@@ -1,29 +1,63 @@
 {
   "name": "Porota Trading Codespace",
-  "image": "mcr.microsoft.com/devcontainers/php:1-8.2-bookworm",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
   "features": {
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true,
+      "dockerDashComposeVersion": "v2"
     }
   },
   "customizations": {
     "vscode": {
       "extensions": [
-        "bmewburn.vscode-intelephense-client",
-        "dbaeumer.vscode-eslint",
-        "esbenp.prettier-vscode"
-      ]
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker",
+        "ms-toolsai.jupyter",
+        "charliermarsh.ruff",
+        "github.vscode-github-actions"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.analysis.typeCheckingMode": "basic",
+        "python.analysis.autoImportCompletions": true,
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": [
+          "tests"
+        ],
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.fixAll": "explicit",
+            "source.organizeImports": "explicit"
+          }
+        },
+        "ruff.nativeServer": "on"
+      }
     }
   },
-  "remoteEnv": {
-    "COMPOSER_ALLOW_SUPERUSER": "1"
-  },
-  "postCreateCommand": "php --version && node --version && npm --version && composer --version",
+  "remoteUser": "vscode",
+  "postCreateCommand": "/usr/local/bin/porota-post-create",
   "forwardPorts": [3000, 5173, 8000, 8080],
   "portsAttributes": {
-    "3000": { "label": "Frontend / app" },
-    "5173": { "label": "Vite / frontend" },
-    "8000": { "label": "PHP application" },
-    "8080": { "label": "Web service" }
+    "3000": {
+      "label": "Porota Trading app"
+    },
+    "5173": {
+      "label": "Frontend / Vite"
+    },
+    "8000": {
+      "label": "Python web app"
+    },
+    "8080": {
+      "label": "Web service"
+    }
   }
 }
