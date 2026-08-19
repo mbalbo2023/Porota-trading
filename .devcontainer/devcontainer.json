@@ -1,0 +1,29 @@
+{
+  "name": "Porota Trading Codespace",
+  "image": "mcr.microsoft.com/devcontainers/php:1-8.2-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "bmewburn.vscode-intelephense-client",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  },
+  "remoteEnv": {
+    "COMPOSER_ALLOW_SUPERUSER": "1"
+  },
+  "postCreateCommand": "php --version && node --version && npm --version && composer --version",
+  "forwardPorts": [3000, 5173, 8000, 8080],
+  "portsAttributes": {
+    "3000": { "label": "Frontend / app" },
+    "5173": { "label": "Vite / frontend" },
+    "8000": { "label": "PHP application" },
+    "8080": { "label": "Web service" }
+  }
+}
