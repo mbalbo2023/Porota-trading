@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/devcontainers/python:1-3.11-bookworm
 
-ARG TALIB_VERSION=0.6.4
+ARG TALIB_VERSION=0.7.1
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
