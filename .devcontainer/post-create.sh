@@ -12,9 +12,14 @@ if [ -f requirements.txt ]; then
 fi
 
 # Verify the native tools required by the bot.
-command -v docker >/dev/null 2>&1 && docker --version || true
-command -v docker compose >/dev/null 2>&1 || true
-command -v wkhtmltopdf >/dev/null 2>&1 && wkhtmltopdf --version || true
+if command -v docker >/dev/null 2>&1; then
+  docker --version
+  docker compose version
+fi
+
+if command -v wkhtmltopdf >/dev/null 2>&1; then
+  wkhtmltopdf --version
+fi
 
 python - <<'PY'
 import importlib.util
