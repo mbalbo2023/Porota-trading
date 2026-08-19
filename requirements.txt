@@ -1,0 +1,50 @@
+# Core and data
+pandas
+numpy
+scipy
+
+# Technical analysis
+TA-Lib
+pandas-ta
+
+# Financial APIs and WebSockets
+requests
+aiohttp
+websockets
+
+# AI and graph workflows
+google-generativeai
+langchain
+langgraph
+networkx
+
+# Notifications
+python-telegram-bot
+
+# Monitoring and AIOps
+psutil
+prometheus_client
+watchdog
+
+# News and scraping
+beautifulsoup4
+feedparser
+
+# Reports and dashboards
+streamlit
+pdfkit
+jinja2
+matplotlib
+seaborn
+
+# Machine learning and optimization
+scikit-learn
+optuna
+
+# Configuration
+python-dotenv
+
+# Development and quality
+pytest
+black
+ruff
