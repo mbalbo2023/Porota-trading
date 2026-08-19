@@ -1,0 +1,3 @@
+Temporary connectivity test created by ChatGPT on 2026-08-19.
+Purpose: verify private-repository write, read, and delete permissions.
+This file is intentionally temporary and will be deleted after verification.
