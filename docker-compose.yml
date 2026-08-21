@@ -1,0 +1,53 @@
+services:
+  bot:
+    build: .
+    container_name: porota_trading_bot
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env
+      - ./sre_vector_db:/app/sre_vector_db
+    ports:
+      - "${DASHBOARD_PORT:-8000}:8000"
+    depends_on:
+      sre_vectordb:
+        condition: service_healthy
+    networks:
+      - porota_bot_net
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  sre_vectordb:
+    image: chromadb/chroma:0.5.23
+    container_name: porota_sre_chromadb
+    restart: unless-stopped
+    volumes:
+      - ./sre_vector_db:/chroma/chroma
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - porota_bot_net
+
+networks:
+  porota_bot_net:
+    driver: bridge
