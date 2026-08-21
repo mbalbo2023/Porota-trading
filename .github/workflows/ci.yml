@@ -1,0 +1,100 @@
+name: CI — Porota Trading
+
+on:
+  push:
+    branches: [develop, testing]
+  pull_request:
+    branches: [develop, testing, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Infrastructure and secret preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject committed secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files -z | grep -zE '(^|/)\.env($|\.)|(^|/)(credentials|secrets)[^/]*\.(json|ya?ml|txt)$' >/dev/null; then
+            echo "::error::Potential secret-bearing file is tracked."
+            exit 1
+          fi
+          if grep -RInE 'AIza[0-9A-Za-z_-]{20,}|[0-9]{8,12}:[A-Za-z0-9_-]{30,}|eyJ[A-Za-z0-9_-]{20,}\.' \
+             --include='*.py' --include='*.yml' --include='*.yaml' --include='*.json' .; then
+            echo "::error::Credential-like material detected in tracked source/config."
+            exit 1
+          fi
+          echo "Secret preflight: OK"
+
+  application-ci:
+    name: Application build, tests and smoke test
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: ${{ hashFiles('requirements.txt') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Compile Python
+        run: python -m compileall -q .
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Prepare isolated SANDBOX environment
+        run: |
+          test -f .env.example
+          cp .env.example .env
+          sed -i 's/^ENVIRONMENT=.*/ENVIRONMENT=SANDBOX/' .env
+          mkdir -p data sre_vector_db
+
+      - name: Validate Compose
+        run: docker compose config
+
+      - name: Build production image
+        run: docker compose build
+
+      - name: Start stack
+        run: docker compose up -d
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 40); do
+            if curl -fsS http://localhost:8000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 3
+          done
+          docker compose logs --tail=150
+          exit 1
+
+      - name: Verify no restart loop
+        run: |
+          sleep 10
+          test "$(docker inspect porota_trading_bot --format '{{.RestartCount}}')" -eq 0
+
+      - name: Verify SQLite WAL when DB is available
+        run: |
+          docker compose exec -T bot python -c '
+          import ac_db
+          info = ac_db.healthcheck()
+          assert info["ok"]
+          assert str(info["journal_mode"]).lower() == "wal"
+          print(info)
+          '
+
+      - name: Shutdown
+        if: always()
+        run: docker compose down -v
