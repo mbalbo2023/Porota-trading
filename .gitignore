@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+credentials*.json
+data/
+sre_vector_db/
+__pycache__/
+*.pyc
+venv/
+.venv/
+backtest_*.json
+*.json.bak
+/tmp/
