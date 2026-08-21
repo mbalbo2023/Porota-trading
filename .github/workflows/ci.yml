@@ -2,77 +2,133 @@ name: CI — Porota Trading
 
 on:
   push:
-    branches: [develop, testing]
+    branches:
+      - main
+      - develop
+      - testing
   pull_request:
-    branches: [develop, testing, main]
+    branches:
+      - main
+      - develop
+      - testing
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  preflight:
-    name: Infrastructure and secret preflight
+  infrastructure:
+    name: Infrastructure preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Reject committed secrets
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate repository safety
         shell: bash
         run: |
           set -euo pipefail
+          echo "Checking tracked secret-bearing files..."
           if git ls-files -z | grep -zE '(^|/)\.env($|\.)|(^|/)(credentials|secrets)[^/]*\.(json|ya?ml|txt)$' >/dev/null; then
             echo "::error::Potential secret-bearing file is tracked."
             exit 1
           fi
+
+          echo "Checking credential-like strings in tracked source/config..."
           if grep -RInE 'AIza[0-9A-Za-z_-]{20,}|[0-9]{8,12}:[A-Za-z0-9_-]{30,}|eyJ[A-Za-z0-9_-]{20,}\.' \
              --include='*.py' --include='*.yml' --include='*.yaml' --include='*.json' .; then
             echo "::error::Credential-like material detected in tracked source/config."
             exit 1
           fi
-          echo "Secret preflight: OK"
 
-  application-ci:
-    name: Application build, tests and smoke test
+          echo "Infrastructure preflight: OK"
+
+      - name: Validate Codespaces files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .devcontainer/devcontainer.json
+          test -f .devcontainer/post-create.sh
+          test -f .devcontainer/welcome.sh
+          test -f Dockerfile
+          test -f docker-compose.yml
+          test -f codespace-test.sh
+          test -f scripts/release-guard.sh
+          echo "Codespaces infrastructure files: OK"
+
+      - name: Validate Docker Compose syntax
+        run: docker compose config
+
+  application:
+    name: Application CI
     runs-on: ubuntu-latest
-    needs: preflight
-    if: ${{ hashFiles('requirements.txt') != '' }}
+    needs: infrastructure
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Detect application package
+        id: detect
+        shell: bash
+        run: |
+          if [ -f requirements.txt ] && [ -f entrypoint.py ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Application package not installed yet
+        if: steps.detect.outputs.present == 'false'
+        run: |
+          echo "Application package is not present yet."
+          echo "Infrastructure-only validation completed successfully."
+          echo "Application tests will activate automatically when the final package is uploaded."
+
+      - name: Setup Python 3.11
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
 
-      - name: Install Python dependencies
+      - name: Install application dependencies
+        if: steps.detect.outputs.present == 'true'
         run: python -m pip install -r requirements.txt
 
       - name: Compile Python
+        if: steps.detect.outputs.present == 'true'
         run: python -m compileall -q .
 
       - name: Run tests
+        if: steps.detect.outputs.present == 'true'
         run: pytest -q
 
       - name: Prepare isolated SANDBOX environment
+        if: steps.detect.outputs.present == 'true'
+        shell: bash
         run: |
+          set -euo pipefail
           test -f .env.example
           cp .env.example .env
           sed -i 's/^ENVIRONMENT=.*/ENVIRONMENT=SANDBOX/' .env
           mkdir -p data sre_vector_db
 
-      - name: Validate Compose
-        run: docker compose config
-
-      - name: Build production image
+      - name: Build application image
+        if: steps.detect.outputs.present == 'true'
         run: docker compose build
 
-      - name: Start stack
+      - name: Start application stack
+        if: steps.detect.outputs.present == 'true'
         run: docker compose up -d
 
-      - name: Wait for health
+      - name: Wait for application health
+        if: steps.detect.outputs.present == 'true'
+        shell: bash
         run: |
+          set -euo pipefail
           for i in $(seq 1 40); do
             if curl -fsS http://localhost:8000/health >/dev/null; then
+              echo "Application health: OK"
               exit 0
             fi
             sleep 3
@@ -81,11 +137,15 @@ jobs:
           exit 1
 
       - name: Verify no restart loop
+        if: steps.detect.outputs.present == 'true'
+        shell: bash
         run: |
           sleep 10
           test "$(docker inspect porota_trading_bot --format '{{.RestartCount}}')" -eq 0
 
-      - name: Verify SQLite WAL when DB is available
+      - name: Verify SQLite WAL when database module is available
+        if: steps.detect.outputs.present == 'true'
+        shell: bash
         run: |
           docker compose exec -T bot python -c '
           import ac_db
@@ -95,6 +155,6 @@ jobs:
           print(info)
           '
 
-      - name: Shutdown
-        if: always()
+      - name: Shutdown application stack
+        if: always() && steps.detect.outputs.present == 'true'
         run: docker compose down -v
