@@ -24,7 +24,7 @@ producción deben existir únicamente en el servidor y/o GitHub Actions Secrets.
 1. Copiar el paquete final a una rama de trabajo.
 2. Ejecutar `bash scripts/release-guard.sh`.
 3. Abrir/usar un Codespace desde esa rama.
-4. Ejecutar `./codespace-test.sh`.
+4. Ejecutar `bash codespace-test.sh`.
 5. Confirmar CI verde.
 6. Promover mediante `Promover a producción`.
 7. Desplegar mediante `Despliegue de producción`.
