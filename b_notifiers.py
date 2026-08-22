@@ -81,7 +81,7 @@ class MultiChannelNotifier:
         """
         if not self.telegram_token or not self.telegram_chat_id:
             logger.warning("Telegram no configurado (falta TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID).")
-            return
+            return False
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
         payload = {"chat_id": self.telegram_chat_id, "text": message, "parse_mode": "Markdown"}
         last_error = None
@@ -89,7 +89,7 @@ class MultiChannelNotifier:
             try:
                 res = requests.post(url, json=payload, timeout=5)
                 if res.status_code == 200:
-                    return
+                    return True
                 last_error = f"HTTP {res.status_code}: {res.text}"
                 logger.error("Telegram respondió %s: %s", res.status_code, res.text)
             except Exception as e:
@@ -98,13 +98,14 @@ class MultiChannelNotifier:
             if intento < 2:
                 time.sleep(2 * (intento + 1))  # 2s, luego 4s
         _save_failed_notification(message, last_error)
+        return False
 
     def send_telegram_confirmation(self, message: str, order_id: str):
         """Igual que send_telegram, pero agrega dos botones (Confirmar/Cancelar)
         con el id de la orden pendiente codificado en el callback_data."""
         if not self.telegram_token or not self.telegram_chat_id:
             logger.warning("Telegram no configurado.")
-            return
+            return False
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
         payload = {
             "chat_id": self.telegram_chat_id,
@@ -121,8 +122,11 @@ class MultiChannelNotifier:
             res = requests.post(url, json=payload, timeout=5)
             if res.status_code != 200:
                 logger.error("Telegram (confirmación) respondió %s: %s", res.status_code, res.text)
+                return False
+            return True
         except Exception as e:
             logger.error("Error enviando confirmación por Telegram: %s", e)
+            return False
 
     def send_telegram_generic_confirmation(self, message: str, confirm_data: str, cancel_data: str,
                                            confirm_text: str = "✅ Confirmar",
@@ -140,7 +144,7 @@ class MultiChannelNotifier:
         """
         if not self.telegram_token or not self.telegram_chat_id:
             logger.warning("Telegram no configurado.")
-            return
+            return False
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
         payload = {
             "chat_id": self.telegram_chat_id,
@@ -157,8 +161,11 @@ class MultiChannelNotifier:
             res = requests.post(url, json=payload, timeout=5)
             if res.status_code != 200:
                 logger.error("Telegram (confirmación genérica) respondió %s: %s", res.status_code, res.text)
+                return False
+            return True
         except Exception as e:
             logger.error("Error enviando confirmación genérica por Telegram: %s", e)
+            return False
 
     def get_telegram_button_taps(self, offset: int = 0):
         """LECTOR ÚNICO de getUpdates de todo el sistema (v16.2).
