@@ -400,17 +400,22 @@ def verificar_telegram(vf: Verificador) -> None:
 
 def _mensaje_de_prueba():
     import b_notifiers
-    n = b_notifiers.Notifier()
-    return {"enviado": bool(n.send(
+    n = b_notifiers.MultiChannelNotifier()
+    return {"enviado": bool(n.send_telegram(
         "🔍 Verificación de APIs de Porota Trading.\n"
         "Si estás viendo este mensaje, el canal de notificaciones funciona."))}
 
 
 def _mensaje_con_botones():
     import b_notifiers
-    n = b_notifiers.Notifier()
-    teclado = {"inline_keyboard": [[{"text": "✅ Funciona", "callback_data": "verif_ok"}]]}
-    return {"enviado": bool(n.send("Probando botones de confirmación.", reply_markup=teclado))}
+    n = b_notifiers.MultiChannelNotifier()
+    return {"enviado": bool(n.send_telegram_generic_confirmation(
+        "Probando botones de confirmación.",
+        confirm_data="VERIF_OK",
+        cancel_data="VERIF_CANCEL",
+        confirm_text="✅ Funciona",
+        cancel_text="Cerrar prueba",
+    ))}
 
 
 def verificar_fuentes_publicas(vf: Verificador) -> None:
