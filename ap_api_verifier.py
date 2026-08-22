@@ -153,7 +153,7 @@ def verificar_iol(vf: Verificador) -> None:
         envia="username, password y grant_type=password, como formulario codificado.",
         espera="access_token, refresh_token y expires_in (1200 s).",
         modulo_del_bot="ak_iol_client.IOLClient._authenticate()",
-    ), lambda: {"autenticado": bool(cliente._headers())})
+    ), lambda: bool(cliente._headers()))
 
     vf.ejecutar(Verificacion(
         familia="IOL", nombre="estado_cuenta",
@@ -234,14 +234,18 @@ def verificar_ppi(vf: Verificador, ejecutar_orden_sandbox: bool = False) -> None
     print(f"  Entorno: {entorno}")
     cliente = c_ppi_client.ResilientPPIClient(_NotificadorSilencioso())
 
-    vf.ejecutar(Verificacion(
+    login = vf.ejecutar(Verificacion(
         familia="PPI", nombre="login",
         proposito="Abrir sesión: sin esto no hay precios ni órdenes.",
         metodo="POST", endpoint="/api/1.0/Account/Login",
         envia="AuthorizedClient, ClientKey y el par de llaves pública/privada en cabeceras.",
         espera="accessToken con su vencimiento y refreshToken.",
-        modulo_del_bot="c_ppi_client.PPIClient.login()",
-    ), lambda: {"sesion": bool(cliente.login())})
+        modulo_del_bot="c_ppi_client.ResilientPPIClient.login()",
+    ), cliente.login)
+
+    if login.estado != "OK":
+        print("  ⚪ Pruebas PPI restantes OMITIDAS: el login no fue válido.")
+        return
 
     vf.ejecutar(Verificacion(
         familia="PPI", nombre="saldos",
@@ -288,7 +292,7 @@ def verificar_ppi(vf: Verificador, ejecutar_orden_sandbox: bool = False) -> None
             envia="Tipo de instrumento.",
             espera="Lista de tickers disponibles.",
             modulo_del_bot="m_instrument_universe.build_universe()",
-        ), lambda c=clase: {"encontrados": len(cliente.search_instruments(c) or [])})
+        ), lambda c=clase: _conteo_instrumentos(cliente, c))
 
     if entorno == "SANDBOX" and ejecutar_orden_sandbox:
         vf.ejecutar(Verificacion(
@@ -330,6 +334,13 @@ def _orden_sandbox_con_cancelacion(cliente):
         "cancelada": True,
         "estado_cancelacion": cancelacion.get("status") if isinstance(cancelacion, dict) else str(cancelacion),
     }
+
+
+def _conteo_instrumentos(cliente, clase):
+    instrumentos = cliente.search_instruments(clase)
+    if instrumentos is None:
+        return None
+    return {"encontrados": len(instrumentos)}
 
 
 # ===========================================================================
@@ -438,21 +449,21 @@ def verificar_telegram(vf: Verificador) -> None:
 def _mensaje_de_prueba():
     import b_notifiers
     n = b_notifiers.MultiChannelNotifier()
-    return {"enviado": bool(n.send_telegram(
+    return bool(n.send_telegram(
         "🔍 Verificación de APIs de Porota Trading.\n"
-        "Si estás viendo este mensaje, el canal de notificaciones funciona."))}
+        "Si estás viendo este mensaje, el canal de notificaciones funciona."))
 
 
 def _mensaje_con_botones():
     import b_notifiers
     n = b_notifiers.MultiChannelNotifier()
-    return {"enviado": bool(n.send_telegram_generic_confirmation(
+    return bool(n.send_telegram_generic_confirmation(
         "Probando botones de confirmación.",
         confirm_data="VERIF_OK",
         cancel_data="VERIF_CANCEL",
         confirm_text="✅ Funciona",
         cancel_text="Cerrar prueba",
-    ))}
+    ))
 
 
 def verificar_fuentes_publicas(vf: Verificador) -> None:
