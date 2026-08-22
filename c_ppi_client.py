@@ -375,6 +375,10 @@ class ResilientPPIClient:
     # ------------------------------------------------------------------ #
     # Autenticación
     # ------------------------------------------------------------------ #
+    def login(self) -> bool:
+        """Reautentica explícitamente y devuelve un resultado verificable."""
+        return self._login()
+
     def _login(self) -> bool:
         try:
             self.client = PPI(sandbox=self.is_sandbox)
@@ -894,6 +898,20 @@ class ResilientPPIClient:
             "get_orders",
         )
 
+    def cancel_order(self, order_id: str, external_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Cancela una orden por ID usando el método oficial de PPI."""
+        if not self.account_number:
+            logger.warning("PPI_ACCOUNT_NUMBER no configurado; no se puede cancelar la orden.")
+            return None
+        from ppi_client.models.order import Order
+
+        return self._call_with_retry(
+            lambda: self.client.orders.cancel_order(
+                Order(order_id, self.account_number, external_id)
+            ),
+            f"cancel_order({order_id})",
+        )
+
     # ------------------------------------------------------------------ #
     # Colocación de órdenes reales (v7.0) — SOLO se llaman desde
     # l_order_confirmation.py, después de que el usuario tocó "Confirmar"
@@ -941,7 +959,8 @@ class ResilientPPIClient:
                        order_type: str = "PRECIO-LIMITE", term: str = "VÁLIDA-HASTA-EL",
                        operation: str = "COMPRA", settlement: str = "A-24HS",
                        external_id: Optional[str] = None,
-                       quantity_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+                       quantity_type: Optional[str] = None,
+                       sandbox_probe: bool = False) -> Optional[Dict[str, Any]]:
         """Coloca la orden REAL. En PRODUCTION esto mueve dinero de verdad.
         En v10.5, en SANDBOX con ORDER_EXECUTION_MODE=auto se llama sin
         botón de confirmación previo (pedido explícito del usuario — ver
@@ -960,18 +979,26 @@ class ResilientPPIClient:
         # bróker. Ponerlo acá y no en cada módulo que puede ordenar es lo que
         # garantiza que no quede un camino olvidado por el que se escape una
         # orden real durante una prueba.
-        try:
-            import ao_startup_gate as startup_gate
-            simulada = startup_gate.interceptar_orden(
-                ticker, quantity, price, operation, instrument_type)
-            if simulada is not None:
-                logger.info("Orden NO enviada (modo simulación): %s %s × %s a $%s",
-                            operation, quantity, ticker, price)
-                return {"simulada": True, "externalId": simulada["id"],
-                        "ticker": ticker, "quantity": quantity, "price": price,
-                        "operation": operation, "status": "SIMULADA"}
-        except ImportError:
-            pass  # sin el portón instalado, el comportamiento es el de siempre
+        if sandbox_probe:
+            entorno = os.getenv("ENVIRONMENT", "").upper()
+            if not self.is_sandbox or entorno != "SANDBOX" or not str(external_id or "").startswith(
+                    "api-verifier-sandbox-"):
+                raise RuntimeError(
+                    "sandbox_probe solo admite ENVIRONMENT=SANDBOX y un external_id del verificador."
+                )
+        else:
+            try:
+                import ao_startup_gate as startup_gate
+                simulada = startup_gate.interceptar_orden(
+                    ticker, quantity, price, operation, instrument_type)
+                if simulada is not None:
+                    logger.info("Orden NO enviada (modo simulación): %s %s × %s a $%s",
+                                operation, quantity, ticker, price)
+                    return {"simulada": True, "externalId": simulada["id"],
+                            "ticker": ticker, "quantity": quantity, "price": price,
+                            "operation": operation, "status": "SIMULADA"}
+            except ImportError:
+                pass  # sin el portón instalado, el comportamiento es el de siempre
 
         from ppi_client.models.order_confirm import OrderConfirm
         from ppi_client.models.disclaimer import Disclaimer
