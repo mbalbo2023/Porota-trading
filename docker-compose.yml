@@ -100,6 +100,7 @@ services:
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
+      - FOWNER
 
   sre_vectordb:
     # Version fija, nunca `latest`: un tag movil en un servicio de base de
