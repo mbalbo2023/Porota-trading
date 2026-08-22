@@ -13,6 +13,9 @@
 services:
   bot:
     build: .
+    # Nombre explicito: permite auditar y promover exactamente la misma
+    # imagen en CI, Sandbox y produccion, sin depender del nombre del directorio.
+    image: porota-trading-bot:16.2
     container_name: porota_trading_bot
     restart: unless-stopped
     volumes:
