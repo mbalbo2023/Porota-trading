@@ -88,7 +88,11 @@ class MultiChannelNotifier:
         for intento in range(3):
             try:
                 res = requests.post(url, json=payload, timeout=5)
-                if res.status_code == 200:
+                try:
+                    respuesta = res.json()
+                except Exception:
+                    respuesta = {}
+                if res.status_code == 200 and respuesta.get("ok") is True:
                     return True
                 last_error = f"HTTP {res.status_code}: {res.text}"
                 logger.error("Telegram respondió %s: %s", res.status_code, res.text)
@@ -120,7 +124,11 @@ class MultiChannelNotifier:
         }
         try:
             res = requests.post(url, json=payload, timeout=5)
-            if res.status_code != 200:
+            try:
+                respuesta = res.json()
+            except Exception:
+                respuesta = {}
+            if res.status_code != 200 or respuesta.get("ok") is not True:
                 logger.error("Telegram (confirmación) respondió %s: %s", res.status_code, res.text)
                 return False
             return True
@@ -159,7 +167,11 @@ class MultiChannelNotifier:
         }
         try:
             res = requests.post(url, json=payload, timeout=5)
-            if res.status_code != 200:
+            try:
+                respuesta = res.json()
+            except Exception:
+                respuesta = {}
+            if res.status_code != 200 or respuesta.get("ok") is not True:
                 logger.error("Telegram (confirmación genérica) respondió %s: %s", res.status_code, res.text)
                 return False
             return True
