@@ -185,11 +185,7 @@ jobs:
           # /app/.env, lo que produce un falso positivo aunque la capa de la
           # imagen este limpia. Se inspecciona la imagen pura, sin Compose ni
           # bind mounts.
-          # Algunas versiones de Compose tambien listan imagenes relacionadas;
-          # Docker necesita una sola referencia, no varias lineas.
-          IMAGEN=$(docker compose images -q bot | awk 'NF {print; exit}')
-          test -n "$IMAGEN"
-          SALIDA=$(docker run --rm --entrypoint sh "$IMAGEN" -c 'ls -a /app | grep -E "^\.env" || true')
+          SALIDA=$(docker run --rm --entrypoint sh porota-trading-bot:16.2 -c 'ls -a /app | grep -E "^\.env" || true')
           if echo "$SALIDA" | grep -v '\.env\.example' | grep -q '\.env'; then
             echo "::error::La imagen contiene archivos de entorno: $SALIDA"
             exit 1
