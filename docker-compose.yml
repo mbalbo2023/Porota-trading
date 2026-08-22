@@ -38,6 +38,10 @@ services:
       #    prefijo 127.0.0.1 es la unica forma confiable de que no pase.
       - "127.0.0.1:${DASHBOARD_PORT:-8000}:${DASHBOARD_PORT:-8000}"
     depends_on:
+      init_permissions:
+        # Los bind mounts nacen como root:root en un host nuevo. Este init
+        # termina antes de arrancar el bot y cede solo los directorios de datos.
+        condition: service_completed_successfully
       sre_vectordb:
         # CORREGIDO EN v16.2 - antes era `service_healthy`. El bot, que es el
         # componente critico, no arrancaba si el healthcheck del indice
@@ -70,6 +74,29 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
+
+  init_permissions:
+    # Reutiliza la misma imagen: no agrega software ni una version paralela.
+    image: porota-trading-bot:16.2
+    user: "0:0"
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - >-
+        mkdir -p /app/data/logs /app/data/backups /app/data/proposals
+        /app/sre_vector_db &&
+        chown -R 1000:1000 /app/data /app/sre_vector_db
+    volumes:
+      - ./data:/app/data
+      - ./sre_vector_db:/app/sre_vector_db
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
 
   sre_vectordb:
     # Version fija, nunca `latest`: un tag movil en un servicio de base de
