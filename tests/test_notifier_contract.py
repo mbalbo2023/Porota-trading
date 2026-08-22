@@ -1,6 +1,7 @@
 """Contrato de retorno del canal Telegram usado por el verificador de APIs."""
 
 import sys
+import json
 from pathlib import Path
 
 
@@ -14,6 +15,9 @@ class _Respuesta:
     def __init__(self, status_code=200, text='{"ok": true}'):
         self.status_code = status_code
         self.text = text
+
+    def json(self):
+        return json.loads(self.text)
 
 
 def _notificador():
@@ -43,3 +47,12 @@ def test_confirmacion_generica_devuelve_false_en_error_http(monkeypatch):
     assert _notificador().send_telegram_generic_confirmation(
         "prueba", "VERIF_OK", "VERIF_CANCEL") is False
 
+
+def test_http_200_con_ok_false_no_es_un_exito(monkeypatch):
+    monkeypatch.setattr(
+        b_notifiers.requests,
+        "post",
+        lambda *a, **k: _Respuesta(status_code=200, text='{"ok": false}'),
+    )
+    assert _notificador().send_telegram_generic_confirmation(
+        "prueba", "VERIF_OK", "VERIF_CANCEL") is False
