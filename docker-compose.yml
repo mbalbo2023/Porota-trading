@@ -86,10 +86,13 @@ services:
       - >-
         mkdir -p /app/data/logs /app/data/backups /app/data/proposals
         /app/sre_vector_db &&
-        chown -R 1000:1000 /app/data /app/sre_vector_db
+        chown -R 1000:1000 /app/data /app/sre_vector_db &&
+        chown 1000:1000 /app/.env &&
+        chmod 600 /app/.env
     volumes:
       - ./data:/app/data
       - ./sre_vector_db:/app/sre_vector_db
+      - ./.env:/app/.env
     security_opt:
       - no-new-privileges:true
     cap_drop:
