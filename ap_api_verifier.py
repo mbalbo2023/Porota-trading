@@ -216,13 +216,23 @@ def verificar_iol(vf: Verificador) -> None:
 # PPI
 # ===========================================================================
 
-def verificar_ppi(vf: Verificador) -> None:
+class _NotificadorSilencioso:
+    """Evita que una prueba de conectividad genere alertas operativas."""
+
+    def notify_recovery(self, *args, **kwargs):
+        return None
+
+    def notify_error(self, *args, **kwargs):
+        return None
+
+
+def verificar_ppi(vf: Verificador, ejecutar_orden_sandbox: bool = False) -> None:
     print("\n[PPI] Portfolio Personal Inversiones")
     import c_ppi_client
 
     entorno = os.getenv("ENVIRONMENT", "SANDBOX").upper()
     print(f"  Entorno: {entorno}")
-    cliente = c_ppi_client.PPIClient()
+    cliente = c_ppi_client.ResilientPPIClient(_NotificadorSilencioso())
 
     vf.ejecutar(Verificacion(
         familia="PPI", nombre="login",
@@ -280,19 +290,46 @@ def verificar_ppi(vf: Verificador) -> None:
             modulo_del_bot="m_instrument_universe.build_universe()",
         ), lambda c=clase: {"encontrados": len(cliente.search_instruments(c) or [])})
 
-    if entorno == "SANDBOX":
+    if entorno == "SANDBOX" and ejecutar_orden_sandbox:
         vf.ejecutar(Verificacion(
             familia="PPI", nombre="orden_sandbox",
             proposito="Probar el circuito completo de envío de orden con plata ficticia.",
             metodo="POST", endpoint="/api/1.0/Order",
             envia="Cuenta, ticker, tipo, plazo, cantidad, precio, lado y tipo de orden.",
             espera="Identificador de orden.",
-            modulo_del_bot="c_ppi_client.send_order()",
-        ), lambda: cliente.send_order(os.getenv("PPI_ACCOUNT_NUMBER", ""), "AL30", "BONOS",
-                                      "A-24HS", 1, 1.0, "BUY", "LIMIT"))
+            modulo_del_bot="c_ppi_client.confirm_order() + cancel_order()",
+        ), lambda: _orden_sandbox_con_cancelacion(cliente))
     else:
-        print("  ⚪ Envío de orden OMITIDO: ENVIRONMENT no es SANDBOX. "
-              "No se manda una orden real como prueba.")
+        motivo = "falta --orden-sandbox" if entorno == "SANDBOX" else "ENVIRONMENT no es SANDBOX"
+        print(f"  ⚪ Envío de orden OMITIDO: {motivo}. No se manda ninguna orden.")
+
+
+def _orden_sandbox_con_cancelacion(cliente):
+    cuenta = os.getenv("PPI_ACCOUNT_NUMBER", "")
+    presupuesto = cliente.budget_order(cuenta, 1, 1.0, "AL30", "BONOS")
+    if not presupuesto:
+        raise RuntimeError("PPI no devolvió presupuesto; la orden Sandbox no se envió.")
+    external_id = f"api-verifier-sandbox-{int(time.time())}"
+    confirmacion = cliente.confirm_order(
+        cuenta, 1, 1.0, "AL30", presupuesto.get("disclaimers", []),
+        instrument_type="BONOS", order_type="PRECIO-LIMITE",
+        operation="COMPRA", settlement="A-24HS", external_id=external_id,
+        sandbox_probe=True,
+    )
+    if not confirmacion or not confirmacion.get("id"):
+        raise RuntimeError("PPI no confirmó la creación de la orden Sandbox.")
+    order_id = confirmacion["id"]
+    cancelacion = cliente.cancel_order(order_id, external_id)
+    if not cancelacion:
+        raise RuntimeError(
+            f"La orden Sandbox {order_id} fue creada pero PPI no confirmó su cancelación."
+        )
+    return {
+        "order_id": order_id,
+        "estado_inicial": confirmacion.get("status"),
+        "cancelada": True,
+        "estado_cancelacion": cancelacion.get("status") if isinstance(cancelacion, dict) else str(cancelacion),
+    }
 
 
 # ===========================================================================
@@ -526,6 +563,8 @@ def main():
                         help="Verificar una sola familia.")
     parser.add_argument("--dry", action="store_true",
                         help="Mostrar qué se haría, sin ejecutar ninguna llamada.")
+    parser.add_argument("--orden-sandbox", action="store_true",
+                        help="Enviar y cancelar una orden ficticia; exige ENVIRONMENT=SANDBOX.")
     parser.add_argument("--salida", default="./data/informe_apis",
                         help="Ruta base de los archivos de salida.")
     args = parser.parse_args()
@@ -534,7 +573,10 @@ def main():
     vf = Verificador(dry=args.dry)
 
     familias = {
-        "iol": verificar_iol, "ppi": verificar_ppi, "gemini": verificar_gemini,
+        "iol": verificar_iol,
+        "ppi": lambda verificador: verificar_ppi(
+            verificador, ejecutar_orden_sandbox=args.orden_sandbox),
+        "gemini": verificar_gemini,
         "telegram": verificar_telegram, "publicas": verificar_fuentes_publicas,
     }
     elegidas = [familias[args.solo]] if args.solo else list(familias.values())
