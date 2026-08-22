@@ -247,4 +247,9 @@ jobs:
 
       - name: Apagar
         if: always()
-        run: docker compose down -v
+        run: |
+          # El init deja .env en 1000:1000 y modo 600 para el bot. El runner
+          # necesita recuperar temporalmente la lectura para que Compose pueda
+          # resolver la configuracion durante la limpieza.
+          sudo chown "$(id -u):$(id -g)" .env 2>/dev/null || true
+          docker compose down -v
