@@ -198,6 +198,10 @@ jobs:
           # Credenciales de juguete: alcanzan para que el guardian de entorno
           # deje arrancar y el panel responda. No autentican contra nada.
           {
+            echo "PPI_API_KEY=ci-ppi-api-key-not-real"
+            echo "PPI_API_SECRET=ci-ppi-api-secret-not-real"
+            echo "GEMINI_API_KEY=ci-gemini-api-key-not-real"
+            echo "TELEGRAM_BOT_TOKEN=ci-telegram-token-not-real"
             echo "DASHBOARD_ACCESS_TOKEN=ci-token-de-prueba-largo-y-suficiente"
             echo "DASHBOARD_PASSWORD=ci-password-de-prueba"
             echo "DASHBOARD_HOST=0.0.0.0"
