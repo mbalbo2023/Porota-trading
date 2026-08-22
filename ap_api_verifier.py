@@ -315,21 +315,65 @@ def verificar_gemini(vf: Verificador) -> None:
         proposito="Confirmar que el modelo puede invocar las herramientas del bot, que es "
                   "el mecanismo con el que consulta precios y contexto macro reales.",
         metodo="POST", endpoint="generateContent con tools",
-        envia="El mismo prompt más la lista de herramientas de ah_market_tools.",
+        envia="Un prompt mínimo más una herramienta segura de verificación.",
         espera="Una llamada a función, no texto libre.",
-        modulo_del_bot="ah_market_tools.HERRAMIENTAS",
+        modulo_del_bot="google.genai (mismo mecanismo usado por ah_market_tools.HERRAMIENTAS)",
     ), _prueba_function_calling)
 
 
 def _inferencia_minima():
+    from google.genai import types
     import f_gemini_decision_engine as motor
+
     m = motor.GeminiDecisionEngine()
-    return {"respuesta": str(m.consulta_libre("Respondé solamente: OK"))[:100]}
+    respuesta = m._llamar_con_timeout_estricto(
+        "Respondé solamente: OK",
+        types.GenerateContentConfig(),
+    )
+    texto = (respuesta.text or "").strip()
+    if not texto:
+        raise RuntimeError("Gemini respondió sin texto en la inferencia básica.")
+    return {"respuesta": texto[:100], "modelo": m.model}
 
 
 def _prueba_function_calling():
-    import ah_market_tools as tools
-    return {"herramientas_registradas": [f.__name__ for f in tools.HERRAMIENTAS]}
+    from google.genai import types
+    import f_gemini_decision_engine as motor
+
+    m = motor.GeminiDecisionEngine()
+    declaracion = types.FunctionDeclaration(
+        name="verificar_herramienta",
+        description="Confirma que Gemini puede seleccionar una herramienta declarada.",
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "codigo": {
+                    "type": "string",
+                    "description": "Código de verificación; debe ser OK.",
+                },
+            },
+            "required": ["codigo"],
+        },
+    )
+    respuesta = m._llamar_con_timeout_estricto(
+        "Invocá verificar_herramienta con codigo OK. No respondas texto libre.",
+        types.GenerateContentConfig(
+            tools=[types.Tool(function_declarations=[declaracion])],
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            tool_config=types.ToolConfig(
+                function_calling_config=types.FunctionCallingConfig(mode="ANY")
+            ),
+        ),
+    )
+    llamadas = respuesta.function_calls or []
+    if not llamadas:
+        raise RuntimeError("Gemini no devolvió ninguna llamada a función.")
+    llamada = llamadas[0]
+    return {
+        "funcion": llamada.name,
+        "argumentos": dict(llamada.args or {}),
+        "modelo": m.model,
+    }
 
 
 def verificar_telegram(vf: Verificador) -> None:
