@@ -1,0 +1,32 @@
+# ============================================================================
+# .dockerignore — Porota Trading v16.2
+# ============================================================================
+# No existía. El `COPY . .` del Dockerfile metía dentro de la imagen todo lo
+# que hubiera en el directorio: archivos de entorno con credenciales, la base
+# de datos operativa y el índice vectorial. Una imagen con secretos adentro se
+# distribuye, se cachea y se sube a un registry sin que nadie lo note.
+.env
+.env.*
+!.env.example
+Secret.txt
+ACCESO_DASHBOARD_DROPLET.txt
+
+data/
+sre_vector_db/
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+.git/
+.github/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+venv/
+.venv/
+docs/
+*.pdf

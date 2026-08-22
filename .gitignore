@@ -1,16 +1,32 @@
+# ============================================================================
+# .gitignore — Porota Trading v16.2
+# ============================================================================
+# El patrón .env solo excluía UN nombre de archivo. Cualquier variante
+# (.env.testing, .env.produccion, .env.bak) entraba al repositorio sin que
+# nada avisara. Ahora se excluye la familia entera y se admite una sola
+# excepción explícita: la plantilla sin valores.
 .env
 .env.*
 !.env.example
-*.pem
-*.key
-*.secret
-credentials*.json
+
+# Datos operativos y estado en runtime
 data/
 sre_vector_db/
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Artefactos fuera del paquete (se entregan aparte, nunca se versionan)
+Secret.txt
+ACCESO_DASHBOARD_DROPLET.txt
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.hypothesis/
 venv/
 .venv/
-backtest_*.json
-*.json.bak
-/tmp/

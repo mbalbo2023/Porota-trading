@@ -1,3 +1,15 @@
+# ============================================================================
+# docker-compose.yml - Porota Trading v16.2
+# ============================================================================
+# Docker Compose es el UNICO camino de despliegue soportado. Mantener dos
+# caminos en paralelo (systemd + Docker) fue la causa raiz de tres bugs
+# distintos en versiones previas.
+#
+# La configuracion NO se inyecta con `env_file:`. El proceso la lee con
+# load_dotenv() desde /app/.env, que se monta como volumen desde el host: asi
+# el editor del panel escribe sobre el archivo REAL del servidor y el proceso
+# nuevo, al reiniciar, lee esos valores. (Compose sigue leyendo ./.env por su
+# cuenta para resolver la interpolacion de ${DASHBOARD_PORT} de mas abajo.)
 services:
   bot:
     build: .
@@ -8,40 +20,79 @@ services:
       - ./.env:/app/.env
       - ./sre_vector_db:/app/sre_vector_db
     ports:
-      - "${DASHBOARD_PORT:-8000}:8000"
+      # CORREGIDO EN v16.2 - dos problemas en una sola linea.
+      #
+      # 1) El puerto interno estaba fijo en 8000 mientras la aplicacion tomaba
+      #    el suyo de DASHBOARD_PORT: cambiar esa variable desacoplaba el mapeo
+      #    y el panel dejaba de ser alcanzable sin que nada avisara. Ahora los
+      #    dos lados del mapeo salen de la misma variable.
+      #
+      # 2) Se publica SOLO en el loopback del host. El panel no queda expuesto
+      #    a internet por el mapeo de Docker: quien lo publique hacia afuera
+      #    tiene que hacerlo a proposito, por el reverse proxy con TLS. Ojo con
+      #    esto: Docker escribe reglas de iptables por debajo de ufw, asi que
+      #    un mapeo "0.0.0.0" abre el puerto AUNQUE ufw lo tenga cerrado. El
+      #    prefijo 127.0.0.1 es la unica forma confiable de que no pase.
+      - "127.0.0.1:${DASHBOARD_PORT:-8000}:${DASHBOARD_PORT:-8000}"
     depends_on:
       sre_vectordb:
-        condition: service_healthy
+        # CORREGIDO EN v16.2 - antes era `service_healthy`. El bot, que es el
+        # componente critico, no arrancaba si el healthcheck del indice
+        # vectorial no pasaba, y ese healthcheck usaba `curl`, que la imagen
+        # oficial de Chroma no garantiza tener. Resultado: una dependencia dura
+        # de un componente critico sobre uno accesorio -el motor SRE no
+        # participa de ninguna decision de inversion-, en la direccion
+        # equivocada. El motor SRE ya tolera un indice ausente.
+        condition: service_started
     networks:
       - porota_bot_net
+    # Endurecimiento del contenedor (v16.2).
+    security_opt:
+      # Impide que un proceso adentro gane privilegios via binarios setuid.
+      - no-new-privileges:true
+    cap_drop:
+      # El bot no necesita ninguna capability del kernel: hace HTTP, escribe
+      # archivos y habla SQLite.
+      - ALL
     deploy:
       resources:
         limits:
           memory: 1536M
     logging:
-      driver: json-file
+      # Sin esto, el log que captura Docker crece sin techo hasta llenar el
+      # disco del Droplet. Es una de las formas mas comunes de tumbar un
+      # servidor chico, y no la cubre la rotacion de logs del propio bot, que
+      # solo rota SUS archivos y no el stdout.
+      driver: "json-file"
       options:
         max-size: "20m"
         max-file: "5"
 
   sre_vectordb:
+    # Version fija, nunca `latest`: un tag movil en un servicio de base de
+    # datos es un cambio de version no anunciado esperando a ocurrir.
     image: chromadb/chroma:0.5.23
     container_name: porota_sre_chromadb
     restart: unless-stopped
     volumes:
       - ./sre_vector_db:/chroma/chroma
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/heartbeat || exit 1"]
+      # CORREGIDO EN v16.2 - antes usaba `curl`, que las imagenes minimas de
+      # Chroma no siempre incluyen. Si el binario no esta, el healthcheck nunca
+      # pasa a healthy. Ahora usa el interprete de Python de la propia imagen.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat', timeout=4).status==200 else 1)\""]
       interval: 15s
-      timeout: 5s
+      timeout: 6s
       retries: 5
-      start_period: 30s
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
           memory: 1024M
     logging:
-      driver: json-file
+      driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"

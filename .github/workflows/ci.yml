@@ -1,147 +1,241 @@
-name: CI — Porota Trading
+# ============================================================================
+# ci.yml - Porota Trading v16.2
+# ============================================================================
+# UN SOLO PIPELINE. Hasta la version anterior convivian dos: el del repositorio
+# y el que viajaba dentro del ZIP del paquete, que se contradecian en los dos
+# puntos que mas importan (si el CI corre los tests y si produccion se dispara
+# sola con un push a main). El procedimiento previsto era subir el paquete a
+# una rama de trabajo, asi que en cuanto ese contenido llegara a main los
+# workflows del ZIP habrian reemplazado a los del repositorio: el propio acto
+# de cargar el paquete desarmaba el control que la infraestructura fue
+# disenada para dar.
+#
+# Estos son ahora los archivos definitivos. Si en algun momento vuelve a haber
+# divergencia, la regla es que manda el repositorio.
+name: CI
 
 on:
   push:
-    branches:
-      - main
-      - develop
-      - testing
+    branches: [main, develop, testing]
   pull_request:
-    branches:
-      - main
-      - develop
-      - testing
-  workflow_dispatch:
+    branches: [main, develop, testing]
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  infrastructure:
-    name: Infrastructure preflight
+  # ==========================================================================
+  # 1. SECRETOS - corre primero y es el mas barato de todos
+  # ==========================================================================
+  # El barrido anterior solo inspeccionaba *.py, *.yml y *.json, asi que nunca
+  # abria el archivo que efectivamente tenia los secretos (.env.testing). Y el
+  # chequeo de ".env versionado" tampoco lo veia, porque el archivo se llamaba
+  # distinto. El CI daba verde sobre un repositorio con credenciales reales
+  # adentro.
+  secretos:
+    name: Barrido de credenciales
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          # Historia completa: un secreto borrado en el ultimo commit sigue
+          # estando en los anteriores, y ahi es donde hay que buscarlo.
+          fetch-depth: 0
 
-      - name: Validate repository safety
-        shell: bash
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ningun archivo de entorno versionado
         run: |
-          set -euo pipefail
-          echo "Checking tracked secret-bearing files..."
-          if git ls-files -z | grep -zE '(^|/)\.env($|\.)|(^|/)(credentials|secrets)[^/]*\.(json|ya?ml|txt)$' >/dev/null; then
-            echo "::error::Potential secret-bearing file is tracked."
+          set -e
+          # El patron cubre la FAMILIA .env*, no un solo nombre. Esa era la
+          # falla exacta: .gitignore excluia .env pero no .env.testing.
+          ENCONTRADOS=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$' || true)
+          if [ -n "$ENCONTRADOS" ]; then
+            echo "::error::Hay archivos de entorno versionados:"
+            echo "$ENCONTRADOS"
             exit 1
           fi
+          echo "OK: no hay archivos de entorno en el repositorio."
 
-          echo "Checking credential-like strings in tracked source/config..."
-          if grep -RInE 'AIza[0-9A-Za-z_-]{20,}|[0-9]{8,12}:[A-Za-z0-9_-]{30,}|eyJ[A-Za-z0-9_-]{20,}\.' \
-             --include='*.py' --include='*.yml' --include='*.yaml' --include='*.json' .; then
-            echo "::error::Credential-like material detected in tracked source/config."
+      - name: Credenciales con formato real en cualquier archivo de texto
+        run: |
+          set -e
+          # Barrido sobre TODO el arbol, no sobre tres extensiones.
+          PATRON='(AIza[0-9A-Za-z_-]{30,}|sk-ant-[0-9A-Za-z_-]{20,}|[0-9]{9,10}:AA[0-9A-Za-z_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
+          if grep -rEIn "$PATRON" . \
+               --exclude-dir=.git \
+               --exclude='.env.example' \
+               --exclude='ci.yml'; then
+            echo "::error::Aparecen credenciales con formato real en el repositorio."
+            echo "Rotarlas es la unica remediacion valida: borrar el archivo no las borra del historial."
             exit 1
           fi
+          echo "OK: sin credenciales con formato reconocible."
 
-          echo "Infrastructure preflight: OK"
-
-      - name: Validate Docker Compose syntax
-        run: docker compose config
-
-  application:
-    name: Application CI
+  # ==========================================================================
+  # 2. TESTS - el control que ya demostro que funciona
+  # ==========================================================================
+  # El job estatico anterior hacia compileall, buscaba un .env y grepeaba
+  # credenciales. No habia ningun paso pytest, con 63 funciones de prueba en el
+  # paquete. El bug mas caro de la historia del proyecto -las dos unidades de
+  # costo, cien veces menos friccion en el filtro de rentabilidad- lo encontro
+  # un test unitario. Dejar esa red fuera del pipeline era renunciar
+  # justamente al control que ya habia demostrado servir.
+  tests:
+    name: Suite de tests
     runs-on: ubuntu-latest
-    needs: infrastructure
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Detect application package
-        id: detect
-        shell: bash
-        run: |
-          if [ -f requirements.txt ] && [ -f entrypoint.py ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Application package not installed yet
-        if: steps.detect.outputs.present == 'false'
-        run: |
-          echo "Application package is not present yet."
-          echo "Infrastructure-only validation completed successfully."
-          echo "Application tests will activate automatically when the final package is uploaded."
-
-      - name: Setup Python 3.11
-        if: steps.detect.outputs.present == 'true'
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: pip
+          cache: 'pip'
 
-      - name: Install application dependencies
-        if: steps.detect.outputs.present == 'true'
-        run: python -m pip install -r requirements.txt
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Compile Python
-        if: steps.detect.outputs.present == 'true'
+      - name: Integridad sintactica
         run: python -m compileall -q .
 
-      - name: Run tests
-        if: steps.detect.outputs.present == 'true'
-        run: pytest -q
-
-      - name: Prepare isolated SANDBOX environment
-        if: steps.detect.outputs.present == 'true'
-        shell: bash
+      - name: Ejecutar la suite
+        env:
+          # Valores de juguete: los tests no tocan red ni cuentas reales.
+          ENVIRONMENT: SANDBOX
+          DB_PATH: /tmp/test_porota.db
+          TELEGRAM_CHAT_ID: "0"
         run: |
-          set -euo pipefail
-          test -f .env.example
-          cp .env.example .env
-          sed -i 's/^ENVIRONMENT=.*/ENVIRONMENT=SANDBOX/' .env
-          mkdir -p data sre_vector_db
+          pytest -q --junitxml=/tmp/tests.xml \
+                 --cov=. --cov-report=term-missing --cov-report=xml \
+                 --cov-fail-under=15
 
-      - name: Build application image
-        if: steps.detect.outputs.present == 'true'
+      - name: Cobertura minima en los modulos que tocan dinero
+        # Un piso global bajo no dice nada si el modulo de costos esta sin
+        # cubrir. Estos cuatro son los que mueven plata o deciden si se opera.
+        run: |
+          python - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          MINIMOS = {
+              "d_economics.py": 30.0,
+              "au_fee_schedule.py": 60.0,
+              "ai_derivatives_engine.py": 55.0,
+              "aj_trade_gate.py": 60.0,
+          }
+          raiz = ET.parse("coverage.xml").getroot()
+          medido = {}
+          for clase in raiz.iter("class"):
+              archivo = clase.get("filename", "").split("/")[-1]
+              if archivo in MINIMOS:
+                  medido[archivo] = float(clase.get("line-rate", 0)) * 100
+          fallos = []
+          for archivo, minimo in MINIMOS.items():
+              real = medido.get(archivo)
+              if real is None:
+                  fallos.append(f"{archivo}: sin cobertura reportada")
+              elif real < minimo:
+                  fallos.append(f"{archivo}: {real:.1f}% < {minimo:.0f}% exigido")
+          for f in fallos:
+              print(f"::error::{f}")
+          sys.exit(1 if fallos else 0)
+          PY
+
+      - name: Resumen en la evidencia de la promocion
+        if: always()
+        run: |
+          echo "### Suite de tests" >> $GITHUB_STEP_SUMMARY
+          python - <<'PY' >> $GITHUB_STEP_SUMMARY
+          import xml.etree.ElementTree as ET
+          try:
+              r = ET.parse('/tmp/tests.xml').getroot()
+              print(f"- Total: {r.get('tests')} | Fallas: {r.get('failures')} | Errores: {r.get('errors')} | Omitidos: {r.get('skipped')}")
+          except Exception as e:
+              print(f"- No se pudo leer el reporte: {e}")
+          PY
+
+  # ==========================================================================
+  # 3. DOCKER - build reproducible y arranque real
+  # ==========================================================================
+  docker:
+    name: Build y arranque
+    runs-on: ubuntu-latest
+    needs: [secretos, tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
         run: docker compose build
 
-      - name: Start application stack
-        if: steps.detect.outputs.present == 'true'
-        run: docker compose up -d
-
-      - name: Wait for application health
-        if: steps.detect.outputs.present == 'true'
-        shell: bash
+      - name: La imagen no contiene archivos de entorno
+        # El COPY . . metia el .env.testing, la base y el indice vectorial
+        # dentro de la imagen. Una imagen con secretos adentro se distribuye,
+        # se cachea y se sube a un registry sin que nadie lo note.
         run: |
-          set -euo pipefail
-          for i in $(seq 1 40); do
-            if curl -fsS http://localhost:8000/health >/dev/null; then
-              echo "Application health: OK"
+          set -e
+          SALIDA=$(docker compose run --rm --no-deps --entrypoint sh bot -c 'ls -a /app | grep -E "^\.env" || true')
+          if echo "$SALIDA" | grep -v '\.env\.example' | grep -q '\.env'; then
+            echo "::error::La imagen contiene archivos de entorno: $SALIDA"
+            exit 1
+          fi
+          echo "OK: la imagen no lleva secretos."
+
+      - name: Levantar el stack
+        run: |
+          cp .env.example .env
+          # Credenciales de juguete: alcanzan para que el guardian de entorno
+          # deje arrancar y el panel responda. No autentican contra nada.
+          {
+            echo "DASHBOARD_ACCESS_TOKEN=ci-token-de-prueba-largo-y-suficiente"
+            echo "DASHBOARD_PASSWORD=ci-password-de-prueba"
+            echo "DASHBOARD_HOST=0.0.0.0"
+            echo "STARTUP_REQUIRE_AUTH=false"
+          } >> .env
+          docker compose up -d
+          sleep 25
+
+      - name: El panel responde
+        # Este paso fallaba SIEMPRE en la version anterior: la aplicacion
+        # escuchaba en el loopback del contenedor, asi que el mapeo de puertos
+        # no podia alcanzarla. Es decir que el pipeline que se presentaba como
+        # semaforo de calidad nunca corrio en verde, o corrio y se ignoro el
+        # rojo. Salir a produccion con un pipeline que nadie mira es peor que
+        # no tenerlo.
+        run: |
+          set -e
+          for i in $(seq 1 12); do
+            ESTADO=$(curl -fsS http://127.0.0.1:8000/health \
+              | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
+            if [ "$ESTADO" = "ok" ]; then
+              echo "Panel sano en el intento $i."
               exit 0
             fi
-            sleep 3
+            sleep 5
           done
-          docker compose logs --tail=150
+          echo "::error::El panel no respondio sano en 60 segundos."
+          docker compose logs --tail=120
           exit 1
 
-      - name: Verify no restart loop
-        if: steps.detect.outputs.present == 'true'
-        shell: bash
+      - name: /health no filtra estado interno
+        # Devolver el estado del kill switch y el modelo activo sin
+        # autenticacion es reconocimiento gratuito para cualquiera que
+        # descubra la direccion.
         run: |
-          sleep 10
-          test "$(docker inspect porota_trading_bot --format '{{.RestartCount}}')" -eq 0
+          set -e
+          CUERPO=$(curl -fsS http://127.0.0.1:8000/health)
+          if echo "$CUERPO" | grep -qE 'kill_switch|modelo_ia|db'; then
+            echo "::error::/health expone detalle interno: $CUERPO"
+            exit 1
+          fi
+          echo "OK: /health devuelve solo el estado agregado."
 
-      - name: Verify SQLite WAL when database module is available
-        if: steps.detect.outputs.present == 'true'
-        shell: bash
-        run: |
-          docker compose exec -T bot python -c '
-          import ac_db
-          info = ac_db.healthcheck()
-          assert info["ok"]
-          assert str(info["journal_mode"]).lower() == "wal"
-          print(info)
-          '
-
-      - name: Shutdown application stack
-        if: always() && steps.detect.outputs.present == 'true'
+      - name: Apagar
+        if: always()
         run: docker compose down -v

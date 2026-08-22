@@ -1,78 +1,71 @@
-name: Promover a producción
+# ============================================================================
+# promote-to-production.yml - Porota Trading v16.2
+# ============================================================================
+# Promocion = mover codigo de testing a main. NO despliega: eso lo hace
+# deploy.yml, a mano y con su propia confirmacion. Separar los dos actos es
+# deliberado y es el control que se habia perdido.
+name: Promover a produccion
 
 on:
   workflow_dispatch:
     inputs:
       confirmacion:
-        description: Escribí PROMOVER para confirmar
-        required: true
-        type: string
-      rama_origen:
-        description: Rama validada que se promueve
-        required: true
-        default: testing
-        type: choice
-        options: [testing, develop]
-      motivo:
-        description: Motivo/evidencia de la promoción
+        description: 'Escribi PROMOVER para confirmar'
         required: true
         type: string
 
 permissions:
   contents: write
-  actions: read
 
 jobs:
-  verify:
-    name: Verificar condiciones de promoción
+  promover:
+    name: testing -> main
     runs-on: ubuntu-latest
-    steps:
-      - name: Confirmación humana
-        run: test "${{ inputs.confirmacion }}" = "PROMOVER"
+    environment: production
+    if: github.event.inputs.confirmacion == 'PROMOVER'
 
+    steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.rama_origen }}
           fetch-depth: 0
+          ref: testing
 
-      - name: Verificar CI del commit que se promueve
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: La suite tiene que pasar ANTES de promover
         env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-        run: |
-          runs="$(gh run list --workflow ci.yml --branch "${{ inputs.rama_origen }}" --limit 20 --json headSha,conclusion --jq '.[] | select(.headSha == env.SHA) | .conclusion')"
-          echo "$runs"
-          test -n "$runs"
-          ! echo "$runs" | grep -qv '^success$'
+          ENVIRONMENT: SANDBOX
+          DB_PATH: /tmp/promote.db
+          TELEGRAM_CHAT_ID: "0"
+        run: pytest -q
 
-      - name: Auditoría de promoción
+      - name: Etiquetar y mergear
         run: |
-          {
-            echo "### Promoción solicitada"
-            echo "- Rama: ${{ inputs.rama_origen }}"
-            echo "- Motivo: ${{ inputs.motivo }}"
-            echo "- Solicitante: ${{ github.actor }}"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  merge:
-    name: Fusionar rama validada en main
-    runs-on: ubuntu-latest
-    needs: verify
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ github.token }}
-      - name: Merge y tag
-        run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main "${{ inputs.rama_origen }}"
+          ETIQUETA="v16.2-$(date +%Y%m%d-%H%M%S)"
+          git tag -a "$ETIQUETA" -m "Promocion a produccion por ${{ github.actor }}"
+          git push origin "$ETIQUETA"
           git checkout main
-          git merge --no-ff "origin/${{ inputs.rama_origen }}" -m "Promoción a producción: ${{ inputs.motivo }}"
+          git merge --no-ff testing -m "Promocion $ETIQUETA"
           git push origin main
-          TAG="prod-$(date +%Y%m%d-%H%M%S)"
-          git tag -a "$TAG" -m "${{ inputs.motivo }}"
-          git push origin "$TAG"
+          echo "ETIQUETA=$ETIQUETA" >> $GITHUB_ENV
+
+      - name: Resumen
+        if: always()
+        run: |
+          echo "### Promocion" >> $GITHUB_STEP_SUMMARY
+          echo "- Etiqueta: ${ETIQUETA:-no generada}" >> $GITHUB_STEP_SUMMARY
+          echo "- Promovido por: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "El codigo esta en main. El despliegue NO se disparo solo:" >> $GITHUB_STEP_SUMMARY
+          echo "corre el workflow 'Desplegar al Droplet' escribiendo DESPLEGAR." >> $GITHUB_STEP_SUMMARY

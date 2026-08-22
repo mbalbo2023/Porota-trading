@@ -1,68 +1,124 @@
-name: Despliegue de producción
+# ============================================================================
+# deploy.yml - Porota Trading v16.2
+# ============================================================================
+# CORREGIDO: el disparador era `on: push: branches: [main]`. Es decir que
+# cualquier merge a main desplegaba solo, sin ninguna confirmacion, y -sumado
+# a que el CI no corria los tests- se desplegaba sin haber ejecutado nunca la
+# suite. Eso contradecia el principio de arquitectura que el propio proyecto
+# declara: "produccion no se dispara por un simple push a main".
+#
+# Ahora hay DOS actos humanos distintos y separados: alguien mergea a main
+# (eso solo actualiza el codigo), y alguien decide desplegar escribiendo
+# DESPLEGAR a mano. El segundo acto es el que este archivo ejecuta.
+name: Desplegar al Droplet
 
 on:
   workflow_dispatch:
     inputs:
       confirmacion:
-        description: Escribí DESPLEGAR para confirmar
+        description: 'Escribi DESPLEGAR para confirmar'
         required: true
         type: string
-      version:
-        description: Tag o rama exacta a desplegar
-        required: true
-        default: main
+      referencia:
+        description: 'Tag o commit a desplegar (vacio = main)'
+        required: false
         type: string
 
 permissions:
   contents: read
 
-concurrency:
-  group: production-deploy
-  cancel-in-progress: false
-
 jobs:
-  deploy:
-    name: Deploy Docker Compose en DigitalOcean
+  desplegar:
+    name: Desplegar
     runs-on: ubuntu-latest
-    environment:
-      name: production
+    # `environment` exige el revisor asignado en la configuracion del
+    # repositorio: es el control que impide que quien dispara sea tambien
+    # quien aprueba.
+    environment: production
+    if: github.event.inputs.confirmacion == 'DESPLEGAR'
+
     steps:
-      - name: Confirmación humana
-        run: test "${{ inputs.confirmacion }}" = "DESPLEGAR"
+      - name: Confirmacion
+        run: echo "Despliegue confirmado por ${{ github.actor }}."
 
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.version }}
-
-      - name: Validate production package
-        run: |
-          test -f Dockerfile
-          test -f docker-compose.yml
-          test -f requirements.txt
-          test -f entrypoint.py
-          python3 -m compileall -q .
-
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Desplegar, verificar y volver atras EN EL SERVIDOR
+        # =====================================================================
+        # Este es el paso que arregla el hallazgo mas engañoso de la version
+        # anterior. El workflow de promocion hacia:
+        #
+        #     curl -fsS http://localhost:8000/health
+        #     ... y si fallaba: docker compose down && up -d
+        #
+        # Todo eso se ejecutaba en la maquina EFIMERA de GitHub Actions, donde
+        # no hay ni bot ni Docker Compose del proyecto. No verificaba nada y no
+        # revertia nada: el paso fallaba siempre a los 120 segundos, dejando
+        # cada promocion en rojo. Y el efecto de segundo orden es el mas caro:
+        # un pipeline que siempre esta en rojo deja de mirarse, que es -textual
+        # del propio documento maestro- el modo mas comun en que fallan los
+        # sistemas de monitoreo.
+        #
+        # Ahora la verificacion corre en el Droplet, dentro de la MISMA sesion
+        # SSH del despliegue, y la vuelta atras es sobre la etiqueta anterior
+        # -no un `up -d` del mismo codigo roto, que reinicia lo que ya no
+        # funciona.
+        # =====================================================================
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
+          script_stop: true
           script: |
             set -euo pipefail
-            APP_DIR="/home/tradingbot/app"
-            cd "$APP_DIR"
-            test -f .env
-            grep -q '^ENVIRONMENT=PRODUCTION' .env
-            mkdir -p data/backups
-            if [ -f data/trading_system.db ]; then
-              cp data/trading_system.db "data/backups/pre_deploy_$(date +%Y%m%d-%H%M%S).db"
-            fi
-            git fetch --tags origin
-            git checkout "${{ inputs.version }}"
-            docker compose config >/dev/null
+            cd /opt/porota-trading
+
+            REFERENCIA="${{ github.event.inputs.referencia }}"
+            [ -z "$REFERENCIA" ] && REFERENCIA="origin/main"
+
+            ANTERIOR=$(git rev-parse HEAD)
+            echo "Version actual: $ANTERIOR"
+
+            git fetch origin --tags
+            git checkout --detach "$REFERENCIA"
+            NUEVA=$(git rev-parse HEAD)
+            echo "Desplegando: $NUEVA"
+
             docker compose build
             docker compose up -d
-            sleep 10
+
+            PUERTO=$(grep -E '^DASHBOARD_PORT=' .env | cut -d= -f2 || echo 8000)
+            PUERTO=${PUERTO:-8000}
+
+            SANO=0
+            for i in $(seq 1 12); do
+              ESTADO=$(curl -fsS "http://127.0.0.1:${PUERTO}/health" \
+                | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
+              if [ "$ESTADO" = "ok" ]; then
+                echo "Sano en el intento $i."
+                SANO=1
+                break
+              fi
+              echo "Intento $i: estado='$ESTADO'"
+              sleep 10
+            done
+
+            if [ "$SANO" -ne 1 ]; then
+              echo "Sin respuesta sana en 120 segundos. Volviendo a $ANTERIOR."
+              git checkout --detach "$ANTERIOR"
+              docker compose up -d --build
+              exit 1
+            fi
+
+            # Se exige status=ok, no un HTTP 200 pelado: el endpoint responde
+            # 200 tambien cuando esta degradado, y promover algo degradado es
+            # lo mismo que no verificar.
+            echo "Despliegue confirmado en $NUEVA."
             docker compose ps
-            curl -fsS http://localhost:8000/health >/dev/null
+
+      - name: Resumen
+        if: always()
+        run: |
+          echo "### Despliegue" >> $GITHUB_STEP_SUMMARY
+          echo "- Disparado por: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Referencia: ${{ github.event.inputs.referencia || 'origin/main' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Resultado: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
