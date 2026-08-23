@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import al_market_startup as arranque
@@ -53,6 +54,13 @@ def test_fin_de_semana_motor_hibernado_todo_el_dia():
         datetime(2026, 8, 23, 11, 30, tzinfo=ZONA))
     assert activo is False
     assert motivo == "Fin de semana"
+
+
+def test_supervisor_publica_la_hibernacion_en_el_dashboard():
+    fuente = (Path(__file__).resolve().parents[1] / "entrypoint.py").read_text(
+        encoding="utf-8")
+    assert "marcar_espera_calendario" in fuente
+    assert "_publish_calendar_state(motivo)" in fuente
 
 
 def test_sandbox_jamas_selecciona_modo_real(monkeypatch):
