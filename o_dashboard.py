@@ -42,8 +42,9 @@ import sqlite3
 import time
 from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException, Query, Request, Header
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response, RedirectResponse
 from typing import Optional
+from urllib.parse import urlencode
 import uvicorn
 import ac_db  # NUEVO EN v15.0 — conexión SQLite única (WAL + timeout)
 
@@ -84,6 +85,51 @@ VERSION = "16.2"
 CSRF_TOKEN_MAX_AGE_SECONDS = int(os.getenv("CSRF_TOKEN_MAX_AGE_SECONDS", "900"))
 
 app = FastAPI(title="Dashboard — Bot de Trading (solo lectura)")
+
+SESSION_COOKIE_NAME = "porota_dashboard_session"
+
+
+@app.middleware("http")
+async def token_inicial_a_sesion(request: Request, call_next):
+    """Consume el token de la primera URL y continúa con cookie HttpOnly.
+
+    Compatibilidad: los scripts pueden seguir usando Authorization: Bearer.
+    Para el navegador, un token válido en query se transforma en una sesión
+    opaca y se redirige a la misma ruta sin el secreto. Las páginas internas
+    ya no necesitan ni propagan parámetros token.
+    """
+    import ay_dashboard_auth as auth
+
+    token = request.query_params.get("token", "")
+    if token and auth.token_valido(token):
+        sesion = auth.crear_sesion_desde_token(token, origen=request.client.host if request.client else "local")
+        parametros = [(k, v) for k, v in request.query_params.multi_items() if k != "token"]
+        destino = request.url.path
+        if parametros:
+            destino += "?" + urlencode(parametros)
+        respuesta = RedirectResponse(destino, status_code=303)
+        respuesta.set_cookie(
+            SESSION_COOKIE_NAME,
+            sesion,
+            max_age=int(auth.SESION_HORAS * 3600),
+            httponly=True,
+            secure=auth.ENTORNO == "PRODUCTION",
+            samesite="lax",
+            path="/",
+        )
+        return respuesta
+
+    sesion = request.cookies.get(SESSION_COOKIE_NAME)
+    if auth.sesion_valida(sesion):
+        # Las rutas existentes ya aceptan Bearer. Se inyecta sólo dentro del
+        # scope ASGI para reutilizar esa validación sin propagar el secreto al
+        # navegador, a los enlaces ni a los logs.
+        headers = [(k, v) for k, v in request.scope.get("headers", [])
+                   if k.lower() != b"authorization"]
+        headers.append((b"authorization", ("Bearer " + auth.TOKEN_BEARER).encode("utf-8")))
+        request.scope["headers"] = headers
+
+    return await call_next(request)
 
 
 def _query(sql, params=()):
@@ -479,7 +525,7 @@ def logs_dashboard(token: str = Query(default=""), authorization: Optional[str] 
     size_kb = round(os.path.getsize(LOG_FILE_PATH) / 1024, 1) if exists else 0
     rows_html = "".join(
         f"<tr><td>{cat.upper()}</td><td colspan='2'>"
-        f"<a href='/api/logs/download/{cat}?token={token}'>⬇️ Descargar .log</a></td></tr>"
+        f"<a href='/api/logs/download/{cat}'>⬇️ Descargar .log</a></td></tr>"
         for cat in LOG_CATEGORY_KEYWORDS
     )
     return f"""
@@ -492,8 +538,8 @@ def logs_dashboard(token: str = Query(default=""), authorization: Optional[str] 
     <p>{'Archivo actual: ' + LOG_FILE_PATH + f' ({size_kb} KB)' if exists else
         '⚠️ Todavía no hay archivo de log (el bot recién arrancó, o LOG_DIR no es escribible).'}</p>
     <table><tr><th>Categoría</th><th colspan="2">Acción</th></tr>{rows_html}</table>
-    <p><a href="/api/logs/download/all?token={token}">⬇️ Descargar log completo (sin filtrar)</a></p>
-    <p><a href="/?token={token}">← Volver al dashboard</a></p>
+    <p><a href="/api/logs/download/all">⬇️ Descargar log completo (sin filtrar)</a></p>
+    <p><a href="/">← Volver al dashboard</a></p>
     </body></html>
     """
 
@@ -588,7 +634,7 @@ def sre_dashboard(token: str = Query(default=""), authorization: Optional[str] =
     <h2>Diagnósticos del motor de introspección SRE</h2><ul>{proposals_html}</ul>
     <h2>Grafo multi-agente (LangGraph)</h2><ul>{shadow_html}</ul>
     <h2>Stream de tiempo real de PPI (NUEVO v14.0)</h2><ul>{stream_html}</ul>
-    <p><a href="/?token={token}">← Volver al dashboard</a></p>
+    <p><a href="/">← Volver al dashboard</a></p>
     </body></html>
     """
 
@@ -638,7 +684,7 @@ def infra_dashboard(token: str = Query(default=""), authorization: Optional[str]
     </table>
     <h2>Sugerencias</h2>
     <ul>{suggestions_html}</ul>
-    <p><a href="/?token={token}">← Volver al dashboard</a></p>
+    <p><a href="/">← Volver al dashboard</a></p>
     </body></html>
     """
 
@@ -700,7 +746,7 @@ def ai_decisions_dashboard(token: str = Query(default=""), days: int = Query(def
     <table><tr><th>Día</th><th>Evaluaciones</th><th>Score prom.</th><th>Vetos</th></tr>{daily_html}</table>
     <h2>Últimos vetos por contexto macro/geopolítico</h2>
     <ul>{vetoes_html}</ul>
-    <p><a href="/?token={token}">← Volver al dashboard</a></p>
+    <p><a href="/">← Volver al dashboard</a></p>
     </body></html>
     """
 
@@ -868,7 +914,7 @@ def config_editor(token: str = Query(default=""), authorization: Optional[str] =
         <p style="font-size:0.9em;color:#555;">Al pedir el reinicio te va a llegar un mensaje a
         Telegram con dos botones. El bot <b>no se reinicia hasta que confirmes ahí</b>, y nunca
         mientras haya una operación en curso.</p>
-        <form method="post" action="/restart-request?token={token}">
+        <form method="post" action="/restart-request">
           <input type="hidden" name="csrf_token" value="{csrf}">
           <input type="hidden" name="request_id" value="{pendiente['id']}">
           <button type="submit" style="padding:10px 20px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;">
@@ -904,7 +950,7 @@ def config_editor(token: str = Query(default=""), authorization: Optional[str] =
       <p>Los campos sensibles se muestran vacíos por seguridad; si los dejás vacíos y guardás, no se
       tocan (se conserva el valor que ya estaba). Solo escribí ahí si querés CAMBIAR ese dato.</p>
       {bloque_reinicio}
-      <form method="post" action="/config?token={token}">
+      <form method="post" action="/config">
         <input type="hidden" name="csrf_token" value="{csrf}">
         {body}
         <button type="submit" style="padding:10px 20px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;">Guardar cambios</button>
@@ -917,7 +963,7 @@ def config_editor(token: str = Query(default=""), authorization: Optional[str] =
         <th style="text-align:left;padding:6px;">Estado</th></tr>
         {filas_hist}
       </table>
-      <p><a href="/?token={token}">← Volver al dashboard</a></p>
+      <p><a href="/">← Volver al dashboard</a></p>
     </body>
     </html>
     """
@@ -999,7 +1045,7 @@ async def config_save(request: Request, token: str = Query(default=""),
     return f"""
     <html><body style="font-family:-apple-system,sans-serif;max-width:640px;margin:40px auto;">
       {cuerpo}
-      <p style="margin-top:20px;"><a href="/config?token={token}">← Volver al editor</a></p>
+      <p style="margin-top:20px;"><a href="/config">← Volver al editor</a></p>
     </body></html>
     """
 
@@ -1050,7 +1096,7 @@ async def restart_request(request: Request, token: str = Query(default=""),
     return f"""
     <html><body style="font-family:-apple-system,sans-serif;max-width:640px;margin:40px auto;">
       {mensaje}
-      <p style="margin-top:20px;"><a href="/config?token={token}">← Volver al editor</a></p>
+      <p style="margin-top:20px;"><a href="/config">← Volver al editor</a></p>
     </body></html>
     """
 
@@ -1103,14 +1149,14 @@ _ESTILO_V16 = """
 
 def _nav(token: str) -> str:
     return (f"<div class='nav'>"
-            f"<a href='/?token={token}'>← Inicio</a>"
-            f"<a href='/vivo?token={token}'>📡 Actividad en vivo</a>"
-            f"<a href='/testing?token={token}'>🧪 Testing</a>"
-            f"<a href='/salud?token={token}'>🚦 Salud de APIs</a>"
-            f"<a href='/sre?token={token}'>🩺 SRE</a>"
-            f"<a href='/historicos?token={token}'>📚 Datos históricos</a>"
-            f"<a href='/aprendizaje?token={token}'>🎓 Blog de aprendizaje</a>"
-            f"<a href='/config?token={token}'>⚙️ Configuración</a>"
+            f"<a href='/'>← Inicio</a>"
+            f"<a href='/vivo'>📡 Actividad en vivo</a>"
+            f"<a href='/testing'>🧪 Testing</a>"
+            f"<a href='/salud'>🚦 Salud de APIs</a>"
+            f"<a href='/sre'>🩺 SRE</a>"
+            f"<a href='/historicos'>📚 Datos históricos</a>"
+            f"<a href='/aprendizaje'>🎓 Blog de aprendizaje</a>"
+            f"<a href='/config'>⚙️ Configuración</a>"
             f"</div>")
 
 
@@ -1317,7 +1363,7 @@ def blog_de_aprendizaje(token: str = Query(default=""),
 
     <div class="tarjeta">
       <h2>Este es el archivo que hay que subir a la conversación</h2>
-      <p><a href="/api/learning-logs?token={token}"
+      <p><a href="/api/learning-logs"
             style="display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;
                    border-radius:6px;text-decoration:none;font-weight:600;">
          ⬇️ Descargar blog de aprendizaje (JSON)</a></p>
@@ -1326,8 +1372,8 @@ def blog_de_aprendizaje(token: str = Query(default=""),
       switch. Es el insumo con el que se analiza cómo se está comportando el sistema de verdad
       —no cómo debería comportarse— y de ahí salen las mejoras de la versión siguiente.</p>
       <p class="chico"><b>Junto a este archivo conviene subir también:</b> el log completo
-      (<a href="/api/logs/download/all?token={token}">descargar acá</a>) y el informe mensual
-      (<a href="/api/reports/monthly/download?token={token}">descargar acá</a>). Con esos tres
+      (<a href="/api/logs/download/all">descargar acá</a>) y el informe mensual
+      (<a href="/api/reports/monthly/download">descargar acá</a>). Con esos tres
       alcanza para reconstruir qué pasó sin acceso al servidor.</p>
     </div>
 
@@ -1394,11 +1440,11 @@ def solapa_testing(token: str = Query(default=""),
                   "levantado y accesible, sin operar.</div>")
 
     botones = f"""
-      <form method='post' action='/api/testing/autorizar?token={token}&modo=SIMULACION'
+      <form method='post' action='/api/testing/autorizar?modo=SIMULACION'
             style='display:inline'><button type='submit'
             style='background:#f59e0b;color:#fff;border:0;padding:9px 16px;border-radius:6px;
                    font-weight:600;cursor:pointer;margin-right:8px;'>🧪 Arrancar en simulación</button></form>
-      <form method='post' action='/api/testing/autorizar?token={token}&modo=DETENIDO'
+      <form method='post' action='/api/testing/autorizar?modo=DETENIDO'
             style='display:inline'><button type='submit'
             style='background:#6b7280;color:#fff;border:0;padding:9px 16px;border-radius:6px;
                    font-weight:600;cursor:pointer;'>⏸️ Detener</button></form>
