@@ -214,7 +214,9 @@ def solicitar_autorizacion(notifier=None) -> str:
 
     if notifier is not None:
         try:
-            notifier.send(texto, reply_markup=teclado, parse_mode="Markdown")
+            enviado = notifier.send(texto, reply_markup=teclado, parse_mode="Markdown")
+            if not enviado:
+                raise RuntimeError("Telegram rechazó el pedido de autorización")
             registrar_paso("ARRANQUE", "Pedido de autorización enviado a Telegram.", "Enviado")
         except Exception as e:
             registrar_paso("ARRANQUE", f"No se pudo avisar por Telegram: {e}",
@@ -323,10 +325,31 @@ def procesar_respuesta_telegram(texto: str, origen: str = "telegram") -> Optiona
     codigo = partes[1] if len(partes) > 1 else ""
 
     mapa = {"SIMULAR": MODO_SIMULACION, "SIMULACION": MODO_SIMULACION,
+            "SIMULACIÓN": MODO_SIMULACION,
             "REAL": MODO_REAL, "NO": MODO_DETENIDO, "DETENER": MODO_DETENIDO}
     if comando not in mapa:
         return None
+    if not codigo:
+        return {"ok": False, "motivo": "Falta el código de esta sesión."}
+    with _lock:
+        if _estado.estado == "AUTORIZADO":
+            return {"ok": False, "motivo": "El arranque ya fue autorizado."}
     return autorizar(mapa[comando], codigo, origen)
+
+
+def procesar_boton_telegram(callback_data: str, origen: str = "telegram_boton") -> Optional[dict]:
+    """Procesa los tres botones inline del pedido de autorización."""
+    partes = (callback_data or "").split(":")
+    if len(partes) != 3 or partes[0] != "arranque":
+        return None
+    mapa = {"sim": MODO_SIMULACION, "real": MODO_REAL, "no": MODO_DETENIDO}
+    modo = mapa.get(partes[1])
+    if modo is None:
+        return {"ok": False, "motivo": "Opción de arranque desconocida."}
+    with _lock:
+        if _estado.estado == "AUTORIZADO":
+            return {"ok": False, "motivo": "El arranque ya fue autorizado."}
+    return autorizar(modo, partes[2], origen)
 
 
 # ---------------------------------------------------------------------------
