@@ -32,6 +32,20 @@ def test_send_telegram_devuelve_true_en_http_200(monkeypatch):
     assert _notificador().send_telegram("prueba") is True
 
 
+def test_send_admite_teclado_de_tres_botones(monkeypatch):
+    enviado = {}
+
+    def post(url, **kwargs):
+        enviado.update(kwargs["json"])
+        return _Respuesta()
+
+    monkeypatch.setattr(b_notifiers.requests, "post", post)
+    teclado = {"inline_keyboard": [[{"text": "Simular", "callback_data": "arranque:sim:12345"}]]}
+
+    assert _notificador().send("prueba", reply_markup=teclado) is True
+    assert enviado["reply_markup"] == teclado
+
+
 def test_confirmacion_generica_devuelve_true_en_http_200(monkeypatch):
     monkeypatch.setattr(b_notifiers.requests, "post", lambda *a, **k: _Respuesta())
     assert _notificador().send_telegram_generic_confirmation(
