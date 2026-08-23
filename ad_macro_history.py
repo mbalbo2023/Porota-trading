@@ -88,6 +88,7 @@ HTTP_TIMEOUT = float(os.getenv("MACRO_HTTP_TIMEOUT", "8"))
 LOOKBACK_DAYS = int(os.getenv("MACRO_LOOKBACK_DAYS", "365"))
 
 BCRA_BASE = "https://api.bcra.gob.ar"
+BCRA_MONETARIAS_VERSION = os.getenv("BCRA_MONETARIAS_VERSION", "v4.0")
 DATOS_AR_BASE = "https://apis.datos.gob.ar/series/api/series"
 ARGENTINADATOS_BASE = "https://api.argentinadatos.com/v1"
 
@@ -198,14 +199,34 @@ def _fetch_bcra_variable(nombre: str, id_variable: int) -> int:
     if not _necesita_refresco(serie):
         return 0
     desde = (date.today() - timedelta(days=LOOKBACK_DAYS)).isoformat()
-    url = f"{BCRA_BASE}/estadisticas/v3.0/monetarias/{id_variable}"
+    # Principales Variables v3.0 fue desactivada por el BCRA el 28/02/2026
+    # y desde entonces responde HTTP 410. v4.0 conserva el identificador en
+    # la ruta, pero agrupa los puntos dentro de ``results[].detalle``.
+    url = f"{BCRA_BASE}/estadisticas/{BCRA_MONETARIAS_VERSION}/monetarias/{id_variable}"
     try:
         r = requests.get(url, params={"desde": desde, "hasta": date.today().isoformat(),
                                       "limit": 3000},
                          timeout=HTTP_TIMEOUT, headers={"Accept-Language": "es-AR"})
         r.raise_for_status()
-        datos = r.json().get("results", [])
-        puntos = [(d.get("fecha"), _num(d.get("valor"))) for d in datos if d.get("fecha")]
+        resultados = r.json().get("results", [])
+        datos = []
+        for resultado in resultados:
+            if not isinstance(resultado, dict):
+                continue
+            if isinstance(resultado.get("detalle"), list):
+                datos.extend(resultado["detalle"])
+            elif resultado.get("fecha"):
+                # Compatibilidad defensiva con la estructura plana de v3.
+                datos.append(resultado)
+        puntos = [
+            (d.get("fecha"), _num(d.get("valor")))
+            for d in datos
+            if isinstance(d, dict) and d.get("fecha")
+        ]
+        if not puntos:
+            raise ValueError(
+                f"BCRA {BCRA_MONETARIAS_VERSION} respondió sin puntos para {nombre}."
+            )
         return _guardar(serie, puntos, "BCRA")
     except Exception as e:
         # Caso frecuente y esperado: SSLError por la cadena de certificados
