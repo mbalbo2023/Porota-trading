@@ -13,6 +13,7 @@ ACCESO_DASHBOARD_DROPLET.txt
 
 data/
 sre_vector_db/
+model_cache/
 *.db
 *.db-wal
 *.db-shm
