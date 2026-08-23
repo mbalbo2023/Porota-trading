@@ -38,6 +38,23 @@ def test_no_inicializa_despues_del_cierre():
     assert motivo == "Rueda finalizada"
 
 
+def test_motor_permanece_hasta_completar_el_resumen_de_cierre():
+    activo, _ = arranque.motor_debe_estar_activo(
+        datetime(2026, 8, 24, 17, 9, tzinfo=ZONA))
+    hibernado, motivo = arranque.motor_debe_estar_activo(
+        datetime(2026, 8, 24, 17, 10, tzinfo=ZONA))
+    assert activo is True
+    assert hibernado is False
+    assert "hibernado" in motivo
+
+
+def test_fin_de_semana_motor_hibernado_todo_el_dia():
+    activo, motivo = arranque.motor_debe_estar_activo(
+        datetime(2026, 8, 23, 11, 30, tzinfo=ZONA))
+    assert activo is False
+    assert motivo == "Fin de semana"
+
+
 def test_sandbox_jamas_selecciona_modo_real(monkeypatch):
     monkeypatch.setattr(arranque, "AUTO_START_MODE", "REAL")
     monkeypatch.setattr(arranque, "ENVIRONMENT", "SANDBOX")
