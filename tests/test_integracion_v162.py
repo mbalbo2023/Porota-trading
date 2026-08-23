@@ -170,6 +170,20 @@ class TestPortonCableado:
             "documentación promete y la pregunta 'por qué no operó hoy' solo "
             "se responde interpretando logs.")
 
+    def test_el_cierre_de_mercado_se_evalua_antes_de_consultar_ppi(self):
+        fuente = (RAIZ / "j_main.py").read_text(encoding="utf-8")
+        inicio_loop = fuente.index("while not _shutdown_requested.is_set():")
+        tramo = fuente[inicio_loop:]
+        assert tramo.index("if not market_is_open:") < tramo.index(
+            "check_exits_job(ppi, notifier)"
+        ), "Fuera de rueda no se debe consultar PPI antes de cerrar el portón."
+
+    def test_el_horario_de_rueda_usa_el_huso_configurado(self):
+        fuente = (RAIZ / "j_main.py").read_text(encoding="utf-8")
+        assert "datetime.now(ZoneInfo(SERVER_TIMEZONE))" in fuente, (
+            "El contenedor usa UTC: comparar datetime.now() directo desplaza "
+            "tres horas la apertura y el cierre de BYMA.")
+
 
 # ===========================================================================
 # 2. EL MOTOR DE DERIVADOS ESTÁ CABLEADO
