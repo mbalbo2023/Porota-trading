@@ -11,10 +11,10 @@ decisión; si hay alguna API disponible quiero saber cuál es".
 Sí, hay tres, todas públicas y gratuitas, y las tres se implementan acá:
 
   1) BCRA — API pública oficial (https://api.bcra.gob.ar)
-     - Estadísticas Monetarias (Principales Variables): reservas
-       internacionales, base monetaria, tasas de política monetaria,
+     - Estadísticas Monetarias: reservas internacionales, base monetaria,
+       TAMAR de bancos privados,
        agregados M1/M2/M3, con historia larga.
-       GET /estadisticas/v3.0/monetarias/{idVariable}?desde&hasta
+       GET /estadisticas/v4.0/monetarias/{idVariable}?desde&hasta
      - Estadísticas Cambiarias: tipo de cambio oficial por moneda ISO.
        GET /estadisticascambiarias/v1.0/Cotizaciones/{codMoneda}?fechadesde&fechahasta
      No requiere token ni registro. Es la fuente de mayor jerarquía para
@@ -92,12 +92,14 @@ BCRA_MONETARIAS_VERSION = os.getenv("BCRA_MONETARIAS_VERSION", "v4.0")
 DATOS_AR_BASE = "https://apis.datos.gob.ar/series/api/series"
 ARGENTINADATOS_BASE = "https://api.argentinadatos.com/v1"
 
-# IDs de variables del BCRA (Estadísticas Monetarias v3.0). Se dejan
-# configurables porque el BCRA agrega y renumera variables entre versiones
-# de la API: si un id cambia, se corrige en el .env sin tocar código.
+# IDs vigentes de Estadísticas Monetarias v4.0. Se dejan configurables porque
+# el BCRA puede agregar o renumerar variables sin versionar nuestro código.
+# La antigua tasa de política monetaria (id 160) terminó el 10/07/2025: desde
+# el cambio de régimen se usa TAMAR privada TNA como referencia de mercado,
+# conservando un nombre distinto para no alterar su significado económico.
 BCRA_VARIABLES = {
     "reservas_usd_millones": int(os.getenv("BCRA_ID_RESERVAS", "1")),
-    "tasa_politica_monetaria_tna": int(os.getenv("BCRA_ID_TASA_PM", "6")),
+    "tasa_tamar_privados_tna": int(os.getenv("BCRA_ID_TAMAR_PRIVADOS_TNA", "44")),
     "base_monetaria": int(os.getenv("BCRA_ID_BASE_MONETARIA", "15")),
 }
 
@@ -199,9 +201,8 @@ def _fetch_bcra_variable(nombre: str, id_variable: int) -> int:
     if not _necesita_refresco(serie):
         return 0
     desde = (date.today() - timedelta(days=LOOKBACK_DAYS)).isoformat()
-    # Principales Variables v3.0 fue desactivada por el BCRA el 28/02/2026
-    # y desde entonces responde HTTP 410. v4.0 conserva el identificador en
-    # la ruta, pero agrupa los puntos dentro de ``results[].detalle``.
+    # Principales Variables v3.0 fue desactivada por el BCRA el 28/02/2026.
+    # v4.0 agrupa los puntos dentro de ``results[].detalle``.
     url = f"{BCRA_BASE}/estadisticas/{BCRA_MONETARIAS_VERSION}/monetarias/{id_variable}"
     try:
         r = requests.get(url, params={"desde": desde, "hasta": date.today().isoformat(),
@@ -397,7 +398,7 @@ def get_macro_context(dias: int = 180) -> dict:
                 "indicadores": {}}
     mapa = {
         "reservas_bcra_usd_mn": "bcra_reservas_usd_millones",
-        "tasa_politica_monetaria_tna": "bcra_tasa_politica_monetaria_tna",
+        "tasa_tamar_privados_tna": "bcra_tasa_tamar_privados_tna",
         "usd_oficial_bcra": "bcra_usd_oficial",
         "ipc_var_mensual_pct": "indec_ipc_var_mensual",
         "actividad_emae": "indec_emae_actividad",
