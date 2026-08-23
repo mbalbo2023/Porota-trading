@@ -1,34 +1,8 @@
-"""
-entrypoint.py — Punto de entrada real del contenedor Docker (NUEVO EN v13.0)
+"""Supervisor del dashboard y del motor de trading dentro del contenedor.
 
-BUG DE INFRAESTRUCTURA REAL ENCONTRADO en el paquete v12.0 (ver bitácora
-v13 para el detalle): el Dockerfile de v12.0 tenía CMD ["python", "j_main.py"]
-— el contenedor SOLO arrancaba el bot, nunca o_dashboard.py. El propio
-Dockerfile define un HEALTHCHECK que le pega a
-http://localhost:${DASHBOARD_PORT:-8000}/health, y docker-compose.yml
-publica ese mismo puerto — pero nada dentro del contenedor lo servía.
-En la práctica, cualquier despliegue con el paquete v12.0 tal cual tenía
-el dashboard inalcanzable Y el healthcheck en fallo permanente (lo que,
-con Docker configurado en modo Fail-Fast, podía terminar reiniciando el
-contenedor en loop indefinidamente sin que el bot llegara a operar).
-
-Este archivo reemplaza al CMD directo: arranca o_dashboard.py y j_main.py
-como dos subprocesos dentro del mismo contenedor (documentado como "un
-único contenedor, dos procesos" en el Documento Maestro — se evaluó pasar
-a dos contenedores separados en docker-compose.yml, pero eso hubiese
-significado duplicar la imagen y la carga de dependencias pesadas de
-scikit-learn/langgraph/chromadb en un segundo contenedor solo para un
-proceso de solo lectura; no se justifica para este tamaño de proyecto).
-
-También resuelve el pedido de "reinicio graceful": entrypoint.py escribe
-el PID de j_main.py en un pidfile (ver PID_FILE) para que, si en algún
-momento hace falta reiniciar el bot desde afuera (por ejemplo a mano, por
-SSH), se le pueda mandar SIGTERM directamente a ESE proceso — j_main.py ya
-sabe cerrar ordenadamente (ver _handle_shutdown_signal en j_main.py). Si
-cualquiera de los dos procesos termina (por error o por un shutdown
-ordenado), entrypoint.py termina el otro y sale con el mismo código de
-salida — con `restart: unless-stopped` en docker-compose.yml, Docker
-relanza el contenedor completo, releyendo el .env desde cero.
+El dashboard permanece disponible durante toda la vida del contenedor. Si la
+política automática BYMA está activa, j_main.py se crea solo dentro de la
+ventana bursátil y se termina ordenadamente después del resumen de cierre.
 """
 
 import os
@@ -37,28 +11,17 @@ import subprocess
 import sys
 import time
 
-# ---------------------------------------------------------------------- #
-# NUEVO EN v14.0 — CARGA DE CONFIGURACIÓN ANTES QUE CUALQUIER OTRA COSA
-# ---------------------------------------------------------------------- #
-# Esto tiene que ejecutarse ANTES de importar cualquier módulo del proyecto.
-# Motivo (bug latente encontrado al corregir docker-compose.yml en v14.0):
-# varios módulos leen os.getenv() a nivel de módulo, es decir en el momento
-# en que se los importa. Hasta v13.0 eso funcionaba de casualidad, porque
-# docker-compose inyectaba todo el .env en el entorno del contenedor con
-# `env_file:`, así que las variables ya estaban ahí antes de que arrancara
-# Python. Al sacar `env_file` (ver el comentario largo en docker-compose.yml
-# sobre por qué había que sacarlo), esa red desaparece: si no se carga el
-# .env acá arriba, los módulos importados leerían sus valores por defecto y
-# el bot arrancaría, silenciosamente, con la configuración equivocada.
 from dotenv import load_dotenv
+
 load_dotenv()
 
-
 PID_FILE = os.getenv("J_MAIN_PID_FILE", "data/j_main.pid")
+SUPERVISOR_POLL_SECONDS = 2
+BOT_RESTART_COOLDOWN_SECONDS = 30
 
 
 def _terminate(proc, name, timeout=15):
-    if proc.poll() is not None:
+    if proc is None or proc.poll() is not None:
         return
     print(f"entrypoint: enviando SIGTERM a {name} (pid={proc.pid})...", flush=True)
     proc.send_signal(signal.SIGTERM)
@@ -67,29 +30,42 @@ def _terminate(proc, name, timeout=15):
     except subprocess.TimeoutExpired:
         print(f"entrypoint: {name} no cerró a tiempo, forzando SIGKILL.", flush=True)
         proc.kill()
+        proc.wait()
 
 
-def main():
-    os.makedirs(os.path.dirname(PID_FILE) or ".", exist_ok=True)
+def _clear_pidfile():
+    try:
+        os.remove(PID_FILE)
+    except OSError:
+        pass
 
-    # =====================================================================
-    # NUEVO EN v16.2 — VALIDAR CREDENCIALES ANTES DE LEVANTAR NADA
-    # =====================================================================
-    # aa_env_guard.validar_secretos_criticos() existía, estaba completa y era
-    # correcta —variables obligatorias, longitud mínima por credencial,
-    # detección de valores de plantilla, validación de ENVIRONMENT— y no la
-    # llamaba ningún módulo del paquete. El hallazgo que la bitácora daba por
-    # cerrado ("se suma verificación de longitud mínima antes de permitir el
-    # arranque") quedó implementado a medias: se escribió la verificación, no
-    # el "antes de permitir el arranque".
-    #
-    # La consecuencia práctica: el código SECRETOS_FALTANTES del nivel 0 del
-    # portón no existía en tiempo de ejecución. Un token de Telegram truncado
-    # al copiar no se detectaba al arrancar sino cuando hacía falta mandar el
-    # aviso de un kill switch — el peor momento posible para descubrirlo.
-    #
-    # Va acá, en el entrypoint, y no dentro de cada proceso, porque este es el
-    # único lugar por el que pasan los dos.
+
+def _start_bot():
+    proc = subprocess.Popen([sys.executable, "j_main.py"])
+    try:
+        with open(PID_FILE, "w", encoding="utf-8") as f:
+            f.write(str(proc.pid))
+    except OSError as e:
+        print("entrypoint: no se pudo escribir el pidfile "
+              f"({e}) — no bloquea el arranque.", flush=True)
+    return proc
+
+
+def _notify_telegram(message):
+    """Avisa sin convertir una caída de Telegram en una caída del supervisor."""
+
+    try:
+        from b_notifiers import MultiChannelNotifier
+        enviado = MultiChannelNotifier().send_telegram(message)
+        if not enviado:
+            print("entrypoint: Telegram no confirmó la notificación; "
+                  "el ciclo continúa.", flush=True)
+    except Exception as e:
+        print(f"entrypoint: no se pudo avisar por Telegram ({e}); "
+              "el ciclo continúa.", flush=True)
+
+
+def _validate_configuration():
     try:
         import aa_env_guard as env_guard
         problemas = env_guard.validar_secretos_criticos()
@@ -110,58 +86,103 @@ def main():
         for problema in problemas:
             print("  -", problema, flush=True)
         print("=" * 72, flush=True)
-        print("Ninguno de los dos procesos se levantó. Corregí el .env y "
-              "reintentá: es preferible que el contenedor no arranque a que "
-              "arranque a medias y descubra el faltante en el peor momento.",
+        print("Ningún proceso se levantó. Corregí el .env y reintentá.",
               flush=True)
         raise SystemExit(2)
 
-    print("Configuración validada. Levantando panel y bot.", flush=True)
+
+def main():
+    os.makedirs(os.path.dirname(PID_FILE) or ".", exist_ok=True)
+    _validate_configuration()
+
+    import al_market_startup as market_startup
+
+    auto_enabled = market_startup.AUTO_START_ENABLED
+    print("Configuración validada. Levantando dashboard.", flush=True)
     dashboard_proc = subprocess.Popen([sys.executable, "o_dashboard.py"])
-    bot_proc = subprocess.Popen([sys.executable, "j_main.py"])
+    state = {"bot": None, "stopping": False}
+    last_bot_exit = 0.0
+    last_reason = None
 
-    try:
-        with open(PID_FILE, "w", encoding="utf-8") as f:
-            f.write(str(bot_proc.pid))
-    except OSError as e:
-        print(f"entrypoint: no se pudo escribir el pidfile ({e}) — no bloquea el arranque.", flush=True)
-
-    exit_code = 0
-    stopping = {"flag": False}
+    if not auto_enabled:
+        print("Política manual: levantando motor de trading.", flush=True)
+        state["bot"] = _start_bot()
 
     def _forward_signal(signum, frame):
-        # Reenvía la señal a ambos hijos — así `docker stop` (que manda
-        # SIGTERM al proceso 1, este mismo script) también dispara el
-        # cierre ordenado de j_main.py en vez de matarlo de golpe.
-        stopping["flag"] = True
-        for proc, name in ((bot_proc, "j_main.py"), (dashboard_proc, "o_dashboard.py")):
-            _terminate(proc, name)
+        state["stopping"] = True
+        _terminate(state["bot"], "j_main.py")
+        _terminate(dashboard_proc, "o_dashboard.py")
 
     signal.signal(signal.SIGTERM, _forward_signal)
     signal.signal(signal.SIGINT, _forward_signal)
 
+    exit_code = 0
     try:
-        while True:
-            if stopping["flag"]:
-                break
-            if bot_proc.poll() is not None:
-                exit_code = bot_proc.returncode or 0
-                print(f"entrypoint: j_main.py terminó (code={exit_code}) — cerrando dashboard también.",
-                      flush=True)
-                _terminate(dashboard_proc, "o_dashboard.py")
-                break
+        while not state["stopping"]:
             if dashboard_proc.poll() is not None:
                 exit_code = dashboard_proc.returncode or 0
-                print(f"entrypoint: o_dashboard.py terminó (code={exit_code}) — cerrando el bot también.",
-                      flush=True)
-                _terminate(bot_proc, "j_main.py")
+                print("entrypoint: o_dashboard.py terminó "
+                      f"(code={exit_code}) — cerrando el motor.", flush=True)
+                _terminate(state["bot"], "j_main.py")
                 break
-            time.sleep(2)
+
+            bot_proc = state["bot"]
+            if not auto_enabled:
+                if bot_proc.poll() is not None:
+                    exit_code = bot_proc.returncode or 0
+                    print("entrypoint: j_main.py terminó "
+                          f"(code={exit_code}) — cerrando dashboard también.",
+                          flush=True)
+                    _terminate(dashboard_proc, "o_dashboard.py")
+                    break
+                time.sleep(SUPERVISOR_POLL_SECONDS)
+                continue
+
+            motor_activo, motivo = market_startup.motor_debe_estar_activo()
+            listo_para_iniciar, _ = market_startup.evaluar_ventana()
+
+            if bot_proc is not None and bot_proc.poll() is not None:
+                codigo = bot_proc.returncode or 0
+                print(f"entrypoint: j_main.py terminó (code={codigo}). "
+                      "El dashboard sigue disponible.", flush=True)
+                state["bot"] = None
+                _clear_pidfile()
+                last_bot_exit = time.monotonic()
+                bot_proc = None
+
+            if state["bot"] is not None and not motor_activo:
+                _notify_telegram(
+                    "🌙 *RUEDA FINALIZADA*\n"
+                    "El motor de trading completó el cierre y entra en "
+                    "hibernación. El dashboard continúa disponible.")
+                _terminate(state["bot"], "j_main.py")
+                state["bot"] = None
+                _clear_pidfile()
+                last_bot_exit = time.monotonic()
+                print(f"entrypoint: {motivo}.", flush=True)
+
+            puede_reiniciar = (
+                time.monotonic() - last_bot_exit >= BOT_RESTART_COOLDOWN_SECONDS)
+            if (state["bot"] is None and motor_activo and listo_para_iniciar
+                    and puede_reiniciar):
+                _notify_telegram(
+                    "🟢 *INICIANDO SESIÓN BURSÁTIL*\n"
+                    "El calendario BYMA habilitó la preparación automática "
+                    "del motor de trading.")
+                state["bot"] = _start_bot()
+                print("entrypoint: motor de trading iniciado por calendario BYMA.",
+                      flush=True)
+                last_reason = None
+            elif state["bot"] is None and motivo != last_reason:
+                print(f"entrypoint: {motivo}. Dashboard disponible; "
+                      "motor hibernado.", flush=True)
+                last_reason = motivo
+
+            time.sleep(SUPERVISOR_POLL_SECONDS)
     finally:
-        try:
-            os.remove(PID_FILE)
-        except OSError:
-            pass
+        _terminate(state["bot"], "j_main.py")
+        _terminate(dashboard_proc, "o_dashboard.py")
+        _clear_pidfile()
 
     sys.exit(exit_code)
 
