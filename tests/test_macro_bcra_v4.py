@@ -2,12 +2,16 @@
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 import ad_macro_history as macro
+import as_greeks_engine as greeks
 
 
 class _Respuesta:
@@ -74,6 +78,27 @@ def test_bcra_mantiene_compatibilidad_con_respuesta_plana(monkeypatch):
         lambda serie, puntos, fuente: guardado.setdefault("puntos", puntos) or len(puntos),
     )
 
-    macro._fetch_bcra_variable("tasa", 6)
+    macro._fetch_bcra_variable("tasa_tamar_privados_tna", 44)
 
     assert guardado["puntos"] == [("2026-08-21", 12.5)]
+
+
+def test_bcra_v4_usa_tamar_privada_tna_vigente():
+    assert macro.BCRA_VARIABLES == {
+        "reservas_usd_millones": 1,
+        "tasa_tamar_privados_tna": 44,
+        "base_monetaria": 15,
+    }
+
+
+def test_greeks_lee_tamar_desde_contexto_macro(monkeypatch):
+    macro_falso = SimpleNamespace(
+        get_macro_context=lambda dias: {
+            "indicadores": {
+                "tasa_tamar_privados_tna": {"ultimo": 29.5},
+            }
+        }
+    )
+    monkeypatch.setitem(sys.modules, "ad_macro_history", macro_falso)
+
+    assert greeks._tasa_desde_macro() == pytest.approx(0.295)
