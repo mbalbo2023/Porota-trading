@@ -103,8 +103,10 @@ services:
       - >-
         mkdir -p /app/data/logs /app/data/backups /app/data/proposals
         /app/sre_vector_db /home/botuser/.cache &&
+        touch /app/data/chroma.log &&
         chown -R 1000:1000 /app/data /app/sre_vector_db /home/botuser/.cache &&
         chown 1000:1000 /app/.env &&
+        chmod 640 /app/data/chroma.log &&
         chmod 600 /app/.env
     volumes:
       - ./data:/app/data
@@ -126,12 +128,21 @@ services:
     image: chromadb/chroma:0.5.23
     container_name: porota_sre_chromadb
     restart: unless-stopped
-    # Reduce escrituras accidentales de Python. Chroma mantiene rootfs
-    # escribible por ahora porque su imagen oficial crea /chroma/chroma.log.
+    # La imagen queda inmutable. El índice y el log son los únicos datos
+    # persistentes; caché y temporales viven en memoria y desaparecen al salir.
+    read_only: true
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /root/.cache:rw,noexec,nosuid,size=16m
     volumes:
       - ./sre_vector_db:/chroma/chroma
+      - ./data/chroma.log:/chroma/chroma.log
+    depends_on:
+      init_permissions:
+        condition: service_completed_successfully
     healthcheck:
       # CORREGIDO EN v16.2 - antes usaba `curl`, que las imagenes minimas de
       # Chroma no siempre incluyen. Si el binario no esta, el healthcheck nunca
