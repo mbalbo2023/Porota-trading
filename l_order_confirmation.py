@@ -594,7 +594,13 @@ def recover_orphaned_orders(ppi, notifier, position_manager):
     de terminar de registrarla acá) y termina el trabajo: abre la
     posición para que el stop-loss/take-profit se sigan vigilando, en vez
     de dejarla "perdida".
+
+    La tabla se inicializa también en este camino de lectura. En una base
+    nueva todavía no hubo ninguna propuesta y create_pending_order() no
+    tuvo oportunidad de crearla; consultar antes de inicializar hacía caer
+    todo el proceso en el primer arranque.
     """
+    _init_table()
     conn = ac_db.connect_raw()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
