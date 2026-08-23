@@ -128,6 +128,11 @@ async def token_inicial_a_sesion(request: Request, call_next):
                    if k.lower() != b"authorization"]
         headers.append((b"authorization", ("Bearer " + auth.TOKEN_BEARER).encode("utf-8")))
         request.scope["headers"] = headers
+        # request.cookies pudo materializar y cachear Headers antes de esta
+        # inyección. Se invalida el cache para que las dependencias FastAPI
+        # lean el scope actualizado.
+        if hasattr(request, "_headers"):
+            delattr(request, "_headers")
 
     return await call_next(request)
 
