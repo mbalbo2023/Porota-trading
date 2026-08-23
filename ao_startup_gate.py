@@ -70,6 +70,7 @@ MODO_SIMULACION = "SIMULACION"
 MODO_REAL = "REAL"
 MODO_DETENIDO = "DETENIDO"
 ESPERANDO = "ESPERANDO_AUTORIZACION"
+ESPERANDO_CALENDARIO = "ESPERANDO_APERTURA"
 
 
 @dataclass
@@ -179,6 +180,20 @@ def leer_pasos(limite: int = 200) -> List[dict]:
 # ---------------------------------------------------------------------------
 # Solicitud y autorización
 # ---------------------------------------------------------------------------
+
+def marcar_espera_calendario(mensaje: str) -> None:
+    """Publica en el panel que el motor espera una rueda válida, sin pedir permiso."""
+    with _lock:
+        _estado.estado = ESPERANDO_CALENDARIO
+        _estado.modo = None
+        _estado.solicitado = datetime.now().isoformat(timespec="seconds")
+        _estado.autorizado = ""
+        _estado.autorizado_por = ""
+        _estado.codigo = ""
+        _estado.mensaje = mensaje
+    _persistir()
+    registrar_paso("CALENDARIO", mensaje, "Sin operar")
+
 
 def solicitar_autorizacion(notifier=None) -> str:
     """Lo primero que hace el sistema al levantar: avisar y quedarse esperando."""
