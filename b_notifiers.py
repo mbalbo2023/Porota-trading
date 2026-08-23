@@ -65,6 +65,44 @@ class MultiChannelNotifier:
         self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
+    def send(self, message: str, reply_markup=None, parse_mode: str = "Markdown"):
+        """Envía un mensaje Telegram con un teclado opcional.
+
+        ``ao_startup_gate`` necesita tres botones y por eso no puede reutilizar
+        la confirmación genérica de dos botones. Este es el contrato común que
+        faltaba entre el portón de arranque y el notificador real.
+        """
+        if not self.telegram_token or not self.telegram_chat_id:
+            logger.warning("Telegram no configurado (falta TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID).")
+            return False
+        url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+        payload = {
+            "chat_id": self.telegram_chat_id,
+            "text": message,
+            "parse_mode": parse_mode,
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        last_error = None
+        for intento in range(3):
+            try:
+                res = requests.post(url, json=payload, timeout=5)
+                try:
+                    respuesta = res.json()
+                except Exception:
+                    respuesta = {}
+                if res.status_code == 200 and respuesta.get("ok") is True:
+                    return True
+                last_error = f"HTTP {res.status_code}: {res.text}"
+                logger.error("Telegram respondió %s: %s", res.status_code, res.text)
+            except Exception as e:
+                last_error = str(e)
+                logger.error("Error enviando Telegram (intento %d/3): %s", intento + 1, e)
+            if intento < 2:
+                time.sleep(2 * (intento + 1))
+        _save_failed_notification(message, last_error)
+        return False
+
     def send_telegram(self, message: str):
         """
         AMPLIADO EN v10.5 (segunda revisión) — hallazgo real: antes, si
