@@ -534,7 +534,7 @@ def verificar_fuentes_publicas(vf: Verificador) -> None:
     import ad_macro_history as macro
 
     for nombre, proposito, accion in [
-        ("bcra_variables", "Reservas, tasa de política monetaria y base monetaria.",
+        ("bcra_variables", "Reservas, TAMAR privada TNA y base monetaria.",
          lambda: _probar_bcra(macro)),
         ("datos_gob_ipc", "Inflación del INDEC para el piso de rentabilidad.",
          lambda: _probar_fetch_macro(
