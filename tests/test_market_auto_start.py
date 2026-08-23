@@ -15,6 +15,17 @@ def test_domingo_no_inicializa_el_motor():
     assert motivo == "Fin de semana"
 
 
+def test_sabado_no_inicializa_el_motor():
+    listo, motivo = arranque.evaluar_ventana(
+        datetime(2026, 8, 22, 12, 0, tzinfo=ZONA))
+    activo, motivo_motor = arranque.motor_debe_estar_activo(
+        datetime(2026, 8, 22, 12, 0, tzinfo=ZONA))
+    assert listo is False
+    assert activo is False
+    assert motivo == "Fin de semana"
+    assert motivo_motor == "Fin de semana"
+
+
 def test_feriado_byma_no_inicializa_el_motor():
     listo, motivo = arranque.evaluar_ventana(
         datetime(2026, 12, 8, 12, 0, tzinfo=ZONA))
