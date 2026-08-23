@@ -7,9 +7,13 @@ firmas obsoletas o marque como correcta una fuente que registró un fallo en
 
 import sqlite3
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+RAIZ = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ))
 
 import ap_api_verifier as verifier
 
