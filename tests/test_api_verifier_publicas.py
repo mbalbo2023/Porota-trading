@@ -67,7 +67,7 @@ def _macro_falso(tmp_path, *, fallar=None):
     macro = SimpleNamespace(
         ac_db=db,
         _init_table=init_table,
-        BCRA_VARIABLES={"reservas": 1, "tasa": 6, "base": 15},
+        BCRA_VARIABLES={"reservas": 1, "tasa_tamar_privados_tna": 44, "base": 15},
         DATOS_AR_SERIES={"ipc_var_mensual": "serie-ipc"},
     )
     macro._fetch_bcra_variable = lambda nombre, variable_id: registrar(
@@ -93,6 +93,7 @@ def test_fuentes_publicas_usan_firmas_actuales_y_confirman_datos(tmp_path, monke
 
     assert [resultado.estado for resultado in vf.resultados] == ["OK"] * 4
     assert ("indec_ipc_var_mensual", ("ipc_var_mensual", "serie-ipc")) in llamadas
+    assert ("bcra_tasa_tamar_privados_tna", ("tasa_tamar_privados_tna", 44)) in llamadas
     assert ("dolar_bolsa", ("bolsa",)) in llamadas
     assert ("dolar_contadoconliqui", ("contadoconliqui",)) in llamadas
 
