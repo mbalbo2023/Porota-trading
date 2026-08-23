@@ -72,3 +72,36 @@ def test_la_sesion_sobrevive_una_recreacion_del_contenedor(monkeypatch, tmp_path
 
     assert auth.sesion_valida(sesion)
     assert oct(almacen.stat().st_mode & 0o777) == "0o600"
+
+def test_sandbox_admite_sesion_sin_vencimiento(monkeypatch):
+    token = _preparar(monkeypatch)
+    monkeypatch.setattr(auth, "SESION_SIN_VENCIMIENTO", True)
+
+    sesion = auth.crear_sesion_desde_token(token)
+    assert auth._sesiones[sesion] == 0.0
+
+    monkeypatch.setattr(auth.time, "time", lambda: 9_999_999_999)
+    assert auth.sesion_valida(sesion) is True
+
+
+def test_cookie_persistente_se_renueva_en_sandbox(monkeypatch):
+    token = _preparar(monkeypatch)
+    monkeypatch.setattr(auth, "SESION_SIN_VENCIMIENTO", True)
+    monkeypatch.setattr(auth, "COOKIE_MAX_AGE_SECONDS", 400 * 24 * 3600)
+    cliente = TestClient(dashboard.app)
+
+    primera = cliente.get("/?token=" + token, follow_redirects=False)
+    assert primera.status_code == 303
+    assert "Max-Age=34560000" in primera.headers["set-cookie"]
+
+    siguiente = cliente.get("/")
+    assert siguiente.status_code == 200
+    assert "Max-Age=34560000" in siguiente.headers["set-cookie"]
+
+
+def test_produccion_rechaza_sesion_sin_vencimiento(monkeypatch):
+    monkeypatch.setattr(auth, "ENTORNO", "PRODUCTION")
+    monkeypatch.setattr(auth, "SESION_HORAS", 0)
+    problemas = auth.validar_configuracion()
+    assert any("solo está permitido" in problema for problema in problemas)
+
