@@ -63,6 +63,11 @@ TOKEN_BEARER = os.getenv("DASHBOARD_ACCESS_TOKEN", "").strip()
 ENTORNO = os.getenv("ENVIRONMENT", "SANDBOX").strip().upper()
 
 SESION_HORAS = float(os.getenv("DASHBOARD_SESSION_HOURS", "168"))
+# En Sandbox, cero significa sesión sin vencimiento del lado servidor.
+# La cookie se renueva en cada uso hasta el máximo admitido por Chrome.
+SESION_SIN_VENCIMIENTO = ENTORNO == "SANDBOX" and SESION_HORAS == 0
+COOKIE_MAX_AGE_SECONDS = (400 * 24 * 3600 if SESION_SIN_VENCIMIENTO
+                          else max(1, int(SESION_HORAS * 3600)))
 MAX_INTENTOS = int(os.getenv("DASHBOARD_MAX_LOGIN_ATTEMPTS", "5"))
 BLOQUEO_MINUTOS = float(os.getenv("DASHBOARD_LOCKOUT_MINUTES", "15"))
 
@@ -110,7 +115,8 @@ def _cargar_sesiones() -> None:
         _sesiones.update({
             str(sesion): float(vence)
             for sesion, vence in guardado.get("sessions", {}).items()
-            if float(vence) > ahora
+            if ((SESION_SIN_VENCIMIENTO and float(vence) == 0.0)
+                or float(vence) > ahora)
         })
         _persistir_sesiones_sin_lock()
     except Exception as exc:
@@ -184,6 +190,10 @@ def validar_configuracion() -> list:
             f"DASHBOARD_ACCESS_TOKEN tiene {len(TOKEN_BEARER)} caracteres. Es corto "
             "para ser la única puerta si el panel queda expuesto: usá 32 o más, "
             "generados al azar.")
+    if SESION_HORAS < 0 or (SESION_HORAS == 0 and ENTORNO != "SANDBOX"):
+        problemas.append(
+            "DASHBOARD_SESSION_HOURS=0 (sin vencimiento) solo está permitido "
+            "en SANDBOX; en producción definí una duración positiva.")
     if PASSWORD_PLANA and ENTORNO == "PRODUCTION":
         problemas.append(
             "DASHBOARD_PASSWORD está en texto plano y el entorno es PRODUCTION. "
@@ -195,6 +205,14 @@ def validar_configuracion() -> list:
 # ---------------------------------------------------------------------------
 # Login y sesiones
 # ---------------------------------------------------------------------------
+
+
+def _nueva_expiracion() -> float:
+    """Cero representa una sesión persistente, únicamente válida en Sandbox."""
+    if SESION_SIN_VENCIMIENTO:
+        return 0.0
+    return time.time() + SESION_HORAS * 3600
+
 
 def _bloqueado(origen: str) -> Optional[float]:
     """Minutos que faltan para poder reintentar, o None si no está bloqueado."""
@@ -241,7 +259,7 @@ def login(usuario: str, password: str, origen: str = "desconocido") -> Optional[
 
         _intentos.pop(origen, None)
         sesion = secrets.token_urlsafe(32)
-        _sesiones[sesion] = time.time() + SESION_HORAS * 3600
+        _sesiones[sesion] = _nueva_expiracion()
         _persistir_sesiones_sin_lock()
         logger.info("Login correcto desde %s.", origen)
         return sesion
@@ -259,7 +277,7 @@ def crear_sesion_desde_token(token: Optional[str], origen: str = "token_url") ->
         return None
     with _lock:
         sesion = secrets.token_urlsafe(32)
-        _sesiones[sesion] = time.time() + SESION_HORAS * 3600
+        _sesiones[sesion] = _nueva_expiracion()
         _persistir_sesiones_sin_lock()
     logger.info("Sesión de navegador creada desde token válido (%s).", origen)
     return sesion
@@ -270,7 +288,13 @@ def sesion_valida(identificador: Optional[str]) -> bool:
         return False
     with _lock:
         vence = _sesiones.get(identificador)
-        if not vence:
+        if vence is None:
+            return False
+        if vence == 0.0:
+            if SESION_SIN_VENCIMIENTO:
+                return True
+            _sesiones.pop(identificador, None)
+            _persistir_sesiones_sin_lock()
             return False
         if time.time() > vence:
             _sesiones.pop(identificador, None)
