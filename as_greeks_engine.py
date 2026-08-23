@@ -74,9 +74,9 @@ from typing import Optional
 
 logger = logging.getLogger("greeks")
 
-# Tasa libre de riesgo por default si no hay dato de caución disponible.
-# Se usa la tasa de política monetaria como aproximación; el propio cálculo
-# avisa cuando cayó a este valor en vez de usar la caución real.
+# Tasa libre de riesgo por default si no hay dato de caución ni TAMAR.
+# TAMAR se usa como aproximación de mercado; el propio cálculo avisa cuando
+# cayó a este valor en vez de usar la caución real.
 TASA_LIBRE_RIESGO_DEFAULT = float(os.getenv("GREEKS_RISK_FREE_DEFAULT", "0.29"))
 
 # Límites de la búsqueda de volatilidad implícita. Una IV del 500% anual no es
@@ -328,9 +328,14 @@ def _tasa_desde_macro() -> Optional[float]:
     try:
         import ad_macro_history as macro
         ctx = macro.get_macro_context(30) or {}
-        tasa = ctx.get("tasa_caucion_tna") or ctx.get("bcra_tasa_politica_monetaria_tna")
-        if tasa:
-            return float(tasa) / 100.0
+        indicadores = ctx.get("indicadores") or {}
+        # La caché macro devuelve metadatos por indicador. Se conserva la
+        # lectura plana como compatibilidad con contextos anteriores.
+        for clave in ("tasa_caucion_tna", "tasa_tamar_privados_tna"):
+            dato = indicadores.get(clave, ctx.get(clave))
+            tasa = dato.get("ultimo") if isinstance(dato, dict) else dato
+            if tasa is not None:
+                return float(tasa) / 100.0
     except Exception as e:
         logger.debug("Sin tasa macro disponible: %s", e)
     return None
