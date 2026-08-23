@@ -68,6 +68,7 @@ import ae_ppi_api_watch as ppi_api_watch
 import af_model_registry as model_registry
 import ag_kill_switch_supervisor as ks_supervisor
 import ah_market_tools as market_tools
+import ak_byma_calendar as byma_calendar
 # NUEVO EN v16.2 — piezas que en v16.1 existían pero nadie llamaba.
 import aj_trade_gate as gate          # el portón de 29 casos, ahora cableado
 import ai_derivatives_engine as deriv  # dimensionamiento de opciones y futuros
@@ -285,12 +286,10 @@ MARKET_CLOSE_HOUR = int(os.getenv("MARKET_CLOSE_HOUR", "17"))
 def _mercado_abierto(ahora=None) -> bool:
     """¿Hay rueda de contado en BYMA ahora mismo?
 
-    Fines de semana quedan afuera. Los feriados NO se contemplan acá: no hay
-    una fuente confiable y gratuita del calendario de feriados bursátiles
-    argentinos que se pueda consultar en runtime, y un calendario hardcodeado
-    se desactualiza en silencio, que es peor. El día de un feriado el bot va
-    a evaluar y a descartar todo por cotización vieja, que es una degradación
-    ruidosa y correcta, no una operación equivocada.
+    Fines de semana, feriados y jornadas especiales quedan afuera mediante
+    el calendario oficial auditado de BYMA. Si el año todavía no fue auditado,
+    el portón queda cerrado: nunca se infiere que un día desconocido está
+    habilitado para operar.
 
     El reloj del contenedor puede estar en UTC. Cuando no se inyecta una hora
     de prueba, se convierte explícitamente a SERVER_TIMEZONE antes de comparar
@@ -302,6 +301,8 @@ def _mercado_abierto(ahora=None) -> bool:
     elif getattr(ahora, "tzinfo", None) is not None:
         ahora = ahora.astimezone(ZoneInfo(SERVER_TIMEZONE))
     if ahora.weekday() >= 5:
+        return False
+    if not byma_calendar.es_dia_habil_operativo(ahora.date()):
         return False
     return MARKET_OPEN_HOUR <= ahora.hour < MARKET_CLOSE_HOUR
 
