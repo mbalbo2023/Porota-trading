@@ -300,16 +300,16 @@ def _render_html(days: list, halts: list, recommendations: list, tuning_history:
     <body>
       <h1>📊 Bot de Trading — Dashboard (solo lectura)</h1>
       <p><em>Este panel nunca puede ejecutar órdenes — es de consulta únicamente.</em></p>
-      <p><a href="/vivo?token=TU-TOKEN">📡 Actividad en vivo</a> ·
-      <a href="/testing?token=TU-TOKEN">🧪 Testing</a> ·
-      <a href="/salud?token=TU-TOKEN">🚦 Salud de APIs</a> ·
-      <a href="/historicos?token=TU-TOKEN">📚 Datos históricos</a> ·
-      <a href="/aprendizaje?token=TU-TOKEN">🎓 Blog de aprendizaje</a> ·
-      <a href="/config?token=TU-TOKEN">⚙️ Ir al editor de configuración</a> ·
-      <a href="/sre?token=TU-TOKEN">🩺 SRE / Monitoreo</a> ·
-      <a href="/infra?token=TU-TOKEN">🖥️ Infraestructura</a> ·
-      <a href="/ai-decisions?token=TU-TOKEN">🧠 Decisiones de IA</a> ·
-      <a href="/api/reports/weekly/download?token=TU-TOKEN">📄 Descargar informe semanal</a>
+      <p><a href="/vivo">📡 Actividad en vivo</a> ·
+      <a href="/testing">🧪 Testing</a> ·
+      <a href="/salud">🚦 Salud de APIs</a> ·
+      <a href="/historicos">📚 Datos históricos</a> ·
+      <a href="/aprendizaje">🎓 Blog de aprendizaje</a> ·
+      <a href="/config">⚙️ Ir al editor de configuración</a> ·
+      <a href="/sre">🩺 SRE / Monitoreo</a> ·
+      <a href="/infra">🖥️ Infraestructura</a> ·
+      <a href="/ai-decisions">🧠 Decisiones de IA</a> ·
+      <a href="/api/reports/weekly/download">📄 Descargar informe semanal</a>
       (reemplazá TU-TOKEN por tu token real en la URL).</p>
       <p style="font-size:0.85em;color:#888;">Más seguro: en vez de ?token=... en la URL, mandá el encabezado
       <code>Authorization: Bearer TU-TOKEN</code> (no queda en logs del servidor ni en el historial del navegador).</p>
