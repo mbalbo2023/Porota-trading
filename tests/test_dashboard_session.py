@@ -51,3 +51,24 @@ def test_los_enlaces_internos_no_propagan_tokens():
     )
     assert "?token=TU-TOKEN" not in fuente
     assert "?token={token}" not in fuente
+
+
+def test_la_sesion_sobrevive_una_recreacion_del_contenedor(monkeypatch, tmp_path):
+    token = _preparar(monkeypatch)
+    almacen = tmp_path / "dashboard_sessions.json"
+    monkeypatch.setattr(auth, "SESSION_STORE_PATH", str(almacen))
+    monkeypatch.setattr(
+        auth, "_TOKEN_FINGERPRINT",
+        auth.hashlib.sha256(token.encode("utf-8")).hexdigest(),
+    )
+
+    sesion = auth.crear_sesion_desde_token(token)
+    assert auth.sesion_valida(sesion)
+    assert almacen.exists()
+
+    # Simula memoria vacía tras recrear el contenedor.
+    auth._sesiones.clear()
+    auth._cargar_sesiones()
+
+    assert auth.sesion_valida(sesion)
+    assert oct(almacen.stat().st_mode & 0o777) == "0o600"
