@@ -40,31 +40,6 @@ def _clear_pidfile():
         pass
 
 
-def _start_bot():
-    proc = subprocess.Popen([sys.executable, "j_main.py"])
-    try:
-        with open(PID_FILE, "w", encoding="utf-8") as f:
-            f.write(str(proc.pid))
-    except OSError as e:
-        print("entrypoint: no se pudo escribir el pidfile "
-              f"({e}) — no bloquea el arranque.", flush=True)
-    return proc
-
-
-def _notify_telegram(message):
-    """Avisa sin convertir una caída de Telegram en una caída del supervisor."""
-
-    try:
-        from b_notifiers import MultiChannelNotifier
-        enviado = MultiChannelNotifier().send_telegram(message)
-        if not enviado:
-            print("entrypoint: Telegram no confirmó la notificación; "
-                  "el ciclo continúa.", flush=True)
-    except Exception as e:
-        print(f"entrypoint: no se pudo avisar por Telegram ({e}); "
-              "el ciclo continúa.", flush=True)
-
-
 def _validate_configuration():
     try:
         import aa_env_guard as env_guard
@@ -89,6 +64,31 @@ def _validate_configuration():
         print("Ningún proceso se levantó. Corregí el .env y reintentá.",
               flush=True)
         raise SystemExit(2)
+
+
+def _start_bot():
+    proc = subprocess.Popen([sys.executable, "j_main.py"])
+    try:
+        with open(PID_FILE, "w", encoding="utf-8") as f:
+            f.write(str(proc.pid))
+    except OSError as e:
+        print("entrypoint: no se pudo escribir el pidfile "
+              f"({e}) — no bloquea el arranque.", flush=True)
+    return proc
+
+
+def _notify_telegram(message):
+    """Avisa sin convertir una caída de Telegram en una caída del supervisor."""
+
+    try:
+        from b_notifiers import MultiChannelNotifier
+        enviado = MultiChannelNotifier().send_telegram(message)
+        if not enviado:
+            print("entrypoint: Telegram no confirmó la notificación; "
+                  "el ciclo continúa.", flush=True)
+    except Exception as e:
+        print(f"entrypoint: no se pudo avisar por Telegram ({e}); "
+              "el ciclo continúa.", flush=True)
 
 
 def main():
