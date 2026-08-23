@@ -66,6 +66,17 @@ def _validate_configuration():
         raise SystemExit(2)
 
 
+def _publish_calendar_state(message):
+    """Refleja la hibernación en el dashboard sin arrancar el motor pesado."""
+
+    try:
+        import ao_startup_gate as startup_gate
+        startup_gate.marcar_espera_calendario(message)
+    except Exception as e:
+        print(f"entrypoint: no se pudo publicar el estado de calendario "
+              f"({e}); el ciclo continúa.", flush=True)
+
+
 def _start_bot():
     proc = subprocess.Popen([sys.executable, "j_main.py"])
     try:
@@ -174,6 +185,7 @@ def main():
                       flush=True)
                 last_reason = None
             elif state["bot"] is None and motivo != last_reason:
+                _publish_calendar_state(motivo)
                 print(f"entrypoint: {motivo}. Dashboard disponible; "
                       "motor hibernado.", flush=True)
                 last_reason = motivo
