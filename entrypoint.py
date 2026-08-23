@@ -111,6 +111,13 @@ def main():
     auto_enabled = market_startup.AUTO_START_ENABLED
     print("Configuración validada. Levantando dashboard.", flush=True)
     dashboard_proc = subprocess.Popen([sys.executable, "o_dashboard.py"])
+
+    # Backups, refresco macro e informes no pueden vivir dentro de j_main.py:
+    # ese proceso hiberna fuera de rueda. Este scheduler es liviano y lanza
+    # cada tarea en un subproceso corto que libera memoria al finalizar.
+    import az_maintenance_scheduler
+    maintenance_scheduler = az_maintenance_scheduler.start()
+
     state = {"bot": None, "stopping": False}
     last_bot_exit = 0.0
     last_reason = None
@@ -192,6 +199,11 @@ def main():
 
             time.sleep(SUPERVISOR_POLL_SECONDS)
     finally:
+        try:
+            maintenance_scheduler.shutdown(wait=False)
+        except Exception as e:
+            print(f"entrypoint: no se pudo cerrar el scheduler de mantenimiento ({e}).",
+                  flush=True)
         _terminate(state["bot"], "j_main.py")
         _terminate(dashboard_proc, "o_dashboard.py")
         _clear_pidfile()
