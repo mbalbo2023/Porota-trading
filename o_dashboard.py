@@ -111,7 +111,7 @@ async def token_inicial_a_sesion(request: Request, call_next):
         respuesta.set_cookie(
             SESSION_COOKIE_NAME,
             sesion,
-            max_age=int(auth.SESION_HORAS * 3600),
+            max_age=auth.COOKIE_MAX_AGE_SECONDS,
             httponly=True,
             secure=auth.ENTORNO == "PRODUCTION",
             samesite="lax",
@@ -120,7 +120,8 @@ async def token_inicial_a_sesion(request: Request, call_next):
         return respuesta
 
     sesion = request.cookies.get(SESSION_COOKIE_NAME)
-    if auth.sesion_valida(sesion):
+    sesion_es_valida = auth.sesion_valida(sesion)
+    if sesion_es_valida:
         # Las rutas existentes ya aceptan Bearer. Se inyecta sólo dentro del
         # scope ASGI para reutilizar esa validación sin propagar el secreto al
         # navegador, a los enlaces ni a los logs.
@@ -134,7 +135,20 @@ async def token_inicial_a_sesion(request: Request, call_next):
         if hasattr(request, "_headers"):
             delattr(request, "_headers")
 
-    return await call_next(request)
+    respuesta = await call_next(request)
+    if sesion_es_valida and auth.SESION_SIN_VENCIMIENTO:
+        # Chrome limita las cookies persistentes a 400 días. Renovarla en
+        # cada uso hace que la sesión de Sandbox no venza mientras se utilice.
+        respuesta.set_cookie(
+            SESSION_COOKIE_NAME,
+            sesion,
+            max_age=auth.COOKIE_MAX_AGE_SECONDS,
+            httponly=True,
+            secure=auth.ENTORNO == "PRODUCTION",
+            samesite="lax",
+            path="/",
+        )
+    return respuesta
 
 
 def _query(sql, params=()):
