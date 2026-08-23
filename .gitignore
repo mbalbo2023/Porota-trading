@@ -12,6 +12,7 @@
 # Datos operativos y estado en runtime
 data/
 sre_vector_db/
+model_cache/
 *.db
 *.db-wal
 *.db-shm
