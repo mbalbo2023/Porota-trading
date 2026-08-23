@@ -26,6 +26,7 @@ import os
 import signal
 import sys
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # ---------------------------------------------------------------------- #
@@ -290,8 +291,16 @@ def _mercado_abierto(ahora=None) -> bool:
     se desactualiza en silencio, que es peor. El día de un feriado el bot va
     a evaluar y a descartar todo por cotización vieja, que es una degradación
     ruidosa y correcta, no una operación equivocada.
+
+    El reloj del contenedor puede estar en UTC. Cuando no se inyecta una hora
+    de prueba, se convierte explícitamente a SERVER_TIMEZONE antes de comparar
+    las horas de rueda; el timezone del scheduler por sí solo no cambia
+    datetime.now().
     """
-    ahora = ahora or datetime.now()
+    if ahora is None:
+        ahora = datetime.now(ZoneInfo(SERVER_TIMEZONE))
+    elif getattr(ahora, "tzinfo", None) is not None:
+        ahora = ahora.astimezone(ZoneInfo(SERVER_TIMEZONE))
     if ahora.weekday() >= 5:
         return False
     return MARKET_OPEN_HOUR <= ahora.hour < MARKET_CLOSE_HOUR
@@ -1178,13 +1187,14 @@ def main():
     # mensajes del otro, y ese era el defecto que rompía las confirmaciones.
     import threading as _th
     _fin_bombeo = _th.Event()
-    order_confirmation.arrancar_bombeo(notifier, ppi, _fin_bombeo)
+    _hilo_bombeo = order_confirmation.arrancar_bombeo(notifier, ppi, _fin_bombeo)
 
     import ao_startup_gate as startup_gate
-    try:
-        modo = startup_gate.esperar_autorizacion(notifier)
-    finally:
-        _fin_bombeo.set()
+    # La misma escucha continúa durante TODA la inicialización posterior.
+    # Antes se apagaba inmediatamente después de autorizar y se reanudaba
+    # varios minutos más tarde, después de llamadas al bróker. En esa ventana
+    # PARADA y ESTADO no respondían, justamente cuando más se los necesita.
+    modo = startup_gate.esperar_autorizacion(notifier)
     if modo == startup_gate.MODO_DETENIDO:
         logger.info("Arranque no autorizado. El bot queda levantado sin operar; "
                     "el panel sigue accesible en la solapa de Testing.")
@@ -1243,6 +1253,10 @@ def main():
     import u_aiops_watcher as aiops_watcher
 
     def _current_metrics():
+        # Fuera de rueda no se quema cuota ni se fuerza una autenticación PPI
+        # sólo para medir latencia. El watcher volverá a medir al abrir.
+        if not _mercado_abierto():
+            return None
         try:
             import resource
             import time as _time
@@ -1310,7 +1324,10 @@ def main():
             "que lo liberes a mano con r_clear_kill_switch.py."
         )
 
-    refresh_universe_job(ppi)  # carga inicial al arrancar, además de todas las mañanas
+    if _mercado_abierto():
+        refresh_universe_job(ppi)  # carga inicial si hay rueda; luego, cada apertura
+    else:
+        logger.info("Mercado cerrado: la carga del universo PPI se difiere hasta la próxima apertura.")
 
     # NUEVO EN v14.0 — recién ahora, con el universo ya resuelto, se abre el
     # stream de tiempo real (market data + notificaciones de cuenta). Ver
@@ -1325,6 +1342,11 @@ def main():
         except Exception as e:
             logger.warning("No se pudo completar la verificación de scalping: %s", e)
 
+    # Transferencia sin solapamiento entre la escucha de arranque y la
+    # escucha permanente. Se espera a que el primer hilo termine antes de
+    # iniciar el segundo: sigue existiendo un único consumidor de getUpdates.
+    _fin_bombeo.set()
+    _hilo_bombeo.join(timeout=5)
     threading.Thread(target=confirmations_thread_loop, args=(ppi, notifier), daemon=True).start()
 
     scheduler = BackgroundScheduler(timezone=SERVER_TIMEZONE)
@@ -1397,6 +1419,23 @@ def main():
     )
     while not _shutdown_requested.is_set():
         try:
+            # Fuera de rueda se corta ANTES de cualquier consulta operativa al
+            # bróker. check_exits_job() y el guardián de riesgo consultan PPI;
+            # ejecutarlos primero convertía cada domingo en una tormenta de
+            # reintentos y evitaba registrar MERCADO_CERRADO.
+            market_is_open = _mercado_abierto()
+            if not market_is_open:
+                g0 = gate.check_session_health(
+                    kill_switch_active=risk_guardian.is_halted(),
+                    broker_session_ok=True,
+                    db_ok=ac_db.healthcheck().get("ok", False),
+                    market_open=False,
+                    clock_drift_seconds=0.0)
+                logger.warning("Rueda detenida por el portón: %s (%s)", g0.reason, g0.code)
+                registrar_abstencion_global(g0.code, g0.reason)
+                time.sleep(60)
+                continue
+
             check_exits_job(ppi, notifier)
             risk_guardian.check_and_halt_if_needed(ppi, notifier)
 
@@ -1415,7 +1454,7 @@ def main():
                 kill_switch_active=risk_guardian.is_halted(),
                 broker_session_ok=bool(getattr(ppi, "logged_in", True)),
                 db_ok=ac_db.healthcheck().get("ok", False),
-                market_open=_mercado_abierto(),
+                market_open=market_is_open,
                 clock_drift_seconds=_desfasaje_de_reloj(ppi))
             if not g0.allow:
                 logger.warning("Rueda detenida por el portón: %s (%s)", g0.reason, g0.code)
