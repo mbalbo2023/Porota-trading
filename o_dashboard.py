@@ -37,6 +37,7 @@ Requiere: pip install fastapi uvicorn
 
 import hmac
 import hashlib
+import json
 import os
 import sqlite3
 import time
@@ -45,6 +46,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Header
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response, RedirectResponse
 from typing import Optional
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 import uvicorn
 import ac_db  # NUEVO EN v15.0 — conexión SQLite única (WAL + timeout)
 
@@ -75,6 +77,8 @@ DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "8000"))
 # queda accesible desde el propio host y quien lo publique hacia afuera tiene
 # que hacerlo a propósito, por el reverse proxy con TLS.
 DASHBOARD_HOST = os.getenv("DASHBOARD_HOST", "0.0.0.0")
+SERVER_TIMEZONE = os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires")
+STARTUP_STATE_PATH = os.getenv("STARTUP_STATE_PATH", "data/startup_state.json")
 
 # Fuente única de la versión. El endpoint /health devolvía "15.0" mientras la
 # portada del documento decía otra cosa: la inconsistencia de inventario fue
@@ -1179,6 +1183,21 @@ def _nav(token: str) -> str:
             f"</div>")
 
 
+def _ahora_local() -> datetime:
+    """Hora visible del panel, siempre en la zona configurada del mercado."""
+    return datetime.now(ZoneInfo(SERVER_TIMEZONE))
+
+
+def _estado_arranque_persistido() -> dict:
+    """Lee el estado compartido sin importar el módulo del motor pesado."""
+    try:
+        with open(STARTUP_STATE_PATH, encoding="utf-8") as f:
+            estado = json.load(f)
+        return estado if isinstance(estado, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 @app.get("/vivo", response_class=HTMLResponse)
 def actividad_en_vivo(token: str = Query(default=""),
                       authorization: Optional[str] = Header(default=None)):
@@ -1193,11 +1212,14 @@ def actividad_en_vivo(token: str = Query(default=""),
     _check_auth(token, authorization)
 
     posiciones = _query("SELECT * FROM positions WHERE status='OPEN' ORDER BY opened_at DESC")
-    senales = _query("SELECT * FROM signals ORDER BY rowid DESC LIMIT 25")
+    # Los eventos globales del portón conservan su auditoría en la base, pero
+    # no son evaluaciones de instrumentos y no deben repetirse como 25 filas.
+    senales = _query("SELECT * FROM signals WHERE COALESCE(ticker, '') <> '__SISTEMA__' ORDER BY rowid DESC LIMIT 25")
     decisiones = _query("SELECT * FROM ai_decisions ORDER BY rowid DESC LIMIT 15")
     pendientes = _query("SELECT * FROM order_proposals WHERE status='PENDING' ORDER BY rowid DESC")
 
     expuesto = sum((p.get("entry_price") or 0) * (p.get("quantity") or 0) for p in posiciones)
+    estado_arranque = _estado_arranque_persistido()
 
     try:
         import p_risk_guardian as rg
@@ -1208,6 +1230,10 @@ def actividad_en_vivo(token: str = Query(default=""),
     if detenido:
         banner = ("<div class='banner b-rojo'>🔴 <b>Kill switch activo.</b> El bot no está abriendo "
                   "posiciones nuevas. Las abiertas siguen vigiladas.</div>")
+    elif estado_arranque.get("estado") == "ESPERANDO_APERTURA":
+        motivo = estado_arranque.get("mensaje") or "Fuera de la rueda bursátil"
+        banner = (f"<div class='banner b-amarillo'>🌙 <b>Mercado cerrado.</b> "
+                  f"Motor de trading hibernado. {motivo}.</div>")
     elif posiciones:
         banner = (f"<div class='banner b-verde'>🟢 <b>Operando.</b> {len(posiciones)} posición(es) "
                   f"abierta(s), ${expuesto:,.0f} comprometidos.</div>")
@@ -1243,7 +1269,7 @@ def actividad_en_vivo(token: str = Query(default=""),
     <title>Actividad en vivo</title>{_ESTILO_V16}</head><body><div class="cont">
     {_nav(token)}
     <h1>📡 Actividad en vivo</h1>
-    <p class="sub">Se refresca solo cada 30 segundos · {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
+    <p class="sub">Se refresca solo cada 30 segundos · {_ahora_local().strftime('%d/%m/%Y %H:%M:%S')} (Buenos Aires)</p>
     {banner}
     <div class="tarjeta"><h2>Posiciones abiertas</h2><table>
       <tr><th>Instrumento</th><th>Cantidad</th><th>Entrada</th><th>Stop-loss</th><th>Take-profit</th><th>Desde</th></tr>
