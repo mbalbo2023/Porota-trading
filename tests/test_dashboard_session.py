@@ -117,3 +117,40 @@ def test_actividad_en_vivo_responde_con_sesion_valida(monkeypatch):
     assert respuesta.status_code == 200
     assert "Actividad en vivo" in respuesta.text
 
+def test_dashboard_usa_zona_horaria_del_mercado(monkeypatch):
+    monkeypatch.setattr(dashboard, "SERVER_TIMEZONE", "America/Argentina/Buenos_Aires")
+    ahora = dashboard._ahora_local()
+
+    assert ahora.tzinfo is not None
+    assert getattr(ahora.tzinfo, "key", None) == "America/Argentina/Buenos_Aires"
+
+
+def test_vivo_muestra_un_solo_estado_de_mercado_cerrado(monkeypatch, tmp_path):
+    token = _preparar(monkeypatch)
+    estado = tmp_path / "startup_state.json"
+    estado.write_text(
+        '{"estado":"ESPERANDO_APERTURA","modo":null,"mensaje":"Fin de semana"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(dashboard, "STARTUP_STATE_PATH", str(estado))
+
+    consultas = []
+
+    def consulta(sql, params=()):
+        consultas.append(sql)
+        return []
+
+    monkeypatch.setattr(dashboard, "_query", consulta)
+    cliente = TestClient(dashboard.app)
+
+    entrada = cliente.get("/vivo?token=" + token, follow_redirects=False)
+    assert entrada.status_code == 303
+    respuesta = cliente.get("/vivo")
+
+    assert respuesta.status_code == 200
+    assert respuesta.text.count("<b>Mercado cerrado.</b>") == 1
+    assert "Motor de trading hibernado. Fin de semana." in respuesta.text
+    assert "(Buenos Aires)" in respuesta.text
+    consulta_senales = next(sql for sql in consultas if "FROM signals" in sql)
+    assert "__SISTEMA__" in consulta_senales
+
