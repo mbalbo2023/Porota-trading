@@ -61,14 +61,14 @@ services:
       # El bot no necesita ninguna capability del kernel: hace HTTP, escribe
       # archivos y habla SQLite.
       - ALL
-    # Evita que un bug o proceso comprometido agote la tabla de procesos del
-    # Droplet mediante un fork bomb. Es un límite holgado para los hilos y
-    # subprocesos legítimos del bot.
-    pids_limit: 256
     deploy:
       resources:
         limits:
           memory: 1536M
+          # Evita que un bug o proceso comprometido agote la tabla de procesos
+          # del Droplet. Se usa la forma canónica del bloque deploy para no
+          # duplicar el mismo límite con pids_limit en Docker Compose 5.x.
+          pids: 256
     logging:
       # Sin esto, el log que captura Docker crece sin techo hasta llenar el
       # disco del Droplet. Es una de las formas mas comunes de tumbar un
