@@ -197,6 +197,23 @@ def login(usuario: str, password: str, origen: str = "desconocido") -> Optional[
         return sesion
 
 
+def crear_sesion_desde_token(token: Optional[str], origen: str = "token_url") -> Optional[str]:
+    """Convierte un token Bearer válido en una sesión de navegador.
+
+    El token se comprueba una sola vez. La cookie recibe un identificador
+    aleatorio y opaco: nunca contiene el token ni la contraseña. Esto permite
+    limpiar el parámetro token de la barra de direcciones inmediatamente
+    después del primer acceso.
+    """
+    if not token_valido(token):
+        return None
+    with _lock:
+        sesion = secrets.token_urlsafe(32)
+        _sesiones[sesion] = time.time() + SESION_HORAS * 3600
+    logger.info("Sesión de navegador creada desde token válido (%s).", origen)
+    return sesion
+
+
 def sesion_valida(identificador: Optional[str]) -> bool:
     if not identificador:
         return False
