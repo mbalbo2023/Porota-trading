@@ -69,6 +69,7 @@ import af_model_registry as model_registry
 import ag_kill_switch_supervisor as ks_supervisor
 import ah_market_tools as market_tools
 import ak_byma_calendar as byma_calendar
+import al_market_startup as market_startup
 # NUEVO EN v16.2 — piezas que en v16.1 existían pero nadie llamaba.
 import aj_trade_gate as gate          # el portón de 29 casos, ahora cableado
 import ai_derivatives_engine as deriv  # dimensionamiento de opciones y futuros
@@ -1157,6 +1158,29 @@ def main():
     init_db()
     load_tuned_thresholds()
     notifier = MultiChannelNotifier()
+
+    # Arranque autónomo: el dashboard queda disponible, pero el motor pesado
+    # (PPI, Gemini, streams y universo) no se inicializa en fines de semana,
+    # feriados ni antes de la ventana previa a la apertura.
+    import ao_startup_gate as startup_gate
+    modo = None
+    if market_startup.AUTO_START_ENABLED:
+        ultimo_motivo = None
+        while not _shutdown_requested.is_set():
+            listo, motivo = market_startup.evaluar_ventana()
+            if listo:
+                break
+            if motivo != ultimo_motivo:
+                startup_gate.marcar_espera_calendario(motivo)
+                logger.info("Arranque automático en espera: %s", motivo)
+                ultimo_motivo = motivo
+            _shutdown_requested.wait(60)
+        if _shutdown_requested.is_set():
+            return
+        modo = market_startup.modo_automatico()
+        startup_gate.autorizar(modo, origen="calendario_BYMA")
+        logger.info("Calendario BYMA habilitó el arranque automático en modo %s.", modo)
+
     ppi = ResilientPPIClient(notifier)
     gemini = GeminiDecisionEngine()
 
@@ -1190,12 +1214,12 @@ def main():
     _fin_bombeo = _th.Event()
     _hilo_bombeo = order_confirmation.arrancar_bombeo(notifier, ppi, _fin_bombeo)
 
-    import ao_startup_gate as startup_gate
     # La misma escucha continúa durante TODA la inicialización posterior.
     # Antes se apagaba inmediatamente después de autorizar y se reanudaba
     # varios minutos más tarde, después de llamadas al bróker. En esa ventana
     # PARADA y ESTADO no respondían, justamente cuando más se los necesita.
-    modo = startup_gate.esperar_autorizacion(notifier)
+    if modo is None:
+        modo = startup_gate.esperar_autorizacion(notifier)
     if modo == startup_gate.MODO_DETENIDO:
         logger.info("Arranque no autorizado. El bot queda levantado sin operar; "
                     "el panel sigue accesible en la solapa de Testing.")
