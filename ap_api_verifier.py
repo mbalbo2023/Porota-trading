@@ -466,17 +466,86 @@ def _mensaje_con_botones():
     ))
 
 
+def _probar_fetch_macro(macro, serie: str, accion: Callable[[], int]) -> dict:
+    """Fuerza una consulta real y convierte el resultado persistido en veredicto.
+
+    Los fetchers de ``ad_macro_history`` son tolerantes a fallos por diseño:
+    registran el error en SQLite y devuelven 0 para que una caída de un
+    proveedor no detenga el bot. Para un verificador ese contrato no alcanza,
+    porque 0 puede significar tanto "no había que refrescar" como "la red
+    falló". Esta función invalida solamente el TTL de la serie probada, ejecuta
+    la llamada y lee ``macro_fetch_log`` para distinguir ambos casos sin
+    cambiar el comportamiento operativo del módulo.
+    """
+    macro._init_table()
+    with macro.ac_db.connect() as conn:
+        conn.execute(
+            "UPDATE macro_fetch_log SET ultimo_exito = NULL, error = NULL WHERE serie = ?",
+            (serie,),
+        )
+
+    filas = accion()
+    with macro.ac_db.connect() as conn:
+        registro = conn.execute(
+            "SELECT ultimo_exito, filas, error FROM macro_fetch_log WHERE serie = ?",
+            (serie,),
+        ).fetchone()
+
+    if not registro:
+        raise RuntimeError(f"{serie}: la fuente no dejó resultado de verificación.")
+    ultimo_exito, filas_registradas, error = registro
+    if error:
+        raise RuntimeError(f"{serie}: {error}")
+    if not ultimo_exito:
+        raise RuntimeError(f"{serie}: la fuente no confirmó una actualización exitosa.")
+
+    cantidad = filas if isinstance(filas, int) else filas_registradas
+    if not isinstance(cantidad, int) or cantidad <= 0:
+        raise RuntimeError(f"{serie}: la respuesta no contenía datos utilizables.")
+    return {"serie": serie, "filas": cantidad}
+
+
+def _probar_bcra(macro) -> dict:
+    series = {}
+    for nombre, variable_id in macro.BCRA_VARIABLES.items():
+        resultado = _probar_fetch_macro(
+            macro,
+            f"bcra_{nombre}",
+            lambda n=nombre, i=variable_id: macro._fetch_bcra_variable(n, i),
+        )
+        series[nombre] = resultado["filas"]
+    return {"series": series, "filas": sum(series.values())}
+
+
+def _probar_dolares_publicos(macro) -> dict:
+    series = {}
+    for casa in ("bolsa", "contadoconliqui"):
+        resultado = _probar_fetch_macro(
+            macro,
+            f"dolar_{casa}",
+            lambda c=casa: macro._fetch_dolar_historico(c),
+        )
+        series[casa] = resultado["filas"]
+    return {"series": series, "filas": sum(series.values())}
+
+
 def verificar_fuentes_publicas(vf: Verificador) -> None:
     print("\n[PÚBLICAS] Macro, noticias y datos de mercado abiertos")
     import ad_macro_history as macro
 
     for nombre, proposito, accion in [
         ("bcra_variables", "Reservas, tasa de política monetaria y base monetaria.",
-         lambda: macro._fetch_bcra_variable(1, (datetime.now() - timedelta(days=30)).date())),
+         lambda: _probar_bcra(macro)),
         ("datos_gob_ipc", "Inflación del INDEC para el piso de rentabilidad.",
-         lambda: macro._fetch_datos_ar("145.3_INGNACUAL_DICI_M_38")),
+         lambda: _probar_fetch_macro(
+             macro,
+             "indec_ipc_var_mensual",
+             lambda: macro._fetch_datos_ar(
+                 "ipc_var_mensual", macro.DATOS_AR_SERIES["ipc_var_mensual"]
+             ),
+         )),
         ("argentinadatos_dolar", "Serie histórica diaria de MEP y CCL.",
-         lambda: macro._fetch_dolar_historico("bolsa")),
+         lambda: _probar_dolares_publicos(macro)),
     ]:
         vf.ejecutar(Verificacion(
             familia="Públicas", nombre=nombre, proposito=proposito,
