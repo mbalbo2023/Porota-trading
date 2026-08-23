@@ -231,6 +231,19 @@ def test_un_codigo_equivocado_no_autoriza(tmp_path, monkeypatch):
     assert g.puede_operar() is False
 
 
+def test_telegram_exige_codigo_y_acepta_simulacion_con_tilde(tmp_path, monkeypatch):
+    monkeypatch.setenv("STARTUP_STATE_PATH", str(tmp_path / "st.json"))
+    monkeypatch.setenv("TESTING_LOG_PATH", str(tmp_path / "tr.jsonl"))
+    import importlib
+    import ao_startup_gate as g
+    importlib.reload(g)
+
+    codigo = g.solicitar_autorizacion(notifier=None)
+    assert g.procesar_respuesta_telegram("SIMULAR")["ok"] is False
+    assert g.procesar_respuesta_telegram(f"SIMULACIÓN {codigo}")["ok"] is True
+    assert g.esta_en_simulacion() is True
+
+
 def test_en_simulacion_ninguna_orden_sale(tmp_path, monkeypatch):
     monkeypatch.setenv("STARTUP_STATE_PATH", str(tmp_path / "st.json"))
     monkeypatch.setenv("TESTING_LOG_PATH", str(tmp_path / "tr.jsonl"))
