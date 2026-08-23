@@ -328,6 +328,21 @@ def process_button_taps(ppi, notifier, position_manager=None):
         # refactoriza ese lugar.
         if tap.get("text"):
             try:
+                import ao_startup_gate as startup_gate
+                resultado_arranque = startup_gate.procesar_respuesta_telegram(
+                    tap["text"], origen="telegram"
+                )
+                if resultado_arranque is not None:
+                    if resultado_arranque.get("ok"):
+                        notifier.send_telegram(
+                            f"✅ Arranque autorizado en modo {resultado_arranque['modo']}."
+                        )
+                    else:
+                        notifier.send_telegram(
+                            "⚠️ No se pudo autorizar el arranque: "
+                            + resultado_arranque.get("motivo", "respuesta inválida")
+                        )
+                    continue
                 import ar_telegram_commands as tg_cmd
                 tg_cmd.procesar_mensaje(tap["text"], notifier, ppi,
                                         remitente_id=tap.get("sender_id"))
@@ -338,6 +353,20 @@ def process_button_taps(ppi, notifier, position_manager=None):
 
         action, _, order_id = tap["data"].partition(":")
         notifier.answer_telegram_callback(tap["callback_id"], "Procesando...")
+
+        if action == "arranque":
+            import ao_startup_gate as startup_gate
+            resultado_arranque = startup_gate.procesar_boton_telegram(tap["data"])
+            if resultado_arranque and resultado_arranque.get("ok"):
+                notifier.send_telegram(
+                    f"✅ Arranque autorizado en modo {resultado_arranque['modo']}."
+                )
+            else:
+                notifier.send_telegram(
+                    "⚠️ No se pudo autorizar el arranque: "
+                    + ((resultado_arranque or {}).get("motivo", "botón inválido"))
+                )
+            continue
 
         # NUEVO EN v16.2 — botones de la parada de emergencia y del motor SRE.
         # Mismo criterio de siempre: un solo lector, despacho por prefijo.
