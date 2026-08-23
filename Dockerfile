@@ -3,6 +3,13 @@
 # ============================================================================
 FROM python:3.11-slim
 
+# No escribir bytecode en la capa del contenedor. Las caches descargables van
+# a un volumen persistente y los temporales a tmpfs desde Docker Compose.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    XDG_CACHE_HOME=/home/botuser/.cache \
+    MPLCONFIGDIR=/tmp/matplotlib
+
 # Dependencias de sistema minimas. Se elimino `curl`: el healthcheck ahora usa
 # el propio interprete de Python, que siempre esta presente. Un healthcheck que
 # depende de un binario que puede no estar instalado es un healthcheck que
@@ -31,7 +38,8 @@ COPY . .
 # ellos, el UID 1000 ya es el duenio y puede escribir.
 RUN useradd -m -u 1000 botuser \
     && mkdir -p /app/data /app/data/logs /app/data/backups /app/data/proposals /app/sre_vector_db \
-    && chown -R botuser:botuser /app
+       /home/botuser/.cache /home/botuser/.config \
+    && chown -R botuser:botuser /app /home/botuser
 USER botuser
 
 # Healthcheck sin curl y contra el puerto real configurado.
