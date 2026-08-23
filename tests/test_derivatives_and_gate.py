@@ -10,6 +10,7 @@ import sys
 from datetime import date, timedelta
 
 import pytest
+import sqlite3
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -188,6 +189,36 @@ def test_el_reloj_desfasado_frena_todo():
                                   db_ok=True, market_open=True, clock_drift_seconds=600)
     assert r.allow is False
     assert r.code == "RELOJ_DESFASADO"
+
+
+def test_mercado_cerrado_precede_a_una_sesion_broker_caida():
+    """Un domingo se explica como mercado cerrado y no fuerza al bróker."""
+    r = gate.check_session_health(kill_switch_active=False, broker_session_ok=False,
+                                  db_ok=True, market_open=False)
+    assert r.allow is False
+    assert r.code == "MERCADO_CERRADO"
+
+
+def test_recuperar_ordenes_inicializa_una_base_nueva(tmp_path):
+    """El primer arranque no cae si todavía nunca hubo una propuesta."""
+    import ac_db
+    import l_order_confirmation as orders
+
+    original_path = ac_db.DB_PATH
+    original_pragmas = ac_db._pragmas_applied
+    db = tmp_path / "trading_system.db"
+    try:
+        ac_db.DB_PATH = str(db)
+        ac_db._pragmas_applied = False
+        orders.recover_orphaned_orders(object(), object(), object())
+        with sqlite3.connect(db) as conn:
+            tablas = {row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+        assert "pending_orders" in tablas
+    finally:
+        ac_db.DB_PATH = original_path
+        ac_db._pragmas_applied = original_pragmas
 
 
 def test_los_limites_de_perdida_no_impiden_cerrar():
