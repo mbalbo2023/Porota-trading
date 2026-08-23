@@ -48,6 +48,7 @@ import hashlib
 import hmac
 import logging
 import os
+import json
 import secrets
 import threading
 import time
@@ -61,7 +62,7 @@ PASSWORD_PLANA = os.getenv("DASHBOARD_PASSWORD", "").strip()
 TOKEN_BEARER = os.getenv("DASHBOARD_ACCESS_TOKEN", "").strip()
 ENTORNO = os.getenv("ENVIRONMENT", "SANDBOX").strip().upper()
 
-SESION_HORAS = float(os.getenv("DASHBOARD_SESSION_HOURS", "12"))
+SESION_HORAS = float(os.getenv("DASHBOARD_SESSION_HOURS", "168"))
 MAX_INTENTOS = int(os.getenv("DASHBOARD_MAX_LOGIN_ATTEMPTS", "5"))
 BLOQUEO_MINUTOS = float(os.getenv("DASHBOARD_LOCKOUT_MINUTES", "15"))
 
@@ -70,6 +71,54 @@ ITERACIONES = 240_000
 _sesiones: Dict[str, float] = {}
 _intentos: Dict[str, list] = {}
 _lock = threading.Lock()
+SESSION_STORE_PATH = os.getenv(
+    "DASHBOARD_SESSION_STORE", "data/dashboard_sessions.json").strip()
+_TOKEN_FINGERPRINT = hashlib.sha256(TOKEN_BEARER.encode("utf-8")).hexdigest()
+
+
+def _persistir_sesiones_sin_lock() -> None:
+    """Guarda sesiones opacas para que sobrevivan recreaciones del contenedor."""
+    if not SESSION_STORE_PATH:
+        return
+    try:
+        carpeta = os.path.dirname(SESSION_STORE_PATH) or "."
+        os.makedirs(carpeta, exist_ok=True)
+        temporal = f"{SESSION_STORE_PATH}.{os.getpid()}.tmp"
+        with open(temporal, "w", encoding="utf-8") as archivo:
+            json.dump({
+                "token_fingerprint": _TOKEN_FINGERPRINT,
+                "sessions": _sesiones,
+            }, archivo, sort_keys=True)
+        os.chmod(temporal, 0o600)
+        os.replace(temporal, SESSION_STORE_PATH)
+    except Exception as exc:
+        logger.warning("No se pudieron persistir las sesiones del dashboard: %s", exc)
+
+
+def _cargar_sesiones() -> None:
+    if not SESSION_STORE_PATH or not os.path.exists(SESSION_STORE_PATH):
+        return
+    try:
+        with open(SESSION_STORE_PATH, encoding="utf-8") as archivo:
+            guardado = json.load(archivo)
+        # Rotar el token revoca todas las sesiones anteriores.
+        if guardado.get("token_fingerprint") != _TOKEN_FINGERPRINT:
+            _sesiones.clear()
+            _persistir_sesiones_sin_lock()
+            return
+        ahora = time.time()
+        _sesiones.update({
+            str(sesion): float(vence)
+            for sesion, vence in guardado.get("sessions", {}).items()
+            if float(vence) > ahora
+        })
+        _persistir_sesiones_sin_lock()
+    except Exception as exc:
+        _sesiones.clear()
+        logger.warning("Almacén de sesiones inválido; se descarta de forma segura: %s", exc)
+
+
+_cargar_sesiones()
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +242,7 @@ def login(usuario: str, password: str, origen: str = "desconocido") -> Optional[
         _intentos.pop(origen, None)
         sesion = secrets.token_urlsafe(32)
         _sesiones[sesion] = time.time() + SESION_HORAS * 3600
+        _persistir_sesiones_sin_lock()
         logger.info("Login correcto desde %s.", origen)
         return sesion
 
@@ -210,6 +260,7 @@ def crear_sesion_desde_token(token: Optional[str], origen: str = "token_url") ->
     with _lock:
         sesion = secrets.token_urlsafe(32)
         _sesiones[sesion] = time.time() + SESION_HORAS * 3600
+        _persistir_sesiones_sin_lock()
     logger.info("Sesión de navegador creada desde token válido (%s).", origen)
     return sesion
 
@@ -223,6 +274,7 @@ def sesion_valida(identificador: Optional[str]) -> bool:
             return False
         if time.time() > vence:
             _sesiones.pop(identificador, None)
+            _persistir_sesiones_sin_lock()
             return False
         return True
 
@@ -231,6 +283,7 @@ def cerrar_sesion(identificador: Optional[str]) -> None:
     if identificador:
         with _lock:
             _sesiones.pop(identificador, None)
+            _persistir_sesiones_sin_lock()
 
 
 def token_valido(token: Optional[str]) -> bool:
