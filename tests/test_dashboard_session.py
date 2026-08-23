@@ -105,3 +105,15 @@ def test_produccion_rechaza_sesion_sin_vencimiento(monkeypatch):
     problemas = auth.validar_configuracion()
     assert any("solo está permitido" in problema for problema in problemas)
 
+def test_actividad_en_vivo_responde_con_sesion_valida(monkeypatch):
+    token = _preparar(monkeypatch)
+    cliente = TestClient(dashboard.app)
+
+    entrada = cliente.get("/vivo?token=" + token, follow_redirects=False)
+    assert entrada.status_code == 303
+    assert entrada.headers["location"] == "/vivo"
+
+    respuesta = cliente.get("/vivo")
+    assert respuesta.status_code == 200
+    assert "Actividad en vivo" in respuesta.text
+
