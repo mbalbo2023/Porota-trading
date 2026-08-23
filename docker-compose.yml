@@ -18,10 +18,23 @@ services:
     image: porota-trading-bot:16.2
     container_name: porota_trading_bot
     restart: unless-stopped
+    # Todo el sistema de archivos de la imagen queda inmutable. Solo los
+    # montajes declarados abajo y los tmpfs pueden recibir escrituras.
+    read_only: true
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      XDG_CACHE_HOME: /home/botuser/.cache
+      MPLCONFIGDIR: /tmp/matplotlib
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+      - /home/botuser/.config:rw,noexec,nosuid,size=16m
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env
       - ./sre_vector_db:/app/sre_vector_db
+      # Modelos descargables sobreviven a cada recreación sin escribirse
+      # dentro de la capa inmutable de la imagen.
+      - ./model_cache:/home/botuser/.cache
     ports:
       # CORREGIDO EN v16.2 - dos problemas en una sola linea.
       #
@@ -89,13 +102,14 @@ services:
       - -c
       - >-
         mkdir -p /app/data/logs /app/data/backups /app/data/proposals
-        /app/sre_vector_db &&
-        chown -R 1000:1000 /app/data /app/sre_vector_db &&
+        /app/sre_vector_db /home/botuser/.cache &&
+        chown -R 1000:1000 /app/data /app/sre_vector_db /home/botuser/.cache &&
         chown 1000:1000 /app/.env &&
         chmod 600 /app/.env
     volumes:
       - ./data:/app/data
       - ./sre_vector_db:/app/sre_vector_db
+      - ./model_cache:/home/botuser/.cache
       - ./.env:/app/.env
     security_opt:
       - no-new-privileges:true
@@ -112,6 +126,10 @@ services:
     image: chromadb/chroma:0.5.23
     container_name: porota_sre_chromadb
     restart: unless-stopped
+    # Reduce escrituras accidentales de Python. Chroma mantiene rootfs
+    # escribible por ahora porque su imagen oficial crea /chroma/chroma.log.
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - ./sre_vector_db:/chroma/chroma
     healthcheck:
