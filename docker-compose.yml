@@ -61,6 +61,10 @@ services:
       # El bot no necesita ninguna capability del kernel: hace HTTP, escribe
       # archivos y habla SQLite.
       - ALL
+    # Evita que un bug o proceso comprometido agote la tabla de procesos del
+    # Droplet mediante un fork bomb. Es un límite holgado para los hilos y
+    # subprocesos legítimos del bot.
+    pids_limit: 256
     deploy:
       resources:
         limits:
