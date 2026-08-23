@@ -317,10 +317,13 @@ def check_session_health(*, kill_switch_active: bool, broker_session_ok: bool,
         return result.block("KILL_SWITCH_ACTIVO")
     if not db_ok:
         return result.block("BASE_DE_DATOS_CAIDA")
-    if not broker_session_ok:
-        return result.block("SIN_SESION_BROKER")
+    # Fuera de rueda no hace falta una sesión con el bróker para concluir
+    # que no se opera. Priorizar MERCADO_CERRADO evita clasificar un fin de
+    # semana como una falla de autenticación y evita reintentos inútiles.
     if not market_open:
         return result.block("MERCADO_CERRADO")
+    if not broker_session_ok:
+        return result.block("SIN_SESION_BROKER")
     if abs(clock_drift_seconds) > CLOCK_DRIFT_MAX_SECONDS:
         return result.block("RELOJ_DESFASADO")
     return result
