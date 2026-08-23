@@ -1375,44 +1375,13 @@ def main():
     threading.Thread(target=confirmations_thread_loop, args=(ppi, notifier), daemon=True).start()
 
     scheduler = BackgroundScheduler(timezone=SERVER_TIMEZONE)
-    scheduler.add_job(send_weekly_report_job, "cron", day_of_week="sun", hour=20,
-                       timezone=SERVER_TIMEZONE, args=[notifier])
-    scheduler.add_job(run_monthly_autotune_job, "cron", day=1, hour=1, timezone=SERVER_TIMEZONE)
-    # NUEVO EN v11.0: poda mensual de signals/noticias en bruto (ver
-    # run_monthly_data_retention_job) — corre 30 min después del
-    # auto-tuning, mismo día, para no competir con él por la base.
-    scheduler.add_job(run_monthly_data_retention_job, "cron", day=1, hour=1, minute=30,
-                       timezone=SERVER_TIMEZONE)
+    # Backups, macro, noticias e informes corren en az_maintenance_scheduler,
+    # propiedad del supervisor siempre activo. Aquí quedan únicamente tareas
+    # que necesitan al motor bursátil y sus clientes ya inicializados.
     scheduler.add_job(market_open_job, "cron", day_of_week="mon-fri", hour=MARKET_OPEN_HOUR, minute=0,
                        timezone=SERVER_TIMEZONE, args=[ppi, notifier])
     scheduler.add_job(market_close_job, "cron", day_of_week="mon-fri", hour=MARKET_CLOSE_HOUR, minute=5,
                        timezone=SERVER_TIMEZONE, args=[ppi, notifier])
-    # Nuevo en v10.0: noticias 24/7 cada 45 min fuera de rueda, diagnóstico
-    # semanal de aprendizaje (nunca escribe código solo — ver
-    # s_learning_engine.py) y chequeo semanal del modelo de IA (nunca lo
-    # cambia solo — ver t_model_guardian.py).
-    scheduler.add_job(news_247.run_continuous_scan, "interval", minutes=45)
-    scheduler.add_job(lambda: LearningEngine(notifier).analyze_and_diagnose(),
-                       "cron", day_of_week="sun", hour=19, timezone=SERVER_TIMEZONE)
-    scheduler.add_job(model_guardian.check_model_status, "cron", day_of_week="mon", hour=9,
-                       timezone=SERVER_TIMEZONE, args=[notifier])
-    # NUEVO EN v13.0 — hallazgo de infraestructura real (ver Documento
-    # Maestro v13, sección de bugs corregidos): docker-compose.yml (v12.0)
-    # nunca tuvo un mecanismo de backup equivalente al cronjob diario que
-    # install.sh sí configuraba para el despliegue systemd viejo — quien
-    # desplegara con Docker (el camino recomendado desde v12.0) se quedaba
-    # SIN backups automáticos de trading_system.db. Se agrega acá, dentro
-    # del propio proceso, para que el backup exista sin importar qué
-    # camino de despliegue se use.
-    scheduler.add_job(run_daily_backup_job, "cron", hour=3, minute=0, timezone=SERVER_TIMEZONE)
-    # NUEVO EN v15.0 — refresco de series macro históricas (BCRA, INDEC,
-    # dólares financieros). A las 2:30 AM: después del cierre de rueda y
-    # antes del backup, así el backup ya se lleva los datos del día. El
-    # INDEC publica el IPC una vez por mes, pero las series diarias
-    # (reservas, tipo de cambio) sí cambian todos los días hábiles.
-    scheduler.add_job(macro_history.refresh, "cron", hour=2, minute=30,
-                      timezone=SERVER_TIMEZONE, id="macro_refresh")
-
     # ------------------------------------------------------------------ #
     # NUEVO EN v14.0
     # ------------------------------------------------------------------ #
@@ -1430,10 +1399,6 @@ def main():
     #    el reinicio tiene que salir apenas el sistema quede libre.
     scheduler.add_job(process_restart_requests_job, "interval",
                        seconds=int(os.getenv("RESTART_CHECK_INTERVAL_SECONDS", "30")),
-                       args=[notifier])
-    # 4) Informe mensual gerencial (ver z_reports_engine.py): el primer día
-    #    de cada mes, con el mes cerrado.
-    scheduler.add_job(send_monthly_report_job, "cron", day=1, hour=9, timezone=SERVER_TIMEZONE,
                        args=[notifier])
     scheduler.start()
 
