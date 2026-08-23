@@ -63,28 +63,50 @@ jobs:
         # funciona.
         # =====================================================================
         uses: appleboy/ssh-action@v1.2.0
+        # Root por SSH está deshabilitado en el Droplet. DO_USER debe ser
+        # porotaadmin; su sudo no interactivo está limitado por la política
+        # administrativa instalada y permite automatizar sin contraseñas.
+        env:
+          DEPLOY_REF: ${{ github.event.inputs.referencia }}
         with:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
+          envs: DEPLOY_REF
           script_stop: true
           script: |
             set -euo pipefail
             cd /opt/porota-trading
 
-            REFERENCIA="${{ github.event.inputs.referencia }}"
-            [ -z "$REFERENCIA" ] && REFERENCIA="origin/main"
+            # El input llega como variable de entorno del action, no como
+            # texto interpolado dentro del shell remoto. Así no puede inyectar
+            # comandos aunque contenga caracteres especiales.
+            REFERENCIA="${DEPLOY_REF:-origin/main}"
 
-            ANTERIOR=$(git rev-parse HEAD)
+            ANTERIOR=$(sudo git rev-parse HEAD)
             echo "Version actual: $ANTERIOR"
 
-            git fetch origin --tags
-            git checkout --detach "$REFERENCIA"
-            NUEVA=$(git rev-parse HEAD)
+            sudo git fetch origin --tags
+            if ! sudo git rev-parse --verify "${REFERENCIA}^{commit}" >/dev/null 2>&1; then
+              echo "Referencia inexistente o no desplegable: $REFERENCIA"
+              exit 1
+            fi
+            sudo git checkout --detach "$REFERENCIA"
+            NUEVA=$(sudo git rev-parse HEAD)
             echo "Desplegando: $NUEVA"
 
-            docker compose build
-            docker compose up -d
+            sudo docker compose build
+
+            # La referencia elegida vuelve a pasar la suite en la misma imagen
+            # que se desplegará. Después se toma un backup SQLite online antes
+            # de reemplazar los contenedores.
+            sudo docker run --rm \
+              -v /opt/porota-trading/.github:/app/.github:ro \
+              --entrypoint pytest porota-trading-bot:16.2 -q
+            sudo docker compose run --rm --no-deps \
+              --entrypoint python bot az_maintenance_job.py backup
+
+            sudo docker compose up -d
 
             PUERTO=$(grep -E '^DASHBOARD_PORT=' .env | cut -d= -f2 || echo 8000)
             PUERTO=${PUERTO:-8000}
@@ -104,8 +126,8 @@ jobs:
 
             if [ "$SANO" -ne 1 ]; then
               echo "Sin respuesta sana en 120 segundos. Volviendo a $ANTERIOR."
-              git checkout --detach "$ANTERIOR"
-              docker compose up -d --build
+              sudo git checkout --detach "$ANTERIOR"
+              sudo docker compose up -d --build
               exit 1
             fi
 
@@ -113,7 +135,7 @@ jobs:
             # 200 tambien cuando esta degradado, y promover algo degradado es
             # lo mismo que no verificar.
             echo "Despliegue confirmado en $NUEVA."
-            docker compose ps
+            sudo docker compose ps
 
       - name: Resumen
         if: always()
