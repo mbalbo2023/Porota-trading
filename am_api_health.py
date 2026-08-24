@@ -38,6 +38,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
+import bb_runtime_status as runtime_status
 
 logger = logging.getLogger("api_health")
 
@@ -84,7 +85,7 @@ def _con_cache(clave: str, fn: Callable[[], Chequeo]) -> Chequeo:
         # con el motivo, que es información útil, y se sigue.
         resultado = Chequeo(nombre=clave, critico=False, estado=ROJO,
                             detalle=f"El propio chequeo falló: {e}")
-    resultado.verificado = datetime.now().isoformat(timespec="seconds")
+    resultado.verificado = runtime_status.now_iso()
     _cache[clave] = (ahora, resultado)
     return resultado
 
@@ -103,21 +104,32 @@ def chequear_ppi(ppi_client) -> Chequeo:
     """PPI es la única dependencia sin la cual el sistema no tiene sentido:
     es el precio con el que se dimensiona y el canal por el que se ejecuta."""
     c = Chequeo("PPI — REST (bróker)", critico=True)
-    if ppi_client is None:
-        c.estado, c.detalle = ROJO, "El cliente de PPI no está inicializado."
-        return c
-    if getattr(ppi_client, "_circuit_open", False):
-        c.estado, c.detalle = ROJO, "El circuit breaker está abierto por errores repetidos."
-        return c
-
-    saldos, ms = _medir(ppi_client.get_available_balance)
-    c.latencia_ms = ms
-    if saldos is None:
-        c.estado, c.detalle = ROJO, "No devolvió saldos: sesión caída o token vencido."
-    elif ms > HEALTH_SLOW_MS:
-        c.estado, c.detalle = AMARILLO, f"Responde, pero lento ({ms} ms)."
+    status = (getattr(ppi_client, "auth_status", lambda: {})()
+              if ppi_client is not None else {})
+    event = runtime_status.latest_event("PPI_AUTH")
+    rest_event = runtime_status.latest_event("PPI_REST")
+    state = status.get("state") or event.get("state")
+    detail = status.get("last_error") or event.get("detail") or "Sin verificación registrada."
+    rest_age = runtime_status.age_seconds(rest_event.get("timestamp"))
+    auth_age = runtime_status.age_seconds(event.get("timestamp"))
+    if status.get("authenticated"):
+        c.estado, c.detalle = VERDE, "Sesión autenticada; estado leído localmente, sin consumir cuota."
+        latency = status.get("last_call_latency_ms")
+        c.latencia_ms = int(latency) if latency is not None else None
+    elif rest_event.get("state") == "OK" and rest_age is not None and rest_age <= 900:
+        c.estado, c.detalle = VERDE, "REST respondió correctamente en los últimos 15 minutos."
+    elif state == "OK":
+        edad = "desconocida" if auth_age is None else f"{int(auth_age / 60)} min"
+        c.estado, c.detalle = AMARILLO, (
+            f"Última autenticación conocida correcta hace {edad}; no se prueba desde el panel."
+        )
+    elif state in ("RATE_LIMIT", "COOLDOWN"):
+        c.estado, c.detalle = ROJO, f"Autenticación en cooldown/cuota: {detail}"
+    elif state:
+        c.estado, c.detalle = ROJO, f"PPI no autenticado: {detail}"
     else:
-        c.estado, c.detalle = VERDE, f"Sesión activa, saldos legibles ({ms} ms)."
+        c.estado, c.detalle = GRIS, "Todavía no existe un intento de autenticación registrado."
+    c.extras.update({"evento_auth": event, "evento_rest": rest_event, "estado_local": status})
     return c
 
 
@@ -126,26 +138,20 @@ def chequear_stream_ppi() -> Chequeo:
     mira la antigüedad del último tick y no el estado del socket: un socket
     abierto sin datos es la falla más engañosa que tiene este sistema."""
     c = Chequeo("PPI — WebSocket (tiempo real)", critico=False)
-    try:
-        import x_ppi_websocket as ws
-        ultimo = getattr(ws, "get_last_tick_epoch", lambda: None)()
-    except Exception as e:
-        c.estado, c.detalle = ROJO, f"No se pudo consultar el stream: {e}"
-        return c
-
-    if not ultimo:
-        c.estado, c.detalle = AMARILLO, ("Sin ticks todavía. Normal fuera de rueda; "
-                                         "en horario de mercado, revisar la suscripción.")
-        return c
-    antiguedad = time.time() - ultimo
-    c.extras["antiguedad_segundos"] = int(antiguedad)
-    if antiguedad < 60:
-        c.estado, c.detalle = VERDE, f"Último tick hace {int(antiguedad)} s."
-    elif antiguedad < 600:
-        c.estado, c.detalle = AMARILLO, f"Último tick hace {int(antiguedad / 60)} min."
+    event = runtime_status.latest_event("STREAM")
+    state = event.get("state")
+    age = runtime_status.age_seconds(event.get("timestamp"))
+    if state == "CONNECTED" and age is not None and age <= 600:
+        c.estado, c.detalle = VERDE, event.get("detail") or "Stream conectado."
+    elif state == "CONNECTED":
+        c.estado, c.detalle = AMARILLO, "El último estado conectado tiene más de 10 minutos."
+    elif state in ("AUTH_BLOCKED", "RETRY_ESCALATION"):
+        c.estado, c.detalle = ROJO, event.get("detail") or state
+    elif state in ("DISCONNECTED", "STALE"):
+        c.estado, c.detalle = AMARILLO, event.get("detail") or state
     else:
-        c.estado, c.detalle = ROJO, ("El stream no entrega datos hace más de 10 minutos. "
-                                     "El bot está cayendo a consultas REST.")
+        c.estado, c.detalle = GRIS, "Sin estado persistido del stream."
+    c.extras["evento"] = event
     return c
 
 
@@ -153,22 +159,19 @@ def chequear_gemini() -> Chequeo:
     """Se consulta el registro de modelos en vez de gastar una inferencia real:
     el registro ya sabe qué modelo está activo y si hubo degradación."""
     c = Chequeo("Google Gemini — motor de decisión", critico=True)
-    try:
-        import af_model_registry as reg
-        estado = reg.get_estado_actual() if hasattr(reg, "get_estado_actual") else {}
-    except Exception as e:
-        c.estado, c.detalle = ROJO, f"No se pudo leer el registro de modelos: {e}"
-        return c
-
-    modelo = estado.get("modelo_activo")
-    degradado = estado.get("degradado", False)
-    if not modelo:
-        c.estado, c.detalle = ROJO, "Ningún modelo disponible."
-    elif degradado:
-        c.estado, c.detalle = AMARILLO, f"Operando con modelo de respaldo: {modelo}."
+    report = runtime_status.read_verifier_report("gemini")
+    raw = str(report.get("data", "")).upper()
+    age = runtime_status.age_seconds(report.get("mtime"))
+    if (report and age is not None and age <= 86400 and "FALLA" not in raw
+            and ("OK" in raw or "CORRECT" in raw)):
+        c.estado, c.detalle = VERDE, "Última verificación de inferencia y function calling: correcta."
+    elif report and "FALLA" not in raw and ("OK" in raw or "CORRECT" in raw):
+        c.estado, c.detalle = AMARILLO, "La última verificación correcta tiene más de 24 horas."
+    elif report:
+        c.estado, c.detalle = ROJO, "El último verificador de Gemini registró una falla."
     else:
-        c.estado, c.detalle = VERDE, f"Modelo activo: {modelo}."
-    c.extras.update(estado)
+        c.estado, c.detalle = GRIS, "Sin informe persistido; ejecutar el verificador de Gemini."
+    c.extras.update(report)
     return c
 
 
@@ -177,17 +180,28 @@ def chequear_telegram(notifier) -> Chequeo:
     caído, el kill switch puede saltar sin que nadie se entere — que es
     exactamente el escenario que el kill switch existe para evitar."""
     c = Chequeo("Telegram — notificaciones y control", critico=False)
-    if notifier is None:
-        c.estado, c.detalle = GRIS, "Notificador no inicializado."
-        return c
-    fallidas = getattr(notifier, "pending_failed_count", lambda: 0)()
+    try:
+        import b_notifiers
+        fallidas = len(b_notifiers.get_failed_notifications(limit=100))
+    except Exception:
+        fallidas = 0
+    report = runtime_status.read_verifier_report("telegram")
+    raw = str(report.get("data", "")).upper()
+    age = runtime_status.age_seconds(report.get("mtime"))
     if fallidas == 0:
-        c.estado, c.detalle = VERDE, "Sin notificaciones fallidas pendientes."
+        if (report and age is not None and age <= 86400 and "FALLA" not in raw
+                and ("OK" in raw or "CORRECT" in raw)):
+            c.estado, c.detalle = VERDE, "Verificación correcta y sin notificaciones fallidas."
+        elif report and "FALLA" not in raw and ("OK" in raw or "CORRECT" in raw):
+            c.estado, c.detalle = AMARILLO, "Sin fallas pendientes; la prueba correcta tiene más de 24 horas."
+        else:
+            c.estado, c.detalle = GRIS, "Sin fallas pendientes; falta una verificación persistida reciente."
     elif fallidas < 5:
         c.estado, c.detalle = AMARILLO, f"{fallidas} notificaciones fallidas en cola."
     else:
         c.estado, c.detalle = ROJO, (f"{fallidas} notificaciones fallidas: es probable que no te "
                                      "esté llegando nada. Verificar el token y el chat.")
+    c.extras.update(report)
     return c
 
 
@@ -240,20 +254,15 @@ def chequear_iol() -> Chequeo:
         c.estado = GRIS
         c.detalle = "Desactivado a propósito hasta que exista la cuenta. No es una falla."
         return c
-    try:
-        import ak_iol_client
-        cliente = ak_iol_client.IOLClient()
-        if not cliente.enabled:
-            c.estado, c.detalle = AMARILLO, "Activado pero sin credenciales cargadas."
-            return c
-        cot, ms = _medir(lambda: cliente.get_cotizacion("GGAL"))
-        c.latencia_ms = ms
-        if cot:
-            c.estado, c.detalle = VERDE, f"Autenticación y consulta correctas ({ms} ms)."
-        else:
-            c.estado, c.detalle = ROJO, "Autenticó pero no devolvió cotización."
-    except Exception as e:
-        c.estado, c.detalle = ROJO, f"Error consultando IOL: {e}"
+    report = runtime_status.read_verifier_report("iol")
+    raw = str(report.get("data", "")).upper()
+    if report and "FALLA" not in raw and ("OK" in raw or "CORRECT" in raw):
+        c.estado, c.detalle = VERDE, "Última verificación persistida: correcta."
+    elif report:
+        c.estado, c.detalle = ROJO, "La última verificación persistida registró una falla."
+    else:
+        c.estado, c.detalle = AMARILLO, "Activado, pero sin informe persistido reciente."
+    c.extras.update(report)
     return c
 
 
@@ -339,7 +348,7 @@ def tablero(ppi_client=None, notifier=None) -> dict:
         "estado_general": general,
         "circulo_general": CIRCULO[general],
         "resumen": resumen,
-        "verificado": datetime.now().isoformat(timespec="seconds"),
+        "verificado": runtime_status.now_iso(),
         "chequeos": [
             {"nombre": c.nombre, "estado": c.estado, "circulo": c.circulo,
              "critico": c.critico, "detalle": c.detalle,

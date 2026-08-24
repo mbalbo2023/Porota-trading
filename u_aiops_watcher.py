@@ -31,6 +31,8 @@ AIOPS_CONTAMINATION = float(os.getenv("AIOPS_CONTAMINATION", "0.05"))
 AIOPS_POLL_INTERVAL_SECONDS = int(os.getenv("AIOPS_POLL_INTERVAL_SECONDS", "30"))
 AIOPS_RETRAIN_EVERY_N_SAMPLES = int(os.getenv("AIOPS_RETRAIN_EVERY_N_SAMPLES", "200"))
 AIOPS_MIN_TRAINING_SAMPLES = int(os.getenv("AIOPS_MIN_TRAINING_SAMPLES", "20"))
+AIOPS_ALERT_COOLDOWN_SECONDS = int(os.getenv("AIOPS_ALERT_COOLDOWN_SECONDS", "1800"))
+AIOPS_CONFIRM_ANOMALY_SAMPLES = int(os.getenv("AIOPS_CONFIRM_ANOMALY_SAMPLES", "3"))
 
 # Rangos "normales" declarados para el arranque en frío (Instrucción 6):
 # latencia_ms, uso_ram_mb, slippage_pct. Se pueden ajustar por .env sin
@@ -108,6 +110,8 @@ class AIOpsWatcher:
         self._model = None
         self._thread: Optional[threading.Thread] = None
         self._stop_flag = threading.Event()
+        self._consecutive_anomalies = 0
+        self._last_alert_epoch = 0.0
 
     def _train_initial_model(self):
         try:
@@ -162,13 +166,20 @@ class AIOpsWatcher:
 
                 status = self._model.predict(np.array([point]))
                 if status[0] == -1:
+                    self._consecutive_anomalies += 1
                     reason = (f"AIOps: anomalía detectada (latencia={point[0]:.0f}ms, "
                               f"RAM={point[1]:.0f}MB, slippage={point[2]:.3f}%)")
-                    logger.warning(reason)
-                    try:
-                        self.on_anomaly(reason)
-                    except Exception as e:
-                        logger.error("Callback on_anomaly falló: %s", e)
+                    if (self._consecutive_anomalies >= AIOPS_CONFIRM_ANOMALY_SAMPLES and
+                            time.time() - self._last_alert_epoch >= AIOPS_ALERT_COOLDOWN_SECONDS):
+                        logger.warning("%s; confirmada en %s muestras consecutivas.",
+                                       reason, self._consecutive_anomalies)
+                        self._last_alert_epoch = time.time()
+                        try:
+                            self.on_anomaly(reason)
+                        except Exception as e:
+                            logger.error("Callback on_anomaly falló: %s", e)
+                else:
+                    self._consecutive_anomalies = 0
 
                 if samples_since_retrain >= AIOPS_RETRAIN_EVERY_N_SAMPLES:
                     self._retrain_with_history()

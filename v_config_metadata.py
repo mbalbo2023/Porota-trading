@@ -55,7 +55,7 @@ CONFIG_METADATA = [
     ("PRICE_REVALIDATION_TOLERANCE_PCT", "Ejecución", "% máximo que el precio puede moverse antes de ejecutar/confirmar.", "1.0", False),
     ("POLL_CONFIRMATIONS_INTERVAL_SECONDS", "Ejecución", "Cada cuántos segundos se revisan los botones de Telegram (modo confirm).", "4", False),
     # --- Scalping (nuevo en v10.5) ---
-    ("SCALPING_MODE", "Scalping", "Activa marcos 1M/5M y horizonte en minutos, solo para CEDEARs.", "false", False),
+    ("SCALPING_MODE", "Scalping", "Solicita scalping; queda bloqueado hasta disponer de intradía contractual de PPI.", "false", False),
     ("SCALPING_TARGET_HOLD_MINUTES", "Scalping", "Minutos de mantenimiento esperado de una posición en modo scalping.", "30", False),
     ("SCALPING_SCAN_INTERVAL_SECONDS", "Scalping", "Segundos de pausa entre instrumentos en modo scalping.", "10", False),
     ("WIN_RATE_LOOKBACK_DAYS", "Scalping", "Días hacia atrás para el win rate mostrado en cada ejecución automática.", "30", False),
@@ -65,7 +65,12 @@ CONFIG_METADATA = [
     ("MAX_DISCOVERED_PER_TYPE", "Universo de instrumentos", "Tope de instrumentos descubiertos por tipo.", "40", False),
     ("MIN_LIQUIDITY_ARS", "Universo de instrumentos", "Volumen promedio mínimo (pesos) para analizar un instrumento.", "5000000", False),
     ("INSTRUMENT_WATCHLIST_PATH", "Universo de instrumentos", "Archivo con la watchlist de respaldo.", "n_instrument_watchlist.json", False),
-    ("TECHNICAL_DATA_SOURCE_CEDEARS", "Universo de instrumentos", "Fuente primaria del análisis técnico de CEDEARs: yfinance o ppi.", "yfinance", False),
+    ("TECHNICAL_DATA_SOURCE_CEDEARS", "Universo de instrumentos", "Fuente operativa del análisis técnico de CEDEARs.", "ppi", False),
+    ("YFINANCE_SHADOW_ONLY", "Universo de instrumentos", "Mantiene Yahoo aislado para investigación; nunca interviene en operaciones.", "true", False),
+    ("PPI_AUTH_RETRY_COOLDOWN_SECONDS", "Robustez API PPI", "Espera mínima tras un login fallido; compartida por todos los hilos.", "3600", False),
+    ("PPI_RATE_LIMIT_COOLDOWN_SECONDS", "Robustez API PPI", "Espera tras una respuesta 429/cuota excedida.", "3600", False),
+    ("AIOPS_ALERT_COOLDOWN_SECONDS", "AIOps (detección de anomalías)", "Tiempo mínimo entre alertas AIOps equivalentes.", "1800", False),
+    ("AIOPS_CONFIRM_ANOMALY_SAMPLES", "AIOps (detección de anomalías)", "Muestras anómalas consecutivas para confirmar una alerta.", "3", False),
     # --- Aprendizaje ---
     ("MIN_SAMPLE_SIZE_AUTOTUNE", "Aprendizaje", "Operaciones cerradas mínimas para permitir el ajuste mensual.", "30", False),
     ("SIGNALS_RETENTION_DAYS", "Aprendizaje", "Días que se conservan las filas de la tabla signals antes de podarse (mensual, junto al auto-tuning). No afecta closed_trades/learning_diagnostics.", "365", False),

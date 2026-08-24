@@ -14,6 +14,8 @@ import time
 from dotenv import load_dotenv
 
 load_dotenv()
+import bb_runtime_status
+bb_runtime_status.configure_process_timezone()
 
 PID_FILE = os.getenv("J_MAIN_PID_FILE", "data/j_main.pid")
 SUPERVISOR_POLL_SECONDS = 2

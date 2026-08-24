@@ -446,6 +446,19 @@ def refresh_universe_job(ppi):
     nunca se actualizaba — el propio archivo lo dejaba anotado como límite
     conocido. Ahora la suscripción sigue al universo real."""
     global active_universe, _permisos_de_cuenta
+    if not getattr(ppi, "is_authenticated", lambda: False)():
+        active_universe = []
+        _permisos_de_cuenta = {}
+        logger.error("Universo no actualizado: PPI no está autenticado. No se abren posiciones.")
+        try:
+            import bb_runtime_status
+            bb_runtime_status.record_event(
+                "TRADING_GATE", "BLOCKED_PPI_AUTH",
+                "Universo vacío hasta recuperar autenticación PPI.",
+            )
+        except Exception:
+            pass
+        return
     # v16.2 — los permisos de la cuenta se sondean una vez por día, acá. El
     # método es no invasivo: se pide un presupuesto de orden, que simula y
     # devuelve el costo sin colocar nada. Se preguntan, no se asumen.
@@ -457,7 +470,11 @@ def refresh_universe_job(ppi):
 
     all_instruments = universe.build_universe(ppi)
     active_universe = universe.filter_by_liquidity(all_instruments, ppi)
-    universe.discover_observation_only(ppi)  # visibilidad extra, nunca entra a active_universe
+    observacion = getattr(universe, "discover_observation_only", None)
+    if callable(observacion):
+        observacion(ppi)
+    else:
+        logger.info("Descubrimiento de observación no disponible; se omite sin afectar el universo operable.")
     logger.info("Universo activo tras filtro de liquidez: %s de %s instrumentos.",
                 len(active_universe), len(all_instruments))
     _resubscribe_stream()
@@ -513,13 +530,10 @@ def scalping_preflight(notifier) -> dict:
     """
     chequeos = []
 
-    # 1) Velas de 1 minuto disponibles (sin esto no hay análisis de scalping).
-    try:
-        muestra = technical_engine._fetch_bars("AAPL", "1m", "1d")
-        chequeos.append(("Velas de 1 minuto (yfinance)", muestra is not None,
-                         "sin datos intradía de 1m no hay señal de scalping posible"))
-    except Exception as e:
-        chequeos.append(("Velas de 1 minuto (yfinance)", False, str(e)[:80]))
+    # 1) El bot vivo no usa Yahoo. Hasta que PPI entregue intradía suficiente,
+    #    scalping se considera no habilitado y no abre entradas.
+    chequeos.append(("Velas intradiarias contractuales de PPI", False,
+                     "Yahoo quedó aislado para investigación; falta 1m/5m confiable de PPI"))
 
     # 2) Stream de tiempo real: con polling HTTP y 2 req/s, una vuelta de
     #    escaneo de scalping no cierra a tiempo.
@@ -559,8 +573,8 @@ def scalping_preflight(notifier) -> dict:
         lineas.append("\n*Qué revisar:*")
         for nombre, motivo in fallidos:
             lineas.append(f"• {nombre}: {motivo}")
-        lineas.append("\nEl bot arranca igual en modo scalping, pero con estas condiciones "
-                      "sin cumplir el resultado no va a ser el esperado.")
+        lineas.append("\nEl proceso arranca para diagnóstico, pero las entradas de scalping "
+                      "quedan bloqueadas mientras falte intradía contractual.")
     else:
         lineas.append("\nTodas las condiciones del modo scalping están dadas.")
 
@@ -666,6 +680,13 @@ def run_monthly_data_retention_job():
 
 def market_open_job(ppi, notifier):
     load_tuned_thresholds()
+    if not getattr(ppi, "is_authenticated", lambda: False)():
+        logger.error("Apertura sin sesión PPI: se informa y el motor queda sin entradas nuevas.")
+        notifier.send_telegram(
+            "🔴 *PPI NO AUTENTICADO*\nEl bot sigue encendido para diagnóstico, pero no "
+            "evaluará ni abrirá posiciones. El reintento de login está limitado a una vez por hora."
+        )
+        return
     refresh_universe_job(ppi)
     daily_report.send_market_open_email(ppi, notifier)
 
@@ -770,6 +791,10 @@ _permisos_de_cuenta: dict = {}
 def evaluate_instrument(inst, ppi, gemini, notifier, ccl_cached,
                         news_cached=None, macro_cached=None, contexto=None):
     ticker = inst.ticker
+
+    if not getattr(ppi, "is_authenticated", lambda: False)():
+        log_signal(ticker, "REJECTED_PPI_AUTH", "PPI no autenticado; operación bloqueada.")
+        return
 
     if risk_guardian.is_halted():
         return  # kill switch activo: no se evalúan instrumentos nuevos hasta revisión manual
@@ -1284,10 +1309,12 @@ def main():
             return None
         try:
             import resource
-            import time as _time
-            t0 = _time.time()
-            ppi.get_market_data("AL30", "BONOS", "INMEDIATA")
-            latency_ms = (_time.time() - t0) * 1000
+            estado_ppi = getattr(ppi, "auth_status", lambda: {})()
+            if not estado_ppi.get("authenticated"):
+                return None
+            latency_ms = estado_ppi.get("last_call_latency_ms")
+            if latency_ms is None:
+                return None
             ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
             recent_slippage = position_manager.get_recent_avg_slippage_pct() \
                 if hasattr(position_manager, "get_recent_avg_slippage_pct") else 0.0
@@ -1306,8 +1333,8 @@ def main():
         # nunca se actualizó para usar el método nuevo. El bug que la
         # autoauditoría decía haber cerrado seguía presente en el único
         # lugar que importaba.
-        ppi.force_circuit_open(reason=f"AIOps: {reason}")
-        notifier.notify_error(f"⚠️ AIOps activó el Circuit Breaker preventivamente: {reason}")
+        # Una anomalía estadística aislada no demuestra una caída del broker.
+        logger.warning("AIOps registró una anomalía sin modificar el circuito: %s", reason)
         # NUEVO EN v13.0 — se persiste también como anomalía de AIOps (no
         # solo como evento de Circuit Breaker) para que la sección
         # SRE/Monitoreo del dashboard pueda mostrar ambos por separado.
@@ -1497,7 +1524,9 @@ def main():
             # que era el hallazgo de la auditoría sobre bucles bloqueantes.
             try:
                 cedears = [i.ticker for i in active_universe if i.asset_class == "CEDEARS"]
-                if cedears:
+                if (cedears and
+                        technical_engine.TECHNICAL_DATA_SOURCE_CEDEARS != "ppi" and
+                        not technical_engine.YFINANCE_SHADOW_ONLY):
                     technical_engine.prefetch_bars(cedears, scalping=SCALPING_MODE)
             except Exception as e:
                 # El prefetch es una optimización: si falla, cada instrumento

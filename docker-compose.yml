@@ -12,10 +12,12 @@
 # cuenta para resolver la interpolacion de ${DASHBOARD_PORT} de mas abajo.)
 services:
   bot:
+    init: true
+    stop_grace_period: 45s
     build: .
     # Nombre explicito: permite auditar y promover exactamente la misma
     # imagen en CI, Sandbox y produccion, sin depender del nombre del directorio.
-    image: porota-trading-bot:16.2
+    image: porota-trading-bot:16.3
     container_name: porota_trading_bot
     restart: unless-stopped
     # Todo el sistema de archivos de la imagen queda inmutable. Solo los
@@ -94,7 +96,7 @@ services:
 
   init_permissions:
     # Reutiliza la misma imagen: no agrega software ni una version paralela.
-    image: porota-trading-bot:16.2
+    image: porota-trading-bot:16.3
     user: "0:0"
     restart: "no"
     command:

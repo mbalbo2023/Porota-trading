@@ -58,11 +58,8 @@ from typing import Optional, Dict, Any, Callable
 from dotenv import load_dotenv
 from ppi_client.ppi import PPI
 
-# NUEVO EN v13.0 — solo se usa para el diagnóstico puntual de
-# _diagnose_sandbox_clientkey() (ver más abajo). No reemplaza a la
-# librería oficial ppi-client en ningún endpoint real.
-import requests
 import ac_db  # NUEVO EN v15.0 — conexión SQLite única (WAL + timeout)
+import bb_runtime_status as runtime_status
 
 DB_PATH = os.getenv("DB_PATH", "data/trading_system.db")
 
@@ -79,25 +76,7 @@ def _persist_system_event(component: str, state: str, detail: str = ""):
     vez de nada. Best-effort: si la escritura falla (ej. DB bloqueada un
     instante), no debe interrumpir la operatoria real del cliente PPI.
     """
-    try:
-        import sqlite3
-        conn = ac_db.connect_raw()
-        c = conn.cursor()
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS system_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                component TEXT,
-                state TEXT,
-                detail TEXT
-            )
-        """)
-        c.execute("INSERT INTO system_events (component, state, detail) VALUES (?, ?, ?)",
-                   (component, state, detail))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.debug("No se pudo persistir el evento de sistema %s/%s: %s", component, state, e)
+    runtime_status.record_event(component, state, detail)
 
 load_dotenv()
 logger = logging.getLogger("ppi_client_wrapper")
@@ -331,6 +310,22 @@ class ResilientPPIClient:
         self.notifier = notifier
         self.is_recovering = False
         self.client: Optional[PPI] = None
+        self._authenticated = False
+        self._auth_lock = threading.Lock()
+        self._auth_blocked_until = 0.0
+        self._auth_last_attempt = 0.0
+        self._auth_last_error = ""
+        self._last_call_latency_ms = None
+        self._last_call_epoch = None
+        # Sandbox informó explícitamente un máximo de 10 llamadas de login
+        # por hora. Una falla de login abre este circuito compartido y evita
+        # que cada ticker, health-check o WebSocket vuelva a autenticarse.
+        self.AUTH_RETRY_COOLDOWN_SECONDS = int(
+            os.getenv("PPI_AUTH_RETRY_COOLDOWN_SECONDS", "3600")
+        )
+        self.RATE_LIMIT_COOLDOWN_SECONDS = int(
+            os.getenv("PPI_RATE_LIMIT_COOLDOWN_SECONDS", "3600")
+        )
 
         # NUEVO EN v12.0 — Circuit Breaker real (Instrucción 7). Antes
         # (v11) cada llamada individual reintentaba su propia progresión
@@ -379,103 +374,88 @@ class ResilientPPIClient:
         """Reautentica explícitamente y devuelve un resultado verificable."""
         return self._login()
 
+    def is_authenticated(self) -> bool:
+        return bool(self._authenticated and self.client is not None)
+
+    def auth_status(self) -> dict:
+        """Estado local y barato para dashboard/AIOps; nunca toca la red."""
+        remaining = max(0, int(self._auth_blocked_until - time.time()))
+        return {
+            "authenticated": self.is_authenticated(),
+            "state": "OK" if self.is_authenticated() else (
+                "COOLDOWN" if remaining else "DISCONNECTED"
+            ),
+            "cooldown_remaining_seconds": remaining,
+            "last_attempt_epoch": self._auth_last_attempt or None,
+            "last_error": self._auth_last_error,
+            "circuit": self._circuit_state.value,
+            "last_call_latency_ms": self._last_call_latency_ms,
+            "last_call_epoch": self._last_call_epoch,
+        }
+
     def _login(self) -> bool:
+        now = time.time()
+        if now < self._auth_blocked_until:
+            return False
+        # Un único hilo puede consumir el intento de login de la ventana.
+        if not self._auth_lock.acquire(blocking=False):
+            return False
         try:
-            self.client = PPI(sandbox=self.is_sandbox)
-            self.client.account.login_api(self.api_key, self.api_secret)
-            self._token_obtenido_en = time.time()  # v15.0 — base del refresco proactivo
+            now = time.time()
+            if now < self._auth_blocked_until:
+                return False
+            self._auth_last_attempt = now
+            candidate = PPI(sandbox=self.is_sandbox)
+            candidate.account.login_api(self.api_key, self.api_secret)
+            self.client = candidate
+            self._authenticated = True
+            self._auth_last_error = ""
+            self._auth_blocked_until = 0.0
+            self._token_obtenido_en = time.time()
+            _persist_system_event("PPI_AUTH", "OK", "Sesión autenticada.")
             if self.is_recovering:
                 self.notifier.notify_recovery("API PPI")
                 self.is_recovering = False
             logger.info("Login PPI exitoso (sandbox=%s).", self.is_sandbox)
             return True
         except Exception as e:
-            # DECISIÓN DE EXPERTO v12.0 (pendiente #4 resuelta): no se puede
-            # verificar desde este entorno de desarrollo (sin acceso a red)
-            # si la librería oficial ppi-client necesita el header
-            # AuthorizedClient/ClientKey por dentro al usar sandbox=True
-            # (ver BITACORA_v12.0, entrada 8). En vez de dejar eso como una
-            # duda muda que solo se nota si el login falla en Sandbox real,
-            # se agrega acá un diagnóstico específico: si el login falla en
-            # modo sandbox, el mensaje de error apunta derecho a esa
-            # hipótesis concreta en vez de un log genérico "falló el login".
-            if self.is_sandbox:
-                logger.error(
-                    "Error autenticando contra PPI en SANDBOX: %s. Si el error menciona "
-                    "credenciales inválidas/no autorizado y las claves son correctas, "
-                    "verificar si la librería oficial 'ppi-client' requiere pasar el header "
-                    "'ClientKey: ppApiCliSB' de forma explícita para el entorno de Testing "
-                    "(ver aclaración de soporte de PPI documentada en BITACORA_v12.0, "
-                    "entrada 8) — sería la primera hipótesis a descartar antes de asumir "
-                    "que las credenciales están mal.", e,
-                )
-                # NUEVO EN v13.0 (Pendiente #4 de v12.0, resuelto con datos
-                # reales en vez de con una hipótesis permanente): si el
-                # login con la librería oficial falló Y el usuario cargó
-                # PPI_CLIENT_ID/PPI_CLIENT_KEY en el .env (variables de
-                # contingencia sugeridas en la auditoría de v12.0), se hace
-                # UN llamado de diagnóstico puro por REST directo — solo
-                # para confirmar o descartar la hipótesis del header
-                # ClientKey, nunca para reemplazar a ppi-client como
-                # cliente real (ver docstring de _diagnose_sandbox_clientkey).
-                self._diagnose_sandbox_clientkey()
-            else:
-                logger.error("Error autenticando contra PPI: %s", e)
+            safe_error = obfuscate_secret(str(e))
+            rate_limited = self._classify_error(e) == "RATE_LIMIT"
+            cooldown = (self.RATE_LIMIT_COOLDOWN_SECONDS if rate_limited
+                        else self.AUTH_RETRY_COOLDOWN_SECONDS)
+            self.client = None
+            self._authenticated = False
+            self._token_obtenido_en = 0.0
+            self._auth_last_error = safe_error
+            self._auth_blocked_until = time.time() + cooldown
+            state = "RATE_LIMIT" if rate_limited else "ERROR"
+            _persist_system_event(
+                "PPI_AUTH", state,
+                f"{safe_error}. Próximo intento: {runtime_status.epoch_iso(self._auth_blocked_until)}.",
+            )
+            logger.error(
+                "Autenticación PPI falló (%s). Se bloquean nuevos logins por %ss: %s",
+                state, cooldown, safe_error,
+            )
             if not self.is_recovering:
                 self.notifier.notify_error(
-                    f"Falla de conexión con API PPI ({e}). Entrando en modo recuperación."
+                    f"Falla de autenticación con PPI. No se abrirán posiciones y el próximo "
+                    f"intento será dentro de {cooldown // 60} minutos."
                 )
                 self.is_recovering = True
             return False
+        finally:
+            self._auth_lock.release()
 
     def _diagnose_sandbox_clientkey(self):
-        """
-        NUEVO EN v13.0 — cierre real del Pendiente #4 de v12.0 ("Header
-        ClientKey en Sandbox"). En v12.0 se había decidido, con criterio
-        correcto, NO modificar el login a ciegas basado en una suposición
-        no verificable sin red. Ahora que hace falta revisar variable por
-        variable qué está pendiente de configuración (pedido explícito de
-        v13), se agrega el chequeo real — pero acotado a un diagnóstico de
-        UN solo llamado HTTP, no a un reemplazo del cliente:
+        """Compatibilidad: el diagnóstico activo fue retirado.
 
-        Solo se ejecuta si el login con la librería oficial ya falló en
-        SANDBOX y el usuario cargó PPI_CLIENT_ID y PPI_CLIENT_KEY en el
-        .env (nuevas variables opcionales, ver v_config_metadata.py) — si
-        están vacías (el default), esta función no hace nada y el
-        diagnóstico sigue siendo el mismo mensaje de hipótesis de v12.0.
-
-        Si el llamado directo (mismo endpoint, headers AuthorizedClient/
-        ClientKey, igual que test_sandbox_connection.py de la auditoría)
-        confirma o descarta la hipótesis, se deja constancia CLARA en el
-        log de cuál de las dos es — información real, no una suposición
-        repetida en cada intento de login.
+        Nunca debe hacerse una segunda autenticación automática después de
+        fallar la librería oficial: consume la misma cuota y su antiguo URL
+        ni siquiera correspondía al Sandbox actual.
         """
-        client_id = os.getenv("PPI_CLIENT_ID", "").strip()
-        client_key = os.getenv("PPI_CLIENT_KEY", "").strip()
-        if not client_id and not client_key:
-            return  # nada que diagnosticar sin estas variables cargadas
-        try:
-            url = "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginToken"
-            headers = {"AuthorizedClient": client_id or "API_CLI_REST", "ClientKey": client_key or "ppApiCliSB"}
-            payload = {"apiKey": self.api_key, "apiSecret": self.api_secret}
-            resp = requests.post(url, json=payload, headers=headers, timeout=10)
-            if resp.status_code == 200:
-                logger.critical(
-                    "DIAGNÓSTICO SANDBOX: el login DIRECTO con los headers AuthorizedClient/ClientKey "
-                    "respondió 200 OK. Esto confirma la hipótesis: el entorno Sandbox de esta cuenta SÍ "
-                    "necesita esos headers. Falta evaluar con soporte de PPI si la librería 'ppi-client' "
-                    "expone algún parámetro para pasarlos puertas adentro antes de decidir un cliente REST propio."
-                )
-            else:
-                logger.critical(
-                    "DIAGNÓSTICO SANDBOX: el login directo con ClientKey también falló (HTTP %s). "
-                    "La hipótesis del header queda DESCARTADA por esta prueba — el problema de login "
-                    "es otro (credenciales, cuenta no habilitada para API, o endpoint/URL desactualizados).",
-                    resp.status_code,
-                )
-        except Exception as diag_e:
-            logger.warning("No se pudo completar el diagnóstico directo de ClientKey (sin red o endpoint "
-                            "inalcanzable desde este entorno): %s", diag_e)
+        logger.info("Diagnóstico REST directo de PPI desactivado; revisar el estado persistido.")
+        return None
 
     def get_order_status(self, order_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -598,6 +578,9 @@ class ResilientPPIClient:
         se resuelve al instante con un nuevo login, y no distingue una falla
         de PPI real (503) de una credencial vencida."""
         msg = str(e)
+        lower = msg.lower()
+        if "429" in msg or "quota exceeded" in lower or "rate limit" in lower:
+            return "RATE_LIMIT"
         if any(code in msg for code in ("401", "403", "Unauthorized", "Forbidden")):
             return "AUTH"
         if any(code in msg for code in ("502", "503", "504", "Timeout", "timeout", "ConnectionError")):
@@ -687,17 +670,32 @@ class ResilientPPIClient:
             pass
 
     def _call_with_retry(self, fn: Callable[[], Any], label: str) -> Optional[Any]:
+        # La sesión es una precondición. Un método de mercado jamás debe
+        # iniciar su propio festival de logins: consume como máximo el único
+        # intento compartido que permite _login() en esta ventana.
+        if not self.is_authenticated() and not self._login():
+            logger.debug("PPI sin autenticar — '%s' omitido durante cooldown.", label)
+            return None
         if not self._circuit_allow_call():
             logger.debug("Circuit Breaker OPEN — '%s' se corta sin llamar a PPI.", label)
             return None
 
         self._refrescar_token_si_hace_falta()  # v15.0 — refresco proactivo del JWT
 
+        attempts_done = 0
         for attempt, wait_s in enumerate(BACKOFF_SCHEDULE_SECONDS, start=1):
+            attempts_done = attempt
             try:
                 _throttle()  # nunca más de PPI_MAX_REQUESTS_PER_SECOND, sin importar el método
+                started = time.perf_counter()
                 result = fn()
+                self._last_call_latency_ms = (time.perf_counter() - started) * 1000
+                self._last_call_epoch = time.time()
                 self._circuit_record_success()
+                _persist_system_event(
+                    "PPI_REST", "OK",
+                    f"{label}: {self._last_call_latency_ms:.0f} ms",
+                )
                 self._registrar_firma_api(label, result)  # v15.0 — vigilancia de cambios de la API
                 return result
             except Exception as e:
@@ -707,11 +705,22 @@ class ResilientPPIClient:
                                 obfuscate_secret(str(e)))
 
                 if error_kind == "AUTH":
-                    # Token vencido/inválido: relogin inmediato, sin esperar
-                    # el backoff completo — es la corrección explícita
-                    # pedida en la Instrucción 7 (refresco proactivo).
-                    self._login()
+                    # Un 401 invalida la sesión completa. Se permite un solo
+                    # relogin compartido; si falla, se termina esta llamada.
+                    self._authenticated = False
+                    self.client = None
+                    if not self._login():
+                        break
                     continue
+
+                if error_kind == "RATE_LIMIT":
+                    self._authenticated = False
+                    self.client = None
+                    self._token_obtenido_en = 0.0
+                    self._auth_last_error = obfuscate_secret(str(e))
+                    self._auth_blocked_until = time.time() + self.RATE_LIMIT_COOLDOWN_SECONDS
+                    _persist_system_event("PPI_AUTH", "RATE_LIMIT", self._auth_last_error)
+                    break
 
                 if error_kind == "SERVER":
                     self._circuit_record_failure()
@@ -720,12 +729,14 @@ class ResilientPPIClient:
                         # llamada si el circuito acaba de abrirse.
                         break
 
-                self._login()  # por las dudas la sesión también haya expirado
-                if attempt < len(BACKOFF_SCHEDULE_SECONDS):
-                    time.sleep(wait_s)
+                # Un error desconocido NO demuestra que el token expiró.
+                # Tampoco se repite a ciegas: puede ser un 4xx/quota nuevo que
+                # la librería no exponga claramente. Un solo intento es el
+                # comportamiento seguro hasta clasificar el contrato real.
+                break
         if not self.is_recovering:
             self.notifier.notify_error(
-                f"'{label}' falló tras {len(BACKOFF_SCHEDULE_SECONDS)} reintentos. "
+                f"'{label}' falló tras {attempts_done} intento(s). "
                 "Entrando en RECOVERY_MODE."
             )
             self.is_recovering = True

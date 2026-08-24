@@ -39,6 +39,11 @@ RSS_FEEDS = [
 # esto, una noticia vieja no debería influir en la decisión de hoy.
 import os
 NEWS_MAX_AGE_SECONDS = int(os.getenv("NEWS_MAX_AGE_SECONDS", str(6 * 3600)))  # 6 horas por default
+NEWS_FEED_FAILURE_COOLDOWN_SECONDS = int(
+    os.getenv("NEWS_FEED_FAILURE_COOLDOWN_SECONDS", "1800")
+)
+_feed_retry_after = {}
+_feed_last_warning = {}
 
 import re
 import unicodedata
@@ -81,6 +86,9 @@ def fetch_latest_headlines(max_headlines: int = 10) -> Dict:
     any_feed_ok = False
 
     for url in RSS_FEEDS:
+        ahora = time.time()
+        if ahora < _feed_retry_after.get(url, 0):
+            continue
         try:
             # CORRECCIÓN — auditoría 9.1 (rev. 1), hallazgo válido:
             # feedparser.parse(url) no tiene timeout propio y puede
@@ -89,10 +97,17 @@ def fetch_latest_headlines(max_headlines: int = 10) -> Dict:
             # primero con requests (timeout de 8s) y recién ahí se lo pasa
             # a feedparser para parsear el contenido ya descargado.
             response = requests.get(url, timeout=8)
+            response.raise_for_status()
             feed = feedparser.parse(response.content)
             if getattr(feed, "bozo", False) and not feed.entries:
-                logger.warning("Feed RSS no parseable: %s (%s)", url, getattr(feed, "bozo_exception", ""))
+                detalle = f"no parseable: {getattr(feed, 'bozo_exception', '')}"
+                _feed_retry_after[url] = ahora + NEWS_FEED_FAILURE_COOLDOWN_SECONDS
+                if ahora - _feed_last_warning.get(url, 0) >= NEWS_FEED_FAILURE_COOLDOWN_SECONDS:
+                    logger.warning("Feed RSS %s; se pausa %ss: %s", url,
+                                   NEWS_FEED_FAILURE_COOLDOWN_SECONDS, detalle)
+                    _feed_last_warning[url] = ahora
                 continue
+            _feed_retry_after.pop(url, None)
             any_feed_ok = True
             for entry in feed.entries[:5]:
                 title = getattr(entry, "title", None)
@@ -115,7 +130,11 @@ def fetch_latest_headlines(max_headlines: int = 10) -> Dict:
                 seen.add(title)
                 headlines.append(title)
         except Exception as e:
-            logger.warning("Error leyendo feed RSS %s: %s", url, e)
+            _feed_retry_after[url] = ahora + NEWS_FEED_FAILURE_COOLDOWN_SECONDS
+            if ahora - _feed_last_warning.get(url, 0) >= NEWS_FEED_FAILURE_COOLDOWN_SECONDS:
+                logger.warning("Error leyendo feed RSS %s; se pausa %ss: %s", url,
+                               NEWS_FEED_FAILURE_COOLDOWN_SECONDS, e)
+                _feed_last_warning[url] = ahora
 
     # NUEVO EN v10.0 — se suman los titulares acumulados durante la noche/
     # madrugada por r_news_engine_247.py (si ese proceso está corriendo),

@@ -399,6 +399,10 @@ class PPIRealTimeClient:
     def _run(self):
         intento = 0
         while not self._stop.is_set():
+            if not getattr(self.ppi_client, "is_authenticated", lambda: False)():
+                _persist("AUTH_BLOCKED", "Stream detenido: PPI no está autenticado.")
+                logger.warning("Stream PPI no inicia/reintenta mientras la autenticación está bloqueada.")
+                return
             try:
                 realtime = getattr(self.ppi_client.client, "realtime", None)
                 if realtime is None:
@@ -432,6 +436,9 @@ class PPIRealTimeClient:
                 intento += 1
                 logger.warning("Stream de PPI caído (%s). Reintento %s en %.1fs.", e, intento, espera)
                 self._escalar_si_corresponde(intento, e)
+                if not getattr(self.ppi_client, "is_authenticated", lambda: False)():
+                    _persist("AUTH_BLOCKED", "Reconexión cancelada: sesión PPI no autenticada.")
+                    return
                 self._stop.wait(espera)
 
     def _escalar_si_corresponde(self, intento: int, error: Exception):
@@ -445,8 +452,8 @@ class PPIRealTimeClient:
                 self.notifier.send_telegram(
                     f"⚠️ *STREAM DE PPI SIN RECONECTAR*\n"
                     f"{intento} intentos fallidos seguidos.\nÚltimo error: {detalle}\n\n"
-                    "Market data cae a polling HTTP automáticamente, así que el bot sigue "
-                    "operando con precios reales — más lento y gastando rate limit."
+                    "Si REST continúa autenticado, market data cae a polling HTTP. Si la "
+                    "autenticación también está caída, no se abren posiciones nuevas."
                 )
             except Exception:
                 pass
@@ -485,9 +492,8 @@ class PPIRealTimeClient:
                         self.notifier.send_telegram(
                             f"⚠️ *STREAM DE TIEMPO REAL SIN DATOS*\n"
                             f"Hace {int(edad)}s que no llega ningún tick de PPI.\n"
-                            "El bot ya está operando con precios por HTTP (fallback automático), "
-                            "así que no hay riesgo de decidir con datos viejos — pero si esto pasa "
-                            "en horario de rueda, algo del stream no está bien."
+                            "Sólo se usa REST si la sesión sigue autenticada. De lo contrario, "
+                            "las entradas nuevas permanecen bloqueadas."
                         )
             except Exception as e:
                 logger.debug("Watchdog de stream: %s", e)
@@ -496,8 +502,10 @@ class PPIRealTimeClient:
         if not STREAM_ENABLED:
             logger.info("PPI_STREAM_ENABLED=false — se usa polling HTTP para todo.")
             return
-        if not self.ppi_client or not getattr(self.ppi_client, "client", None):
+        if (not self.ppi_client or
+                not getattr(self.ppi_client, "is_authenticated", lambda: False)()):
             logger.warning("Cliente PPI no autenticado — el stream de tiempo real no arranca.")
+            _persist("AUTH_BLOCKED", "No se inició el stream: sesión no autenticada.")
             return
         for objetivo, nombre in ((self._run, "ppi_realtime"), (self._watchdog, "ppi_realtime_watchdog")):
             hilo = threading.Thread(target=objetivo, name=nombre, daemon=True)

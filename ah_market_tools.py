@@ -175,10 +175,8 @@ def consultar_mercado(ticker: str, instrument_type: str = "CEDEARS",
                       settlement: str = "A-24HS") -> dict:
     """Consulta el precio y las puntas de un instrumento del mercado argentino.
 
-    Usa PPI (el bróker real donde opera el bot) como fuente principal y, solo
-    para acciones y CEDEARs, cae a Yahoo Finance como referencia si PPI no
-    responde. El resultado indica siempre la fuente y si el precio sirve para
-    colocar una orden real.
+    Usa exclusivamente PPI. Si PPI no responde, devuelve el error y el motor
+    se abstiene: una fuente demorada no puede reemplazar un precio ejecutable.
 
     Args:
         ticker: símbolo del instrumento (ej. GGAL, AAPL, AL30).
@@ -192,19 +190,11 @@ def consultar_mercado(ticker: str, instrument_type: str = "CEDEARS",
     if "error" not in datos:
         return datos
 
-    simbolo = _ticker_yahoo(ticker, instrument_type)
-    if not simbolo:
-        datos["fallback_disponible"] = False
-        datos["nota"] = (
-            f"No hay fallback para tipo '{instrument_type}': el mapeo de este instrumento "
-            "a Yahoo Finance no es confiable (los bonos argentinos cotizan allí en otra "
-            "moneda y con otra unidad). Mejor sin dato que con un dato equivocado.")
-        return datos
-
-    logger.warning("PPI falló para %s (%s). Cayendo a Yahoo como referencia.", ticker, datos.get("error"))
-    respaldo = obtener_datos_yahoo(simbolo)
-    respaldo["motivo_fallback"] = datos.get("error")
-    return respaldo
+    datos["fallback_disponible"] = False
+    datos["apto_para_ordenar"] = False
+    datos["nota"] = ("PPI es la única fuente operativa. Yahoo quedó aislado para "
+                     "investigación y no reemplaza una cotización ejecutable.")
+    return datos
 
 
 def consultar_contexto_macro(dias: int = 180) -> dict:
@@ -404,5 +394,4 @@ def consultar_historico(ticker: str) -> dict:
 # PARECE que el dato es raro. La decisión pasó del código al motor, que es
 # exactamente lo que se pidió.
 HERRAMIENTAS = [consultar_mercado, consultar_contexto_macro,
-                consultar_posiciones_abiertas, consultar_historico,
-                doble_chequeo_precio]
+                consultar_posiciones_abiertas, consultar_historico]

@@ -26,6 +26,8 @@ o_dashboard.py, nunca toca la operatoria de trading.
 import glob
 import logging
 import os
+import bb_runtime_status
+bb_runtime_status.configure_process_timezone()
 import shutil
 import sqlite3
 import time

@@ -23,6 +23,8 @@ import glob
 import json
 import logging
 import os
+import bb_runtime_status
+bb_runtime_status.configure_process_timezone()
 import sys
 import traceback
 from datetime import datetime

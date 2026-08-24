@@ -16,6 +16,7 @@ import datetime
 import requests
 from dotenv import load_dotenv
 import ac_db  # NUEVO EN v15.0 — conexión SQLite única (WAL + timeout)
+import bb_runtime_status as runtime_status
 
 load_dotenv()
 logger = logging.getLogger("notifiers")
@@ -74,6 +75,7 @@ class MultiChannelNotifier:
         """
         if not self.telegram_token or not self.telegram_chat_id:
             logger.warning("Telegram no configurado (falta TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID).")
+            runtime_status.record_telegram("SALIENTE", "MENSAJE", "NO_CONFIGURADO", message)
             return False
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
         payload = {
@@ -92,6 +94,7 @@ class MultiChannelNotifier:
                 except Exception:
                     respuesta = {}
                 if res.status_code == 200 and respuesta.get("ok") is True:
+                    runtime_status.record_telegram("SALIENTE", "MENSAJE", "ENTREGADO", message)
                     return True
                 last_error = f"HTTP {res.status_code}: {res.text}"
                 logger.error("Telegram respondió %s: %s", res.status_code, res.text)
@@ -101,6 +104,7 @@ class MultiChannelNotifier:
             if intento < 2:
                 time.sleep(2 * (intento + 1))
         _save_failed_notification(message, last_error)
+        runtime_status.record_telegram("SALIENTE", "MENSAJE", "FALLIDO", message)
         return False
 
     def send_telegram(self, message: str):
@@ -119,6 +123,7 @@ class MultiChannelNotifier:
         """
         if not self.telegram_token or not self.telegram_chat_id:
             logger.warning("Telegram no configurado (falta TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID).")
+            runtime_status.record_telegram("SALIENTE", "MENSAJE", "NO_CONFIGURADO", message)
             return False
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
         payload = {"chat_id": self.telegram_chat_id, "text": message, "parse_mode": "Markdown"}
@@ -131,6 +136,7 @@ class MultiChannelNotifier:
                 except Exception:
                     respuesta = {}
                 if res.status_code == 200 and respuesta.get("ok") is True:
+                    runtime_status.record_telegram("SALIENTE", "MENSAJE", "ENTREGADO", message)
                     return True
                 last_error = f"HTTP {res.status_code}: {res.text}"
                 logger.error("Telegram respondió %s: %s", res.status_code, res.text)
@@ -140,6 +146,7 @@ class MultiChannelNotifier:
             if intento < 2:
                 time.sleep(2 * (intento + 1))  # 2s, luego 4s
         _save_failed_notification(message, last_error)
+        runtime_status.record_telegram("SALIENTE", "MENSAJE", "FALLIDO", message)
         return False
 
     def send_telegram_confirmation(self, message: str, order_id: str):
@@ -168,10 +175,13 @@ class MultiChannelNotifier:
                 respuesta = {}
             if res.status_code != 200 or respuesta.get("ok") is not True:
                 logger.error("Telegram (confirmación) respondió %s: %s", res.status_code, res.text)
+                runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "FALLIDO", message)
                 return False
+            runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "ENTREGADO", message)
             return True
         except Exception as e:
             logger.error("Error enviando confirmación por Telegram: %s", e)
+            runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "FALLIDO", message)
             return False
 
     def send_telegram_generic_confirmation(self, message: str, confirm_data: str, cancel_data: str,
@@ -211,10 +221,13 @@ class MultiChannelNotifier:
                 respuesta = {}
             if res.status_code != 200 or respuesta.get("ok") is not True:
                 logger.error("Telegram (confirmación genérica) respondió %s: %s", res.status_code, res.text)
+                runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "FALLIDO", message)
                 return False
+            runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "ENTREGADO", message)
             return True
         except Exception as e:
             logger.error("Error enviando confirmación genérica por Telegram: %s", e)
+            runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "FALLIDO", message)
             return False
 
     def get_telegram_button_taps(self, offset: int = 0):

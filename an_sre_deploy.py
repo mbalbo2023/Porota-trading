@@ -58,6 +58,8 @@ que el mercado hace lo que no esperabas.
 import json
 import logging
 import os
+import bb_runtime_status
+bb_runtime_status.configure_process_timezone()
 import shutil
 import subprocess
 import sys

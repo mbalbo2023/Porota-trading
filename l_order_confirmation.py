@@ -313,6 +313,13 @@ def process_button_taps(ppi, notifier, position_manager=None):
     process_button_taps._offset = new_offset
 
     for tap in taps:
+        try:
+            import bb_runtime_status
+            tipo = "COMANDO" if "text" in tap else "BOTON"
+            resumen = tap.get("text") or tap.get("data") or ""
+            bb_runtime_status.record_telegram("ENTRANTE", tipo, "RECIBIDO", resumen)
+        except Exception:
+            pass
         # ------------------------------------------------------------------
         # NUEVO EN v16.2 — despacho de MENSAJES ESCRITOS
         # ------------------------------------------------------------------
@@ -594,11 +601,6 @@ def recover_orphaned_orders(ppi, notifier, position_manager):
     de terminar de registrarla acá) y termina el trabajo: abre la
     posición para que el stop-loss/take-profit se sigan vigilando, en vez
     de dejarla "perdida".
-
-    La tabla se inicializa también en este camino de lectura. En una base
-    nueva todavía no hubo ninguna propuesta y create_pending_order() no
-    tuvo oportunidad de crearla; consultar antes de inicializar hacía caer
-    todo el proceso en el primer arranque.
     """
     _init_table()
     conn = ac_db.connect_raw()

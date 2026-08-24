@@ -57,7 +57,11 @@ import yfinance as yf
 
 logger = logging.getLogger("technical_engine")
 
-TECHNICAL_DATA_SOURCE_CEDEARS = os.getenv("TECHNICAL_DATA_SOURCE_CEDEARS", "yfinance").lower()
+TECHNICAL_DATA_SOURCE_CEDEARS = os.getenv("TECHNICAL_DATA_SOURCE_CEDEARS", "ppi").lower()
+# Yahoo es una fuente no contractual y demorada. Puede conservarse para
+# investigación/backtests explícitos, pero nunca autoriza, bloquea ni
+# dimensiona una operación del bot vivo.
+YFINANCE_SHADOW_ONLY = os.getenv("YFINANCE_SHADOW_ONLY", "true").lower() == "true"
 
 # Mapeo CEDEAR -> ticker subyacente en EE.UU. La ratio de conversión del
 # CEDEAR no afecta el análisis (trabajamos en % de retorno, no en precio
@@ -209,6 +213,8 @@ def prefetch_bars(cedear_tickers: list, scalping: bool = False) -> int:
     individuales no se propagan: un ticker que falla se descarga después de
     la forma tradicional (la caché simplemente no lo va a tener).
     """
+    if YFINANCE_SHADOW_ONLY or TECHNICAL_DATA_SOURCE_CEDEARS == "ppi":
+        return 0
     combinaciones = []
     marcos = [("5m", "1d"), ("15m", "5d"), ("1h", "1mo")] if not scalping else [("1m", "1d"), ("5m", "1d")]
     for ticker in cedear_tickers:
@@ -278,14 +284,14 @@ def evaluate_technical(cedear_ticker: str, ppi_client=None) -> TechnicalResult:
     # Si TECHNICAL_DATA_SOURCE_CEDEARS=ppi, PPI es la fuente PRIMARIA (no
     # el respaldo): ni siquiera se intenta yfinance. Ver docstring del
     # módulo para la explicación completa de esta decisión.
-    if TECHNICAL_DATA_SOURCE_CEDEARS == "ppi":
+    if TECHNICAL_DATA_SOURCE_CEDEARS == "ppi" or YFINANCE_SHADOW_ONLY:
         if ppi_client is None:
             return TechnicalResult(
                 ticker=cedear_ticker, score_tech=0.0, atr_1h=None, data_ok=False,
                 reason="TECHNICAL_DATA_SOURCE_CEDEARS=ppi pero no se recibió cliente de PPI.",
             )
         result = evaluate_technical_local(cedear_ticker, ppi_client, "CEDEARS", "A-24HS")
-        result.reason = f"[Fuente primaria: PPI, por configuración] {result.reason}"
+        result.reason = f"[Fuente operativa: PPI] {result.reason}"
         return result
 
     df_1h = _fetch_bars(underlying, "1h", "3mo")
@@ -364,6 +370,12 @@ def evaluate_technical_scalping(cedear_ticker: str) -> TechnicalResult:
     aproximar con otro timeframe — para scalping, usar el timeframe
     equivocado es peor que no operar.
     """
+    if YFINANCE_SHADOW_ONLY:
+        return TechnicalResult(
+            ticker=cedear_ticker, score_tech=0.0, atr_1h=None, data_ok=False,
+            reason=("Scalping bloqueado: no hay velas intradiarias contractuales de PPI. "
+                    "Yahoo está permitido sólo para investigación y no interviene en decisiones."),
+        )
     underlying = CEDEAR_UNDERLYING_MAP.get(cedear_ticker, cedear_ticker)
     df_5m = _fetch_bars(underlying, "5m", "5d")
     df_1m = _fetch_bars(underlying, "1m", "1d")
