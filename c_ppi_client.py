@@ -393,6 +393,56 @@ class ResilientPPIClient:
             "last_call_epoch": self._last_call_epoch,
         }
 
+    def _configure_sandbox_sdk(self, candidate) -> None:
+        """Adapta ppi-client 1.2.4 al contrato Sandbox vigente de PPI.
+
+        La versión 1.2.4 fija internamente AuthorizedClient/ClientKey y usa
+        un hostname Sandbox distinto del publicado actualmente. Se corrige
+        únicamente la instancia candidata antes del login; no se modifican
+        archivos de site-packages ni se agrega ninguna llamada HTTP.
+        """
+        if not self.is_sandbox:
+            return
+
+        authorized_client = os.getenv("PPI_CLIENT_ID", "").strip()
+        client_key = os.getenv("PPI_CLIENT_KEY", "").strip()
+        base_url = os.getenv(
+            "PPI_SANDBOX_BASE_URL",
+            "https://clientapi_sandbox.portfoliopersonal.com/api/",
+        ).strip()
+
+        if not authorized_client or not client_key:
+            raise RuntimeError(
+                "Sandbox requiere PPI_CLIENT_ID y PPI_CLIENT_KEY; no se usará "
+                "el identificador fijo incluido en ppi-client."
+            )
+        if not base_url.startswith("https://") or not base_url.endswith("/api/"):
+            raise RuntimeError("PPI_SANDBOX_BASE_URL debe ser HTTPS y terminar en /api/.")
+
+        api_client = getattr(candidate, "_PPI__apiClient", None)
+        if api_client is None or not hasattr(api_client, "get_rest_client"):
+            raise RuntimeError(
+                "La estructura interna de ppi-client cambió; se bloquea el login "
+                "hasta revisar la compatibilidad del adaptador Sandbox."
+            )
+        rest_client = api_client.get_rest_client()
+        if rest_client is None or not hasattr(rest_client, "_RestClient__API_BASE_URL"):
+            raise RuntimeError(
+                "La estructura de RestClient cambió; se bloquea el login Sandbox."
+            )
+
+        # PPIClient construye estos headers en cada llamada REST.
+        setattr(api_client, "_PPIClient__authorized_client", authorized_client)
+        setattr(api_client, "_PPIClient__client_key", client_key)
+        # RestClient los reutiliza para renovar el token del WebSocket.
+        rest_client.authorized_client = authorized_client
+        rest_client.client_key = client_key
+        setattr(rest_client, "_RestClient__API_BASE_URL", base_url)
+        logger.info(
+            "Adaptador Sandbox aplicado a ppi-client (host=%s, credenciales de cliente presentes).",
+            base_url.split("/", 3)[2],
+        )
+
     def _login(self) -> bool:
         now = time.time()
         if now < self._auth_blocked_until:
@@ -406,6 +456,7 @@ class ResilientPPIClient:
                 return False
             self._auth_last_attempt = now
             candidate = PPI(sandbox=self.is_sandbox)
+            self._configure_sandbox_sdk(candidate)
             candidate.account.login_api(self.api_key, self.api_secret)
             self.client = candidate
             self._authenticated = True

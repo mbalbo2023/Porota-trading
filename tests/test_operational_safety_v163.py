@@ -36,6 +36,7 @@ def test_ppi_rate_limit_hace_un_solo_login(monkeypatch, tmp_path):
 
     fake, calls = _fake_ppi("429 API calls quota exceeded maximum admitted 10 per 1h")
     monkeypatch.setattr(module, "PPI", fake)
+    monkeypatch.setattr(module.ResilientPPIClient, "_configure_sandbox_sdk", lambda self, candidate: None)
     client = module.ResilientPPIClient(DummyNotifier())
 
     assert calls["login"] == 1
@@ -54,6 +55,7 @@ def test_ppi_login_exitoso_expone_estado_local(monkeypatch, tmp_path):
 
     fake, calls = _fake_ppi()
     monkeypatch.setattr(module, "PPI", fake)
+    monkeypatch.setattr(module.ResilientPPIClient, "_configure_sandbox_sdk", lambda self, candidate: None)
     client = module.ResilientPPIClient(DummyNotifier())
 
     assert calls["login"] == 1
