@@ -31,6 +31,7 @@ import os
 import sys
 
 import pytest
+from hypothesis import assume
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -136,6 +137,9 @@ class TestTarifario:
         tiene que seguir funcionando y tiene que errar CARO. Errar por caro
         descarta de más, que no cuesta plata; errar por barato aprueba lo que
         pierde."""
+        normalizada = str(clase).strip().upper().replace("_", "").replace("-", "")
+        assume(normalizada not in tarifario.ARANCELES)
+        assume(normalizada not in tarifario._ALIAS)
         costo = tarifario.costo_redondo(clase, spread)
         assert costo >= tarifario.costo_redondo("BONOS", spread)
 

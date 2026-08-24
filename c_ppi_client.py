@@ -408,7 +408,7 @@ class ResilientPPIClient:
         client_key = os.getenv("PPI_CLIENT_KEY", "").strip()
         base_url = os.getenv(
             "PPI_SANDBOX_BASE_URL",
-            "https://clientapi_sandbox.portfoliopersonal.com/api/",
+            "https://clientapisandbox.portfoliopersonal.com/api/",
         ).strip()
 
         if not authorized_client or not client_key:
@@ -438,6 +438,27 @@ class ResilientPPIClient:
         rest_client.authorized_client = authorized_client
         rest_client.client_key = client_key
         setattr(rest_client, "_RestClient__API_BASE_URL", base_url)
+
+        # ppi-client 1.2.4 decodifica JSON antes de exponer el status HTTP.
+        # Se guardan solo metadatos no sensibles para diagnosticar HTML/WAF.
+        self._auth_http_diagnostic = ""
+        original_get_session = rest_client.get_session
+
+        def _diagnostic_session():
+            session = original_get_session()
+
+            def _capture_metadata(response, *args, **kwargs):
+                content_type = response.headers.get("Content-Type", "ausente")
+                self._auth_http_diagnostic = (
+                    f"HTTP {response.status_code}; Content-Type={content_type}; "
+                    f"Content-Length={len(response.content or b'')}"
+                )
+                return response
+
+            session.hooks.setdefault("response", []).append(_capture_metadata)
+            return session
+
+        rest_client.get_session = _diagnostic_session
         logger.info(
             "Adaptador Sandbox aplicado a ppi-client (host=%s, credenciales de cliente presentes).",
             base_url.split("/", 3)[2],
@@ -455,6 +476,7 @@ class ResilientPPIClient:
             if now < self._auth_blocked_until:
                 return False
             self._auth_last_attempt = now
+            self._auth_http_diagnostic = ""
             candidate = PPI(sandbox=self.is_sandbox)
             self._configure_sandbox_sdk(candidate)
             candidate.account.login_api(self.api_key, self.api_secret)
@@ -471,7 +493,16 @@ class ResilientPPIClient:
             return True
         except Exception as e:
             safe_error = obfuscate_secret(str(e))
-            rate_limited = self._classify_error(e) == "RATE_LIMIT"
+            http_diag = getattr(self, "_auth_http_diagnostic", "")
+            if http_diag and (
+                "Expecting value" in safe_error
+                or "JSONDecodeError" in type(e).__name__
+            ):
+                safe_error = f"Respuesta no JSON de PPI ({http_diag})"
+            rate_limited = (
+                "HTTP 429" in http_diag
+                or self._classify_error(e) == "RATE_LIMIT"
+            )
             cooldown = (self.RATE_LIMIT_COOLDOWN_SECONDS if rate_limited
                         else self.AUTH_RETRY_COOLDOWN_SECONDS)
             self.client = None

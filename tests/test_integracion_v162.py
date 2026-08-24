@@ -490,7 +490,7 @@ class TestInventario:
 
     def test_la_version_sale_de_un_solo_lugar(self):
         fuente = (RAIZ / "o_dashboard.py").read_text(encoding="utf-8")
-        assert 'VERSION = "16.3.1"' in fuente
+        assert 'VERSION = "16.3.2"' in fuente
         assert '"version": "15.0"' not in fuente
 
     def test_el_conteo_de_modulos_es_verificable(self):
