@@ -20,6 +20,7 @@ logger = logging.getLogger("maintenance")
 VALID_JOBS = {
     "backup",
     "macro_refresh",
+    "historical_refresh",
     "weekly_report",
     "monthly_autotune",
     "data_retention",
@@ -42,6 +43,9 @@ def run(job_name: str) -> None:
     elif job_name == "macro_refresh":
         import ad_macro_history
         ad_macro_history.refresh()
+    elif job_name == "historical_refresh":
+        import ba_data912_history
+        ba_data912_history.refresh()
     elif job_name == "weekly_report":
         from i_auto_tuner import AutoTuner
         _notifier().send_telegram(AutoTuner().generate_weekly_report())

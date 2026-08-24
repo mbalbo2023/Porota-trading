@@ -50,6 +50,8 @@ MIN_LIQUIDITY_ARS = float(os.getenv("MIN_LIQUIDITY_ARS", "5000000"))  # $5M ARS 
 AUTO_DISCOVER_INSTRUMENTS = os.getenv("AUTO_DISCOVER_INSTRUMENTS", "true").lower() == "true"
 MAX_DISCOVERED_PER_TYPE = int(os.getenv("MAX_DISCOVERED_PER_TYPE", "40"))
 AUTO_DISCOVER_ALL_TYPES = os.getenv("AUTO_DISCOVER_ALL_TYPES", "true").lower() == "true"
+HISTORICAL_UNIVERSE_FALLBACK = os.getenv(
+    "HISTORICAL_UNIVERSE_FALLBACK", "true").lower() == "true"
 
 # Las 4 clases de activo que el motor de riesgo actual sabe OPERAR (calcular
 # stop-loss, tamaño de posición, etc.) de forma segura.
@@ -119,7 +121,7 @@ def discover_instruments_dynamically(ppi_client) -> List[Instrument]:
                         "(0 resultados, no una falla de red).", asset_class)
             continue
 
-        for r in results[:MAX_DISCOVERED_PER_TYPE]:
+        for r in results:
             ticker = r.get("ticker") or r.get("symbol")
             if not ticker:
                 continue
@@ -130,7 +132,7 @@ def discover_instruments_dynamically(ppi_client) -> List[Instrument]:
                 asset_class=asset_class,
             ))
         logger.info("Descubrimiento automático — %s: %d instrumentos encontrados.",
-                    asset_class, len(results[:MAX_DISCOVERED_PER_TYPE]))
+                    asset_class, len(results))
     return discovered
 
 
@@ -387,6 +389,29 @@ def build_universe(ppi_client) -> List[Instrument]:
             seen.add(key)
             universe.append(inst)
 
+    if HISTORICAL_UNIVERSE_FALLBACK:
+        try:
+            import ba_data912_history as data912
+            archived = data912.archived_instruments()
+            for row in archived:
+                asset_class = row["asset_class"]
+                config = DISCOVERABLE_TYPES.get(asset_class)
+                if not config:
+                    continue
+                inst = Instrument(
+                    ticker=row["symbol"],
+                    instrument_type=config["instrument_type"],
+                    settlement=config["settlement"],
+                    asset_class=asset_class,
+                )
+                key = (inst.ticker, inst.instrument_type)
+                if key not in seen:
+                    seen.add(key)
+                    universe.append(inst)
+            logger.info("Archivo histórico aportó %d instrumentos candidatos.", len(archived))
+        except Exception as exc:
+            logger.warning("No se pudo sumar el universo histórico local: %s", exc)
+
     if not universe:
         logger.error("El universo de instrumentos quedó vacío — ni el descubrimiento automático "
                       "ni la watchlist devolvieron nada. Revisar conexión con PPI.")
@@ -395,30 +420,84 @@ def build_universe(ppi_client) -> List[Instrument]:
 
 def filter_by_liquidity(instruments: List[Instrument], ppi_client, days_back: int = 5) -> List[Instrument]:
     """
-    Descarta instrumentos cuyo volumen promedio de los últimos días esté
-    por debajo de MIN_LIQUIDITY_ARS. Con el descubrimiento automático
-    trayendo muchos más candidatos que antes, este filtro pasa a ser más
-    importante todavía — es lo que evita que el bot pierda tiempo
-    analizando en profundidad instrumentos que después nadie puede
-    operar con un volumen razonable.
+    Ordena por liquidez y aplica el límite DESPUÉS del filtro. PPI es la
+    fuente histórica primaria. Una prueba inicial evita repetir cientos de
+    autenticaciones si el histórico PPI está caído; en ese caso se usa el
+    archivo local Data912 y se conserva PPI para precio, book y ejecución.
     """
-    liquid = []
-    for inst in instruments:
-        hist = ppi_client.get_historical_series(inst.ticker, inst.instrument_type,
-                                                  inst.settlement, days_back)
-        if not hist:
-            continue
+    import ba_data912_history as data912
+
+    by_class = {}
+    pinned = {(item.ticker, item.instrument_type) for item in load_watchlist()}
+    ppi_history_enabled = False
+    probe_cache = {}
+    probe = next((item for item in instruments if item.ticker == "GGAL"),
+                 instruments[0] if instruments else None)
+    if probe is not None:
         try:
-            volumes = [h.get("volume", 0) or 0 for h in hist]
-            prices = [h.get("price", 0) or 0 for h in hist]
-            avg_volume = sum(volumes) / len(volumes) if volumes else 0
-            avg_price = sum(prices) / len(prices) if prices else 0
-        except Exception:
+            probe_history = ppi_client.get_historical_series(
+                probe.ticker, probe.instrument_type, probe.settlement, days_back)
+            if probe_history:
+                ppi_history_enabled = True
+                probe_cache[(probe.ticker, probe.instrument_type)] = probe_history
+                logger.info("Histórico PPI disponible; se usa como fuente primaria.")
+            else:
+                logger.warning("Histórico PPI no disponible; se usa Data912 como respaldo.")
+        except Exception as exc:
+            logger.warning("Prueba de histórico PPI falló; se usa Data912: %s", exc)
+
+    for inst in instruments:
+        traded_ars = None
+        if ppi_history_enabled:
+            try:
+                history = probe_cache.get((inst.ticker, inst.instrument_type))
+                if history is None:
+                    history = ppi_client.get_historical_series(
+                        inst.ticker, inst.instrument_type, inst.settlement, days_back)
+                if history:
+                    volumes = [row.get("volume", 0) or 0 for row in history]
+                    prices = [row.get("price", 0) or 0 for row in history]
+                    avg_volume = sum(volumes) / len(volumes) if volumes else 0
+                    avg_price = sum(prices) / len(prices) if prices else 0
+                    traded_ars = (avg_price * avg_volume
+                                  if inst.asset_class != "BONOS" else avg_volume)
+            except Exception as exc:
+                logger.info("PPI no entregó histórico de %s: %s", inst.ticker, exc)
+
+        if traded_ars is None:
+            traded_ars = data912.archived_liquidity(
+                inst.ticker, inst.asset_class, days_back)
+        if traded_ars is None:
+            try:
+                if data912.ensure_symbol(inst.ticker, inst.asset_class):
+                    traded_ars = data912.archived_liquidity(
+                        inst.ticker, inst.asset_class, days_back)
+            except Exception as exc:
+                logger.info("Data912 no completó %s: %s", inst.ticker, exc)
+
+        if traded_ars is None:
+            logger.warning("%s queda fuera de la preselección: sin histórico PPI ni Data912.",
+                           inst.ticker)
             continue
-        traded_ars = avg_price * avg_volume if inst.asset_class != "BONOS" else avg_volume
+
         if traded_ars >= MIN_LIQUIDITY_ARS:
-            liquid.append(inst)
+            by_class.setdefault(inst.asset_class, []).append((traded_ars, inst))
         else:
             logger.info("Descartado por liquidez: %s (%.0f ARS promedio/día, mínimo %.0f)",
                         inst.ticker, traded_ars, MIN_LIQUIDITY_ARS)
+
+    liquid = []
+    for asset_class, candidates in by_class.items():
+        candidates.sort(
+            key=lambda item: (
+                (item[1].ticker, item[1].instrument_type) in pinned,
+                item[0],
+            ),
+            reverse=True,
+        )
+        selected = (candidates if MAX_DISCOVERED_PER_TYPE <= 0
+                    else candidates[:MAX_DISCOVERED_PER_TYPE])
+        liquid.extend(inst for _score, inst in selected)
+        logger.info("Universo %s: %d líquidos, %d seleccionados después de ordenar.",
+                    asset_class, len(candidates), len(selected))
     return liquid
