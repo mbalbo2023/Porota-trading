@@ -176,34 +176,29 @@ def chequear_gemini() -> Chequeo:
 
 
 def chequear_telegram(notifier) -> Chequeo:
-    """Telegram no es crítico para operar, pero sí para enterarse. Si está
-    caído, el kill switch puede saltar sin que nadie se entere — que es
-    exactamente el escenario que el kill switch existe para evitar."""
+    """Use persisted recent activity; opening this page never calls Telegram."""
     c = Chequeo("Telegram — notificaciones y control", critico=False)
-    try:
-        import b_notifiers
-        fallidas = len(b_notifiers.get_failed_notifications(limit=100))
-    except Exception:
-        fallidas = 0
-    report = runtime_status.read_verifier_report("telegram")
-    raw = str(report.get("data", "")).upper()
-    age = runtime_status.age_seconds(report.get("mtime"))
-    if fallidas == 0:
-        if (report and age is not None and age <= 86400 and "FALLA" not in raw
-                and ("OK" in raw or "CORRECT" in raw)):
-            c.estado, c.detalle = VERDE, "Verificación correcta y sin notificaciones fallidas."
-        elif report and "FALLA" not in raw and ("OK" in raw or "CORRECT" in raw):
-            c.estado, c.detalle = AMARILLO, "Sin fallas pendientes; la prueba correcta tiene más de 24 horas."
-        else:
-            c.estado, c.detalle = GRIS, "Sin fallas pendientes; falta una verificación persistida reciente."
-    elif fallidas < 5:
-        c.estado, c.detalle = AMARILLO, f"{fallidas} notificaciones fallidas en cola."
-    else:
-        c.estado, c.detalle = ROJO, (f"{fallidas} notificaciones fallidas: es probable que no te "
-                                     "esté llegando nada. Verificar el token y el chat.")
-    c.extras.update(report)
-    return c
+    bot = runtime_status.read_bot_state()
+    rows = runtime_status.telegram_activity(100)
+    relevant = [row for row in rows if row.get("status") in
+                ("ENTREGADO", "FALLIDO", "NO_CONFIGURADO")]
+    latest = relevant[0] if relevant else {}
+    latest_age = runtime_status.age_seconds(latest.get("timestamp"))
+    status = latest.get("status")
 
+    if not bot.get("alive", False):
+        suffix = f" Último evento conocido: {status}." if status else " Sin eventos persistidos."
+        c.estado, c.detalle = GRIS, "Bot detenido; las notificaciones están pausadas." + suffix
+    elif not latest or latest_age is None or latest_age > 86400:
+        c.estado, c.detalle = GRIS, "Bot activo, pero no existe actividad de Telegram en las últimas 24 horas."
+    elif status == "ENTREGADO":
+        c.estado, c.detalle = VERDE, "Último envío entregado correctamente."
+    elif status == "NO_CONFIGURADO":
+        c.estado, c.detalle = ROJO, "Bot activo sin configuración disponible de Telegram."
+    else:
+        c.estado, c.detalle = ROJO, "El último intento de Telegram falló; revisar la cola y conectividad."
+    c.extras.update({"ultimo_evento": latest, "estado_bot": bot})
+    return c
 
 def chequear_macro() -> Chequeo:
     """Las series macro alimentan el piso de rentabilidad. Publicadas con

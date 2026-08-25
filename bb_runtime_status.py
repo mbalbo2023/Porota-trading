@@ -8,6 +8,7 @@ import json
 import os
 import sqlite3
 import time
+import threading
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -15,6 +16,10 @@ import ac_db
 
 
 SERVER_TIMEZONE = os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires")
+CONFIG_PRESENCE_PATH = os.getenv("CONFIG_PRESENCE_PATH", "data/config_presence.json")
+BOT_RUNTIME_STATE_PATH = os.getenv("BOT_RUNTIME_STATE_PATH", "data/bot_runtime_state.json")
+BOT_HEARTBEAT_SECONDS = int(os.getenv("BOT_HEARTBEAT_SECONDS", "30"))
+BOT_HEARTBEAT_STALE_SECONDS = int(os.getenv("BOT_HEARTBEAT_STALE_SECONDS", "120"))
 
 
 def configure_process_timezone() -> None:
@@ -51,6 +56,139 @@ def age_seconds(value) -> float | None:
     except Exception:
         return None
 
+
+
+def read_bot_state() -> dict:
+    """Estado local del motor; nunca consulta PPI ni otra API externa."""
+    try:
+        with open(BOT_RUNTIME_STATE_PATH, encoding="utf-8") as stream:
+            state = json.load(stream)
+        if not isinstance(state, dict):
+            raise ValueError("estado invalido")
+    except (OSError, ValueError, TypeError):
+        return {"state": "STOPPED", "alive": False, "detail": "Sin heartbeat activo."}
+    age = age_seconds(state.get("updated_at"))
+    explicit_stopped = state.get("state") in ("STOPPED", "STOPPING", "ERROR")
+    state["age_seconds"] = age
+    state["alive"] = bool(not explicit_stopped and age is not None
+                          and age <= BOT_HEARTBEAT_STALE_SECONDS)
+    if not state["alive"] and not explicit_stopped:
+        state["state"] = "STALE"
+        state["detail"] = "El proceso no renueva su heartbeat."
+    return state
+
+
+class BotHeartbeat:
+    """Un solo archivo atomico, actualizado por un hilo liviano."""
+
+    def __init__(self):
+        self._state = "STOPPED"
+        self._mode = ""
+        self._detail = ""
+        self._started_at = None
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _write(self) -> None:
+        with self._lock:
+            payload = {
+                "state": self._state,
+                "mode": self._mode,
+                "detail": self._detail,
+                "started_at": self._started_at,
+                "updated_at": now_iso(),
+                "pid": os.getpid(),
+            }
+        directory = os.path.dirname(BOT_RUNTIME_STATE_PATH)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        temporary = f"{BOT_RUNTIME_STATE_PATH}.{os.getpid()}.tmp"
+        with open(temporary, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, BOT_RUNTIME_STATE_PATH)
+
+    def start(self, state: str = "STARTING", mode: str = "", detail: str = "") -> None:
+        with self._lock:
+            self._state = state
+            self._mode = mode
+            self._detail = detail
+            self._started_at = now_iso()
+        self._stop.clear()
+        self._write()
+        if self._thread is None or not self._thread.is_alive():
+            self._thread = threading.Thread(target=self._run, name="bot_heartbeat", daemon=True)
+            self._thread.start()
+
+    def set_state(self, state: str, mode: str = "", detail: str = "") -> None:
+        with self._lock:
+            self._state = state
+            if mode:
+                self._mode = mode
+            self._detail = str(detail)[:500]
+        self._write()
+
+    def _run(self) -> None:
+        while not self._stop.wait(BOT_HEARTBEAT_SECONDS):
+            try:
+                self._write()
+            except Exception:
+                pass
+
+    def stop(self, detail: str = "Detenido ordenadamente.") -> None:
+        self.set_state("STOPPED", detail=detail)
+        self._stop.set()
+
+
+
+def write_config_presence() -> None:
+    """Persist only booleans; never values, lengths, hashes or credentials."""
+    from v_config_metadata import CONFIG_METADATA
+
+    configured = {
+        var: bool(str(os.getenv(var, "")).strip())
+        for var, _section, _description, _default, _sensitive in CONFIG_METADATA
+    }
+    payload = {
+        "schema": 1,
+        "generated_at": now_iso(),
+        "source": "trading-engine",
+        "configured": configured,
+    }
+    directory = os.path.dirname(CONFIG_PRESENCE_PATH)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    temporary = f"{CONFIG_PRESENCE_PATH}.{os.getpid()}.tmp"
+    try:
+        with open(temporary, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, sort_keys=True)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, CONFIG_PRESENCE_PATH)
+    finally:
+        try:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        except OSError:
+            pass
+
+
+def read_config_presence() -> dict:
+    """Read the safe manifest. Missing/corrupt means unknown, never absent."""
+    try:
+        with open(CONFIG_PRESENCE_PATH, encoding="utf-8") as stream:
+            payload = json.load(stream)
+        configured = payload.get("configured")
+        if payload.get("schema") != 1 or not isinstance(configured, dict):
+            return {}
+        if any(not isinstance(value, bool) for value in configured.values()):
+            return {}
+        return payload
+    except (OSError, ValueError, TypeError):
+        return {}
 
 def record_event(component: str, state: str, detail: str = "") -> None:
     """Guarda una transición pequeña. Nunca propaga una falla de monitoreo."""

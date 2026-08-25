@@ -49,6 +49,7 @@ from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 import uvicorn
 import ac_db  # NUEVO EN v15.0 — conexión SQLite única (WAL + timeout)
+import bb_runtime_status as runtime_status
 
 DB_PATH = os.getenv("DB_PATH", "data/trading_system.db")
 DASHBOARD_ACCESS_TOKEN = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
@@ -83,7 +84,7 @@ STARTUP_STATE_PATH = os.getenv("STARTUP_STATE_PATH", "data/startup_state.json")
 # Fuente única de la versión. El endpoint /health devolvía "15.0" mientras la
 # portada del documento decía otra cosa: la inconsistencia de inventario fue
 # un hallazgo de la auditoría anterior y se corrige teniendo un solo lugar.
-VERSION = "16.3.2"
+VERSION = "16.3.3"
 # NUEVO EN v10.5 — auditorías 2 y 3, hallazgo "Exposición de token en
 # URL": vigencia del token CSRF de /config, en segundos.
 CSRF_TOKEN_MAX_AGE_SECONDS = int(os.getenv("CSRF_TOKEN_MAX_AGE_SECONDS", "900"))
@@ -1227,20 +1228,33 @@ def actividad_en_vivo(token: str = Query(default=""),
     except Exception:
         detenido = None
 
-    if detenido:
+    runtime_bot = runtime_status.read_bot_state()
+    runtime_state = runtime_bot.get("state")
+    runtime_alive = runtime_bot.get("alive", False)
+
+    if not runtime_alive:
+        if posiciones:
+            banner = (f"<div class='banner b-rojo'>🔴 <b>Bot detenido con {len(posiciones)} "
+                      "posición(es) registradas como abiertas.</b> Requiere revisión antes del arranque.</div>")
+        else:
+            banner = ("<div class='banner b-amarillo'>⚪ <b>Bot de trading detenido.</b> "
+                      "El dashboard continúa disponible; no se evalúa el mercado ni se envían órdenes.</div>")
+    elif detenido:
         banner = ("<div class='banner b-rojo'>🔴 <b>Kill switch activo.</b> El bot no está abriendo "
                   "posiciones nuevas. Las abiertas siguen vigiladas.</div>")
-    elif estado_arranque.get("estado") == "ESPERANDO_APERTURA":
-        motivo = estado_arranque.get("mensaje") or "Fuera de la rueda bursátil"
+    elif runtime_state == "WAITING_OPEN":
+        motivo = runtime_bot.get("detail") or estado_arranque.get("mensaje") or "Fuera de la rueda bursátil"
         banner = (f"<div class='banner b-amarillo'>🌙 <b>Mercado cerrado.</b> "
-                  f"Motor de trading hibernado. {motivo}.</div>")
+                  f"Motor de trading en espera. {motivo}</div>")
+    elif runtime_state in ("STARTING", "INITIALIZING"):
+        banner = ("<div class='banner b-amarillo'>🟡 <b>Bot inicializando.</b> "
+                  "Todavía no está evaluando instrumentos.</div>")
     elif posiciones:
         banner = (f"<div class='banner b-verde'>🟢 <b>Operando.</b> {len(posiciones)} posición(es) "
                   f"abierta(s), ${expuesto:,.0f} comprometidos.</div>")
     else:
-        banner = ("<div class='banner b-amarillo'>🟡 <b>Vigilando sin posiciones abiertas.</b> "
-                  "El bot está evaluando el mercado; todavía no encontró una oportunidad que "
-                  "pase todos los filtros.</div>")
+        banner = ("<div class='banner b-verde'>🟢 <b>Motor activo.</b> "
+                  "Está evaluando el mercado y no tiene posiciones abiertas.</div>")
 
     fila_pos = "".join(
         f"<tr><td><b>{p.get('ticker')}</b></td><td>{p.get('quantity')}</td>"
@@ -1368,7 +1382,8 @@ def datos_historicos(token: str = Query(default=""),
     <div class="banner {'b-verde' if estado['semaforo']=='VERDE' else 'b-amarillo' if estado['semaforo']=='AMARILLO' else 'b-rojo'}">
       {circulo} <b>{estado['instrumentos_archivados']} instrumentos · {estado['velas_totales']} velas ·
       dato más reciente: {estado.get('fecha_mas_reciente') or 'ninguno'}</b>
-      {f"· atraso de {estado['atraso_dias']} días" if estado.get('atraso_dias') is not None else ""}
+      {f"· atraso de {estado.get('ruedas_atrasadas')} rueda(s) BYMA · esperada: {estado.get('fecha_esperada')}"
+       if estado.get('ruedas_atrasadas') is not None else "· frescura no verificable"}
     </div>
     <div class="tarjeta"><h2>Fuentes disponibles y antigüedad recomendada</h2><table>
       <tr><th>Fuente</th><th>Qué cubre</th><th>Antigüedad</th><th>Rol</th><th>Advertencia</th></tr>
@@ -1470,7 +1485,11 @@ def solapa_testing(token: str = Query(default=""),
     pasos = gate.leer_pasos(200)
 
     modo = estado.get("modo")
-    if modo == gate.MODO_SIMULACION:
+    runtime_bot = runtime_status.read_bot_state()
+    if not runtime_bot.get("alive", False):
+        banner = ("<div class='banner b-amarillo'>⚪ <b>Bot de trading detenido.</b> "
+                  "No hay ninguna autorización pendiente. El dashboard permanece activo.</div>")
+    elif modo == gate.MODO_SIMULACION:
         banner = ("<div class='banner b-amarillo'>🧪 <b>Modo simulación.</b> El bot recorre "
                   "todo el circuito contra el sandbox de PPI. Ninguna orden sale al mercado real.</div>")
     elif modo == gate.MODO_REAL:
@@ -1478,8 +1497,7 @@ def solapa_testing(token: str = Query(default=""),
                   "con dinero de verdad.</div>")
     elif estado.get("estado") == gate.ESPERANDO:
         banner = (f"<div class='banner b-amarillo'>⏸️ <b>Esperando tu autorización.</b> "
-                  f"Te mandé el pedido por Telegram con el código "
-                  f"<code>{estado.get('codigo','')}</code>. El bot no está operando.</div>")
+                  f"Código <code>{estado.get('codigo','')}</code>. El bot no está operando.</div>")
     else:
         banner = ("<div class='banner b-verde'>⏸️ <b>Detenido a pedido.</b> El sistema está "
                   "levantado y accesible, sin operar.</div>")

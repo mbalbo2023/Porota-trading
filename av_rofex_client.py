@@ -199,11 +199,11 @@ def _garantia_de_la_cuenta(simbolo: str) -> tuple:
     detalle = (reporte.get("accountData") or reporte.get("account_data") or {})
     for campo in ("initialMargin", "margin", "detailedAccountReports"):
         valor = detalle.get(campo)
-        if isinstance(valor, (int, float)) and valor > 0:
-            return float(valor), f"reporte de cuenta ({campo})"
+        # Un número suelto es el margen agregado de la cuenta, no la garantía
+        # de este contrato. Usarlo como unitario contradice el fail-closed.
         if isinstance(valor, dict):
             por_simbolo = valor.get(simbolo)
-            if isinstance(por_simbolo, (int, float)) and por_simbolo > 0:
+            if isinstance(por_simbolo, (int, float)) and valor.get(simbolo) > 0:
                 return float(por_simbolo), f"reporte de cuenta ({campo}.{simbolo})"
 
     override = os.getenv(f"FUTURO_GARANTIA_{_raiz(simbolo)}")

@@ -1156,15 +1156,19 @@ def evaluate_instrument(inst, ppi, gemini, notifier, ccl_cached,
 #     reinicios de Docker/systemd/`docker stop`, que sí mandan SIGTERM
 #     de por sí — sin necesidad de exponer un botón nuevo.
 _shutdown_requested = threading.Event()
+_runtime_heartbeat = bb_runtime_status.BotHeartbeat()
 
 
 def _handle_shutdown_signal(signum, frame):
     logger.warning("Señal %s recibida — se completa la vuelta de escaneo en curso y se corta ordenadamente.",
                     signal.Signals(signum).name)
+    _runtime_heartbeat.set_state("STOPPING", detail=f"Senal {signum} recibida.")
     _shutdown_requested.set()
 
 
 def main():
+    _runtime_heartbeat.start("STARTING", detail="Inicializando motor de trading.")
+    bb_runtime_status.write_config_presence()
     # NUEVO EN v13.0 — se registra antes que nada más, junto al hook de
     # introspección, para que un SIGTERM llegue en cualquier punto del
     # arranque o del loop y siempre encuentre el handler instalado.
@@ -1196,6 +1200,7 @@ def main():
             if listo:
                 break
             if motivo != ultimo_motivo:
+                _runtime_heartbeat.set_state("WAITING_OPEN", detail=motivo)
                 startup_gate.marcar_espera_calendario(motivo)
                 logger.info("Arranque automático en espera: %s", motivo)
                 ultimo_motivo = motivo
@@ -1206,6 +1211,8 @@ def main():
         startup_gate.autorizar(modo, origen="calendario_BYMA")
         logger.info("Calendario BYMA habilitó el arranque automático en modo %s.", modo)
 
+    _runtime_heartbeat.set_state("INITIALIZING", mode=str(modo or ""),
+                                 detail="Inicializando servicios operativos.")
     ppi = ResilientPPIClient(notifier)
     gemini = GeminiDecisionEngine()
 
@@ -1441,6 +1448,12 @@ def main():
             # ejecutarlos primero convertía cada domingo en una tormenta de
             # reintentos y evitaba registrar MERCADO_CERRADO.
             market_is_open = _mercado_abierto()
+            if market_is_open:
+                _runtime_heartbeat.set_state("RUNNING", mode=str(modo or ""),
+                                             detail="Motor activo dentro de rueda.")
+            else:
+                _runtime_heartbeat.set_state("WAITING_OPEN", mode=str(modo or ""),
+                                             detail="Mercado cerrado; motor en espera.")
             if not market_is_open:
                 g0 = gate.check_session_health(
                     kill_switch_active=risk_guardian.is_halted(),

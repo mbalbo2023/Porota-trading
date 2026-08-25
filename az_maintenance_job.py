@@ -21,6 +21,7 @@ VALID_JOBS = {
     "backup",
     "macro_refresh",
     "historical_refresh",
+    "historical_refresh_if_needed",
     "weekly_report",
     "monthly_autotune",
     "data_retention",
@@ -46,6 +47,16 @@ def run(job_name: str) -> None:
     elif job_name == "historical_refresh":
         import ba_data912_history
         ba_data912_history.refresh()
+    elif job_name == "historical_refresh_if_needed":
+        import al_historical_ingest
+        state = al_historical_ingest.estado_del_archivo()
+        if (not state.get("instrumentos_archivados")
+                or state.get("ruedas_atrasadas") is None
+                or state.get("ruedas_atrasadas", 0) > 0):
+            import ba_data912_history
+            ba_data912_history.refresh()
+        else:
+            logger.info("Archivo histórico al día; catch-up omitido.")
     elif job_name == "weekly_report":
         from i_auto_tuner import AutoTuner
         _notifier().send_telegram(AutoTuner().generate_weekly_report())

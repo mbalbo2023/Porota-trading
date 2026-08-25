@@ -21,8 +21,36 @@ from v_config_metadata import CONFIG_METADATA
 
 
 LOG_DIR = os.getenv("LOG_DIR", "data/logs")
-VERSION = "16.3"
+VERSION = "16.3.3"
 _installed = False
+
+MODERN_CSS = """
+<style id="porota-theme-v1633">
+:root{--bg:#f4f7fb;--surface:#fff;--surface2:#eef3f9;--text:#172033;--muted:#5d6b82;
+--line:#dce4ef;--brand:#2457d6;--brand2:#173b99;--ok:#177447;--warn:#966400;--bad:#b52b35;
+--shadow:0 8px 24px rgba(23,32,51,.08);color-scheme:light}
+*{box-sizing:border-box}html{font-size:16px}body{margin:0!important;padding:0!important;max-width:none!important;
+font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif!important;background:var(--bg)!important;
+color:var(--text)!important;line-height:1.5}#porota-page-shell{width:min(1180px,calc(100% - 28px));margin:22px auto 48px}
+#porota-top-nav{position:sticky;top:0;z-index:9999;display:flex;gap:6px;align-items:center;overflow-x:auto;
+padding:10px max(14px,calc((100vw - 1180px)/2));background:rgba(255,255,255,.96);border-bottom:1px solid var(--line);
+box-shadow:0 2px 12px rgba(23,32,51,.07);backdrop-filter:blur(10px)}#porota-top-nav a{display:inline-flex;
+align-items:center;min-height:44px;padding:8px 12px;border-radius:10px;color:var(--brand2);font-weight:650;text-decoration:none;
+white-space:nowrap}#porota-top-nav a:hover{background:var(--surface2)}a{color:var(--brand)}a:focus-visible,button:focus-visible,
+input:focus-visible{outline:3px solid #70a2ff;outline-offset:2px}.cont{max-width:none!important;margin:0!important;padding:0!important}
+h1{font-size:clamp(1.55rem,3vw,2.15rem)!important;letter-spacing:-.025em;margin:0 0 6px!important}h2{font-size:1.08rem!important;
+border:0!important;color:var(--text)!important}.sub,.chico{color:var(--muted)!important}.tarjeta,section,.card{background:var(--surface);
+border:1px solid var(--line)!important;border-radius:16px!important;padding:18px!important;box-shadow:var(--shadow);margin-bottom:16px}
+.banner{border-radius:14px!important;padding:14px 16px!important}.b-verde{background:#eaf8f0!important;border-color:#a9ddc0!important}
+.b-amarillo{background:#fff7df!important;border-color:#ead18a!important}.b-rojo{background:#fff0f1!important;border-color:#e7a8ad!important}
+table{display:block;width:100%!important;overflow-x:auto;border-collapse:separate!important;border-spacing:0;font-size:.91rem}
+th{background:var(--surface2)!important;color:var(--text);font-weight:700}th,td{padding:11px 12px!important;border-bottom:1px solid var(--line)!important;
+text-align:left}button,input,select{min-height:44px;border-radius:10px;border:1px solid var(--line);font:inherit}button{padding:9px 15px;cursor:pointer}
+code{background:var(--surface2);padding:2px 6px;border-radius:6px} @media(max-width:700px){#porota-page-shell{width:min(100% - 18px,1180px);
+margin-top:14px}.tarjeta,section,.card{padding:14px!important}th,td{padding:9px!important;font-size:.84rem}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+"""
 
 
 def _sanitize(value: str) -> str:
@@ -33,18 +61,33 @@ def _sanitize(value: str) -> str:
         return "[contenido omitido porque no pudo sanearse]"
 
 
-def _configured(var: str) -> bool:
-    return bool(os.getenv(var, ""))
+def _configured(var: str):
+    manifest = runtime_status.read_config_presence()
+    value = manifest.get("configured", {}).get(var)
+    if isinstance(value, bool):
+        return value
+    if str(os.getenv(var, "")).strip():
+        return True
+    return None
+
+
+def _safe_presence_text(var: str) -> str:
+    present = _configured(var)
+    if present is True:
+        return "******** (configurada)"
+    if present is False:
+        return "NO CONFIGURADA"
+    return "ESTADO NO DISPONIBLE"
 
 
 def _top_nav() -> str:
     return (
-        "<nav id='porota-top-nav' style='position:sticky;top:0;z-index:9999;"
-        "padding:10px;background:#fff;border-bottom:1px solid #ddd'>"
-        "<a href='/'>← Inicio</a> · <a href='/vivo'>Actividad</a> · "
-        "<a href='/telegram'>Telegram</a> · <a href='/salud'>Salud</a> · "
-        "<a href='/sre'>SRE</a> · <a href='/dashboard/logs'>Logs</a> · "
-        "<a href='/api/diagnostics/download'>Diagnóstico ZIP</a> · "
+        "<nav id='porota-top-nav' aria-label='Navegación principal'>"
+        "<a href='/'>⌂ Inicio</a><a href='/vivo'>Actividad</a>"
+        "<a href='/telegram'>Telegram</a><a href='/salud'>Salud</a>"
+        "<a href='/testing'>Testing</a><a href='/historicos'>Históricos</a>"
+        "<a href='/sre'>SRE</a><a href='/dashboard/logs'>Logs</a>"
+        "<a href='/api/diagnostics/download'>Diagnóstico</a>"
         "<a href='/config'>Configuración</a></nav>"
     )
 
@@ -61,7 +104,7 @@ def _config_page() -> str:
         for var, description, default, sensitive in rows:
             critical = var in env_guard.CRITICAL_VARS
             if sensitive or critical:
-                shown = "******** (configurada)" if _configured(var) else "NO CONFIGURADA"
+                shown = _safe_presence_text(var)
             else:
                 shown = str(default)
             body.append(
@@ -119,10 +162,18 @@ def _rewrite_html(path: str, content: str) -> str:
             "Control manual de emergencia. El arranque normal lo autoriza el calendario BYMA; Telegram no lo bloquea.",
         )
         content = content.replace("Pedir autorización por Telegram", "Autorizar manualmente (emergencia)")
-    if path != "/" and "id='porota-top-nav'" not in content:
+    if "id='porota-top-nav'" not in content:
         match = re.search(r"<body[^>]*>", content, flags=re.IGNORECASE)
         if match:
             content = content[:match.end()] + _top_nav() + content[match.end():]
+    if "porota-theme-v1633" not in content:
+        content = re.sub(r"</head>", MODERN_CSS + "</head>", content, count=1, flags=re.IGNORECASE)
+    if "id='porota-page-shell'" not in content:
+        nav_end = content.find("</nav>")
+        body_end = content.lower().rfind("</body>")
+        if nav_end >= 0 and body_end > nav_end:
+            nav_end += len("</nav>")
+            content = content[:nav_end] + "<main id='porota-page-shell'>" + content[nav_end:body_end] + "</main>" + content[body_end:]
     return content
 
 
@@ -206,7 +257,7 @@ def install(app, check_auth) -> None:
         response = await call_next(request)
         content_type = response.headers.get("content-type", "")
         if path == "/config" and request.method == "GET" and response.status_code < 400:
-            return HTMLResponse(_config_page(), status_code=response.status_code)
+            return HTMLResponse(_rewrite_html(path, _config_page()), status_code=response.status_code)
         if path.startswith("/api/logs/download/") and response.status_code < 400:
             body = b"".join([chunk async for chunk in response.body_iterator])
             headers = dict(response.headers)

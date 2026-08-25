@@ -141,6 +141,10 @@ def test_vivo_muestra_un_solo_estado_de_mercado_cerrado(monkeypatch, tmp_path):
         return []
 
     monkeypatch.setattr(dashboard, "_query", consulta)
+    monkeypatch.setattr(
+        dashboard.runtime_status, "read_bot_state",
+        lambda: {"alive": True, "state": "WAITING_OPEN", "detail": "Fuera de rueda"},
+    )
     cliente = TestClient(dashboard.app)
 
     entrada = cliente.get("/vivo?token=" + token, follow_redirects=False)
@@ -149,7 +153,7 @@ def test_vivo_muestra_un_solo_estado_de_mercado_cerrado(monkeypatch, tmp_path):
 
     assert respuesta.status_code == 200
     assert respuesta.text.count("<b>Mercado cerrado.</b>") == 1
-    assert "Motor de trading hibernado. Fin de semana." in respuesta.text
+    assert "Motor de trading en espera. Fuera de rueda" in respuesta.text
     assert "(Buenos Aires)" in respuesta.text
     consulta_senales = next(sql for sql in consultas if "FROM signals" in sql)
     assert "__SISTEMA__" in consulta_senales

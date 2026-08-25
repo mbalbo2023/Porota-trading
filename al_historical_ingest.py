@@ -206,10 +206,58 @@ def backfill_desde_iol(iol_client, simbolos: List[str], asset_class: str = "ACCI
     return {"ok": True, "instrumentos_ok": ok, "fallidos": fallidos, "velas": escritas}
 
 
+from datetime import timedelta as _timedelta
+from zoneinfo import ZoneInfo as _ZoneInfo
+import ak_byma_calendar as _byma_calendar
+
+
+HISTORICAL_READY_HOUR = int(os.getenv("HISTORICAL_READY_HOUR", "19"))
+HISTORICAL_READY_MINUTE = int(os.getenv("HISTORICAL_READY_MINUTE", "30"))
+
+
+def fecha_esperada_historica(ahora=None) -> date:
+    """Última rueda BYMA que razonablemente ya debe estar publicada."""
+    timezone = _ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
+    if ahora is None:
+        local = datetime.now(timezone)
+    elif ahora.tzinfo is None:
+        local = ahora.replace(tzinfo=timezone)
+    else:
+        local = ahora.astimezone(timezone)
+    candidate = local.date()
+    cutoff = (HISTORICAL_READY_HOUR, HISTORICAL_READY_MINUTE)
+    if (local.hour, local.minute) < cutoff or not _byma_calendar.es_dia_habil_operativo(candidate):
+        candidate -= _timedelta(days=1)
+    while not _byma_calendar.es_dia_habil_operativo(candidate):
+        candidate -= _timedelta(days=1)
+    return candidate
+
+
+def calcular_ruedas_atrasadas(fecha_mas_reciente, ahora=None):
+    """Cuenta sesiones BYMA faltantes; None significa dato inválido/futuro."""
+    try:
+        if isinstance(fecha_mas_reciente, datetime):
+            recent = fecha_mas_reciente.date()
+        elif isinstance(fecha_mas_reciente, date):
+            recent = fecha_mas_reciente
+        else:
+            recent = datetime.fromisoformat(str(fecha_mas_reciente)).date()
+        expected = fecha_esperada_historica(ahora)
+        if recent > expected:
+            return None
+        missing = 0
+        cursor = recent + _timedelta(days=1)
+        while cursor <= expected:
+            if _byma_calendar.es_dia_habil_operativo(cursor):
+                missing += 1
+            cursor += _timedelta(days=1)
+        return missing
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def estado_del_archivo() -> dict:
-    """Qué tan al día está el archivo histórico. Alimenta el semáforo del panel:
-    un archivo que dejó de actualizarse hace días sigue respondiendo consultas
-    sin dar ningún error, y esa es justamente la falla peligrosa."""
+    """Frescura en ruedas BYMA; atraso_dias queda solo por compatibilidad."""
     init_db()
     with _conn() as conn:
         fila = conn.execute("""
@@ -223,14 +271,20 @@ def estado_del_archivo() -> dict:
 
     simbolos, fecha_max, filas = fila or (0, None, 0)
     atraso_dias = None
+    ruedas_atrasadas = None
+    fecha_esperada = fecha_esperada_historica().isoformat()
     if fecha_max:
-        atraso_dias = (date.today() - datetime.fromisoformat(fecha_max).date()).days
+        try:
+            atraso_dias = (date.today() - datetime.fromisoformat(fecha_max).date()).days
+        except (TypeError, ValueError):
+            atraso_dias = None
+        ruedas_atrasadas = calcular_ruedas_atrasadas(fecha_max)
 
-    if not simbolos:
+    if not simbolos or ruedas_atrasadas is None:
         semaforo = "ROJO"
-    elif atraso_dias is not None and atraso_dias <= 3:
+    elif ruedas_atrasadas == 0:
         semaforo = "VERDE"
-    elif atraso_dias is not None and atraso_dias <= 10:
+    elif ruedas_atrasadas == 1:
         semaforo = "AMARILLO"
     else:
         semaforo = "ROJO"
@@ -240,12 +294,12 @@ def estado_del_archivo() -> dict:
         "instrumentos_archivados": simbolos,
         "velas_totales": filas,
         "fecha_mas_reciente": fecha_max,
+        "fecha_esperada": fecha_esperada,
+        "ruedas_atrasadas": ruedas_atrasadas,
         "atraso_dias": atraso_dias,
         "ultima_corrida": {"terminada": ultima[0], "fuente": ultima[1],
                            "ok": ultima[2], "fallidos": ultima[3]} if ultima else None,
     }
-
-
 def extraer_features(symbol: str) -> dict:
     """
     Comprime un año de velas en cinco números para el prompt de la IA.

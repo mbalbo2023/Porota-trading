@@ -321,10 +321,22 @@ class ResilientPPIClient:
         # por hora. Una falla de login abre este circuito compartido y evita
         # que cada ticker, health-check o WebSocket vuelva a autenticarse.
         self.AUTH_RETRY_COOLDOWN_SECONDS = int(
-            os.getenv("PPI_AUTH_RETRY_COOLDOWN_SECONDS", "3600")
+            os.getenv("PPI_AUTH_RETRY_COOLDOWN_SECONDS", "900")
+        )
+        self.SERVER_RETRY_COOLDOWN_SECONDS = int(
+            os.getenv("PPI_SERVER_RETRY_COOLDOWN_SECONDS", "600")
         )
         self.RATE_LIMIT_COOLDOWN_SECONDS = int(
             os.getenv("PPI_RATE_LIMIT_COOLDOWN_SECONDS", "3600")
+        )
+        self.AUTH_UNKNOWN_COOLDOWN_SECONDS = int(
+            os.getenv("PPI_AUTH_UNKNOWN_COOLDOWN_SECONDS", "3600")
+        )
+        self.LOGIN_MAX_ATTEMPTS_PER_WINDOW = int(
+            os.getenv("PPI_LOGIN_MAX_ATTEMPTS_PER_HOUR", "6")
+        )
+        self.LOGIN_ATTEMPT_WINDOW_SECONDS = int(
+            os.getenv("PPI_LOGIN_ATTEMPT_WINDOW_SECONDS", "3600")
         )
 
         # NUEVO EN v12.0 — Circuit Breaker real (Instrucción 7). Antes
@@ -464,6 +476,65 @@ class ResilientPPIClient:
             base_url.split("/", 3)[2],
         )
 
+    def _reserve_login_attempt(self) -> tuple[bool, int]:
+        """Reserva en SQLite un unico POST de login dentro de la ventana.
+
+        El limite local queda por debajo de la cuota conocida de Sandbox y se
+        comparte entre procesos. Si el guard no puede persistir, falla cerrado.
+        """
+        now = time.time()
+        window_start = now - self.LOGIN_ATTEMPT_WINDOW_SECONDS
+        conn = None
+        try:
+            conn = ac_db.connect_raw()
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS ppi_login_attempts (
+                       attempted_at REAL NOT NULL
+                   )"""
+            )
+            conn.execute(
+                "DELETE FROM ppi_login_attempts WHERE attempted_at < ?",
+                (window_start,),
+            )
+            rows = conn.execute(
+                "SELECT attempted_at FROM ppi_login_attempts ORDER BY attempted_at"
+            ).fetchall()
+            if len(rows) >= self.LOGIN_MAX_ATTEMPTS_PER_WINDOW:
+                retry = max(1, int(rows[0][0] + self.LOGIN_ATTEMPT_WINDOW_SECONDS - now))
+                conn.commit()
+                return False, retry
+            conn.execute(
+                "INSERT INTO ppi_login_attempts(attempted_at) VALUES (?)", (now,)
+            )
+            conn.commit()
+            return True, 0
+        except Exception as exc:
+            if conn is not None:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            logger.error("Guard persistente de login PPI no disponible: %s", exc)
+            return False, self.AUTH_UNKNOWN_COOLDOWN_SECONDS
+        finally:
+            if conn is not None:
+                conn.close()
+
+    def _login_failure_policy(self, error: Exception, safe_error: str,
+                              http_diag: str = "") -> tuple[str, int]:
+        evidence = " ".join((str(error), safe_error, http_diag))
+        category = self._classify_error(Exception(evidence))
+        if category == "RATE_LIMIT":
+            return "RATE_LIMIT", self.RATE_LIMIT_COOLDOWN_SECONDS
+        if category == "AUTH":
+            return "AUTH_REJECTED", self.AUTH_RETRY_COOLDOWN_SECONDS
+        if category == "SERVER":
+            return "UPSTREAM_TEMPORARY", self.SERVER_RETRY_COOLDOWN_SECONDS
+        if "Respuesta no JSON" in safe_error or "JSONDecodeError" in evidence:
+            return "PROTOCOL_TEMPORARY", self.SERVER_RETRY_COOLDOWN_SECONDS
+        return "CONFIGURATION_ERROR", self.AUTH_UNKNOWN_COOLDOWN_SECONDS
+
     def _login(self) -> bool:
         now = time.time()
         if now < self._auth_blocked_until:
@@ -474,6 +545,20 @@ class ResilientPPIClient:
         try:
             now = time.time()
             if now < self._auth_blocked_until:
+                return False
+            allowed, retry_after = self._reserve_login_attempt()
+            if not allowed:
+                self.client = None
+                self._authenticated = False
+                self._auth_last_error = "Limite local de intentos de login alcanzado."
+                self._auth_blocked_until = time.time() + retry_after
+                _persist_system_event(
+                    "PPI_AUTH", "LOCAL_LIMIT",
+                    f"Proximo intento local dentro de {retry_after}s.",
+                )
+                logger.warning(
+                    "Login PPI bloqueado por limite local; reintento en %ss.", retry_after,
+                )
                 return False
             self._auth_last_attempt = now
             self._auth_http_diagnostic = ""
@@ -499,18 +584,14 @@ class ResilientPPIClient:
                 or "JSONDecodeError" in type(e).__name__
             ):
                 safe_error = f"Respuesta no JSON de PPI ({http_diag})"
-            rate_limited = (
-                "HTTP 429" in http_diag
-                or self._classify_error(e) == "RATE_LIMIT"
+            state, cooldown = self._login_failure_policy(
+                e, safe_error, http_diag
             )
-            cooldown = (self.RATE_LIMIT_COOLDOWN_SECONDS if rate_limited
-                        else self.AUTH_RETRY_COOLDOWN_SECONDS)
             self.client = None
             self._authenticated = False
             self._token_obtenido_en = 0.0
             self._auth_last_error = safe_error
             self._auth_blocked_until = time.time() + cooldown
-            state = "RATE_LIMIT" if rate_limited else "ERROR"
             _persist_system_event(
                 "PPI_AUTH", state,
                 f"{safe_error}. Próximo intento: {runtime_status.epoch_iso(self._auth_blocked_until)}.",
@@ -665,7 +746,12 @@ class ResilientPPIClient:
             return "RATE_LIMIT"
         if any(code in msg for code in ("401", "403", "Unauthorized", "Forbidden")):
             return "AUTH"
-        if any(code in msg for code in ("502", "503", "504", "Timeout", "timeout", "ConnectionError")):
+        temporary = (
+            "502", "503", "504", "timeout", "connectionerror",
+            "connection reset", "connection refused", "name resolution",
+            "temporary failure", "remotedisconnected",
+        )
+        if any(code in lower for code in temporary):
             return "SERVER"
         return "UNKNOWN"
 

@@ -18,6 +18,8 @@ def test_scheduler_siempre_activo_contiene_todas_las_tareas():
         "maintenance_data_retention",
         "maintenance_macro_refresh",
         "maintenance_historical_refresh",
+        "maintenance_historical_catchup",
+        "maintenance_historical_startup_catchup",
         "maintenance_daily_backup",
         "maintenance_model_guardian",
         "maintenance_monthly_report",

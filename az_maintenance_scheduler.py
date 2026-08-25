@@ -55,8 +55,12 @@ def build_scheduler() -> BackgroundScheduler:
                       hour=2, minute=30, args=["macro_refresh"])
     scheduler.add_job(_run_job, "cron", id="maintenance_daily_backup",
                       hour=3, minute=0, args=["backup"])
+    scheduler.add_job(_run_job, "cron", id="maintenance_historical_catchup",
+                      day_of_week="mon-fri", hour=10, minute=15,
+                      args=["historical_refresh_if_needed"])
     scheduler.add_job(_run_job, "cron", id="maintenance_historical_refresh",
-                      day_of_week="mon-fri", hour=9, minute=30, args=["historical_refresh"])
+                      day_of_week="mon-fri", hour=19, minute=20,
+                      args=["historical_refresh"])
     scheduler.add_job(_run_job, "cron", id="maintenance_model_guardian",
                       day_of_week="mon", hour=9, args=["model_guardian"])
     scheduler.add_job(_run_job, "cron", id="maintenance_monthly_report",
@@ -67,6 +71,9 @@ def build_scheduler() -> BackgroundScheduler:
                       day_of_week="sun", hour=20, args=["weekly_report"])
     scheduler.add_job(_run_job, "interval", id="maintenance_news_scan",
                       minutes=45, args=["news_scan"])
+
+    scheduler.add_job(_run_job, "date", id="maintenance_historical_startup_catchup",
+                      args=["historical_refresh_if_needed"])
 
     return scheduler
 
