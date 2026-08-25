@@ -1,0 +1,197 @@
+"""Barrera HTTP fail-closed para observacion de mercado PPI Produccion.
+
+Este modulo no conoce ordenes ni cuentas. Solo permite autenticacion y datos
+de mercado contra el host productivo exacto. Cualquier ruta no enumerada se
+rechaza antes de que requests entregue el paquete al adaptador de red.
+"""
+
+from __future__ import annotations
+
+import threading
+from dataclasses import dataclass, field
+from typing import Callable, Optional
+from urllib.parse import urlsplit
+
+import requests
+
+
+PRODUCTION_HOST = "clientapi.portfoliopersonal.com"
+
+_POST_PATHS = {
+    "/api/1.0/account/loginapi",
+    "/api/1.0/account/refreshtoken",
+}
+
+_GET_PATHS = {
+    "/api/1.0/configuration/instrumenttypes",
+    "/api/1.0/configuration/markets",
+    "/api/1.0/configuration/settlements",
+    "/api/1.0/configuration/holidays",
+    "/api/1.0/configuration/islocalholiday",
+    "/api/1.0/marketdata/searchinstrument",
+    "/api/1.0/marketdata/search",
+    "/api/1.0/marketdata/current",
+    "/api/1.0/marketdata/book",
+    "/api/1.0/marketdata/intraday",
+}
+
+
+class ReadOnlyPolicyViolation(RuntimeError):
+    """La solicitud fue bloqueada localmente; no salio a la red."""
+
+
+def _normal_path(value: str) -> str:
+    path = urlsplit(value).path.rstrip("/")
+    return path.lower() or "/"
+
+
+@dataclass
+class ReadOnlyTransportGuard:
+    """Intercepta Session.request y HTTPAdapter.send con lista blanca cerrada."""
+
+    audit: Optional[Callable[[str, str, str], None]] = None
+    connect_timeout: int = 10
+    read_timeout: int = 30
+    calls_allowed: int = 0
+    calls_blocked: int = 0
+    login_calls: int = 0
+    _installed: bool = False
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _original_request: object = None
+    _original_send: object = None
+
+    def _record(self, method: str, path: str, result: str) -> None:
+        if self.audit:
+            self.audit(method, path, result)
+
+    def check(self, method: str, url: str, *, count_login: bool = False) -> tuple[str, str]:
+        parsed = urlsplit(str(url))
+        method = str(method or "").upper()
+        path = _normal_path(url)
+
+        if parsed.scheme.lower() != "https":
+            raise ReadOnlyPolicyViolation("Solo se permite HTTPS.")
+        if (parsed.hostname or "").lower() != PRODUCTION_HOST:
+            raise ReadOnlyPolicyViolation("Host fuera de la lista blanca productiva.")
+
+        allowed = ((method == "POST" and path in _POST_PATHS) or
+                   (method == "GET" and path in _GET_PATHS))
+        if not allowed:
+            raise ReadOnlyPolicyViolation(
+                f"Ruta bloqueada por politica de solo lectura: {method} {path}"
+            )
+
+        with self._lock:
+            if count_login and path == "/api/1.0/account/loginapi":
+                if self.login_calls >= 1:
+                    raise ReadOnlyPolicyViolation(
+                        "Segundo login bloqueado dentro del mismo proceso."
+                    )
+                self.login_calls += 1
+        return method, path
+
+    def install(self) -> "ReadOnlyTransportGuard":
+        if self._installed:
+            return self
+
+        guard = self
+        self._original_request = requests.sessions.Session.request
+        self._original_send = requests.adapters.HTTPAdapter.send
+        original_request = self._original_request
+        original_send = self._original_send
+
+        def guarded_request(session, method, url, **kwargs):
+            try:
+                checked_method, checked_path = guard.check(method, url, count_login=True)
+            except ReadOnlyPolicyViolation:
+                with guard._lock:
+                    guard.calls_blocked += 1
+                guard._record(str(method).upper(), _normal_path(url), "BLOCKED")
+                raise
+            kwargs["allow_redirects"] = False
+            kwargs["timeout"] = (guard.connect_timeout, guard.read_timeout)
+            guard._record(checked_method, checked_path, "ALLOWED")
+            return original_request(session, method, url, **kwargs)
+
+        def guarded_send(adapter, request, **kwargs):
+            try:
+                checked_method, checked_path = guard.check(request.method, request.url)
+            except ReadOnlyPolicyViolation:
+                with guard._lock:
+                    guard.calls_blocked += 1
+                guard._record(
+                    str(request.method).upper(), _normal_path(request.url), "BLOCKED"
+                )
+                raise
+            with guard._lock:
+                guard.calls_allowed += 1
+            kwargs["timeout"] = (guard.connect_timeout, guard.read_timeout)
+            return original_send(adapter, request, **kwargs)
+
+        requests.sessions.Session.request = guarded_request
+        requests.adapters.HTTPAdapter.send = guarded_send
+        self._installed = True
+        return self
+
+    def restore(self) -> None:
+        if not self._installed:
+            return
+        requests.sessions.Session.request = self._original_request
+        requests.adapters.HTTPAdapter.send = self._original_send
+        self._installed = False
+
+
+class ProductionMarketReader:
+    """Fachada sin atributo de ordenes, cuentas, transferencias ni cancelacion."""
+
+    def __init__(self, api_key: str, api_secret: str,
+                 audit: Optional[Callable[[str, str, str], None]] = None):
+        if not api_key or not api_secret:
+            raise ValueError("Faltan credenciales productivas.")
+        self.__api_key = api_key
+        self.__api_secret = api_secret
+        self.__guard = ReadOnlyTransportGuard(audit=audit).install()
+        self.__client = None
+        self.__authenticated = False
+
+    @property
+    def metrics(self) -> dict:
+        return {
+            "http_allowed": self.__guard.calls_allowed,
+            "http_blocked": self.__guard.calls_blocked,
+            "login_calls": self.__guard.login_calls,
+            "authenticated": self.__authenticated,
+        }
+
+    def login_once(self) -> None:
+        if self.__authenticated:
+            return
+        from ppi_client.ppi import PPI
+
+        client = PPI(sandbox=False)
+        client.account.login_api(self.__api_key, self.__api_secret)
+        self.__client = client
+        self.__authenticated = True
+
+    def _market(self):
+        if not self.__authenticated or self.__client is None:
+            raise RuntimeError("El lector no esta autenticado.")
+        return self.__client.marketdata
+
+    def current(self, ticker: str, instrument_type: str, settlement: str):
+        return self._market().current(ticker, instrument_type, settlement)
+
+    def book(self, ticker: str, instrument_type: str, settlement: str):
+        return self._market().book(ticker, instrument_type, settlement)
+
+    def history(self, ticker: str, instrument_type: str, settlement: str,
+                date_from, date_to):
+        return self._market().search(
+            ticker, instrument_type, settlement, date_from, date_to
+        )
+
+    def intraday(self, ticker: str, instrument_type: str, settlement: str):
+        return self._market().intraday(ticker, instrument_type, settlement)
+
+    def close(self) -> None:
+        self.__guard.restore()

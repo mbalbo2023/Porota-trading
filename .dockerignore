@@ -20,7 +20,6 @@ model_cache/
 *.log
 
 .git/
-.github/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -31,3 +30,6 @@ venv/
 .venv/
 docs/
 *.pdf
+.secrets
+data/observer
+porota_production_paper_v1634.sh

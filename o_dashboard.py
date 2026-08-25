@@ -84,7 +84,7 @@ STARTUP_STATE_PATH = os.getenv("STARTUP_STATE_PATH", "data/startup_state.json")
 # Fuente única de la versión. El endpoint /health devolvía "15.0" mientras la
 # portada del documento decía otra cosa: la inconsistencia de inventario fue
 # un hallazgo de la auditoría anterior y se corrige teniendo un solo lugar.
-VERSION = "16.3.3"
+VERSION = "16.3.4"
 # NUEVO EN v10.5 — auditorías 2 y 3, hallazgo "Exposición de token en
 # URL": vigencia del token CSRF de /config, en segundos.
 CSRF_TOKEN_MAX_AGE_SECONDS = int(os.getenv("CSRF_TOKEN_MAX_AGE_SECONDS", "900"))
@@ -1560,6 +1560,11 @@ def testing_estado(token: str = Query(default=""),
 # Extensiones v16.3: seguridad, Telegram y diagnósticos sin red.
 import bc_dashboard_v163
 bc_dashboard_v163.install(app, _check_auth)
+
+# v16.3.4 — modo de simulacion productiva aislado.
+import bg_paper_dashboard
+bg_paper_dashboard.install(app, _check_auth)
+
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ from v_config_metadata import CONFIG_METADATA
 
 
 LOG_DIR = os.getenv("LOG_DIR", "data/logs")
-VERSION = "16.3.3"
+VERSION = "16.3.4"
 _installed = False
 
 MODERN_CSS = """
