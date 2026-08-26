@@ -196,6 +196,43 @@ def test_universo_ampliado_mantiene_derivados_solo_contexto(monkeypatch, tmp_pat
     assert any(row[1] == "FUTUROS" and not row[4] for row in candidates)
 
 
+def test_universo_rota_sin_aumentar_el_tope_y_evitar_variantes(tmp_path, monkeypatch):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 6)
+    monkeypatch.setattr(observer, "CORE_SYMBOL_LIMIT", 3)
+    monkeypatch.setattr(observer, "ROTATION_DWELL_CYCLES", 1)
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [
+        ("GGAL", "ACCIONES"), ("YPFD", "ACCIONES"), ("PAMP", "ACCIONES"),
+        ("GGALC", "ACCIONES"), ("GGALD", "ACCIONES"), ("BMA", "ACCIONES"),
+        ("BBAR", "ACCIONES"), ("AAPL", "CEDEARS"), ("MSFT", "CEDEARS"),
+    ]
+    with store.connect() as connection:
+        for ticker, kind in rows:
+            connection.execute("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+                               (ticker, kind, "A-24HS", "BYMA", 1, "AVAILABLE", "ok", now))
+    first = observer._active_symbols(store)
+    second = observer._active_symbols(store)
+    assert len(first) <= 6 and len(second) <= 6
+    assert not {"GGALC", "GGALD"}.intersection({row[0] for row in first + second})
+    assert {row[0] for row in first} != {row[0] for row in second}
+
+
+def test_instrumento_con_fallas_entra_en_pausa_y_sale_del_ciclo(tmp_path, monkeypatch):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    monkeypatch.setattr(observer, "DATA_ERROR_QUARANTINE_THRESHOLD", 2)
+    now = datetime.now(timezone.utc).isoformat()
+    with store.connect() as connection:
+        connection.execute("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+                           ("BBARC", "ACCIONES", "A-24HS", "BYMA", 1,
+                            "AVAILABLE", "ok", now))
+    observer._instrument_error(store, "BBARC", "ACCIONES", "A-24HS", ValueError("bad"))
+    observer._instrument_error(store, "BBARC", "ACCIONES", "A-24HS", ValueError("bad"))
+    assert "BBARC" not in {row[0] for row in observer._active_symbols(store)}
+
+
 def test_gemini_es_porton_critico_y_persiste_veredicto(tmp_path):
     class Gate:
         def __init__(self, approve):
@@ -242,6 +279,14 @@ def test_gemini_sin_inventario_usa_cadena_estable_actual():
     models = rank_models("gemini-2.5-flash-lite", (), None)
     assert tuple(models[:len(CURRENT_TEXT_MODELS)]) == CURRENT_TEXT_MODELS
     assert models[0] == "gemini-3.7-flash"
+
+
+def test_modelo_operativo_se_fija_y_no_alterna_durante_rueda():
+    source = (ROOT / "bh_paper_gemini.py").read_text(encoding="utf-8")
+    manager = (ROOT / "porota_mode_manager.py").read_text(encoding="utf-8")
+    assert 'GEMINI_STRICT_MODEL", "true"' in source
+    assert '"GEMINI_MODEL": "gemini-3.7-flash"' in manager
+    assert '"GEMINI_MODEL_CHAIN": ""' in manager
 
 
 def test_comando_gemini_no_abre_ni_requiere_ppi(tmp_path):

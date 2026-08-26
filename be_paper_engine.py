@@ -196,7 +196,7 @@ class PaperBroker:
                  risk_pct="0.005", max_positions=3, fee_rate="0.00605",
                  slippage_bps="2", participation="0.10",
                  max_position_pct="0.25", max_total_exposure_pct="0.60",
-                 ai_gate=None, require_ai=False, context_fn=None):
+                 ai_gate=None, require_ai=False, context_fn=None, notify_fn=None):
         self.store = store
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
@@ -209,6 +209,16 @@ class PaperBroker:
         self.ai_gate = ai_gate
         self.require_ai = bool(require_ai)
         self.context_fn = context_fn
+        self.notify_fn = notify_fn
+
+    def _notify(self, event, paper_id, message):
+        if not self.notify_fn:
+            return
+        try:
+            self.notify_fn(event, paper_id, message)
+        except Exception as exc:
+            self.store.event("PAPER_NOTIFICATION_ERROR",
+                             f"{paper_id}: {type(exc).__name__}: {str(exc)[:240]}", paper_id)
 
     def _cost(self, price, qty, asset_class="ACCIONES"):
         """Costo de una punta; el spread ya vive en bid/ask y no se duplica."""
@@ -338,6 +348,12 @@ class PaperBroker:
             c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                       (q.observed_at, SOURCE, "PAPER_FILLED_BUY", paper_id,
                        f"Compra simulada {qty} {q.symbol} @ {entry}"))
+        self._notify(
+            "OPEN", paper_id,
+            f"🟣 COMPRA SIMULADA — {q.symbol}\nCantidad: {qty}\nEntrada paper: ${entry}\n"
+            f"Importe ficticio comprometido: ${entry * qty + cost}\n"
+            f"Stop: ${stop} · Objetivo: ${target}\nCapital ficticio. Órdenes reales: NINGUNA.",
+        )
 
     def _maybe_close(self, q: Quote):
         p = self.store.open_position(q.symbol)
@@ -389,6 +405,11 @@ class PaperBroker:
             c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                       (q.observed_at, SOURCE, "PAPER_FILLED_SELL", p["paper_id"],
                        f"Venta simulada {qty} {q.symbol} @ {exit_price}; PnL neto {net}"))
+        self._notify(
+            "CLOSE", p["paper_id"],
+            f"🟣 CIERRE SIMULADO — {q.symbol}\nCantidad: {qty}\nSalida paper: ${exit_price}\n"
+            f"Resultado neto ficticio: ${net} ({ret:.2f}%)\nMotivo: {reason}. Órdenes reales: NINGUNA.",
+        )
 
     def mark_equity(self, quotes: dict):
         exposure = unrealized = ZERO

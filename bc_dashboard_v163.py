@@ -162,7 +162,7 @@ def _rewrite_html(path: str, content: str) -> str:
             "Control manual de emergencia. El arranque normal lo autoriza el calendario BYMA; Telegram no lo bloquea.",
         )
         content = content.replace("Pedir autorización por Telegram", "Autorizar manualmente (emergencia)")
-    if "id='porota-top-nav'" not in content:
+    if "id='porota-top-nav'" not in content and "id='porota-canonical-nav'" not in content:
         match = re.search(r"<body[^>]*>", content, flags=re.IGNORECASE)
         if match:
             content = content[:match.end()] + _top_nav() + content[match.end():]

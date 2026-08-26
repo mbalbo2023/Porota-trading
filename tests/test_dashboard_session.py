@@ -115,7 +115,11 @@ def test_actividad_en_vivo_responde_con_sesion_valida(monkeypatch):
 
     respuesta = cliente.get("/vivo")
     assert respuesta.status_code == 200
-    assert "Actividad en vivo" in respuesta.text
+    # En simulación productiva /vivo es un alias deliberado del panel
+    # consolidado: evita tres pantallas distintas para el mismo estado.
+    assert "Panel de simulación productiva" in respuesta.text
+    assert "Una sola vista para estado, actividad y simulación" in respuesta.text
+    assert respuesta.text.count("id='porota-canonical-nav'") == 1
 
 def test_dashboard_usa_zona_horaria_del_mercado(monkeypatch):
     monkeypatch.setattr(dashboard, "SERVER_TIMEZONE", "America/Argentina/Buenos_Aires")
@@ -125,7 +129,7 @@ def test_dashboard_usa_zona_horaria_del_mercado(monkeypatch):
     assert getattr(ahora.tzinfo, "key", None) == "America/Argentina/Buenos_Aires"
 
 
-def test_vivo_muestra_un_solo_estado_de_mercado_cerrado(monkeypatch, tmp_path):
+def test_vivo_es_alias_del_panel_consolidado(monkeypatch, tmp_path):
     token = _preparar(monkeypatch)
     estado = tmp_path / "startup_state.json"
     estado.write_text(
@@ -152,9 +156,13 @@ def test_vivo_muestra_un_solo_estado_de_mercado_cerrado(monkeypatch, tmp_path):
     respuesta = cliente.get("/vivo")
 
     assert respuesta.status_code == 200
-    assert respuesta.text.count("<b>Mercado cerrado.</b>") == 1
-    assert "Motor de trading en espera. Fuera de rueda" in respuesta.text
-    assert "(Buenos Aires)" in respuesta.text
+    assert "Panel de simulación productiva" in respuesta.text
+    assert "Una sola vista para estado, actividad y simulación" in respuesta.text
+    assert respuesta.text.count("id='porota-canonical-nav'") == 1
+    # La ruta heredada conserva sus lecturas SQLite para no saltear la
+    # autenticación y renovación de sesión existentes. Son exclusivamente
+    # SELECT locales: no implican llamadas a PPI ni capacidad de ordenar.
+    assert consultas
+    assert all(sql.lstrip().upper().startswith("SELECT") for sql in consultas)
     consulta_senales = next(sql for sql in consultas if "FROM signals" in sql)
     assert "__SISTEMA__" in consulta_senales
-

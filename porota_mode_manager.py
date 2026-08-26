@@ -116,7 +116,7 @@ def dashboard_env(mode):
 
 
 def observer_ai_env():
-    """Archivo 0600 exclusivo del observador; el dashboard no recibe la key."""
+    """Archivo 0600 exclusivo del observador; el dashboard no recibe secretos."""
     env = env_file()
     key = env.get("GEMINI_API_KEY", "").strip()
     if not key:
@@ -124,8 +124,11 @@ def observer_ai_env():
     target = DATA / "diagnosticos" / "observer_ai_v1634.env"
     values = {
         "GEMINI_API_KEY": key,
-        "GEMINI_MODEL": env.get("GEMINI_MODEL", "").strip() or "gemini-3.7-flash",
-        "GEMINI_MODEL_CHAIN": env.get("GEMINI_MODEL_CHAIN", "").strip(),
+        "GEMINI_MODEL": "gemini-3.7-flash",
+        "GEMINI_MODEL_CHAIN": "",
+        "GEMINI_STRICT_MODEL": "true",
+        "TELEGRAM_BOT_TOKEN": env.get("TELEGRAM_BOT_TOKEN", "").strip(),
+        "TELEGRAM_CHAT_ID": env.get("TELEGRAM_CHAT_ID", "").strip(),
     }
     target.write_text("\n".join(f"{name}={value}" for name, value in values.items()) + "\n",
                       encoding="utf-8")
@@ -171,6 +174,10 @@ def simulation():
         "-e", "PAPER_PREOPEN_MINUTES=15",
         "-e", "PPI_LOGIN_COOLDOWN_SECONDS=900",
         "-e", "PAPER_ACTIVE_SYMBOL_LIMIT=20",
+        "-e", "PAPER_CORE_SYMBOL_LIMIT=10",
+        "-e", "PAPER_ROTATION_DWELL_CYCLES=8",
+        "-e", "PAPER_DATA_ERROR_THRESHOLD=3",
+        "-e", "PAPER_DATA_ERROR_QUARANTINE_MINUTES=30",
         "-e", "SERVER_TIMEZONE=America/Argentina/Buenos_Aires",
         "--env-file", str(ai_env),
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
