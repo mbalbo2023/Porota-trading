@@ -28,8 +28,9 @@ Telegram, SRE, Logs, Diagnóstico y Configuración, además de Volver.
 
 - **Motor de trading:** cada operación paper se despliega individualmente y
   muestra señal, variables, costos, fills simulados, eventos y veredicto.
-- **IA:** sólo se atribuye una reacción a Gemini si existe una evaluación
-  persistida. En caso contrario se informa que no participó.
+- **IA:** Gemini es un portón crítico. La estrategia determinística propone;
+  Gemini aprueba o veta. Si el modelo o su contrato JSON fallan, no se abre ni
+  siquiera una posición simulada. Cada veredicto queda persistido.
 - **Salud:** inventaría todas las APIs y conserva último reporte y último éxito.
 - **Históricos:** muestra último intento/éxito por fuente y fecha del catálogo.
 - **Sincronización manual:** el botón del dashboard encola una orden local. El
@@ -41,7 +42,9 @@ Telegram, SRE, Logs, Diagnóstico y Configuración, además de Volver.
 OPENBYMADATA es una web pública oficial. Las APIs oficiales de BYMA requieren
 alta o contratación, por lo que v16.3.4 no intenta utilizar endpoints ocultos.
 Hasta contar con ese acceso, catálogo e históricos se obtienen de PPI Producción
-bajo la barrera de solo lectura.
+bajo la barrera de solo lectura. Cada instrumento devuelto por PPI queda
+inventariado; hasta 20 elegibles se escanean por ciclo para limitar cuota,
+latencia y memoria, sin ocultar el resto del universo disponible.
 
 ## Patrimonio en simulación
 

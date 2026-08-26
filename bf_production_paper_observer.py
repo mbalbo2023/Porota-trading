@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolation
 from be_paper_engine import D, PaperBroker, PaperStore, Quote, now_iso
+from bh_paper_gemini import GeminiPaperGate
 
 
 VERSION = "16.3.4"
@@ -26,7 +27,8 @@ INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
 COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
 PUBLIC_CHECK_SECONDS = max(900, int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")))
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
-ACTIVE_SYMBOL_LIMIT = max(3, min(int(os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "12")), 30))
+ACTIVE_SYMBOL_LIMIT = max(3, min(int(os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "20")), 30))
+CATALOG_QUERY_SLEEP_SECONDS = max(0.0, float(os.getenv("PPI_CATALOG_QUERY_SLEEP_SECONDS", "0.05")))
 MARKET_OPEN_HOUR = int(os.getenv("MARKET_OPEN_HOUR", "11"))
 MARKET_OPEN_MINUTE = int(os.getenv("MARKET_OPEN_MINUTE", "0"))
 MARKET_CLOSE_HOUR = int(os.getenv("MARKET_CLOSE_HOUR", "17"))
@@ -37,6 +39,21 @@ CORE_SYMBOLS = (
     ("AL30", "BONOS", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
 )
+# Semillas amplias; PPI sigue siendo quien confirma existencia, clase y mercado.
+# La lista no habilita por si sola ningun instrumento y una coincidencia devuelta
+# por el broker se persiste individualmente en el universo observable.
+DISCOVERY_SEEDS = {
+    "ACCIONES": ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "TXAR",
+                 "ALUA", "LOMA", "COME", "EDN", "TGSU2", "TGNO4", "TRAN", "BYMA",
+                 "CRES", "HARG", "IRSA", "TECO2", "VALO", "MIRG", "MOLI", "AGRO"),
+    "CEDEARS": ("AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "SPY",
+                "DIA", "QQQ", "IWM", "KO", "MCD", "WMT", "DIS", "NFLX", "AMD",
+                "INTC", "AVGO", "ORCL", "IBM", "CRM", "JPM", "BAC", "V", "MA",
+                "XOM", "CVX", "GOLD", "VALE", "PBR", "BABA", "MELI", "NU"),
+    "BONOS": ("AL29", "AL30", "AL35", "AE38", "AL41", "GD29", "GD30", "GD35",
+              "GD38", "GD41", "GD46", "BPOA7", "BPOB7", "TX26", "TX28", "TZX27"),
+    "ETF": ("SPY", "DIA", "QQQ", "IWM"),
+}
 STOP = False
 
 SAFE_PAPER_TYPES = {"ACCIONES", "CEDEARS", "BONOS", "ETF", "ETFS"}
@@ -105,6 +122,10 @@ def _candidate_universe():
                               kind in SAFE_PAPER_TYPES))
     except Exception:
         pass
+    for kind, tickers in DISCOVERY_SEEDS.items():
+        for ticker in tickers:
+            rows.add((ticker, kind, SETTLEMENT_BY_TYPE.get(kind, "A-24HS"),
+                      "BYMA", kind in SAFE_PAPER_TYPES))
     # Contexto derivado: se valida disponibilidad, nunca entra al paper broker
     # sin multiplicador, vencimiento y margen atribuible al contrato.
     rows.add(("DLR", "FUTUROS", "A-24HS", "ROFEX", False))
@@ -250,8 +271,13 @@ def _public_probe(store):
             _sync_state(store, component, "ROJO", 0,
                         f"{type(exc).__name__}: {str(exc)[:180]}")
     _health(store, "BYMA_INSTRUMENTS_API", "GRIS",
-            "La API oficial de instrumentos requiere alta/acceso de BYMA; no se usan endpoints no documentados.",
+            "Los planes oficiales de instrumentos/market data requieren alta o suscripcion, incluso los gratuitos; no se usan endpoints ocultos.",
             "catálogo oficial BYMA")
+    _sync_state(store, "BYMA_CALENDAR", "VERDE", 1,
+                f"Calendario local auditado: fase actual {_market_phase()}.", success=True)
+    _health(store, "BYMA_CALENDAR", "VERDE",
+            f"Calendario operativo auditado; fase actual {_market_phase()}.",
+            "ak_byma_calendar", success=True)
 
 
 def _claim_command(store):
@@ -316,6 +342,13 @@ def _download_catalog(reader, store):
                               (instrument_type, ticker, str(description or "")[:300],
                                str(market or "")[:80], str(settlement or "")[:80], downloaded,
                                json.dumps(row, ensure_ascii=False, default=str)[:8000]))
+                    actual_type = str(row.get("instrumentType") or row.get("type") or
+                                      row.get("Tipo") or instrument_type).upper()
+                    actual_can_simulate = actual_type in SAFE_PAPER_TYPES and market_query == "BYMA"
+                    c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+                              (ticker.upper(), actual_type, str(settlement or fallback_settlement),
+                               str(market or market_query), int(actual_can_simulate), "AVAILABLE",
+                               f"Descubierto por PPI a partir de {ticker_query}.", downloaded))
                     total += 1
             if market_query == "ROFEX" and records:
                 rofex_available += len(records)
@@ -327,6 +360,8 @@ def _download_catalog(reader, store):
             c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
                       (ticker_query, instrument_type, fallback_settlement, market_query,
                        int(can_simulate), status, detail, downloaded))
+        if CATALOG_QUERY_SLEEP_SECONDS:
+            time.sleep(CATALOG_QUERY_SLEEP_SECONDS)
     state = "VERDE" if available and not failures else "AMARILLO" if available else "ROJO"
     detail = (f"{available} candidatos validados; {total} instrumentos devueltos; "
               f"{failures} búsquedas fallidas. Ticker y Name siempre no vacíos.")
@@ -354,13 +389,47 @@ def _active_symbols(store):
               ORDER BY CASE WHEN ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
               instrument_type,ticker""").fetchall()
         seen = {value[0] for value in core}
+        groups = {kind: [] for kind in ("ACCIONES", "CEDEARS", "BONOS", "ETF", "ETFS")}
         for ticker, kind, settlement in rows:
-            if ticker not in seen:
-                core.append((ticker, kind, settlement))
-                seen.add(ticker)
+            if ticker not in seen and kind in groups:
+                groups[kind].append((ticker, kind, settlement))
+        while len(core) < ACTIVE_SYMBOL_LIMIT and any(groups.values()):
+            for kind in groups:
+                if groups[kind] and len(core) < ACTIVE_SYMBOL_LIMIT:
+                    value = groups[kind].pop(0)
+                    if value[0] not in seen:
+                        core.append(value)
+                        seen.add(value[0])
     except Exception:
         pass
     return tuple(core[:ACTIVE_SYMBOL_LIMIT])
+
+
+def _gemini_context(store, symbol):
+    """Contexto compacto: historico PPI y fase BYMA, sin red adicional."""
+    result = {"market_phase": _market_phase(), "source": "PPI_PRODUCTION_READ_ONLY"}
+    try:
+        with store.connect() as c:
+            row = c.execute("""SELECT row_count,date_from,date_to,downloaded_at
+              FROM production_history WHERE symbol=? ORDER BY downloaded_at DESC LIMIT 1""",
+              (symbol,)).fetchone()
+        if row:
+            result["historical"] = dict(row)
+    except Exception:
+        pass
+    return result
+
+
+def _gemini_health(store, gate):
+    try:
+        result = gate.healthcheck()
+        detail = f"Modelo {result['model']} disponible; contrato JSON correcto; porton critico activo."
+        _health(store, "GEMINI_DECISION", "VERDE", detail, "Google Gemini", success=True)
+        return True, detail
+    except Exception as exc:
+        detail = f"{type(exc).__name__}: {str(exc)[:500]}. Porton cerrado: no se abren posiciones paper."
+        _health(store, "GEMINI_DECISION", "ROJO", detail, "Google Gemini")
+        return False, detail
 
 
 def _history_count(value):
@@ -423,7 +492,7 @@ def _daily_sync(reader, store):
         store.event("DAILY_READONLY_SYNC_ERROR", detail)
 
 
-def _run_command(store, reader, command):
+def _run_command(store, reader, command, gemini_gate=None):
     command_id, name = command
     if name != "LOGIN_AND_SYNC":
         _finish_command(store, command_id, "ERROR", "Comando no permitido.")
@@ -445,6 +514,12 @@ def _run_command(store, reader, command):
             "PPI Producción", success=True)
     store.state(ppi_auth="OK", detail="Login correcto; sincronizando configuración, catálogo e históricos.")
     problems = []
+    if gemini_gate is None:
+        problems.append("Gemini: no configurado")
+    else:
+        gemini_ok, gemini_detail = _gemini_health(store, gemini_gate)
+        if not gemini_ok:
+            problems.append("Gemini: " + gemini_detail[:120])
     try:
         catalog = _download_catalog(reader, store)
     except Exception as exc:
@@ -470,12 +545,21 @@ def run():
     signal.signal(signal.SIGINT, _stop)
     store = PaperStore(DB_PATH)
     _support_schema(store)
+    gemini_gate = None
+    try:
+        gemini_gate = GeminiPaperGate()
+        _gemini_health(store, gemini_gate)
+    except Exception as exc:
+        _health(store, "GEMINI_DECISION", "ROJO",
+                f"{type(exc).__name__}: {str(exc)[:500]}. Porton cerrado.", "Google Gemini")
     broker = PaperBroker(store,
                          initial_cash=os.getenv("PAPER_INITIAL_CAPITAL_ARS", "1000000"),
                          risk_pct=os.getenv("PAPER_RISK_PER_TRADE", "0.005"),
                          max_positions=os.getenv("PAPER_MAX_OPEN_POSITIONS", "3"),
                          max_position_pct=os.getenv("PAPER_MAX_POSITION_PCT", "0.25"),
-                         max_total_exposure_pct=os.getenv("PAPER_MAX_TOTAL_EXPOSURE_PCT", "0.60"))
+                         max_total_exposure_pct=os.getenv("PAPER_MAX_TOTAL_EXPOSURE_PCT", "0.60"),
+                         ai_gate=gemini_gate, require_ai=True,
+                         context_fn=lambda symbol: _gemini_context(store, symbol))
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", real_orders_sent=0,
                 detail="Simulacion productiva inicializando.")
@@ -494,7 +578,7 @@ def run():
                 last_public_check = time.time()
             command = _claim_command(store)
             if command:
-                reader = _run_command(store, reader, command)
+                reader = _run_command(store, reader, command, gemini_gate)
             phase = _market_phase()
             if phase == "CLOSED":
                 store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",

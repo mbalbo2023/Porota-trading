@@ -55,7 +55,7 @@ def test_menu_unico_elimina_los_dos_menus_anteriores(monkeypatch):
     assert "duplicado" not in rendered
 
 
-def test_motor_muestra_trazabilidad_y_no_inventa_ia(tmp_path, monkeypatch):
+def test_motor_muestra_trazabilidad_y_explica_porton_gemini(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
     monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
@@ -78,7 +78,8 @@ def test_motor_muestra_trazabilidad_y_no_inventa_ia(tmp_path, monkeypatch):
     rendered = bg_paper_dashboard.motor_page()
     assert "<details class='paper-trade'>" in rendered
     assert "Variables utilizadas" in rendered
-    assert "IA generativa: NO PARTICIPÓ" in rendered
+    assert "no tiene evaluación Gemini asociada" in rendered
+    assert "Últimos veredictos de Gemini" in rendered
     assert "PENDIENTE" in rendered
     assert "Todas las operaciones de esta página son simuladas" in rendered
 
@@ -107,6 +108,38 @@ def test_home_heredada_queda_moderna_y_sin_menu_duplicado(monkeypatch):
     assert rendered.count("href='/vivo'") == 1
     assert "id='porota-legacy-shell'" in rendered
     assert "legacy-shell" in rendered
+
+
+def test_portada_y_logs_tienen_documento_moderno_sin_menu_repetido(tmp_path, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
+    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
+    import be_paper_engine
+    be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
+    import bg_paper_dashboard
+    bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
+    for page in (bg_paper_dashboard.home_page(), bg_paper_dashboard.logs_page()):
+        assert page.count("id='porota-canonical-nav'") == 1
+        assert page.count("id='porota-paper-mode'") == 1
+        assert page.count("href='/vivo'") == 1
+        assert "porota-paper-theme" in page
+    assert "Gestión de logs" in bg_paper_dashboard.logs_page()
+
+
+def test_gemini_figura_como_porton_critico_y_lee_salud_persistida(tmp_path, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
+    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
+    import be_paper_engine
+    import bf_production_paper_observer as observer
+    store = be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
+    observer._support_schema(store)
+    observer._health(store, "GEMINI_DECISION", "VERDE",
+                     "Modelo activo y contrato JSON correcto.", "Google Gemini", success=True)
+    import bg_paper_dashboard
+    bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
+    page = bg_paper_dashboard.health_page()
+    assert "Portón crítico de cada compra simulada" in page
+    assert "Modelo activo y contrato JSON correcto" in page
+    assert "Desactivado en esta versión paper" not in page
 
 
 def test_clave_error_null_no_convierte_reporte_en_rojo(tmp_path, monkeypatch):

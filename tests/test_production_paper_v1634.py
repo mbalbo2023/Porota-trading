@@ -193,3 +193,53 @@ def test_universo_ampliado_mantiene_derivados_solo_contexto(monkeypatch, tmp_pat
     candidates = observer._candidate_universe()
     assert any(row[0] == "YPFD" and row[4] for row in candidates)
     assert any(row[1] == "FUTUROS" and not row[4] for row in candidates)
+
+
+def test_gemini_es_porton_critico_y_persiste_veredicto(tmp_path):
+    class Gate:
+        def __init__(self, approve):
+            self.approve = approve
+        def evaluate(self, *_args):
+            return {"decision": "APPROVE" if self.approve else "VETO",
+                    "score": 0.91, "veto": not self.approve,
+                    "reason": "contrato de prueba", "model": "gemini-test", "raw": {}}
+
+    for approve in (False, True):
+        store = PaperStore(str(tmp_path / f"observer-{approve}.db"))
+        broker = PaperBroker(store, ai_gate=Gate(approve), require_ai=True)
+        for i in range(8):
+            q = quote(price=str(100+i), minute=i)
+            store.add_quote(q)
+            broker.on_quote(q)
+        assert bool(store.open_positions()) is approve
+        with store.connect() as connection:
+            ai = dict(connection.execute(
+                "SELECT * FROM ai_shadow_evaluations ORDER BY id DESC LIMIT 1").fetchone())
+        assert ai["decision"] == ("APPROVE" if approve else "VETO")
+
+
+def test_gemini_ausente_cierra_el_porton_paper(tmp_path):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    broker = PaperBroker(store, require_ai=True)
+    for i in range(8):
+        q = quote(price=str(100+i), minute=i)
+        store.add_quote(q)
+        broker.on_quote(q)
+    assert store.open_positions() == []
+
+
+def test_catalogo_incorpora_cada_instrumento_devuelto(monkeypatch, tmp_path):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    monkeypatch.setattr(observer, "_candidate_universe",
+                        lambda: [("A", "ACCIONES", "A-24HS", "BYMA", True)])
+    class Reader:
+        def search_instruments(self, ticker, kind, name=None, market="BYMA"):
+            assert ticker and name
+            return [{"ticker": "GGAL", "instrumentType": "ACCIONES", "market": "BYMA"},
+                    {"ticker": "YPFD", "instrumentType": "ACCIONES", "market": "BYMA"}]
+    assert observer._download_catalog(Reader(), store) == 2
+    with store.connect() as connection:
+        values = {row[0] for row in connection.execute(
+            "SELECT ticker FROM candidate_universe WHERE status='AVAILABLE'")}
+    assert {"GGAL", "YPFD"}.issubset(values)

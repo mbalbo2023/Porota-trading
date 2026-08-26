@@ -106,6 +106,11 @@ class PaperStore:
               id INTEGER PRIMARY KEY AUTOINCREMENT, measured_at TEXT NOT NULL,
               source TEXT NOT NULL, cash TEXT NOT NULL, exposure TEXT NOT NULL,
               unrealized_pnl TEXT NOT NULL, realized_pnl TEXT NOT NULL, equity TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS ai_shadow_evaluations(
+              id INTEGER PRIMARY KEY AUTOINCREMENT, evaluated_at TEXT NOT NULL,
+              symbol TEXT NOT NULL, decision TEXT NOT NULL, score TEXT NOT NULL,
+              veto_risk INTEGER NOT NULL, reason TEXT NOT NULL, model TEXT NOT NULL,
+              input_json TEXT NOT NULL, raw_json TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS http_audit(
               id INTEGER PRIMARY KEY AUTOINCREMENT, happened_at TEXT NOT NULL,
               method TEXT NOT NULL, path TEXT NOT NULL, result TEXT NOT NULL);
@@ -174,12 +179,24 @@ class PaperStore:
             c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                       (now_iso(), SOURCE, kind, paper_id, detail[:1000]))
 
+    def record_ai(self, q: Quote, result: dict, features: dict):
+        with self.connect() as c:
+            c.execute("""INSERT INTO ai_shadow_evaluations
+              (evaluated_at,symbol,decision,score,veto_risk,reason,model,input_json,raw_json)
+              VALUES(?,?,?,?,?,?,?,?,?)""",
+              (q.observed_at, q.symbol, str(result.get("decision", "VETO")),
+               str(result.get("score", 0)), int(bool(result.get("veto", True))),
+               str(result.get("reason", ""))[:800], str(result.get("model", ""))[:120],
+               json.dumps(features, ensure_ascii=False, default=str),
+               json.dumps(result.get("raw", result), ensure_ascii=False, default=str)[:8000]))
+
 
 class PaperBroker:
     def __init__(self, store: PaperStore, initial_cash="1000000",
                  risk_pct="0.005", max_positions=3, fee_rate="0.00605",
                  slippage_bps="2", participation="0.10",
-                 max_position_pct="0.25", max_total_exposure_pct="0.60"):
+                 max_position_pct="0.25", max_total_exposure_pct="0.60",
+                 ai_gate=None, require_ai=False, context_fn=None):
         self.store = store
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
@@ -189,6 +206,9 @@ class PaperBroker:
         self.participation = D(participation)
         self.max_position_pct = D(max_position_pct)
         self.max_total_exposure_pct = D(max_total_exposure_pct)
+        self.ai_gate = ai_gate
+        self.require_ai = bool(require_ai)
+        self.context_fn = context_fn
 
     def _cost(self, price, qty, asset_class="ACCIONES"):
         """Costo de una punta; el spread ya vive en bid/ask y no se duplica."""
@@ -247,6 +267,23 @@ class PaperBroker:
             return
         self.store.event("DECISION_PAPER", f"{q.symbol} {action}: {reason}")
         if action == "BUY":
+            if self.ai_gate is None and self.require_ai:
+                self.store.event("AI_VETO_PAPER", f"{q.symbol}: Gemini no disponible; porton cerrado")
+                return
+            if self.ai_gate is not None:
+                try:
+                    context = self.context_fn(q.symbol) if self.context_fn else {}
+                    ai = self.ai_gate.evaluate(q, score, features, context)
+                except Exception as exc:
+                    ai = {"decision": "VETO", "score": 0, "veto": True,
+                          "reason": f"Gemini no disponible: {type(exc).__name__}: {str(exc)[:300]}",
+                          "model": "NO_DISPONIBLE", "raw": {}}
+                self.store.record_ai(q, ai, features)
+                features["gemini"] = {key: ai.get(key) for key in
+                                       ("decision", "score", "veto", "reason", "model")}
+                if ai.get("decision") != "APPROVE" or ai.get("veto", True):
+                    self.store.event("AI_VETO_PAPER", f"{q.symbol}: {ai.get('reason')}")
+                    return
             self._open(q, score, features)
 
     def _open(self, q: Quote, score: Decimal, features: dict):

@@ -28,6 +28,7 @@ PAPER_INITIAL_CAPITAL = os.getenv("PAPER_INITIAL_CAPITAL_ARS", "1000000")
 PAPER_RISK_PCT = os.getenv("PAPER_RISK_PER_TRADE", "0.005")
 PAPER_MAX_POSITION_PCT = os.getenv("PAPER_MAX_POSITION_PCT", "0.25")
 PAPER_MAX_TOTAL_EXPOSURE_PCT = os.getenv("PAPER_MAX_TOTAL_EXPOSURE_PCT", "0.60")
+PAPER_ACTIVE_SYMBOL_LIMIT = os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "20")
 _installed = False
 
 THEME = """
@@ -178,12 +179,15 @@ def _canonicalize(content, path=""):
                      flags=re.I | re.S)
     content = re.sub(r"<style[^>]+id=['\"]porota-paper-theme['\"][^>]*>.*?</style>", "", content,
                      flags=re.I | re.S)
-    if path == "/":
-        # Retira únicamente bloques de navegación heredados de la portada;
-        # el menú superior conserva todas las rutas en un solo lugar.
-        content = re.sub(
-            r"<p[^>]*>(?:(?!</p>).)*(?:href=['\"]/(?:vivo|salud|testing|historicos|config)['\"])(?:(?!</p>).)*</p>",
-            "", content, flags=re.I | re.S)
+    known = ("/vivo", "/testing", "/salud", "/historicos", "/aprendizaje",
+             "/telegram", "/sre", "/dashboard/logs", "/config")
+    def strip_duplicate_links(match):
+        block = match.group(0)
+        matches = sum(f"href='{route}" in block or f'href="{route}' in block
+                      for route in known)
+        return "" if matches >= 3 else block
+    content = re.sub(r"<(?:p|div)[^>]*>.*?</(?:p|div)>", strip_duplicate_links,
+                     content, flags=re.I | re.S)
     if "</head>" in content.lower():
         content = re.sub(r"</head>", THEME + "</head>", content, count=1, flags=re.I)
     body = re.search(r"<body[^>]*>", content, flags=re.I)
@@ -215,6 +219,52 @@ def snapshot():
     return {"state": state, "quotes": quotes, "open": opened, "closed": closed,
             "decisions": decisions, "equity": equity_rows[0] if equity_rows else {},
             "learning": samples[0] if samples else {}, "command": commands[0] if commands else {}}
+
+
+def home_page():
+    data = snapshot()
+    state, equity = data["state"], data["equity"]
+    grouped = _rows("SELECT state,COUNT(*) total FROM api_health GROUP BY state") \
+        if _table("api_health") else []
+    counts = {str(row["state"]).upper(): row["total"] for row in grouped}
+    events = _rows("SELECT * FROM paper_events ORDER BY id DESC LIMIT 8")
+    event_rows = "".join(
+        f"<tr><td>{_local_time(row['event_at'])}</td><td>{_e(row['event_type'])}</td>"
+        f"<td>{_e(row['detail'])}</td></tr>" for row in events
+    ) or "<tr><td colspan='3'>Esperando actividad del observador.</td></tr>"
+    body = f"""<h1>Porota Trading 16.3.4</h1>
+    <p class='paper-muted'>Centro operativo de la simulación productiva: datos reales de mercado,
+    decisiones y patrimonio ficticio; ninguna orden puede salir a PPI.</p>
+    <div class='paper-grid'>
+      <div class='paper-card'>Motor paper<br><b class='metric'>{_e(state.get('process_state'))}</b><br><span class='paper-muted'>{_e(state.get('detail'))}</span></div>
+      <div class='paper-card'>Sesión BYMA<br><b class='metric'>{_e(state.get('session_state'))}</b><br><span class='paper-muted'>Último latido {_local_time(state.get('heartbeat_at'))}</span></div>
+      <div class='paper-card'>PPI Producción<br><b class='metric'>{_e(state.get('ppi_auth'))}</b><br><span class='paper-muted'>Solo lectura</span></div>
+      <div class='paper-card'>Patrimonio paper<br><b class='metric'>{_money(equity.get('equity') or PAPER_INITIAL_CAPITAL)}</b><br><span class='paper-muted'>Capital ficticio separado</span></div>
+      <div class='paper-card'>Salud persistida<br><b class='metric'>{counts.get('VERDE',0)} verde · {counts.get('ROJO',0)} rojo</b><br><span class='paper-muted'>Abrir Salud no consume APIs</span></div>
+      <div class='paper-card'>Órdenes reales<br><b class='metric'>0</b><br><span class='paper-muted'>Bloqueadas por transporte</span></div>
+    </div>
+    <div class='paper-card'><h2>Actividad reciente</h2><table class='paper-table'>
+    <tr><th>Hora</th><th>Evento</th><th>Detalle</th></tr>{event_rows}</table></div>
+    <div class='paper-notice'>El menú superior es el único punto de navegación. Motor de trading
+    conserva el procedimiento, Gemini, las variables y el resultado de cada simulación.</div>"""
+    return _document("Porota Trading", body, refresh=30)
+
+
+def logs_page():
+    log_file = Path(os.getenv("LOG_DIR", "data/logs")) / "trading_bot.log"
+    size = f"{log_file.stat().st_size / 1024:.1f} KB" if log_file.exists() else "todavía no creado"
+    categories = ("all", "critical", "trading", "system", "ia_fallback", "ppi",
+                  "telegram", "sre")
+    rows = "".join(
+        f"<tr><td>{_e('COMPLETO' if category=='all' else category.upper())}</td>"
+        f"<td><a class='paper-action' href='/api/logs/download/{category}'>Descargar</a></td></tr>"
+        for category in categories)
+    body = f"""<h1>Gestión de logs</h1><p class='paper-muted'>Vista unificada con descargas saneadas.</p>
+    <div class='paper-grid'><div class='paper-card'>Archivo operativo<br><b class='metric'>{_e(size)}</b><br>
+    <span class='paper-muted'>{_e(log_file)}</span></div>
+    <div class='paper-card'>Diagnóstico integral<br><a class='paper-action' href='/api/diagnostics/download'>Descargar ZIP</a></div></div>
+    <div class='paper-card'><table class='paper-table'><tr><th>Categoría</th><th>Acción</th></tr>{rows}</table></div>"""
+    return _document("Gestión de logs", body)
 
 
 def _probe_form():
@@ -356,11 +406,11 @@ def motor_page():
                              for event in events) or "<div>Sin eventos adicionales.</div>"
         verdict_class, verdict, verdict_detail = _verdict(position)
         if ai:
-            ai_text = (f"Participó en modo sombra. Resultado: {_e(ai.get('decision'))}; "
+            ai_text = (f"Participó como portón crítico. Resultado: {_e(ai.get('decision'))}; "
                        f"score {_e(ai.get('score'))}; fundamento: {_e(ai.get('reason'))}.")
         else:
-            ai_text = ("IA generativa: NO PARTICIPÓ en esta decisión. La operación fue determinada "
-                       "por el motor paper determinístico; el dashboard no atribuye decisiones a Gemini que no ocurrieron.")
+            ai_text = ("Esta operación histórica no tiene evaluación Gemini asociada. En la versión actual, "
+                       "una nueva compra paper queda bloqueada si Gemini no participa y aprueba.")
         cards.append(f"""<details class='paper-trade'>
           <summary>{_e(position['symbol'])} · {_e(position['status'])} · {_local_time(position['opened_at'])} ·
           PnL {_money(position.get('net_pnl'))}</summary><div class='trade-body'>
@@ -382,13 +432,23 @@ def motor_page():
           <h3>5. Reacción y seguimiento del sistema</h3><div class='timeline'>{event_rows}</div>
           <h3>6. Resultado para aprendizaje</h3><p class='{verdict_class}'><b>{verdict}:</b> {_e(verdict_detail)}
           PnL neto: {_money(position.get('net_pnl'))}.</p></div></details>""")
+    ai_only = _rows("SELECT * FROM ai_shadow_evaluations ORDER BY id DESC LIMIT 30") \
+        if _table("ai_shadow_evaluations") else []
+    ai_rows = "".join(
+        f"<tr><td>{_local_time(row['evaluated_at'])}</td><td>{_e(row['symbol'])}</td>"
+        f"<td>{_status(row['decision'])}</td><td>{_e(row['model'])}</td><td>{_e(row['reason'])}</td></tr>"
+        for row in ai_only
+    ) or "<tr><td colspan='5'>Todavía no existen evaluaciones Gemini.</td></tr>"
     content = "".join(cards) or """<div class='paper-card'><h2>Todavía no existen operaciones simuladas</h2>
       <p>El motor empezará a registrar cada procedimiento cuando reúna datos suficientes y una señal supere
       los filtros. Las abstenciones siguen visibles en la página de Simulación.</p></div>"""
     body = f"""<h1>Motor de trading</h1><p class='paper-muted'>Trazabilidad operación por operación.
     Seleccioná una fila para desplegar el procedimiento completo, las variables y el resultado.</p>
     <div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b>
-    Nunca representan una orden enviada a PPI.</div>{content}"""
+    Nunca representan una orden enviada a PPI.</div>{content}
+    <div class='paper-card'><h2>Últimos veredictos de Gemini</h2><table class='paper-table'>
+    <tr><th>Hora</th><th>Instrumento</th><th>Decisión</th><th>Modelo</th><th>Fundamento</th></tr>
+    {ai_rows}</table></div>"""
     return _document("Motor de trading", body, refresh=30)
 
 
@@ -452,10 +512,8 @@ def health_page():
                      "No se usa en SIMULACIÓN PRODUCTIVA. Último estado histórico: " +
                      str(sandbox.get("detail") or sandbox_state or "sin prueba"),
                      sandbox.get("timestamp"), sandbox.get("timestamp") if sandbox_state == "OK" else None)
-    gemini, telegram = _report_state("gemini"), _report_state("telegram")
-    if MODE == "PRODUCTION_PAPER":
-        gemini = ("GRIS", "Desactivado en esta versión paper; no se le atribuyen decisiones.",
-                  gemini[2], gemini[3])
+    telegram = _report_state("telegram")
+    gemini = paper("GEMINI_DECISION", "Sin verificación del portón crítico Gemini.")
     market_data = paper("PPI_PRODUCTION_MARKETDATA", "Sin lectura de mercado reciente.")
     if state.get("session_state") == "MARKET_CLOSED":
         market_data = ("GRIS", "Rueda cerrada: no se espera cotización y no se consume market data.",
@@ -466,11 +524,12 @@ def health_page():
         ("PPI Producción — históricos", *paper("PPI_PRODUCTION_HISTORY", "Todavía no se descargaron históricos."), "365 días / solo lectura"),
         ("PPI Producción — market data", *market_data, "Sólo con rueda abierta"),
         ("PPI Sandbox", *sandbox_tuple, "Sandbox"),
-        ("Google Gemini", *gemini, "Motor de decisión / sombra"),
+        ("Google Gemini", *gemini, "Portón crítico de cada compra simulada"),
         ("Telegram", *telegram, "Notificaciones y control"),
         ("OPENBYMADATA", *paper("BYMA_OPEN_DATA", "Sin sonda pública persistida."), "Datos públicos oficiales"),
         ("BYMA — sitio institucional", *paper("BYMA_WEB", "Sin sonda pública persistida."), "Referencia oficial"),
         ("BYMA — API de instrumentos", *paper("BYMA_INSTRUMENTS_API", "Requiere alta de acceso."), "Catálogo oficial con acceso"),
+        ("BYMA — calendario operativo", *paper("BYMA_CALENDAR", "Sin validación persistida."), "Horarios, feriados y portón de rueda"),
         ("Data912", "GRIS", "Sin sonda independiente en este observador.", None, None, "Históricos alternativos"),
         ("InvertirOnline (IOL)", "GRIS", "Sin sonda independiente en este observador.", None, None, "Históricos alternativos"),
         ("BCRA / INDEC / ArgentinaDatos", "GRIS", "Estado disponible cuando corre el refresco macro.", None, None, "Contexto macro"),
@@ -505,6 +564,8 @@ def history_page():
     catalog = _rows("SELECT instrument_type,COUNT(*) items,MAX(downloaded_at) downloaded_at FROM instrument_catalog GROUP BY instrument_type ORDER BY instrument_type")
     candidates = _rows("""SELECT * FROM candidate_universe ORDER BY can_simulate DESC,
       instrument_type,ticker""") if _table("candidate_universe") else []
+    eligible = sum(1 for row in candidates if row.get("can_simulate") and row.get("status") == "AVAILABLE")
+    catalog_total = sum(int(row.get("items") or 0) for row in catalog)
     sync_rows = "".join(f"<tr><td><b>{_e(row['source'])}</b></td><td>{_status(row['status'])}</td>"
                         f"<td>{_local_time(row['last_attempt_at'])}</td><td>{_local_time(row['last_success_at'])}</td>"
                         f"<td>{_e(row['items'])}</td><td>{_e(row['detail'])}</td></tr>" for row in syncs) or \
@@ -525,6 +586,8 @@ def history_page():
     <div class='paper-grid'><div class='paper-card'>Instrumentos archivados<br><b class='metric'>{_e(historical.get('instruments',0))}</b></div>
     <div class='paper-card'>Velas archivadas<br><b class='metric'>{_e(historical.get('candles',0))}</b></div>
     <div class='paper-card'>Dato más reciente<br><b class='metric'>{_e(historical.get('newest'))}</b></div>
+    <div class='paper-card'>Catálogo PPI observado<br><b class='metric'>{catalog_total}</b><br><span class='paper-muted'>{eligible} habilitables para paper</span></div>
+    <div class='paper-card'>Escaneo por ciclo<br><b class='metric'>hasta {_e(PAPER_ACTIVE_SYMBOL_LIMIT)}</b><br><span class='paper-muted'>tope para controlar cuota y memoria</span></div>
     <div class='paper-card'>Última ingesta<br><b class='metric'>{_local_time(ingest.get('finished_at'))}</b><br><span class='paper-muted'>{_e(ingest.get('source'))}</span></div></div>
     {_probe_form()}
     <div class='paper-card'><h2>Última conexión o bajada por fuente</h2><table class='paper-table'>
@@ -604,6 +667,10 @@ def install(app, check_auth):
             content = health_page()
         elif request.url.path == "/historicos":
             content = history_page()
+        elif request.url.path == "/":
+            content = home_page()
+        elif request.url.path == "/dashboard/logs":
+            content = logs_page()
         else:
             content = _canonicalize(content, request.url.path)
         headers = dict(response.headers)

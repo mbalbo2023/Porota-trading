@@ -108,8 +108,27 @@ def dashboard_env(mode):
              "PAPER_MAX_OPEN_POSITIONS=3",
              "PAPER_MAX_POSITION_PCT=0.25",
              "PAPER_MAX_TOTAL_EXPOSURE_PCT=0.60",
+             "PAPER_ACTIVE_SYMBOL_LIMIT=20",
              "SERVER_TIMEZONE=America/Argentina/Buenos_Aires"]
     target.write_text("\n".join(safe) + "\n", encoding="utf-8")
+    os.chmod(target, 0o600)
+    return target
+
+
+def observer_ai_env():
+    """Archivo 0600 exclusivo del observador; el dashboard no recibe la key."""
+    env = env_file()
+    key = env.get("GEMINI_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("Falta GEMINI_API_KEY: Gemini es un porton critico del modo paper.")
+    target = DATA / "diagnosticos" / "observer_ai_v1634.env"
+    values = {
+        "GEMINI_API_KEY": key,
+        "GEMINI_MODEL": env.get("GEMINI_MODEL", "").strip() or "gemini-2.5-flash-lite",
+        "GEMINI_MODEL_CHAIN": env.get("GEMINI_MODEL_CHAIN", "").strip(),
+    }
+    target.write_text("\n".join(f"{name}={value}" for name, value in values.items()) + "\n",
+                      encoding="utf-8")
     os.chmod(target, 0o600)
     return target
 
@@ -128,11 +147,12 @@ def simulation():
     stop_engines()
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
-                "PPI_ORDERS": "BLOCKED", "GEMINI": "OFF_V1"}, detail="Iniciando")
+                "PPI_ORDERS": "BLOCKED", "GEMINI": "CRITICAL_DECISION_GATE"}, detail="Iniciando")
     start_dashboard("PRODUCTION_PAPER")
     secret = ROOT / ".secrets" / "ppi_production.json"
     if not secret.exists():
         raise RuntimeError("Falta el secreto productivo de solo lectura.")
+    ai_env = observer_ai_env()
     run("docker", "run", "-d", "--name", "porota_production_observer",
         "--restart", "unless-stopped", "--no-healthcheck",
         "--user", "botuser", "--read-only", "--cap-drop", "ALL",
@@ -150,14 +170,15 @@ def simulation():
         "-e", "MARKET_CLOSE_MINUTE=0",
         "-e", "PAPER_PREOPEN_MINUTES=15",
         "-e", "PPI_LOGIN_COOLDOWN_SECONDS=900",
-        "-e", "PAPER_ACTIVE_SYMBOL_LIMIT=12",
+        "-e", "PAPER_ACTIVE_SYMBOL_LIMIT=20",
         "-e", "SERVER_TIMEZONE=America/Argentina/Buenos_Aires",
+        "--env-file", str(ai_env),
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
         "--entrypoint", "python", IMAGE, "bf_production_paper_observer.py")
-    status = notify("🟣 POROTA — MODO SIMULACIÓN PRODUCTIVA\nDatos reales de PPI Producción. Compras y ventas 100% simuladas. Órdenes reales: NINGUNA.")
+    status = notify("🟣 POROTA — MODO SIMULACIÓN PRODUCTIVA\nDatos reales de PPI Producción. Gemini actúa como portón crítico. Compras y ventas 100% simuladas. Órdenes reales: NINGUNA.")
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
-                "PPI_ORDERS": "BLOCKED", "GEMINI": "OFF_V1"}, telegram=status,
+                "PPI_ORDERS": "BLOCKED", "GEMINI": "CRITICAL_DECISION_GATE"}, telegram=status,
                detail="Fuera de rueda queda en espera; preapertura sincroniza; rueda abierta simula")
 
 
