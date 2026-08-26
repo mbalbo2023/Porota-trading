@@ -61,7 +61,13 @@ details.paper-trade{background:#fff;border:1px solid var(--line);border-radius:1
 details.paper-trade>summary{cursor:pointer;padding:13px 15px;font-weight:750;background:#f8fafc;list-style-position:inside}
 .trade-body{padding:4px 15px 15px}.timeline{border-left:3px solid #bcc8d8;padding-left:15px;margin:10px 0}
 .timeline>div{margin:10px 0}.verdict-ok{color:var(--green)}.verdict-bad{color:var(--red)}.verdict-pending{color:var(--gray)}
-code{white-space:normal;overflow-wrap:anywhere}@media(max-width:700px){#porota-canonical-nav{position:relative}
+code{white-space:normal;overflow-wrap:anywhere}.legacy-shell{background:transparent}.legacy-shell>h1{margin-top:4px}
+.legacy-shell table{width:100%!important;border-collapse:collapse!important;background:#fff;border:1px solid var(--line);
+border-radius:10px;overflow:hidden}.legacy-shell th{background:#edf2f7!important}.legacy-shell th,.legacy-shell td{
+padding:9px!important;border-bottom:1px solid #e5e9f0!important;text-align:left}.legacy-shell h2{color:var(--ink)!important;
+border-bottom:1px solid var(--line)!important;padding-bottom:7px}.legacy-shell button,.legacy-shell input[type=submit]{
+background:var(--action)!important;color:#fff!important;border:0!important;border-radius:8px!important;padding:9px 13px!important}
+@media(max-width:700px){#porota-canonical-nav{position:relative}
 .paper-page{padding:12px}.paper-table{font-size:.79rem}.paper-table th,.paper-table td{padding:7px}}
 </style>"""
 
@@ -156,8 +162,12 @@ def _document(title, body, refresh=None):
             f"<main class='paper-page'>{body}</main></body></html>")
 
 
-def _canonicalize(content):
+def _canonicalize(content, path=""):
     """Deja un solo menú, un solo banner y un solo tema en cualquier página."""
+    if (content.count("id='porota-canonical-nav'") == 1 and
+            content.count("id='porota-paper-mode'") == 1 and
+            content.count("id='porota-paper-theme'") == 1):
+        return content
     content = re.sub(r"<nav[^>]+id=['\"]porota-top-nav['\"][^>]*>.*?</nav>", "", content,
                      flags=re.I | re.S)
     content = re.sub(r"<nav[^>]+id=['\"]porota-canonical-nav['\"][^>]*>.*?</nav>", "", content,
@@ -168,12 +178,22 @@ def _canonicalize(content):
                      flags=re.I | re.S)
     content = re.sub(r"<style[^>]+id=['\"]porota-paper-theme['\"][^>]*>.*?</style>", "", content,
                      flags=re.I | re.S)
+    if path == "/":
+        # Retira únicamente bloques de navegación heredados de la portada;
+        # el menú superior conserva todas las rutas en un solo lugar.
+        content = re.sub(
+            r"<p[^>]*>(?:(?!</p>).)*(?:href=['\"]/(?:vivo|salud|testing|historicos|config)['\"])(?:(?!</p>).)*</p>",
+            "", content, flags=re.I | re.S)
     if "</head>" in content.lower():
         content = re.sub(r"</head>", THEME + "</head>", content, count=1, flags=re.I)
     body = re.search(r"<body[^>]*>", content, flags=re.I)
-    if body:
-        insert = body.end()
-        content = content[:insert] + _nav() + mode_banner() + content[insert:]
+    closing = re.search(r"</body>", content, flags=re.I)
+    if body and closing:
+        inner = content[body.end():closing.start()]
+        if "id='porota-legacy-shell'" not in inner:
+            inner = f"<main id='porota-legacy-shell' class='paper-page legacy-shell'>{inner}</main>"
+        content = (content[:body.end()] + _nav() + mode_banner() + inner +
+                   content[closing.start():])
     return content
 
 
@@ -200,7 +220,8 @@ def snapshot():
 def _probe_form():
     return """<div class='paper-card'><h2>Conexión manual de solo lectura</h2>
     <p>Realiza un único login contra PPI Producción y descarga el catálogo e históricos permitidos.
-    No consulta la cuenta y la barrera técnica bloquea cualquier ruta de órdenes.</p>
+    No consulta la cuenta y la barrera técnica bloquea cualquier ruta de órdenes. Si la rueda está
+    cerrada, valida acceso y sincroniza datos pero <b>no ejecuta la estrategia ni crea operaciones paper</b>.</p>
     <form method='post' action='/api/paper/login-readonly'>
       <button class='paper-action' type='submit'>Conectar y sincronizar datos</button>
     </form></div>"""
@@ -225,9 +246,16 @@ def paper_page(compact=False):
     command_text = (f"Última solicitud: {_e(command.get('status'))} · {_local_time(command.get('created_at'))}"
                     f" · {_e(command.get('result'))}") if command else "Todavía no se solicitó una sincronización manual."
     learning = data["learning"]
+    process_labels = {"WAITING_MARKET": "EN ESPERA", "READY_PREOPEN": "PREAPERTURA",
+                      "RUNNING": "EVALUANDO", "DEGRADED": "DEGRADADO", "STARTING": "INICIANDO"}
+    session_labels = {"MARKET_CLOSED": "CERRADA", "PREOPEN": "PREAPERTURA",
+                      "OPEN": "ABIERTA", "MARKET_OPEN": "ABIERTA"}
+    process_label = process_labels.get(str(state.get("process_state")), str(state.get("process_state")))
+    session_label = session_labels.get(str(state.get("session_state")), str(state.get("session_state")))
     body = f"""<h1>Simulación productiva y aprendizaje</h1>
     <div class='paper-grid'>
-      <div class='paper-card'>Estado<br><b class='metric'>{_e(state.get('process_state'))}</b><br><span class='paper-muted'>{_e(state.get('detail'))}</span></div>
+      <div class='paper-card'>Motor de simulación<br><b class='metric'>{_e(process_label)}</b><br><span class='paper-muted'>{_e(state.get('detail'))}</span></div>
+      <div class='paper-card'>Rueda BYMA<br><b class='metric'>{_e(session_label)}</b><br><span class='paper-muted'>Sólo evalúa instrumentos con rueda abierta</span></div>
       <div class='paper-card'>PPI Producción<br><b class='metric'>{_e(state.get('ppi_auth'))}</b><br><span class='paper-muted'>Solo lectura; órdenes reales: 0</span></div>
       <div class='paper-card'>Capital inicial ficticio<br><b class='metric'>{_money(PAPER_INITIAL_CAPITAL)}</b><br><span class='paper-muted'>Patrimonio paper actual {_money(equity.get('equity'))}</span></div>
       <div class='paper-card'>Aprendizaje paper<br><b class='metric'>{_e(learning.get('labeled',0))}/{_e(learning.get('total',0))}</b><br><span class='paper-muted'>muestras cerradas/totales</span></div>
@@ -258,6 +286,19 @@ def _status(value):
     else:
         state, label = "gris", raw
     return f"<span class='paper-status s-{state}'>{_e(label)}</span>"
+
+
+def _health_status(value):
+    raw = str(value or "GRIS").upper()
+    if raw in {"VERDE", "OK", "CONNECTED", "HEALTHY"}:
+        state, label = "verde", "VERDE"
+    elif raw in {"AMARILLO", "DEGRADED", "PARTIAL", "WAITING", "COOLDOWN"}:
+        state, label = "amarillo", "AMARILLO"
+    elif raw in {"ROJO", "ERROR", "FAILED", "BLOCKED"}:
+        state, label = "rojo", "ROJO"
+    else:
+        state, label = "gris", "GRIS"
+    return f"<span class='paper-status s-{state}'>{label}</span>"
 
 
 def _ai_for(position):
@@ -366,9 +407,30 @@ def _report_state(family):
             if path.exists():
                 modified = datetime.fromtimestamp(path.stat().st_mtime, TZ).isoformat()
                 data = json.loads(path.read_text(encoding="utf-8"))
-                raw = json.dumps(data, ensure_ascii=False).upper()
-                state = "ROJO" if "FALLA" in raw or "ERROR" in raw else "VERDE"
-                return state, f"Último verificador persistido: {path.name}", modified, modified if state == "VERDE" else None
+                def values(node):
+                    if isinstance(node, dict):
+                        for key, value in node.items():
+                            if str(key).lower() in {"ok", "status", "state", "estado", "result", "resultado", "error"}:
+                                yield str(value or "").strip().upper()
+                            yield from values(value)
+                    elif isinstance(node, list):
+                        for value in node:
+                            yield from values(value)
+                outcomes = [value for value in values(data) if value]
+                bad = {"ERROR", "FAILED", "FAIL", "FALLA", "ROJO", "FALSE"}
+                good = {"OK", "SUCCESS", "CORRECTO", "CORRECT", "VERDE", "TRUE", "HEALTHY"}
+                explicit_bad = any(value in bad or value.startswith("ERROR:") for value in outcomes)
+                explicit_good = any(value in good for value in outcomes)
+                age = max(0, (datetime.now(TZ) - datetime.fromisoformat(modified)).total_seconds())
+                if explicit_bad:
+                    state, detail, success = "ROJO", "El verificador registró una falla explícita.", None
+                elif explicit_good and age <= 86400:
+                    state, detail, success = "VERDE", "Verificación correcta dentro de las últimas 24 horas.", modified
+                elif explicit_good:
+                    state, detail, success = "AMARILLO", "La última verificación correcta tiene más de 24 horas.", modified
+                else:
+                    state, detail, success = "GRIS", "Informe presente pero sin resultado concluyente.", None
+                return state, f"{detail} Archivo: {path.name}", modified, success
         except Exception:
             continue
     return "GRIS", "Sin verificación persistida.", None, None
@@ -386,12 +448,23 @@ def health_page():
     sandbox = (_legacy_event("PPI_SANDBOX") or _legacy_event("PPI_AUTH_SANDBOX")
                or _legacy_event("PPI_AUTH"))
     sandbox_state = sandbox.get("state", "GRIS")
-    sandbox_tuple = (sandbox_state, sandbox.get("detail", "Sin prueba reciente de PPI Sandbox."),
+    sandbox_tuple = ("GRIS",
+                     "No se usa en SIMULACIÓN PRODUCTIVA. Último estado histórico: " +
+                     str(sandbox.get("detail") or sandbox_state or "sin prueba"),
                      sandbox.get("timestamp"), sandbox.get("timestamp") if sandbox_state == "OK" else None)
     gemini, telegram = _report_state("gemini"), _report_state("telegram")
+    if MODE == "PRODUCTION_PAPER":
+        gemini = ("GRIS", "Desactivado en esta versión paper; no se le atribuyen decisiones.",
+                  gemini[2], gemini[3])
+    market_data = paper("PPI_PRODUCTION_MARKETDATA", "Sin lectura de mercado reciente.")
+    if state.get("session_state") == "MARKET_CLOSED":
+        market_data = ("GRIS", "Rueda cerrada: no se espera cotización y no se consume market data.",
+                       market_data[2], market_data[3])
     health_rows = (
         ("PPI Producción — autenticación", *paper("PPI_PRODUCTION_AUTH", "Todavía no se intentó login."), "Producción / simulación productiva"),
-        ("PPI Producción — market data", *paper("PPI_PRODUCTION_MARKETDATA", "Sin lectura de mercado reciente."), "Producción / simulación productiva"),
+        ("PPI Producción — catálogo", *paper("PPI_PRODUCTION_CATALOG", "Todavía no se validó el universo."), "Instrumentos disponibles"),
+        ("PPI Producción — históricos", *paper("PPI_PRODUCTION_HISTORY", "Todavía no se descargaron históricos."), "365 días / solo lectura"),
+        ("PPI Producción — market data", *market_data, "Sólo con rueda abierta"),
         ("PPI Sandbox", *sandbox_tuple, "Sandbox"),
         ("Google Gemini", *gemini, "Motor de decisión / sombra"),
         ("Telegram", *telegram, "Notificaciones y control"),
@@ -402,11 +475,13 @@ def health_page():
         ("InvertirOnline (IOL)", "GRIS", "Sin sonda independiente en este observador.", None, None, "Históricos alternativos"),
         ("BCRA / INDEC / ArgentinaDatos", "GRIS", "Estado disponible cuando corre el refresco macro.", None, None, "Contexto macro"),
         ("Yahoo Finance", "GRIS", "Fuente demorada; no se consulta desde esta pantalla.", None, None, "Respaldo de precios"),
-        ("ROFEX / Primary", "GRIS", "No habilitada en simulación productiva actual.", None, None, "Futuros"),
+        ("ROFEX / Primary", *paper("ROFEX_MARKETDATA",
+          "Sin validación reciente. Se usa sólo como contexto; futuros no habilitados sin margen y multiplicador."),
+         "Contexto de futuros; ejecución bloqueada"),
         ("SQLite operativa", "VERDE", "Base paper accesible; órdenes reales persistidas: 0.",
          state.get("heartbeat_at"), state.get("heartbeat_at"), "Persistencia local"),
     )
-    rows = "".join(f"<tr><td><b>{_e(name)}</b></td><td>{_status(status)}</td><td>{_e(detail)}</td>"
+    rows = "".join(f"<tr><td><b>{_e(name)}</b></td><td>{_health_status(status)}</td><td>{_e(detail)}</td>"
                    f"<td>{_local_time(checked)}</td><td>{_local_time(success)}</td><td>{_e(use)}</td></tr>"
                    for name, status, detail, checked, success, use in health_rows)
     body = f"""<h1>Salud de APIs y fuentes</h1>
@@ -428,6 +503,8 @@ def history_page():
         if _table("ingest_runs", LEGACY_DB_PATH) else []
     syncs = _rows("SELECT * FROM source_sync ORDER BY source")
     catalog = _rows("SELECT instrument_type,COUNT(*) items,MAX(downloaded_at) downloaded_at FROM instrument_catalog GROUP BY instrument_type ORDER BY instrument_type")
+    candidates = _rows("""SELECT * FROM candidate_universe ORDER BY can_simulate DESC,
+      instrument_type,ticker""") if _table("candidate_universe") else []
     sync_rows = "".join(f"<tr><td><b>{_e(row['source'])}</b></td><td>{_status(row['status'])}</td>"
                         f"<td>{_local_time(row['last_attempt_at'])}</td><td>{_local_time(row['last_success_at'])}</td>"
                         f"<td>{_e(row['items'])}</td><td>{_e(row['detail'])}</td></tr>" for row in syncs) or \
@@ -435,6 +512,14 @@ def history_page():
     catalog_rows = "".join(f"<tr><td>{_e(row['instrument_type'])}</td><td>{_e(row['items'])}</td>"
                            f"<td>{_local_time(row['downloaded_at'])}</td></tr>" for row in catalog) or \
                    "<tr><td colspan='3'>Catálogo todavía no descargado.</td></tr>"
+    core = {"GGAL", "AL30", "AAPL"}
+    candidate_rows = "".join(
+        f"<tr><td><b>{_e(row['ticker'])}</b></td><td>{_e(row['instrument_type'])}</td>"
+        f"<td>{_e(row['market'])}</td><td>{_health_status('VERDE' if row['status']=='AVAILABLE' else 'ROJO' if row['status']=='ERROR' else 'GRIS')}</td>"
+        f"<td>{'NÚCLEO' if row['ticker'] in core else 'NUEVO CANDIDATO'}</td>"
+        f"<td>{'SIMULACIÓN HABILITABLE' if row['can_simulate'] else 'SÓLO CONTEXTO'}</td>"
+        f"<td>{_local_time(row['last_checked_at'])}</td></tr>" for row in candidates) or \
+        "<tr><td colspan='7'>Esperando validación del universo contra PPI.</td></tr>"
     ingest = last_ingest[0] if last_ingest else {}
     body = f"""<h1>Datos históricos e instrumentos</h1>
     <div class='paper-grid'><div class='paper-card'>Instrumentos archivados<br><b class='metric'>{_e(historical.get('instruments',0))}</b></div>
@@ -446,6 +531,9 @@ def history_page():
     <tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div>
     <div class='paper-card'><h2>Catálogo de instrumentos observado</h2><table class='paper-table'>
     <tr><th>Clase</th><th>Instrumentos</th><th>Descargado</th></tr>{catalog_rows}</table></div>
+    <div class='paper-card'><h2>Universo ampliado validado</h2><table class='paper-table'>
+    <tr><th>Ticker</th><th>Clase</th><th>Mercado</th><th>Disponible</th><th>Origen</th>
+    <th>Uso seguro</th><th>Última validación</th></tr>{candidate_rows}</table></div>
     <div class='paper-notice'><b>BYMA:</b> OPENBYMADATA es consultable públicamente en su web. Las APIs oficiales
     de instrumentos/market data requieren alta o contratación; el sistema no usa endpoints ocultos. Mientras tanto,
     el catálogo y los históricos automatizados provienen de PPI Producción bajo barrera de solo lectura.
@@ -517,7 +605,7 @@ def install(app, check_auth):
         elif request.url.path == "/historicos":
             content = history_page()
         else:
-            content = _canonicalize(content)
+            content = _canonicalize(content, request.url.path)
         headers = dict(response.headers)
         headers.pop("content-length", None)
         return HTMLResponse(content, status_code=response.status_code, headers=headers)

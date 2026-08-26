@@ -184,11 +184,21 @@ class ProductionMarketReader:
     def book(self, ticker: str, instrument_type: str, settlement: str):
         return self._market().book(ticker, instrument_type, settlement)
 
-    def search_instruments(self, instrument_type: str, ticker_query: str = "",
-                           market: str = "BYMA"):
-        """Catálogo visible para la cuenta, sin consultar saldos ni permisos."""
+    def search_instruments(self, ticker: str, instrument_type: str,
+                           name: str | None = None, market: str = "BYMA"):
+        """Busca un candidato concreto sin consultar saldos ni permisos.
+
+        El SDK productivo exige ``Ticker`` y ``Name``. La implementación
+        anterior intentaba usar esta operación como un listado sin filtros y
+        enviaba ambos campos vacíos; PPI autenticaba correctamente y luego
+        rechazaba el catálogo con ``Field 'Name'/'Ticker' is required``.
+        """
+        ticker = str(ticker or "").strip()
+        name = str(name or ticker).strip()
+        if not ticker or not name:
+            raise ValueError("PPI requiere Ticker y Name no vacíos para buscar instrumentos.")
         return self._market().search_instrument(
-            ticker_query, "", market, instrument_type
+            ticker, name, str(market or "BYMA"), str(instrument_type or "")
         )
 
     def history(self, ticker: str, instrument_type: str, settlement: str,

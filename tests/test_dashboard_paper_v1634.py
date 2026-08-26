@@ -92,3 +92,40 @@ def test_colores_de_estado_son_estandar(monkeypatch):
     assert "--red:" in bg_paper_dashboard.THEME
     assert "--gray:" in bg_paper_dashboard.THEME
     assert "#5b21b6" not in bg_paper_dashboard.THEME
+
+
+def test_home_heredada_queda_moderna_y_sin_menu_duplicado(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
+    import bg_paper_dashboard
+    bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
+    source = ("<html><head><style>body{max-width:900px}</style></head><body>"
+              "<h1>Inicio</h1><p><a href='/vivo'>Actividad</a> · "
+              "<a href='/salud'>Salud</a> · <a href='/config'>Config</a></p>"
+              "<table><tr><td>dato</td></tr></table></body></html>")
+    rendered = bg_paper_dashboard._canonicalize(source, "/")
+    assert rendered.count("id='porota-canonical-nav'") == 1
+    assert rendered.count("href='/vivo'") == 1
+    assert "id='porota-legacy-shell'" in rendered
+    assert "legacy-shell" in rendered
+
+
+def test_clave_error_null_no_convierte_reporte_en_rojo(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    data = {"status": "OK", "error": None, "detail": "correcto"}
+    Path("data").mkdir()
+    Path("data/informe_api_gemini.json").write_text(
+        __import__("json").dumps(data), encoding="utf-8")
+    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
+    import bg_paper_dashboard
+    bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
+    state, _detail, _checked, _success = bg_paper_dashboard._report_state("gemini")
+    assert state == "VERDE"
+
+
+def test_semáforo_salud_siempre_usa_etiquetas_estandar(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
+    import bg_paper_dashboard
+    bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
+    assert ">ROJO<" in bg_paper_dashboard._health_status("ERROR")
+    assert ">AMARILLO<" in bg_paper_dashboard._health_status("PARTIAL")
+    assert ">GRIS<" in bg_paper_dashboard._health_status("OFF")

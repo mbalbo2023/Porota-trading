@@ -10,7 +10,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from bd_ppi_readonly_guard import ReadOnlyPolicyViolation, ReadOnlyTransportGuard
+from bd_ppi_readonly_guard import (ProductionMarketReader, ReadOnlyPolicyViolation,
+                                   ReadOnlyTransportGuard)
 from be_paper_engine import D, PaperBroker, PaperStore, Quote
 import bf_production_paper_observer as observer
 
@@ -149,3 +150,46 @@ def test_sync_diario_no_se_duplica(tmp_path):
             connection.execute("INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
                                (source, "VERDE", today, today, 1, "ok"))
     assert not observer._daily_sync_needed(store)
+
+
+def test_busqueda_ppi_envia_ticker_y_name_no_vacios():
+    calls = []
+    class Market:
+        def search_instrument(self, *args):
+            calls.append(args)
+            return []
+    class Client:
+        marketdata = Market()
+    reader = object.__new__(ProductionMarketReader)
+    reader._ProductionMarketReader__authenticated = True
+    reader._ProductionMarketReader__client = Client()
+    assert reader.search_instruments("GGAL", "ACCIONES", market="BYMA") == []
+    assert calls == [("GGAL", "GGAL", "BYMA", "ACCIONES")]
+    with pytest.raises(ValueError):
+        reader.search_instruments("", "ACCIONES")
+
+
+def test_fases_de_mercado_impiden_operar_fuera_de_rueda(monkeypatch):
+    monkeypatch.setattr(observer, "_business_day", lambda _day: True)
+    closed = datetime(2026, 8, 26, 9, 0, tzinfo=observer.TZ)
+    preopen = datetime(2026, 8, 26, 10, 50, tzinfo=observer.TZ)
+    opened = datetime(2026, 8, 26, 11, 5, tzinfo=observer.TZ)
+    after = datetime(2026, 8, 26, 17, 1, tzinfo=observer.TZ)
+    assert observer._market_phase(closed) == "CLOSED"
+    assert observer._market_phase(preopen) == "PREOPEN"
+    assert observer._market_phase(opened) == "OPEN"
+    assert observer._market_phase(after) == "CLOSED"
+
+
+def test_universo_ampliado_mantiene_derivados_solo_contexto(monkeypatch, tmp_path):
+    watchlist = tmp_path / "watchlist.json"
+    watchlist.write_text(json.dumps({
+        "ACCIONES": {"instrument_type": "ACCIONES", "settlement": "A-24HS",
+                      "tickers": ["GGAL", "YPFD"]},
+        "FUTUROS": {"instrument_type": "FUTUROS", "settlement": "A-24HS",
+                     "tickers": ["DLR"]},
+    }), encoding="utf-8")
+    monkeypatch.setattr(observer, "WATCHLIST_PATH", watchlist)
+    candidates = observer._candidate_universe()
+    assert any(row[0] == "YPFD" and row[4] for row in candidates)
+    assert any(row[1] == "FUTUROS" and not row[4] for row in candidates)

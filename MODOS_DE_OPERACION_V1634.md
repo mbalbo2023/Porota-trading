@@ -1,5 +1,22 @@
 # Modos de operación — Porota Trading v16.3.4
 
+## Ciclo horario y sincronización de instrumentos
+
+En `PRODUCTION_PAPER` el proceso tiene tres fases explícitas. Fuera de rueda
+queda `WAITING_MARKET` y no evalúa señales. En los quince minutos anteriores a
+la apertura queda `READY_PREOPEN`: puede autenticar y sincronizar catálogo e
+históricos, pero no crea decisiones ni operaciones paper. Solamente con la
+rueda BYMA abierta consulta puntas y entrega cotizaciones al simulador.
+
+La búsqueda productiva de PPI siempre envía `Ticker` y `Name` no vacíos. El
+universo curado del proyecto se valida candidato por candidato; los candidatos
+de contado confirmados pueden incorporarse al conjunto paper hasta el tope
+configurado. Opciones y futuros quedan visibles como contexto, pero no se
+simulan mientras falten vencimiento, multiplicador o margen atribuible.
+
+Autenticación, catálogo, históricos y market data se registran por separado:
+una falla de un dato posterior al login nunca vuelve a declarar falsamente que
+la autenticación falló.
 El dashboard corre siempre en un contenedor separado y no recibe credenciales
 de PPI. El selector impide que dos motores queden activos al mismo tiempo.
 

@@ -10,6 +10,7 @@ import sys
 import time
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
@@ -24,17 +25,27 @@ SECRET_PATH = os.getenv("PPI_PRODUCTION_SECRET_FILE", "/run/secrets/ppi_producti
 INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
 COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
 PUBLIC_CHECK_SECONDS = max(900, int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")))
-SYMBOLS = (
+LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
+ACTIVE_SYMBOL_LIMIT = max(3, min(int(os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "12")), 30))
+MARKET_OPEN_HOUR = int(os.getenv("MARKET_OPEN_HOUR", "11"))
+MARKET_OPEN_MINUTE = int(os.getenv("MARKET_OPEN_MINUTE", "0"))
+MARKET_CLOSE_HOUR = int(os.getenv("MARKET_CLOSE_HOUR", "17"))
+MARKET_CLOSE_MINUTE = int(os.getenv("MARKET_CLOSE_MINUTE", "0"))
+PREOPEN_MINUTES = max(5, int(os.getenv("PAPER_PREOPEN_MINUTES", "15")))
+CORE_SYMBOLS = (
     ("GGAL", "ACCIONES", "A-24HS"),
     ("AL30", "BONOS", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
 )
 STOP = False
 
-CATALOG_TYPES = (
-    "ACCIONES", "CEDEARS", "BONOS", "ETF", "OPCIONES", "FUTUROS",
-    "CAUCIONES", "FCI",
-)
+SAFE_PAPER_TYPES = {"ACCIONES", "CEDEARS", "BONOS", "ETF", "ETFS"}
+SETTLEMENT_BY_TYPE = {
+    "ACCIONES": "A-24HS", "CEDEARS": "A-24HS", "BONOS": "A-24HS",
+    "ETF": "A-24HS", "ETFS": "A-24HS", "OPCIONES": "A-24HS",
+    "FUTUROS": "A-24HS", "CAUCIONES": "INMEDIATA", "FCI": "INMEDIATA",
+}
+WATCHLIST_PATH = Path(os.getenv("INSTRUMENT_WATCHLIST_PATH", "n_instrument_watchlist.json"))
 
 
 def _stop(*_):
@@ -51,12 +62,54 @@ def _secret():
     return key, secret
 
 
-def _market_open(now=None):
+def _business_day(day):
+    try:
+        import ak_byma_calendar as calendar
+        return bool(calendar.es_dia_habil_operativo(day))
+    except Exception:
+        return day.weekday() < 5
+
+
+def _market_phase(now=None):
     now = now or datetime.now(TZ)
-    if now.weekday() >= 5:
-        return False
+    if not _business_day(now.date()):
+        return "CLOSED"
     minute = now.hour * 60 + now.minute
-    return 10 * 60 + 30 <= minute <= 17 * 60
+    opening = MARKET_OPEN_HOUR * 60 + MARKET_OPEN_MINUTE
+    closing = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
+    if opening - PREOPEN_MINUTES <= minute < opening:
+        return "PREOPEN"
+    if opening <= minute < closing:
+        return "OPEN"
+    return "CLOSED"
+
+
+def _market_open(now=None):
+    return _market_phase(now) == "OPEN"
+
+
+def _candidate_universe():
+    """Candidatos locales y del archivo curado; derivados son solo contexto."""
+    rows = {(ticker, kind, settlement, "BYMA", True)
+            for ticker, kind, settlement in CORE_SYMBOLS}
+    try:
+        data = json.loads(WATCHLIST_PATH.read_text(encoding="utf-8"))
+        for asset_class, block in data.items():
+            if str(asset_class).startswith("_") or not isinstance(block, dict):
+                continue
+            kind = str(block.get("instrument_type") or asset_class).upper()
+            settlement = str(block.get("settlement") or SETTLEMENT_BY_TYPE.get(kind, "A-24HS"))
+            for ticker in block.get("tickers", []):
+                if str(ticker).strip():
+                    rows.add((str(ticker).strip().upper(), kind, settlement, "BYMA",
+                              kind in SAFE_PAPER_TYPES))
+    except Exception:
+        pass
+    # Contexto derivado: se valida disponibilidad, nunca entra al paper broker
+    # sin multiplicador, vencimiento y margen atribuible al contrato.
+    rows.add(("DLR", "FUTUROS", "A-24HS", "ROFEX", False))
+    rows.add(("GGAL", "OPCIONES", "A-24HS", "BYMA", False))
+    return sorted(rows, key=lambda value: (not value[4], value[1], value[0]))
 
 
 def _walk_numbers(value, keys):
@@ -139,6 +192,11 @@ def _support_schema(store):
         CREATE TABLE IF NOT EXISTS source_sync(
           source TEXT PRIMARY KEY, status TEXT NOT NULL, last_attempt_at TEXT NOT NULL,
           last_success_at TEXT, items INTEGER NOT NULL DEFAULT 0, detail TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS candidate_universe(
+          ticker TEXT NOT NULL, instrument_type TEXT NOT NULL, settlement TEXT NOT NULL,
+          market TEXT NOT NULL, can_simulate INTEGER NOT NULL, status TEXT NOT NULL,
+          detail TEXT NOT NULL, last_checked_at TEXT NOT NULL,
+          PRIMARY KEY(ticker,instrument_type,market));
         """)
 
 
@@ -233,28 +291,76 @@ def _catalog_records(value):
 
 
 def _download_catalog(reader, store):
-    total = 0
+    """Valida candidatos concretos. Nunca confunde catálogo con login."""
+    total = failures = available = rofex_available = 0
     downloaded = now_iso()
-    for instrument_type in CATALOG_TYPES:
-        payload = reader.search_instruments(instrument_type)
-        records = _catalog_records(payload)
+    with store.connect() as c:
+        c.execute("DELETE FROM instrument_catalog")
+    for ticker_query, instrument_type, fallback_settlement, market_query, can_simulate in _candidate_universe():
+        status, detail = "UNAVAILABLE", "La búsqueda no devolvió coincidencias."
+        try:
+            payload = reader.search_instruments(
+                ticker_query, instrument_type, name=ticker_query, market=market_query)
+            records = _catalog_records(payload)
+            if records:
+                status, detail, available = "AVAILABLE", f"{len(records)} coincidencia(s).", available + 1
+            with store.connect() as c:
+                for row in records:
+                    ticker = str(row.get("ticker") or row.get("symbol") or row.get("Ticker") or "").strip()
+                    if not ticker:
+                        continue
+                    description = row.get("description") or row.get("name") or row.get("Descripcion")
+                    market = row.get("market") or row.get("mercado") or market_query
+                    settlement = row.get("settlement") or row.get("plazo") or fallback_settlement
+                    c.execute("INSERT OR REPLACE INTO instrument_catalog VALUES(?,?,?,?,?,?,?)",
+                              (instrument_type, ticker, str(description or "")[:300],
+                               str(market or "")[:80], str(settlement or "")[:80], downloaded,
+                               json.dumps(row, ensure_ascii=False, default=str)[:8000]))
+                    total += 1
+            if market_query == "ROFEX" and records:
+                rofex_available += len(records)
+        except Exception as exc:
+            failures += 1
+            status = "ERROR"
+            detail = f"{type(exc).__name__}: {str(exc)[:260]}"
         with store.connect() as c:
-            c.execute("DELETE FROM instrument_catalog WHERE instrument_type=?", (instrument_type,))
-            for row in records:
-                ticker = str(row.get("ticker") or row.get("symbol") or row.get("Ticker") or "").strip()
-                if not ticker:
-                    continue
-                description = row.get("description") or row.get("name") or row.get("Descripcion")
-                market = row.get("market") or row.get("mercado") or "BYMA"
-                settlement = row.get("settlement") or row.get("plazo") or ""
-                c.execute("INSERT OR REPLACE INTO instrument_catalog VALUES(?,?,?,?,?,?,?)",
-                          (instrument_type, ticker, str(description or "")[:300],
-                           str(market or "")[:80], str(settlement or "")[:80], downloaded,
-                           json.dumps(row, ensure_ascii=False, default=str)[:8000]))
-                total += 1
-    _sync_state(store, "PPI_PRODUCTION_CATALOG", "VERDE", total,
-                f"Catálogo actualizado para {len(CATALOG_TYPES)} clases.", success=True)
+            c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+                      (ticker_query, instrument_type, fallback_settlement, market_query,
+                       int(can_simulate), status, detail, downloaded))
+    state = "VERDE" if available and not failures else "AMARILLO" if available else "ROJO"
+    detail = (f"{available} candidatos validados; {total} instrumentos devueltos; "
+              f"{failures} búsquedas fallidas. Ticker y Name siempre no vacíos.")
+    _sync_state(store, "PPI_PRODUCTION_CATALOG", state, total, detail,
+                success=bool(available))
+    _health(store, "PPI_PRODUCTION_CATALOG", state, detail, "PPI Producción",
+            success=bool(available))
+    rofex_state = "AMARILLO" if rofex_available else "GRIS"
+    rofex_detail = (f"{rofex_available} contrato(s) visible(s); contexto únicamente. "
+                    "No se simulan futuros sin multiplicador y margen atribuible."
+                    if rofex_available else
+                    "Sin contrato ROFEX validado. Contexto desactivado; no afecta contado.")
+    _health(store, "ROFEX_MARKETDATA", rofex_state, rofex_detail,
+            "PPI Producción / ROFEX", success=bool(rofex_available))
     return total
+
+
+def _active_symbols(store):
+    """Universo seguro: núcleo más candidatos validados, con tope operativo."""
+    core = list(CORE_SYMBOLS)
+    try:
+        with store.connect() as c:
+            rows = c.execute("""SELECT ticker,instrument_type,settlement FROM candidate_universe
+              WHERE can_simulate=1 AND status='AVAILABLE'
+              ORDER BY CASE WHEN ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
+              instrument_type,ticker""").fetchall()
+        seen = {value[0] for value in core}
+        for ticker, kind, settlement in rows:
+            if ticker not in seen:
+                core.append((ticker, kind, settlement))
+                seen.add(ticker)
+    except Exception:
+        pass
+    return tuple(core[:ACTIVE_SYMBOL_LIMIT])
 
 
 def _history_count(value):
@@ -267,18 +373,28 @@ def _history_count(value):
 
 def _download_histories(reader, store):
     start, end = date.today() - timedelta(days=365), date.today()
-    total = 0
-    for symbol, instrument_type, settlement in SYMBOLS:
-        payload = reader.history(symbol, instrument_type, settlement, start, end)
-        count = _history_count(payload)
-        with store.connect() as c:
-            c.execute("INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)",
-                      (symbol, instrument_type, settlement, start.isoformat(), end.isoformat(),
-                       now_iso(), count, json.dumps(payload, ensure_ascii=False, default=str)))
-        total += count
-    _sync_state(store, "PPI_PRODUCTION_HISTORY", "VERDE", total,
-                f"Históricos de {len(SYMBOLS)} instrumentos guardados en modo solo lectura.",
-                success=True)
+    total = successes = failures = 0
+    symbols = _active_symbols(store)
+    for symbol, instrument_type, settlement in symbols:
+        try:
+            payload = reader.history(symbol, instrument_type, settlement, start, end)
+            count = _history_count(payload)
+            with store.connect() as c:
+                c.execute("INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)",
+                          (symbol, instrument_type, settlement, start.isoformat(), end.isoformat(),
+                           now_iso(), count, json.dumps(payload, ensure_ascii=False, default=str)))
+            total += count
+            successes += 1
+        except Exception as exc:
+            failures += 1
+            store.event("HISTORY_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
+    state = "VERDE" if successes and not failures else "AMARILLO" if successes else "ROJO"
+    detail = (f"Históricos de {successes}/{len(symbols)} instrumentos; {total} filas; "
+              f"{failures} fallidos. Solo lectura.")
+    _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail,
+                success=bool(successes))
+    _health(store, "PPI_PRODUCTION_HISTORY", state, detail, "PPI Producción",
+            success=bool(successes))
     return total
 
 
@@ -317,24 +433,36 @@ def _run_command(store, reader, command):
             key, secret = _secret()
             reader = ProductionMarketReader(key, secret, audit=store.audit_http)
             reader.login_once()
-        _health(store, "PPI_PRODUCTION_AUTH", "VERDE", "Login de solo lectura correcto.",
-                "PPI Producción", success=True)
-        store.state(ppi_auth="OK", detail="Login manual de solo lectura correcto; sincronizando datos.")
-        catalog = _download_catalog(reader, store)
-        histories = _download_histories(reader, store)
-        result = f"Login correcto; {catalog} instrumentos y {histories} filas históricas descargadas."
-        _finish_command(store, command_id, "OK", result)
-        store.state(detail=result)
-        return reader
     except Exception as exc:
         detail = f"{type(exc).__name__}: {str(exc)[:500]}"
         _health(store, "PPI_PRODUCTION_AUTH", "ROJO", detail, "PPI Producción")
-        _sync_state(store, "PPI_PRODUCTION_CATALOG", "ROJO", 0, detail)
         _finish_command(store, command_id, "ERROR", detail)
         store.state(ppi_auth="ERROR", detail=f"Prueba manual falló: {detail}")
         if reader:
             reader.close()
         return None
+    _health(store, "PPI_PRODUCTION_AUTH", "VERDE", "Login de solo lectura correcto.",
+            "PPI Producción", success=True)
+    store.state(ppi_auth="OK", detail="Login correcto; sincronizando configuración, catálogo e históricos.")
+    problems = []
+    try:
+        catalog = _download_catalog(reader, store)
+    except Exception as exc:
+        catalog = 0
+        problems.append(f"catálogo: {type(exc).__name__}")
+        _sync_state(store, "PPI_PRODUCTION_CATALOG", "ROJO", 0, str(exc)[:500])
+    try:
+        histories = _download_histories(reader, store)
+    except Exception as exc:
+        histories = 0
+        problems.append(f"históricos: {type(exc).__name__}")
+        _sync_state(store, "PPI_PRODUCTION_HISTORY", "ROJO", 0, str(exc)[:500])
+    suffix = ("; advertencias: " + ", ".join(problems)) if problems else ""
+    result = (f"Login correcto; {catalog} instrumentos y {histories} filas históricas "
+              f"descargadas{suffix}. Fuera de rueda no se ejecutó la estrategia.")
+    _finish_command(store, command_id, "PARTIAL" if problems else "OK", result)
+    store.state(detail=result)
+    return reader
 
 
 def run():
@@ -351,13 +479,14 @@ def run():
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", real_orders_sent=0,
                 detail="Simulacion productiva inicializando.")
-    if not _market_open():
-        store.state(process_state="RUNNING", session_state="MARKET_CLOSED",
+    if _market_phase() == "CLOSED":
+        store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
                     ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
-                    detail="Mercado cerrado; no se consume un login productivo.")
+                    detail="Proceso disponible y en espera; estrategia detenida por mercado cerrado.")
     reader = None
     quotes = {}
     last_public_check = 0.0
+    next_login_at = 0.0
     try:
         while not STOP:
             if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:
@@ -366,13 +495,24 @@ def run():
             command = _claim_command(store)
             if command:
                 reader = _run_command(store, reader, command)
-            if not _market_open():
-                store.state(process_state="RUNNING", session_state="MARKET_CLOSED",
+            phase = _market_phase()
+            if phase == "CLOSED":
+                store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
-                            detail="Mercado cerrado; simulador en espera.")
+                            detail="Proceso disponible; estrategia y simulación en espera por mercado cerrado.")
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
+            if phase == "PREOPEN":
+                store.state(process_state="READY_PREOPEN", session_state="PREOPEN",
+                            heartbeat_at=now_iso(), real_orders_sent=0,
+                            detail="Preapertura: sólo login y sincronización; cero evaluaciones y cero operaciones.")
             if reader is None:
+                if time.time() < next_login_at:
+                    store.state(process_state="DEGRADED", ppi_auth="COOLDOWN",
+                                heartbeat_at=now_iso(), real_orders_sent=0,
+                                detail="PPI en espera de reintento; no se abre una tormenta de logins.")
+                    time.sleep(COMMAND_POLL_SECONDS)
+                    continue
                 key, secret = _secret()
                 reader = ProductionMarketReader(key, secret, audit=store.audit_http)
                 try:
@@ -380,7 +520,7 @@ def run():
                     _health(store, "PPI_PRODUCTION_AUTH", "VERDE",
                             "Login automático de solo lectura correcto.",
                             "PPI Producción", success=True)
-                    store.state(ppi_auth="OK", session_state="MARKET_OPEN",
+                    store.state(ppi_auth="OK", session_state=phase,
                                 detail="Login de solo lectura correcto.")
                     _daily_sync(reader, store)
                 except Exception as exc:
@@ -388,9 +528,17 @@ def run():
                             f"{type(exc).__name__}: {str(exc)[:300]}", "PPI Producción")
                     store.state(process_state="DEGRADED", ppi_auth="ERROR",
                                 heartbeat_at=now_iso(), detail=f"Login fallo: {type(exc).__name__}")
-                    return 2
+                    reader.close()
+                    reader = None
+                    next_login_at = time.time() + LOGIN_COOLDOWN_SECONDS
+                    time.sleep(COMMAND_POLL_SECONDS)
+                    continue
+            if phase != "OPEN":
+                time.sleep(COMMAND_POLL_SECONDS)
+                continue
+            symbols = _active_symbols(store)
             cycle_ok = 0
-            for symbol, asset_class, settlement in SYMBOLS:
+            for symbol, asset_class, settlement in symbols:
                 if STOP:
                     break
                 try:
@@ -416,10 +564,10 @@ def run():
                         session_state="MARKET_OPEN", heartbeat_at=now_iso(),
                         http_allowed=metrics["http_allowed"],
                         http_blocked=metrics["http_blocked"], real_orders_sent=0,
-                        detail=f"{cycle_ok}/{len(SYMBOLS)} instrumentos actualizados; operaciones solo simuladas.")
+                        detail=f"{cycle_ok}/{len(symbols)} instrumentos actualizados; operaciones solo simuladas.")
             _health(store, "PPI_PRODUCTION_MARKETDATA",
                     "VERDE" if cycle_ok else "ROJO",
-                    f"{cycle_ok}/{len(SYMBOLS)} instrumentos con cotización útil.",
+                    f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil.",
                     "PPI Producción", success=bool(cycle_ok))
             time.sleep(INTERVAL)
     finally:

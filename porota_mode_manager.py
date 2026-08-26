@@ -144,6 +144,13 @@ def simulation():
         "-e", "PAPER_MAX_OPEN_POSITIONS=3",
         "-e", "PAPER_MAX_POSITION_PCT=0.25",
         "-e", "PAPER_MAX_TOTAL_EXPOSURE_PCT=0.60",
+        "-e", "MARKET_OPEN_HOUR=11",
+        "-e", "MARKET_OPEN_MINUTE=0",
+        "-e", "MARKET_CLOSE_HOUR=17",
+        "-e", "MARKET_CLOSE_MINUTE=0",
+        "-e", "PAPER_PREOPEN_MINUTES=15",
+        "-e", "PPI_LOGIN_COOLDOWN_SECONDS=900",
+        "-e", "PAPER_ACTIVE_SYMBOL_LIMIT=12",
         "-e", "SERVER_TIMEZONE=America/Argentina/Buenos_Aires",
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
         "--entrypoint", "python", IMAGE, "bf_production_paper_observer.py")
@@ -151,7 +158,7 @@ def simulation():
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
                 "PPI_ORDERS": "BLOCKED", "GEMINI": "OFF_V1"}, telegram=status,
-               detail="Simulador productivo y dashboard independiente iniciados")
+               detail="Fuera de rueda queda en espera; preapertura sincroniza; rueda abierta simula")
 
 
 def sandbox():
