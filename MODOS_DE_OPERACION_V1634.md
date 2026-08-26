@@ -30,7 +30,10 @@ Telegram, SRE, Logs, Diagnóstico y Configuración, además de Volver.
   muestra señal, variables, costos, fills simulados, eventos y veredicto.
 - **IA:** Gemini es un portón crítico. La estrategia determinística propone;
   Gemini aprueba o veta. Si el modelo o su contrato JSON fallan, no se abre ni
-  siquiera una posición simulada. Cada veredicto queda persistido.
+  siquiera una posición simulada. Cada veredicto queda persistido. El modelo
+  no queda fijado a un nombre heredado: se consulta el inventario visible para
+  la clave, se filtran los modelos de texto con `generateContent` y se usa el
+  primero vigente. Si no hay uno compatible, el portón permanece cerrado.
 - **Salud:** inventaría todas las APIs y conserva último reporte y último éxito.
 - **Históricos:** muestra último intento/éxito por fuente y fecha del catálogo.
 - **Sincronización manual:** el botón del dashboard encola una orden local. El

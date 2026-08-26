@@ -494,6 +494,14 @@ def _daily_sync(reader, store):
 
 def _run_command(store, reader, command, gemini_gate=None):
     command_id, name = command
+    if name == "GEMINI_PREFLIGHT":
+        if gemini_gate is None:
+            detail = "Gemini no configurado. Porton cerrado."
+            _finish_command(store, command_id, "ERROR", detail)
+            return reader
+        ok, detail = _gemini_health(store, gemini_gate)
+        _finish_command(store, command_id, "OK" if ok else "ERROR", detail)
+        return reader
     if name != "LOGIN_AND_SYNC":
         _finish_command(store, command_id, "ERROR", "Comando no permitido.")
         return reader

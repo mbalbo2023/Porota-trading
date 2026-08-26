@@ -124,7 +124,7 @@ def observer_ai_env():
     target = DATA / "diagnosticos" / "observer_ai_v1634.env"
     values = {
         "GEMINI_API_KEY": key,
-        "GEMINI_MODEL": env.get("GEMINI_MODEL", "").strip() or "gemini-2.5-flash-lite",
+        "GEMINI_MODEL": env.get("GEMINI_MODEL", "").strip() or "gemini-3.7-flash",
         "GEMINI_MODEL_CHAIN": env.get("GEMINI_MODEL_CHAIN", "").strip(),
     }
     target.write_text("\n".join(f"{name}={value}" for name, value in values.items()) + "\n",

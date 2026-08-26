@@ -14,6 +14,7 @@ from bd_ppi_readonly_guard import (ProductionMarketReader, ReadOnlyPolicyViolati
                                    ReadOnlyTransportGuard)
 from be_paper_engine import D, PaperBroker, PaperStore, Quote
 import bf_production_paper_observer as observer
+from bh_paper_gemini import CURRENT_TEXT_MODELS, rank_models
 
 
 def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"):
@@ -226,6 +227,42 @@ def test_gemini_ausente_cierra_el_porton_paper(tmp_path):
         store.add_quote(q)
         broker.on_quote(q)
     assert store.open_positions() == []
+
+
+def test_gemini_descarta_modelo_retirado_y_prioriza_inventario_real():
+    models = rank_models(
+        "gemini-2.5-flash-lite", (),
+        ["gemini-3.6-flash", "gemini-3.1-flash-lite"],
+    )
+    assert models == ["gemini-3.6-flash", "gemini-3.1-flash-lite"]
+    assert "gemini-2.5-flash-lite" not in models
+
+
+def test_gemini_sin_inventario_usa_cadena_estable_actual():
+    models = rank_models("gemini-2.5-flash-lite", (), None)
+    assert tuple(models[:len(CURRENT_TEXT_MODELS)]) == CURRENT_TEXT_MODELS
+    assert models[0] == "gemini-3.7-flash"
+
+
+def test_comando_gemini_no_abre_ni_requiere_ppi(tmp_path):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    class Gate:
+        def healthcheck(self):
+            return {"ok": True, "model": "gemini-3.7-flash"}
+    with store.connect() as connection:
+        cursor = connection.execute(
+            "INSERT INTO observer_commands(created_at,command,status) VALUES(?,?,?)",
+            (datetime.now(timezone.utc).isoformat(), "GEMINI_PREFLIGHT", "RUNNING"),
+        )
+        command_id = cursor.lastrowid
+    assert observer._run_command(store, None, (command_id, "GEMINI_PREFLIGHT"), Gate()) is None
+    with store.connect() as connection:
+        row = connection.execute(
+            "SELECT status,result FROM observer_commands WHERE id=?", (command_id,)
+        ).fetchone()
+    assert row[0] == "OK"
+    assert "gemini-3.7-flash" in row[1]
 
 
 def test_catalogo_incorpora_cada_instrumento_devuelto(monkeypatch, tmp_path):

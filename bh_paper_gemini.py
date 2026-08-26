@@ -15,6 +15,62 @@ import os
 PING = ('Devolve exclusivamente JSON valido: '
         '{"decision":"HOLD","score":0.0,"veto":true,"reason":"healthcheck","risks":[]}')
 
+# Modelos de texto estables vigentes, en orden de preferencia. La lista de la
+# cuenta manda: estos nombres son solamente el respaldo si el inventario no
+# pudiera consultarse. Nunca se vuelve silenciosamente a un modelo retirado.
+CURRENT_TEXT_MODELS = (
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+)
+RETIRED_MODELS = {"gemini-2.5-flash-lite"}
+NON_TEXT_MARKERS = (
+    "embedding", "imagen", "veo", "tts", "live", "robotics", "computer-use",
+    "image", "audio", "translate", "aqa", "learnlm",
+)
+
+
+def _clean_model_name(value):
+    name = str(value or "").strip()
+    return name[7:] if name.startswith("models/") else name
+
+
+def _supports_generate_content(model):
+    actions = getattr(model, "supported_actions", None) or []
+    return any("generatecontent" in str(action).replace("_", "").lower()
+               for action in actions)
+
+
+def rank_models(configured="", chain=(), discovered=None):
+    """Ordena sólo modelos de texto utilizables por la clave actual.
+
+    ``discovered`` es ``None`` cuando listar modelos falló y una lista cuando
+    Google respondió. Una lista vacía es una respuesta válida y no habilita a
+    inventar disponibilidad.
+    """
+    requested = [_clean_model_name(configured),
+                 *(_clean_model_name(value) for value in chain)]
+    requested = [name for name in requested if name and name not in RETIRED_MODELS]
+    if discovered is None:
+        pool = [*CURRENT_TEXT_MODELS, *requested]
+    else:
+        available = {_clean_model_name(value) for value in discovered}
+        available.discard("")
+        pool = [name for name in requested if name in available]
+        pool += [name for name in CURRENT_TEXT_MODELS if name in available]
+        pool += sorted(
+            name for name in available
+            if name.startswith("gemini-")
+            and not any(marker in name.lower() for marker in NON_TEXT_MARKERS)
+        )
+    result = []
+    for name in pool:
+        if name not in result and name not in RETIRED_MODELS:
+            result.append(name)
+    return result
+
 
 class GeminiPaperGate:
     def __init__(self):
@@ -25,12 +81,29 @@ class GeminiPaperGate:
         configured = os.getenv("GEMINI_MODEL", "").strip()
         chain = [item.strip() for item in os.getenv("GEMINI_MODEL_CHAIN", "").split(",")
                  if item.strip()]
-        self.models = []
-        for model in [configured, *chain, "gemini-2.5-flash-lite"]:
-            if model and model not in self.models:
-                self.models.append(model)
         self.client = genai.Client(api_key=api_key)
+        discovered = self._discover_models()
+        self.models = rank_models(configured, chain, discovered)
+        if not self.models:
+            raise RuntimeError(
+                "La clave no publica ningun modelo de texto compatible con generateContent."
+            )
         self.model = self.models[0]
+
+    def _discover_models(self):
+        """Inventario barato de la cuenta; no genera contenido ni toca PPI."""
+        try:
+            result = []
+            for model in self.client.models.list():
+                name = _clean_model_name(getattr(model, "name", ""))
+                if (name.startswith("gemini-") and _supports_generate_content(model)
+                        and not any(marker in name.lower() for marker in NON_TEXT_MARKERS)):
+                    result.append(name)
+            return result
+        except Exception:
+            # Un proxy o una version vieja del SDK puede impedir listar. En
+            # ese caso _call prueba la cadena estable y conserva fail-closed.
+            return None
 
     @staticmethod
     def _parse(response, model):
