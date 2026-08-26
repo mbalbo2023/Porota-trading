@@ -103,6 +103,11 @@ def dashboard_env(mode):
             safe.append(line)
     safe += [f"DASHBOARD_OPERATION_MODE={mode}",
              "PAPER_DB_PATH=/app/data/observer/observer_production.db",
+             "PAPER_INITIAL_CAPITAL_ARS=1000000",
+             "PAPER_RISK_PER_TRADE=0.005",
+             "PAPER_MAX_OPEN_POSITIONS=3",
+             "PAPER_MAX_POSITION_PCT=0.25",
+             "PAPER_MAX_TOTAL_EXPOSURE_PCT=0.60",
              "SERVER_TIMEZONE=America/Argentina/Buenos_Aires"]
     target.write_text("\n".join(safe) + "\n", encoding="utf-8")
     os.chmod(target, 0o600)
@@ -129,10 +134,16 @@ def simulation():
     if not secret.exists():
         raise RuntimeError("Falta el secreto productivo de solo lectura.")
     run("docker", "run", "-d", "--name", "porota_production_observer",
-        "--restart", "no", "--no-healthcheck", "--user", "botuser", "--read-only", "--cap-drop", "ALL",
+        "--restart", "unless-stopped", "--no-healthcheck",
+        "--user", "botuser", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
         "-e", "PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json",
         "-e", "PAPER_DB_PATH=/app/data/observer/observer_production.db",
+        "-e", "PAPER_INITIAL_CAPITAL_ARS=1000000",
+        "-e", "PAPER_RISK_PER_TRADE=0.005",
+        "-e", "PAPER_MAX_OPEN_POSITIONS=3",
+        "-e", "PAPER_MAX_POSITION_PCT=0.25",
+        "-e", "PAPER_MAX_TOTAL_EXPOSURE_PCT=0.60",
         "-e", "SERVER_TIMEZONE=America/Argentina/Buenos_Aires",
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
         "--entrypoint", "python", IMAGE, "bf_production_paper_observer.py")

@@ -3,6 +3,41 @@
 El dashboard corre siempre en un contenedor separado y no recibe credenciales
 de PPI. El selector impide que dos motores queden activos al mismo tiempo.
 
+## Dashboard operativo
+
+Todas las páginas comparten un único menú superior. Incluye Inicio, Actividad,
+Simulación, Motor de trading, Salud de APIs, Históricos, Blog de aprendizaje,
+Telegram, SRE, Logs, Diagnóstico y Configuración, además de Volver.
+
+- **Motor de trading:** cada operación paper se despliega individualmente y
+  muestra señal, variables, costos, fills simulados, eventos y veredicto.
+- **IA:** sólo se atribuye una reacción a Gemini si existe una evaluación
+  persistida. En caso contrario se informa que no participó.
+- **Salud:** inventaría todas las APIs y conserva último reporte y último éxito.
+- **Históricos:** muestra último intento/éxito por fuente y fecha del catálogo.
+- **Sincronización manual:** el botón del dashboard encola una orden local. El
+  observador aislado realiza un solo login PPI de solo lectura y descarga datos;
+  el dashboard no recibe secretos y la lista blanca bloquea cuentas y órdenes.
+- **Sincronización diaria:** al primer login de mercado de cada día se actualizan
+  catálogo e históricos; reiniciar el observador no duplica esa bajada.
+
+OPENBYMADATA es una web pública oficial. Las APIs oficiales de BYMA requieren
+alta o contratación, por lo que v16.3.4 no intenta utilizar endpoints ocultos.
+Hasta contar con ese acceso, catálogo e históricos se obtienen de PPI Producción
+bajo la barrera de solo lectura.
+
+## Patrimonio en simulación
+
+El capital inicial es **$1.000.000 ARS ficticios**. No se consulta ni se copia
+el saldo real de la cuenta. La política inicial es: riesgo máximo 0,5% por
+operación, tope 25% por posición, hasta tres posiciones y exposición total
+máxima 60%. La cantidad final es el menor límite entre riesgo hasta el stop,
+efectivo paper, tope individual, tope total y liquidez visible.
+
+Producción real no puede reutilizar ese capital: si se habilita en una versión
+futura deberá conciliar el patrimonio real de PPI y bloquear el dimensionamiento
+si ese dato no está disponible.
+
 | Modo | Datos | Ejecución | Telegram |
 |---|---|---|---|
 | DETENIDO | Ninguna API | Ninguna | Avisa la detención |

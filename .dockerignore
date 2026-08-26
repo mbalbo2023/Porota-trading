@@ -33,3 +33,5 @@ docs/
 .secrets
 data/observer
 porota_production_paper_v1634.sh
+
+porota_dashboard_hotfix_v1634.sh

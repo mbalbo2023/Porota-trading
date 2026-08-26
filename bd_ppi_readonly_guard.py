@@ -184,6 +184,13 @@ class ProductionMarketReader:
     def book(self, ticker: str, instrument_type: str, settlement: str):
         return self._market().book(ticker, instrument_type, settlement)
 
+    def search_instruments(self, instrument_type: str, ticker_query: str = "",
+                           market: str = "BYMA"):
+        """Catálogo visible para la cuenta, sin consultar saldos ni permisos."""
+        return self._market().search_instrument(
+            ticker_query, "", market, instrument_type
+        )
+
     def history(self, ticker: str, instrument_type: str, settlement: str,
                 date_from, date_to):
         return self._market().search(

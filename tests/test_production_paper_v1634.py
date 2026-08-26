@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 
 from bd_ppi_readonly_guard import ReadOnlyPolicyViolation, ReadOnlyTransportGuard
 from be_paper_engine import D, PaperBroker, PaperStore, Quote
+import bf_production_paper_observer as observer
 
 
 def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"):
@@ -38,6 +39,16 @@ def test_guard_permite_solo_host_https_y_rutas_lectura():
     with pytest.raises(ReadOnlyPolicyViolation):
         g.check("POST", "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi",
                 count_login=True)
+
+
+def test_guard_permite_catalogo_e_historicos_pero_no_cuenta_ni_ordenes():
+    g = ReadOnlyTransportGuard()
+    assert g.check("GET", "https://clientapi.portfoliopersonal.com/api/1.0/MarketData/SearchInstrument")
+    assert g.check("GET", "https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Search")
+    with pytest.raises(ReadOnlyPolicyViolation):
+        g.check("GET", "https://clientapi.portfoliopersonal.com/api/1.0/Account/Accounts")
+    with pytest.raises(ReadOnlyPolicyViolation):
+        g.check("POST", "https://clientapi.portfoliopersonal.com/api/1.0/Order/New")
 
 
 @pytest.mark.parametrize("word", ["Order/", "Budget", "Confirm", "Cancel", "Transfer", "MassCancel"])
@@ -97,6 +108,22 @@ def test_sin_ask_size_no_hay_fill(tmp_path):
     assert store.open_positions() == []
 
 
+def test_patrimonio_paper_limita_posicion_y_exposicion(tmp_path):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    broker = PaperBroker(store, initial_cash="1000000", risk_pct="0.50",
+                         max_position_pct="0.25", max_total_exposure_pct="0.60")
+    for i in range(8):
+        q = quote(price=str(100+i), minute=i, ask_size="100000")
+        store.add_quote(q)
+        broker.on_quote(q)
+    position = store.open_positions()[0]
+    notional = D(position["entry_price"]) * D(position["quantity"])
+    assert notional <= D("250000")
+    features = json.loads(position["features_json"])
+    assert features["initial_capital_ars"] == "1000000"
+    assert features["max_position_pct"] == "0.25"
+
+
 def test_base_operativa_no_se_abre(tmp_path):
     operational = tmp_path / "trading_system.db"
     operational.write_bytes(b"NO TOCAR")
@@ -110,3 +137,15 @@ def test_estado_declara_cero_ordenes_reales(tmp_path):
         row = dict(c.execute("SELECT * FROM observer_state").fetchone())
     assert row["mode"] == "PRODUCTION_PAPER"
     assert row["real_orders_sent"] == 0
+
+
+def test_sync_diario_no_se_duplica(tmp_path):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    assert observer._daily_sync_needed(store)
+    today = datetime.now(observer.TZ).date().isoformat()
+    with store.connect() as connection:
+        for source in ("PPI_PRODUCTION_CATALOG", "PPI_PRODUCTION_HISTORY"):
+            connection.execute("INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
+                               (source, "VERDE", today, today, 1, "ok"))
+    assert not observer._daily_sync_needed(store)

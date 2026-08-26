@@ -178,7 +178,8 @@ class PaperStore:
 class PaperBroker:
     def __init__(self, store: PaperStore, initial_cash="1000000",
                  risk_pct="0.005", max_positions=3, fee_rate="0.00605",
-                 slippage_bps="2", participation="0.10"):
+                 slippage_bps="2", participation="0.10",
+                 max_position_pct="0.25", max_total_exposure_pct="0.60"):
         self.store = store
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
@@ -186,6 +187,8 @@ class PaperBroker:
         self.fee_rate = D(fee_rate)
         self.slippage = D(slippage_bps) / D(10000)
         self.participation = D(participation)
+        self.max_position_pct = D(max_position_pct)
+        self.max_total_exposure_pct = D(max_total_exposure_pct)
 
     def _cost(self, price, qty, asset_class="ACCIONES"):
         """Costo de una punta; el spread ya vive en bid/ask y no se duplica."""
@@ -257,7 +260,25 @@ class PaperBroker:
         by_risk = (self.initial_cash * self.risk_pct / unit_risk).to_integral_value(ROUND_DOWN)
         by_cash = (max(ZERO, self._cash()) / entry).to_integral_value(ROUND_DOWN)
         by_book = (q.ask_size * self.participation).to_integral_value(ROUND_DOWN)
-        qty = min(by_risk, by_cash, by_book)
+        by_position_cap = (self.initial_cash * self.max_position_pct / entry).to_integral_value(ROUND_DOWN)
+        current_exposure = sum((D(p["entry_price"]) * D(p["quantity"])
+                                for p in self.store.open_positions()), ZERO)
+        exposure_remaining = max(
+            ZERO, self.initial_cash * self.max_total_exposure_pct - current_exposure
+        )
+        by_total_cap = (exposure_remaining / entry).to_integral_value(ROUND_DOWN)
+        qty = min(by_risk, by_cash, by_book, by_position_cap, by_total_cap)
+        features.update({
+            "initial_capital_ars": str(self.initial_cash),
+            "risk_budget_ars": str(self.initial_cash * self.risk_pct),
+            "max_position_pct": str(self.max_position_pct),
+            "max_total_exposure_pct": str(self.max_total_exposure_pct),
+            "qty_by_risk": str(by_risk),
+            "qty_by_cash": str(by_cash),
+            "qty_by_liquidity": str(by_book),
+            "qty_by_position_cap": str(by_position_cap),
+            "qty_by_total_cap": str(by_total_cap),
+        })
         if qty < 1:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: capital/liquidez insuficiente")
             return
