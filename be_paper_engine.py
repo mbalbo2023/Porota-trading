@@ -23,7 +23,8 @@ ZERO = Decimal("0")
 
 def D(value, default="0") -> Decimal:
     try:
-        return Decimal(str(value))
+        result = Decimal(str(value))
+        return result if result.is_finite() else Decimal(default)
     except Exception:
         return Decimal(default)
 
@@ -146,10 +147,18 @@ class PaperStore:
                       (SOURCE, q.observed_at, q.symbol, q.asset_class, q.settlement,
                        str(q.last), str(q.bid), str(q.ask), str(q.bid_size), str(q.ask_size)))
 
-    def prices(self, symbol: str, limit=30):
+    def prices(self, symbol: str, limit=30, *, asset_class=None, settlement=None):
+        filters, params = ["symbol=?"], [symbol]
+        if asset_class is not None:
+            filters.append("asset_class=?")
+            params.append(asset_class)
+        if settlement is not None:
+            filters.append("settlement=?")
+            params.append(settlement)
         with self.connect() as c:
-            rows = c.execute("SELECT last FROM market_snapshots WHERE symbol=? ORDER BY id DESC LIMIT ?",
-                             (symbol, limit)).fetchall()
+            rows = c.execute("SELECT last FROM market_snapshots WHERE " +
+                             " AND ".join(filters) + " ORDER BY id DESC LIMIT ?",
+                             (*params, limit)).fetchall()
         return [D(r[0]) for r in reversed(rows)]
 
     def open_position(self, symbol: str):
@@ -231,13 +240,25 @@ class PaperBroker:
 
     def _cost(self, price, qty, asset_class="ACCIONES"):
         """Costo de una punta; el spread ya vive en bid/ask y no se duplica."""
-        rate = self.fee_rate
-        try:
-            import au_fee_schedule
-            rate = D(au_fee_schedule.costo_por_tramo(asset_class))
-        except Exception:
-            pass
+        import au_fee_schedule
+        rate = D(au_fee_schedule.costo_por_tramo(asset_class), "-1")
+        if rate < 0:
+            raise ValueError("tarifario no valido para el costo por tramo")
         return (D(price) * D(qty) * rate).quantize(Decimal("0.01"))
+
+    @staticmethod
+    def _quantity_in_budget(unit_amount, budget, extra_cost):
+        """Mayor cantidad entera que cabe incluyendo costos redondeados."""
+        if unit_amount <= 0 or budget <= 0:
+            return ZERO
+        low, high = 0, int(budget / unit_amount)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if unit_amount * middle + extra_cost(D(middle)) <= budget:
+                low = middle
+            else:
+                high = middle - 1
+        return D(low)
 
     def _cash(self):
         closed = self.store.recent_closed(100000)
@@ -255,7 +276,10 @@ class PaperBroker:
         return D("0.67") if rate < D("0.45") else D("0.58") if rate > D("0.65") else D("0.62")
 
     def decide(self, q: Quote):
-        values = self.store.prices(q.symbol, 20)
+        if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
+            return "HOLD", ZERO, "Puntas o profundidad invalidas", {"samples": 0}
+        values = self.store.prices(q.symbol, 20, asset_class=q.asset_class,
+                                   settlement=q.settlement)
         if len(values) < 8:
             return "HOLD", D("0"), f"Aprendiendo serie: {len(values)}/8 muestras", {"samples": len(values)}
         short = sum(values[-3:], ZERO) / D(3)
@@ -266,7 +290,7 @@ class PaperBroker:
         features = {"sma3": str(short), "sma8": str(long), "momentum": str(momentum),
                     "spread": str(spread), "samples": len(values),
                     "paper_threshold": str(self.threshold())}
-        if q.bid <= 0 or q.ask <= 0 or q.ask_size <= 0:
+        if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
             return "HOLD", score, "Puntas o profundidad insuficientes", features
         if spread > D("0.02"):
             return "HOLD", score, "Spread superior al 2%", features
@@ -318,15 +342,28 @@ class PaperBroker:
                 paper_id=paper_id, detail=features)
 
     def _open(self, q: Quote, score: Decimal, features: dict):
+        if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
+            return False, "Puntas o profundidad invalidas para una compra simulada", None
+        if self.store.open_position(q.symbol):
+            return False, "Ya existe una posicion abierta del simbolo", None
         if len(self.store.open_positions()) >= self.max_positions:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: maximo de posiciones paper")
             return False, "Límite máximo de posiciones paper alcanzado", None
         entry = (q.ask * (1 + self.slippage)).quantize(Decimal("0.0001"))
+        if entry <= 0:
+            return False, "Precio de entrada no representable", None
         stop = entry * D("0.98")
         target = entry * D("1.035")
-        unit_risk = entry - stop + self._cost(entry, 1, q.asset_class)
-        by_risk = (self.initial_cash * self.risk_pct / unit_risk).to_integral_value(ROUND_DOWN)
-        by_cash = (max(ZERO, self._cash()) / entry).to_integral_value(ROUND_DOWN)
+        modeled_stop_fill = (stop * (1 - self.slippage)).quantize(Decimal("0.0001"))
+        # Incluye ambos tramos y deslizamiento de salida, sin afirmar que un
+        # stop garantice este precio ante gaps o falta de liquidez.
+        by_risk = self._quantity_in_budget(
+            entry - modeled_stop_fill, self.initial_cash * self.risk_pct,
+            lambda qty: self._cost(entry, qty, q.asset_class) +
+                        self._cost(modeled_stop_fill, qty, q.asset_class))
+        by_cash = self._quantity_in_budget(
+            entry, max(ZERO, self._cash()),
+            lambda qty: self._cost(entry, qty, q.asset_class))
         by_book = (q.ask_size * self.participation).to_integral_value(ROUND_DOWN)
         by_position_cap = (self.initial_cash * self.max_position_pct / entry).to_integral_value(ROUND_DOWN)
         current_exposure = sum((D(p["entry_price"]) * D(p["quantity"])
@@ -379,7 +416,8 @@ class PaperBroker:
 
     def _maybe_close(self, q: Quote):
         p = self.store.open_position(q.symbol)
-        if not p or q.bid <= 0 or q.bid_size <= 0:
+        if (not p or (p["asset_class"], p["settlement"]) !=
+                (q.asset_class, q.settlement) or D(q.bid) <= 0 or D(q.bid_size) <= 0):
             return False
         reason = None
         if q.bid <= D(p["stop_price"]):
@@ -395,29 +433,49 @@ class PaperBroker:
             except Exception:
                 pass
         if reason:
-            self._close(p, q, reason)
-            return True
+            return self._close(p, q, reason)
         return False
 
     def _close(self, p: dict, q: Quote, reason: str):
+        """Cierre total simulado: sin inventar volumen ni duplicar un fill.
+
+        Las salidas parciales requieren un libro propio y quedan pendientes.
+        Por ahora se rechaza un cierre que excede la participacion disponible.
+        La futura integracion del supervisor debe validar frescura y sesion
+        usando su reloj; este metodo solo valida secuencia temporal y fill.
+        """
+        if (p["symbol"], p["asset_class"], p["settlement"]) != (
+                q.symbol, q.asset_class, q.settlement):
+            return False
         qty = D(p["quantity"])
+        if D(q.bid) <= 0 or qty <= 0 or qty > (D(q.bid_size) * self.participation):
+            self.store.event("EXIT_PENDING_NO_LIQUIDITY",
+                             "Profundidad insuficiente para cerrar toda la posicion", p["paper_id"])
+            return False
+        try:
+            opened = datetime.fromisoformat(p["opened_at"].replace("Z", "+00:00"))
+            observed = datetime.fromisoformat(q.observed_at.replace("Z", "+00:00"))
+            if opened.tzinfo is None or observed.tzinfo is None or observed < opened:
+                return False
+            duration = int((observed-opened).total_seconds() / 60)
+        except (ValueError, TypeError):
+            return False
         exit_price = (q.bid * (1 - self.slippage)).quantize(Decimal("0.0001"))
         exit_cost = self._cost(exit_price, qty, p.get("asset_class", "ACCIONES"))
         gross = (exit_price - D(p["entry_price"])) * qty
         net = gross - D(p["entry_cost"]) - exit_cost
         invested = D(p["entry_price"]) * qty
         ret = (net / invested * 100) if invested else ZERO
-        try:
-            duration = int((datetime.fromisoformat(q.observed_at) -
-                            datetime.fromisoformat(p["opened_at"])).total_seconds() / 60)
-        except Exception:
-            duration = 0
         outcome = "WIN" if net > 0 else "LOSS" if net < 0 else "FLAT"
         with self.store.connect() as c:
-            c.execute("""UPDATE paper_positions SET status='CLOSED',closed_at=?,exit_price=?,
-                         exit_cost=?,gross_pnl=?,net_pnl=?,close_reason=? WHERE paper_id=?""",
+            updated = c.execute("""UPDATE paper_positions SET status='CLOSED',closed_at=?,exit_price=?,
+                         exit_cost=?,gross_pnl=?,net_pnl=?,close_reason=?
+                         WHERE paper_id=? AND status='OPEN' AND quantity=?
+                         AND entry_price=? AND entry_cost=?""",
                       (q.observed_at, str(exit_price), str(exit_cost), str(gross), str(net),
-                       reason, p["paper_id"]))
+                       reason, p["paper_id"], p["quantity"], p["entry_price"], p["entry_cost"]))
+            if updated.rowcount != 1:
+                return False
             c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
                       (p["paper_id"], SOURCE, "SELL_SIMULATED", q.observed_at, str(qty),
                        str(exit_price), str(exit_cost), str(q.bid-exit_price)))
@@ -427,6 +485,7 @@ class PaperBroker:
             c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                       (q.observed_at, SOURCE, "PAPER_FILLED_SELL", p["paper_id"],
                        f"Venta simulada {qty} {q.symbol} @ {exit_price}; PnL neto {net}"))
+        return True
 
     def mark_equity(self, quotes: dict):
         exposure = unrealized = ZERO
