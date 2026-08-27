@@ -56,6 +56,9 @@ DISCOVERY_SEEDS = {
     "BONOS": ("AL29", "AL30", "AL35", "AE38", "AL41", "GD29", "GD30", "GD35",
               "GD38", "GD41", "GD46", "BPOA7", "BPOB7", "TX26", "TX28", "TZX27"),
     "ETF": ("SPY", "DIA", "QQQ", "IWM"),
+    # Filtros de búsqueda, no tickers confirmados ni autorización de operación.
+    "LETRAS": ("LETRA",), "ON": ("YPF",),
+    "CAUCIONES": ("CAUCION",), "FCI": ("FONDO",),
     "INDICES": ("MERVAL", "SPMERVAL"),
 }
 STOP = False
@@ -63,7 +66,8 @@ STOP = False
 SAFE_PAPER_TYPES = {"ACCIONES", "CEDEARS", "BONOS", "ETF", "ETFS"}
 SETTLEMENT_BY_TYPE = {
     "ACCIONES": "A-24HS", "CEDEARS": "A-24HS", "BONOS": "A-24HS",
-    "ETF": "A-24HS", "ETFS": "A-24HS", "OPCIONES": "A-24HS",
+    "ETF": "A-24HS", "ETFS": "A-24HS", "OPCIONES": "INMEDIATA",
+    "LETRAS": "A-24HS", "ON": "A-24HS", "OBLIGACIONES": "A-24HS",
     "INDICES": "A-24HS", "FUTUROS": "A-24HS", "CAUCIONES": "INMEDIATA", "FCI": "INMEDIATA",
 }
 WATCHLIST_PATH = Path(os.getenv("INSTRUMENT_WATCHLIST_PATH", "n_instrument_watchlist.json"))
@@ -110,7 +114,7 @@ def _market_open(now=None):
 
 
 def _candidate_universe():
-    """Candidatos locales y del archivo curado; derivados son solo contexto."""
+    """Todas las familias; descubrir no equivale a habilitar una operación."""
     rows = {(ticker, kind, settlement, "BYMA", True)
             for ticker, kind, settlement in CORE_SYMBOLS}
     try:
@@ -133,7 +137,7 @@ def _candidate_universe():
     # Contexto derivado: se valida disponibilidad, nunca entra al paper broker
     # sin multiplicador, vencimiento y margen atribuible al contrato.
     rows.add(("DLR", "FUTUROS", "A-24HS", "ROFEX", False))
-    rows.add(("GGAL", "OPCIONES", "A-24HS", "BYMA", False))
+    rows.add(("GGAL", "OPCIONES", "INMEDIATA", "BYMA", False))
     return sorted(rows, key=lambda value: (not value[4], value[1], value[0]))
 
 
@@ -329,6 +333,7 @@ def _download_catalog(reader, store):
         c.execute("DELETE FROM instrument_catalog")
     for ticker_query, instrument_type, fallback_settlement, market_query, can_simulate in _candidate_universe():
         status, detail = "UNAVAILABLE", "La búsqueda no devolvió coincidencias."
+        exact_match = False
         try:
             payload = reader.search_instruments(
                 ticker_query, instrument_type, name=ticker_query, market=market_query)
@@ -349,22 +354,24 @@ def _download_catalog(reader, store):
                                json.dumps(row, ensure_ascii=False, default=str)[:8000]))
                     actual_type = str(row.get("instrumentType") or row.get("type") or
                                       row.get("Tipo") or instrument_type).upper()
-                    actual_can_simulate = actual_type in SAFE_PAPER_TYPES and market_query == "BYMA"
+                    actual_can_simulate = actual_type in SAFE_PAPER_TYPES and str(market).upper() == "BYMA"
                     c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
                               (ticker.upper(), actual_type, str(settlement or fallback_settlement),
                                str(market or market_query), int(actual_can_simulate), "AVAILABLE",
                                f"Descubierto por PPI a partir de {ticker_query}.", downloaded))
                     total += 1
+                    exact_match |= (ticker.upper(), actual_type, str(settlement)) == (ticker_query.upper(), instrument_type, fallback_settlement)
             if market_query == "ROFEX" and records:
                 rofex_available += len(records)
         except Exception as exc:
             failures += 1
             status = "ERROR"
             detail = f"{type(exc).__name__}: {str(exc)[:260]}"
-        with store.connect() as c:
-            c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
-                      (ticker_query, instrument_type, fallback_settlement, market_query,
-                       int(can_simulate), status, detail, downloaded))
+        if not exact_match:
+            with store.connect() as c:
+                c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+                          (ticker_query, instrument_type, fallback_settlement, market_query,
+                           0, "QUERY_ONLY" if status == "AVAILABLE" else status, detail, downloaded))
         if CATALOG_QUERY_SLEEP_SECONDS:
             time.sleep(CATALOG_QUERY_SLEEP_SECONDS)
     state = "VERDE" if available and not failures else "AMARILLO" if available else "ROJO"
@@ -619,6 +626,7 @@ def run():
                 f"{type(exc).__name__}: {str(exc)[:500]}. Porton cerrado.", "Google Gemini")
     broker = PaperBroker(store,
                          initial_cash=os.getenv("PAPER_INITIAL_CAPITAL_ARS", "1000000"),
+                         initial_cash_usd=os.getenv("PAPER_INITIAL_CAPITAL_USD", "0"),
                          risk_pct=os.getenv("PAPER_RISK_PER_TRADE", "0.005"),
                          max_positions=os.getenv("PAPER_MAX_OPEN_POSITIONS", "3"),
                          max_position_pct=os.getenv("PAPER_MAX_POSITION_PCT", "0.25"),
@@ -638,6 +646,9 @@ def run():
     next_login_at = 0.0
     try:
         while not STOP:
+            # Una caución vence por contrato, aunque el mercado esté cerrado
+            # o falle el login. No depende de cotizaciones ni de Gemini.
+            broker.settle_cauciones()
             # Estos trabajos continúan con la rueda cerrada: dashboard, SRE,
             # backups, noticias, macro, reportes y resumen Telegram son 24x7.
             operations.service_tick(store, _market_phase())
@@ -706,7 +717,7 @@ def run():
                         store.event("DATA_REJECTED", f"{symbol}: cotizacion sin precio util")
                         continue
                     store.add_quote(q)
-                    quotes[symbol] = q
+                    quotes[(symbol, asset_class, settlement)] = q
                     broker.on_quote(q)
                     cycle_ok += 1
                     store.state(last_market_data_at=q.observed_at)
