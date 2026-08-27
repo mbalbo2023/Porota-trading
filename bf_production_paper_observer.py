@@ -416,16 +416,25 @@ def _active_symbols(store):
 
 
 def _cycle_symbols(store):
-    """Ventana rotativa: 20 por ciclo no significa siempre los mismos 20."""
+    """Abiertas primero, incluso fuera del catalogo; candidatos rotativos."""
     universe = list(_eligible_symbols(store))
+    opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
+                                for p in store.open_positions()))
     if not universe:
-        return (), 0, 0, 0
+        return tuple(opened), 0, 0, 0
     with store.connect() as c:
         row = c.execute("SELECT cursor_after FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1").fetchone()
     cursor = int(row[0] if row else 0) % len(universe)
-    selected = [universe[(cursor + i) % len(universe)]
-                for i in range(min(ACTIVE_SYMBOL_LIMIT, len(universe)))]
-    return tuple(selected), len(universe), cursor, (cursor + len(selected)) % len(universe)
+    selected = list(opened)
+    seen = set(opened)
+    visited = 0
+    while len(selected) < ACTIVE_SYMBOL_LIMIT and visited < len(universe):
+        candidate = universe[(cursor + visited) % len(universe)]
+        visited += 1
+        if candidate not in seen:
+            selected.append(candidate)
+            seen.add(candidate)
+    return tuple(selected), len(universe), cursor, (cursor + visited) % len(universe)
 
 
 def _gemini_context(store, symbol):
