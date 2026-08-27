@@ -8,6 +8,32 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
+def test_v17_dashboard_separa_plazos_y_muestra_caucion_real_del_simulador(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from be_paper_engine import D, PaperBroker, PaperStore, Quote
+    from bt_caucion_paper import CaucionOffer
+    import bg_paper_dashboard as dashboard
+    store = PaperStore(str(tmp_path / "paper.db"))
+    monkeypatch.setattr(dashboard, "DB_PATH", store.path)
+    q = Quote("GGAL", "ACCIONES", "INMEDIATA", D(100), D(99), D(101), D(100), D(100), "2026-08-28T11:00:00-03:00")
+    store.add_quote(q)
+    store.add_quote(replace(q, settlement="A-24HS", last=D(102)))
+    offer = CaucionOffer("CONTRATO-PRUEBA", "ARS", D("0.365"), "2026-08-28",
+                         "2026-08-31T15:00:00-03:00", q.observed_at,
+                         D(100000), D(100), D(1), 365, "MATURITY", "TEST_NOT_BROKER",
+                         quoted_total_fees=D(1), fee_quote_principal=D(1000))
+    broker = PaperBroker(store)
+    broker.place_caucion(offer, "1000", "panel", q.observed_at)
+    snapshot = dashboard.snapshot()
+    assert {row["settlement"] for row in snapshot["quotes"]} == {"INMEDIATA", "A-24HS"}
+    assert snapshot["cauciones"][0]["principal"] == "1000"
+    page = dashboard.motor_page()
+    assert "CONTRATO-PRUEBA" in page
+    assert "Cauciones colocadoras" in page
+    assert "Capital inmovilizado hasta el vencimiento" in page
+    assert "no confirman movimientos en PPI" in page
+
+
 def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
     monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
