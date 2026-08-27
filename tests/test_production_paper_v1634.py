@@ -16,6 +16,8 @@ from bd_ppi_readonly_guard import (ProductionMarketReader, ReadOnlyPolicyViolati
 from be_paper_engine import D, PaperBroker, PaperStore, Quote
 import bf_production_paper_observer as observer
 from bh_paper_gemini import CURRENT_TEXT_MODELS, rank_models
+from bt_caucion_paper import CaucionOffer, modeled_sale_settlement, pending_proceeds
+from bs_instrument_contracts import InstrumentContract
 
 
 def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"):
@@ -24,6 +26,223 @@ def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"
     price = D(price)
     return Quote(symbol, "ACCIONES", "A-24HS", price, price-D("0.10"),
                  price+D("0.10"), D(bid_size), D(ask_size), at)
+
+
+def caucion_offer(**changes):
+    terms = dict(instrument_id="CAUCION-FIXTURE-ARS-20260831", currency="ARS",
+                 annual_rate_fraction=D("0.365"), start_date="2026-08-28",
+                 maturity_at="2026-08-31T15:00:00-03:00",
+                 quoted_at="2026-08-28T11:00:00-03:00",
+                 available_principal=D("100000"), minimum_principal=D("100"),
+                 principal_step=D("1"), day_count_basis=365, fee_payment="MATURITY",
+                 metadata_source="TEST_FIXTURE_NOT_BROKER", quoted_total_fees=D("1"),
+                 fee_quote_principal=D("1000"))
+    return CaucionOffer(**(terms | changes))
+
+
+@pytest.mark.parametrize("fee_payment", ["MATURITY", "UPFRONT"])
+def test_v17_caucion_inmoviliza_capital_y_acredita_una_vez_al_vencer(tmp_path, fee_payment):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    broker = PaperBroker(store, initial_cash="10000")
+    offer = caucion_offer(fee_payment=fee_payment)
+    p = broker.place_caucion(offer, "1000", "pedido-1", offer.quoted_at)
+    assert p["interest_days"] == 3  # Viernes a lunes; no usar 1 día para el interés.
+    assert D(p["gross_interest"]) == 3
+    assert broker._cash() == D("8999" if fee_payment == "UPFRONT" else "9000")
+    broker.mark_equity({}, as_of=offer.quoted_at)
+    with store.connect() as c:
+        assert D(c.execute("SELECT equity FROM paper_equity ORDER BY id DESC LIMIT 1").fetchone()[0]) == 9999
+    assert broker.settle_cauciones("2026-08-31T14:59:59-03:00") == []
+    assert broker.settle_cauciones(offer.maturity_at) == [p["paper_id"]]
+    assert broker._cash() == 10002
+    assert broker.settle_cauciones(offer.maturity_at) == []
+    broker.mark_equity({}, as_of=offer.maturity_at)
+    with store.connect() as c:
+        assert D(c.execute("SELECT equity FROM paper_equity ORDER BY id DESC LIMIT 1").fetchone()[0]) == 10002
+        assert c.execute("SELECT COUNT(*) FROM paper_events WHERE event_type='PAPER_CAUCION_MATURED'").fetchone()[0] == 1
+        assert c.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0  # No inventa compra/venta.
+
+
+def test_v17_caucion_reintento_persistente_no_duplica_ni_reutiliza_terminos(tmp_path):
+    path = str(tmp_path / "paper.db")
+    broker = PaperBroker(PaperStore(path), initial_cash="10000")
+    offer = caucion_offer()
+    original = broker.place_caucion(offer, "1000", "pedido", offer.quoted_at)
+    restarted = PaperBroker(PaperStore(path), initial_cash="10000")
+    assert restarted.place_caucion(offer, "1000", "pedido", offer.maturity_at)["paper_id"] == original["paper_id"]
+    with pytest.raises(ValueError, match="términos diferentes"):
+        restarted.place_caucion(replace(offer, annual_rate_fraction=D("0.40")), "1000", "pedido", offer.quoted_at)
+    assert restarted._cash() == 9000
+    assert len(restarted.cauciones.positions()) == 1
+
+
+def test_v17_caucion_no_convierte_pesos_en_dolares_para_financiarse(tmp_path):
+    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash="1000000")
+    offer = caucion_offer(currency="USD")
+    with pytest.raises(ValueError, match="Caja liquidada insuficiente"):
+        broker.place_caucion(offer, "1000", "usd-sin-caja", offer.quoted_at)
+    assert broker._cash() == 1000000
+    funded = PaperBroker(broker.store, initial_cash="1000000", initial_cash_usd="2000")
+    funded.place_caucion(offer, "1000", "usd", offer.quoted_at)
+    assert funded._cash(currency="USD") == 1000
+    funded.settle_cauciones(offer.maturity_at)
+    assert funded._cash(currency="USD") == 2002
+    assert funded._cash() == 1000000
+
+
+@pytest.mark.parametrize("changes, now, reserve, error", [
+    ({}, "2026-08-28T11:01:01-03:00", "0", "vencida o futura"),
+    ({}, "2026-08-28T10:59:59-03:00", "0", "vencida o futura"),
+    ({"available_principal": D("2000")}, "2026-08-28T11:00:00-03:00", "0", "participación"),
+    ({"annual_rate_fraction": D("0.001")}, "2026-08-28T11:00:00-03:00", "0", "neto positivo"),
+    ({}, "2026-08-28T11:00:00-03:00", "9500", "Caja liquidada"),
+    ({"fee_quote_principal": D("2000")}, "2026-08-28T11:00:00-03:00", "0", "otro capital"),
+])
+def test_v17_caucion_rechaza_datos_y_fondos_incompatibles(tmp_path, changes, now, reserve, error):
+    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash="10000")
+    with pytest.raises(ValueError, match=error):
+        broker.place_caucion(caucion_offer(**changes), "1000", "pedido", now, reserve=reserve)
+    assert broker.cauciones.positions() == []
+    assert broker._cash() == 10000
+
+
+@pytest.mark.parametrize("changes", [
+    {"annual_rate_fraction": "NaN"}, {"day_count_basis": 0},
+    {"maturity_at": "2026-08-31T15:00:00"}, {"maturity_at": "2026-08-28T15:00:00-03:00"},
+    {"currency": "EUR"}, {"fee_payment": "UNKNOWN"},
+    {"currency": "USD", "quoted_total_fees": None}, {"quoted_total_fees": "Infinity"},
+])
+def test_v17_caucion_exige_terminos_completos(changes):
+    with pytest.raises(ValueError):
+        caucion_offer(**changes)
+
+
+def test_v17_caucion_prorratea_arancel_anual_sin_cobrarlo_por_operacion():
+    offer = caucion_offer(quoted_total_fees=None)
+    interest, fees, net = offer.economics("1000")
+    assert interest == 3
+    assert fees == D("0.20")  # 1000 * (0.02 + 0.00045) * 1.21 * 3 / 365.
+    assert net == D("2.80")
+
+
+def test_v17_dos_colocaciones_concurrentes_no_gastan_la_misma_caja(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash="1500")
+    offer = caucion_offer()
+    def place(request):
+        try:
+            return broker.place_caucion(offer, "1000", request, offer.quoted_at)["paper_id"]
+        except ValueError:
+            return None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(place, ["A", "B"]))
+    assert sum(result is not None for result in results) == 1
+    assert broker._cash() == 500
+
+
+def test_v17_venta_t1_no_es_caja_hasta_liquidacion_modelada(tmp_path):
+    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash="10000")
+    q = replace(quote(), observed_at="2026-08-28T11:00:00-03:00")
+    assert broker._open(q, D("0.8"), {})[0]
+    position = broker.store.open_positions()[0]
+    before = broker._cash(as_of=q.observed_at)
+    sell = replace(q, bid=D("110"), observed_at="2026-08-28T11:01:00-03:00")
+    assert broker._close(position, sell, "TEST")
+    assert broker._cash(as_of=sell.observed_at) == before
+    assert broker._cash(as_of="2026-08-31T12:00:00-03:00") == before
+    assert broker._cash(as_of="2026-09-01T00:00:00-03:00") == 10000 + D(broker.store.recent_closed()[0]["net_pnl"])
+    assert pending_proceeds(broker.store, sell.observed_at) > 0
+    broker.mark_equity({}, as_of=sell.observed_at)
+    with broker.store.connect() as c:
+        equity = D(c.execute("SELECT equity FROM paper_equity ORDER BY id DESC LIMIT 1").fetchone()[0])
+    assert equity == 10000 + D(broker.store.recent_closed()[0]["net_pnl"])
+
+
+def test_v17_calendario_caja_respeta_dia_sin_liquidacion_y_ano_desconocido():
+    # Viernes 6/11 no liquida: jueves T+1 pasa al lunes 9.
+    assert modeled_sale_settlement("A-24HS", "2026-11-05T11:00:00-03:00").startswith("2026-11-09")
+    assert modeled_sale_settlement("A-24HS", "2026-12-30T11:00:00-03:00") is None
+    assert modeled_sale_settlement("PLAZO-DESCONOCIDO", "2026-08-28T11:00:00-03:00") is None
+
+
+@pytest.mark.parametrize("family", ["CAUCIONES", "OPCIONES", "FUTUROS", "FCI", "DESCONOCIDO"])
+def test_v17_no_ejecuta_familias_especiales_como_acciones(tmp_path, family):
+    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")))
+    assert broker._open(replace(quote(), asset_class=family), D("0.8"), {})[0] is False
+    assert broker.store.open_positions() == []
+
+
+@pytest.mark.parametrize("family", ["BONOS", "LETRAS", "ON"])
+def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, family):
+    path = str(tmp_path / "paper.db")
+    broker = PaperBroker(PaperStore(path), initial_cash="10000", risk_pct="1",
+                         max_position_pct="1", max_total_exposure_pct="1", slippage_bps="0")
+    q = replace(quote(ask_size="1000000", bid_size="1000000"), asset_class=family,
+                ask=D("100"), settlement="INMEDIATA")
+    assert broker._open(q, D("0.8"), {})[0] is False  # No inventa el factor VN.
+    spec = InstrumentContract(q.symbol, family, "ARS", "BYMA", "INMEDIATA",
+                              D("0.01"), D("100"), "TEST_NOT_BROKER")
+    q = replace(q, contract=spec)
+    assert broker._open(q, D("0.8"), {})[0]
+    position = broker.store.open_positions()[0]
+    assert D(position["quantity"]) == 9900
+    assert broker._cash() == 10000 - 9900 - D(position["entry_cost"])
+    broker = PaperBroker(PaperStore(path), initial_cash="10000", risk_pct="1", slippage_bps="0")
+    broker.mark_equity({q.symbol: q}, as_of=q.observed_at)
+    with broker.store.connect() as c:
+        assert D(c.execute("SELECT exposure FROM paper_equity ORDER BY id DESC LIMIT 1").fetchone()[0]) == q.bid * 99
+    closing = replace(q, bid=D("110"), observed_at="2026-08-25T14:01:00+00:00")
+    assert broker._close(position, replace(closing, contract=replace(spec, cash_multiplier=D("1"))), "TEST") is False
+    assert broker._close(position, closing, "TEST")
+    closed = broker.store.recent_closed()[0]
+    assert D(closed["gross_pnl"]) == 990
+    assert D(closed["entry_cost"]) == broker._cost(D("1"), D("9900"), family)
+    assert D(closed["exit_cost"]) == broker._cost(D("1.1"), D("9900"), family)
+    assert broker._cash(as_of=closing.observed_at) == 10000 + D(closed["net_pnl"])
+
+
+def test_v17_no_cauciona_el_producido_de_una_venta_t1(tmp_path):
+    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash="1100",
+                         risk_pct="1", max_position_pct="1", max_total_exposure_pct="1")
+    q = replace(quote(), observed_at="2026-08-28T10:59:00-03:00")
+    assert broker._open(q, D("0.8"), {})[0]
+    assert broker._close(broker.store.open_positions()[0], replace(q, bid=D("110"), observed_at="2026-08-28T11:00:00-03:00"), "TEST")
+    offer = caucion_offer()
+    with pytest.raises(ValueError, match="Caja liquidada insuficiente"):
+        broker.place_caucion(offer, "1000", "reusar-venta", offer.quoted_at)
+
+
+def test_v17_compra_no_reutiliza_capital_colocado_en_caucion(tmp_path):
+    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash="1050",
+                         risk_pct="1", max_position_pct="1", max_total_exposure_pct="1")
+    offer = caucion_offer()
+    broker.place_caucion(offer, "1000", "inmovilizar", offer.quoted_at)
+    q = replace(quote(), observed_at=offer.quoted_at)
+    assert broker._open(q, D("0.8"), {})[0] is False
+    assert broker._cash() == 50
+
+
+def test_v17_diagnostico_exporta_catalogo_y_copia_json_sin_cuentas(tmp_path):
+    import base64
+    import subprocess
+    store = PaperStore(str(tmp_path / "paper.db"))
+    observer._support_schema(store)
+    with store.connect() as c:
+        c.execute("INSERT INTO instrument_catalog VALUES(?,?,?,?,?,?,?)",
+                  ("FUTUROS", "DLR-FIXTURE", "Contrato de prueba", "A3", "INMEDIATA", "2026-08-28",
+                   json.dumps({"ticker": "DLR-FIXTURE", "contractMultiplier": 1000,
+                               "initialMargin": 100000, "accountNumber": "NO-EXPORTAR", "api_key": "NO-EXPORTAR"})))
+    result = subprocess.run([sys.executable, str(ROOT / "scripts/v17_diagnostico_instrumentos.py"),
+                             "--db", store.path, "--clipboard"], check=True, capture_output=True, text=True)
+    plain, rest = result.stdout.split("\033]52;c;", 1)
+    report = json.loads(plain)
+    copied = json.loads(base64.b64decode(rest.split("\a", 1)[0]))
+    assert copied == report
+    assert "NO-EXPORTAR" not in result.stdout
+    assert report["samples"][0]["public_metadata"]["contractMultiplier"] == 1000
+    with store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM instrument_catalog").fetchone()[0] == 1
+        assert c.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 0
 
 
 def test_v17_compra_reserva_comision_dentro_de_la_caja(tmp_path):
