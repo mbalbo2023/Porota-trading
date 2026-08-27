@@ -78,21 +78,12 @@ class GeminiPaperGate:
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY no configurada en el observador aislado.")
-        configured = os.getenv("GEMINI_MODEL", "").strip() or "gemini-3.7-flash"
-        strict = os.getenv("GEMINI_STRICT_MODEL", "true").strip().lower() == "true"
+        configured = os.getenv("GEMINI_MODEL", "").strip()
         chain = [item.strip() for item in os.getenv("GEMINI_MODEL_CHAIN", "").split(",")
                  if item.strip()]
         self.client = genai.Client(api_key=api_key)
         discovered = self._discover_models()
-        if strict:
-            if discovered is not None and configured not in {
-                    _clean_model_name(value) for value in discovered}:
-                raise RuntimeError(
-                    f"El modelo operativo fijado {configured} no esta disponible para esta clave."
-                )
-            self.models = [configured]
-        else:
-            self.models = rank_models(configured, chain, discovered)
+        self.models = rank_models(configured, chain, discovered)
         if not self.models:
             raise RuntimeError(
                 "La clave no publica ningun modelo de texto compatible con generateContent."

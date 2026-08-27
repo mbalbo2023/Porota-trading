@@ -36,3 +36,6 @@ porota_production_paper_v1634.sh
 
 porota_dashboard_hotfix_v1634.sh
 porota_hotfix_integral_v1634.sh
+data/reports
+data/backups
+porota_production_paper_v1635.sh

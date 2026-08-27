@@ -196,43 +196,6 @@ def test_universo_ampliado_mantiene_derivados_solo_contexto(monkeypatch, tmp_pat
     assert any(row[1] == "FUTUROS" and not row[4] for row in candidates)
 
 
-def test_universo_rota_sin_aumentar_el_tope_y_evitar_variantes(tmp_path, monkeypatch):
-    store = PaperStore(str(tmp_path / "observer.db"))
-    observer._support_schema(store)
-    monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 6)
-    monkeypatch.setattr(observer, "CORE_SYMBOL_LIMIT", 3)
-    monkeypatch.setattr(observer, "ROTATION_DWELL_CYCLES", 1)
-    now = datetime.now(timezone.utc).isoformat()
-    rows = [
-        ("GGAL", "ACCIONES"), ("YPFD", "ACCIONES"), ("PAMP", "ACCIONES"),
-        ("GGALC", "ACCIONES"), ("GGALD", "ACCIONES"), ("BMA", "ACCIONES"),
-        ("BBAR", "ACCIONES"), ("AAPL", "CEDEARS"), ("MSFT", "CEDEARS"),
-    ]
-    with store.connect() as connection:
-        for ticker, kind in rows:
-            connection.execute("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
-                               (ticker, kind, "A-24HS", "BYMA", 1, "AVAILABLE", "ok", now))
-    first = observer._active_symbols(store)
-    second = observer._active_symbols(store)
-    assert len(first) <= 6 and len(second) <= 6
-    assert not {"GGALC", "GGALD"}.intersection({row[0] for row in first + second})
-    assert {row[0] for row in first} != {row[0] for row in second}
-
-
-def test_instrumento_con_fallas_entra_en_pausa_y_sale_del_ciclo(tmp_path, monkeypatch):
-    store = PaperStore(str(tmp_path / "observer.db"))
-    observer._support_schema(store)
-    monkeypatch.setattr(observer, "DATA_ERROR_QUARANTINE_THRESHOLD", 2)
-    now = datetime.now(timezone.utc).isoformat()
-    with store.connect() as connection:
-        connection.execute("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
-                           ("BBARC", "ACCIONES", "A-24HS", "BYMA", 1,
-                            "AVAILABLE", "ok", now))
-    observer._instrument_error(store, "BBARC", "ACCIONES", "A-24HS", ValueError("bad"))
-    observer._instrument_error(store, "BBARC", "ACCIONES", "A-24HS", ValueError("bad"))
-    assert "BBARC" not in {row[0] for row in observer._active_symbols(store)}
-
-
 def test_gemini_es_porton_critico_y_persiste_veredicto(tmp_path):
     class Gate:
         def __init__(self, approve):
@@ -254,6 +217,11 @@ def test_gemini_es_porton_critico_y_persiste_veredicto(tmp_path):
             ai = dict(connection.execute(
                 "SELECT * FROM ai_shadow_evaluations ORDER BY id DESC LIMIT 1").fetchone())
         assert ai["decision"] == ("APPROVE" if approve else "VETO")
+        with store.connect() as connection:
+            gate = dict(connection.execute(
+                "SELECT * FROM trade_gate_evaluations ORDER BY id DESC LIMIT 1").fetchone())
+        assert gate["ai_gate"] == ("APPROVE" if approve else "VETO")
+        assert gate["final_result"] == ("OPENED_SIMULATED" if approve else "BLOCKED")
 
 
 def test_gemini_ausente_cierra_el_porton_paper(tmp_path):
@@ -279,14 +247,6 @@ def test_gemini_sin_inventario_usa_cadena_estable_actual():
     models = rank_models("gemini-2.5-flash-lite", (), None)
     assert tuple(models[:len(CURRENT_TEXT_MODELS)]) == CURRENT_TEXT_MODELS
     assert models[0] == "gemini-3.7-flash"
-
-
-def test_modelo_operativo_se_fija_y_no_alterna_durante_rueda():
-    source = (ROOT / "bh_paper_gemini.py").read_text(encoding="utf-8")
-    manager = (ROOT / "porota_mode_manager.py").read_text(encoding="utf-8")
-    assert 'GEMINI_STRICT_MODEL", "true"' in source
-    assert '"GEMINI_MODEL": "gemini-3.7-flash"' in manager
-    assert '"GEMINI_MODEL_CHAIN": ""' in manager
 
 
 def test_comando_gemini_no_abre_ni_requiere_ppi(tmp_path):
@@ -325,3 +285,42 @@ def test_catalogo_incorpora_cada_instrumento_devuelto(monkeypatch, tmp_path):
         values = {row[0] for row in connection.execute(
             "SELECT ticker FROM candidate_universe WHERE status='AVAILABLE'")}
     assert {"GGAL", "YPFD"}.issubset(values)
+
+
+def test_lote_por_ciclo_rota_sobre_todo_el_universo(tmp_path, monkeypatch):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 3)
+    with store.connect() as connection:
+        for ticker in ("GGAL", "AL30", "AAPL", "YPFD", "PAMP", "BMA"):
+            kind = "CEDEARS" if ticker == "AAPL" else "BONOS" if ticker == "AL30" else "ACCIONES"
+            connection.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+                               (ticker, kind, "A-24HS", "BYMA", 1, "AVAILABLE", "ok", "2026-08-26"))
+    first, total, before, after = observer._cycle_symbols(store)
+    with store.connect() as connection:
+        connection.execute("""INSERT INTO universe_cycle_metrics
+          (started_at,finished_at,eligible_total,selected_count,successful_count,failed_count,
+           duration_seconds,cursor_before,cursor_after,recommended_limit,detail)
+          VALUES('a','b',?,?,?,?,?,?,?,?,?)""",
+          (total, len(first), len(first), 0, 1.0, before, after, 3, "test"))
+    second, total2, _, _ = observer._cycle_symbols(store)
+    assert total2 == total >= 6
+    assert {x[0] for x in first} != {x[0] for x in second}
+
+
+def test_historicos_usan_universo_completo_no_lote_activo(tmp_path, monkeypatch):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    with store.connect() as connection:
+        for ticker in ("GGAL", "YPFD", "PAMP", "BMA"):
+            connection.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+                               (ticker, "ACCIONES", "A-24HS", "BYMA", 1, "AVAILABLE", "ok", "2026-08-26"))
+    monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 2)
+    monkeypatch.setattr(observer, "HISTORY_BATCH_LIMIT", 100)
+    class Reader:
+        def history(self, symbol, *_args):
+            return [{"date": "2026-08-25", "close": 1}]
+    observer._download_histories(Reader(), store)
+    with store.connect() as connection:
+        covered = connection.execute("SELECT COUNT(*) FROM production_history").fetchone()[0]
+    assert covered >= 4

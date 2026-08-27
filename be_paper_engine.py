@@ -114,6 +114,12 @@ class PaperStore:
             CREATE TABLE IF NOT EXISTS http_audit(
               id INTEGER PRIMARY KEY AUTOINCREMENT, happened_at TEXT NOT NULL,
               method TEXT NOT NULL, path TEXT NOT NULL, result TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS trade_gate_evaluations(
+              id INTEGER PRIMARY KEY AUTOINCREMENT, evaluated_at TEXT NOT NULL,
+              decision_key TEXT NOT NULL UNIQUE, symbol TEXT NOT NULL,
+              technical_gate TEXT NOT NULL, ai_gate TEXT NOT NULL,
+              patrimonial_gate TEXT NOT NULL, final_result TEXT NOT NULL,
+              reason TEXT NOT NULL, paper_id TEXT, detail_json TEXT NOT NULL);
             INSERT OR IGNORE INTO observer_state(id,mode,process_state,session_state,ppi_auth)
               VALUES(1,'PRODUCTION_PAPER','STOPPED','UNKNOWN','NOT_ATTEMPTED');
             """)
@@ -190,13 +196,26 @@ class PaperStore:
                json.dumps(features, ensure_ascii=False, default=str),
                json.dumps(result.get("raw", result), ensure_ascii=False, default=str)[:8000]))
 
+    def record_gates(self, q: Quote, decision_key: str, technical: str,
+                     ai: str, patrimonial: str, final: str, reason: str,
+                     paper_id=None, detail=None):
+        """Conserva la secuencia completa; APPROVE de IA no equivale a fill."""
+        with self.connect() as c:
+            c.execute("""INSERT OR REPLACE INTO trade_gate_evaluations
+              (evaluated_at,decision_key,symbol,technical_gate,ai_gate,
+               patrimonial_gate,final_result,reason,paper_id,detail_json)
+              VALUES(?,?,?,?,?,?,?,?,?,?)""",
+              (q.observed_at, decision_key, q.symbol, technical, ai,
+               patrimonial, final, str(reason)[:1000], paper_id,
+               json.dumps(detail or {}, ensure_ascii=False, default=str)[:8000]))
+
 
 class PaperBroker:
     def __init__(self, store: PaperStore, initial_cash="1000000",
                  risk_pct="0.005", max_positions=3, fee_rate="0.00605",
                  slippage_bps="2", participation="0.10",
                  max_position_pct="0.25", max_total_exposure_pct="0.60",
-                 ai_gate=None, require_ai=False, context_fn=None, notify_fn=None):
+                 ai_gate=None, require_ai=False, context_fn=None):
         self.store = store
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
@@ -209,16 +228,6 @@ class PaperBroker:
         self.ai_gate = ai_gate
         self.require_ai = bool(require_ai)
         self.context_fn = context_fn
-        self.notify_fn = notify_fn
-
-    def _notify(self, event, paper_id, message):
-        if not self.notify_fn:
-            return
-        try:
-            self.notify_fn(event, paper_id, message)
-        except Exception as exc:
-            self.store.event("PAPER_NOTIFICATION_ERROR",
-                             f"{paper_id}: {type(exc).__name__}: {str(exc)[:240]}", paper_id)
 
     def _cost(self, price, qty, asset_class="ACCIONES"):
         """Costo de una punta; el spread ya vive en bid/ask y no se duplica."""
@@ -279,6 +288,9 @@ class PaperBroker:
         if action == "BUY":
             if self.ai_gate is None and self.require_ai:
                 self.store.event("AI_VETO_PAPER", f"{q.symbol}: Gemini no disponible; porton cerrado")
+                self.store.record_gates(q, key, "APPROVE", "VETO", "NOT_EVALUATED",
+                                        "BLOCKED", "Gemini no disponible; portón cerrado",
+                                        detail=features)
                 return
             if self.ai_gate is not None:
                 try:
@@ -293,13 +305,22 @@ class PaperBroker:
                                        ("decision", "score", "veto", "reason", "model")}
                 if ai.get("decision") != "APPROVE" or ai.get("veto", True):
                     self.store.event("AI_VETO_PAPER", f"{q.symbol}: {ai.get('reason')}")
+                    self.store.record_gates(q, key, "APPROVE", str(ai.get("decision", "VETO")),
+                                            "NOT_EVALUATED", "BLOCKED",
+                                            str(ai.get("reason") or "Gemini vetó la apertura"),
+                                            detail=features)
                     return
-            self._open(q, score, features)
+            opened, gate_reason, paper_id = self._open(q, score, features)
+            self.store.record_gates(
+                q, key, "APPROVE", "APPROVE",
+                "APPROVE" if opened else "BLOCKED",
+                "OPENED_SIMULATED" if opened else "BLOCKED", gate_reason,
+                paper_id=paper_id, detail=features)
 
     def _open(self, q: Quote, score: Decimal, features: dict):
         if len(self.store.open_positions()) >= self.max_positions:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: maximo de posiciones paper")
-            return
+            return False, "Límite máximo de posiciones paper alcanzado", None
         entry = (q.ask * (1 + self.slippage)).quantize(Decimal("0.0001"))
         stop = entry * D("0.98")
         target = entry * D("1.035")
@@ -328,7 +349,13 @@ class PaperBroker:
         })
         if qty < 1:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: capital/liquidez insuficiente")
-            return
+            limits = {
+                "riesgo": by_risk, "caja": by_cash, "profundidad": by_book,
+                "tope_posicion": by_position_cap, "exposicion_total": by_total_cap,
+            }
+            binding = min(limits, key=lambda name: limits[name])
+            return False, (f"Portón patrimonial/liquidez: {binding} dejó cantidad "
+                           f"ejecutable en {limits[binding]}"), None
         paper_id = "PAPER-" + uuid.uuid4().hex
         cost = self._cost(entry, qty, q.asset_class)
         with self.store.connect() as c:
@@ -348,12 +375,7 @@ class PaperBroker:
             c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                       (q.observed_at, SOURCE, "PAPER_FILLED_BUY", paper_id,
                        f"Compra simulada {qty} {q.symbol} @ {entry}"))
-        self._notify(
-            "OPEN", paper_id,
-            f"🟣 COMPRA SIMULADA — {q.symbol}\nCantidad: {qty}\nEntrada paper: ${entry}\n"
-            f"Importe ficticio comprometido: ${entry * qty + cost}\n"
-            f"Stop: ${stop} · Objetivo: ${target}\nCapital ficticio. Órdenes reales: NINGUNA.",
-        )
+        return True, "Todos los portones aprobaron; compra simulada registrada", paper_id
 
     def _maybe_close(self, q: Quote):
         p = self.store.open_position(q.symbol)
@@ -405,11 +427,6 @@ class PaperBroker:
             c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                       (q.observed_at, SOURCE, "PAPER_FILLED_SELL", p["paper_id"],
                        f"Venta simulada {qty} {q.symbol} @ {exit_price}; PnL neto {net}"))
-        self._notify(
-            "CLOSE", p["paper_id"],
-            f"🟣 CIERRE SIMULADO — {q.symbol}\nCantidad: {qty}\nSalida paper: ${exit_price}\n"
-            f"Resultado neto ficticio: ${net} ({ret:.2f}%)\nMotivo: {reason}. Órdenes reales: NINGUNA.",
-        )
 
     def mark_equity(self, quotes: dict):
         exposure = unrealized = ZERO

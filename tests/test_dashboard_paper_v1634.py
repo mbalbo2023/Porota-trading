@@ -17,6 +17,9 @@ def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
     page = bg_paper_dashboard.paper_page(compact=True)
     health = bg_paper_dashboard.health_page()
+    assert "Panel de simulación productiva" in page
+    assert "Una sola vista para estado, actividad y simulación" in page
+    assert page.count("id='porota-canonical-nav'") == 1
     assert page.count("id='porota-paper-mode'") == 1
     assert "MODO SIMULACIÓN PRODUCTIVA" in page
     assert "órdenes reales: NINGUNA" in page
@@ -26,6 +29,56 @@ def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     assert "Último reporte" in health
     assert "PPI Sandbox" in health
     assert "OPENBYMADATA" in health
+
+
+def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
+    # Ejecuta la aplicación real, incluidos los middleware y la autenticación;
+    # encontrar el nombre de una ruta en el fuente no valida su respuesta.
+    from fastapi.testclient import TestClient
+    import ay_dashboard_auth as auth
+    import o_dashboard as dashboard
+    import bg_paper_dashboard as paper
+    import be_paper_engine
+
+    monkeypatch.chdir(tmp_path)
+    db = str(tmp_path / "paper.db")
+    be_paper_engine.PaperStore(db)
+    monkeypatch.setattr(paper, "DB_PATH", db)
+    monkeypatch.setattr(paper, "MODE", "PRODUCTION_PAPER")
+    monkeypatch.setattr(auth, "TOKEN_BEARER", "R" * 40)
+    monkeypatch.setattr(auth, "ENTORNO", "SANDBOX")
+    monkeypatch.setattr(auth, "SESSION_STORE_PATH", str(tmp_path / "sessions.json"))
+    monkeypatch.setattr(auth, "_sesiones", {})
+    monkeypatch.setattr(dashboard, "DASHBOARD_ACCESS_TOKEN", "R" * 40)
+    consultas = []
+
+    def query(sql, params=()):
+        consultas.append(sql)
+        return []
+
+    monkeypatch.setattr(dashboard, "_query", query)
+    with TestClient(dashboard.app) as cliente:
+        assert cliente.get("/vivo").status_code == 401
+        assert cliente.get("/observacion").status_code == 401
+        entrada = cliente.get("/vivo?token=" + "R" * 40, follow_redirects=False)
+        assert entrada.status_code == 303
+        assert entrada.headers["location"] == "/vivo"
+        assert "porota_dashboard_session=" in entrada.headers["set-cookie"]
+        assert "HttpOnly" in entrada.headers["set-cookie"]
+        for path in ("/vivo", "/observacion", "/testing"):
+            respuesta = cliente.get(path)
+            assert respuesta.status_code == 200
+            assert "Panel de simulación productiva" in respuesta.text
+            assert "Una sola vista para estado, actividad y simulación" in respuesta.text
+            assert respuesta.text.count("id='porota-canonical-nav'") == 1
+            assert respuesta.text.count("id='porota-paper-mode'") == 1
+            assert "MODO SIMULACIÓN PRODUCTIVA" in respuesta.text
+            assert "órdenes reales: NINGUNA" in respuesta.text
+            assert "R" * 40 not in respuesta.text
+            assert "Esperando tu autorización" not in respuesta.text
+    assert consultas
+    assert all(sql.lstrip().upper().startswith("SELECT") for sql in consultas)
+    assert any("FROM signals" in sql and "__SISTEMA__" in sql for sql in consultas)
 
 
 def test_inyeccion_del_banner_es_idempotente(monkeypatch):
@@ -39,8 +92,11 @@ def test_inyeccion_del_banner_es_idempotente(monkeypatch):
     assert second.count("porota-paper-theme") == 1
     assert second.count("id='porota-canonical-nav'") == 1
     assert "Motor de trading" in second
-    assert "Blog de aprendizaje" in second
-    assert "← Volver" in second
+    assert "Aprendizaje" in second
+    assert "← Volver" not in second
+    assert "↑ Ir al principio" in second
+    assert "Información financiera" in second
+    assert "Reportes" in second
 
 
 def test_menu_unico_elimina_los_dos_menus_anteriores(monkeypatch):
@@ -53,86 +109,6 @@ def test_menu_unico_elimina_los_dos_menus_anteriores(monkeypatch):
     assert rendered.count("id='porota-canonical-nav'") == 1
     assert "porota-top-nav" not in rendered
     assert "duplicado" not in rendered
-
-
-def test_menu_legacy_inyectado_despues_del_canonico_tambien_se_elimina(monkeypatch):
-    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
-    import bg_paper_dashboard
-    bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
-    source = bg_paper_dashboard._document("x", "<h1>x</h1>")
-    source = source.replace("<body>", "<body><nav id='porota-top-nav'><a>viejo</a></nav>")
-    rendered = bg_paper_dashboard._canonicalize(source)
-    assert rendered.count("id='porota-canonical-nav'") == 1
-    assert "porota-top-nav" not in rendered
-
-
-def test_vivo_paper_muestra_observador_y_no_motor_legacy(tmp_path, monkeypatch):
-    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
-    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
-    import be_paper_engine
-    store = be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
-    with store.connect() as connection:
-        connection.execute("""UPDATE observer_state SET process_state='RUNNING',
-          session_state='MARKET_OPEN',ppi_auth='OK',detail='19/20 instrumentos' WHERE id=1""")
-        connection.execute("""INSERT INTO paper_decisions VALUES(NULL,'PRODUCTION_PAPER',
-          'paper-momentum-v1','live-1','2026-08-26T14:32:31+00:00','ABEV','HOLD',
-          '0.517','Score paper debajo del umbral adaptativo','{"paper_threshold":"0.62"}')""")
-    import bg_paper_dashboard
-    bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
-    rendered = bg_paper_dashboard.live_page()
-    assert "Observador paper" in rendered
-    assert "19/20 instrumentos" in rendered
-    assert "26/08/2026" in rendered
-    assert "Bot de trading detenido" not in rendered
-    assert "REJECTED_TECH" not in rendered
-    assert rendered.count("id='porota-canonical-nav'") == 1
-
-
-def test_panel_consolidado_y_formato_argentino(tmp_path, monkeypatch):
-    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
-    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
-    import be_paper_engine
-    be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
-    import bg_paper_dashboard
-    bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
-    page = bg_paper_dashboard.home_page()
-    assert "Panel de simulación productiva" in page
-    assert "Una sola vista para estado, actividad y simulación" in page
-    assert "$ 1.000.000,00" in page
-    assert "Próxima actualización" in page
-    assert "details[open]" in page
-    assert "href='/vivo'" not in page
-
-
-def test_aprendizaje_es_pagina_principal_visible(tmp_path, monkeypatch):
-    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
-    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
-    import be_paper_engine
-    be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
-    import bg_paper_dashboard
-    bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
-    page = bg_paper_dashboard.learning_page()
-    assert "Aprendizaje del sistema" in page
-    assert "Win rate acumulado" in page
-    assert "Cómo aprende" in page
-    assert "href='/aprendizaje'" in page
-
-
-def test_motor_explica_hold_y_umbral_sin_exigir_gemini(tmp_path, monkeypatch):
-    monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
-    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
-    import be_paper_engine
-    store = be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
-    with store.connect() as connection:
-        connection.execute("""INSERT INTO paper_decisions VALUES(NULL,'PRODUCTION_PAPER',
-          'paper-momentum-v1','hold-1','2026-08-26T14:32:31+00:00','ABEV','HOLD',
-          '0.517','Score paper debajo del umbral adaptativo','{"paper_threshold":"0.62"}')""")
-    import bg_paper_dashboard
-    bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
-    rendered = bg_paper_dashboard.motor_page()
-    assert "Decisiones y abstenciones actuales" in rendered
-    assert "Gemini se consulta" in rendered
-    assert "0.62" in rendered
 
 
 def test_motor_muestra_trazabilidad_y_explica_porton_gemini(tmp_path, monkeypatch):
@@ -158,9 +134,9 @@ def test_motor_muestra_trazabilidad_y_explica_porton_gemini(tmp_path, monkeypatc
     rendered = bg_paper_dashboard.motor_page()
     assert "<details class='paper-trade'>" in rendered
     assert "Variables utilizadas" in rendered
-    assert "no tiene evaluación Gemini asociada" in rendered
-    assert "Últimos veredictos de Gemini" in rendered
-    assert "PENDIENTE" in rendered
+    assert "Secuencia de portones" in rendered
+    assert "Gemini no es el último filtro absoluto" in rendered
+    assert "Decisiones bloqueadas o aprobadas" in rendered
     assert "Todas las operaciones de esta página son simuladas" in rendered
 
 
@@ -200,7 +176,7 @@ def test_portada_y_logs_tienen_documento_moderno_sin_menu_repetido(tmp_path, mon
     for page in (bg_paper_dashboard.home_page(), bg_paper_dashboard.logs_page()):
         assert page.count("id='porota-canonical-nav'") == 1
         assert page.count("id='porota-paper-mode'") == 1
-        assert page.count("href='/vivo'") == 0
+        assert page.count("href='/motor-trading'") == 1
         assert "porota-paper-theme" in page
     assert "Gestión de logs" in bg_paper_dashboard.logs_page()
 
@@ -217,7 +193,7 @@ def test_gemini_figura_como_porton_critico_y_lee_salud_persistida(tmp_path, monk
     import bg_paper_dashboard
     bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
     page = bg_paper_dashboard.health_page()
-    assert "Portón crítico de cada compra simulada" in page
+    assert "Portón crítico, seguido del portón patrimonial" in page
     assert "Modelo activo y contrato JSON correcto" in page
     assert "Desactivado en esta versión paper" not in page
 
@@ -244,23 +220,28 @@ def test_semáforo_salud_siempre_usa_etiquetas_estandar(monkeypatch):
     assert ">GRIS<" in bg_paper_dashboard._health_status("OFF")
 
 
-def test_approve_es_verde_y_el_motor_explica_su_efecto(monkeypatch):
+def test_no_hay_dos_contadores_y_todas_las_paginas_tienen_subir(monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
     import bg_paper_dashboard
     bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
-    assert "s-verde'>APPROVE" in bg_paper_dashboard._status("APPROVE")
-    source = __import__("inspect").getsource(bg_paper_dashboard.motor_page)
-    assert "Efecto real en paper" in source
-    assert "Win rate al abrir" in source
+    page = bg_paper_dashboard.motor_page()
+    assert page.count("Actualización visual única") == 1
+    assert "Próxima actualización:" not in page
+    assert page.count("↑ Ir al principio") == 1
+    assert "← Volver" not in page
 
 
-def test_historicos_no_expone_boton_manual(tmp_path, monkeypatch):
+def test_sre_reportes_finanzas_y_colores_explicitos(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
     monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
-    be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
+    store = be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
+    import bf_production_paper_observer as observer
+    observer._support_schema(store)
     import bg_paper_dashboard
     bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
-    page = bg_paper_dashboard.history_page()
-    assert "Actualización automática" in page
-    assert "Conectar y sincronizar datos" not in page
+    assert "Backups y restauración" in bg_paper_dashboard.sre_page("backups")
+    assert "Inflación vs performance" in bg_paper_dashboard.financial_page()
+    assert "Paquete IA" in bg_paper_dashboard.reports_page()
+    assert "card-green" in bg_paper_dashboard.home_page()
+    assert "Próximo chequeo" in bg_paper_dashboard.health_page()

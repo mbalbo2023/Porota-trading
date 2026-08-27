@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Selector exclusivo de modo operativo para Porota Trading v16.3.4.
+"""Selector exclusivo de modo operativo para Porota Trading v16.3.5.
 
 Uso:
   sudo python porota_mode_manager.py status
@@ -13,6 +13,7 @@ Produccion real permanece fail-closed y exige dos habilitaciones independientes.
 from __future__ import annotations
 
 import fcntl
+import base64
 import json
 import os
 import subprocess
@@ -28,7 +29,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 MODE_FILE = DATA / "operation_mode.json"
-IMAGE = "porota-trading-bot:16.3.4"
+IMAGE = "porota-trading-bot:16.3.5"
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 KNOWN = ("porota_production_observer", "porota_production_dashboard",
          "porota_dashboard_preview", "porota_sandbox_engine", "porota_production_engine")
@@ -81,8 +82,10 @@ def notify(message):
         return "FALLO_" + type(exc).__name__
 
 
-def stop_engines():
+def stop_engines(include_dashboard=True):
     for name in KNOWN:
+        if not include_dashboard and name in {"porota_production_dashboard", "porota_dashboard_preview"}:
+            continue
         run("docker", "rm", "-f", name, check=False, capture=True)
     run("docker", "compose", "stop", "-t", "20", "bot", "sre_vectordb",
         check=False, capture=True)
@@ -92,7 +95,7 @@ def dashboard_env(mode):
     source = DATA / "diagnosticos" / "dashboard_preview_v1633.env"
     if not source.exists():
         raise RuntimeError("Falta el archivo persistente de acceso al dashboard.")
-    target = DATA / "diagnosticos" / "dashboard_mode_v1634.env"
+    target = DATA / "diagnosticos" / "dashboard_mode_v1635.env"
     safe = []
     forbidden = ("PPI_", "TELEGRAM_", "GEMINI_", "IOL_", "ROFEX_")
     for line in source.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -109,6 +112,7 @@ def dashboard_env(mode):
              "PAPER_MAX_POSITION_PCT=0.25",
              "PAPER_MAX_TOTAL_EXPOSURE_PCT=0.60",
              "PAPER_ACTIVE_SYMBOL_LIMIT=20",
+             "DASHBOARD_REFRESH_SECONDS=30",
              "SERVER_TIMEZONE=America/Argentina/Buenos_Aires"]
     target.write_text("\n".join(safe) + "\n", encoding="utf-8")
     os.chmod(target, 0o600)
@@ -116,17 +120,16 @@ def dashboard_env(mode):
 
 
 def observer_ai_env():
-    """Archivo 0600 exclusivo del observador; el dashboard no recibe secretos."""
+    """Archivo 0600 del observador; el dashboard no recibe secretos."""
     env = env_file()
     key = env.get("GEMINI_API_KEY", "").strip()
     if not key:
         raise RuntimeError("Falta GEMINI_API_KEY: Gemini es un porton critico del modo paper.")
-    target = DATA / "diagnosticos" / "observer_ai_v1634.env"
+    target = DATA / "diagnosticos" / "observer_runtime_v1635.env"
     values = {
         "GEMINI_API_KEY": key,
-        "GEMINI_MODEL": "gemini-3.7-flash",
-        "GEMINI_MODEL_CHAIN": "",
-        "GEMINI_STRICT_MODEL": "true",
+        "GEMINI_MODEL": env.get("GEMINI_MODEL", "").strip() or "gemini-3.7-flash",
+        "GEMINI_MODEL_CHAIN": env.get("GEMINI_MODEL_CHAIN", "").strip(),
         "TELEGRAM_BOT_TOKEN": env.get("TELEGRAM_BOT_TOKEN", "").strip(),
         "TELEGRAM_CHAT_ID": env.get("TELEGRAM_CHAT_ID", "").strip(),
     }
@@ -174,10 +177,8 @@ def simulation():
         "-e", "PAPER_PREOPEN_MINUTES=15",
         "-e", "PPI_LOGIN_COOLDOWN_SECONDS=900",
         "-e", "PAPER_ACTIVE_SYMBOL_LIMIT=20",
-        "-e", "PAPER_CORE_SYMBOL_LIMIT=10",
-        "-e", "PAPER_ROTATION_DWELL_CYCLES=8",
-        "-e", "PAPER_DATA_ERROR_THRESHOLD=3",
-        "-e", "PAPER_DATA_ERROR_QUARANTINE_MINUTES=30",
+        "-e", "PPI_HISTORY_BATCH_LIMIT=40",
+        "-e", "DATA_DIR=/app/data",
         "-e", "SERVER_TIMEZONE=America/Argentina/Buenos_Aires",
         "--env-file", str(ai_env),
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
@@ -212,10 +213,21 @@ def production(argv):
 
 
 def stop():
-    stop_engines()
-    status = notify("⚪ POROTA — PLATAFORMA DETENIDA\nDashboard y motores detenidos; no se realizan llamadas ni operaciones.")
+    # DETENIDO se refiere a motores; el dashboard continúa 24x7.
+    stop_engines(include_dashboard=False)
+    start_dashboard("DETENIDO")
+    status = notify("⚪ POROTA — MOTORES DETENIDOS\nDashboard 24x7 activo; no se realizan llamadas PPI ni operaciones.")
     write_mode("DETENIDO", "NONE", "NONE", {}, telegram=status,
-               detail="Todos los motores detenidos")
+               detail="Todos los motores detenidos; dashboard 24x7 activo")
+
+
+def copy_output(text):
+    """OSC 52 para Termius/terminal: evita seleccionar texto manualmente."""
+    try:
+        encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+        print(f"\033]52;c;{encoded}\a", end="")
+    except Exception:
+        pass
 
 
 def status():
@@ -246,6 +258,10 @@ def main(argv=None):
             status()
         else:
             raise SystemExit("Uso: porota-mode <status|simulation|sandbox|stop|production>")
+    summary = (f"POROTA_MODE=OK\nACCION={action.upper()}\n"
+               f"MANIFIESTO={MODE_FILE}\nDASHBOARD_24X7=SI")
+    print(summary)
+    copy_output(summary)
     return 0
 
 

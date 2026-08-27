@@ -1,4 +1,4 @@
-# Modos de operación — Porota Trading v16.3.4
+# Modos de operación — Porota Trading v16.3.5
 
 ## Ciclo horario y sincronización de instrumentos
 
@@ -22,19 +22,24 @@ de PPI. El selector impide que dos motores queden activos al mismo tiempo.
 
 ## Dashboard operativo
 
-Todas las páginas comparten un único menú superior. Incluye Inicio, Actividad,
-Simulación, Motor de trading, Salud de APIs, Históricos, Blog de aprendizaje,
-Telegram, SRE, Logs, Diagnóstico y Configuración, además de Volver.
+Todas las páginas comparten un único menú superior. Incluye Panel, Motor de
+trading, Salud, Históricos, Aprendizaje, Información financiera, Reportes,
+Telegram, SRE, Logs y Configuración. Se eliminó `Volver`; cada página termina
+con el enlace accesible `Ir al principio` y existe un solo refresco visual.
 
 - **Motor de trading:** cada operación paper se despliega individualmente y
   muestra señal, variables, costos, fills simulados, eventos y veredicto.
-- **IA:** Gemini es un portón crítico. La estrategia determinística propone;
-  Gemini aprueba o veta. Si el modelo o su contrato JSON fallan, no se abre ni
+- **IA y portones:** Gemini es un portón crítico, pero no el último control.
+  La estrategia propone; Gemini aprueba o veta; luego capital, exposición y
+  liquidez pueden bloquear correctamente la apertura. Toda la secuencia queda
+  persistida y explicada. Si el modelo o su contrato JSON fallan, no se abre ni
   siquiera una posición simulada. Cada veredicto queda persistido. El modelo
   no queda fijado a un nombre heredado: se consulta el inventario visible para
   la clave, se filtran los modelos de texto con `generateContent` y se usa el
   primero vigente. Si no hay uno compatible, el portón permanece cerrado.
-- **Salud:** inventaría todas las APIs y conserva último reporte y último éxito.
+- **Salud:** inventaría las APIs, modo/uso, último reporte, último éxito y
+  próximo chequeo. La autenticación Sandbox se prueba una sola vez durante la
+  instalación, sin consultar cuenta ni enviar órdenes.
 - **Históricos:** muestra último intento/éxito por fuente y fecha del catálogo.
 - **Sincronización manual:** el botón del dashboard encola una orden local. El
   observador aislado realiza un solo login PPI de solo lectura y descarga datos;
@@ -46,8 +51,22 @@ OPENBYMADATA es una web pública oficial. Las APIs oficiales de BYMA requieren
 alta o contratación, por lo que v16.3.4 no intenta utilizar endpoints ocultos.
 Hasta contar con ese acceso, catálogo e históricos se obtienen de PPI Producción
 bajo la barrera de solo lectura. Cada instrumento devuelto por PPI queda
-inventariado; hasta 20 elegibles se escanean por ciclo para limitar cuota,
-latencia y memoria, sin ocultar el resto del universo disponible.
+inventariado. El lote inicial de 20 rota sobre todo el universo; SRE registra
+duración, errores y límite recomendado. Los históricos se descargan en lotes
+incrementales de hasta 40 hasta cubrir todos los instrumentos, no sólo los 20
+del ciclo.
+
+## Operación 24x7, SRE y reportes
+
+El dashboard sigue activo con la rueda cerrada. El observador conserva el
+heartbeat y ejecuta servicios no operativos: noticias, indicadores oficiales
+BCRA/INDEC, SRE, backup diario con restore test, informes y Telegram de cierre.
+El menú SRE separa resumen, base, backups, infraestructura y performance.
+
+Reportes conserva PDF diarios y mensuales y un paquete JSON intensivo para IA
+con operaciones, variables, secuencia de portones, noticias y lecciones. Los
+semanales son transitorios: al crear el mensual integrado se eliminan los de
+ese mes; los diarios permanecen disponibles.
 
 ## Patrimonio en simulación
 
@@ -66,7 +85,7 @@ si ese dato no está disponible.
 | DETENIDO | Ninguna API | Ninguna | Avisa la detención |
 | SANDBOX | PPI Sandbox | Órdenes de prueba | Informa SANDBOX |
 | SIMULACIÓN PRODUCTIVA | PPI Producción, solo mercado | Compras/ventas locales simuladas | Informa SIMULACIÓN |
-| PRODUCCIÓN REAL | PPI Producción | Dinero real | Bloqueado en v16.3.4 |
+| PRODUCCIÓN REAL | PPI Producción | Dinero real | Bloqueado en v16.3.5 |
 
 Comandos del administrador instalado:
 
@@ -79,5 +98,6 @@ sudo porota-mode stop
 
 `production` permanece deliberadamente bloqueado. Habilitarlo requiere otra
 versión auditada, una marca local independiente y confirmación explícita de
-dinero real. El cambio de modo se guarda en `data/operation_mode.json` y se
-muestra en todas las páginas del dashboard y en Salud.
+dinero real. El cambio de modo se guarda en `data/operation_mode.json`, se
+muestra en todas las páginas y en Salud, se informa por Telegram y deja un
+resumen corto en el portapapeles de la terminal.

@@ -6,22 +6,22 @@ import json
 import os
 import signal
 import sqlite3
+import statistics
 import sys
 import time
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import urlencode
-from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolation
 from be_paper_engine import D, PaperBroker, PaperStore, Quote, now_iso
 from bh_paper_gemini import GeminiPaperGate
+import bi_operational_services as operations
 
 
-VERSION = "16.3.4"
+VERSION = "16.3.5"
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 DB_PATH = os.getenv("PAPER_DB_PATH", "data/observer/observer_production.db")
 SECRET_PATH = os.getenv("PPI_PRODUCTION_SECRET_FILE", "/run/secrets/ppi_production.json")
@@ -29,12 +29,8 @@ INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
 COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
 PUBLIC_CHECK_SECONDS = max(900, int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")))
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
-ACTIVE_SYMBOL_LIMIT = max(3, min(int(os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "20")), 30))
-CORE_SYMBOL_LIMIT = max(3, min(int(os.getenv("PAPER_CORE_SYMBOL_LIMIT", "10")),
-                               ACTIVE_SYMBOL_LIMIT))
-ROTATION_DWELL_CYCLES = max(1, int(os.getenv("PAPER_ROTATION_DWELL_CYCLES", "8")))
-DATA_ERROR_QUARANTINE_THRESHOLD = max(2, int(os.getenv("PAPER_DATA_ERROR_THRESHOLD", "3")))
-DATA_ERROR_QUARANTINE_MINUTES = max(5, int(os.getenv("PAPER_DATA_ERROR_QUARANTINE_MINUTES", "30")))
+ACTIVE_SYMBOL_LIMIT = max(3, min(int(os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "20")), 60))
+HISTORY_BATCH_LIMIT = max(5, min(int(os.getenv("PPI_HISTORY_BATCH_LIMIT", "40")), 100))
 CATALOG_QUERY_SLEEP_SECONDS = max(0.0, float(os.getenv("PPI_CATALOG_QUERY_SLEEP_SECONDS", "0.05")))
 MARKET_OPEN_HOUR = int(os.getenv("MARKET_OPEN_HOUR", "11"))
 MARKET_OPEN_MINUTE = int(os.getenv("MARKET_OPEN_MINUTE", "0"))
@@ -43,15 +39,8 @@ MARKET_CLOSE_MINUTE = int(os.getenv("MARKET_CLOSE_MINUTE", "0"))
 PREOPEN_MINUTES = max(5, int(os.getenv("PAPER_PREOPEN_MINUTES", "15")))
 CORE_SYMBOLS = (
     ("GGAL", "ACCIONES", "A-24HS"),
-    ("YPFD", "ACCIONES", "A-24HS"),
-    ("PAMP", "ACCIONES", "A-24HS"),
-    ("BMA", "ACCIONES", "A-24HS"),
     ("AL30", "BONOS", "A-24HS"),
-    ("GD30", "BONOS", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
-    ("SPY", "CEDEARS", "A-24HS"),
-    ("NVDA", "CEDEARS", "A-24HS"),
-    ("MSFT", "CEDEARS", "A-24HS"),
 )
 # Semillas amplias; PPI sigue siendo quien confirma existencia, clase y mercado.
 # La lista no habilita por si sola ningun instrumento y una coincidencia devuelta
@@ -67,6 +56,7 @@ DISCOVERY_SEEDS = {
     "BONOS": ("AL29", "AL30", "AL35", "AE38", "AL41", "GD29", "GD30", "GD35",
               "GD38", "GD41", "GD46", "BPOA7", "BPOB7", "TX26", "TX28", "TZX27"),
     "ETF": ("SPY", "DIA", "QQQ", "IWM"),
+    "INDICES": ("MERVAL", "SPMERVAL"),
 }
 STOP = False
 
@@ -74,7 +64,7 @@ SAFE_PAPER_TYPES = {"ACCIONES", "CEDEARS", "BONOS", "ETF", "ETFS"}
 SETTLEMENT_BY_TYPE = {
     "ACCIONES": "A-24HS", "CEDEARS": "A-24HS", "BONOS": "A-24HS",
     "ETF": "A-24HS", "ETFS": "A-24HS", "OPCIONES": "A-24HS",
-    "FUTUROS": "A-24HS", "CAUCIONES": "INMEDIATA", "FCI": "INMEDIATA",
+    "INDICES": "A-24HS", "FUTUROS": "A-24HS", "CAUCIONES": "INMEDIATA", "FCI": "INMEDIATA",
 }
 WATCHLIST_PATH = Path(os.getenv("INSTRUMENT_WATCHLIST_PATH", "n_instrument_watchlist.json"))
 
@@ -232,23 +222,8 @@ def _support_schema(store):
           market TEXT NOT NULL, can_simulate INTEGER NOT NULL, status TEXT NOT NULL,
           detail TEXT NOT NULL, last_checked_at TEXT NOT NULL,
           PRIMARY KEY(ticker,instrument_type,market));
-        CREATE TABLE IF NOT EXISTS instrument_runtime(
-          ticker TEXT NOT NULL, instrument_type TEXT NOT NULL, settlement TEXT NOT NULL,
-          consecutive_errors INTEGER NOT NULL DEFAULT 0, quarantined_until TEXT,
-          last_error TEXT, last_success_at TEXT, last_selected_at TEXT,
-          PRIMARY KEY(ticker,instrument_type,settlement));
-        CREATE TABLE IF NOT EXISTS observer_rotation(
-          id INTEGER PRIMARY KEY CHECK(id=1), cursor INTEGER NOT NULL DEFAULT 0,
-          cycles_in_cohort INTEGER NOT NULL DEFAULT 0, cohort_json TEXT NOT NULL DEFAULT '[]',
-          cohort_number INTEGER NOT NULL DEFAULT 0, updated_at TEXT);
-        INSERT OR IGNORE INTO observer_rotation(id) VALUES(1);
-        CREATE TABLE IF NOT EXISTS active_instruments(
-          ticker TEXT PRIMARY KEY, instrument_type TEXT NOT NULL, settlement TEXT NOT NULL,
-          role TEXT NOT NULL, selected_at TEXT NOT NULL, cohort_number INTEGER NOT NULL DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS observer_notifications(
-          notification_key TEXT PRIMARY KEY, attempted_at TEXT NOT NULL,
-          status TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');
         """)
+    operations.init_schema(store)
 
 
 def _health(store, component, state, detail, source, success=False):
@@ -300,28 +275,6 @@ def _public_probe(store):
                     "sonda pública oficial")
             _sync_state(store, component, "ROJO", 0,
                         f"{type(exc).__name__}: {str(exc)[:180]}")
-    # Disponibilidad de red del Sandbox sin credenciales y sin consumir un
-    # login. Un 4xx controlado demuestra que el servidor atendió la solicitud;
-    # se marca amarillo porque la autenticación no corresponde a este modo.
-    sandbox_url = "https://clientapisandbox.portfoliopersonal.com/api/"
-    try:
-        request = Request(sandbox_url,
-                          headers={"User-Agent": "PorotaReadOnlyHealth/16.3.4"},
-                          method="GET")
-        with urlopen(request, timeout=12) as response:
-            response.read(256)
-            code = int(response.status)
-        _health(store, "PPI_SANDBOX_REACHABILITY", "AMARILLO",
-                f"Sandbox accesible por red (HTTP {code}); autenticación no ejecutada en modo productivo paper.",
-                "PPI Sandbox", success=True)
-    except HTTPError as exc:
-        _health(store, "PPI_SANDBOX_REACHABILITY", "AMARILLO",
-                f"Sandbox respondió HTTP {exc.code}; conectividad confirmada, autenticación no ejecutada.",
-                "PPI Sandbox", success=True)
-    except Exception as exc:
-        _health(store, "PPI_SANDBOX_REACHABILITY", "ROJO",
-                f"Sin respuesta de red del Sandbox: {type(exc).__name__}: {str(exc)[:180]}",
-                "PPI Sandbox")
     _health(store, "BYMA_INSTRUMENTS_API", "GRIS",
             "Los planes oficiales de instrumentos/market data requieren alta o suscripcion, incluso los gratuitos; no se usan endpoints ocultos.",
             "catálogo oficial BYMA")
@@ -431,165 +384,48 @@ def _download_catalog(reader, store):
     return total
 
 
-def _is_redundant_variant(ticker, available_tickers):
-    """Evita gastar cupo en especies C/D cuando la especie base está disponible."""
-    return (len(ticker) > 3 and ticker[-1:] in {"C", "D"} and
-            ticker[:-1] in available_tickers)
-
-
-def _candidate_rank(ticker, kind):
+def _eligible_symbols(store):
+    """Universo completo elegible, balanceado por clase y sin duplicados."""
+    core = list(CORE_SYMBOLS)
     try:
-        return list(DISCOVERY_SEEDS.get(kind, ())).index(ticker)
-    except ValueError:
-        return 10000
-
-
-def _quarantined(until):
-    if not until:
-        return False
-    try:
-        return datetime.fromisoformat(str(until)) > datetime.now(TZ)
+        with store.connect() as c:
+            rows = c.execute("""SELECT ticker,instrument_type,settlement FROM candidate_universe
+              WHERE can_simulate=1 AND status='AVAILABLE'
+              ORDER BY CASE WHEN ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
+              instrument_type,ticker""").fetchall()
+        seen = {value[0] for value in core}
+        groups = {kind: [] for kind in ("ACCIONES", "CEDEARS", "BONOS", "ETF", "ETFS")}
+        for ticker, kind, settlement in rows:
+            if ticker not in seen and kind in groups:
+                groups[kind].append((ticker, kind, settlement))
+        while any(groups.values()):
+            for kind in groups:
+                if groups[kind]:
+                    value = groups[kind].pop(0)
+                    if value[0] not in seen:
+                        core.append(value)
+                        seen.add(value[0])
     except Exception:
-        return False
+        pass
+    return tuple(core)
 
 
 def _active_symbols(store):
-    """Núcleo líquido más cohorte rotativa, sin aumentar las llamadas por ciclo."""
-    selected_at = now_iso()
-    try:
-        with store.connect() as c:
-            rows = [tuple(row) for row in c.execute("""SELECT c.ticker,c.instrument_type,
-              c.settlement,r.quarantined_until FROM candidate_universe c
-              LEFT JOIN instrument_runtime r ON r.ticker=c.ticker
-               AND r.instrument_type=c.instrument_type AND r.settlement=c.settlement
-              WHERE c.can_simulate=1 AND c.status='AVAILABLE'""").fetchall()]
-            rotation = c.execute("SELECT * FROM observer_rotation WHERE id=1").fetchone()
-        available = {str(row[0]).upper() for row in rows}
-        eligible = [(str(t).upper(), str(k).upper(), str(s)) for t, k, s, until in rows
-                    if not _quarantined(until) and
-                    not _is_redundant_variant(str(t).upper(), available)]
-        by_key = {(ticker, kind): (ticker, kind, settlement)
-                  for ticker, kind, settlement in eligible}
-        core = []
-        for ticker, kind, settlement in CORE_SYMBOLS:
-            value = by_key.get((ticker, kind))
-            if value and value not in core:
-                core.append(value)
-            if len(core) >= CORE_SYMBOL_LIMIT:
-                break
-        if len(core) < CORE_SYMBOL_LIMIT:
-            extras = sorted(eligible, key=lambda value:
-                            (_candidate_rank(value[0], value[1]), value[1], value[0]))
-            for value in extras:
-                if value not in core:
-                    core.append(value)
-                if len(core) >= CORE_SYMBOL_LIMIT:
-                    break
-        seen = {value[0] for value in core}
-        pool = sorted((value for value in eligible if value[0] not in seen),
-                      key=lambda value: (_candidate_rank(value[0], value[1]),
-                                         value[1], value[0]))
-        rotating_limit = max(0, ACTIVE_SYMBOL_LIMIT - len(core))
-        old_cohort = []
-        if rotation:
-            try:
-                old_cohort = [tuple(value) for value in json.loads(rotation[3] or "[]")]
-            except Exception:
-                old_cohort = []
-        pool_keys = {value[0] for value in pool}
-        cohort = [value for value in old_cohort if value[0] in pool_keys]
-        cycles = int(rotation[2] or 0) if rotation else 0
-        cursor = int(rotation[1] or 0) if rotation else 0
-        cohort_number = int(rotation[4] or 0) if rotation else 0
-        if (not cohort or cycles >= ROTATION_DWELL_CYCLES) and rotating_limit and pool:
-            cohort = [pool[(cursor + offset) % len(pool)]
-                      for offset in range(min(rotating_limit, len(pool)))]
-            cursor = (cursor + len(cohort)) % len(pool)
-            cycles = 0
-            cohort_number += 1
-        cohort = cohort[:rotating_limit]
-        result = (core + cohort)[:ACTIVE_SYMBOL_LIMIT]
-        with store.connect() as c:
-            c.execute("DELETE FROM active_instruments")
-            for value in result:
-                role = "NUCLEO" if value in core else "ROTATIVO"
-                c.execute("INSERT INTO active_instruments VALUES(?,?,?,?,?,?)",
-                          (value[0], value[1], value[2], role, selected_at, cohort_number))
-                c.execute("""INSERT INTO instrument_runtime
-                  (ticker,instrument_type,settlement,last_selected_at) VALUES(?,?,?,?)
-                  ON CONFLICT(ticker,instrument_type,settlement) DO UPDATE SET
-                  last_selected_at=excluded.last_selected_at""", (*value, selected_at))
-            c.execute("""UPDATE observer_rotation SET cursor=?,cycles_in_cohort=?,
-              cohort_json=?,cohort_number=?,updated_at=? WHERE id=1""",
-              (cursor, cycles + 1, json.dumps(cohort, ensure_ascii=False),
-               cohort_number, selected_at))
-        return tuple(result)
-    except Exception as exc:
-        store.event("UNIVERSE_ROTATION_ERROR", f"{type(exc).__name__}: {str(exc)[:300]}")
-        return tuple(CORE_SYMBOLS[:ACTIVE_SYMBOL_LIMIT])
+    """Compatibilidad: devuelve el primer lote, no el universo histórico."""
+    return _eligible_symbols(store)[:ACTIVE_SYMBOL_LIMIT]
 
 
-def _instrument_success(store, symbol, kind, settlement):
+def _cycle_symbols(store):
+    """Ventana rotativa: 20 por ciclo no significa siempre los mismos 20."""
+    universe = list(_eligible_symbols(store))
+    if not universe:
+        return (), 0, 0, 0
     with store.connect() as c:
-        c.execute("""INSERT INTO instrument_runtime
-          (ticker,instrument_type,settlement,last_success_at) VALUES(?,?,?,?)
-          ON CONFLICT(ticker,instrument_type,settlement) DO UPDATE SET
-          consecutive_errors=0,quarantined_until=NULL,last_error=NULL,
-          last_success_at=excluded.last_success_at""", (symbol, kind, settlement, now_iso()))
-
-
-def _instrument_error(store, symbol, kind, settlement, exc):
-    detail = f"{type(exc).__name__}: {str(exc)[:260]}"
-    with store.connect() as c:
-        row = c.execute("""SELECT consecutive_errors FROM instrument_runtime
-          WHERE ticker=? AND instrument_type=? AND settlement=?""",
-          (symbol, kind, settlement)).fetchone()
-        failures = int(row[0] or 0) + 1 if row else 1
-        until = None
-        if failures >= DATA_ERROR_QUARANTINE_THRESHOLD:
-            until = (datetime.now(TZ) + timedelta(
-                minutes=DATA_ERROR_QUARANTINE_MINUTES)).isoformat(timespec="seconds")
-        c.execute("""INSERT INTO instrument_runtime
-          (ticker,instrument_type,settlement,consecutive_errors,quarantined_until,last_error)
-          VALUES(?,?,?,?,?,?) ON CONFLICT(ticker,instrument_type,settlement) DO UPDATE SET
-          consecutive_errors=excluded.consecutive_errors,
-          quarantined_until=excluded.quarantined_until,last_error=excluded.last_error""",
-          (symbol, kind, settlement, failures, until, detail))
-    if until:
-        store.event("INSTRUMENT_QUARANTINED",
-                    f"{symbol}: {failures} fallas consecutivas; pausa hasta {until}. {detail}")
-
-
-def _telegram_once(store, key, message):
-    """Un aviso por hecho operativo; los reinicios no lo duplican."""
-    token, chat = os.getenv("TELEGRAM_BOT_TOKEN", ""), os.getenv("TELEGRAM_CHAT_ID", "")
-    if not token or not chat:
-        return "NO_CONFIGURADO"
-    with store.connect() as c:
-        previous = c.execute("SELECT status,attempted_at FROM observer_notifications WHERE notification_key=?",
-                             (key,)).fetchone()
-    if previous and previous[0] == "ENTREGADO":
-        return "YA_ENTREGADO"
-    if previous:
-        try:
-            age = (datetime.now(TZ) - datetime.fromisoformat(previous[1])).total_seconds()
-            if age < 900:
-                return "EN_COOLDOWN"
-        except Exception:
-            pass
-    status, detail = "FALLIDO", ""
-    try:
-        body = urlencode({"chat_id": chat, "text": message}).encode()
-        request = Request(f"https://api.telegram.org/bot{token}/sendMessage",
-                          data=body, method="POST")
-        with urlopen(request, timeout=8) as response:
-            status = "ENTREGADO" if response.status == 200 else f"HTTP_{response.status}"
-    except Exception as exc:
-        detail = f"{type(exc).__name__}: {str(exc)[:180]}"
-    with store.connect() as c:
-        c.execute("INSERT OR REPLACE INTO observer_notifications VALUES(?,?,?,?)",
-                  (key, now_iso(), status, detail))
-    return status
+        row = c.execute("SELECT cursor_after FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1").fetchone()
+    cursor = int(row[0] if row else 0) % len(universe)
+    selected = [universe[(cursor + i) % len(universe)]
+                for i in range(min(ACTIVE_SYMBOL_LIMIT, len(universe)))]
+    return tuple(selected), len(universe), cursor, (cursor + len(selected)) % len(universe)
 
 
 def _gemini_context(store, symbol):
@@ -627,10 +463,28 @@ def _history_count(value):
     return 0
 
 
+def _historical_targets(store):
+    """Todo el universo validado; índices se conservan como benchmark."""
+    try:
+        with store.connect() as c:
+            rows = c.execute("""SELECT u.ticker,u.instrument_type,u.settlement,
+              h.downloaded_at FROM candidate_universe u
+              LEFT JOIN production_history h ON h.symbol=u.ticker
+                AND h.instrument_type=u.instrument_type AND h.settlement=u.settlement
+              WHERE u.status='AVAILABLE' AND (u.can_simulate=1 OR u.instrument_type='INDICES')
+              ORDER BY h.downloaded_at IS NOT NULL,h.downloaded_at,u.instrument_type,u.ticker""").fetchall()
+        if rows:
+            return [(r[0], r[1], r[2]) for r in rows]
+    except Exception:
+        pass
+    return list(CORE_SYMBOLS)
+
+
 def _download_histories(reader, store):
     start, end = date.today() - timedelta(days=365), date.today()
     total = successes = failures = 0
-    symbols = _active_symbols(store)
+    all_symbols = _historical_targets(store)
+    symbols = all_symbols[:HISTORY_BATCH_LIMIT]
     for symbol, instrument_type, settlement in symbols:
         try:
             payload = reader.history(symbol, instrument_type, settlement, start, end)
@@ -645,8 +499,11 @@ def _download_histories(reader, store):
             failures += 1
             store.event("HISTORY_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
     state = "VERDE" if successes and not failures else "AMARILLO" if successes else "ROJO"
-    detail = (f"Históricos de {successes}/{len(symbols)} instrumentos; {total} filas; "
-              f"{failures} fallidos. Solo lectura.")
+    with store.connect() as c:
+        covered = c.execute("SELECT COUNT(*) FROM production_history").fetchone()[0]
+    detail = (f"Lote histórico {successes}/{len(symbols)}; cobertura acumulada "
+              f"{covered}/{len(all_symbols)} instrumentos; {total} filas en este lote; "
+              f"{failures} fallidos. La descarga completa es incremental para no saturar PPI.")
     _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail,
                 success=bool(successes))
     _health(store, "PPI_PRODUCTION_HISTORY", state, detail, "PPI Producción",
@@ -740,6 +597,10 @@ def run():
     signal.signal(signal.SIGINT, _stop)
     store = PaperStore(DB_PATH)
     _support_schema(store)
+    store.state(process_state="STARTING", session_state="CHECKING",
+                ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
+                real_orders_sent=0, detail="Inicializando servicios 24x7.")
+    operations.service_tick(store, _market_phase(), force=True)
     gemini_gate = None
     try:
         gemini_gate = GeminiPaperGate()
@@ -754,9 +615,7 @@ def run():
                          max_position_pct=os.getenv("PAPER_MAX_POSITION_PCT", "0.25"),
                          max_total_exposure_pct=os.getenv("PAPER_MAX_TOTAL_EXPOSURE_PCT", "0.60"),
                          ai_gate=gemini_gate, require_ai=True,
-                         context_fn=lambda symbol: _gemini_context(store, symbol),
-                         notify_fn=lambda event, paper_id, message: _telegram_once(
-                             store, f"PAPER_{event}:{paper_id}", message))
+                         context_fn=lambda symbol: _gemini_context(store, symbol))
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", real_orders_sent=0,
                 detail="Simulacion productiva inicializando.")
@@ -768,9 +627,11 @@ def run():
     quotes = {}
     last_public_check = 0.0
     next_login_at = 0.0
-    previous_phase = None
     try:
         while not STOP:
+            # Estos trabajos continúan con la rueda cerrada: dashboard, SRE,
+            # backups, noticias, macro, reportes y resumen Telegram son 24x7.
+            operations.service_tick(store, _market_phase())
             if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:
                 _public_probe(store)
                 last_public_check = time.time()
@@ -778,14 +639,6 @@ def run():
             if command:
                 reader = _run_command(store, reader, command, gemini_gate)
             phase = _market_phase()
-            today = datetime.now(TZ).date().isoformat()
-            if phase == "CLOSED" and previous_phase in {"OPEN", "PREOPEN"}:
-                _telegram_once(
-                    store, f"SESSION_CLOSE:{today}",
-                    "⚪ CIERRE DE RUEDA — SIMULACIÓN PRODUCTIVA\n"
-                    "El observador queda en espera. Operaciones reales: NINGUNA.",
-                )
-            previous_phase = phase
             if phase == "CLOSED":
                 store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
@@ -813,13 +666,6 @@ def run():
                     store.state(ppi_auth="OK", session_state=phase,
                                 detail="Login de solo lectura correcto.")
                     _daily_sync(reader, store)
-                    _telegram_once(
-                        store, f"SESSION_OPEN:{today}",
-                        "🟢 RUEDA INICIADA — SIMULACIÓN PRODUCTIVA\n"
-                        "PPI Producción autenticado en solo lectura. Gemini es portón crítico.\n"
-                        f"Universo activo: hasta {ACTIVE_SYMBOL_LIMIT}; compras y ventas simuladas. "
-                        "Órdenes reales: NINGUNA.",
-                    )
                 except Exception as exc:
                     _health(store, "PPI_PRODUCTION_AUTH", "ROJO",
                             f"{type(exc).__name__}: {str(exc)[:300]}", "PPI Producción")
@@ -830,24 +676,19 @@ def run():
                     next_login_at = time.time() + LOGIN_COOLDOWN_SECONDS
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
-            # Si el observador permanece vivo entre jornadas, también hace la
-            # ingesta diaria sin depender de un reinicio ni de un botón web.
-            _daily_sync(reader, store)
             if phase != "OPEN":
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
-            _telegram_once(
-                store, f"SESSION_OPEN:{today}",
-                "🟢 RUEDA INICIADA — SIMULACIÓN PRODUCTIVA\n"
-                "PPI Producción autenticado en solo lectura. Gemini es portón crítico.\n"
-                f"Universo activo: hasta {ACTIVE_SYMBOL_LIMIT}; compras y ventas simuladas. "
-                "Órdenes reales: NINGUNA.",
-            )
-            symbols = _active_symbols(store)
+            symbols, eligible_total, cursor_before, cursor_after = _cycle_symbols(store)
+            cycle_started = now_iso()
+            cycle_clock = time.perf_counter()
             cycle_ok = 0
+            cycle_failures = 0
+            latencies = []
             for symbol, asset_class, settlement in symbols:
                 if STOP:
                     break
+                symbol_clock = time.perf_counter()
                 try:
                     current = reader.current(symbol, asset_class, settlement)
                     book = reader.book(symbol, asset_class, settlement)
@@ -858,22 +699,47 @@ def run():
                     store.add_quote(q)
                     quotes[symbol] = q
                     broker.on_quote(q)
-                    _instrument_success(store, symbol, asset_class, settlement)
                     cycle_ok += 1
                     store.state(last_market_data_at=q.observed_at)
                 except ReadOnlyPolicyViolation as exc:
                     store.event("HTTP_BLOCKED", str(exc))
                     store.state(process_state="DEGRADED", detail="La barrera bloqueo una ruta no permitida.")
                 except Exception as exc:
+                    cycle_failures += 1
                     store.event("DATA_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
-                    _instrument_error(store, symbol, asset_class, settlement, exc)
+                finally:
+                    latency = round((time.perf_counter() - symbol_clock) * 1000, 2)
+                    latencies.append(latency)
+                    with store.connect() as c:
+                        c.execute("""INSERT INTO symbol_cycle_metrics
+                          (cycle_started_at,symbol,latency_ms,state,detail) VALUES(?,?,?,?,?)""",
+                          (cycle_started, symbol, latency,
+                           "VERDE" if latency < INTERVAL * 500 else "AMARILLO",
+                           "current + book; PPI Producción solo lectura"))
             broker.mark_equity(quotes)
+            duration = round(time.perf_counter() - cycle_clock, 3)
+            avg_seconds = (statistics.fmean(latencies) / 1000) if latencies else INTERVAL
+            budget = max(1.0, INTERVAL * 0.75)
+            recommended = max(5, min(60, int(budget / max(avg_seconds, .05))))
+            if cycle_failures / max(1, len(symbols)) > .10:
+                recommended = min(recommended, max(5, ACTIVE_SYMBOL_LIMIT - 5))
+            with store.connect() as c:
+                c.execute("""INSERT INTO universe_cycle_metrics
+                  (started_at,finished_at,eligible_total,selected_count,successful_count,
+                   failed_count,duration_seconds,cursor_before,cursor_after,recommended_limit,detail)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                  (cycle_started, now_iso(), eligible_total, len(symbols), cycle_ok,
+                   cycle_failures, duration, cursor_before, cursor_after, recommended,
+                   f"Límite configurado={ACTIVE_SYMBOL_LIMIT}; rotación activa; dos lecturas PPI por instrumento"))
+                c.execute("DELETE FROM symbol_cycle_metrics WHERE id NOT IN (SELECT id FROM symbol_cycle_metrics ORDER BY id DESC LIMIT 10000)")
+                c.execute("DELETE FROM universe_cycle_metrics WHERE id NOT IN (SELECT id FROM universe_cycle_metrics ORDER BY id DESC LIMIT 5000)")
             metrics = reader.metrics
             store.state(process_state="RUNNING" if cycle_ok else "DEGRADED",
                         session_state="MARKET_OPEN", heartbeat_at=now_iso(),
                         http_allowed=metrics["http_allowed"],
                         http_blocked=metrics["http_blocked"], real_orders_sent=0,
-                        detail=f"{cycle_ok}/{len(symbols)} instrumentos actualizados; operaciones solo simuladas.")
+                        detail=(f"{cycle_ok}/{len(symbols)} instrumentos actualizados de "
+                                f"{eligible_total} elegibles; rotación activa; operaciones solo simuladas."))
             _health(store, "PPI_PRODUCTION_MARKETDATA",
                     "VERDE" if cycle_ok else "ROJO",
                     f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil.",
