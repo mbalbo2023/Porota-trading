@@ -8,6 +8,7 @@ significaría que el sistema puede tomar una decisión que no sabe evaluar.
 import os
 import sys
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 import sqlite3
@@ -16,8 +17,63 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import ai_derivatives_engine as deriv  # noqa: E402
 import aj_trade_gate as gate  # noqa: E402
+from bs_instrument_contracts import InstrumentContract, contract_from_metadata, family_name
 
 HOY = date(2026, 8, 20)
+
+
+@pytest.mark.parametrize("family,factor,expected", [
+    ("ACCIONES", "1", "200"), ("CEDEARS", "1", "200"), ("ETF", "1", "200"),
+    ("BONOS", "0.01", "2"), ("LETRAS", "0.01", "2"), ("ON", "0.01", "2"),
+    ("FCI", "1", "200"),
+])
+def test_v17_contrato_conserva_unidades_de_cada_familia(family, factor, expected):
+    spec = InstrumentContract("FIXTURE", family, "ARS", "BYMA", "INMEDIATA",
+                              Decimal(factor), Decimal("1"), "TEST_NOT_BROKER")
+    assert spec.notional("100", "2") == Decimal(expected)
+    assert spec.cash_required("100", "2", "0.1") == Decimal(expected) + Decimal("0.1")
+    assert spec.pnl("100", "110", "2") == Decimal(expected) / 10
+
+
+def test_v17_opcion_calcula_prima_y_perdida_por_contrato_no_por_accion():
+    spec = InstrumentContract("OPCION-FIXTURE", "OPCIONES", "ARS", "BYMA", "INMEDIATA",
+                              Decimal("100"), Decimal("1"), "TEST_NOT_BROKER",
+                              expires_at="2026-10-16T15:30:00-03:00", underlying="GGAL",
+                              strike=Decimal("7000"), option_right="CALL")
+    assert spec.cash_required("20", "3", "60") == 6060
+    assert spec.option_max_loss("20", "3", "60") == 6060
+    assert spec.pnl("20", "25", "3") == 1500
+    with pytest.raises(ValueError, match="política de garantías"):
+        spec.cash_required("20", "3", side="SHORT")
+
+
+def test_v17_futuro_separa_nocional_garantia_y_ajuste_diario():
+    spec = InstrumentContract("DLR-FIXTURE", "FUTUROS", "ARS", "A3", "INMEDIATA",
+                              Decimal("1000"), Decimal("1"), "TEST_NOT_BROKER",
+                              expires_at="2026-10-30T15:00:00-03:00",
+                              initial_margin=Decimal("100000"), maintenance_margin=Decimal("80000"))
+    assert spec.notional("1400", "2") == 2800000
+    assert spec.cash_required("1400", "2", "150") == 200150
+    assert spec.daily_variation("1400", "1410", "2") == 20000
+    assert spec.daily_variation("1400", "1410", "2", side="SHORT") == -20000
+    assert spec.margin_deficit("150000", "2") == 50000
+    assert spec.margin_deficit("180000", "2") == 0
+
+
+@pytest.mark.parametrize("family", ["CAUCIONES", "OPCIONES", "FUTUROS", "FCI", "ON", "LETRAS"])
+def test_v17_familia_conocida_no_significa_metadatos_completos(family):
+    assert family_name(family)
+    with pytest.raises(ValueError, match="metadatos"):
+        contract_from_metadata("FIXTURE", family, {"currency": "ARS"})
+
+
+def test_v17_desconocido_nunca_se_disfraza_de_accion():
+    with pytest.raises(ValueError, match="no reconocida"):
+        family_name("INSTRUMENTO_NUEVO")
+    spec = InstrumentContract("CAUCION", "CAUCIONES", "ARS", "BYMA", "INMEDIATA",
+                              Decimal("1"), Decimal("1"), "TEST_NOT_BROKER")
+    with pytest.raises(ValueError, match="capital, tasa y plazo"):
+        spec.notional("40", "1000")
 
 
 def _confirmar_strike_api(spec):
