@@ -33,6 +33,7 @@ def test_ppi_rate_limit_hace_un_solo_login(monkeypatch, tmp_path):
     monkeypatch.setenv("PPI_API_SECRET", "secret-test")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "db.sqlite"))
     import c_ppi_client as module
+    monkeypatch.setattr(module.ac_db, "DB_PATH", str(tmp_path / "db.sqlite"))
 
     fake, calls = _fake_ppi("429 API calls quota exceeded maximum admitted 10 per 1h")
     monkeypatch.setattr(module, "PPI", fake)
@@ -52,6 +53,7 @@ def test_ppi_login_exitoso_expone_estado_local(monkeypatch, tmp_path):
     monkeypatch.setenv("PPI_API_SECRET", "secret-test")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "db.sqlite"))
     import c_ppi_client as module
+    monkeypatch.setattr(module.ac_db, "DB_PATH", str(tmp_path / "db.sqlite"))
 
     fake, calls = _fake_ppi()
     monkeypatch.setattr(module, "PPI", fake)
