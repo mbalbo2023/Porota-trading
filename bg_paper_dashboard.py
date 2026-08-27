@@ -98,17 +98,17 @@ def _local_time(value):
     except Exception: return _e(value)
 
 
-def _conn(path=DB_PATH):
-    c = sqlite3.connect(path, timeout=5); c.row_factory = sqlite3.Row; return c
+def _conn(path=None):
+    c = sqlite3.connect(path or DB_PATH, timeout=5); c.row_factory = sqlite3.Row; return c
 
 
-def _rows(sql, params=(), path=DB_PATH):
+def _rows(sql, params=(), path=None):
     try:
         with _conn(path) as c: return [dict(r) for r in c.execute(sql, params).fetchall()]
     except Exception: return []
 
 
-def _table(name, path=DB_PATH):
+def _table(name, path=None):
     try:
         with _conn(path) as c: return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone())
     except Exception: return False
@@ -200,13 +200,35 @@ def _canonicalize(content, path=""):
 def snapshot():
     state = (_rows("SELECT * FROM observer_state WHERE id=1") or [{"mode":MODE,"process_state":"STOPPED","session_state":"UNKNOWN","ppi_auth":"NOT_ATTEMPTED","real_orders_sent":0,"detail":"Observador todavía no iniciado."}])[0]
     state["real_orders_sent"] = 0
-    quotes = _rows("""SELECT s.* FROM market_snapshots s JOIN (SELECT symbol,MAX(id) id FROM market_snapshots GROUP BY symbol) x ON x.id=s.id ORDER BY s.symbol""")
+    quotes = _rows("""SELECT s.* FROM market_snapshots s JOIN
+      (SELECT symbol,asset_class,settlement,MAX(id) id FROM market_snapshots
+       GROUP BY symbol,asset_class,settlement) x ON x.id=s.id
+      ORDER BY s.symbol,s.asset_class,s.settlement""")
     opened = _rows("SELECT * FROM paper_positions WHERE status='OPEN' ORDER BY opened_at DESC")
     closed = _rows("SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY closed_at DESC LIMIT 1000")
     decisions = _rows("SELECT * FROM paper_decisions ORDER BY id DESC LIMIT 100")
     equity = (_rows("SELECT * FROM paper_equity ORDER BY id DESC LIMIT 1") or [{}])[0]
     learning = (_rows("SELECT COUNT(*) total,SUM(CASE WHEN label_timestamp IS NOT NULL THEN 1 ELSE 0 END) labeled FROM paper_learning_samples") or [{}])[0]
-    return {"state":state,"quotes":quotes,"open":opened,"closed":closed,"decisions":decisions,"equity":equity,"learning":learning}
+    cauciones = _rows("SELECT * FROM paper_cauciones ORDER BY opened_at DESC LIMIT 500") if _table("paper_cauciones") else []
+    return {"state":state,"quotes":quotes,"open":opened,"closed":closed,"decisions":decisions,"equity":equity,"learning":learning,"cauciones":cauciones}
+
+
+def _cauciones_panel():
+    positions = _rows("SELECT * FROM paper_cauciones ORDER BY opened_at DESC LIMIT 100") if _table("paper_cauciones") else []
+    rows = "".join(
+        f"<tr><td>{_e(p['instrument_id'])}</td><td>{_e(p['currency'])}</td>"
+        f"<td>{_e(p['principal'])}</td><td>{_e(p['annual_rate_fraction'])}</td>"
+        f"<td>{p['interest_days']}</td><td>{_local_time(p['maturity_at'])}</td>"
+        f"<td>{_e(p['gross_interest'])}</td><td>{_e(p['total_fees'])}</td>"
+        f"<td>{_status(p['status'])}</td></tr>" for p in positions
+    ) or "<tr><td colspan='9'>Sin colocaciones simuladas. El alta requiere términos y cotización validados.</td></tr>"
+    return ("<div class='paper-card'><h2>Cauciones colocadoras</h2>"
+            "<p>Capital inmovilizado hasta el vencimiento. ARS y USD mantienen cajas separadas. "
+            "Sin stop ni venta intradiaria. La tasa se muestra como fracción anual: 0,30 equivale a 30%.</p>"
+            "<p class='paper-muted'>Vencimientos y acreditaciones son simulados; no confirman movimientos en PPI.</p>"
+            "<table class='paper-table'><tr><th>Contrato</th><th>Moneda</th><th>Capital</th>"
+            "<th>TNA (fracción)</th><th>Días corridos</th><th>Vencimiento</th>"
+            "<th>Interés bruto</th><th>Costos totales</th><th>Estado</th></tr>" + rows + "</table></div>")
 
 
 def _trade_metrics(closed):
@@ -309,7 +331,7 @@ def motor_page():
     gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(g['ai_gate'])}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas todavía.</div>'
     body=f"<h1>Motor de trading</h1><p class='paper-muted'>Una única actualización visual; trazabilidad técnica → IA → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>IA</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",body)
+    return _document("Motor de trading",body + _cauciones_panel())
 
 
 def _next_check(component, checked):
