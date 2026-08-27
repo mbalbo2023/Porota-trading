@@ -3,6 +3,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,116 @@ def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"
     price = D(price)
     return Quote(symbol, "ACCIONES", "A-24HS", price, price-D("0.10"),
                  price+D("0.10"), D(bid_size), D(ask_size), at)
+
+
+def test_v17_compra_reserva_comision_dentro_de_la_caja(tmp_path):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    broker = PaperBroker(store, initial_cash="1000", risk_pct="1",
+                         max_position_pct="1", max_total_exposure_pct="1",
+                         slippage_bps="0")
+    q = replace(quote(ask_size="100000"), ask=D("100"))
+    assert broker._open(q, D("0.8"), {})[0]
+    assert broker._cash() >= 0
+    assert D(store.open_positions()[0]["quantity"]) == 9
+
+
+def test_v17_riesgo_incluye_ambas_comisiones_y_slippage_de_salida(tmp_path):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    broker = PaperBroker(store, initial_cash="1000", risk_pct="0.01",
+                         max_position_pct="1", max_total_exposure_pct="1")
+    assert broker._open(quote(ask_size="100000"), D("0.8"), {})[0]
+    p = store.open_positions()[0]
+    qty = D(p["quantity"])
+    expected_exit = (D(p["stop_price"]) * (1-broker.slippage)).quantize(D("0.0001"))
+    modeled_loss = ((D(p["entry_price"])-expected_exit)*qty +
+                    D(p["entry_cost"]) + broker._cost(expected_exit, qty, "ACCIONES"))
+    assert modeled_loss <= D("10")
+
+
+@pytest.mark.parametrize("change", [
+    {"bid_size": D("1")}, {"settlement": "INMEDIATA"},
+    {"asset_class": "BONOS"}, {"symbol": "OTRO"},
+    {"observed_at": "2026-08-25T13:59:59+00:00"},
+    {"observed_at": "fecha-invalida"},
+])
+def test_v17_cierre_no_inventa_liquidez_ni_mezcla_instrumentos(tmp_path, change):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    broker = PaperBroker(store)
+    assert broker._open(quote(), D("0.8"), {})[0]
+    p = store.open_positions()[0]
+    assert broker._close(p, replace(quote(price="110", minute=1), **change), "TEST") is False
+    assert store.open_positions()
+    with store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0] == 0
+
+
+def test_v17_cierre_idempotente_ante_reintento_con_posicion_vieja(tmp_path):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    broker = PaperBroker(store)
+    assert broker._open(quote(), D("0.8"), {})[0]
+    p = store.open_positions()[0]
+    closing = quote(price="110", minute=1)
+    assert broker._close(p, closing, "TEST") is True
+    before = broker._cash()
+    assert broker._close(p, closing, "TEST") is False
+    assert broker._cash() == before
+    with store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0] == 1
+
+
+def test_v17_no_entrena_senal_con_otro_plazo_o_clase(tmp_path):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    for i in range(8):
+        store.add_quote(replace(quote(price=str(100+i), minute=i), settlement="INMEDIATA"))
+        store.add_quote(replace(quote(price=str(100+i), minute=i), asset_class="BONOS"))
+    q = quote(price="107", minute=8)
+    store.add_quote(q)
+    action, _, _, features = PaperBroker(store).decide(q)
+    assert action == "HOLD"
+    assert features["samples"] == 1
+
+
+@pytest.mark.parametrize("value", ["NaN", "sNaN", "Infinity", "-Infinity"])
+def test_v17_decimal_no_finito_se_rechaza_como_dato_invalido(value):
+    assert D(value, "-1") == D("-1")
+
+
+def test_v17_sin_tarifario_no_se_inventa_comision(tmp_path, monkeypatch):
+    import au_fee_schedule
+    def unavailable(_kind):
+        raise ValueError("tarifario no disponible")
+    monkeypatch.setattr(au_fee_schedule, "costo_por_tramo", unavailable)
+    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")))
+    with pytest.raises(ValueError, match="tarifario"):
+        broker._cost(D("100"), D("1"), "ACCIONES")
+
+
+def test_v17_prioridad_de_abiertas_incluso_fuera_del_universo(tmp_path, monkeypatch):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    observer._support_schema(store)
+    broker = PaperBroker(store, max_positions=5)
+    for i in range(4):
+        assert broker._open(quote(symbol=f"ABIERTA{i}"), D("0.8"), {})[0]
+    monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 2)
+    selected, _, _, _ = observer._cycle_symbols(store)
+    assert {v[0] for v in selected} == {f"ABIERTA{i}" for i in range(4)}
+
+
+def test_v17_compra_rechaza_puntas_cruzadas(tmp_path):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    broker = PaperBroker(store)
+    assert broker._open(replace(quote(), bid=D("110"), ask=D("100")), D("0.8"), {})[0] is False
+    assert store.open_positions() == []
+
+
+@pytest.mark.parametrize("change", [{"bid": Decimal("NaN")},
+                                   {"ask": Decimal("Infinity")},
+                                   {"ask_size": Decimal("sNaN")}])
+def test_v17_senal_no_calcula_con_puntas_no_finitas(tmp_path, change):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    for i in range(8):
+        store.add_quote(quote(price=str(100+i), minute=i))
+    assert PaperBroker(store).decide(replace(quote(), **change))[0] == "HOLD"
 
 
 def test_guard_permite_solo_host_https_y_rutas_lectura():
