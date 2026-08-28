@@ -82,7 +82,7 @@ def test_ganancia_en_pesos_no_prueba_superar_inflacion(tmp_path, monkeypatch):
 
 def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
-    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
     be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
     import bg_paper_dashboard
@@ -204,7 +204,7 @@ def test_menu_unico_elimina_los_dos_menus_anteriores(monkeypatch):
 
 def test_motor_muestra_trazabilidad_y_explica_porton_gemini(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
-    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
     store = be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
     with store.connect() as connection:
@@ -259,7 +259,7 @@ def test_home_heredada_queda_moderna_y_sin_menu_duplicado(monkeypatch):
 
 def test_portada_y_logs_tienen_documento_moderno_sin_menu_repetido(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
-    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
     be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
     import bg_paper_dashboard
@@ -274,7 +274,7 @@ def test_portada_y_logs_tienen_documento_moderno_sin_menu_repetido(tmp_path, mon
 
 def test_gemini_figura_como_porton_critico_y_lee_salud_persistida(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
-    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
     import bf_production_paper_observer as observer
     store = be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
@@ -324,7 +324,7 @@ def test_no_hay_dos_contadores_y_todas_las_paginas_tienen_subir(monkeypatch):
 
 def test_sre_reportes_finanzas_y_colores_explicitos(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
-    monkeypatch.setenv("PAPER_DB_PATH", str(tmp_path / "paper.db"))
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
     store = be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
     import bf_production_paper_observer as observer
