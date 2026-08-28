@@ -17,7 +17,7 @@ services:
     build: .
     # Nombre explicito: permite auditar y promover exactamente la misma
     # imagen en CI, Sandbox y produccion, sin depender del nombre del directorio.
-    image: porota-trading-bot:16.3.5
+    image: porota-trading-bot:17.0.0-rc1
     container_name: porota_trading_bot
     restart: unless-stopped
     # Todo el sistema de archivos de la imagen queda inmutable. Solo los
@@ -96,7 +96,7 @@ services:
 
   init_permissions:
     # Reutiliza la misma imagen: no agrega software ni una version paralela.
-    image: porota-trading-bot:16.3.5
+    image: porota-trading-bot:17.0.0-rc1
     user: "0:0"
     restart: "no"
     command:
