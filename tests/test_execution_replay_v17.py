@@ -316,3 +316,40 @@ def test_cli_entrada_invalida_no_crea_base(tmp_path):
                               '--input', str(spec)], capture_output=True, text=True, timeout=20)
     assert process.returncode == 2 and not database.exists()
     assert json.loads(process.stdout)['status'] == 'INVALID_REPLAY_INPUT'
+
+
+def test_callback_no_puede_retrofechar_ni_mezclar_ordenes(setup):
+    class Strategy:
+        def on_event(self, view):
+            return order(setup, submitted=1)
+    engine = ExecutionReplay(*setup[:5])
+    with pytest.raises(ValueError,match='instante actual'):
+        engine.run([], [book(setup)],start=at(0),end=at(30),initial_cash='10000',strategy=Strategy())
+    with pytest.raises(ValueError,match='mezclar'):
+        engine.run([order(setup)], [book(setup)],start=at(0),end=at(30),initial_cash='10000',strategy=Strategy())
+
+
+def test_callback_recibe_copia_del_ledger_sin_libros_futuros(setup):
+    seen = []
+    class Strategy:
+        def on_event(self, view):
+            seen.append((view['at'],len(view['fills'])))
+            view['cash'] = D('9999999')
+            view['orders'].append({'status':'PENDING'})
+    result = ExecutionReplay(*setup[:5]).run([], [book(setup),book(setup,3)],
+        start=at(0),end=at(30),initial_cash='10000',strategy=Strategy())
+    assert len(seen) == 2 and result['cash'] == '10000' and not result['orders']
+
+
+def test_salida_no_puede_inventar_plan_de_entrada(setup):
+    with pytest.raises(ValueError,match='plan de entrada'):
+        run(setup,[order(setup,side='SELL',entry_order_id='missing')],[book(setup)])
+    with pytest.raises(ValueError,match='Sólo una salida'):
+        order(setup,entry_order_id='anything')
+
+
+def test_limite_de_venta_se_respeta_en_replay_preparado(setup):
+    result = run(setup,[order(setup),order(setup,'sell',3,side='SELL',price_limit=D(110))],
+                 [book(setup),book(setup,4)])
+    assert result['orders'][-1]['status'] == 'UNFILLED_PRICE_LIMIT'
+    assert result['open_quantity'] == '5'
