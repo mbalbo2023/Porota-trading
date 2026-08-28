@@ -9,13 +9,14 @@ import hashlib
 import json
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
 from bl_candle_engine import fingerprint, stamp
 import cd_spot_ledger as spot_ledger
+from cf_sale_settlement import modeled_sale_settlement, validated_sale_settlement
 
 ZERO = Decimal("0")
 CENT = Decimal("0.01")
@@ -42,30 +43,6 @@ def book_payload(offer):
 
 def money(value):
     return decimal_value(value, "importe").quantize(CENT, rounding=ROUND_HALF_UP)
-
-
-def modeled_sale_settlement(settlement, traded_at):
-    """Disponibilidad conservadora PAPER, no un horario oficial del broker.
-
-    CI: mismo instante. T+1: fin del siguiente día del calendario auditado.
-    Sin calendario o plazo conocido: pendiente de conciliación, nunca caja.
-    No se usa una regla de lunes a viernes si faltan feriados.
-    """
-    at = aware_datetime(traded_at).astimezone(TZ)
-    key = settlement.upper().strip()
-    if key in {"INMEDIATA", "CI", "T+0"}:
-        return at.isoformat()
-    if key not in {"A-24HS", "24HS", "T+1"}:
-        return None
-    import ak_byma_calendar as calendar
-    candidate = at.date()
-    for _ in range(370):
-        candidate += timedelta(days=1)
-        if candidate.year not in calendar.ANIOS_AUDITADOS:
-            return None
-        if calendar.es_dia_habil_operativo(candidate):
-            return datetime.combine(candidate, time.max, TZ).isoformat()
-    return None
 
 
 def init_schema(store):
@@ -149,16 +126,8 @@ def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
             "SELECT * FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",(row['paper_id'],)).fetchall())
         if amount != expected:
             raise ValueError('Producido del recibo no concilia con el fill')
-        available = aware_datetime(row['available_at']) if row['available_at'] is not None else None
-        if row['basis']=='PENDING_CONFIRMATION':
-            if available is not None:
-                raise ValueError('Recibo pendiente con acreditación no confirmada')
-        elif row['basis']=='PAPER_CONSERVATIVE_CALENDAR':
-            modeled = modeled_sale_settlement(row['settlement'],row['closed_at'])
-            if modeled is None or available is None or available!=aware_datetime(modeled):
-                raise ValueError('Liquidación incompatible con el modelo PAPER declarado')
-        else:
-            raise ValueError('Fuente de liquidación no soportada; requiere conciliación')
+        available = validated_sale_settlement(row['settlement'],row['closed_at'],
+                                             row['available_at'],row['basis'])
         if amount > 0 and (available is None or available > at):
             pending += amount
     return pending
