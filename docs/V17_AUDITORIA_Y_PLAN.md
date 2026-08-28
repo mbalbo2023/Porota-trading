@@ -1203,6 +1203,8 @@ capital/plazo/base, costos ni caja real. Cauciones siguen HOLD y sin promoción.
 No se ejecutó el diagnóstico en PPI/servidor desde este entorno. La ejecución
 productiva puntual requiere transferir el ZIP y correr el comando por el operador.
 Detalle, límites y fuentes: `docs/V17_PPI_DIAGNOSTICO.md`.
+El lanzador usa el permiso ya probado `sudo -n docker`; Python y la copia
+temporal del paquete corren con el usuario del operador, sin exigir sudo Python.
 
 ## Evaluación del código sugerido: decisiones y pendientes
 
@@ -1456,6 +1458,14 @@ montaje, usuario/imagen exacta, nombre ocupado, cleanup sólo del ID propio,
 archivo SFTP modo 600 conservado y portapapeles. ZIP reproducible cotejado
 con fuentes y CLI --help sin paquetes de terceros. No se ensayó Docker del
 servidor ni login real a PPI; eso requiere la ejecución puntual del operador.
+
+Revisión final del lanzador del checkpoint 25: **1114 tests aprobados**,
+0 fallas, 0 errores y 0 omisiones; 50 nuevos frente al checkpoint 24 y
+98 dirigidos. Cobertura global local **65,40%**, diagnóstico **97,75%**;
+cuatro mínimos financieros cumplidos. Verifica que únicamente Docker usa
+`sudo -n` y que una denegación termina sin sudo Python, chmod o reintento.
+La versión inicial obtuvo CI225 completa; el paquete entregable utiliza
+este lanzador final y sus fuentes exactas dentro del manifiesto.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
