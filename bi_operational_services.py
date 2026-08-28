@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
+from bt_caucion_paper import CaucionBook
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -345,8 +346,8 @@ def _period_data(store, start, end):
         positions.sort(key=lambda p:aware_datetime(p['opened_at']))
         cauciones = []
         if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_cauciones'").fetchone():
-            cauciones = [dict(r) for r in c.execute("""SELECT * FROM paper_cauciones WHERE status='MATURED'
-              AND julianday(settled_at)>=julianday(?) AND julianday(settled_at)<julianday(?)""", (start, end))]
+            cauciones = [p for p in CaucionBook(store).positions(status='MATURED',connection=c)
+                         if aware_datetime(start)<=aware_datetime(p['settled_at'])<aware_datetime(end)]
         decisions = [dict(r) for r in c.execute("""SELECT * FROM paper_decisions
           WHERE julianday(decided_at)>=julianday(?) AND julianday(decided_at)<julianday(?) ORDER BY decided_at""", (start, end))]
         news = [dict(r) for r in c.execute("""SELECT * FROM financial_news
