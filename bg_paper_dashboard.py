@@ -8,6 +8,7 @@ import os
 import re
 import sqlite3
 from contextlib import closing
+from decimal import Decimal
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -17,6 +18,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from bl_candle_engine import fingerprint
 from cb_caucion_audit import allocation_history
+import cd_spot_ledger as spot_ledger
+from bs_instrument_contracts import aware_datetime
 
 
 VERSION = "16.3.5"
@@ -120,6 +123,22 @@ def _table(name, path=None):
     except Exception: return False
 
 
+def _spot_warning(state):
+    return "" if state=="READY" else "<div class='paper-warning'>No se pudo conciliar el ledger spot. Cantidades y resultados no disponibles; no interpretar como cero.</div>"
+
+
+def _spot_snapshot():
+    """Cantidades/PnL consistentes; los parciales no multiplican el win rate."""
+    try:
+        with closing(_conn()) as c:
+            c.execute('BEGIN')
+            opened, realized = spot_ledger.positions_at(c)
+            closed = [dict(r) for r in c.execute("SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY closed_at DESC")]
+            return {'open':opened,'closed':closed,'realized':realized,'state':'READY'}
+    except Exception:
+        return {'open':[],'closed':[],'realized':[],'state':'UNAVAILABLE'}
+
+
 def _status(value):
     key = str(value or "").upper()
     css = "s-verde" if key in {"OK","VERDE","RUNNING","APPROVE","WIN","OPENED_SIMULATED","AVAILABLE"} else \
@@ -211,8 +230,8 @@ def snapshot():
       (SELECT symbol,asset_class,settlement,MAX(id) id FROM market_snapshots
        GROUP BY symbol,asset_class,settlement{identity_extra}) x ON x.id=s.id
       ORDER BY s.symbol,s.asset_class,s.settlement""")
-    opened = _rows("SELECT * FROM paper_positions WHERE status='OPEN' ORDER BY opened_at DESC")
-    closed = _rows("SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY closed_at DESC LIMIT 1000")
+    spot = _spot_snapshot()
+    opened, closed = spot['open'],spot['closed']
     decisions = _rows("SELECT * FROM paper_decisions ORDER BY id DESC LIMIT 100")
     equity = (_rows("SELECT * FROM paper_equity ORDER BY id DESC LIMIT 1") or [{}])[0]
     learning = (_rows("SELECT COUNT(*) total,SUM(CASE WHEN label_timestamp IS NOT NULL THEN 1 ELSE 0 END) labeled FROM paper_learning_samples") or [{}])[0]
@@ -224,7 +243,7 @@ def snapshot():
     exit_reader = (_rows("SELECT * FROM paper_exit_reader_state WHERE id=1") or [{}])[0] if _table("paper_exit_reader_state") else {}
     exits = _rows("SELECT * FROM paper_exit_intents") if _table("paper_exit_intents") else []
     valuation_quality = _rows("SELECT * FROM paper_valuation_quality") if _table("paper_valuation_quality") else []
-    return {"state":state,"quotes":quotes,"open":opened,"closed":closed,"decisions":decisions,"equity":equity,"learning":learning,"cauciones":cauciones,"balances_by_currency":balances,
+    return {"state":state,"quotes":quotes,"open":opened,"closed":closed,"realized":spot['realized'],"spot_state":spot['state'],"decisions":decisions,"equity":equity,"learning":learning,"cauciones":cauciones,"balances_by_currency":balances,
             "exit_supervisor":supervisor,"exit_reader":exit_reader,"exit_intents":exits,"valuation_quality":valuation_quality,
             "daily_risk":_rows('SELECT * FROM paper_daily_risk ORDER BY day DESC,currency LIMIT 16') if _table('paper_daily_risk') else [],
             "notification_worker":(_rows('SELECT * FROM paper_notification_worker WHERE id=1') or [{}])[0] if _table('paper_notification_worker') else {},
@@ -456,8 +475,10 @@ def _report_state(family):
 
 def home_page():
     data=snapshot(); state=data["state"]; closed=data["closed"]
-    today=datetime.now(TZ).date().isoformat(); today_closed=[p for p in closed if str(p.get("closed_at",""))[:10]==today]
+    today=datetime.now(TZ).date().isoformat(); today_closed=[p for p in closed if aware_datetime(p["closed_at"]).astimezone(TZ).date().isoformat()==today]
     today_pnl,today_wins,today_wr=_trade_metrics(today_closed); total_pnl,wins,total_wr=_trade_metrics(closed)
+    today_pnl = sum((_num(p['net_pnl']) for p in data['realized'] if p.get('currency','ARS')=='ARS'
+                     and aware_datetime(p['closed_at']).astimezone(TZ).date().isoformat()==today),0)
     heartbeat_ok=_fresh(state.get("heartbeat_at"),180)
     sre=(_rows("SELECT * FROM sre_snapshots ORDER BY id DESC LIMIT 1") or [{}])[0] if _table("sre_snapshots") else {}
     db_ok=sre.get("db_integrity")=="ok"
@@ -474,24 +495,25 @@ def home_page():
         _card("Base paper", "OK" if db_ok else "REVISAR", f"Integridad {sre.get('db_integrity','sin medición')}", "green" if db_ok else "red"),
         _card("PPI solo lectura", state.get("ppi_auth"), "Órdenes reales bloqueadas por transporte", "green" if state.get("ppi_auth")=="OK" else "yellow" if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
         _card("Patrimonio paper ARS", _money(equity), "Capital completamente ficticio; sin consolidar dólares", "green" if equity>=PAPER_INITIAL_CAPITAL else "red"),
-        _card("Resultado de hoy ARS", _money(today_pnl), f"Win rate {'s/d' if today_wr is None else f'{today_wr:.1f}%'}", "green" if today_pnl>0 else "red" if today_pnl<0 else "gray", "positive" if today_pnl>0 else "negative" if today_pnl<0 else "neutral"),
+        _card("Resultado de hoy ARS", _money(today_pnl) if data["spot_state"]=="READY" else "s/d", f"Win rate {'s/d' if today_wr is None else f'{today_wr:.1f}%'}", "green" if today_pnl>0 else "red" if today_pnl<0 else "gray", "positive" if today_pnl>0 else "negative" if today_pnl<0 else "neutral"),
         _card("Win rate acumulado", "s/d" if total_wr is None else f"{total_wr:.1f}%", f"{wins}/{len(closed)} cierres ganadores", "green" if total_wr is not None and total_wr>=50 else "red" if total_wr is not None else "gray"),
         _card("Órdenes reales", "0", "Barrera HTTP fail-closed", "green"),
     ))
     body=f"<h1>Panel ejecutivo — Porota Trading {VERSION}</h1><p class='paper-muted'>Una sola vista del sistema, infraestructura, APIs y desempeño paper.</p><div class='paper-grid'>{cards}</div>"
-    return _document("Porota Trading",body)
+    return _document("Porota Trading",_spot_warning(data["spot_state"])+body)
 
 
 def paper_page(compact=False):
     data=snapshot(); state=data["state"]
     latest=(_rows("SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1") or [{}])[0] if _table("universe_cycle_metrics") else {}
     pnl,wins,wr=_trade_metrics(data["closed"])
+    pnl=sum(_num(p["net_pnl"]) for p in data["realized"] if p.get("currency","ARS")=="ARS")
     rows="".join(f"<tr><td>{_local_time(d['decided_at'])}</td><td><b>{_e(d['symbol'])}</b></td><td>{_status(d['action'])}</td><td>{_e(d['score'])}</td><td>{_e(d['reason'])}</td></tr>" for d in data["decisions"][:30]) or "<tr><td colspan='5'>Esperando decisiones.</td></tr>"
     cards="".join((
         _card("Motor paper", state.get("process_state"), state.get("detail"), "green" if _fresh(state.get("heartbeat_at"),180) else "red"),
         _card("Sesión BYMA", state.get("session_state"), "El dashboard sigue activo fuera de rueda", "green" if state.get("session_state")=="MARKET_OPEN" else "gray"),
         _card("PPI Producción", state.get("ppi_auth"), "Sólo lectura", "green" if state.get("ppi_auth")=="OK" else "yellow"),
-        _card("Resultado acumulado ARS", _money(pnl), f"{len(data['closed'])} cierres", "green" if pnl>0 else "red" if pnl<0 else "gray", "positive" if pnl>0 else "negative" if pnl<0 else "neutral"),
+        _card("Resultado acumulado ARS", _money(pnl) if data["spot_state"]=="READY" else "s/d", "Incluye fills parciales realizados", "green" if pnl>0 else "red" if pnl<0 else "gray", "positive" if pnl>0 else "negative" if pnl<0 else "neutral"),
         _card("Win rate", "s/d" if wr is None else f"{wr:.1f}%", f"{wins}/{len(data['closed'])} ganadoras", "green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),
         _card("Universo del ciclo", f"{latest.get('selected_count',0)}/{latest.get('eligible_total',0)}", f"Rotación activa; recomendación medida: {latest.get('recommended_limit','s/d')}", "green" if latest.get('successful_count')==latest.get('selected_count') and latest.get('selected_count') else "yellow"),
     ))
@@ -501,6 +523,7 @@ def paper_page(compact=False):
         "<p class='paper-muted'>Una sola vista para estado, actividad y simulación.</p>"
     )
     body=heading+f"<div class='paper-grid'>{cards}</div><div class='paper-notice'><b>El límite {PAPER_ACTIVE_SYMBOL_LIMIT} es por ciclo, no el universo total.</b> La ventana rota para cubrir todos los elegibles y registra latencia, errores y recomendación antes de ampliarse.</div><div class='paper-card'><h2>Decisiones y abstenciones actuales</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>Acción</th><th>Score</th><th>Motivo</th></tr>{rows}</table></div>"
+    body = _spot_warning(data['spot_state'])+body
     return _document("Simulación productiva",body) if compact else body
 
 
@@ -510,7 +533,8 @@ def _features(value):
 
 
 def motor_page():
-    positions=_rows("SELECT * FROM paper_positions ORDER BY opened_at DESC LIMIT 100")
+    spot=_spot_snapshot()
+    positions=sorted(spot["open"]+spot["closed"],key=lambda p:aware_datetime(p["opened_at"]),reverse=True)[:100]
     gates=_rows("SELECT * FROM trade_gate_evaluations ORDER BY id DESC LIMIT 100") if _table("trade_gate_evaluations") else []
     gate_by_symbol={g["symbol"]:g for g in gates}
     cards=[]
@@ -523,12 +547,13 @@ def motor_page():
         <h3>Secuencia de portones</h3><table class='paper-table'><tr><th>Técnico</th><th>IA Gemini</th><th>Patrimonial / liquidez</th><th>Resultado final</th></tr><tr><td>{_status(gate.get('technical_gate','APPROVE'))}</td><td>{_status(gate.get('ai_gate','SIN_REGISTRO'))}</td><td>{_status(gate.get('patrimonial_gate','SIN_REGISTRO'))}</td><td>{_status(gate.get('final_result',p['status']))}</td></tr></table>
         <p><b>Explicación:</b> {_e(gate.get('reason','Operación histórica sin secuencia completa persistida.'))}</p>
         <p class='paper-notice'><b>Importante:</b> Gemini no es el último filtro absoluto. Puede aprobar la tesis y aun así capital, exposición, cantidad máxima o profundidad pueden bloquear el fill. Esto es correcto y protege el patrimonio paper.</p>
+        <p><b>Cantidad remanente:</b> {_e(p['quantity'] if p['status']=='OPEN' else '0')}. <b>PnL parcial realizado:</b> {_e(p.get('realized_net_pnl','—'))} {_e(p.get('currency','ARS'))}. Una operación abierta todavía no tiene resultado final.</p>
         <h3>Variables utilizadas</h3><table class='paper-table'><tr><th>Variable</th><th>Valor</th></tr>{variables}</table>
         <h3>Lección aprendida</h3><p class='{cls}'>{_e(lesson)}</p></div></details>""")
     gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(g['ai_gate'])}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas todavía.</div>'
     body=f"<h1>Motor de trading</h1><p class='paper-muted'>Una única actualización visual; trazabilidad técnica → IA → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>IA</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",_daily_risk_panel() + _exit_supervision_panel() + body + _balances_panel() + _caucion_allocations_panel() + _cauciones_panel())
+    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + body + _balances_panel() + _caucion_allocations_panel() + _cauciones_panel())
 
 
 def _next_check(component, checked):
@@ -617,21 +642,26 @@ def learning_page():
     rows="".join(f"<tr class='{'card-green' if _num(p.get('net_pnl'))>0 else 'card-red' if _num(p.get('net_pnl'))<0 else 'card-gray'}'><td>{_local_time(p.get('opened_at'))}</td><td><b>{_e(p['symbol'])}</b></td><td>{_status('WIN' if _num(p.get('net_pnl'))>0 else 'LOSS' if _num(p.get('net_pnl'))<0 else p.get('status'))}</td><td class='{'positive' if _num(p.get('net_pnl'))>0 else 'negative' if _num(p.get('net_pnl'))<0 else 'neutral'}'>{_money(p.get('net_pnl'))} {_e(p.get('currency','ARS'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in data["closed"][:100]) or "<tr><td colspan='5'>Sin muestras cerradas.</td></tr>"
     cards="".join((_card("Muestras cerradas",len(data["closed"]),"Etiquetas para aprendizaje","green" if data["closed"] else "gray"),_card("Win rate","s/d" if wr is None else f"{wr:.1f}%",f"{wins}/{len(data['closed'])}","green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),_card("Resultado ARS",_money(pnl),"Neto de costos y slippage paper","green" if pnl>0 else "red" if pnl<0 else "gray")))
     body=f"<h1>Aprendizaje del sistema</h1><div class='paper-grid'>{cards}</div><div class='paper-notice'>Cada compra simulada conserva variables, decisión IA, portón patrimonial, resultado y lección. El archivo intensivo para discutir con una IA está en Reportes.</div><div class='paper-card'><table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Etiqueta</th><th>PnL neto</th><th>Motivo</th></tr>{rows}</table></div>"
-    return _document("Aprendizaje",body)
+    return _document("Aprendizaje",_spot_warning(data["spot_state"])+body)
 
 
 def financial_page():
     latest=_rows("""SELECT f.* FROM financial_series f JOIN (SELECT source,indicator,MAX(observed_date) d FROM financial_series GROUP BY source,indicator) x ON x.source=f.source AND x.indicator=f.indicator AND x.d=f.observed_date ORDER BY f.source,f.indicator""") if _table("financial_series") else []
     values="".join(f"<tr><td><b>{_e(r['indicator'])}</b></td><td>{_e(r['value'])}</td><td>{_e(r['unit'])}</td><td>{_e(r['observed_date'])}</td><td>{_e(r['source'])}</td></tr>" for r in latest) or "<tr><td colspan='5'>Esperando el primer refresco oficial.</td></tr>"
-    currency_filter = " AND currency='ARS'" if any(r["name"] == "currency" for r in _rows("PRAGMA table_info(paper_positions)")) else ""
-    monthly=_rows(f"""SELECT substr(closed_at,1,7) month,SUM(CAST(net_pnl AS REAL)) pnl FROM paper_positions WHERE status='CLOSED'{currency_filter} GROUP BY substr(closed_at,1,7) ORDER BY month DESC LIMIT 24""")
+    spot=_spot_snapshot()
+    amounts={}
+    for p in spot['realized']:
+        if p.get('currency','ARS')=='ARS':
+            month=aware_datetime(p['closed_at']).astimezone(TZ).strftime('%Y-%m')
+            amounts[month]=amounts.get(month,Decimal(0))+Decimal(p['net_pnl'])
+    monthly=[{'month':key,'pnl':str(amounts[key])} for key in sorted(amounts,reverse=True)[:24]]
     ipc=_rows("SELECT substr(observed_date,1,7) month,value FROM financial_series WHERE indicator='IPC mensual INDEC' ORDER BY observed_date DESC LIMIT 24") if _table("financial_series") else []
     ipc_map={r['month']:r['value'] for r in ipc}
     compare="".join(f"<tr><td>{_e(r['month'])}</td><td>{_e(ipc_map.get(r['month'],'s/d'))}%</td><td class='{'positive' if _num(r['pnl'])>0 else 'negative' if _num(r['pnl'])<0 else 'neutral'}'>{_money(r['pnl'])} ARS</td><td>NO COMPARABLE: falta rentabilidad porcentual del período</td></tr>" for r in monthly) or "<tr><td colspan='4'>Aún no hay meses cerrados.</td></tr>"
     merval=_rows("SELECT * FROM production_history WHERE symbol IN ('MERVAL','SPMERVAL') ORDER BY downloaded_at DESC LIMIT 1") if _table("production_history") else []
     merval_state="Histórico PPI disponible" if merval else "Pendiente de validación PPI; no se scrapea ni redistribuye BYMA sin licencia"
     body=f"<h1>Información financiera</h1><p class='paper-muted'>Indicadores para preparar la operatoria diaria. Fuentes oficiales BCRA/INDEC y benchmark de mercado por canal autorizado.</p><div class='paper-grid'>{_card('S&P Merval',merval_state,'Benchmark contra performance paper','green' if merval else 'yellow')}{_card('Actualización macro','12 horas','Caché local; la página no llama APIs','green')}</div><div class='paper-card'><h2>Indicadores BCRA e INDEC</h2><table class='paper-table'><tr><th>Indicador</th><th>Valor</th><th>Unidad</th><th>Fecha</th><th>Fuente</th></tr>{values}</table></div><div class='paper-card'><h2>Inflación vs performance del bot</h2><table class='paper-table'><tr><th>Mes</th><th>Inflación mensual</th><th>PnL paper</th><th>Lectura</th></tr>{compare}</table></div><div class='paper-notice'>La comparación correcta a futuro será rentabilidad porcentual del patrimonio paper contra inflación y Merval del mismo período; se mostrará cuando exista un mes completo y un benchmark autorizado con fechas alineadas.</div>"
-    return _document("Información financiera",body,refresh=300)
+    return _document("Información financiera",_spot_warning(spot["state"])+body,refresh=300)
 
 
 def reports_page():
