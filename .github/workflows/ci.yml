@@ -185,7 +185,9 @@ jobs:
           # /app/.env, lo que produce un falso positivo aunque la capa de la
           # imagen este limpia. Se inspecciona la imagen pura, sin Compose ni
           # bind mounts.
-          SALIDA=$(docker run --rm --entrypoint sh porota-trading-bot:16.2 -c 'ls -a /app | grep -E "^\.env" || true')
+          CI_BOT_IMAGE=$(docker compose config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["bot"]["image"])')
+          docker image inspect "$CI_BOT_IMAGE" >/dev/null
+          SALIDA=$(docker run --rm --entrypoint sh "$CI_BOT_IMAGE" -c 'ls -a /app | grep -E "^\.env" || true')
           if echo "$SALIDA" | grep -v '\.env\.example' | grep -q '\.env'; then
             echo "::error::La imagen contiene archivos de entorno: $SALIDA"
             exit 1
