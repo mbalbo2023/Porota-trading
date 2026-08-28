@@ -19,6 +19,7 @@ from bh_paper_gemini import CURRENT_TEXT_MODELS, rank_models
 from bt_caucion_paper import CaucionOffer, modeled_sale_settlement, pending_proceeds
 from bs_instrument_contracts import InstrumentContract
 from bs_instrument_contracts import cash_currency
+from ca_caucion_allocator import CaucionPolicy, choose
 import bu_instrument_catalog as catalog
 
 
@@ -213,6 +214,214 @@ def caucion_offer(**changes):
                  metadata_source="TEST_FIXTURE_NOT_BROKER", quoted_total_fees=D("1"),
                  fee_quote_principal=D("1000"))
     return CaucionOffer(**(terms | changes))
+
+
+def caucion_policy(**changes):
+    return CaucionPolicy(**(dict(frozen_at='2026-08-28T10:00:00-03:00',currency='ARS',
+        reserve_cash=D(1000),maximum_cash_fraction=D('.5'),maximum_principal=D(3000),
+        liquidity_deadline='2026-09-01T15:00:00-03:00',maximum_quote_age_seconds=D(60),
+        participation=D('.10'),minimum_net_profit=D(0),ranking='NET_PROFIT',
+        session_open_at='2026-08-28T11:00:00-03:00',session_close_at='2026-08-28T16:00:00-03:00',
+        session_source='TEST_NOT_MARKET_CALENDAR') | changes))
+
+
+def allocated(tmp_path,offers,policy=None,**kwargs):
+    broker = PaperBroker(PaperStore(str(tmp_path/'allocation.db')),initial_cash='10000',daily_loss_pct='1')
+    result = broker.allocate_caucion(offers,policy or caucion_policy(),'test',
+                                    as_of=kwargs.get('at','2026-08-28T11:00:00-03:00'))
+    return broker,result
+
+
+def test_asignador_compara_neto_no_tasa_mayor_y_conserva_decision(tmp_path):
+    cheap = caucion_offer(instrument_id='NETO_MEJOR',annual_rate_fraction=D('.365'),quoted_total_fees=D('.1'))
+    costly = caucion_offer(instrument_id='TASA_MAYOR',annual_rate_fraction=D('.50'),quoted_total_fees=D(2))
+    broker,result = allocated(tmp_path,[costly,cheap])
+    assert result['status']=='PLACED_SIMULATED' and result['selected']['instrument_id']=='NETO_MEJOR'
+    assert not result['promotion_allowed'] and not result['data_certified']
+    assert D(result['selected']['net_profit'])==D('2.9')
+    assert broker._cash(as_of=cheap.quoted_at)==9000
+    with broker.store.connect() as c:
+        assert json.loads(c.execute('SELECT decision_json FROM paper_caucion_allocations').fetchone()[0])==result
+
+
+def test_asignador_ranking_explicito_no_presume_reinversion(tmp_path):
+    large = caucion_offer(instrument_id='LARGE')  # neto 2, capital 1000
+    small = caucion_offer(instrument_id='SMALL',fee_quote_principal=D(500),
+                          annual_rate_fraction=D('.5'),quoted_total_fees=D('.1'))
+    _,profit = allocated(tmp_path,[small,large])
+    # Plan puro, sin reutilizar fondos inmovilizados del primer escenario.
+    daily = {'currency':'ARS','state':'READY','daily_pnl':'0','loss_budget':'100'}
+    rate = choose([large,small],caucion_policy(ranking='NET_RETURN_PER_DAY'),at=large.quoted_at,
+                  cash='10000',risk=daily,participation='.1')
+    assert profit['selected']['instrument_id']=='LARGE' and rate['selected']['instrument_id']=='SMALL'
+
+
+@pytest.mark.parametrize('changes,policy_changes,code',[
+    ({'quoted_total_fees':None},{},'EXPLICIT_COST_BUDGET_REQUIRED'),
+    ({'quoted_at':'2026-08-28T10:58:59-03:00'},{},'QUOTE_STALE_OR_FUTURE'),
+    ({'quoted_at':'2026-08-28T11:00:01-03:00'},{},'QUOTE_STALE_OR_FUTURE'),
+    ({'maturity_at':'2026-09-02T15:00:00-03:00'},{},'MATURITY_OUTSIDE_LIQUIDITY_WINDOW'),
+    ({'currency':'USD_MEP'},{},'OTHER_CURRENCY'),
+    ({'available_principal':D(2000)},{},'DEPTH_EXHAUSTED'),
+    ({},{'maximum_principal':D(500)},'PRINCIPAL_CAP'),
+    ({},{'reserve_cash':D(9000)},'CASH_RESERVE_OR_FRACTION'),
+    ({},{'minimum_net_profit':D(3)},'NET_PROFIT_TOO_LOW'),
+    ({'start_date':'2026-08-27'},{},'START_DATE_MISMATCH'),
+    ({'metadata_source':'UNKNOWN'},{},'UNKNOWN_CONTRACT_SOURCE'),
+])
+def test_asignador_rechaza_oferta_con_motivo_sin_colocar(tmp_path,changes,policy_changes,code):
+    broker,result = allocated(tmp_path,[caucion_offer(**changes)],caucion_policy(**policy_changes))
+    assert result['status']=='HOLD' and result['candidates'][0]['code']==code
+    assert not broker.cauciones.positions() and result['paper_id'] is None
+
+
+def test_asignador_no_escala_presupuesto_ni_ignora_costo_inicial(tmp_path):
+    offer = caucion_offer(fee_payment='UPFRONT')
+    broker,result = allocated(tmp_path,[offer],caucion_policy(reserve_cash=D(8000)))
+    assert result['cash_budget']=='1000' and result['candidates'][0]['code']=='CASH_RESERVE_OR_FRACTION'
+    assert not broker.cauciones.positions()  # No inventar otro costo para 999.
+
+
+@pytest.mark.parametrize('ranking',['NET_PROFIT','NET_RETURN_PER_DAY'])
+def test_asignador_reorden_y_duplicados_no_cambian_plan(ranking):
+    a,b = caucion_offer(instrument_id='A'),caucion_offer(instrument_id='B')
+    args=dict(policy=caucion_policy(ranking=ranking),at=a.quoted_at,cash='10000',
+              risk={'currency':'ARS','state':'READY','daily_pnl':'0','loss_budget':'100'},participation='.1')
+    assert choose([a,b],**args)==choose([b,a,a],**args)
+
+
+@pytest.mark.parametrize('change',[{'annual_rate_fraction':D('.5')},{'quoted_total_fees':D('.5')}])
+def test_ofertas_contradictorias_no_eligen_el_numero_mas_favorable(tmp_path,change):
+    a=caucion_offer()
+    broker,result=allocated(tmp_path,[a,replace(a,**change)])
+    assert result['status']=='HOLD'
+    assert {r['code'] for r in result['candidates']}=={'CONFLICTING_BOOK_OR_BUDGET'}
+    assert not broker.cauciones.positions()
+
+
+def test_asignador_idempotente_reinicio_y_cambio_de_politica(tmp_path):
+    offer,policy = caucion_offer(),caucion_policy()
+    broker,result=allocated(tmp_path,[offer],policy)
+    restarted=PaperBroker(PaperStore(broker.store.path),initial_cash='10000',daily_loss_pct='1')
+    assert restarted.allocate_caucion([offer,offer],policy,'test',as_of=offer.maturity_at)==result
+    with pytest.raises(ValueError,match='términos diferentes'):
+        restarted.allocate_caucion([offer],replace(policy,reserve_cash=D(2000)),'test',as_of=offer.quoted_at)
+    assert len(restarted.cauciones.positions())==1
+
+
+def test_asignador_hold_no_se_reinterpreta_con_otro_reloj(tmp_path):
+    offer=caucion_offer(quoted_total_fees=None)
+    broker,result=allocated(tmp_path,[offer])
+    assert broker.allocate_caucion([offer],caucion_policy(),'test',as_of=offer.maturity_at)==result
+    assert result['status']=='HOLD'
+
+
+def test_asignacion_y_colocacion_comparten_rollback(tmp_path):
+    import sqlite3
+    broker=PaperBroker(PaperStore(str(tmp_path/'atomic.db')),daily_loss_pct='1')
+    with broker.store.connect() as c:
+        c.execute("CREATE TRIGGER fail_allocation BEFORE INSERT ON paper_caucion_allocations BEGIN SELECT RAISE(ABORT,'TEST'); END")
+    with pytest.raises(sqlite3.IntegrityError):
+        broker.allocate_caucion([caucion_offer()],caucion_policy(),'atomic',as_of=caucion_offer().quoted_at)
+    assert not broker.cauciones.positions()
+    with broker.store.connect() as c:
+        assert c.execute('SELECT COUNT(*) FROM paper_notification_outbox').fetchone()[0]==0
+
+
+def test_asignador_requiere_riesgo_y_sesion_sin_aplicar_config_defaults(tmp_path):
+    broker=PaperBroker(PaperStore(str(tmp_path/'no-risk.db')))
+    result=broker.allocate_caucion([caucion_offer()],caucion_policy(),'none',as_of=caucion_offer().quoted_at)
+    assert result['code']=='DAILY_RISK_NOT_CONFIGURED'
+    broker,result=allocated(tmp_path,[caucion_offer()],at='2026-08-28T16:00:00-03:00')
+    assert result['code']=='OUTSIDE_CONFIRMED_SESSION' and not broker.cauciones.positions()
+
+
+@pytest.mark.parametrize('change',[{'maximum_cash_fraction':0},{'maximum_cash_fraction':'1.01'},
+    {'participation':'NaN'},{'reserve_cash':'-1'},{'ranking':'TASA_MAS_ALTA'},
+    {'session_source':'UNKNOWN'},{'maximum_principal':'1.001'},
+    {'session_close_at':'2026-08-28T10:00:00-03:00'},{'currency':'EUR'}])
+def test_politica_caucion_invalida_no_crea_defaults(change):
+    with pytest.raises(ValueError): caucion_policy(**change)
+
+
+def test_dos_colocaciones_no_reponen_misma_profundidad_y_libro_viejo_no_revive(tmp_path):
+    broker=PaperBroker(PaperStore(str(tmp_path/'depth.db')),initial_cash='10000')
+    offer=caucion_offer(available_principal=D(10000))
+    broker.place_caucion(offer,'1000','first',offer.quoted_at)
+    with pytest.raises(ValueError,match='participación'):
+        broker.place_caucion(offer,'1000','second',offer.quoted_at)
+    newer=replace(offer,quoted_at='2026-08-28T11:00:01-03:00')
+    broker.place_caucion(newer,'1000','fresh',newer.quoted_at)
+    with pytest.raises(ValueError,match='OLDER_BOOK'):
+        broker.place_caucion(offer,'1000','old',newer.quoted_at)
+    assert len(broker.cauciones.positions())==2
+
+
+@pytest.mark.parametrize('limiting',['cash','depth'])
+def test_asignador_concurrente_no_reutiliza_caja_ni_profundidad(tmp_path,limiting):
+    from concurrent.futures import ThreadPoolExecutor
+    broker=PaperBroker(PaperStore(str(tmp_path/'concurrent.db')),initial_cash='1500' if limiting=='cash' else '10000',daily_loss_pct='1')
+    offer=caucion_offer(available_principal=D(100000 if limiting=='cash' else 10000))
+    policy=caucion_policy(reserve_cash=D(0),maximum_cash_fraction=D(1))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda key:broker.allocate_caucion([offer],policy,key,as_of=offer.quoted_at),['a','b']))
+    assert sorted(r['status'] for r in results)==['HOLD','PLACED_SIMULATED']
+    assert len(broker.cauciones.positions())==1
+
+
+def test_asignador_costo_contra_limite_no_registra_perdida_hipotetica(tmp_path):
+    broker=PaperBroker(PaperStore(str(tmp_path/'daily.db')),initial_cash='10000',daily_loss_pct='.01')
+    offer=caucion_offer()
+    result=broker.allocate_caucion([offer],caucion_policy(),'daily',as_of=offer.quoted_at)
+    assert result['candidates'][0]['code']=='DAILY_RISK_PROJECTED_LOSS'
+    assert result['status']=='HOLD' and not broker.cauciones.positions()
+    risk=broker.daily_risk.evaluate(offer.quoted_at)['ARS']
+    assert risk['state']=='READY' and D(risk['daily_pnl'])==0
+
+
+def test_asignador_respeta_tope_del_broker_aunque_politica_pida_mas(tmp_path):
+    broker,result=allocated(tmp_path,[caucion_offer(available_principal=D(1000))],
+                             caucion_policy(participation=D(1)))
+    assert result['participation']=='0.1' and result['candidates'][0]['code']=='DEPTH_EXHAUSTED'
+    assert not broker.cauciones.positions()
+
+
+def test_asignador_mep_no_compromete_ars_ni_ccl(tmp_path):
+    broker=PaperBroker(PaperStore(str(tmp_path/'mep.db')),initial_cash='10000',
+                      initial_cash_by_currency={'USD_MEP':'4000','USD_CCL':'5000'},daily_loss_pct='1')
+    offer=caucion_offer(currency='USD_MEP')
+    result=broker.allocate_caucion([offer],caucion_policy(currency='USD_MEP'),'mep',as_of=offer.quoted_at)
+    assert result['status']=='PLACED_SIMULATED'
+    assert broker._cash(offer.quoted_at,'USD_MEP')==3000
+    assert broker._cash(offer.quoted_at,'USD_CCL')==5000 and broker._cash(offer.quoted_at)==10000
+
+
+def test_asignador_identifica_conflicto_con_fotografia_ya_consumida(tmp_path):
+    offer=caucion_offer()
+    broker,result=allocated(tmp_path,[offer])
+    changed=replace(offer,annual_rate_fraction=D('.5'))
+    result=broker.allocate_caucion([changed],caucion_policy(),'changed',as_of=offer.quoted_at)
+    assert result['status']=='HOLD' and result['candidates'][0]['code']=='CAUCION_CONFLICTING_BOOK'
+    assert len(broker.cauciones.positions())==1
+
+
+def test_asignador_no_reutiliza_clave_de_colocacion_manual(tmp_path):
+    broker=PaperBroker(PaperStore(str(tmp_path/'manual.db')),daily_loss_pct='1')
+    offer=caucion_offer()
+    broker.place_caucion(offer,'1000','same',offer.quoted_at)
+    with pytest.raises(ValueError,match='colocación explícita'):
+        broker.allocate_caucion([offer],caucion_policy(),'same',as_of=offer.quoted_at)
+
+
+@pytest.mark.parametrize('state,currency,at,code',[
+    ('LATCHED','ARS','2026-08-28T11:00:00-03:00','DAILY_RISK_LATCHED'),
+    ('READY','USD_MEP','2026-08-28T11:00:00-03:00','DAILY_RISK_CURRENCY_MISMATCH'),
+    ('READY','ARS','2026-08-28T09:00:00-03:00','POLICY_NOT_KNOWN'),
+])
+def test_plan_sin_admision_valida_no_selecciona(state,currency,at,code):
+    result=choose([caucion_offer()],caucion_policy(),at=at,cash='10000',participation='.1',
+                  risk={'state':state,'currency':currency,'daily_pnl':'0','loss_budget':'100'})
+    assert result['code']==code and result['selected'] is None
 
 
 @pytest.mark.parametrize("fee_payment", ["MATURITY", "UPFRONT"])
