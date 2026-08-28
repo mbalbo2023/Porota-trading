@@ -43,8 +43,8 @@ línea del repositorio ni una validación de rentabilidad de las estrategias.
 | La compra podía dejar caja negativa al omitir comisión en sizing | Cantidad máxima calculada con costos redondeados; caso de capital 1000 reproducido y corregido |
 | Riesgo del stop omitía comisión de ambas puntas y slippage de salida | Presupuesto de riesgo incluye ambos costos y precio de salida modelado; no promete protección frente a gaps |
 | Un cierre podía repetirse con una posición vieja | Actualización condicional y fill en una transacción; reintento sin segunda venta |
-| Se podían cerrar posiciones usando otro plazo, clase o símbolo | Identidad y secuencia temporal verificadas; profundidad suficiente para cierre total |
-| Se inventaba un cierre total con profundidad insuficiente | Queda pendiente; todavía falta implementar fills parciales |
+| Se podían cerrar posiciones usando otro plazo, clase o símbolo | Identidad y secuencia temporal verificadas; cantidad ejecutada limitada por lotes y profundidad |
+| Se inventaba un cierre total con profundidad insuficiente | Cierre parcial PAPER por profundidad disponible; remanente e intención persistentes hasta completar la venta |
 | Reintentos podían consumir otra vez la misma profundidad spot | Consumo por fill, identidad, fotografía y lado; revalidación dentro del lock y persistencia tras reinicio |
 | NaN e infinitos contaminaban cuentas y señales | Rechazo/normalización de valores no finitos; cotizaciones cruzadas no abren compras |
 | Señales mezclaban muestras CI/24 h, clases y monedas | Series filtradas por símbolo, clase, plazo, moneda/plaza y mercado |
@@ -185,7 +185,8 @@ flowchart TD
   deben validarse contra PPI antes de promover**. Las pruebas no usan una cuenta.
 - Máximo de permanencia se decide sin cotización. Stop/target exigen libro
   fechado y compatible; un stop tocado con profundidad cero queda pendiente.
-  Todavía no hay fills parciales ni barrido real de varios niveles del libro.
+  Desde el checkpoint 16 hay fills parciales; no barrido real de varios niveles
+  del libro ni confirmación de fills en PPI.
 - Timestamps faltantes, sin zona horaria o futuros se rechazan; no se infiere
   UTC/Argentina ni se sustituye por recepción. Límite modelado de edad: 120 s.
   Para salir no se exige último negocio fresco; para entrar por señal sí.
@@ -795,8 +796,48 @@ distintas en la [documentación REST de PPI](https://itatppi.github.io/ppi-offic
   desconocida; contrato, caja y liquidez requieren sus controles propios.
 
 Estos cambios corrigen rutas heredadas adicionales; no conectan el stream al
-nuevo runtime paper ni resuelven ejecutores especializados o cierres parciales.
+nuevo runtime paper ni resuelven ejecutores especializados. Los cierres parciales
+se implementan por separado en el checkpoint 16 siguiente.
 No se ejecutaron llamadas reales a PPI, órdenes ni mensajes de Telegram.
+
+## Decimosexto checkpoint: cierres parciales en el runtime PAPER
+
+- `paper_spot_sales`, tabla aditiva enlazada a cada fill: costo de entrada
+  asignado, PnL, producido, fecha de disponibilidad y motivo. Cantidad/precio/
+  costo de venta se leen del fill. Comprueba concordancia aritmética, fechas,
+  totalidad de fills y remanente; una inconsistencia no habilita caja.
+- La compra original no se modifica. El remanente y las realizaciones se
+  reconstruyen al instante consultado; una venta futura no cambia una caja
+  histórica. Ejecución retroactiva frente a ventas ya registradas se bloquea.
+- Venta por lotes del contrato y profundidad todavía disponible. Misma foto,
+  reintento, posición vieja o proceso concurrente no repiten cantidades.
+  El costo proporcional se asigna en centavos, conservando el residuo exacto
+  para el último fill. Nominales y factor monetario permanecen los de entrada.
+- Cada venta parcial conserva su propio crédito y liquidación modelada.
+  CI libera producido neto; T+1 o plazo desconocido mantienen el crédito fuera
+  de la caja utilizable. Patrimonio sí incluye el crédito, sin doble PnL.
+- Fill, asignación, consumo de libro, estado de salida, evento y outbox en una
+  transacción. Si falla cualquier escritura se revierte el cambio financiero.
+  El aviso distingue cantidad vendida y remanente; no se envió Telegram real.
+- `EXIT_PARTIAL` mantiene la causa inicial aun si el precio se recupera. El
+  supervisor comprueba el ledger, no acepta un callback como prueba de cierre.
+  Nuevas entradas siguen bloqueadas mientras haya una salida pendiente.
+- Riesgo diario incluye realizados parciales y valuación/costos del remanente.
+  El latch no desaparece tras recuperar precio o reiniciar; las salidas continúan.
+- Una operación conserva una sola muestra: etiqueta y retorno agregado sólo
+  al cerrar todo. Nueva versión `paper-momentum-v17.3-partial-fills`, separada
+  del aprendizaje anterior. Los cierres antiguos conservan su contabilidad.
+- Informes atribuyen PnL por fecha de cada venta; win rate por operación completa.
+  El panel muestra cantidad remanente, PnL parcial y resultado final separado;
+  un ledger inconsistente se muestra no disponible, no como caja cero.
+
+**Alcance y reversión:** sólo simulación de contado ya admitido; no ejecutores
+nuevos de futuros, opciones, FCI o cauciones. Costos y liquidación siguen siendo
+modelos por contrastar. No hay garantía de fill ni pérdida máxima. No ejecutar
+una versión anterior contra una base que ya tenga ventas parciales: para una
+reversión de despliegue se requiere restaurar conjuntamente código y copia de
+la base anterior, conservando evidencia de los movimientos posteriores. Este
+checkpoint no se desplegó ni modificó la base del Droplet.
 
 ## Evaluación del código sugerido: decisiones y pendientes
 
@@ -941,6 +982,17 @@ Los cierres del runtime siguen siendo totales en este checkpoint. Una nueva
 fotografía renueva el modelo de profundidad, no demuestra reposición o fill real.
 Sin cambio de costos, caja inicial, modo, servidor ni límites de participación.
 CI remoto y mínimos de cobertura se registran en la PR tras verificarlos.
+
+Decimosexto checkpoint: **818 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 24 pruebas nuevas de parciales. Cobertura local global 61,88%;
+ledger parcial 92,47%, motor PAPER 86,74%, cauciones/caja 95%, riesgo diario
+94,66% y dashboard 87,12%. Cuatro mínimos financieros existentes aprobados.
+Pruebas de CI/T+1, ARS/MEP, renta fija con nominal/lote, costo proporcional,
+fechas de liquidación diferentes, remanente, replay histórico de caja/informes,
+concurrencia, reinicio, rollback de cada escritura crítica, salida con corte
+diario activo, etiqueta agregada única y rechazo de ledger inconsistente.
+El panel se comprobó funcionalmente, sin revisión visual en navegador/tablet.
+La verificación remota se registra en la PR cuando termina el CI completo.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
