@@ -1,5 +1,49 @@
 # Diagnóstico público PPI de una sola ejecución
 
+## Resultado recibido: no repetir el diagnóstico
+
+El operador ejecutó el paquete y aportó `COMPLETED_OBSERVATION`, generado el
+28/08/2026 a las 17:32:17.791080 UTC. Se informó un login y catorce solicitudes
+HTTP, todas 200; SDK 1.2.4. ALUA devolvió libro y último negocio, con marcas
+del proveedor distintas: 14:32:19.496 y 14:31:56, ambas -03:00. `generated_at`
+es el inicio del informe, no una hora de recepción de cada cotización: no se
+usa para certificar frescura. No es un feed continuo ni una cotización actual.
+
+El resultado declara quince familias, cinco mercados y diez operaciones.
+Incluye `CAUCIONES` y `COLOCAR-CAUCION`, pero CAUCION/PESOS/DOLAR devolvieron
+cero coincidencias. No demuestra que la cuenta tenga permiso para colocar,
+que el producto no esté disponible ni que deban probarse tickers inventados.
+ALUA devolvió ALUA/ALUAC/ALUAD: ARS/CCL/MEP se conservan separados.
+
+La configuración real devuelve `POR-EL-DIA`, `HASTA-SU-EJECUCION` y
+`VALIDA-HASTA-EL`, sin las tildes de los ejemplos web. Se corrige la ruta
+genérica: admite las tres grafías heredadas como alias locales y serializa
+sin tildes; conserva validación/revalidación de vigencia y exclusión de
+productos especializados. No se probó presupuesto o confirmación contra PPI.
+
+El informe confirma motores apagados antes del sondeo, sin montaje de datos
+o .env, secreto read-only y eliminación del contenedor temporal. No certifica
+el estado posterior de los motores; no se emitieron comandos de arranque.
+Extracto público utilizado sólo en tests:
+`tests/fixtures/ppi_public_observation_20260828.json`. No se importa como
+catálogo o configuración operativa vigente del servidor.
+
+### Bloqueo específico de cauciones
+
+Falta un ejemplo oficial, completo y anonimizado del contrato de datos de
+caución colocadora: consulta/identificador válido y mercado, plazo y moneda,
+libro/tasa y sus unidades, lado colocador, capital mínimo/paso, base de días,
+liquidación/vencimiento y desglose de costos del presupuesto. La documentación
+genérica no establece esos términos y el sondeo no recuperó una especie.
+La cuenta/saldo y permisos tampoco fueron consultados. No ampliar por ello el
+lector read-only a cuentas/órdenes ni repetir la autenticación sin un nuevo
+objetivo verificable. Hace falta confirmar esos datos con PPI antes de
+completar el adaptador real. No se ha contactado al soporte en nombre del usuario.
+
+Se mantiene `HOLD_UNVERIFIED_TERMS`, sin tomadoras, sin endeudamiento y sin
+usar producido de ventas pendiente de liquidación. Sólo caja liquidada libre
+de compromisos en la misma moneda puede financiar futuras colocaciones.
+
 ## Instalación confirmada por el operador
 
 El operador aportó inspección Docker: `porota_trading_bot` usa imagen 16.3.3;
