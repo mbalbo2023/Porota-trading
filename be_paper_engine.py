@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
 from typing import Optional
 
-from bs_instrument_contracts import InstrumentContract, SPOT_FAMILIES, family_name
+from bs_instrument_contracts import (CASH_CURRENCIES, InstrumentContract, SPOT_FAMILIES,
+                                     cash_currency, decimal_value, family_name)
 from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
 
@@ -49,6 +50,19 @@ class Quote:
     ask_size: Decimal
     observed_at: str
     contract: Optional[InstrumentContract] = None
+    currency: Optional[str] = None
+    market: Optional[str] = None
+    metadata_source: Optional[str] = None
+    opening_block_reason: str = ""
+
+    def monetary_identity(self):
+        currency = cash_currency(self.currency)
+        market = str(self.market or "").strip().upper()
+        if not market or market == "UNKNOWN":
+            raise ValueError("Falta mercado confirmado de la cotización")
+        if self.contract and (self.contract.currency != currency or self.contract.market != market):
+            raise ValueError("Moneda/mercado de la cotización contradice el contrato")
+        return currency, market
 
 
 class PaperStore:
@@ -129,6 +143,21 @@ class PaperStore:
             INSERT OR IGNORE INTO observer_state(id,mode,process_state,session_state,ppi_auth)
               VALUES(1,'PRODUCTION_PAPER','STOPPED','UNKNOWN','NOT_ATTEMPTED');
             """)
+            # No reinterpretar históricos: los fills anteriores gastaron la
+            # caja ARS del motor viejo. Se etiqueta esa suposición explícita.
+            c.execute("BEGIN IMMEDIATE")
+            for table, additions in {
+                "paper_positions": {"currency": "TEXT NOT NULL DEFAULT 'ARS'",
+                    "market": "TEXT NOT NULL DEFAULT 'BYMA'",
+                    "currency_source": "TEXT NOT NULL DEFAULT 'LEGACY_ASSUMED_ARS'"},
+                "market_snapshots": {"currency": "TEXT NOT NULL DEFAULT 'UNKNOWN'",
+                    "market": "TEXT NOT NULL DEFAULT 'UNKNOWN'"},
+            }.items():
+                columns = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
+                for column, definition in additions.items():
+                    if column not in columns:
+                        c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_identity ON market_snapshots(symbol,asset_class,settlement,currency,market,id)")
         init_financial_schema(self)
 
     def audit_http(self, method, path, result):
@@ -148,12 +177,19 @@ class PaperStore:
             c.execute(f"UPDATE observer_state SET {sql} WHERE id=1", tuple(updates.values()))
 
     def add_quote(self, q: Quote):
+        try:
+            currency, market = q.monetary_identity()
+        except ValueError:
+            currency, market = "UNKNOWN", q.market or "UNKNOWN"
         with self.connect() as c:
-            c.execute("""INSERT INTO market_snapshots VALUES(NULL,?,?,?,?,?,?,?,?,?,?)""",
+            c.execute("""INSERT INTO market_snapshots
+              (source,observed_at,symbol,asset_class,settlement,last,bid,ask,bid_size,ask_size,currency,market)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (SOURCE, q.observed_at, q.symbol, q.asset_class, q.settlement,
-                       str(q.last), str(q.bid), str(q.ask), str(q.bid_size), str(q.ask_size)))
+                       str(q.last), str(q.bid), str(q.ask), str(q.bid_size), str(q.ask_size),
+                       currency, market))
 
-    def prices(self, symbol: str, limit=30, *, asset_class=None, settlement=None):
+    def prices(self, symbol: str, limit=30, *, asset_class=None, settlement=None, currency=None, market=None):
         filters, params = ["symbol=?"], [symbol]
         if asset_class is not None:
             filters.append("asset_class=?")
@@ -161,6 +197,10 @@ class PaperStore:
         if settlement is not None:
             filters.append("settlement=?")
             params.append(settlement)
+        for column, value in (("currency", currency), ("market", market)):
+            if value is not None:
+                filters.append(column + "=?")
+                params.append(value)
         with self.connect() as c:
             rows = c.execute("SELECT last FROM market_snapshots WHERE " +
                              " AND ".join(filters) + " ORDER BY id DESC LIMIT ?",
@@ -231,7 +271,7 @@ class PaperBroker:
                  slippage_bps="2", participation="0.10",
                  max_position_pct="0.25", max_total_exposure_pct="0.60",
                  ai_gate=None, require_ai=False, context_fn=None,
-                 initial_cash_usd="0"):
+                 initial_cash_usd="0", initial_cash_by_currency=None):
         self.store = store
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
@@ -245,6 +285,11 @@ class PaperBroker:
         self.require_ai = bool(require_ai)
         self.context_fn = context_fn
         self.initial_cash_usd = D(initial_cash_usd)
+        self.initial_balances = {key: ZERO for key in CASH_CURRENCIES}
+        self.initial_balances.update(ARS=decimal_value(initial_cash, "capital ARS", nonnegative=True),
+                                     USD=decimal_value(initial_cash_usd, "capital USD", nonnegative=True))
+        for key, value in (initial_cash_by_currency or {}).items():
+            self.initial_balances[cash_currency(key)] = decimal_value(value, "capital por moneda", nonnegative=True)
         self.cauciones = CaucionBook(store)
 
     def _cost(self, price, qty, asset_class="ACCIONES"):
@@ -284,16 +329,13 @@ class PaperBroker:
 
     def _cash(self, as_of=None, currency="ARS"):
         """Caja disponible por moneda; no incluye ventas aún sin liquidar."""
-        if currency == "USD":
-            return self.initial_cash_usd + self.cauciones.cash_effect("USD")
-        if currency != "ARS":
-            raise ValueError("Moneda sin libro de caja")
-        closed = self.store.recent_closed(100000)
+        currency = cash_currency(currency)
+        closed = [p for p in self.store.recent_closed(100000) if p["currency"] == currency]
         realized = sum((D(r.get("net_pnl")) for r in closed), ZERO)
         committed = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p) + D(p["entry_cost"])
-                         for p in self.store.open_positions()), ZERO)
-        return (self.initial_cash + realized - committed + self.cauciones.cash_effect("ARS")
-                - pending_proceeds(self.store, as_of or now_iso(), "ARS"))
+                         for p in self.store.open_positions() if p["currency"] == currency), ZERO)
+        return (self.initial_balances[currency] + realized - committed + self.cauciones.cash_effect(currency)
+                - pending_proceeds(self.store, as_of or now_iso(), currency))
 
     def place_caucion(self, offer, principal, request_id, as_of=None, *, reserve="0"):
         """Colocación PAPER explícita; no coloca órdenes reales ni elige plazo."""
@@ -314,10 +356,18 @@ class PaperBroker:
         return D("0.67") if rate < D("0.45") else D("0.58") if rate > D("0.65") else D("0.62")
 
     def decide(self, q: Quote):
+        try:
+            currency, market = q.monetary_identity()
+        except ValueError as exc:
+            return "HOLD", ZERO, str(exc), {"samples": 0}
+        if q.opening_block_reason:
+            return "HOLD", ZERO, q.opening_block_reason, {"samples": 0}
+        if self.initial_balances[currency] <= 0:
+            return "HOLD", ZERO, f"Sin capital asignado en {currency}; no se usa otra moneda/plaza", {"samples": 0}
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
             return "HOLD", ZERO, "Puntas o profundidad invalidas", {"samples": 0}
         values = self.store.prices(q.symbol, 20, asset_class=q.asset_class,
-                                   settlement=q.settlement)
+                                   settlement=q.settlement, currency=currency, market=market)
         if len(values) < 8:
             return "HOLD", D("0"), f"Aprendiendo serie: {len(values)}/8 muestras", {"samples": len(values)}
         short = sum(values[-3:], ZERO) / D(3)
@@ -343,7 +393,7 @@ class PaperBroker:
             return
         action, score, reason, features = self.decide(q)
         bucket = q.observed_at[:16]
-        key = f"{STRATEGY_VERSION}:{q.symbol}:{bucket}:{action}"
+        key = f"{STRATEGY_VERSION}:{q.symbol}:{q.asset_class}:{q.settlement}:{q.currency}:{q.market}:{bucket}:{action}"
         if not self.store.record_decision(key, q, action, score, reason, features):
             return
         self.store.event("DECISION_PAPER", f"{q.symbol} {action}: {reason}")
@@ -380,18 +430,24 @@ class PaperBroker:
                 paper_id=paper_id, detail=features)
 
     def _open(self, q: Quote, score: Decimal, features: dict):
+        if q.opening_block_reason:
+            return False, q.opening_block_reason, None
         try:
             family = family_name(q.asset_class)
+            currency, market = q.monetary_identity()
         except ValueError as exc:
             return False, str(exc), None
         if family not in SPOT_FAMILIES:
             return False, f"{family} requiere su ciclo financiero específico; no se compra como una acción", None
+        if market != "BYMA":
+            return False, "Ejecutor de contado pendiente para este mercado", None
+        capital = self.initial_balances[currency]
         factor, step = D(1), D(1)
         if q.contract is not None:
             spec = q.contract
             if ((spec.symbol, spec.family, spec.settlement) != (q.symbol, family, q.settlement)
-                    or spec.currency != "ARS" or spec.market != "BYMA"):
-                return False, "Contrato incompatible con esta cotización y libro de caja ARS/BYMA", None
+                    or spec.currency != currency or spec.market != market):
+                return False, "Contrato incompatible con esta cotización y libro de caja", None
             factor, step = spec.cash_multiplier, spec.quantity_step
             if step < 1 or step != step.to_integral_value():
                 return False, "Este ejecutor de contado requiere cantidades enteras", None
@@ -413,26 +469,26 @@ class PaperBroker:
         # Incluye ambos tramos y deslizamiento de salida, sin afirmar que un
         # stop garantice este precio ante gaps o falta de liquidez.
         by_risk = self._quantity_in_budget(
-            (entry - modeled_stop_fill) * factor, self.initial_cash * self.risk_pct,
+            (entry - modeled_stop_fill) * factor, capital * self.risk_pct,
             lambda qty: self._cost(entry * factor, qty, q.asset_class) +
                         self._cost(modeled_stop_fill * factor, qty, q.asset_class))
         by_cash = self._quantity_in_budget(
-            entry * factor, max(ZERO, self._cash(as_of=q.observed_at)),
+            entry * factor, max(ZERO, self._cash(as_of=q.observed_at, currency=currency)),
             lambda qty: self._cost(entry * factor, qty, q.asset_class))
         by_book = (q.ask_size * self.participation).to_integral_value(ROUND_DOWN)
-        by_position_cap = (self.initial_cash * self.max_position_pct / (entry * factor)).to_integral_value(ROUND_DOWN)
+        by_position_cap = (capital * self.max_position_pct / (entry * factor)).to_integral_value(ROUND_DOWN)
         current_exposure = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
-                                for p in self.store.open_positions()), ZERO)
+                                for p in self.store.open_positions() if p["currency"] == currency), ZERO)
         exposure_remaining = max(
-            ZERO, self.initial_cash * self.max_total_exposure_pct - current_exposure
+            ZERO, capital * self.max_total_exposure_pct - current_exposure
         )
         by_total_cap = (exposure_remaining / (entry * factor)).to_integral_value(ROUND_DOWN)
         qty = (min(by_risk, by_cash, by_book, by_position_cap, by_total_cap) / step).to_integral_value(ROUND_DOWN) * step
         features.update({
             "contract_cash_multiplier": str(factor), "contract_quantity_step": str(step),
             "financial_contract": asdict(q.contract) if q.contract else None,
-            "initial_capital_ars": str(self.initial_cash),
-            "risk_budget_ars": str(self.initial_cash * self.risk_pct),
+            "capital_currency": currency, "market": market,
+            "initial_capital": str(capital), "risk_budget": str(capital * self.risk_pct),
             "max_position_pct": str(self.max_position_pct),
             "max_total_exposure_pct": str(self.max_total_exposure_pct),
             "qty_by_risk": str(by_risk),
@@ -441,6 +497,8 @@ class PaperBroker:
             "qty_by_position_cap": str(by_position_cap),
             "qty_by_total_cap": str(by_total_cap),
         })
+        if currency == "ARS":
+            features.update(initial_capital_ars=str(capital), risk_budget_ars=str(capital * self.risk_pct))
         if qty < 1:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: capital/liquidez insuficiente")
             limits = {
@@ -457,18 +515,20 @@ class PaperBroker:
             # No se hace red ni IA dentro de esta transacción.
             c.execute("BEGIN IMMEDIATE")
             opened = self.store.open_positions()
-            exposure_now = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p) for p in opened), ZERO)
+            exposure_now = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
+                                for p in opened if p["currency"] == currency), ZERO)
             if (len(opened) >= self.max_positions or any(p["symbol"] == q.symbol for p in opened)
-                    or entry * qty * factor + cost > self._cash(as_of=q.observed_at)
-                    or exposure_now + entry * qty * factor > self.initial_cash * self.max_total_exposure_pct):
+                    or entry * qty * factor + cost > self._cash(as_of=q.observed_at, currency=currency)
+                    or exposure_now + entry * qty * factor > capital * self.max_total_exposure_pct):
                 return False, "Caja, posiciones o exposición cambiaron antes de registrar la compra", None
             c.execute("""INSERT INTO paper_positions
               (paper_id,source,strategy_version,symbol,asset_class,settlement,status,
-               quantity,entry_price,entry_cost,stop_price,target_price,opened_at,features_json)
-              VALUES(?,?,?,?,?,?,'OPEN',?,?,?,?,?,?,?)""",
+               quantity,entry_price,entry_cost,stop_price,target_price,opened_at,features_json,currency,market,currency_source)
+              VALUES(?,?,?,?,?,?,'OPEN',?,?,?,?,?,?,?,?,?,?)""",
               (paper_id, SOURCE, STRATEGY_VERSION, q.symbol, q.asset_class, q.settlement,
                str(qty), str(entry), str(cost), str(stop), str(target), q.observed_at,
-               json.dumps(features, ensure_ascii=False, default=str)))
+               json.dumps(features, ensure_ascii=False, default=str), currency, market,
+               q.metadata_source or "EXPLICIT_QUOTE"))
             c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
                       (paper_id, SOURCE, "BUY_SIMULATED", q.observed_at, str(qty),
                        str(entry), str(cost), str(entry-q.ask)))
@@ -513,11 +573,17 @@ class PaperBroker:
         if (p["symbol"], p["asset_class"], p["settlement"]) != (
                 q.symbol, q.asset_class, q.settlement):
             return False
+        try:
+            if q.monetary_identity() != (p["currency"], p["market"]):
+                self.store.event("EXIT_PENDING_IDENTITY_MISMATCH", "Moneda/mercado distintos del fill original; requiere conciliación", p["paper_id"])
+                return False
+        except ValueError:
+            return False
         qty = D(p["quantity"])
         factor = self._position_multiplier(p)
         if q.contract and (q.contract.cash_multiplier != factor or
                            q.contract.symbol != q.symbol or q.contract.settlement != q.settlement or
-                           q.contract.family != family_name(q.asset_class) or q.contract.currency != "ARS"):
+                           q.contract.family != family_name(q.asset_class) or q.contract.currency != p["currency"]):
             return False
         if D(q.bid) <= 0 or qty <= 0 or qty > (D(q.bid_size) * self.participation):
             self.store.event("EXIT_PENDING_NO_LIQUIDITY",
@@ -548,7 +614,7 @@ class PaperBroker:
             if updated.rowcount != 1:
                 return False
             record_sale(c, p["paper_id"], p["settlement"], q.observed_at,
-                        exit_price * qty * factor - exit_cost)
+                        exit_price * qty * factor - exit_cost, currency=p["currency"])
             c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
                       (p["paper_id"], SOURCE, "SELL_SIMULATED", q.observed_at, str(qty),
                        str(exit_price), str(exit_cost), str(q.bid-exit_price)))
@@ -562,25 +628,40 @@ class PaperBroker:
 
     def mark_equity(self, quotes: dict, as_of=None):
         measured_at = as_of or now_iso()
-        exposure = unrealized = ZERO
-        for p in self.store.open_positions():
-            q = quotes.get((p["symbol"], p["asset_class"], p["settlement"])) or quotes.get(p["symbol"])
-            if q and (q.symbol, q.asset_class, q.settlement) != (p["symbol"], p["asset_class"], p["settlement"]):
-                q = None
-            mark = q.bid if q else D(p["entry_price"])
-            qty = D(p["quantity"]) * self._position_multiplier(p)
-            exposure += mark * qty
-            unrealized += (mark - D(p["entry_price"])) * qty - D(p["entry_cost"])
-        realized = sum((D(p.get("net_pnl")) for p in self.store.recent_closed(100000)), ZERO)
-        caucion = self.cauciones.valuation(measured_at)
-        unrealized += caucion["unrealized"]
-        realized += caucion["realized"]
-        cash = self._cash(as_of=measured_at)
-        # Un crédito sin liquidar y una caución siguen siendo patrimonio,
-        # pero no se muestran como efectivo que se pueda volver a gastar.
-        equity = (cash + exposure + pending_proceeds(self.store, measured_at)
-                  + caucion["principal"] + caucion["accrued"])
+        opened, closed = self.store.open_positions(), self.store.recent_closed(100000)
+        results = {}
+        for currency in sorted(CASH_CURRENCIES):
+            exposure = unrealized = ZERO
+            for p in (p for p in opened if p["currency"] == currency):
+                q = (quotes.get((p["symbol"], p["asset_class"], p["settlement"], currency, p["market"]))
+                     or quotes.get((p["symbol"], p["asset_class"], p["settlement"])) or quotes.get(p["symbol"]))
+                try:
+                    usable = (q is not None and q.monetary_identity() == (currency, p["market"]) and
+                              (q.symbol, q.asset_class, q.settlement) == (p["symbol"], p["asset_class"], p["settlement"]) and D(q.bid) > 0)
+                except ValueError:
+                    usable = False
+                mark = q.bid if usable else D(p["entry_price"])
+                qty = D(p["quantity"]) * self._position_multiplier(p)
+                exposure += mark * qty
+                unrealized += (mark - D(p["entry_price"])) * qty - D(p["entry_cost"])
+            realized = sum((D(p.get("net_pnl")) for p in closed if p["currency"] == currency), ZERO)
+            caucion = self.cauciones.valuation(measured_at, currency)
+            unrealized += caucion["unrealized"]
+            realized += caucion["realized"]
+            cash = self._cash(as_of=measured_at, currency=currency)
+            receivable = pending_proceeds(self.store, measured_at, currency)
+            equity = cash + exposure + receivable + caucion["principal"] + caucion["accrued"]
+            results[currency] = {"cash": cash, "exposure": exposure, "pending_proceeds": receivable,
+                                 "caucion_principal": caucion["principal"], "caucion_accrued": caucion["accrued"],
+                                 "unrealized_pnl": unrealized, "realized_pnl": realized, "equity": equity}
         with self.store.connect() as c:
+            for currency, values in results.items():
+                c.execute("INSERT INTO paper_equity_by_currency VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",
+                          (measured_at, currency, *(str(value) for value in values.values())))
+            ars = results["ARS"]
+            # Compatibilidad: la serie histórica principal conserva sólo ARS.
+            # No sumar dólares, MEP y CCL sin una conversión valuada explícita.
             c.execute("INSERT INTO paper_equity VALUES(NULL,?,?,?,?,?,?,?)",
-                      (measured_at, SOURCE, str(cash), str(exposure), str(unrealized),
-                       str(realized), str(equity)))
+                      (measured_at, SOURCE, str(ars["cash"]), str(ars["exposure"]), str(ars["unrealized_pnl"]),
+                       str(ars["realized_pnl"]), str(ars["equity"])))
+        return results
