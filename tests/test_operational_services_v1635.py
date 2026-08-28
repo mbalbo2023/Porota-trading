@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from be_paper_engine import PaperStore
+from bt_caucion_paper import record_sale
 import bi_operational_services as services
 
 
@@ -23,10 +24,17 @@ def test_resultado_del_periodo_usa_fecha_cierre_y_separa_monedas(tmp_path):
             ("FUTURE", "ARS", "2026-08-28T11:00:00-03:00", "2026-08-31T11:00:00-03:00", "900"),
             ("PREVIOUS", "ARS", "2026-08-27T11:00:00-03:00", "2026-08-28T01:00:00+00:00", "800"),
         ]:
+            price=str(services.Decimal(102)+services.Decimal(pnl))
+            gross=str(services.Decimal(pnl)+2)
             c.execute("""INSERT INTO paper_positions(paper_id,source,strategy_version,symbol,asset_class,
-                settlement,status,quantity,entry_price,entry_cost,stop_price,target_price,opened_at,closed_at,net_pnl,features_json,currency)
-                VALUES(?,'PRODUCTION_PAPER','fixture',?,'ACCIONES','INMEDIATA','CLOSED','1','100','1','98','104',?,?,?,'{}',?)""",
-                (key, key, opened, closed, pnl, currency))
+                settlement,status,quantity,entry_price,entry_cost,stop_price,target_price,opened_at,closed_at,
+                exit_price,exit_cost,gross_pnl,net_pnl,features_json,currency)
+                VALUES(?,'PRODUCTION_PAPER','fixture',?,'ACCIONES','INMEDIATA','CLOSED','1','100','1','98','104',?,?,?,'1',?,?,'{}',?)""",
+                (key, key, opened, closed, price, gross, pnl, currency))
+            for side,at,fill_price in (('BUY_SIMULATED',opened,'100'),('SELL_SIMULATED',closed,price)):
+                c.execute('INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)',
+                    (key,'PRODUCTION_PAPER',side,at,'1',fill_price,'1','0'))
+            record_sale(c,key,'INMEDIATA',closed,services.Decimal(price)-1,currency)
     data = services._period_data(store, "2026-08-28T00:00:00-03:00", "2026-08-29T00:00:00-03:00")
     assert data["pnl"] == 50
     assert data["pnl_by_currency"] == {"ARS": "50", "USD_MEP": "10"}
@@ -101,6 +109,11 @@ def test_reporte_pdf_y_paquete_ia_sin_secretos(tmp_path, monkeypatch):
           VALUES('PAPER-X','PRODUCTION_PAPER','v','GGAL','ACCIONES','A-24HS','CLOSED',
           '1','100','1','98','104',?,?, '105','1','5','3','TAKE_PROFIT_PAPER','{"spread":"0.01"}')""",
           (start.isoformat(), (start + timedelta(hours=2)).isoformat()))
+        closed_at=(start+timedelta(hours=2)).isoformat()
+        for side,at,price in (('BUY_SIMULATED',start.isoformat(),'100'),('SELL_SIMULATED',closed_at,'105')):
+            connection.execute('INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)',
+                ('PAPER-X','PRODUCTION_PAPER',side,at,'1',price,'1','0'))
+        record_sale(connection,'PAPER-X','A-24HS',closed_at,'104')
     pdf, ai = services.generate_report(store, "DIARIO", start.date().isoformat(),
                                         start.isoformat(), end.isoformat())
     assert Path(pdf).read_bytes().startswith(b"%PDF")
