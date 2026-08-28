@@ -362,6 +362,7 @@ def _caucion_allocations_panel():
         decision = record['decision']
         policy, selected = decision['manifest']['policy'], decision['selected']
         metric = ('Mayor beneficio neto del contrato' if policy['ranking'] == 'NET_PROFIT'
+                  else 'Vencimiento más próximo; luego mayor retorno neto por día' if policy['ranking']=='EARLIEST_MATURITY_NET_RETURN'
                   else 'Mayor retorno neto por día sobre el débito inicial')
         offers = {fingerprint(o):o for o in decision['manifest']['offers']}
         rows = []
