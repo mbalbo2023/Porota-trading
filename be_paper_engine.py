@@ -101,8 +101,13 @@ class Quote:
 class PaperStore:
     def __init__(self, path: str):
         self.path = path
+        new_file = not os.path.exists(path)
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self.init_db()
+        if new_file:
+            from cg_paper_workspace import mark_new_database
+            with self.connect() as c:
+                mark_new_database(c)
 
     def connect(self):
         conn = sqlite3.connect(self.path, timeout=20)
