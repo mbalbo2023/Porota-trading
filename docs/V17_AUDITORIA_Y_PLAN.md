@@ -55,6 +55,7 @@ línea del repositorio ni una validación de rentabilidad de las estrategias.
 | Posiciones abiertas podían quedar fuera del universo rotativo | Todas las abiertas tienen prioridad, incluso fuera del catálogo o sobre el límite de muestreo |
 | Una venta T+1 aparecía inmediatamente como caja | Recibos pendientes separados de efectivo; siguen siendo patrimonio |
 | Dos operaciones podían gastar la misma caja | Revalidación dentro de transacción de compra; colocaciones serializadas y prueba concurrente |
+| Una caución guardada con capital negativo podía aumentar la caja | Conciliación del ledger contra contrato, importes y fechas antes de caja, riesgo, profundidad, acreditación o informe; no se reparan filas automáticamente |
 | Renta fija podía usar precio por 100 VN como precio por unidad | Factor monetario y lote explícitos, conservados con la posición; sin esos datos no se abre una nueva posición de renta fija |
 | El panel mezclaba precios de diferentes identidades | Última cotización por símbolo, clase, plazo, moneda/plaza y mercado |
 | Una búsqueda de catálogo se confundía con un instrumento real | Historial de consultas separado de los instrumentos efectivamente devueltos; deduplicación por identidad completa |
@@ -912,6 +913,50 @@ Desactivar reinicio Docker no impide un arranque manual/despliegue posterior ni
 cancela órdenes ya enviadas a PPI. Se mantiene la instrucción de no arrancar
 los motores mientras se prepara la nueva versión.
 
+## Decimoctavo checkpoint: conciliación interna del ledger de cauciones
+
+Reproducción en SQLite de prueba: cambiar el principal guardado de 1000 a
+-1000 dejaba de inmovilizar 1000 y agregaba 1000 a la caja. No se afirma que
+esto haya ocurrido en el servidor. El test primero falló por no obtener error;
+la corrección impide reconocer ese registro como efectivo válido.
+
+- `validate_position()` contrasta la fila con los términos persistidos:
+  identidad/moneda, fuente paper, principal positivo con centavos/lote/límites,
+  tasa, base y días corridos, interés calculado, costos no negativos y neto
+  original positivo. Cuando hay presupuesto explícito exige capital y costo
+  exactos. También comprueba la huella original de términos/capital.
+- Fechas conocidas y con zona, inicio coherente con el contrato/cotización,
+  vencimiento sin cambios y estado OPEN/MATURED acorde con la acreditación.
+  No se permite acreditar antes del vencimiento ni obtener un reintento
+  idempotente exitoso de una operación cuyo registro ya no concuerda.
+- Validación antes de filtrar moneda/estado: si una fila ARS se mueve por
+  error a USD_CCL, no desaparece silenciosamente su débito de pesos. Un ledger
+  inconsistente bloquea el uso de caja y se informa como INVALID_LEDGER en
+  riesgo; las monedas no se suman ni se convierten.
+- Antes de acreditar un lote se comprueban todas las filas, incluidas las
+  históricas. Si alguna no concuerda, ninguna se acredita parcialmente ni
+  emite un evento de vencimiento. No hay modificación automática del dato roto.
+- El supervisor conserva las salidas de tenencias spot válidas aunque una
+  caución impida acreditar el lote. Su pulso queda DEGRADED con motivo de
+  conciliación; no se anuncia RUNNING normal ni se habilitan nuevas entradas
+  por ese pulso. Un error de caución no suspende el reloj de stops spot.
+- Caja y valuación, consumo de profundidad, riesgo diario, informes y lector
+  de asignaciones utilizan la misma validación de colocaciones. El informe
+  interrumpe su cálculo antes de atribuir un PnL no conciliado.
+- Panel lee sin escrituras y valida todo antes de paginar. Distingue READY
+  (incluso vacío), tabla ausente, error de lectura y ledger inválido. Ante error
+  oculta importes de caución y la tabla de caja/patrimonio; patrimonio de portada
+  queda s/d. No presenta “sin colocaciones” ni cero como lectura exitosa.
+
+**Compatibilidad:** se conserva el costo ya contabilizado de cauciones ARS que
+usaron el modelo heredado; no se recalcula con un arancel nuevo. Cuando ese
+contrato no guardó presupuesto explícito no es posible certificar retrospectivamente
+su tarifa sólo con estos datos. Concordancia interna no equivale a conciliación
+con PPI ni detecta toda alteración coordinada de las evidencias. No se cambian
+esquemas, operaciones históricas, límites, proveedor ni ejecución real. No es
+un trabajo nuevo de ciberseguridad. Motor y observador del servidor permanecen
+apagados según la evidencia aportada; sin despliegue.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -1078,6 +1123,17 @@ ventana y rollback de presupuesto/decisión/colocación/outbox. Fixtures sintét
 sin PPI ni Telegram. Verificación remota completa a registrar en la PR; sin
 despliegue o validación end-to-end del flujo automático de tesorería.
 
+Decimoctavo checkpoint: **886 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 36 pruebas nuevas. Cobertura local global 62,75%; cauciones/caja
+95,12%, supervisor 87,59%, dashboard 88,14% y lector 99,02%. Cuatro mínimos
+financieros existentes cumplidos. Regresión reproducida antes de corregir;
+pruebas de valores no finitos/negativos, moneda, términos, cronología, huella,
+costos históricos no recalculados, ARS/MEP/CCL, bases 360/365, UPFRONT/MATURITY,
+lectura histórica, reintento roto, lote sin acreditación parcial, riesgo/informes,
+panel sin escritura y salidas spot que continúan con supervisor DEGRADED.
+Verificación funcional del panel, sin captura visual en navegador/tablet.
+CI remoto completo a registrar en la PR; sin despliegue ni llamadas PPI/Telegram.
+
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
 todos los pins de producción. Advertencia observada: deprecación del TestClient
@@ -1132,6 +1188,11 @@ específica, y renta fija necesita factor nominal/lote contrastados.
 
 - [PPI: documentación REST](https://itatppi.github.io/ppi-official-api-docs/api/documentacionRest/):
   instrumentos, cotizaciones, libros y distinción entre fecha de operación y liquidación.
+- [PPI: documentación Python](https://itatppi.github.io/ppi-official-api-docs/api/documentacionPython/):
+  revisión adicional 28/08/2026: enumera CAUCIONES y COLOCAR-CAUCIÓN. Los ejemplos
+  genéricos de libro/presupuesto no bastan para confirmar unidad de tasa, capital,
+  vencimiento y gastos completos de una caución de esta cuenta. No se concluye
+  que PPI carezca de soporte; falta contrastar ese contrato de datos específico.
 - [BYMA: cauciones](https://www.byma.com.ar/productos/productos-financieros/caucion):
   colocadora/tomadora, monedas y devolución al vencimiento.
 - [PPI: comisiones](https://www.portfoliopersonal.com/Contenido/comisiones):
