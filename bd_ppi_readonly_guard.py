@@ -184,6 +184,14 @@ class ProductionMarketReader:
     def book(self, ticker: str, instrument_type: str, settlement: str):
         return self._market().book(ticker, instrument_type, settlement)
 
+    def market_configuration(self):
+        """Sólo configuración pública, por rutas GET ya permitidas."""
+        self._market()  # exige la misma sesión; no intenta otro login
+        configuration = self.__client.configuration
+        return {"instrument_types": configuration.get_instrument_types(),
+                "markets": configuration.get_markets(),
+                "settlements": configuration.get_settlements()}
+
     def search_instruments(self, ticker: str, instrument_type: str,
                            name: str | None = None, market: str = "BYMA"):
         """Busca un candidato concreto sin consultar saldos ni permisos.
