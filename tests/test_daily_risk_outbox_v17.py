@@ -15,9 +15,107 @@ from be_paper_engine import D, PaperBroker, PaperStore
 from bm_exit_supervisor import PositionExitSupervisor
 from bn_telegram_bus import DeliveryError, OutboxWorker, TelegramTransport, enqueue
 from bv_paper_runtime import broker_from_environment
+from bw_daily_risk import loss_limit_crossed
+from bz_replay_risk import ReplayDailyRisk, ReplayRiskConfig
 from test_production_paper_v1634 import quote, caucion_offer
 
 AT = '2026-08-28T11:00:00-03:00'
+
+
+@pytest.mark.parametrize('daily,realized,budget,crossed',[
+    ('-100','0','100',True), ('-99.99','0','100',False),
+    (None,'-100','100',True), ('50','-100','100',True),
+    (None,'-99.99','100',False), ('-1','0','1',True),
+])
+def test_corte_paper_y_replay_comparten_umbral_inclusivo(daily,realized,budget,crossed):
+    assert loss_limit_crossed(daily,realized,budget) is crossed
+
+
+@pytest.mark.parametrize('value',['0','-1','100.01','NaN','Infinity','texto',True])
+def test_configuracion_riesgo_replay_exige_porcentaje_valido(value):
+    with pytest.raises(ValueError):
+        ReplayRiskConfig(AT,value)
+
+
+def risk_tracker(**changes):
+    return ReplayDailyRisk(**(dict(config=ReplayRiskConfig(AT,D(1)),currency='ARS',
+                                  capital='10000',start=AT) | changes))
+
+
+def evaluate_risk(risk,at=AT,**changes):
+    return risk.evaluate(at,**(dict(held=D(0),equity=D(10000),quality='CURRENT',
+        realized_total=D(0),realized_today=D(0),phase='TEST') | changes))
+
+
+def test_replay_latch_no_se_borra_por_recuperacion_o_marca_faltante():
+    risk = risk_tracker()
+    evaluate_risk(risk)
+    loss = evaluate_risk(risk,equity=D(9900))
+    assert loss['state']=='LATCHED' and loss['loss_budget']==100
+    assert evaluate_risk(risk,equity=D(11000))['state']=='LATCHED'
+    assert evaluate_risk(risk,equity=None,quality='STALE_MARKS')['latched_at']==loss['latched_at']
+    assert risk.observations[0]['state']=='READY'  # No mutar la historia.
+
+
+def test_replay_sin_marca_bloquea_entrada_pero_realizado_puede_activar_corte():
+    risk = risk_tracker()
+    evaluate_risk(risk)
+    unknown = evaluate_risk(risk,equity=D(10000),quality='UNKNOWN_EXIT_COST')
+    assert unknown['state']=='STALE_MARKS' and unknown['last_equity'] is None
+    assert unknown['remaining_budget']==0
+    assert evaluate_risk(risk,equity=None,realized_total=D(-100),realized_today=D(-100))['state']=='LATCHED'
+
+
+def test_replay_cambio_de_dia_argentino_y_base_patrimonial_no_caja():
+    risk = risk_tracker()
+    evaluate_risk(risk,realized_total=D(-100),realized_today=D(-100),equity=D(9900))
+    # Medianoche UTC sigue siendo el mismo día bursátil local.
+    same = evaluate_risk(risk,'2026-08-29T00:01:00+00:00',equity=D(9900),
+                         realized_total=D(-100),realized_today=D(-100))
+    assert same['state']=='LATCHED' and same['day']=='2026-08-28'
+    next_day = evaluate_risk(risk,'2026-08-29T03:00:00+00:00',equity=D(9900),realized_total=D(-100))
+    assert next_day['state']=='READY' and next_day['baseline_equity']==9900
+    assert next_day['daily_pnl']==0 and next_day['loss_budget']==99
+
+
+def test_replay_carry_bloquea_dia_entero_aun_despues_de_cerrar():
+    risk = risk_tracker()
+    evaluate_risk(risk)
+    carry = evaluate_risk(risk,'2026-08-29T10:00:00-03:00',held=D(1),equity=D(10005))
+    assert carry['state']=='BASELINE_UNAVAILABLE' and carry['baseline_equity'] is None
+    closed = evaluate_risk(risk,'2026-08-29T11:00:00-03:00',equity=D(10005),
+                           realized_total=D(5),realized_today=D(5))
+    assert closed['state']=='BASELINE_UNAVAILABLE' and closed['remaining_budget']==0
+    ready = evaluate_risk(risk,'2026-08-30T10:00:00-03:00',equity=D(10005),realized_total=D(5))
+    assert ready['state']=='READY' and ready['baseline_equity']==10005
+
+
+def test_replay_presupuesto_no_aumenta_por_ganancias_y_respeta_realizado():
+    risk = risk_tracker()
+    assert evaluate_risk(risk,equity=D(10100))['remaining_budget']==100
+    assert evaluate_risk(risk,equity=D(9975))['remaining_budget']==75
+    assert evaluate_risk(risk,equity=D(10100),realized_total=D(-50),realized_today=D(-50))['remaining_budget']==50
+    assert not risk.permits_projected_equity(AT,D(9900))
+    assert risk.permits_projected_equity(AT,D('9900.01'))
+    assert risk.days['2026-08-28']['state']=='READY'
+
+
+def test_replay_riesgo_rechaza_reloj_futuro_moneda_y_capital_invalidos():
+    for changes in ({'config':None},{'currency':'ZZZ'},{'capital':'NaN'},
+                    {'start':'2026-08-28T10:59:00-03:00'}):
+        with pytest.raises(ValueError):
+            risk_tracker(**changes)
+    risk = risk_tracker()
+    evaluate_risk(risk,'2026-08-28T11:01:00-03:00')
+    with pytest.raises(ValueError):
+        evaluate_risk(risk,AT)
+
+
+def test_replay_dia_sin_capital_positivo_no_habilita_compras():
+    risk = risk_tracker()
+    evaluate_risk(risk,equity=D(0),realized_total=D(-10000),realized_today=D(-10000))
+    row = evaluate_risk(risk,'2026-08-29T11:00:00-03:00',equity=D(0),realized_total=D(-10000))
+    assert row['state']=='NO_CAPITAL' and row['remaining_budget']==0
 
 
 @pytest.fixture
