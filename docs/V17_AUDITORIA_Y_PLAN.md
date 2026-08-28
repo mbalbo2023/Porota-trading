@@ -591,6 +591,58 @@ calibración/holdout ni benchmark histórico de caución. No integra al runtime 
 candidato ni habilita los ejecutores especializados que faltan. Se mantiene
 `promotion_allowed=False`, PR en borrador, sin despliegue ni órdenes reales.
 
+## Décimo checkpoint: caja temporal y admisión de cauciones
+
+Se corrigen debilidades del ciclo existente de colocadoras antes de conectarlo
+a una selección automática de ofertas. No se inventa un payload PPI, un plazo
+preferido ni un porcentaje de efectivo a invertir.
+
+### Caja y vencimientos con fecha
+
+- `_cash(as_of=...)` reconstruye posiciones y resultados a ese instante: una
+  posición hoy cerrada sigue inmovilizando capital si entonces estaba abierta.
+  Compras/ventas posteriores no alteran una consulta anterior. El saldo sin
+  fecha usa el reloj del broker o el actual; las pruebas aportan fechas explícitas.
+- La caja ya no depende del reporte de los últimos 100.000 cierres. Lee el
+  ledger completo en un snapshot SQLite, y la comprobación final de compra o
+  caución comparte la transacción que registra el movimiento.
+- Los recibos de ventas cuentan desde la operación, no antes. Si falta el
+  recibo, pertenece a otra moneda o contiene un importe no finito, se bloquea
+  el cálculo de caja. Un vencimiento desconocido conserva el crédito pendiente.
+- El principal de caución sólo vuelve a caja a partir de su acreditación
+  registrada. Una caución hoy vencida no aporta interés realizado ni capital
+  libre en una consulta anterior. El devengamiento conserva costos completos
+  y no transforma el principal en ganancia.
+- Consultar una fecha anterior es distinto de colocar retroactivamente: una
+  nueva operación se bloquea con `CASH_CLOCK_ROLLBACK` si existen movimientos
+  posteriores en esa moneda. Un reintento de la misma clave sólo devuelve el
+  resultado registrado. En el runtime, la colocación usa su reloj real, no una
+  fecha suministrada para hacer parecer vigente una cotización vieja.
+- La valuación histórica usa posiciones de ese instante y no adopta libros ni
+  marcas conocidos después. Si no tiene una marca utilizable, conserva su
+  indicación de calidad insuficiente; no reconstruye cotizaciones perdidas.
+
+### Costos antes de aceptar la caución
+
+El presupuesto diario considera el costo total comprometido antes de colocar,
+tanto `UPFRONT` como `MATURITY`. Si ese gasto llevaría el PnL diario al límite
+o por debajo, devuelve `DAILY_RISK_PROJECTED_LOSS` sin registrar colocación,
+gasto ni aviso de fill. No activa un corte por una operación hipotética; un
+corte ya ocurrido sí se conserva. La proyección no resta el principal del PnL
+y no modifica el interés devengado de operaciones previas.
+
+Se mantienen el retorno neto positivo, capital mínimo/paso, participación en
+profundidad, reserva de efectivo, fechas y moneda/plaza. Se rechazan parámetros
+no finitos de frescura y saldo. Los costos explícitos son presupuestos del
+escenario; el tarifario heredado ARS sigue siendo un modelo sin validar como
+tarifa comercial de la cuenta.
+
+La automatización de cauciones permanece pendiente de ofertas/contratos reales
+normalizados, asignación de capital/plazo/reserva y conciliación. No hay cambios
+de esquema, migraciones ejecutadas en el servidor, órdenes reales ni nuevos
+trabajos de ciberseguridad. PR en borrador; tampoco se habilitan futuros,
+opciones o FCI como si fueran operaciones de contado.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -678,6 +730,17 @@ La CLI rechaza el candidato sin límite explícito y no modifica su base. Suite
 local Python 3.12 con cobertura y XML; se conserva una advertencia existente de
 Starlette/httpx. La comprobación remota del noveno se registra en el PR tras CI.
 
+Décimo checkpoint: **661 tests aprobados**, 0 fallas, 0 errores y 0 omisiones
+(22 pruebas nuevas). Cobertura local global 55,84%; motor PAPER 87,11%, cauciones
+94,22% y riesgo diario 95,97%. Los cuatro mínimos financieros siguen aprobados.
+Se verificaron caja histórica, acreditación posterior, bloqueo de colocaciones
+retroactivas, reloj del runtime, recibos ausentes/inválidos, costos proyectados
+en ambas formas de pago, moneda/plaza y rechazo sin pérdidas ni avisos ficticios.
+La comparación de bytes del replay consolida ahora el WAL del fixture antes de
+medir, evitando una falla intermitente por checkpoint SQLite; mantiene la
+verificación del archivo sin cambios. Suite con XML y cobertura, sin broker ni
+Telegram reales. El resultado remoto del décimo se registra en el PR tras CI.
+
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
 todos los pins de producción. Advertencia observada: deprecación del TestClient
@@ -695,6 +758,8 @@ El séptimo obtuvo CI completo aprobado, run 33135821052, commit
 `6ab7b990c4937c7491fee5a1438101119454b3b9`, cobertura remota 53,40%.
 El octavo obtuvo CI completo aprobado, run 33136743030, commit
 `12a3b6bbcc93bdef05cfa9ff0017b8d006a49cbd`, cobertura remota 54,66%.
+El noveno obtuvo CI completo aprobado, run 33137676458, commit
+`a7cafc0a0454055df0bcb75a1583e266ee69150b`, cobertura remota 55,39%.
 Los 12 payloads públicos aportados se usan como fixture; aún falta integración
 con cotizaciones/contratos especializados y validación en el Droplet.
 
