@@ -15,14 +15,15 @@ from ppi_client.ppi import PPI
 from be_paper_engine import PaperStore
 from bf_production_paper_observer import _health, _support_schema
 from c_ppi_client import ResilientPPIClient
+from cg_paper_workspace import database_path, runtime_store
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
-DB_PATH = os.getenv("PAPER_DB_PATH", "data/observer/observer_production.db")
+DB_PATH = str(database_path())
 
 
 def run():
-    store = PaperStore(DB_PATH)
+    store = runtime_store(DB_PATH)
     _support_schema(store)
     key = os.getenv("PPI_API_KEY", "").strip()
     secret = os.getenv("PPI_API_SECRET", "").strip()
