@@ -11,18 +11,18 @@ import os
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_DOWN
 from typing import Optional
 
 from bs_instrument_contracts import (CASH_CURRENCIES, InstrumentContract, SPOT_FAMILIES,
-                                     cash_currency, decimal_value, family_name)
+                                     aware_datetime, cash_currency, decimal_value, family_name)
 from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
 
 
 SOURCE = "PRODUCTION_PAPER"
-STRATEGY_VERSION = "paper-momentum-v1"
+STRATEGY_VERSION = "paper-momentum-v17.1-source-time"
 ZERO = Decimal("0")
 
 
@@ -35,7 +35,7 @@ def D(value, default="0") -> Decimal:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 @dataclass(frozen=True)
@@ -54,6 +54,37 @@ class Quote:
     market: Optional[str] = None
     metadata_source: Optional[str] = None
     opening_block_reason: str = ""
+    book_at: Optional[str] = None
+    trade_at: Optional[str] = None
+    last_kind: str = "UNKNOWN"
+
+    def time_error(self, as_of, *, require_trade=False, max_age_seconds=120):
+        """Hora del proveedor y recepción, nunca reemplazadas por la hora local.
+
+        Un libro fresco sirve para salir aunque el último negocio sea antiguo.
+        Para una entrada por señal, también se exige último negocio fresco.
+        """
+        try:
+            at = aware_datetime(as_of)
+            received = aware_datetime(self.observed_at, "recepción")
+            if not 0 <= (at - received).total_seconds() <= max_age_seconds:
+                return "RECEIPT_STALE_OR_FUTURE"
+            fields = [(self.book_at, "BOOK")]
+            if require_trade:
+                if self.last_kind != "TRADE":
+                    return "LAST_IS_NOT_A_TRADE"
+                fields.append((self.trade_at, "TRADE"))
+            for value, label in fields:
+                if not value:
+                    return label + "_TIME_MISSING"
+                source_at = aware_datetime(value, label)
+                if source_at > received or source_at > at:
+                    return label + "_TIME_FUTURE"
+                if (at - source_at).total_seconds() > max_age_seconds:
+                    return label + "_STALE"
+        except (ValueError, TypeError):
+            return "INVALID_OR_NAIVE_TIMESTAMP"
+        return ""
 
     def monetary_identity(self):
         currency = cash_currency(self.currency)
@@ -126,6 +157,12 @@ class PaperStore:
               id INTEGER PRIMARY KEY AUTOINCREMENT, measured_at TEXT NOT NULL,
               source TEXT NOT NULL, cash TEXT NOT NULL, exposure TEXT NOT NULL,
               unrealized_pnl TEXT NOT NULL, realized_pnl TEXT NOT NULL, equity TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS paper_position_marks(
+              paper_id TEXT PRIMARY KEY, mark_price TEXT NOT NULL,
+              book_at TEXT NOT NULL, marked_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS paper_valuation_quality(
+              currency TEXT PRIMARY KEY, measured_at TEXT NOT NULL,
+              state TEXT NOT NULL, stale_positions INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS ai_shadow_evaluations(
               id INTEGER PRIMARY KEY AUTOINCREMENT, evaluated_at TEXT NOT NULL,
               symbol TEXT NOT NULL, decision TEXT NOT NULL, score TEXT NOT NULL,
@@ -151,7 +188,11 @@ class PaperStore:
                     "market": "TEXT NOT NULL DEFAULT 'BYMA'",
                     "currency_source": "TEXT NOT NULL DEFAULT 'LEGACY_ASSUMED_ARS'"},
                 "market_snapshots": {"currency": "TEXT NOT NULL DEFAULT 'UNKNOWN'",
-                    "market": "TEXT NOT NULL DEFAULT 'UNKNOWN'"},
+                    "market": "TEXT NOT NULL DEFAULT 'UNKNOWN'",
+                    "book_at": "TEXT", "trade_at": "TEXT",
+                    "last_kind": "TEXT NOT NULL DEFAULT 'UNKNOWN'",
+                    "contract_json": "TEXT", "metadata_source": "TEXT",
+                    "opening_block_reason": "TEXT NOT NULL DEFAULT ''"},
             }.items():
                 columns = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
                 for column, definition in additions.items():
@@ -159,6 +200,8 @@ class PaperStore:
                         c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
             c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_identity ON market_snapshots(symbol,asset_class,settlement,currency,market,id)")
         init_financial_schema(self)
+        from bm_exit_supervisor import init_schema as init_exit_schema
+        init_exit_schema(self)
 
     def audit_http(self, method, path, result):
         with self.connect() as c:
@@ -183,11 +226,60 @@ class PaperStore:
             currency, market = "UNKNOWN", q.market or "UNKNOWN"
         with self.connect() as c:
             c.execute("""INSERT INTO market_snapshots
-              (source,observed_at,symbol,asset_class,settlement,last,bid,ask,bid_size,ask_size,currency,market)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+              (source,observed_at,symbol,asset_class,settlement,last,bid,ask,bid_size,ask_size,currency,market,
+               book_at,trade_at,last_kind,contract_json,metadata_source,opening_block_reason)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (SOURCE, q.observed_at, q.symbol, q.asset_class, q.settlement,
                        str(q.last), str(q.bid), str(q.ask), str(q.bid_size), str(q.ask_size),
-                       currency, market))
+                       currency, market, q.book_at, q.trade_at, q.last_kind,
+                       json.dumps(asdict(q.contract), default=str) if q.contract else None,
+                       q.metadata_source, q.opening_block_reason))
+
+    def latest_quote(self, position):
+        # La última respuesta recibida gana: una respuesta vacía/no válida no
+        # permite rescatar silenciosamente una punta anterior que ya desapareció.
+        with self.connect() as c:
+            row = c.execute("""SELECT * FROM market_snapshots WHERE symbol=? AND asset_class=?
+              AND settlement=? ORDER BY id DESC LIMIT 1""",
+              tuple(position[k] for k in ("symbol", "asset_class", "settlement"))).fetchone()
+        if not row:
+            return None
+        values = dict(row)
+        spec = json.loads(values["contract_json"]) if values["contract_json"] else None
+        return Quote(**{k: values[k] for k in ("symbol", "asset_class", "settlement", "observed_at", "currency", "market",
+                                             "book_at", "trade_at", "last_kind", "metadata_source", "opening_block_reason")},
+                     **{k: D(values[k]) for k in ("last", "bid", "ask", "bid_size", "ask_size")},
+                     contract=InstrumentContract(**spec) if spec else None)
+
+    def signal_prices(self, q, as_of, limit=20, window_minutes=30):
+        """Negocios distintos, disponibles al decidir, de una sola identidad.
+
+        Son muestras de último negocio; no se presentan como velas ni volumen.
+        """
+        end = aware_datetime(as_of)
+        currency, market = q.monetary_identity()
+        start = (end - timedelta(minutes=window_minutes)).isoformat()
+        with self.connect() as c:
+            rows = c.execute("""SELECT trade_at,last,observed_at FROM market_snapshots
+              WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
+                AND last_kind='TRADE' AND trade_at IS NOT NULL
+                AND julianday(trade_at)>=julianday(?) AND julianday(trade_at)<=julianday(?)
+                AND julianday(observed_at)<=julianday(?)
+              ORDER BY julianday(trade_at) DESC,id DESC""",
+              (q.symbol,q.asset_class,q.settlement,currency,market,start,end.isoformat(),end.isoformat())).fetchall()
+        unique = {}
+        for row in rows:
+            try:
+                source_at = aware_datetime(row["trade_at"])
+                if source_at > aware_datetime(row["observed_at"]):
+                    continue
+                if D(row["last"]) > 0:
+                    unique.setdefault(source_at, D(row["last"]))
+            except (ValueError, TypeError):
+                continue
+            if len(unique) >= limit:
+                break
+        return list(reversed(list(unique.values())))
 
     def prices(self, symbol: str, limit=30, *, asset_class=None, settlement=None, currency=None, market=None):
         filters, params = ["symbol=?"], [symbol]
@@ -218,8 +310,13 @@ class PaperStore:
             return [dict(r) for r in c.execute(
                 "SELECT * FROM paper_positions WHERE status='OPEN' ORDER BY opened_at")]
 
-    def recent_closed(self, limit=50):
+    def recent_closed(self, limit=50, *, strategy_version=None, closed_before=None):
         with self.connect() as c:
+            if strategy_version is not None:
+                return [dict(r) for r in c.execute("""SELECT * FROM paper_positions
+                  WHERE status='CLOSED' AND strategy_version=?
+                  AND (? IS NULL OR julianday(closed_at)<=julianday(?)) ORDER BY closed_at DESC LIMIT ?""",
+                  (strategy_version, closed_before, closed_before, limit))]
             return [dict(r) for r in c.execute(
                 "SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY closed_at DESC LIMIT ?",
                 (limit,))]
@@ -271,7 +368,9 @@ class PaperBroker:
                  slippage_bps="2", participation="0.10",
                  max_position_pct="0.25", max_total_exposure_pct="0.60",
                  ai_gate=None, require_ai=False, context_fn=None,
-                 initial_cash_usd="0", initial_cash_by_currency=None):
+                 initial_cash_usd="0", initial_cash_by_currency=None,
+                 clock_fn=None, session_policy=None, require_supervisor=False,
+                 quote_max_age_seconds=120):
         self.store = store
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
@@ -291,6 +390,28 @@ class PaperBroker:
         for key, value in (initial_cash_by_currency or {}).items():
             self.initial_balances[cash_currency(key)] = decimal_value(value, "capital por moneda", nonnegative=True)
         self.cauciones = CaucionBook(store)
+        # Sin reloj inyectado, llamadas directas son simulación por tiempo de
+        # evento. El runtime vivo SIEMPRE inyecta reloj real y política de sesión.
+        self.clock_fn = clock_fn
+        self.session_policy = session_policy
+        self.require_supervisor = require_supervisor
+        self.quote_max_age_seconds = quote_max_age_seconds
+
+    def execution_time(self, q):
+        return self.clock_fn() if self.clock_fn else q.observed_at
+
+    def admission_error(self, q, at):
+        error = q.time_error(at, require_trade=True, max_age_seconds=self.quote_max_age_seconds)
+        if error:
+            return error
+        if self.session_policy:
+            error = self.session_policy.admission_error(q, at)
+            if error:
+                return error
+        if self.require_supervisor:
+            from bm_exit_supervisor import admission_error
+            return admission_error(self.store, at)
+        return ""
 
     def _cost(self, price, qty, asset_class="ACCIONES"):
         """Costo de una punta; el spread ya vive en bid/ask y no se duplica."""
@@ -347,8 +468,8 @@ class PaperBroker:
     def settle_cauciones(self, as_of=None):
         return self.cauciones.settle_due(as_of or now_iso())
 
-    def threshold(self):
-        closed = self.store.recent_closed(20)
+    def threshold(self, as_of=None):
+        closed = self.store.recent_closed(20, strategy_version=STRATEGY_VERSION, closed_before=as_of)
         if len(closed) < 5:
             return D("0.62")
         wins = sum(1 for p in closed if D(p.get("net_pnl")) > 0)
@@ -362,12 +483,15 @@ class PaperBroker:
             return "HOLD", ZERO, str(exc), {"samples": 0}
         if q.opening_block_reason:
             return "HOLD", ZERO, q.opening_block_reason, {"samples": 0}
+        at = self.execution_time(q)
+        error = self.admission_error(q, at)
+        if error:
+            return "HOLD", ZERO, error, {"samples": 0}
         if self.initial_balances[currency] <= 0:
             return "HOLD", ZERO, f"Sin capital asignado en {currency}; no se usa otra moneda/plaza", {"samples": 0}
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
             return "HOLD", ZERO, "Puntas o profundidad invalidas", {"samples": 0}
-        values = self.store.prices(q.symbol, 20, asset_class=q.asset_class,
-                                   settlement=q.settlement, currency=currency, market=market)
+        values = self.store.signal_prices(q, at)
         if len(values) < 8:
             return "HOLD", D("0"), f"Aprendiendo serie: {len(values)}/8 muestras", {"samples": len(values)}
         short = sum(values[-3:], ZERO) / D(3)
@@ -377,12 +501,12 @@ class PaperBroker:
         score = max(ZERO, min(D(1), D("0.5") + momentum * D(40) - spread * D(10)))
         features = {"sma3": str(short), "sma8": str(long), "momentum": str(momentum),
                     "spread": str(spread), "samples": len(values),
-                    "paper_threshold": str(self.threshold())}
+                    "paper_threshold": str(self.threshold(at))}
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
             return "HOLD", score, "Puntas o profundidad insuficientes", features
         if spread > D("0.02"):
             return "HOLD", score, "Spread superior al 2%", features
-        if score < self.threshold():
+        if score < self.threshold(at):
             return "HOLD", score, "Score paper debajo del umbral adaptativo", features
         return "BUY", score, "Momentum positivo y friccion admisible", features
 
@@ -430,6 +554,10 @@ class PaperBroker:
                 paper_id=paper_id, detail=features)
 
     def _open(self, q: Quote, score: Decimal, features: dict):
+        at = self.execution_time(q)
+        error = self.admission_error(q, at)
+        if error:
+            return False, error, None
         if q.opening_block_reason:
             return False, q.opening_block_reason, None
         try:
@@ -473,7 +601,7 @@ class PaperBroker:
             lambda qty: self._cost(entry * factor, qty, q.asset_class) +
                         self._cost(modeled_stop_fill * factor, qty, q.asset_class))
         by_cash = self._quantity_in_budget(
-            entry * factor, max(ZERO, self._cash(as_of=q.observed_at, currency=currency)),
+            entry * factor, max(ZERO, self._cash(as_of=at, currency=currency)),
             lambda qty: self._cost(entry * factor, qty, q.asset_class))
         by_book = (q.ask_size * self.participation).to_integral_value(ROUND_DOWN)
         by_position_cap = (capital * self.max_position_pct / (entry * factor)).to_integral_value(ROUND_DOWN)
@@ -485,6 +613,8 @@ class PaperBroker:
         by_total_cap = (exposure_remaining / (entry * factor)).to_integral_value(ROUND_DOWN)
         qty = (min(by_risk, by_cash, by_book, by_position_cap, by_total_cap) / step).to_integral_value(ROUND_DOWN) * step
         features.update({
+            "book_source_at": q.book_at, "trade_source_at": q.trade_at,
+            "received_at": q.observed_at, "last_kind": q.last_kind,
             "contract_cash_multiplier": str(factor), "contract_quantity_step": str(step),
             "financial_contract": asdict(q.contract) if q.contract else None,
             "capital_currency": currency, "market": market,
@@ -514,11 +644,15 @@ class PaperBroker:
             # Serializa contra otras compras y colocaciones de caución.
             # No se hace red ni IA dentro de esta transacción.
             c.execute("BEGIN IMMEDIATE")
+            at = self.execution_time(q)
+            error = self.admission_error(q, at)
+            if error:
+                return False, error, None
             opened = self.store.open_positions()
             exposure_now = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
                                 for p in opened if p["currency"] == currency), ZERO)
             if (len(opened) >= self.max_positions or any(p["symbol"] == q.symbol for p in opened)
-                    or entry * qty * factor + cost > self._cash(as_of=q.observed_at, currency=currency)
+                    or entry * qty * factor + cost > self._cash(as_of=at, currency=currency)
                     or exposure_now + entry * qty * factor > capital * self.max_total_exposure_pct):
                 return False, "Caja, posiciones o exposición cambiaron antes de registrar la compra", None
             c.execute("""INSERT INTO paper_positions
@@ -526,50 +660,43 @@ class PaperBroker:
                quantity,entry_price,entry_cost,stop_price,target_price,opened_at,features_json,currency,market,currency_source)
               VALUES(?,?,?,?,?,?,'OPEN',?,?,?,?,?,?,?,?,?,?)""",
               (paper_id, SOURCE, STRATEGY_VERSION, q.symbol, q.asset_class, q.settlement,
-               str(qty), str(entry), str(cost), str(stop), str(target), q.observed_at,
+               str(qty), str(entry), str(cost), str(stop), str(target), at,
                json.dumps(features, ensure_ascii=False, default=str), currency, market,
                q.metadata_source or "EXPLICIT_QUOTE"))
             c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
-                      (paper_id, SOURCE, "BUY_SIMULATED", q.observed_at, str(qty),
+                      (paper_id, SOURCE, "BUY_SIMULATED", at, str(qty),
                        str(entry), str(cost), str(entry-q.ask)))
             c.execute("INSERT INTO paper_learning_samples VALUES(?,?,?,?,?,?,?,?,?)",
                       (paper_id, SOURCE, STRATEGY_VERSION, q.observed_at,
                        json.dumps(features, ensure_ascii=False, default=str), None, None, None, None))
             c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
-                      (q.observed_at, SOURCE, "PAPER_FILLED_BUY", paper_id,
+                      (at, SOURCE, "PAPER_FILLED_BUY", paper_id,
                        f"Compra simulada {qty} {q.symbol} @ {entry}"))
         return True, "Todos los portones aprobaron; compra simulada registrada", paper_id
 
     def _maybe_close(self, q: Quote):
         p = self.store.open_position(q.symbol)
-        if (not p or (p["asset_class"], p["settlement"]) !=
-                (q.asset_class, q.settlement) or D(q.bid) <= 0 or D(q.bid_size) <= 0):
+        if not p:
             return False
-        reason = None
-        if q.bid <= D(p["stop_price"]):
-            reason = "STOP_PAPER"
-        elif q.bid >= D(p["target_price"]):
-            reason = "TAKE_PROFIT_PAPER"
-        else:
-            try:
-                opened = datetime.fromisoformat(p["opened_at"])
-                age = (datetime.fromisoformat(q.observed_at) - opened).total_seconds() / 60
-                if age >= int(os.getenv("PAPER_MAX_HOLD_MINUTES", "180")):
-                    reason = "MAX_HOLD_PAPER"
-            except Exception:
-                pass
-        if reason:
-            return self._close(p, q, reason)
-        return False
+        from bm_exit_supervisor import PositionExitSupervisor
+        at = self.execution_time(q)
+        supervisor = PositionExitSupervisor(self, clock_fn=lambda: at,
+            session_policy=self.session_policy,
+            max_hold_minutes=int(os.getenv("PAPER_MAX_HOLD_MINUTES", "180")))
+        return supervisor.supervise(p, q, at).state == "CLOSED"
 
-    def _close(self, p: dict, q: Quote, reason: str):
+    def _close(self, p: dict, q: Quote, reason: str, *, as_of=None):
         """Cierre total simulado: sin inventar volumen ni duplicar un fill.
 
         Las salidas parciales requieren un libro propio y quedan pendientes.
         Por ahora se rechaza un cierre que excede la participacion disponible.
-        La futura integracion del supervisor debe validar frescura y sesion
-        usando su reloj; este metodo solo valida secuencia temporal y fill.
+        Frescura y sesión se revalidan también aquí, antes del fill.
         """
+        at = as_of or self.execution_time(q)
+        if q.time_error(at, max_age_seconds=self.quote_max_age_seconds):
+            return False
+        if self.session_policy and self.session_policy.execution_error(p, at):
+            return False
         if (p["symbol"], p["asset_class"], p["settlement"]) != (
                 q.symbol, q.asset_class, q.settlement):
             return False
@@ -585,14 +712,14 @@ class PaperBroker:
                            q.contract.symbol != q.symbol or q.contract.settlement != q.settlement or
                            q.contract.family != family_name(q.asset_class) or q.contract.currency != p["currency"]):
             return False
-        if D(q.bid) <= 0 or qty <= 0 or qty > (D(q.bid_size) * self.participation):
+        if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or qty <= 0 or qty > (D(q.bid_size) * self.participation):
             self.store.event("EXIT_PENDING_NO_LIQUIDITY",
                              "Profundidad insuficiente para cerrar toda la posicion", p["paper_id"])
             return False
         try:
             opened = datetime.fromisoformat(p["opened_at"].replace("Z", "+00:00"))
-            observed = datetime.fromisoformat(q.observed_at.replace("Z", "+00:00"))
-            if opened.tzinfo is None or observed.tzinfo is None or observed < opened:
+            observed = aware_datetime(at)
+            if opened.tzinfo is None or observed < opened or aware_datetime(q.book_at) < opened:
                 return False
             duration = int((observed-opened).total_seconds() / 60)
         except (ValueError, TypeError):
@@ -605,42 +732,75 @@ class PaperBroker:
         ret = (net / invested * 100) if invested else ZERO
         outcome = "WIN" if net > 0 else "LOSS" if net < 0 else "FLAT"
         with self.store.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            at = self.execution_time(q) if self.clock_fn else at
+            if q.time_error(at, max_age_seconds=self.quote_max_age_seconds):
+                return False
+            if self.session_policy and self.session_policy.execution_error(p, at):
+                return False
+            intent = c.execute("SELECT cause FROM paper_exit_intents WHERE paper_id=?", (p["paper_id"],)).fetchone()
+            if intent and intent[0]:
+                reason = intent[0]
             updated = c.execute("""UPDATE paper_positions SET status='CLOSED',closed_at=?,exit_price=?,
                          exit_cost=?,gross_pnl=?,net_pnl=?,close_reason=?
                          WHERE paper_id=? AND status='OPEN' AND quantity=?
                          AND entry_price=? AND entry_cost=?""",
-                      (q.observed_at, str(exit_price), str(exit_cost), str(gross), str(net),
+                      (at, str(exit_price), str(exit_cost), str(gross), str(net),
                        reason, p["paper_id"], p["quantity"], p["entry_price"], p["entry_cost"]))
             if updated.rowcount != 1:
                 return False
-            record_sale(c, p["paper_id"], p["settlement"], q.observed_at,
+            c.execute("""INSERT INTO paper_exit_intents VALUES(?, 'CLOSED', ?, ?, '', ?, 1)
+              ON CONFLICT(paper_id) DO UPDATE SET state='CLOSED',blocked_reason='',
+              cause=COALESCE(paper_exit_intents.cause,excluded.cause),
+              due_at=COALESCE(paper_exit_intents.due_at,excluded.due_at),
+              supervised_at=excluded.supervised_at,attempts=paper_exit_intents.attempts+1""",
+              (p["paper_id"], reason, at, at))
+            record_sale(c, p["paper_id"], p["settlement"], at,
                         exit_price * qty * factor - exit_cost, currency=p["currency"])
             c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
-                      (p["paper_id"], SOURCE, "SELL_SIMULATED", q.observed_at, str(qty),
+                      (p["paper_id"], SOURCE, "SELL_SIMULATED", at, str(qty),
                        str(exit_price), str(exit_cost), str(q.bid-exit_price)))
             c.execute("""UPDATE paper_learning_samples SET label_timestamp=?,net_return_pct=?,
                          outcome=?,duration_minutes=? WHERE paper_id=?""",
-                      (q.observed_at, str(ret), outcome, duration, p["paper_id"]))
+                      (at, str(ret), outcome, duration, p["paper_id"]))
             c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
-                      (q.observed_at, SOURCE, "PAPER_FILLED_SELL", p["paper_id"],
+                      (at, SOURCE, "PAPER_FILLED_SELL", p["paper_id"],
                        f"Venta simulada {qty} {q.symbol} @ {exit_price}; PnL neto {net}"))
         return True
 
     def mark_equity(self, quotes: dict, as_of=None):
+        # Un snapshot financiero consistente mientras lector/escáner/reloj
+        # escriben concurrentemente. No hay red ni IA dentro de este bloqueo.
+        with self.store.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            return self._mark_equity_locked(quotes, as_of, c)
+
+    def _mark_equity_locked(self, quotes, as_of, c):
         measured_at = as_of or now_iso()
         opened, closed = self.store.open_positions(), self.store.recent_closed(100000)
-        results = {}
+        results, quality, new_marks = {}, {}, []
+        last_marks = {r["paper_id"]: r for r in c.execute("SELECT * FROM paper_position_marks")}
         for currency in sorted(CASH_CURRENCIES):
             exposure = unrealized = ZERO
+            stale = 0
             for p in (p for p in opened if p["currency"] == currency):
                 q = (quotes.get((p["symbol"], p["asset_class"], p["settlement"], currency, p["market"]))
                      or quotes.get((p["symbol"], p["asset_class"], p["settlement"])) or quotes.get(p["symbol"]))
                 try:
+                    stored = self.store.latest_quote(p)
+                    if stored is not None and (q is None or aware_datetime(stored.observed_at) >= aware_datetime(q.observed_at)):
+                        q = stored
                     usable = (q is not None and q.monetary_identity() == (currency, p["market"]) and
-                              (q.symbol, q.asset_class, q.settlement) == (p["symbol"], p["asset_class"], p["settlement"]) and D(q.bid) > 0)
-                except ValueError:
+                              (q.symbol, q.asset_class, q.settlement) == (p["symbol"], p["asset_class"], p["settlement"]) and D(q.bid) > 0 and not q.time_error(measured_at, max_age_seconds=self.quote_max_age_seconds))
+                except (ValueError, TypeError):
                     usable = False
-                mark = q.bid if usable else D(p["entry_price"])
+                if usable:
+                    mark = q.bid
+                    new_marks.append((p["paper_id"],str(mark),q.book_at,measured_at))
+                else:
+                    previous = last_marks.get(p["paper_id"])
+                    mark = D(previous["mark_price"]) if previous else D(p["entry_price"])
+                    stale += 1
                 qty = D(p["quantity"]) * self._position_multiplier(p)
                 exposure += mark * qty
                 unrealized += (mark - D(p["entry_price"])) * qty - D(p["entry_cost"])
@@ -654,14 +814,17 @@ class PaperBroker:
             results[currency] = {"cash": cash, "exposure": exposure, "pending_proceeds": receivable,
                                  "caucion_principal": caucion["principal"], "caucion_accrued": caucion["accrued"],
                                  "unrealized_pnl": unrealized, "realized_pnl": realized, "equity": equity}
-        with self.store.connect() as c:
-            for currency, values in results.items():
-                c.execute("INSERT INTO paper_equity_by_currency VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",
-                          (measured_at, currency, *(str(value) for value in values.values())))
-            ars = results["ARS"]
-            # Compatibilidad: la serie histórica principal conserva sólo ARS.
-            # No sumar dólares, MEP y CCL sin una conversión valuada explícita.
-            c.execute("INSERT INTO paper_equity VALUES(NULL,?,?,?,?,?,?,?)",
-                      (measured_at, SOURCE, str(ars["cash"]), str(ars["exposure"]), str(ars["unrealized_pnl"]),
-                       str(ars["realized_pnl"]), str(ars["equity"])))
+            quality[currency] = ("STALE_MARKS" if stale else "CURRENT", stale)
+        c.executemany("INSERT OR REPLACE INTO paper_position_marks VALUES(?,?,?,?)",new_marks)
+        for currency, values in results.items():
+            c.execute("INSERT OR REPLACE INTO paper_valuation_quality VALUES(?,?,?,?)",
+                      (currency,measured_at,*quality[currency]))
+            c.execute("INSERT INTO paper_equity_by_currency VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",
+                      (measured_at, currency, *(str(value) for value in values.values())))
+        ars = results["ARS"]
+        # Compatibilidad: la serie histórica principal conserva sólo ARS.
+        # No sumar dólares, MEP y CCL sin una conversión valuada explícita.
+        c.execute("INSERT INTO paper_equity VALUES(NULL,?,?,?,?,?,?,?)",
+                  (measured_at, SOURCE, str(ars["cash"]), str(ars["exposure"]), str(ars["unrealized_pnl"]),
+                   str(ars["realized_pnl"]), str(ars["equity"])))
         return results
