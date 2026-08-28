@@ -14,10 +14,29 @@ from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
+from bl_candle_engine import fingerprint, stamp
 
 ZERO = Decimal("0")
 CENT = Decimal("0.01")
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+
+
+def offer_payload(offer):
+    values = asdict(offer)
+    for key, value in values.items():
+        if isinstance(value, Decimal):
+            values[key] = format(value.normalize(), 'f')
+    for key in ('quoted_at','maturity_at'):
+        values[key] = stamp(values[key])
+    return values
+
+
+def book_key(offer):
+    return fingerprint({k:offer_payload(offer)[k] for k in ('instrument_id','currency','quoted_at')})
+
+
+def book_payload(offer):
+    return {k:v for k,v in offer_payload(offer).items() if k not in {'quoted_total_fees','fee_quote_principal'}}
 
 
 def money(value):
@@ -64,6 +83,10 @@ def init_schema(store):
           gross_interest TEXT NOT NULL, total_fees TEXT NOT NULL,
           fee_payment TEXT NOT NULL, opened_at TEXT NOT NULL, maturity_at TEXT NOT NULL,
           settled_at TEXT, terms_json TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS paper_caucion_allocations(
+          request_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL,
+          evaluated_at TEXT NOT NULL, decision_json TEXT NOT NULL,
+          paper_id TEXT UNIQUE REFERENCES paper_cauciones(paper_id));
         CREATE TABLE IF NOT EXISTS paper_equity_by_currency(
           id INTEGER PRIMARY KEY AUTOINCREMENT, measured_at TEXT NOT NULL,
           currency TEXT NOT NULL, cash TEXT NOT NULL, exposure TEXT NOT NULL,
@@ -203,6 +226,20 @@ class CaucionBook:
         return [dict(r) for r in connection.execute("SELECT * FROM paper_cauciones" +
                 (" WHERE " + " AND ".join(where) if where else ""), params)]
 
+    def used_principal(self, offer, *, connection):
+        """La misma fotografía de liquidez no se repone por otro request_id."""
+        used = ZERO
+        for p in connection.execute('SELECT * FROM paper_cauciones WHERE instrument_id=? AND currency=?',
+                                    (offer.instrument_id,offer.currency)):
+            previous = CaucionOffer(**json.loads(p['terms_json']))
+            if aware_datetime(previous.quoted_at) > aware_datetime(offer.quoted_at):
+                raise ValueError('CAUCION_OLDER_BOOK')
+            if book_key(previous) == book_key(offer):
+                if book_payload(previous) != book_payload(offer):
+                    raise ValueError('CAUCION_CONFLICTING_BOOK')
+                used += decimal_value(p['principal'],'capital consumido',positive=True)
+        return used
+
     @staticmethod
     def state_at(p, at):
         opened, maturity = map(aware_datetime, (p['opened_at'], p['maturity_at']))
@@ -248,7 +285,19 @@ class CaucionBook:
         return {"principal": principal, "accrued": accrued, "unrealized": unrealized, "realized": realized}
 
     def place(self, offer, principal, request_id, as_of, available_cash, *, reserve=ZERO,
-              participation=Decimal("0.10"), max_quote_age_seconds=60, admission=None):
+              participation=Decimal("0.10"), max_quote_age_seconds=60, admission=None, connection=None):
+        if connection is None:
+            with self.store.connect() as c:
+                c.execute('BEGIN IMMEDIATE')
+                return self.place(offer,principal,request_id,as_of,available_cash,reserve=reserve,
+                    participation=participation,max_quote_age_seconds=max_quote_age_seconds,
+                    admission=admission,connection=c)
+        return self._place_locked(offer,principal,request_id,as_of,available_cash,reserve=reserve,
+            participation=participation,max_quote_age_seconds=max_quote_age_seconds,
+            admission=admission,connection=connection)
+
+    def _place_locked(self, offer, principal, request_id, as_of, available_cash, *, reserve,
+                      participation, max_quote_age_seconds, admission, connection):
         at = aware_datetime(as_of)
         principal = decimal_value(principal, "capital", positive=True)
         reserve = decimal_value(reserve, "reserva de caja", nonnegative=True)
@@ -260,45 +309,44 @@ class CaucionBook:
             raise ValueError("Falta clave idempotente de la colocación")
         interest, fees, net = offer.economics(principal)
         terms = json.dumps(asdict(offer), sort_keys=True, default=str)
-        fingerprint = hashlib.sha256((terms + "|" + format(principal.normalize(), "f")).encode()).hexdigest()
-        with self.store.connect() as c:
-            c.execute("BEGIN IMMEDIATE")
-            previous = c.execute("SELECT * FROM paper_cauciones WHERE request_id=?", (request_id,)).fetchone()
-            if previous:
-                if previous["request_fingerprint"] != fingerprint:
-                    raise ValueError("Clave de colocación reutilizada con términos diferentes")
-                return dict(previous)
-            if admission:
-                error = admission(c,offer.currency,at,fees)
-                if error:
-                    # Sólo se evaluó riesgo, todavía no existe colocación.
-                    # Conservar el latch aunque la petición sea rechazada.
-                    c.commit()
-                    raise ValueError(error)
-            age = (at - aware_datetime(offer.quoted_at)).total_seconds()
-            if age < 0 or age > max_quote_age_seconds:
-                raise ValueError("Cotización de caución vencida o futura")
-            if at.astimezone(TZ).date().isoformat() != offer.start_date or at >= aware_datetime(offer.maturity_at):
-                raise ValueError("Inicio o vencimiento incompatible con el reloj de la operación")
-            if principal > offer.available_principal * participation:
-                raise ValueError("Capital supera la participación permitida en la profundidad")
-            if net <= 0:
-                raise ValueError("La caución no tiene retorno neto positivo con estos costos")
-            required = principal + (fees if offer.fee_payment == "UPFRONT" else ZERO)
-            cash = decimal_value(available_cash(offer.currency, at, c), 'caja disponible')
-            if required + reserve > cash:
-                raise ValueError("Caja liquidada insuficiente después de reservar fondos")
-            paper_id = "PAPER-CAUCION-" + uuid.uuid4().hex
-            c.execute("""INSERT INTO paper_cauciones VALUES(
-              ?,?,?,'PRODUCTION_PAPER',?,?,'OPEN',?,?,?,?,?,?,?,?,?,NULL,?)""",
-              (paper_id, request_id, fingerprint, offer.instrument_id, offer.currency,
-               str(principal), str(offer.annual_rate_fraction), offer.interest_days,
-               offer.day_count_basis, str(interest), str(fees), offer.fee_payment,
-               at.isoformat(), offer.maturity_at, terms))
-            c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
-                      (at.isoformat(), "PRODUCTION_PAPER", "PAPER_CAUCION_PLACED", paper_id,
-                       f"Colocadora simulada {principal} {offer.currency}; vence {offer.maturity_at}; neto estimado {net}"))
-            return dict(c.execute("SELECT * FROM paper_cauciones WHERE paper_id=?", (paper_id,)).fetchone())
+        request_fingerprint = hashlib.sha256((terms + "|" + format(principal.normalize(), "f")).encode()).hexdigest()
+        c = connection
+        previous = c.execute("SELECT * FROM paper_cauciones WHERE request_id=?", (request_id,)).fetchone()
+        if previous:
+            if previous["request_fingerprint"] != request_fingerprint:
+                raise ValueError("Clave de colocación reutilizada con términos diferentes")
+            return dict(previous)
+        if admission:
+            error = admission(c,offer.currency,at,fees)
+            if error:
+                # Sólo se evaluó riesgo, todavía no existe colocación.
+                # Conservar el latch aunque la petición sea rechazada.
+                c.commit()
+                raise ValueError(error)
+        age = (at - aware_datetime(offer.quoted_at)).total_seconds()
+        if age < 0 or age > max_quote_age_seconds:
+            raise ValueError("Cotización de caución vencida o futura")
+        if at.astimezone(TZ).date().isoformat() != offer.start_date or at >= aware_datetime(offer.maturity_at):
+            raise ValueError("Inicio o vencimiento incompatible con el reloj de la operación")
+        if principal + self.used_principal(offer,connection=c) > offer.available_principal * participation:
+            raise ValueError("Capital supera la participación permitida en la profundidad")
+        if net <= 0:
+            raise ValueError("La caución no tiene retorno neto positivo con estos costos")
+        required = principal + (fees if offer.fee_payment == "UPFRONT" else ZERO)
+        cash = decimal_value(available_cash(offer.currency, at, c), 'caja disponible')
+        if required + reserve > cash:
+            raise ValueError("Caja liquidada insuficiente después de reservar fondos")
+        paper_id = "PAPER-CAUCION-" + uuid.uuid4().hex
+        c.execute("""INSERT INTO paper_cauciones VALUES(
+          ?,?,?,'PRODUCTION_PAPER',?,?,'OPEN',?,?,?,?,?,?,?,?,?,NULL,?)""",
+          (paper_id, request_id, request_fingerprint, offer.instrument_id, offer.currency,
+           str(principal), str(offer.annual_rate_fraction), offer.interest_days,
+           offer.day_count_basis, str(interest), str(fees), offer.fee_payment,
+           at.isoformat(), offer.maturity_at, terms))
+        c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
+                  (at.isoformat(), "PRODUCTION_PAPER", "PAPER_CAUCION_PLACED", paper_id,
+                   f"Colocadora simulada {principal} {offer.currency}; vence {offer.maturity_at}; neto estimado {net}"))
+        return dict(c.execute("SELECT * FROM paper_cauciones WHERE paper_id=?", (paper_id,)).fetchone())
 
     def settle_due(self, as_of):
         at = aware_datetime(as_of)
