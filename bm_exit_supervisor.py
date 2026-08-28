@@ -73,8 +73,14 @@ class PositionExitSupervisor:
         with self.store.connect() as c:
             c.execute("BEGIN IMMEDIATE")
             actual = c.execute("SELECT status FROM paper_positions WHERE paper_id=?", (p["paper_id"],)).fetchone()
-            if not actual or actual[0] != "OPEN":
+            if not actual:
+                return Verdict(p["paper_id"], "WATCH_POSITION_MISSING", verdict.cause,
+                               "La posición desapareció antes de conciliar el fill")
+            if actual[0] == "CLOSED":
                 return Verdict(p["paper_id"], "CLOSED", verdict.cause, "Fill ya registrado")
+            if actual[0] != "OPEN":
+                verdict = Verdict(p["paper_id"],"WATCH_INVALID_LEDGER",verdict.cause,
+                                  "Estado de posición no reconocido; requiere conciliación")
             previous = c.execute("SELECT * FROM paper_exit_intents WHERE paper_id=?", (p["paper_id"],)).fetchone()
             due = previous["due_at"] if previous else None
             cause = (previous["cause"] if previous else None) or verdict.cause
@@ -88,7 +94,7 @@ class PositionExitSupervisor:
                 c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                           (at,"PRODUCTION_PAPER","PAPER_EXIT_STATE",p["paper_id"],
                            f"{verdict.state}; {cause or 'NONE'}; {verdict.reason}"))
-        return verdict
+        return Verdict(p['paper_id'],verdict.state,cause,verdict.reason)
 
     def supervise(self, p, q, at):
         with self.store.connect() as c:
@@ -175,7 +181,12 @@ class PositionExitSupervisor:
         if self.broker.daily_risk:
             self.broker.daily_risk.evaluate(at)
         verdicts = []
-        for p in self.store.open_positions():
+        positions, invalid = self.store.exit_positions()
+        if invalid:
+            settlement_error += f'SPOT_LEDGER_BLOCKED; {len(invalid)} abiertas requieren conciliación. '
+        for p, error in invalid:
+            verdicts.append(self._persist(p,Verdict(p['paper_id'],'WATCH_INVALID_LEDGER',None,error),at))
+        for p in positions:
             key = tuple(p[k] for k in ("symbol","asset_class","settlement","currency","market"))
             try:
                 q = quotes.get(key) if quotes is not None else self.store.latest_quote(p)
