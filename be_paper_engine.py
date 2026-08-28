@@ -345,14 +345,19 @@ class PaperStore:
 
     def recent_closed(self, limit=50, *, strategy_version=None, closed_before=None):
         with self.connect() as c:
+            c.execute('BEGIN')
             if strategy_version is not None:
-                return [dict(r) for r in c.execute("""SELECT * FROM paper_positions
+                rows = [dict(r) for r in c.execute("""SELECT * FROM paper_positions
                   WHERE status='CLOSED' AND strategy_version=?
                   AND (? IS NULL OR julianday(closed_at)<=julianday(?)) ORDER BY closed_at DESC LIMIT ?""",
                   (strategy_version, closed_before, closed_before, limit))]
-            return [dict(r) for r in c.execute(
-                "SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY closed_at DESC LIMIT ?",
-                (limit,))]
+            else:
+                rows = [dict(r) for r in c.execute(
+                    "SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY closed_at DESC LIMIT ?",
+                    (limit,))]
+            for row in rows:
+                spot_ledger.partition(c,row)
+            return rows
 
     def record_decision(self, key: str, q: Quote, action: str, score: Decimal,
                         reason: str, features: dict) -> bool:
