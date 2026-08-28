@@ -1300,6 +1300,50 @@ son criterios de evaluación a discutir, no evidencia de rentabilidad ni una
 garantía de resultados. La hipótesis de que una pérdida no se recupera tampoco
 se acepta como regla universal sin datos.
 
+## Vigesimoséptimo checkpoint: costos y procedencia de ventas parciales
+
+Se reprodujeron tres inconsistencias que el lector aceptaba: `source` del
+fill distinto al de la posición, reasignación de costos entre ventas que
+conservaba el PnL total pero alteraba el resultado por fecha, y precio
+agregado de cierre distinto al promedio ponderado de sus fills.
+
+- `cd_spot_ledger` exige procedencia concordante y valida cada asignación
+  contra cantidad/costo originales. El cierre agregado concilia también el
+  precio ponderado, sin inferirlo del PnL.
+- `allocated_entry_cost` centraliza la regla que ya aplicaba el escritor:
+  centavos HALF_UP, tope del costo remanente y residuo exacto en el último
+  fill. Conserva costos históricos subcentavo; no consulta aranceles actuales.
+- Caja, cortes históricos, riesgo, aprendizaje y panel rechazan registros
+  inconsistentes. El supervisor sigue atendiendo una posición válida aunque
+  otra esté dañada. No se reescriben ni reparan datos históricos.
+- 48 pruebas nuevas; suite intermedia **1.206 aprobadas**, cobertura local
+  **66,01%**, 0 fallas/errores/omisiones. Este resultado precede al diagnóstico
+  del siguiente checkpoint; no lo acredita por sí solo.
+
+## Vigesimoctavo checkpoint: preflight del ledger en lectura
+
+[Procedimiento y límites](V17_LEDGER_PREFLIGHT.md). Paquete independiente del
+diagnóstico PPI ya ejecutado: sin login, red, credenciales, cuentas u órdenes.
+Comprueba los dos motores detenidos/reinicio desactivado y usa un contenedor
+temporal propio con la imagen local del observador, sin arrancar servicios.
+Monta sólo su paquete y el subdirectorio del observador en lectura.
+
+Lee tablas PAPER en una transacción SQLite read-only, incluyendo WAL vigente,
+sin instanciar `PaperStore` ni aplicar migraciones. Las columnas legacy
+faltantes se proyectan sólo en memoria y quedan declaradas como supuestos;
+recibos inexistentes no se inventan. Informe agregado, sin datos por posición.
+No certifica saldos del broker ni habilita producción. Falta ejecutarlo sobre
+la base del servidor: la evidencia local usa fixtures y Docker simulado.
+
+Verificación conjunta de checkpoints 27–28: **1.260 pruebas aprobadas**,
+0 fallas, 0 errores y 0 omisiones; 102 nuevas frente al checkpoint 26
+(48 de conciliación y 54 del preflight). Cobertura global local **66,78%**,
+ledger **96,30%**, lector **97,63%**; cuatro mínimos financieros cumplidos.
+Una advertencia preexistente de Starlette/httpx. La primera ejecución completa
+se interrumpió con `fatal library error, lookup self`; la repetición íntegra
+con registro detallado terminó correctamente, sin cambiar código ni omitir tests.
+No se considera la corrida interrumpida como evidencia aprobada.
+
 ## Verificación
 
 Primer checkpoint: 279 tests aprobados. Segundo: 329. Tercero: 354.
