@@ -5,7 +5,9 @@ Actualizado: 28/08/2026. Base entregada: v16.3.5, rama `testing`, commit
 Trabajo aislado en `feature/v17-convergencia`.
 
 **Estado: desarrollo. No es una versión lista para producción.**
-No se cambiaron imágenes, servicios, modo operativo ni permisos del servidor.
+No se cambiaron imágenes desplegadas, servicios, modo operativo ni permisos del servidor.
+El código del selector ahora inicia el runtime nuevo al solicitar simulación;
+este selector actualizado todavía no se ejecutó en el Droplet.
 No se enviaron órdenes reales. Los nuevos registros son `PRODUCTION_PAPER`.
 
 ## Decisiones del operador
@@ -56,6 +58,16 @@ línea del repositorio ni una validación de rentabilidad de las estrategias.
 | Los informes atribuían PnL por fecha de apertura o incorporaban cierres futuros | PnL por fecha de cierre/acreditación y zona horaria; detalle histórico no muestra resultados posteriores al corte |
 | Un PnL positivo se presentaba como prueba de superar inflación | Comparación bloqueada hasta tener rendimiento porcentual y benchmark del mismo período |
 | CI construía 16.3.5 pero intentaba inspeccionar la imagen 16.2 | Resuelve la imagen exacta desde Compose; test ejecuta el paso con una etiqueta distinta |
+| El reloj de salida se detenía junto con red, sincronizaciones o Gemini | Runtime con reloj padre sin red/IA, escáner y lector de salidas en procesos separados |
+| El supervisor propuesto confundía devolución del callback con venta | Sólo declara CLOSED si existe cierre en el ledger; intento fallido conserva causa y estado pendiente |
+| Stops/tiempo pendientes se olvidaban si el precio luego cambiaba | Intención durable por posición; no se borra al reiniciar ni por recuperar precio |
+| Hora local de descarga rejuvenecía cotizaciones anteriores | book_at y trade_at vienen del campo date de cada respuesta PPI; recepción queda separada |
+| Una aprobación lenta de Gemini terminaba usando un libro viejo | Revalidación de edad/sesión/salud al decidir y dentro de la transacción de apertura |
+| Último negocio ausente se sustituía por midpoint | No se fabrica negocio; libro fresco puede permitir salida pero no crea una señal de entrada |
+| Repetir el mismo último negocio producía ocho muestras ficticias | Series deduplicadas por fecha del proveedor, ventana temporal y disponibilidad al decidir |
+| El aprendizaje mezclaba operaciones con contabilidad anterior | Versión nueva y filtro de versión/fecha de cierre en umbral; muestras antiguas se conservan |
+| Perder la cotización devolvía la valuación al precio de compra | Última marca válida persistente y aviso STALE_MARKS; no desaparece una pérdida por perder el feed |
+| Selector tenía capitales fijos que anulaban el archivo de configuración | Dashboard, escáner y reloj reciben la misma configuración monetaria explícita |
 | Tests de login compartían estado entre ejecuciones | Aislamiento de base temporal en los tests; ningún cambio al límite operativo de login |
 
 ## Cauciones: lo que ya hace el código
@@ -98,7 +110,7 @@ a la nueva contabilidad. Deben reemplazarse antes de habilitar ejecución real.*
 
 | Familia | Implementado en este avance | Falta para completar v17 |
 |---|---|---|
-| Acciones, CEDEARs, ETF | Correcciones de caja, costos, riesgo y cierres en paper | Datos/supervisión independiente y nueva señal validada |
+| Acciones, CEDEARs, ETF | Caja, costos, riesgo, fuente temporal y supervisor independiente en paper | Contrastar segmento/sesión por especie y validar nueva señal/backtest |
 | Bonos, letras, ON | Compras/cierres paper con contrato explícito, factor VN y lote | Cargar factores desde metadatos contrastados; cashflows, amortizaciones, intereses corridos y monedas |
 | Cauciones | Ciclo completo de colocadora simulada, capital y vencimiento | Cotización/adaptador PPI y política de asignación; tomadora excluida por instrucción |
 | Opciones | Contrato y cálculos de prima/lote/pérdida máxima de opción comprada | Integración del ejecutor, liquidez, ejercicio, vencimiento y supervisor específico |
@@ -139,6 +151,66 @@ garantías, moneda ni fecha de vencimiento a partir de un ticker.
 - Falta el libro integral de débitos, créditos, garantías y cashflows corporativos,
   conciliado por moneda y fecha valor. Esta migración no sustituye ese trabajo.
 
+## Supervisor y calidad temporal: cuarto avance
+
+`bv_paper_runtime.py` mantiene el reloj del supervisor en el padre, sin red ni
+Gemini. Dos hijos separados ejecutan el escáner y la lectura de libros de abiertas.
+El padre reinicia al hijo caído con cooldown, procesa vencimientos de cauciones
+y revisa todas las abiertas cada 5 segundos; no es una garantía de tiempo real
+frente a saturación de CPU/disco o bloqueos de SQLite.
+
+```mermaid
+flowchart TD
+    R["Reloj de salidas"] --> D["Libro SQLite paper"]
+    S["Escáner e IA"] --> D
+    L["Lector de salidas"] --> D
+    R -. "Control del proceso" .-> S
+    R -. "Control del proceso" .-> L
+```
+
+- `paper_exit_intents`: causa, primera fecha debida, último control, bloqueo y
+  contador de intentos. CLOSED se escribe en la misma transacción del fill.
+  Se mantienen explícitas las salidas pendientes por falta de libro, liquidez,
+  identidad, sesión o confirmación del ejecutor. La causa original no se relaja.
+- `paper_supervisor_state` y `paper_exit_reader_state`: pulso independiente.
+  El lector realiza preflight incluso sin posiciones, para no abrir primero y
+  descubrir después que no tiene sesión. El silencio mayor a 20 segundos o un
+  estado degradado bloquean admisión; no inventan una venta de las existentes.
+- El hijo lector sólo pide Book por abierta, con pausa entre solicitudes.
+  Tiene sesión PPI propia: **cuotas, latencia y coexistencia de sesiones aún
+  deben validarse contra PPI antes de promover**. Las pruebas no usan una cuenta.
+- Máximo de permanencia se decide sin cotización. Stop/target exigen libro
+  fechado y compatible; un stop tocado con profundidad cero queda pendiente.
+  Todavía no hay fills parciales ni barrido real de varios niveles del libro.
+- Timestamps faltantes, sin zona horaria o futuros se rechazan; no se infiere
+  UTC/Argentina ni se sustituye por recepción. Límite modelado de edad: 120 s.
+  Para salir no se exige último negocio fresco; para entrar por señal sí.
+- Fuente temporal contrastada: campos `date` de Current y Book en la
+  documentación REST PPI. Sus payloads reales y precisión de reloj todavía
+  necesitan comprobación en integración; no se presenta la documentación como
+  una captura de la cuenta del operador.
+- `paper-momentum-v17.1-source-time` identifica operaciones/muestras nuevas.
+  La señal sigue siendo heurística; el filtro de versión no constituye una
+  validación estadística ni completa embargo, holdout o backtest.
+- Las valuaciones se toman bajo un bloqueo transaccional sin red. Conservan
+  última marca válida; sin una marca previa muestran costo como aproximación,
+  siempre con `STALE_MARKS`. No deben usarse como precios actuales ejecutables.
+
+### Ventana de simulación, no horario universal
+
+Modelo de contado regular BYMA CI/24 h: **11:00–16:55**, admisión hasta 16:25
+y salida EOD desde 16:45. Se evita asumir que una punta de subasta es ejecutable.
+El COM18782 enlazado por BYMA distingue cierre regular hasta 16:57 o 17:00 según
+modalidad, además de otros segmentos y subastas. Por eso estos horarios son
+una restricción del modelo paper, **no una afirmación de sesión de cada ticker**.
+Falta confirmar segmento y sesión de cada especie; no se habilita ejecución real.
+No se extrapolan a cauciones, opciones, futuros, FCI ni ruedas concentradas.
+
+No se copió la supuesta regla de que una perdedora casi nunca recupera ni los
+descuentos de salida arbitrarios de la propuesta. Tampoco se fuerza una venta
+después del cierre: se conserva pendiente hasta tener sesión y libro utilizable.
+Siguen pendientes el límite diario persistente, stops dinámicos netos y outbox.
+
 ## Evaluación del código sugerido: decisiones pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -147,8 +219,8 @@ garantías, moneda ni fecha de vencimiento a partir de un ticker.
 | `bl_candle_engine` | Lectura mezcla series ajustadas/no ajustadas; upsert no actualiza apertura | Corregir identidad completa y upsert antes de migrar |
 | Velas desde snapshots | Midpoint no equivale a último negocio y volumen acumulado no equivale a volumen del intervalo | Separar cotizaciones y operaciones; no fabricar volumen, VWAP o dollar bars |
 | Migración histórica | Ruta por defecto difiere de la base actual y cuenta filas ignoradas como migradas | Migración idempotente, conciliación de cantidades y respaldo previo |
-| `bm_exit_supervisor` | Da un cierre por hecho aunque el callback devuelva False | Estado persistente dependiente del fill; reloj y proceso independientes del escáner/IA |
-| `bq_exit_policy` | Horario 17:00 uniforme; breakeven sin costo completo; bloqueo diario no persistente | Sesión por instrumento, costos de salida y bloqueo diario persistente |
+| `bm_exit_supervisor` | Da un cierre por hecho aunque el callback devuelva False | Reescrito: ledger decide CLOSED, intención persistente y reloj sin red/IA; probado con hijos bloqueados |
+| `bq_exit_policy` | Horario 17:00 uniforme; breakeven sin costo completo; bloqueo diario no persistente | Modelo paper regular acotado; sesión real por instrumento, stops netos y bloqueo diario siguen pendientes |
 | Liquidación forzada al cierre | No existe fill ejecutable una vez cerrado el mercado o sin profundidad | Anticipar cierre; conservar salida pendiente si no se puede ejecutar |
 | `bn_telegram_bus` | Fill y notificación en transacciones distintas; riesgo de perder evento; 429 mal coordinado | Outbox en la misma transacción financiera y cooldown global; documentar entrega al menos una vez |
 | `bo_signal_core` | Reward/risk bruto, umbrales heurísticos y controles incompletos de datos | Evaluar neto, calidad y disponibilidad temporal; validar sin anticipación |
@@ -165,8 +237,11 @@ se acepta como regla universal sin datos.
 
 ## Verificación
 
-Primer checkpoint: 279 tests aprobados. Segundo: 329. Tercero: **354 tests
-aprobados** después del diagnóstico real, separación monetaria, catálogo e informes.
+Primer checkpoint: 279 tests aprobados. Segundo: 329. Tercero: 354.
+Cuarto: **386 tests aprobados**, sin fallas ni omisiones, con supervisor,
+calidad temporal y runtime independiente. Cobertura local: 47,44% global;
+86,5% supervisor, 86,5% política de sesión, 77,3% runtime y 86,2% motor paper.
+Los cuatro mínimos de módulos financieros del CI también se cumplen localmente.
 Comando usado: `python -m pytest -o addopts='' -q -m 'not red'`.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
@@ -174,8 +249,10 @@ todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
 todos los pins de producción. Advertencia observada: deprecación del TestClient
 Starlette/httpx del entorno local. En el CI remoto anterior (run 33128104915),
 la suite Python 3.11 y el build Docker aprobaron; el job de arranque falló antes
-de levantar servicios por buscar la imagen 16.2. Este avance corrige esa causa;
-se debe comprobar el nuevo CI completo, no asumir que arrancó por pasar tests.
+de levantar servicios por buscar la imagen 16.2. El tercer checkpoint ya obtuvo
+**CI completo aprobado**, run 33130775522, commit
+`925a9eabee128a46bfd833467611c4a456a9a8b0`: tests, build, arranque, panel y apagado.
+El cuarto avance necesita su propio CI; su resultado se registra en el PR #3.
 Los 12 payloads públicos aportados se usan como fixture; aún falta integración
 con cotizaciones/contratos especializados y validación en el Droplet.
 
@@ -214,6 +291,9 @@ específica, y renta fija necesita factor nominal/lote contrastados.
 - [BYMA: opciones](https://www.byma.com.ar/productos/productos-financieros/opciones):
   prima T+0 y horarios/ejercicio específicos. No corresponde asumir T+1 y cierre
   uniforme de todas las familias.
+- [BYMA: horarios y COM18782](https://www.byma.com.ar/mercado/horarios):
+  PDF oficial enlazado descargado y leído el 28/08/2026; regular, subastas,
+  negociación concentrada y derivados no tienen un horario universal.
 
 Los aranceles heredados aún requieren conciliación con el presupuesto aplicable
 a la cuenta. No se validaron aquí como tarifas comerciales vigentes del usuario.
