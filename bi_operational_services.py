@@ -20,6 +20,7 @@ import sqlite3
 import statistics
 import time
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -324,22 +325,44 @@ def refresh_news(store, timeout=8):
 def _period_data(store, start, end):
     with store.connect() as c:
         positions = [dict(r) for r in c.execute("""SELECT * FROM paper_positions
-          WHERE opened_at>=? AND opened_at<? ORDER BY opened_at""", (start, end))]
+          WHERE (julianday(opened_at)>=julianday(?) AND julianday(opened_at)<julianday(?))
+          OR (status='CLOSED' AND julianday(closed_at)>=julianday(?) AND julianday(closed_at)<julianday(?))
+          ORDER BY opened_at""", (start, end, start, end))]
+        closed = [dict(r) for r in c.execute("""SELECT * FROM paper_positions WHERE status='CLOSED'
+          AND julianday(closed_at)>=julianday(?) AND julianday(closed_at)<julianday(?)""", (start, end))]
+        cauciones = []
+        if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_cauciones'").fetchone():
+            cauciones = [dict(r) for r in c.execute("""SELECT * FROM paper_cauciones WHERE status='MATURED'
+              AND julianday(settled_at)>=julianday(?) AND julianday(settled_at)<julianday(?)""", (start, end))]
         decisions = [dict(r) for r in c.execute("""SELECT * FROM paper_decisions
-          WHERE decided_at>=? AND decided_at<? ORDER BY decided_at""", (start, end))]
+          WHERE julianday(decided_at)>=julianday(?) AND julianday(decided_at)<julianday(?) ORDER BY decided_at""", (start, end))]
         news = [dict(r) for r in c.execute("""SELECT * FROM financial_news
-          WHERE fetched_at>=? AND fetched_at<? ORDER BY COALESCE(published_at,fetched_at) DESC LIMIT 25""",
+          WHERE julianday(fetched_at)>=julianday(?) AND julianday(fetched_at)<julianday(?) ORDER BY COALESCE(published_at,fetched_at) DESC LIMIT 25""",
           (start, end))]
         try:
             gates = [dict(r) for r in c.execute("""SELECT * FROM trade_gate_evaluations
-              WHERE evaluated_at>=? AND evaluated_at<? ORDER BY evaluated_at""", (start, end))]
+              WHERE julianday(evaluated_at)>=julianday(?) AND julianday(evaluated_at)<julianday(?) ORDER BY evaluated_at""", (start, end))]
         except sqlite3.Error:
             gates = []
-    closed = [p for p in positions if p.get("status") == "CLOSED"]
-    pnl = sum(float(p.get("net_pnl") or 0) for p in closed)
+    pnl_by_currency = {}
+    for p in closed:
+        currency = p.get("currency", "ARS")
+        pnl_by_currency[currency] = pnl_by_currency.get(currency, Decimal(0)) + Decimal(p.get("net_pnl") or "0")
+    for p in cauciones:
+        currency = p["currency"]
+        pnl_by_currency[currency] = pnl_by_currency.get(currency, Decimal(0)) + Decimal(p["gross_interest"]) - Decimal(p["total_fees"])
+    # Un informe histórico no convierte en resultado del día un cierre futuro.
+    for p in positions:
+        if p.get("closed_at") and datetime.fromisoformat(p["closed_at"].replace("Z", "+00:00")) >= datetime.fromisoformat(end.replace("Z", "+00:00")):
+            p["status"] = "OPEN"
+            for key in ("closed_at", "exit_price", "exit_cost", "gross_pnl", "net_pnl", "close_reason"):
+                p[key] = None
+    pnl = float(pnl_by_currency.get("ARS", 0))
     wins = sum(1 for p in closed if float(p.get("net_pnl") or 0) > 0)
     return {"positions": positions, "closed": closed, "decisions": decisions,
             "news": news, "gates": gates, "pnl": pnl, "wins": wins,
+            "pnl_by_currency": {key: str(value) for key, value in sorted(pnl_by_currency.items())},
+            "cauciones_matured": cauciones,
             "win_rate": wins / len(closed) * 100 if closed else None}
 
 
@@ -358,6 +381,7 @@ def _report_story(title, period, data):
     for p in data["positions"]:
         operations.append({
             "instrumento": p.get("symbol"), "estado": p.get("status"),
+            "moneda_plaza": p.get("currency", "ARS"), "mercado": p.get("market", "BYMA"),
             "apertura": p.get("opened_at"), "cierre": p.get("closed_at"),
             "entrada": p.get("entry_price"), "salida": p.get("exit_price"),
             "pnl_neto": p.get("net_pnl"), "motivo_cierre": p.get("close_reason"),
@@ -369,20 +393,40 @@ def _report_story(title, period, data):
         "resumen": {"operaciones": len(data["positions"]), "cerradas": len(data["closed"]),
                     "ganadoras": data["wins"], "win_rate_pct": data["win_rate"],
                     "pnl_neto_ars": round(data["pnl"], 2), "decisiones": len(data["decisions"]),
+                    "pnl_por_moneda": data.get("pnl_by_currency", {}),
+                    "cauciones_vencidas": len(data.get("cauciones_matured", [])),
                     "bloqueos_finales": sum(1 for g in data["gates"] if g.get("final_result") == "BLOCKED")},
         "operaciones": operations, "secuencia_de_portones": data["gates"],
+        "cauciones_vencidas": [{"contrato": p["instrument_id"], "moneda_plaza": p["currency"],
+                                "capital": p["principal"], "interes_bruto": p["gross_interest"],
+                                "costos": p["total_fees"], "acreditacion": p["settled_at"],
+                                "interes_neto": str(Decimal(p["gross_interest"]) - Decimal(p["total_fees"]))}
+                               for p in data.get("cauciones_matured", [])],
         "decisiones": data["decisions"], "noticias_relevantes": data["news"],
         "nota": "Archivo preparado para discusión de lecciones aprendidas con una IA; no contiene secretos ni datos de cuenta.",
     }
 
 
 def _pdf(story, path):
+    import reportlab
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     styles = getSampleStyleSheet()
+    # Fuentes incluidas con ReportLab: el PDF conserva su tipografía al exportar.
+    font_dir = Path(reportlab.__file__).parent / "fonts"
+    for name, filename in (("Porota", "Vera.ttf"), ("Porota-Bold", "VeraBd.ttf"),
+                           ("Porota-Italic", "VeraIt.ttf"), ("Porota-BoldItalic", "VeraBI.ttf")):
+        if name not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(name, str(font_dir / filename)))
+    pdfmetrics.registerFontFamily("Porota", normal="Porota", bold="Porota-Bold",
+                                 italic="Porota-Italic", boldItalic="Porota-BoldItalic")
+    for style in styles.byName.values():
+        style.fontName = "Porota-Bold" if style.name.startswith("Heading") else "Porota"
     doc = SimpleDocTemplate(str(path), pagesize=A4, rightMargin=14*mm, leftMargin=14*mm,
                             topMargin=14*mm, bottomMargin=14*mm,
                             title=story["titulo"], author="Porota Trading")
@@ -390,7 +434,7 @@ def _pdf(story, path):
               Paragraph(f"{html.escape(story['periodo'])} · Modo SIMULACIÓN PRODUCTIVA · órdenes reales: 0", styles["Normal"]),
               Spacer(1, 8)]
     summary = story["resumen"]
-    table = Table([["Operaciones", "Cerradas", "Ganadoras", "Win rate", "PnL neto"],
+    table = Table([["Operaciones", "Cerradas", "Ganadoras", "Win rate", "PnL neto ARS"],
                    [summary["operaciones"], summary["cerradas"], summary["ganadoras"],
                     "s/d" if summary["win_rate_pct"] is None else f"{summary['win_rate_pct']:.1f}%",
                     f"$ {summary['pnl_neto_ars']:,.2f}"]], repeatRows=1)
@@ -398,13 +442,24 @@ def _pdf(story, path):
                                ("TEXTCOLOR", (0,0), (-1,0), colors.white),
                                ("GRID", (0,0), (-1,-1), .3, colors.grey),
                                ("VALIGN", (0,0), (-1,-1), "TOP"),
+                               ("FONTNAME", (0,0), (-1,-1), "Porota"),
                                ("FONTSIZE", (0,0), (-1,-1), 8)]))
-    blocks += [table, Spacer(1, 12), Paragraph("Operaciones y lecciones", styles["Heading2"])]
+    blocks += [table, Spacer(1, 8), Paragraph("Resultados realizados por moneda/plaza (sin conversión ni suma entre monedas)", styles["Heading3"])]
+    for currency, pnl in summary.get("pnl_por_moneda", {}).items():
+        blocks.append(Paragraph(html.escape(f"{currency}: {Decimal(pnl):,.2f}"), styles["Normal"]))
+    if story.get("cauciones_vencidas"):
+        blocks.append(Paragraph("Cauciones colocadoras acreditadas", styles["Heading2"]))
+        for item in story["cauciones_vencidas"]:
+            blocks.append(Paragraph(html.escape(
+                f"{item['contrato']} · {item['moneda_plaza']} · capital {item['capital']} · "
+                f"interés bruto {item['interes_bruto']} · costos {item['costos']} · "
+                f"interés neto {item['interes_neto']} · acreditación {item['acreditacion']}"), styles["BodyText"]))
+    blocks += [Spacer(1, 12), Paragraph("Operaciones y lecciones", styles["Heading2"])]
     if not story["operaciones"]:
-        blocks.append(Paragraph("No hubo operaciones simuladas en este período.", styles["Normal"]))
+        blocks.append(Paragraph("No hubo operaciones de compraventa simuladas en este período.", styles["Normal"]))
     for op in story["operaciones"]:
         color = "#16833b" if float(op.get("pnl_neto") or 0) > 0 else "#c62828" if float(op.get("pnl_neto") or 0) < 0 else "#667085"
-        blocks += [Paragraph(f"<font color='{color}'><b>{html.escape(str(op['instrumento']))} · {html.escape(str(op['estado']))} · PnL $ {float(op.get('pnl_neto') or 0):,.2f}</b></font>", styles["Heading3"]),
+        blocks += [Paragraph(f"<font color='{color}'><b>{html.escape(str(op['instrumento']))} · {html.escape(str(op['estado']))} · PnL {html.escape(op.get('moneda_plaza', 'ARS'))} {float(op.get('pnl_neto') or 0):,.2f}</b></font>", styles["Heading3"]),
                    Paragraph(html.escape(op["leccion"]), styles["BodyText"]), Spacer(1, 5)]
     blocks += [PageBreak(), Paragraph("Noticias financieras, económicas y geopolíticas", styles["Heading2"])]
     for item in story["noticias_relevantes"][:20]:
@@ -458,8 +513,10 @@ def ensure_reports(store, include_today=False):
     # servicio fue instalado después de esas operaciones.
     with store.connect() as c:
         observed = [r[0] for r in c.execute("""SELECT DISTINCT day FROM (
-          SELECT substr(opened_at,1,10) day FROM paper_positions
-          UNION SELECT substr(decided_at,1,10) day FROM paper_decisions)
+          SELECT date(opened_at,'-3 hours') day FROM paper_positions
+          UNION SELECT date(closed_at,'-3 hours') day FROM paper_positions WHERE status='CLOSED'
+          UNION SELECT date(settled_at,'-3 hours') day FROM paper_cauciones WHERE status='MATURED'
+          UNION SELECT date(decided_at,'-3 hours') day FROM paper_decisions)
           WHERE day IS NOT NULL AND day<>'' ORDER BY day""").fetchall()]
         existing = {r[0] for r in c.execute(
             "SELECT period_key FROM report_registry WHERE period_type='DIARIO'").fetchall()}
@@ -513,7 +570,9 @@ def send_closing_summary(store):
     win = "s/d" if data["win_rate"] is None else f"{data['win_rate']:.1f}%"
     text = ("📊 POROTA — CIERRE SIMULACIÓN PRODUCTIVA\n"
             f"Fecha: {today.isoformat()}\nOperaciones cerradas: {len(data['closed'])}\n"
-            f"Win rate: {win}\nPnL paper neto: $ {data['pnl']:,.2f}\n"
+            f"Win rate: {win}\nPnL paper neto ARS: $ {data['pnl']:,.2f}\n"
+            f"Por moneda/plaza: {json.dumps(data.get('pnl_by_currency', {}), ensure_ascii=False)}\n"
+            f"Cauciones vencidas: {len(data.get('cauciones_matured', []))}\n"
             f"Decisiones evaluadas: {len(data['decisions'])}\nÓrdenes reales: 0\n"
             "Dashboard: disponible 24x7. Informe diario: menú Reportes.")
     try:
