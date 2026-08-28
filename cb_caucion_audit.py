@@ -12,7 +12,7 @@ import sqlite3
 from bl_candle_engine import fingerprint, stamp
 from bs_instrument_contracts import decimal_value
 from bt_caucion_paper import CaucionOffer, offer_payload
-from ca_caucion_allocator import CaucionPolicy, encoded
+from ca_caucion_allocator import CaucionPolicy, encoded, selection_key
 
 
 def _require(condition, code):
@@ -87,9 +87,7 @@ def _validated(row, connection):
              and decision['code'] == 'CANDIDATE_SELECTED'
              and selected == candidates[selected['candidate_id']] and selected in eligible,
              'SELECTION_MISMATCH')
-    metric = 'net_profit' if policy.ranking == 'NET_PROFIT' else 'net_return_per_day'
-    winner = min(eligible, key=lambda r:(-Decimal(r[metric]), r['interest_days'],
-                                       Decimal(r['cash_debit']), r['candidate_id']))
+    winner = min(eligible, key=lambda r:selection_key(r,policy.ranking))
     _require(selected == winner, 'RANKING_MISMATCH')
     placement = connection.execute('SELECT * FROM paper_cauciones WHERE paper_id=?', (row['paper_id'],)).fetchone()
     _require(placement is not None, 'MISSING_PLACEMENT')
