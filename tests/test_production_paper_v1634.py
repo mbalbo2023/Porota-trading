@@ -824,7 +824,8 @@ def test_historicos_usan_universo_completo_no_lote_activo(tmp_path, monkeypatch)
     monkeypatch.setattr(observer, "HISTORY_BATCH_LIMIT", 100)
     class Reader:
         def history(self, symbol, *_args):
-            return [{"date": "2026-08-25", "close": 1}]
+            return [{"date":"2026-08-25T17:00:00-03:00","price":1,
+                     "openingPrice":1,"max":1,"min":1,"volume":100}]
     observer._download_histories(Reader(), store)
     with store.connect() as connection:
         covered = connection.execute("SELECT COUNT(*) FROM production_history").fetchone()[0]
