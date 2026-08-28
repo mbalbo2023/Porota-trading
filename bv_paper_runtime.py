@@ -1,4 +1,4 @@
-"""Runtime PAPER: reloj sin red + escáner/IA + lector de salidas en procesos distintos.
+"""Runtime PAPER: reloj, escáner/IA, lector de salidas y avisos en procesos distintos.
 
 No envía órdenes. Compartir SQLite permite que una llamada lenta a PPI/Gemini
 no detenga los vencimientos ni el estado de salida. El lector de salidas usa
@@ -34,7 +34,8 @@ def broker_from_environment(store, **overrides):
         max_position_pct=os.getenv("PAPER_MAX_POSITION_PCT", "0.25"),
         max_total_exposure_pct=os.getenv("PAPER_MAX_TOTAL_EXPOSURE_PCT", "0.60"),
         clock_fn=now_iso, session_policy=PaperSessionPolicy(), require_supervisor=True,
-        quote_max_age_seconds=120)
+        quote_max_age_seconds=120,
+        daily_loss_pct=os.getenv('MAX_DAILY_LOSS_PCT','1.0'))
     values.update(overrides)
     return PaperBroker(store, **values)
 
@@ -176,6 +177,10 @@ def main(argv=None):
     if argv == ["--exit-reader"]:
         run_reader(store, stop)
         return 0
+    if argv == ["--notification-worker"]:
+        from bn_telegram_bus import run_worker
+        run_worker(store,stop,clock_fn=now_iso)
+        return 0
     if argv:
         raise ValueError("Argumentos desconocidos del runtime paper")
     # Un reloj por libro, incluso si se intenta iniciar otro contenedor.
@@ -184,6 +189,7 @@ def main(argv=None):
         children = ChildProcesses({
             "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
             "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
+            "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
         })
         run_clock(store,children,stop)
     return 0
