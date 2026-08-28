@@ -8,6 +8,7 @@ from decimal import Decimal
 import json
 
 from bs_instrument_contracts import aware_datetime, decimal_value, cash_currency
+from cf_sale_settlement import validated_sale_settlement
 
 ZERO = Decimal(0)
 
@@ -164,9 +165,8 @@ def pending(c, at, currency):
             if aware_datetime(sale['filled_at']) > at:
                 continue
             value = decimal_value(sale['net_proceeds'],'producido de venta')
-            available = aware_datetime(sale['available_at']) if sale['available_at'] else None
-            if available is not None and available < aware_datetime(sale['filled_at']):
-                raise ValueError('Liquidación anterior a la venta')
+            available = validated_sale_settlement(row['settlement'],sale['filled_at'],
+                                                 sale['available_at'],sale['basis'])
             if value > 0 and (available is None or available > at):
                 amount += value
     return amount
