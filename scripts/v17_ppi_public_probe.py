@@ -204,7 +204,8 @@ def live_report(secret_path=SECRET):
 
 
 def docker(args, *, timeout=15):
-    result=subprocess.run(['docker',*args],capture_output=True,text=True,timeout=timeout)
+    # El operador ya verificó sudo -n docker. No requiere sudo para Python.
+    result=subprocess.run(['sudo','-n','docker',*args],capture_output=True,text=True,timeout=timeout)
     if result.returncode:
         raise ProbeStop('DOCKER_COMMAND_FAILED_'+args[0].upper())
     return result.stdout
