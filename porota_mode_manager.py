@@ -33,6 +33,17 @@ IMAGE = "porota-trading-bot:16.3.5"
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 KNOWN = ("porota_production_observer", "porota_production_dashboard",
          "porota_dashboard_preview", "porota_sandbox_engine", "porota_production_engine")
+PAPER_DEFAULTS = {
+    "PAPER_INITIAL_CAPITAL_ARS": "1000000", "PAPER_INITIAL_CAPITAL_USD": "0",
+    "PAPER_INITIAL_CAPITAL_USD_MEP": "0", "PAPER_INITIAL_CAPITAL_USD_CCL": "0",
+    "PAPER_RISK_PER_TRADE": "0.005", "PAPER_MAX_OPEN_POSITIONS": "3",
+    "PAPER_MAX_POSITION_PCT": "0.25", "PAPER_MAX_TOTAL_EXPOSURE_PCT": "0.60",
+    "PAPER_MAX_HOLD_MINUTES": "180", "PAPER_ACTIVE_SYMBOL_LIMIT": "20",
+}
+
+
+def paper_settings(env):
+    return {key: env.get(key, "").strip() or default for key, default in PAPER_DEFAULTS.items()}
 
 
 def run(*args, check=True, capture=False):
@@ -102,18 +113,13 @@ def dashboard_env(mode):
         if "=" not in line:
             continue
         key = line.split("=", 1)[0].strip()
-        if not key.startswith(forbidden) and key not in {"DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH"}:
+        if not key.startswith(forbidden) and key not in {"DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH", *PAPER_DEFAULTS}:
             safe.append(line)
     safe += [f"DASHBOARD_OPERATION_MODE={mode}",
              "PAPER_DB_PATH=/app/data/observer/observer_production.db",
-             "PAPER_INITIAL_CAPITAL_ARS=1000000",
-             "PAPER_RISK_PER_TRADE=0.005",
-             "PAPER_MAX_OPEN_POSITIONS=3",
-             "PAPER_MAX_POSITION_PCT=0.25",
-             "PAPER_MAX_TOTAL_EXPOSURE_PCT=0.60",
-             "PAPER_ACTIVE_SYMBOL_LIMIT=20",
              "DASHBOARD_REFRESH_SECONDS=30",
              "SERVER_TIMEZONE=America/Argentina/Buenos_Aires"]
+    safe += [f"{key}={value}" for key, value in paper_settings(env_file()).items()]
     target.write_text("\n".join(safe) + "\n", encoding="utf-8")
     os.chmod(target, 0o600)
     return target
@@ -133,6 +139,7 @@ def observer_ai_env():
         "TELEGRAM_BOT_TOKEN": env.get("TELEGRAM_BOT_TOKEN", "").strip(),
         "TELEGRAM_CHAT_ID": env.get("TELEGRAM_CHAT_ID", "").strip(),
     }
+    values.update(paper_settings(env))
     target.write_text("\n".join(f"{name}={value}" for name, value in values.items()) + "\n",
                       encoding="utf-8")
     os.chmod(target, 0o600)
@@ -165,24 +172,18 @@ def simulation():
         "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
         "-e", "PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json",
         "-e", "PAPER_DB_PATH=/app/data/observer/observer_production.db",
-        "-e", "PAPER_INITIAL_CAPITAL_ARS=1000000",
-        "-e", "PAPER_RISK_PER_TRADE=0.005",
-        "-e", "PAPER_MAX_OPEN_POSITIONS=3",
-        "-e", "PAPER_MAX_POSITION_PCT=0.25",
-        "-e", "PAPER_MAX_TOTAL_EXPOSURE_PCT=0.60",
         "-e", "MARKET_OPEN_HOUR=11",
         "-e", "MARKET_OPEN_MINUTE=0",
         "-e", "MARKET_CLOSE_HOUR=17",
         "-e", "MARKET_CLOSE_MINUTE=0",
         "-e", "PAPER_PREOPEN_MINUTES=15",
         "-e", "PPI_LOGIN_COOLDOWN_SECONDS=900",
-        "-e", "PAPER_ACTIVE_SYMBOL_LIMIT=20",
         "-e", "PPI_HISTORY_BATCH_LIMIT=40",
         "-e", "DATA_DIR=/app/data",
         "-e", "SERVER_TIMEZONE=America/Argentina/Buenos_Aires",
         "--env-file", str(ai_env),
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
-        "--entrypoint", "python", IMAGE, "bf_production_paper_observer.py")
+        "--entrypoint", "python", IMAGE, "bv_paper_runtime.py")
     status = notify("🟣 POROTA — MODO SIMULACIÓN PRODUCTIVA\nDatos reales de PPI Producción. Gemini actúa como portón crítico. Compras y ventas 100% simuladas. Órdenes reales: NINGUNA.")
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
