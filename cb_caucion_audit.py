@@ -112,7 +112,7 @@ def _validated(row, connection):
     return decision, {k:placement[k] for k in ('paper_id','status','opened_at','maturity_at','settled_at')}
 
 
-def allocation_history(path, *, limit=25, offset=0):
+def allocation_history(path, *, limit=25, offset=0, require_workspace=False):
     """Página de decisiones y ledger en una única transacción de sólo lectura.
 
 Orden por instante (no por texto de zona horaria). total y estado se refieren
@@ -127,9 +127,15 @@ al historial/página indicados. Nunca interpreta una lectura fallida como vacío
     if not path.exists():
         return result
     try:
+        if require_workspace:
+            from cg_paper_workspace import checked_path
+            path = checked_path(path)
         with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro', uri=True, timeout=5)) as c:
             c.row_factory = sqlite3.Row
             c.execute('BEGIN')
+            if require_workspace:
+                from cg_paper_workspace import identity_from_connection
+                identity_from_connection(c)
             if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_caucion_allocations'").fetchone():
                 return dict(result, state='MISSING_TABLE')
             result['total'] = c.execute('SELECT COUNT(*) FROM paper_caucion_allocations').fetchone()[0]
@@ -148,6 +154,6 @@ al historial/página indicados. Nunca interpreta una lectura fallida como vacío
             result['has_more'] = offset+len(rows) < result['total']
             result['state'] = ('PARTIAL' if any(r['state'] != 'CONSISTENT' for r in result['records'])
                                else 'READABLE' if rows else 'EMPTY_PAGE' if result['total'] else 'EMPTY')
-    except (sqlite3.Error, OSError):
+    except (sqlite3.Error, OSError, ValueError):
         result.update(state='READ_ERROR', records=[], total=None, has_more=False)
     return result
