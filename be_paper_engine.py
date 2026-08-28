@@ -521,6 +521,11 @@ class PaperBroker:
         from ca_caucion_allocator import allocate
         return allocate(self,offers,policy,request_id,as_of=as_of)
 
+    def allocate_conservative_caucion(self, offers, window, request_id, as_of=None):
+        """Perfil ARS delegado; ventana/ofertas reales todavía deben validarse."""
+        from ce_caucion_treasury import allocate_conservative
+        return allocate_conservative(self,offers,window,request_id,as_of=as_of)
+
     def threshold(self, as_of=None):
         closed = self.store.recent_closed(20, strategy_version=STRATEGY_VERSION, closed_before=as_of)
         if len(closed) < 5:
