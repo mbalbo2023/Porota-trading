@@ -1049,6 +1049,39 @@ los originales, sin unidad de cantidad ni plazo de liquidación.
 Sin llamadas PPI/Telegram, arranque del servidor, despliegue, cambios de
 ciberseguridad ni nueva carga de trabajo para el operador.
 
+## Vigesimoprimer checkpoint: aislamiento de posiciones spot inconsistentes
+
+Se reprodujo una falla operacional en el reloj de salidas: `open_positions()`
+valida el ledger completo y, correctamente, no entrega una cartera financiera
+parcial. Pero el supervisor y su lector reutilizaban esa lectura estricta. Una
+sola posición abierta con cronología, contrato o venta parcial inconsistentes
+interrumpía el lote antes de evaluar los stops de las demás posiciones.
+
+- Se agrega un snapshot exclusivo y de sólo lectura para supervisión. Valida
+  cada abierta con la misma partición económica y devuelve por separado las
+  válidas y las inconsistentes. Errores de base o esquema se propagan; no se
+  convierten en una cartera vacía aparentemente sana.
+- El supervisor persiste `WATCH_INVALID_LEDGER` para cada registro roto,
+  conserva su causa/due_at/intentos anteriores y marca su pulso `DEGRADED`.
+  No repara, elimina, cierra ni genera fills para esa posición.
+- Sólo `CLOSED` sale de ese snapshot. Un estado desconocido también se marca
+  inconsistente y nunca se informa como un cierre o una posición inexistente.
+- Las posiciones válidas del mismo snapshot continúan con identidad, horario,
+  libro, profundidad, stop y fill normales. El lector sólo consulta books para
+  ellas y cuenta cada registro inconsistente como error, por lo que su salud
+  tampoco puede quedar `READY` en falso.
+- La lectura financiera continúa siendo estricta: caja, riesgo diario, panel e
+  informes no omiten el registro roto para inventar disponibilidad o patrimonio.
+  El estado diario queda `INVALID_LEDGER` y la admisión de compras permanece
+  bloqueada; sólo se preserva la capacidad defensiva de vender posiciones sanas.
+- Un `features_json` de una venta parcial debe ser un objeto; arreglos u otras
+  formas ya no producen un `AttributeError` impreciso y se clasifican como
+  inconsistencia de contrato.
+
+Es aislamiento de fallas para salidas PAPER, no tolerancia financiera ni
+recuperación automática. No cambia posiciones históricas ni política de stops,
+no usa red/IA y no despliega o arranca el servidor.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -1246,6 +1279,16 @@ llamadas antiguas y rama REAL sin escritura. Confirmación interceptada probada
 contra la función real del portón con estado y traza sustituidos; cualquier
 acceso al SDK falla en ese fixture. No se escribe caja, posiciones o trazas
 reales ni se certifica un fill. CI remoto completo a registrar en la PR.
+
+Vigesimoprimer checkpoint: **962 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 11 pruebas nuevas y 79 dirigidas. Cobertura global local 63,63%;
+cuatro mínimos financieros existentes cumplidos. Regresión reproducida antes
+de corregir con cinco corrupciones: cronología/estado, PnL parcial, cantidad no
+finita y contrato con forma inválida. Se verifican dos abiertas en el mismo
+lote, stop válido, cero fills sobre la rota, caja/riesgo estrictos, pulso
+DEGRADED, reader que continúa con una sola consulta, snapshot read-only,
+reinicio/idempotencia, reparación explícita y errores SQLite no silenciados.
+Fixtures locales sin PPI/Telegram; CI remoto completo a registrar en la PR.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
