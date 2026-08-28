@@ -839,7 +839,7 @@ def evaluate_instrument(inst, ppi, gemini, notifier, ccl_cached,
         return
 
     mkt = ppi.get_market_data(ticker, inst.instrument_type, inst.settlement)
-    if not mkt or (time.time() - mkt.get("epoch_recv", 0)) > 30:
+    if not mkt or not all(0 <= time.time()-mkt.get(key,0) <= 30 for key in ('epoch_recv','epoch_source')):
         log_signal(ticker, "REJECTED_STALE_DATA", "Cotización PPI ausente o vieja (>30s).",
                    score_tech=tech.score_tech)
         return
@@ -847,18 +847,22 @@ def evaluate_instrument(inst, ppi, gemini, notifier, ccl_cached,
     if current_price <= 0:
         return
 
-    # NUEVO EN v13.0 — hallazgo MEDIO de Simulación_y_pasos_a_tener_en_cuenta:
-    # antes se pedía el book una sola vez con el settlement configurado por
-    # instrumento; si ese plazo puntual venía vacío en Sandbox (común en
-    # BONOS), se perdía la oportunidad aunque hubiera liquidez real en el
-    # otro plazo. get_book_with_fallback() reintenta automáticamente contra
-    # A-48HS antes de asumir que no hay liquidez.
+    # La liquidez de otro plazo requiere una evaluación nueva, no un
+    # reemplazo transparente del libro de la orden original.
     book = ppi.get_book_with_fallback(ticker, inst.instrument_type, inst.settlement)
-    spread_pct = 0.0
-    if book and book.get("offers") and book.get("bids"):
-        best_bid = book["bids"][0]["price"]
-        if best_bid > 0:
-            spread_pct = round((book["offers"][0]["price"] - best_bid) / best_bid * 100, 4)
+    if (not book or book.get('settlement_used') != inst.settlement
+            or not book.get('bids') or not book.get('offers')
+            or not all(0 <= time.time()-book.get(key,0) <= 30 for key in ('epoch_recv','epoch_source'))):
+        log_signal(ticker, 'REJECTED_BOOK_DATA', 'Libro incompleto, vencido o de otro plazo.',score_tech=tech.score_tech)
+        return
+    try:
+        best_bid, best_ask = float(book['bids'][0]['price']), float(book['offers'][0]['price'])
+        if not economics._finite_number(best_bid) or not economics._finite_number(best_ask) or not 0 < best_bid <= best_ask:
+            raise ValueError('Puntas inválidas')
+    except (ValueError,TypeError,KeyError,IndexError):
+        log_signal(ticker, 'REJECTED_BOOK_DATA', 'Puntas inválidas o cruzadas.',score_tech=tech.score_tech)
+        return
+    spread_pct = round((best_ask-best_bid)/best_bid*100,4)
 
     # Para instrumentos locales, atr_1h ya viene expresado en unidades de precio diario (ver e_technical_engine).
     ref_price = tech.signals.get("1H", tech.signals.get("1D", tech.signals.get("5M"))).ema_fast if tech.signals else current_price
@@ -915,6 +919,10 @@ def evaluate_instrument(inst, ppi, gemini, notifier, ccl_cached,
     target_hold_days = (SCALPING_TARGET_HOLD_MINUTES / (60 * 24)) if scalping_active else TARGET_HOLD_DAYS
 
     hurdle = economics.get_dynamic_hurdle_rate_monthly(ppi, dec_ia.get("estimated_monthly_inflation_pct"))
+    if hurdle.get("state") != "READY":
+        log_signal(ticker, "REJECTED_HURDLE_DATA", hurdle.get("reason", "Piso de rentabilidad no validado"),
+                   score_tech=tech.score_tech, macro_score=dec_ia.get("macro_score"))
+        return
     net_return = economics.calculate_net_return_pct(expected_gross, spread_pct)
     check = economics.passes_hurdle(net_return, max(int(round(target_hold_days)), 1) if not scalping_active else 1,
                                      hurdle["hurdle_monthly_pct"])
