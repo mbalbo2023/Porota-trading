@@ -206,6 +206,8 @@ class PaperStore:
         from bw_daily_risk import init_schema as init_risk_schema
         init_outbox_schema(self)
         init_risk_schema(self)
+        from bl_candle_engine import init_schema as init_candle_schema
+        init_candle_schema(self)
 
     def audit_http(self, method, path, result):
         with self.connect() as c:
