@@ -1,8 +1,10 @@
 import importlib
+import json
 import os
 import sqlite3
 import sys
 from pathlib import Path
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -123,6 +125,7 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
     with TestClient(dashboard.app) as cliente:
         assert cliente.get("/vivo").status_code == 401
         assert cliente.get("/observacion").status_code == 401
+        assert cliente.get("/api/paper/caucion-allocations").status_code == 401
         entrada = cliente.get("/vivo?token=" + "R" * 40, follow_redirects=False)
         assert entrada.status_code == 303
         assert entrada.headers["location"] == "/vivo"
@@ -139,6 +142,24 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
             assert "órdenes reales: NINGUNA" in respuesta.text
             assert "R" * 40 not in respuesta.text
             assert "Esperando tu autorización" not in respuesta.text
+        history = cliente.get('/api/paper/caucion-allocations')
+        assert history.status_code == 200
+        assert history.json()['state'] == 'EMPTY'
+        for query in ('limit=0','limit=101','offset=-1','offset=100001'):
+            assert cliente.get('/api/paper/caucion-allocations?'+query).status_code == 422
+        assert cliente.post('/api/paper/caucion-allocations').status_code == 405
+        from test_production_paper_v1634 import caucion_offer, caucion_policy
+        broker = be_paper_engine.PaperBroker(be_paper_engine.PaperStore(db), initial_cash='10000', daily_loss_pct='1')
+        original = _decision(broker, [caucion_offer()], caucion_policy())
+        response = cliente.get('/api/paper/caucion-allocations')
+        assert response.status_code == 200
+        assert response.json()['records'][0]['decision'] == original
+        assert 'Colocación simulada registrada' in cliente.get('/motor-trading').text
+        with broker.store.connect() as c:
+            c.execute('DROP TABLE paper_caucion_allocations')
+            c.execute('CREATE TABLE paper_caucion_allocations(x)')
+        response = cliente.get('/api/paper/caucion-allocations')
+        assert response.status_code == 503 and response.json()['state'] == 'READ_ERROR'
     assert consultas
     assert all(sql.lstrip().upper().startswith("SELECT") for sql in consultas)
     assert any("FROM signals" in sql and "__SISTEMA__" in sql for sql in consultas)
@@ -308,3 +329,203 @@ def test_sre_reportes_finanzas_y_colores_explicitos(tmp_path, monkeypatch):
     assert "Paquete IA" in bg_paper_dashboard.reports_page()
     assert "card-green" in bg_paper_dashboard.home_page()
     assert "Próximo chequeo" in bg_paper_dashboard.health_page()
+
+
+@pytest.fixture
+def allocation_case(tmp_path, monkeypatch):
+    from test_production_paper_v1634 import caucion_offer, caucion_policy
+    from be_paper_engine import PaperBroker, PaperStore
+    import bg_paper_dashboard as dashboard
+    broker = PaperBroker(PaperStore(str(tmp_path/'allocation.db')), initial_cash='10000', daily_loss_pct='1')
+    monkeypatch.setattr(dashboard, 'DB_PATH', broker.store.path)
+    return broker, caucion_offer, caucion_policy
+
+
+def _decision(broker, offers, policy, request='audit'):
+    return broker.allocate_caucion(offers, policy, request, as_of='2026-08-28T11:00:00-03:00')
+
+
+@pytest.mark.parametrize('currency', ['ARS','USD_MEP','USD_CCL'])
+@pytest.mark.parametrize('fee_payment', ['MATURITY','UPFRONT'])
+def test_historial_concilia_importes_moneda_y_costos(allocation_case, currency, fee_payment):
+    from be_paper_engine import PaperBroker
+    from cb_caucion_audit import allocation_history
+    import bg_paper_dashboard as dashboard
+    base, offer, policy = allocation_case
+    broker = PaperBroker(base.store, initial_cash='10000', initial_cash_by_currency={currency:'10000'}, daily_loss_pct='1')
+    offers = [offer(instrument_id='ELEGIDA',currency=currency,fee_payment=fee_payment),
+              offer(instrument_id='TASA_MENOR',currency=currency,annual_rate_fraction='.30'),
+              offer(instrument_id='LIBRO_VIEJO',currency=currency,quoted_at='2026-08-28T10:00:00-03:00')]
+    decision = _decision(broker, offers, policy(currency=currency,ranking='NET_RETURN_PER_DAY'))
+    history = allocation_history(broker.store.path)
+    assert history['state'] == 'READABLE'
+    record = history['records'][0]
+    assert record['decision'] == decision
+    assert record['placement']['status'] == 'OPEN'
+    assert record['decision']['selected']['instrument_id'] == 'ELEGIDA'
+    page = dashboard._caucion_allocations_panel()
+    assert 'Caja liquidada evaluada: 10000 '+currency in page
+    assert 'Capital colocado: 1000' in page
+    assert 'Débito inicial: '+('1001' if fee_payment=='UPFRONT' else '1000') in page
+    assert 'Elegible; no elegida por criterio o desempate' in page
+    assert 'Cotización vencida o posterior a la decisión' in page
+    assert 'no son el saldo actual' in page
+    assert 'No certifica datos de PPI' in page
+    assert 'Mayor retorno neto por día sobre el débito inicial' in page
+
+
+def test_historial_hold_no_inventa_colocacion_y_no_reintenta(allocation_case):
+    from cb_caucion_audit import allocation_history
+    import bg_paper_dashboard as dashboard
+    broker, offer, policy = allocation_case
+    original = _decision(broker, [offer()], policy(reserve_cash='10000'))
+    assert original['status'] == 'HOLD'
+    for _ in range(2):
+        record = allocation_history(broker.store.path)['records'][0]
+        assert record['decision'] == original and record['placement'] is None
+        page = dashboard.motor_page()
+        assert 'Abstención' in page and 'Sin inversión' in page
+        assert 'Excede la fracción disponible después de la reserva' in page
+    assert broker.cauciones.positions() == []
+
+
+def test_historial_maduro_no_confunde_decision_con_saldo_actual(allocation_case):
+    from cb_caucion_audit import allocation_history
+    import bg_paper_dashboard as dashboard
+    broker, offer, policy = allocation_case
+    original = _decision(broker, [offer()], policy())
+    broker.cauciones.settle_due('2026-09-01T11:00:00-03:00')
+    record = allocation_history(broker.store.path)['records'][0]
+    assert record['state'] == 'CONSISTENT'
+    assert record['decision'] == original
+    assert record['placement']['status'] == 'MATURED'
+    assert 'Estado guardado: MATURED' in dashboard._caucion_allocations_panel()
+    assert 'Acreditación simulada: 01/09/2026 11:00:00' in dashboard._caucion_allocations_panel()
+
+
+@pytest.mark.parametrize('payload', ['{','[]','null','{"x": NaN}','{"x": Infinity}'])
+def test_historial_json_invalido_no_aparece_como_vacio(allocation_case, payload):
+    from cb_caucion_audit import allocation_history
+    import bg_paper_dashboard as dashboard
+    broker, offer, policy = allocation_case
+    _decision(broker, [offer()], policy())
+    with broker.store.connect() as c:
+        c.execute('UPDATE paper_caucion_allocations SET decision_json=?', (payload,))
+    history = allocation_history(broker.store.path)
+    assert history['state'] == 'PARTIAL' and history['total'] == 1
+    assert history['records'][0]['decision'] is None
+    page = dashboard._caucion_allocations_panel()
+    assert 'Registro inconsistente' in page and 'Capital colocado:' not in page
+
+
+@pytest.mark.parametrize('sql,issue', [
+    ("DELETE FROM paper_cauciones", 'MISSING_PLACEMENT'),
+    ("UPDATE paper_cauciones SET principal='999'", 'LEDGER_AMOUNT_MISMATCH'),
+    ("UPDATE paper_cauciones SET currency='USD_CCL'", 'LEDGER_TERMS_MISMATCH'),
+    ("UPDATE paper_cauciones SET request_id='otra'", 'LEDGER_TERMS_MISMATCH'),
+    ("UPDATE paper_cauciones SET total_fees='NaN'", 'valor fuera de rango'),
+    ("UPDATE paper_cauciones SET terms_json='{}'", 'INVALID_RECORD_SHAPE'),
+    ("UPDATE paper_cauciones SET status='MATURED'", 'LEDGER_STATE_MISMATCH'),
+    ("UPDATE paper_cauciones SET status='MATURED',settled_at='2026-08-28T15:00:00-03:00'", 'LEDGER_STATE_MISMATCH'),
+    ("UPDATE paper_caucion_allocations SET paper_id=NULL", 'PLACEMENT_LINK_MISMATCH'),
+    ("UPDATE paper_caucion_allocations SET evaluated_at='2026-08-28T15:00:00-03:00'", 'EVALUATION_TIME_MISMATCH'),
+    ("UPDATE paper_caucion_allocations SET request_hash='otro'", 'REQUEST_MANIFEST_MISMATCH'),
+])
+def test_historial_detecta_desacuerdos_con_ledger(allocation_case, sql, issue):
+    from cb_caucion_audit import allocation_history
+    broker, offer, policy = allocation_case
+    _decision(broker, [offer()], policy())
+    # Simula un registro roto de una restauración/importación externa.
+    with sqlite3.connect(broker.store.path) as c:
+        c.execute(sql)
+    history = allocation_history(broker.store.path)
+    record = history['records'][0]
+    assert history['state'] == 'PARTIAL'
+    assert issue in record['issue']
+    assert record['placement'] is None and record['decision'] is None
+
+
+@pytest.mark.parametrize('field,value', [('cash','Infinity'),('selected',[]),('candidates',{}),
+    ('status','HOLD'),('promotion_allowed',True),('policy_version','otra'),('cash_budget','1')])
+def test_historial_rechaza_formas_invalidas_aunque_manifiesto_coincida(allocation_case, field, value):
+    from bl_candle_engine import fingerprint
+    from cb_caucion_audit import allocation_history
+    broker, offer, policy = allocation_case
+    decision = _decision(broker, [offer()], policy())
+    decision[field] = value
+    decision['plan_id'] = fingerprint({k:v for k,v in decision.items() if k not in {'plan_id','paper_id','status'}})
+    with broker.store.connect() as c:
+        c.execute('UPDATE paper_caucion_allocations SET decision_json=?', (json.dumps(decision),))
+    assert allocation_history(broker.store.path)['state'] == 'PARTIAL'
+
+
+def test_historial_pagina_por_instante_y_conserva_registros_validos(allocation_case):
+    from cb_caucion_audit import allocation_history
+    broker, offer, policy = allocation_case
+    # HOLD permite varios eventos sin consumir caja; la zona no cambia el instante.
+    for request in ('a','b','c'):
+        _decision(broker, [], policy(), request)
+    with broker.store.connect() as c:
+        c.execute("UPDATE paper_caucion_allocations SET evaluated_at='2026-08-28T11:00:00-03:00' WHERE request_id='c'")
+        c.execute("UPDATE paper_caucion_allocations SET decision_json='{}' WHERE request_id='a'")
+    page = allocation_history(broker.store.path, limit=2)
+    assert page['state'] == 'READABLE' and page['has_more'] and page['total'] == 3
+    assert [r['request_id'] for r in page['records']] == ['c','b']
+    last = allocation_history(broker.store.path, limit=2, offset=2)
+    assert last['state'] == 'PARTIAL' and not last['has_more']
+    assert allocation_history(broker.store.path, offset=3)['state'] == 'EMPTY_PAGE'
+
+
+def test_historial_distingue_faltantes_vacio_y_error_sin_crear_base(tmp_path, monkeypatch):
+    from cb_caucion_audit import allocation_history
+    from be_paper_engine import PaperBroker, PaperStore
+    import bg_paper_dashboard as dashboard
+    path = tmp_path/'sin-base.db'
+    monkeypatch.setattr(dashboard,'DB_PATH',str(path))
+    assert allocation_history(path)['state'] == 'MISSING_DATABASE'
+    assert 'Base no disponible' in dashboard.motor_page()
+    assert not path.exists()
+    with sqlite3.connect(path):
+        pass
+    assert allocation_history(path)['state'] == 'MISSING_TABLE'
+    PaperBroker(PaperStore(str(path)))
+    assert allocation_history(path)['state'] == 'EMPTY'
+    with sqlite3.connect(path) as c:
+        c.execute('DROP TABLE paper_caucion_allocations')
+        c.execute('CREATE TABLE paper_caucion_allocations(x)')
+    assert allocation_history(path)['state'] == 'READ_ERROR'
+
+
+def test_historial_y_panel_son_solo_lectura(allocation_case):
+    from cb_caucion_audit import allocation_history
+    import bg_paper_dashboard as dashboard
+    broker, offer, policy = allocation_case
+    _decision(broker, [offer()], policy())
+    c = broker.store.connect()
+    c.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    c.close()
+    path = Path(broker.store.path)
+    before = path.read_bytes()
+    assert allocation_history(path)['state'] == 'READABLE'
+    assert 'Decisiones de caución' in dashboard.motor_page()
+    with dashboard._conn() as c:
+        with pytest.raises(sqlite3.OperationalError,match='readonly'):
+            c.execute('DELETE FROM paper_cauciones')
+    c.close()
+    assert path.read_bytes() == before
+
+
+def test_historial_usa_una_fotografia_aunque_acrediten_durante_lectura(allocation_case, monkeypatch):
+    import cb_caucion_audit as audit
+    broker, offer, policy = allocation_case
+    _decision(broker, [offer()], policy())
+    original = audit._validated
+    def concurrent(row, connection):
+        broker.cauciones.settle_due('2026-09-01T11:00:00-03:00')
+        return original(row, connection)
+    monkeypatch.setattr(audit, '_validated', concurrent)
+    report = audit.allocation_history(broker.store.path)
+    assert report['state'] == 'READABLE'
+    assert report['records'][0]['placement']['status'] == 'OPEN'
+    monkeypatch.setattr(audit, '_validated', original)
+    assert audit.allocation_history(broker.store.path)['records'][0]['placement']['status'] == 'MATURED'
