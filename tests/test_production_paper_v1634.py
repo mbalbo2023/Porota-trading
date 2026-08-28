@@ -34,6 +34,96 @@ def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"
 
 
 @pytest.fixture
+def shared_spot_book(tmp_path):
+    broker = PaperBroker(PaperStore(str(tmp_path/'liquidity.db')),initial_cash='10000')
+    q = quote(ask_size='100',bid_size='100')
+    assert broker._open(q,D('.8'),{})[0]
+    first = broker.store.open_positions()[0]
+    assert D(first['quantity'])==10
+    # Dos tenencias de la misma especie son posibles en datos importados.
+    second = dict(first,paper_id='PAPER-IMPORTED-SECOND')
+    with broker.store.connect() as c:
+        c.execute('INSERT INTO paper_positions ('+','.join(second)+') VALUES ('+','.join('?' for _ in second)+')',tuple(second.values()))
+    return broker,q,first,second
+
+
+def test_profundo_spot_consumido_no_se_repone_por_reinicio_o_reintento(shared_spot_book):
+    broker,q,first,second=shared_spot_book
+    closing=quote(minute=1,ask_size='100',bid_size='100')
+    assert broker._close(first,closing,'TEST')
+    restarted=PaperBroker(PaperStore(broker.store.path),initial_cash='10000')
+    assert not restarted._close(first,closing,'TEST')
+    assert not restarted._close(second,closing,'TEST')
+    newer=quote(minute=2,ask_size='100',bid_size='100')
+    assert restarted._close(second,newer,'TEST')
+    with broker.store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0]==2
+        assert c.execute('SELECT COUNT(*) FROM paper_book_consumption').fetchone()[0]==3
+
+
+def test_consumo_spot_concurrente_revalida_dentro_del_lock(shared_spot_book):
+    from concurrent.futures import ThreadPoolExecutor
+    broker,q,first,second=shared_spot_book
+    closing=quote(minute=1,ask_size='100',bid_size='100')
+    def close(p):
+        worker=PaperBroker(PaperStore(broker.store.path),initial_cash='10000')
+        return worker._close(p,closing,'TEST')
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(close,[first,second]))
+    assert results.count(True)==1
+    assert len(broker.store.open_positions())==1
+
+
+def test_libro_spot_separa_lados_moneda_plazo_y_rechaza_historia_reescrita(shared_spot_book):
+    import cc_spot_liquidity as liquidity
+    broker,q,first,second=shared_spot_book
+    with broker.store.connect() as c:
+        assert liquidity.available(c,q,'BUY_SIMULATED',D('.1'))==0
+        assert liquidity.available(c,q,'SELL_SIMULATED',D('.1'))==10
+        for other in (replace(q,currency='USD_MEP'),replace(q,settlement='INMEDIATA'),replace(q,market='OTHER_TEST_MARKET')):
+            assert liquidity.available(c,other,'BUY_SIMULATED',D('.1'))==10
+        with pytest.raises(ValueError,match='CONFLICTING_SNAPSHOT'):
+            liquidity.available(c,replace(q,ask_size=D(200)),'BUY_SIMULATED',D('.1'))
+    closing=quote(minute=1,ask_size='100',bid_size='100')
+    assert broker._close(first,closing,'TEST')
+    with broker.store.connect() as c:
+        with pytest.raises(ValueError,match='OLDER_THAN_CONSUMED'):
+            liquidity.available(c,q,'BUY_SIMULATED',D('.1'))
+
+
+@pytest.mark.parametrize('side',['entry','exit'])
+def test_consumo_spot_y_fill_se_revierten_juntos(tmp_path,side):
+    import sqlite3
+    broker=PaperBroker(PaperStore(str(tmp_path/'atomic-book.db')),initial_cash='10000')
+    q=quote()
+    if side=='exit':
+        assert broker._open(q,D('.8'),{})[0]
+        position=broker.store.open_positions()[0]
+    with broker.store.connect() as c:
+        c.execute("CREATE TRIGGER fail_depth BEFORE INSERT ON paper_book_consumption BEGIN SELECT RAISE(ABORT,'TEST_DEPTH'); END")
+    with pytest.raises(sqlite3.IntegrityError,match='TEST_DEPTH'):
+        if side=='entry': broker._open(q,D('.8'),{})
+        else: broker._close(position,quote(minute=1),'TEST')
+    with broker.store.connect() as c:
+        assert c.execute('SELECT COUNT(*) FROM paper_fills').fetchone()[0]==(0 if side=='entry' else 1)
+        assert c.execute('SELECT COUNT(*) FROM paper_book_consumption').fetchone()[0]==(0 if side=='entry' else 1)
+        assert c.execute('SELECT COUNT(*) FROM paper_sale_receivables').fetchone()[0]==0
+    assert len(broker.store.open_positions())==(0 if side=='entry' else 1)
+
+
+def test_liquidez_heredada_no_se_inventa_y_una_cotizacion_nueva_no_cambia_la_caja(shared_spot_book):
+    import cc_spot_liquidity as liquidity
+    broker,q,first,second=shared_spot_book
+    cash=broker._cash(as_of=q.observed_at)
+    with broker.store.connect() as c:
+        c.execute('DELETE FROM paper_book_consumption')
+        with pytest.raises(ValueError,match='LEGACY_DEPTH_UNKNOWN'):
+            liquidity.available(c,q,'BUY_SIMULATED',D('.1'))
+        assert liquidity.available(c,quote(minute=1),'BUY_SIMULATED',D('.1'))==100
+    assert broker._cash(as_of=q.observed_at)==cash
+
+
+@pytest.fixture
 def real_catalog():
     return json.loads((ROOT / "tests/fixtures/ppi_catalog_20260827.json").read_text())["records"]
 
@@ -554,7 +644,7 @@ def test_movimiento_spot_posterior_bloquea_colocacion_retroactiva(tmp_path,futur
     q = quote(at='2026-08-28T11:01:00-03:00' if future_move=='entry' else '2026-08-28T10:59:00-03:00')
     assert broker._open(q,D('.8'),{})[0]
     if future_move=='exit':
-        sell = replace(q,bid=D(110),ask=D(111),observed_at='2026-08-28T11:01:00-03:00')
+        sell = replace(q,bid=D(110),ask=D(111),observed_at='2026-08-28T11:01:00-03:00', book_at='2026-08-28T11:01:00-03:00')
         assert broker._close(broker.store.open_positions()[0],sell,'TEST')
     offer = caucion_offer()
     with pytest.raises(ValueError,match='CASH_CLOCK_ROLLBACK'):
@@ -584,7 +674,7 @@ def test_caja_y_credito_de_venta_respetan_fecha_de_operacion(tmp_path):
     assert broker._open(q,D('.8'),{})[0]
     p = broker.store.open_positions()[0]
     committed = D(p['entry_price'])*D(p['quantity'])+D(p['entry_cost'])
-    sell = replace(q,bid=D(110),ask=D(111),observed_at='2026-08-28T11:01:00-03:00')
+    sell = replace(q,bid=D(110),ask=D(111),observed_at='2026-08-28T11:01:00-03:00', book_at='2026-08-28T11:01:00-03:00')
     assert broker._close(p,sell,'TEST')
     assert broker._cash(as_of='2026-08-28T10:59:00-03:00')==10000
     assert pending_proceeds(broker.store,q.observed_at)==0
@@ -599,7 +689,7 @@ def test_caja_no_pagina_cierres_ni_depende_del_reporte_reciente(tmp_path,monkeyp
     broker = PaperBroker(PaperStore(str(tmp_path/'unpaged.db')),initial_cash='10000')
     q = replace(quote(),settlement='CI')
     assert broker._open(q,D('.8'),{})[0]
-    sell = replace(q,bid=D(110),ask=D(111),observed_at='2026-08-25T14:01:00+00:00')
+    sell = replace(q,bid=D(110),ask=D(111),observed_at='2026-08-25T14:01:00+00:00', book_at='2026-08-25T14:01:00+00:00')
     assert broker._close(broker.store.open_positions()[0],sell,'TEST')
     pnl = D(broker.store.recent_closed()[0]['net_pnl'])
     monkeypatch.setattr(broker.store,'recent_closed',lambda *a,**k: [])
@@ -611,7 +701,7 @@ def test_venta_sin_liquidacion_valida_no_se_convierte_en_caja(tmp_path,problem):
     broker = PaperBroker(PaperStore(str(tmp_path/'missing-receipt.db')),initial_cash='10000')
     q = replace(quote(),settlement='CI')
     assert broker._open(q,D('.8'),{})[0]
-    sell = replace(q,bid=D(110),ask=D(111),observed_at='2026-08-25T14:01:00+00:00')
+    sell = replace(q,bid=D(110),ask=D(111),observed_at='2026-08-25T14:01:00+00:00', book_at='2026-08-25T14:01:00+00:00')
     assert broker._close(broker.store.open_positions()[0],sell,'TEST')
     with broker.store.connect() as c:
         if problem=='missing':
@@ -663,7 +753,7 @@ def test_v17_venta_t1_no_es_caja_hasta_liquidacion_modelada(tmp_path):
     assert broker._open(q, D("0.8"), {})[0]
     position = broker.store.open_positions()[0]
     before = broker._cash(as_of=q.observed_at)
-    sell = replace(q, bid=D("110"), ask=D("111"), observed_at="2026-08-28T11:01:00-03:00")
+    sell = replace(q, bid=D("110"), ask=D("111"), observed_at='2026-08-28T11:01:00-03:00', book_at='2026-08-28T11:01:00-03:00')
     assert broker._close(position, sell, "TEST")
     assert broker._cash(as_of=sell.observed_at) == before
     assert broker._cash(as_of="2026-08-31T12:00:00-03:00") == before
@@ -708,7 +798,7 @@ def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, famil
     broker.mark_equity({q.symbol: q}, as_of=q.observed_at)
     with broker.store.connect() as c:
         assert D(c.execute("SELECT exposure FROM paper_equity ORDER BY id DESC LIMIT 1").fetchone()[0]) == q.bid * 99
-    closing = replace(q, bid=D("110"), ask=D("111"), observed_at="2026-08-25T14:01:00+00:00")
+    closing = replace(q, bid=D("110"), ask=D("111"), observed_at='2026-08-25T14:01:00+00:00', book_at='2026-08-25T14:01:00+00:00')
     assert broker._close(position, replace(closing, contract=replace(spec, cash_multiplier=D("1"))), "TEST") is False
     assert broker._close(position, closing, "TEST")
     closed = broker.store.recent_closed()[0]
@@ -723,7 +813,7 @@ def test_v17_no_cauciona_el_producido_de_una_venta_t1(tmp_path):
                          risk_pct="1", max_position_pct="1", max_total_exposure_pct="1")
     q = quote(at="2026-08-28T10:59:00-03:00")
     assert broker._open(q, D("0.8"), {})[0]
-    assert broker._close(broker.store.open_positions()[0], replace(q, bid=D("110"), ask=D("111"), observed_at="2026-08-28T11:00:00-03:00"), "TEST")
+    assert broker._close(broker.store.open_positions()[0], replace(q, bid=D("110"), ask=D("111"), observed_at='2026-08-28T11:00:00-03:00', book_at='2026-08-28T11:00:00-03:00'), "TEST")
     offer = caucion_offer()
     with pytest.raises(ValueError, match="Caja liquidada insuficiente"):
         broker.place_caucion(offer, "1000", "reusar-venta", offer.quoted_at)
