@@ -11,7 +11,7 @@ import sqlite3
 
 from bl_candle_engine import fingerprint, stamp
 from bs_instrument_contracts import decimal_value
-from bt_caucion_paper import CaucionOffer, offer_payload
+from bt_caucion_paper import CaucionOffer, offer_payload, validate_position
 from ca_caucion_allocator import CaucionPolicy, encoded, selection_key
 
 
@@ -108,6 +108,7 @@ def _validated(row, connection):
     _require((placement['status'] == 'OPEN' and placement['settled_at'] is None)
              or (placement['status'] == 'MATURED' and placement['settled_at'] is not None
                  and stamp(placement['settled_at']) >= stamp(placement['maturity_at'])), 'LEDGER_STATE_MISMATCH')
+    validate_position(placement)
     return decision, {k:placement[k] for k in ('paper_id','status','opened_at','maturity_at','settled_at')}
 
 
