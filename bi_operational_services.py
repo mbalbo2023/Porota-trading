@@ -555,18 +555,21 @@ def ensure_reports(store, include_today=False):
 
 
 def send_closing_summary(store):
-    """Un resumen por fecha; nunca consulta PPI ni autoriza acciones."""
+    """Un resumen por fecha en outbox; generar no equivale a entregar."""
+    from bn_telegram_bus import enqueue
+    init_schema(store)
     today = datetime.now(TZ).date()
     key = "TELEGRAM_CLOSE_" + today.isoformat()
-    if not _job_due(store, key, 365 * 86400):
-        return "YA_ENVIADO"
+    with store.connect() as c:
+        existing = c.execute('SELECT state FROM paper_notification_outbox WHERE event_key=?',(key,)).fetchone()
+        if existing:
+            return 'ENTREGADO' if existing[0]=='SENT' else existing[0]
+        legacy = c.execute('SELECT state,last_success_at FROM operational_jobs WHERE job_key=?',(key,)).fetchone()
+        if legacy and legacy['state']=='VERDE' and legacy['last_success_at']:
+            return 'YA_ENVIADO'
     start = datetime.combine(today, datetime.min.time(), TZ).isoformat()
     end = datetime.combine(today + timedelta(days=1), datetime.min.time(), TZ).isoformat()
     data = _period_data(store, start, end)
-    token, chat = os.getenv("TELEGRAM_BOT_TOKEN", ""), os.getenv("TELEGRAM_CHAT_ID", "")
-    if not token or not chat:
-        _job(store, key, "ROJO", "Telegram no configurado")
-        return "NO_CONFIGURADO"
     win = "s/d" if data["win_rate"] is None else f"{data['win_rate']:.1f}%"
     text = ("📊 POROTA — CIERRE SIMULACIÓN PRODUCTIVA\n"
             f"Fecha: {today.isoformat()}\nOperaciones cerradas: {len(data['closed'])}\n"
@@ -575,17 +578,15 @@ def send_closing_summary(store):
             f"Cauciones vencidas: {len(data.get('cauciones_matured', []))}\n"
             f"Decisiones evaluadas: {len(data['decisions'])}\nÓrdenes reales: 0\n"
             "Dashboard: disponible 24x7. Informe diario: menú Reportes.")
-    try:
-        body = urlencode({"chat_id": chat, "text": text}).encode()
-        req = Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body, method="POST")
-        with urlopen(req, timeout=10) as response:
-            if response.status != 200:
-                raise RuntimeError(f"HTTP {response.status}")
-        _job(store, key, "VERDE", "Resumen de cierre entregado", success=True)
-        return "ENTREGADO"
-    except Exception as exc:
-        _job(store, key, "ROJO", f"{type(exc).__name__}: {exc}")
-        return "FALLO"
+    at = now_iso()
+    with store.connect() as c:
+        c.execute('BEGIN IMMEDIATE')
+        if enqueue(c,key,'CLOSING_SUMMARY',text,at):
+            c.execute('''INSERT INTO operational_jobs VALUES(?,?,NULL,'EN_COLA',?)
+              ON CONFLICT(job_key) DO UPDATE SET last_run_at=excluded.last_run_at,
+                state=excluded.state,detail=excluded.detail''',
+                (key,at,'Resumen persistido; pendiente de ACK de Telegram'))
+    return 'EN_COLA'
 
 
 def service_tick(store, phase, force=False):
