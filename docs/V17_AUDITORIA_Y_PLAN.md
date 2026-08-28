@@ -1,6 +1,6 @@
-# Porota Trading v17 — auditoría inicial y primer avance
+# Porota Trading v17 — auditoría y avances de implementación
 
-Fecha: 27/08/2026. Base entregada: v16.3.5, rama `testing`, commit
+Actualizado: 28/08/2026. Base entregada: v16.3.5, rama `testing`, commit
 `612b0431a33909af3eeaaaa909db648c165a4ac9`.
 Trabajo aislado en `feature/v17-convergencia`.
 
@@ -13,9 +13,9 @@ No se enviaron órdenes reales. Los nuevos registros son `PRODUCTION_PAPER`.
 - Incluir cauciones y todas las familias del sistema: acciones, CEDEARs,
   ETF, bonos, letras, ON, opciones, futuros y FCI.
 - La instrucción posterior de incluir cauciones prevalece sobre la adenda
-  que las dejaba como observación. Se implementó primero la **colocadora**.
-  Tomadora, garantías comprometidas y endeudamiento necesitan una política
-  explícita; no se activaron por interpretar “todos los instrumentos”.
+  que las dejaba como observación. Confirmación del operador del 28/08:
+  **sólo cauciones colocadoras, invirtiendo saldo disponible**. Se excluyen
+  tomadoras, financiación y uso de fondos comprometidos o aún sin liquidar.
 - No incorporar las mejoras de ciberseguridad de las propuestas en esta etapa.
   No quitar las protecciones existentes. Los límites de riesgo, la liquidez,
   los vencimientos y la integridad contable sí forman parte del trabajo.
@@ -44,13 +44,18 @@ línea del repositorio ni una validación de rentabilidad de las estrategias.
 | Se podían cerrar posiciones usando otro plazo, clase o símbolo | Identidad y secuencia temporal verificadas; profundidad suficiente para cierre total |
 | Se inventaba un cierre total con profundidad insuficiente | Queda pendiente; todavía falta implementar fills parciales |
 | NaN e infinitos contaminaban cuentas y señales | Rechazo/normalización de valores no finitos; cotizaciones cruzadas no abren compras |
-| Señales mezclaban muestras CI/24 h y clases | Series filtradas por símbolo, clase y plazo |
+| Señales mezclaban muestras CI/24 h, clases y monedas | Series filtradas por símbolo, clase, plazo, moneda/plaza y mercado |
 | Posiciones abiertas podían quedar fuera del universo rotativo | Todas las abiertas tienen prioridad, incluso fuera del catálogo o sobre el límite de muestreo |
 | Una venta T+1 aparecía inmediatamente como caja | Recibos pendientes separados de efectivo; siguen siendo patrimonio |
 | Dos operaciones podían gastar la misma caja | Revalidación dentro de transacción de compra; colocaciones serializadas y prueba concurrente |
 | Renta fija podía usar precio por 100 VN como precio por unidad | Factor monetario y lote explícitos, conservados con la posición; sin esos datos no se abre una nueva posición de renta fija |
-| El panel mezclaba precios de diferentes plazos | Última cotización por símbolo, clase y plazo |
-| Una búsqueda de catálogo se confundía con un instrumento real | Filtros sin coincidencia exacta quedan `QUERY_ONLY`; se comprueba mercado devuelto, no sólo el solicitado |
+| El panel mezclaba precios de diferentes identidades | Última cotización por símbolo, clase, plazo, moneda/plaza y mercado |
+| Una búsqueda de catálogo se confundía con un instrumento real | Historial de consultas separado de los instrumentos efectivamente devueltos; deduplicación por identidad completa |
+| Precios MEP/CCL podían gastar pesos o mezclarse con USD genérico | Cuatro cajas separadas; identidad monetaria obligatoria en apertura, cierre, series, valuación e informes |
+| Una actualización podía borrar el catálogo antes de terminar la red | Recolección previa y persistencia transaccional; registros no reconfirmados quedan STALE y no abren posiciones |
+| Los informes atribuían PnL por fecha de apertura o incorporaban cierres futuros | PnL por fecha de cierre/acreditación y zona horaria; detalle histórico no muestra resultados posteriores al corte |
+| Un PnL positivo se presentaba como prueba de superar inflación | Comparación bloqueada hasta tener rendimiento porcentual y benchmark del mismo período |
+| CI construía 16.3.5 pero intentaba inspeccionar la imagen 16.2 | Resuelve la imagen exacta desde Compose; test ejecuta el paso con una etiqueta distinta |
 | Tests de login compartían estado entre ejecuciones | Aislamiento de base temporal en los tests; ningún cambio al límite operativo de login |
 
 ## Cauciones: lo que ya hace el código
@@ -65,8 +70,9 @@ línea del repositorio ni una validación de rentabilidad de las estrategias.
 - Distingue costos pagados al inicio de costos descontados al vencimiento.
 - Rechaza retorno neto no positivo, cotizaciones futuras/vencidas y costos
   presupuestados para un capital distinto.
-- Rechaza financiar USD con pesos; USD comienza en cero salvo configuración
-  explícita `PAPER_INITIAL_CAPITAL_USD`. No convierte ni consolida monedas.
+- Rechaza usar otra moneda/plaza: ARS, USD, USD_MEP y USD_CCL tienen cajas
+  independientes. Los tres saldos USD comienzan en cero salvo configuración
+  explícita de su capital paper. No convierte ni consolida monedas.
 - Usa el tarifario heredado sólo como modelo ARS; prorratea su comisión anual,
   sin cobrarla como si fuera por operación. En USD exige costos explícitos.
 - Persiste colocaciones y claves idempotentes. Vencimiento y evento se registran
@@ -74,6 +80,8 @@ línea del repositorio ni una validación de rentabilidad de las estrategias.
 - El observador procesa vencimientos antes del trabajo de red, incluso con
   mercado cerrado. No aplica stop ni una venta ficticia a la caución.
 - El panel muestra capital, moneda, tasa, días, vencimiento, costos y estado.
+  Informes PDF/JSON y Telegram separan resultados por moneda/plaza; una caución
+  acreditada aporta interés menos costos, nunca la devolución del principal.
 
 **Pendiente para la operación automática:** adaptador de cotizaciones/contratos
 PPI con evidencia real de sus campos; política de plazo, capital y reserva;
@@ -92,7 +100,7 @@ a la nueva contabilidad. Deben reemplazarse antes de habilitar ejecución real.*
 |---|---|---|
 | Acciones, CEDEARs, ETF | Correcciones de caja, costos, riesgo y cierres en paper | Datos/supervisión independiente y nueva señal validada |
 | Bonos, letras, ON | Compras/cierres paper con contrato explícito, factor VN y lote | Cargar factores desde metadatos contrastados; cashflows, amortizaciones, intereses corridos y monedas |
-| Cauciones | Ciclo completo de colocadora simulada, capital y vencimiento | Cotización/adaptador PPI y política de asignación; tomadora no activada |
+| Cauciones | Ciclo completo de colocadora simulada, capital y vencimiento | Cotización/adaptador PPI y política de asignación; tomadora excluida por instrucción |
 | Opciones | Contrato y cálculos de prima/lote/pérdida máxima de opción comprada | Integración del ejecutor, liquidez, ejercicio, vencimiento y supervisor específico |
 | Futuros | Separación de nocional, garantía, ajuste diario y déficit de margen | Libro persistente de ajustes, proveedor, conciliación y gestión de márgenes |
 | FCI | Familia y unidades reconocidas; no pasa por ejecutor de acciones | Suscripción/rescate, valor de cuotaparte, corte y demora de rescate |
@@ -114,6 +122,17 @@ garantías, moneda ni fecha de vencimiento a partir de un ticker.
   El calendario actual sólo cubre 2026; deberá actualizarse para operar 2027.
 - Posiciones antiguas conservan su factor histórico 1. No se “corrigen” cantidades
   retrospectivamente. Sus muestras se deberán separar de las de v17.
+- La migración de moneda conserva la contabilidad heredada en ARS con etiqueta
+  `LEGACY_ASSUMED_ARS`; no convierte una compra histórica errónea de ALUAC/AAPLD
+  en dólares por cambiar una columna. Un cierre con moneda distinta queda
+  pendiente de conciliación. Snapshots antiguos quedan `UNKNOWN`, fuera de
+  señales que requieran moneda confirmada. Migración probada dos veces sin
+  duplicar fills ni alterar cantidades/precios/costos.
+- `financial_instrument_catalog` guarda identidad, procedencia y capacidad;
+  `catalog_query_results` guarda búsquedas. Catálogo legado se importa STALE.
+  `paper_equity_by_currency` guarda patrimonio por moneda/plaza; `paper_equity`
+  conserva sólo ARS por compatibilidad. El capital de cada caja sigue siendo
+  configuración del simulador, no saldo obtenido de una cuenta real.
 - Patrimonio incluye créditos pendientes y principal/interés devengado de caución;
   caja disponible los excluye hasta que corresponda. El resumen histórico principal
   sigue en ARS; no agrega USD sin una valuación de cambio explícita.
@@ -146,23 +165,45 @@ se acepta como regla universal sin datos.
 
 ## Verificación
 
-Primer checkpoint: 279 tests aprobados. Segundo checkpoint: **329 tests aprobados**
-después de incorporar diagnóstico, contabilidad y contratos.
+Primer checkpoint: 279 tests aprobados. Segundo: 329. Tercero: **354 tests
+aprobados** después del diagnóstico real, separación monetaria, catálogo e informes.
 Comando usado: `python -m pytest -o addopts='' -q -m 'not red'`.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
 todos los pins de producción. Advertencia observada: deprecación del TestClient
-Starlette/httpx del entorno local. Faltan build, CI remoto, pruebas de integración
-con payloads PPI y validación en el Droplet.
+Starlette/httpx del entorno local. En el CI remoto anterior (run 33128104915),
+la suite Python 3.11 y el build Docker aprobaron; el job de arranque falló antes
+de levantar servicios por buscar la imagen 16.2. Este avance corrige esa causa;
+se debe comprobar el nuevo CI completo, no asumir que arrancó por pasar tests.
+Los 12 payloads públicos aportados se usan como fixture; aún falta integración
+con cotizaciones/contratos especializados y validación en el Droplet.
 
-## Próximo dato necesario, con una sola acción
+## Diagnóstico recibido: no repetir el comando
 
-`scripts/v17_diagnostico_instrumentos.py` lee el catálogo persistido del observador
-en modo sólo lectura. No hace llamadas de red, no consulta cuentas ni lee
-credenciales. Exporta una muestra acotada de campos públicos por clase; `--clipboard`
-envía el JSON con OSC 52. Ese diagnóstico permite preparar los adaptadores con
-campos reales y saber qué familias aún no fueron descargadas.
+El operador entregó el resultado de `scripts/v17_diagnostico_instrumentos.py`
+generado el 28/08/2026 a las 00:17:19 UTC sobre
+`/opt/porota-trading/data/observer/observer_production.db`. Catálogo descargado
+el 27/08 a las 13:45:03 UTC: **330 instrumentos** (55 acciones, 42 bonos,
+188 CEDEARs, 45 futuros). La muestra contiene 12 registros, no el catálogo entero.
+
+| Etiqueta real de PPI | Caja normalizada |
+|---|---|
+| Pesos | ARS |
+| Dolares billete \| MEP | USD_MEP |
+| Dolares divisa \| CCL | USD_CCL |
+
+AE38 está cotizado en Pesos aunque su descripción diga USD. ALUAC/AAPLC son CCL;
+AE38D/AAPLD, MEP. DLR/AGO26 figura en ROFEX/Pesos, sin multiplicador, margen ni
+vencimiento estructurado. No se extrae vencimiento de su nombre/descripción.
+
+Las familias ausentes y los resultados UNAVAILABLE/ERROR describen búsquedas
+anteriores; no prueban falta de soporte del broker. Se amplían consultas de
+letras, ON, opciones, cauciones y FCI y se conserva la configuración pública
+devuelta por el SDK. Sus resultados reales todavía deben comprobarse.
+Todos los registros observados pueden entrar al muestreo, pero catálogo no
+equivale a ejecutor: futuros/opciones/FCI/cauciones siguen requiriendo su ruta
+específica, y renta fija necesita factor nominal/lote contrastados.
 
 ## Fuentes externas contrastadas
 
