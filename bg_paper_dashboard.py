@@ -219,7 +219,35 @@ def snapshot():
     exits = _rows("SELECT * FROM paper_exit_intents") if _table("paper_exit_intents") else []
     valuation_quality = _rows("SELECT * FROM paper_valuation_quality") if _table("paper_valuation_quality") else []
     return {"state":state,"quotes":quotes,"open":opened,"closed":closed,"decisions":decisions,"equity":equity,"learning":learning,"cauciones":cauciones,"balances_by_currency":balances,
-            "exit_supervisor":supervisor,"exit_reader":exit_reader,"exit_intents":exits,"valuation_quality":valuation_quality}
+            "exit_supervisor":supervisor,"exit_reader":exit_reader,"exit_intents":exits,"valuation_quality":valuation_quality,
+            "daily_risk":_rows('SELECT * FROM paper_daily_risk ORDER BY day DESC,currency LIMIT 16') if _table('paper_daily_risk') else [],
+            "notification_worker":(_rows('SELECT * FROM paper_notification_worker WHERE id=1') or [{}])[0] if _table('paper_notification_worker') else {},
+            "notification_counts":_rows('SELECT state,COUNT(*) total FROM paper_notification_outbox GROUP BY state') if _table('paper_notification_outbox') else []}
+
+
+def _daily_risk_panel():
+    rows = snapshot()['daily_risk']
+    today = datetime.now(TZ).date().isoformat()
+    current = [r for r in rows if r['day']==today]
+    items = []
+    for r in current:
+        state = r['state']
+        try:
+            age = (datetime.now(TZ)-datetime.fromisoformat(r['evaluated_at'])).total_seconds()
+            if not 0 <= age <= 20 and state!='LATCHED':
+                state = 'STALE'
+        except (ValueError,TypeError):
+            state = 'UNKNOWN'
+        items.append(f"<tr><td>{_e(r['currency'])}</td><td>{_e(state)}</td>"
+            f"<td>{_e(r['baseline_equity'] or 'Sin base')}</td><td>{_e(r['daily_pnl'] or 'Sin valuación')}</td>"
+            f"<td>{_e(r['loss_budget'] or '—')} ({_e(r['limit_pct'])}%)</td>"
+            f"<td>{_e(r['detail'])}</td></tr>")
+    return ("<div class='paper-card'><h2>Corte diario por moneda</h2>"
+            "<p>El bloqueo sobrevive a reinicios. No mezcla monedas ni libera cauciones antes del vencimiento. "
+            "Sin base o cotizaciones confiables se suspenden nuevas entradas; las salidas continúan.</p>"
+            "<table class='paper-table'><tr><th>Moneda</th><th>Estado</th><th>Base</th><th>PnL neto diario</th>"
+            "<th>Límite</th><th>Detalle</th></tr>"+(''.join(items) or
+            "<tr><td colspan='6'>Sin evaluación del día actual; no asumir habilitación.</td></tr>")+"</table></div>")
 
 
 def _exit_supervision_panel():
@@ -396,7 +424,7 @@ def motor_page():
     gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(g['ai_gate'])}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas todavía.</div>'
     body=f"<h1>Motor de trading</h1><p class='paper-muted'>Una única actualización visual; trazabilidad técnica → IA → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>IA</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",_exit_supervision_panel() + body + _balances_panel() + _cauciones_panel())
+    return _document("Motor de trading",_daily_risk_panel() + _exit_supervision_panel() + body + _balances_panel() + _cauciones_panel())
 
 
 def _next_check(component, checked):
@@ -539,6 +567,22 @@ def telegram_page():
     jobs=_rows("SELECT * FROM operational_jobs WHERE job_key LIKE 'TELEGRAM%' ORDER BY last_run_at DESC LIMIT 30") if _table("operational_jobs") else []
     report=_report_state("telegram"); rows="".join(f"<tr><td>{_e(r['job_key'])}</td><td>{_health_status(r['state'])}</td><td>{_local_time(r['last_run_at'])}</td><td>{_e(r['detail'])}</td></tr>" for r in jobs) or "<tr><td colspan='4'>Aún no hay cierre enviado en esta base.</td></tr>"
     body=f"<h1>Telegram</h1><div class='paper-grid'>{_card('Canal',report[0],report[1],'green' if report[0]=='VERDE' else 'red' if report[0]=='ROJO' else 'gray')}{_card('Autorización paper','NO APLICA','La simulación no espera autorización por Telegram','green')}</div><div class='paper-card'><h2>Resúmenes de cierre</h2><table class='paper-table'><tr><th>Evento</th><th>Estado</th><th>Hora</th><th>Detalle</th></tr>{rows}</table></div>"
+    data=snapshot(); worker=data['notification_worker']
+    notices=_rows('SELECT * FROM paper_notification_outbox ORDER BY id DESC LIMIT 100') if _table('paper_notification_outbox') else []
+    worker_state=worker.get('state','NOT_STARTED')
+    try:
+        if not 0 <= (datetime.now(TZ)-datetime.fromisoformat(worker['heartbeat_at'])).total_seconds() <= 30:
+            worker_state='STALE'
+    except (KeyError,ValueError,TypeError):
+        worker_state='UNKNOWN'
+    delivery=''.join(f"<tr><td>{_e(r['event_key'])}</td><td>{_e(r['state'])}</td>"
+        f"<td>{r['attempts']}</td><td>{_local_time(r['sent_at'])}</td><td>{_e(r['last_error'])}</td></tr>" for r in notices)
+    body+=("<div class='paper-card'><h2>Cola persistente de avisos</h2>"
+        f"<p>Proceso: {_e(worker_state)} · {_e(worker.get('detail',''))}</p>"
+        "<p>PENDING espera; SENDING está en vuelo; SENT tiene ACK; DEAD requiere revisión. "
+        "Un envío de resultado incierto puede repetirse con el mismo ID. No repite operaciones.</p>"
+        "<table class='paper-table'><tr><th>ID</th><th>Estado</th><th>Intentos</th><th>ACK recibido</th><th>Error</th></tr>"
+        +(delivery or "<tr><td colspan='5'>Sin avisos nuevos.</td></tr>")+"</table></div>")
     return _document("Telegram",body,refresh=60)
 
 
