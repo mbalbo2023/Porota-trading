@@ -172,3 +172,16 @@ class DailyRisk:
     def admission_error(self, currency, at, *, connection=None, quotes=None):
         state = self.evaluate(at,connection=connection,quotes=quotes)[cash_currency(currency)]['state']
         return '' if state=='READY' else 'DAILY_RISK_' + state
+
+    def projected_admission_error(self, currency, at, committed_cost, *, connection=None):
+        """Costo de caución comprometido hoy, incluso si se cobra al vencer.
+
+        Un rechazo hipotético no activa latch ni registra un gasto. La
+        evaluación del estado existente sí conserva un corte ya ocurrido.
+        """
+        cost = decimal_value(committed_cost, 'costo comprometido', nonnegative=True)
+        row = self.evaluate(at,connection=connection)[cash_currency(currency)]
+        if row['state'] != 'READY':
+            return 'DAILY_RISK_' + row['state']
+        projected = decimal_value(row['daily_pnl'], 'PnL diario') - cost
+        return 'DAILY_RISK_PROJECTED_LOSS' if loss_limit_crossed(projected,ZERO,row['loss_budget']) else ''
