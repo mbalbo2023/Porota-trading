@@ -634,7 +634,34 @@ def history_page():
     cycle_rows="".join(f"<tr><td>{_local_time(r['started_at'])}</td><td>{r['selected_count']}/{r['eligible_total']}</td><td>{r['successful_count']}</td><td>{r['failed_count']}</td><td>{r['duration_seconds']:.2f}s</td><td>{r['recommended_limit']}</td></tr>" for r in cycles) or "<tr><td colspan='6'>Esperando métricas.</td></tr>"
     cards="".join((_card("Catálogo PPI",catalog,"Todos los instrumentos devueltos por búsquedas validadas","green" if catalog else "gray"),_card("Universo elegible",eligible,"No equivale al lote de un ciclo","green" if eligible else "gray"),_card("Respuestas históricas guardadas",history.get('instruments',0),f"{history.get('rows',0) or 0} filas declaradas; no equivale a series validadas para backtest","yellow"),_card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,"Ventana rotativa sobre todo el universo","green"),_card("Último histórico",_local_time(history.get("latest")),"Fecha de descarga, no de publicación original","gray")))
     body=f"<h1>Históricos y universo</h1><div class='paper-grid'>{cards}</div><div class='paper-notice'><b>PPI históricos no debe quedar limitado a 20 instrumentos.</b> Desde esta versión se conserva el catálogo completo y los históricos se descargan por lotes rotativos hasta cubrir todo el universo. Descargar cientos de series en una sola ráfaga elevaría timeouts, cuota y riesgo de bloqueo.</div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
-    return _document("Históricos",body+_candle_archive_panel(),refresh=60)
+    return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
+
+
+def _family_coverage_panel():
+    # Sólo lectura: no importa la fixture del operador ni actualiza el servidor.
+    records = _rows('SELECT * FROM catalog_family_coverage ORDER BY instrument_type') if _table('catalog_family_coverage') else []
+    labels = {'NOT_ENUMERATED': 'No enumerada en la última configuración',
+        'INSTRUMENTS_OBSERVED': 'Instrumentos encontrados',
+        'OBSERVED_WITH_ERRORS': 'Instrumentos encontrados; consultas con errores',
+        'QUERY_ERROR': 'Error de consulta o metadatos',
+        'EMPTY_FILTER_RESULTS': 'Filtros sin coincidencias',
+        'DECLARED_NO_QUERY': 'Declarada; sin consulta',
+        'CONFIGURATION_UNAVAILABLE': 'Configuración no disponible'}
+    items = []
+    for r in records:
+        declared = {1: 'Sí', 0: 'No enumerada', -1: 'Desconocido'}.get(r['declared'], 'Desconocido')
+        items.append(f"<tr><td>{_e(r['instrument_type'])}</td><td>{declared}</td>"
+            f"<td>{_e(labels.get(r['discovery_status'], r['discovery_status']))}</td>"
+            f"<td>{_e(r['queries'])}</td><td>{_e(r['observed_count'])}</td>"
+            f"<td>{_e(r['ready_paper_count'])}</td><td>{_local_time(r['checked_at'])}</td></tr>")
+    return ("<div class='paper-card'><h2>Cobertura por familia</h2>"
+        "<p>Última ejecución de catálogo, no estado en tiempo real. No acredita permisos ni habilita operaciones. "
+        "Una familia declarada no garantiza instrumentos, cotizaciones o contratos ejecutables. "
+        "Cero coincidencias no prueba indisponibilidad; sin consulta no significa cero instrumentos existentes. "
+        "Compatibles PAPER cuenta sólo contratos de contado reconocidos; faltan los demás portones y no implica ejecución real.</p>"
+        "<table class='paper-table'><tr><th>Familia</th><th>Declarada por PPI</th><th>Descubrimiento</th>"
+        "<th>Consultas</th><th>Identidades encontradas</th><th>Compatibles PAPER</th><th>Consultado</th></tr>" +
+        (''.join(items) or "<tr><td colspan='7'>Sin inventario de familias persistido.</td></tr>") + "</table></div>")
 
 
 def _candle_archive_panel():
