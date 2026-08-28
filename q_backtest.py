@@ -1,5 +1,12 @@
 """
-q_backtest.py — Backtest histórico (v9.0)
+q_backtest.py — Experimento legado NO VALIDADO (v17)
+
+RETIRADO como vía de validación: mezcla subyacente/CEDEAR, moneda y fecha de
+ejecución, y su partición posterior NO es walk-forward. Las funciones públicas
+fallan antes de descargar datos. Consultar bx_execution_replay.py para el replay
+offline nuevo; tampoco ese replay aprueba estrategias. Código histórico
+conservado sólo para auditoría. Las afirmaciones originales debajo no están
+validadas.
 
 RESUELVE el pendiente más importante y repetido en todas las revisiones
 anteriores (v6.0 a v8.0) y en las auditorías 7.1 y 8.1: el sistema nunca
@@ -44,7 +51,6 @@ from datetime import date
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
 import e_technical_engine as tech
 import os
@@ -90,6 +96,7 @@ MAX_HOLD_DAYS = int(os.getenv("BACKTEST_MAX_HOLD_DAYS", "10"))  # si no tocó st
 
 
 def _fetch_history(ticker: str, period: str = "2y") -> pd.DataFrame:
+    import yfinance as yf
     df = yf.Ticker(ticker).history(interval="1d", period=period)
     if df is None or df.empty:
         raise RuntimeError(f"Sin datos históricos para {ticker}")
@@ -117,6 +124,10 @@ def _compute_daily_scores(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def run_backtest(ticker: str, period: str = "2y") -> dict:
+    raise RuntimeError("LEGACY_BACKTEST_UNVERIFIED: usar replay offline v17; no habilita promoción")
+
+
+def _legacy_run_backtest_unverified(ticker: str, period: str = "2y") -> dict:
     df = _fetch_history(ticker, period)
     df = _compute_daily_scores(df)
 
@@ -191,6 +202,8 @@ def run_backtest(ticker: str, period: str = "2y") -> dict:
         max_dd = max(max_dd, (peak - t["capital_after"]) / peak * 100 if peak else 0)
 
     return {
+        "promotion_allowed": False,
+        "validation_status": "LEGACY_UNVERIFIED",
         "ticker": ticker,
         "period": period,
         "total_trades": len(trades),
@@ -215,6 +228,8 @@ def run_walk_forward(ticker: str, total_period: str = "3y", window_days: int = 1
     fallar en los demás — eso sería señal de sobreajuste al período
     completo en vez de un patrón real).
     """
+    raise RuntimeError("POSTHOC_PARTITION_IS_NOT_WALK_FORWARD: validación pendiente")
+
     df = _fetch_history(ticker, total_period)
     windows = []
     start = 0
@@ -241,14 +256,8 @@ def run_walk_forward(ticker: str, total_period: str = "3y", window_days: int = 1
 
 
 if __name__ == "__main__":
-    ticker = sys.argv[1] if len(sys.argv) > 1 else "AAPL"
-    print(f"Corriendo backtest de {ticker} (2 años, técnico + costos reales, SIN capa de IA)...")
-    result = run_backtest(ticker, period="2y")
-    print(json.dumps({k: v for k, v in result.items() if k != "trades"}, indent=2, ensure_ascii=False))
-    print(f"\n--- Walk-forward (ventanas de 180 días) ---")
-    wf = run_walk_forward(ticker)
-    print(json.dumps(wf, indent=2, ensure_ascii=False))
-
-    with open(f"backtest_{ticker}_{date.today().isoformat()}.json", "w") as f:
-        json.dump(result, f, indent=2, ensure_ascii=False)
-    print(f"\nResultado completo guardado en backtest_{ticker}_{date.today().isoformat()}.json")
+    print(json.dumps({"status": "BLOCKED_LEGACY_UNVERIFIED", "promotion_allowed": False,
+                      "reason": "El experimento antiguo no valida CEDEARs ni walk-forward. "
+                                "Usar bx_execution_replay.py con datos locales explícitos."},
+                     ensure_ascii=False))
+    sys.exit(2)
