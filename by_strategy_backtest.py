@@ -11,11 +11,13 @@ from bl_candle_engine import fingerprint, stamp
 from bo_signal_core import candidate, trade_economics
 from bs_instrument_contracts import aware_datetime
 from bx_execution_replay import ReplayOrder, serializable
+from bz_replay_risk import ReplayRiskConfig
 
 
 class CandleStrategy:
-    def __init__(self, engine, config, grid):
+    def __init__(self, engine, config, grid, risk_config):
         self.engine, self.config, self.grid = engine, config, grid
+        self.version = config.version + ':risk:' + fingerprint(serializable(asdict(risk_config)))[:16]
         self.plan = None
         self.last_entry_bar = None
         self.decisions = []
@@ -23,12 +25,16 @@ class CandleStrategy:
     def record(self, view, code, action='HOLD', **detail):
         self.decisions.append(serializable({'at': view['at'], 'book_id': view['book'].event_id,
             'action': action, 'code': code, 'cash': view['cash'], 'held': view['held'],
-            'strategy_version': self.config.version, 'promotion_allowed': False, **detail}))
+            'strategy_version': self.version, 'daily_risk': view['daily_risk'],
+            'promotion_allowed': False, **detail}))
 
     def on_event(self, view):
         at = aware_datetime(view['at'])
         book = view['book']
         states = {o['order_id']: o for o in view['orders']}
+        risk = view['daily_risk']
+        if self.plan is not None and view['held'] > 0 and risk['state'] == 'LATCHED':
+            self.plan['exit_reason'] = self.plan['exit_reason'] or 'DAILY_LOSS_LIMIT'
         # No volver a enviar una orden que sigue viva durante latencia o sesión cerrada.
         if any(o['status'] == 'PENDING' for o in states.values()):
             self.record(view, 'ORDER_PENDING')
@@ -67,7 +73,7 @@ class CandleStrategy:
                         self.record(view, 'EXIT_WAITING_FOR_BOOK', exit_reason=self.plan['exit_reason'])
                         return None
                     order = ReplayOrder(order_id=f"exit:{self.plan['entry_order_id']}:{len(self.decisions)}",
-                        series_id=self.engine.series.key, strategy_version=self.config.version,
+                        series_id=self.engine.series.key, strategy_version=self.version,
                         submitted_at=stamp(at), expires_at=stamp(at + timedelta(seconds=self.config.order_ttl_seconds)),
                         side='SELL', quantity=view['held'], evidence_ids=self.plan['evidence_ids'],
                         entry_order_id=self.plan['entry_order_id'])
@@ -81,6 +87,9 @@ class CandleStrategy:
                 self.record(view, 'FLAT_AFTER_EXIT')
                 return None
 
+        if risk['state'] != 'READY':
+            self.record(view, 'DAILY_RISK_' + risk['state'])
+            return None
         signal = candidate(self.engine.archive, self.engine.series, self.engine.contract,
             self.engine.fees, self.engine.assumptions, self.grid, self.config, view)
         if signal['action'] != 'BUY':
@@ -90,11 +99,11 @@ class CandleStrategy:
             self.record(view, 'ENTRY_ALREADY_ATTEMPTED_FOR_BAR')
             return None
         self.last_entry_bar = signal['bar_start']
-        entry_id = 'entry:' + fingerprint({'version': self.config.version, 'series': self.engine.series.key,
+        entry_id = 'entry:' + fingerprint({'version': self.version, 'series': self.engine.series.key,
                                            'bar': signal['bar_start'], 'at': stamp(at)})[:24]
         self.plan = {'entry_order_id': entry_id, 'stop': signal['stop'], 'target': signal['target'],
                      'evidence_ids': signal['evidence_ids'], 'exit_reason': ''}
-        order = ReplayOrder(entry_id, self.engine.series.key, self.config.version, stamp(at),
+        order = ReplayOrder(entry_id, self.engine.series.key, self.version, stamp(at),
             stamp(at + timedelta(seconds=self.config.order_ttl_seconds)), 'BUY', signal['quantity'],
             signal['evidence_ids'], price_limit=signal['entry_cap'])
         self.record(view, 'CANDIDATE_ENTRY', 'BUY', order_id=entry_id, features=signal['features'],
@@ -103,21 +112,25 @@ class CandleStrategy:
         return order
 
 
-def run_strategy(engine, books, config, grid, *, start, end, initial_cash):
+def run_strategy(engine, books, config, grid, *, start, end, initial_cash, risk_config=None):
+    if not isinstance(risk_config, ReplayRiskConfig):
+        raise ValueError('El candidato requiere riesgo diario explícito, sin porcentaje predeterminado')
     if aware_datetime(config.frozen_at) > aware_datetime(start):
         raise ValueError('Los parámetros deben estar congelados antes del período de prueba')
     grid.validate(engine.series, start, end)
-    strategy = CandleStrategy(engine, config, grid)
-    result = engine.run([], books, start=start, end=end, initial_cash=initial_cash, strategy=strategy)
+    strategy = CandleStrategy(engine, config, grid, risk_config)
+    result = engine.run([], books, start=start, end=end, initial_cash=initial_cash,
+                        strategy=strategy, risk_config=risk_config)
     result['execution_run_id'] = result['run_id']
     result['mode'] = 'CANDIDATE_STRATEGY_BACKTEST'
-    result['strategy_version'] = config.version
+    result['strategy_version'] = strategy.version
     result['decisions'] = strategy.decisions
     result['manifest'].update(serializable({'mode': result['mode'], 'signal_config': asdict(config),
         'session_grid': asdict(grid), 'decision_trace': strategy.decisions}))
     result['run_id'] = fingerprint(result['manifest'])
     result['limitations'] = [
-        'Candidato momentum/ATR de contado, no la estrategia completa paper con IA y riesgo diario',
+        'Candidato momentum/ATR con corte diario, no la estrategia completa paper con IA ni cartera multiactivo',
+        'Carry sin cierre anterior conciliado bloquea entradas; el límite no garantiza precio ni ejecución de salida',
         'Sin calibración walk-forward, holdout independiente, eventos corporativos ni benchmark de caución',
         'Parámetros y grilla aportados, no acreditan por sí solos calidad del feed ni rentabilidad',
         'Stop es un disparador: el fill depende de un libro posterior y puede exceder el riesgo modelado',
