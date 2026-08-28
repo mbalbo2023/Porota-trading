@@ -11,12 +11,13 @@ import re
 import shutil
 import signal
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
 from urllib.parse import quote
 
-VERSION = 'v17-ledger-preflight-1'
+VERSION = 'v17-ledger-preflight-2'
 HOST_DATA = '/opt/porota-trading/data'
 DATABASE = '/observer/observer_production.db'
 BOT = 'porota_trading_bot'
@@ -37,11 +38,62 @@ def report_base():
         'status': 'NOT_STARTED', 'scope': 'Registros PAPER persistidos; sin APIs, cuentas o credenciales.',
         'database_modified': False, 'migration_performed': False, 'promotion_allowed': False,
         'counts': {}, 'issues': {}, 'examples': [], 'legacy_projection': {},
+        'stage': 'NOT_STARTED',
+        'reader_runtime': {'python': '.'.join(map(str, sys.version_info[:3])),
+                           'sqlite': sqlite3.sqlite_version},
         'limits': ['No certifica movimientos, saldos, permisos o costos reales de PPI.',
                    'Sin exportar importes, posiciones individuales o contenido de features_json.',
                    'No migra ni repara registros. Los defaults legacy son hipótesis explícitas.',
                    'Contrasta salidas con entradas almacenadas; no certifica origen de entradas ni aranceles.',
                    'Sólo ledger spot: no certifica señales, sesiones, cauciones o producción.']}
+
+
+def filesystem_evidence(path):
+    """Sólo archivos conocidos; no lista directorios ni lee filas o payloads.
+
+    Fotografía previa, no atómica con la transacción SQLite. El encabezado
+    describe el modo persistido, no la integridad ni recuperación del WAL.
+    """
+    result = {}
+    for label, item in (('database', path), ('wal', Path(str(path)+'-wal')),
+                        ('shm', Path(str(path)+'-shm')),
+                        ('rollback_journal', Path(str(path)+'-journal'))):
+        row = {}
+        try:
+            info = item.stat()
+            row.update(state='PRESENT', regular_file=stat.S_ISREG(info.st_mode),
+                       bytes=info.st_size)
+            if row['regular_file']:
+                # Apertura de sólo lectura: no intenta crear archivos auxiliares.
+                with item.open('rb') as stream:
+                    row['read_open_succeeded'] = True
+                    if label == 'database':
+                        header = stream.read(20)
+                        row['header_journal_mode'] = (
+                            {b'\x02\x02':'WAL', b'\x01\x01':'ROLLBACK'}.get(header[18:20], 'UNKNOWN')
+                            if header[:16] == b'SQLite format 3\x00' else 'NOT_SQLITE_HEADER')
+        except FileNotFoundError:
+            row.update(state='MISSING')
+        except OSError as exc:
+            row.update(state='ACCESS_ERROR', os_errno=exc.errno,
+                       error_class=type(exc).__name__)
+        result[label] = row
+    return result
+
+
+def sqlite_failure(exc):
+    """Códigos nativos, nunca el mensaje SQL que podría contener datos."""
+    code = getattr(exc, 'sqlite_errorcode', None)
+    name = getattr(exc, 'sqlite_errorname', None)
+    code = code if type(code) is int and 0 <= code < 65536 else None
+    name = (name if isinstance(name, str) and
+            re.fullmatch(r'SQLITE_[A-Z0-9_]{1,80}', name) else None)
+    primary = code & 255 if code is not None else None
+    category = {1:'SQL_ERROR', 3:'PERMISSION', 5:'BUSY', 6:'LOCKED',
+                8:'READONLY', 10:'IO_ERROR', 11:'CORRUPT', 14:'CANNOT_OPEN',
+                17:'SCHEMA', 23:'AUTHORIZATION', 26:'NOT_A_DATABASE'}.get(primary, 'OTHER')
+    return {'error_class':type(exc).__name__, 'sqlite_errorcode':code,
+            'sqlite_errorname':name, 'primary_code':primary, 'category':category}
 
 
 def issue_code(exc):
@@ -60,23 +112,29 @@ def issue_code(exc):
 def collect(path):
     report = report_base()
     path = Path(path)
-    if not path.is_file():
-        report.update(status='STOPPED', reason='DATABASE_NOT_FOUND')
-        return report
-    # Sólo estos módulos de cálculo; no PaperStore, que inicializa/migra tablas.
-    if Path(__file__).is_file():
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    import cd_spot_ledger as ledger
-    from bs_instrument_contracts import decimal_value
-    from cf_sale_settlement import validated_sale_settlement
-    from decimal import Decimal
     issues = Counter()
     try:
+        report['stage'] = 'FILE_METADATA'
+        report['filesystem_evidence'] = filesystem_evidence(path)
+        if not path.is_file():
+            raise PreflightStop('DATABASE_NOT_FOUND')
+        report['stage'] = 'IMPORT_READERS'
+        # Sólo módulos de cálculo; no PaperStore, que inicializa/migra tablas.
+        if Path(__file__).is_file():
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        import cd_spot_ledger as ledger
+        from bs_instrument_contracts import decimal_value
+        from cf_sale_settlement import validated_sale_settlement
+        from decimal import Decimal
+        report['stage'] = 'OPEN_SQLITE'
         uri = 'file:' + quote(str(path.resolve()), safe='/') + '?mode=ro'
         with closing(sqlite3.connect(uri, uri=True, timeout=5)) as c:
             c.row_factory = sqlite3.Row
+            report['stage'] = 'SET_QUERY_ONLY'
             c.execute('PRAGMA query_only=ON')
+            report['stage'] = 'BEGIN_READ_TRANSACTION'
             c.execute('BEGIN')
+            report['stage'] = 'READ_SCHEMA'
             schemas = {r['name']: r for r in c.execute(
                 "SELECT name,type,sql FROM sqlite_master WHERE name IN (?,?,?,?)", TABLES)}
             if any(r['type'] != 'table' or 'CREATE VIRTUAL TABLE' in (r['sql'] or '').upper()
@@ -84,6 +142,7 @@ def collect(path):
                 raise PreflightStop('UNEXPECTED_TABLE_KIND')
             if not {'paper_positions', 'paper_fills'} <= set(schemas):
                 raise PreflightStop('PAPER_TABLES_MISSING')
+            report['stage'] = 'READ_COLUMNS'
             columns = {name: {r['name'] for r in c.execute('PRAGMA table_info(' + name + ')')}
                        for name in schemas}
             required = {'paper_positions': {'paper_id','source','status','symbol','asset_class',
@@ -95,6 +154,7 @@ def collect(path):
                 'paper_sale_receivables': {'paper_id','currency','net_proceeds','available_at','basis'}}
             if any(not required[name] <= columns[name] for name in schemas):
                 raise PreflightStop('UNSUPPORTED_LEDGER_SCHEMA')
+            report['stage'] = 'COUNT_ROWS'
             for name, limit in (('paper_positions', MAX_POSITIONS), ('paper_fills', MAX_FILLS),
                                 ('paper_spot_sales', MAX_FILLS), ('paper_sale_receivables', MAX_POSITIONS)):
                 if name not in schemas:
@@ -110,6 +170,7 @@ def collect(path):
             states = Counter()
             checked = valid = 0
             missing_receipts = 0
+            report['stage'] = 'VALIDATE_POSITIONS'
             for ordinal, row in enumerate(c.execute('SELECT * FROM paper_positions ORDER BY opened_at,paper_id'), 1):
                 p = dict(row, **defaults)
                 states[p['status'] if p['status'] in {'OPEN','CLOSED'} else 'UNKNOWN'] += 1
@@ -144,6 +205,7 @@ def collect(path):
                     issues[code] += 1
                     if len(report['examples']) < MAX_EXAMPLES:
                         report['examples'].append({'row_number': ordinal, 'issue': code})
+            report['stage'] = 'CHECK_ORPHANS'
             orphan_fills = c.execute('''SELECT COUNT(*) FROM paper_fills f LEFT JOIN paper_positions p
                 ON p.paper_id=f.paper_id WHERE p.paper_id IS NULL''').fetchone()[0]
             if orphan_fills:
@@ -166,9 +228,13 @@ def collect(path):
                 position_states=dict(states))
             report['issues'] = dict(issues)
             report['status'] = 'OBSERVED_REVIEW_REQUIRED' if issues or defaults or missing_receipts else 'OBSERVED_NO_DETECTED_INCONSISTENCIES'
+            report['stage'] = 'END_READ_TRANSACTION'
             c.rollback()
+            report['stage'] = 'DONE'
     except PreflightStop as exc:
         report.update(status='STOPPED', reason=str(exc))
+    except sqlite3.Error as exc:
+        report.update(status='STOPPED', reason='SQLITE_ERROR', sqlite_error=sqlite_failure(exc))
     except Exception as exc:
         report.update(status='STOPPED', reason=type(exc).__name__)
     report['completed_at'] = datetime.now(timezone.utc).isoformat()
