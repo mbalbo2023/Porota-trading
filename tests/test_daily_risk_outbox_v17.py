@@ -17,6 +17,7 @@ from bn_telegram_bus import DeliveryError, OutboxWorker, TelegramTransport, enqu
 from bv_paper_runtime import broker_from_environment
 from bw_daily_risk import loss_limit_crossed
 from bz_replay_risk import ReplayDailyRisk, ReplayRiskConfig
+from bt_caucion_paper import record_sale
 from test_production_paper_v1634 import quote, caucion_offer
 
 AT = '2026-08-28T11:00:00-03:00'
@@ -143,6 +144,7 @@ def seed_closed(store, *, key='closed', currency='ARS', net='-100',
           VALUES(?,'PRODUCTION_PAPER','fixture',?,'ACCIONES','CI','CLOSED',
             '1','100','0','98','104',?,?,'1','0',?,?,'TEST','{}',?,'BYMA')''',
             (key,key,opened,closed,net,net,currency))
+        record_sale(c,key,'CI',closed,D(1),currency)
 
 
 def test_aviso_y_fill_comparten_commit_y_rollback(store):
@@ -421,6 +423,33 @@ def test_caucion_devenga_sin_contar_principal_y_bloqueo_no_impide_vencer(store):
     assert broker.settle_cauciones(offer.maturity_at)==[p['paper_id']]
     assert broker.settle_cauciones(offer.maturity_at)==[]
     assert len([r for r in records(store,'paper_notification_outbox') if r['kind']=='PAPER_CAUCION_MATURED'])==1
+
+
+@pytest.mark.parametrize('payment',['MATURITY','UPFRONT'])
+@pytest.mark.parametrize('fee',['1','1.01'])
+def test_caucion_costos_proyectados_no_agotan_limite_diario(store,payment,fee):
+    broker = PaperBroker(store,initial_cash='10000',daily_loss_pct='.01')
+    offer = caucion_offer(fee_payment=payment,quoted_total_fees=D(fee))
+    with pytest.raises(ValueError,match='DAILY_RISK_PROJECTED_LOSS'):
+        broker.place_caucion(offer,'1000','costly',AT)
+    assert not broker.cauciones.positions()
+    assert broker._cash(as_of=AT)==10000
+    row = broker.daily_risk.evaluate(AT)['ARS']
+    assert row['state']=='READY' and row['latched_at'] is None and D(row['daily_pnl'])==0
+    assert not records(store,'paper_notification_outbox')
+
+
+@pytest.mark.parametrize('payment',['MATURITY','UPFRONT'])
+def test_caucion_costo_menor_al_remanente_se_registra_en_misma_moneda(store,payment):
+    broker = PaperBroker(store,initial_cash='10000',initial_cash_by_currency={'USD_MEP':'10000'},daily_loss_pct='.01')
+    offer = caucion_offer(currency='USD_MEP',fee_payment=payment,quoted_total_fees=D('.99'))
+    broker.place_caucion(offer,'1000','accepted',AT)
+    rows = broker.daily_risk.evaluate(AT)
+    assert rows['USD_MEP']['state']=='READY' and D(rows['USD_MEP']['daily_pnl'])==D('-.99')
+    assert D(rows['ARS']['daily_pnl'])==0 and broker._cash(as_of=AT)==10000
+    with pytest.raises(ValueError,match='DAILY_RISK_PROJECTED_LOSS'):
+        broker.place_caucion(offer,'1000','second',AT)
+    assert len(broker.cauciones.positions())==1
 
 
 @pytest.mark.parametrize('bad',['0','-1','NaN','Infinity','101'])
