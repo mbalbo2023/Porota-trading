@@ -233,7 +233,7 @@ def host(tmp_path, monkeypatch):
                'tag':'porota-trading-bot:16.3.5', 'user':'botuser'} for name in (probe.BOT, probe.OBSERVER)]
     mounts = [{'Destination':'/app/data', 'Source':probe.HOST_DATA, 'Type':'bind', 'RW':True}]
     calls, failures = [], {}
-    output = {'create':'b'*64, 'start':json.dumps(dict(probe.report_base(), status='OBSERVED_REVIEW_REQUIRED'))}
+    output = {'create':'b'*64, 'start':json.dumps(dict(probe.report_base(), status='OBSERVED_REVIEW_REQUIRED', read_mode='TEMPORARY_COPY'))}
     def docker(args, **kwargs):
         calls.append(args)
         if args[0] in failures:
@@ -265,7 +265,11 @@ def test_host_only_reads_observer_directory_offline(host):
     assert mounts[1] == 'type=bind,src='+probe.HOST_DATA+'/observer,dst=/observer,readonly'
     assert not any('.env' in a or '/app/data' in a or 'secrets' in a for a in create)
     assert all('.Env' not in ' '.join(a) for a in calls)
-    assert calls[-2:] == [['start','--attach','b'*64], ['rm','--force','b'*64]]
+    assert calls[-3] == ['start','--attach','b'*64]
+    assert calls[-2][0] == 'inspect' and calls[-1] == ['rm','--force','b'*64]
+    assert create[-1] == '--copy-read'
+    assert create[create.index('--tmpfs')+1] == '/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777'
+    assert report['host_evidence']['engines_stopped_after_probe']
     assert not any(a[0] in {'stop','restart','update','exec','pull'} for a in calls)
     copy = Path(mounts[0].split('src=',1)[1].split(',dst=',1)[0])
     assert not copy.exists()
