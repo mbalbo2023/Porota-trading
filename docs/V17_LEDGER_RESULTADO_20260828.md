@@ -62,17 +62,18 @@ conserva; caja continúa bloqueada y supervisión separa tres abiertas de una
 inconsistente. Corregir hipotéticamente sólo el estado tampoco certifica
 el historial ni elimina las hipótesis de moneda o los recibos faltantes.
 
-## Decisión pendiente, sin cambios en el servidor
+## Decisión del operador, sin cambios en el servidor
 
 Recomendación: conservar la base anterior intacta y preparar para v17 una
 base PAPER independiente, sin trasladar caja, posiciones ni aprendizaje
 no verificados. El historial anterior sigue disponible para conciliación;
 no se borra, repara ni convierte un estado desconocido en un cierre.
 
-Esta separación de continuidad requiere autorización del operador antes de
-implementarla/configurarla. No supone arrancar v17, validar el resto del sistema
-ni desplegar. La auditoría puntual por copia ya autorizada no se amplía a
-migración, reescritura de registros ni cambio de base activa.
+El operador respondió «Continúa Según tu criterio» y autorizó preparar esta
+separación. Implementación: [PAPER v17 independiente](V17_PAPER_SEPARACION.md).
+No supone arrancar v17, validar el resto del sistema ni desplegar. No se
+autoriza por ello reescribir registros del original ni cambiar la base activa
+del servidor. La base nueva no se creó en el Droplet durante el desarrollo.
 
 Alternativa si se exige continuidad de las diez posiciones: obtener evidencia
 del estado original y su procedencia, contrastar términos/entrada de esa fila
