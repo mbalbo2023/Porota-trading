@@ -214,7 +214,49 @@ def snapshot():
     balances = _rows("""SELECT e.* FROM paper_equity_by_currency e JOIN
       (SELECT currency,MAX(id) id FROM paper_equity_by_currency GROUP BY currency) latest ON latest.id=e.id
       ORDER BY e.currency""") if _table("paper_equity_by_currency") else []
-    return {"state":state,"quotes":quotes,"open":opened,"closed":closed,"decisions":decisions,"equity":equity,"learning":learning,"cauciones":cauciones,"balances_by_currency":balances}
+    supervisor = (_rows("SELECT * FROM paper_supervisor_state WHERE id=1") or [{}])[0] if _table("paper_supervisor_state") else {}
+    exit_reader = (_rows("SELECT * FROM paper_exit_reader_state WHERE id=1") or [{}])[0] if _table("paper_exit_reader_state") else {}
+    exits = _rows("SELECT * FROM paper_exit_intents") if _table("paper_exit_intents") else []
+    valuation_quality = _rows("SELECT * FROM paper_valuation_quality") if _table("paper_valuation_quality") else []
+    return {"state":state,"quotes":quotes,"open":opened,"closed":closed,"decisions":decisions,"equity":equity,"learning":learning,"cauciones":cauciones,"balances_by_currency":balances,
+            "exit_supervisor":supervisor,"exit_reader":exit_reader,"exit_intents":exits,"valuation_quality":valuation_quality}
+
+
+def _exit_supervision_panel():
+    data = snapshot()
+    health = data["exit_supervisor"]
+    # Sólo lectura: abrir el panel no crea bases, migra ni ejecuta supervisión.
+    state = health.get("state", "NOT_STARTED")
+    try:
+        age = (datetime.now(TZ) - datetime.fromisoformat(health["heartbeat_at"])).total_seconds()
+        if not 0 <= age <= 20:
+            state = "STALE"
+    except (KeyError, ValueError, TypeError):
+        state = "UNKNOWN"
+    reader = data["exit_reader"]
+    reader_state = reader.get("state","NOT_STARTED")
+    try:
+        age = (datetime.now(TZ) - datetime.fromisoformat(reader["heartbeat_at"])).total_seconds()
+        if not 0 <= age <= 20:
+            reader_state = "STALE"
+    except (KeyError, ValueError, TypeError):
+        reader_state = "UNKNOWN"
+    intents = {r["paper_id"]:r for r in data["exit_intents"]}
+    rows = []
+    for p in data["open"]:
+        r = intents.get(p["paper_id"],{})
+        rows.append(f"<tr><td>{_e(p['symbol'])} · {_e(p.get('currency','ARS'))}</td>"
+                    f"<td>{_e(r.get('state','AWAITING_SUPERVISION'))}</td><td>{_e(r.get('cause') or '—')}</td>"
+                    f"<td>{_local_time(r.get('due_at'))}</td><td>{_e(r.get('blocked_reason','Pendiente de revisión'))}</td>"
+                    f"<td>{_local_time(r.get('supervised_at'))}</td></tr>")
+    return ("<div class='paper-card'><h2>Supervisión de salidas</h2>"
+            f"<p>Reloj independiente: <b>{_e(state)}</b> · último pulso: {_local_time(health.get('heartbeat_at'))}</p>"
+            f"<p>Lector de salidas: <b>{_e(reader_state)}</b> · último pulso: {_local_time(reader.get('heartbeat_at'))}</p>"
+            "<p>Una salida decidida no equivale a una venta. Sin libro fresco, liquidez o sesión habilitada, sigue pendiente. "
+            "No se ejecuta con precios viejos ni fuera de la ventana paper. El estado STALE bloquea nuevas entradas.</p>"
+            "<table class='paper-table'><tr><th>Instrumento</th><th>Estado de salida</th><th>Causa</th>"
+            "<th>Decidida</th><th>Detalle</th><th>Supervisada</th></tr>" + ("".join(rows) or
+            "<tr><td colspan='6'>Sin posiciones de compraventa abiertas.</td></tr>") + "</table></div>")
 
 
 def _cauciones_panel():
@@ -242,17 +284,22 @@ def _trade_metrics(closed):
 
 
 def _balances_panel():
-    balances = snapshot()["balances_by_currency"]
+    data = snapshot()
+    balances = data["balances_by_currency"]
+    quality = {r['currency']:r for r in data["valuation_quality"]}
     rows = "".join(f"<tr><td>{_e(r['currency'])}</td><td>{_e(r['cash'])}</td>"
                    f"<td>{_e(r['pending_proceeds'])}</td><td>{_e(r['caucion_principal'])}</td>"
-                   f"<td>{_e(r['realized_pnl'])}</td><td>{_e(r['equity'])}</td></tr>" for r in balances)
-    rows = rows or "<tr><td colspan='6'>Pendiente de la primera valuación por moneda.</td></tr>"
+                   f"<td>{_e(r['realized_pnl'])}</td><td>{_e(r['equity'])}</td>"
+                   f"<td>{_e(quality.get(r['currency'],{}).get('state','UNKNOWN'))} · "
+                   f"{_local_time(quality.get(r['currency'],{}).get('measured_at'))}</td></tr>" for r in balances)
+    rows = rows or "<tr><td colspan='7'>Pendiente de la primera valuación por moneda.</td></tr>"
     return ("<div class='paper-card'><h2>Caja y patrimonio por moneda</h2>"
             "<p>Sin conversión automática: pesos, dólar billete/MEP, divisa/CCL y USD sin plaza "
             "no se suman ni se prestan saldo entre sí. Sólo cauciones colocadoras; sin financiación.</p>"
             "<table class='paper-table'><tr><th>Moneda/plaza</th><th>Disponible</th>"
             "<th>Ventas pendientes</th><th>Capital caucionado</th><th>PnL realizado</th>"
-            "<th>Patrimonio</th></tr>" + rows + "</table></div>")
+            "<th>Patrimonio estimado</th><th>Valuación</th></tr>" + rows + "</table>"
+            "<p>STALE_MARKS conserva la última marca válida (o costo inicial sin marca); no es una valuación vigente.</p></div>")
 
 
 def _report_state(family):
@@ -349,7 +396,7 @@ def motor_page():
     gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(g['ai_gate'])}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas todavía.</div>'
     body=f"<h1>Motor de trading</h1><p class='paper-muted'>Una única actualización visual; trazabilidad técnica → IA → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>IA</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",body + _balances_panel() + _cauciones_panel())
+    return _document("Motor de trading",_exit_supervision_panel() + body + _balances_panel() + _cauciones_panel())
 
 
 def _next_check(component, checked):
