@@ -288,42 +288,62 @@ def _throttle():
 
 
 # ---------------------------------------------------------------------- #
-# NUEVO EN v10.5 — Adaptador de parámetros de orden por tipo de
-# instrumento (auditoría 3, hallazgo #1, CRÍTICO): antes budget_order() y
-# confirm_order() pasaban SIEMPRE quantity_type="PAPELES" y el settlement
-# recibido, sin importar la clase de activo. Eso rechaza directo en el
-# bróker para instrumentos que no operan "por papeles" (FCI se suscribe
-# por MONTO) o que no usan los settlements A-24HS/A-48HS (CAUCIONES usa
-# INMEDIATA). Esta tabla es la fuente única de esa correspondencia.
-#
-# LÍMITE HONESTO que se mantiene igual que en revisiones anteriores: la
-# documentación pública de PPI no confirma, con una cuenta Sandbox real,
-# el detalle fino de cómo se arma una orden de OPCIONES (strike/
-# vencimiento) o de FUTUROS (margen) — por eso esos dos tipos NO están acá
-# y siguen sin operarse (ver m_instrument_universe.OBSERVATION_ONLY_TYPES).
-# CAUCIONES y FCI sí tienen un mapeo de parámetros razonablemente claro en
-# la documentación oficial, así que se agregan acá, pero su colocación
-# automática real queda además detrás de un interruptor propio, apagado
-# por default (ver CAUCIONES_AUTO_PLACEMENT en l_order_confirmation.py) —
-# no se activa solo por agregar el mapeo.
+# Ruta genérica de contado, no un adaptador de todos los productos PPI.
+# REST/Python oficiales, revisados 28/08/2026: enumeran DINERO/PAPELES/
+# CANTIDAD-TOTAL, no MONTO. El enum COLOCAR-CAUCIÓN no define por sí solo
+# tasa, capital, plazo ni costos. No presupuestar/confirmar familias
+# especializadas con los defaults de una acción, ni siquiera en simulación.
 ORDER_PARAM_MAP = {
     "CEDEARS":  {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
     "ACCIONES": {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
     "BONOS":    {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
     "ETF":      {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
-    "FCI":              {"quantity_type": "MONTO",   "settlement_default": "INMEDIATA"},
-    "FCI-EXTERIOR":     {"quantity_type": "MONTO",   "settlement_default": "INMEDIATA"},
-    "CAUCIONES":        {"quantity_type": "PAPELES", "settlement_default": "INMEDIATA"},
+    "LETRAS":  {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+    "NOBAC":   {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+    "LEBAC":   {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+    "ON":      {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
 }
 
 
 def order_param_adapter(instrument_type: str) -> Dict[str, str]:
-    """Devuelve el quantity_type correcto para el tipo de instrumento dado.
-    Si el tipo no está en la tabla (ej. OPCIONES/FUTUROS, que todavía no se
-    operan), cae al comportamiento histórico (PAPELES) en vez de fallar —
-    es un valor por default razonable, no una promesa de que ese tipo esté
-    soportado para operar de verdad."""
-    return ORDER_PARAM_MAP.get(instrument_type, {"quantity_type": "PAPELES", "settlement_default": "A-24HS"})
+    """Default sólo de contado; no certifica contrato, costos o habilitación."""
+    kind = str(instrument_type).strip().upper()
+    if kind not in ORDER_PARAM_MAP:
+        raise NotImplementedError('PPI_SPECIALIZED_ORDER_ROUTE_REQUIRED: '+kind)
+    return dict(ORDER_PARAM_MAP[kind])
+
+
+def _order_terms(instrument_type, quantity_type, order_type, term, operation,
+                 settlement, operation_max_date):
+    """Campos documentados del SDK, iguales en presupuesto y confirmación.
+
+    operationMaxDate es vigencia de la orden, no vencimiento de caución.
+    Esta validación local no constituye autorización del broker.
+    """
+    from datetime import datetime, timezone
+    from bs_instrument_contracts import aware_datetime
+    kind = str(instrument_type).strip().upper()
+    defaults = order_param_adapter(kind)  # incluso con quantity_type explícito
+    values = dict(instrumentType=kind,
+        quantityType=str(defaults['quantity_type'] if quantity_type is None else quantity_type).strip().upper(),
+        operationType=str(order_type).strip().upper(),operationTerm=str(term).strip().upper(),
+        operation=str(operation).strip().upper(),settlement=str(settlement).strip().upper())
+    accepted = {'quantityType':{'DINERO','PAPELES','CANTIDAD-TOTAL'},
+        'operationType':{'PRECIO-LIMITE','PRECIO-DE-MERCADO'},
+        'operationTerm':{'POR-EL-DÍA','HASTA-SU-EJECUCIÓN','VÁLIDA-HASTA-EL','72-HS'},
+        'operation':{'COMPRA','VENTA'},'settlement':{'INMEDIATA','A-24HS','A-48HS','A-72HS'}}
+    for field, choices in accepted.items():
+        if values[field] not in choices:
+            raise ValueError('PPI_ORDER_ENUM_INVALID: '+field)
+    if values['operationTerm']=='VÁLIDA-HASTA-EL':
+        expiry = aware_datetime(operation_max_date,'vigencia de orden')
+        if expiry<=datetime.now(timezone.utc):
+            raise ValueError('PPI_ORDER_EXPIRY_NOT_FUTURE')
+    else:
+        if operation_max_date is not None:
+            raise ValueError('PPI_ORDER_EXPIRY_WITHOUT_DATED_TERM')
+        expiry = None
+    return dict(values,operationMaxDate=expiry)
 
 
 class ResilientPPIClient:
@@ -1113,37 +1133,32 @@ class ResilientPPIClient:
     # ------------------------------------------------------------------ #
     def budget_order(self, account_number: str, quantity: int, price: float, ticker: str,
                       instrument_type: str = "CEDEARS", order_type: str = "PRECIO-LIMITE",
-                      term: str = "VÁLIDA-HASTA-EL", operation: str = "COMPRA",
-                      settlement: str = "A-24HS", quantity_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+                      term: str = "POR-EL-DÍA", operation: str = "COMPRA",
+                      settlement: str = "A-24HS", quantity_type: Optional[str] = None,
+                      operation_max_date=None) -> Optional[Dict[str, Any]]:
         """Presupuesto/simulación de la orden: PPI devuelve el detalle y los
         disclaimers que hay que aceptar antes de poder confirmar. NO coloca
-        ninguna orden todavía — es seguro llamarlo para probar.
-
-        CORRECCIÓN v10.5 — auditoría 3, hallazgo #1 (CRÍTICO): antes
-        "PAPELES" se pasaba siempre igual, sin importar el tipo de
-        instrumento — eso rompe para FCI (se suscribe por MONTO, no por
-        PAPELES). Si no se pasa quantity_type explícito, se resuelve con
-        order_param_adapter() según instrument_type."""
+        ninguna orden todavía. Requiere cuenta y términos correctos; un
+        presupuesto no prueba permiso general ni equivale a gastos all-in.
+        Familia especializada sin adaptador se rechaza antes del SDK."""
         from ppi_client.models.order_budget import OrderBudget
-
-        if quantity_type is None:
-            quantity_type = order_param_adapter(instrument_type)["quantity_type"]
+        _order_terms(instrument_type,quantity_type,order_type,term,operation,settlement,operation_max_date)
 
         def _fetch():
-            return self.client.orders.budget(OrderBudget(
-                account_number, quantity, price, ticker, instrument_type, quantity_type,
-                order_type, term, None, operation, settlement,
-            ))
+            params = _order_terms(instrument_type,quantity_type,order_type,term,operation,settlement,operation_max_date)
+            return self.client.orders.budget(OrderBudget(accountNumber=account_number,
+                quantity=quantity,price=price,ticker=ticker,**params))
 
         return self._call_with_retry(_fetch, f"budget_order({ticker})")
 
     def confirm_order(self, account_number: str, quantity: int, price: float, ticker: str,
                        accepted_disclaimers: list, instrument_type: str = "CEDEARS",
-                       order_type: str = "PRECIO-LIMITE", term: str = "VÁLIDA-HASTA-EL",
+                       order_type: str = "PRECIO-LIMITE", term: str = "POR-EL-DÍA",
                        operation: str = "COMPRA", settlement: str = "A-24HS",
                        external_id: Optional[str] = None,
                        quantity_type: Optional[str] = None,
-                       sandbox_probe: bool = False) -> Optional[Dict[str, Any]]:
+                       sandbox_probe: bool = False,
+                       operation_max_date=None) -> Optional[Dict[str, Any]]:
         """Coloca la orden REAL. En PRODUCTION esto mueve dinero de verdad.
         En v10.5, en SANDBOX con ORDER_EXECUTION_MODE=auto se llama sin
         botón de confirmación previo (pedido explícito del usuario — ver
@@ -1152,6 +1167,9 @@ class ResilientPPIClient:
 
         Ver order_param_adapter() para el mapeo de quantity_type por tipo
         de instrumento (corrección v10.5, auditoría 3, hallazgo #1)."""
+        # Antes de la intercepción: no registrar un producto especializado
+        # como si fuera una compraventa spot ni eludirlo mediante sandbox_probe.
+        _order_terms(instrument_type,quantity_type,order_type,term,operation,settlement,operation_max_date)
         # ------------------------------------------------------------------ #
         # NUEVO EN v16.0 — FRENO DE SIMULACIÓN
         # ------------------------------------------------------------------ #
@@ -1186,15 +1204,11 @@ class ResilientPPIClient:
         from ppi_client.models.order_confirm import OrderConfirm
         from ppi_client.models.disclaimer import Disclaimer
 
-        if quantity_type is None:
-            quantity_type = order_param_adapter(instrument_type)["quantity_type"]
-
         def _fetch():
+            params = _order_terms(instrument_type,quantity_type,order_type,term,operation,settlement,operation_max_date)
             accepted = [Disclaimer(d.get("code"), True) for d in accepted_disclaimers]
-            return self.client.orders.confirm(OrderConfirm(
-                account_number, quantity, price, ticker, instrument_type, quantity_type,
-                order_type, term, None, operation, settlement, accepted, external_id,
-            ))
+            return self.client.orders.confirm(OrderConfirm(accountNumber=account_number,
+                quantity=quantity,price=price,ticker=ticker,disclaimers=accepted,externalId=external_id,**params))
 
         return self._call_with_retry(_fetch, f"confirm_order({ticker})")
 
