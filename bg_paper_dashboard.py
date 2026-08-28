@@ -20,7 +20,7 @@ from bl_candle_engine import fingerprint
 from cb_caucion_audit import allocation_history
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
-from bt_caucion_paper import validate_position
+from bt_caucion_paper import validate_position, pending_proceeds
 
 
 VERSION = "16.3.5"
@@ -135,6 +135,8 @@ def _spot_snapshot():
             c.execute('BEGIN')
             opened, realized = spot_ledger.positions_at(c)
             closed = [dict(r) for r in c.execute("SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY closed_at DESC")]
+            for currency in {p['currency'] for p in closed}:
+                pending_proceeds(None,datetime.now(TZ).isoformat(),currency,connection=c)
             return {'open':opened,'closed':closed,'realized':realized,'state':'READY'}
     except Exception:
         return {'open':[],'closed':[],'realized':[],'state':'UNAVAILABLE'}
@@ -264,6 +266,9 @@ def snapshot():
     balances = _rows("""SELECT e.* FROM paper_equity_by_currency e JOIN
       (SELECT currency,MAX(id) id FROM paper_equity_by_currency GROUP BY currency) latest ON latest.id=e.id
       ORDER BY e.currency""") if _table("paper_equity_by_currency") else []
+    if spot['state']!='READY' or caucion_data['state']!='READY':
+        # No publicar una cifra anterior como si siguiera conciliada.
+        balances, equity = [], {}
     supervisor = (_rows("SELECT * FROM paper_supervisor_state WHERE id=1") or [{}])[0] if _table("paper_supervisor_state") else {}
     exit_reader = (_rows("SELECT * FROM paper_exit_reader_state WHERE id=1") or [{}])[0] if _table("paper_exit_reader_state") else {}
     exits = _rows("SELECT * FROM paper_exit_intents") if _table("paper_exit_intents") else []
@@ -465,8 +470,9 @@ def _trade_metrics(closed):
 
 def _balances_panel():
     data = snapshot()
-    if data['caucion_state']!='READY':
-        return "<div class='paper-card'><h2>Caja y patrimonio por moneda</h2>"+_caucion_warning(data['caucion_state'])+'</div>'
+    if data['caucion_state']!='READY' or data['spot_state']!='READY':
+        return ("<div class='paper-card'><h2>Caja y patrimonio por moneda</h2>"
+                +_spot_warning(data['spot_state'])+_caucion_warning(data['caucion_state'])+'</div>')
     balances = data["balances_by_currency"]
     quality = {r['currency']:r for r in data["valuation_quality"]}
     rows = "".join(f"<tr><td>{_e(r['currency'])}</td><td>{_e(r['cash'])}</td>"
@@ -516,7 +522,8 @@ def home_page():
     telegram=_report_state("telegram")[0]
     api=(_rows("SELECT state FROM api_health") if _table("api_health") else [])
     critical_bad=sum(1 for r in api if str(r.get("state")).upper()=="ROJO")
-    overall=heartbeat_ok and db_ok and critical_bad==0
+    financial_ready=data['caucion_state']=='READY' and data['spot_state']=='READY'
+    overall=heartbeat_ok and db_ok and critical_bad==0 and financial_ready
     equity=_num(data["equity"].get("equity"),PAPER_INITIAL_CAPITAL)
     cards="".join((
         _card("Estado general", "TODO OPERATIVO" if overall else "REVISAR", f"{critical_bad} APIs en rojo", "green" if overall else "red"),
@@ -525,7 +532,7 @@ def home_page():
         _card("Telegram", telegram, "Avisos de modo y resumen de cierre", "green" if telegram=="VERDE" else "red" if telegram=="ROJO" else "gray"),
         _card("Base paper", "OK" if db_ok else "REVISAR", f"Integridad {sre.get('db_integrity','sin medición')}", "green" if db_ok else "red"),
         _card("PPI solo lectura", state.get("ppi_auth"), "Órdenes reales bloqueadas por transporte", "green" if state.get("ppi_auth")=="OK" else "yellow" if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
-        _card("Patrimonio paper ARS", _money(equity) if data['caucion_state']=='READY' else 's/d', "Capital completamente ficticio; sin consolidar dólares", "gray" if data['caucion_state']!='READY' else "green" if equity>=PAPER_INITIAL_CAPITAL else "red"),
+        _card("Patrimonio paper ARS", _money(equity) if financial_ready else 's/d', "Capital completamente ficticio; sin consolidar dólares", "gray" if not financial_ready else "green" if equity>=PAPER_INITIAL_CAPITAL else "red"),
         _card("Resultado de hoy ARS", _money(today_pnl) if data["spot_state"]=="READY" else "s/d", f"Win rate {'s/d' if today_wr is None else f'{today_wr:.1f}%'}", "green" if today_pnl>0 else "red" if today_pnl<0 else "gray", "positive" if today_pnl>0 else "negative" if today_pnl<0 else "neutral"),
         _card("Win rate acumulado", "s/d" if total_wr is None else f"{total_wr:.1f}%", f"{wins}/{len(closed)} cierres ganadores", "green" if total_wr is not None and total_wr>=50 else "red" if total_wr is not None else "gray"),
         _card("Órdenes reales", "0", "Barrera HTTP fail-closed", "green"),
