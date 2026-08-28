@@ -200,9 +200,10 @@ def _canonicalize(content, path=""):
 def snapshot():
     state = (_rows("SELECT * FROM observer_state WHERE id=1") or [{"mode":MODE,"process_state":"STOPPED","session_state":"UNKNOWN","ppi_auth":"NOT_ATTEMPTED","real_orders_sent":0,"detail":"Observador todavía no iniciado."}])[0]
     state["real_orders_sent"] = 0
-    quotes = _rows("""SELECT s.* FROM market_snapshots s JOIN
+    identity_extra = ",currency,market" if any(r["name"] == "currency" for r in _rows("PRAGMA table_info(market_snapshots)")) else ""
+    quotes = _rows(f"""SELECT s.* FROM market_snapshots s JOIN
       (SELECT symbol,asset_class,settlement,MAX(id) id FROM market_snapshots
-       GROUP BY symbol,asset_class,settlement) x ON x.id=s.id
+       GROUP BY symbol,asset_class,settlement{identity_extra}) x ON x.id=s.id
       ORDER BY s.symbol,s.asset_class,s.settlement""")
     opened = _rows("SELECT * FROM paper_positions WHERE status='OPEN' ORDER BY opened_at DESC")
     closed = _rows("SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY closed_at DESC LIMIT 1000")
@@ -210,7 +211,10 @@ def snapshot():
     equity = (_rows("SELECT * FROM paper_equity ORDER BY id DESC LIMIT 1") or [{}])[0]
     learning = (_rows("SELECT COUNT(*) total,SUM(CASE WHEN label_timestamp IS NOT NULL THEN 1 ELSE 0 END) labeled FROM paper_learning_samples") or [{}])[0]
     cauciones = _rows("SELECT * FROM paper_cauciones ORDER BY opened_at DESC LIMIT 500") if _table("paper_cauciones") else []
-    return {"state":state,"quotes":quotes,"open":opened,"closed":closed,"decisions":decisions,"equity":equity,"learning":learning,"cauciones":cauciones}
+    balances = _rows("""SELECT e.* FROM paper_equity_by_currency e JOIN
+      (SELECT currency,MAX(id) id FROM paper_equity_by_currency GROUP BY currency) latest ON latest.id=e.id
+      ORDER BY e.currency""") if _table("paper_equity_by_currency") else []
+    return {"state":state,"quotes":quotes,"open":opened,"closed":closed,"decisions":decisions,"equity":equity,"learning":learning,"cauciones":cauciones,"balances_by_currency":balances}
 
 
 def _cauciones_panel():
@@ -223,7 +227,7 @@ def _cauciones_panel():
         f"<td>{_status(p['status'])}</td></tr>" for p in positions
     ) or "<tr><td colspan='9'>Sin colocaciones simuladas. El alta requiere términos y cotización validados.</td></tr>"
     return ("<div class='paper-card'><h2>Cauciones colocadoras</h2>"
-            "<p>Capital inmovilizado hasta el vencimiento. ARS y USD mantienen cajas separadas. "
+            "<p>Capital inmovilizado hasta el vencimiento. ARS, USD, MEP y CCL mantienen cajas separadas. "
             "Sin stop ni venta intradiaria. La tasa se muestra como fracción anual: 0,30 equivale a 30%.</p>"
             "<p class='paper-muted'>Vencimientos y acreditaciones son simulados; no confirman movimientos en PPI.</p>"
             "<table class='paper-table'><tr><th>Contrato</th><th>Moneda</th><th>Capital</th>"
@@ -232,9 +236,23 @@ def _cauciones_panel():
 
 
 def _trade_metrics(closed):
-    pnl = sum(_num(p.get("net_pnl")) for p in closed)
+    pnl = sum(_num(p.get("net_pnl")) for p in closed if p.get("currency", "ARS") == "ARS")
     wins = sum(1 for p in closed if _num(p.get("net_pnl")) > 0)
     return pnl, wins, (wins / len(closed) * 100 if closed else None)
+
+
+def _balances_panel():
+    balances = snapshot()["balances_by_currency"]
+    rows = "".join(f"<tr><td>{_e(r['currency'])}</td><td>{_e(r['cash'])}</td>"
+                   f"<td>{_e(r['pending_proceeds'])}</td><td>{_e(r['caucion_principal'])}</td>"
+                   f"<td>{_e(r['realized_pnl'])}</td><td>{_e(r['equity'])}</td></tr>" for r in balances)
+    rows = rows or "<tr><td colspan='6'>Pendiente de la primera valuación por moneda.</td></tr>"
+    return ("<div class='paper-card'><h2>Caja y patrimonio por moneda</h2>"
+            "<p>Sin conversión automática: pesos, dólar billete/MEP, divisa/CCL y USD sin plaza "
+            "no se suman ni se prestan saldo entre sí. Sólo cauciones colocadoras; sin financiación.</p>"
+            "<table class='paper-table'><tr><th>Moneda/plaza</th><th>Disponible</th>"
+            "<th>Ventas pendientes</th><th>Capital caucionado</th><th>PnL realizado</th>"
+            "<th>Patrimonio</th></tr>" + rows + "</table></div>")
 
 
 def _report_state(family):
@@ -276,8 +294,8 @@ def home_page():
         _card("Telegram", telegram, "Avisos de modo y resumen de cierre", "green" if telegram=="VERDE" else "red" if telegram=="ROJO" else "gray"),
         _card("Base paper", "OK" if db_ok else "REVISAR", f"Integridad {sre.get('db_integrity','sin medición')}", "green" if db_ok else "red"),
         _card("PPI solo lectura", state.get("ppi_auth"), "Órdenes reales bloqueadas por transporte", "green" if state.get("ppi_auth")=="OK" else "yellow" if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
-        _card("Patrimonio paper", _money(equity), "Capital completamente ficticio", "green" if equity>=PAPER_INITIAL_CAPITAL else "red"),
-        _card("Resultado de hoy", _money(today_pnl), f"Win rate {'s/d' if today_wr is None else f'{today_wr:.1f}%'}", "green" if today_pnl>0 else "red" if today_pnl<0 else "gray", "positive" if today_pnl>0 else "negative" if today_pnl<0 else "neutral"),
+        _card("Patrimonio paper ARS", _money(equity), "Capital completamente ficticio; sin consolidar dólares", "green" if equity>=PAPER_INITIAL_CAPITAL else "red"),
+        _card("Resultado de hoy ARS", _money(today_pnl), f"Win rate {'s/d' if today_wr is None else f'{today_wr:.1f}%'}", "green" if today_pnl>0 else "red" if today_pnl<0 else "gray", "positive" if today_pnl>0 else "negative" if today_pnl<0 else "neutral"),
         _card("Win rate acumulado", "s/d" if total_wr is None else f"{total_wr:.1f}%", f"{wins}/{len(closed)} cierres ganadores", "green" if total_wr is not None and total_wr>=50 else "red" if total_wr is not None else "gray"),
         _card("Órdenes reales", "0", "Barrera HTTP fail-closed", "green"),
     ))
@@ -294,7 +312,7 @@ def paper_page(compact=False):
         _card("Motor paper", state.get("process_state"), state.get("detail"), "green" if _fresh(state.get("heartbeat_at"),180) else "red"),
         _card("Sesión BYMA", state.get("session_state"), "El dashboard sigue activo fuera de rueda", "green" if state.get("session_state")=="MARKET_OPEN" else "gray"),
         _card("PPI Producción", state.get("ppi_auth"), "Sólo lectura", "green" if state.get("ppi_auth")=="OK" else "yellow"),
-        _card("Resultado acumulado", _money(pnl), f"{len(data['closed'])} cierres", "green" if pnl>0 else "red" if pnl<0 else "gray", "positive" if pnl>0 else "negative" if pnl<0 else "neutral"),
+        _card("Resultado acumulado ARS", _money(pnl), f"{len(data['closed'])} cierres", "green" if pnl>0 else "red" if pnl<0 else "gray", "positive" if pnl>0 else "negative" if pnl<0 else "neutral"),
         _card("Win rate", "s/d" if wr is None else f"{wr:.1f}%", f"{wins}/{len(data['closed'])} ganadoras", "green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),
         _card("Universo del ciclo", f"{latest.get('selected_count',0)}/{latest.get('eligible_total',0)}", f"Rotación activa; recomendación medida: {latest.get('recommended_limit','s/d')}", "green" if latest.get('successful_count')==latest.get('selected_count') and latest.get('selected_count') else "yellow"),
     ))
@@ -322,7 +340,7 @@ def motor_page():
         gate=gate_by_symbol.get(p["symbol"],{})
         features=_features(p.get("features_json")); variables="".join(f"<tr><td>{_e(k)}</td><td>{_e(v)}</td></tr>" for k,v in sorted(features.items()))
         lesson=("Ganancia: el movimiento favorable superó costos y slippage." if pnl>0 else "Pérdida: revisar momentum, spread, profundidad, duración y contexto antes de ampliar exposición." if pnl<0 else "Resultado aún no cerrado; no cambia umbrales.")
-        cards.append(f"""<details class='paper-trade'><summary>{_e(p['symbol'])} · {_e(p['status'])} · {_local_time(p['opened_at'])} · <span class='{cls}'>PnL {_money(pnl)}</span></summary><div class='trade-body'>
+        cards.append(f"""<details class='paper-trade'><summary>{_e(p['symbol'])} · {_e(p['status'])} · {_local_time(p['opened_at'])} · <span class='{cls}'>PnL {_money(pnl)} {_e(p.get('currency','ARS'))}</span></summary><div class='trade-body'>
         <h3>Secuencia de portones</h3><table class='paper-table'><tr><th>Técnico</th><th>IA Gemini</th><th>Patrimonial / liquidez</th><th>Resultado final</th></tr><tr><td>{_status(gate.get('technical_gate','APPROVE'))}</td><td>{_status(gate.get('ai_gate','SIN_REGISTRO'))}</td><td>{_status(gate.get('patrimonial_gate','SIN_REGISTRO'))}</td><td>{_status(gate.get('final_result',p['status']))}</td></tr></table>
         <p><b>Explicación:</b> {_e(gate.get('reason','Operación histórica sin secuencia completa persistida.'))}</p>
         <p class='paper-notice'><b>Importante:</b> Gemini no es el último filtro absoluto. Puede aprobar la tesis y aun así capital, exposición, cantidad máxima o profundidad pueden bloquear el fill. Esto es correcto y protege el patrimonio paper.</p>
@@ -331,7 +349,7 @@ def motor_page():
     gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(g['ai_gate'])}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas todavía.</div>'
     body=f"<h1>Motor de trading</h1><p class='paper-muted'>Una única actualización visual; trazabilidad técnica → IA → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>IA</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",body + _cauciones_panel())
+    return _document("Motor de trading",body + _balances_panel() + _cauciones_panel())
 
 
 def _next_check(component, checked):
@@ -380,8 +398,8 @@ def history_page():
 
 def learning_page():
     data=snapshot(); pnl,wins,wr=_trade_metrics(data["closed"])
-    rows="".join(f"<tr class='{'card-green' if _num(p.get('net_pnl'))>0 else 'card-red' if _num(p.get('net_pnl'))<0 else 'card-gray'}'><td>{_local_time(p.get('opened_at'))}</td><td><b>{_e(p['symbol'])}</b></td><td>{_status('WIN' if _num(p.get('net_pnl'))>0 else 'LOSS' if _num(p.get('net_pnl'))<0 else p.get('status'))}</td><td class='{'positive' if _num(p.get('net_pnl'))>0 else 'negative' if _num(p.get('net_pnl'))<0 else 'neutral'}'>{_money(p.get('net_pnl'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in data["closed"][:100]) or "<tr><td colspan='5'>Sin muestras cerradas.</td></tr>"
-    cards="".join((_card("Muestras cerradas",len(data["closed"]),"Etiquetas para aprendizaje","green" if data["closed"] else "gray"),_card("Win rate","s/d" if wr is None else f"{wr:.1f}%",f"{wins}/{len(data['closed'])}","green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),_card("Resultado",_money(pnl),"Neto de costos y slippage paper","green" if pnl>0 else "red" if pnl<0 else "gray")))
+    rows="".join(f"<tr class='{'card-green' if _num(p.get('net_pnl'))>0 else 'card-red' if _num(p.get('net_pnl'))<0 else 'card-gray'}'><td>{_local_time(p.get('opened_at'))}</td><td><b>{_e(p['symbol'])}</b></td><td>{_status('WIN' if _num(p.get('net_pnl'))>0 else 'LOSS' if _num(p.get('net_pnl'))<0 else p.get('status'))}</td><td class='{'positive' if _num(p.get('net_pnl'))>0 else 'negative' if _num(p.get('net_pnl'))<0 else 'neutral'}'>{_money(p.get('net_pnl'))} {_e(p.get('currency','ARS'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in data["closed"][:100]) or "<tr><td colspan='5'>Sin muestras cerradas.</td></tr>"
+    cards="".join((_card("Muestras cerradas",len(data["closed"]),"Etiquetas para aprendizaje","green" if data["closed"] else "gray"),_card("Win rate","s/d" if wr is None else f"{wr:.1f}%",f"{wins}/{len(data['closed'])}","green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),_card("Resultado ARS",_money(pnl),"Neto de costos y slippage paper","green" if pnl>0 else "red" if pnl<0 else "gray")))
     body=f"<h1>Aprendizaje del sistema</h1><div class='paper-grid'>{cards}</div><div class='paper-notice'>Cada compra simulada conserva variables, decisión IA, portón patrimonial, resultado y lección. El archivo intensivo para discutir con una IA está en Reportes.</div><div class='paper-card'><table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Etiqueta</th><th>PnL neto</th><th>Motivo</th></tr>{rows}</table></div>"
     return _document("Aprendizaje",body)
 
@@ -389,10 +407,11 @@ def learning_page():
 def financial_page():
     latest=_rows("""SELECT f.* FROM financial_series f JOIN (SELECT source,indicator,MAX(observed_date) d FROM financial_series GROUP BY source,indicator) x ON x.source=f.source AND x.indicator=f.indicator AND x.d=f.observed_date ORDER BY f.source,f.indicator""") if _table("financial_series") else []
     values="".join(f"<tr><td><b>{_e(r['indicator'])}</b></td><td>{_e(r['value'])}</td><td>{_e(r['unit'])}</td><td>{_e(r['observed_date'])}</td><td>{_e(r['source'])}</td></tr>" for r in latest) or "<tr><td colspan='5'>Esperando el primer refresco oficial.</td></tr>"
-    monthly=_rows("""SELECT substr(closed_at,1,7) month,SUM(CAST(net_pnl AS REAL)) pnl FROM paper_positions WHERE status='CLOSED' GROUP BY substr(closed_at,1,7) ORDER BY month DESC LIMIT 24""")
+    currency_filter = " AND currency='ARS'" if any(r["name"] == "currency" for r in _rows("PRAGMA table_info(paper_positions)")) else ""
+    monthly=_rows(f"""SELECT substr(closed_at,1,7) month,SUM(CAST(net_pnl AS REAL)) pnl FROM paper_positions WHERE status='CLOSED'{currency_filter} GROUP BY substr(closed_at,1,7) ORDER BY month DESC LIMIT 24""")
     ipc=_rows("SELECT substr(observed_date,1,7) month,value FROM financial_series WHERE indicator='IPC mensual INDEC' ORDER BY observed_date DESC LIMIT 24") if _table("financial_series") else []
     ipc_map={r['month']:r['value'] for r in ipc}
-    compare="".join(f"<tr><td>{_e(r['month'])}</td><td>{_e(ipc_map.get(r['month'],'s/d'))}%</td><td class='{'positive' if _num(r['pnl'])>0 else 'negative' if _num(r['pnl'])<0 else 'neutral'}'>{_money(r['pnl'])}</td><td>{'SUPERÓ EN PESOS' if _num(r['pnl'])>0 and r['month'] in ipc_map else 'NO CONCLUYENTE'}</td></tr>" for r in monthly) or "<tr><td colspan='4'>Aún no hay meses cerrados.</td></tr>"
+    compare="".join(f"<tr><td>{_e(r['month'])}</td><td>{_e(ipc_map.get(r['month'],'s/d'))}%</td><td class='{'positive' if _num(r['pnl'])>0 else 'negative' if _num(r['pnl'])<0 else 'neutral'}'>{_money(r['pnl'])} ARS</td><td>NO COMPARABLE: falta rentabilidad porcentual del período</td></tr>" for r in monthly) or "<tr><td colspan='4'>Aún no hay meses cerrados.</td></tr>"
     merval=_rows("SELECT * FROM production_history WHERE symbol IN ('MERVAL','SPMERVAL') ORDER BY downloaded_at DESC LIMIT 1") if _table("production_history") else []
     merval_state="Histórico PPI disponible" if merval else "Pendiente de validación PPI; no se scrapea ni redistribuye BYMA sin licencia"
     body=f"<h1>Información financiera</h1><p class='paper-muted'>Indicadores para preparar la operatoria diaria. Fuentes oficiales BCRA/INDEC y benchmark de mercado por canal autorizado.</p><div class='paper-grid'>{_card('S&P Merval',merval_state,'Benchmark contra performance paper','green' if merval else 'yellow')}{_card('Actualización macro','12 horas','Caché local; la página no llama APIs','green')}</div><div class='paper-card'><h2>Indicadores BCRA e INDEC</h2><table class='paper-table'><tr><th>Indicador</th><th>Valor</th><th>Unidad</th><th>Fecha</th><th>Fuente</th></tr>{values}</table></div><div class='paper-card'><h2>Inflación vs performance del bot</h2><table class='paper-table'><tr><th>Mes</th><th>Inflación mensual</th><th>PnL paper</th><th>Lectura</th></tr>{compare}</table></div><div class='paper-notice'>La comparación correcta a futuro será rentabilidad porcentual del patrimonio paper contra inflación y Merval del mismo período; se mostrará cuando exista un mes completo y un benchmark autorizado con fechas alineadas.</div>"
