@@ -7,12 +7,16 @@ import json
 import os
 import re
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+
+from bl_candle_engine import fingerprint
+from cb_caucion_audit import allocation_history
 
 
 VERSION = "16.3.5"
@@ -99,18 +103,20 @@ def _local_time(value):
 
 
 def _conn(path=None):
-    c = sqlite3.connect(path or DB_PATH, timeout=5); c.row_factory = sqlite3.Row; return c
+    c = sqlite3.connect(Path(path or DB_PATH).resolve().as_uri()+'?mode=ro', uri=True, timeout=5)
+    c.row_factory = sqlite3.Row
+    return c
 
 
 def _rows(sql, params=(), path=None):
     try:
-        with _conn(path) as c: return [dict(r) for r in c.execute(sql, params).fetchall()]
+        with closing(_conn(path)) as c: return [dict(r) for r in c.execute(sql, params).fetchall()]
     except Exception: return []
 
 
 def _table(name, path=None):
     try:
-        with _conn(path) as c: return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone())
+        with closing(_conn(path)) as c: return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone())
     except Exception: return False
 
 
@@ -287,6 +293,103 @@ def _exit_supervision_panel():
             "<tr><td colspan='6'>Sin posiciones de compraventa abiertas.</td></tr>") + "</table></div>")
 
 
+_ALLOCATION_REASONS = {
+    'CANDIDATE_SELECTED':'Oferta elegida por el criterio configurado',
+    'NO_ELIGIBLE_OFFER':'Ninguna oferta cumple las condiciones',
+    'POLICY_NOT_KNOWN':'La política aún no estaba disponible al decidir',
+    'OUTSIDE_CONFIRMED_SESSION':'Fuera de la sesión indicada en la política',
+    'DAILY_RISK_NOT_CONFIGURED':'Falta configurar el corte diario',
+    'DAILY_RISK_CURRENCY_MISMATCH':'El riesgo diario corresponde a otra moneda',
+    'DAILY_RISK_PROJECTED_LOSS':'Los costos comprometidos alcanzarían el corte diario',
+    'OTHER_CURRENCY':'Moneda o plaza distinta de la caja elegida',
+    'CONFLICTING_BOOK_OR_BUDGET':'Libro o presupuesto contradictorio',
+    'CAUCION_CONFLICTING_BOOK':'El libro contradice la fotografía ya utilizada',
+    'CAUCION_OLDER_BOOK':'Libro anterior a otro ya utilizado',
+    'UNKNOWN_CONTRACT_SOURCE':'Falta la fuente del contrato',
+    'QUOTE_STALE_OR_FUTURE':'Cotización vencida o posterior a la decisión',
+    'START_DATE_MISMATCH':'Fecha de inicio incompatible',
+    'MATURITY_OUTSIDE_LIQUIDITY_WINDOW':'Vencimiento fuera del plazo permitido',
+    'EXPLICIT_COST_BUDGET_REQUIRED':'Falta presupuesto completo para el capital exacto',
+    'PRINCIPAL_CAP':'Supera el tope de capital por colocación',
+    'DEPTH_EXHAUSTED':'Profundidad disponible insuficiente',
+    'CASH_RESERVE_OR_FRACTION':'Excede la fracción disponible después de la reserva',
+    'NET_PROFIT_TOO_LOW':'Beneficio neto insuficiente',
+}
+
+
+def _allocation_reason(code):
+    if code in _ALLOCATION_REASONS:
+        return _ALLOCATION_REASONS[code]
+    if code.startswith('DAILY_RISK_'):
+        return 'Corte diario no habilitado: '+code.removeprefix('DAILY_RISK_')
+    return code
+
+
+def _caucion_allocations_panel():
+    data = allocation_history(DB_PATH)
+    states = {'MISSING_DATABASE':'Base no disponible; no asumir ausencia de decisiones',
+        'MISSING_TABLE':'Historial de asignación aún no disponible en esta base',
+        'READ_ERROR':'No se pudo leer el historial; requiere revisión',
+        'EMPTY':'Sin decisiones de asignación registradas', 'EMPTY_PAGE':'Página sin registros',
+        'PARTIAL':'Hay registros inconsistentes en esta página; revisar',
+        'READABLE':'Historial legible; concordancia interna de esta página'}
+    cards = []
+    for record in data['records']:
+        label = f"Solicitud {_e(record['request_id'])} · {_local_time(record['evaluated_at'])}"
+        if record['state'] != 'CONSISTENT':
+            cards.append(f"<div class='paper-warning'><b>{label} · Registro inconsistente</b>"
+                         f"<p>No se muestran importes ni se confirma una colocación: {_e(record['issue'])}</p></div>")
+            continue
+        decision = record['decision']
+        policy, selected = decision['manifest']['policy'], decision['selected']
+        metric = ('Mayor beneficio neto del contrato' if policy['ranking'] == 'NET_PROFIT'
+                  else 'Mayor retorno neto por día sobre el débito inicial')
+        offers = {fingerprint(o):o for o in decision['manifest']['offers']}
+        rows = []
+        for candidate in decision['candidates']:
+            offer = offers[candidate['candidate_id']]
+            chosen = selected is not None and candidate['candidate_id'] == selected['candidate_id']
+            reason = ('Elegida' if chosen else 'Elegible; no elegida por criterio o desempate'
+                      if candidate['code'] == 'ELIGIBLE' else _allocation_reason(candidate['code']))
+            rows.append(f"<tr><td>{_e(offer['instrument_id'])}<br>"
+                f"Cotizada: {_local_time(offer['quoted_at'])}<br>Vence: {_local_time(offer['maturity_at'])}</td>"
+                f"<td>{_e(offer['currency'])}</td><td>{_e(offer['fee_quote_principal'])}</td>"
+                f"<td>{_e(offer['quoted_total_fees'])} · {_e(offer['fee_payment'])}</td>"
+                f"<td>{_e(candidate.get('net_profit'))}</td><td>{_e(candidate.get('net_return_per_day'))}</td>"
+                f"<td>{_e(reason)}</td></tr>")
+        placement = record['placement']
+        placement_text = ('Sin colocación para esta solicitud' if placement is None else
+            f"Registro {_e(placement['paper_id'])} · Estado guardado: {_e(placement['status'])} · "
+            f"Acreditación simulada: {_local_time(placement['settled_at'])}")
+        selected_text = ('Sin inversión' if selected is None else
+            f"Capital colocado: {_e(selected['principal'])} · Débito inicial: {_e(selected['cash_debit'])} · "
+            f"Neto estimado al vencimiento: {_e(selected['net_profit'])}")
+        expanded = ' open' if record is data['records'][0] else ''
+        cards.append(f"<details class='paper-trade'{expanded}><summary>{label} · {_e(decision['currency'])} · "
+            f"{'Colocación simulada registrada' if selected else 'Abstención'}</summary><div class='trade-body'>"
+            f"<p>{_e(_allocation_reason(decision['code']))}. {selected_text}</p><p>{placement_text}</p>"
+            f"<p>Criterio: {_e(metric)}. Desempate: menor plazo, menor débito, identificador de oferta.</p>"
+            f"<p>Caja liquidada evaluada: {_e(decision['cash'])} {_e(decision['currency'])} · "
+            f"Reserva: {_e(policy['reserve_cash'])} · Fracción por solicitud (0–1): {_e(policy['maximum_cash_fraction'])} · "
+            f"Presupuesto de débito: {_e(decision['cash_budget'])} · Tope de capital por colocación: {_e(policy['maximum_principal'])}</p>"
+            f"<p>Liquidez requerida: {_local_time(policy['liquidity_deadline'])} · Participación efectiva (0–1): {_e(decision['participation'])} · "
+            f"Antigüedad máxima: {_e(policy['maximum_quote_age_seconds'])} s · Neto mínimo: {_e(policy['minimum_net_profit'])}</p>"
+            f"<p>Política: {_e(decision['policy_version'])} · Congelada: {_local_time(policy['frozen_at'])} · "
+            f"Sesión: {_local_time(policy['session_open_at'])} a {_local_time(policy['session_close_at'])} · Fuente: {_e(policy['session_source'])}</p>"
+            "<p>Costos: UPFRONT al inicio; MATURITY al vencimiento. Retorno diario expresado como fracción, "
+            "sin suponer reinversión. Un guion indica cálculo no habilitado, no beneficio cero.</p>"
+            "<table class='paper-table'><tr><th>Oferta / fechas</th><th>Moneda</th><th>Capital presupuestado</th>"
+            "<th>Costo total / pago</th><th>Neto estimado</th><th>Retorno neto diario</th><th>Resultado</th></tr>"
+            + (''.join(rows) or "<tr><td colspan='7'>No se aportaron ofertas.</td></tr>") + "</table></div></details>")
+    return ("<section class='paper-card' id='caucion-allocations'><h2>Decisiones de caución</h2>"
+        "<p>Historial de simulación: sólo colocadoras con saldo liquidado de la misma moneda. "
+        "La caja y los presupuestos corresponden al momento de decidir; no son el saldo actual. "
+        "No certifica datos de PPI ni habilita operaciones reales. La selección automática todavía no está conectada.</p>"
+        f"<p><b>{_e(states[data['state']])}</b> · Mostrando {len(data['records'])} de {_e(data['total'])} decisiones.</p>"
+        "<p><a href='/api/paper/caucion-allocations?limit=100'>Ver historial JSON (hasta 100; admite offset)</a></p>"
+        + ''.join(cards) + "</section>")
+
+
 def _cauciones_panel():
     positions = _rows("SELECT * FROM paper_cauciones ORDER BY opened_at DESC LIMIT 100") if _table("paper_cauciones") else []
     rows = "".join(
@@ -424,7 +527,7 @@ def motor_page():
     gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(g['ai_gate'])}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas todavía.</div>'
     body=f"<h1>Motor de trading</h1><p class='paper-muted'>Una única actualización visual; trazabilidad técnica → IA → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>IA</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",_daily_risk_panel() + _exit_supervision_panel() + body + _balances_panel() + _cauciones_panel())
+    return _document("Motor de trading",_daily_risk_panel() + _exit_supervision_panel() + body + _balances_panel() + _caucion_allocations_panel() + _cauciones_panel())
 
 
 def _next_check(component, checked):
@@ -649,6 +752,13 @@ def install(app,check_auth):
     def reports(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(reports_page())
     @app.get("/api/observer/state")
     def observer_state(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return JSONResponse(snapshot())
+    @app.get("/api/paper/caucion-allocations")
+    def caucion_allocations(request:Request,limit:int=Query(default=25,ge=1,le=100),
+                            offset:int=Query(default=0,ge=0,le=100000),
+                            token:str=Query(default=""),authorization:str|None=Header(default=None)):
+        auth(request,token,authorization)
+        data = allocation_history(DB_PATH,limit=limit,offset=offset)
+        return JSONResponse(data,status_code=503 if data['state']=='READ_ERROR' else 200)
     @app.get("/api/reports/{report_id}/{kind}")
     def report_download(report_id:int,kind:str,request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
