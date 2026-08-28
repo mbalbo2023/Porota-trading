@@ -193,10 +193,10 @@ def test_lector_salidas_solo_pide_book_y_guarda_fecha_fuente(position,monkeypatc
     assert saved.book_at == q.book_at and saved.last_kind == "UNAVAILABLE"
 
 
-def test_reloj_avanza_mientras_dos_procesos_hijos_estan_bloqueados(position):
+def test_reloj_avanza_mientras_tres_procesos_hijos_estan_bloqueados(position):
     broker,p,_ = position
     command = [sys.executable,"-c","import time; time.sleep(60)"]
-    children = ChildProcesses({"scanner":command,"reader":command})
+    children = ChildProcesses({"scanner":command,"reader":command,"notifications":command})
     stop = threading.Event()
     thread = threading.Thread(target=run_clock,args=(broker.store,children,stop),
         kwargs={"clock_fn":lambda:"2026-08-28T14:01:00-03:00","interval":0.02})
@@ -210,7 +210,7 @@ def test_reloj_avanza_mientras_dos_procesos_hijos_estan_bloqueados(position):
                 break
             time.sleep(.02)
         assert result[0] == "EXIT_PENDING_NO_QUOTE"
-        assert len(children.processes) == 2
+        assert len(children.processes) == 3
         assert all(p.poll() is None for p in children.processes.values())
     finally:
         stop.set()
