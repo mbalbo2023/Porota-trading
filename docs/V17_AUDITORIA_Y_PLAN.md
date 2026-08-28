@@ -96,8 +96,10 @@ línea del repositorio ni una validación de rentabilidad de las estrategias.
   acreditada aporta interés menos costos, nunca la devolución del principal.
 
 **Pendiente para la operación automática:** adaptador de cotizaciones/contratos
-PPI con evidencia real de sus campos; política de plazo, capital y reserva;
-comparación de alternativas netas; programación de colocaciones y conciliación.
+PPI con evidencia real de sus campos; confirmar parámetros de plazo, capital y
+reserva; programación de colocaciones y conciliación. El undécimo checkpoint
+agrega comparación/asignación paper con política explícita, sin conectarla al
+escáner o a órdenes reales.
 `place_caucion()` es una operación explícita del simulador, no un planificador
 de inversión automática ni una orden real.
 
@@ -112,7 +114,7 @@ a la nueva contabilidad. Deben reemplazarse antes de habilitar ejecución real.*
 |---|---|---|
 | Acciones, CEDEARs, ETF | Caja, costos, riesgo, fuente temporal y supervisor independiente en paper | Contrastar segmento/sesión por especie y validar nueva señal/backtest |
 | Bonos, letras, ON | Compras/cierres paper con contrato explícito, factor VN y lote | Cargar factores desde metadatos contrastados; cashflows, amortizaciones, intereses corridos y monedas |
-| Cauciones | Ciclo completo de colocadora simulada, capital y vencimiento | Cotización/adaptador PPI y política de asignación; tomadora excluida por instrucción |
+| Cauciones | Ciclo de colocadora, asignador paper explícito, caja/riesgo/profundidad y vencimiento | Cotización/adaptador PPI, parámetros confirmados, programación y conciliación; tomadora excluida |
 | Opciones | Contrato y cálculos de prima/lote/pérdida máxima de opción comprada | Integración del ejecutor, liquidez, ejercicio, vencimiento y supervisor específico |
 | Futuros | Separación de nocional, garantía, ajuste diario y déficit de margen | Libro persistente de ajustes, proveedor, conciliación y gestión de márgenes |
 | FCI | Familia y unidades reconocidas; no pasa por ejecutor de acciones | Suscripción/rescate, valor de cuotaparte, corte y demora de rescate |
@@ -643,6 +645,67 @@ de esquema, migraciones ejecutadas en el servidor, órdenes reales ni nuevos
 trabajos de ciberseguridad. PR en borrador; tampoco se habilitan futuros,
 opciones o FCI como si fueran operaciones de contado.
 
+## Undécimo checkpoint: selección y asignación paper de cauciones
+
+`ca_caucion_allocator` incorpora una política explícita y un selector puro, más
+`PaperBroker.allocate_caucion()` para registrar a lo sumo una colocación simulada
+por solicitud. No hay llamadas a PPI, programación por reloj, toma de fondos ni
+colocación real. La entrada son contratos normalizados y presupuestos completos,
+no el primer ticker encontrado ni un proxy de tasa. `data_certified=False` deja
+claro que validar el formato no certifica los datos del broker.
+
+### Política y comparación
+
+La política exige moneda/plaza, reserva de caja, fracción máxima del efectivo
+libre de esa reserva, tope de principal, fecha límite para recuperar liquidez,
+antigüedad de cotización, participación en profundidad, beneficio neto mínimo,
+sesión explícita con fuente y configuración congelada antes de ella. No se
+elige ninguno de esos parámetros para la cuenta del operador. La participación
+efectiva nunca puede superar el límite del broker paper.
+
+Hay dos criterios explícitos: mayor beneficio neto del contrato (`NET_PROFIT`)
+o mayor retorno neto por día y por efectivo debitado (`NET_RETURN_PER_DAY`). El
+segundo es `neto / débito inicial / días corridos`, no una TNA garantizada ni una
+hipótesis de reinversión a la misma tasa. Importes y plazos diferentes pueden
+producir ganadores distintos: el informe conserva los valores, la política y
+el criterio. Se elige una oferta del conjunto aportado, no una cartera óptima.
+
+Sólo se comparan presupuestos con costo total explícito **para el capital exacto**.
+Si ese monto no cabe en caja/reserva/fracción, necesita otro presupuesto: no se
+escala una comisión fija, mínima o desconocida. Tampoco se usa el tarifario ARS
+heredado para habilitar esta asignación. Se incluyen días corridos, pago de gastos
+inicial o al vencimiento, retorno neto y pérdida diaria proyectada.
+
+### Decisión, liquidez e idempotencia
+
+- Rechaza cotizaciones futuras/vencidas, fecha de inicio incorrecta, vencimiento
+  posterior a la necesidad de liquidez, moneda distinta, sesión desconocida o
+  cerrada, falta de riesgo diario y presupuestos incompatibles con mínimos/pasos.
+- Ofertas duplicadas no agregan profundidad ni alteran el orden de selección.
+  Dos versiones contradictorias de un libro/presupuesto no permiten escoger el
+  número más favorable; se registra el conflicto. Los desempates son deterministas.
+- `CaucionBook` contabiliza el principal ya usado de una misma fotografía
+  (instrumento, moneda y hora normalizada). Un nuevo request no repone liquidez;
+  tampoco se vuelve a consumir un libro anterior después de uno más reciente.
+  Un snapshot posterior puede aportar otra profundidad como supuesto paper, no
+  como prueba de que hubiera fills reales o liquidez propia disponible.
+- Caja, riesgo, selección, colocación y registro de decisión comparten una
+  transacción SQLite, sin red dentro del bloqueo. Se conservan los controles
+  finales del ciclo de cauciones y sus avisos existentes. Un fallo al guardar
+  la decisión revierte también colocación y aviso; no queda dinero sin registro.
+- `paper_caucion_allocations` conserva la solicitud, huella de política/ofertas,
+  momento, motivos de cada candidato y resultado. El mismo request devuelve su
+  resultado al reiniciar, incluso si fue HOLD; parámetros distintos con esa
+  clave se rechazan. Un evento nuevo requiere una clave nueva. No se ejecuta
+  ciegamente un plan externo ni se reutiliza una clave de colocación manual.
+
+La tabla nueva es una migración aditiva del código, **no ejecutada en el Droplet**.
+Siguen pendientes el adaptador PPI contrastado, confirmar parámetros con el
+operador, programación, conciliación y evaluación con datos reales. El plazo de
+liquidez es contractual en el modelo; no garantiza una acreditación real puntual.
+No se activa renovación automática ni se aplica esta ruta a futuros, opciones
+o FCI. PR en borrador, `promotion_allowed=False`, sin despliegue.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -741,6 +804,16 @@ medir, evitando una falla intermitente por checkpoint SQLite; mantiene la
 verificación del archivo sin cambios. Suite con XML y cobertura, sin broker ni
 Telegram reales. El resultado remoto del décimo se registra en el PR tras CI.
 
+Undécimo checkpoint: **703 tests aprobados**, 0 fallas, 0 errores y 0 omisiones
+(42 pruebas nuevas). Cobertura local global 56,59%; asignador 97,50%, cauciones
+94,88% y motor PAPER 87,18%. Cumple los cuatro mínimos financieros del CI.
+Se verificaron ranking neto explícito, fracción/reserva con costos iniciales,
+rechazo de presupuesto heredado o contradictorio, moneda/plaza, límite diario,
+sesión, vencimiento, idempotencia al reiniciar, rollback conjunto de decisión,
+colocación y aviso, y concurrencia sin duplicar caja ni profundidad. Reordenar
+o duplicar ofertas no altera el plan. Fixtures sintéticas, sin feeds ni órdenes
+reales. La comprobación remota del undécimo se registra en el PR después del CI.
+
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
 todos los pins de producción. Advertencia observada: deprecación del TestClient
@@ -760,6 +833,8 @@ El octavo obtuvo CI completo aprobado, run 33136743030, commit
 `12a3b6bbcc93bdef05cfa9ff0017b8d006a49cbd`, cobertura remota 54,66%.
 El noveno obtuvo CI completo aprobado, run 33137676458, commit
 `a7cafc0a0454055df0bcb75a1583e266ee69150b`, cobertura remota 55,39%.
+El décimo obtuvo CI completo aprobado, run 33165282504, commit
+`b9156d40cd33e6b775b7754a89f18fd1a933d65c`, cobertura remota 55,85%.
 Los 12 payloads públicos aportados se usan como fixture; aún falta integración
 con cotizaciones/contratos especializados y validación en el Droplet.
 
