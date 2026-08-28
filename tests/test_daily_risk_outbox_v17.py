@@ -136,15 +136,21 @@ def queue(store, key='test', at=AT):
 
 def seed_closed(store, *, key='closed', currency='ARS', net='-100',
                 opened=AT, closed='2026-08-28T11:01:00-03:00'):
+    # Fixture económico completo: el PnL pedido debe conciliar con ambos fills.
+    exit_price=D(1000)+D(net)
+    assert exit_price>0
     with store.connect() as c:
         c.execute('''INSERT INTO paper_positions
           (paper_id,source,strategy_version,symbol,asset_class,settlement,status,
            quantity,entry_price,entry_cost,stop_price,target_price,opened_at,closed_at,
            exit_price,exit_cost,gross_pnl,net_pnl,close_reason,features_json,currency,market)
           VALUES(?,'PRODUCTION_PAPER','fixture',?,'ACCIONES','CI','CLOSED',
-            '1','100','0','98','104',?,?,'1','0',?,?,'TEST','{}',?,'BYMA')''',
-            (key,key,opened,closed,net,net,currency))
-        record_sale(c,key,'CI',closed,D(1),currency)
+            '1','1000','0','980','1040',?, ?,?,'0',?,?,'TEST','{}',?,'BYMA')''',
+            (key,key,opened,closed,str(exit_price),net,net,currency))
+        for side,at,price in (('BUY_SIMULATED',opened,'1000'),('SELL_SIMULATED',closed,str(exit_price))):
+            c.execute('INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)',
+                (key,'PRODUCTION_PAPER',side,at,'1',price,'0','0'))
+        record_sale(c,key,'CI',closed,exit_price,currency)
 
 
 def test_aviso_y_fill_comparten_commit_y_rollback(store):
@@ -343,7 +349,8 @@ def test_limite_se_revalida_dentro_del_lock_antes_del_fill(store,monkeypatch):
         return result
     monkeypatch.setattr(broker,'admission_error',interleave)
     assert broker._open(quote(at=AT),D('.8'),{})[1]=='DAILY_RISK_LATCHED'
-    assert records(store,'paper_fills')==[]
+    assert len(records(store,'paper_fills'))==2
+    assert {r['paper_id'] for r in records(store,'paper_fills')}=={'closed'}
     assert len([r for r in records(store,'paper_notification_outbox') if r['kind']=='PAPER_DAILY_LOSS'])==1
 
 
