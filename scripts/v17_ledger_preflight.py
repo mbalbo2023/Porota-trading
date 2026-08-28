@@ -1,9 +1,10 @@
-"""Preflight contable de sólo lectura: no migra ni abre APIs o motores."""
+"""Preflight contable: origen sólo lectura; copia temporal sin APIs ni motores."""
 import argparse
 import base64
 from collections import Counter
 from contextlib import closing
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,7 +18,7 @@ import sys
 import tempfile
 from urllib.parse import quote
 
-VERSION = 'v17-ledger-preflight-2'
+VERSION = 'v17-ledger-preflight-3'
 HOST_DATA = '/opt/porota-trading/data'
 DATABASE = '/observer/observer_production.db'
 BOT = 'porota_trading_bot'
@@ -26,6 +27,8 @@ CONTAINER = 'porota_v17_ledger_preflight'
 MAX_POSITIONS = 10000
 MAX_FILLS = 100000
 MAX_EXAMPLES = 10
+MAX_COPY_BYTES = 16 * 1024 * 1024
+COPY_CHUNK_BYTES = 1024 * 1024
 TABLES = ('paper_positions', 'paper_fills', 'paper_spot_sales', 'paper_sale_receivables')
 
 
@@ -39,6 +42,7 @@ def report_base():
         'database_modified': False, 'migration_performed': False, 'promotion_allowed': False,
         'counts': {}, 'issues': {}, 'examples': [], 'legacy_projection': {},
         'stage': 'NOT_STARTED',
+        'read_mode': 'DIRECT',
         'reader_runtime': {'python': '.'.join(map(str, sys.version_info[:3])),
                            'sqlite': sqlite3.sqlite_version},
         'limits': ['No certifica movimientos, saldos, permisos o costos reales de PPI.',
@@ -241,18 +245,164 @@ def collect(path):
     return report
 
 
-def read_report():
+def _no_source_sidecars(path):
+    for suffix in ('-wal', '-shm', '-journal'):
+        try:
+            Path(str(path)+suffix).lstat()
+        except FileNotFoundError:
+            continue
+        # Incluso un archivo vacío o enlace requiere otra evaluación.
+        raise PreflightStop('SOURCE_AUXILIARY_PRESENT')
+
+
+def _signature(info):
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _source_signature(path):
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise PreflightStop('SOURCE_NOT_REGULAR_FILE')
+    if not 0 < info.st_size <= MAX_COPY_BYTES:
+        raise PreflightStop('SOURCE_SIZE_OUTSIDE_COPY_LIMIT')
+    return _signature(info)
+
+
+def _stream_source(path, expected, destination=None):
+    """Una pasada acotada del origen; nunca lo abre con SQLite ni para escribir."""
+    _no_source_sidecars(path)
+    if _source_signature(path) != expected:
+        raise PreflightStop('SOURCE_CHANGED')
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+    total = 0
+    digest = hashlib.sha256()
+    with os.fdopen(os.open(path, flags), 'rb') as source:
+        if _signature(os.fstat(source.fileno())) != expected:
+            raise PreflightStop('SOURCE_CHANGED')
+        while True:
+            chunk = source.read(min(COPY_CHUNK_BYTES, expected[2]-total+1))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > expected[2]:
+                raise PreflightStop('SOURCE_CHANGED')
+            digest.update(chunk)
+            if destination is not None:
+                destination.write(chunk)
+        if total != expected[2] or _signature(os.fstat(source.fileno())) != expected:
+            raise PreflightStop('SOURCE_CHANGED')
+    if _source_signature(path) != expected:
+        raise PreflightStop('SOURCE_CHANGED')
+    _no_source_sidecars(path)
+    return digest.digest()
+
+
+def _copy_digest(path):
+    digest = hashlib.sha256()
+    total = 0
+    with path.open('rb') as source:
+        while True:
+            chunk = source.read(min(COPY_CHUNK_BYTES, MAX_COPY_BYTES-total+1))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_COPY_BYTES:
+                raise PreflightStop('COPY_SIZE_OUTSIDE_LIMIT')
+            digest.update(chunk)
+    return digest.digest()
+
+
+def collect_copy(path, scratch_root='/tmp'):
+    """Copia temporal autorizada: exige origen sin auxiliares y sin cambios detectados.
+
+    No es backup online ni bloqueo de escritores. Aborta ante cambios observados;
+    no recupera transacciones de WAL eliminados previamente. Sólo exporta el
+    informe agregado. El lanzador monta scratch en tmpfs dentro del servidor.
+    """
+    report = report_base()
+    report.update(read_mode='TEMPORARY_COPY',
+                  scope='Auditoría PAPER sobre copia temporal local; origen sólo lectura.',
+                  temporary_copy_created=False, temporary_copy_removed=None)
+    report['limits'] = report['limits'] + [
+        'Copia del archivo completo, sin exportarlo; sólo se consultan tablas PAPER.',
+        'Comprobaciones de estabilidad por muestras; no bloqueo exclusivo de escritores.',
+        'No recupera WAL previamente eliminados ni certifica integridad histórica.']
+    evidence = {'bytes':0, 'copy_hash_matches':False, 'source_hash_rechecks':0}
+    report['copy_evidence'] = evidence
+    path = Path(path).absolute()
+    temporary = None
+    try:
+        report['stage'] = 'SOURCE_PREFLIGHT'
+        _no_source_sidecars(path)
+        expected = _source_signature(path)
+        report['source_filesystem_evidence'] = filesystem_evidence(path)
+        header = report['source_filesystem_evidence']['database'].get('header_journal_mode')
+        if header not in {'WAL','ROLLBACK'}:
+            raise PreflightStop('SOURCE_HEADER_UNSUPPORTED')
+        root = Path(scratch_root).resolve(strict=True)
+        source_parent = path.parent.resolve(strict=True)
+        if root == source_parent or root.is_relative_to(source_parent):
+            raise PreflightStop('TEMPORARY_LOCATION_OVERLAPS_SOURCE')
+        report['stage'] = 'CREATE_TEMPORARY_COPY'
+        temporary = tempfile.TemporaryDirectory(prefix='porota-ledger-copy-', dir=root)
+        copy_path = Path(temporary.name)/'observer_copy.db'
+        with copy_path.open('xb') as destination:
+            report['temporary_copy_created'] = True
+            report['stage'] = 'COPY_SOURCE_BYTES'
+            original_hash = _stream_source(path, expected, destination)
+        evidence['bytes'] = expected[2]
+        report['stage'] = 'VERIFY_COPY_BYTES'
+        if _copy_digest(copy_path) != original_hash:
+            raise PreflightStop('COPY_HASH_MISMATCH')
+        evidence['copy_hash_matches'] = True
+        report['stage'] = 'VERIFY_SOURCE_BEFORE_AUDIT'
+        if _stream_source(path, expected) != original_hash:
+            raise PreflightStop('SOURCE_HASH_CHANGED')
+        evidence['source_hash_rechecks'] = 1
+        report['stage'] = 'AUDIT_TEMPORARY_COPY'
+        audit = collect(copy_path)  # SQLite sólo sobre la copia, mode=ro.
+        report['stage'] = 'VERIFY_SOURCE_AFTER_AUDIT'
+        if _stream_source(path, expected) != original_hash:
+            raise PreflightStop('SOURCE_HASH_CHANGED')
+        evidence['source_hash_rechecks'] = 2
+        # Publicar resultados sólo después de verificar nuevamente el origen.
+        for key in ('status','stage','counts','issues','examples','legacy_projection',
+                    'reason','sqlite_error'):
+            if key in audit:
+                report[key] = audit[key]
+        report['copy_filesystem_evidence'] = audit.get('filesystem_evidence', {})
+    except PreflightStop as exc:
+        report.update(status='STOPPED', reason=str(exc))
+    except Exception as exc:
+        report.update(status='STOPPED', reason=type(exc).__name__)
+        if isinstance(exc, OSError):
+            report['os_errno'] = exc.errno
+    finally:
+        if temporary is not None:
+            try:
+                temporary.cleanup()
+                report['temporary_copy_removed'] = True
+            except Exception:
+                report.update(status='STOPPED', reason='TEMPORARY_COPY_CLEANUP_FAILED',
+                              temporary_copy_removed=False)
+        report['completed_at'] = datetime.now(timezone.utc).isoformat()
+    return report
+
+
+def read_report(copy_mode=False):
     previous = signal.getsignal(signal.SIGALRM)
     def expired(*args):
         raise PreflightStop('TIME_LIMIT_120_SECONDS')
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(120)
     try:
-        return collect(DATABASE)
+        return collect_copy(DATABASE) if copy_mode else collect(DATABASE)
     except PreflightStop as exc:
-        return dict(report_base(), status='STOPPED', reason=str(exc))
+        return dict(report_base(), status='STOPPED', reason=str(exc),
+                    read_mode='TEMPORARY_COPY' if copy_mode else 'DIRECT')
     except Exception as exc:
-        return dict(report_base(), status='STOPPED', reason=type(exc).__name__)
+        return dict(report_base(), status='STOPPED', reason=type(exc).__name__,
+                    read_mode='TEMPORARY_COPY' if copy_mode else 'DIRECT')
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, previous)
@@ -267,6 +417,7 @@ def docker(args, timeout=15):
 
 def host_report(archive):
     report = report_base()
+    report['read_mode'] = 'TEMPORARY_COPY'
     created = None
     package_dir = None
     try:
@@ -295,20 +446,26 @@ def host_report(archive):
             '--read-only','--no-healthcheck','--user','botuser','--workdir','/tmp',
             '--cap-drop','ALL','--security-opt','no-new-privileges','--init',
             '--memory','256m','--cpus','1',
-            '--tmpfs','/tmp:rw,nosuid,nodev,noexec,size=32m',
+            '--tmpfs','/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777',
             '--env','PYTHONDONTWRITEBYTECODE=1','--env','PYTHONUNBUFFERED=1',
             '--mount',f'type=bind,src={package},dst=/run/porota_ledger.zip,readonly',
             '--mount',f'type=bind,src={HOST_DATA}/observer,dst=/observer,readonly',
-            '--entrypoint','python',observer['image'],'/run/porota_ledger.zip','--read']
+            '--entrypoint','python',observer['image'],'/run/porota_ledger.zip','--copy-read']
         output = docker(args).strip()
         if not re.fullmatch(r'[0-9a-f]{64}', output):
             raise PreflightStop('UNEXPECTED_CREATE_RESULT_REVIEW_REQUIRED')
         created = output
         result = json.loads(docker(['start','--attach',created], timeout=150))
-        if not isinstance(result, dict) or result.get('diagnostic') != VERSION:
+        if (not isinstance(result, dict) or result.get('diagnostic') != VERSION
+                or result.get('read_mode') != 'TEMPORARY_COPY'):
             raise PreflightStop('INVALID_PROBE_OUTPUT')
+        after = [json.loads(s) for s in docker(['inspect','--type','container','--format',template,BOT,OBSERVER]).splitlines()]
+        if (len(after) != 2 or {s['name'] for s in after} != {'/'+BOT,'/'+OBSERVER}
+                or any(s['running'] is not False or s['restart'] != 'no' for s in after)):
+            raise PreflightStop('ENGINES_STATE_CHANGED_DURING_PROBE')
         report = result
         report['host_evidence'] = {'engines_stopped_before_probe': True,
+            'engines_stopped_after_probe': True, 'copy_storage':'container_tmpfs',
             'observer_image': observer['image'], 'network': 'none',
             'observer_directory_readonly': True, 'credentials_or_env_mounted': False}
     except PreflightStop as exc:
@@ -332,8 +489,9 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--host', action='store_true')
     mode.add_argument('--read', action='store_true')
+    mode.add_argument('--copy-read', action='store_true')
     args = parser.parse_args()
-    report = host_report(sys.argv[0]) if args.host else read_report()
+    report = host_report(sys.argv[0]) if args.host else read_report(copy_mode=args.copy_read)
     output = json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False)
     print(output, flush=True)
     if args.host:
