@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
 from bl_candle_engine import fingerprint, stamp
+import cd_spot_ledger as spot_ledger
 
 ZERO = Decimal("0")
 CENT = Decimal("0.01")
@@ -100,6 +101,8 @@ def init_schema(store):
           LEFT JOIN paper_sale_receivables r USING(paper_id)
           WHERE p.status='CLOSED' AND r.paper_id IS NULL""").fetchall()
         for p in closed:
+            if spot_ledger.sales(c,p['paper_id']):
+                continue
             features = json.loads(p["features_json"] or "{}")
             factor = decimal_value(features.get("contract_cash_multiplier", "1"), "factor histórico", positive=True)
             record_sale(c, p["paper_id"], p["settlement"], p["closed_at"],
@@ -121,13 +124,16 @@ def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
     at = aware_datetime(as_of)
     if connection is None:
         with store.connect() as c:
+            c.execute('BEGIN')
             return pending_proceeds(store, at, currency, connection=c)
     currency = cash_currency(currency)
-    rows = connection.execute("""SELECT r.*,p.closed_at FROM paper_positions p
+    rows = connection.execute("""SELECT r.*,p.closed_at,p.paper_id AS position_id FROM paper_positions p
         LEFT JOIN paper_sale_receivables r USING(paper_id) WHERE p.currency=? AND p.status='CLOSED'""",
         (cash_currency(currency),)).fetchall()
-    pending = ZERO
+    pending = spot_ledger.pending(connection,at,currency)
     for row in rows:
+        if spot_ledger.sales(connection,row['position_id']):
+            continue
         if aware_datetime(row['closed_at']) > at:
             continue
         if row['paper_id'] is None or row['currency'] != currency:
