@@ -19,6 +19,7 @@ from bs_instrument_contracts import (CASH_CURRENCIES, InstrumentContract, SPOT_F
                                      aware_datetime, cash_currency, decimal_value, family_name)
 from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
+import cc_spot_liquidity as spot_liquidity
 
 
 SOURCE = "PRODUCTION_PAPER"
@@ -396,6 +397,7 @@ class PaperBroker:
         for key, value in (initial_cash_by_currency or {}).items():
             self.initial_balances[cash_currency(key)] = decimal_value(value, "capital por moneda", nonnegative=True)
         self.cauciones = CaucionBook(store)
+        spot_liquidity.init_schema(store)
         # Sin reloj inyectado, llamadas directas son simulación por tiempo de
         # evento. El runtime vivo SIEMPRE inyecta reloj real y política de sesión.
         self.clock_fn = clock_fn
@@ -655,7 +657,11 @@ class PaperBroker:
         by_cash = self._quantity_in_budget(
             entry * factor, max(ZERO, self._cash(as_of=at, currency=currency)),
             lambda qty: self._cost(entry * factor, qty, q.asset_class))
-        by_book = (q.ask_size * self.participation).to_integral_value(ROUND_DOWN)
+        try:
+            with self.store.connect() as c:
+                by_book = spot_liquidity.available(c,q,'BUY_SIMULATED',self.participation).to_integral_value(ROUND_DOWN)
+        except ValueError as exc:
+            return False, str(exc), None
         by_position_cap = (capital * self.max_position_pct / (entry * factor)).to_integral_value(ROUND_DOWN)
         current_exposure = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
                                 for p in self.store.open_positions() if p["currency"] == currency), ZERO)
@@ -700,6 +706,11 @@ class PaperBroker:
             error = self.admission_error(q, at, connection=c)
             if error:
                 return False, error, None
+            try:
+                if qty > spot_liquidity.available(c,q,'BUY_SIMULATED',self.participation):
+                    return False, 'SPOT_BOOK_DEPTH_CHANGED', None
+            except ValueError as exc:
+                return False, str(exc), None
             opened = self.store.open_positions()
             exposure_now = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
                                 for p in opened if p["currency"] == currency), ZERO)
@@ -715,9 +726,10 @@ class PaperBroker:
                str(qty), str(entry), str(cost), str(stop), str(target), at,
                json.dumps(features, ensure_ascii=False, default=str), currency, market,
                q.metadata_source or "EXPLICIT_QUOTE"))
-            c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
+            fill = c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
                       (paper_id, SOURCE, "BUY_SIMULATED", at, str(qty),
                        str(entry), str(cost), str(entry-q.ask)))
+            spot_liquidity.record(c,fill.lastrowid,q)
             c.execute("INSERT INTO paper_learning_samples VALUES(?,?,?,?,?,?,?,?,?)",
                       (paper_id, SOURCE, STRATEGY_VERSION, q.observed_at,
                        json.dumps(features, ensure_ascii=False, default=str), None, None, None, None))
@@ -766,7 +778,13 @@ class PaperBroker:
                            q.contract.symbol != q.symbol or q.contract.settlement != q.settlement or
                            q.contract.family != family_name(q.asset_class) or q.contract.currency != p["currency"]):
             return False
-        if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or qty <= 0 or qty > (D(q.bid_size) * self.participation):
+        try:
+            with self.store.connect() as c:
+                depth = spot_liquidity.available(c,q,'SELL_SIMULATED',self.participation)
+        except ValueError as exc:
+            self.store.event('EXIT_PENDING_BOOK',str(exc),p['paper_id'])
+            return False
+        if qty <= 0 or qty > depth:
             self.store.event("EXIT_PENDING_NO_LIQUIDITY",
                              "Profundidad insuficiente para cerrar toda la posicion", p["paper_id"])
             return False
@@ -792,6 +810,11 @@ class PaperBroker:
                 return False
             if self.session_policy and self.session_policy.execution_error(p, at):
                 return False
+            try:
+                if qty > spot_liquidity.available(c,q,'SELL_SIMULATED',self.participation):
+                    return False
+            except ValueError:
+                return False
             intent = c.execute("SELECT cause FROM paper_exit_intents WHERE paper_id=?", (p["paper_id"],)).fetchone()
             if intent and intent[0]:
                 reason = intent[0]
@@ -811,9 +834,10 @@ class PaperBroker:
               (p["paper_id"], reason, at, at))
             record_sale(c, p["paper_id"], p["settlement"], at,
                         exit_price * qty * factor - exit_cost, currency=p["currency"])
-            c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
+            fill = c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
                       (p["paper_id"], SOURCE, "SELL_SIMULATED", at, str(qty),
                        str(exit_price), str(exit_cost), str(q.bid-exit_price)))
+            spot_liquidity.record(c,fill.lastrowid,q)
             c.execute("""UPDATE paper_learning_samples SET label_timestamp=?,net_return_pct=?,
                          outcome=?,duration_minutes=? WHERE paper_id=?""",
                       (at, str(ret), outcome, duration, p["paper_id"]))
