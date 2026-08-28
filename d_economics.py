@@ -28,6 +28,7 @@ DISEÑO PEDIDO POR EL USUARIO:
 
 import json
 import logging
+import math
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -223,21 +224,21 @@ def deflact_price_series(price_series: list, fx_series: list) -> list:
 
 
 def get_caucion_benchmark_rate(ppi_client) -> Optional[float]:
-    """NUEVO EN v12.0 (Instrucción 3 y 7) — tasa de caución bursátil a 1 día
-    como benchmark dinámico de costo de oportunidad (tasa libre de riesgo en
-    ARS). Antes (v11) el único piso de rentabilidad exigido era el hurdle de
-    inflación/CCL (ver get_dynamic_hurdle_rate_monthly); ahora se agrega la
-    caución como tercera referencia: si colocar el efectivo en caución rinde
-    más que el retorno neto proyectado de una operación, esa operación no
-    tiene sentido económico aunque supere el hurdle de inflación.
+    """Benchmark mensual heredado no validado; no llama a un proxy de tasa.
 
-    Devuelve la tasa mensualizada (TNA/12) para que sea comparable directo
-    contra hurdle_monthly_pct. None si no se pudo obtener (el caller debe
-    tratarlo igual que la ausencia de dato de CCL: no asumir 0%)."""
-    tna_pct = ppi_client.get_caucion_rate(days=1)
-    if tna_pct is None:
-        return None
-    return round(tna_pct / 12, 4)
+    Una TNA aislada de una caución de un día no aporta costos, disponibilidad,
+    moneda ni una inversión realizable durante un mes. No extrapolar TNA/12
+    ni suponer renovaciones. ca_caucion_allocator compara contratos completos
+    en su plazo, pero no implementa este benchmark mensual del motor legado.
+    """
+    return None
+
+
+def _finite_number(value):
+    try:
+        return isinstance(value,(float,int)) and not isinstance(value,bool) and math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def get_dynamic_hurdle_rate_monthly(
@@ -256,43 +257,39 @@ def get_dynamic_hurdle_rate_monthly(
     Sin techo: esto es un PISO. No limita cuánto puede rendir una operación.
     """
     macro_cfg = load_macro_config()
-    inflation_candidates = [macro_cfg.monthly_inflation_pct]
-    if gemini_inflation_estimate_pct is not None:
+    inflation_candidates = [macro_cfg.monthly_inflation_pct] if _finite_number(macro_cfg.monthly_inflation_pct) else []
+    if _finite_number(gemini_inflation_estimate_pct):
         # Clamp de sanidad: una IA puede alucinar un número absurdo. Se acepta
         # el input pero se lo acota a un rango plausible antes de usarlo.
         inflation_candidates.append(max(0.0, min(gemini_inflation_estimate_pct, 25.0)))
-    inflation_pct = max(inflation_candidates)
+    inflation_pct = max(inflation_candidates) if inflation_candidates else None
 
     devaluacion_pct = get_ccl_devaluation_pct(ppi_client, days_back=30)
-    if devaluacion_pct is None:
-        logger.warning("No se pudo medir devaluación real del CCL; el hurdle se basa solo en inflación.")
-        devaluacion_pct = 0.0
-
-    # NUEVO EN v12.0 (Instrucción 3) — se agrega la tasa de caución
-    # mensualizada como tercera candidata al piso. Mismo criterio
-    # conservador que las otras dos fuentes: se toma el máximo, nunca el
-    # mínimo, porque exigirle de más al sistema es más seguro que de menos.
     caucion_pct = get_caucion_benchmark_rate(ppi_client)
-    if caucion_pct is None:
-        logger.warning("No se pudo obtener tasa de caución; no se incluye en el piso del hurdle.")
-        caucion_pct = 0.0
-
-    piso_pct = max(inflation_pct, devaluacion_pct, caucion_pct)
-    hurdle_pct = piso_pct + risk_premium_pct
-
-    if piso_pct == inflation_pct:
-        binding_factor = "inflación"
-    elif piso_pct == devaluacion_pct:
-        binding_factor = "devaluación CCL"
-    else:
-        binding_factor = "tasa de caución"
-
+    values = {'inflación':inflation_pct, 'devaluación CCL':devaluacion_pct, 'tasa de caución':caucion_pct}
+    finite = {k:float(v) for k,v in values.items() if _finite_number(v)}
+    missing = [k for k in values if k not in finite]
+    if gemini_inflation_estimate_pct is not None and not _finite_number(gemini_inflation_estimate_pct):
+        missing.append('estimación IA inválida')
+    premium_ok = _finite_number(risk_premium_pct) and risk_premium_pct >= 0
+    if not premium_ok:
+        missing.append('prima de riesgo')
+    binding_factor = max(finite, key=finite.get) if finite else None
+    partial_floor = finite[binding_factor] + risk_premium_pct if finite and premium_ok else None
+    if partial_floor is not None and not _finite_number(partial_floor):
+        partial_floor = None
+        missing.append('piso no representable')
+    ready = not missing
     return {
-        "hurdle_monthly_pct": round(hurdle_pct, 2),
-        "inflation_pct": round(inflation_pct, 2),
-        "ccl_devaluation_30d_pct": devaluacion_pct,
-        "caucion_benchmark_monthly_pct": caucion_pct,
-        "risk_premium_pct": risk_premium_pct,
+        "state": "READY" if ready else "INCOMPLETE",
+        "missing_inputs": missing,
+        "reason": "Piso incompleto: "+', '.join(missing) if missing else "Fuentes disponibles",
+        "hurdle_monthly_pct": round(partial_floor, 2) if ready else None,
+        "partial_floor_monthly_pct": round(partial_floor, 2) if partial_floor is not None else None,
+        "inflation_pct": finite.get('inflación'),
+        "ccl_devaluation_30d_pct": finite.get('devaluación CCL'),
+        "caucion_benchmark_monthly_pct": finite.get('tasa de caución'),
+        "risk_premium_pct": risk_premium_pct if premium_ok else None,
         "binding_factor": binding_factor,
     }
 
@@ -485,6 +482,11 @@ def passes_hurdle(net_return_pct: float, days_held_estimate: int, hurdle_monthly
     PISO únicamente: si net_return_pct es mucho mayor al hurdle, pasa
     igual — nunca se rechaza ni se recorta por ser "demasiado" rentable.
     """
+    values = (net_return_pct, days_held_estimate, hurdle_monthly_pct)
+    if (any(not _finite_number(v) for v in values)
+            or days_held_estimate < 0 or hurdle_monthly_pct < 0):
+        return {"approved":False,"net_return_pct":None,"hurdle_prorated_pct":None,
+                "margin_pct":None,"reason":"MISSING_OR_INVALID_HURDLE_INPUT"}
     days_held_estimate = max(days_held_estimate, 1)
     hurdle_prorated_pct = hurdle_monthly_pct * (days_held_estimate / 30)
     approved = net_return_pct > hurdle_prorated_pct
