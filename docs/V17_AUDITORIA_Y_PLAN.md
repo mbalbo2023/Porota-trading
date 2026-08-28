@@ -44,10 +44,26 @@ detenidos antes/después. No se requiere repetir el diagnóstico agregado.
 La prueba de regresión usa exclusivamente datos ficticios con esa estructura.
 El constructor actual puede crear recibos modelados y mantener la suposición
 ARS, pero no repara el estado desconocido ni habilita caja con esa inconsistencia.
-No se ejecutó la migración en el servidor. Recomendación pendiente de autorización:
-conservar la base anterior intacta y preparar una base PAPER independiente para
-v17, sin trasladar saldos, posiciones o aprendizaje no verificados. No implica
-arranque ni despliegue. [Evidencia, interpretación y decisión pendiente](V17_LEDGER_RESULTADO_20260828.md).
+No se ejecutó la migración en el servidor. El operador autorizó posteriormente
+preparar una base PAPER independiente para v17, conservando intacta la anterior
+y sin trasladar saldos, posiciones o aprendizaje no verificados. No implica
+arranque ni despliegue. [Evidencia e interpretación](V17_LEDGER_RESULTADO_20260828.md).
+
+## Checkpoint 32 — separación PAPER v17 autorizada
+
+Selección centralizada por `PAPER_V17_DB_PATH`, sin fallback a la variable vieja.
+Runtime, escáner, workers y dashboard usan una misma base nueva, con informes y
+backups separados incluso entre datasets. Identidad persistida al crear un
+archivo nuevo; el arranque rechaza un existente ajeno/no marcado, no lo migra
+ni borra para continuar. Capital inicial exclusivamente ficticio registrado
+por moneda; un cambio de variables no rebasa el saldo del mismo historial.
+Reinicio conserva UUID/datos propios. Dashboard no crea bases ni recurre al
+historial anterior. Selector/Compose usan imagen `17.0.0-rc1`, nunca el tag
+16.3.5 instalado como fallback. No se ejecutó en el servidor.
+
+La suite nueva verifica rechazo de legado/alias, identidad/capital, procesos
+concurrentes, panel sin fallback y un worker offline real RUNNING → SIGTERM →
+STOPPED sobre datos ficticios. [Alcance y pendientes de despliegue](V17_PAPER_SEPARACION.md).
 
 ## Material revisado
 
