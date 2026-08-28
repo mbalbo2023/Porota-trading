@@ -290,7 +290,9 @@ def _throttle():
 # ---------------------------------------------------------------------- #
 # Ruta genérica de contado, no un adaptador de todos los productos PPI.
 # REST/Python oficiales, revisados 28/08/2026: enumeran DINERO/PAPELES/
-# CANTIDAD-TOTAL, no MONTO. El enum COLOCAR-CAUCIÓN no define por sí solo
+# CANTIDAD-TOTAL, no MONTO. La respuesta productiva aportada el 28/08/2026
+# usa COLOCAR-CAUCION y vigencias sin tildes, a diferencia del ejemplo web.
+# El enum de colocación no define por sí solo
 # tasa, capital, plazo ni costos. No presupuestar/confirmar familias
 # especializadas con los defaults de una acción, ni siquiera en simulación.
 ORDER_PARAM_MAP = {
@@ -328,14 +330,21 @@ def _order_terms(instrument_type, quantity_type, order_type, term, operation,
         quantityType=str(defaults['quantity_type'] if quantity_type is None else quantity_type).strip().upper(),
         operationType=str(order_type).strip().upper(),operationTerm=str(term).strip().upper(),
         operation=str(operation).strip().upper(),settlement=str(settlement).strip().upper())
+    # Compatibilidad sólo con las tres grafías documentadas/heredadas.
+    # No quitar diacríticos indiscriminadamente ni habilitar nuevos productos.
+    values['operationTerm'] = {
+        'POR-EL-DÍA': 'POR-EL-DIA',
+        'HASTA-SU-EJECUCIÓN': 'HASTA-SU-EJECUCION',
+        'VÁLIDA-HASTA-EL': 'VALIDA-HASTA-EL',
+    }.get(values['operationTerm'], values['operationTerm'])
     accepted = {'quantityType':{'DINERO','PAPELES','CANTIDAD-TOTAL'},
         'operationType':{'PRECIO-LIMITE','PRECIO-DE-MERCADO'},
-        'operationTerm':{'POR-EL-DÍA','HASTA-SU-EJECUCIÓN','VÁLIDA-HASTA-EL','72-HS'},
+        'operationTerm':{'POR-EL-DIA','HASTA-SU-EJECUCION','VALIDA-HASTA-EL','72-HS'},
         'operation':{'COMPRA','VENTA'},'settlement':{'INMEDIATA','A-24HS','A-48HS','A-72HS'}}
     for field, choices in accepted.items():
         if values[field] not in choices:
             raise ValueError('PPI_ORDER_ENUM_INVALID: '+field)
-    if values['operationTerm']=='VÁLIDA-HASTA-EL':
+    if values['operationTerm']=='VALIDA-HASTA-EL':
         expiry = aware_datetime(operation_max_date,'vigencia de orden')
         if expiry<=datetime.now(timezone.utc):
             raise ValueError('PPI_ORDER_EXPIRY_NOT_FUTURE')
@@ -752,7 +761,7 @@ class ResilientPPIClient:
         budget = self.budget_order(
             self.account_number, quantity, precio_referencia, ticker,
             instrument_type=instrument_type, order_type="PRECIO-DE-MERCADO",
-            term="POR-EL-DÍA", operation="VENTA", settlement=settlement,
+            term="POR-EL-DIA", operation="VENTA", settlement=settlement,
         )
         if not budget:
             logger.error("No se pudo presupuestar la VENTA a mercado de %s x%s.", ticker, quantity)
@@ -761,7 +770,7 @@ class ResilientPPIClient:
         return self.confirm_order(
             self.account_number, quantity, precio_referencia, ticker,
             budget.get("disclaimers", []), instrument_type=instrument_type,
-            order_type="PRECIO-DE-MERCADO", term="POR-EL-DÍA", operation="VENTA",
+            order_type="PRECIO-DE-MERCADO", term="POR-EL-DIA", operation="VENTA",
             settlement=settlement, external_id=external_id,
         )
 
@@ -1133,7 +1142,7 @@ class ResilientPPIClient:
     # ------------------------------------------------------------------ #
     def budget_order(self, account_number: str, quantity: int, price: float, ticker: str,
                       instrument_type: str = "CEDEARS", order_type: str = "PRECIO-LIMITE",
-                      term: str = "POR-EL-DÍA", operation: str = "COMPRA",
+                      term: str = "POR-EL-DIA", operation: str = "COMPRA",
                       settlement: str = "A-24HS", quantity_type: Optional[str] = None,
                       operation_max_date=None) -> Optional[Dict[str, Any]]:
         """Presupuesto/simulación de la orden: PPI devuelve el detalle y los
@@ -1153,7 +1162,7 @@ class ResilientPPIClient:
 
     def confirm_order(self, account_number: str, quantity: int, price: float, ticker: str,
                        accepted_disclaimers: list, instrument_type: str = "CEDEARS",
-                       order_type: str = "PRECIO-LIMITE", term: str = "POR-EL-DÍA",
+                       order_type: str = "PRECIO-LIMITE", term: str = "POR-EL-DIA",
                        operation: str = "COMPRA", settlement: str = "A-24HS",
                        external_id: Optional[str] = None,
                        quantity_type: Optional[str] = None,
