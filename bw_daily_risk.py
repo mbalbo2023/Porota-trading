@@ -93,7 +93,7 @@ class DailyRisk:
                     raise ValueError('Ledger parcial con fechas futuras')
                 opened_rows,closed_rows = self.broker._positions_at(at,c)
                 rows = [p for p in opened_rows+closed_rows if p['currency']==currency]
-                cauciones = [dict(r) for r in c.execute('SELECT * FROM paper_cauciones WHERE currency=?',(currency,))]
+                cauciones = self.broker.cauciones.positions(currency=currency,connection=c)
                 before = realized = today_realized = unrealized = ZERO
                 carry, stale = False, False
                 for p in rows:
