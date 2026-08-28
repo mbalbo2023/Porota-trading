@@ -25,7 +25,9 @@ import bu_instrument_catalog as financial_catalog
 
 VERSION = "16.3.5"
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
-DB_PATH = os.getenv("PAPER_DB_PATH", "data/observer/observer_production.db")
+from cg_paper_workspace import database_path, runtime_store
+
+DB_PATH = str(database_path())
 SECRET_PATH = os.getenv("PPI_PRODUCTION_SECRET_FILE", "/run/secrets/ppi_production.json")
 INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
 COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
@@ -709,7 +711,7 @@ def _run_command(store, reader, command, gemini_gate=None):
 def run():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    store = PaperStore(DB_PATH)
+    store = runtime_store(DB_PATH)
     _support_schema(store)
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
