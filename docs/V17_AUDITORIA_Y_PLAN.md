@@ -45,6 +45,7 @@ línea del repositorio ni una validación de rentabilidad de las estrategias.
 | Un cierre podía repetirse con una posición vieja | Actualización condicional y fill en una transacción; reintento sin segunda venta |
 | Se podían cerrar posiciones usando otro plazo, clase o símbolo | Identidad y secuencia temporal verificadas; profundidad suficiente para cierre total |
 | Se inventaba un cierre total con profundidad insuficiente | Queda pendiente; todavía falta implementar fills parciales |
+| Reintentos podían consumir otra vez la misma profundidad spot | Consumo por fill, identidad, fotografía y lado; revalidación dentro del lock y persistencia tras reinicio |
 | NaN e infinitos contaminaban cuentas y señales | Rechazo/normalización de valores no finitos; cotizaciones cruzadas no abren compras |
 | Señales mezclaban muestras CI/24 h, clases y monedas | Series filtradas por símbolo, clase, plazo, moneda/plaza y mercado |
 | Posiciones abiertas podían quedar fuera del universo rotativo | Todas las abiertas tienen prioridad, incluso fuera del catálogo o sobre el límite de muestreo |
@@ -925,6 +926,21 @@ inválidos, atrasos, contradicciones, desconexión, respuestas ambiguas y moneda
 desconocida sin aprobación ficticia. Se instalaron en el entorno local los SDK
 ya declarados en requirements que faltaban para importar el motor legado; no
 se cambiaron requirements ni dependencias del servidor. CI remoto en la PR.
+
+Decimoquinto checkpoint: **794 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 253 pruebas dirigidas. Cobertura local global 61,19%.
+Nueva tabla aditiva `paper_book_consumption`: cada fill consume la participación
+permitida de su lado del libro, compartida entre posiciones/reintentos/procesos.
+Moneda, mercado y plazo separados. Una fotografía contradictoria o anterior
+a la ya consumida se rechaza. Fills históricos sin fotografía registrada no
+reciben una profundidad inventada: exigen un libro posterior.
+Fill y consumo se confirman o revierten juntos. Tests de reinicio, concurrencia,
+rollback, ambos lados e identidades. Se corrigieron siete fixtures que cambiaban
+puntas sin cambiar la fecha del libro; no se debilitó la validación temporal.
+Los cierres del runtime siguen siendo totales en este checkpoint. Una nueva
+fotografía renueva el modelo de profundidad, no demuestra reposición o fill real.
+Sin cambio de costos, caja inicial, modo, servidor ni límites de participación.
+CI remoto y mínimos de cobertura se registran en la PR tras verificarlos.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
