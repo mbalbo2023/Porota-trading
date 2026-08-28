@@ -103,10 +103,11 @@ escáner o a órdenes reales.
 `place_caucion()` es una operación explícita del simulador, no un planificador
 de inversión automática ni una orden real.
 
-El método heredado `c_ppi_client.get_caucion_rate()` todavía usa una selección
-insegura de primer resultado/proxy; `place_caucion()` de ese cliente devuelve
-un presupuesto y no acredita una colocación. **No se conectaron estos métodos
-a la nueva contabilidad. Deben reemplazarse antes de habilitar ejecución real.**
+El proxy heredado `c_ppi_client.get_caucion_rate()` fue retirado: devuelve None
+sin buscar el primer instrumento ni reinterpretar precio como tasa.
+`place_caucion()` de ese cliente está bloqueado explícitamente incluso si se
+activa el flag antiguo: un presupuesto no constituye colocación. Ninguno de
+estos métodos se conecta a la nueva contabilidad paper.
 
 ## Estado por familia
 
@@ -744,6 +745,58 @@ Sin cambios de esquema, ejecución, despliegue ni nuevos trabajos de
 ciberseguridad. No activa la programación automática ni habilita otras
 familias como contado. `promotion_allowed=False`, `data_certified=False`.
 
+## Decimotercer checkpoint: caución heredada y piso de rentabilidad
+
+- Se retira el proxy que tomaba el primer ticker y consideraba `price` una
+  tasa anual. El método de compatibilidad devuelve None sin red; no declara
+  falta de soporte del broker, sino falta de un adaptador contrastado.
+- La antigua colocación no devuelve más un presupuesto como si fuera un
+  fill. Falla explícitamente antes de buscar, presupuestar o confirmar,
+  independientemente de CAUCIONES_AUTO_PLACEMENT. La descripción del flag
+  aclara que no habilita la nueva asignación paper.
+- Se retira TNA/12 como benchmark mensual realizable. Faltan costos, moneda,
+  fechas y evidencia de inversión/reinversión para el horizonte comparado.
+  El asignador paper compara contratos completos; no valida este benchmark.
+- El piso dinámico conserva None para fuentes ausentes/no finitas y expone
+  INCOMPLETE. El piso parcial queda sólo como diagnóstico, sin utilizarse
+  para aprobar. Una estimación IA o prima inválidas también quedan señaladas.
+- El motor legado se abstiene con REJECTED_HURDLE_DATA antes de entrar al
+  cálculo de scalping u ordenar. Se ejecutó la función real con dependencias
+  externas simuladas. El nuevo runtime PRODUCTION_PAPER no usa este filtro.
+
+**Efecto deliberado:** las entradas del motor legado quedan detenidas mientras
+su benchmark obligatorio siga sin validar. No se modifica el servicio
+desplegado ni se presenta ese motor como listo para operar. El valor cero no
+puede sustituir un dato desconocido. El presupuesto y la orden nueva son rutas
+distintas en la [documentación REST de PPI](https://itatppi.github.io/ppi-official-api-docs/api/documentacionRest/).
+
+## Decimocuarto checkpoint: identidad y tiempo del mercado heredado
+
+- Caché de negocios por ticker, clase y plazo. Una consulta sin plazo no usa
+  la caché. La lectura devuelve copia; no mezcla CI con 24 horas.
+- Sólo Trade=True actualiza el último negocio. Date del proveedor y recepción
+  permanecen separadas. Mensajes de libro, duplicados y atrasados no renuevan
+  el precio; timestamps ausentes, ingenuos, futuros o vencidos se rechazan.
+- Dos precios diferentes en el mismo instante invalidan esa entrada hasta un
+  negocio posterior. Una desconexión vacía la caché de mercado.
+- Si falta Type, sólo una suscripción inequívoca del mismo ticker/plazo aporta
+  la clase; no se presupone CEDEAR. Se sigue el contrato del
+  [ejemplo oficial de PPI](https://itatppi.github.io/ppi-official-api-docs/api/ejemploPython/)
+  para Trade, Date y Settlement, sin afirmar prueba de un stream real.
+- REST conserva la identidad solicitada, rechaza campos contradictorios y
+  respuestas múltiples ambiguas. No muta la respuesta original ni marca como
+  reciente un precio antiguo al recibirlo. Misma validación temporal para libro.
+- get_book_with_fallback conserva el nombre pero sólo consulta el plazo pedido.
+  Otro plazo requiere otra evaluación y presupuesto. El motor rechaza libro
+  faltante, cruzado, inválido, vencido o de un plazo diferente.
+- Las herramientas de contexto ya no convierten toda cotización en ARS ni
+  marcan un precio aislado como apto para ordenar. Moneda ausente permanece
+  desconocida; contrato, caja y liquidez requieren sus controles propios.
+
+Estos cambios corrigen rutas heredadas adicionales; no conectan el stream al
+nuevo runtime paper ni resuelven ejecutores especializados o cierres parciales.
+No se ejecutaron llamadas reales a PPI, órdenes ni mensajes de Telegram.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -861,6 +914,17 @@ JSON inválido, discrepancias con ledger, lectura concurrente consistente,
 paginación por instante, ausencia de escrituras y rutas HTML/JSON reales.
 Sin captura de navegador: estas verificaciones son funcionales, no una revisión
 visual del diseño en la tablet. El resultado remoto se registra en el PR tras CI.
+
+Checkpoints decimotercero y decimocuarto: **788 tests aprobados**, 0 fallas,
+0 errores y 0 omisiones (47 nuevos). Cobertura local global 60,98%; cliente PPI
+52,77%, economics 45,54%, motor legado 24,27%, stream 41,41% y herramientas de
+mercado 38,71%. Cumple los cuatro mínimos financieros del CI. Incluye función
+real de evaluación con dependencias externas simuladas, bloqueo por benchmark
+ausente incluso en scalping, separación de plazos, negocios/libros, timestamps
+inválidos, atrasos, contradicciones, desconexión, respuestas ambiguas y moneda
+desconocida sin aprobación ficticia. Se instalaron en el entorno local los SDK
+ya declarados en requirements que faltaban para importar el motor legado; no
+se cambiaron requirements ni dependencias del servidor. CI remoto en la PR.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
