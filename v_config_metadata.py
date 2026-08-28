@@ -109,7 +109,7 @@ CONFIG_METADATA = [
     # editor visual del dashboard sin que nada lo avisara) ---
     ("CIRCUIT_FAILURE_THRESHOLD", "Robustez API PPI", "Fallas de servidor/red consecutivas antes de abrir el Circuit Breaker.", "5", False),
     ("CIRCUIT_OPEN_COOLDOWN_SECONDS", "Robustez API PPI", "Segundos que el Circuit Breaker corta llamadas antes de probar de nuevo.", "60", False),
-    ("CAUCIONES_AUTO_PLACEMENT", "Robustez API PPI", "Colocación automática de liquidez ociosa en cauciones. Mantener en false hasta confirmar plazo/ticker contra Sandbox real.", "false", False),
+    ("CAUCIONES_AUTO_PLACEMENT", "Robustez API PPI", "Flag heredado sin efecto: la ruta que devolvía presupuestos como colocaciones fue retirada. El asignador paper exige política y contratos explícitos; no activa órdenes reales.", "false", False),
     ("DASHBOARD_DOMAIN", "Dashboard y técnico", "Dominio propio para HTTPS automático con Caddy (vacío = sin HTTPS).", "", False),
     ("ENV_FILE_PATH", "Dashboard y técnico", "Ruta del .env que lee/escribe el editor visual del dashboard.", ".env", False),
     # --- NUEVO EN v14.0 ---
