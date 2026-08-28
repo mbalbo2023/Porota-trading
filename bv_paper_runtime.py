@@ -19,6 +19,7 @@ from pathlib import Path
 from be_paper_engine import PaperBroker, PaperStore, now_iso
 from bm_exit_supervisor import PositionExitSupervisor
 from bq_exit_policy import PaperSessionPolicy
+from cg_paper_workspace import DB_ENV, runtime_store
 
 ROOT = Path(__file__).resolve().parent
 
@@ -171,10 +172,14 @@ def run_reader(store, stop):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker']):
+        raise ValueError("Argumentos desconocidos del runtime paper")
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
-    store = PaperStore(os.getenv("PAPER_DB_PATH", "data/observer/observer_production.db"))
+    store = runtime_store()
+    # Los hijos cambian cwd; todos deben heredar la misma ruta absoluta.
+    os.environ[DB_ENV] = store.path
     if argv == ["--exit-reader"]:
         run_reader(store, stop)
         return 0
@@ -186,8 +191,6 @@ def main(argv=None):
         from bl_candle_engine import run_worker
         run_worker(store,stop,clock_fn=now_iso)
         return 0
-    if argv:
-        raise ValueError("Argumentos desconocidos del runtime paper")
     # Un reloj por libro, incluso si se intenta iniciar otro contenedor.
     with open(store.path + ".runtime.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
