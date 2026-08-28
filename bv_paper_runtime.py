@@ -100,13 +100,14 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False, 
     """Un book por abierta; jamás depende de último negocio o de Gemini."""
     from bf_production_paper_observer import normalize_quote
     import bu_instrument_catalog as catalog
-    failures = 0
-    for p in store.open_positions():
+    positions, invalid = store.exit_positions()
+    failures = len(invalid)
+    for p in positions:
         if should_stop():
             break
-        if policy.execution_error(p, at):
-            continue
         try:
+            if policy.execution_error(p, at):
+                continue
             book = reader.book(p["symbol"],p["asset_class"],p["settlement"])
             metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"])
             q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,metadata=metadata)
