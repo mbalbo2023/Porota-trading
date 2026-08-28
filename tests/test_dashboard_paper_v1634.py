@@ -65,9 +65,16 @@ def test_ganancia_en_pesos_no_prueba_superar_inflacion(tmp_path, monkeypatch):
     monkeypatch.setattr(dashboard, "DB_PATH", store.path)
     with store.connect() as c:
         c.execute("""INSERT INTO paper_positions(paper_id,source,strategy_version,symbol,asset_class,
-            settlement,status,quantity,entry_price,entry_cost,stop_price,target_price,opened_at,closed_at,net_pnl,features_json)
+            settlement,status,quantity,entry_price,entry_cost,stop_price,target_price,opened_at,closed_at,
+            exit_price,exit_cost,gross_pnl,net_pnl,features_json)
             VALUES('X','PRODUCTION_PAPER','fixture','GGAL','ACCIONES','INMEDIATA','CLOSED','1','100','1','98','104',
-            '2026-08-27T11:00:00-03:00','2026-08-27T12:00:00-03:00','1','{}')""")
+            '2026-08-27T11:00:00-03:00','2026-08-27T12:00:00-03:00','103','1','3','1','{}')""")
+        for side,at,price in (('BUY_SIMULATED','2026-08-27T11:00:00-03:00','100'),
+                              ('SELL_SIMULATED','2026-08-27T12:00:00-03:00','103')):
+            c.execute('INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)',
+                ('X','PRODUCTION_PAPER',side,at,'1',price,'1','0'))
+        from bt_caucion_paper import record_sale
+        record_sale(c,'X','INMEDIATA','2026-08-27T12:00:00-03:00','102')
     page = dashboard.financial_page()
     assert "SUPERÓ EN PESOS" not in page
     assert "NO COMPARABLE: falta rentabilidad porcentual" in page
