@@ -389,6 +389,34 @@ def test_historial_hold_no_inventa_colocacion_y_no_reintenta(allocation_case):
     assert broker.cauciones.positions() == []
 
 
+@pytest.mark.parametrize('fee_payment', ['UPFRONT','MATURITY'])
+def test_panel_muestra_costos_redondeados_del_simulador(allocation_case, fee_payment):
+    import bg_paper_dashboard as dashboard
+    broker, offer, policy = allocation_case
+    decision = _decision(broker, [offer(quoted_total_fees='1.234',fee_payment=fee_payment)], policy())
+    assert decision['selected']['fees'] == '1.23'
+    page = dashboard._caucion_allocations_panel()
+    assert '1.23 · '+fee_payment in page
+    assert '1.234 · '+fee_payment not in page
+
+
+def test_historial_oferta_no_canonica_no_rompe_el_panel(allocation_case):
+    from bl_candle_engine import fingerprint
+    from cb_caucion_audit import allocation_history
+    import bg_paper_dashboard as dashboard
+    broker, offer, policy = allocation_case
+    decision = _decision(broker, [offer()], policy())
+    decision['manifest']['offers'][0]['available_principal'] = '100000.00'
+    decision['plan_id'] = fingerprint({k:v for k,v in decision.items() if k not in {'plan_id','paper_id','status'}})
+    with broker.store.connect() as c:
+        c.execute('UPDATE paper_caucion_allocations SET decision_json=?, request_hash=?',
+                  (json.dumps(decision),fingerprint(decision['manifest'])))
+    report = allocation_history(broker.store.path)
+    assert report['state'] == 'PARTIAL'
+    assert report['records'][0]['issue'] == 'NON_CANONICAL_OFFER'
+    assert 'Registro inconsistente' in dashboard.motor_page()
+
+
 def test_historial_maduro_no_confunde_decision_con_saldo_actual(allocation_case):
     from cb_caucion_audit import allocation_history
     import bg_paper_dashboard as dashboard
