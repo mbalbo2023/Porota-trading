@@ -33,6 +33,44 @@ def sales(c, paper_id):
         ORDER BY julianday(f.filled_at),s.fill_id''',(paper_id,))]
 
 
+def entry_terms(p):
+    """Unidades/costos históricos explícitos; no consulta un tarifario actual."""
+    qty = decimal_value(p['quantity'],'cantidad original',positive=True)
+    fee = decimal_value(p['entry_cost'],'costo original',nonnegative=True)
+    price = decimal_value(p['entry_price'],'precio original',positive=True)
+    features = json.loads(p['features_json'] or '{}')
+    if not isinstance(features,dict):
+        raise ValueError('Contrato de posición debe ser un objeto')
+    factor = decimal_value(features.get('contract_cash_multiplier','1'),'factor',positive=True)
+    return qty, fee, price, factor
+
+
+def single_close_proceeds(p, fills):
+    """Concordancia del cierre completo con un único SELL_SIMULATED.
+
+    Valida contra la entrada almacenada; no certifica origen de esa entrada,
+    arancel histórico, ejecución PPI ni modificaciones coordinadas del ledger.
+    """
+    qty, entry_fee, entry_price, factor = entry_terms(p)
+    if p['status']!='CLOSED' or not p['closed_at'] or len(fills)!=1:
+        raise ValueError('Cierre simple sin un único fill de venta')
+    end, start = aware_datetime(p['closed_at']), aware_datetime(p['opened_at'])
+    fill = fills[0]
+    price = decimal_value(p['exit_price'],'precio de cierre',positive=True)
+    fee = decimal_value(p['exit_cost'],'costo de cierre',nonnegative=True)
+    if (end < start or fill['paper_id']!=p['paper_id'] or fill['source']!=p['source']
+            or fill['side']!='SELL_SIMULATED' or aware_datetime(fill['filled_at'])!=end
+            or decimal_value(fill['quantity'],'cantidad del fill',positive=True)!=qty
+            or decimal_value(fill['price'],'precio del fill',positive=True)!=price
+            or decimal_value(fill['costs'],'costo del fill',nonnegative=True)!=fee):
+        raise ValueError('Cierre simple incompatible con su fill')
+    gross = (price-entry_price)*qty*factor
+    if (decimal_value(p['gross_pnl'],'PnL bruto')!=gross
+            or decimal_value(p['net_pnl'],'PnL neto')!=gross-entry_fee-fee):
+        raise ValueError('Importes del cierre simple no concilian')
+    return price*qty*factor-fee
+
+
 def partition(c, p, at=None):
     """Retorna remanente y realizaciones; no cambia filas ni etiqueta parciales."""
     p = dict(p)
@@ -43,10 +81,12 @@ def partition(c, p, at=None):
         raise ValueError('Cronología de posición inválida')
     at = aware_datetime(at) if at is not None else None
     rows = sales(c,p['paper_id'])
-    fills = c.execute("SELECT id FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",(p['paper_id'],)).fetchall()
+    fills = c.execute("SELECT * FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",(p['paper_id'],)).fetchall()
     if not rows:
         if (p['status']=='OPEN' and fills) or len(fills)>1:
             raise ValueError('Ventas sin asignación de cantidad/costo')
+        if end:
+            single_close_proceeds(p,fills)
         if at is not None and start > at:
             return None, []
         if end and (at is None or end <= at):
@@ -54,13 +94,7 @@ def partition(c, p, at=None):
         p.update(status='OPEN',closed_at=None,exit_price=None,exit_cost=None,
                  gross_pnl=None,net_pnl=None,close_reason=None)
         return p, []
-    original_qty = decimal_value(p['quantity'],'cantidad original',positive=True)
-    original_cost = decimal_value(p['entry_cost'],'costo original',nonnegative=True)
-    entry_price = decimal_value(p['entry_price'],'precio original',positive=True)
-    features = json.loads(p['features_json'] or '{}')
-    if not isinstance(features,dict):
-        raise ValueError('Contrato de posición debe ser un objeto')
-    factor = decimal_value(features.get('contract_cash_multiplier','1'),'factor',positive=True)
+    original_qty, original_cost, entry_price, factor = entry_terms(p)
     if {r['fill_id'] for r in rows} != {r['id'] for r in fills}:
         raise ValueError('Ventas sin asignación de cantidad/costo')
     sold = costs = seen_qty = seen_cost = ZERO
