@@ -209,7 +209,81 @@ No se extrapolan a cauciones, opciones, futuros, FCI ni ruedas concentradas.
 No se copió la supuesta regla de que una perdedora casi nunca recupera ni los
 descuentos de salida arbitrarios de la propuesta. Tampoco se fuerza una venta
 después del cierre: se conserva pendiente hasta tener sesión y libro utilizable.
-Siguen pendientes el límite diario persistente, stops dinámicos netos y outbox.
+El quinto checkpoint agrega límite diario persistente y outbox. Siguen pendientes
+stops dinámicos netos y validación del modelo contra contratos/sesiones de PPI.
+
+## Quinto checkpoint: corte diario y avisos transaccionales
+
+### Corte de pérdidas PAPER (`bw_daily_risk`)
+
+- Reutiliza `MAX_DAILY_LOSS_PCT=1.0` del ejemplo: **1 significa 1%**, no una
+  fracción de 100%. Se transmite el valor configurado al runtime. No se leyó ni
+  modificó el valor del servidor del operador. El broker usado directamente por
+  tests conserva el control opcional; el runtime vivo siempre lo activa.
+- Día civil de Buenos Aires; ARS, USD, USD_MEP y USD_CCL separados. La base se
+  reconstruye al inicio del día con capital configurado, PnL de cierres anteriores
+  y devengamiento contractual de cauciones. Nunca usa el patrimonio al reiniciar
+  como nueva base. Principal colocado y ventas pendientes no son ganancias.
+- Incluye PnL neto realizado y pérdidas/ganancias abiertas con libros vigentes,
+  costo y deslizamiento de salida modelados. También corta si el realizado neto
+  del día agota por sí solo el presupuesto, aunque haya otras posiciones sin
+  libro válido: las ganancias abiertas no reponen ese presupuesto realizado.
+- **Carry spot sin marca de cierre anterior conciliada:** base desconocida y
+  bloqueo del día, incluso si el carry se cierra después. No se inventa una
+  marca de medianoche ni se carga toda la pérdida histórica al día nuevo.
+  El día siguiente puede reconstruirse sólo si ya no hay carry. La conciliación
+  de una base con posiciones heredadas sigue siendo requisito de promoción.
+- El disparo se guarda en `paper_daily_risk` y crea intenciones de salida para
+  abiertas en esa moneda, conservando causas previas. No se borra por recuperación
+  posterior, reinicio ni cambio de parámetros. Al día siguiente se evalúa otra
+  base, sin cancelar las salidas decididas el día anterior.
+- Capital distinto al persistido requiere conciliación; cambiar el porcentaje
+  durante el mismo día bloquea nuevas entradas. Un reloj que retrocede no reinicia
+  el control. No hay botón que borre silenciosamente el latch o la base.
+- La admisión se revalida dentro del mismo bloqueo SQLite del fill o colocación.
+  Cierres y disparo se registran juntos. Las cauciones colocadoras no se rompen:
+  sigue la acreditación al vencimiento, sin financiación ni saldo no liquidado.
+- Sin libros confiables se informa PnL actual desconocido y se bloquean entradas;
+  el reloj de salida sigue activo. Un corte no garantiza una pérdida máxima:
+  gaps, profundidad insuficiente, mercado cerrado y tiempo entre lecturas pueden
+  dejar pérdidas mayores. No se simula una venta inexistente.
+- Nueva versión de aprendizaje `paper-momentum-v17.2-daily-risk`, para no usar
+  como calibración indistinta resultados anteriores a esta política de salida.
+
+### Cola de Telegram (`bn_telegram_bus`)
+
+- Se reemplazó la base separada de la propuesta por una outbox dentro de la misma
+  SQLite. Un trigger sobre **eventos nuevos** de compra, venta, caución, corte y
+  salida pendiente confirma aviso y cambio financiero en la misma transacción.
+  Una falla al persistir el aviso revierte ese cambio. No reenvía el histórico.
+- `PENDING`, `SENDING`, `SENT` y `DEAD` distinguen espera, envío en vuelo, ACK
+  confirmado y revisión necesaria. Un lease y token de intento evitan reclamos
+  simultáneos y que un ACK viejo sobrescriba otro intento. No se mantiene un
+  bloqueo SQLite durante llamadas HTTP.
+- 429 respeta `retry_after` y suspende **toda esta cola** incluso tras reiniciar;
+  se mantiene separación de un segundo. Otros errores transitorios tienen
+  backoff limitado y ocho intentos. Errores permanentes o intentos agotados
+  conservan mensaje/error en `DEAD`, visible en el panel, sin eliminarlo ni
+  declararlo entregado. Falta de configuración conserva pendientes sin consumir
+  intentos. Revisión/reenvío de `DEAD` todavía requiere intervención explícita.
+- El proceso de notificaciones es un tercer hijo independiente: una llamada lenta
+  no detiene el reloj, PPI o Gemini. No comparte el interceptor HTTP del lector PPI.
+  Las notificaciones del selector y otros motores fuera de PAPER no se migraron;
+  su coordinación global con este mismo bot sigue pendiente de revisión.
+- El resumen diario deja de hacer red desde el escáner. Se encola por fecha y
+  sólo pasa a entregado cuando existe ACK de Telegram; un fallo previo del sistema
+  viejo ya no consume la fecha como si hubiera sido un envío exitoso.
+- **Entrega al menos una vez, no exactamente una vez:** un corte tras recepción
+  remota y antes del commit local puede duplicar un mensaje, siempre identificado
+  con el mismo ID. Lease vencido también puede producir duplicados si un worker
+  antiguo quedó suspendido. Reintentar un aviso nunca reejecuta una operación.
+- Se validó el contrato público de `sendMessage`/`retry_after` en la
+  [documentación oficial de Telegram](https://core.telegram.org/bots/api#sendmessage).
+  Se exige `ok=true` y `message_id`; HTTP 200 por sí solo no prueba entrega.
+  **Las pruebas usan transportes ficticios: no se enviaron mensajes reales.**
+
+Migraciones aditivas e idempotentes. El PR continúa en borrador; no se modificó
+el Droplet, no se desplegó y no se habilitaron órdenes reales.
 
 ## Evaluación del código sugerido: decisiones pendientes
 
@@ -220,9 +294,9 @@ Siguen pendientes el límite diario persistente, stops dinámicos netos y outbox
 | Velas desde snapshots | Midpoint no equivale a último negocio y volumen acumulado no equivale a volumen del intervalo | Separar cotizaciones y operaciones; no fabricar volumen, VWAP o dollar bars |
 | Migración histórica | Ruta por defecto difiere de la base actual y cuenta filas ignoradas como migradas | Migración idempotente, conciliación de cantidades y respaldo previo |
 | `bm_exit_supervisor` | Da un cierre por hecho aunque el callback devuelva False | Reescrito: ledger decide CLOSED, intención persistente y reloj sin red/IA; probado con hijos bloqueados |
-| `bq_exit_policy` | Horario 17:00 uniforme; breakeven sin costo completo; bloqueo diario no persistente | Modelo paper regular acotado; sesión real por instrumento, stops netos y bloqueo diario siguen pendientes |
+| `bq_exit_policy` | Horario 17:00 uniforme; breakeven sin costo completo; bloqueo diario no persistente | Sesión paper acotada y bloqueo persistente implementados; sesión real por instrumento y stops dinámicos netos pendientes |
 | Liquidación forzada al cierre | No existe fill ejecutable una vez cerrado el mercado o sin profundidad | Anticipar cierre; conservar salida pendiente si no se puede ejecutar |
-| `bn_telegram_bus` | Fill y notificación en transacciones distintas; riesgo de perder evento; 429 mal coordinado | Outbox en la misma transacción financiera y cooldown global; documentar entrega al menos una vez |
+| `bn_telegram_bus` | Fill y notificación en transacciones distintas; riesgo de perder evento; 429 mal coordinado | Reescrito: outbox transaccional, lease, ACK validado, cooldown de toda la cola y entrega al menos una vez |
 | `bo_signal_core` | Reward/risk bruto, umbrales heurísticos y controles incompletos de datos | Evaluar neto, calidad y disponibilidad temporal; validar sin anticipación |
 | `bp_dashboard_v17` | CSV ordena por `id` inexistente en muestras; consultas silenciosamente vacías | Reutilizar panel existente y corregir consultas; no reemplazo ciego |
 | `br_backtest_gate` | Tres meses distintos pueden cubrir sólo ~32 días; drawdown y estrés incompletos | Span real, curva marcada a mercado, costos/slippage y splits temporales efectivos |
@@ -242,6 +316,15 @@ Cuarto: **386 tests aprobados**, sin fallas ni omisiones, con supervisor,
 calidad temporal y runtime independiente. Cobertura local: 47,44% global;
 86,5% supervisor, 86,5% política de sesión, 77,3% runtime y 86,2% motor paper.
 Los cuatro mínimos de módulos financieros del CI también se cumplen localmente.
+Quinto checkpoint: **418 tests aprobados**, sin fallas ni omisiones. Cobertura
+global 49,77%; riesgo diario 95,5%, outbox 85,5%, motor paper 94,5% y cauciones
+95,9%. Se mantiene la advertencia local de Starlette/httpx. Pruebas adicionales:
+rollback compartido aviso/fill, dos workers y lease vencido, ACK viejo, 429 global,
+falta de configuración, reintentos agotados, corte al umbral, reinicio, reloj,
+monedas, carry, costos de caución y revalidación de riesgo dentro de la transacción.
+El reloj también pasa la prueba con **tres** procesos hijos realmente bloqueados.
+Smoke local real de `--notification-worker`: NOT_CONFIGURED, SIGTERM, STOPPED y
+código 0; no se usaron credenciales ni se enviaron mensajes.
 Comando usado: `python -m pytest -o addopts='' -q -m 'not red'`.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
@@ -252,7 +335,9 @@ la suite Python 3.11 y el build Docker aprobaron; el job de arranque falló ante
 de levantar servicios por buscar la imagen 16.2. El tercer checkpoint ya obtuvo
 **CI completo aprobado**, run 33130775522, commit
 `925a9eabee128a46bfd833467611c4a456a9a8b0`: tests, build, arranque, panel y apagado.
-El cuarto avance necesita su propio CI; su resultado se registra en el PR #3.
+El cuarto avance también obtuvo CI completo aprobado, run 33132183073, commit
+`5dac57af7f084273a2e5cfeb367bf6c54849074d`. El resultado del quinto se registra
+en el PR #3 después de subir y verificar el contenido remoto.
 Los 12 payloads públicos aportados se usan como fixture; aún falta integración
 con cotizaciones/contratos especializados y validación en el Droplet.
 
