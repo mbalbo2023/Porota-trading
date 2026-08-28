@@ -9,6 +9,7 @@ import sqlite3
 import statistics
 import sys
 import time
+import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -19,6 +20,7 @@ from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolatio
 from be_paper_engine import D, PaperBroker, PaperStore, Quote, now_iso
 from bh_paper_gemini import GeminiPaperGate
 import bi_operational_services as operations
+import bu_instrument_catalog as financial_catalog
 
 
 VERSION = "16.3.5"
@@ -57,8 +59,9 @@ DISCOVERY_SEEDS = {
               "GD38", "GD41", "GD46", "BPOA7", "BPOB7", "TX26", "TX28", "TZX27"),
     "ETF": ("SPY", "DIA", "QQQ", "IWM"),
     # Filtros de búsqueda, no tickers confirmados ni autorización de operación.
-    "LETRAS": ("LETRA",), "ON": ("YPF",),
+    "LETRAS": ("LETRA", "S", "T"), "ON": ("YPF", "MRC", "YMC"),
     "CAUCIONES": ("CAUCION",), "FCI": ("FONDO",),
+    "OPCIONES": ("GFG", "YPF", "PAM"),
     "INDICES": ("MERVAL", "SPMERVAL"),
 }
 STOP = False
@@ -184,7 +187,7 @@ def _level(level):
     return price or Decimal(0), size or Decimal(0)
 
 
-def normalize_quote(symbol, asset_class, settlement, current, book):
+def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=None):
     last = _walk_numbers(current, ("price", "last", "lastprice", "ultimo", "close")) or Decimal(0)
     bids, asks = _levels(book, "bid"), _levels(book, "ask")
     bid, bid_size = _level(bids[0]) if bids else (Decimal(0), Decimal(0))
@@ -196,7 +199,8 @@ def normalize_quote(symbol, asset_class, settlement, current, book):
     ask_size = ask_size or _walk_numbers(book, ("offersize", "asksize", "offerquantity")) or Decimal(0)
     if last <= 0 and bid > 0 and ask > 0:
         last = (bid + ask) / 2
-    return Quote(symbol, asset_class, settlement, last, bid, ask, bid_size, ask_size, now_iso())
+    return Quote(symbol, asset_class, settlement, last, bid, ask, bid_size, ask_size, now_iso(),
+                 **financial_catalog.quote_terms(metadata))
 
 
 def _support_schema(store):
@@ -228,6 +232,7 @@ def _support_schema(store):
           PRIMARY KEY(ticker,instrument_type,market));
         """)
     operations.init_schema(store)
+    financial_catalog.init_schema(store)
 
 
 def _health(store, component, state, detail, source, success=False):
@@ -326,56 +331,72 @@ def _catalog_records(value):
 
 
 def _download_catalog(reader, store):
-    """Valida candidatos concretos. Nunca confunde catálogo con login."""
-    total = failures = available = rofex_available = 0
+    """Publica un lote atómico; conserva registros previos como STALE.
+
+    Los filtros de búsqueda y los instrumentos devueltos son entidades
+    diferentes. No se inventa una especie por haber consultado un prefijo.
+    """
+    failures = available = 0
     downloaded = now_iso()
-    with store.connect() as c:
-        c.execute("DELETE FROM instrument_catalog")
-    for ticker_query, instrument_type, fallback_settlement, market_query, can_simulate in _candidate_universe():
+    run_id = uuid.uuid4().hex
+    found, query_results = {}, []
+    if hasattr(reader, "market_configuration"):
+        try:
+            configuration = reader.market_configuration()
+            with store.connect() as c:
+                for name, payload in configuration.items():
+                    c.execute("INSERT OR REPLACE INTO broker_market_configuration VALUES(?,?,?)",
+                              (name, downloaded, json.dumps(payload, ensure_ascii=False, default=str)))
+        except Exception as exc:
+            store.event("CATALOG_CONFIGURATION_UNAVAILABLE", type(exc).__name__)
+    for ticker_query, instrument_type, fallback_settlement, market_query, _ in _candidate_universe():
         status, detail = "UNAVAILABLE", "La búsqueda no devolvió coincidencias."
-        exact_match = False
+        count = 0
+        name_query = {("OPCIONES", "GFG"): "GALICIA", ("OPCIONES", "YPF"): "YPF",
+                      ("OPCIONES", "PAM"): "PAMPA", ("LETRAS", "S"): "LETRA",
+                      ("LETRAS", "T"): "LETRA", ("ON", "MRC"): "MASTELLONE",
+                      ("ON", "YMC"): "YPF"}.get((instrument_type, ticker_query), ticker_query)
         try:
             payload = reader.search_instruments(
-                ticker_query, instrument_type, name=ticker_query, market=market_query)
+                ticker_query, instrument_type, name=name_query, market=market_query)
             records = _catalog_records(payload)
-            if records:
-                status, detail, available = "AVAILABLE", f"{len(records)} coincidencia(s).", available + 1
-            with store.connect() as c:
-                for row in records:
-                    ticker = str(row.get("ticker") or row.get("symbol") or row.get("Ticker") or "").strip()
-                    if not ticker:
-                        continue
-                    description = row.get("description") or row.get("name") or row.get("Descripcion")
-                    market = row.get("market") or row.get("mercado") or market_query
-                    settlement = row.get("settlement") or row.get("plazo") or fallback_settlement
-                    c.execute("INSERT OR REPLACE INTO instrument_catalog VALUES(?,?,?,?,?,?,?)",
-                              (instrument_type, ticker, str(description or "")[:300],
-                               str(market or "")[:80], str(settlement or "")[:80], downloaded,
-                               json.dumps(row, ensure_ascii=False, default=str)[:8000]))
-                    actual_type = str(row.get("instrumentType") or row.get("type") or
-                                      row.get("Tipo") or instrument_type).upper()
-                    actual_can_simulate = actual_type in SAFE_PAPER_TYPES and str(market).upper() == "BYMA"
-                    c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
-                              (ticker.upper(), actual_type, str(settlement or fallback_settlement),
-                               str(market or market_query), int(actual_can_simulate), "AVAILABLE",
-                               f"Descubierto por PPI a partir de {ticker_query}.", downloaded))
-                    total += 1
-                    exact_match |= (ticker.upper(), actual_type, str(settlement)) == (ticker_query.upper(), instrument_type, fallback_settlement)
-            if market_query == "ROFEX" and records:
-                rofex_available += len(records)
+            for raw in records:
+                try:
+                    record = financial_catalog.normalize_record(raw, fallback_settlement, downloaded, run_id)
+                except (ValueError, TypeError):
+                    continue
+                key = tuple(record[k] for k in ("ticker", "instrument_type", "market", "currency", "settlement"))
+                found[key] = record
+                count += 1
+            if count:
+                status, detail, available = "AVAILABLE", f"{count} coincidencia(s).", available + 1
+            elif records:
+                status, detail = "INVALID_METADATA", "Respuestas sin ticker/clase verificables."
         except Exception as exc:
             failures += 1
             status = "ERROR"
             detail = f"{type(exc).__name__}: {str(exc)[:260]}"
-        if not exact_match:
-            with store.connect() as c:
-                c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
-                          (ticker_query, instrument_type, fallback_settlement, market_query,
-                           0, "QUERY_ONLY" if status == "AVAILABLE" else status, detail, downloaded))
+        query_results.append((run_id, ticker_query, name_query, instrument_type, market_query, status, count, detail))
         if CATALOG_QUERY_SLEEP_SECONDS:
             time.sleep(CATALOG_QUERY_SLEEP_SECONDS)
+    with store.connect() as c:
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("UPDATE financial_instrument_catalog SET status='STALE'")
+        c.execute("UPDATE candidate_universe SET status='STALE',can_simulate=0")
+        for record in found.values():
+            financial_catalog.persist(c, record)
+            c.execute("INSERT OR REPLACE INTO instrument_catalog VALUES(?,?,?,?,?,?,?)",
+                      (record["instrument_type"], record["ticker"], record["description"],
+                       record["market"], record["settlement"], downloaded,
+                       json.dumps(record["raw"], ensure_ascii=False, default=str)))
+            c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+                      (record["ticker"], record["instrument_type"], record["settlement"], record["market"],
+                       int(record["capability"] == "READY_PAPER_SPOT"), "AVAILABLE", record["capability"], downloaded))
+        c.executemany("INSERT INTO catalog_query_results VALUES(?,?,?,?,?,?,?,?)", query_results)
+    total = len(found)
+    rofex_available = sum(r["market"] in {"ROFEX", "A3"} for r in found.values())
     state = "VERDE" if available and not failures else "AMARILLO" if available else "ROJO"
-    detail = (f"{available} candidatos validados; {total} instrumentos devueltos; "
+    detail = (f"{available} búsquedas con coincidencias; {total} identidades únicas; "
               f"{failures} búsquedas fallidas. Ticker y Name siempre no vacíos.")
     _sync_state(store, "PPI_PRODUCTION_CATALOG", state, total, detail,
                 success=bool(available))
@@ -392,26 +413,32 @@ def _download_catalog(reader, store):
 
 
 def _eligible_symbols(store):
-    """Universo completo elegible, balanceado por clase y sin duplicados."""
+    """Universo observable. La capacidad financiera se verifica por contrato."""
     core = list(CORE_SYMBOLS)
     try:
         with store.connect() as c:
-            rows = c.execute("""SELECT ticker,instrument_type,settlement FROM candidate_universe
+            normalized_count = c.execute("SELECT COUNT(*) FROM financial_instrument_catalog").fetchone()[0]
+            if normalized_count:
+                rows = c.execute("""SELECT DISTINCT ticker,instrument_type,settlement FROM financial_instrument_catalog
+                  WHERE status='AVAILABLE' ORDER BY instrument_type,ticker,settlement""").fetchall()
+            else:
+                rows = c.execute("""SELECT ticker,instrument_type,settlement FROM candidate_universe
               WHERE can_simulate=1 AND status='AVAILABLE'
               ORDER BY CASE WHEN ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
               instrument_type,ticker""").fetchall()
-        seen = {value[0] for value in core}
-        groups = {kind: [] for kind in ("ACCIONES", "CEDEARS", "BONOS", "ETF", "ETFS")}
+        seen = set(core)
+        groups = {kind: [] for kind in ("ACCIONES", "CEDEARS", "BONOS", "ETF", "ETFS", "LETRAS", "ON", "OBLIGACIONES",
+                                        "OPCIONES", "FUTUROS", "CAUCIONES", "FCI")}
         for ticker, kind, settlement in rows:
-            if ticker not in seen and kind in groups:
+            if (ticker, kind, settlement) not in seen and kind in groups:
                 groups[kind].append((ticker, kind, settlement))
         while any(groups.values()):
             for kind in groups:
                 if groups[kind]:
                     value = groups[kind].pop(0)
-                    if value[0] not in seen:
+                    if value not in seen:
                         core.append(value)
-                        seen.add(value[0])
+                        seen.add(value)
     except Exception:
         pass
     return tuple(core)
@@ -627,6 +654,8 @@ def run():
     broker = PaperBroker(store,
                          initial_cash=os.getenv("PAPER_INITIAL_CAPITAL_ARS", "1000000"),
                          initial_cash_usd=os.getenv("PAPER_INITIAL_CAPITAL_USD", "0"),
+                         initial_cash_by_currency={"USD_MEP": os.getenv("PAPER_INITIAL_CAPITAL_USD_MEP", "0"),
+                                                   "USD_CCL": os.getenv("PAPER_INITIAL_CAPITAL_USD_CCL", "0")},
                          risk_pct=os.getenv("PAPER_RISK_PER_TRADE", "0.005"),
                          max_positions=os.getenv("PAPER_MAX_OPEN_POSITIONS", "3"),
                          max_position_pct=os.getenv("PAPER_MAX_POSITION_PCT", "0.25"),
@@ -712,12 +741,13 @@ def run():
                 try:
                     current = reader.current(symbol, asset_class, settlement)
                     book = reader.book(symbol, asset_class, settlement)
-                    q = normalize_quote(symbol, asset_class, settlement, current, book)
+                    metadata = financial_catalog.lookup(store, symbol, asset_class, settlement)
+                    q = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
                     if q.last <= 0:
                         store.event("DATA_REJECTED", f"{symbol}: cotizacion sin precio util")
                         continue
                     store.add_quote(q)
-                    quotes[(symbol, asset_class, settlement)] = q
+                    quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
                     broker.on_quote(q)
                     cycle_ok += 1
                     store.state(last_market_data_at=q.observed_at)
