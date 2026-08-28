@@ -135,7 +135,7 @@ def _spot_snapshot():
             c.execute('BEGIN')
             opened, realized = spot_ledger.positions_at(c)
             closed = [dict(r) for r in c.execute("SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY closed_at DESC")]
-            for currency in {p['currency'] for p in closed}:
+            for currency in {p['currency'] for p in realized}:
                 pending_proceeds(None,datetime.now(TZ).isoformat(),currency,connection=c)
             return {'open':opened,'closed':closed,'realized':realized,'state':'READY'}
     except Exception:
