@@ -285,21 +285,110 @@ stops dinámicos netos y validación del modelo contra contratos/sesiones de PPI
 Migraciones aditivas e idempotentes. El PR continúa en borrador; no se modificó
 el Droplet, no se desplegó y no se habilitaron órdenes reales.
 
-## Evaluación del código sugerido: decisiones pendientes
+## Sexto checkpoint: archivo de barras y controles temporales
+
+### Archivo nuevo (`bl_candle_engine`)
+
+- Clave de serie por símbolo, familia, mercado, moneda/plaza, liquidación,
+  resolución, fuente, ajuste y su procedencia, tipo de precio, unidad del volumen
+  y factor monetario. Un precio por 100 nominales no se mezcla con uno por unidad.
+  UNKNOWN se conserva explícito: no se infiere moneda, factor o ajuste del ticker.
+- OHLC en Decimal serializado, validación de positivos/finitos, rango coherente,
+  período alineado y zonas horarias obligatorias. Los conteos de muestras y
+  negocios se mantienen separados. No se interpreta un volumen cuya unidad
+  sea desconocida; el payload original queda en raw.
+- Revisiones anexadas con `known_at`, sin sobreescribir apertura, extremos o
+  cierre previos. `read(as_of=...)` devuelve sólo lo disponible entonces, de una
+  única serie explícita y ya cerrada. Si una revisión informa conflicto o datos
+  no verificados, el lector no rescata silenciosamente una versión vieja válida.
+- Las barras de la propuesta sumaban acumulados como incrementos y usaban
+  midpoint como negocio. Se rechazó esa implementación: midpoint no garantiza
+  precio ejecutable y Current no identifica todos los negocios individuales.
+- El materializador consume snapshots persistidos: usa `trade_at`/`last_kind`
+  del normalizador, conserva recepción y referencia al snapshot original.
+  Construye **muestras de 1m y 5m**, no un OHLCV completo del mercado. Volumen,
+  VWAP y cantidad de negocios son **desconocidos**, no cero. No crea dollar bars,
+  no rellena huecos ni reinventa fechas de datos inválidos. La semántica y
+  precisión real del campo `date` de PPI aún requieren contraste de payloads.
+- Dedupe por timestamp del proveedor y precio normalizados. Sin ID de negocio
+  no puede contar trades: dos precios distintos con el mismo timestamp quedan
+  en CONFLICT. Conserva muestras fuera de orden y corrige apertura/cierre según
+  hora del dato, con nueva disponibilidad para el resultado recalculado.
+- Cursor, muestras y agregados se confirman juntos. Lotes de hasta 100 snapshots
+  por tick (máximo admitido 500), pendientes persistentes y cierre por reloj incluso
+  sin nuevas lecturas. Un cuarto hijo `--candle-worker`, sin red, descarga este
+  trabajo del reloj de salidas; caída o demora del archivo no detiene esa supervisión.
+
+### Descargas de PPI y legado
+
+- Contrato estructural contrastado contra la
+  [documentación REST de PPI](https://itatppi.github.io/ppi-official-api-docs/api/documentacionRest/):
+  fecha, apertura, máximo, mínimo, precio y volumen. No se cuentan listas de
+  errores, fechas futuras/sin zona, precios inconsistentes o duplicados como
+  filas válidas. Esto verifica estructura, **no** unidad de volumen, ajuste,
+  sesión o disponibilidad original de toda la historia.
+- Cada respuesta recibida se conserva en `historical_raw_archive` con petición,
+  metadata de catálogo disponible al descargar, texto original del payload y
+  fecha de recepción. Metadata actual no prueba el contrato histórico de la especie.
+  Respuestas vacías/parciales no borran la última completa ni cuentan como éxito.
+  Intentos fallidos rotan para no bloquear siempre al comienzo del universo.
+- `migrate_legacy` abre el origen en modo sólo lectura, conserva filas en raw
+  LEGACY_UNVERIFIED y concilia leídas/nuevas/ya archivadas al reintentar. No
+  transforma una fecha sin zona en una vela confiable ni cambia el origen.
+  Se probó con bases temporales; **no se ejecutó sobre el servidor**.
+- El esquema nuevo evita las colisiones que permite `(symbol,date)`. No puede
+  recuperar filas que ya se sobreescribieron ni demostrar que toda la historia
+  vieja esté contaminada. La tabla antigua y sus productores/lectores de los
+  motores heredados siguen pendientes de convergencia; esta copia no los corrige.
+- El panel separa respuestas descargadas, raw, muestras, versiones y estado del
+  proceso. Se retiró el porcentaje que confundía cantidad de descargas con
+  cobertura validada para backtesting.
+
+### Controles previos (`br_backtest_gate`)
+
+- Reescrito como controles de datos, partición temporal y drawdown; **no es el
+  backtester completo ni un portón que habilite dinero real**. Se dejó explícito
+  `promotion_allowed=False`. No se copiaron las tasas fijas de caución, la
+  anualización de un período supuesto ni la confianza basada en trades
+  presuntamente independientes de la propuesta.
+- La muestra y duración mínima se configuran explícitamente. Se mide el tramo
+  real entre barras, no cuántos nombres de meses aparecen. Una grilla esperada
+  debe provenir del calendario/sesión del instrumento; sin ella no aprueba
+  integridad. No se presume que todas las especies comparten horario BYMA.
+- Exige identidad/factor/unidades/ajuste conocidos; rechaza muestras, conflictos,
+  sintéticos, volumen ausente, huecos e intervalos inesperados. Aprobar estos
+  chequeos sólo acredita los requisitos expresados, no ausencia de sesgo de
+  sobrevivientes, licencia adecuada o rentabilidad.
+- La partición exige disponibilidad de features y etiquetas. Purga etiquetas
+  que llegaron después del corte, operaciones que cruzan el período de prueba
+  y el embargo definido. No mezcla monedas ni versiones. El llamador aún debe
+  congelar el modelo y mantener holdout; dividir resultados optimizados a
+  posteriori no constituye validación fuera de muestra.
+- El drawdown usa una curva patrimonial marcada, una sola moneda y el máximo
+  patrimonial alcanzado como denominador. Rechaza marcas vencidas, duplicados
+  y flujos externos sin conciliar. No calcula pérdidas máximas sólo con cierres.
+
+**Sin cambios de estrategia ni despliegue:** la señal vigente sigue usando su
+serie anterior de muestras; no se conectó automáticamente a estas barras.
+Faltan normalización histórica definitiva de PPI, ajustes y acciones societarias
+con disponibilidad temporal, ejecución y costos del backtester, benchmark real
+de caución y validación estadística. No hubo llamadas nuevas a PPI ni órdenes.
+
+## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
 |---|---|---|
 | `bk_free_market_data` | El adaptador data912 espera campos/rutas que no corresponden a todos los activos | No copiar como feed universal; verificar payload, moneda y cobertura por clase |
-| `bl_candle_engine` | Lectura mezcla series ajustadas/no ajustadas; upsert no actualiza apertura | Corregir identidad completa y upsert antes de migrar |
+| `bl_candle_engine` | Lectura mezcla series ajustadas/no ajustadas; upsert no actualiza apertura | Reescrito: identidad completa, revisiones con disponibilidad, muestras sin volumen ficticio; legado sólo en cuarentena |
 | Velas desde snapshots | Midpoint no equivale a último negocio y volumen acumulado no equivale a volumen del intervalo | Separar cotizaciones y operaciones; no fabricar volumen, VWAP o dollar bars |
-| Migración histórica | Ruta por defecto difiere de la base actual y cuenta filas ignoradas como migradas | Migración idempotente, conciliación de cantidades y respaldo previo |
+| Migración histórica | Ruta por defecto difiere de la base actual y cuenta filas ignoradas como migradas | Ruta explícita, origen read-only y conteos conciliados; no se ejecutó en servidor ni recupera datos sobreescritos |
 | `bm_exit_supervisor` | Da un cierre por hecho aunque el callback devuelva False | Reescrito: ledger decide CLOSED, intención persistente y reloj sin red/IA; probado con hijos bloqueados |
 | `bq_exit_policy` | Horario 17:00 uniforme; breakeven sin costo completo; bloqueo diario no persistente | Sesión paper acotada y bloqueo persistente implementados; sesión real por instrumento y stops dinámicos netos pendientes |
 | Liquidación forzada al cierre | No existe fill ejecutable una vez cerrado el mercado o sin profundidad | Anticipar cierre; conservar salida pendiente si no se puede ejecutar |
 | `bn_telegram_bus` | Fill y notificación en transacciones distintas; riesgo de perder evento; 429 mal coordinado | Reescrito: outbox transaccional, lease, ACK validado, cooldown de toda la cola y entrega al menos una vez |
 | `bo_signal_core` | Reward/risk bruto, umbrales heurísticos y controles incompletos de datos | Evaluar neto, calidad y disponibilidad temporal; validar sin anticipación |
 | `bp_dashboard_v17` | CSV ordena por `id` inexistente en muestras; consultas silenciosamente vacías | Reutilizar panel existente y corregir consultas; no reemplazo ciego |
-| `br_backtest_gate` | Tres meses distintos pueden cubrir sólo ~32 días; drawdown y estrés incompletos | Span real, curva marcada a mercado, costos/slippage y splits temporales efectivos |
+| `br_backtest_gate` | Tres meses distintos pueden cubrir sólo ~32 días; drawdown y estrés incompletos | Implementados controles de span, datos, purga/embargo y drawdown marcado; backtester, estrés y aceptación de estrategia siguen pendientes |
 | Comparación con caución | Tasa anual fija y período supuesto distorsionan Sharpe/benchmark | Tasa, plazo y período históricos observados, no constantes inventadas |
 | Calibración/aprendizaje | Versiones viejas y nuevas comparten muestras; separación temporal insuficiente | Etiquetas/versiones, embargo, holdout y parámetros congelados |
 | Producción | Dos motores divergentes, flags y versiones de imagen no alineados | Convergencia por etapas y rollback; no modificar despliegue hasta probar |
@@ -327,6 +416,17 @@ Smoke local real de `--notification-worker`: NOT_CONFIGURED, SIGTERM, STOPPED y
 código 0; no se usaron credenciales ni se enviaron mensajes.
 Comando usado: `python -m pytest -o addopts='' -q -m 'not red'`.
 
+Sexto checkpoint: **495 tests aprobados**, 0 fallas, 0 errores y 0 omisiones.
+Cobertura local: 51,17% global; archivo de velas 89,37%, controles de backtest
+94,06% y motor paper 86,55%. Se cumplen los cuatro mínimos financieros del CI.
+Incluye revisiones tardías, aislamiento de series, duplicados, reinicios,
+rollback del cursor, cuarentena, históricos vacíos, purga/embargo y drawdown
+sobre patrimonio valuado. El reloj continúa con **cuatro** hijos realmente
+bloqueados. Smoke real de `--candle-worker`: RUNNING → SIGTERM → STOPPED,
+código 0, sin credenciales ni llamadas externas. Una advertencia existente de
+Starlette/httpx. Suite ejecutada con `python -m pytest -q --cov=.`, reportes
+XML de tests/cobertura y mínimo global de 15%.
+
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
 todos los pins de producción. Advertencia observada: deprecación del TestClient
@@ -336,8 +436,10 @@ de levantar servicios por buscar la imagen 16.2. El tercer checkpoint ya obtuvo
 **CI completo aprobado**, run 33130775522, commit
 `925a9eabee128a46bfd833467611c4a456a9a8b0`: tests, build, arranque, panel y apagado.
 El cuarto avance también obtuvo CI completo aprobado, run 33132183073, commit
-`5dac57af7f084273a2e5cfeb367bf6c54849074d`. El resultado del quinto se registra
-en el PR #3 después de subir y verificar el contenido remoto.
+`5dac57af7f084273a2e5cfeb367bf6c54849074d`. El quinto obtuvo CI completo aprobado,
+run 33133328514, commit `c113cff9497464a943ae73a4fb7eb29e419edd76`.
+El resultado remoto del sexto se registra en el PR #3 después de subir y
+verificar el contenido y el CI completo.
 Los 12 payloads públicos aportados se usan como fixture; aún falta integración
 con cotizaciones/contratos especializados y validación en el Droplet.
 
