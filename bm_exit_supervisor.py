@@ -165,7 +165,13 @@ class PositionExitSupervisor:
 
     def tick(self, quotes=None):
         at = aware_datetime(self.clock_fn()).isoformat()
-        self.broker.settle_cauciones(at)
+        settlement_error = ''
+        try:
+            self.broker.settle_cauciones(at)
+        except ValueError:
+            # Caución no conciliada: no acreditar ni admitir entradas, pero
+            # conservar la supervisión/venta de tenencias spot válidas.
+            settlement_error = 'CAUCION_SETTLEMENT_BLOCKED; requiere conciliación. '
         if self.broker.daily_risk:
             self.broker.daily_risk.evaluate(at)
         verdicts = []
@@ -177,5 +183,6 @@ class PositionExitSupervisor:
             except Exception as exc:
                 verdicts.append(self._persist(p,Verdict(p["paper_id"],"WATCH_ERROR",None,
                                                         type(exc).__name__),at))
-        self.heartbeat(at, detail=f"{len(verdicts)} posiciones supervisadas; sin red ni IA")
+        self.heartbeat(at,state='DEGRADED' if settlement_error else 'RUNNING',
+                       detail=settlement_error+f"{len(verdicts)} posiciones supervisadas; sin red ni IA")
         return verdicts
