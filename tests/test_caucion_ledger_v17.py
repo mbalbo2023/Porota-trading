@@ -154,6 +154,11 @@ def test_lector_panel_no_crea_base_y_distingue_tabla_ausente(tmp_path,monkeypatc
     assert not path.exists()
     with sqlite3.connect(path) as c:
         c.execute('CREATE TABLE fixture(id INTEGER)')
+    # Un archivo ajeno no es un dataset v17 con una tabla faltante.
+    assert dashboard._caucion_snapshot()['state']=='INVALID_LEDGER'
+    with sqlite3.connect(path) as c:
+        from cg_paper_workspace import mark_new_database
+        mark_new_database(c)  # Identidad explícita de esta fixture recién creada.
     assert dashboard._caucion_snapshot()['state']=='MISSING_TABLE'
 
 
