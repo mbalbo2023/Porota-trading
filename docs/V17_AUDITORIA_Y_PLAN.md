@@ -1124,6 +1124,33 @@ tarifa histórica, cuenta PPI ni alteraciones coordinadas de todas las evidencia
 No se cambian ledgers de usuario, límites, ejecución real ni controles de
 ciberseguridad. Sin llamadas PPI/Telegram, despliegue o arranque del servidor.
 
+## Vigesimotercer checkpoint: términos de abiertas sin ventas
+
+Se extendió la misma validación a la rama de posiciones abiertas que todavía
+no tienen ventas. Esa rama retornaba la tenencia antes de comprobar cantidad,
+precio, costo y contrato; por ejemplo, un contrato JSON con forma de arreglo
+podía salir del lector como válido y luego interrumpir el cálculo global de
+riesgo. Una moneda desconocida o no canónica podía además quedar fuera del
+filtro de caja por moneda.
+
+- Toda partición valida primero términos económicos finitos, cantidad/precio
+  positivos, costo no negativo y factor monetario positivo. La forma del
+  contrato debe ser un objeto, también sin ventas previas.
+- La moneda persistida debe pertenecer al conjunto canónico ya utilizado por
+  el ledger. No se convierte PESOS a ARS ni se reetiqueta un histórico durante
+  una lectura; una etiqueta inconsistente requiere conciliación.
+- El snapshot de salidas del checkpoint 21 aísla ahora también estas entradas:
+  WATCH_INVALID_LEDGER y supervisor DEGRADED, sin fills sobre la rota, mientras
+  otra abierta válida puede ejecutar su stop. Caja/riesgo/panel siguen bloqueados
+  ante la inconsistencia, sin omitirla para inventar saldo.
+- Se preserva la compatibilidad explícita con entradas importadas sin fill BUY
+  y sin factor nuevo: mantienen sus unidades históricas (factor 1). Validar
+  términos no certifica el origen de la entrada ni detecta una sustitución
+  coordinada de evidencia o un cambio entre dos monedas canónicas.
+
+Sin migrar ni reescribir registros, activar órdenes, cambiar límites o iniciar
+el servidor. No se agregan controles de ciberseguridad.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -1344,6 +1371,16 @@ reutilizar balances previos. Fixtures de riesgo/dashboard/reportes completadas
 con fills consistentes. Panel verificado funcionalmente, sin captura visual
 en navegador/tablet. CI remoto completo a registrar en la PR; sin PPI/Telegram
 ni despliegue o arranque del servidor.
+
+Vigesimotercer checkpoint: **1029 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 22 nuevos y 78 dirigidos. Antes del ajuste se reprodujeron 21
+fallas en los 22 casos nuevos. Cobertura global local **64,11%** y cuatro
+mínimos financieros existentes cumplidos. Entradas sin ventas con cantidades,
+precios, costos, factores, formas JSON o monedas inválidas bloquean caja y
+riesgo, permanecen sin fills y no impiden el stop de otra posición válida.
+Compatibilidad de entradas importadas y lectura sin escrituras verificadas.
+Panel probado funcionalmente, sin captura visual de navegador/tablet.
+Fixtures locales; no acreditan datos, ejecución ni integración PPI real.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
