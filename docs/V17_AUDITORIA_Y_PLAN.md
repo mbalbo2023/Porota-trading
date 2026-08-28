@@ -31,6 +31,24 @@ No se enviaron órdenes reales. Los nuevos registros son `PRODUCTION_PAPER`.
   API de PPI. No se le exige aportar una fuente alternativa. Usar sólo lo que
   pueda contrastarse allí; una omisión no autoriza inventar términos financieros.
 
+## Checkpoint 31 — ledger anterior observado, continuidad pendiente
+
+El operador completó el preflight 3 el 28/08/2026 20:50 UTC: 10 posiciones,
+16 fills, seis CLOSED, tres OPEN y una agrupada UNKNOWN. Nueve concordantes
+bajo proyección legacy; una inconsistente, ordinal 4. Las tablas nuevas de
+ventas parciales y recibos no existen; seis cierres sin recibo no equivalen
+a seis errores adicionales demostrados. ARS/BYMA son hipótesis, no términos
+verificados. Original sin modificar, copia/contenedor retirados, motores
+detenidos antes/después. No se requiere repetir el diagnóstico agregado.
+
+La prueba de regresión usa exclusivamente datos ficticios con esa estructura.
+El constructor actual puede crear recibos modelados y mantener la suposición
+ARS, pero no repara el estado desconocido ni habilita caja con esa inconsistencia.
+No se ejecutó la migración en el servidor. Recomendación pendiente de autorización:
+conservar la base anterior intacta y preparar una base PAPER independiente para
+v17, sin trasladar saldos, posiciones o aprendizaje no verificados. No implica
+arranque ni despliegue. [Evidencia, interpretación y decisión pendiente](V17_LEDGER_RESULTADO_20260828.md).
+
 ## Material revisado
 
 Fuente de `Porota-trading-testing.zip`; README, parches y ocho módulos propuestos
