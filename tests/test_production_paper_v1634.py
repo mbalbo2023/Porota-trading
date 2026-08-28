@@ -18,6 +18,8 @@ import bf_production_paper_observer as observer
 from bh_paper_gemini import CURRENT_TEXT_MODELS, rank_models
 from bt_caucion_paper import CaucionOffer, modeled_sale_settlement, pending_proceeds
 from bs_instrument_contracts import InstrumentContract
+from bs_instrument_contracts import cash_currency
+import bu_instrument_catalog as catalog
 
 
 def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"):
@@ -25,7 +27,176 @@ def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"
           timedelta(minutes=minute)).isoformat()
     price = D(price)
     return Quote(symbol, "ACCIONES", "A-24HS", price, price-D("0.10"),
-                 price+D("0.10"), D(bid_size), D(ask_size), at)
+                 price+D("0.10"), D(bid_size), D(ask_size), at,
+                 currency="ARS", market="BYMA", metadata_source="TEST_FIXTURE")
+
+
+@pytest.fixture
+def real_catalog():
+    return json.loads((ROOT / "tests/fixtures/ppi_catalog_20260827.json").read_text())["records"]
+
+
+@pytest.mark.parametrize("label,expected", [("Pesos", "ARS"), ("Dolares billete | MEP", "USD_MEP"),
+                                          ("Dolares divisa | CCL", "USD_CCL"), ("USD", "USD")])
+def test_moneda_ppi_conserva_plaza(label, expected):
+    assert cash_currency(label) == expected
+
+
+@pytest.mark.parametrize("label", [None, "", "Dolares", "EUR", "INVENTADA"])
+def test_moneda_ambigua_no_se_supone_ars(label):
+    with pytest.raises(ValueError):
+        cash_currency(label)
+
+
+def test_diagnostico_real_no_convierte_bono_denominado_usd_en_caja_usd(real_catalog):
+    raw = next(r for r in real_catalog if r["ticker"] == "AE38")
+    record = catalog.normalize_record(raw, "A-24HS", "2026-08-27T13:45:03Z", "test")
+    assert record["currency"] == "ARS"
+    assert record["capability"] == "NEEDS_NOMINAL_UNITS"
+    future = catalog.normalize_record(real_catalog[-1], "A-24HS", "2026-08-27T13:45:03Z", "test")
+    assert future["capability"] == "NEEDS_FUTURES_MARGIN_AND_CONTRACT"
+    assert catalog.quote_terms(future)["contract"] is None  # No parsea vencimiento desde descripción.
+
+
+def test_catalogo_real_preserva_clase_moneda_y_no_duplica_resultados(tmp_path, monkeypatch, real_catalog):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    observer._support_schema(store)
+    monkeypatch.setattr(observer, "CATALOG_QUERY_SLEEP_SECONDS", 0)
+    monkeypatch.setattr(observer, "_candidate_universe", lambda: [
+        ("FILTRO-A", "ACCIONES", "A-24HS", "BYMA", True),
+        ("FILTRO-B", "ACCIONES", "A-24HS", "BYMA", True)])
+    class Reader:
+        def search_instruments(self, *_args, **_kwargs):
+            return real_catalog
+    assert observer._download_catalog(Reader(), store) == 12
+    with store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM candidate_universe").fetchone()[0] == 12
+        assert c.execute("SELECT COUNT(*) FROM instrument_catalog WHERE instrument_type='FUTUROS'").fetchone()[0] == 3
+        assert c.execute("SELECT COUNT(*) FROM catalog_query_results").fetchone()[0] == 2
+        assert not c.execute("SELECT 1 FROM candidate_universe WHERE ticker LIKE 'FILTRO-%'").fetchone()
+    assert catalog.lookup(store, "ALUAC", "ACCIONES", "A-24HS")["currency"] == "USD_CCL"
+    assert catalog.lookup(store, "AAPLD", "CEDEARS", "A-24HS")["currency"] == "USD_MEP"
+    assert ("DLR/AGO26", "FUTUROS", "A-24HS") in observer._eligible_symbols(store)
+
+
+def test_actualizacion_fallida_no_borra_catalogo_ni_habilita_registros_viejos(tmp_path, monkeypatch, real_catalog):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    observer._support_schema(store)
+    monkeypatch.setattr(observer, "CATALOG_QUERY_SLEEP_SECONDS", 0)
+    monkeypatch.setattr(observer, "_candidate_universe", lambda: [("A", "ACCIONES", "A-24HS", "BYMA", True)])
+    class Reader:
+        def search_instruments(self, *_args, **_kwargs):
+            return real_catalog
+    observer._download_catalog(Reader(), store)
+    class Broken:
+        def search_instruments(self, *_args, **_kwargs):
+            raise TimeoutError("fixture")
+    assert observer._download_catalog(Broken(), store) == 0
+    with store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM instrument_catalog").fetchone()[0] == 12
+        assert c.execute("SELECT COUNT(*) FROM financial_instrument_catalog WHERE status='STALE'").fetchone()[0] == 12
+    metadata = catalog.lookup(store, "AAPL", "CEDEARS", "A-24HS")
+    assert catalog.quote_terms(metadata)["opening_block_reason"]
+
+
+def test_cotizacion_mep_del_catalogo_no_gasta_ars_ni_usd_generico(tmp_path, real_catalog):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    raw = next(r for r in real_catalog if r["ticker"] == "AAPLD")
+    metadata = catalog.normalize_record(raw, "INMEDIATA", "2026-08-27T13:45:03Z", "test")
+    q = observer.normalize_quote("AAPLD", "CEDEARS", "INMEDIATA", {"price": 100},
+                                 {"bid": 99, "ask": 100, "bidsize": 10000, "asksize": 10000}, metadata=metadata)
+    broker = PaperBroker(store, initial_cash="1000000", initial_cash_usd="10000")
+    assert q.currency == "USD_MEP" and q.contract.currency == "USD_MEP"
+    assert broker._open(q, D("0.8"), {})[0] is False
+    assert broker._cash(currency="USD") == 10000
+    funded = PaperBroker(store, initial_cash_by_currency={"USD_MEP": "10000"})
+    assert funded._open(q, D("0.8"), {})[0]
+    p = store.open_positions()[0]
+    assert p["currency"] == "USD_MEP"
+    assert funded._cash() == 1000000
+    assert funded._cash(currency="USD_MEP") < 10000
+    ccl = replace(q, currency="USD_CCL", contract=replace(q.contract, currency="USD_CCL"))
+    assert not funded._close(p, ccl, "TEST")
+    closing = replace(q, bid=D("110"), observed_at=(datetime.fromisoformat(q.observed_at)+timedelta(minutes=1)).isoformat())
+    assert funded._close(p, closing, "TEST")
+    closed = store.recent_closed()[0]
+    assert funded._cash(currency="USD_MEP", as_of=closing.observed_at) == 10000 + D(closed["net_pnl"])
+    assert funded._cash() == 1000000
+    assert funded._cash(currency="USD_CCL") == 0
+    values = funded.mark_equity({}, as_of=closing.observed_at)
+    assert values["ARS"]["realized_pnl"] == 0
+    assert values["USD_MEP"]["realized_pnl"] == D(closed["net_pnl"])
+
+
+def test_senal_no_mezcla_moneda_ni_mercado(tmp_path):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    broker = PaperBroker(store)
+    for i in range(8):
+        store.add_quote(replace(quote(minute=i), currency="USD_CCL"))
+        store.add_quote(replace(quote(minute=i), market="OTRO"))
+    q = quote(minute=9)
+    store.add_quote(q)
+    assert broker.decide(q)[3]["samples"] == 1
+
+
+def test_migracion_moneda_preserva_fills_anteriores_sin_reinterpretar_dolares(tmp_path):
+    db = str(tmp_path / "legacy.db")
+    store = PaperStore(db)
+    q = quote(symbol="ALUAC")
+    store.add_quote(q)
+    assert PaperBroker(store)._open(q, D("0.8"), {})[0]
+    original = store.open_positions()[0]
+    # Reproduce el esquema anterior, que no identificaba moneda ni plaza.
+    with store.connect() as c:
+        c.execute("DROP INDEX idx_snapshot_identity")
+        for table, columns in {"paper_positions": ("currency", "market", "currency_source"),
+                               "market_snapshots": ("currency", "market")}.items():
+            for column in columns:
+                c.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+    migrated = PaperStore(db)
+    PaperStore(db)  # Reintento de migración sin efectos adicionales.
+    p = migrated.open_positions()[0]
+    assert p["currency"] == "ARS" and p["currency_source"] == "LEGACY_ASSUMED_ARS"
+    assert (p["quantity"], p["entry_cost"], p["entry_price"]) == (original["quantity"], original["entry_cost"], original["entry_price"])
+    assert not PaperBroker(migrated)._close(p, replace(q, currency="USD_CCL"), "TEST")
+    with migrated.connect() as c:
+        assert c.execute("SELECT currency FROM market_snapshots").fetchone()[0] == "UNKNOWN"
+        assert c.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("changes", [{"currency": None}, {"market": None}, {"opening_block_reason": "STALE"}])
+def test_cotizacion_sin_identidad_confirmada_no_abre(tmp_path, changes):
+    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")))
+    q = replace(quote(), **changes)
+    assert broker._open(q, D("0.8"), {})[0] is False
+    assert broker.decide(q)[0] == "HOLD"
+
+
+def test_metadatos_viejos_se_importan_sin_aprobar_operaciones(tmp_path, real_catalog):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    observer._support_schema(store)
+    raw = next(r for r in real_catalog if r["ticker"] == "ALUAC")
+    with store.connect() as c:
+        c.execute("INSERT INTO instrument_catalog VALUES(?,?,?,?,?,?,?)",
+                  ("ACCIONES", "ALUAC", raw["description"], "BYMA", "A-24HS", "2026-08-27T13:45:03Z", json.dumps(raw)))
+    catalog.init_schema(store)
+    catalog.init_schema(store)
+    record = catalog.lookup(store, "ALUAC", "ACCIONES", "A-24HS")
+    assert record["currency"] == "USD_CCL"
+    assert record["status"] == "STALE"
+    assert catalog.quote_terms(record)["opening_block_reason"]
+
+
+def test_caucion_mep_no_usa_ccl_ni_usd_sin_plaza(tmp_path):
+    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash_usd="10000",
+                         initial_cash_by_currency={"USD_CCL": "10000"})
+    offer = caucion_offer(currency="USD_MEP")
+    with pytest.raises(ValueError, match="Caja liquidada"):
+        broker.place_caucion(offer, "1000", "sin-mep", offer.quoted_at)
+    funded = PaperBroker(broker.store, initial_cash_by_currency={"USD_MEP": "2000"})
+    funded.place_caucion(offer, "1000", "mep", offer.quoted_at)
+    assert funded._cash(currency="USD_MEP") == 1000
+    assert funded._cash(currency="USD_CCL") == 0
 
 
 def caucion_offer(**changes):
