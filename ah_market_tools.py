@@ -78,21 +78,31 @@ def bind_ppi_client(client):
     _ppi_client = client
 
 
-def _desde_stream(ticker: str, instrument_type: str) -> Optional[Dict[str, Any]]:
+def _currency_label(data):
+    from bs_instrument_contracts import cash_currency
+    try:
+        return cash_currency(data.get('currency',data.get('Currency')))
+    except ValueError:
+        return 'DESCONOCIDA'
+
+
+def _desde_stream(ticker: str, instrument_type: str, settlement: str) -> Optional[Dict[str, Any]]:
     try:
         import x_ppi_websocket as ws
         # get_cached_price() es el nombre real de la función en x_ppi_websocket.py
         # (verificado contra el archivo, no asumido por el nombre).
-        tick = ws.get_cached_price(ticker, instrument_type)
+        tick = ws.get_cached_price(ticker, instrument_type, settlement)
         if not tick:
             return None
-        edad = time.time() - tick.get("epoch_recv", 0)
-        if edad > TICK_MAX_AGE_SECONDS:
+        edad = time.time() - tick.get("epoch_source", 0)
+        if not 0 <= edad <= TICK_MAX_AGE_SECONDS:
             return None
         return {
             "ticker": ticker, "precio": tick.get("price"), "bid": tick.get("bid"),
-            "ask": tick.get("ask"), "moneda": "ARS", "fuente": "PPI_STREAM",
-            "antiguedad_segundos": round(edad, 1), "apto_para_ordenar": True,
+            "ask": tick.get("ask"), "moneda": _currency_label(tick), "fuente": "PPI_STREAM",
+            "settlement":settlement,"fecha_proveedor":tick.get('date'),
+            "antiguedad_segundos": round(edad, 1), "apto_para_ordenar": False,
+            "advertencia":"Cotización de contexto; falta validar contrato, moneda, caja y libro para ordenar.",
         }
     except Exception:
         return None
@@ -104,7 +114,7 @@ def obtener_datos_ppi(ticker: str, instrument_type: str = "CEDEARS",
     real, porque es el precio del mercado donde el bot efectivamente opera."""
     if _ppi_client is None:
         return {"error": "Cliente PPI no inicializado", "fuente": "PPI"}
-    desde_stream = _desde_stream(ticker, instrument_type)
+    desde_stream = _desde_stream(ticker, instrument_type, settlement)
     if desde_stream:
         return desde_stream
     try:
@@ -118,10 +128,12 @@ def obtener_datos_ppi(ticker: str, instrument_type: str = "CEDEARS",
             "bid": datos.get("bid") or datos.get("Bid"),
             "ask": datos.get("ask") or datos.get("Ask"),
             "volumen": datos.get("volume") or datos.get("VolumeTotalAmount"),
-            "moneda": "ARS",
+            "moneda": _currency_label(datos),
             "fuente": "PPI",
             "settlement": settlement,
-            "apto_para_ordenar": precio is not None,
+            "apto_para_ordenar": False,
+            "fecha_proveedor":datos.get('date',datos.get('Date')),
+            "advertencia":"Cotización de contexto; falta validar contrato, moneda, caja y libro para ordenar.",
             "consultado_en": datetime.now().isoformat(timespec="seconds"),
         }
     except Exception as e:
