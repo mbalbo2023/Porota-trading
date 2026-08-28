@@ -374,6 +374,88 @@ Faltan normalización histórica definitiva de PPI, ajustes y acciones societari
 con disponibilidad temporal, ejecución y costos del backtester, benchmark real
 de caución y validación estadística. No hubo llamadas nuevas a PPI ni órdenes.
 
+## Séptimo checkpoint: replay de ejecución y propuestas sin promoción
+
+### Fallos retirados de la vía de validación
+
+`q_backtest.run_backtest` usaba la serie del subyacente de Yahoo como si fuera
+el CEDEAR local y una caja ARS; decidía con el cierre y entraba a ese mismo
+precio. Aplicaba el costo redondo al nocional de entrada, sin presupuestar cada
+punta sobre su propio importe, y valoraba sólo operaciones cerradas. Su supuesto
+walk-forward cortaba resultados ya calculados, sin recalibración y congelación
+independientes por ventana. **Las dos funciones públicas ahora bloquean antes
+de descargar datos**. La CLI devuelve un diagnóstico de experimento retirado y
+código 2. El cálculo privado antiguo queda rotulado no validado para auditoría;
+no forma parte del runtime v17 ni de la validación del auto-tuner.
+
+`i_auto_tuner` describía un control de deterioro que el código no hacía: sólo
+agregaba una nota y escribía los parámetros nuevos incluso si fallaba el
+backtest. Ahora conserva configuración e historial, registra la propuesta y
+su candidata limitada, y **no escribe `auto_tune_config.json`**. Propuestas no
+numéricas, NaN/infinito, booleanos o fuera del dominio se cancelan. El control
+devuelve `PENDING_VALIDATION` y `promotion_allowed=False`, sin mutar globals ni
+consultar el backtest antiguo. El aprendizaje puede generar recomendaciones,
+pero la promoción automática de estos parámetros queda suspendida hasta contar
+con validación temporal, estadística y de estrategia completa. No se modificó
+el archivo activo del servidor ni se migró el resto de los motores de aprendizaje.
+
+### Replay nuevo (`bx_execution_replay`)
+
+- Función offline y CLI que leen una base existente en modo read-only. El
+  manifiesto JSON exige serie, contrato, costos históricos, supuestos, órdenes,
+  libros fechados, período y capital; no toma tarifas del entorno actual ni
+  llama a PPI, IA o Telegram. Devuelve manifiesto, identidad reproducible de la
+  corrida, fills, estados, caja, créditos pendientes y curva patrimonial.
+- Cada orden referencia versiones concretas del archivo de velas: deben ser
+  completas, nominales, no sintéticas y conocidas al decidir. No acepta una
+  revisión futura o reemplazada, otra moneda/plazo ni otro factor monetario.
+- Modela IOC sobre la siguiente mejor punta posterior a la decisión y a la
+  latencia explícita. El libro debe ser vigente y de una sesión habilitada.
+  Datos atrasados no reemplazan el libro más reciente; duplicados no reponen
+  profundidad, contradicciones o recepción simultánea sin secuencia se rechazan.
+- Participación compartida entre órdenes de la misma punta, lotes, ejecución
+  parcial y cancelación del remanente. Compra a ask y venta a bid, slippage
+  adverso y redondeo al tick; el spread no se cobra otra vez como arancel.
+- Costos all-in explícitos por fill, con vigencia/disponibilidad, mínimo y fijo.
+  Compra dimensionada con costos incluidos; ventas limitadas a la tenencia.
+  Precio por 100 VN usa su factor y no una multiplicación de acciones.
+- Caja pagada/comprometida en cada compra; producido neto de venta separado
+  hasta la fecha de disponibilidad aportada. No hay crédito, conversión de
+  moneda ni doble acreditación. Costo de tenencia por promedio ponderado y PnL
+  proporcional en salidas parciales, conciliado al cerrar el remanente.
+- No fuerza ventas al final de los datos. Marca tenencias al bid modelado menos
+  costo de salida; con marca vencida o costo desconocido no publica patrimonio
+  ni drawdown completo. El drawdown informado es **entre observaciones**, sin
+  afirmar que reproduce mínimos intramuestra o liquidación íntegra de la cartera.
+
+El ejecutor admite contado (acciones, CEDEARs, ETF, bonos, letras y ON) **con
+contrato y datos normalizados explícitos**. Rechaza opciones, futuros, FCI y
+cauciones como compraventa común; no elimina sus contratos ni el ciclo separado
+de cauciones colocadoras implementado anteriormente. No se probaron aquí feeds
+reales de esas familias ni se habilitaron para operar por aparecer en catálogo.
+El modelo de costos es declarado por corrida, no un tarifario comercial verificado.
+
+### Límites y uso técnico
+
+Es un replay de **órdenes ya decididas**, no generación de señales, validación de
+IA, calibración walk-forward ni backtest completo de cartera. El manifiesto
+registra la evidencia declarada; no demuestra por sí solo cómo una estrategia
+produjo la orden. Comparar costos distintos reproduce ejecuciones con esas
+mismas órdenes: aún falta recalcular las decisiones de estrategia bajo estrés.
+La sesión y liquidación son datos del adaptador, no reglas inventadas de lunes
+a viernes. Faltan archivo real de profundidad, eventos corporativos, contratos
+especializados y benchmark histórico de caución. Siempre `promotion_allowed=False`.
+
+Entrada técnica: `python bx_execution_replay.py --database ARCHIVO_EXISTENTE
+--input MANIFIESTO.json`. La salida JSON contiene `manifest`, que puede volver
+a usarse como entrada para reproducir la misma corrida con las mismas versiones
+de evidencia. Requiere las estructuras explícitas de `Series`,
+`InstrumentContract`, `FeeTerms`, `ExecutionAssumptions`, `ReplayOrder` y
+`BookEvent`; no se agrega un camino que tome cuentas o credenciales por defecto.
+Las fixtures de prueba son sintéticas y están rotuladas TEST; no se presentan
+como cotizaciones reales ni como evidencia de rentabilidad. El replay no se
+conecta automáticamente al runtime de producción. No hay despliegue en este avance.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -390,7 +472,8 @@ de caución y validación estadística. No hubo llamadas nuevas a PPI ni órdene
 | `bp_dashboard_v17` | CSV ordena por `id` inexistente en muestras; consultas silenciosamente vacías | Reutilizar panel existente y corregir consultas; no reemplazo ciego |
 | `br_backtest_gate` | Tres meses distintos pueden cubrir sólo ~32 días; drawdown y estrés incompletos | Implementados controles de span, datos, purga/embargo y drawdown marcado; backtester, estrés y aceptación de estrategia siguen pendientes |
 | Comparación con caución | Tasa anual fija y período supuesto distorsionan Sharpe/benchmark | Tasa, plazo y período históricos observados, no constantes inventadas |
-| Calibración/aprendizaje | Versiones viejas y nuevas comparten muestras; separación temporal insuficiente | Etiquetas/versiones, embargo, holdout y parámetros congelados |
+| Calibración/aprendizaje | Versiones mezcladas y auto-tuner aplicaba propuestas incluso sin backtest | Propuestas pendientes sin tocar parámetros vigentes; purga/embargo y evidencia temporal; calibración/holdout completo aún pendiente |
+| Backtest legado y ejecución | Subyacente tratado como CEDEAR, mismo cierre y partición post hoc | Vía pública antigua bloqueada; replay IOC offline con caja, costos por fill y profundidad; no aprueba estrategia |
 | Producción | Dos motores divergentes, flags y versiones de imagen no alineados | Convergencia por etapas y rollback; no modificar despliegue hasta probar |
 
 Los requisitos propuestos de cantidad de trades, meses, profit factor y drawdown
@@ -427,6 +510,18 @@ código 0, sin credenciales ni llamadas externas. Una advertencia existente de
 Starlette/httpx. Suite ejecutada con `python -m pytest -q --cov=.`, reportes
 XML de tests/cobertura y mínimo global de 15%.
 
+Séptimo checkpoint: **556 tests aprobados**, 0 fallas, 0 errores, 0 omisiones.
+Cobertura local 53,40%; replay 85,86% y auto-tuner 65,12%. Los cuatro mínimos
+financieros existentes se cumplen. Verificados: costo de ambas puntas,
+liquidación sin doble acreditación, profundidad compartida/duplicada, latencia,
+libros atrasados, vencimiento, salidas parciales, nominales por 100, caja MEP,
+rechazo de familias especializadas, datos/costos futuros, deterioro de marcas,
+reproducción por CLI read-only y conservación del archivo activo del auto-tuner
+con propuesta válida, fallas de IA o parámetros inválidos. Las llamadas a IA
+de estos tests son dobles locales; no se enviaron consultas reales.
+Se mantiene una advertencia existente Starlette/httpx. Verificación local con
+`python -m pytest -q --cov=.` y reportes XML. No se probaron fills reales.
+
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
 todos los pins de producción. Advertencia observada: deprecación del TestClient
@@ -438,8 +533,10 @@ de levantar servicios por buscar la imagen 16.2. El tercer checkpoint ya obtuvo
 El cuarto avance también obtuvo CI completo aprobado, run 33132183073, commit
 `5dac57af7f084273a2e5cfeb367bf6c54849074d`. El quinto obtuvo CI completo aprobado,
 run 33133328514, commit `c113cff9497464a943ae73a4fb7eb29e419edd76`.
-El resultado remoto del sexto se registra en el PR #3 después de subir y
-verificar el contenido y el CI completo.
+El sexto obtuvo CI completo aprobado, run 33134835615, commit
+`731475c8485ca7245a807ba31d70d871fddfaa51`, con cobertura global remota 51,18%.
+El resultado remoto del séptimo se registra en el PR #3 tras verificar el
+contenido subido y el CI completo.
 Los 12 payloads públicos aportados se usan como fixture; aún falta integración
 con cotizaciones/contratos especializados y validación en el Droplet.
 
