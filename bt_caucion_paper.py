@@ -103,10 +103,15 @@ def init_schema(store):
         for p in closed:
             if spot_ledger.sales(c,p['paper_id']):
                 continue
-            features = json.loads(p["features_json"] or "{}")
-            factor = decimal_value(features.get("contract_cash_multiplier", "1"), "factor histórico", positive=True)
+            try:
+                proceeds = spot_ledger.single_close_proceeds(p,c.execute(
+                    "SELECT * FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",(p['paper_id'],)).fetchall())
+            except (ValueError,TypeError,ArithmeticError):
+                # Sin evidencia conciliada no crear un recibo. La caja sigue
+                # bloqueada, sin impedir supervisar otras posiciones válidas.
+                continue
             record_sale(c, p["paper_id"], p["settlement"], p["closed_at"],
-                        Decimal(p["exit_price"]) * Decimal(p["quantity"]) * factor - Decimal(p["exit_cost"]),
+                        proceeds,
                         currency=p["currency"])
 
 
@@ -127,19 +132,34 @@ def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
             c.execute('BEGIN')
             return pending_proceeds(store, at, currency, connection=c)
     currency = cash_currency(currency)
-    rows = connection.execute("""SELECT r.*,p.closed_at,p.paper_id AS position_id FROM paper_positions p
+    rows = connection.execute("""SELECT p.*,r.paper_id AS receipt_id,r.currency AS receipt_currency,
+        r.net_proceeds,r.available_at,r.basis FROM paper_positions p
         LEFT JOIN paper_sale_receivables r USING(paper_id) WHERE p.currency=? AND p.status='CLOSED'""",
         (cash_currency(currency),)).fetchall()
     pending = spot_ledger.pending(connection,at,currency)
     for row in rows:
-        if spot_ledger.sales(connection,row['position_id']):
+        if spot_ledger.sales(connection,row['paper_id']):
             continue
         if aware_datetime(row['closed_at']) > at:
             continue
-        if row['paper_id'] is None or row['currency'] != currency:
+        if row['receipt_id'] is None or row['receipt_currency'] != currency:
             raise ValueError('Venta sin recibo de liquidación en su moneda')
         amount = decimal_value(row['net_proceeds'], 'producido de venta')
-        if amount > 0 and (row['available_at'] is None or aware_datetime(row['available_at']) > at):
+        expected = spot_ledger.single_close_proceeds(row,connection.execute(
+            "SELECT * FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",(row['paper_id'],)).fetchall())
+        if amount != expected:
+            raise ValueError('Producido del recibo no concilia con el fill')
+        available = aware_datetime(row['available_at']) if row['available_at'] is not None else None
+        if row['basis']=='PENDING_CONFIRMATION':
+            if available is not None:
+                raise ValueError('Recibo pendiente con acreditación no confirmada')
+        elif row['basis']=='PAPER_CONSERVATIVE_CALENDAR':
+            modeled = modeled_sale_settlement(row['settlement'],row['closed_at'])
+            if modeled is None or available is None or available!=aware_datetime(modeled):
+                raise ValueError('Liquidación incompatible con el modelo PAPER declarado')
+        else:
+            raise ValueError('Fuente de liquidación no soportada; requiere conciliación')
+        if amount > 0 and (available is None or available > at):
             pending += amount
     return pending
 
