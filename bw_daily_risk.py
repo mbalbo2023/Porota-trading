@@ -15,6 +15,14 @@ TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 ZERO = Decimal('0')
 
 
+def loss_limit_crossed(daily_pnl, realized_today, budget):
+    """Mismo umbral inclusivo para PAPER y replay; 1% se convierte antes."""
+    budget = decimal_value(budget, 'presupuesto diario', positive=True)
+    realized_today = decimal_value(realized_today, 'realizado hoy')
+    daily_pnl = None if daily_pnl is None else decimal_value(daily_pnl, 'PnL diario')
+    return realized_today <= -budget or (daily_pnl is not None and daily_pnl <= -budget)
+
+
 def init_schema(store):
     with store.connect() as c:
         c.executescript("""
@@ -128,7 +136,7 @@ class DailyRisk:
                 elif baseline <= 0 or capital <= 0:
                     state, detail = 'NO_CAPITAL', 'Sin base positiva en esta moneda'
                 else:
-                    if not latched and (today_realized <= -budget or (daily is not None and daily <= -budget)):
+                    if not latched and loss_limit_crossed(daily, today_realized, budget):
                         latched = at.isoformat()
                         c.execute('INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)',
                             (latched,'PRODUCTION_PAPER','PAPER_DAILY_LOSS',None,
