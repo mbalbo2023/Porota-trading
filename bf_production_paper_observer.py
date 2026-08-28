@@ -188,7 +188,9 @@ def _level(level):
 
 
 def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=None):
-    last = _walk_numbers(current, ("price", "last", "lastprice", "ultimo", "close")) or Decimal(0)
+    # Current documenta price/date en la raíz. Un cierre diario o un precio
+    # anidado arbitrario no constituye el último negocio de este instrumento.
+    last = D(current.get("price")) if isinstance(current, dict) else Decimal(0)
     bids, asks = _levels(book, "bid"), _levels(book, "ask")
     bid, bid_size = _level(bids[0]) if bids else (Decimal(0), Decimal(0))
     ask, ask_size = _level(asks[0]) if asks else (Decimal(0), Decimal(0))
@@ -197,9 +199,10 @@ def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=
     ask = ask or _walk_numbers(book, ("offerprice", "askprice", "ask", "venta")) or Decimal(0)
     bid_size = bid_size or _walk_numbers(book, ("bidsize", "bidquantity")) or Decimal(0)
     ask_size = ask_size or _walk_numbers(book, ("offersize", "asksize", "offerquantity")) or Decimal(0)
-    if last <= 0 and bid > 0 and ask > 0:
-        last = (bid + ask) / 2
     return Quote(symbol, asset_class, settlement, last, bid, ask, bid_size, ask_size, now_iso(),
+                 book_at=book.get("date") if isinstance(book, dict) else None,
+                 trade_at=current.get("date") if isinstance(current, dict) else None,
+                 last_kind="TRADE" if last > 0 else "UNAVAILABLE",
                  **financial_catalog.quote_terms(metadata))
 
 
@@ -651,17 +654,9 @@ def run():
     except Exception as exc:
         _health(store, "GEMINI_DECISION", "ROJO",
                 f"{type(exc).__name__}: {str(exc)[:500]}. Porton cerrado.", "Google Gemini")
-    broker = PaperBroker(store,
-                         initial_cash=os.getenv("PAPER_INITIAL_CAPITAL_ARS", "1000000"),
-                         initial_cash_usd=os.getenv("PAPER_INITIAL_CAPITAL_USD", "0"),
-                         initial_cash_by_currency={"USD_MEP": os.getenv("PAPER_INITIAL_CAPITAL_USD_MEP", "0"),
-                                                   "USD_CCL": os.getenv("PAPER_INITIAL_CAPITAL_USD_CCL", "0")},
-                         risk_pct=os.getenv("PAPER_RISK_PER_TRADE", "0.005"),
-                         max_positions=os.getenv("PAPER_MAX_OPEN_POSITIONS", "3"),
-                         max_position_pct=os.getenv("PAPER_MAX_POSITION_PCT", "0.25"),
-                         max_total_exposure_pct=os.getenv("PAPER_MAX_TOTAL_EXPOSURE_PCT", "0.60"),
-                         ai_gate=gemini_gate, require_ai=True,
-                         context_fn=lambda symbol: _gemini_context(store, symbol))
+    from bv_paper_runtime import broker_from_environment
+    broker = broker_from_environment(store, ai_gate=gemini_gate, require_ai=True,
+                                     context_fn=lambda symbol: _gemini_context(store, symbol))
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", real_orders_sent=0,
                 detail="Simulacion productiva inicializando.")
@@ -743,12 +738,12 @@ def run():
                     book = reader.book(symbol, asset_class, settlement)
                     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement)
                     q = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
-                    if q.last <= 0:
-                        store.event("DATA_REJECTED", f"{symbol}: cotizacion sin precio util")
-                        continue
                     store.add_quote(q)
                     quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
                     broker.on_quote(q)
+                    if q.time_error(now_iso(), require_trade=True):
+                        store.event("DATA_REJECTED", f"{symbol}: {q.time_error(now_iso(), require_trade=True)}")
+                        continue
                     cycle_ok += 1
                     store.state(last_market_data_at=q.observed_at)
                 except ReadOnlyPolicyViolation as exc:
