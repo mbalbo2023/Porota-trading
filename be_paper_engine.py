@@ -20,10 +20,11 @@ from bs_instrument_contracts import (CASH_CURRENCIES, InstrumentContract, SPOT_F
 from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
 import cc_spot_liquidity as spot_liquidity
+import cd_spot_ledger as spot_ledger
 
 
 SOURCE = "PRODUCTION_PAPER"
-STRATEGY_VERSION = "paper-momentum-v17.2-daily-risk"
+STRATEGY_VERSION = "paper-momentum-v17.3-partial-fills"
 ZERO = Decimal("0")
 
 
@@ -200,6 +201,7 @@ class PaperStore:
                     if column not in columns:
                         c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
             c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_identity ON market_snapshots(symbol,asset_class,settlement,currency,market,id)")
+        spot_ledger.init_schema(self)
         init_financial_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
@@ -308,13 +310,15 @@ class PaperStore:
 
     def open_position(self, symbol: str):
         with self.connect() as c:
+            c.execute('BEGIN')
             row = c.execute("SELECT * FROM paper_positions WHERE symbol=? AND status='OPEN'",
                             (symbol,)).fetchone()
-        return dict(row) if row else None
+            return spot_ledger.partition(c,row)[0] if row else None
 
     def open_positions(self):
         with self.connect() as c:
-            return [dict(r) for r in c.execute(
+            c.execute('BEGIN')
+            return [spot_ledger.partition(c,r)[0] for r in c.execute(
                 "SELECT * FROM paper_positions WHERE status='OPEN' ORDER BY opened_at")]
 
     def recent_closed(self, limit=50, *, strategy_version=None, closed_before=None):
@@ -468,17 +472,7 @@ class PaperBroker:
 
     def _positions_at(self, at, connection):
         """Estado económico en la fecha consultada, sin paginar el ledger."""
-        opened, closed = [], []
-        for row in connection.execute('SELECT * FROM paper_positions'):
-            p = dict(row)
-            start = aware_datetime(p['opened_at'])
-            end = aware_datetime(p['closed_at']) if p['closed_at'] else None
-            if (p['status'] not in {'OPEN','CLOSED'} or (p['status']=='CLOSED') != bool(end)
-                    or (end and end < start)):
-                raise ValueError('Cronología de posición inválida')
-            if start <= at:
-                (closed if end and end <= at else opened).append(p)
-        return opened, closed
+        return spot_ledger.positions_at(connection,at)
 
     def _cash(self, as_of=None, currency="ARS", *, connection=None, for_execution=False):
         """Caja disponible por moneda; no incluye ventas aún sin liquidar."""
@@ -496,6 +490,11 @@ class PaperBroker:
                 for row in connection.execute('SELECT '+','.join(fields)+' FROM '+table+' WHERE currency=?',(currency,)):
                     if any(value and aware_datetime(value)>at for value in row):
                         raise ValueError('CASH_CLOCK_ROLLBACK')
+            if connection.execute("""SELECT 1 FROM paper_spot_sales s JOIN paper_fills f ON f.id=s.fill_id
+                JOIN paper_positions p ON p.paper_id=s.paper_id
+                WHERE p.currency=? AND julianday(f.filled_at)>julianday(?) LIMIT 1""",
+                (currency,at.isoformat())).fetchone():
+                raise ValueError('CASH_CLOCK_ROLLBACK')
         opened, closed = self._positions_at(at, connection)
         realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed if p['currency']==currency), ZERO)
         committed = sum((decimal_value(p['entry_price'],'precio',positive=True) *
@@ -752,98 +751,122 @@ class PaperBroker:
         return supervisor.supervise(p, q, at).state == "CLOSED"
 
     def _close(self, p: dict, q: Quote, reason: str, *, as_of=None):
-        """Cierre total simulado: sin inventar volumen ni duplicar un fill.
+        """Fill total o parcial, limitado por lotes y profundidad compartida.
 
-        Las salidas parciales requieren un libro propio y quedan pendientes.
-        Por ahora se rechaza un cierre que excede la participacion disponible.
-        Frescura y sesión se revalidan también aquí, antes del fill.
+        True confirma un fill, no necesariamente el cierre de la posición.
+        El supervisor comprueba remanente y estado en el ledger.
         """
         at = as_of or self.execution_time(q)
         if q.time_error(at, max_age_seconds=self.quote_max_age_seconds):
             return False
         if self.session_policy and self.session_policy.execution_error(p, at):
             return False
-        if (p["symbol"], p["asset_class"], p["settlement"]) != (
-                q.symbol, q.asset_class, q.settlement):
+        if (p['symbol'],p['asset_class'],p['settlement']) != (q.symbol,q.asset_class,q.settlement):
             return False
         try:
-            if q.monetary_identity() != (p["currency"], p["market"]):
-                self.store.event("EXIT_PENDING_IDENTITY_MISMATCH", "Moneda/mercado distintos del fill original; requiere conciliación", p["paper_id"])
+            if q.monetary_identity() != (p['currency'],p['market']):
+                self.store.event('EXIT_PENDING_IDENTITY_MISMATCH','Moneda/mercado distintos del fill original',p['paper_id'])
                 return False
-        except ValueError:
-            return False
-        qty = D(p["quantity"])
-        factor = self._position_multiplier(p)
-        if q.contract and (q.contract.cash_multiplier != factor or
-                           q.contract.symbol != q.symbol or q.contract.settlement != q.settlement or
-                           q.contract.family != family_name(q.asset_class) or q.contract.currency != p["currency"]):
-            return False
-        try:
-            with self.store.connect() as c:
-                depth = spot_liquidity.available(c,q,'SELL_SIMULATED',self.participation)
-        except ValueError as exc:
-            self.store.event('EXIT_PENDING_BOOK',str(exc),p['paper_id'])
-            return False
-        if qty <= 0 or qty > depth:
-            self.store.event("EXIT_PENDING_NO_LIQUIDITY",
-                             "Profundidad insuficiente para cerrar toda la posicion", p["paper_id"])
-            return False
-        try:
-            opened = datetime.fromisoformat(p["opened_at"].replace("Z", "+00:00"))
-            observed = aware_datetime(at)
-            if opened.tzinfo is None or observed < opened or aware_datetime(q.book_at) < opened:
+            factor = self._position_multiplier(p)
+            if q.contract and (q.contract.cash_multiplier != factor or
+                    q.contract.symbol != q.symbol or q.contract.settlement != q.settlement or
+                    q.contract.family != family_name(q.asset_class) or q.contract.currency != p['currency']):
                 return False
-            duration = int((observed-opened).total_seconds() / 60)
-        except (ValueError, TypeError):
+            step = decimal_value(json.loads(p['features_json'] or '{}').get('contract_quantity_step','1'),
+                                 'lote de salida',positive=True)
+            if q.contract and q.contract.quantity_step != step:
+                return False
+        except (ValueError,TypeError):
             return False
-        exit_price = (q.bid * (1 - self.slippage)).quantize(Decimal("0.0001"))
-        exit_cost = self._cost(exit_price * factor, qty, p.get("asset_class", "ACCIONES"))
-        gross = (exit_price - D(p["entry_price"])) * qty * factor
-        net = gross - D(p["entry_cost"]) - exit_cost
-        invested = D(p["entry_price"]) * qty * factor
-        ret = (net / invested * 100) if invested else ZERO
-        outcome = "WIN" if net > 0 else "LOSS" if net < 0 else "FLAT"
         with self.store.connect() as c:
-            c.execute("BEGIN IMMEDIATE")
+            c.execute('BEGIN IMMEDIATE')
             at = self.execution_time(q) if self.clock_fn else at
-            if q.time_error(at, max_age_seconds=self.quote_max_age_seconds):
+            if q.time_error(at,max_age_seconds=self.quote_max_age_seconds):
                 return False
-            if self.session_policy and self.session_policy.execution_error(p, at):
+            if self.session_policy and self.session_policy.execution_error(p,at):
+                return False
+            root = c.execute('SELECT * FROM paper_positions WHERE paper_id=?',(p['paper_id'],)).fetchone()
+            if not root or root['status']!='OPEN':
+                return False
+            root = dict(root)
+            if any(root[k]!=p[k] for k in ('symbol','asset_class','settlement','currency','market','features_json')):
+                return False
+            current, prior = spot_ledger.partition(c,root)
+            # Snapshot viejo: no consumir otra porción con un reintento ciego.
+            if not current or any(current[k]!=p[k] for k in ('quantity','entry_cost','entry_price')):
                 return False
             try:
-                if qty > spot_liquidity.available(c,q,'SELL_SIMULATED',self.participation):
+                observed = aware_datetime(at)
+                opened = aware_datetime(root['opened_at'])
+                if observed < opened or aware_datetime(q.book_at) < opened:
                     return False
-            except ValueError:
+                if any(aware_datetime(r['closed_at'])>observed for r in prior):
+                    return False
+                depth = spot_liquidity.available(c,q,'SELL_SIMULATED',self.participation)
+            except (ValueError,TypeError):
                 return False
-            intent = c.execute("SELECT cause FROM paper_exit_intents WHERE paper_id=?", (p["paper_id"],)).fetchone()
+            remaining = decimal_value(current['quantity'],'remanente',positive=True)
+            if remaining % step:
+                return False
+            qty = (min(remaining,depth)/step).to_integral_value(rounding=ROUND_DOWN)*step
+            if qty <= 0:
+                c.execute('INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)',
+                    (at,SOURCE,'EXIT_PENDING_NO_LIQUIDITY',p['paper_id'],'Sin profundidad para un lote de salida'))
+                return False
+            final = qty==remaining
+            # Reparto monetario en centavos, con residuo exacto en el último fill.
+            from bt_caucion_paper import money, modeled_sale_settlement
+            entry_cost = D(current['entry_cost']) if final else min(D(current['entry_cost']),
+                money(D(root['entry_cost'])*qty/D(root['quantity'])))
+            exit_price = (q.bid*(1-self.slippage)).quantize(Decimal('0.0001'))
+            if exit_price <= 0:
+                return False
+            exit_cost = self._cost(exit_price*factor,qty,p['asset_class'])
+            gross = (exit_price-D(root['entry_price']))*qty*factor
+            net = gross-entry_cost-exit_cost
+            proceeds = exit_price*qty*factor-exit_cost
+            intent = c.execute('SELECT cause FROM paper_exit_intents WHERE paper_id=?',(p['paper_id'],)).fetchone()
             if intent and intent[0]:
                 reason = intent[0]
-            updated = c.execute("""UPDATE paper_positions SET status='CLOSED',closed_at=?,exit_price=?,
-                         exit_cost=?,gross_pnl=?,net_pnl=?,close_reason=?
-                         WHERE paper_id=? AND status='OPEN' AND quantity=?
-                         AND entry_price=? AND entry_cost=?""",
-                      (at, str(exit_price), str(exit_cost), str(gross), str(net),
-                       reason, p["paper_id"], p["quantity"], p["entry_price"], p["entry_cost"]))
-            if updated.rowcount != 1:
-                return False
-            c.execute("""INSERT INTO paper_exit_intents VALUES(?, 'CLOSED', ?, ?, '', ?, 1)
-              ON CONFLICT(paper_id) DO UPDATE SET state='CLOSED',blocked_reason='',
-              cause=COALESCE(paper_exit_intents.cause,excluded.cause),
-              due_at=COALESCE(paper_exit_intents.due_at,excluded.due_at),
-              supervised_at=excluded.supervised_at,attempts=paper_exit_intents.attempts+1""",
-              (p["paper_id"], reason, at, at))
-            record_sale(c, p["paper_id"], p["settlement"], at,
-                        exit_price * qty * factor - exit_cost, currency=p["currency"])
-            fill = c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
-                      (p["paper_id"], SOURCE, "SELL_SIMULATED", at, str(qty),
-                       str(exit_price), str(exit_cost), str(q.bid-exit_price)))
+            fill = c.execute('INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)',
+                (p['paper_id'],SOURCE,'SELL_SIMULATED',at,str(qty),str(exit_price),str(exit_cost),str(q.bid-exit_price)))
+            if not final or prior:
+                available = modeled_sale_settlement(p['settlement'],at)
+                c.execute('INSERT INTO paper_spot_sales VALUES(?,?,?,?,?,?,?,?,?)',
+                    (fill.lastrowid,p['paper_id'],str(entry_cost),str(gross),str(net),str(proceeds),available,
+                     'PAPER_CONSERVATIVE_CALENDAR' if available else 'PENDING_CONFIRMATION',reason))
+            else:
+                # Mantiene el formato histórico del cierre de un solo fill.
+                record_sale(c,p['paper_id'],p['settlement'],at,proceeds,currency=p['currency'])
             spot_liquidity.record(c,fill.lastrowid,q)
-            c.execute("""UPDATE paper_learning_samples SET label_timestamp=?,net_return_pct=?,
-                         outcome=?,duration_minutes=? WHERE paper_id=?""",
-                      (at, str(ret), outcome, duration, p["paper_id"]))
-            c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
-                      (at, SOURCE, "PAPER_FILLED_SELL", p["paper_id"],
-                       f"Venta simulada {qty} {q.symbol} @ {exit_price}; PnL neto {net}"))
+            total_net = net + sum((D(r['net_pnl']) for r in prior),ZERO)
+            if final:
+                total_gross = gross + sum((D(r['gross_pnl']) for r in prior),ZERO)
+                total_cost = exit_cost + sum((D(r['exit_cost']) for r in prior),ZERO)
+                avg_exit = ((exit_price*qty + sum((D(r['exit_price'])*D(r['quantity']) for r in prior),ZERO)) /
+                            D(root['quantity']))
+                c.execute('''UPDATE paper_positions SET status='CLOSED',closed_at=?,exit_price=?,
+                    exit_cost=?,gross_pnl=?,net_pnl=?,close_reason=? WHERE paper_id=?''',
+                    (at,str(avg_exit),str(total_cost),str(total_gross),str(total_net),reason,p['paper_id']))
+                invested = D(root['entry_price'])*D(root['quantity'])*factor
+                ret = total_net/invested*100
+                outcome = 'WIN' if total_net>0 else 'LOSS' if total_net<0 else 'FLAT'
+                duration = int((observed-opened).total_seconds()/60)
+                c.execute('''UPDATE paper_learning_samples SET label_timestamp=?,net_return_pct=?,
+                    outcome=?,duration_minutes=? WHERE paper_id=?''',
+                    (at,str(ret),outcome,duration,p['paper_id']))
+            state = 'CLOSED' if final else 'EXIT_PARTIAL'
+            detail = '' if final else f'Remanente {remaining-qty}; espera otra profundidad ejecutable'
+            c.execute('''INSERT INTO paper_exit_intents VALUES(?,?,?,?,?,?,1)
+                ON CONFLICT(paper_id) DO UPDATE SET state=excluded.state,
+                blocked_reason=excluded.blocked_reason,cause=COALESCE(paper_exit_intents.cause,excluded.cause),
+                due_at=COALESCE(paper_exit_intents.due_at,excluded.due_at),
+                supervised_at=excluded.supervised_at,attempts=paper_exit_intents.attempts+1''',
+                (p['paper_id'],state,reason,at,detail,at))
+            c.execute('INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)',
+                (at,SOURCE,'PAPER_FILLED_SELL',p['paper_id'],
+                 f'Venta simulada {qty} {q.symbol} @ {exit_price}; PnL de este fill {net}; '
+                 f'remanente {remaining-qty}; posición {state}'))
             if self.daily_risk:
                 self.daily_risk.evaluate(at,connection=c,quotes={q.symbol:q})
         return True
