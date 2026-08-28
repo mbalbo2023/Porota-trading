@@ -16,12 +16,14 @@ no inspección SSH independiente. La imagen del bot anterior no se reutiliza.
 2. Ejecutar una sola vez:
 
 ```bash
-sudo -n python3 /tmp/porota_ppi_diagnostico_v17.zip --host
+python3 /tmp/porota_ppi_diagnostico_v17.zip --host
 ```
 
 3. Pegar el JSON de salida. Se imprime y se envía al portapapeles mediante
    OSC52 si Termius lo admite. No repetir hasta revisar el resultado.
 
+El lanzador usa internamente `sudo -n docker`, igual que la inspección ya
+autorizada por el operador; Python no se ejecuta como administrador.
 `sudo -n` no solicita contraseña; si no está autorizado se detiene. No se
 agrega el usuario al grupo Docker ni se cambian permisos del socket/secreto.
 El ZIP original se conserva. Una copia temporal del paquete se hace legible
