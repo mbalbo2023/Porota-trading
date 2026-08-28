@@ -141,8 +141,8 @@ class PositionExitSupervisor:
             cause = "TAKE_PROFIT_PAPER"
         if not cause:
             return verdict("OPEN", "Dentro de parámetros")
-        if size * self.broker.participation < Decimal(p["quantity"]):
-            return verdict("EXIT_PENDING_NO_LIQUIDITY", "Profundidad insuficiente para cierre total")
+        if size * self.broker.participation <= 0:
+            return verdict("EXIT_PENDING_NO_LIQUIDITY", "Sin profundidad de salida")
         verdict("EXIT_DUE", "Salida decidida; pendiente de fill")
         reason = "El ejecutor no confirmó un cierre"
         try:
@@ -152,6 +152,13 @@ class PositionExitSupervisor:
                 actual = c.execute("SELECT status FROM paper_positions WHERE paper_id=?", (p["paper_id"],)).fetchone()
             if actual and actual[0] == "CLOSED":
                 return Verdict(p["paper_id"],"CLOSED",cause,"Venta simulada registrada")
+            with self.store.connect() as c:
+                from cd_spot_ledger import partition
+                row = c.execute('SELECT * FROM paper_positions WHERE paper_id=?',(p['paper_id'],)).fetchone()
+                remaining = partition(c,row)[0] if row else None
+            if remaining and Decimal(remaining['quantity']) < Decimal(p['quantity']):
+                return Verdict(p['paper_id'],'EXIT_PARTIAL',cause,
+                               'Fill parcial registrado; remanente '+remaining['quantity'])
         except Exception as exc:
             reason = "Error del ejecutor: " + type(exc).__name__
         return self._persist(p, Verdict(p["paper_id"],"EXIT_PENDING_EXECUTION",cause,reason),at,attempted=True)
