@@ -126,7 +126,7 @@ RECONNECT_JITTER_SECONDS = float(os.getenv("PPI_STREAM_RECONNECT_JITTER", "5"))
 MAX_SILENT_RETRIES = int(os.getenv("PPI_STREAM_MAX_SILENT_RETRIES", "5"))
 
 # Caché de precios: {(ticker, instrument_type): {...}}
-_tick_cache = {}
+_tick_cache = {}  # (ticker, tipo, plazo); sólo negocios con hora del proveedor.
 _cache_lock = threading.Lock()
 
 # Caché de estado de órdenes recibido por push: {str(order_id): {...}}
@@ -161,18 +161,20 @@ def _persist(state: str, detail: str = ""):
 # ---------------------------------------------------------------------- #
 # Lectura (lo que consume el resto del sistema)
 # ---------------------------------------------------------------------- #
-def get_cached_price(ticker: str, instrument_type: str) -> Optional[dict]:
+def get_cached_price(ticker: str, instrument_type: str, settlement: str | None = None) -> Optional[dict]:
     """Consultada por c_ppi_client.get_market_data() antes de salir a hacer
     polling HTTP. Devuelve None —nunca un dato viejo en silencio— si el tick
     está vencido, y el que llama cae al REST como si este módulo no
     existiera."""
-    if not STREAM_ENABLED:
+    if not STREAM_ENABLED or not settlement:
         return None
     with _cache_lock:
-        entry = _tick_cache.get((ticker, (instrument_type or "").upper()))
+        entry = dict(_tick_cache.get((ticker.upper(), (instrument_type or "").upper(), settlement.upper()), {}))
     if not entry:
         return None
-    if (time.time() - entry["epoch_recv"]) > MAX_TICK_AGE_SECONDS:
+    now = time.time()
+    if entry.get('conflicting') or any(not 0 <= now-entry[key] <= MAX_TICK_AGE_SECONDS
+                                      for key in ('epoch_recv','epoch_source')):
         return None
     return entry
 
@@ -237,38 +239,39 @@ class PPIRealTimeClient:
     # ---------------- market data ---------------- #
     def _on_market_data(self, data):
         try:
+            from bs_instrument_contracts import aware_datetime, decimal_value
             msg = json.loads(data) if isinstance(data, (str, bytes)) else data
-            ticker = msg.get("Ticker")
-            if not ticker:
+            # Un mensaje de libro no renueva la hora ni el precio del negocio.
+            if not isinstance(msg,dict) or msg.get('Trade') is not True:
                 return
-            instrument_type = (msg.get("Type") or "CEDEARS").upper()
-            price = msg.get("Price")
-
-            bid = ask = None
-            bids, offers = msg.get("Bids") or [], msg.get("Offers") or []
-            if bids:
-                bid = bids[0].get("Price")
-            if offers:
-                ask = offers[0].get("Price")
-
-            # Los mensajes con Trade=False son actualizaciones de book: pueden
-            # venir sin Price. En ese caso se conserva el último precio
-            # operado y solo se refrescan las puntas — pisar el precio con un
-            # 0 sería peor que no actualizar nada, porque j_main usa ese
-            # precio para dimensionar órdenes reales.
-            with _cache_lock:
-                previo = _tick_cache.get((ticker, instrument_type), {})
-                precio_final = price if price else previo.get("price")
-                if not precio_final:
+            ticker, settlement = str(msg.get('Ticker') or '').upper(), str(msg.get('Settlement') or '').upper()
+            if not ticker or not settlement:
+                return
+            instrument_type = str(msg.get('Type') or '').upper()
+            if not instrument_type:
+                # El ejemplo oficial omite Type; sólo una suscripción inequívoca
+                # aporta la clase. Nunca asumir CEDEAR por falta de dato.
+                types = {str(kind).upper() for symbol,kind,term in self.instruments
+                         if str(symbol).upper()==ticker and str(term).upper()==settlement}
+                if len(types) != 1:
                     return
-                _tick_cache[(ticker, instrument_type)] = {
-                    "price": float(precio_final),
-                    "bid": bid if bid is not None else previo.get("bid"),
-                    "ask": ask if ask is not None else previo.get("ask"),
-                    "settlement": msg.get("Settlement") or previo.get("settlement"),
-                    "volume": msg.get("VolumeTotalAmount") or previo.get("volume"),
-                    "epoch_recv": time.time(),
-                    "source": "stream",
+                instrument_type = types.pop()
+            received = time.time()
+            source = aware_datetime(msg.get('Date')).timestamp()
+            price = float(decimal_value(msg.get('Price'),'precio',positive=True))
+            if not 0 <= received-source <= MAX_TICK_AGE_SECONDS or not 0 < price < float('inf'):
+                return
+            key = (ticker, instrument_type, settlement)
+            with _cache_lock:
+                previous = _tick_cache.get(key)
+                if previous and source <= previous['epoch_source']:
+                    if source == previous['epoch_source'] and price != previous['price']:
+                        previous['conflicting'] = True
+                    return  # atrasados/duplicados no rejuvenecen la cotización.
+                _tick_cache[key] = {
+                    'ticker':ticker,'instrument_type':instrument_type,'settlement':settlement,
+                    'price':price,'date':msg['Date'],'epoch_source':source,
+                    'epoch_recv':received,'source':'stream','conflicting':False,
                 }
             with _stats_lock:
                 _stats["ticks_received"] += 1
@@ -340,6 +343,8 @@ class PPIRealTimeClient:
 
     def _on_market_disconnect(self):
         logger.warning("Stream de Market Data desconectado.")
+        with _cache_lock:
+            _tick_cache.clear()
         with _stats_lock:
             _stats["connected"] = False
         _persist("DISCONNECTED", "Stream de Market Data desconectado.")
