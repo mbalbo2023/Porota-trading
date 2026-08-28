@@ -29,10 +29,11 @@ from zoneinfo import ZoneInfo
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
 from bt_caucion_paper import CaucionBook
+from cg_paper_workspace import artifact_root
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
-ROOT_DATA = Path(os.getenv("DATA_DIR", "data"))
+ROOT_DATA = artifact_root()
 REPORT_DIR = ROOT_DATA / "reports"
 BACKUP_DIR = ROOT_DATA / "backups" / "paper"
 OFFICIAL_BCRA = "https://api.bcra.gob.ar"
