@@ -706,6 +706,40 @@ liquidez es contractual en el modelo; no garantiza una acreditación real puntua
 No se activa renovación automática ni se aplica esta ruta a futuros, opciones
 o FCI. PR en borrador, `promotion_allowed=False`, sin despliegue.
 
+## Duodécimo checkpoint: historial de decisiones de caución
+
+`cb_caucion_audit` lee asignaciones y colocaciones en una sola transacción de
+sólo lectura. No ejecuta el asignador, acredita vencimientos, escribe eventos,
+crea tablas ni consulta PPI. El panel usa ahora conexiones SQLite de sólo
+lectura cerradas explícitamente; consultar una ruta no crea una base vacía.
+
+- Motor de trading muestra decisión, abstención, moneda, caja histórica,
+  reserva, fracción por solicitud, tope por colocación, sesión/fuente, plazo
+  de liquidez, costos y criterio. El registro más reciente se abre por defecto.
+- Distingue la oferta elegida, elegibles que perdieron el ranking/desempate y
+  motivos de rechazo. Un neto no calculado no se representa como beneficio cero.
+  El retorno diario es una fracción, no porcentaje ni hipótesis de reinversión.
+- Conserva la decisión original y muestra aparte el estado OPEN/MATURED del
+  ledger leído. Caja al decidir no equivale al saldo actual; una acreditación
+  simulada no confirma un movimiento en PPI.
+- Verifica concordancia del manifiesto/plan, política, candidatos, aritmética
+  de ofertas elegibles, ganador y vínculo con el ledger (contrato, moneda,
+  capital, costos, fechas y estado). No reconstruye riesgo/libros históricos
+  faltantes ni vuelve a ejecutar una decisión. CONSISTENT sólo describe
+  concordancia interna, nunca certificación de datos o conciliación del broker.
+- JSON roto, importes no finitos, colocación ausente o desacuerdos quedan como
+  INCONSISTENT sin cifras parciales. Una falla de consulta no aparece como
+  historial vacío. El estado de concordancia corresponde a la página leída.
+- `/api/paper/caucion-allocations?limit=25&offset=0` reutiliza la autenticación
+  existente. Sólo GET, límite 1–100 y offset 0–100000; incluye total, has_more,
+  manifiesto y motivos. Error de lectura devuelve 503; ausencia de base/tabla
+  o registros son estados explícitos. Orden cronológico por instante, incluso
+  si los timestamps usan distintas zonas. La página HTML muestra los últimos 25.
+
+Sin cambios de esquema, ejecución, despliegue ni nuevos trabajos de
+ciberseguridad. No activa la programación automática ni habilita otras
+familias como contado. `promotion_allowed=False`, `data_certified=False`.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -813,6 +847,16 @@ sesión, vencimiento, idempotencia al reiniciar, rollback conjunto de decisión,
 colocación y aviso, y concurrencia sin duplicar caja ni profundidad. Reordenar
 o duplicar ofertas no altera el plan. Fixtures sintéticas, sin feeds ni órdenes
 reales. La comprobación remota del undécimo se registra en el PR después del CI.
+
+Duodécimo checkpoint: **738 tests aprobados**, 0 fallas, 0 errores y 0 omisiones
+(35 pruebas nuevas, más extensión de la prueba de rutas reales). Cobertura
+local global 57,34%; lector de asignaciones 99,01% y dashboard 86,46%. Cumple
+los cuatro mínimos financieros existentes. Se comprobaron cajas separadas,
+costos iniciales/al vencimiento, HOLD, estado acreditado sin reescribir decisión,
+JSON inválido, discrepancias con ledger, lectura concurrente consistente,
+paginación por instante, ausencia de escrituras y rutas HTML/JSON reales.
+Sin captura de navegador: estas verificaciones son funcionales, no una revisión
+visual del diseño en la tablet. El resultado remoto se registra en el PR tras CI.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
