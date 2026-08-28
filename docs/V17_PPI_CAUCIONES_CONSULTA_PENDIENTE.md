@@ -1,9 +1,13 @@
 # Consulta pendiente a PPI — cauciones colocadoras
 
-**Estado:** PENDIENTE_ENVIO_Y_RESPUESTA_PPI  
-**Responsable del envío:** Martín Balbo  
-**Envío:** a cargo del usuario; todavía no confirmado. El asistente no envió el correo.  
-**Registrado:** 28/08/2026  
+**Estado:** PENDIENTE_ENVIO_Y_RESPUESTA_PPI
+
+**Responsable del envío:** Martín Balbo
+
+**Envío:** a cargo del usuario; todavía no confirmado. El asistente no envió el correo.
+
+**Registrado:** 28/08/2026
+
 **Impacto:** bloquea únicamente la habilitación real del adaptador de cauciones.
 
 No bloquea el desarrollo y las pruebas del resto de v17. No repetir el
