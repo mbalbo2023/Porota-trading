@@ -26,6 +26,10 @@ _GET_PATHS = {
     "/api/1.0/configuration/instrumenttypes",
     "/api/1.0/configuration/markets",
     "/api/1.0/configuration/settlements",
+    "/api/1.0/configuration/quantitytypes",
+    "/api/1.0/configuration/operationterms",
+    "/api/1.0/configuration/operationtypes",
+    "/api/1.0/configuration/operations",
     "/api/1.0/configuration/holidays",
     "/api/1.0/configuration/islocalholiday",
     "/api/1.0/marketdata/searchinstrument",
@@ -185,12 +189,20 @@ class ProductionMarketReader:
         return self._market().book(ticker, instrument_type, settlement)
 
     def market_configuration(self):
-        """Sólo configuración pública, por rutas GET ya permitidas."""
+        """Enums públicos documentados; misma sesión y ninguna cuenta/orden."""
         self._market()  # exige la misma sesión; no intenta otro login
         configuration = self.__client.configuration
-        return {"instrument_types": configuration.get_instrument_types(),
+        values = {"instrument_types": configuration.get_instrument_types(),
                 "markets": configuration.get_markets(),
-                "settlements": configuration.get_settlements()}
+                "settlements": configuration.get_settlements(),
+                "quantity_types": configuration.get_quantity_types(),
+                "operation_terms": configuration.get_operation_terms(),
+                "operation_types": configuration.get_operation_types(),
+                "operations": configuration.get_operations()}
+        if any(not isinstance(items,list) or any(not isinstance(item,str) or not item.strip() for item in items)
+               for items in values.values()):
+            raise ValueError('PPI_CONFIGURATION_INVALID_SHAPE')
+        return values
 
     def search_instruments(self, ticker: str, instrument_type: str,
                            name: str | None = None, market: str = "BYMA"):
