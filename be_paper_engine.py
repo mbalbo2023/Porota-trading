@@ -321,6 +321,28 @@ class PaperStore:
             return [spot_ledger.partition(c,r)[0] for r in c.execute(
                 "SELECT * FROM paper_positions WHERE status='OPEN' ORDER BY opened_at")]
 
+    def exit_positions(self):
+        """Snapshot exclusivo de supervisión: abiertas válidas e inconsistentes.
+
+        No sustituye open_positions/positions_at para caja, riesgo o informes.
+        Un error de datos de una posición no ciega las salidas de las demás;
+        errores de base/esquema se propagan, nunca producen una cartera vacía.
+        """
+        opened, invalid = [], []
+        with self.connect() as c:
+            c.execute('BEGIN')
+            # Un estado desconocido tampoco puede desaparecer de la vigilancia
+            # como si fuera un cierre; sólo CLOSED queda fuera de este reloj.
+            for row in c.execute("SELECT * FROM paper_positions WHERE status<>'CLOSED' ORDER BY opened_at,paper_id"):
+                try:
+                    remaining = spot_ledger.partition(c,row)[0]
+                    if remaining is None:
+                        raise ValueError('Abierta sin remanente conciliado')
+                    opened.append(remaining)
+                except (ValueError,TypeError,ArithmeticError) as exc:
+                    invalid.append((dict(row),f'SPOT_LEDGER_INVALID: {type(exc).__name__}: {exc}'[:240]))
+        return opened, invalid
+
     def recent_closed(self, limit=50, *, strategy_version=None, closed_before=None):
         with self.connect() as c:
             if strategy_version is not None:
