@@ -515,6 +515,11 @@ class PaperBroker:
     def settle_cauciones(self, as_of=None):
         return self.cauciones.settle_due(as_of or now_iso())
 
+    def allocate_caucion(self, offers, policy, request_id, as_of=None):
+        """Selecciona y coloca sólo en PAPER con presupuesto/política explícitos."""
+        from ca_caucion_allocator import allocate
+        return allocate(self,offers,policy,request_id,as_of=as_of)
+
     def threshold(self, as_of=None):
         closed = self.store.recent_closed(20, strategy_version=STRATEGY_VERSION, closed_before=as_of)
         if len(closed) < 5:
