@@ -22,7 +22,7 @@ from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
 
 
 SOURCE = "PRODUCTION_PAPER"
-STRATEGY_VERSION = "paper-momentum-v17.1-source-time"
+STRATEGY_VERSION = "paper-momentum-v17.2-daily-risk"
 ZERO = Decimal("0")
 
 
@@ -202,6 +202,10 @@ class PaperStore:
         init_financial_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
+        from bn_telegram_bus import init_schema as init_outbox_schema
+        from bw_daily_risk import init_schema as init_risk_schema
+        init_outbox_schema(self)
+        init_risk_schema(self)
 
     def audit_http(self, method, path, result):
         with self.connect() as c:
@@ -370,7 +374,7 @@ class PaperBroker:
                  ai_gate=None, require_ai=False, context_fn=None,
                  initial_cash_usd="0", initial_cash_by_currency=None,
                  clock_fn=None, session_policy=None, require_supervisor=False,
-                 quote_max_age_seconds=120):
+                 quote_max_age_seconds=120, daily_loss_pct=None):
         self.store = store
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
@@ -396,11 +400,13 @@ class PaperBroker:
         self.session_policy = session_policy
         self.require_supervisor = require_supervisor
         self.quote_max_age_seconds = quote_max_age_seconds
+        from bw_daily_risk import DailyRisk
+        self.daily_risk = DailyRisk(self,daily_loss_pct) if daily_loss_pct is not None else None
 
     def execution_time(self, q):
         return self.clock_fn() if self.clock_fn else q.observed_at
 
-    def admission_error(self, q, at):
+    def admission_error(self, q, at, *, connection=None):
         error = q.time_error(at, require_trade=True, max_age_seconds=self.quote_max_age_seconds)
         if error:
             return error
@@ -410,7 +416,15 @@ class PaperBroker:
                 return error
         if self.require_supervisor:
             from bm_exit_supervisor import admission_error
-            return admission_error(self.store, at)
+            error = admission_error(self.store, at)
+            if error:
+                return error
+        if self.daily_risk:
+            try:
+                currency, _ = q.monetary_identity()
+            except ValueError:
+                return 'DAILY_RISK_UNKNOWN_CURRENCY'
+            return self.daily_risk.admission_error(currency,at,connection=connection,quotes={q.symbol:q})
         return ""
 
     def _cost(self, price, qty, asset_class="ACCIONES"):
@@ -463,7 +477,9 @@ class PaperBroker:
         return self.cauciones.place(
             offer, principal, request_id, as_of or now_iso(),
             lambda currency, at: self._cash(as_of=at, currency=currency),
-            reserve=D(reserve, "-1"), participation=self.participation)
+            reserve=D(reserve, "-1"), participation=self.participation,
+            admission=(lambda c, currency, at: self.daily_risk.admission_error(currency,at,connection=c))
+                      if self.daily_risk else None)
 
     def settle_cauciones(self, as_of=None):
         return self.cauciones.settle_due(as_of or now_iso())
@@ -645,7 +661,7 @@ class PaperBroker:
             # No se hace red ni IA dentro de esta transacción.
             c.execute("BEGIN IMMEDIATE")
             at = self.execution_time(q)
-            error = self.admission_error(q, at)
+            error = self.admission_error(q, at, connection=c)
             if error:
                 return False, error, None
             opened = self.store.open_positions()
@@ -672,6 +688,8 @@ class PaperBroker:
             c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                       (at, SOURCE, "PAPER_FILLED_BUY", paper_id,
                        f"Compra simulada {qty} {q.symbol} @ {entry}"))
+            if self.daily_risk:
+                self.daily_risk.evaluate(at,connection=c,quotes={q.symbol:q})
         return True, "Todos los portones aprobaron; compra simulada registrada", paper_id
 
     def _maybe_close(self, q: Quote):
@@ -766,6 +784,8 @@ class PaperBroker:
             c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                       (at, SOURCE, "PAPER_FILLED_SELL", p["paper_id"],
                        f"Venta simulada {qty} {q.symbol} @ {exit_price}; PnL neto {net}"))
+            if self.daily_risk:
+                self.daily_risk.evaluate(at,connection=c,quotes={q.symbol:q})
         return True
 
     def mark_equity(self, quotes: dict, as_of=None):
