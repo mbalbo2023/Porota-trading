@@ -719,6 +719,8 @@ lectura cerradas explícitamente; consultar una ruta no crea una base vacía.
 - Distingue la oferta elegida, elegibles que perdieron el ranking/desempate y
   motivos de rechazo. Un neto no calculado no se representa como beneficio cero.
   El retorno diario es una fracción, no porcentaje ni hipótesis de reinversión.
+  En elegibles muestra los costos redondeados aplicados por el simulador; en
+  descartadas, el presupuesto aportado sin confirmar una ejecución.
 - Conserva la decisión original y muestra aparte el estado OPEN/MATURED del
   ledger leído. Caja al decidir no equivale al saldo actual; una acreditación
   simulada no confirma un movimiento en PPI.
@@ -730,6 +732,8 @@ lectura cerradas explícitamente; consultar una ruta no crea una base vacía.
 - JSON roto, importes no finitos, colocación ausente o desacuerdos quedan como
   INCONSISTENT sin cifras parciales. Una falla de consulta no aparece como
   historial vacío. El estado de concordancia corresponde a la página leída.
+  El manifiesto debe conservar la representación canónica del asignador: una
+  oferta reformateada no puede pasar la validación y romper su detalle en HTML.
 - `/api/paper/caucion-allocations?limit=25&offset=0` reutiliza la autenticación
   existente. Sólo GET, límite 1–100 y offset 0–100000; incluye total, has_more,
   manifiesto y motivos. Error de lectura devuelve 503; ausencia de base/tabla
@@ -848,9 +852,9 @@ colocación y aviso, y concurrencia sin duplicar caja ni profundidad. Reordenar
 o duplicar ofertas no altera el plan. Fixtures sintéticas, sin feeds ni órdenes
 reales. La comprobación remota del undécimo se registra en el PR después del CI.
 
-Duodécimo checkpoint: **738 tests aprobados**, 0 fallas, 0 errores y 0 omisiones
-(35 pruebas nuevas, más extensión de la prueba de rutas reales). Cobertura
-local global 57,34%; lector de asignaciones 99,01% y dashboard 86,46%. Cumple
+Duodécimo checkpoint: **741 tests aprobados**, 0 fallas, 0 errores y 0 omisiones
+(38 pruebas nuevas, más extensión de la prueba de rutas reales). Cobertura
+local global 57,45%; lector de asignaciones 100% y dashboard 88,26%. Cumple
 los cuatro mínimos financieros existentes. Se comprobaron cajas separadas,
 costos iniciales/al vencimiento, HOLD, estado acreditado sin reescribir decisión,
 JSON inválido, discrepancias con ledger, lectura concurrente consistente,
