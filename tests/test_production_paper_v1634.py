@@ -22,13 +22,14 @@ from bs_instrument_contracts import cash_currency
 import bu_instrument_catalog as catalog
 
 
-def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"):
-    at = (datetime(2026, 8, 25, 14, 0, tzinfo=timezone.utc) +
+def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000", at=None):
+    at = at or (datetime(2026, 8, 25, 14, 0, tzinfo=timezone.utc) +
           timedelta(minutes=minute)).isoformat()
     price = D(price)
     return Quote(symbol, "ACCIONES", "A-24HS", price, price-D("0.10"),
                  price+D("0.10"), D(bid_size), D(ask_size), at,
-                 currency="ARS", market="BYMA", metadata_source="TEST_FIXTURE")
+                 currency="ARS", market="BYMA", metadata_source="TEST_FIXTURE",
+                 book_at=at, trade_at=at, last_kind="TRADE")
 
 
 @pytest.fixture
@@ -103,8 +104,9 @@ def test_cotizacion_mep_del_catalogo_no_gasta_ars_ni_usd_generico(tmp_path, real
     store = PaperStore(str(tmp_path / "paper.db"))
     raw = next(r for r in real_catalog if r["ticker"] == "AAPLD")
     metadata = catalog.normalize_record(raw, "INMEDIATA", "2026-08-27T13:45:03Z", "test")
-    q = observer.normalize_quote("AAPLD", "CEDEARS", "INMEDIATA", {"price": 100},
-                                 {"bid": 99, "ask": 100, "bidsize": 10000, "asksize": 10000}, metadata=metadata)
+    source_at = observer.now_iso()
+    q = observer.normalize_quote("AAPLD", "CEDEARS", "INMEDIATA", {"price": 100, "date": source_at},
+                                 {"bid": 99, "ask": 100, "bidsize": 10000, "asksize": 10000, "date": source_at}, metadata=metadata)
     broker = PaperBroker(store, initial_cash="1000000", initial_cash_usd="10000")
     assert q.currency == "USD_MEP" and q.contract.currency == "USD_MEP"
     assert broker._open(q, D("0.8"), {})[0] is False
@@ -117,7 +119,8 @@ def test_cotizacion_mep_del_catalogo_no_gasta_ars_ni_usd_generico(tmp_path, real
     assert funded._cash(currency="USD_MEP") < 10000
     ccl = replace(q, currency="USD_CCL", contract=replace(q.contract, currency="USD_CCL"))
     assert not funded._close(p, ccl, "TEST")
-    closing = replace(q, bid=D("110"), observed_at=(datetime.fromisoformat(q.observed_at)+timedelta(minutes=1)).isoformat())
+    closing_at = (datetime.fromisoformat(q.observed_at)+timedelta(minutes=1)).isoformat()
+    closing = replace(q, bid=D("110"), ask=D("111"), observed_at=closing_at, book_at=closing_at)
     assert funded._close(p, closing, "TEST")
     closed = store.recent_closed()[0]
     assert funded._cash(currency="USD_MEP", as_of=closing.observed_at) == 10000 + D(closed["net_pnl"])
@@ -313,11 +316,11 @@ def test_v17_dos_colocaciones_concurrentes_no_gastan_la_misma_caja(tmp_path):
 
 def test_v17_venta_t1_no_es_caja_hasta_liquidacion_modelada(tmp_path):
     broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash="10000")
-    q = replace(quote(), observed_at="2026-08-28T11:00:00-03:00")
+    q = quote(at="2026-08-28T11:00:00-03:00")
     assert broker._open(q, D("0.8"), {})[0]
     position = broker.store.open_positions()[0]
     before = broker._cash(as_of=q.observed_at)
-    sell = replace(q, bid=D("110"), observed_at="2026-08-28T11:01:00-03:00")
+    sell = replace(q, bid=D("110"), ask=D("111"), observed_at="2026-08-28T11:01:00-03:00")
     assert broker._close(position, sell, "TEST")
     assert broker._cash(as_of=sell.observed_at) == before
     assert broker._cash(as_of="2026-08-31T12:00:00-03:00") == before
@@ -362,7 +365,7 @@ def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, famil
     broker.mark_equity({q.symbol: q}, as_of=q.observed_at)
     with broker.store.connect() as c:
         assert D(c.execute("SELECT exposure FROM paper_equity ORDER BY id DESC LIMIT 1").fetchone()[0]) == q.bid * 99
-    closing = replace(q, bid=D("110"), observed_at="2026-08-25T14:01:00+00:00")
+    closing = replace(q, bid=D("110"), ask=D("111"), observed_at="2026-08-25T14:01:00+00:00")
     assert broker._close(position, replace(closing, contract=replace(spec, cash_multiplier=D("1"))), "TEST") is False
     assert broker._close(position, closing, "TEST")
     closed = broker.store.recent_closed()[0]
@@ -375,9 +378,9 @@ def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, famil
 def test_v17_no_cauciona_el_producido_de_una_venta_t1(tmp_path):
     broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash="1100",
                          risk_pct="1", max_position_pct="1", max_total_exposure_pct="1")
-    q = replace(quote(), observed_at="2026-08-28T10:59:00-03:00")
+    q = quote(at="2026-08-28T10:59:00-03:00")
     assert broker._open(q, D("0.8"), {})[0]
-    assert broker._close(broker.store.open_positions()[0], replace(q, bid=D("110"), observed_at="2026-08-28T11:00:00-03:00"), "TEST")
+    assert broker._close(broker.store.open_positions()[0], replace(q, bid=D("110"), ask=D("111"), observed_at="2026-08-28T11:00:00-03:00"), "TEST")
     offer = caucion_offer()
     with pytest.raises(ValueError, match="Caja liquidada insuficiente"):
         broker.place_caucion(offer, "1000", "reusar-venta", offer.quoted_at)
@@ -388,7 +391,7 @@ def test_v17_compra_no_reutiliza_capital_colocado_en_caucion(tmp_path):
                          risk_pct="1", max_position_pct="1", max_total_exposure_pct="1")
     offer = caucion_offer()
     broker.place_caucion(offer, "1000", "inmovilizar", offer.quoted_at)
-    q = replace(quote(), observed_at=offer.quoted_at)
+    q = quote(at=offer.quoted_at)
     assert broker._open(q, D("0.8"), {})[0] is False
     assert broker._cash() == 50
 
