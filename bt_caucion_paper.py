@@ -13,7 +13,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
-from bs_instrument_contracts import aware_datetime, decimal_value
+from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
 
 ZERO = Decimal("0")
 CENT = Decimal("0.01")
@@ -64,6 +64,12 @@ def init_schema(store):
           gross_interest TEXT NOT NULL, total_fees TEXT NOT NULL,
           fee_payment TEXT NOT NULL, opened_at TEXT NOT NULL, maturity_at TEXT NOT NULL,
           settled_at TEXT, terms_json TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS paper_equity_by_currency(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, measured_at TEXT NOT NULL,
+          currency TEXT NOT NULL, cash TEXT NOT NULL, exposure TEXT NOT NULL,
+          pending_proceeds TEXT NOT NULL, caucion_principal TEXT NOT NULL,
+          caucion_accrued TEXT NOT NULL, unrealized_pnl TEXT NOT NULL,
+          realized_pnl TEXT NOT NULL, equity TEXT NOT NULL);
         """)
         # Migración aditiva. Cada recibo se crea una sola vez, sin reescribir
         # una fecha que luego haya sido conciliada contra una fuente mejor.
@@ -74,16 +80,17 @@ def init_schema(store):
             features = json.loads(p["features_json"] or "{}")
             factor = decimal_value(features.get("contract_cash_multiplier", "1"), "factor histórico", positive=True)
             record_sale(c, p["paper_id"], p["settlement"], p["closed_at"],
-                        Decimal(p["exit_price"]) * Decimal(p["quantity"]) * factor - Decimal(p["exit_cost"]))
+                        Decimal(p["exit_price"]) * Decimal(p["quantity"]) * factor - Decimal(p["exit_cost"]),
+                        currency=p["currency"])
 
 
-def record_sale(c, paper_id, settlement, traded_at, net_proceeds):
+def record_sale(c, paper_id, settlement, traded_at, net_proceeds, currency="ARS"):
     try:
         available = modeled_sale_settlement(settlement, traded_at)
     except (ValueError, TypeError):
         available = None
     c.execute("INSERT OR IGNORE INTO paper_sale_receivables VALUES(?,?,?,?,?)",
-              (paper_id, "ARS", str(net_proceeds), available,
+              (paper_id, cash_currency(currency), str(net_proceeds), available,
                "PAPER_CONSERVATIVE_CALENDAR" if available else "PENDING_CONFIRMATION"))
 
 
@@ -117,8 +124,7 @@ class CaucionOffer:
     def __post_init__(self):
         if not self.instrument_id.strip() or not self.metadata_source.strip():
             raise ValueError("Falta identificación o fuente del contrato de caución")
-        if self.currency not in {"ARS", "USD"}:
-            raise ValueError("Moneda de caución no admitida")
+        object.__setattr__(self, "currency", cash_currency(self.currency))
         if self.fee_payment not in {"UPFRONT", "MATURITY"}:
             raise ValueError("Falta momento de cobro de los costos")
         if self.day_count_basis not in {360, 365}:
@@ -130,8 +136,8 @@ class CaucionOffer:
         if self.quoted_total_fees is not None:
             object.__setattr__(self, "quoted_total_fees", decimal_value(self.quoted_total_fees, "costos cotizados", nonnegative=True))
             object.__setattr__(self, "fee_quote_principal", decimal_value(self.fee_quote_principal, "capital del presupuesto", positive=True))
-        if self.currency == "USD" and self.quoted_total_fees is None:
-            raise ValueError("Caución USD requiere costos explícitos en USD")
+        if self.currency != "ARS" and self.quoted_total_fees is None:
+            raise ValueError("Caución en moneda extranjera requiere costos explícitos en esa moneda/plaza")
         start = date.fromisoformat(self.start_date)
         maturity = aware_datetime(self.maturity_at, "vencimiento").astimezone(TZ)
         aware_datetime(self.quoted_at, "cotización")
