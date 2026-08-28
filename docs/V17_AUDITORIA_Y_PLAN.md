@@ -519,7 +519,7 @@ del presupuesto usado al decidir; no se asume un fill al cierre de la señal.
 
 Es una evaluación secuencial de un candidato con parámetros fijos, una serie
 y posición larga de contado. **No es calibración walk-forward, holdout
-independiente ni reproducción completa del paper con IA, bloqueo diario,
+independiente ni reproducción completa del paper con IA,
 supervisión por reloj o selección de cartera.** Tampoco modela eventos
 corporativos ni genera un benchmark histórico de cauciones. Se necesita un
 archivo real normalizado de velas/libros y metadatos para ejecutar evaluaciones
@@ -530,6 +530,66 @@ mantienen sus contratos y el ciclo de cauciones colocadoras con saldo disponible
 sus estrategias/ejecutores especializados siguen pendientes. No se habilita
 promoción automática del auto-tuner, no se cambian parámetros del servidor y
 no se conecta automáticamente este candidato al runtime. Sin despliegue.
+
+## Noveno checkpoint: pérdida diaria en decisiones y ejecución
+
+El candidato requiere ahora `risk_config` explícito: `frozen_at` anterior o
+igual al comienzo del período y `daily_loss_pct` en porcentaje (`1` significa
+1%). No lee el límite del entorno ni impone un porcentaje a la cuenta. La
+configuración normalizada integra la versión de estrategia, los IDs de entrada
+y el manifiesto reproducible. Una corrida CLI del candidato sin ella se rechaza.
+Los porcentajes de los tests son escenarios sintéticos, no recomendaciones.
+
+### Política y base patrimonial
+
+- `bw_daily_risk.loss_limit_crossed` concentra el mismo umbral inclusivo que ya
+  utilizaba PAPER: pérdida realizada del día **o** PnL patrimonial diario menor
+  o igual al presupuesto negativo. La extracción no cambia la política PAPER.
+- `bz_replay_risk` evalúa esa política offline en la moneda de la serie, con
+  fecha de Argentina. El corte queda activo aunque el precio se recupere y se
+  reinicia sólo en otra fecha local con base válida. No existe conversión ni
+  compensación entre ARS, MEP y CCL.
+- El patrimonio incluye caja, créditos de ventas sin liquidar y posición a
+  bid modelado menos costos de salida. El resultado realizado descuenta costo
+  asignado de entrada y costo de cada fill de venta. Acreditar una venta no es
+  otra ganancia ni cambia el presupuesto; su crédito no financia compras antes
+  de la fecha de liquidación.
+- Si cruza el día con tenencia y no hay marca conciliada del cierre previo,
+  queda `BASELINE_UNAVAILABLE` todo ese día, aun después de cerrar. No se usa
+  la primera cotización de la mañana como cierre ficticio. Con posición plana,
+  la base es capital inicial más resultados realizados anteriores, incluidos
+  sus créditos pendientes. Marcas vencidas/costos desconocidos bloquean entradas.
+
+### Doble control y salidas
+
+El replay valúa con el libro más reciente antes de procesar órdenes, y vuelve
+a controlar entre fills. Una compra pendiente se cancela si el estado dejó
+de ser `READY`, incluso durante su latencia. Cancelarla no la resucita cuando
+vuelve un libro válido. Antes de debitar una compra se proyecta el patrimonio
+con spread, slippage, entrada y salida: si alcanzaría el corte, se rechaza sin
+inventar un fill, una pérdida ni un corte ocurrido.
+
+La señal limita su riesgo modelado al menor entre presupuesto por operación y
+remanente diario. El remanente no crece por ganancias, y las ganancias abiertas
+no compensan pérdidas realizadas para aumentar el tamaño de una nueva entrada.
+Las ventas siguen permitidas después del corte. El driver genera una intención
+de salida, preserva el motivo y reintenta remanentes; requiere un libro posterior
+ejecutable. Sin profundidad/sesión/libro válido no declara una liquidación.
+
+La traza registra base, presupuesto, PnL, realizado, estado y momento del corte
+antes/después de los fills, además de la decisión. El replay de órdenes preparadas
+puede utilizar la misma configuración, pero **no genera salidas automáticamente**;
+sin ella declara `daily_risk.configured=False`, no un control diario aprobado.
+
+### Alcance pendiente
+
+No es un límite garantizado de pérdida: gaps, costos adicionales de salidas
+parciales o falta de liquidez pueden superarlo. Se evalúan eventos y cierre del
+período; no se inventan observaciones ni un reloj entre libros. Sigue siendo una
+serie de contado sin cartera, IA, carry conciliado, eventos corporativos,
+calibración/holdout ni benchmark histórico de caución. No integra al runtime el
+candidato ni habilita los ejecutores especializados que faltan. Se mantiene
+`promotion_allowed=False`, PR en borrador, sin despliegue ni órdenes reales.
 
 ## Evaluación del código sugerido: decisiones y pendientes
 
@@ -607,6 +667,17 @@ reintento parcial, efecto de costos sobre la decisión y reproducción por CLI.
 La CLI se prueba en un proceso real con la base sin modificar; señales y fills
 coinciden con la corrida original. No hubo consultas ni órdenes al broker.
 
+Noveno checkpoint: **639 tests aprobados**, 0 fallas, 0 errores y 0 omisiones
+(37 pruebas nuevas). Cobertura local global 55,39%; riesgo diario offline 98,53%,
+riesgo PAPER 95,73%, driver 98,91% y replay 85,19%. Los cuatro mínimos financieros
+siguen aprobados. Se verificaron corte inclusivo, latch con recuperación, cambio
+de día argentino, base con créditos pendientes/carry desconocido, cancelación
+durante latencia, revisión entre fills, proyección sin pérdidas ficticias,
+dimensionamiento diario, salidas parciales y reproducción CLI con corte activo.
+La CLI rechaza el candidato sin límite explícito y no modifica su base. Suite
+local Python 3.12 con cobertura y XML; se conserva una advertencia existente de
+Starlette/httpx. La comprobación remota del noveno se registra en el PR tras CI.
+
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
 todos los pins de producción. Advertencia observada: deprecación del TestClient
@@ -622,8 +693,8 @@ El sexto obtuvo CI completo aprobado, run 33134835615, commit
 `731475c8485ca7245a807ba31d70d871fddfaa51`, con cobertura global remota 51,18%.
 El séptimo obtuvo CI completo aprobado, run 33135821052, commit
 `6ab7b990c4937c7491fee5a1438101119454b3b9`, cobertura remota 53,40%.
-El resultado remoto del octavo se registra en el PR #3 tras verificar el
-contenido subido y el CI completo.
+El octavo obtuvo CI completo aprobado, run 33136743030, commit
+`12a3b6bbcc93bdef05cfa9ff0017b8d006a49cbd`, cobertura remota 54,66%.
 Los 12 payloads públicos aportados se usan como fixture; aún falta integración
 con cotizaciones/contratos especializados y validación en el Droplet.
 
