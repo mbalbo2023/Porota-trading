@@ -1180,6 +1180,30 @@ Esto valida concordancia interna del simulador, no una acreditación de PPI.
 Sin migración ni cambios al servidor, órdenes reales, nuevos controles de
 ciberseguridad o activación de cauciones automáticas.
 
+## Vigesimoquinto checkpoint: diagnóstico PPI aislado para obtener evidencia
+
+El operador confirmó ambos motores apagados/sin reinicio, bot 16.3.3 y
+observador 16.3.5 con secreto productivo read-only separado del `.env`.
+Se prepara un ZIP ejecutable para SFTP y un único comando del host, sin
+actualizar ni arrancar el sistema anterior. Se usa la imagen exacta del
+observador sólo para un proceso temporal de diagnóstico.
+
+El paquete reutiliza la barrera existente y el SDK instalado; un login,
+configuración pública, búsquedas acotadas y muestras book/current únicamente
+para identidades completas devueltas. Un rechazo se detiene antes del refresh
+interno del SDK; no hay reintentos, cuentas, presupuestos u órdenes. Límites
+de tiempo/cantidad y cleanup del único contenedor creado por la consulta.
+El host no lee secretos; sólo los monta para su consumidor original. No monta
+datos ni `.env`, ni importa motor o Telegram. La copia temporal del ZIP evita
+problemas de permisos SFTP sin cambiar el archivo original o el secreto.
+
+Un vacío no prueba falta de acceso a una familia; las configuraciones no
+certifican todos sus instrumentos. Las muestras no validan tasa/unidad/lado,
+capital/plazo/base, costos ni caja real. Cauciones siguen HOLD y sin promoción.
+No se ejecutó el diagnóstico en PPI/servidor desde este entorno. La ejecución
+productiva puntual requiere transferir el ZIP y correr el comando por el operador.
+Detalle, límites y fuentes: `docs/V17_PPI_DIAGNOSTICO.md`.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -1421,6 +1445,17 @@ reinicio, pendientes sin fecha y calendario no verificable. Se comprueba
 rechazo de caución sin escrituras y continuidad de otra salida válida.
 Panel sin balances reciclados, probado funcionalmente; sin captura visual de
 navegador/tablet. Datos sintéticos, sin PPI, mensajes reales ni servidor.
+
+Vigesimoquinto checkpoint: **1113 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 49 nuevos y 97 dirigidos. Cobertura global local **65,34%**;
+diagnóstico **94,14%** y cuatro mínimos financieros existentes cumplidos.
+SDK real con transporte sustituido: un login, enums, filtros/identidades,
+HTTP 302/400/401/403/429/500 sin refresh ni reintento, formas inválidas,
+timeouts y ausencia de secretos/tokens en salida. Docker sustituido: estado,
+montaje, usuario/imagen exacta, nombre ocupado, cleanup sólo del ID propio,
+archivo SFTP modo 600 conservado y portapapeles. ZIP reproducible cotejado
+con fuentes y CLI --help sin paquetes de terceros. No se ensayó Docker del
+servidor ni login real a PPI; eso requiere la ejecución puntual del operador.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
