@@ -83,6 +83,16 @@ class DailyRisk:
             latched = previous['latched_at'] if previous else None
             try:
                 rows = [dict(r) for r in c.execute('SELECT * FROM paper_positions WHERE currency=?',(currency,))]
+                for p in rows:
+                    if any(p[k] and aware_datetime(p[k])>at for k in ('opened_at','closed_at')):
+                        raise ValueError('Ledger con fechas futuras')
+                if c.execute("""SELECT 1 FROM paper_spot_sales s JOIN paper_fills f ON f.id=s.fill_id
+                    JOIN paper_positions p ON p.paper_id=s.paper_id WHERE p.currency=?
+                    AND julianday(f.filled_at)>julianday(?) LIMIT 1""",
+                    (currency,at.isoformat())).fetchone():
+                    raise ValueError('Ledger parcial con fechas futuras')
+                opened_rows,closed_rows = self.broker._positions_at(at,c)
+                rows = [p for p in opened_rows+closed_rows if p['currency']==currency]
                 cauciones = [dict(r) for r in c.execute('SELECT * FROM paper_cauciones WHERE currency=?',(currency,))]
                 before = realized = today_realized = unrealized = ZERO
                 carry, stale = False, False
