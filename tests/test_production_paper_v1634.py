@@ -34,6 +34,253 @@ def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"
 
 
 @pytest.fixture
+def partial_spot(tmp_path):
+    def make(settlement='INMEDIATA',currency='ARS',**options):
+        broker=PaperBroker(PaperStore(str(tmp_path/(currency+settlement.replace('+','')+'.db'))),
+            initial_cash='10000',initial_cash_by_currency={currency:'10000'},**options)
+        q=replace(quote(ask_size='100'),settlement=settlement,currency=currency)
+        assert broker._open(q,D('.8'),{})[0]
+        p=broker.store.open_positions()[0]
+        assert D(p['quantity'])==10
+        def sell(minute=1,size='40',price='110'):
+            return replace(quote(minute=minute,bid_size=size,price=price),settlement=settlement,currency=currency)
+        return broker,p,q,sell
+    return make
+
+
+@pytest.mark.parametrize('settlement',['INMEDIATA','A-24HS'])
+@pytest.mark.parametrize('currency',['ARS','USD_MEP'])
+def test_parcial_caja_creditos_y_costo_original_por_fecha(partial_spot,settlement,currency):
+    import cd_spot_ledger as ledger
+    b,p,q,sell=partial_spot(settlement,currency)
+    before=b._cash(as_of=q.observed_at,currency=currency)
+    first=sell()
+    assert b._close(p,first,'TEST')
+    remaining=b.store.open_positions()[0]
+    assert D(remaining['quantity'])==6
+    with b.store.connect() as c:
+        root=dict(c.execute('SELECT * FROM paper_positions').fetchone())
+        sales=ledger.sales(c,p['paper_id'])
+        assert root['quantity']==p['quantity'] and root['entry_cost']==p['entry_cost']
+        assert D(sales[0]['entry_cost'])+D(remaining['entry_cost'])==D(p['entry_cost'])
+        assert c.execute('SELECT label_timestamp FROM paper_learning_samples').fetchone()[0] is None
+    cash=b._cash(as_of=first.observed_at,currency=currency)
+    assert cash==before+(D(sales[0]['net_proceeds']) if settlement=='INMEDIATA' else 0)
+    assert pending_proceeds(b.store,first.observed_at,currency)==(0 if settlement=='INMEDIATA' else D(sales[0]['net_proceeds']))
+    assert b._cash(as_of=q.observed_at,currency=currency)==before
+    # Una segunda porción produce su propio crédito, no reescribe el primero.
+    assert b._close(remaining,sell(2,'100','105'),'TEST')
+    final=b.store.recent_closed()[0]
+    with b.store.connect() as c:
+        rows=ledger.sales(c,p['paper_id'])
+        assert len(rows)==2
+        assert sum(D(r['entry_cost']) for r in rows)==D(p['entry_cost'])
+        assert sum(D(r['net_pnl']) for r in rows)==D(final['net_pnl'])
+        assert c.execute('SELECT COUNT(*) FROM paper_sale_receivables').fetchone()[0]==0
+    restarted=PaperBroker(PaperStore(b.store.path),initial_cash='10000',initial_cash_by_currency={currency:'10000'})
+    assert restarted._cash(as_of='2026-09-01T00:00:00+00:00',currency=currency)==10000+D(final['net_pnl'])
+    assert restarted._cash(as_of=first.observed_at,currency=currency)==cash
+    assert restarted._cash(as_of=q.observed_at,currency=currency)==before
+    with restarted.store.connect() as c:
+        assert c.execute('SELECT COUNT(*) FROM paper_sale_receivables').fetchone()[0]==0
+        assert c.execute('SELECT COUNT(*) FROM paper_learning_samples WHERE label_timestamp IS NOT NULL').fetchone()[0]==1
+
+
+def test_parcial_reintento_reinicio_y_concurrencia_no_revenden(partial_spot):
+    from concurrent.futures import ThreadPoolExecutor
+    b,p,q,sell=partial_spot()
+    def close(_):
+        other=PaperBroker(PaperStore(b.store.path),initial_cash='10000')
+        return other._close(p,sell(),'TEST')
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert list(pool.map(close,range(2))).count(True)==1
+    assert not b._close(p,sell(2),'TEST')  # posición vieja aunque el libro sea nuevo
+    remaining=b.store.open_positions()[0]
+    assert not b._close(remaining,sell(),'TEST')  # profundidad ya consumida
+    assert D(b.store.open_positions()[0]['quantity'])==6
+    assert b._close(remaining,sell(2,'100'),'TEST')
+    assert not b._close(remaining,sell(3,'100'),'TEST')
+
+
+@pytest.mark.parametrize('table',['paper_spot_sales','paper_book_consumption','paper_events','paper_notification_outbox'])
+def test_parcial_rollback_incluye_caja_muestra_y_aviso(partial_spot,table):
+    import sqlite3
+    b,p,q,sell=partial_spot()
+    before=b._cash(as_of=q.observed_at)
+    with b.store.connect() as c:
+        counts={t:c.execute('SELECT COUNT(*) FROM '+t).fetchone()[0] for t in
+                ('paper_fills','paper_book_consumption','paper_events','paper_notification_outbox')}
+        c.execute('CREATE TRIGGER fail_partial BEFORE INSERT ON '+table+" BEGIN SELECT RAISE(ABORT,'TEST_PARTIAL'); END")
+    with pytest.raises(sqlite3.IntegrityError,match='TEST_PARTIAL'):
+        b._close(p,sell(),'TEST')
+    assert b._cash(as_of=sell().observed_at)==before
+    assert b.store.open_positions()[0]['quantity']==p['quantity']
+    with b.store.connect() as c:
+        assert c.execute('SELECT COUNT(*) FROM paper_spot_sales').fetchone()[0]==0
+        for t,n in counts.items():assert c.execute('SELECT COUNT(*) FROM '+t).fetchone()[0]==n
+        assert c.execute('SELECT label_timestamp FROM paper_learning_samples').fetchone()[0] is None
+
+
+@pytest.mark.parametrize('change',[
+    "UPDATE paper_spot_sales SET net_proceeds='99999'",
+    "UPDATE paper_spot_sales SET entry_cost='99999'",
+    "DELETE FROM paper_spot_sales",
+    "UPDATE paper_spot_sales SET available_at='2026-08-24T00:00:00+00:00'",
+])
+def test_parcial_ledger_roto_no_libera_caja(partial_spot,change):
+    b,p,q,sell=partial_spot()
+    assert b._close(p,sell(),'TEST')
+    with b.store.connect() as c:c.execute(change)
+    with pytest.raises(ValueError):b._cash(as_of=sell().observed_at)
+
+
+def test_parcial_futuro_no_financia_operacion_retroactiva(partial_spot):
+    b,p,q,sell=partial_spot()
+    before=b._cash(as_of=q.observed_at)
+    assert b._close(p,sell(),'TEST')
+    assert b._cash(as_of=q.observed_at)==before
+    with pytest.raises(ValueError,match='CASH_CLOCK_ROLLBACK'):
+        b._cash(as_of=q.observed_at,for_execution=True)
+
+
+def test_parcial_supervisor_conserva_causa_y_confirma_el_ledger(partial_spot):
+    from bm_exit_supervisor import PositionExitSupervisor
+    b,p,q,sell=partial_spot()
+    first=sell(price='90')
+    supervisor=PositionExitSupervisor(b,clock_fn=lambda:first.observed_at)
+    verdict=supervisor.supervise(p,first,first.observed_at)
+    assert verdict.state=='EXIT_PARTIAL' and verdict.cause=='STOP_PAPER'
+    remaining=b.store.open_positions()[0]
+    recovered=sell(2,'100','120')
+    # Callback que promete éxito no borra el remanente.
+    liar=PositionExitSupervisor(b,clock_fn=lambda:recovered.observed_at,close_fn=lambda *a,**k:True)
+    assert liar.supervise(remaining,recovered,recovered.observed_at).state=='EXIT_PENDING_EXECUTION'
+    assert supervisor.supervise(remaining,recovered,recovered.observed_at).state=='CLOSED'
+    assert b.store.recent_closed()[0]['close_reason']=='STOP_PAPER'
+
+
+def test_parcial_resultado_y_costo_de_lotes_no_multiplican_aprendizaje(partial_spot):
+    b,p,q,sell=partial_spot()
+    with b.store.connect() as c:
+        features=json.loads(p['features_json']);features['contract_quantity_step']='2'
+        c.execute('UPDATE paper_positions SET features_json=?',(json.dumps(features),))
+    p=b.store.open_positions()[0]
+    # Capacidad de 3 unidades: solamente un lote de 2.
+    assert b._close(p,sell(size='30'),'TEST')
+    assert D(b.store.open_positions()[0]['quantity'])==8
+    assert b.store.recent_closed()==[]
+    assert b._close(b.store.open_positions()[0],sell(2,'80','105'),'TEST')
+    final=b.store.recent_closed()[0]
+    with b.store.connect() as c:
+        sample=dict(c.execute('SELECT * FROM paper_learning_samples').fetchone())
+        assert D(sample['net_return_pct'])==D(final['net_pnl'])/(D(p['entry_price'])*10)*100
+        assert c.execute('SELECT COUNT(*) FROM paper_learning_samples').fetchone()[0]==1
+
+
+def test_parcial_corte_diario_persiste_y_permite_reducir_remanente(partial_spot):
+    b,p,q,sell=partial_spot(daily_loss_pct='1')
+    first=sell(price='80')
+    assert b._close(p,first,'STOP_PAPER')
+    state=b.daily_risk.evaluate(first.observed_at,quotes={q.symbol:first})['ARS']
+    assert state['state']=='LATCHED'
+    restarted=PaperBroker(PaperStore(b.store.path),initial_cash='10000',daily_loss_pct='1')
+    assert restarted.daily_risk.evaluate(first.observed_at)['ARS']['state']=='LATCHED'
+    assert restarted._close(restarted.store.open_positions()[0],sell(2,'100','120'),'STOP_PAPER')
+    assert restarted.daily_risk.evaluate(sell(2).observed_at)['ARS']['state']=='LATCHED'
+
+
+def test_parcial_informes_panel_y_caja_historica_concuerdan(partial_spot,monkeypatch):
+    import bi_operational_services as services
+    import bg_paper_dashboard as dashboard
+    b,p,q,sell=partial_spot()
+    services.init_schema(b.store)
+    first=sell()
+    assert b._close(p,first,'TEST')
+    cutoff=sell(2).observed_at
+    first_data=services._period_data(b.store,q.observed_at,cutoff)
+    assert first_data['closed']==[] and first_data['win_rate'] is None
+    assert len(first_data['realizations'])==1
+    assert D(first_data['positions'][0]['quantity'])==6
+    first_pnl=D(first_data['pnl_by_currency']['ARS'])
+    assert first_pnl==D(first_data['realizations'][0]['net_pnl'])
+    assert b._close(b.store.open_positions()[0],sell(3,'100','105'),'TEST')
+    historical=services._period_data(b.store,q.observed_at,cutoff)
+    assert historical==first_data  # ningún cierre/etiqueta futura en el informe
+    final=services._period_data(b.store,cutoff,sell(4).observed_at)
+    assert len(final['closed'])==1 and len(final['realizations'])==1
+    assert D(final['pnl_by_currency']['ARS'])+first_pnl==D(b.store.recent_closed()[0]['net_pnl'])
+    monkeypatch.setattr(dashboard,'DB_PATH',b.store.path)
+    snap=dashboard.snapshot()
+    assert snap['spot_state']=='READY' and len(snap['realized'])==2 and len(snap['closed'])==1
+    assert dashboard._trade_metrics(snap['closed'])[2]==100
+    assert 'Cantidad remanente' in dashboard.motor_page()
+    assert 'NO COMPARABLE' in dashboard.financial_page()
+
+
+@pytest.mark.parametrize('family',['BONOS','LETRAS','ON'])
+def test_parcial_renta_fija_conserva_nominal_lote_y_ganancia(tmp_path,family):
+    b=PaperBroker(PaperStore(str(tmp_path/'nominal.db')),initial_cash='10000',slippage_bps='0')
+    q=replace(quote(ask_size='100'),asset_class=family,settlement='INMEDIATA',ask=D(100))
+    spec=InstrumentContract(q.symbol,family,'ARS','BYMA','INMEDIATA',D('.01'),D(2),'TEST_FIXTURE')
+    q=replace(q,contract=spec)
+    assert b._open(q,D('.8'),{})[0]
+    p=b.store.open_positions()[0]
+    assert D(p['quantity'])==10
+    first=replace(q,bid=D(110),ask=D(111),bid_size=D(30),
+                  observed_at=quote(minute=1).observed_at,book_at=quote(minute=1).book_at)
+    assert not b._close(p,replace(first,contract=replace(spec,quantity_step=D(1))),'TEST')
+    assert b._close(p,first,'TEST')
+    remaining=b.store.open_positions()[0]
+    assert D(remaining['quantity'])==8
+    final=replace(first,bid=D(120),ask=D(121),bid_size=D(100),
+                  observed_at=quote(minute=2).observed_at,book_at=quote(minute=2).book_at)
+    assert b._close(remaining,final,'TEST')
+    closed=b.store.recent_closed()[0]
+    assert D(closed['gross_pnl'])==D('1.80')
+    assert b._cash(as_of=final.observed_at)==10000+D(closed['net_pnl'])
+
+
+def test_parcial_cada_venta_conserva_su_fecha_de_liquidacion(partial_spot):
+    import cd_spot_ledger as ledger
+    b,p,q,sell=partial_spot('A-24HS')
+    before=b._cash(as_of=q.observed_at)
+    assert b._close(p,sell(),'TEST')
+    second=replace(sell(2,'100'),observed_at='2026-08-27T14:00:00+00:00',book_at='2026-08-27T14:00:00+00:00')
+    assert b._close(b.store.open_positions()[0],second,'TEST')
+    with b.store.connect() as c:rows=ledger.sales(c,p['paper_id'])
+    assert rows[0]['available_at']!=rows[1]['available_at']
+    assert b._cash(as_of=second.observed_at)==before+D(rows[0]['net_proceeds'])
+    assert pending_proceeds(b.store,second.observed_at)==D(rows[1]['net_proceeds'])
+    assert b._cash(as_of='2026-09-01T00:00:00+00:00')==before+sum(D(r['net_proceeds']) for r in rows)
+
+
+def test_parcial_credito_desconocido_no_es_caja_y_valuacion_conserva_patrimonio(partial_spot):
+    b,p,q,sell=partial_spot('PLAZO-DESCONOCIDO')
+    before=b._cash(as_of=q.observed_at)
+    first=sell()
+    assert b._close(p,first,'TEST')
+    balances=b.mark_equity({q.symbol:first},as_of=first.observed_at)['ARS']
+    assert balances['cash']==before and balances['pending_proceeds']>0
+    assert balances['exposure']==first.bid*6
+    assert balances['equity']==10000+balances['realized_pnl']+balances['unrealized_pnl']
+    assert b._cash(as_of='2026-09-01T00:00:00+00:00')==before
+
+
+def test_parcial_panel_abierto_muestra_remanente_sin_muestra_ficticia(partial_spot,monkeypatch):
+    import bg_paper_dashboard as dashboard
+    b,p,q,sell=partial_spot()
+    assert b._close(p,sell(),'TEST')
+    monkeypatch.setattr(dashboard,'DB_PATH',b.store.path)
+    state=dashboard.snapshot()
+    assert len(state['open'])==1 and D(state['open'][0]['quantity'])==6
+    assert state['closed']==[] and len(state['realized'])==1
+    assert 'Cantidad remanente:</b> 6' in dashboard.motor_page()
+    with b.store.connect() as c:c.execute("UPDATE paper_spot_sales SET net_pnl='9999'")
+    assert dashboard.snapshot()['spot_state']=='UNAVAILABLE'
+    assert 'no interpretar como cero' in dashboard.paper_page()
+
+
+@pytest.fixture
 def shared_spot_book(tmp_path):
     broker = PaperBroker(PaperStore(str(tmp_path/'liquidity.db')),initial_cash='10000')
     q = quote(ask_size='100',bid_size='100')
