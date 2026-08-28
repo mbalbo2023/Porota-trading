@@ -26,6 +26,11 @@ def init_schema(store):
           PRIMARY KEY(run_id,ticker_query,instrument_type,market));
         CREATE TABLE IF NOT EXISTS broker_market_configuration(
           name TEXT PRIMARY KEY, checked_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS catalog_family_coverage(
+          instrument_type TEXT PRIMARY KEY, run_id TEXT NOT NULL,
+          declared INTEGER NOT NULL, queries INTEGER NOT NULL,
+          observed_count INTEGER NOT NULL, ready_paper_count INTEGER NOT NULL,
+          discovery_status TEXT NOT NULL, checked_at TEXT NOT NULL);
         """)
         legacy_exists = c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='instrument_catalog'").fetchone()
         if legacy_exists and not c.execute("SELECT 1 FROM financial_instrument_catalog LIMIT 1").fetchone():
@@ -36,6 +41,58 @@ def init_schema(store):
                     continue
                 record["status"] = "STALE"
                 persist(c, record)
+
+
+def validate_configuration(value):
+    """Conserva literalmente los enums; no los convierte en permisos.
+
+    No acepta un snapshot parcial ni mezcla una respuesta inválida con la
+    configuración de un ciclo anterior. Vacío es distinto de no disponible.
+    """
+    names = {'instrument_types', 'markets', 'settlements', 'quantity_types',
+             'operation_terms', 'operation_types', 'operations'}
+    if not isinstance(value, dict) or set(value) != names:
+        raise ValueError('PPI_CONFIGURATION_INVALID_SHAPE')
+    for items in value.values():
+        if (not isinstance(items, list) or len(items) > 100
+                or any(not isinstance(s, str) or not s.strip() or len(s) > 100 for s in items)
+                or len(set(items)) != len(items)):
+            raise ValueError('PPI_CONFIGURATION_INVALID_SHAPE')
+    return {key: list(items) for key, items in value.items()}
+
+
+def persist_family_coverage(c, configuration, query_results, records, run_id, observed_at):
+    """Inventario completo de familias declaradas, aunque no haya semillas.
+
+    declared: 1 devuelta, 0 no enumerada en snapshot válido, -1 desconocida.
+    Cuenta identidades, no filtros ni permisos; únicamente la última ejecución.
+    Mantiene familias retiradas y las conocidas si falla la configuración.
+    """
+    records = list(records)
+    declared = set(configuration['instrument_types']) if configuration is not None else None
+    families = {r[0] for r in c.execute('SELECT instrument_type FROM catalog_family_coverage')}
+    families.update(declared or ())
+    families.update(q[3] for q in query_results)
+    families.update(r['instrument_type'] for r in records)
+    for kind in sorted(families):
+        queries = [q for q in query_results if q[3] == kind
+                   and q[5] not in {'TYPE_NOT_ENUMERATED', 'MARKET_NOT_ENUMERATED'}]
+        observed = [r for r in records if r['instrument_type'] == kind]
+        errors = any(q[5] in {'ERROR', 'INVALID_METADATA'} for q in queries)
+        listed = -1 if declared is None else int(kind in declared)
+        if listed == 0:
+            state = 'NOT_ENUMERATED'
+        elif observed:
+            state = 'OBSERVED_WITH_ERRORS' if errors else 'INSTRUMENTS_OBSERVED'
+        elif errors:
+            state = 'QUERY_ERROR'
+        elif queries:
+            state = 'EMPTY_FILTER_RESULTS'
+        else:
+            state = 'DECLARED_NO_QUERY' if listed == 1 else 'CONFIGURATION_UNAVAILABLE'
+        c.execute('INSERT OR REPLACE INTO catalog_family_coverage VALUES(?,?,?,?,?,?,?,?)',
+            (kind, run_id, listed, len(queries), len(observed),
+             sum(r['capability'] == 'READY_PAPER_SPOT' for r in observed), state, observed_at))
 
 
 def normalize_record(raw, settlement_hint, observed_at, run_id):
