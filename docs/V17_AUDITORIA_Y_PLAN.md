@@ -456,6 +456,81 @@ Las fixtures de prueba son sintéticas y están rotuladas TEST; no se presentan
 como cotizaciones reales ni como evidencia de rentabilidad. El replay no se
 conecta automáticamente al runtime de producción. No hay despliegue en este avance.
 
+## Octavo checkpoint: decisiones del candidato conectadas a ejecución
+
+### Señal temporal y costos netos
+
+`bo_signal_core` se reescribe como **candidato offline**, sin importar perfiles
+por defecto de acciones para otras familias. La propuesta original admitía
+volumen faltante con puntos favorables, calculaba beneficio/riesgo bruto y
+usaba historial sin disponibilidad temporal suficiente. No se copian esos
+comportamientos ni se presentan sus umbrales como parámetros óptimos.
+
+Se conserva la fórmula explícita de momentum del paper (media corta/larga,
+penalización de spread y score acotado), pero sobre **cierres de velas completas**.
+La ventana y el resto de los parámetros se aportan por corrida y quedan
+congelados antes del test. La versión identifica esos parámetros normalizados.
+No se toca el algoritmo de muestras, el umbral adaptativo ni Gemini del runtime
+actual: el candidato y la estrategia productiva no se declaran equivalentes.
+
+Cada evaluación lee la última versión conocida a su instante y compara la
+ventana con una grilla explícita de sesiones, con cobertura y fuente. No usa
+velas abiertas, futuras, sintéticas, sin volumen, inválidas o fuera de grilla;
+no sustituye huecos por barras antiguas buenas. La antigüedad y el calentamiento
+se controlan por separado. El ATR implementado es la media simple de rangos
+verdaderos del período, explícitamente **no Wilder**, sin aceptar datos cero
+como si demostraran una oportunidad.
+
+Stop y objetivo se derivan del ATR y se redondean al tick. La cantidad respeta
+lotes, profundidad, caja con costos y presupuesto de riesgo **modelado**. El
+ratio usa beneficio neto y pérdida neta, incluyendo ambas puntas, mínimos,
+fijos, slippage y un supuesto de gap configurable. No es un máximo garantizado
+de pérdida. La compra tiene un límite de precio para no ejecutar por encima
+del presupuesto usado al decidir; no se asume un fill al cierre de la señal.
+
+### Estrategia y ledger (`by_strategy_backtest` / `bx_execution_replay`)
+
+- Se generan decisiones durante el recorrido de los libros, después de
+  procesar los fills anteriores. El callback recibe una copia del estado y
+  sólo el prefijo ocurrido; no recibe libros futuros ni puede retrofechar una
+  orden. No se mezclan órdenes preparadas con este modo de generación.
+- La ejecución comparte el mismo ledger del séptimo avance. Nuevas órdenes
+  necesitan un libro posterior; se conservan costos, liquidez, crédito pendiente,
+  fills parciales y estado de caja. No existe otro cálculo de efectivo paralelo.
+- Se conserva un plan de stop/objetivo por entrada y la evidencia que lo
+  originó. Las salidas referencian ese plan: una revisión posterior no obliga
+  a generar una nueva señal de compra para poder reducir el riesgo existente.
+- Stop, objetivo y plazo generan intenciones; la venta depende del siguiente
+  libro y puede ocurrir peor que el stop. El plazo corre desde el fill de
+  entrada y se evalúa al llegar eventos, no desde la señal. Una salida parcial
+  conserva su motivo y reintenta el remanente; sin libro usable queda pendiente.
+- Los mínimos/fijos se reevalúan contra el fill realmente abierto. Si una
+  cantidad parcial vuelve insuficiente la economía neta, se solicita salida.
+  Se evita repetir entradas en cada snapshot de la misma vela.
+- El estrés de costos vuelve a **generar decisiones**; puede cancelar una
+  entrada, no sólo restar dinero a un listado fijo de operaciones ya elegidas.
+- Se devuelve traza de decisiones con razones/evidencia, órdenes, fills,
+  manifiesto y curva. La CLI existente reconoce `signal_config` y
+  `session_grid`, los convierte a los contratos explícitos y reproduce la
+  corrida leyendo SQLite en modo read-only. La salida declara
+  `CANDIDATE_STRATEGY_BACKTEST` y siempre `promotion_allowed=False`.
+
+### Qué aún no demuestra
+
+Es una evaluación secuencial de un candidato con parámetros fijos, una serie
+y posición larga de contado. **No es calibración walk-forward, holdout
+independiente ni reproducción completa del paper con IA, bloqueo diario,
+supervisión por reloj o selección de cartera.** Tampoco modela eventos
+corporativos ni genera un benchmark histórico de cauciones. Se necesita un
+archivo real normalizado de velas/libros y metadatos para ejecutar evaluaciones
+de mercado: las fixtures sintéticas sólo verifican comportamiento del código.
+
+Futuros, opciones, FCI y cauciones no pasan por esta ruta de compraventa. Se
+mantienen sus contratos y el ciclo de cauciones colocadoras con saldo disponible;
+sus estrategias/ejecutores especializados siguen pendientes. No se habilita
+promoción automática del auto-tuner, no se cambian parámetros del servidor y
+no se conecta automáticamente este candidato al runtime. Sin despliegue.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -468,7 +543,7 @@ conecta automáticamente al runtime de producción. No hay despliegue en este av
 | `bq_exit_policy` | Horario 17:00 uniforme; breakeven sin costo completo; bloqueo diario no persistente | Sesión paper acotada y bloqueo persistente implementados; sesión real por instrumento y stops dinámicos netos pendientes |
 | Liquidación forzada al cierre | No existe fill ejecutable una vez cerrado el mercado o sin profundidad | Anticipar cierre; conservar salida pendiente si no se puede ejecutar |
 | `bn_telegram_bus` | Fill y notificación en transacciones distintas; riesgo de perder evento; 429 mal coordinado | Reescrito: outbox transaccional, lease, ACK validado, cooldown de toda la cola y entrega al menos una vez |
-| `bo_signal_core` | Reward/risk bruto, umbrales heurísticos y controles incompletos de datos | Evaluar neto, calidad y disponibilidad temporal; validar sin anticipación |
+| `bo_signal_core` | Reward/risk bruto, umbrales heurísticos y datos faltantes favorables | Candidato offline reescrito: ventanas as-of, grilla, ATR simple, ratio neto, caja/riesgo y ejecución secuencial; runtime/IA todavía separados |
 | `bp_dashboard_v17` | CSV ordena por `id` inexistente en muestras; consultas silenciosamente vacías | Reutilizar panel existente y corregir consultas; no reemplazo ciego |
 | `br_backtest_gate` | Tres meses distintos pueden cubrir sólo ~32 días; drawdown y estrés incompletos | Implementados controles de span, datos, purga/embargo y drawdown marcado; backtester, estrés y aceptación de estrategia siguen pendientes |
 | Comparación con caución | Tasa anual fija y período supuesto distorsionan Sharpe/benchmark | Tasa, plazo y período históricos observados, no constantes inventadas |
@@ -522,6 +597,16 @@ de estos tests son dobles locales; no se enviaron consultas reales.
 Se mantiene una advertencia existente Starlette/httpx. Verificación local con
 `python -m pytest -q --cov=.` y reportes XML. No se probaron fills reales.
 
+Octavo checkpoint: **602 tests aprobados**, 0 fallas, 0 errores y 0 omisiones.
+Cobertura local 54,66%; núcleo candidato 98,08%, driver de estrategia 98,78% y
+replay 84,20%. Cumple los cuatro mínimos financieros del CI. Incluye 96 pruebas
+específicas de estrategia/replay: prefijos sin anticipación, correcciones
+futuras, bloqueo de datos inválidos, salida con revisión de velas inválida,
+gap de compra, gap de stop sin fill ficticio, latencia, timeout desde fill,
+reintento parcial, efecto de costos sobre la decisión y reproducción por CLI.
+La CLI se prueba en un proceso real con la base sin modificar; señales y fills
+coinciden con la corrida original. No hubo consultas ni órdenes al broker.
+
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
 todos los pins de producción. Advertencia observada: deprecación del TestClient
@@ -535,7 +620,9 @@ El cuarto avance también obtuvo CI completo aprobado, run 33132183073, commit
 run 33133328514, commit `c113cff9497464a943ae73a4fb7eb29e419edd76`.
 El sexto obtuvo CI completo aprobado, run 33134835615, commit
 `731475c8485ca7245a807ba31d70d871fddfaa51`, con cobertura global remota 51,18%.
-El resultado remoto del séptimo se registra en el PR #3 tras verificar el
+El séptimo obtuvo CI completo aprobado, run 33135821052, commit
+`6ab7b990c4937c7491fee5a1438101119454b3b9`, cobertura remota 53,40%.
+El resultado remoto del octavo se registra en el PR #3 tras verificar el
 contenido subido y el CI completo.
 Los 12 payloads públicos aportados se usan como fixture; aún falta integración
 con cotizaciones/contratos especializados y validación en el Droplet.
