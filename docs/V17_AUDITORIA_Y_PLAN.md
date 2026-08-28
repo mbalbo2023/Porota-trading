@@ -65,6 +65,26 @@ La suite nueva verifica rechazo de legado/alias, identidad/capital, procesos
 concurrentes, panel sin fallback y un worker offline real RUNNING → SIGTERM →
 STOPPED sobre datos ficticios. [Alcance y pendientes de despliegue](V17_PAPER_SEPARACION.md).
 
+## Checkpoint 33 — preparación del procedimiento de instalación aislado
+
+Tras completar CI234 se continúa con el siguiente dato indispensable del host:
+propietarios/permisos de las rutas nuevas y su padre, existencia del destino y
+espacio disponible. El montaje Docker no demuestra que botuser pueda crear la
+carpeta nueva. `v17_preinstall_readonly.py` reúne sólo metadatos de cuatro rutas
+fijas y un Docker inspect acotado. No abre SQLite, .env o credenciales; no crea
+archivos/contenedores, cambia permisos, instala o arranca motores.
+
+Paquete de nombre único `porota_v17_preinstalacion_r1.zip`. Requiere una acción
+del operador para devolver el JSON; este entorno no tiene SSH al Droplet.
+No repite la auditoría contable completada ni el sondeo PPI. El resultado no
+autoriza una instalación ni certifica ACL/UID remapeados/escritura efectiva.
+[Comando único y límites](V17_PREINSTALACION.md).
+
+Validación local: 1.392 pruebas aprobadas, 4 omitidas por ejecución como root,
+0 fallas; cobertura global 68,57 %. Las 28 pruebas nuevas cubren el lector y
+el empaquetado determinista. El contenido del ZIP se comparó con el código
+probado; CI remoto y resultado del host se registran por separado en el PR.
+
 ## Material revisado
 
 Fuente de `Porota-trading-testing.zip`; README, parches y ocho módulos propuestos
