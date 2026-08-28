@@ -218,7 +218,7 @@ class CaucionBook:
         return {"principal": principal, "accrued": accrued, "unrealized": unrealized, "realized": realized}
 
     def place(self, offer, principal, request_id, as_of, available_cash, *, reserve=ZERO,
-              participation=Decimal("0.10"), max_quote_age_seconds=60):
+              participation=Decimal("0.10"), max_quote_age_seconds=60, admission=None):
         at = aware_datetime(as_of)
         principal = decimal_value(principal, "capital", positive=True)
         reserve = decimal_value(reserve, "reserva de caja", nonnegative=True)
@@ -237,6 +237,13 @@ class CaucionBook:
                 if previous["request_fingerprint"] != fingerprint:
                     raise ValueError("Clave de colocación reutilizada con términos diferentes")
                 return dict(previous)
+            if admission:
+                error = admission(c,offer.currency,at)
+                if error:
+                    # Sólo se evaluó riesgo, todavía no existe colocación.
+                    # Conservar el latch aunque la petición sea rechazada.
+                    c.commit()
+                    raise ValueError(error)
             age = (at - aware_datetime(offer.quoted_at)).total_seconds()
             if age < 0 or age > max_quote_age_seconds:
                 raise ValueError("Cotización de caución vencida o futura")
