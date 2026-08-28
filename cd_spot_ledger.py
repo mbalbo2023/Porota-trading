@@ -57,7 +57,10 @@ def partition(c, p, at=None):
     original_qty = decimal_value(p['quantity'],'cantidad original',positive=True)
     original_cost = decimal_value(p['entry_cost'],'costo original',nonnegative=True)
     entry_price = decimal_value(p['entry_price'],'precio original',positive=True)
-    factor = decimal_value(json.loads(p['features_json'] or '{}').get('contract_cash_multiplier','1'),'factor',positive=True)
+    features = json.loads(p['features_json'] or '{}')
+    if not isinstance(features,dict):
+        raise ValueError('Contrato de posición debe ser un objeto')
+    factor = decimal_value(features.get('contract_cash_multiplier','1'),'factor',positive=True)
     if {r['fill_id'] for r in rows} != {r['id'] for r in fills}:
         raise ValueError('Ventas sin asignación de cantidad/costo')
     sold = costs = seen_qty = seen_cost = ZERO
