@@ -4,7 +4,7 @@ Una posición sigue siendo una muestra de estrategia. Los fills realizan PnL
 y producen créditos por separado; sólo el último cierre etiqueta la muestra.
 Lecturas históricas reconstruyen cantidades/costos al instante solicitado.
 """
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import json
 
 from bs_instrument_contracts import aware_datetime, decimal_value, cash_currency
@@ -29,7 +29,7 @@ def sales(c, paper_id):
     if not c.execute("SELECT 1 FROM sqlite_master WHERE name='paper_spot_sales'").fetchone():
         return []
     return [dict(r) for r in c.execute('''SELECT s.*,f.quantity,f.price,f.costs,f.filled_at,
-        f.side,f.paper_id AS fill_paper_id FROM paper_spot_sales s
+        f.side,f.paper_id AS fill_paper_id,f.source AS fill_source FROM paper_spot_sales s
         LEFT JOIN paper_fills f ON f.id=s.fill_id WHERE s.paper_id=?
         ORDER BY julianday(f.filled_at),s.fill_id''',(paper_id,))]
 
@@ -46,6 +46,27 @@ def entry_terms(p):
         raise ValueError('Contrato de posición debe ser un objeto')
     factor = decimal_value(features.get('contract_cash_multiplier','1'),'factor',positive=True)
     return qty, fee, price, factor
+
+
+def allocated_entry_cost(original_qty, original_cost, sold_qty, allocated_cost, sell_qty):
+    """Regla PAPER única para escritura y lectura de costos de entrada.
+
+    Prorratea el costo histórico por cantidad original, redondea en centavos
+    HALF_UP y asigna el residuo exacto al último fill. No consulta ni recalcula
+    comisiones. El tope conserva costos subcentavo de entradas importadas.
+    """
+    original_qty = decimal_value(original_qty, 'cantidad original', positive=True)
+    original_cost = decimal_value(original_cost, 'costo original', nonnegative=True)
+    sold_qty = decimal_value(sold_qty, 'cantidad ya vendida', nonnegative=True)
+    allocated_cost = decimal_value(allocated_cost, 'costo ya asignado', nonnegative=True)
+    sell_qty = decimal_value(sell_qty, 'cantidad a vender', positive=True)
+    if sold_qty >= original_qty or sell_qty > original_qty - sold_qty or allocated_cost > original_cost:
+        raise ValueError('Reparto parcial excede la cantidad o costo original')
+    remaining_cost = original_cost - allocated_cost
+    if sell_qty == original_qty - sold_qty:
+        return remaining_cost
+    portion = (original_cost * sell_qty / original_qty).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+    return min(remaining_cost, portion)
 
 
 def single_close_proceeds(p, fills):
@@ -103,11 +124,14 @@ def partition(c, p, at=None):
     sold = costs = seen_qty = seen_cost = ZERO
     realized = []
     for r in rows:
-        if r['side'] != 'SELL_SIMULATED' or r['fill_paper_id'] != p['paper_id']:
+        if (r['side'] != 'SELL_SIMULATED' or r['fill_paper_id'] != p['paper_id']
+                or r['fill_source'] != p['source']):
             raise ValueError('Venta parcial sin fill compatible')
         when = aware_datetime(r['filled_at'])
         qty = decimal_value(r['quantity'],'cantidad vendida',positive=True)
         cost = decimal_value(r['entry_cost'],'costo asignado',nonnegative=True)
+        if cost != allocated_entry_cost(original_qty, original_cost, sold, costs, qty):
+            raise ValueError('Costo de entrada parcial no concilia con su cantidad histórica')
         sold += qty
         costs += cost
         if when < start or (end and when > end) or sold > original_qty or costs > original_cost:
@@ -134,6 +158,13 @@ def partition(c, p, at=None):
             decimal_value(p[target],target)!=sum((Decimal(r[source]) for r in rows),ZERO)
             for target,source in (('net_pnl','net_pnl'),('gross_pnl','gross_pnl'),('exit_cost','costs')))):
         raise ValueError('Cierre agregado no concilia con sus fills')
+    if end:
+        # Misma operación Decimal que el ejecutor: último fill + anteriores.
+        # No inferir un precio desde el PnL, que incluye costos y factor nominal.
+        average = (Decimal(rows[-1]['price']) * Decimal(rows[-1]['quantity']) + sum(
+            (Decimal(r['price']) * Decimal(r['quantity']) for r in rows[:-1]), ZERO)) / original_qty
+        if decimal_value(p['exit_price'], 'precio agregado de cierre', positive=True) != average:
+            raise ValueError('Precio agregado de cierre no concilia con sus fills')
     if at is not None and start > at:
         return None, []
     remaining = original_qty-seen_qty
