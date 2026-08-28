@@ -847,9 +847,11 @@ class PaperBroker:
                 return False
             final = qty==remaining
             # Reparto monetario en centavos, con residuo exacto en el último fill.
-            from bt_caucion_paper import money, modeled_sale_settlement
-            entry_cost = D(current['entry_cost']) if final else min(D(current['entry_cost']),
-                money(D(root['entry_cost'])*qty/D(root['quantity'])))
+            from bt_caucion_paper import modeled_sale_settlement
+            entry_cost = spot_ledger.allocated_entry_cost(
+                D(root['quantity']), D(root['entry_cost']),
+                D(root['quantity']) - remaining,
+                D(root['entry_cost']) - D(current['entry_cost']), qty)
             exit_price = (q.bid*(1-self.slippage)).quantize(Decimal('0.0001'))
             if exit_price <= 0:
                 return False
