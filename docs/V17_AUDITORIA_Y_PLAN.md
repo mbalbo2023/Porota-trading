@@ -27,6 +27,9 @@ No se enviaron órdenes reales. Los nuevos registros son `PRODUCTION_PAPER`.
   comandos cortos con salida al portapapeles mediante OSC 52 en Termius.
 - Parámetros delegados: perfil conservador PAPER de cauciones del checkpoint 17.
   Motores anteriores apagados hasta preparar la nueva versión; no reiniciarlos.
+- Fuente indicada posteriormente por el operador: documentación oficial de la
+  API de PPI. No se le exige aportar una fuente alternativa. Usar sólo lo que
+  pueda contrastarse allí; una omisión no autoriza inventar términos financieros.
 
 ## Material revisado
 
@@ -957,6 +960,69 @@ esquemas, operaciones históricas, límites, proveedor ni ejecución real. No es
 un trabajo nuevo de ciberseguridad. Motor y observador del servidor permanecen
 apagados según la evidencia aportada; sin despliegue.
 
+## Decimonoveno checkpoint: contrato documentado de la API PPI
+
+Revisión adicional de REST, librería Python y ejemplo oficial el 28/08/2026,
+por indicación del operador. No se realizaron login, lecturas de cuentas,
+presupuestos ni confirmaciones reales. Swagger no produjo contenido utilizable
+en esta herramienta y la colección Postman enlazada devolvió error; no se
+presentan como documentos examinados ni se sortearon sus errores de acceso.
+
+### Qué respalda la documentación y qué no se infiere
+
+| Dato/ruta PPI | Evidencia utilizable | Límite para cauciones |
+|---|---|---|
+| Configuration/InstrumentTypes y Operations | CAUCIONES y COLOCAR-CAUCIÓN enumerados | No prueba habilitación de la cuenta ni ejecución integrada |
+| Configuration/QuantityTypes | DINERO, PAPELES, CANTIDAD-TOTAL | MONTO no aparece en ese enum; no asignar una unidad a caución por analogía |
+| SearchInstrument | Identidad, descripción, moneda, clase y mercado | No extraer vencimiento contractual o base anual desde el ticker |
+| MarketData/Book | Fecha, niveles, price y quantity | No asumir unidad de tasa, capital ni lado ejecutable de colocadora |
+| Order/Budget | Consulta separada de Order/Confirm | amount no se convierte automáticamente en gasto total; ejemplo genérico sin desglose suficiente |
+| operationMaxDate | Campo de vigencia de orden | No es evidencia del vencimiento financiero de la caución |
+| Account/AvailableBalance | Saldo por moneda/plazo | El lector actual no consulta cuentas; la caja PAPER sigue siendo simulada |
+
+Referencias: [REST PPI](https://itatppi.github.io/ppi-official-api-docs/api/documentacionRest/),
+[Python PPI](https://itatppi.github.io/ppi-official-api-docs/api/documentacionPython/)
+y [ejemplo oficial](https://itatppi.github.io/ppi-official-api-docs/api/ejemploPython/).
+
+### Cambios implementados
+
+- Se elimina el fallback genérico PAPELES para familias desconocidas y los
+  defaults supuestos para cauciones/FCI. `budget_order()` y `confirm_order()`
+  rechazan familias especializadas antes de llamar al SDK, aun con unidad
+  explícita, intercepción de simulación o probe Sandbox. El método antiguo
+  `place_caucion()` ya estaba bloqueado, pero no cerraba esta otra ruta.
+- No desaparecen instrumentos del catálogo. Acciones, CEDEARs, ETF, bonos,
+  letras/NOBAC/LEBAC y ON conservan la ruta genérica de contado; esto no certifica
+  costos, unidades nominales o sesión de una especie particular. Cauciones,
+  opciones, futuros, fondos y mercados externos requieren su adaptador propio.
+- Presupuesto y confirmación usan un único constructor de términos y los
+  campos por nombre del SDK instalado. Enums fuera de la lista documentada
+  se rechazan antes del transporte; un valor vacío no se reemplaza por default.
+- Antes se enviaba por default VÁLIDA-HASTA-EL con operationMaxDate=None.
+  El default pasa a POR-EL-DÍA. Si se elige vigencia fechada, la política local
+  exige fecha futura con zona y la transmite en ambas solicitudes; una fecha
+  con otro tipo de vigencia se rechaza. Se revalida antes de llamar al SDK.
+  Son reglas conservadoras del cliente, no una afirmación sobre todos los
+  casos que el servidor PPI pueda aceptar. No se cambian órdenes existentes.
+- La fachada de lectura agrega los cuatro GET públicos de QuantityTypes,
+  OperationTerms, OperationTypes y Operations a su misma sesión, con forma
+  list[str] comprobada. La sincronización de catálogo ya persiste estos valores
+  con su fecha. Lista vacía se conserva sin inventar soporte. No se habilitan
+  Account, Order/Budget, Order/Confirm ni nuevas sesiones en ese lector.
+- El sondeo heredado distingue falta de adaptador/consulta local inválida de
+  un rechazo atribuido a PPI. No se presenta una excepción local como evidencia
+  de permiso denegado. Ese sondeo genérico sigue sin certificar permisos o
+  costos de toda una familia mediante un presupuesto de ejemplo.
+
+**Resultado de alcance:** se avanzó usando la fuente oficial indicada, sin
+pedir al operador otra documentación. Sigue sin haber un mapeo financiero
+contrastado que transforme el libro genérico en `CaucionOffer` completo ni un
+presupuesto all-in real confirmado. Esos casos conservan HOLD; no se activa
+colocación automática. No se modifica la política de reserva del checkpoint 17,
+ni se arranca el servidor. Sin trabajo nuevo de ciberseguridad; se conservan
+las barreras existentes de cuentas/órdenes, ampliando sólo consultas públicas
+necesarias del contrato API.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -1133,6 +1199,17 @@ lectura histórica, reintento roto, lote sin acreditación parcial, riesgo/infor
 panel sin escritura y salidas spot que continúan con supervisor DEGRADED.
 Verificación funcional del panel, sin captura visual en navegador/tablet.
 CI remoto completo a registrar en la PR; sin despliegue ni llamadas PPI/Telegram.
+
+Decimonoveno checkpoint: **934 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 48 pruebas nuevas. Cobertura local global 63,55%; cuatro mínimos
+financieros existentes cumplidos. Casos de familias especializadas bloqueadas
+antes del SDK/intercepción/probe, identidad de ocho familias de contado,
+defaults no mutables, enums inválidos, vigencia diaria/fechada, revalidación
+antes del transporte, Sandbox sin autoridad de producción y configuración
+pública con forma comprobada sin abrir cuentas/órdenes. El sondeo distingue
+adaptador ausente de permiso denegado. Fixtures y modelos del SDK instalado,
+sin acceso a PPI ni certificación de su ejecución real. CI remoto completo a
+registrar en la PR; no se despliega ni se arranca el servidor.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
