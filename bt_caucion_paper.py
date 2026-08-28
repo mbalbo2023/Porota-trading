@@ -216,28 +216,73 @@ class CaucionOffer:
         return interest, fees, interest - fees
 
 
+def validate_position(p):
+    """Concordancia interna antes de reconocer caja, profundidad o un crédito.
+
+    No consulta PPI ni revaloriza comisiones antiguas con el tarifario actual.
+    El costo legado ya contabilizado permanece fijo; un presupuesto explícito
+    sí debe coincidir. Un registro inválido requiere conciliación, no reparación.
+    """
+    try:
+        offer = CaucionOffer(**json.loads(p['terms_json']))
+        principal = decimal_value(p['principal'],'principal',positive=True)
+        fees = decimal_value(p['total_fees'],'costos',nonnegative=True)
+        interest = decimal_value(p['gross_interest'],'interés',nonnegative=True)
+        rate = decimal_value(p['annual_rate_fraction'],'tasa',nonnegative=True)
+        if any(value != money(value) for value in (principal,fees,interest)):
+            raise ValueError('Importes incompatibles con centavos')
+        if (principal % offer.principal_step or
+                not offer.minimum_principal <= principal <= offer.available_principal):
+            raise ValueError('Capital incompatible con el contrato')
+        if (not p['paper_id'] or not p['request_id'] or p['source']!='PRODUCTION_PAPER'
+                or p['instrument_id']!=offer.instrument_id or p['currency']!=offer.currency
+                or p['fee_payment']!=offer.fee_payment or rate!=offer.annual_rate_fraction
+                or p['interest_days']!=offer.interest_days or p['day_count_basis']!=offer.day_count_basis):
+            raise ValueError('Términos no concuerdan con el contrato')
+        expected = money(principal*offer.annual_rate_fraction*offer.interest_days/offer.day_count_basis)
+        if interest!=expected or interest<=fees:
+            raise ValueError('Interés o neto incompatible con la colocación')
+        if offer.quoted_total_fees is not None and (
+                principal!=offer.fee_quote_principal or fees!=money(offer.quoted_total_fees)):
+            raise ValueError('Costo no concuerda con el presupuesto exacto')
+        digest = hashlib.sha256((p['terms_json']+'|'+format(principal.normalize(),'f')).encode()).hexdigest()
+        if digest!=p['request_fingerprint']:
+            raise ValueError('Huella de términos/capital inconsistente')
+        opened, maturity = map(aware_datetime,(p['opened_at'],p['maturity_at']))
+        settled = aware_datetime(p['settled_at']) if p['settled_at'] is not None else None
+        if (opened.astimezone(TZ).date().isoformat()!=offer.start_date
+                or aware_datetime(offer.quoted_at)>opened or maturity!=aware_datetime(offer.maturity_at)
+                or maturity<=opened or p['status'] not in {'OPEN','MATURED'}
+                or (p['status']=='MATURED')!=(settled is not None)
+                or (settled is not None and settled<maturity)):
+            raise ValueError('Cronología de caución inválida')
+        return offer
+    except (ValueError,TypeError,KeyError,AttributeError,ArithmeticError) as exc:
+        raise ValueError('CAUCION_LEDGER_INVALID: '+str(exc)) from exc
+
+
 class CaucionBook:
     def __init__(self, store):
         self.store = store
 
     def positions(self, *, currency=None, status=None, connection=None):
-        where, params = [], []
-        for column, value in (("currency", currency), ("status", status)):
-            if value is not None:
-                where.append(column + "=?")
-                params.append(value)
         if connection is None:
             with self.store.connect() as c:
                 return self.positions(currency=currency, status=status, connection=c)
-        return [dict(r) for r in connection.execute("SELECT * FROM paper_cauciones" +
-                (" WHERE " + " AND ".join(where) if where else ""), params)]
+        rows = [dict(r) for r in connection.execute('SELECT * FROM paper_cauciones')]
+        # Validar ANTES de filtrar: mover una fila rota de ARS a otra moneda
+        # no puede hacer desaparecer su débito de la caja ARS.
+        for p in rows:
+            validate_position(p)
+        return [p for p in rows if (currency is None or p['currency']==currency)
+                and (status is None or p['status']==status)]
 
     def used_principal(self, offer, *, connection):
         """La misma fotografía de liquidez no se repone por otro request_id."""
         used = ZERO
         for p in connection.execute('SELECT * FROM paper_cauciones WHERE instrument_id=? AND currency=?',
                                     (offer.instrument_id,offer.currency)):
-            previous = CaucionOffer(**json.loads(p['terms_json']))
+            previous = validate_position(p)
             if aware_datetime(previous.quoted_at) > aware_datetime(offer.quoted_at):
                 raise ValueError('CAUCION_OLDER_BOOK')
             if book_key(previous) == book_key(offer):
@@ -319,6 +364,7 @@ class CaucionBook:
         c = connection
         previous = c.execute("SELECT * FROM paper_cauciones WHERE request_id=?", (request_id,)).fetchone()
         if previous:
+            validate_position(previous)
             if previous["request_fingerprint"] != request_fingerprint:
                 raise ValueError("Clave de colocación reutilizada con términos diferentes")
             return dict(previous)
@@ -359,7 +405,7 @@ class CaucionBook:
         settled = []
         with self.store.connect() as c:
             c.execute("BEGIN IMMEDIATE")
-            rows = c.execute("SELECT * FROM paper_cauciones WHERE status='OPEN'").fetchall()
+            rows = self.positions(status='OPEN',connection=c)
             for p in rows:
                 if aware_datetime(p["maturity_at"]) > at:
                     continue
