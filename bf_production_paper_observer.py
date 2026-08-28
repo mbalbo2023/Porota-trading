@@ -225,6 +225,10 @@ def _support_schema(store):
           settlement TEXT NOT NULL, date_from TEXT NOT NULL, date_to TEXT NOT NULL,
           downloaded_at TEXT NOT NULL, row_count INTEGER NOT NULL, payload_json TEXT,
           PRIMARY KEY(symbol,instrument_type,settlement));
+        CREATE TABLE IF NOT EXISTS production_history_attempts(
+          symbol TEXT NOT NULL, instrument_type TEXT NOT NULL, settlement TEXT NOT NULL,
+          attempted_at TEXT NOT NULL, state TEXT NOT NULL, valid_rows INTEGER NOT NULL,
+          detail TEXT NOT NULL, PRIMARY KEY(symbol,instrument_type,settlement));
         CREATE TABLE IF NOT EXISTS source_sync(
           source TEXT PRIMARY KEY, status TEXT NOT NULL, last_attempt_at TEXT NOT NULL,
           last_success_at TEXT, items INTEGER NOT NULL DEFAULT 0, detail TEXT NOT NULL);
@@ -501,12 +505,31 @@ def _gemini_health(store, gate):
         return False, detail
 
 
-def _history_count(value):
-    if isinstance(value, list):
-        return len(value)
-    if isinstance(value, dict):
-        return max([_history_count(v) for v in value.values()] or [0])
-    return 0
+def _history_count(value, *, as_of=None, date_from=None, date_to=None):
+    # El contrato documentado es una lista de OHLC/volumen. Una lista de
+    # mensajes de error o claves anidadas no equivale a una serie financiera.
+    from bs_instrument_contracts import aware_datetime, decimal_value
+    at=aware_datetime(as_of or now_iso())
+    seen=set()
+    valid = 0
+    for row in value if isinstance(value,list) else []:
+        try:
+            if not isinstance(row,dict):
+                continue
+            source_at=aware_datetime(row.get('date'))
+            if source_at>at or source_at in seen:
+                continue
+            source_day=source_at.astimezone(TZ).date()
+            if (date_from and source_day<date_from) or (date_to and source_day>date_to):
+                continue
+            prices={k:decimal_value(row.get(k),k,positive=True) for k in ('openingPrice','max','min','price')}
+            decimal_value(row.get('volume'),'volume',nonnegative=True)
+            if prices['min']<=min(prices['openingPrice'],prices['price'])<=max(prices['openingPrice'],prices['price'])<=prices['max']:
+                valid+=1
+                seen.add(source_at)
+        except (ValueError,TypeError):
+            continue
+    return valid
 
 
 def _historical_targets(store):
@@ -517,8 +540,11 @@ def _historical_targets(store):
               h.downloaded_at FROM candidate_universe u
               LEFT JOIN production_history h ON h.symbol=u.ticker
                 AND h.instrument_type=u.instrument_type AND h.settlement=u.settlement
+              LEFT JOIN production_history_attempts a ON a.symbol=u.ticker
+                AND a.instrument_type=u.instrument_type AND a.settlement=u.settlement
               WHERE u.status='AVAILABLE' AND (u.can_simulate=1 OR u.instrument_type='INDICES')
-              ORDER BY h.downloaded_at IS NOT NULL,h.downloaded_at,u.instrument_type,u.ticker""").fetchall()
+              ORDER BY COALESCE(a.attempted_at,h.downloaded_at) IS NOT NULL,
+                COALESCE(a.attempted_at,h.downloaded_at),u.instrument_type,u.ticker""").fetchall()
         if rows:
             return [(r[0], r[1], r[2]) for r in rows]
     except Exception:
@@ -527,26 +553,50 @@ def _historical_targets(store):
 
 
 def _download_histories(reader, store):
-    start, end = date.today() - timedelta(days=365), date.today()
+    end = datetime.now(TZ).date()
+    start = end - timedelta(days=365)
     total = successes = failures = 0
     all_symbols = _historical_targets(store)
     symbols = all_symbols[:HISTORY_BATCH_LIMIT]
     for symbol, instrument_type, settlement in symbols:
+        attempted = now_iso()
         try:
             payload = reader.history(symbol, instrument_type, settlement, start, end)
-            count = _history_count(payload)
+            attempted = now_iso()
+            count = _history_count(payload,as_of=attempted,date_from=start,date_to=end)
+            from bl_candle_engine import archive_raw, canonical
+            metadata = financial_catalog.lookup(store,symbol,instrument_type,settlement)
+            expected = len(payload) if isinstance(payload,list) else 0
+            status = 'VALID_PAYLOAD' if count and count==expected else 'PARTIAL' if count else 'EMPTY_OR_INVALID'
             with store.connect() as c:
-                c.execute("INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)",
-                          (symbol, instrument_type, settlement, start.isoformat(), end.isoformat(),
-                           now_iso(), count, json.dumps(payload, ensure_ascii=False, default=str)))
+                c.execute('BEGIN IMMEDIATE')
+                archive_raw(c,origin='PPI_HISTORY',row_key=canonical([symbol,instrument_type,settlement,attempted]),
+                    payload={'symbol':symbol,'asset_class':instrument_type,'settlement':settlement,
+                        'date_from':start.isoformat(),'date_to':end.isoformat(),'metadata':metadata,
+                        'valid_rows':count,'payload_json':json.dumps(payload,ensure_ascii=False,default=str)},
+                    recorded_at=attempted,quality=status)
+                c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
+                          (symbol,instrument_type,settlement,attempted,status,count,
+                           'Sólo estructura OHLC; ajuste, unidad de volumen y publicación pendientes de confirmar'))
+                # Vacío o parcial NO reemplaza la última descarga completa.
+                if status=='VALID_PAYLOAD':
+                    c.execute("INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)",
+                              (symbol, instrument_type, settlement, start.isoformat(), end.isoformat(),
+                               attempted, count, json.dumps(payload, ensure_ascii=False, default=str)))
             total += count
-            successes += 1
+            if status=='VALID_PAYLOAD':
+                successes += 1
+            else:
+                failures += 1
         except Exception as exc:
             failures += 1
+            with store.connect() as c:
+                c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
+                          (symbol,instrument_type,settlement,attempted,'ERROR',0,type(exc).__name__))
             store.event("HISTORY_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
     state = "VERDE" if successes and not failures else "AMARILLO" if successes else "ROJO"
     with store.connect() as c:
-        covered = c.execute("SELECT COUNT(*) FROM production_history").fetchone()[0]
+        covered = c.execute("SELECT COUNT(*) FROM production_history WHERE row_count>0").fetchone()[0]
     detail = (f"Lote histórico {successes}/{len(symbols)}; cobertura acumulada "
               f"{covered}/{len(all_symbols)} instrumentos; {total} filas en este lote; "
               f"{failures} fallidos. La descarga completa es incremental para no saturar PPI.")
