@@ -464,23 +464,52 @@ class PaperBroker:
             raise ValueError("Posición con factor monetario inválido")
         return factor
 
-    def _cash(self, as_of=None, currency="ARS"):
+    def _positions_at(self, at, connection):
+        """Estado económico en la fecha consultada, sin paginar el ledger."""
+        opened, closed = [], []
+        for row in connection.execute('SELECT * FROM paper_positions'):
+            p = dict(row)
+            start = aware_datetime(p['opened_at'])
+            end = aware_datetime(p['closed_at']) if p['closed_at'] else None
+            if (p['status'] not in {'OPEN','CLOSED'} or (p['status']=='CLOSED') != bool(end)
+                    or (end and end < start)):
+                raise ValueError('Cronología de posición inválida')
+            if start <= at:
+                (closed if end and end <= at else opened).append(p)
+        return opened, closed
+
+    def _cash(self, as_of=None, currency="ARS", *, connection=None, for_execution=False):
         """Caja disponible por moneda; no incluye ventas aún sin liquidar."""
+        at = aware_datetime(as_of or (self.clock_fn() if self.clock_fn else now_iso()))
         currency = cash_currency(currency)
-        closed = [p for p in self.store.recent_closed(100000) if p["currency"] == currency]
-        realized = sum((D(r.get("net_pnl")) for r in closed), ZERO)
-        committed = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p) + D(p["entry_cost"])
-                         for p in self.store.open_positions() if p["currency"] == currency), ZERO)
-        return (self.initial_balances[currency] + realized - committed + self.cauciones.cash_effect(currency)
-                - pending_proceeds(self.store, as_of or now_iso(), currency))
+        if connection is None:
+            with self.store.connect() as c:
+                c.execute('BEGIN')
+                return self._cash(at, currency, connection=c, for_execution=for_execution)
+        if for_execution:
+            # Consultar el pasado es válido; gastar después de retroceder el
+            # reloj sobre movimientos ya registrados no lo es.
+            for table, fields in (('paper_positions',('opened_at','closed_at')),
+                                  ('paper_cauciones',('opened_at','settled_at'))):
+                for row in connection.execute('SELECT '+','.join(fields)+' FROM '+table+' WHERE currency=?',(currency,)):
+                    if any(value and aware_datetime(value)>at for value in row):
+                        raise ValueError('CASH_CLOCK_ROLLBACK')
+        opened, closed = self._positions_at(at, connection)
+        realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed if p['currency']==currency), ZERO)
+        committed = sum((decimal_value(p['entry_price'],'precio',positive=True) *
+                         decimal_value(p['quantity'],'cantidad',positive=True) * self._position_multiplier(p) +
+                         decimal_value(p['entry_cost'],'costo',nonnegative=True)
+                         for p in opened if p['currency']==currency), ZERO)
+        return (self.initial_balances[currency] + realized - committed + self.cauciones.cash_effect(currency,at,connection=connection)
+                - pending_proceeds(self.store, at, currency, connection=connection))
 
     def place_caucion(self, offer, principal, request_id, as_of=None, *, reserve="0"):
         """Colocación PAPER explícita; no coloca órdenes reales ni elige plazo."""
         return self.cauciones.place(
-            offer, principal, request_id, as_of or now_iso(),
-            lambda currency, at: self._cash(as_of=at, currency=currency),
+            offer, principal, request_id, self.clock_fn() if self.clock_fn else as_of or now_iso(),
+            lambda currency, at, c: self._cash(as_of=at, currency=currency, connection=c, for_execution=True),
             reserve=D(reserve, "-1"), participation=self.participation,
-            admission=(lambda c, currency, at: self.daily_risk.admission_error(currency,at,connection=c))
+            admission=(lambda c, currency, at, fees: self.daily_risk.projected_admission_error(currency,at,fees,connection=c))
                       if self.daily_risk else None)
 
     def settle_cauciones(self, as_of=None):
@@ -670,7 +699,7 @@ class PaperBroker:
             exposure_now = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
                                 for p in opened if p["currency"] == currency), ZERO)
             if (len(opened) >= self.max_positions or any(p["symbol"] == q.symbol for p in opened)
-                    or entry * qty * factor + cost > self._cash(as_of=at, currency=currency)
+                    or entry * qty * factor + cost > self._cash(as_of=at, currency=currency, connection=c, for_execution=True)
                     or exposure_now + entry * qty * factor > capital * self.max_total_exposure_pct):
                 return False, "Caja, posiciones o exposición cambiaron antes de registrar la compra", None
             c.execute("""INSERT INTO paper_positions
@@ -799,7 +828,7 @@ class PaperBroker:
 
     def _mark_equity_locked(self, quotes, as_of, c):
         measured_at = as_of or now_iso()
-        opened, closed = self.store.open_positions(), self.store.recent_closed(100000)
+        opened, closed = self._positions_at(aware_datetime(measured_at), c)
         results, quality, new_marks = {}, {}, []
         last_marks = {r["paper_id"]: r for r in c.execute("SELECT * FROM paper_position_marks")}
         for currency in sorted(CASH_CURRENCIES):
@@ -810,7 +839,8 @@ class PaperBroker:
                      or quotes.get((p["symbol"], p["asset_class"], p["settlement"])) or quotes.get(p["symbol"]))
                 try:
                     stored = self.store.latest_quote(p)
-                    if stored is not None and (q is None or aware_datetime(stored.observed_at) >= aware_datetime(q.observed_at)):
+                    if (stored is not None and aware_datetime(stored.observed_at) <= aware_datetime(measured_at)
+                            and (q is None or aware_datetime(stored.observed_at) >= aware_datetime(q.observed_at))):
                         q = stored
                     usable = (q is not None and q.monetary_identity() == (currency, p["market"]) and
                               (q.symbol, q.asset_class, q.settlement) == (p["symbol"], p["asset_class"], p["settlement"]) and D(q.bid) > 0 and not q.time_error(measured_at, max_age_seconds=self.quote_max_age_seconds))
@@ -821,17 +851,19 @@ class PaperBroker:
                     new_marks.append((p["paper_id"],str(mark),q.book_at,measured_at))
                 else:
                     previous = last_marks.get(p["paper_id"])
+                    if previous and max(aware_datetime(previous['book_at']),aware_datetime(previous['marked_at'])) > aware_datetime(measured_at):
+                        previous = None
                     mark = D(previous["mark_price"]) if previous else D(p["entry_price"])
                     stale += 1
                 qty = D(p["quantity"]) * self._position_multiplier(p)
                 exposure += mark * qty
                 unrealized += (mark - D(p["entry_price"])) * qty - D(p["entry_cost"])
             realized = sum((D(p.get("net_pnl")) for p in closed if p["currency"] == currency), ZERO)
-            caucion = self.cauciones.valuation(measured_at, currency)
+            caucion = self.cauciones.valuation(measured_at, currency, connection=c)
             unrealized += caucion["unrealized"]
             realized += caucion["realized"]
-            cash = self._cash(as_of=measured_at, currency=currency)
-            receivable = pending_proceeds(self.store, measured_at, currency)
+            cash = self._cash(as_of=measured_at, currency=currency, connection=c)
+            receivable = pending_proceeds(self.store, measured_at, currency, connection=c)
             equity = cash + exposure + receivable + caucion["principal"] + caucion["accrued"]
             results[currency] = {"cash": cash, "exposure": exposure, "pending_proceeds": receivable,
                                  "caucion_principal": caucion["principal"], "caucion_accrued": caucion["accrued"],
