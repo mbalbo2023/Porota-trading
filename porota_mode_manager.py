@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Selector exclusivo de modo operativo para Porota Trading v16.3.5.
+"""Selector exclusivo de modo operativo para Porota Trading v17 candidata.
 
 Uso:
   sudo python porota_mode_manager.py status
@@ -24,12 +24,12 @@ from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
+from cg_paper_workspace import DB_ENV, CONTAINER_DB, IMAGE
 
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 MODE_FILE = DATA / "operation_mode.json"
-IMAGE = "porota-trading-bot:16.3.5"
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 KNOWN = ("porota_production_observer", "porota_production_dashboard",
          "porota_dashboard_preview", "porota_sandbox_engine", "porota_production_engine")
@@ -107,17 +107,17 @@ def dashboard_env(mode):
     source = DATA / "diagnosticos" / "dashboard_preview_v1633.env"
     if not source.exists():
         raise RuntimeError("Falta el archivo persistente de acceso al dashboard.")
-    target = DATA / "diagnosticos" / "dashboard_mode_v1635.env"
+    target = DATA / "diagnosticos" / "dashboard_mode_v17.env"
     safe = []
     forbidden = ("PPI_", "TELEGRAM_", "GEMINI_", "IOL_", "ROFEX_")
     for line in source.read_text(encoding="utf-8", errors="replace").splitlines():
         if "=" not in line:
             continue
         key = line.split("=", 1)[0].strip()
-        if not key.startswith(forbidden) and key not in {"DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH", *PAPER_DEFAULTS}:
+        if not key.startswith(forbidden) and key not in {"DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH", DB_ENV, *PAPER_DEFAULTS}:
             safe.append(line)
     safe += [f"DASHBOARD_OPERATION_MODE={mode}",
-             "PAPER_DB_PATH=/app/data/observer/observer_production.db",
+             f"{DB_ENV}={CONTAINER_DB}",
              "DASHBOARD_REFRESH_SECONDS=30",
              "SERVER_TIMEZONE=America/Argentina/Buenos_Aires"]
     safe += [f"{key}={value}" for key, value in paper_settings(env_file()).items()]
@@ -132,7 +132,7 @@ def observer_ai_env():
     key = env.get("GEMINI_API_KEY", "").strip()
     if not key:
         raise RuntimeError("Falta GEMINI_API_KEY: Gemini es un porton critico del modo paper.")
-    target = DATA / "diagnosticos" / "observer_runtime_v1635.env"
+    target = DATA / "diagnosticos" / "observer_runtime_v17.env"
     values = {
         "GEMINI_API_KEY": key,
         "GEMINI_MODEL": env.get("GEMINI_MODEL", "").strip() or "gemini-3.7-flash",
@@ -141,6 +141,7 @@ def observer_ai_env():
         "TELEGRAM_CHAT_ID": env.get("TELEGRAM_CHAT_ID", "").strip(),
     }
     values.update(paper_settings(env))
+    values[DB_ENV] = CONTAINER_DB
     target.write_text("\n".join(f"{name}={value}" for name, value in values.items()) + "\n",
                       encoding="utf-8")
     os.chmod(target, 0o600)
@@ -151,7 +152,7 @@ def start_dashboard(mode):
     env_path = dashboard_env(mode)
     run("docker", "rm", "-f", "porota_production_dashboard", check=False, capture=True)
     run("docker", "run", "-d", "--name", "porota_production_dashboard",
-        "--restart", "unless-stopped", "--user", "botuser", "--cap-drop", "ALL",
+        "--pull", "never", "--restart", "unless-stopped", "--user", "botuser", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "-p", "127.0.0.1:8000:8000",
         "--env-file", str(env_path), "-v", f"{DATA}:/app/data",
         "--entrypoint", "python", IMAGE, "o_dashboard.py")
@@ -168,11 +169,11 @@ def simulation():
         raise RuntimeError("Falta el secreto productivo de solo lectura.")
     ai_env = observer_ai_env()
     run("docker", "run", "-d", "--name", "porota_production_observer",
-        "--restart", "unless-stopped", "--no-healthcheck",
+        "--pull", "never", "--restart", "unless-stopped", "--no-healthcheck",
         "--user", "botuser", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
         "-e", "PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json",
-        "-e", "PAPER_DB_PATH=/app/data/observer/observer_production.db",
+        "-e", f"{DB_ENV}={CONTAINER_DB}",
         "-e", "MARKET_OPEN_HOUR=11",
         "-e", "MARKET_OPEN_MINUTE=0",
         "-e", "MARKET_CLOSE_HOUR=17",
@@ -185,7 +186,7 @@ def simulation():
         "--env-file", str(ai_env),
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
         "--entrypoint", "python", IMAGE, "bv_paper_runtime.py")
-    status = notify("🟣 POROTA — MODO SIMULACIÓN PRODUCTIVA\nDatos reales de PPI Producción. Gemini actúa como portón crítico. Compras y ventas 100% simuladas. Órdenes reales: NINGUNA.")
+    status = notify("🟣 POROTA — MODO SIMULACIÓN PRODUCTIVA\nDatos reales de PPI Producción. Gemini actúa como portón crítico. Compras y ventas 100% simuladas. Órdenes reales: NINGUNA.\nHistorial PAPER v17 independiente; sin traslado de saldos, posiciones ni aprendizaje anteriores.")
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
                 "PPI_ORDERS": "BLOCKED", "GEMINI": "CRITICAL_DECISION_GATE"}, telegram=status,
