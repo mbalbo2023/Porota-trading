@@ -1169,7 +1169,7 @@ class ResilientPPIClient:
         de instrumento (corrección v10.5, auditoría 3, hallazgo #1)."""
         # Antes de la intercepción: no registrar un producto especializado
         # como si fuera una compraventa spot ni eludirlo mediante sandbox_probe.
-        _order_terms(instrument_type,quantity_type,order_type,term,operation,settlement,operation_max_date)
+        terms = _order_terms(instrument_type,quantity_type,order_type,term,operation,settlement,operation_max_date)
         # ------------------------------------------------------------------ #
         # NUEVO EN v16.0 — FRENO DE SIMULACIÓN
         # ------------------------------------------------------------------ #
@@ -1191,13 +1191,16 @@ class ResilientPPIClient:
             try:
                 import ao_startup_gate as startup_gate
                 simulada = startup_gate.interceptar_orden(
-                    ticker, quantity, price, operation, instrument_type)
+                    ticker, quantity, price, terms['operation'], terms['instrumentType'],
+                    terms['quantityType'], terms['settlement'])
                 if simulada is not None:
-                    logger.info("Orden NO enviada (modo simulación): %s %s × %s a $%s",
-                                operation, quantity, ticker, price)
+                    logger.info("Orden NO enviada (interceptada): %s %s, cantidad %s (%s), precio %s",
+                                terms['operation'], ticker, quantity, terms['quantityType'], price)
                     return {"simulada": True, "externalId": simulada["id"],
                             "ticker": ticker, "quantity": quantity, "price": price,
-                            "operation": operation, "status": "SIMULADA"}
+                            "operation": terms['operation'], "status": "SIMULADA",
+                            "instrumentType": terms['instrumentType'],
+                            "quantityType": terms['quantityType'], "settlement": terms['settlement']}
             except ImportError:
                 pass  # sin el portón instalado, el comportamiento es el de siempre
 
