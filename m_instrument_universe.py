@@ -217,8 +217,14 @@ def detect_account_permissions(ppi_client) -> dict:
                 estado["motivo"] = "El bróker devolvió presupuesto para este tipo de instrumento."
             else:
                 estado["motivo"] = "El bróker no devolvió presupuesto (sin error explícito)."
+        except NotImplementedError:
+            estado["motivo"] = "Sin adaptador específico de orden; no se consultó presupuesto ni se verificó permiso PPI."
+            estado["estado_verificacion"] = "LOCAL_ADAPTER_UNAVAILABLE"
+        except ValueError:
+            estado["motivo"] = "Términos de consulta inválidos; no constituye un rechazo de permisos PPI."
+            estado["estado_verificacion"] = "INVALID_PROBE_TERMS"
         except Exception as e:
-            estado["motivo"] = f"El bróker rechazó el presupuesto: {e}"
+            estado["motivo"] = f"No se pudo verificar el presupuesto: {type(e).__name__}. No prueba falta de permiso."
 
         permisos[asset_class] = estado
         logger.info("Permiso de cuenta — %s: %s (%s)", asset_class,
