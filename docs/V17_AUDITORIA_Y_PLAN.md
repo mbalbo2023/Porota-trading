@@ -1023,6 +1023,32 @@ ni se arranca el servidor. Sin trabajo nuevo de ciberseguridad; se conservan
 las barreras existentes de cuentas/órdenes, ampliando sólo consultas públicas
 necesarias del contrato API.
 
+## Vigésimo checkpoint: unidades y moneda en la traza de órdenes
+
+La revisión del contrato PPI detectó una segunda inconsistencia en la ruta
+heredada de intercepción: `cantidad * precio` se publicaba como `monto_ars`
+sin conocer moneda, nominal/factor ni costos. Una cantidad en DINERO o
+CANTIDAD-TOTAL tampoco puede convertirse en títulos por esa multiplicación.
+Además, la confirmación validaba términos normalizados pero la traza recibía
+los originales, sin unidad de cantidad ni plazo de liquidación.
+
+- `confirm_order()` transmite a la intercepción clase, operación, unidad de
+  cantidad y liquidación canónicas, y las conserva en la respuesta simulada.
+- La traza conserva los valores recibidos, no calcula pesos ficticios:
+  `monto_ars=None` y `valuacion=NO_CALCULADA_SIN_CONTRATO`. El texto no presenta
+  precio ni producto de inputs como un importe en pesos, y aclara que no hay
+  valuación ni ejecución confirmada. No se infiere moneda desde el ticker.
+- Las llamadas antiguas de cinco argumentos mantienen compatibilidad; sus
+  unidades por defecto son PAPELES y su liquidación desconocida. La rama REAL
+  sigue sin escribir una simulación y los otros modos conservan su intercepción.
+- Es una corrección de términos de la traza, no un adaptador de fill ni una
+  valuación financiera. No cambia ledgers, capital, órdenes históricas, permisos,
+  estados heredados de simulación ni políticas de caja/riesgo. El motor PAPER
+  especializado sigue siendo quien calcula importes con contratos explícitos.
+
+Sin llamadas PPI/Telegram, arranque del servidor, despliegue, cambios de
+ciberseguridad ni nueva carga de trabajo para el operador.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -1210,6 +1236,16 @@ pública con forma comprobada sin abrir cuentas/órdenes. El sondeo distingue
 adaptador ausente de permiso denegado. Fixtures y modelos del SDK instalado,
 sin acceso a PPI ni certificación de su ejecución real. CI remoto completo a
 registrar en la PR; no se despliega ni se arranca el servidor.
+
+Vigésimo checkpoint: **951 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 17 pruebas nuevas y 157 dirigidas. Cobertura global local 63,35%;
+cuatro mínimos financieros existentes cumplidos. Regresión de importe ARS
+inventado reproducida antes de corregir. Pruebas en SIMULACION/DETENIDO,
+acciones/bonos, PAPELES/DINERO/CANTIDAD-TOTAL, normalización, liquidación,
+llamadas antiguas y rama REAL sin escritura. Confirmación interceptada probada
+contra la función real del portón con estado y traza sustituidos; cualquier
+acceso al SDK falla en ese fixture. No se escribe caja, posiciones o trazas
+reales ni se certifica un fill. CI remoto completo a registrar en la PR.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
