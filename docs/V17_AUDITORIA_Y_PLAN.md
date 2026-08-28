@@ -1369,6 +1369,36 @@ para el usuario habitual no-root del CI, sin elevación ni cambios de identidad.
 Las demás pruebas inyectan códigos nativos para comprobar diagnóstico y ausencia
 de reintentos. No se atribuye al servidor una reproducción hecha con fixtures.
 
+## Trigésimo checkpoint: auditoría sobre copia temporal autorizada
+
+La revisión 2 informó el 28/08 a las 20:13:54 UTC `SQLITE_CANTOPEN` (14)
+en `READ_SCHEMA`: base legible de 9.187.328 bytes, WAL sin auxiliares y
+montaje read-only. No se auditó el contenido ni se diagnosticó corrupción.
+Tras explicar el cambio de procedimiento, el operador confirmó expresamente
+crear una copia temporal en el mismo servidor y eliminarla al terminar.
+
+`v17-ledger-preflight-3` lee el archivo original sólo como bytes y utiliza
+SQLite únicamente en la copia dentro del tmpfs del contenedor. Impone 16 MiB
+de máximo, auxiliares ausentes, archivo regular y encabezado reconocido.
+Verifica huella y metadatos del origen antes/después de copiar y auditar;
+descarta resultados ante cambios detectados. No es un backup online ni un
+bloqueo exclusivo de escritores, ni recupera un WAL eliminado anteriormente.
+La copia incluye todo el archivo, pero sólo consulta tablas PAPER y devuelve
+conteos/códigos, nunca el archivo ni datos por posición. Limpieza en error y
+éxito; el lanzador verifica también motores detenidos al finalizar.
+
+No hubo acceso SSH desde este entorno ni modificación de la base del servidor.
+No se concedió escritura al original, no se reiniciaron motores ni se desplegó
+v17. Procedimiento y alcance: [preflight](V17_LEDGER_PREFLIGHT.md).
+
+Verificación local de la configuración final: **1.329 aprobadas, 4 omitidas**,
+0 fallas/errores, 51 casos nuevos; cobertura global **67,70%**, lector **97,61%**,
+cuatro mínimos financieros cumplidos. Las cuatro reproducciones omitidas
+requieren el usuario no-root habitual del CI y no cambian identidad del proceso.
+ZIP ejecutado sin site-packages en modo `--copy-read`; el servidor sigue
+pendiente de la ejecución puntual del operador. No se equiparan pruebas de
+fixtures con una auditoría ya realizada sobre su base.
+
 ## Verificación
 
 Primer checkpoint: 279 tests aprobados. Segundo: 329. Tercero: 354.
