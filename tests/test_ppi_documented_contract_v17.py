@@ -51,7 +51,7 @@ def test_contado_conserva_identidad_y_vigencia_diaria_en_ambos_pedidos(wrapper,k
     for name,p in calls:
         assert p['instrumentType']==kind and p['quantityType']=='PAPELES'
         assert p['operation']=='VENTA' and p['settlement']=='INMEDIATA'
-        assert p['operationTerm']=='POR-EL-DÍA' and p['operationMaxDate'] is None
+        assert p['operationTerm']=='POR-EL-DIA' and p['operationMaxDate'] is None
     assert {k:v for k,v in calls[1][1].items() if k not in {'externalId','disclaimers'}}==calls[0][1]
 
 
