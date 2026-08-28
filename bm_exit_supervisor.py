@@ -159,6 +159,8 @@ class PositionExitSupervisor:
     def tick(self, quotes=None):
         at = aware_datetime(self.clock_fn()).isoformat()
         self.broker.settle_cauciones(at)
+        if self.broker.daily_risk:
+            self.broker.daily_risk.evaluate(at)
         verdicts = []
         for p in self.store.open_positions():
             key = tuple(p[k] for k in ("symbol","asset_class","settlement","currency","market"))
