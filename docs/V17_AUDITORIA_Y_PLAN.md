@@ -1082,6 +1082,48 @@ Es aislamiento de fallas para salidas PAPER, no tolerancia financiera ni
 recuperación automática. No cambia posiciones históricas ni política de stops,
 no usa red/IA y no despliega o arranca el servidor.
 
+## Vigesimosegundo checkpoint: cierres simples y recibos conciliados
+
+Las ventas parciales tenían validación contra sus fills, pero los cierres de
+una sola venta admitían el PnL agregado sin esa comprobación. Se reprodujo que
+un `net_pnl` inconsistente podía aumentar la caja o alterar el aprendizaje.
+También un producido finito incorrecto en el recibo podía reducir las ventas
+pendientes y, por diferencia, liberar caja antes de liquidar.
+
+- Cierre simple exige exactamente un SELL_SIMULATED del mismo paper_id/source,
+  con cantidad, precio, costo y fecha compatibles. PnL bruto/neto se contrastan
+  con la entrada almacenada y su factor monetario. No se recalculan comisiones
+  históricas con el tarifario actual. Un faltante no se completa con un fill
+  supuesto. La lectura histórica conserva las posiciones abiertas anteriores
+  al cierre, pero no acepta un cierre conocido que no concilia.
+- La consulta de cierres recientes valida los registros que devuelve. No
+  alimenta el umbral adaptativo con una ganancia sin evidencia compatible.
+- El recibo debe coincidir con el producido neto del fill y su moneda. Una
+  fecha declarada bajo PAPER_CONSERVATIVE_CALENDAR debe concordar con el modelo
+  de liquidación auditado disponible; PENDING_CONFIRMATION mantiene fecha NULL
+  y no libera producido positivo. Un origen distinto no se acepta como fecha
+  confirmada sin un protocolo explícito. No se reescriben fechas existentes;
+  una discrepancia o un calendario no verificable bloquean caja. Esto sigue
+  siendo un modelo PAPER, no confirmación de acreditación de PPI.
+- La migración aditiva sólo reconstruye recibos de cierres simples conciliados.
+  Si falta evidencia o hay inconsistencia, deja el registro sin reparar y las
+  lecturas financieras bloqueadas, permitiendo iniciar la supervisión defensiva
+  de otras posiciones válidas.
+- El panel lee cierres/recibos sin escribir. Si no concilian, suprime los
+  balances anteriores y muestra patrimonio s/d, no cero ni un importe antiguo
+  como vigente. El estado general tampoco queda TODO OPERATIVO con ese ledger
+  inválido. PnL/informes y riesgo detectan cierres inconsistentes; un problema
+  exclusivo del recibo bloquea disponibilidad de caja aunque el PnL del fill
+  sea matemáticamente válido.
+
+Se completaron fixtures antiguas de riesgo, reportes y dashboard que declaraban
+PnL sin fills o con precios/costos incompatibles. Se conservan sus objetivos
+de prueba; no se debilita la validación para aceptar esas inconsistencias.
+La comprobación contra entrada/fill no certifica el origen de la entrada,
+tarifa histórica, cuenta PPI ni alteraciones coordinadas de todas las evidencias.
+No se cambian ledgers de usuario, límites, ejecución real ni controles de
+ciberseguridad. Sin llamadas PPI/Telegram, despliegue o arranque del servidor.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -1289,6 +1331,19 @@ lote, stop válido, cero fills sobre la rota, caja/riesgo estrictos, pulso
 DEGRADED, reader que continúa con una sola consulta, snapshot read-only,
 reinicio/idempotencia, reparación explícita y errores SQLite no silenciados.
 Fixtures locales sin PPI/Telegram; CI remoto completo a registrar en la PR.
+
+Vigesimosegundo checkpoint: **1007 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 45 pruebas nuevas y 198 dirigidas. Cobertura global local 64,01%;
+cuatro mínimos financieros existentes cumplidos. Se reprodujeron fallas antes
+de corregir. Casos de PnL/costos/cantidades no conciliados o no finitos, fill
+ausente/duplicado/incompatible, source y cronología, nominal por cien, ARS/MEP,
+CI/T+1, caja histórica, fechas equivalentes en UTC, tarifas no recalculadas,
+recibos con producido/fecha/origen incompatibles, pendiente sin fecha,
+migración sin inventar evidencia, continuidad de otra salida y panel sin
+reutilizar balances previos. Fixtures de riesgo/dashboard/reportes completadas
+con fills consistentes. Panel verificado funcionalmente, sin captura visual
+en navegador/tablet. CI remoto completo a registrar en la PR; sin PPI/Telegram
+ni despliegue o arranque del servidor.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
