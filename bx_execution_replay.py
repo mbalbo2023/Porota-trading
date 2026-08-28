@@ -13,6 +13,7 @@ from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 from bl_candle_engine import fingerprint, stamp
 from br_backtest_gate import marked_drawdown
 from bs_instrument_contracts import SPOT_FAMILIES, aware_datetime, decimal_value
+from bz_replay_risk import ReplayDailyRisk, ReplayRiskConfig
 
 ZERO = Decimal('0')
 CENT = Decimal('0.01')
@@ -185,13 +186,14 @@ class ExecutionReplay:
         self.archive, self.series, self.contract = archive, series, contract
         self.fees, self.assumptions = fees, assumptions
 
-    def run(self, orders, books, *, start, end, initial_cash, strategy=None):
+    def run(self, orders, books, *, start, end, initial_cash, strategy=None, risk_config=None):
         begin, finish = map(aware_datetime, (start, end))
         if begin >= finish:
             raise ValueError('Intervalo inválido')
         capital = decimal_value(initial_cash, 'capital', positive=True)
         if capital != money(capital):
             raise ValueError('Capital debe expresarse en centavos')
+        risk = ReplayDailyRisk(risk_config, self.series.currency, capital, begin) if risk_config is not None else None
         orders = sorted(orders, key=lambda o: (stamp(o.submitted_at), o.order_id))
         if strategy is not None and orders:
             raise ValueError('No mezclar órdenes preparadas con generación de estrategia')
@@ -258,38 +260,57 @@ class ExecutionReplay:
         states = {o.order_id: {'order_id': o.order_id, 'status': 'PENDING', 'filled': ZERO} for o in orders}
         consumed = set()
         last_book = None
+        realized_by_day = {}
 
         def settle(at):
             nonlocal cash, receivables
             cash += sum((r['amount'] for r in receivables if aware_datetime(r['available_at']) <= at), ZERO)
             receivables = [r for r in receivables if aware_datetime(r['available_at']) > at]
 
-        def mark(at, book):
+        def valuation(at, book, *, projected_cash=None, projected_held=None):
+            cash_value = cash if projected_cash is None else projected_cash
+            quantity_value = held if projected_held is None else projected_held
             pending = sum((r['amount'] for r in receivables), ZERO)
             quality, value = 'CURRENT', ZERO
-            if held:
+            if quantity_value:
                 if book is None or (at - aware_datetime(book.book_at)).total_seconds() > float(self.assumptions.maximum_book_age_seconds):
                     quality, value = 'STALE_MARKS', None
                 elif not self.fees.available(at, at):
                     quality, value = 'UNKNOWN_EXIT_COST', None
                 else:
                     price = self.assumptions.price(book, 'SELL')
-                    notional = money(self.contract.notional(price, held))
+                    notional = money(self.contract.notional(price, quantity_value))
                     value = notional - self.fees.fee(notional)
             point = {'measured_at': stamp(at), 'currency': self.series.currency, 'quality': quality,
-                     'external_flow': ZERO, 'cash': cash, 'pending_proceeds': pending,
-                     'quantity': held, 'equity': cash + pending + value if value is not None else None}
+                     'external_flow': ZERO, 'cash': cash_value, 'pending_proceeds': pending,
+                     'quantity': quantity_value, 'equity': cash_value + pending + value if value is not None else None}
+            return point
+
+        def assess_risk(at, phase):
+            if risk is None:
+                return None
+            point = valuation(at, last_book)
+            return risk.evaluate(at, held=held, equity=point['equity'], quality=point['quality'],
+                realized_total=realized, realized_today=realized_by_day.get(risk.day(at), ZERO), phase=phase)
+
+        def mark(at, book):
+            point = valuation(at, book)
             if curve and curve[-1]['measured_at'] == point['measured_at']:
                 curve[-1] = point
             else:
                 curve.append(point)
 
         mark(begin, None)
+        assess_risk(begin, 'START')
         for book in unique:
             at = aware_datetime(book.received_at)
             settle(at)
             stale = (at - aware_datetime(book.book_at)).total_seconds() > float(self.assumptions.maximum_book_age_seconds)
             older = last_book is not None and aware_datetime(book.book_at) < aware_datetime(last_book.book_at)
+            # La admisión usa el libro nuevo, nunca una marca anterior al fill.
+            if last_book is None or aware_datetime(book.book_at) > aware_datetime(last_book.book_at):
+                last_book = book
+            assess_risk(at, 'BEFORE_BOOK')
             capacities = {side: (size * self.assumptions.participation / self.contract.quantity_step).to_integral_value(rounding=ROUND_FLOOR) * self.contract.quantity_step
                           for side, size in (('BUY', book.ask_size), ('SELL', book.bid_size))}
             for order in orders:
@@ -298,6 +319,11 @@ class ExecutionReplay:
                 state = states[order.order_id]
                 if at >= aware_datetime(order.expires_at):
                     state['status'] = 'EXPIRED'; consumed.add(order.order_id); continue
+                risk_state = assess_risk(at, 'BEFORE_FILL')
+                if order.side == 'BUY' and risk_state is not None and risk_state['state'] != 'READY':
+                    state['status'] = 'CANCELLED_DAILY_RISK_' + risk_state['state']
+                    consumed.add(order.order_id)
+                    continue
                 eligible = aware_datetime(order.submitted_at) + timedelta(seconds=float(self.assumptions.latency_seconds))
                 # El timestamp del libro también debe ser posterior a la orden;
                 # recibir tarde un libro anterior no crea una ejecución nueva.
@@ -336,6 +362,11 @@ class ExecutionReplay:
                     state['status'] = 'REJECTED_ZERO_NOTIONAL'; continue
                 if order.side == 'SELL' and fee > notional:
                     state['status'] = 'REJECTED_NEGATIVE_PROCEEDS'; continue
+                if order.side == 'BUY' and risk is not None:
+                    projected = valuation(at, last_book, projected_cash=cash-notional-fee,
+                                          projected_held=held+quantity)
+                    if not risk.permits_projected_equity(at, projected['equity']):
+                        state['status'] = 'REJECTED_PROJECTED_DAILY_LOSS'; continue
                 pnl = ZERO
                 if order.side == 'BUY':
                     cash -= notional + fee
@@ -345,6 +376,8 @@ class ExecutionReplay:
                     allocated = basis if quantity == held else basis * quantity / held
                     pnl = notional - fee - allocated
                     realized += pnl
+                    day = ReplayDailyRisk.day(at)
+                    realized_by_day[day] = realized_by_day.get(day, ZERO) + pnl
                     held -= quantity; basis -= allocated
                     receivables.append({'available_at': stamp(book.settlement_at), 'amount': notional - fee})
                     settle(at)
@@ -354,17 +387,16 @@ class ExecutionReplay:
                               'executed_at': stamp(at), 'book_at': stamp(book.book_at),
                               'price': price, 'quantity': quantity, 'notional': notional, 'fee': fee,
                               'realized_pnl': pnl, 'settlement_at': stamp(book.settlement_at)})
-            # Nunca rejuvenecer una marca con un mensaje anterior recibido tarde.
-            if last_book is None or aware_datetime(book.book_at) > aware_datetime(last_book.book_at):
-                last_book = book
+                assess_risk(at, 'AFTER_FILL')
             mark(at, last_book)
+            risk_state = assess_risk(at, 'AFTER_BOOK')
             if strategy is not None and at < finish:
                 # Copias: el callback no puede alterar libro, estados o ledger.
                 # Sólo ve el prefijo ya ocurrido; nunca recibe libros futuros.
                 from copy import deepcopy
                 view = deepcopy({'at': stamp(at), 'book': book, 'book_usable': not stale and not older and book.session_open,
                     'cash': cash, 'held': held, 'basis': basis, 'equity': curve[-1]['equity'],
-                    'orders': list(states.values()), 'fills': fills})
+                    'orders': list(states.values()), 'fills': fills, 'daily_risk': risk_state})
                 generated = strategy.on_event(view)
                 if generated is not None:
                     if not isinstance(generated, ReplayOrder) or stamp(generated.submitted_at) != stamp(at):
@@ -374,16 +406,19 @@ class ExecutionReplay:
                     states[generated.order_id] = {'order_id': generated.order_id, 'status': 'PENDING', 'filled': ZERO}
         settle(finish)
         mark(finish, last_book)
+        assess_risk(finish, 'FINAL')
         for order in orders:
             if states[order.order_id]['status'] == 'PENDING':
                 states[order.order_id]['status'] = 'EXPIRED' if aware_datetime(order.expires_at) <= finish else 'PENDING_AT_END'
         curve_ok = all(p['quality'] == 'CURRENT' for p in curve)
         manifest = serializable({'series': asdict(self.series), 'contract': asdict(self.contract),
             'fees': asdict(self.fees), 'assumptions': asdict(self.assumptions),
+            'risk_config': asdict(risk_config) if risk_config is not None else None,
             'orders': [asdict(o) for o in orders], 'books': [asdict(b) for b in unique],
             'evidence': evidence, 'start': stamp(begin), 'end': stamp(finish), 'capital': capital})
         return serializable({'mode': 'OFFLINE_EXECUTION_REPLAY', 'promotion_allowed': False,
             'run_id': fingerprint(manifest), 'manifest': manifest,
+            'daily_risk': risk.report() if risk is not None else {'configured': False, 'days': [], 'observations': []},
             'orders': list(states.values()), 'fills': fills, 'curve': curve,
             'cash': cash, 'pending_proceeds': sum((r['amount'] for r in receivables), ZERO),
             'open_quantity': held, 'open_cost_basis': basis, 'realized_pnl': realized,
@@ -427,6 +462,7 @@ def main(argv=None):
             InstrumentContract(**data['contract']), FeeTerms(**data['fees']),
             ExecutionAssumptions(**data['assumptions']))
         books = [BookEvent(**b) for b in data['books']]
+        risk_config = ReplayRiskConfig(**data['risk_config']) if data.get('risk_config') is not None else None
         if 'signal_config' in data:
             from bo_signal_core import SignalConfig, SessionGrid
             from by_strategy_backtest import run_strategy
@@ -435,12 +471,12 @@ def main(argv=None):
             grid_data = data['session_grid']
             result = run_strategy(engine, books, SignalConfig(**data['signal_config']),
                 SessionGrid(**(grid_data | {'starts': tuple(grid_data['starts'])})),
-                start=data['start'], end=data['end'], initial_cash=data['capital'])
+                start=data['start'], end=data['end'], initial_cash=data['capital'], risk_config=risk_config)
             if 'orders' in data and data['orders'] != result['manifest']['orders']:
                 raise ValueError('La corrida no reproduce las órdenes del manifiesto')
         else:
             orders = [ReplayOrder(**(o | {'evidence_ids': tuple(o['evidence_ids'])})) for o in data['orders']]
-            result = engine.run(orders, books, start=data['start'], end=data['end'], initial_cash=data['capital'])
+            result = engine.run(orders, books, start=data['start'], end=data['end'], initial_cash=data['capital'], risk_config=risk_config)
     except (ValueError, TypeError, KeyError, OSError, sqlite3.Error, ArithmeticError) as exc:
         print(json.dumps({'status': 'INVALID_REPLAY_INPUT', 'promotion_allowed': False,
                           'error_type': type(exc).__name__}, ensure_ascii=False))
