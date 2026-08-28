@@ -82,6 +82,38 @@ load_dotenv()
 logger = logging.getLogger("ppi_client_wrapper")
 
 
+def _market_snapshot(data, ticker, instrument_type, settlement, *, is_book=False):
+    """Normalización de una sola respuesta y del instante del proveedor.
+
+    La identidad de la consulta se conserva; cualquier identidad explícita
+    contradictoria invalida el dato. Recepción local no rejuvenece el precio.
+    """
+    from bs_instrument_contracts import aware_datetime, decimal_value
+    if isinstance(data,list):
+        data = data[0] if len(data)==1 else None
+    if not isinstance(data,dict):
+        return None
+    try:
+        for names, expected in ((('ticker','Ticker'),ticker), (('type','Type','instrumentType'),instrument_type),
+                                (('settlement','Settlement','settlement_used'),settlement)):
+            if any(name in data and str(data[name]).upper()!=str(expected).upper() for name in names):
+                return None
+        received = time.time()
+        source = aware_datetime(data.get('date',data.get('Date'))).timestamp()
+        if not 0 <= received-source <= 30:
+            return None
+        result = dict(data, ticker=ticker, instrument_type=instrument_type, settlement=settlement,
+                      epoch_recv=received, epoch_source=source, source='rest')
+        if not is_book:
+            price = float(decimal_value(data.get('price',data.get('Price')),'precio',positive=True))
+            if not 0 < price < float('inf'):
+                return None
+            result['price'] = price
+        return result
+    except (ValueError,TypeError,OverflowError):
+        return None
+
+
 # ============================================================================
 # NUEVO EN v12.0 — Ofuscación de secretos en logs/notificaciones
 # ============================================================================
@@ -932,9 +964,9 @@ class ResilientPPIClient:
         ser la única fuente de un dato crítico."""
         try:
             import x_ppi_websocket as ppi_ws
-            cached = ppi_ws.get_cached_price(ticker, instrument_type)
+            cached = ppi_ws.get_cached_price(ticker, instrument_type, settlement)
             if cached:
-                return {"price": cached["price"], "epoch_recv": cached["epoch_recv"], "source": "websocket"}
+                return dict(cached, source='websocket')
         except ImportError:
             pass  # módulo opcional; sin él, comportamiento normal de siempre
 
@@ -947,16 +979,7 @@ class ResilientPPIClient:
         # ilíquido — congelando el loop de escaneo entero.
         def _fetch():
             data = self.client.marketdata.current(ticker, instrument_type, settlement)
-            if isinstance(data, dict):
-                data["epoch_recv"] = time.time()
-                return data
-            if isinstance(data, list) and data and isinstance(data[0], dict):
-                res = data[0]
-                res["epoch_recv"] = time.time()
-                return res
-            logger.warning("get_market_data formato inesperado para %s (%s): %s",
-                            ticker, instrument_type, type(data))
-            return None
+            return _market_snapshot(data,ticker,instrument_type,settlement)
 
         return self._call_with_retry(_fetch, f"get_market_data({ticker})")
 
@@ -964,39 +987,20 @@ class ResilientPPIClient:
         """Puntas de compra/venta — útil para estimar spread real antes de
         alertar (ver hallazgo de fricción en el informe de auditoría)."""
         return self._call_with_retry(
-            lambda: self.client.marketdata.book(ticker, instrument_type, settlement),
+            lambda: _market_snapshot(self.client.marketdata.book(ticker, instrument_type, settlement),
+                                     ticker,instrument_type,settlement,is_book=True),
             f"get_book({ticker})",
         )
 
     def get_book_with_fallback(self, ticker: str, instrument_type: str, primary_settlement: str,
                                 fallback_settlement: str = "A-48HS") -> Optional[Dict[str, Any]]:
-        """
-        NUEVO EN v13.0 — hallazgo MEDIO de Simulación_y_pasos_a_tener_en_
-        cuenta_para_corregir.pdf ("Fallback de Plazo de Liquidación"): en
-        BONOS especialmente, a veces hay liquidez cargada en INMEDIATA y no
-        en A-48HS, o viceversa — y el book vacío en Sandbox para un plazo
-        no significa necesariamente que no haya oportunidad, puede ser solo
-        que ese plazo puntual no tiene datos cargados en el ambiente de
-        pruebas. Si el book del plazo primario viene sin puntas (bid/ask
-        ambos ausentes), se reintenta UNA vez contra fallback_settlement
-        antes de descartar el instrumento por falta de liquidez.
+        """Nombre conservado por compatibilidad; no cambia de plazo.
+
+        Un libro de otro plazo requiere otra evaluación completa y otro
+        presupuesto de caja/costos. No sirve para ejecutar la orden original.
         """
         book = self.get_book(ticker, instrument_type, primary_settlement)
-        # Formato real usado en este proyecto (ver j_main.evaluate_instrument):
-        # book["bids"]/book["offers"] son listas de puntas; vacías las dos =
-        # sin liquidez cargada para ese plazo en este ambiente.
-        has_liquidity = bool(book and (book.get("bids") or book.get("offers")))
-        if has_liquidity:
-            if book is not None:
-                book["settlement_used"] = primary_settlement
-            return book
-        logger.info("Sin liquidez en %s/%s para %s. Reintentando en %s...",
-                    ticker, primary_settlement, instrument_type, fallback_settlement)
-        fallback_book = self.get_book(ticker, instrument_type, fallback_settlement)
-        if fallback_book:
-            fallback_book["settlement_used"] = fallback_settlement
-            return fallback_book
-        return book  # ninguno de los dos plazos tiene liquidez — se devuelve el original (vacío)
+        return dict(book,settlement_used=primary_settlement) if book is not None else None
 
     def get_ccl_rate(self) -> Optional[float]:
         """Dólar CCL implícito vía AL30 (ARS) / AL30D (USD), ambos INMEDIATA.
@@ -1218,52 +1222,23 @@ class ResilientPPIClient:
     # NUEVO EN v12.0 (Instrucción 3 y 7) — Cauciones bursátiles.
     # ------------------------------------------------------------------ #
     def get_caucion_rate(self, days: int = 1) -> Optional[float]:
-        """Tasa anualizada (TNA %) de colocadora a `days` días, usada como
-        benchmark dinámico de costo de oportunidad / tasa libre de riesgo
-        en pesos (ver d_economics.get_caucion_benchmark_rate). Antes
-        (v10.5/v11) CAUCIONES era OBSERVATION_ONLY: se descubría en el
-        universo pero nunca se usaba como referencia de tasa ni se operaba.
+        """Compatibilidad del proxy retirado: no hay una tasa contrastada.
 
-        LÍMITE HONESTO: el ticker/nombre exacto que PPI usa para cada plazo
-        de caución colocadora (1 día, 7 días, etc.) conviene confirmarlo
-        inspeccionando search_instruments('CAUCIONES') contra Sandbox antes
-        de asumir un ticker fijo — acá se busca por tipo y se toma el de
-        menor plazo disponible como proxy de tasa "overnight"."""
-        results = self.search_instruments("CAUCIONES")
-        if not results:
-            return None
-        try:
-            candidates = [r for r in results if getattr(r, "term_days", None) in (None, days)] or results
-            best = candidates[0]
-            data = self.get_market_data(best.ticker, "CAUCIONES", "INMEDIATA")
-            if data and "rate" in data:
-                return float(data["rate"])
-            if data and "price" in data:
-                return float(data["price"])
-        except Exception as e:
-            logger.error("Error obteniendo tasa de caución: %s", obfuscate_secret(str(e)))
+        No elegir el primer ticker ni reinterpretar precio como TNA. La ruta
+        paper v17 exige contrato, moneda, plazo, fecha y costos explícitos.
+        None significa dato no disponible, nunca rendimiento cero.
+        """
+        logger.warning("CAUCION_RATE_UNVERIFIED: proxy de tasa retirado; faltan términos PPI contrastados.")
         return None
 
     def place_caucion(self, account_number: str, amount_ars: float, days: int = 1,
                        accepted_disclaimers: Optional[list] = None) -> Optional[Dict[str, Any]]:
-        """Coloca liquidez ociosa en pesos a tasa de caución (colocadora).
-        NUEVO EN v12.0 — Instrucción 7. Detrás de un interruptor propio
-        apagado por default (CAUCIONES_AUTO_PLACEMENT=false en .env), igual
-        criterio de prudencia que se usó para el resto de las colocaciones
-        automáticas nuevas (ver ORDER_PARAM_MAP más arriba): agregar la
-        capacidad no implica activarla sola."""
-        if os.getenv("CAUCIONES_AUTO_PLACEMENT", "false").lower() != "true":
-            logger.info("CAUCIONES_AUTO_PLACEMENT desactivado — no se coloca caución automática.")
-            return None
-        results = self.search_instruments("CAUCIONES")
-        if not results:
-            logger.warning("No se encontraron instrumentos de CAUCIONES para colocar liquidez.")
-            return None
-        ticker = results[0].ticker
-        return self.budget_order(
-            account_number=account_number, quantity=int(amount_ars), price=0, ticker=ticker,
-            instrument_type="CAUCIONES", operation="COLOCADORA", settlement="INMEDIATA",
-        )
+        """Ruta heredada retirada: un presupuesto no es una colocación.
+
+        El flag antiguo no habilita esta ruta. No se consulta cuenta, saldo,
+        presupuesto ni confirmación de orden. Usar PaperBroker para simular.
+        """
+        raise NotImplementedError("CAUCION_LEGACY_PLACEMENT_BLOCKED: falta adaptador PPI validado; un presupuesto no es una colocación")
 
     def get_tax_report(self, date_from, date_to) -> Optional[list]:
         """NUEVO EN v12.0 (Instrucción 7) — reporte de impuestos, derechos de
