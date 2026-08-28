@@ -7,7 +7,7 @@ Lecturas históricas reconstruyen cantidades/costos al instante solicitado.
 from decimal import Decimal
 import json
 
-from bs_instrument_contracts import aware_datetime, decimal_value
+from bs_instrument_contracts import aware_datetime, decimal_value, cash_currency
 
 ZERO = Decimal(0)
 
@@ -35,6 +35,8 @@ def sales(c, paper_id):
 
 def entry_terms(p):
     """Unidades/costos históricos explícitos; no consulta un tarifario actual."""
+    if cash_currency(p['currency']) != p['currency']:
+        raise ValueError('Moneda de posición no canónica; no reinterpretar el ledger')
     qty = decimal_value(p['quantity'],'cantidad original',positive=True)
     fee = decimal_value(p['entry_cost'],'costo original',nonnegative=True)
     price = decimal_value(p['entry_price'],'precio original',positive=True)
@@ -80,6 +82,7 @@ def partition(c, p, at=None):
             or (end and end < start)):
         raise ValueError('Cronología de posición inválida')
     at = aware_datetime(at) if at is not None else None
+    original_qty, original_cost, entry_price, factor = entry_terms(p)
     rows = sales(c,p['paper_id'])
     fills = c.execute("SELECT * FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",(p['paper_id'],)).fetchall()
     if not rows:
@@ -94,7 +97,6 @@ def partition(c, p, at=None):
         p.update(status='OPEN',closed_at=None,exit_price=None,exit_cost=None,
                  gross_pnl=None,net_pnl=None,close_reason=None)
         return p, []
-    original_qty, original_cost, entry_price, factor = entry_terms(p)
     if {r['fill_id'] for r in rows} != {r['id'] for r in fills}:
         raise ValueError('Ventas sin asignación de cantidad/costo')
     sold = costs = seen_qty = seen_cost = ZERO
