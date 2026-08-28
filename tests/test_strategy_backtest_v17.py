@@ -16,6 +16,7 @@ from bo_signal_core import SessionGrid, SignalConfig, candidate, window_at
 from bs_instrument_contracts import InstrumentContract
 from bx_execution_replay import BookEvent, ExecutionAssumptions, ExecutionReplay, FeeTerms, ReplayOrder
 from by_strategy_backtest import run_strategy
+from bz_replay_risk import ReplayRiskConfig
 from test_candle_archive_v17 import series
 
 
@@ -48,11 +49,56 @@ def book(setup, second, bid='108.9', ask='109', **changes):
 
 
 def run(setup, books, **kwargs):
-    return run_strategy(*[setup[0],books,*setup[1:]],**(dict(start=at(0),end=at(30),initial_cash='10000') | kwargs))
+    return run_strategy(*[setup[0],books,*setup[1:]],**(dict(start=at(0),end=at(30),initial_cash='10000',
+        risk_config=ReplayRiskConfig(at(-600),D(5))) | kwargs))
 
 
 def scenario(setup):
     return [book(setup,1),book(setup,2),book(setup,3,'115','115.1'),book(setup,4,'116','116.1')]
+
+
+def test_candidato_exige_riesgo_explicito_y_congelado(setup):
+    with pytest.raises(ValueError):
+        run(setup,scenario(setup),risk_config=None)
+    with pytest.raises(ValueError):
+        run(setup,scenario(setup),risk_config=ReplayRiskConfig(at(1),D(1)))
+
+
+def test_corte_genera_salida_posterior_y_no_reentra_con_recuperacion(setup):
+    result = run(setup,[book(setup,1),book(setup,2),book(setup,3,'80','81'),
+        book(setup,4,'115','116'),book(setup,5)],risk_config=ReplayRiskConfig(at(-600),D(1)))
+    assert result['decisions'][2]['code']=='DAILY_LOSS_LIMIT'
+    assert result['fills'][-1]['executed_at']==stamp(at(4))
+    assert result['decisions'][-1]['code']=='DAILY_RISK_LATCHED'
+    assert [f['side'] for f in result['fills']]==['BUY','SELL']
+    assert result['daily_risk']['days'][0]['state']=='LATCHED'
+
+
+def test_corte_sin_libro_ejecutable_conserva_intencion_y_salida_parcial(setup):
+    result = run(setup,[book(setup,1),book(setup,2),book(setup,3,'80','81',session_open=False),
+        book(setup,4),book(setup,5,bid_size=D(1)),book(setup,6)],
+        risk_config=ReplayRiskConfig(at(-600),D(1)))
+    assert result['decisions'][2]['code']=='EXIT_WAITING_FOR_BOOK'
+    assert result['decisions'][2]['exit_reason']=='DAILY_LOSS_LIMIT'
+    assert result['decisions'][3]['code']==result['decisions'][4]['code']=='DAILY_LOSS_LIMIT'
+    assert len(result['fills'])==3 and result['open_quantity']=='0'
+
+
+def test_dimensionamiento_respeta_presupuesto_diario_menor_que_por_operacion(setup):
+    result = run(setup,[book(setup,1)],risk_config=ReplayRiskConfig(at(-600),D('.10')))
+    decision = result['decisions'][0]
+    assert decision['action']=='BUY' and D(decision['quantity'])<22
+    assert D(decision['features']['risk_budget'])==10
+    assert D(decision['features']['modeled_stop_loss'])<=10
+
+
+def test_limite_diario_forma_parte_de_version_y_normaliza_representacion(setup):
+    one = run(setup,scenario(setup),risk_config=ReplayRiskConfig(at(-600),D(1)))
+    same = run(setup,scenario(setup),risk_config=ReplayRiskConfig(stamp(at(-600)),D('1.00')))
+    two = run(setup,scenario(setup),risk_config=ReplayRiskConfig(at(-600),D(2)))
+    assert one==same
+    assert one['strategy_version']!=two['strategy_version']
+    assert one['manifest']['orders'][0]['order_id']!=two['manifest']['orders'][0]['order_id']
 
 
 def test_genera_entrada_y_salida_con_fills_posteriores_y_caja_conciliada(setup):
@@ -72,7 +118,8 @@ def test_resultado_equivale_a_replay_de_ordenes_generadas(setup):
     books = scenario(setup)
     dynamic = run(setup,books)
     orders = [ReplayOrder(**(o | {'evidence_ids':tuple(o['evidence_ids'])})) for o in dynamic['manifest']['orders']]
-    fixed = setup[0].run(orders,books,start=at(0),end=at(30),initial_cash='10000')
+    fixed = setup[0].run(orders,books,start=at(0),end=at(30),initial_cash='10000',
+                         risk_config=ReplayRiskConfig(**dynamic['manifest']['risk_config']))
     assert dynamic['execution_run_id'] == fixed['run_id']
     assert dynamic['fills'] == fixed['fills'] and dynamic['curve'] == fixed['curve']
 
@@ -215,8 +262,10 @@ def test_no_calibra_parametros_despues_de_comenzar_test(setup):
         run((setup[0],replace(setup[1],frozen_at=at(1)),setup[2]),scenario(setup))
 
 
-def test_cli_reproduce_senales_y_fills_del_manifiesto(setup,tmp_path):
-    result = run(setup,scenario(setup))
+@pytest.mark.parametrize('daily_cut',[False,True])
+def test_cli_reproduce_senales_y_fills_del_manifiesto(setup,tmp_path,daily_cut):
+    books = [book(setup,1),book(setup,2),book(setup,3,'20','21'),book(setup,4)] if daily_cut else scenario(setup)
+    result = run(setup,books)
     spec = tmp_path/'strategy.json'; spec.write_text(json.dumps(result['manifest']))
     database = Path(setup[0].archive.store.path)
     before = database.read_bytes()
@@ -225,6 +274,18 @@ def test_cli_reproduce_senales_y_fills_del_manifiesto(setup,tmp_path):
     assert process.returncode == 0,process.stdout+process.stderr
     assert json.loads(process.stdout) == result
     assert database.read_bytes() == before
+
+
+def test_cli_candidato_sin_riesgo_no_usa_un_default(setup,tmp_path):
+    result = run(setup,scenario(setup))
+    result['manifest'].pop('risk_config')
+    spec = tmp_path/'missing-risk.json'; spec.write_text(json.dumps(result['manifest']))
+    database = Path(setup[0].archive.store.path)
+    before = database.read_bytes()
+    process = subprocess.run([sys.executable,'bx_execution_replay.py','--database',str(database),
+                              '--input',str(spec)],capture_output=True,text=True,timeout=20)
+    assert process.returncode==2 and json.loads(process.stdout)['status']=='INVALID_REPLAY_INPUT'
+    assert database.read_bytes()==before
 
 
 def test_identidad_de_configuracion_normaliza_decimales_y_zona(setup):
