@@ -15,7 +15,7 @@ def test_v17_dashboard_separa_plazos_y_muestra_caucion_real_del_simulador(tmp_pa
     import bg_paper_dashboard as dashboard
     store = PaperStore(str(tmp_path / "paper.db"))
     monkeypatch.setattr(dashboard, "DB_PATH", store.path)
-    q = Quote("GGAL", "ACCIONES", "INMEDIATA", D(100), D(99), D(101), D(100), D(100), "2026-08-28T11:00:00-03:00")
+    q = Quote("GGAL", "ACCIONES", "INMEDIATA", D(100), D(99), D(101), D(100), D(100), "2026-08-28T11:00:00-03:00", currency="ARS", market="BYMA")
     store.add_quote(q)
     store.add_quote(replace(q, settlement="A-24HS", last=D(102)))
     offer = CaucionOffer("CONTRATO-PRUEBA", "ARS", D("0.365"), "2026-08-28",
@@ -32,6 +32,43 @@ def test_v17_dashboard_separa_plazos_y_muestra_caucion_real_del_simulador(tmp_pa
     assert "Cauciones colocadoras" in page
     assert "Capital inmovilizado hasta el vencimiento" in page
     assert "no confirman movimientos en PPI" in page
+
+
+def test_dashboard_no_suma_dolares_como_pesos_y_muestra_cajas(tmp_path, monkeypatch):
+    import bg_paper_dashboard as dashboard
+    from be_paper_engine import PaperBroker, PaperStore
+    pnl, _, _ = dashboard._trade_metrics([
+        {"net_pnl": "100", "currency": "ARS"}, {"net_pnl": "25", "currency": "USD_MEP"},
+        {"net_pnl": "20", "currency": "USD_CCL"}])
+    assert pnl == 100
+    store = PaperStore(str(tmp_path / "paper.db"))
+    monkeypatch.setattr(dashboard, "DB_PATH", store.path)
+    broker = PaperBroker(store, initial_cash="1000", initial_cash_by_currency={"USD_MEP": "25", "USD_CCL": "50"})
+    broker.mark_equity({})
+    balances = {r["currency"]: r for r in dashboard.snapshot()["balances_by_currency"]}
+    assert balances["ARS"]["equity"] == "1000"
+    assert balances["USD_MEP"]["equity"] == "25"
+    assert balances["USD_CCL"]["equity"] == "50"
+    page = dashboard.motor_page()
+    assert "Caja y patrimonio por moneda" in page
+    assert "USD_MEP" in page and "USD_CCL" in page
+
+
+def test_ganancia_en_pesos_no_prueba_superar_inflacion(tmp_path, monkeypatch):
+    import bg_paper_dashboard as dashboard
+    from be_paper_engine import PaperStore
+    import bi_operational_services as services
+    store = PaperStore(str(tmp_path / "paper.db"))
+    services.init_schema(store)
+    monkeypatch.setattr(dashboard, "DB_PATH", store.path)
+    with store.connect() as c:
+        c.execute("""INSERT INTO paper_positions(paper_id,source,strategy_version,symbol,asset_class,
+            settlement,status,quantity,entry_price,entry_cost,stop_price,target_price,opened_at,closed_at,net_pnl,features_json)
+            VALUES('X','PRODUCTION_PAPER','fixture','GGAL','ACCIONES','INMEDIATA','CLOSED','1','100','1','98','104',
+            '2026-08-27T11:00:00-03:00','2026-08-27T12:00:00-03:00','1','{}')""")
+    page = dashboard.financial_page()
+    assert "SUPERÓ EN PESOS" not in page
+    assert "NO COMPARABLE: falta rentabilidad porcentual" in page
 
 
 def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
