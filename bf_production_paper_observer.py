@@ -347,31 +347,42 @@ def _download_catalog(reader, store):
     downloaded = now_iso()
     run_id = uuid.uuid4().hex
     found, query_results = {}, []
+    configuration = None
     if hasattr(reader, "market_configuration"):
         try:
-            configuration = reader.market_configuration()
-            with store.connect() as c:
-                for name, payload in configuration.items():
-                    c.execute("INSERT OR REPLACE INTO broker_market_configuration VALUES(?,?,?)",
-                              (name, downloaded, json.dumps(payload, ensure_ascii=False, default=str)))
+            configuration = financial_catalog.validate_configuration(reader.market_configuration())
         except Exception as exc:
             store.event("CATALOG_CONFIGURATION_UNAVAILABLE", type(exc).__name__)
     for ticker_query, instrument_type, fallback_settlement, market_query, _ in _candidate_universe():
-        status, detail = "UNAVAILABLE", "La búsqueda no devolvió coincidencias."
+        status, detail = "EMPTY_FILTER_RESULT", "Este filtro no devolvió coincidencias; no prueba indisponibilidad."
         count = 0
         name_query = {("OPCIONES", "GFG"): "GALICIA", ("OPCIONES", "YPF"): "YPF",
                       ("OPCIONES", "PAM"): "PAMPA", ("LETRAS", "S"): "LETRA",
                       ("LETRAS", "T"): "LETRA", ("ON", "MRC"): "MASTELLONE",
                       ("ON", "YMC"): "YPF"}.get((instrument_type, ticker_query), ticker_query)
+        if configuration is not None:
+            missing = ('TYPE' if instrument_type not in configuration['instrument_types'] else
+                       'MARKET' if market_query not in configuration['markets'] else None)
+            if missing:
+                query_results.append((run_id, ticker_query, name_query, instrument_type,
+                    market_query, missing + '_NOT_ENUMERATED', 0, 'No se consultó: ausente de la configuración actual.'))
+                continue
         try:
             payload = reader.search_instruments(
                 ticker_query, instrument_type, name=name_query, market=market_query)
-            records = _catalog_records(payload)
+            if not isinstance(payload, list) or any(not isinstance(r, dict) for r in payload):
+                raise ValueError('PPI_SEARCH_INVALID_SHAPE')
+            records = payload  # contrato público: lista directa; no extraer de errores anidados
             for raw in records:
                 try:
                     record = financial_catalog.normalize_record(raw, fallback_settlement, downloaded, run_id)
                 except (ValueError, TypeError):
                     continue
+                if configuration is not None:
+                    if record['instrument_type'] not in configuration['instrument_types']:
+                        record['capability'] = 'TYPE_NOT_ENUMERATED'
+                    elif record['market'] not in configuration['markets']:
+                        record['capability'] = 'MARKET_NOT_ENUMERATED'
                 key = tuple(record[k] for k in ("ticker", "instrument_type", "market", "currency", "settlement"))
                 found[key] = record
                 count += 1
@@ -388,6 +399,10 @@ def _download_catalog(reader, store):
             time.sleep(CATALOG_QUERY_SLEEP_SECONDS)
     with store.connect() as c:
         c.execute("BEGIN IMMEDIATE")
+        if configuration is not None:
+            for name, payload in configuration.items():
+                c.execute("INSERT OR REPLACE INTO broker_market_configuration VALUES(?,?,?)",
+                          (name, downloaded, json.dumps(payload, ensure_ascii=False)))
         c.execute("UPDATE financial_instrument_catalog SET status='STALE'")
         c.execute("UPDATE candidate_universe SET status='STALE',can_simulate=0")
         for record in found.values():
@@ -400,11 +415,14 @@ def _download_catalog(reader, store):
                       (record["ticker"], record["instrument_type"], record["settlement"], record["market"],
                        int(record["capability"] == "READY_PAPER_SPOT"), "AVAILABLE", record["capability"], downloaded))
         c.executemany("INSERT INTO catalog_query_results VALUES(?,?,?,?,?,?,?,?)", query_results)
+        financial_catalog.persist_family_coverage(c, configuration, query_results,
+                                                  found.values(), run_id, downloaded)
     total = len(found)
     rofex_available = sum(r["market"] in {"ROFEX", "A3"} for r in found.values())
-    state = "VERDE" if available and not failures else "AMARILLO" if available else "ROJO"
+    state = "VERDE" if available and not failures and configuration is not None else "AMARILLO" if available else "ROJO"
     detail = (f"{available} búsquedas con coincidencias; {total} identidades únicas; "
-              f"{failures} búsquedas fallidas. Ticker y Name siempre no vacíos.")
+              f"{failures} búsquedas fallidas. Ticker y Name siempre no vacíos. "
+              f"Configuración actual: {'verificada' if configuration is not None else 'no disponible'}.")
     _sync_state(store, "PPI_PRODUCTION_CATALOG", state, total, detail,
                 success=bool(available))
     _health(store, "PPI_PRODUCTION_CATALOG", state, detail, "PPI Producción",
