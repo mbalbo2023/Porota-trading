@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal
 import json
 
+from ak_byma_calendar import es_dia_habil_operativo
 from bl_candle_engine import fingerprint, stamp
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
 from bt_caucion_paper import CaucionOffer, TZ, book_key, book_payload, money, offer_payload
@@ -36,7 +37,7 @@ class CaucionPolicy:
     maximum_quote_age_seconds: Decimal
     participation: Decimal
     minimum_net_profit: Decimal
-    ranking: str  # NET_PROFIT o NET_RETURN_PER_DAY, elección explícita.
+    ranking: str  # Criterio explícito; no implica una estrategia óptima.
     session_open_at: str
     session_close_at: str
     session_source: str
@@ -54,7 +55,7 @@ class CaucionPolicy:
             if field in {'reserve_cash','maximum_principal','minimum_net_profit'} and value != money(value):
                 raise ValueError('Importe debe expresarse en centavos')
             object.__setattr__(self,field,value)
-        if (self.ranking not in {'NET_PROFIT','NET_RETURN_PER_DAY'} or not self.session_source.strip()
+        if (self.ranking not in {'NET_PROFIT','NET_RETURN_PER_DAY','EARLIEST_MATURITY_NET_RETURN'} or not self.session_source.strip()
                 or self.session_source.strip().upper()=='UNKNOWN'):
             raise ValueError('Falta criterio de comparación o fuente de sesión')
         if not self.frozen_at <= self.session_open_at < self.session_close_at <= self.liquidity_deadline:
@@ -72,6 +73,13 @@ def normalized_offers(offers):
             raise ValueError('Se requieren ofertas normalizadas, no payloads supuestos')
         unique[fingerprint(offer_payload(offer))] = offer
     return dict(sorted(unique.items()))
+
+
+def selection_key(candidate, ranking):
+    metric = 'net_profit' if ranking=='NET_PROFIT' else 'net_return_per_day'
+    key = (-decimal_value(candidate[metric],metric),candidate['interest_days'],
+           decimal_value(candidate['cash_debit'],'débito'),candidate['candidate_id'])
+    return (stamp(candidate['maturity_at']),*key) if ranking=='EARLIEST_MATURITY_NET_RETURN' else key
 
 
 def choose(offers, policy, *, at, cash, risk, participation, consumed=None):
@@ -126,6 +134,10 @@ def choose(offers, policy, *, at, cash, risk, participation, consumed=None):
                 raise ValueError('START_DATE_MISMATCH')
             if not at < aware_datetime(offer.maturity_at) <= aware_datetime(policy.liquidity_deadline):
                 raise ValueError('MATURITY_OUTSIDE_LIQUIDITY_WINDOW')
+            # Un límite de liquidez posterior no vuelve válido un vencimiento
+            # en fin de semana, día sin liquidación o calendario desconocido.
+            if not es_dia_habil_operativo(aware_datetime(offer.maturity_at).astimezone(TZ).date()):
+                raise ValueError('MATURITY_CALENDAR_UNAVAILABLE_OR_CLOSED')
             if offer.quoted_total_fees is None:
                 raise ValueError('EXPLICIT_COST_BUDGET_REQUIRED')
             principal = offer.fee_quote_principal
@@ -148,9 +160,8 @@ def choose(offers, policy, *, at, cash, risk, participation, consumed=None):
         except ValueError as exc:
             row['code'] = str(exc)
     eligible = [r for r in result['candidates'] if r['code']=='ELIGIBLE']
-    metric = 'net_profit' if policy.ranking=='NET_PROFIT' else 'net_return_per_day'
     if eligible:
-        result['selected'] = min(eligible,key=lambda r:(-r[metric],r['interest_days'],r['cash_debit'],r['candidate_id']))
+        result['selected'] = min(eligible,key=lambda r:selection_key(r,policy.ranking))
     result['code'] = global_error or ('CANDIDATE_SELECTED' if result['selected'] else 'NO_ELIGIBLE_OFFER')
     result['plan_id'] = fingerprint(encoded(result))
     return encoded(result)
@@ -170,38 +181,46 @@ def allocate(broker, offers, policy, request_id, *, as_of=None):
                                'offers':[offer_payload(o) for o in offers.values()]})
     with broker.store.connect() as c:
         c.execute('BEGIN IMMEDIATE')
-        previous = c.execute('SELECT * FROM paper_caucion_allocations WHERE request_id=?',(request_id,)).fetchone()
-        if previous:
-            if previous['request_hash'] != request_hash:
-                raise ValueError('Clave de asignación reutilizada con términos diferentes')
-            return json.loads(previous['decision_json'])
-        if c.execute('SELECT 1 FROM paper_cauciones WHERE request_id=?',(request_id,)).fetchone():
-            raise ValueError('Clave ya utilizada por una colocación explícita')
         at = broker.clock_fn() if broker.clock_fn else as_of
-        if at is None:
-            raise ValueError('Falta reloj explícito de la asignación')
-        at = aware_datetime(at)
-        cash = broker._cash(at,policy.currency,connection=c,for_execution=True)
-        risk = broker.daily_risk.evaluate(at,connection=c)[policy.currency] if broker.daily_risk else None
-        consumed = {}
-        for offer in offers.values():
-            try:
-                consumed[book_key(offer)] = broker.cauciones.used_principal(offer,connection=c)
-            except ValueError as exc:
-                consumed[book_key(offer)] = str(exc)
-        decision = choose(offers.values(),policy,at=at,cash=cash,risk=risk,
-                          participation=broker.participation,consumed=consumed)
-        selected, position = decision['selected'], None
-        if selected:
-            offer = offers[selected['candidate_id']]
-            position = broker.cauciones.place(offer,selected['principal'],request_id,at,
-                lambda currency,clock,connection: broker._cash(clock,currency,connection=connection,for_execution=True),
-                reserve=policy.reserve_cash,participation=min(policy.participation,broker.participation),
-                max_quote_age_seconds=policy.maximum_quote_age_seconds,
-                admission=lambda connection,currency,clock,fees: broker.daily_risk.projected_admission_error(
-                    currency,clock,fees,connection=connection),connection=c)
-        decision['paper_id'] = position['paper_id'] if position else None
-        decision['status'] = 'PLACED_SIMULATED' if position else 'HOLD'
-        c.execute('INSERT INTO paper_caucion_allocations VALUES(?,?,?,?,?)',
-            (request_id,request_hash,stamp(at),json.dumps(decision,ensure_ascii=False,allow_nan=False),decision['paper_id']))
-        return decision
+        return allocate_locked(broker,offers,policy,request_id,request_hash,c,as_of=at)
+
+
+def allocate_locked(broker, offers, policy, request_id, request_hash, c, *, as_of=None):
+    """Interno: comparte el lock del llamador con la política de tesorería."""
+    if not c.in_transaction:
+        raise ValueError('La asignación necesita una transacción activa')
+    previous = c.execute('SELECT * FROM paper_caucion_allocations WHERE request_id=?',(request_id,)).fetchone()
+    if previous:
+        if previous['request_hash'] != request_hash:
+            raise ValueError('Clave de asignación reutilizada con términos diferentes')
+        return json.loads(previous['decision_json'])
+    if c.execute('SELECT 1 FROM paper_cauciones WHERE request_id=?',(request_id,)).fetchone():
+        raise ValueError('Clave ya utilizada por una colocación explícita')
+    at = as_of
+    if at is None:
+        raise ValueError('Falta reloj explícito de la asignación')
+    at = aware_datetime(at)
+    cash = broker._cash(at,policy.currency,connection=c,for_execution=True)
+    risk = broker.daily_risk.evaluate(at,connection=c)[policy.currency] if broker.daily_risk else None
+    consumed = {}
+    for offer in offers.values():
+        try:
+            consumed[book_key(offer)] = broker.cauciones.used_principal(offer,connection=c)
+        except ValueError as exc:
+            consumed[book_key(offer)] = str(exc)
+    decision = choose(offers.values(),policy,at=at,cash=cash,risk=risk,
+                      participation=broker.participation,consumed=consumed)
+    selected, position = decision['selected'], None
+    if selected:
+        offer = offers[selected['candidate_id']]
+        position = broker.cauciones.place(offer,selected['principal'],request_id,at,
+            lambda currency,clock,connection: broker._cash(clock,currency,connection=connection,for_execution=True),
+            reserve=policy.reserve_cash,participation=min(policy.participation,broker.participation),
+            max_quote_age_seconds=policy.maximum_quote_age_seconds,
+            admission=lambda connection,currency,clock,fees: broker.daily_risk.projected_admission_error(
+                currency,clock,fees,connection=connection),connection=c)
+    decision['paper_id'] = position['paper_id'] if position else None
+    decision['status'] = 'PLACED_SIMULATED' if position else 'HOLD'
+    c.execute('INSERT INTO paper_caucion_allocations VALUES(?,?,?,?,?)',
+        (request_id,request_hash,stamp(at),json.dumps(decision,ensure_ascii=False,allow_nan=False),decision['paper_id']))
+    return decision
