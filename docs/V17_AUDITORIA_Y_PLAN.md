@@ -1206,6 +1206,72 @@ Detalle, límites y fuentes: `docs/V17_PPI_DIAGNOSTICO.md`.
 El lanzador usa el permiso ya probado `sudo -n docker`; Python y la copia
 temporal del paquete corren con el usuario del operador, sin exigir sudo Python.
 
+## Vigesimosexto checkpoint: configuración productiva observada
+
+El operador aportó el resultado real del diagnóstico aislado el 28/08/2026,
+generado a las 17:32:17.791080 UTC: `COMPLETED_OBSERVATION`, SDK 1.2.4,
+un login y catorce HTTP 200. El contenedor temporal fue eliminado; motores
+apagados antes del sondeo y sin montar datos/.env. No es inspección SSH desde
+el entorno de desarrollo ni garantía del estado posterior del servidor.
+No repetir el diagnóstico: la autenticación y lectura de ALUA ya respondieron.
+
+### Hallazgos y cambios
+
+- Incompatibilidad reproducida entre documentación y producción: los ejemplos
+  web usan vigencias con tildes; Configuration devuelve `POR-EL-DIA`,
+  `HASTA-SU-EJECUCION`, `VALIDA-HASTA-EL`. El wrapper ahora serializa esas
+  grafías y admite las tres anteriores como alias explícitos. Mantiene la
+  revalidación de fecha futura con zona antes del transporte y la barrera de
+  familias/operaciones especializadas. No se probó una orden real o presupuesto.
+- Configuration declara 15 familias, incluidos NOBAC, LEBAC, LICITACIONES,
+  ACCIONES-USA y FCI-EXTERIOR. Inventario dinámico aditivo de cobertura:
+  declarada/no enumerada/desconocida, consultas, identidades encontradas,
+  compatibilidad de contrato PAPER y estado. No agrega semillas ni presume
+  mercado, moneda, sesión o liquidación para esas familias.
+- El inventario incluye familias sin consulta y conserva las retiradas. Una
+  falla de configuración no recicla declaraciones anteriores como vigentes.
+  Validación de snapshot completo, listas, duplicados y copia independiente;
+  configuración, catálogo y cobertura se publican en la misma transacción.
+- Consulta vacía es `EMPTY_FILTER_RESULT`, no `UNAVAILABLE`. Una respuesta
+  inválida/error no se toma por catálogo vacío ni se extraen especies de un
+  objeto de error anidado. Familias/mercados no enumerados no se consultan;
+  registros devueltos fuera de esos enums se conservan sin habilitar PAPER.
+- Panel Históricos muestra cobertura por familia desde SQLite, sin consumir
+  APIs ni migrar al abrirlo. Explica que es la última consulta, no tiempo real,
+  permiso de cuenta o cobertura exhaustiva. Familias nuevas no desaparecen por
+  faltar en un diccionario local. No cambia la lista de ejecutores o señales.
+- Extracto público del resultado en fixture separada; no se carga como
+  configuración operativa o catálogo vivo. ALUA/ALUAC/ALUAD conservan ARS/CCL/MEP.
+  `generated_at` precede al libro: corresponde al inicio del sondeo y no es
+  timestamp de recepción de cada dato. No se calcula frescura con él.
+
+### Bloqueo pendiente de cauciones
+
+CAUCIONES y COLOCAR-CAUCION están declaradas, pero los tres filtros devolvieron
+cero instrumentos. Faltan identificador/consulta oficial válida y términos
+contrastados de colocación (tasa/unidades/lado, capital, plazo/vencimiento,
+base de días y costos completos). No se concluye que el broker no soporte el
+producto ni que la cuenta esté autorizada. No se consultaron saldos/cuentas.
+Se requiere confirmación técnica de PPI; no se lo contactó en nombre del usuario.
+Detalles: `docs/V17_PPI_DIAGNOSTICO.md`.
+
+Continúa HOLD_UNVERIFIED_TERMS: exclusivamente colocadoras, caja liquidada
+libre de compromisos de la misma moneda, sin tomadoras ni fondos pendientes.
+Sin cambios de servidor, reinicios, órdenes/mensajes reales ni nuevos trabajos
+de ciberseguridad. La matriz cubre familias declaradas, no todos los instrumentos
+existentes ni los ejecutores especializados pendientes. PR en borrador.
+
+Verificación final: **1158 pruebas aprobadas**, 0 fallas, 0 errores y
+0 omisiones; 44 nuevas frente al checkpoint 25. La primera ejecución de los
+casos nuevos reprodujo 21 fallas antes de corregir. Cobertura global local
+**65,75%**; catálogo **85,37%** y cuatro mínimos financieros cumplidos.
+Incluye serialización con modelos del SDK y transporte sustituido, alias,
+vigencias inválidas, operaciones especializadas bloqueadas, las 15 familias,
+errores/vacíos/metadatos inválidos, configuración retirada/nueva, mercado/familia
+no enumerados, actualización sin reciclaje y dashboard read-only compatible.
+Panel comprobado funcionalmente, sin captura visual en navegador/tablet.
+No se ejecutó PPI, Docker del servidor ni Telegram desde desarrollo.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
