@@ -372,7 +372,8 @@ def procesar_boton_telegram(callback_data: str, origen: str = "telegram_boton") 
 # ---------------------------------------------------------------------------
 
 def interceptar_orden(ticker: str, cantidad: int, precio: float, lado: str,
-                      instrument_type: str = "") -> Optional[dict]:
+                      instrument_type: str = "", quantity_type: str = "PAPELES",
+                      settlement: Optional[str] = None) -> Optional[dict]:
     """
     Se llama justo antes de mandar una orden. Devuelve una orden simulada si el
     sistema está en modo simulación, o None si corresponde ejecutar de verdad.
@@ -413,12 +414,16 @@ def interceptar_orden(ticker: str, cantidad: int, precio: float, lado: str,
         "id": f"SIM-{int(time.time() * 1000) % 10_000_000}",
         "ticker": ticker, "cantidad": cantidad, "precio": precio, "lado": lado,
         "instrument_type": instrument_type,
+        "quantity_type": quantity_type, "settlement": settlement,
         "momento": datetime.now().isoformat(timespec="seconds"),
-        "monto_ars": round(cantidad * precio, 2),
+        # Una intercepción no conoce moneda, nominal/factor ni costos. DINERO
+        # tampoco es número de títulos. Conservar la clave histórica como
+        # desconocida, nunca multiplicar inputs y etiquetarlos como pesos.
+        "monto_ars": None, "valuacion": "NO_CALCULADA_SIN_CONTRATO",
     }
     registrar_paso("ORDEN_INTERCEPTADA" if modo != MODO_SIMULACION else "ORDEN_SIMULADA",
-                   f"{lado} {cantidad} × {ticker} a ${precio}",
+                   f"{lado} {ticker}: cantidad {cantidad} ({quantity_type}), precio {precio}",
                    f"No se envió al mercado — modo {modo} "
-                   f"(${orden['monto_ars']:,.2f} figurados)",
+                   "(términos de solicitud, sin valuación ni ejecución confirmada)",
                    orden)
     return orden
