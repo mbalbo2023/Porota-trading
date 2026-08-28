@@ -51,6 +51,7 @@ def _validated(row, connection):
     offers = {}
     for payload in manifest['offers']:
         offer = CaucionOffer(**payload)
+        _require(offer_payload(offer) == payload, 'NON_CANONICAL_OFFER')
         key = fingerprint(offer_payload(offer))
         _require(key not in offers, 'DUPLICATE_OFFER')
         offers[key] = offer
