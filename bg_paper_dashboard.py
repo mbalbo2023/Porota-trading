@@ -20,6 +20,7 @@ from bl_candle_engine import fingerprint
 from cb_caucion_audit import allocation_history
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
+from bt_caucion_paper import validate_position
 
 
 VERSION = "16.3.5"
@@ -139,6 +140,29 @@ def _spot_snapshot():
         return {'open':[],'closed':[],'realized':[],'state':'UNAVAILABLE'}
 
 
+def _caucion_snapshot():
+    """Validar todo el ledger antes de paginar; no ejecuta ni migra."""
+    try:
+        with closing(_conn()) as c:
+            c.execute('BEGIN')
+            if not c.execute("SELECT 1 FROM sqlite_master WHERE name='paper_cauciones' AND type='table'").fetchone():
+                return {'state':'MISSING_TABLE','positions':[]}
+            rows = [dict(r) for r in c.execute('SELECT * FROM paper_cauciones ORDER BY julianday(opened_at) DESC')]
+            for p in rows:
+                validate_position(p)
+            return {'state':'READY','positions':rows}
+    except ValueError:
+        return {'state':'INVALID_LEDGER','positions':[]}
+    except sqlite3.Error:
+        return {'state':'UNAVAILABLE','positions':[]}
+
+
+def _caucion_warning(state):
+    return '' if state=='READY' else ("<div class='paper-warning'>Ledger de cauciones no disponible o inconsistente "
+        f"({_e(state)}). Caja, patrimonio e importes de caución no confirmados; no interpretar como cero. "
+        "Requiere conciliación, no se reparan registros automáticamente.</div>")
+
+
 def _status(value):
     key = str(value or "").upper()
     css = "s-verde" if key in {"OK","VERDE","RUNNING","APPROVE","WIN","OPENED_SIMULATED","AVAILABLE"} else \
@@ -235,7 +259,8 @@ def snapshot():
     decisions = _rows("SELECT * FROM paper_decisions ORDER BY id DESC LIMIT 100")
     equity = (_rows("SELECT * FROM paper_equity ORDER BY id DESC LIMIT 1") or [{}])[0]
     learning = (_rows("SELECT COUNT(*) total,SUM(CASE WHEN label_timestamp IS NOT NULL THEN 1 ELSE 0 END) labeled FROM paper_learning_samples") or [{}])[0]
-    cauciones = _rows("SELECT * FROM paper_cauciones ORDER BY opened_at DESC LIMIT 500") if _table("paper_cauciones") else []
+    caucion_data = _caucion_snapshot()
+    cauciones = caucion_data['positions'][:500]
     balances = _rows("""SELECT e.* FROM paper_equity_by_currency e JOIN
       (SELECT currency,MAX(id) id FROM paper_equity_by_currency GROUP BY currency) latest ON latest.id=e.id
       ORDER BY e.currency""") if _table("paper_equity_by_currency") else []
@@ -244,7 +269,7 @@ def snapshot():
     exits = _rows("SELECT * FROM paper_exit_intents") if _table("paper_exit_intents") else []
     valuation_quality = _rows("SELECT * FROM paper_valuation_quality") if _table("paper_valuation_quality") else []
     return {"state":state,"quotes":quotes,"open":opened,"closed":closed,"realized":spot['realized'],"spot_state":spot['state'],"decisions":decisions,"equity":equity,"learning":learning,"cauciones":cauciones,"balances_by_currency":balances,
-            "exit_supervisor":supervisor,"exit_reader":exit_reader,"exit_intents":exits,"valuation_quality":valuation_quality,
+            "caucion_state":caucion_data['state'],"exit_supervisor":supervisor,"exit_reader":exit_reader,"exit_intents":exits,"valuation_quality":valuation_quality,
             "daily_risk":_rows('SELECT * FROM paper_daily_risk ORDER BY day DESC,currency LIMIT 16') if _table('paper_daily_risk') else [],
             "notification_worker":(_rows('SELECT * FROM paper_notification_worker WHERE id=1') or [{}])[0] if _table('paper_notification_worker') else {},
             "notification_counts":_rows('SELECT state,COUNT(*) total FROM paper_notification_outbox GROUP BY state') if _table('paper_notification_outbox') else []}
@@ -412,7 +437,10 @@ def _caucion_allocations_panel():
 
 
 def _cauciones_panel():
-    positions = _rows("SELECT * FROM paper_cauciones ORDER BY opened_at DESC LIMIT 100") if _table("paper_cauciones") else []
+    data = _caucion_snapshot()
+    if data['state']!='READY':
+        return "<div class='paper-card'><h2>Cauciones colocadoras</h2>"+_caucion_warning(data['state'])+'</div>'
+    positions = data['positions'][:100]
     rows = "".join(
         f"<tr><td>{_e(p['instrument_id'])}</td><td>{_e(p['currency'])}</td>"
         f"<td>{_e(p['principal'])}</td><td>{_e(p['annual_rate_fraction'])}</td>"
@@ -437,6 +465,8 @@ def _trade_metrics(closed):
 
 def _balances_panel():
     data = snapshot()
+    if data['caucion_state']!='READY':
+        return "<div class='paper-card'><h2>Caja y patrimonio por moneda</h2>"+_caucion_warning(data['caucion_state'])+'</div>'
     balances = data["balances_by_currency"]
     quality = {r['currency']:r for r in data["valuation_quality"]}
     rows = "".join(f"<tr><td>{_e(r['currency'])}</td><td>{_e(r['cash'])}</td>"
@@ -495,13 +525,13 @@ def home_page():
         _card("Telegram", telegram, "Avisos de modo y resumen de cierre", "green" if telegram=="VERDE" else "red" if telegram=="ROJO" else "gray"),
         _card("Base paper", "OK" if db_ok else "REVISAR", f"Integridad {sre.get('db_integrity','sin medición')}", "green" if db_ok else "red"),
         _card("PPI solo lectura", state.get("ppi_auth"), "Órdenes reales bloqueadas por transporte", "green" if state.get("ppi_auth")=="OK" else "yellow" if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
-        _card("Patrimonio paper ARS", _money(equity), "Capital completamente ficticio; sin consolidar dólares", "green" if equity>=PAPER_INITIAL_CAPITAL else "red"),
+        _card("Patrimonio paper ARS", _money(equity) if data['caucion_state']=='READY' else 's/d', "Capital completamente ficticio; sin consolidar dólares", "gray" if data['caucion_state']!='READY' else "green" if equity>=PAPER_INITIAL_CAPITAL else "red"),
         _card("Resultado de hoy ARS", _money(today_pnl) if data["spot_state"]=="READY" else "s/d", f"Win rate {'s/d' if today_wr is None else f'{today_wr:.1f}%'}", "green" if today_pnl>0 else "red" if today_pnl<0 else "gray", "positive" if today_pnl>0 else "negative" if today_pnl<0 else "neutral"),
         _card("Win rate acumulado", "s/d" if total_wr is None else f"{total_wr:.1f}%", f"{wins}/{len(closed)} cierres ganadores", "green" if total_wr is not None and total_wr>=50 else "red" if total_wr is not None else "gray"),
         _card("Órdenes reales", "0", "Barrera HTTP fail-closed", "green"),
     ))
     body=f"<h1>Panel ejecutivo — Porota Trading {VERSION}</h1><p class='paper-muted'>Una sola vista del sistema, infraestructura, APIs y desempeño paper.</p><div class='paper-grid'>{cards}</div>"
-    return _document("Porota Trading",_spot_warning(data["spot_state"])+body)
+    return _document("Porota Trading",_spot_warning(data["spot_state"])+_caucion_warning(data['caucion_state'])+body)
 
 
 def paper_page(compact=False):
@@ -524,7 +554,7 @@ def paper_page(compact=False):
         "<p class='paper-muted'>Una sola vista para estado, actividad y simulación.</p>"
     )
     body=heading+f"<div class='paper-grid'>{cards}</div><div class='paper-notice'><b>El límite {PAPER_ACTIVE_SYMBOL_LIMIT} es por ciclo, no el universo total.</b> La ventana rota para cubrir todos los elegibles y registra latencia, errores y recomendación antes de ampliarse.</div><div class='paper-card'><h2>Decisiones y abstenciones actuales</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>Acción</th><th>Score</th><th>Motivo</th></tr>{rows}</table></div>"
-    body = _spot_warning(data['spot_state'])+body
+    body = _spot_warning(data['spot_state'])+_caucion_warning(data['caucion_state'])+body
     return _document("Simulación productiva",body) if compact else body
 
 
