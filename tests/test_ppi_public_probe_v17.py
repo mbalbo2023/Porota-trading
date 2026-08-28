@@ -366,3 +366,19 @@ def test_host_portapapeles_json_sin_escapes_dentro_del_resultado(host,monkeypatc
     displayed,encoded=output.split('\033]52;c;')
     clipboard=base64.b64decode(encoded.rstrip('\a')).decode()
     assert json.loads(displayed)==json.loads(clipboard)
+
+
+def test_solo_docker_usa_sudo_sin_password_y_no_hay_fallback(monkeypatch):
+    calls=[]
+    result=subprocess.CompletedProcess([],0,'FIXTURE','')
+    def run(args,**kwargs):
+        calls.append(args)
+        return result
+    monkeypatch.setattr(subprocess,'run',run)
+    assert probe.docker(['inspect','TEST'])=='FIXTURE'
+    assert calls==[['sudo','-n','docker','inspect','TEST']]
+    result.returncode=1
+    result.stderr='permission denied '+FIXTURE_SECRET
+    with pytest.raises(probe.ProbeStop,match='^DOCKER_COMMAND_FAILED_INSPECT$'):
+        probe.docker(['inspect','TEST'])
+    assert len(calls)==2  # sin sudo Python, chmod, grupo Docker ni otro intento
