@@ -465,10 +465,47 @@ def history_page():
     history=(_rows("SELECT COUNT(*) instruments,SUM(row_count) rows,MAX(downloaded_at) latest FROM production_history") or [{}])[0] if _table("production_history") else {}
     cycles=_rows("SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 30") if _table("universe_cycle_metrics") else []
     cycle_rows="".join(f"<tr><td>{_local_time(r['started_at'])}</td><td>{r['selected_count']}/{r['eligible_total']}</td><td>{r['successful_count']}</td><td>{r['failed_count']}</td><td>{r['duration_seconds']:.2f}s</td><td>{r['recommended_limit']}</td></tr>" for r in cycles) or "<tr><td colspan='6'>Esperando métricas.</td></tr>"
-    coverage=_num(history.get("instruments"))/eligible*100 if eligible else 0
-    cards="".join((_card("Catálogo PPI",catalog,"Todos los instrumentos devueltos por búsquedas validadas","green" if catalog else "gray"),_card("Universo elegible",eligible,"No equivale al lote de un ciclo","green" if eligible else "gray"),_card("Históricos cubiertos",f"{history.get('instruments',0)}/{eligible}",f"{coverage:.1f}% · {history.get('rows',0) or 0} filas","green" if eligible and coverage>=95 else "yellow"),_card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,"Ventana rotativa sobre todo el universo","green"),_card("Último histórico",_local_time(history.get("latest")),"Descarga incremental para evitar tormentas de API","gray")))
+    cards="".join((_card("Catálogo PPI",catalog,"Todos los instrumentos devueltos por búsquedas validadas","green" if catalog else "gray"),_card("Universo elegible",eligible,"No equivale al lote de un ciclo","green" if eligible else "gray"),_card("Respuestas históricas guardadas",history.get('instruments',0),f"{history.get('rows',0) or 0} filas declaradas; no equivale a series validadas para backtest","yellow"),_card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,"Ventana rotativa sobre todo el universo","green"),_card("Último histórico",_local_time(history.get("latest")),"Fecha de descarga, no de publicación original","gray")))
     body=f"<h1>Históricos y universo</h1><div class='paper-grid'>{cards}</div><div class='paper-notice'><b>PPI históricos no debe quedar limitado a 20 instrumentos.</b> Desde esta versión se conserva el catálogo completo y los históricos se descargan por lotes rotativos hasta cubrir todo el universo. Descargar cientos de series en una sola ráfaga elevaría timeouts, cuota y riesgo de bloqueo.</div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
-    return _document("Históricos",body,refresh=60)
+    return _document("Históricos",body+_candle_archive_panel(),refresh=60)
+
+
+def _candle_archive_panel():
+    # Sólo consultas: abrir el panel no materializa, migra ni descarga datos.
+    worker=(_rows('SELECT * FROM candle_worker_state WHERE id=1') or [{}])[0] if _table('candle_worker_state') else {}
+    state=worker.get('state','NOT_STARTED')
+    try:
+        if not 0<=(datetime.now(TZ)-datetime.fromisoformat(worker['heartbeat_at'])).total_seconds()<=15:
+            state='STALE'
+    except (KeyError,ValueError,TypeError):
+        state='UNKNOWN'
+    inventory=_rows('''SELECT s.identity_json,COUNT(DISTINCT v.bar_start) bars,
+      COUNT(*) versions,MIN(v.bar_start) first_bar,MAX(v.bar_end) last_bar
+      FROM candle_versions v JOIN candle_series s USING(series_id)
+      WHERE julianday(v.known_at)<=julianday(?) AND julianday(v.bar_end)<=julianday(?)
+      GROUP BY v.series_id ORDER BY s.identity_json LIMIT 100''',
+      (datetime.now(TZ).isoformat(),datetime.now(TZ).isoformat())) if _table('candle_versions') else []
+    items=[]
+    for r in inventory:
+        identity=json.loads(r['identity_json'])
+        items.append(f"<tr><td>{_e(identity['symbol'])} / {_e(identity['asset_class'])}</td>"
+            f"<td>{_e(identity['market'])} / {_e(identity['currency'])} / {_e(identity['settlement'])} · factor {_e(identity.get('cash_multiplier','UNKNOWN'))}</td>"
+            f"<td>{_e(identity['source'])} / {_e(identity['resolution'])}</td>"
+            f"<td>{_e(identity['adjustment'])} / {_e(identity['price_kind'])} / {_e(identity['volume_kind'])}</td>"
+            f"<td>{r['bars']} / {r['versions']}</td><td>{_local_time(r['last_bar'])}</td></tr>")
+    raw=(_rows('SELECT COUNT(*) n FROM historical_raw_archive') or [{'n':0}])[0]['n'] if _table('historical_raw_archive') else 0
+    rejected=(_rows('SELECT COUNT(*) n FROM candle_rejections') or [{'n':0}])[0]['n'] if _table('candle_rejections') else 0
+    attempts=_rows('SELECT * FROM production_history_attempts ORDER BY attempted_at DESC LIMIT 20') if _table('production_history_attempts') else []
+    failed=sum(r['state']!='VALID_PAYLOAD' for r in attempts)
+    return ("<div class='paper-card'><h2>Archivo versionado de barras</h2>"
+        f"<p>Proceso: <b>{_e(state)}</b> · cursor {_e(worker.get('cursor','—'))} · {_e(worker.get('detail',''))}</p>"
+        f"<p>Raw conservados: {raw}. Lecturas excluidas: {rejected}. Descargas no completas entre las últimas {len(attempts)}: {failed}.</p>"
+        "<p>TRADE_SAMPLES son muestras del último negocio, no todos los negocios. Su volumen, número de operaciones y VWAP son desconocidos. "
+        "No se rellenan huecos. Descargar una serie no confirma ajuste, unidad de volumen ni aptitud para operar.</p>"
+        "<p>Las revisiones conservan cuándo se conocieron. Este archivo no aprueba rentabilidad ni habilita órdenes. Se muestran hasta 100 series.</p>"
+        "<table class='paper-table'><tr><th>Instrumento</th><th>Identidad financiera</th><th>Fuente / período</th>"
+        "<th>Ajuste / precio / volumen</th><th>Barras / versiones</th><th>Hasta</th></tr>"+
+        (''.join(items) or "<tr><td colspan='6'>Todavía no hay barras cerradas del archivo nuevo.</td></tr>")+"</table></div>")
 
 
 def learning_page():
