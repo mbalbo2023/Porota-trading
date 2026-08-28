@@ -5,7 +5,9 @@ Actualizado: 28/08/2026. Base entregada: v16.3.5, rama `testing`, commit
 Trabajo aislado en `feature/v17-convergencia`.
 
 **Estado: desarrollo. No es una versión lista para producción.**
-No se cambiaron imágenes desplegadas, servicios, modo operativo ni permisos del servidor.
+No se desplegó v17 ni se cambiaron permisos del servidor. El operador confirmó
+el apagado de los motores anteriores y `restart=no`; el dashboard sigue activo
+(detalle y límites de esa evidencia en el checkpoint 17).
 El código del selector ahora inicia el runtime nuevo al solicitar simulación;
 este selector actualizado todavía no se ejecutó en el Droplet.
 No se enviaron órdenes reales. Los nuevos registros son `PRODUCTION_PAPER`.
@@ -23,6 +25,8 @@ No se enviaron órdenes reales. Los nuevos registros son `PRODUCTION_PAPER`.
   los vencimientos y la integridad contable sí forman parte del trabajo.
 - Reducir acciones manuales: código a GitHub, archivos complejos por SFTP y
   comandos cortos con salida al portapapeles mediante OSC 52 en Termius.
+- Parámetros delegados: perfil conservador PAPER de cauciones del checkpoint 17.
+  Motores anteriores apagados hasta preparar la nueva versión; no reiniciarlos.
 
 ## Material revisado
 
@@ -97,8 +101,9 @@ línea del repositorio ni una validación de rentabilidad de las estrategias.
   acreditada aporta interés menos costos, nunca la devolución del principal.
 
 **Pendiente para la operación automática:** adaptador de cotizaciones/contratos
-PPI con evidencia real de sus campos; confirmar parámetros de plazo, capital y
-reserva; programación de colocaciones y conciliación. El undécimo checkpoint
+PPI con evidencia real de sus campos, programación de colocaciones y conciliación.
+La política conservadora delegada de plazo/capital/reserva se implementa en el
+checkpoint 17, sin acreditarla como óptima. El undécimo checkpoint
 agrega comparación/asignación paper con política explícita, sin conectarla al
 escáner o a órdenes reales.
 `place_caucion()` es una operación explícita del simulador, no un planificador
@@ -116,7 +121,7 @@ estos métodos se conecta a la nueva contabilidad paper.
 |---|---|---|
 | Acciones, CEDEARs, ETF | Caja, costos, riesgo, fuente temporal y supervisor independiente en paper | Contrastar segmento/sesión por especie y validar nueva señal/backtest |
 | Bonos, letras, ON | Compras/cierres paper con contrato explícito, factor VN y lote | Cargar factores desde metadatos contrastados; cashflows, amortizaciones, intereses corridos y monedas |
-| Cauciones | Ciclo de colocadora, asignador paper explícito, caja/riesgo/profundidad y vencimiento | Cotización/adaptador PPI, parámetros confirmados, programación y conciliación; tomadora excluida |
+| Cauciones | Ciclo de colocadora, asignador paper, perfil conservador delegado, caja/riesgo/profundidad y vencimiento | Cotización/adaptador PPI, programación y conciliación; tomadora excluida |
 | Opciones | Contrato y cálculos de prima/lote/pérdida máxima de opción comprada | Integración del ejecutor, liquidez, ejercicio, vencimiento y supervisor específico |
 | Futuros | Separación de nocional, garantía, ajuste diario y déficit de margen | Libro persistente de ajustes, proveedor, conciliación y gestión de márgenes |
 | FCI | Familia y unidades reconocidas; no pasa por ejecutor de acciones | Suscripción/rescate, valor de cuotaparte, corte y demora de rescate |
@@ -662,8 +667,9 @@ claro que validar el formato no certifica los datos del broker.
 La política exige moneda/plaza, reserva de caja, fracción máxima del efectivo
 libre de esa reserva, tope de principal, fecha límite para recuperar liquidez,
 antigüedad de cotización, participación en profundidad, beneficio neto mínimo,
-sesión explícita con fuente y configuración congelada antes de ella. No se
-elige ninguno de esos parámetros para la cuenta del operador. La participación
+sesión explícita con fuente y configuración congelada antes de ella. En este
+checkpoint no se eligieron parámetros para la cuenta; la política PAPER
+delegada posteriormente se describe en el checkpoint 17. La participación
 efectiva nunca puede superar el límite del broker paper.
 
 Hay dos criterios explícitos: mayor beneficio neto del contrato (`NET_PROFIT`)
@@ -703,8 +709,10 @@ inicial o al vencimiento, retorno neto y pérdida diaria proyectada.
   ciegamente un plan externo ni se reutiliza una clave de colocación manual.
 
 La tabla nueva es una migración aditiva del código, **no ejecutada en el Droplet**.
-Siguen pendientes el adaptador PPI contrastado, confirmar parámetros con el
-operador, programación, conciliación y evaluación con datos reales. El plazo de
+En ese punto quedaban pendientes el adaptador PPI contrastado, confirmar parámetros
+con el operador, programación, conciliación y evaluación con datos reales. La
+delegación posterior resuelve sólo la elección del perfil PAPER (checkpoint 17).
+El plazo de
 liquidez es contractual en el modelo; no garantiza una acreditación real puntual.
 No se activa renovación automática ni se aplica esta ruta a futuros, opciones
 o FCI. PR en borrador, `promotion_allowed=False`, sin despliegue.
@@ -838,6 +846,71 @@ una versión anterior contra una base que ya tenga ventas parciales: para una
 reversión de despliegue se requiere restaurar conjuntamente código y copia de
 la base anterior, conservando evidencia de los movimientos posteriores. Este
 checkpoint no se desplegó ni modificó la base del Droplet.
+
+## Decimoséptimo checkpoint: política conservadora de tesorería PAPER
+
+El operador delegó las decisiones de parametrización. `ce_caucion_treasury` y
+`PaperBroker.allocate_conservative_caucion()` incorporan el perfil
+`caucion-treasury-ars-v17.1`. Es un punto de partida prudente para probar, no una
+política optimizada ni una recomendación de rentabilidad demostrada. La API
+explícita de asignación anterior conserva sus políticas independientes.
+
+- Sólo caución colocadora ARS. No convierte USD/MEP/CCL, toma financiación ni
+  utiliza ventas sin liquidar. Usa la misma caja temporal y riesgo del broker.
+- Congela el primer saldo libre válido del día argentino. Conserva al menos
+  el 50% como reserva, redondeada hacia arriba a centavos; el principal máximo
+  es el remanente redondeado hacia abajo. Los costos iniciales también deben
+  caber fuera de esa reserva. Reintentar tras una compra spot no reduce el piso.
+- Máximo una colocación ARS por día, incluidas las hechas por la ruta explícita;
+  ninguna mientras exista otra ARS abierta o no acreditada. El vencimiento
+  contractual por sí solo no equivale a crédito disponible.
+- Liquidez a más tardar en el siguiente día operativo de liquidación, sin
+  superar cuatro días corridos. Calendario desconocido o intervalo mayor
+  produce HOLD, sin alargar el plazo. La ventana y su fuente deben aportarse;
+  no se deducen horas ni vencimientos del ticker. El asignador rechaza también
+  vencimientos en fin de semana/día sin liquidación: estar antes del límite no
+  los vuelve válidos.
+- Prioriza vencimiento más próximo y, entre iguales, retorno neto por día sobre
+  débito inicial (`EARLIEST_MATURITY_NET_RETURN`). No prolonga la inmovilización
+  buscando una TNA mayor. Antigüedad máxima 30 segundos y participación máxima
+  10% de profundidad, o el límite más estricto del broker paper.
+- Exige presupuesto completo para el capital exacto, neto positivo y admisión
+  del límite diario existente. No escala costos fijos/mínimos ni supone
+  reinversión o comisiones comerciales de la cuenta.
+- Dos tablas aditivas conservan presupuesto diario e intentos, incluidos HOLD.
+  Clave idéntica devuelve el mismo resultado tras reiniciar; cambiar datos con
+  ella se rechaza. Reloj regresivo o cambio de ventana/perfil no reinicia el
+  presupuesto. El reloj vivo se lee una sola vez dentro del bloqueo.
+- Presupuesto, decisión, colocación, evento y outbox comparten transacción.
+  Fallas de escritura revierten el conjunto; dos solicitudes concurrentes no
+  pueden colocar sucesivamente otro 50% del saldo. El lector de asignaciones
+  y el panel entienden el nuevo ranking, sin reescribir decisiones antiguas.
+
+**Límites importantes:** esa reserva restringe nuevas cauciones de este perfil;
+no es dinero bloqueado contra compras spot ni garantía frente a pérdidas u
+otros movimientos. Tampoco asegura que todo el efectivo vuelva a la apertura
+del día siguiente: se exige una fecha/hora de liquidez explícita y la acreditación
+real aún requiere conciliación. Los intentos de tesorería previos al asignador
+se conservan en SQLite, pero todavía no tienen un panel específico.
+
+No hay scanner, scheduler ni adaptador PPI conectado a esta función. No se
+enviaron órdenes o mensajes reales. `data_certified=False`,
+`promotion_allowed=False`; contratos, fuente ejecutable, presupuestos y ventana
+real de la cuenta siguen pendientes de contrastar. No se activan automáticamente
+futuros, opciones o FCI por aparecer en el catálogo. El smoke Docker general
+SANDBOX no prueba end-to-end este flujo de tesorería ni PRODUCTION_PAPER.
+
+### Estado informado del servidor — 28/08/2026
+
+El operador aportó la salida de apagado: `porota_trading_bot` y
+`porota_production_observer` quedaron `Running=false`, `RestartPolicy=no`;
+`porota_production_dashboard` seguía activo y healthy. Es evidencia del comando
+ejecutado por el operador, no una inspección SSH independiente. No se reinició
+ni desplegó v17. Contenedores y datos se conservaron. El aviso de deprecación
+de `--time` no impidió detenerlos; comandos futuros usarán `--timeout`.
+Desactivar reinicio Docker no impide un arranque manual/despliegue posterior ni
+cancela órdenes ya enviadas a PPI. Se mantiene la instrucción de no arrancar
+los motores mientras se prepara la nueva versión.
 
 ## Evaluación del código sugerido: decisiones y pendientes
 
@@ -994,6 +1067,17 @@ diario activo, etiqueta agregada única y rechazo de ledger inconsistente.
 El panel se comprobó funcionalmente, sin revisión visual en navegador/tablet.
 La verificación remota se registra en la PR cuando termina el CI completo.
 
+Decimoséptimo checkpoint: **850 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 32 pruebas nuevas, 219 dirigidas. Cobertura local global 62,38%;
+tesorería 94,78%, asignador 97,08% y lector 99,01%. Cuatro mínimos financieros
+existentes cumplidos. Casos de reserva durable tras compra spot, costos al
+inicio/vencimiento, caja menor a dos centavos, prioridad de vencimiento,
+fines de semana/días sin liquidación, feriados largos, calendario desconocido,
+acreditación pendiente, idempotencia, reinicio, concurrencia, reloj, cambio de
+ventana y rollback de presupuesto/decisión/colocación/outbox. Fixtures sintéticas
+sin PPI ni Telegram. Verificación remota completa a registrar en la PR; sin
+despliegue o validación end-to-end del flujo automático de tesorería.
+
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
 todos los pins de producción. Advertencia observada: deprecación del TestClient
@@ -1050,6 +1134,16 @@ específica, y renta fija necesita factor nominal/lote contrastados.
   instrumentos, cotizaciones, libros y distinción entre fecha de operación y liquidación.
 - [BYMA: cauciones](https://www.byma.com.ar/productos/productos-financieros/caucion):
   colocadora/tomadora, monedas y devolución al vencimiento.
+- [PPI: comisiones](https://www.portfoliopersonal.com/Contenido/comisiones):
+  consultado el 28/08/2026; tarifario publicado vigente desde 01/07/2026.
+  Derechos de mercado adicionales: una comisión publicada no es un presupuesto
+  all-in confirmado para esta cuenta/capital. No se copió como costo ejecutable.
+- [PPI: cotizaciones de cauciones](https://www.portfoliopersonal.com/Cotizaciones/Cauciones):
+  la página declara demora de 15 minutos; no se usa como libro apto para decidir
+  con frescura máxima de 30 segundos.
+- [BYMA: calendario bursátil](https://www.byma.com.ar/mercado/calendario-bursatil):
+  feriados y jornadas especiales sin liquidación. Se conserva el calendario
+  operativo acotado de 2026; fuera de cobertura no se presume rueda abierta.
 - [BYMA: opciones](https://www.byma.com.ar/productos/productos-financieros/opciones):
   prima T+0 y horarios/ejercicio específicos. No corresponde asumir T+1 y cierre
   uniforme de todas las familias.
