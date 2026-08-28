@@ -94,13 +94,25 @@ def record_sale(c, paper_id, settlement, traded_at, net_proceeds, currency="ARS"
                "PAPER_CONSERVATIVE_CALENDAR" if available else "PENDING_CONFIRMATION"))
 
 
-def pending_proceeds(store, as_of, currency="ARS"):
+def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
     at = aware_datetime(as_of)
-    with store.connect() as c:
-        rows = c.execute("SELECT * FROM paper_sale_receivables WHERE currency=?", (currency,)).fetchall()
-    return sum((Decimal(row["net_proceeds"]) for row in rows
-                if Decimal(row["net_proceeds"]) > 0 and
-                (row["available_at"] is None or aware_datetime(row["available_at"]) > at)), ZERO)
+    if connection is None:
+        with store.connect() as c:
+            return pending_proceeds(store, at, currency, connection=c)
+    currency = cash_currency(currency)
+    rows = connection.execute("""SELECT r.*,p.closed_at FROM paper_positions p
+        LEFT JOIN paper_sale_receivables r USING(paper_id) WHERE p.currency=? AND p.status='CLOSED'""",
+        (cash_currency(currency),)).fetchall()
+    pending = ZERO
+    for row in rows:
+        if aware_datetime(row['closed_at']) > at:
+            continue
+        if row['paper_id'] is None or row['currency'] != currency:
+            raise ValueError('Venta sin recibo de liquidación en su moneda')
+        amount = decimal_value(row['net_proceeds'], 'producido de venta')
+        if amount > 0 and (row['available_at'] is None or aware_datetime(row['available_at']) > at):
+            pending += amount
+    return pending
 
 
 @dataclass(frozen=True)
@@ -179,32 +191,50 @@ class CaucionBook:
     def __init__(self, store):
         self.store = store
 
-    def positions(self, *, currency=None, status=None):
+    def positions(self, *, currency=None, status=None, connection=None):
         where, params = [], []
         for column, value in (("currency", currency), ("status", status)):
             if value is not None:
                 where.append(column + "=?")
                 params.append(value)
-        with self.store.connect() as c:
-            return [dict(r) for r in c.execute("SELECT * FROM paper_cauciones" +
-                    (" WHERE " + " AND ".join(where) if where else ""), params)]
+        if connection is None:
+            with self.store.connect() as c:
+                return self.positions(currency=currency, status=status, connection=c)
+        return [dict(r) for r in connection.execute("SELECT * FROM paper_cauciones" +
+                (" WHERE " + " AND ".join(where) if where else ""), params)]
 
-    def cash_effect(self, currency):
+    @staticmethod
+    def state_at(p, at):
+        opened, maturity = map(aware_datetime, (p['opened_at'], p['maturity_at']))
+        settled = aware_datetime(p['settled_at']) if p['settled_at'] else None
+        if (p['status'] not in {'OPEN','MATURED'} or (p['status']=='MATURED') != bool(settled)
+                or maturity <= opened or (settled and settled < maturity)):
+            raise ValueError('Cronología de caución inválida')
+        return 'FUTURE' if opened > at else 'MATURED' if settled and settled <= at else 'OPEN'
+
+    def cash_effect(self, currency, as_of, *, connection=None):
+        at = aware_datetime(as_of)
         result = ZERO
-        for p in self.positions(currency=currency):
+        for p in self.positions(currency=currency, connection=connection):
+            state = self.state_at(p, at)
+            if state == 'FUTURE':
+                continue
             principal, fees = Decimal(p["principal"]), Decimal(p["total_fees"])
-            if p["status"] == "MATURED":
+            if state == "MATURED":
                 result += Decimal(p["gross_interest"]) - fees
             else:
                 result -= principal + (fees if p["fee_payment"] == "UPFRONT" else ZERO)
         return result
 
-    def valuation(self, as_of, currency="ARS"):
+    def valuation(self, as_of, currency="ARS", *, connection=None):
         at = aware_datetime(as_of).astimezone(TZ)
         principal = accrued = unrealized = realized = ZERO
-        for p in self.positions(currency=currency):
+        for p in self.positions(currency=currency, connection=connection):
+            state = self.state_at(p, at)
+            if state == 'FUTURE':
+                continue
             fees, interest = Decimal(p["total_fees"]), Decimal(p["gross_interest"])
-            if p["status"] == "MATURED":
+            if state == "MATURED":
                 realized += interest - fees
                 continue
             amount = Decimal(p["principal"])
@@ -223,7 +253,8 @@ class CaucionBook:
         principal = decimal_value(principal, "capital", positive=True)
         reserve = decimal_value(reserve, "reserva de caja", nonnegative=True)
         participation = decimal_value(participation, "participación", positive=True)
-        if participation > 1 or max_quote_age_seconds < 0:
+        max_quote_age_seconds = decimal_value(max_quote_age_seconds, 'antigüedad de caución', nonnegative=True)
+        if participation > 1:
             raise ValueError("Límite de liquidez o frescura inválido")
         if not isinstance(request_id, str) or not request_id.strip():
             raise ValueError("Falta clave idempotente de la colocación")
@@ -238,7 +269,7 @@ class CaucionBook:
                     raise ValueError("Clave de colocación reutilizada con términos diferentes")
                 return dict(previous)
             if admission:
-                error = admission(c,offer.currency,at)
+                error = admission(c,offer.currency,at,fees)
                 if error:
                     # Sólo se evaluó riesgo, todavía no existe colocación.
                     # Conservar el latch aunque la petición sea rechazada.
@@ -254,7 +285,8 @@ class CaucionBook:
             if net <= 0:
                 raise ValueError("La caución no tiene retorno neto positivo con estos costos")
             required = principal + (fees if offer.fee_payment == "UPFRONT" else ZERO)
-            if required + reserve > available_cash(offer.currency, at):
+            cash = decimal_value(available_cash(offer.currency, at, c), 'caja disponible')
+            if required + reserve > cash:
                 raise ValueError("Caja liquidada insuficiente después de reservar fondos")
             paper_id = "PAPER-CAUCION-" + uuid.uuid4().hex
             c.execute("""INSERT INTO paper_cauciones VALUES(
