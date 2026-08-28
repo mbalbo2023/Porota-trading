@@ -3,6 +3,38 @@
 from pathlib import Path
 
 
+def test_ci_inspecciona_la_imagen_configurada_y_no_un_tag_viejo(tmp_path):
+    import json
+    import os
+    import subprocess
+    import sys
+    import yaml
+    workflow = yaml.safe_load((RAIZ / ".github/workflows/ci.yml").read_text())
+    script = next(step["run"] for step in workflow["jobs"]["docker"]["steps"]
+                  if step.get("name") == "La imagen no contiene archivos de entorno")
+    log = tmp_path / "docker_calls.jsonl"
+    docker = tmp_path / "docker"
+    docker.write_text(f"#!{sys.executable}\n" + '''import json, os, sys
+args = sys.argv[1:]
+with open(os.environ['DOCKER_TEST_LOG'], 'a') as out:
+    out.write(json.dumps(args) + '\\n')
+if args == ['compose', 'config', '--format', 'json']:
+    print(json.dumps({'services': {'bot': {'image': 'porota-test:otra-version'}}}))
+elif args[:2] == ['image', 'inspect']:
+    assert args[2] == 'porota-test:otra-version'
+elif args[:4] == ['run', '--rm', '--entrypoint', 'sh']:
+    assert args[4] == 'porota-test:otra-version'
+else:
+    raise AssertionError(args)
+''')
+    docker.chmod(0o755)
+    env = dict(os.environ, PATH=str(tmp_path)+os.pathsep+os.environ["PATH"], DOCKER_TEST_LOG=str(log))
+    subprocess.run(["bash", "-e", "-c", script], env=env, check=True, capture_output=True, text=True)
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert ["image", "inspect", "porota-test:otra-version"] in calls
+    assert any(c[:5] == ["run", "--rm", "--entrypoint", "sh", "porota-test:otra-version"] for c in calls)
+
+
 RAIZ = Path(__file__).resolve().parents[1]
 
 
