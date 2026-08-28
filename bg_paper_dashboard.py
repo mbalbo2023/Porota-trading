@@ -1,4 +1,4 @@
-"""Dashboard 24x7 v16.3.5, independiente y sin credenciales PPI."""
+"""Dashboard 24x7 v17 candidata, independiente y sin credenciales PPI."""
 
 from __future__ import annotations
 
@@ -21,11 +21,11 @@ from cb_caucion_audit import allocation_history
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
 from bt_caucion_paper import validate_position, pending_proceeds
+from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
 
 
-VERSION = "16.3.5"
-DB_PATH = os.getenv("PAPER_DB_PATH", "data/observer/observer_production.db")
-LEGACY_DB_PATH = os.getenv("DB_PATH", "data/trading_system.db")
+VERSION = "17.0.0-rc1"
+DB_PATH = str(database_path())
 MODE = os.getenv("DASHBOARD_OPERATION_MODE", "DETENIDO").upper()
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 PAPER_INITIAL_CAPITAL = float(os.getenv("PAPER_INITIAL_CAPITAL_ARS", "1000000"))
@@ -107,8 +107,13 @@ def _local_time(value):
 
 
 def _conn(path=None):
-    c = sqlite3.connect(Path(path or DB_PATH).resolve().as_uri()+'?mode=ro', uri=True, timeout=5)
+    c = sqlite3.connect(checked_path(path or DB_PATH).as_uri()+'?mode=ro', uri=True, timeout=5)
     c.row_factory = sqlite3.Row
+    try:
+        identity_from_connection(c)
+    except Exception:
+        c.close()
+        raise
     return c
 
 
@@ -196,8 +201,10 @@ def _fresh(value, seconds=180):
 
 def mode_banner():
     title, detail = MODE_INFO.get(MODE, (f"MODO {MODE}", "Estado operativo no reconocido."))
+    dataset = (' Historial PAPER v17 independiente: sin importar posiciones, saldos ni aprendizaje anteriores.'
+               if MODE in {'PRODUCTION_PAPER', 'DETENIDO'} else '')
     return (f"<div id='porota-paper-mode'>{_e(title)}<small>{_e(detail)} "
-            f"Actualización visual única: cada {REFRESH_SECONDS} s.</small></div>")
+            f"Actualización visual única: cada {REFRESH_SECONDS} s.{_e(dataset) if dataset else ''}</small></div>")
 
 
 def _nav():
@@ -375,7 +382,7 @@ def _allocation_reason(code):
 
 
 def _caucion_allocations_panel():
-    data = allocation_history(DB_PATH)
+    data = allocation_history(DB_PATH, require_workspace=True)
     states = {'MISSING_DATABASE':'Base no disponible; no asumir ausencia de decisiones',
         'MISSING_TABLE':'Historial de asignación aún no disponible en esta base',
         'READ_ERROR':'No se pudo leer el historial; requiere revisión',
@@ -853,14 +860,14 @@ def install(app,check_auth):
                             offset:int=Query(default=0,ge=0,le=100000),
                             token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
-        data = allocation_history(DB_PATH,limit=limit,offset=offset)
+        data = allocation_history(DB_PATH,limit=limit,offset=offset,require_workspace=True)
         return JSONResponse(data,status_code=503 if data['state']=='READ_ERROR' else 200)
     @app.get("/api/reports/{report_id}/{kind}")
     def report_download(report_id:int,kind:str,request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
         if kind not in {"pdf","ai"}: raise HTTPException(404,"Tipo no disponible")
         rows=_rows("SELECT pdf_path,ai_path FROM report_registry WHERE id=?",(report_id,)); path=Path(rows[0]["pdf_path" if kind=="pdf" else "ai_path"]) if rows and rows[0].get("pdf_path" if kind=="pdf" else "ai_path") else None
-        root=Path("data/reports").resolve()
+        root=(artifact_root(DB_PATH) / 'reports').resolve()
         if not path or not path.resolve().is_relative_to(root) or not path.exists(): raise HTTPException(404,"Informe no disponible")
         return FileResponse(path,media_type="application/pdf" if kind=="pdf" else "application/json",filename=path.name)
     @app.middleware("http")
