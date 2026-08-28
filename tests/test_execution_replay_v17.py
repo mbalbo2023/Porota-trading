@@ -365,6 +365,14 @@ def test_marca_vencida_no_presenta_patrimonio_ni_drawdown_completo(setup):
 
 def test_replay_reproducible_no_escribe_la_base_y_no_depende_de_env(setup,monkeypatch):
     path = Path(setup[0].store.path)
+    # Consolidar la preparación del fixture antes de comparar bytes. Sin
+    # checkpoint, cerrar una conexión pendiente puede trasladar el WAL a la
+    # base durante la lectura, sin que el replay haya ejecutado una escritura.
+    connection = setup[0].store.connect()
+    try:
+        assert connection.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()[0] == 0
+    finally:
+        connection.close()
     before = path.read_bytes()
     orders, books = [order(setup)], [book(setup)]
     first = run(setup,orders,books)
