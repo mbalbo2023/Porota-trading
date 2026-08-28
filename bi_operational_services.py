@@ -26,6 +26,9 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+import cd_spot_ledger as spot_ledger
+from bs_instrument_contracts import aware_datetime
+
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 ROOT_DATA = Path(os.getenv("DATA_DIR", "data"))
@@ -324,12 +327,22 @@ def refresh_news(store, timeout=8):
 
 def _period_data(store, start, end):
     with store.connect() as c:
+        c.execute("BEGIN")
         positions = [dict(r) for r in c.execute("""SELECT * FROM paper_positions
           WHERE (julianday(opened_at)>=julianday(?) AND julianday(opened_at)<julianday(?))
           OR (status='CLOSED' AND julianday(closed_at)>=julianday(?) AND julianday(closed_at)<julianday(?))
           ORDER BY opened_at""", (start, end, start, end))]
         closed = [dict(r) for r in c.execute("""SELECT * FROM paper_positions WHERE status='CLOSED'
           AND julianday(closed_at)>=julianday(?) AND julianday(closed_at)<julianday(?)""", (start, end))]
+        cutoff = aware_datetime(end)-timedelta(microseconds=1)
+        remaining, all_realized = spot_ledger.positions_at(c,cutoff)
+        realizations = [r for r in all_realized if aware_datetime(start)<=aware_datetime(r['closed_at'])<aware_datetime(end)]
+        selected_ids = {p['paper_id'] for p in positions} | {r['paper_id'] for r in realizations}
+        by_id = {p['paper_id']:p for p in remaining}
+        for p in c.execute("SELECT * FROM paper_positions WHERE status='CLOSED' AND julianday(closed_at)<julianday(?)",(end,)):
+            by_id[p['paper_id']] = dict(p)
+        positions = [by_id[k] for k in selected_ids if k in by_id]
+        positions.sort(key=lambda p:aware_datetime(p['opened_at']))
         cauciones = []
         if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_cauciones'").fetchone():
             cauciones = [dict(r) for r in c.execute("""SELECT * FROM paper_cauciones WHERE status='MATURED'
@@ -345,7 +358,7 @@ def _period_data(store, start, end):
         except sqlite3.Error:
             gates = []
     pnl_by_currency = {}
-    for p in closed:
+    for p in realizations:
         currency = p.get("currency", "ARS")
         pnl_by_currency[currency] = pnl_by_currency.get(currency, Decimal(0)) + Decimal(p.get("net_pnl") or "0")
     for p in cauciones:
@@ -359,7 +372,7 @@ def _period_data(store, start, end):
                 p[key] = None
     pnl = float(pnl_by_currency.get("ARS", 0))
     wins = sum(1 for p in closed if float(p.get("net_pnl") or 0) > 0)
-    return {"positions": positions, "closed": closed, "decisions": decisions,
+    return {"positions": positions, "closed": closed, "realizations": realizations, "decisions": decisions,
             "news": news, "gates": gates, "pnl": pnl, "wins": wins,
             "pnl_by_currency": {key: str(value) for key, value in sorted(pnl_by_currency.items())},
             "cauciones_matured": cauciones,
@@ -385,6 +398,8 @@ def _report_story(title, period, data):
             "apertura": p.get("opened_at"), "cierre": p.get("closed_at"),
             "entrada": p.get("entry_price"), "salida": p.get("exit_price"),
             "pnl_neto": p.get("net_pnl"), "motivo_cierre": p.get("close_reason"),
+            "cantidad_remanente": p.get("quantity") if p.get("status")=="OPEN" else "0",
+            "pnl_parcial_realizado": p.get("realized_net_pnl"),
             "leccion": _lesson(p), "variables": json.loads(p.get("features_json") or "{}"),
         })
     return {
@@ -397,6 +412,7 @@ def _report_story(title, period, data):
                     "cauciones_vencidas": len(data.get("cauciones_matured", [])),
                     "bloqueos_finales": sum(1 for g in data["gates"] if g.get("final_result") == "BLOCKED")},
         "operaciones": operations, "secuencia_de_portones": data["gates"],
+        "realizaciones_spot_del_periodo": data.get("realizations", []),
         "cauciones_vencidas": [{"contrato": p["instrument_id"], "moneda_plaza": p["currency"],
                                 "capital": p["principal"], "interes_bruto": p["gross_interest"],
                                 "costos": p["total_fees"], "acreditacion": p["settled_at"],
@@ -515,6 +531,7 @@ def ensure_reports(store, include_today=False):
         observed = [r[0] for r in c.execute("""SELECT DISTINCT day FROM (
           SELECT date(opened_at,'-3 hours') day FROM paper_positions
           UNION SELECT date(closed_at,'-3 hours') day FROM paper_positions WHERE status='CLOSED'
+          UNION SELECT date(filled_at,'-3 hours') day FROM paper_fills WHERE side='SELL_SIMULATED'
           UNION SELECT date(settled_at,'-3 hours') day FROM paper_cauciones WHERE status='MATURED'
           UNION SELECT date(decided_at,'-3 hours') day FROM paper_decisions)
           WHERE day IS NOT NULL AND day<>'' ORDER BY day""").fetchall()]
