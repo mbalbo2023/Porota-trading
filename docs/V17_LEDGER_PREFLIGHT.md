@@ -1,7 +1,9 @@
 # v17 — diagnóstico del ledger anterior, sin migración
 
 Estado: paquete de inspección; **no es un instalador ni habilita producción**.
-Revisión actual del lector: `v17-ledger-preflight-2`.
+Revisión actual del lector: `v17-ledger-preflight-3`.
+El operador autorizó expresamente auditar una copia temporal dentro del mismo
+servidor, conservar el original en lectura y eliminar la copia al terminar.
 Requiere una ejecución del operador porque este entorno no tiene acceso SSH
 al servidor. No repite el diagnóstico público de PPI ya recibido.
 
@@ -14,9 +16,9 @@ En Termius ejecutar:
 python3 /tmp/porota_ledger_preflight_v17.zip --host
 ```
 
-Si ya se ejecutó la revisión 1, descargar la nueva revisión y sustituir sólo
+Si ya se ejecutó una revisión anterior, descargar la nueva y sustituir sólo
 el ZIP subido a `/tmp`; no cambiar ningún archivo de la base. El resultado
-debe identificar `v17-ledger-preflight-2`, para no repetir el paquete anterior.
+debe identificar `v17-ledger-preflight-3` y `read_mode=TEMPORARY_COPY`.
 
 El JSON aparece en terminal y se envía al portapapeles mediante OSC52, si el
 cliente lo permite. Pegar ese resultado para continuar con evidencia del
@@ -34,9 +36,25 @@ el resultado indica una denegación: revisar ese bloqueo antes de continuar.
 - Sólo monta el paquete y `/opt/porota-trading/data/observer` en lectura.
   El subdirectorio permite leer la base junto a su WAL/SHM existente.
   No monta `.env`, secretos ni el directorio general de datos.
-- Abre `/observer/observer_production.db` con SQLite `mode=ro`,
-  `query_only=ON` y una transacción de lectura. No usa `immutable`, que
-  podría omitir operaciones confirmadas aún presentes en el WAL.
+- Revisión 3: el origen `/observer/observer_production.db` se abre como archivo
+  binario, exclusivamente para leer. **SQLite nunca abre el original en esta
+  vía**. Copia el archivo completo a un subdirectorio temporal del `/tmp`
+  privado del contenedor (tmpfs de 32 MiB); no descarga ni exporta esa copia.
+  Ese tmpfs nuevo declara `mode=1777` para permitir el directorio privado de
+  `botuser` sin depender de defaults del runtime. No cambia permisos del host
+  ni del original. [Opciones tmpfs de Docker](https://docs.docker.com/engine/storage/tmpfs/).
+- Rechaza origen con WAL, SHM o journal presentes, incluso vacíos, enlaces,
+  encabezado desconocido, tamaño cero o superior a 16 MiB. No elimina ni
+  ignora auxiliares del original. La base observada de 9.187.328 bytes está
+  por debajo del límite, pero se vuelve a comprobar en cada ejecución.
+- Compara dispositivo/inodo, tamaño, mtime y ctime al copiar. Verifica SHA256
+  de la copia y relee completamente el original antes y después de auditar;
+  exige las mismas huellas y metadatos, y auxiliares ausentes en esos controles.
+  Ante cambios detectados descarta los resultados, sin reparar ni reintentar.
+- Abre **sólo la copia** con SQLite `mode=ro`, `query_only=ON` y transacción
+  de lectura. Su directorio temporal permite a SQLite crear allí los archivos
+  auxiliares necesarios, sin conceder escritura sobre el origen. No usa
+  `immutable`, checkpoint ni cambio de journal en el original.
 - Examina exclusivamente las tablas `paper_positions`, `paper_fills`,
   `paper_spot_sales` y `paper_sale_receivables`, si existen. Contrasta salidas
   contra entradas almacenadas: identidad, cantidades, costos asignados,
@@ -56,6 +74,9 @@ el resultado indica una denegación: revisar ese bloqueo antes de continuar.
 - Retira únicamente el contenedor que creó esta ejecución y la copia
   temporal del paquete. No borra/reutiliza un contenedor de igual nombre
   preexistente. Si falla la limpieza, lo informa sin declarar éxito.
+- El lector elimina su directorio temporal de la base al terminar, también
+  ante errores; el lanzador retira luego el contenedor y su tmpfs. Vuelve a
+  comprobar ambos motores detenidos y `restart=no` antes de aceptar el informe.
 
 ## Estados y límites
 
@@ -71,11 +92,18 @@ comisiones históricas, saldos reales de PPI, cauciones, derivados, señales,
 rentabilidad ni cambios coordinados que mantengan la aritmética.
 Un ledger vacío tampoco prueba que exista historial recuperable.
 
-Límites: 10.000 posiciones/recibos, 100.000 fills/ventas parciales, lector
+Las huellas son comprobaciones por muestras, **no un bloqueo exclusivo de
+escritores ni un backup online**. No prueban ausencia de cambios entre muestras
+ni recuperan un WAL eliminado previamente. El informe no debe promoverse a
+evidencia de saldo real o integridad histórica completa. Si otro proceso está
+escribiendo, se requiere detener ese escritor explícitamente antes de usar una
+copia de archivo; este diagnóstico no lo detiene por su cuenta.
+
+Límites: copia de hasta 16 MiB, 10.000 posiciones/recibos, 100.000 fills/ventas parciales, lector
 acotado a 120 segundos, espera externa 150 segundos, memoria 256 MiB y una
 CPU. Al superar límites se requiere planificar una auditoría por lotes,
-no asumir un resultado aprobado. Si faltan permisos de lectura del WAL/SHM
-en modo read-only, se detiene; no modifica permisos ni ignora el WAL.
+no asumir un resultado aprobado. Si faltan permisos de lectura del original
+o aparecen auxiliares, se detiene; no modifica permisos ni ignora el WAL.
 La comprobación inicial no impide que un tercero arranque motores después.
 
 ## Paquete reproducible
@@ -88,7 +116,9 @@ realiza migraciones). ZIP determinista; la creación no sobreescribe archivos.
 
 Pruebas locales con bases temporales actuales/legacy, WAL, registros alterados,
 límites y Docker simulado. La prueba standalone usa Python sin site-packages.
-Esto no sustituye ejecutar el paquete en el servidor.
+Esto no sustituye ejecutar el paquete en el servidor. `--read` conserva el
+lector directo para pruebas; `--host` siempre ejecuta `--copy-read` en el
+contenedor y exige el modo de copia en su respuesta.
 
 ## Resultado recibido de la revisión 1
 
@@ -110,8 +140,23 @@ diagnóstico confirmado de esta base. Los
 [códigos nativos](https://www.sqlite.org/rescode.html) permiten distinguir
 READONLY, CANTOPEN, BUSY/LOCKED, errores SQL y corrupción sin divulgar SQL.
 
-No se añadieron reintentos, copia/recuperación de la base, `immutable`,
+En la revisión 2 no se añadieron reintentos, copia/recuperación de la base, `immutable`,
 checkpoint, cambios de journal, montaje de escritura, cambio de usuario del
 contenedor ni permisos nuevos. Si la revisión 2 confirma un impedimento de
 acceso, se mantiene `STOPPED` y requiere una decisión explícita antes de
 cualquier procedimiento distinto. No repetir la revisión 1.
+
+## Resultado de revisión 2 y autorización de revisión 3
+
+Recibido del operador: 28/08/2026 20:13:54.607588 UTC, terminado a las
+20:13:54.985902 UTC, `STOPPED` en `READ_SCHEMA`, `SQLITE_CANTOPEN` (14).
+Python 3.11.16 / SQLite 3.46.1; base regular legible de 9.187.328 bytes,
+encabezado WAL y ausencia de WAL/SHM/journal. El lanzador confirmó motores
+detenidos, montaje read-only y eliminación del contenedor temporal.
+
+La combinación explica el bloqueo de esta vía de lectura conforme a los
+requisitos SQLite citados; no demuestra corrupción ni permite dar la auditoría
+por realizada. Se solicitó cambiar a una copia temporal dentro del servidor,
+manteniendo el original en lectura y eliminando la copia al terminar.
+**El operador respondió «Confirmo»**. La revisión 3 implementa sólo ese cambio;
+no autoriza desplegar v17, reiniciar motores ni tocar permisos del original.
