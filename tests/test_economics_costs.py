@@ -131,6 +131,44 @@ def test_el_piso_no_rechaza_por_ser_demasiado_rentable():
     assert economics.passes_hurdle(50.0, 5, 3.0)["approved"] is True
 
 
+def test_benchmark_no_mensualiza_tna_aislada_ni_consulta_proxy():
+    class Client:
+        def get_caucion_rate(self, **kwargs):
+            raise AssertionError('No convertir una tasa sin contrato/costos a benchmark mensual')
+    assert economics.get_caucion_benchmark_rate(Client()) is None
+
+
+@pytest.mark.parametrize('ccl', [None, float('nan'), float('inf'), 0.0, 2.0])
+def test_piso_incompleto_conserva_ausencias_sin_sustituir_caucion_por_cero(monkeypatch, ccl):
+    import json
+    monkeypatch.setattr(economics,'load_macro_config',lambda:economics.MacroConfig(3.0,'2026-08-28'))
+    monkeypatch.setattr(economics,'get_ccl_devaluation_pct',lambda *_a,**_k:ccl)
+    result = economics.get_dynamic_hurdle_rate_monthly(object())
+    assert result['state'] == 'INCOMPLETE'
+    assert result['hurdle_monthly_pct'] is None
+    assert result['caucion_benchmark_monthly_pct'] is None
+    assert 'tasa de caución' in result['missing_inputs']
+    assert result['partial_floor_monthly_pct'] == 4.5
+    assert economics.passes_hurdle(100, 1, result['hurdle_monthly_pct'])['approved'] is False
+    json.dumps(result,allow_nan=False)
+
+
+@pytest.mark.parametrize('net,days,floor', [(1,1,None),(float('inf'),1,3),(1,float('nan'),3),
+    (1,1,float('-inf')),(1,1,-1),(True,1,3),(1,-1,3)])
+def test_piso_no_aprueba_entradas_invalidas(net,days,floor):
+    result = economics.passes_hurdle(net,days,floor)
+    assert result['approved'] is False
+    assert result['hurdle_prorated_pct'] is None
+
+
+def test_piso_identifica_estimacion_ia_y_prima_invalidas(monkeypatch):
+    monkeypatch.setattr(economics,'load_macro_config',lambda:economics.MacroConfig(3.0,'2026-08-28'))
+    monkeypatch.setattr(economics,'get_ccl_devaluation_pct',lambda *_a,**_k:0.0)
+    result = economics.get_dynamic_hurdle_rate_monthly(object(),'desconocida',risk_premium_pct=float('nan'))
+    assert result['partial_floor_monthly_pct'] is None
+    assert {'estimación IA inválida','prima de riesgo'} <= set(result['missing_inputs'])
+
+
 # ---------------------------------------------------------------------------
 # Dimensionamiento de posición
 # ---------------------------------------------------------------------------
