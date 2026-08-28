@@ -94,3 +94,12 @@ directorios de artefactos distintos y un worker de velas realmente iniciado y
 detenido localmente con la base nueva, sin tocar el archivo legado ficticio.
 Las fixtures no son registros reales. El smoke general del CI no certifica
 fuentes PPI, cauciones reales ni todo el flujo PRODUCTION_PAPER.
+
+## Verificación local del checkpoint 32
+
+Suite completa sobre las fuentes finales: 1.364 aprobadas, cuatro omitidas
+por requerir usuario no-root, cero fallas/errores (1.368 casos). Python 3.12.13;
+advertencia existente de Starlette/httpx. 32 casos nuevos de workspace.
+Cobertura global 68,26%; módulo de separación 100% de sentencias. Los cuatro
+mínimos financieros existentes se cumplen: economía 45,54%, aranceles 61,32%,
+derivados 79,70%, portón 67,62%. Esto no equivale a certificación de producción.
