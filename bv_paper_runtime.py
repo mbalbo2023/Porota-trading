@@ -1,4 +1,4 @@
-"""Runtime PAPER: reloj, escáner/IA, lector de salidas y avisos en procesos distintos.
+"""Runtime PAPER: reloj, escáner, lector, avisos y archivo en procesos distintos.
 
 No envía órdenes. Compartir SQLite permite que una llamada lenta a PPI/Gemini
 no detenga los vencimientos ni el estado de salida. El lector de salidas usa
@@ -181,6 +181,10 @@ def main(argv=None):
         from bn_telegram_bus import run_worker
         run_worker(store,stop,clock_fn=now_iso)
         return 0
+    if argv == ["--candle-worker"]:
+        from bl_candle_engine import run_worker
+        run_worker(store,stop,clock_fn=now_iso)
+        return 0
     if argv:
         raise ValueError("Argumentos desconocidos del runtime paper")
     # Un reloj por libro, incluso si se intenta iniciar otro contenedor.
@@ -190,6 +194,7 @@ def main(argv=None):
             "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
             "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
             "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
+            "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],
         })
         run_clock(store,children,stop)
     return 0
