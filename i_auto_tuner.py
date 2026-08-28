@@ -1,5 +1,10 @@
 """
-i_auto_tuner.py — Reportes, aprendizaje y auto-tuning mensual (v8.0)
+i_auto_tuner.py — Reportes y propuestas mensuales (v17)
+
+V17: se conservan propuestas e historial, pero NO se aplican parámetros
+automáticamente. El backtest legado no constituye validación. Los comentarios
+históricos siguientes explican el origen; min-sample/clamping no prueban
+robustez ni sustituyen una validación temporal y estadística pendiente.
 
 CORRECCIÓN APLICADA por las auditorías 7.1/7.2/7.3 (acepto el hallazgo,
 es el más importante de todos): el ajuste mensual dejaba que Gemini
@@ -39,9 +44,9 @@ Documento Maestro v8.0).
 import sqlite3
 import json
 import os
+import math
 from datetime import date
 import pandas as pd
-from google import genai
 from dotenv import load_dotenv
 
 import k_position_manager as position_manager
@@ -71,14 +76,17 @@ def _init_tables(conn):
 
 
 def _clamp(new_value: float, old_value: float, max_change_pct: float) -> float:
+    if not all(math.isfinite(v) for v in (new_value, old_value, max_change_pct)) or max_change_pct < 0:
+        raise ValueError("Parámetro o límite inválido")
     if old_value == 0:
-        return new_value
+        return old_value
     max_delta = abs(old_value) * (max_change_pct / 100)
     return max(old_value - max_delta, min(old_value + max_delta, new_value))
 
 
 class AutoTuner:
     def __init__(self):
+        from google import genai
         self.db_path = os.getenv("DB_PATH", "data/trading_system.db")
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
@@ -209,71 +217,48 @@ Devolvé un JSON:
             return
 
         # --- GUARDARRAÍL 2: clamping — la propuesta nunca se aplica tal cual ---
-        applied = dict(current_config)
-        for key in ["min_score_tech", "min_score_macro", "take_profit_atr_mult"]:
-            if key in proposed:
-                applied[key] = round(_clamp(float(proposed[key]), float(current_config[key]),
-                                             MAX_PARAM_CHANGE_PCT), 4)
-        applied["notas_del_ajuste"] = proposed.get("notas_del_ajuste", "")
+        try:
+            if not isinstance(proposed, dict):
+                raise ValueError("La propuesta no es un objeto")
+            applied = dict(current_config)
+            for key in ["min_score_tech", "min_score_macro", "take_profit_atr_mult"]:
+                if key in proposed:
+                    value = proposed[key]
+                    if isinstance(value, bool) or not math.isfinite(float(value)):
+                        raise ValueError("Parámetro no finito")
+                    if (key.startswith("min_score_") and not 0 <= float(value) <= 1
+                            or key == "take_profit_atr_mult" and float(value) <= 0):
+                        raise ValueError("Parámetro fuera de dominio")
+                    applied[key] = round(_clamp(float(value), float(current_config[key]),
+                                               MAX_PARAM_CHANGE_PCT), 4)
+            applied["notas_del_ajuste"] = str(proposed.get("notas_del_ajuste", ""))
+        except (ValueError, TypeError, OverflowError):
+            self._log_history(conn, sample_size, current_config, None, current_config,
+                              "Ajuste CANCELADO: propuesta inválida. Se mantienen los umbrales.")
+            conn.close()
+            return
 
-        # --- GUARDARRAÍL 4 (nuevo v10.0) — validación contra backtest ---
-        # ACEPTADO de la auditoría 9.1 (rev. 1): antes, la propuesta de la IA
-        # se aplicaba solo con el clamping numérico, sin chequear si los
-        # umbrales nuevos rinden mejor o peor que los actuales contra datos
-        # históricos. Ahora corre q_backtest.py con la config VIGENTE y con
-        # la PROPUESTA (clampeada) sobre el mismo ticker de referencia, y
-        # solo aplica el cambio si el backtest no muestra un resultado
-        # claramente peor. Si q_backtest falla (sin red, por ejemplo) o el
-        # backtest de referencia no tiene operaciones, el ajuste se aplica
-        # igual pero queda marcado como "sin validar por backtest" en el
-        # historial — no se bloquea el aprendizaje mensual por un problema
-        # de conectividad puntual.
-        backtest_note = self._validate_against_backtest(current_config, applied)
-        applied["notas_del_ajuste"] += f" {backtest_note}"
-
-        # NUEVO EN v10.5 — escritura atómica: antes se escribía directo
-        # sobre auto_tune_config.json con open(...,"w"); si el proceso se
-        # interrumpía a mitad de la escritura (corte de luz, kill -9,
-        # caída del Droplet), el archivo podía quedar con JSON a medio
-        # escribir. j_main.load_tuned_thresholds() ya tenía un try/except
-        # que lo detectaba y mantenía los umbrales anteriores (no rompía
-        # el arranque del bot), pero el ajuste de ese mes se perdía sin
-        # aviso. Ahora se escribe primero a un archivo temporal y se
-        # reemplaza con os.replace(), que en Linux es una operación
-        # atómica a nivel de sistema de archivos — nunca queda un archivo
-        # a medio escribir bajo ese nombre.
-        tmp_path = "auto_tune_config.json.tmp"
-        with open(tmp_path, "w") as f:
-            json.dump(applied, f, indent=2)
-        os.replace(tmp_path, "auto_tune_config.json")
-
-        # --- GUARDARRAÍL 3: versionado, para poder revertir a mano ---
-        self._log_history(conn, sample_size, current_config, proposed, applied,
-                           f"Aplicado con clamping ±{MAX_PARAM_CHANGE_PCT}%. {applied['notas_del_ajuste']}")
+        # v17: una sugerencia, clamping o replay no certifica una estrategia.
+        # Se conserva la propuesta y la configuración vigente. No escribir el
+        # archivo activo hasta integrar validación temporal/estadística real.
+        validation = self._validate_against_backtest(current_config, applied)
+        self._log_history(conn, sample_size, current_config, proposed, current_config,
+                          "PROPUESTA PENDIENTE: " + validation["reason"] +
+                          " Candidata limitada: " + json.dumps(applied, allow_nan=False))
         conn.close()
-
         self._generate_recommendations(win_rate, df_closed)
 
     def _validate_against_backtest(self, current_config: dict, proposed_config: dict,
-                                    reference_ticker: str = "AAPL") -> str:
-        """Corre q_backtest.py con los umbrales actuales y con los nuevos
-        sobre el mismo ticker de referencia — informativo, no bloqueante
-        (ver GUARDARRAÍL 4 arriba)."""
-        try:
-            import q_backtest
-            q_backtest.MIN_SCORE_TECH = current_config["min_score_tech"]
-            q_backtest.TAKE_PROFIT_ATR_MULT = current_config["take_profit_atr_mult"]
-            before = q_backtest.run_backtest(reference_ticker, period="1y")
+                                    reference_ticker: str = "AAPL") -> dict:
+        """No muta globals ni consulta un subyacente para validar CEDEARs.
 
-            q_backtest.MIN_SCORE_TECH = proposed_config["min_score_tech"]
-            q_backtest.TAKE_PROFIT_ATR_MULT = proposed_config["take_profit_atr_mult"]
-            after = q_backtest.run_backtest(reference_ticker, period="1y")
-
-            return (f"[Backtest {reference_ticker} 1y — antes: {before.get('win_rate_pct')}% "
-                    f"win rate / {before.get('return_pct')}% retorno; después: "
-                    f"{after.get('win_rate_pct')}% / {after.get('return_pct')}%]")
-        except Exception as e:
-            return f"[Backtest no disponible este mes: {e} — ajuste aplicado sin esta validación]"
+        Hasta integrar datos, estrategia congelada, costos y holdout reales,
+        cualquier propuesta permanece pendiente. Ni un replay correcto ni
+        una mejora aparente del win rate equivalen a aprobar el aprendizaje.
+        """
+        return {"promotion_allowed": False, "status": "PENDING_VALIDATION",
+                "reason": "Falta validación histórica de la estrategia completa; "
+                          "se mantienen los umbrales vigentes."}
 
     def _load_current_config(self) -> dict:
         defaults = {"min_score_tech": 0.70, "min_score_macro": 0.70, "take_profit_atr_mult": 2.0}
