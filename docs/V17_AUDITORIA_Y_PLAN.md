@@ -1254,6 +1254,9 @@ base de días y costos completos). No se concluye que el broker no soporte el
 producto ni que la cuenta esté autorizada. No se consultaron saldos/cuentas.
 Se requiere confirmación técnica de PPI; no se lo contactó en nombre del usuario.
 Detalles: `docs/V17_PPI_DIAGNOSTICO.md`.
+La consulta lista para enviar, su estado y la evidencia requerida quedan
+registrados en [Consulta pendiente a PPI](V17_PPI_CAUCIONES_CONSULTA_PENDIENTE.md).
+El envío queda a cargo de Martín Balbo; aún no está confirmado.
 
 Continúa HOLD_UNVERIFIED_TERMS: exclusivamente colocadoras, caja liquidada
 libre de compromisos de la misma moneda, sin tomadoras ni fondos pendientes.
