@@ -1344,6 +1344,31 @@ se interrumpió con `fatal library error, lookup self`; la repetición íntegra
 con registro detallado terminó correctamente, sin cambiar código ni omitir tests.
 No se considera la corrida interrumpida como evidencia aprobada.
 
+## Vigesimonoveno checkpoint: error del preflight identificado por etapa
+
+El operador ejecutó el preflight 1 el 28/08 a las 18:37:58 UTC. Devolvió
+`STOPPED` / `OperationalError`, sin conteos: no se completó la inspección
+contable y no corresponde interpretar esa ausencia como una base vacía.
+Se confirmó la retirada del contenedor temporal y los motores detenidos antes
+de leer. El diagnóstico no migró ni modificó la base.
+
+El lector ocultaba el código nativo de SQLite y el punto del fallo. La revisión
+`v17-ledger-preflight-2` añade ambos, versiones Python/SQLite y evidencia
+acotada de archivos/encabezado, sin SQL crudo ni posiciones/importes. Mantiene
+el mismo usuario/montaje read-only y no aplica reparaciones ni alternativas
+que ignoren WAL o requieran escribir. La causa del servidor sigue pendiente
+de evidencia; WAL/archivos auxiliares es una hipótesis, no una conclusión.
+Detalle, resultado recibido y fuentes: [preflight](V17_LEDGER_PREFLIGHT.md).
+
+Verificación local: **1.280 aprobadas, 2 omitidas**, sin fallas ni errores,
+cobertura global **66,89%** y lector **98,02%**; cuatro mínimos financieros
+cumplidos. Hay 22 casos nuevos. Las dos pruebas omitidas requieren un proceso
+no-root sobre su propia fixture read-only: el entorno local no autoriza cambiar
+de identidad, por lo que no se intenta sortear esa restricción. Están previstas
+para el usuario habitual no-root del CI, sin elevación ni cambios de identidad.
+Las demás pruebas inyectan códigos nativos para comprobar diagnóstico y ausencia
+de reintentos. No se atribuye al servidor una reproducción hecha con fixtures.
+
 ## Verificación
 
 Primer checkpoint: 279 tests aprobados. Segundo: 329. Tercero: 354.
