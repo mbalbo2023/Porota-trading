@@ -9,6 +9,7 @@ todavía de metadatos suficientes para operar un instrumento concreto.
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+import unicodedata
 
 
 FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
@@ -23,6 +24,23 @@ _ALIASES = {"ACCION": "ACCIONES", "EQUITY": "ACCIONES", "CEDEAR": "CEDEARS",
             "CAUCION": "CAUCIONES", "LEBAC": "LETRAS", "NOBAC": "LETRAS",
             "ACCIONESUSA": "ACCIONES", "FCIEXTERIOR": "FCI"}
 ZERO = Decimal("0")
+CASH_CURRENCIES = frozenset({"ARS", "USD", "USD_MEP", "USD_CCL"})
+
+
+def cash_currency(value):
+    """Normaliza las etiquetas observadas de PPI sin netear MEP y CCL.
+
+    USD sin plaza conserva una caja propia; no se presume billete ni divisa.
+    El ticker y su descripción NO determinan la moneda de negociación.
+    """
+    key = " ".join(str(value or "").strip().upper().split())
+    key = "".join(c for c in unicodedata.normalize("NFD", key) if not unicodedata.combining(c))
+    aliases = {"PESOS": "ARS", "PESO ARGENTINO": "ARS",
+               "DOLARES BILLETE | MEP": "USD_MEP", "DOLARES DIVISA | CCL": "USD_CCL"}
+    key = aliases.get(key, key)
+    if key not in CASH_CURRENCIES:
+        raise ValueError(f"Moneda/plaza no reconocida: {value!r}")
+    return key
 
 
 def decimal_value(value, name, *, positive=False, nonnegative=False):
@@ -74,8 +92,7 @@ class InstrumentContract:
 
     def __post_init__(self):
         object.__setattr__(self, "family", family_name(self.family))
-        if self.currency not in {"ARS", "USD"}:
-            raise ValueError("Moneda sin libro de caja definido")
+        object.__setattr__(self, "currency", cash_currency(self.currency))
         if not all(str(x or "").strip() for x in (self.symbol, self.market, self.settlement, self.metadata_source)):
             raise ValueError("Contrato incompleto: símbolo, mercado, plazo y fuente son obligatorios")
         for field in ("cash_multiplier", "quantity_step"):
