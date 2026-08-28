@@ -10,9 +10,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from be_paper_engine import PaperStore
-from bl_candle_engine import CandleArchive
+from bl_candle_engine import CandleArchive, stamp
 from bs_instrument_contracts import InstrumentContract
 from bx_execution_replay import BookEvent, ExecutionAssumptions, ExecutionReplay, FeeTerms, ReplayOrder
+from bz_replay_risk import ReplayRiskConfig
 from test_candle_archive_v17 import series, bar
 
 
@@ -48,6 +49,111 @@ def book(setup, second=2, **changes):
 def run(setup, orders, books, **kwargs):
     engine = ExecutionReplay(*setup[:5])
     return engine.run(orders, books, **(dict(start=at(0), end=at(60), initial_cash='10000') | kwargs))
+
+
+def test_corte_cancela_compra_pendiente_y_permite_salida_aun_si_recupera(setup):
+    orders = [order(setup),order(setup,'later-buy',3),order(setup,'sell',5,side='SELL')]
+    result = run(setup,orders,[book(setup),book(setup,4,bid=D(80),ask=D(81)),
+        book(setup,6,bid=D(110),ask=D(111))],risk_config=ReplayRiskConfig(at(0),D(1)))
+    assert result['orders'][1]['status']=='CANCELLED_DAILY_RISK_LATCHED'
+    assert [f['side'] for f in result['fills']]==['BUY','SELL']
+    row = result['daily_risk']['days'][0]
+    assert row['state']=='LATCHED' and D(row['daily_pnl'])>0
+    assert result['open_quantity']=='0'
+
+
+def test_corte_cancela_compra_aun_durante_su_latencia(setup):
+    setup = (*setup[:4],replace(setup[4],latency_seconds=3),setup[5])
+    result = run(setup,[order(setup),order(setup,'waiting',5)],
+        [book(setup,4),book(setup,6,bid=D(80),ask=D(81))],
+        risk_config=ReplayRiskConfig(at(0),D(1)))
+    assert result['fills'][0]['executed_at']==stamp(at(4))
+    assert result['orders'][1]['status']=='CANCELLED_DAILY_RISK_LATCHED'
+
+
+def test_costos_de_salida_activan_corte_antes_de_segunda_compra_del_mismo_libro(setup):
+    # Primero la marca queda arriba del corte; el mínimo fijo adicional de
+    # dividir la salida consume el resto del presupuesto en ese mismo evento.
+    setup = (*setup[:3],replace(setup[3],rate=D(0),fixed=D(10)),*setup[4:])
+    result = run(setup,[order(setup),order(setup,'a-sell-part',3,side='SELL',quantity=D(1)),
+        order(setup,'b-buy-more',3)], [book(setup),book(setup,4)],
+        risk_config=ReplayRiskConfig(at(0),D('.30')))
+    assert result['orders'][1]['status']=='FILLED'
+    assert result['orders'][2]['status']=='CANCELLED_DAILY_RISK_LATCHED'
+    row = result['daily_risk']['days'][0]
+    assert row['state']=='LATCHED' and D(row['daily_pnl'])==D(-35)
+
+
+def test_compra_hipotetica_no_inventa_perdida_ni_activa_latch(setup):
+    result = run(setup,[order(setup)], [book(setup)],risk_config=ReplayRiskConfig(at(0),D('.10')))
+    assert result['orders'][0]['status']=='REJECTED_PROJECTED_DAILY_LOSS'
+    assert not result['fills'] and result['cash']=='10000'
+    row = result['daily_risk']['days'][0]
+    assert row['state']=='READY' and row['latched_at'] is None and row['daily_pnl']=='0'
+
+
+def test_marcas_vencidas_cancelan_entrada_y_recuperacion_no_resucita_orden(setup):
+    result = run(setup,[order(setup),order(setup,'waiting',3,expires_at=at(300))],
+        [book(setup),book(setup,200,book_at=at(4)),book(setup,201)],end=at(210),
+        risk_config=ReplayRiskConfig(at(0),D(1)))
+    assert result['orders'][1]['status']=='CANCELLED_DAILY_RISK_STALE_MARKS'
+    assert len(result['fills'])==1 and result['daily_risk']['days'][0]['state']=='READY'
+
+
+def test_costos_no_conocidos_impiden_compra_proyectada_sin_estado_ficticio(setup):
+    # El contrato conocido al enviar la orden ya venció al ejecutar: no se
+    # acepta un gasto sin presupuesto ni se registra una operación imaginaria.
+    setup = (*setup[:3],replace(setup[3],valid_until=at(2)),*setup[4:])
+    result = run(setup,[order(setup)],[book(setup)],risk_config=ReplayRiskConfig(at(0),D(1)))
+    assert result['orders'][0]['status']=='REJECTED_COST_TERMS'
+    assert not result['fills'] and result['daily_risk']['days'][0]['daily_pnl']=='0'
+
+
+def test_riesgo_reconoce_venta_al_operar_no_al_liquidar(setup):
+    result = run(setup,[order(setup),order(setup,'sell',3,side='SELL')],
+        [book(setup),book(setup,4,bid=D(90),ask=D(91),settlement_at=at(10)),book(setup,12)],
+        risk_config=ReplayRiskConfig(at(0),D(1)))
+    observations = result['daily_risk']['observations']
+    after = [r for r in observations if r['phase']=='AFTER_BOOK']
+    assert D(after[1]['daily_pnl'])==D('-64.55')==D(after[2]['daily_pnl'])
+    assert after[1]['realized_today']==after[2]['realized_today']
+    assert D(result['curve'][2]['pending_proceeds'])==D('445.50')
+    assert result['pending_proceeds']=='0' and result['daily_risk']['days'][0]['state']=='READY'
+
+
+def test_replay_carry_y_credito_pendiente_no_inventan_base_al_dia_siguiente(setup):
+    tomorrow = 86400
+    fees = replace(setup[3],valid_until=at(tomorrow+3600))
+    setup = (*setup[:3],fees,*setup[4:])
+    orders = [order(setup),order(setup,'sell',tomorrow+1,side='SELL',expires_at=at(tomorrow+60)),
+              order(setup,'new',tomorrow+3,expires_at=at(tomorrow+60))]
+    result = run(setup,orders,[book(setup),book(setup,tomorrow),book(setup,tomorrow+2),book(setup,tomorrow+4)],
+        end=at(tomorrow+60),risk_config=ReplayRiskConfig(at(0),D(1)))
+    assert result['orders'][1]['status']=='FILLED'
+    assert result['orders'][2]['status']=='CANCELLED_DAILY_RISK_BASELINE_UNAVAILABLE'
+    assert result['daily_risk']['days'][1]['baseline_equity'] is None
+
+
+def test_replay_credito_del_dia_anterior_integra_base_aunque_no_sea_caja(setup):
+    tomorrow = 86400
+    setup = (*setup[:3],replace(setup[3],valid_until=at(tomorrow+3600)),*setup[4:])
+    result = run(setup,[order(setup),order(setup,'sell',3,side='SELL')],
+        [book(setup),book(setup,4,bid=D(110),ask=D(111),settlement_at=at(tomorrow+30)),
+         book(setup,tomorrow)],end=at(tomorrow+60),risk_config=ReplayRiskConfig(at(0),D(1)))
+    row = result['daily_risk']['days'][1]
+    assert D(row['baseline_equity'])==D('10034.45') and row['daily_pnl']=='0'
+    assert D(result['curve'][3]['pending_proceeds'])==D('544.5')
+
+
+def test_replay_configuracion_de_riesgo_identifica_corrida_y_sin_riesgo_es_explicito(setup):
+    args = [setup,[order(setup)],[book(setup)]]
+    uncontrolled = run(*args)
+    one = run(*args,risk_config=ReplayRiskConfig(at(0),D(1)))
+    two = run(*args,risk_config=ReplayRiskConfig(at(0),D(2)))
+    assert not uncontrolled['daily_risk']['configured']
+    assert len({r['run_id'] for r in (uncontrolled,one,two)})==3
+    with pytest.raises(ValueError):
+        run(*args,risk_config=ReplayRiskConfig(at(1),D(1)))
 
 
 def test_fills_en_evento_posterior_con_costos_de_ambas_puntas(setup):
