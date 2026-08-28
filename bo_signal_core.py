@@ -175,6 +175,12 @@ def candidate(archive, series, contract, fees, assumptions, grid, config, view):
     if cash <= 0 or equity <= 0:
         return reject('NO_AVAILABLE_CAPITAL')
     risk_budget = equity * config.risk_fraction
+    daily_risk = view.get('daily_risk')
+    if daily_risk is not None:
+        if daily_risk['state'] != 'READY':
+            return reject('DAILY_RISK_' + daily_risk['state'])
+        risk_budget = min(risk_budget, decimal_value(daily_risk['remaining_budget'],
+                                                    'presupuesto diario restante', nonnegative=True))
     cash_budget = min(cash, equity * config.maximum_position_fraction)
     lot = contract.quantity_step
     # Un único instrumento/posición larga; no asumir margen ni crédito.
