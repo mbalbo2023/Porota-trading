@@ -85,6 +85,12 @@ class ExecutionAssumptions:
 
     def price(self, book, side):
         raw = book.ask if side == 'BUY' else book.bid
+        return self.price_at(raw, side)
+
+    def price_at(self, raw, side):
+        if side not in {'BUY', 'SELL'}:
+            raise ValueError('Sentido de ejecución inválido')
+        raw = decimal_value(raw, 'precio', positive=True)
         adjusted = raw * (1 + self.slippage_bps / 10000 * (1 if side == 'BUY' else -1))
         rounding = ROUND_CEILING if side == 'BUY' else ROUND_FLOOR
         return (adjusted / self.price_tick).to_integral_value(rounding=rounding) * self.price_tick
@@ -130,6 +136,8 @@ class ReplayOrder:
     side: str
     quantity: Decimal
     evidence_ids: tuple[int, ...]
+    price_limit: Decimal | None = None
+    entry_order_id: str | None = None
 
     def __post_init__(self):
         for field in ('order_id', 'series_id', 'strategy_version'):
@@ -139,6 +147,12 @@ class ReplayOrder:
         if aware_datetime(self.expires_at) <= aware_datetime(self.submitted_at):
             raise ValueError('Orden sin vigencia')
         object.__setattr__(self, 'quantity', decimal_value(self.quantity, 'cantidad', positive=True))
+        if self.price_limit is not None:
+            object.__setattr__(self, 'price_limit', decimal_value(self.price_limit, 'límite de precio', positive=True))
+        if self.entry_order_id is not None:
+            text_required(self.entry_order_id)
+            if self.side != 'SELL':
+                raise ValueError('Sólo una salida puede referenciar el plan de entrada')
         if (not isinstance(self.evidence_ids, tuple) or not self.evidence_ids
                 or any(type(i) is not int or i <= 0 for i in self.evidence_ids)
                 or len(set(self.evidence_ids)) != len(self.evidence_ids)):
@@ -171,7 +185,7 @@ class ExecutionReplay:
         self.archive, self.series, self.contract = archive, series, contract
         self.fees, self.assumptions = fees, assumptions
 
-    def run(self, orders, books, *, start, end, initial_cash):
+    def run(self, orders, books, *, start, end, initial_cash, strategy=None):
         begin, finish = map(aware_datetime, (start, end))
         if begin >= finish:
             raise ValueError('Intervalo inválido')
@@ -179,18 +193,37 @@ class ExecutionReplay:
         if capital != money(capital):
             raise ValueError('Capital debe expresarse en centavos')
         orders = sorted(orders, key=lambda o: (stamp(o.submitted_at), o.order_id))
+        if strategy is not None and orders:
+            raise ValueError('No mezclar órdenes preparadas con generación de estrategia')
         books = sorted(books, key=lambda b: (stamp(b.received_at), b.event_id))
         if len({o.order_id for o in orders}) != len(orders) or len({o.strategy_version for o in orders}) > 1:
             raise ValueError('Órdenes duplicadas o versiones de estrategia mezcladas')
         evidence = {}
-        for order in orders:
+        registered = {}
+        def validate_order(order):
+            if order.order_id in registered:
+                raise ValueError('Identificador de orden duplicado')
+            if registered and order.strategy_version != next(iter(registered.values())).strategy_version:
+                raise ValueError('Versión de estrategia cambió durante la corrida')
             if order.series_id != self.series.key or not begin <= aware_datetime(order.submitted_at) < finish:
                 raise ValueError('Orden fuera de serie o período')
             self.contract.quantity(order.quantity)
-            current = {b['version_id']: b for b in self.archive.read(self.series, as_of=order.submitted_at)}
-            if any(i not in current for i in order.evidence_ids):
-                raise ValueError('Evidencia futura, revisada, sintética, inválida o de otra serie')
-            evidence[order.order_id] = [current[i] for i in order.evidence_ids]
+            if order.entry_order_id is not None:
+                entry = registered.get(order.entry_order_id)
+                if (entry is None or entry.side != 'BUY' or entry.evidence_ids != order.evidence_ids
+                        or aware_datetime(entry.submitted_at) >= aware_datetime(order.submitted_at)):
+                    raise ValueError('Salida sin evidencia del plan de entrada registrado')
+                # Una revisión posterior no anula la evidencia del plan que ya
+                # abrió riesgo. No exigir una nueva señal BUY para poder salir.
+                evidence[order.order_id] = evidence[entry.order_id]
+            else:
+                current = {b['version_id']: b for b in self.archive.read(self.series, as_of=order.submitted_at)}
+                if any(i not in current for i in order.evidence_ids):
+                    raise ValueError('Evidencia futura, revisada, sintética, inválida o de otra serie')
+                evidence[order.order_id] = [current[i] for i in order.evidence_ids]
+            registered[order.order_id] = order
+        for order in orders:
+            validate_order(order)
         # Un evento repetido no repone liquidez. Una corrección contradictoria
         # del mismo instante requiere resolver la fuente, no elegir el mejor fill.
         seen_ids, seen_books, unique = {}, {}, []
@@ -278,6 +311,9 @@ class ExecutionReplay:
                 price = self.assumptions.price(book, order.side)
                 if price <= 0:
                     state['status'] = 'REJECTED_PRICE'; continue
+                if order.price_limit is not None and ((order.side == 'BUY' and price > order.price_limit)
+                        or (order.side == 'SELL' and price < order.price_limit)):
+                    state['status'] = 'UNFILLED_PRICE_LIMIT'; continue
                 quantity = min(order.quantity, capacities[order.side])
                 if order.side == 'SELL':
                     quantity = min(quantity, held)
@@ -322,6 +358,20 @@ class ExecutionReplay:
             if last_book is None or aware_datetime(book.book_at) > aware_datetime(last_book.book_at):
                 last_book = book
             mark(at, last_book)
+            if strategy is not None and at < finish:
+                # Copias: el callback no puede alterar libro, estados o ledger.
+                # Sólo ve el prefijo ya ocurrido; nunca recibe libros futuros.
+                from copy import deepcopy
+                view = deepcopy({'at': stamp(at), 'book': book, 'book_usable': not stale and not older and book.session_open,
+                    'cash': cash, 'held': held, 'basis': basis, 'equity': curve[-1]['equity'],
+                    'orders': list(states.values()), 'fills': fills})
+                generated = strategy.on_event(view)
+                if generated is not None:
+                    if not isinstance(generated, ReplayOrder) or stamp(generated.submitted_at) != stamp(at):
+                        raise ValueError('La estrategia sólo puede decidir en el instante actual')
+                    validate_order(generated)
+                    orders.append(generated)
+                    states[generated.order_id] = {'order_id': generated.order_id, 'status': 'PENDING', 'filled': ZERO}
         settle(finish)
         mark(finish, last_book)
         for order in orders:
@@ -376,9 +426,21 @@ def main(argv=None):
         engine = ExecutionReplay(CandleArchive(ReadOnlyStore()), Series(**data['series']),
             InstrumentContract(**data['contract']), FeeTerms(**data['fees']),
             ExecutionAssumptions(**data['assumptions']))
-        orders = [ReplayOrder(**(o | {'evidence_ids': tuple(o['evidence_ids'])})) for o in data['orders']]
-        result = engine.run(orders, [BookEvent(**b) for b in data['books']],
-                            start=data['start'], end=data['end'], initial_cash=data['capital'])
+        books = [BookEvent(**b) for b in data['books']]
+        if 'signal_config' in data:
+            from bo_signal_core import SignalConfig, SessionGrid
+            from by_strategy_backtest import run_strategy
+            if data.get('orders') and data.get('mode') != 'CANDIDATE_STRATEGY_BACKTEST':
+                raise ValueError('No mezclar órdenes preparadas con señales')
+            grid_data = data['session_grid']
+            result = run_strategy(engine, books, SignalConfig(**data['signal_config']),
+                SessionGrid(**(grid_data | {'starts': tuple(grid_data['starts'])})),
+                start=data['start'], end=data['end'], initial_cash=data['capital'])
+            if 'orders' in data and data['orders'] != result['manifest']['orders']:
+                raise ValueError('La corrida no reproduce las órdenes del manifiesto')
+        else:
+            orders = [ReplayOrder(**(o | {'evidence_ids': tuple(o['evidence_ids'])})) for o in data['orders']]
+            result = engine.run(orders, books, start=data['start'], end=data['end'], initial_cash=data['capital'])
     except (ValueError, TypeError, KeyError, OSError, sqlite3.Error, ArithmeticError) as exc:
         print(json.dumps({'status': 'INVALID_REPLAY_INPUT', 'promotion_allowed': False,
                           'error_type': type(exc).__name__}, ensure_ascii=False))
@@ -388,4 +450,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    # Usar las mismas clases canónicas que importa el driver de estrategia;
+    # __main__.ReplayOrder y bx_execution_replay.ReplayOrder no son el mismo tipo.
+    from bx_execution_replay import main as entrypoint
+    raise SystemExit(entrypoint())
