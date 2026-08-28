@@ -354,7 +354,7 @@ def _caucion_allocations_panel():
             rows.append(f"<tr><td>{_e(offer['instrument_id'])}<br>"
                 f"Cotizada: {_local_time(offer['quoted_at'])}<br>Vence: {_local_time(offer['maturity_at'])}</td>"
                 f"<td>{_e(offer['currency'])}</td><td>{_e(offer['fee_quote_principal'])}</td>"
-                f"<td>{_e(offer['quoted_total_fees'])} · {_e(offer['fee_payment'])}</td>"
+                f"<td>{_e(candidate.get('fees', offer['quoted_total_fees']))} · {_e(offer['fee_payment'])}</td>"
                 f"<td>{_e(candidate.get('net_profit'))}</td><td>{_e(candidate.get('net_return_per_day'))}</td>"
                 f"<td>{_e(reason)}</td></tr>")
         placement = record['placement']
@@ -377,7 +377,8 @@ def _caucion_allocations_panel():
             f"<p>Política: {_e(decision['policy_version'])} · Congelada: {_local_time(policy['frozen_at'])} · "
             f"Sesión: {_local_time(policy['session_open_at'])} a {_local_time(policy['session_close_at'])} · Fuente: {_e(policy['session_source'])}</p>"
             "<p>Costos: UPFRONT al inicio; MATURITY al vencimiento. Retorno diario expresado como fracción, "
-            "sin suponer reinversión. Un guion indica cálculo no habilitado, no beneficio cero.</p>"
+            "sin suponer reinversión. Elegibles muestran el costo redondeado del simulador; descartadas, "
+            "el presupuesto aportado. Un guion indica cálculo no habilitado, no beneficio cero.</p>"
             "<table class='paper-table'><tr><th>Oferta / fechas</th><th>Moneda</th><th>Capital presupuestado</th>"
             "<th>Costo total / pago</th><th>Neto estimado</th><th>Retorno neto diario</th><th>Resultado</th></tr>"
             + (''.join(rows) or "<tr><td colspan='7'>No se aportaron ofertas.</td></tr>") + "</table></div></details>")
