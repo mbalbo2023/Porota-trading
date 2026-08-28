@@ -140,3 +140,82 @@ def test_drawdown_rechaza_curvas_no_conciliadas(changes):
 def test_drawdown_rechaza_inicio_cero_y_tiempos_duplicados():
     with pytest.raises(ValueError): marked_drawdown([point(25,0)],currency='ARS')
     with pytest.raises(ValueError): marked_drawdown([point(25,100)]*2,currency='ARS')
+
+
+def test_backtest_legado_no_descarga_ni_promueve(monkeypatch):
+    import q_backtest
+    def forbidden(*args, **kwargs):
+        pytest.fail('No descargar datos para el backtest retirado')
+    monkeypatch.setattr(q_backtest, '_fetch_history', forbidden)
+    with pytest.raises(RuntimeError, match='LEGACY_BACKTEST_UNVERIFIED'):
+        q_backtest.run_backtest('AAPL')
+    with pytest.raises(RuntimeError, match='POSTHOC_PARTITION'):
+        q_backtest.run_walk_forward('AAPL')
+
+
+@pytest.fixture
+def monthly_tuner(tmp_path, monkeypatch):
+    import json
+    import sqlite3
+    from types import SimpleNamespace
+    import pandas as pd
+    import i_auto_tuner as module
+    monkeypatch.chdir(tmp_path)
+    current = {'min_score_tech':.7, 'min_score_macro':.7, 'take_profit_atr_mult':2.0}
+    active = tmp_path/'auto_tune_config.json'
+    active.write_text(json.dumps(current))
+    tuner = module.AutoTuner.__new__(module.AutoTuner)
+    tuner.db_path = str(tmp_path/'tuner.db')
+    tuner.model = 'TEST_NO_NETWORK'
+    def data(query, conn):
+        if 'signals' in query:
+            return pd.DataFrame([dict(id=1,status='TEST',score_tech=.8,macro_score=.8)])
+        return pd.DataFrame([dict(id=i,exit_reason='TEST',realized_pnl_ars=1,realized_pnl_pct=1)
+                             for i in range(30)])
+    monkeypatch.setattr(module.pd, 'read_sql_query', data)
+    monkeypatch.setattr(module.position_manager, 'get_win_rate', lambda **kwargs: {})
+    monkeypatch.setattr(tuner, '_generate_recommendations', lambda *args: None)
+    def execute(payload):
+        before = active.read_bytes()
+        def generate(**kwargs):
+            if isinstance(payload, Exception): raise payload
+            return SimpleNamespace(text=json.dumps(payload))
+        tuner.client = SimpleNamespace(models=SimpleNamespace(generate_content=generate))
+        tuner.run_monthly_autotune()
+        assert active.read_bytes() == before
+        assert not (tmp_path/'auto_tune_config.json.tmp').exists()
+        with sqlite3.connect(tuner.db_path) as conn:
+            row = conn.execute('SELECT previous_config,proposed_config,applied_config,notas FROM auto_tune_history ORDER BY id DESC LIMIT 1').fetchone()
+        assert json.loads(row[0]) == current == json.loads(row[2])
+        return row
+    return tuner, execute
+
+
+def test_autotuner_conserva_propuesta_sin_modificar_configuracion(monthly_tuner, monkeypatch):
+    import json
+    import q_backtest
+    tuner, execute = monthly_tuner
+    def forbidden(*args, **kwargs): pytest.fail('No invocar validación heredada')
+    monkeypatch.setattr(q_backtest, 'run_backtest', forbidden)
+    before = (q_backtest.MIN_SCORE_TECH, q_backtest.TAKE_PROFIT_ATR_MULT)
+    proposal = {'min_score_tech':.9,'min_score_macro':.8,'take_profit_atr_mult':3}
+    row = execute(proposal)
+    assert json.loads(row[1]) == proposal and row[3].startswith('PROPUESTA PENDIENTE:')
+    assert '0.77' in row[3]  # Se conserva la candidata limitada, no se aplica.
+    assert before == (q_backtest.MIN_SCORE_TECH, q_backtest.TAKE_PROFIT_ATR_MULT)
+    assert tuner._validate_against_backtest({}, {})['promotion_allowed'] is False
+
+
+@pytest.mark.parametrize('proposal', [[],None,{'min_score_tech':float('nan')},
+    {'min_score_macro':float('inf')},{'take_profit_atr_mult':True},
+    {'min_score_tech':2},{'take_profit_atr_mult':-1},RuntimeError('TEST_API_UNAVAILABLE')])
+def test_autotuner_error_o_parametro_invalido_conserva_configuracion(monthly_tuner, proposal):
+    row = monthly_tuner[1](proposal)
+    assert row[1] is None and 'CANCELADO' in row[3]
+
+
+def test_clamping_rechaza_no_finitos_y_no_salta_desde_cero():
+    from i_auto_tuner import _clamp
+    assert _clamp(.7,0,10) == 0
+    with pytest.raises(ValueError): _clamp(float('nan'),.7,10)
+    with pytest.raises(ValueError): _clamp(.8,.7,-1)
