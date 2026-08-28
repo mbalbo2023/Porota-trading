@@ -1151,6 +1151,35 @@ filtro de caja por moneda.
 Sin migrar ni reescribir registros, activar órdenes, cambiar límites o iniciar
 el servidor. No se agregan controles de ciberseguridad.
 
+## Vigesimocuarto checkpoint: liquidación de ventas parciales
+
+El cierre de una sola venta ya conciliaba fuente y fecha de su recibo. La rama
+de parciales, en cambio, sólo rechazaba una fecha anterior al fill: podía
+aceptar una disponibilidad anticipada para T+1, una fuente desconocida o una
+fecha ausente declarada como calculada. Se reprodujo que eso también permitía
+colocar una caución usando caja cuyo recibo no estaba conciliado.
+
+- `cf_sale_settlement.py` centraliza el modelo y su validación, reutilizados
+  por cierres simples y parciales. Se conserva el import público anterior desde
+  `bt_caucion_paper`; no cambia la convención CI/T+1 ni se añade un calendario.
+- PAPER_CONSERVATIVE_CALENDAR exige fecha exactamente concordante con el
+  modelo disponible. PENDING_CONFIRMATION sólo es válido sin fecha y sigue
+  inmovilizando producido positivo. Una fuente diferente requiere protocolo
+  explícito; no se toma su etiqueta como confirmación externa.
+- Fuente/fecha incompatible bloquea caja y colocaciones sin agregar fills,
+  cauciones o avisos. Un recibo incoherente no invalida por sí solo el PnL
+  matemático ni impide reducir otra exposición válida.
+- El panel concilia las monedas de todas las realizaciones, también cuando
+  sólo hay posiciones abiertas con ventas parciales. Oculta balances viejos
+  ante inconsistencia, sin interpretar una lectura fallida como saldo cero.
+- Se preservan producido/costos históricos, caja por moneda/fecha, instantes
+  equivalentes en UTC, reinicio y pendientes legítimos. Si el calendario ya
+  no permite verificar una fecha del modelo, se bloquea sin reescribirla.
+
+Esto valida concordancia interna del simulador, no una acreditación de PPI.
+Sin migración ni cambios al servidor, órdenes reales, nuevos controles de
+ciberseguridad o activación de cauciones automáticas.
+
 ## Evaluación del código sugerido: decisiones y pendientes
 
 | Módulo/propuesta | Problema identificado | Decisión |
@@ -1381,6 +1410,17 @@ riesgo, permanecen sin fills y no impiden el stop de otra posición válida.
 Compatibilidad de entradas importadas y lectura sin escrituras verificadas.
 Panel probado funcionalmente, sin captura visual de navegador/tablet.
 Fixtures locales; no acreditan datos, ejecución ni integración PPI real.
+
+Vigesimocuarto checkpoint: **1064 tests aprobados**, 0 fallas, 0 errores y
+0 omisiones; 35 nuevos y 278 dirigidos. Antes de corregir se reprodujeron
+16 fallas en los 35 casos nuevos. Cobertura global local **64,33%**; validador
+común de liquidación **94,12%** y cuatro mínimos financieros cumplidos.
+Fechas/fuentes inválidas con posición parcial abierta o cerrada, CI/T+1,
+ARS/MEP/CCL sin mezcla, costos originales, UTC equivalente, caja histórica,
+reinicio, pendientes sin fecha y calendario no verificable. Se comprueba
+rechazo de caución sin escrituras y continuidad de otra salida válida.
+Panel sin balances reciclados, probado funcionalmente; sin captura visual de
+navegador/tablet. Datos sintéticos, sin PPI, mensajes reales ni servidor.
 
 Entorno local Python 3.12; librerías instaladas para ejecutar la suite. No es
 todavía una reproducción completa del contenedor objetivo Python 3.11 ni de
