@@ -1,4 +1,4 @@
-"""Dashboard 24x7 v17 candidata, independiente y sin credenciales PPI."""
+"""Dashboard 24x7 v17 RC3, independiente y sin credenciales PPI."""
 
 from __future__ import annotations
 
@@ -24,11 +24,17 @@ from bt_caucion_paper import validate_position, pending_proceeds
 from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
 
 
-VERSION = "17.0.0-rc2"
+VERSION = "17.0.0-rc3"
 DB_PATH = str(database_path())
 MODE = os.getenv("DASHBOARD_OPERATION_MODE", "DETENIDO").upper()
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
-PAPER_INITIAL_CAPITAL = float(os.getenv("PAPER_INITIAL_CAPITAL_ARS", "1000000"))
+PAPER_INITIAL_CAPITALS = {
+    "ARS": float(os.getenv("PAPER_INITIAL_CAPITAL_ARS", "1000000")),
+    "USD": float(os.getenv("PAPER_INITIAL_CAPITAL_USD", "0")),
+    "USD_MEP": float(os.getenv("PAPER_INITIAL_CAPITAL_USD_MEP", "0")),
+    "USD_CCL": float(os.getenv("PAPER_INITIAL_CAPITAL_USD_CCL", "0")),
+}
+PAPER_INITIAL_CAPITAL = PAPER_INITIAL_CAPITALS["ARS"]
 PAPER_ACTIVE_SYMBOL_LIMIT = int(os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "20"))
 REFRESH_SECONDS = int(os.getenv("DASHBOARD_REFRESH_SECONDS", "30"))
 _installed = False
@@ -78,7 +84,7 @@ code{white-space:normal;overflow-wrap:anywhere}.legacy-shell{background:transpar
 MODE_INFO = {
     "PRODUCTION_PAPER": ("MODO SIMULACIÓN PRODUCTIVA", "PPI Producción solo lectura; compras y ventas simuladas; órdenes reales: NINGUNA."),
     "SANDBOX": ("MODO SANDBOX", "PPI Sandbox; únicamente operaciones del entorno de pruebas."),
-    "PRODUCTION_REAL": ("MODO PRODUCCIÓN REAL", "Las órdenes autorizadas pueden utilizar dinero real."),
+    "PRODUCTION_REAL": ("ESTADO INVÁLIDO — PRODUCCIÓN REAL BLOQUEADA", "Por política permanente, Porota nunca puede enviar órdenes con dinero real."),
     "DETENIDO": ("PLATAFORMA DETENIDA", "Dashboard disponible; ningún motor de trading está activo."),
 }
 
@@ -94,6 +100,12 @@ def _num(value, default=0.0):
 
 def _money(value):
     try: return f"$ {float(value):,.2f}"
+    except Exception: return "—"
+
+
+def _amount(value, currency):
+    labels = {"ARS": "ARS $", "USD": "USD", "USD_MEP": "USD MEP", "USD_CCL": "USD CCL"}
+    try: return f"{labels.get(currency, currency)} {float(value):,.2f}"
     except Exception: return "—"
 
 
@@ -174,7 +186,7 @@ def _status(value):
     key = str(value or "").upper()
     css = "s-verde" if key in {"OK","VERDE","RUNNING","APPROVE","WIN","OPENED_SIMULATED","AVAILABLE"} else \
           "s-rojo" if key in {"ERROR","ROJO","FAILED","LOSS","VETO","BLOCKED","DEGRADED"} else \
-          "s-amarillo" if key in {"HOLD","PARTIAL","COOLDOWN","WAITING","AMARILLO"} else "s-gris"
+          "s-amarillo" if key in {"HOLD","PARTIAL","COOLDOWN","WAITING","AMARILLO","PENDIENTE"} else "s-gris"
     return f"<span class='paper-status {css}'>{_e(key or 'GRIS')}</span>"
 
 
@@ -182,7 +194,8 @@ def _health_status(value):
     key = str(value or "GRIS").upper()
     normalized = "VERDE" if key in {"OK","SUCCESS","HEALTHY","VERDE"} else \
                  "ROJO" if key in {"ERROR","FAIL","FAILED","ROJO"} else \
-                 "AMARILLO" if key in {"PARTIAL","DEGRADED","COOLDOWN","AMARILLO"} else "GRIS"
+                 "AMARILLO" if key in {"PARTIAL","DEGRADED","COOLDOWN","AMARILLO","PENDIENTE"} else \
+                 "NO_APLICA" if key in {"NO_APLICA","NOT_APPLICABLE"} else "GRIS"
     return _status(normalized)
 
 
@@ -201,7 +214,8 @@ def _fresh(value, seconds=180):
 
 def mode_banner():
     title, detail = MODE_INFO.get(MODE, (f"MODO {MODE}", "Estado operativo no reconocido."))
-    dataset = (' Historial PAPER v17 independiente: sin importar posiciones, saldos ni aprendizaje anteriores.'
+    dataset = (' Dataset PAPER v17 independiente: una migración verificada puede conservar catálogo e históricos; '
+               'nunca traslada posiciones, saldos ni aprendizaje operativo.'
                if MODE in {'PRODUCTION_PAPER', 'DETENIDO'} else '')
     return (f"<div id='porota-paper-mode'>{_e(title)}<small>{_e(detail)} "
             f"Actualización visual única: cada {REFRESH_SECONDS} s.{_e(dataset) if dataset else ''}</small></div>")
@@ -517,36 +531,191 @@ def _report_state(family):
     return "GRIS", "Sin verificación persistida.", None, None
 
 
-def home_page():
-    data=snapshot(); state=data["state"]; closed=data["closed"]
-    today=datetime.now(TZ).date().isoformat(); today_closed=[p for p in closed if aware_datetime(p["closed_at"]).astimezone(TZ).date().isoformat()==today]
-    today_pnl,today_wins,today_wr=_trade_metrics(today_closed); total_pnl,wins,total_wr=_trade_metrics(closed)
-    today_pnl = sum((_num(p['net_pnl']) for p in data['realized'] if p.get('currency','ARS')=='ARS'
-                     and aware_datetime(p['closed_at']).astimezone(TZ).date().isoformat()==today),0)
-    heartbeat_ok=_fresh(state.get("heartbeat_at"),180)
-    sre=(_rows("SELECT * FROM sre_snapshots ORDER BY id DESC LIMIT 1") or [{}])[0] if _table("sre_snapshots") else {}
-    db_ok=sre.get("db_integrity")=="ok"
-    telegram=_report_state("telegram")[0]
-    api=(_rows("SELECT state FROM api_health") if _table("api_health") else [])
-    critical_bad=sum(1 for r in api if str(r.get("state")).upper()=="ROJO")
-    financial_ready=data['caucion_state']=='READY' and data['spot_state']=='READY'
-    overall=heartbeat_ok and db_ok and critical_bad==0 and financial_ready
-    equity=_num(data["equity"].get("equity"),PAPER_INITIAL_CAPITAL)
-    cards="".join((
-        _card("Estado general", "TODO OPERATIVO" if overall else "REVISAR", f"{critical_bad} APIs en rojo", "green" if overall else "red"),
-        _card("Dashboard 24x7", "ACTIVO", "Esta página responde aunque la rueda esté cerrada", "green"),
-        _card("Observador / simulador", "ACTIVO" if heartbeat_ok else "SIN LATIDO", f"Último latido {_local_time(state.get('heartbeat_at'))}", "green" if heartbeat_ok else "red"),
-        _card("Telegram", telegram, "Avisos de modo y resumen de cierre", "green" if telegram=="VERDE" else "red" if telegram=="ROJO" else "gray"),
-        _card("Base paper", "OK" if db_ok else "REVISAR", f"Integridad {sre.get('db_integrity','sin medición')}", "green" if db_ok else "red"),
-        _card("PPI solo lectura", state.get("ppi_auth"), "Órdenes reales bloqueadas por transporte", "green" if state.get("ppi_auth")=="OK" else "yellow" if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
-        _card("Patrimonio paper ARS", _money(equity) if financial_ready else 's/d', "Capital completamente ficticio; sin consolidar dólares", "gray" if not financial_ready else "green" if equity>=PAPER_INITIAL_CAPITAL else "red"),
-        _card("Resultado de hoy ARS", _money(today_pnl) if data["spot_state"]=="READY" else "s/d", f"Win rate {'s/d' if today_wr is None else f'{today_wr:.1f}%'}", "green" if today_pnl>0 else "red" if today_pnl<0 else "gray", "positive" if today_pnl>0 else "negative" if today_pnl<0 else "neutral"),
-        _card("Win rate acumulado", "s/d" if total_wr is None else f"{total_wr:.1f}%", f"{wins}/{len(closed)} cierres ganadores", "green" if total_wr is not None and total_wr>=50 else "red" if total_wr is not None else "gray"),
-        _card("Órdenes reales", "0", "Barrera HTTP fail-closed", "green"),
-    ))
-    body=f"<h1>Panel ejecutivo — Porota Trading {VERSION}</h1><p class='paper-muted'>Una sola vista del sistema, infraestructura, APIs y desempeño paper.</p><div class='paper-grid'>{cards}</div>"
-    return _document("Porota Trading",_spot_warning(data["spot_state"])+_caucion_warning(data['caucion_state'])+body)
+def _mode_applies(component_mode):
+    label = str(component_mode or "").upper()
+    if label == "TODOS":
+        return True
+    if MODE == "PRODUCTION_PAPER":
+        return "SIMULACIÓN" in label
+    if MODE == "SANDBOX":
+        return "SANDBOX" in label
+    return False
 
+
+def _effective_health_state(raw_state, *, present, applicable):
+    if not applicable:
+        return "NO_APLICA"
+    key = str(raw_state or "").upper()
+    if not present or key in {"", "GRIS", "UNKNOWN", "NOT_ATTEMPTED", "NOT_STARTED"}:
+        return "PENDIENTE"
+    if key in {"OK", "SUCCESS", "HEALTHY", "VERDE"}:
+        return "VERDE"
+    if key in {"ERROR", "FAIL", "FAILED", "ROJO"}:
+        return "ROJO"
+    if key in {"PARTIAL", "DEGRADED", "COOLDOWN", "AMARILLO"}:
+        return "AMARILLO"
+    return "PENDIENTE"
+
+
+def _health_components():
+    persisted = {r["component"]: r for r in _rows("SELECT * FROM api_health")} if _table("api_health") else {}
+    jobs = {r["job_key"]: r for r in _rows("SELECT * FROM operational_jobs")} if _table("operational_jobs") else {}
+    components = []
+
+    def add(name, key, mode, use, default="Sin verificación persistida."):
+        row = persisted.get(key) or jobs.get(key)
+        applicable = _mode_applies(mode)
+        raw = row.get("state") if row else None
+        checked = (row or {}).get("checked_at") or (row or {}).get("last_run_at")
+        detail = (row or {}).get("detail", default)
+        state = _effective_health_state(raw, present=bool(row), applicable=applicable)
+        if state == "NO_APLICA":
+            detail = f"No aplica al modo {MODE}; no es una falla."
+        elif state == "PENDIENTE" and not row:
+            detail = "Esperando la primera verificación persistida; no se considera saludable todavía."
+        components.append({"name": name, "key": key, "state": state, "raw_state": raw,
+            "detail": detail, "checked": checked, "last_success": (row or {}).get("last_success_at"),
+            "next_check": _next_check(key, checked), "mode": mode, "use": use,
+            "applicable": applicable})
+
+    add("PPI Sandbox — autenticación", "PPI_SANDBOX_AUTH", "SANDBOX",
+        "Un login aislado; cero cuenta y cero órdenes")
+    add("PPI Producción — autenticación", "PPI_PRODUCTION_AUTH", "SIMULACIÓN PRODUCTIVA",
+        "Login de sólo lectura")
+    add("PPI Producción — catálogo", "PPI_PRODUCTION_CATALOG", "SIMULACIÓN PRODUCTIVA",
+        "Descubrimiento de instrumentos")
+    add("PPI Producción — históricos", "PPI_PRODUCTION_HISTORY", "SIMULACIÓN PRODUCTIVA",
+        "Cobertura incremental de todo el universo")
+    add("PPI Producción — market data", "PPI_PRODUCTION_MARKETDATA", "SIMULACIÓN PRODUCTIVA",
+        "Cotización y caja de puntas")
+    add("Google Gemini", "GEMINI_DECISION", "SIMULACIÓN / SANDBOX",
+        "Portón crítico, seguido del portón patrimonial")
+
+    tg = _report_state("telegram")
+    tg_mode = "TODOS"
+    tg_applicable = _mode_applies(tg_mode)
+    tg_present = bool(tg[2])
+    components.append({"name": "Telegram", "key": "TELEGRAM", "state":
+        _effective_health_state(tg[0], present=tg_present, applicable=tg_applicable),
+        "raw_state": tg[0], "detail": tg[1], "checked": tg[2], "last_success": tg[3],
+        "next_check": _next_check("TELEGRAM", tg[2]), "mode": tg_mode,
+        "use": "Avisos de modo y resumen de cierre", "applicable": tg_applicable})
+
+    add("BCRA / INDEC", "FINANCIAL_REFRESH", "TODOS", "Información financiera oficial")
+    add("OPENBYMADATA / BYMA", "BYMA_OPEN_DATA", "TODOS",
+        "Referencia pública oficial; sin redistribuir market data")
+    add("Feeds de noticias", "NEWS_REFRESH", "TODOS",
+        "Contexto financiero, económico y geopolítico")
+    add("Base SQLite paper", "SRE_SNAPSHOT", "TODOS", "Persistencia e integridad")
+    return components
+
+
+def _daily_summary_panel(data=None):
+    data = data or snapshot()
+    if data["spot_state"] != "READY" or data["caucion_state"] != "READY":
+        return ("<div class='paper-card'><h2>Resumen simulado del día</h2>"
+                + _spot_warning(data["spot_state"]) + _caucion_warning(data["caucion_state"]) + "</div>")
+    today = datetime.now(TZ).date()
+    currencies = ("ARS", "USD", "USD_MEP", "USD_CCL")
+    totals = {currency: {"buys": 0, "sells": 0, "realized": 0.0, "open": 0,
+                         "unrealized": 0.0} for currency in currencies}
+    fills = _rows("""SELECT f.side,f.filled_at,p.currency FROM paper_fills f
+                     JOIN paper_positions p ON p.paper_id=f.paper_id
+                     ORDER BY f.id DESC LIMIT 2000""") if _table("paper_fills") else []
+    for fill in fills:
+        try:
+            if aware_datetime(fill["filled_at"]).astimezone(TZ).date() != today:
+                continue
+        except Exception:
+            continue
+        currency = fill.get("currency", "ARS")
+        if currency not in totals:
+            continue
+        if fill.get("side") == "BUY_SIMULATED":
+            totals[currency]["buys"] += 1
+        elif fill.get("side") == "SELL_SIMULATED":
+            totals[currency]["sells"] += 1
+    for sale in data["realized"]:
+        try:
+            if aware_datetime(sale["closed_at"]).astimezone(TZ).date() == today:
+                totals[sale.get("currency", "ARS")]["realized"] += _num(sale.get("net_pnl"))
+        except (KeyError, ValueError, TypeError):
+            continue
+    for position in data["open"]:
+        currency = position.get("currency", "ARS")
+        if currency in totals:
+            totals[currency]["open"] += 1
+    for balance in data["balances_by_currency"]:
+        currency = balance.get("currency")
+        if currency in totals:
+            totals[currency]["unrealized"] = _num(balance.get("unrealized_pnl"))
+    rows = "".join(
+        f"<tr><td><b>{_e(currency)}</b></td><td>{values['buys']}</td>"
+        f"<td>{values['sells']}</td><td>{values['open']}</td>"
+        f"<td class='{'positive' if values['realized']>0 else 'negative' if values['realized']<0 else 'neutral'}'>"
+        f"{_amount(values['realized'],currency)}</td>"
+        f"<td class='{'positive' if values['unrealized']>0 else 'negative' if values['unrealized']<0 else 'neutral'}'>"
+        f"{_amount(values['unrealized'],currency)}</td></tr>"
+        for currency, values in totals.items())
+    return ("<div class='paper-card'><h2>Resumen simulado del día</h2>"
+            "<p>Cuenta fills PAPER, no órdenes enviadas a PPI. Los resultados no mezclan ni convierten monedas.</p>"
+            "<table class='paper-table'><tr><th>Moneda</th><th>Compras simuladas</th>"
+            "<th>Ventas simuladas</th><th>Posiciones abiertas</th><th>PnL realizado hoy</th>"
+            "<th>PnL no realizado actual</th></tr>" + rows + "</table></div>")
+
+
+def home_page():
+    data = snapshot()
+    state = data["state"]
+    heartbeat_ok = _fresh(state.get("heartbeat_at"), 180)
+    sre = (_rows("SELECT * FROM sre_snapshots ORDER BY id DESC LIMIT 1") or [{}])[0] if _table("sre_snapshots") else {}
+    db_ok = sre.get("db_integrity") == "ok"
+    financial_ready = data["caucion_state"] == "READY" and data["spot_state"] == "READY"
+    health = _health_components()
+    applicable = [item for item in health if item["applicable"]]
+    red = sum(item["state"] == "ROJO" for item in applicable)
+    pending = sum(item["state"] in {"PENDIENTE", "AMARILLO"} for item in applicable)
+    overall = heartbeat_ok and db_ok and financial_ready and red == 0 and pending == 0
+    overall_label = ("TODO OPERATIVO" if overall else "REVISAR" if red or not heartbeat_ok or not db_ok
+                     or not financial_ready else "VERIFICACIONES PENDIENTES")
+    overall_color = "green" if overall else "red" if overall_label == "REVISAR" else "yellow"
+    telegram = next((item["state"] for item in health if item["key"] == "TELEGRAM"), "PENDIENTE")
+    balances = {row["currency"]: row for row in data["balances_by_currency"]}
+    balance_cards = []
+    for currency in ("ARS", "USD", "USD_MEP", "USD_CCL"):
+        row = balances.get(currency)
+        value = _num((row or {}).get("equity"), PAPER_INITIAL_CAPITALS[currency])
+        ready = financial_ready and row is not None
+        initial = PAPER_INITIAL_CAPITALS[currency]
+        balance_cards.append(_card(
+            f"Patrimonio paper {currency}", _amount(value, currency) if ready else "s/d",
+            f"Capital ficticio inicial {_amount(initial,currency)}; caja independiente",
+            "gray" if not ready else "green" if value >= initial else "red"))
+    cards = "".join((
+        _card("Estado general", overall_label,
+              f"{red} fuentes en rojo; {pending} pendientes/degradadas; NO APLICA no cuenta como falla",
+              overall_color),
+        _card("Dashboard 24x7", "ACTIVO", "Esta página responde aunque la rueda esté cerrada", "green"),
+        _card("Observador / simulador", "ACTIVO" if heartbeat_ok else "SIN LATIDO",
+              f"Último latido {_local_time(state.get('heartbeat_at'))}", "green" if heartbeat_ok else "red"),
+        _card("Telegram", telegram, "Avisos de modo y resumen de cierre",
+              "green" if telegram == "VERDE" else "red" if telegram == "ROJO" else "yellow"),
+        _card("Base paper", "OK" if db_ok else "REVISAR",
+              f"Integridad {sre.get('db_integrity','sin medición')}", "green" if db_ok else "red"),
+        _card("PPI solo lectura", state.get("ppi_auth"), "Órdenes reales bloqueadas por transporte",
+              "green" if state.get("ppi_auth") == "OK" else "yellow"
+              if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
+        *balance_cards,
+        _card("Órdenes reales", "0", "Bloqueo permanente por política y barrera HTTP fail-closed", "green"),
+    ))
+    body = (f"<h1>Panel ejecutivo — Porota Trading {VERSION}</h1>"
+            "<div class='paper-warning'><b>Ejecución exclusivamente simulada.</b> "
+            "Producción significa datos reales y servicio continuo; nunca dinero real.</div>"
+            "<p class='paper-muted'>Una sola vista del sistema, infraestructura, APIs y desempeño paper.</p>"
+            f"<div class='paper-grid'>{cards}</div>")
+    return _document("Porota Trading", _spot_warning(data["spot_state"])
+        + _caucion_warning(data["caucion_state"]) + body
+        + _daily_summary_panel(data) + _balances_panel())
 
 def paper_page(compact=False):
     data=snapshot(); state=data["state"]
@@ -611,27 +780,25 @@ def _next_check(component, checked):
 
 
 def health_page():
-    persisted={r["component"]:r for r in _rows("SELECT * FROM api_health")} if _table("api_health") else {}
-    jobs={r["job_key"]:r for r in _rows("SELECT * FROM operational_jobs")} if _table("operational_jobs") else {}
-    components=[]
-    def add(name,key,mode,use,default="Sin verificación persistida."):
-        row=persisted.get(key) or jobs.get(key) or {}; checked=row.get("checked_at") or row.get("last_run_at")
-        components.append((name,row.get("state","GRIS"),row.get("detail",default),checked,row.get("last_success_at"),_next_check(key,checked),mode,use))
-    add("PPI Sandbox — autenticación","PPI_SANDBOX_AUTH","SANDBOX","Un login aislado; cero cuenta y cero órdenes")
-    add("PPI Producción — autenticación","PPI_PRODUCTION_AUTH","SIMULACIÓN PRODUCTIVA","Login de sólo lectura")
-    add("PPI Producción — catálogo","PPI_PRODUCTION_CATALOG","SIMULACIÓN PRODUCTIVA","Descubrimiento de instrumentos")
-    add("PPI Producción — históricos","PPI_PRODUCTION_HISTORY","SIMULACIÓN PRODUCTIVA","Cobertura incremental de todo el universo")
-    add("PPI Producción — market data","PPI_PRODUCTION_MARKETDATA","SIMULACIÓN PRODUCTIVA","Cotización y caja de puntas")
-    add("Google Gemini","GEMINI_DECISION","SIMULACIÓN / SANDBOX","Portón crítico, seguido del portón patrimonial")
-    tg=_report_state("telegram"); components.append(("Telegram",tg[0],tg[1],tg[2],tg[3],_next_check("TELEGRAM",tg[2]),"TODOS","Avisos de modo y resumen de cierre"))
-    add("BCRA / INDEC","FINANCIAL_REFRESH","TODOS","Información financiera oficial")
-    add("OPENBYMADATA / BYMA","BYMA_OPEN_DATA","TODOS","Referencia pública oficial; sin redistribuir market data")
-    add("Feeds de noticias","NEWS_REFRESH","TODOS","Contexto financiero, económico y geopolítico")
-    add("Base SQLite paper","SRE_SNAPSHOT","TODOS","Persistencia e integridad")
-    rows="".join(f"<tr><td><b>{_e(n)}</b></td><td>{_health_status(s)}</td><td>{_e(d)}</td><td>{_local_time(c)}</td><td>{_local_time(ok)}</td><td>{_e(nx)}</td><td>{_e(m)}</td><td>{_e(u)}</td></tr>" for n,s,d,c,ok,nx,m,u in components)
-    body=f"<h1>Salud de APIs y fuentes</h1><p class='paper-muted'>Abrir esta pantalla no consume APIs. Cada fila informa modo, alcance y próximo chequeo.</p><div class='paper-card'><table class='paper-table'><tr><th>API / fuente</th><th>Estado</th><th>Detalle</th><th>Último reporte / chequeo</th><th>Último éxito</th><th>Próximo chequeo</th><th>Modo</th><th>Uso</th></tr>{rows}</table></div>"
-    return _document("Salud de APIs",body,refresh=60)
-
+    components = _health_components()
+    rows = "".join(
+        f"<tr><td><b>{_e(item['name'])}</b></td><td>{_health_status(item['state'])}</td>"
+        f"<td>{_e(item['detail'])}</td><td>{_local_time(item['checked'])}</td>"
+        f"<td>{_local_time(item['last_success'])}</td><td>{_e(item['next_check'])}</td>"
+        f"<td>{_e(item['mode'])}</td><td>{_e(item['use'])}</td></tr>"
+        for item in components)
+    applicable = [item for item in components if item["applicable"]]
+    red = sum(item["state"] == "ROJO" for item in applicable)
+    pending = sum(item["state"] in {"PENDIENTE", "AMARILLO"} for item in applicable)
+    summary = ("VERDE: verificación exitosa. AMARILLO/PENDIENTE: degradada o esperando la primera muestra. "
+               "ROJO: falla comprobada. NO_APLICA: componente ajeno al modo actual; no es una falla.")
+    body = (f"<h1>Salud de APIs y fuentes</h1><div class='paper-notice'><b>Resumen coherente con la portada:</b> "
+            f"{red} en rojo y {pending} pendientes/degradadas entre las fuentes aplicables. {_e(summary)}</div>"
+            "<p class='paper-muted'>Abrir esta pantalla no consume APIs. Cada fila informa modo, alcance y próximo chequeo.</p>"
+            "<div class='paper-card'><table class='paper-table'><tr><th>API / fuente</th><th>Estado</th>"
+            "<th>Detalle</th><th>Último reporte / chequeo</th><th>Último éxito</th><th>Próximo chequeo</th>"
+            f"<th>Modo</th><th>Uso</th></tr>{rows}</table></div>")
+    return _document("Salud de APIs", body, refresh=60)
 
 def history_page():
     catalog=(_rows("SELECT COUNT(*) n FROM instrument_catalog") or [{"n":0}])[0]["n"] if _table("instrument_catalog") else 0
