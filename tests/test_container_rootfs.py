@@ -64,7 +64,10 @@ def test_init_prepara_la_cache_para_el_usuario_sin_privilegios():
     init = _bloque(fuente, "  init_permissions:\n", "\n  sre_vectordb:\n")
 
     assert "./model_cache:/home/botuser/.cache" in init
-    assert "chown -R 1000:1000 /app/data /app/sre_vector_db /home/botuser/.cache" in init
+    assert "chown -R 1000:1000 /app/data" not in init
+    assert "/app/data/paper_v17 /app/data/chroma.log" in init
+    assert "chmod 750 /app/data/paper_v17" in init
+    assert "chown -R 1000:1000 /app/sre_vector_db /home/botuser/.cache" in init
     assert "touch /app/data/chroma.log" in init
     assert "chmod 640 /app/data/chroma.log" in init
 
