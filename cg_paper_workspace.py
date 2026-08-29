@@ -13,7 +13,7 @@ DB_ENV = 'PAPER_V17_DB_PATH'
 RELATIVE_DB = Path('paper_v17/observer_v17.db')
 CONTAINER_DB = '/app/data/paper_v17/observer_v17.db'
 NAMESPACE = 'POROTA_PAPER_V17_FRESH'
-IMAGE = 'porota-trading-bot:17.0.0-rc1'
+IMAGE = 'porota-trading-bot:17.0.0-rc2'
 CAPITAL_DEFAULTS = {
     'ARS': ('PAPER_INITIAL_CAPITAL_ARS', '1000000'),
     'USD': ('PAPER_INITIAL_CAPITAL_USD', '0'),
