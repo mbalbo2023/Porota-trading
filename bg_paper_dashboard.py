@@ -192,10 +192,13 @@ def _status(value):
 
 def _health_status(value):
     key = str(value or "GRIS").upper()
+    if key == "PENDIENTE":
+        return _status("PENDIENTE")
+    if key in {"NO_APLICA", "NOT_APPLICABLE"}:
+        return _status("NO_APLICA")
     normalized = "VERDE" if key in {"OK","SUCCESS","HEALTHY","VERDE"} else \
                  "ROJO" if key in {"ERROR","FAIL","FAILED","ROJO"} else \
-                 "AMARILLO" if key in {"PARTIAL","DEGRADED","COOLDOWN","AMARILLO","PENDIENTE"} else \
-                 "NO_APLICA" if key in {"NO_APLICA","NOT_APPLICABLE"} else "GRIS"
+                 "AMARILLO" if key in {"PARTIAL","DEGRADED","COOLDOWN","AMARILLO"} else "GRIS"
     return _status(normalized)
 
 
