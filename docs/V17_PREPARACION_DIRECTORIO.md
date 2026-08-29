@@ -15,8 +15,9 @@ sincroniza y elimina el archivo de prueba. No crea ni abre SQLite, no toca
 `promotion_allowed=false`. Una segunda ejecución válida es idempotente.
 
 Compose deja de ejecutar `chown -R` sobre `/app/data`. Su inicializador sólo
-prepara rutas técnicas explícitas y `paper_v17`; conserva el ajuste recursivo
-de la caché y el índice SRE, que no contienen el ledger. Antes de aceptar una
+prepara rutas técnicas explícitas, archivos de estado conocidos y `paper_v17`;
+`data/observer` queda excluido. Conserva el ajuste recursivo de cachés, logs e
+índice SRE, que no contienen el ledger. Antes de aceptar una
 base existente en la ruta nueva exige archivo regular y no enlace.
 
 Acción del operador, tras subir el archivo a `/tmp`:
