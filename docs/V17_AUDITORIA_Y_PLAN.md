@@ -85,6 +85,23 @@ Validación local: 1.392 pruebas aprobadas, 4 omitidas por ejecución como root,
 el empaquetado determinista. El contenido del ZIP se comparó con el código
 probado; CI remoto y resultado del host se registran por separado en el PR.
 
+## Checkpoint 34 — directorio PAPER v17 aislado
+
+El preflight real confirmó UID/GID 1000, destino ausente, 10,1 GB disponibles y
+ambos motores apagados sin reinicio. El Dockerfile usa el mismo UID para
+`botuser`. Se incorporó un preparador idempotente que crea exclusivamente
+`data/paper_v17` modo 0750, prueba escritura y elimina su marcador, sin crear o
+abrir la base ni tocar el historial. Rechaza motores activos, identidad/rutas
+inesperadas, destino no vacío y base existente.
+
+Compose dejó de recorrer `/app/data` con `chown -R`; sólo administra rutas
+técnicas explícitas y la nueva carpeta. [Evidencia, alcance y comando único](V17_PREPARACION_DIRECTORIO.md).
+
+Validación local final: 1.400 pruebas aprobadas, 4 omitidas por requerir
+ejecución no-root, cero fallas/errores; cobertura global 68,71 %. Las pruebas
+nuevas validan éxito, repetición idempotente y rechazos antes de cualquier
+creación. CI remoto se registra por separado en el PR.
+
 ## Material revisado
 
 Fuente de `Porota-trading-testing.zip`; README, parches y ocho módulos propuestos
