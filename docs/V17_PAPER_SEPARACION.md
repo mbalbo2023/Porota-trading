@@ -77,7 +77,7 @@ no se enviaron mensajes reales al desarrollar/probar.
 
 ## Imagen candidata y límite de despliegue
 
-Selector y Compose apuntan a `porota-trading-bot:17.0.0-rc1`; no reutilizan el
+Selector y Compose apuntan a `porota-trading-bot:17.0.0-rc2`; no reutilizan el
 tag de la imagen 16.3.5 instalada. El selector exige la imagen local y no hace
 pull ni fallback a la anterior. La etiqueta RC no declara v17 lista.
 
