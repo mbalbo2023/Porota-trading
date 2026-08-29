@@ -7,7 +7,7 @@ Uso:
   sudo python porota_mode_manager.py sandbox
   sudo python porota_mode_manager.py stop
 
-Produccion real permanece fail-closed y exige dos habilitaciones independientes.
+Produccion real permanece deshabilitada permanentemente por politica del proyecto.
 """
 
 from __future__ import annotations
@@ -209,10 +209,11 @@ def sandbox():
 
 
 def production(argv):
-    gate = ROOT / ".secrets" / "production_real.enable"
-    if "--confirm-real-money" not in argv or not gate.exists():
-        raise RuntimeError("PRODUCCION REAL BLOQUEADA: requiere archivo de habilitacion y --confirm-real-money.")
-    raise RuntimeError("PRODUCCION REAL AUN NO IMPLEMENTADA EN ESTE SELECTOR: permanece fail-closed.")
+    del argv
+    raise RuntimeError(
+        "PRODUCCION REAL DESHABILITADA PERMANENTEMENTE: Porota opera solamente "
+        "SANDBOX o PRODUCTION_PAPER con ejecucion simulada."
+    )
 
 
 def stop():
