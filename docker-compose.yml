@@ -112,8 +112,15 @@ services:
         { test ! -e /app/data/paper_v17/observer_v17.db ||
         test -f /app/data/paper_v17/observer_v17.db; } &&
         touch /app/data/chroma.log &&
-        chown 1000:1000 /app/data/logs /app/data/backups /app/data/proposals
-        /app/data/paper_v17 /app/data/chroma.log &&
+        chown 1000:1000 /app/data /app/data/paper_v17
+        /app/data/chroma.log &&
+        chown -R 1000:1000 /app/data/logs /app/data/backups
+        /app/data/proposals &&
+        for f in /app/data/dashboard_sessions.json /app/data/trading_system.db
+        /app/data/trading_system.db-wal /app/data/trading_system.db-shm
+        /app/data/startup_state.json /app/data/config_presence.json
+        /app/data/bot_runtime_state.json; do
+        test ! -e "$$f" || chown 1000:1000 "$$f"; done &&
         chmod 750 /app/data/paper_v17 &&
         chown -R 1000:1000 /app/sre_vector_db /home/botuser/.cache &&
         chown 1000:1000 /app/.env &&
