@@ -24,7 +24,7 @@ from bt_caucion_paper import validate_position, pending_proceeds
 from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
 
 
-VERSION = "17.0.0-rc1"
+VERSION = "17.0.0-rc2"
 DB_PATH = str(database_path())
 MODE = os.getenv("DASHBOARD_OPERATION_MODE", "DETENIDO").upper()
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
