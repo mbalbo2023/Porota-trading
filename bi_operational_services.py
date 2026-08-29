@@ -68,6 +68,13 @@ def _connect(path):
     return c
 
 
+def _remove_sqlite_bundle(path):
+    """Elimina el archivo temporal SQLite y sus auxiliares WAL/SHM."""
+    path = Path(path)
+    for item in (path, Path(str(path) + "-wal"), Path(str(path) + "-shm")):
+        item.unlink(missing_ok=True)
+
+
 def init_schema(store):
     with store.connect() as c:
         c.executescript("""
@@ -189,13 +196,13 @@ def create_backup(store, force=False):
         target.close(); source.close()
         with open(raw, "rb") as src, gzip.open(final, "wb", compresslevel=6) as dst:
             shutil.copyfileobj(src, dst)
-        raw.unlink(missing_ok=True)
+        _remove_sqlite_bundle(raw)
         digest = hashlib.sha256(final.read_bytes()).hexdigest()
         with gzip.open(final, "rb") as src, open(test, "wb") as dst:
             shutil.copyfileobj(src, dst)
         with sqlite3.connect(str(test)) as c:
             restore = str(c.execute("PRAGMA quick_check").fetchone()[0])
-        test.unlink(missing_ok=True)
+        _remove_sqlite_bundle(test)
         if restore != "ok":
             raise RuntimeError("restore quick_check=" + restore)
         size = final.stat().st_size
@@ -215,7 +222,7 @@ def create_backup(store, force=False):
         _job(store, "DAILY_BACKUP", "VERDE", f"{final.name}; {size} bytes; restore OK", success=True)
         return str(final)
     except Exception as exc:
-        raw.unlink(missing_ok=True); test.unlink(missing_ok=True)
+        _remove_sqlite_bundle(raw); _remove_sqlite_bundle(test)
         _job(store, "DAILY_BACKUP", "ROJO", f"{type(exc).__name__}: {exc}")
         return None
 
