@@ -91,6 +91,18 @@ def test_sre_y_backup_incluyen_restore_real(tmp_path, monkeypatch):
         row = dict(connection.execute("SELECT * FROM backup_runs").fetchone())
     assert row["restore_test"] == "OK"
     assert row["state"] == "VERDE"
+    assert not list((tmp_path / "backups").glob(".restore_test_*.db*"))
+    assert not list((tmp_path / "backups").glob("observer_*.db-wal"))
+    assert not list((tmp_path / "backups").glob("observer_*.db-shm"))
+
+
+def test_remove_sqlite_bundle_elimina_principal_wal_y_shm(tmp_path):
+    test = tmp_path / ".restore_test_42.db"
+    paths = [test, Path(str(test) + "-wal"), Path(str(test) + "-shm")]
+    for path in paths:
+        path.write_bytes(b"fixture")
+    services._remove_sqlite_bundle(test)
+    assert not any(path.exists() for path in paths)
 
 
 def test_reporte_pdf_y_paquete_ia_sin_secretos(tmp_path, monkeypatch):
