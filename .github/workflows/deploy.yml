@@ -100,13 +100,10 @@ jobs:
             test -n "$IMAGEN"
 
             # La referencia elegida vuelve a pasar la suite en la misma imagen
-            # que se desplegará. Después se toma un backup SQLite online antes
-            # de reemplazar los contenedores.
+            # que se desplegará.
             sudo docker run --rm \
               -v /opt/porota-trading/.github:/app/.github:ro \
               --entrypoint pytest "$IMAGEN" -q
-            sudo docker compose run --rm --no-deps \
-              --entrypoint python bot az_maintenance_job.py backup
 
             sudo docker compose up -d
 

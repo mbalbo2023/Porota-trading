@@ -34,11 +34,11 @@ def test_deploy_usa_sudo_con_el_usuario_administrativo():
     assert "sudo docker compose ps" in workflow
 
 
-def test_deploy_prueba_y_respalda_antes_de_recrear():
+def test_deploy_prueba_sin_copia_de_persistencia_antes_de_recrear():
     workflow = _workflow()
 
     pruebas = workflow.index("--entrypoint pytest")
-    backup = workflow.index("az_maintenance_job.py backup")
     despliegue = workflow.index("sudo docker compose up -d")
 
-    assert pruebas < backup < despliegue
+    assert pruebas < despliegue
+    assert "az_maintenance_job.py backup" not in workflow

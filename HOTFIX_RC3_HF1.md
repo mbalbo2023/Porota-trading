@@ -43,6 +43,7 @@ walk-forward.
 
 ## Criterio de salida
 
-El hotfix puede desplegarse para observación y simulación si la suite completa,
-el preflight del servidor, el backup y el restore test terminan en verde. No se
-autoriza producción con dinero real ni se afirma rentabilidad.
+El hotfix puede desplegarse para observación y simulación si la suite completa
+y el preflight del servidor terminan en verde. Por decisión operativa de esta
+salida, el despliegue no crea copias de persistencia. No se autoriza producción
+con dinero real ni se afirma rentabilidad.
