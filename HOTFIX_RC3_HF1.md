@@ -9,6 +9,8 @@ modifica ni cancela órdenes reales.
 ## Cambios operativos
 
 - IA fuera del circuito intradiario: no se inicializa ni se consulta Gemini.
+- El selector operativo tampoco exige ni inyecta Gemini al iniciar simulación;
+  Telegram y el estado de modo informan decisiones determinísticas en Python.
 - Decisión reproducible: señal, economía, riesgo, patrimonio y liquidez en Python.
 - Aprendizaje conservado: features, gates, fills, PnL y lecciones siguen persistidos.
 - Umbral de score congelado por versión; se elimina la adaptación procíclica.

@@ -170,9 +170,9 @@ def test_selector_routes_dashboard_and_runtime_to_same_new_image_and_store(tmp_p
     (settings/'dashboard_preview_v1633.env').write_text(
         'PAPER_DB_PATH=/app/data/observer/observer_production.db\n'
         'PAPER_V17_DB_PATH=/wrong/path.db\nDASHBOARD_ACCESS_TOKEN=fixture-not-real\n')
-    monkeypatch.setattr(manager, 'env_file', lambda: {'GEMINI_API_KEY':'fixture-not-real'})
+    monkeypatch.setattr(manager, 'env_file', lambda: {})
     dashboard = manager.dashboard_env('PRODUCTION_PAPER').read_text()
-    runtime = manager.observer_ai_env().read_text()
+    runtime = manager.observer_runtime_env().read_text()
     assert f'{workspace.DB_ENV}={workspace.CONTAINER_DB}' in dashboard
     assert f'{workspace.DB_ENV}={workspace.CONTAINER_DB}' in runtime
     assert 'PAPER_DB_PATH=' not in dashboard+runtime

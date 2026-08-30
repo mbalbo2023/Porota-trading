@@ -2,6 +2,7 @@
 
 import importlib
 from decimal import Decimal
+from pathlib import Path
 
 import be_paper_engine as engine
 import bf_production_paper_observer as observer
@@ -22,6 +23,16 @@ def test_observador_activo_no_importa_cliente_ia():
     source = open(observer.__file__, encoding="utf-8").read()
     assert "from bh_paper_gemini import GeminiPaperGate" not in source
     assert "gemini_gate = GeminiPaperGate()" not in source
+
+
+def test_selector_operativo_no_activa_ni_exige_gemini():
+    source = (Path(__file__).resolve().parents[1] / "porota_mode_manager.py").read_text(
+        encoding="utf-8")
+    assert "def observer_runtime_env" in source
+    assert "observer_ai_env()" not in source
+    assert "CRITICAL_DECISION_GATE" not in source
+    assert '"PAPER_AI_GATE_MODE": "OFF"' in source
+    assert '"PYTHON_MATH_ENGINE": "ACTIVE"' in source
 
 
 def test_factibilidad_default_supera_minimo_de_muestras():
