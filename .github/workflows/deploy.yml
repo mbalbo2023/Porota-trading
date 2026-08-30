@@ -96,13 +96,15 @@ jobs:
             echo "Desplegando: $NUEVA"
 
             sudo docker compose build
+            IMAGEN=$(sudo docker compose config --images | head -n 1)
+            test -n "$IMAGEN"
 
             # La referencia elegida vuelve a pasar la suite en la misma imagen
             # que se desplegará. Después se toma un backup SQLite online antes
             # de reemplazar los contenedores.
             sudo docker run --rm \
               -v /opt/porota-trading/.github:/app/.github:ro \
-              --entrypoint pytest porota-trading-bot:16.2 -q
+              --entrypoint pytest "$IMAGEN" -q
             sudo docker compose run --rm --no-deps \
               --entrypoint python bot az_maintenance_job.py backup
 

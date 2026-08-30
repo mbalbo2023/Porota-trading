@@ -18,12 +18,11 @@ from zoneinfo import ZoneInfo
 
 from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolation
 from be_paper_engine import D, PaperBroker, PaperStore, Quote, now_iso
-from bh_paper_gemini import GeminiPaperGate
 import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
+from _version import VERSION
 
 
-VERSION = "16.3.5"
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 from cg_paper_workspace import database_path, runtime_store
 
@@ -34,6 +33,9 @@ COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
 PUBLIC_CHECK_SECONDS = max(900, int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")))
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
 ACTIVE_SYMBOL_LIMIT = max(3, min(int(os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "20")), 60))
+PPI_CALL_BUDGET_SECONDS = max(0.1, float(os.getenv("PAPER_PPI_CALL_BUDGET_SECONDS", "2")))
+SIGNAL_MIN_SAMPLES = max(3, int(os.getenv("PAPER_SIGNAL_MIN_SAMPLES", "6")))
+SIGNAL_WINDOW_MINUTES = max(15, int(os.getenv("PAPER_SIGNAL_WINDOW_MINUTES", "90")))
 HISTORY_BATCH_LIMIT = max(5, min(int(os.getenv("PPI_HISTORY_BATCH_LIMIT", "40")), 100))
 CATALOG_QUERY_SLEEP_SECONDS = max(0.0, float(os.getenv("PPI_CATALOG_QUERY_SLEEP_SECONDS", "0.05")))
 MARKET_OPEN_HOUR = int(os.getenv("MARKET_OPEN_HOUR", "11"))
@@ -44,6 +46,19 @@ PREOPEN_MINUTES = max(5, int(os.getenv("PAPER_PREOPEN_MINUTES", "15")))
 CORE_SYMBOLS = (
     ("GGAL", "ACCIONES", "A-24HS"),
     ("AL30", "BONOS", "A-24HS"),
+    ("AAPL", "CEDEARS", "A-24HS"),
+)
+# Núcleo operativo observado en todos los ciclos. La lista no habilita un
+# contrato: catálogo, identidad monetaria, puntas y profundidad siguen siendo
+# obligatorios. Las posiciones abiertas conservan prioridad absoluta.
+FOCUS_SYMBOLS = (
+    ("GGAL", "ACCIONES", "A-24HS"),
+    ("YPFD", "ACCIONES", "A-24HS"),
+    ("PAMP", "ACCIONES", "A-24HS"),
+    ("BMA", "ACCIONES", "A-24HS"),
+    ("BBAR", "ACCIONES", "A-24HS"),
+    ("SUPV", "ACCIONES", "A-24HS"),
+    ("CEPU", "ACCIONES", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
 )
 # Semillas amplias; PPI sigue siendo quien confirma existencia, clase y mercado.
@@ -477,7 +492,7 @@ def _active_symbols(store):
 
 
 def _cycle_symbols(store):
-    """Abiertas primero, incluso fuera del catalogo; candidatos rotativos."""
+    """Abiertas y foco primero; el resto del universo mantiene rotación."""
     universe = list(_eligible_symbols(store))
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
                                 for p in store.open_positions()))
@@ -488,6 +503,18 @@ def _cycle_symbols(store):
     cursor = int(row[0] if row else 0) % len(universe)
     selected = list(opened)
     seen = set(opened)
+    available = set(universe)
+    focus_budget = min(len(FOCUS_SYMBOLS), max(1, ACTIVE_SYMBOL_LIMIT // 2))
+    focus_added = 0
+    for candidate in FOCUS_SYMBOLS:
+        if len(selected) >= max(ACTIVE_SYMBOL_LIMIT, len(opened)):
+            break
+        if focus_added >= focus_budget:
+            break
+        if candidate in available and candidate not in seen:
+            selected.append(candidate)
+            seen.add(candidate)
+            focus_added += 1
     visited = 0
     while len(selected) < ACTIVE_SYMBOL_LIMIT and visited < len(universe):
         candidate = universe[(cursor + visited) % len(universe)]
@@ -496,6 +523,19 @@ def _cycle_symbols(store):
             selected.append(candidate)
             seen.add(candidate)
     return tuple(selected), len(universe), cursor, (cursor + visited) % len(universe)
+
+
+def _sampling_feasibility(selected_count):
+    """Cota conservadora: pausa más dos lecturas PPI por instrumento."""
+    cycle_seconds = INTERVAL + max(0, selected_count) * 2 * PPI_CALL_BUDGET_SECONDS
+    capacity = int(SIGNAL_WINDOW_MINUTES * 60 / max(cycle_seconds, 1))
+    return {
+        "feasible": capacity >= SIGNAL_MIN_SAMPLES,
+        "estimated_cycle_seconds": round(cycle_seconds, 2),
+        "estimated_samples_per_window": capacity,
+        "required_samples": SIGNAL_MIN_SAMPLES,
+        "window_minutes": SIGNAL_WINDOW_MINUTES,
+    }
 
 
 def _gemini_context(store, symbol):
@@ -656,8 +696,8 @@ def _run_command(store, reader, command, gemini_gate=None):
     command_id, name = command
     if name == "GEMINI_PREFLIGHT":
         if gemini_gate is None:
-            detail = "Gemini no configurado. Porton cerrado."
-            _finish_command(store, command_id, "ERROR", detail)
+            detail = "IA intradiaria desactivada por política; no participa de decisiones PAPER."
+            _finish_command(store, command_id, "NOT_APPLICABLE", detail)
             return reader
         ok, detail = _gemini_health(store, gemini_gate)
         _finish_command(store, command_id, "OK" if ok else "ERROR", detail)
@@ -682,9 +722,7 @@ def _run_command(store, reader, command, gemini_gate=None):
             "PPI Producción", success=True)
     store.state(ppi_auth="OK", detail="Login correcto; sincronizando configuración, catálogo e históricos.")
     problems = []
-    if gemini_gate is None:
-        problems.append("Gemini: no configurado")
-    else:
+    if gemini_gate is not None:
         gemini_ok, gemini_detail = _gemini_health(store, gemini_gate)
         if not gemini_ok:
             problems.append("Gemini: " + gemini_detail[:120])
@@ -717,16 +755,11 @@ def run():
                 ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
                 real_orders_sent=0, detail="Inicializando servicios 24x7.")
     operations.service_tick(store, _market_phase(), force=True)
-    gemini_gate = None
-    try:
-        gemini_gate = GeminiPaperGate()
-        _gemini_health(store, gemini_gate)
-    except Exception as exc:
-        _health(store, "GEMINI_DECISION", "ROJO",
-                f"{type(exc).__name__}: {str(exc)[:500]}. Porton cerrado.", "Google Gemini")
     from bv_paper_runtime import broker_from_environment
-    broker = broker_from_environment(store, ai_gate=gemini_gate, require_ai=True,
-                                     context_fn=lambda symbol: _gemini_context(store, symbol))
+    # La IA queda disponible como módulo offline, pero no se inicializa, no se
+    # consulta y no participa de ninguna decisión intradiaria.
+    broker = broker_from_environment(store, ai_gate=None, require_ai=False,
+                                     ai_mode="OFF", context_fn=None)
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", real_orders_sent=0,
                 detail="Simulacion productiva inicializando.")
@@ -741,7 +774,7 @@ def run():
     try:
         while not STOP:
             # Una caución vence por contrato, aunque el mercado esté cerrado
-            # o falle el login. No depende de cotizaciones ni de Gemini.
+            # o falle el login. No depende de cotizaciones ni de IA.
             broker.settle_cauciones()
             # Estos trabajos continúan con la rueda cerrada: dashboard, SRE,
             # backups, noticias, macro, reportes y resumen Telegram son 24x7.
@@ -751,18 +784,11 @@ def run():
                 last_public_check = time.time()
             command = _claim_command(store)
             if command:
-                reader = _run_command(store, reader, command, gemini_gate)
+                reader = _run_command(store, reader, command, None)
             phase = _market_phase()
-            if phase == "CLOSED":
-                store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
-                            heartbeat_at=now_iso(), real_orders_sent=0,
-                            detail="Proceso disponible; estrategia y simulación en espera por mercado cerrado.")
-                time.sleep(COMMAND_POLL_SECONDS)
-                continue
-            if phase == "PREOPEN":
-                store.state(process_state="READY_PREOPEN", session_state="PREOPEN",
-                            heartbeat_at=now_iso(), real_orders_sent=0,
-                            detail="Preapertura: sólo login y sincronización; cero evaluaciones y cero operaciones.")
+            # Autenticación, catálogo e históricos son útiles también durante
+            # noches, fines de semana y feriados. Sólo current/book y la
+            # estrategia quedan condicionados a rueda abierta.
             if reader is None:
                 if time.time() < next_login_at:
                     store.state(process_state="DEGRADED", ppi_auth="COOLDOWN",
@@ -790,10 +816,27 @@ def run():
                     next_login_at = time.time() + LOGIN_COOLDOWN_SECONDS
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
+            if phase == "CLOSED":
+                store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
+                            heartbeat_at=now_iso(), real_orders_sent=0,
+                            detail="PPI de solo lectura activo; ingesta histórica disponible. "
+                                   "Estrategia y market data vivo detenidos por mercado cerrado.")
+                time.sleep(COMMAND_POLL_SECONDS)
+                continue
+            if phase == "PREOPEN":
+                store.state(process_state="READY_PREOPEN", session_state="PREOPEN",
+                            heartbeat_at=now_iso(), real_orders_sent=0,
+                            detail="Preapertura: login e ingesta activos; cero evaluaciones y cero operaciones.")
             if phase != "OPEN":
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
             symbols, eligible_total, cursor_before, cursor_after = _cycle_symbols(store)
+            feasibility = _sampling_feasibility(len(symbols))
+            if not feasibility["feasible"]:
+                store.event("SAMPLING_INFEASIBLE", json.dumps(feasibility, sort_keys=True))
+                _health(store, "PAPER_SIGNAL_SAMPLING", "ROJO",
+                        "Configuración incapaz de reunir la ventana mínima: " +
+                        json.dumps(feasibility, sort_keys=True), "Runtime PAPER")
             cycle_started = now_iso()
             cycle_clock = time.perf_counter()
             cycle_ok = 0
@@ -811,8 +854,12 @@ def run():
                     store.add_quote(q)
                     quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
                     broker.on_quote(q)
-                    if q.time_error(now_iso(), require_trade=True):
-                        store.event("DATA_REJECTED", f"{symbol}: {q.time_error(now_iso(), require_trade=True)}")
+                    data_error = q.time_error(
+                        now_iso(), require_trade=True,
+                        max_age_seconds=broker.quote_max_age_seconds,
+                        max_trade_age_seconds=broker.trade_max_age_seconds)
+                    if data_error:
+                        store.event("DATA_REJECTED", f"{symbol}: {data_error}")
                         continue
                     cycle_ok += 1
                     store.state(last_market_data_at=q.observed_at)
@@ -845,7 +892,7 @@ def run():
                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                   (cycle_started, now_iso(), eligible_total, len(symbols), cycle_ok,
                    cycle_failures, duration, cursor_before, cursor_after, recommended,
-                   f"Límite configurado={ACTIVE_SYMBOL_LIMIT}; rotación activa; dos lecturas PPI por instrumento"))
+                   f"Límite={ACTIVE_SYMBOL_LIMIT}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
                 c.execute("DELETE FROM symbol_cycle_metrics WHERE id NOT IN (SELECT id FROM symbol_cycle_metrics ORDER BY id DESC LIMIT 10000)")
                 c.execute("DELETE FROM universe_cycle_metrics WHERE id NOT IN (SELECT id FROM universe_cycle_metrics ORDER BY id DESC LIMIT 5000)")
             metrics = reader.metrics

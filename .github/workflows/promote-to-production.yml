@@ -52,7 +52,8 @@ jobs:
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          ETIQUETA="v16.2-$(date +%Y%m%d-%H%M%S)"
+          VERSION=$(python -c 'from _version import VERSION; print(VERSION)')
+          ETIQUETA="v${VERSION}-$(date +%Y%m%d-%H%M%S)"
           git tag -a "$ETIQUETA" -m "Promocion a produccion por ${{ github.actor }}"
           git push origin "$ETIQUETA"
           git checkout main

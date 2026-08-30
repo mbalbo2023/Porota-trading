@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sqlite3
+import statistics
 from contextlib import closing
 from decimal import Decimal
 from datetime import datetime, timedelta
@@ -22,9 +23,9 @@ import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
 from bt_caucion_paper import validate_position, pending_proceeds
 from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
+from _version import VERSION
 
 
-VERSION = "17.0.0-rc3"
 DB_PATH = str(database_path())
 MODE = os.getenv("DASHBOARD_OPERATION_MODE", "DETENIDO").upper()
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -564,6 +565,7 @@ def _health_components():
     persisted = {r["component"]: r for r in _rows("SELECT * FROM api_health")} if _table("api_health") else {}
     jobs = {r["job_key"]: r for r in _rows("SELECT * FROM operational_jobs")} if _table("operational_jobs") else {}
     components = []
+    observer = (_rows("SELECT * FROM observer_state WHERE id=1") or [{}])[0] if _table("observer_state") else {}
 
     def add(name, key, mode, use, default="Sin verificación persistida."):
         row = persisted.get(key) or jobs.get(key)
@@ -591,8 +593,10 @@ def _health_components():
         "Cobertura incremental de todo el universo")
     add("PPI Producción — market data", "PPI_PRODUCTION_MARKETDATA", "SIMULACIÓN PRODUCTIVA",
         "Cotización y caja de puntas")
-    add("Google Gemini", "GEMINI_DECISION", "SIMULACIÓN / SANDBOX",
-        "Portón crítico, seguido del portón patrimonial")
+    if components[-1]["applicable"] and observer.get("session_state") != "MARKET_OPEN":
+        components[-1].update(
+            state="NO_APLICA", applicable=False,
+            detail="Rueda cerrada: current/book en vivo no se exige. Autenticación, catálogo e históricos continúan por separado.")
 
     tg = _report_state("telegram")
     tg_mode = "TODOS"
@@ -749,6 +753,13 @@ def _features(value):
     except Exception: return {}
 
 
+def _economics_status(payload):
+    economics = _features(payload).get("economics", {})
+    if not economics:
+        return "SIN_REGISTRO"
+    return "APPROVE" if economics.get("passed") else "SHADOW_REVIEW"
+
+
 def motor_page():
     spot=_spot_snapshot()
     positions=sorted(spot["open"]+spot["closed"],key=lambda p:aware_datetime(p["opened_at"]),reverse=True)[:100]
@@ -761,20 +772,20 @@ def motor_page():
         features=_features(p.get("features_json")); variables="".join(f"<tr><td>{_e(k)}</td><td>{_e(v)}</td></tr>" for k,v in sorted(features.items()))
         lesson=("Ganancia: el movimiento favorable superó costos y slippage." if pnl>0 else "Pérdida: revisar momentum, spread, profundidad, duración y contexto antes de ampliar exposición." if pnl<0 else "Resultado aún no cerrado; no cambia umbrales.")
         cards.append(f"""<details class='paper-trade'><summary>{_e(p['symbol'])} · {_e(p['status'])} · {_local_time(p['opened_at'])} · <span class='{cls}'>PnL {_money(pnl)} {_e(p.get('currency','ARS'))}</span></summary><div class='trade-body'>
-        <h3>Secuencia de portones</h3><table class='paper-table'><tr><th>Técnico</th><th>IA Gemini</th><th>Patrimonial / liquidez</th><th>Resultado final</th></tr><tr><td>{_status(gate.get('technical_gate','APPROVE'))}</td><td>{_status(gate.get('ai_gate','SIN_REGISTRO'))}</td><td>{_status(gate.get('patrimonial_gate','SIN_REGISTRO'))}</td><td>{_status(gate.get('final_result',p['status']))}</td></tr></table>
+        <h3>Secuencia de portones</h3><table class='paper-table'><tr><th>Técnico</th><th>Economía matemática</th><th>Patrimonial / liquidez</th><th>Resultado final</th></tr><tr><td>{_status(gate.get('technical_gate','APPROVE'))}</td><td>{_status('APPROVE' if features.get('economics',{}).get('passed') else 'SHADOW_REVIEW')}</td><td>{_status(gate.get('patrimonial_gate','SIN_REGISTRO'))}</td><td>{_status(gate.get('final_result',p['status']))}</td></tr></table>
         <p><b>Explicación:</b> {_e(gate.get('reason','Operación histórica sin secuencia completa persistida.'))}</p>
-        <p class='paper-notice'><b>Importante:</b> Gemini no es el último filtro absoluto. Puede aprobar la tesis y aun así capital, exposición, cantidad máxima o profundidad pueden bloquear el fill. Esto es correcto y protege el patrimonio paper.</p>
+        <p class='paper-notice'><b>Decisión reproducible:</b> la IA no participa de la rueda. Señal, economía, capital, exposición y profundidad se resuelven con reglas versionadas de Python.</p>
         <p><b>Cantidad remanente:</b> {_e(p['quantity'] if p['status']=='OPEN' else '0')}. <b>PnL parcial realizado:</b> {_e(p.get('realized_net_pnl','—'))} {_e(p.get('currency','ARS'))}. Una operación abierta todavía no tiene resultado final.</p>
         <h3>Variables utilizadas</h3><table class='paper-table'><tr><th>Variable</th><th>Valor</th></tr>{variables}</table>
         <h3>Lección aprendida</h3><p class='{cls}'>{_e(lesson)}</p></div></details>""")
-    gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(g['ai_gate'])}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
+    gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(_economics_status(g.get('detail_json')))}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas todavía.</div>'
-    body=f"<h1>Motor de trading</h1><p class='paper-muted'>Una única actualización visual; trazabilidad técnica → IA → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>IA</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
+    body=f"<h1>Motor de trading</h1><p class='paper-muted'>Trazabilidad técnica → economía matemática → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>Economía</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
     return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + body + _balances_panel() + _caucion_allocations_panel() + _cauciones_panel())
 
 
 def _next_check(component, checked):
-    cadence=21600 if "SANDBOX" in component or "BYMA" in component else 43200 if component in {"FINANCIAL_REFRESH","BCRA","INDEC"} else 3600 if "PPI" in component or "GEMINI" in component else 1800
+    cadence=21600 if "SANDBOX" in component or "BYMA" in component else 43200 if component in {"FINANCIAL_REFRESH","BCRA","INDEC"} else 3600 if "PPI" in component else 1800
     try:
         dt=datetime.fromisoformat(str(checked).replace("Z","+00:00"));
         if dt.tzinfo is None: dt=dt.replace(tzinfo=TZ)
@@ -883,8 +894,39 @@ def learning_page():
     data=snapshot(); pnl,wins,wr=_trade_metrics(data["closed"])
     rows="".join(f"<tr class='{'card-green' if _num(p.get('net_pnl'))>0 else 'card-red' if _num(p.get('net_pnl'))<0 else 'card-gray'}'><td>{_local_time(p.get('opened_at'))}</td><td><b>{_e(p['symbol'])}</b></td><td>{_status('WIN' if _num(p.get('net_pnl'))>0 else 'LOSS' if _num(p.get('net_pnl'))<0 else p.get('status'))}</td><td class='{'positive' if _num(p.get('net_pnl'))>0 else 'negative' if _num(p.get('net_pnl'))<0 else 'neutral'}'>{_money(p.get('net_pnl'))} {_e(p.get('currency','ARS'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in data["closed"][:100]) or "<tr><td colspan='5'>Sin muestras cerradas.</td></tr>"
     cards="".join((_card("Muestras cerradas",len(data["closed"]),"Etiquetas para aprendizaje","green" if data["closed"] else "gray"),_card("Win rate","s/d" if wr is None else f"{wr:.1f}%",f"{wins}/{len(data['closed'])}","green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),_card("Resultado ARS",_money(pnl),"Neto de costos y slippage paper","green" if pnl>0 else "red" if pnl<0 else "gray")))
-    body=f"<h1>Aprendizaje del sistema</h1><div class='paper-grid'>{cards}</div><div class='paper-notice'>Cada compra simulada conserva variables, decisión IA, portón patrimonial, resultado y lección. El archivo intensivo para discutir con una IA está en Reportes.</div><div class='paper-card'><table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Etiqueta</th><th>PnL neto</th><th>Motivo</th></tr>{rows}</table></div>"
+    body=f"<h1>Aprendizaje del sistema</h1><div class='paper-grid'>{cards}</div><div class='paper-notice'>Cada compra simulada conserva señal, economía, riesgo, liquidez, resultado y lección. Python genera el diagnóstico diario; cualquier revisión posterior con IA será batch, opcional y nunca cambiará parámetros automáticamente.</div><div class='paper-card'><table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Etiqueta</th><th>PnL neto</th><th>Motivo</th></tr>{rows}</table></div>"
     return _document("Aprendizaje",_spot_warning(data["spot_state"])+body)
+
+
+def _porota_leaders_proxy():
+    """Pulso propio sobre líderes observados; no replica ni nombra un índice."""
+    focus = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
+    if not _table("market_snapshots"):
+        return {"returns": [], "average": None, "breadth": "s/d", "as_of": None}
+    placeholders = ",".join("?" for _ in focus)
+    rows = _rows(f"""SELECT symbol,trade_at,last FROM market_snapshots
+      WHERE symbol IN ({placeholders}) AND last_kind='TRADE' AND trade_at IS NOT NULL
+      ORDER BY symbol,julianday(trade_at) DESC,id DESC""", focus)
+    samples = {}
+    for row in rows:
+        values = samples.setdefault(row["symbol"], [])
+        if row["trade_at"] not in {value[0] for value in values} and _num(row["last"]) > 0:
+            values.append((row["trade_at"], _num(row["last"])))
+    returns = []
+    for symbol, values in samples.items():
+        if len(values) >= 2 and values[1][1] > 0:
+            returns.append({"symbol": symbol, "return": (values[0][1] / values[1][1] - 1) * 100,
+                            "as_of": values[0][0]})
+    returns.sort(key=lambda value: value["return"], reverse=True)
+    if not returns:
+        return {"returns": [], "average": None, "breadth": "s/d", "as_of": None}
+    rising = sum(value["return"] > 0 for value in returns)
+    falling = sum(value["return"] < 0 for value in returns)
+    return {"returns": returns,
+            "average": statistics.fmean(value["return"] for value in returns),
+            "median": statistics.median(value["return"] for value in returns),
+            "breadth": f"{rising} suben / {falling} bajan / {len(returns)-rising-falling} sin cambio",
+            "as_of": max(value["as_of"] for value in returns)}
 
 
 def financial_page():
@@ -900,9 +942,12 @@ def financial_page():
     ipc=_rows("SELECT substr(observed_date,1,7) month,value FROM financial_series WHERE indicator='IPC mensual INDEC' ORDER BY observed_date DESC LIMIT 24") if _table("financial_series") else []
     ipc_map={r['month']:r['value'] for r in ipc}
     compare="".join(f"<tr><td>{_e(r['month'])}</td><td>{_e(ipc_map.get(r['month'],'s/d'))}%</td><td class='{'positive' if _num(r['pnl'])>0 else 'negative' if _num(r['pnl'])<0 else 'neutral'}'>{_money(r['pnl'])} ARS</td><td>NO COMPARABLE: falta rentabilidad porcentual del período</td></tr>" for r in monthly) or "<tr><td colspan='4'>Aún no hay meses cerrados.</td></tr>"
-    merval=_rows("SELECT * FROM production_history WHERE symbol IN ('MERVAL','SPMERVAL') ORDER BY downloaded_at DESC LIMIT 1") if _table("production_history") else []
-    merval_state="Histórico PPI disponible" if merval else "Pendiente de validación PPI; no se scrapea ni redistribuye BYMA sin licencia"
-    body=f"<h1>Información financiera</h1><p class='paper-muted'>Indicadores para preparar la operatoria diaria. Fuentes oficiales BCRA/INDEC y benchmark de mercado por canal autorizado.</p><div class='paper-grid'>{_card('S&P Merval',merval_state,'Benchmark contra performance paper','green' if merval else 'yellow')}{_card('Actualización macro','12 horas','Caché local; la página no llama APIs','green')}</div><div class='paper-card'><h2>Indicadores BCRA e INDEC</h2><table class='paper-table'><tr><th>Indicador</th><th>Valor</th><th>Unidad</th><th>Fecha</th><th>Fuente</th></tr>{values}</table></div><div class='paper-card'><h2>Inflación vs performance del bot</h2><table class='paper-table'><tr><th>Mes</th><th>Inflación mensual</th><th>PnL paper</th><th>Lectura</th></tr>{compare}</table></div><div class='paper-notice'>La comparación correcta a futuro será rentabilidad porcentual del patrimonio paper contra inflación y Merval del mismo período; se mostrará cuando exista un mes completo y un benchmark autorizado con fechas alineadas.</div>"
+    proxy = _porota_leaders_proxy()
+    proxy_value = "s/d" if proxy["average"] is None else f"{proxy['average']:+.2f}%"
+    median_value = "s/d" if proxy["average"] is None else f"{proxy['median']:+.2f}%"
+    proxy_asof = f"Última muestra {_local_time(proxy['as_of'])}"
+    proxy_rows = "".join(f"<tr><td><b>{_e(r['symbol'])}</b></td><td class='{'positive' if r['return']>0 else 'negative' if r['return']<0 else 'neutral'}'>{r['return']:+.2f}%</td><td>{_local_time(r['as_of'])}</td></tr>" for r in proxy["returns"]) or "<tr><td colspan='3'>Esperando dos muestras de negocio por instrumento.</td></tr>"
+    body=f"<h1>Información financiera</h1><p class='paper-muted'>Indicadores para preparar la operatoria diaria con datos observados y cálculos propios reproducibles.</p><div class='paper-grid'>{_card('Pulso Porota - líderes',proxy_value,proxy['breadth'],'green' if proxy['average'] is not None else 'gray')}{_card('Mediana de líderes',median_value,proxy_asof,'green' if proxy['average'] is not None else 'gray')}{_card('Actualización macro','12 horas','Caché local; la página no llama APIs','green')}</div><div class='paper-card'><h2>Componentes del pulso propio</h2><table class='paper-table'><tr><th>Instrumento</th><th>Variación entre muestras</th><th>Último negocio</th></tr>{proxy_rows}</table><p class='paper-muted'>Indicador interno equiponderado; sirve para amplitud y contexto. No representa un índice oficial ni reemplaza precios ejecutables.</p></div><div class='paper-card'><h2>Indicadores BCRA e INDEC</h2><table class='paper-table'><tr><th>Indicador</th><th>Valor</th><th>Unidad</th><th>Fecha</th><th>Fuente</th></tr>{values}</table></div><div class='paper-card'><h2>Inflación vs performance del bot</h2><table class='paper-table'><tr><th>Mes</th><th>Inflación mensual</th><th>PnL paper</th><th>Lectura</th></tr>{compare}</table></div><div class='paper-notice'>La comparación válida requiere rentabilidad porcentual del patrimonio PAPER y del pulso propio sobre períodos idénticos; se habilitará al completar el primer mes.</div>"
     return _document("Información financiera",_spot_warning(spot["state"])+body,refresh=300)
 
 

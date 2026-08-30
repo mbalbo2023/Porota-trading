@@ -50,6 +50,7 @@ from zoneinfo import ZoneInfo
 import uvicorn
 import ac_db  # NUEVO EN v15.0 — conexión SQLite única (WAL + timeout)
 import bb_runtime_status as runtime_status
+from _version import VERSION
 
 DB_PATH = os.getenv("DB_PATH", "data/trading_system.db")
 DASHBOARD_ACCESS_TOKEN = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
@@ -84,7 +85,6 @@ STARTUP_STATE_PATH = os.getenv("STARTUP_STATE_PATH", "data/startup_state.json")
 # Fuente única de la versión. El endpoint /health devolvía "15.0" mientras la
 # portada del documento decía otra cosa: la inconsistencia de inventario fue
 # un hallazgo de la auditoría anterior y se corrige teniendo un solo lugar.
-VERSION = "17.0.0-rc3"
 # NUEVO EN v10.5 — auditorías 2 y 3, hallazgo "Exposición de token en
 # URL": vigencia del token CSRF de /config, en segundos.
 CSRF_TOKEN_MAX_AGE_SECONDS = int(os.getenv("CSRF_TOKEN_MAX_AGE_SECONDS", "900"))

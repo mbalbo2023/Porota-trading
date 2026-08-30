@@ -858,7 +858,9 @@ def test_caucion_consulta_pasada_no_usa_apertura_ni_acreditacion_futura(tmp_path
     assert broker._cash(as_of=offer.maturity_at)==10002
     assert broker.cauciones.valuation(before)==dict(principal=D(0),accrued=D(0),unrealized=D(0),realized=D(0))
     during = broker.cauciones.valuation(offer.quoted_at)
-    assert during['principal']==1000 and during['realized']==0 and during['unrealized']==-1
+    expected_unrealized = D(-1 if payment == 'MATURITY' else 0)
+    assert (during['principal']==1000 and during['realized']==0
+            and during['unrealized']==expected_unrealized)
     assert broker.cauciones.valuation(offer.maturity_at)['realized']==2
     # Vencido en el ledger no significa que ya estaba acreditado el viernes.
     assert broker.mark_equity({},as_of=offer.quoted_at)['ARS']['equity']==9999
@@ -1225,6 +1227,19 @@ def test_guard_permite_solo_host_https_y_rutas_lectura():
     with pytest.raises(ReadOnlyPolicyViolation):
         g.check("POST", "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi",
                 count_login=True)
+
+
+def test_guard_permite_relogin_controlado_despues_del_cooldown():
+    clock = [1000.0]
+    g = ReadOnlyTransportGuard(login_cooldown_seconds=900, clock=lambda: clock[0])
+    url = "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi"
+    assert g.check("POST", url, count_login=True)
+    clock[0] += 899
+    with pytest.raises(ReadOnlyPolicyViolation):
+        g.check("POST", url, count_login=True)
+    clock[0] += 1
+    assert g.check("POST", url, count_login=True)
+    assert g.login_calls == 2
 
 
 def test_guard_permite_catalogo_e_historicos_pero_no_cuenta_ni_ordenes():

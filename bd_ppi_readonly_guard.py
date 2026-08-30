@@ -8,6 +8,7 @@ rechaza antes de que requests entregue el paquete al adaptador de red.
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 from urllib.parse import urlsplit
@@ -59,10 +60,13 @@ class ReadOnlyTransportGuard:
     calls_allowed: int = 0
     calls_blocked: int = 0
     login_calls: int = 0
+    login_cooldown_seconds: int = 900
+    clock: Callable[[], float] = time.monotonic
     _installed: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _original_request: object = None
     _original_send: object = None
+    _last_login_at: Optional[float] = None
 
     def _record(self, method: str, path: str, result: str) -> None:
         if self.audit:
@@ -87,11 +91,14 @@ class ReadOnlyTransportGuard:
 
         with self._lock:
             if count_login and path == "/api/1.0/account/loginapi":
-                if self.login_calls >= 1:
+                now = self.clock()
+                if (self._last_login_at is not None and
+                        now - self._last_login_at < self.login_cooldown_seconds):
                     raise ReadOnlyPolicyViolation(
-                        "Segundo login bloqueado dentro del mismo proceso."
+                        "Login adicional bloqueado durante el cooldown."
                     )
                 self.login_calls += 1
+                self._last_login_at = now
         return method, path
 
     def install(self) -> "ReadOnlyTransportGuard":

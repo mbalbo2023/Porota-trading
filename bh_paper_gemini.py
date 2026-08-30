@@ -25,6 +25,20 @@ CURRENT_TEXT_MODELS = (
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
 )
+MAX_MODELS_PER_DECISION = max(1, min(2, int(os.getenv("GEMINI_MAX_MODELS_PER_DECISION", "2"))))
+REQUEST_TIMEOUT_MS = max(1000, int(os.getenv("GEMINI_TIMEOUT_MS", "8000")))
+RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "decision": {"type": "string", "enum": ["APPROVE", "VETO", "HOLD"]},
+        "score": {"type": "number", "minimum": 0, "maximum": 1},
+        "veto": {"type": "boolean"},
+        "reason": {"type": "string"},
+        "risks": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["decision", "score", "veto", "reason", "risks"],
+    "additionalProperties": False,
+}
 RETIRED_MODELS = {"gemini-2.5-flash-lite"}
 NON_TEXT_MARKERS = (
     "embedding", "imagen", "veo", "tts", "live", "robotics", "computer-use",
@@ -126,11 +140,16 @@ class GeminiPaperGate:
     def _call(self, prompt):
         from google.genai import types
         errors = []
-        for model in self.models:
+        for model in self.models[:MAX_MODELS_PER_DECISION]:
             try:
                 response = self.client.models.generate_content(
                     model=model, contents=prompt,
-                    config=types.GenerateContentConfig(response_mime_type="application/json"),
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_json_schema=RESPONSE_SCHEMA,
+                        http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS),
+                        temperature=0,
+                    ),
                 )
                 result = self._parse(response, model)
                 self.model = model

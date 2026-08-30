@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 from urllib.parse import quote, urlsplit
+from _version import IMAGE
 
 VERSION = 'v17-public-probe-1'
 SECRET = '/run/secrets/ppi_production.json'
@@ -25,7 +26,7 @@ HOST_SECRET = '/opt/porota-trading/.secrets/ppi_production.json'
 OBSERVER = 'porota_production_observer'
 BOT = 'porota_trading_bot'
 PROBE_NAME = 'porota_v17_ppi_probe'
-IMAGE_TAG = 'porota-trading-bot:16.3.5'
+IMAGE_TAG = IMAGE
 CONFIG_NAMES = ('instrument_types','markets','settlements','quantity_types',
                 'operation_terms','operation_types','operations')
 QUERIES = (('CAUCION','CAUCIONES'),('PESOS','CAUCIONES'),

@@ -24,7 +24,7 @@ import cd_spot_ledger as spot_ledger
 
 
 SOURCE = "PRODUCTION_PAPER"
-STRATEGY_VERSION = "paper-momentum-v17.3-partial-fills"
+STRATEGY_VERSION = "paper-momentum-v17.0-rc3-hf1"
 ZERO = Decimal("0")
 
 
@@ -60,7 +60,8 @@ class Quote:
     trade_at: Optional[str] = None
     last_kind: str = "UNKNOWN"
 
-    def time_error(self, as_of, *, require_trade=False, max_age_seconds=120):
+    def time_error(self, as_of, *, require_trade=False, max_age_seconds=120,
+                   max_trade_age_seconds=None):
         """Hora del proveedor y recepción, nunca reemplazadas por la hora local.
 
         Un libro fresco sirve para salir aunque el último negocio sea antiguo.
@@ -71,18 +72,20 @@ class Quote:
             received = aware_datetime(self.observed_at, "recepción")
             if not 0 <= (at - received).total_seconds() <= max_age_seconds:
                 return "RECEIPT_STALE_OR_FUTURE"
-            fields = [(self.book_at, "BOOK")]
+            fields = [(self.book_at, "BOOK", max_age_seconds)]
             if require_trade:
                 if self.last_kind != "TRADE":
                     return "LAST_IS_NOT_A_TRADE"
-                fields.append((self.trade_at, "TRADE"))
-            for value, label in fields:
+                fields.append((self.trade_at, "TRADE",
+                               max_age_seconds if max_trade_age_seconds is None
+                               else max_trade_age_seconds))
+            for value, label, allowed_age in fields:
                 if not value:
                     return label + "_TIME_MISSING"
                 source_at = aware_datetime(value, label)
                 if source_at > received or source_at > at:
                     return label + "_TIME_FUTURE"
-                if (at - source_at).total_seconds() > max_age_seconds:
+                if (at - source_at).total_seconds() > allowed_age:
                     return label + "_STALE"
         except (ValueError, TypeError):
             return "INVALID_OR_NAIVE_TIMESTAMP"
@@ -413,7 +416,12 @@ class PaperBroker:
                  ai_gate=None, require_ai=False, context_fn=None,
                  initial_cash_usd="0", initial_cash_by_currency=None,
                  clock_fn=None, session_policy=None, require_supervisor=False,
-                 quote_max_age_seconds=120, daily_loss_pct=None):
+                 quote_max_age_seconds=120, trade_max_age_seconds=900,
+                 signal_min_samples=8, signal_window_minutes=90,
+                 score_threshold="0.62", ai_mode="BINDING",
+                 economics_mode="SHADOW", min_net_reward_risk="1.20",
+                 stop_loss_pct="0.02", target_gain_pct="0.035",
+                 daily_loss_pct=None):
         self.store = store
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
@@ -440,6 +448,21 @@ class PaperBroker:
         self.session_policy = session_policy
         self.require_supervisor = require_supervisor
         self.quote_max_age_seconds = quote_max_age_seconds
+        self.trade_max_age_seconds = trade_max_age_seconds
+        self.signal_min_samples = max(3, int(signal_min_samples))
+        self.signal_window_minutes = max(15, int(signal_window_minutes))
+        self.score_threshold = decimal_value(score_threshold, "umbral de score", nonnegative=True)
+        if self.score_threshold > 1:
+            raise ValueError("El umbral de score debe estar entre 0 y 1")
+        self.ai_mode = str(ai_mode or "BINDING").upper()
+        self.economics_mode = str(economics_mode or "SHADOW").upper()
+        if self.ai_mode not in {"BINDING", "SHADOW", "OFF"}:
+            raise ValueError("PAPER_AI_GATE_MODE debe ser BINDING, SHADOW u OFF")
+        if self.economics_mode not in {"BINDING", "SHADOW"}:
+            raise ValueError("PAPER_ECONOMIC_GATE_MODE debe ser BINDING o SHADOW")
+        self.min_net_reward_risk = decimal_value(min_net_reward_risk, "reward/risk neto", nonnegative=True)
+        self.stop_loss_pct = decimal_value(stop_loss_pct, "stop", positive=True)
+        self.target_gain_pct = decimal_value(target_gain_pct, "objetivo", positive=True)
         from bw_daily_risk import DailyRisk
         self.daily_risk = DailyRisk(self,daily_loss_pct) if daily_loss_pct is not None else None
 
@@ -447,7 +470,9 @@ class PaperBroker:
         return self.clock_fn() if self.clock_fn else q.observed_at
 
     def admission_error(self, q, at, *, connection=None):
-        error = q.time_error(at, require_trade=True, max_age_seconds=self.quote_max_age_seconds)
+        error = q.time_error(at, require_trade=True,
+                             max_age_seconds=self.quote_max_age_seconds,
+                             max_trade_age_seconds=self.trade_max_age_seconds)
         if error:
             return error
         if self.session_policy:
@@ -559,12 +584,13 @@ class PaperBroker:
         return allocate_conservative(self,offers,window,request_id,as_of=as_of)
 
     def threshold(self, as_of=None):
-        closed = self.store.recent_closed(20, strategy_version=STRATEGY_VERSION, closed_before=as_of)
-        if len(closed) < 5:
-            return D("0.62")
-        wins = sum(1 for p in closed if D(p.get("net_pnl")) > 0)
-        rate = D(wins) / D(len(closed))
-        return D("0.67") if rate < D("0.45") else D("0.58") if rate > D("0.65") else D("0.62")
+        # Congelado por versión. PAPER observa resultados; no auto-promueve
+        # parámetros a partir de una muestra corta y procíclica. La lectura
+        # conserva la validación de integridad del ledger antes de exponerlo
+        # al aprendizaje, aunque su win rate ya no cambie el umbral.
+        self.store.recent_closed(20, strategy_version=STRATEGY_VERSION,
+                                 closed_before=as_of)
+        return self.score_threshold
 
     def decide(self, q: Quote):
         try:
@@ -581,24 +607,54 @@ class PaperBroker:
             return "HOLD", ZERO, f"Sin capital asignado en {currency}; no se usa otra moneda/plaza", {"samples": 0}
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
             return "HOLD", ZERO, "Puntas o profundidad invalidas", {"samples": 0}
-        values = self.store.signal_prices(q, at)
-        if len(values) < 8:
-            return "HOLD", D("0"), f"Aprendiendo serie: {len(values)}/8 muestras", {"samples": len(values)}
+        values = self.store.signal_prices(
+            q, at, limit=max(20, self.signal_min_samples),
+            window_minutes=self.signal_window_minutes)
+        if len(values) < self.signal_min_samples:
+            return "HOLD", D("0"), (f"Aprendiendo serie: {len(values)}/"
+                                      f"{self.signal_min_samples} muestras"), {"samples": len(values)}
         short = sum(values[-3:], ZERO) / D(3)
-        long = sum(values[-8:], ZERO) / D(8)
+        long_span = min(8, len(values))
+        long = sum(values[-long_span:], ZERO) / D(long_span)
         momentum = (short / long - 1) if long else ZERO
         spread = (q.ask / q.bid - 1) if q.bid else D("99")
         score = max(ZERO, min(D(1), D("0.5") + momentum * D(40) - spread * D(10)))
-        features = {"sma3": str(short), "sma8": str(long), "momentum": str(momentum),
+        features = {"sma3": str(short), f"sma{long_span}": str(long), "momentum": str(momentum),
                     "spread": str(spread), "samples": len(values),
+                    "signal_window_minutes": self.signal_window_minutes,
                     "paper_threshold": str(self.threshold(at))}
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
             return "HOLD", score, "Puntas o profundidad insuficientes", features
         if spread > D("0.02"):
             return "HOLD", score, "Spread superior al 2%", features
         if score < self.threshold(at):
-            return "HOLD", score, "Score paper debajo del umbral adaptativo", features
+            return "HOLD", score, "Score paper debajo del umbral versionado", features
         return "BUY", score, "Momentum positivo y friccion admisible", features
+
+    def _economic_diagnostics(self, q):
+        """Economía ex ante del contrato vigente, sin inventar alpha esperado."""
+        entry = q.ask * (1 + self.slippage)
+        stop = entry * (1 - self.stop_loss_pct)
+        target = entry * (1 + self.target_gain_pct)
+        stop_fill = stop * (1 - self.slippage)
+        target_fill = target * (1 - self.slippage)
+        entry_cost = self._cost(entry, D(1), q.asset_class)
+        stop_cost = self._cost(stop_fill, D(1), q.asset_class)
+        target_cost = self._cost(target_fill, D(1), q.asset_class)
+        net_reward = target_fill - entry - entry_cost - target_cost
+        net_loss = entry - stop_fill + entry_cost + stop_cost
+        ratio = net_reward / net_loss if net_loss > 0 else ZERO
+        breakeven = net_loss / (net_loss + max(ZERO, net_reward)) if net_loss > 0 else D(1)
+        passed = net_reward > 0 and ratio >= self.min_net_reward_risk
+        return {
+            "modeled_tariff": "FULL_PER_LEG_CONSERVATIVE_NO_INTRADAY_REBATE",
+            "net_reward_per_unit": str(net_reward),
+            "net_loss_per_unit": str(net_loss),
+            "net_reward_risk": str(ratio),
+            "breakeven_win_rate": str(breakeven),
+            "minimum_net_reward_risk": str(self.min_net_reward_risk),
+            "passed": passed,
+        }
 
     def on_quote(self, q: Quote):
         if self._maybe_close(q):
@@ -612,13 +668,25 @@ class PaperBroker:
             return
         self.store.event("DECISION_PAPER", f"{q.symbol} {action}: {reason}")
         if action == "BUY":
-            if self.ai_gate is None and self.require_ai:
+            economics = self._economic_diagnostics(q)
+            features["economics"] = economics
+            if not economics["passed"]:
+                self.store.event("ECONOMIC_GATE_" + self.economics_mode,
+                                 f"{q.symbol}: reward/risk neto {economics['net_reward_risk']}")
+                if self.economics_mode == "BINDING":
+                    self.store.record_gates(q, key, "APPROVE", "NOT_EVALUATED",
+                                            "NOT_EVALUATED", "BLOCKED",
+                                            "Economía ex ante no supera el mínimo versionado",
+                                            detail=features)
+                    return
+            ai_result = "NOT_USED"
+            if self.ai_gate is None and self.require_ai and self.ai_mode == "BINDING":
                 self.store.event("AI_VETO_PAPER", f"{q.symbol}: Gemini no disponible; porton cerrado")
                 self.store.record_gates(q, key, "APPROVE", "VETO", "NOT_EVALUATED",
                                         "BLOCKED", "Gemini no disponible; portón cerrado",
                                         detail=features)
                 return
-            if self.ai_gate is not None:
+            if self.ai_gate is not None and self.ai_mode != "OFF":
                 try:
                     context = self.context_fn(q.symbol) if self.context_fn else {}
                     ai = self.ai_gate.evaluate(q, score, features, context)
@@ -627,9 +695,11 @@ class PaperBroker:
                           "reason": f"Gemini no disponible: {type(exc).__name__}: {str(exc)[:300]}",
                           "model": "NO_DISPONIBLE", "raw": {}}
                 self.store.record_ai(q, ai, features)
+                ai_result = str(ai.get("decision", "VETO"))
                 features["gemini"] = {key: ai.get(key) for key in
                                        ("decision", "score", "veto", "reason", "model")}
-                if ai.get("decision") != "APPROVE" or ai.get("veto", True):
+                if ((ai.get("decision") != "APPROVE" or ai.get("veto", True))
+                        and self.ai_mode == "BINDING"):
                     self.store.event("AI_VETO_PAPER", f"{q.symbol}: {ai.get('reason')}")
                     self.store.record_gates(q, key, "APPROVE", str(ai.get("decision", "VETO")),
                                             "NOT_EVALUATED", "BLOCKED",
@@ -638,7 +708,7 @@ class PaperBroker:
                     return
             opened, gate_reason, paper_id = self._open(q, score, features)
             self.store.record_gates(
-                q, key, "APPROVE", "APPROVE",
+                q, key, "APPROVE", ai_result,
                 "APPROVE" if opened else "BLOCKED",
                 "OPENED_SIMULATED" if opened else "BLOCKED", gate_reason,
                 paper_id=paper_id, detail=features)
@@ -659,7 +729,7 @@ class PaperBroker:
             return False, f"{family} requiere su ciclo financiero específico; no se compra como una acción", None
         if market != "BYMA":
             return False, "Ejecutor de contado pendiente para este mercado", None
-        capital = self.initial_balances[currency]
+        capital, capital_source = self._risk_capital(currency)
         factor, step = D(1), D(1)
         if q.contract is not None:
             spec = q.contract
@@ -681,8 +751,8 @@ class PaperBroker:
         entry = (q.ask * (1 + self.slippage)).quantize(Decimal("0.0001"))
         if entry <= 0:
             return False, "Precio de entrada no representable", None
-        stop = entry * D("0.98")
-        target = entry * D("1.035")
+        stop = entry * (1 - self.stop_loss_pct)
+        target = entry * (1 + self.target_gain_pct)
         modeled_stop_fill = (stop * (1 - self.slippage)).quantize(Decimal("0.0001"))
         # Incluye ambos tramos y deslizamiento de salida, sin afirmar que un
         # stop garantice este precio ante gaps o falta de liquidez.
@@ -712,7 +782,9 @@ class PaperBroker:
             "contract_cash_multiplier": str(factor), "contract_quantity_step": str(step),
             "financial_contract": asdict(q.contract) if q.contract else None,
             "capital_currency": currency, "market": market,
-            "initial_capital": str(capital), "risk_budget": str(capital * self.risk_pct),
+            "risk_capital": str(capital), "risk_capital_source": capital_source,
+            "initial_capital": str(self.initial_balances[currency]),
+            "risk_budget": str(capital * self.risk_pct),
             "max_position_pct": str(self.max_position_pct),
             "max_total_exposure_pct": str(self.max_total_exposure_pct),
             "qty_by_risk": str(by_risk),
@@ -775,6 +847,17 @@ class PaperBroker:
             if self.daily_risk:
                 self.daily_risk.evaluate(at,connection=c,quotes={q.symbol:q})
         return True, "Todos los portones aprobaron; compra simulada registrada", paper_id
+
+    def _risk_capital(self, currency):
+        """No aumenta riesgo por ganancias; sí reduce tamaño tras drawdown."""
+        initial = self.initial_balances[currency]
+        with self.store.connect() as c:
+            row = c.execute("""SELECT equity FROM paper_equity_by_currency
+              WHERE currency=? ORDER BY id DESC LIMIT 1""", (currency,)).fetchone()
+        if not row:
+            return initial, "INITIAL_NO_EQUITY_SNAPSHOT"
+        equity = max(ZERO, decimal_value(row[0], "equity", nonnegative=True))
+        return min(initial, equity), "LATEST_EQUITY_CAPPED_AT_INITIAL"
 
     def _maybe_close(self, q: Quote):
         p = self.store.open_position(q.symbol)

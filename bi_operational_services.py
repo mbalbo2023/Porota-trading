@@ -493,7 +493,7 @@ def _pdf(story, path):
     blocks += [Spacer(1, 10), Paragraph("Trazabilidad de portones", styles["Heading2"])]
     for gate in story["secuencia_de_portones"][-30:]:
         blocks.append(Paragraph(html.escape(
-            f"{gate.get('symbol')}: técnico={gate.get('technical_gate')}; IA={gate.get('ai_gate')}; "
+            f"{gate.get('symbol')}: técnico={gate.get('technical_gate')}; "
             f"patrimonial={gate.get('patrimonial_gate')}; final={gate.get('final_result')}. {gate.get('reason')}"), styles["BodyText"]))
     doc.build(blocks)
 

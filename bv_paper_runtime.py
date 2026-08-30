@@ -35,7 +35,16 @@ def broker_from_environment(store, **overrides):
         max_position_pct=os.getenv("PAPER_MAX_POSITION_PCT", "0.25"),
         max_total_exposure_pct=os.getenv("PAPER_MAX_TOTAL_EXPOSURE_PCT", "0.60"),
         clock_fn=now_iso, session_policy=PaperSessionPolicy(), require_supervisor=True,
-        quote_max_age_seconds=120,
+        quote_max_age_seconds=int(os.getenv("PAPER_BOOK_MAX_AGE_SECONDS", "120")),
+        trade_max_age_seconds=int(os.getenv("PAPER_TRADE_MAX_AGE_SECONDS", "900")),
+        signal_min_samples=int(os.getenv("PAPER_SIGNAL_MIN_SAMPLES", "6")),
+        signal_window_minutes=int(os.getenv("PAPER_SIGNAL_WINDOW_MINUTES", "90")),
+        score_threshold=os.getenv("PAPER_SCORE_THRESHOLD", "0.62"),
+        ai_mode=os.getenv("PAPER_AI_GATE_MODE", "OFF"),
+        economics_mode=os.getenv("PAPER_ECONOMIC_GATE_MODE", "SHADOW"),
+        min_net_reward_risk=os.getenv("PAPER_MIN_NET_REWARD_RISK", "1.20"),
+        stop_loss_pct=os.getenv("PAPER_STOP_LOSS_PCT", "0.02"),
+        target_gain_pct=os.getenv("PAPER_TARGET_GAIN_PCT", "0.035"),
         daily_loss_pct=os.getenv('MAX_DAILY_LOSS_PCT','1.0'))
     values.update(overrides)
     return PaperBroker(store, **values)

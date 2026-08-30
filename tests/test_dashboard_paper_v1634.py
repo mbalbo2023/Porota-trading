@@ -202,7 +202,7 @@ def test_menu_unico_elimina_los_dos_menus_anteriores(monkeypatch):
     assert "duplicado" not in rendered
 
 
-def test_motor_muestra_trazabilidad_y_explica_porton_gemini(tmp_path, monkeypatch):
+def test_motor_muestra_trazabilidad_matematica_sin_porton_ia(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
     monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
@@ -226,7 +226,9 @@ def test_motor_muestra_trazabilidad_y_explica_porton_gemini(tmp_path, monkeypatc
     assert "<details class='paper-trade'>" in rendered
     assert "Variables utilizadas" in rendered
     assert "Secuencia de portones" in rendered
-    assert "Gemini no es el último filtro absoluto" in rendered
+    assert "la IA no participa de la rueda" in rendered
+    assert "Economía matemática" in rendered
+    assert "IA Gemini" not in rendered
     assert "Decisiones bloqueadas o aprobadas" in rendered
     assert "Todas las operaciones de esta página son simuladas" in rendered
 
@@ -272,7 +274,7 @@ def test_portada_y_logs_tienen_documento_moderno_sin_menu_repetido(tmp_path, mon
     assert "Gestión de logs" in bg_paper_dashboard.logs_page()
 
 
-def test_gemini_figura_como_porton_critico_y_lee_salud_persistida(tmp_path, monkeypatch):
+def test_gemini_no_figura_como_api_critica_aunque_haya_salud_historica(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
     monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
@@ -284,9 +286,9 @@ def test_gemini_figura_como_porton_critico_y_lee_salud_persistida(tmp_path, monk
     import bg_paper_dashboard
     bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
     page = bg_paper_dashboard.health_page()
-    assert "Portón crítico, seguido del portón patrimonial" in page
-    assert "Modelo activo y contrato JSON correcto" in page
-    assert "Desactivado en esta versión paper" not in page
+    assert "Portón crítico, seguido del portón patrimonial" not in page
+    assert "Modelo activo y contrato JSON correcto" not in page
+    assert "Google Gemini" not in page
 
 
 def test_clave_error_null_no_convierte_reporte_en_rojo(tmp_path, monkeypatch):

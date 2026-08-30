@@ -18,10 +18,10 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 import aa_env_guard as env_guard
 import bb_runtime_status as runtime_status
 from v_config_metadata import CONFIG_METADATA
+from _version import VERSION
 
 
 LOG_DIR = os.getenv("LOG_DIR", "data/logs")
-VERSION = "16.3.5"
 _installed = False
 
 MODERN_CSS = """

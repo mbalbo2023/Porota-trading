@@ -7,7 +7,8 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 SOURCES={'__main__.py':'scripts/v17_ppi_public_probe.py',
-         'bd_ppi_readonly_guard.py':'bd_ppi_readonly_guard.py'}
+         'bd_ppi_readonly_guard.py':'bd_ppi_readonly_guard.py',
+         '_version.py':'_version.py'}
 
 
 def build(destination):

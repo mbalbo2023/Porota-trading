@@ -347,7 +347,7 @@ def test_zip_reproducible_solo_fuentes_y_cli_sin_sdk_ni_login(tmp_path):
     builder.build(b)
     assert a.read_bytes()==b.read_bytes()
     with zipfile.ZipFile(a) as z:
-        assert set(z.namelist())=={'__main__.py','bd_ppi_readonly_guard.py','MANIFEST.json'}
+        assert set(z.namelist())=={'__main__.py','bd_ppi_readonly_guard.py','_version.py','MANIFEST.json'}
         manifest=json.loads(z.read('MANIFEST.json'))
         for name,entry in manifest['files'].items():
             assert z.read(name)==(ROOT/entry['source']).read_bytes()

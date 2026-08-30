@@ -69,6 +69,7 @@ class Arancel:
     # el monto operado igual que el derecho, pero se declara aparte para que
     # el desglose del panel muestre de dónde sale cada peso.
     derecho_sobre_prima: float = 0.0
+    prima_iva: bool = True
     nota: str = ""
 
 
@@ -113,7 +114,7 @@ ARANCELES: Dict[str, Arancel] = {
     "OPCIONES": Arancel(
         comision=0.0100, derecho=0.0005,
         comision_iva=True, derecho_iva=True,
-        derecho_sobre_prima=0.0020,
+        derecho_sobre_prima=0.0020, prima_iva=True,
         nota="Comisión 1% + IVA (casi el doble que renta variable) más un "
              "derecho de 0,20% sobre la prima. Es la clase donde el costo "
              "plano subestimaba, que es el lado que aprueba operaciones "
@@ -200,6 +201,7 @@ def arancel_de(clase: Optional[str]) -> Arancel:
         comision_iva=base.comision_iva,
         derecho_iva=base.derecho_iva,
         derecho_sobre_prima=_override(c, "derecho_sobre_prima", base.derecho_sobre_prima),
+        prima_iva=base.prima_iva,
         nota=base.nota,
     )
 
@@ -209,7 +211,7 @@ def costo_por_tramo(clase: Optional[str], stress_factor: float = 1.0) -> float:
     a = arancel_de(clase)
     comision = (a.comision * stress_factor) * (1 + IVA_PCT if a.comision_iva else 1)
     derecho = a.derecho * (1 + IVA_PCT if a.derecho_iva else 1)
-    prima = a.derecho_sobre_prima * (1 + IVA_PCT if a.derecho_iva else 1)
+    prima = a.derecho_sobre_prima * (1 + IVA_PCT if a.prima_iva else 1)
     return round(comision + derecho + prima, 8)
 
 
@@ -268,7 +270,7 @@ def desglose(clase: Optional[str], monto_ars: float, spread_pct: float = 0.0,
     derecho_tramo = monto_ars * a.derecho
     iva_derecho = derecho_tramo * (IVA_PCT if a.derecho_iva else 0)
     prima_tramo = monto_ars * a.derecho_sobre_prima
-    iva_prima = prima_tramo * (IVA_PCT if a.derecho_iva else 0)
+    iva_prima = prima_tramo * (IVA_PCT if a.prima_iva else 0)
     total_tramo = comision_tramo + iva_comision + derecho_tramo + iva_derecho + prima_tramo + iva_prima
     spread_ars = monto_ars * (spread_pct / 100.0)
     return {

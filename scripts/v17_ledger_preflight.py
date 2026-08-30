@@ -24,6 +24,9 @@ DATABASE = '/observer/observer_production.db'
 BOT = 'porota_trading_bot'
 OBSERVER = 'porota_production_observer'
 CONTAINER = 'porota_v17_ledger_preflight'
+# Este diagnóstico compara una instalación histórica detenida; no identifica
+# la imagen candidata del hotfix ni puede promoverla.
+EXPECTED_LEGACY_OBSERVER_IMAGE = 'porota-trading-bot:16.3.5'
 MAX_POSITIONS = 10000
 MAX_FILLS = 100000
 MAX_EXAMPLES = 10
@@ -431,7 +434,7 @@ def host_report(archive):
         if any(s['running'] is not False or s['restart'] != 'no' for s in states):
             raise PreflightStop('ENGINES_MUST_REMAIN_STOPPED_NO_RESTART')
         observer = next(s for s in states if s['name'] == '/'+OBSERVER)
-        if (observer['tag'] != 'porota-trading-bot:16.3.5' or observer['user'] != 'botuser'
+        if (observer['tag'] != EXPECTED_LEGACY_OBSERVER_IMAGE or observer['user'] != 'botuser'
                 or not re.fullmatch(r'sha256:[0-9a-f]{64}', observer['image'])):
             raise PreflightStop('OBSERVER_INSTALLATION_CHANGED')
         mounts = json.loads(docker(['inspect','--type','container','--format','{{json .Mounts}}',OBSERVER]))

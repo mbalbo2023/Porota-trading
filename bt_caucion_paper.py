@@ -321,7 +321,9 @@ class CaucionBook:
             # Se reconoce el costo comprometido completo; no se presenta
             # como ganancia el interés bruto de una colocación con gastos.
             accrued += earned - (fees if p["fee_payment"] == "MATURITY" else ZERO)
-            unrealized += earned - fees
+            # Los costos UPFRONT ya redujeron caja al abrir. Restarlos otra
+            # vez en el PnL no realizado duplicaba el gasto en el reporte.
+            unrealized += earned - (fees if p["fee_payment"] == "MATURITY" else ZERO)
         return {"principal": principal, "accrued": accrued, "unrealized": unrealized, "realized": realized}
 
     def place(self, offer, principal, request_id, as_of, available_cash, *, reserve=ZERO,
