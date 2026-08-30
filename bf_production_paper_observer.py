@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import signal
 import sqlite3
@@ -32,6 +33,12 @@ INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
 COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
 PUBLIC_CHECK_SECONDS = max(900, int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")))
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
+BACKGROUND_INGEST_SECONDS = max(
+    3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
+)
+READINESS_CHECK_SECONDS = max(
+    60, int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"))
+)
 ACTIVE_SYMBOL_LIMIT = max(3, min(int(os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "20")), 60))
 PPI_CALL_BUDGET_SECONDS = max(0.1, float(os.getenv("PAPER_PPI_CALL_BUDGET_SECONDS", "2")))
 SIGNAL_MIN_SAMPLES = max(3, int(os.getenv("PAPER_SIGNAL_MIN_SAMPLES", "6")))
@@ -60,6 +67,9 @@ FOCUS_SYMBOLS = (
     ("SUPV", "ACCIONES", "A-24HS"),
     ("CEPU", "ACCIONES", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
+)
+FOCUS_MINIMUM_FOR_OPENINGS = max(
+    1, min(int(os.getenv("PAPER_FOCUS_MINIMUM_FOR_OPENINGS", "4")), len(FOCUS_SYMBOLS))
 )
 # Semillas amplias; PPI sigue siendo quien confirma existencia, clase y mercado.
 # La lista no habilita por si sola ningun instrumento y una coincidencia devuelta
@@ -491,7 +501,96 @@ def _active_symbols(store):
     return _eligible_symbols(store)[:ACTIVE_SYMBOL_LIMIT]
 
 
-def _cycle_symbols(store):
+def _focus_coverage(store):
+    """Contrasta el foco declarado con identidades PAPER realmente habilitadas.
+
+    Un ticker parecido no alcanza: tipo y liquidacion deben coincidir, y el
+    catalogo normalizado debe declarar READY_PAPER_SPOT. El fallback legado se
+    usa solo cuando aun no existe ningun registro normalizado.
+    """
+    configured = tuple(FOCUS_SYMBOLS)
+    observed_by_ticker = {}
+    ready = set()
+    source = "PPI_FINANCIAL_CATALOG"
+    with store.connect() as c:
+        normalized_count = c.execute(
+            "SELECT COUNT(*) FROM financial_instrument_catalog"
+        ).fetchone()[0]
+        placeholders = ",".join("?" for _ in configured)
+        tickers = tuple(value[0] for value in configured)
+        if normalized_count:
+            rows = c.execute(f"""SELECT ticker,instrument_type,settlement,status,capability
+              FROM financial_instrument_catalog WHERE ticker IN ({placeholders})""",
+              tickers).fetchall()
+            for ticker, kind, settlement, status, capability in rows:
+                identity = (ticker, kind, settlement)
+                observed_by_ticker.setdefault(ticker, []).append(
+                    {"identity": identity, "status": status, "capability": capability}
+                )
+                if status == "AVAILABLE" and capability == "READY_PAPER_SPOT":
+                    ready.add(identity)
+        else:
+            source = "LEGACY_CANDIDATE_UNIVERSE"
+            rows = c.execute(f"""SELECT ticker,instrument_type,settlement,status,can_simulate,detail
+              FROM candidate_universe WHERE ticker IN ({placeholders})""",
+              tickers).fetchall()
+            for ticker, kind, settlement, status, can_simulate, detail in rows:
+                identity = (ticker, kind, settlement)
+                observed_by_ticker.setdefault(ticker, []).append(
+                    {"identity": identity, "status": status, "capability": detail}
+                )
+                if status == "AVAILABLE" and int(can_simulate) == 1:
+                    ready.add(identity)
+
+    matched = tuple(value for value in configured if value in ready)
+    missing = []
+    for identity in configured:
+        if identity in ready:
+            continue
+        candidates = observed_by_ticker.get(identity[0], [])
+        if not candidates:
+            reason = "NO_OBSERVADO_EN_CATALOGO"
+        elif any(item["identity"] == identity for item in candidates):
+            exact = next(item for item in candidates if item["identity"] == identity)
+            reason = f"{exact['status']}:{exact['capability']}"
+        else:
+            actual = ",".join(
+                f"{item['identity'][1]}/{item['identity'][2]}:{item['capability']}"
+                for item in candidates[:4]
+            )
+            reason = "IDENTIDAD_DISTINTA:" + actual
+        missing.append({"identity": identity, "reason": reason})
+
+    count = len(matched)
+    state = ("VERDE" if count == len(configured) else
+             "AMARILLO" if count >= FOCUS_MINIMUM_FOR_OPENINGS else "ROJO")
+    return {
+        "state": state,
+        "source": source,
+        "configured_count": len(configured),
+        "matched_count": count,
+        "minimum_for_openings": FOCUS_MINIMUM_FOR_OPENINGS,
+        "allow_new_openings": count >= FOCUS_MINIMUM_FOR_OPENINGS,
+        "matched": matched,
+        "missing": missing,
+    }
+
+
+def _publish_focus_health(store, coverage):
+    missing = "; ".join(
+        f"{item['identity'][0]}={item['reason']}" for item in coverage["missing"]
+    ) or "ninguno"
+    detail = (
+        f"Foco efectivo {coverage['matched_count']}/{coverage['configured_count']}; "
+        f"mínimo para nuevas aperturas simuladas {coverage['minimum_for_openings']}; "
+        f"fuente {coverage['source']}; faltantes: {missing}. "
+        f"Ingesta y cierres permanecen activos."
+    )
+    _health(store, "PAPER_FOCUS_COVERAGE", coverage["state"], detail,
+            "Catálogo PPI normalizado", success=coverage["state"] == "VERDE")
+
+
+def _cycle_symbols(store, focus_candidates=None):
     """Abiertas y foco primero; el resto del universo mantiene rotación."""
     universe = list(_eligible_symbols(store))
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
@@ -506,7 +605,7 @@ def _cycle_symbols(store):
     available = set(universe)
     focus_budget = min(len(FOCUS_SYMBOLS), max(1, ACTIVE_SYMBOL_LIMIT // 2))
     focus_added = 0
-    for candidate in FOCUS_SYMBOLS:
+    for candidate in tuple(FOCUS_SYMBOLS if focus_candidates is None else focus_candidates):
         if len(selected) >= max(ACTIVE_SYMBOL_LIMIT, len(opened)):
             break
         if focus_added >= focus_budget:
@@ -525,17 +624,118 @@ def _cycle_symbols(store):
     return tuple(selected), len(universe), cursor, (cursor + visited) % len(universe)
 
 
-def _sampling_feasibility(selected_count):
-    """Cota conservadora: pausa más dos lecturas PPI por instrumento."""
+def _sampling_feasibility(selected_count, *, eligible_total=None, focus_count=None,
+                          open_count=0):
+    """Cota conservadora separada para foco y universo rotativo."""
     cycle_seconds = INTERVAL + max(0, selected_count) * 2 * PPI_CALL_BUDGET_SECONDS
-    capacity = int(SIGNAL_WINDOW_MINUTES * 60 / max(cycle_seconds, 1))
+    window_seconds = SIGNAL_WINDOW_MINUTES * 60
+    capacity = int(window_seconds / max(cycle_seconds, 1))
+    focus_count = selected_count if focus_count is None else max(0, focus_count)
+    eligible_total = selected_count if eligible_total is None else max(0, eligible_total)
+    rotation_slots = max(0, selected_count - max(0, open_count) - focus_count)
+    rotation_pool = max(0, eligible_total - focus_count - max(0, open_count))
+    rotation_turns = (math.ceil(rotation_pool / rotation_slots)
+                      if rotation_pool and rotation_slots else None)
+    rotation_capacity = (int(window_seconds / max(cycle_seconds * rotation_turns, 1))
+                         if rotation_turns else 0)
     return {
-        "feasible": capacity >= SIGNAL_MIN_SAMPLES,
+        "feasible": bool(focus_count) and capacity >= SIGNAL_MIN_SAMPLES,
+        "focus_feasible": bool(focus_count) and capacity >= SIGNAL_MIN_SAMPLES,
+        "rotation_feasible": (rotation_pool == 0 or
+                              (rotation_slots > 0 and rotation_capacity >= SIGNAL_MIN_SAMPLES)),
         "estimated_cycle_seconds": round(cycle_seconds, 2),
         "estimated_samples_per_window": capacity,
+        "focus_count": focus_count,
+        "focus_estimated_samples_per_window": capacity if focus_count else 0,
+        "rotation_slots": rotation_slots,
+        "rotation_pool": rotation_pool,
+        "rotation_turns": rotation_turns,
+        "rotation_estimated_samples_per_window": rotation_capacity,
         "required_samples": SIGNAL_MIN_SAMPLES,
         "window_minutes": SIGNAL_WINDOW_MINUTES,
     }
+
+
+def _economic_shadow_summary(store):
+    """Resume la jornada local sin reinterpretar decisiones historicas."""
+    today = datetime.now(TZ).date()
+    result = {"evaluated": 0, "passed": 0, "failed": 0,
+              "opened_with_failure": 0, "blocked_with_failure": 0}
+    with store.connect() as c:
+        rows = c.execute("""SELECT evaluated_at,final_result,detail_json
+          FROM trade_gate_evaluations ORDER BY id DESC LIMIT 5000""").fetchall()
+    for evaluated_at, final_result, detail_json in rows:
+        try:
+            evaluated = datetime.fromisoformat(str(evaluated_at).replace("Z", "+00:00"))
+            if evaluated.astimezone(TZ).date() != today:
+                continue
+            economics = json.loads(detail_json or "{}").get("economics")
+            if not isinstance(economics, dict) or "passed" not in economics:
+                continue
+        except (ValueError, TypeError, json.JSONDecodeError):
+            continue
+        result["evaluated"] += 1
+        if bool(economics["passed"]):
+            result["passed"] += 1
+        else:
+            result["failed"] += 1
+            if final_result == "OPENED_SIMULATED":
+                result["opened_with_failure"] += 1
+            elif final_result == "BLOCKED":
+                result["blocked_with_failure"] += 1
+    return result
+
+
+def _publish_economic_shadow_health(store):
+    summary = _economic_shadow_summary(store)
+    if not summary["evaluated"]:
+        state = "AMARILLO"
+        detail = "Sin señales BUY evaluadas hoy; esperando evidencia de rueda."
+    elif summary["failed"]:
+        state = "AMARILLO"
+        detail = (
+            f"Evaluadas={summary['evaluated']}; aprueban={summary['passed']}; "
+            f"fallan={summary['failed']}; abrieron simuladas pese al fallo="
+            f"{summary['opened_with_failure']}; bloqueadas={summary['blocked_with_failure']}."
+        )
+    else:
+        state = "VERDE"
+        detail = f"Evaluadas={summary['evaluated']}; todas superaron el umbral económico."
+    detail += " SHADOW valida el pipeline; no demuestra rentabilidad ni habilita dinero real."
+    _health(store, "PAPER_ECONOMIC_GATE_SHADOW", state, detail,
+            "Motor matemático Python", success=state == "VERDE")
+    return summary
+
+
+def _runtime_readiness(store, *, record_event=False):
+    """Publica la capacidad declarada antes de permitir nuevas aperturas."""
+    focus = _focus_coverage(store)
+    _publish_focus_health(store, focus)
+    open_count = len(store.open_positions())
+    symbols, eligible_total, cursor_before, cursor_after = _cycle_symbols(
+        store, focus_candidates=focus["matched"]
+    )
+    matched_set = set(focus["matched"])
+    selected_focus = sum(symbol in matched_set for symbol in symbols)
+    feasibility = _sampling_feasibility(
+        len(symbols), eligible_total=eligible_total,
+        focus_count=selected_focus, open_count=open_count
+    )
+    if not feasibility["focus_feasible"]:
+        if record_event:
+            store.event("SAMPLING_INFEASIBLE", json.dumps(feasibility, sort_keys=True))
+        _health(store, "PAPER_SIGNAL_SAMPLING", "ROJO",
+                "El foco no puede reunir la ventana mínima: " +
+                json.dumps(feasibility, sort_keys=True), "Runtime PAPER")
+    else:
+        _health(store, "PAPER_SIGNAL_SAMPLING", "VERDE",
+                "Foco con capacidad teórica suficiente: " +
+                json.dumps(feasibility, sort_keys=True), "Runtime PAPER", success=True)
+    rotation_state = "VERDE" if feasibility["rotation_feasible"] else "AMARILLO"
+    _health(store, "PAPER_SIGNAL_ROTATION", rotation_state,
+            "Factibilidad rotativa: " + json.dumps(feasibility, sort_keys=True),
+            "Runtime PAPER", success=rotation_state == "VERDE")
+    return focus, symbols, eligible_total, cursor_before, cursor_after, feasibility
 
 
 def _gemini_context(store, symbol):
@@ -668,13 +868,13 @@ def _download_histories(reader, store):
 
 
 def _daily_sync_needed(store):
-    """Una bajada diaria; reiniciar el proceso no multiplica consultas."""
+    """Una bajada de catálogo por día; un error no provoca reintentos en bucle."""
     with store.connect() as connection:
-        rows = connection.execute("""SELECT source,last_success_at FROM source_sync
+        rows = connection.execute("""SELECT source,last_attempt_at FROM source_sync
           WHERE source IN ('PPI_PRODUCTION_CATALOG','PPI_PRODUCTION_HISTORY')""").fetchall()
-    success = {row[0]: str(row[1] or "")[:10] for row in rows}
+    attempts = {row[0]: str(row[1] or "")[:10] for row in rows}
     today = datetime.now(TZ).date().isoformat()
-    return any(success.get(source) != today for source in
+    return any(attempts.get(source) != today for source in
                ("PPI_PRODUCTION_CATALOG", "PPI_PRODUCTION_HISTORY"))
 
 
@@ -690,6 +890,51 @@ def _daily_sync(reader, store):
         detail = f"{type(exc).__name__}: {str(exc)[:500]}"
         _sync_state(store, "PPI_PRODUCTION_DAILY_SYNC", "ROJO", 0, detail)
         store.event("DAILY_READONLY_SYNC_ERROR", detail)
+
+
+def _background_ingest_due(store, now=None):
+    """TTL por intento: protege a PPI incluso si una respuesta falla."""
+    now = now or datetime.now(TZ)
+    with store.connect() as connection:
+        row = connection.execute("""SELECT last_attempt_at FROM source_sync
+          WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+    if not row or not row[0]:
+        return True
+    try:
+        last = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=TZ)
+        return (now - last.astimezone(TZ)).total_seconds() >= BACKGROUND_INGEST_SECONDS
+    except (TypeError, ValueError):
+        return True
+
+
+def _background_ingest(reader, store, *, force=False):
+    """Completa históricos por lotes fuera de rueda, sin current ni book."""
+    if not force and not _background_ingest_due(store):
+        return None
+    try:
+        rows = _download_histories(reader, store)
+        with store.connect() as connection:
+            source = connection.execute("""SELECT status,detail FROM source_sync
+              WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+        state = str(source[0] if source else "AMARILLO")
+        detail = (
+            f"Lote histórico incremental completado: {rows} filas válidas; "
+            f"próximo intento no antes de {BACKGROUND_INGEST_SECONDS // 3600} h. "
+            f"resultado de origen={state}. No se consultaron cotizaciones ni "
+            "libros fuera de rueda."
+        )
+        _health(store, "PPI_BACKGROUND_INGEST", state, detail,
+                "PPI Producción / History", success=state == "VERDE")
+        store.event("BACKGROUND_READONLY_INGEST", detail)
+        return rows
+    except Exception as exc:
+        detail = f"{type(exc).__name__}: {str(exc)[:500]}"
+        _health(store, "PPI_BACKGROUND_INGEST", "ROJO", detail,
+                "PPI Producción / History")
+        store.event("BACKGROUND_READONLY_INGEST_ERROR", detail)
+        return None
 
 
 def _run_command(store, reader, command, gemini_gate=None):
@@ -770,6 +1015,7 @@ def run():
     reader = None
     quotes = {}
     last_public_check = 0.0
+    last_readiness_check = 0.0
     next_login_at = 0.0
     try:
         while not STOP:
@@ -817,6 +1063,14 @@ def run():
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
             if phase == "CLOSED":
+                # El catálogo se renueva una vez por fecha local. Los históricos
+                # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.
+                _daily_sync(reader, store)
+                _background_ingest(reader, store)
+                if time.time() - last_readiness_check >= READINESS_CHECK_SECONDS:
+                    _runtime_readiness(store)
+                    _publish_economic_shadow_health(store)
+                    last_readiness_check = time.time()
                 store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="PPI de solo lectura activo; ingesta histórica disponible. "
@@ -830,13 +1084,8 @@ def run():
             if phase != "OPEN":
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
-            symbols, eligible_total, cursor_before, cursor_after = _cycle_symbols(store)
-            feasibility = _sampling_feasibility(len(symbols))
-            if not feasibility["feasible"]:
-                store.event("SAMPLING_INFEASIBLE", json.dumps(feasibility, sort_keys=True))
-                _health(store, "PAPER_SIGNAL_SAMPLING", "ROJO",
-                        "Configuración incapaz de reunir la ventana mínima: " +
-                        json.dumps(feasibility, sort_keys=True), "Runtime PAPER")
+            (focus, symbols, eligible_total, cursor_before, cursor_after,
+             feasibility) = _runtime_readiness(store, record_event=True)
             cycle_started = now_iso()
             cycle_clock = time.perf_counter()
             cycle_ok = 0
@@ -853,7 +1102,13 @@ def run():
                     q = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
                     store.add_quote(q)
                     quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
-                    broker.on_quote(q)
+                    broker.on_quote(
+                        q, allow_new_openings=focus["allow_new_openings"],
+                        opening_block_reason=(
+                            f"Cobertura prioritaria insuficiente: "
+                            f"{focus['matched_count']}/{focus['configured_count']}"
+                        ),
+                    )
                     data_error = q.time_error(
                         now_iso(), require_trade=True,
                         max_age_seconds=broker.quote_max_age_seconds,
@@ -906,6 +1161,7 @@ def run():
                     "VERDE" if cycle_ok else "ROJO",
                     f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil.",
                     "PPI Producción", success=bool(cycle_ok))
+            _publish_economic_shadow_health(store)
             time.sleep(INTERVAL)
     finally:
         if reader:

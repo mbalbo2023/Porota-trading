@@ -656,10 +656,13 @@ class PaperBroker:
             "passed": passed,
         }
 
-    def on_quote(self, q: Quote):
+    def on_quote(self, q: Quote, *, allow_new_openings=True,
+                 opening_block_reason=""):
         if self._maybe_close(q):
             return
         if self.store.open_position(q.symbol):
+            return
+        if not allow_new_openings:
             return
         action, score, reason, features = self.decide(q)
         bucket = q.observed_at[:16]

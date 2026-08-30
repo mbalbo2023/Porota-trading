@@ -270,6 +270,19 @@ def test_stream_rejects_actual_source_mutation(tmp_path):
         probe._stream_source(path, before, MutatingDestination())
 
 
+def test_stream_detects_mutation_even_when_metadata_appears_unchanged(tmp_path, monkeypatch):
+    path = tmp_path/'fixture.db'
+    path.write_bytes(b'A'*200)
+    before = probe._source_signature(path)
+    monkeypatch.setattr(probe, '_signature', lambda _info: before)
+    class MutatingDestination:
+        def write(self, chunk):
+            with path.open('r+b') as stream:
+                stream.write(b'B')
+    with pytest.raises(probe.PreflightStop, match='SOURCE_CHANGED'):
+        probe._stream_source(path, before, MutatingDestination())
+
+
 def test_stream_rejects_replaced_inode(tmp_path):
     path = tmp_path/'fixture.db'
     replacement = tmp_path/'replacement.db'

@@ -39,6 +39,8 @@ PAPER_DEFAULTS = {
     "PAPER_RISK_PER_TRADE": "0.005", "PAPER_MAX_OPEN_POSITIONS": "3",
     "PAPER_MAX_POSITION_PCT": "0.25", "PAPER_MAX_TOTAL_EXPOSURE_PCT": "0.60",
     "PAPER_MAX_HOLD_MINUTES": "180", "PAPER_ACTIVE_SYMBOL_LIMIT": "20",
+    "PAPER_FOCUS_MINIMUM_FOR_OPENINGS": "4",
+    "PAPER_READINESS_CHECK_SECONDS": "300",
     "MAX_DAILY_LOSS_PCT": "1.0",
     "PAPER_SIGNAL_MIN_SAMPLES": "6", "PAPER_SIGNAL_WINDOW_MINUTES": "90",
     "PAPER_SCORE_THRESHOLD": "0.62", "PAPER_BOOK_MAX_AGE_SECONDS": "120",
@@ -46,6 +48,7 @@ PAPER_DEFAULTS = {
     "PAPER_ECONOMIC_GATE_MODE": "SHADOW",
     "PAPER_MIN_NET_REWARD_RISK": "1.20",
     "PAPER_STOP_LOSS_PCT": "0.02", "PAPER_TARGET_GAIN_PCT": "0.035",
+    "PPI_BACKGROUND_INGEST_SECONDS": "21600",
 }
 
 
@@ -190,7 +193,7 @@ def simulation():
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
                 "PPI_ORDERS": "BLOCKED", "PYTHON_MATH_ENGINE": "ACTIVE"}, telegram=status,
-               detail="Fuera de rueda queda en espera; preapertura sincroniza; rueda abierta simula")
+               detail="Fuera de rueda ingiere históricos por lotes; preapertura sincroniza; rueda abierta simula")
 
 
 def sandbox():

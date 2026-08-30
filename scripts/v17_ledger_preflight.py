@@ -271,6 +271,33 @@ def _source_signature(path):
     return _signature(info)
 
 
+def _verified_source_digest(path, expected):
+    """Lee y firma el origen sin confiar únicamente en metadatos del FS.
+
+    OverlayFS puede conservar metadatos indistinguibles cuando un archivo se
+    reescribe con el mismo tamaño dentro del mismo tick de reloj. La lectura de
+    verificación detecta ese caso comparando los bytes, sin abrir para escritura
+    ni tomar locks sobre el origen.
+    """
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+    total = 0
+    digest = hashlib.sha256()
+    with os.fdopen(os.open(path, flags), 'rb') as source:
+        if _signature(os.fstat(source.fileno())) != expected:
+            raise PreflightStop('SOURCE_CHANGED')
+        while True:
+            chunk = source.read(min(COPY_CHUNK_BYTES, expected[2]-total+1))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > expected[2]:
+                raise PreflightStop('SOURCE_CHANGED')
+            digest.update(chunk)
+        if total != expected[2] or _signature(os.fstat(source.fileno())) != expected:
+            raise PreflightStop('SOURCE_CHANGED')
+    return digest.digest()
+
+
 def _stream_source(path, expected, destination=None):
     """Una pasada acotada del origen; nunca lo abre con SQLite ni para escribir."""
     _no_source_sidecars(path)
@@ -297,7 +324,15 @@ def _stream_source(path, expected, destination=None):
     if _source_signature(path) != expected:
         raise PreflightStop('SOURCE_CHANGED')
     _no_source_sidecars(path)
-    return digest.digest()
+    first_digest = digest.digest()
+    # Una segunda pasada cierra el hueco de archivos reescritos con igual
+    # tamaño y metadatos no observables en el filesystem del contenedor.
+    if _verified_source_digest(path, expected) != first_digest:
+        raise PreflightStop('SOURCE_CHANGED')
+    if _source_signature(path) != expected:
+        raise PreflightStop('SOURCE_CHANGED')
+    _no_source_sidecars(path)
+    return first_digest
 
 
 def _copy_digest(path):

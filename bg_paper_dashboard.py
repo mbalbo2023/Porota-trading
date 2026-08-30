@@ -591,12 +591,22 @@ def _health_components():
         "Descubrimiento de instrumentos")
     add("PPI Producción — históricos", "PPI_PRODUCTION_HISTORY", "SIMULACIÓN PRODUCTIVA",
         "Cobertura incremental de todo el universo")
+    add("PPI Producción — ingesta histórica 24x7", "PPI_BACKGROUND_INGEST", "SIMULACIÓN PRODUCTIVA",
+        "Lotes históricos fuera de rueda con TTL y sin current/book")
     add("PPI Producción — market data", "PPI_PRODUCTION_MARKETDATA", "SIMULACIÓN PRODUCTIVA",
         "Cotización y caja de puntas")
     if components[-1]["applicable"] and observer.get("session_state") != "MARKET_OPEN":
         components[-1].update(
             state="NO_APLICA", applicable=False,
             detail="Rueda cerrada: current/book en vivo no se exige. Autenticación, catálogo e históricos continúan por separado.")
+    add("Cobertura del foco PAPER", "PAPER_FOCUS_COVERAGE", "SIMULACIÓN PRODUCTIVA",
+        "Verifica las ocho identidades prioritarias y bloquea aperturas si hay menos de cuatro")
+    add("Muestreo del foco PAPER", "PAPER_SIGNAL_SAMPLING", "SIMULACIÓN PRODUCTIVA",
+        "Capacidad de reunir seis muestras dentro de 90 minutos")
+    add("Muestreo del universo rotativo", "PAPER_SIGNAL_ROTATION", "SIMULACIÓN PRODUCTIVA",
+        "Cadencia estimada de instrumentos no prioritarios")
+    add("Economía matemática SHADOW", "PAPER_ECONOMIC_GATE_SHADOW", "SIMULACIÓN PRODUCTIVA",
+        "Cuenta aprobaciones, fallos y aperturas simuladas con economía rechazada")
 
     tg = _report_state("telegram")
     tg_mode = "TODOS"
@@ -760,6 +770,49 @@ def _economics_status(payload):
     return "APPROVE" if economics.get("passed") else "SHADOW_REVIEW"
 
 
+def _economic_shadow_metrics():
+    today = datetime.now(TZ).date()
+    result = {"evaluated": 0, "passed": 0, "failed": 0,
+              "opened_with_failure": 0, "blocked_with_failure": 0}
+    if not _table("trade_gate_evaluations"):
+        return result
+    for row in _rows("""SELECT evaluated_at,final_result,detail_json
+      FROM trade_gate_evaluations ORDER BY id DESC LIMIT 5000"""):
+        try:
+            if aware_datetime(row["evaluated_at"]).astimezone(TZ).date() != today:
+                continue
+            economics = _features(row.get("detail_json")).get("economics")
+            if not isinstance(economics, dict) or "passed" not in economics:
+                continue
+        except (ValueError, TypeError):
+            continue
+        result["evaluated"] += 1
+        if bool(economics["passed"]):
+            result["passed"] += 1
+        else:
+            result["failed"] += 1
+            if row.get("final_result") == "OPENED_SIMULATED":
+                result["opened_with_failure"] += 1
+            elif row.get("final_result") == "BLOCKED":
+                result["blocked_with_failure"] += 1
+    return result
+
+
+def _economic_shadow_panel():
+    metrics = _economic_shadow_metrics()
+    cards = "".join((
+        _card("Evaluaciones económicas", metrics["evaluated"], "Señales BUY evaluadas hoy", "gray"),
+        _card("Aprueban", metrics["passed"], "Superan el umbral matemático vigente", "green"),
+        _card("Fallan", metrics["failed"], "No superan el umbral; SHADOW no bloquea por sí solo", "yellow"),
+        _card("Abren pese al fallo", metrics["opened_with_failure"], "Solo simuladas; nunca órdenes PPI", "yellow"),
+    ))
+    return ("<div class='paper-card'><h2>Economía matemática en SHADOW</h2>"
+            "<div class='paper-warning'><b>VALIDACIÓN DE PIPELINE - NO VALIDACIÓN DE RENTABILIDAD.</b> "
+            "Una apertura simulada con economía rechazada sirve para probar el circuito completo; "
+            "no autoriza dinero real ni demuestra que la estrategia sea rentable.</div>"
+            f"<div class='paper-grid'>{cards}</div></div>")
+
+
 def motor_page():
     spot=_spot_snapshot()
     positions=sorted(spot["open"]+spot["closed"],key=lambda p:aware_datetime(p["opened_at"]),reverse=True)[:100]
@@ -781,7 +834,7 @@ def motor_page():
     gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(_economics_status(g.get('detail_json')))}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas todavía.</div>'
     body=f"<h1>Motor de trading</h1><p class='paper-muted'>Trazabilidad técnica → economía matemática → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>Economía</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + body + _balances_panel() + _caucion_allocations_panel() + _cauciones_panel())
+    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + _economic_shadow_panel() + body + _balances_panel() + _caucion_allocations_panel() + _cauciones_panel())
 
 
 def _next_check(component, checked):
