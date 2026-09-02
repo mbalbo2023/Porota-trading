@@ -5,10 +5,12 @@ aprendizaje y reparación batch de históricos. Nunca reemplaza a PPI para
 cotización vigente, book, saldo, sizing, decisión de entrada/salida ni
 ejecución.
 
-HF6-v2 añade dos invariantes explícitos:
+HF6-v2 añade invariantes explícitos:
 - DATA912_EXECUTION_ALLOWED=False;
-- la actualización batch puede ser dirigida por el universo de Porota mediante
-  ``refresh_symbols`` en lugar de dejar que Data912 decida qué especies cubrir.
+- el batch puede ser dirigido por el universo de Porota mediante
+  ``refresh_symbols``;
+- Data912 sólo completa huecos y nunca pisa una vela histórica de mayor
+  autoridad (PPI/BYMA/IOL o una serie marcada adjusted).
 """
 
 import json
@@ -40,6 +42,10 @@ GROUPS = {
     "CEDEARS": ("/live/arg_cedears", "/historical/cedears/{ticker}"),
     "BONOS": ("/live/arg_bonds", "/historical/bonds/{ticker}"),
 }
+
+# Data912 es fallback. Nunca debe degradar una fila que ya llegó de una fuente
+# de mayor autoridad ni una serie ajustada.
+AUTHORITATIVE_SOURCE_PREFIXES = ("PPI", "BYMA", "IOL")
 
 
 def _number(value) -> float:
@@ -119,6 +125,46 @@ def _normalize(rows: list, cutoff: str) -> List[tuple]:
     return candles
 
 
+def _is_authoritative(source, adjusted) -> bool:
+    text = str(source or "").upper()
+    return bool(adjusted) or any(text.startswith(prefix) for prefix in AUTHORITATIVE_SOURCE_PREFIXES)
+
+
+def _store_data912_candles(symbol: str, asset_class: str,
+                           candles: List[tuple]) -> Tuple[int, int]:
+    """Store Data912 only where no higher-authority row already exists.
+
+    Returns (written, protected). The helper deliberately reads the current
+    canonical store before calling the legacy UPSERT, so Data912 can refresh
+    its own rows while PPI/BYMA/IOL rows remain untouched.
+    """
+    if not candles:
+        return 0, 0
+    hist.init_db()
+    dates = [str(row[0]) for row in candles]
+    existing = {}
+    with hist._conn() as connection:
+        # A one-year batch stays well below SQLite's usual bind limit.
+        placeholders = ",".join("?" for _ in dates)
+        rows = connection.execute(
+            f"""SELECT date,source,adjusted FROM market_historical_ohlcv
+                WHERE symbol=? AND asset_class=? AND date IN ({placeholders})""",
+            (symbol, asset_class, *dates),
+        ).fetchall()
+        existing = {str(row[0]): (row[1], row[2]) for row in rows}
+
+    safe = []
+    protected = 0
+    for candle in candles:
+        prior = existing.get(str(candle[0]))
+        if prior and _is_authoritative(prior[0], prior[1]):
+            protected += 1
+            continue
+        safe.append(candle)
+    written = hist.guardar_velas(symbol, asset_class, safe, "DATA912", adjusted=False) if safe else 0
+    return written, protected
+
+
 def _write_state(payload: dict) -> None:
     try:
         folder = os.path.dirname(STATE_PATH) or "."
@@ -134,9 +180,8 @@ def _write_state(payload: dict) -> None:
 def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
     """Actualiza el universo líquido propio de Data912.
 
-    Se conserva por compatibilidad y como control complementario, pero HF6-v2
-    no usa esta selección como universo autoritativo de Porota. Para reparar
-    el histórico del catálogo de Porota se debe usar ``refresh_symbols``.
+    Se conserva por compatibilidad y control complementario. HF6-v2 usa
+    ``refresh_symbols`` para reparar el catálogo gobernado por Porota.
     """
     if not DATA912_REFRESH_ENABLED:
         return {"ok": False, "disabled": True, "reason": "DATA912_REFRESH_ENABLED=false"}
@@ -144,7 +189,7 @@ def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
     started = datetime.now().isoformat()
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     client = _session()
-    selected = successful = empty = failed = rows_written = 0
+    selected = successful = empty = failed = rows_written = protected_rows = 0
     hist.init_db()
     _write_state({"status": "running", "started_at": started, "mode": "provider_universe"})
 
@@ -165,8 +210,9 @@ def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
                         empty += 1
                         logger.info("Data912 %s/%s: sin histórico.", asset_class, symbol)
                     else:
-                        rows_written += hist.guardar_velas(
-                            symbol, asset_class, candles, "DATA912", adjusted=False)
+                        written, protected = _store_data912_candles(symbol, asset_class, candles)
+                        rows_written += written
+                        protected_rows += protected
                         successful += 1
                 except Exception as exc:
                     failed += 1
@@ -180,8 +226,9 @@ def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
                    (started_at, finished_at, source, symbols_ok, symbols_failed,
                     rows_written, notes) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (started, finished, "DATA912", successful, failed + empty, rows_written,
-                 f"seleccionados={selected}; sin_historico={empty}; "
-                 f"errores={failed}; dias={days}; umbral_ars={DATA912_MIN_LIQUIDITY_ARS}"),
+                 f"seleccionados={selected}; sin_historico={empty}; errores={failed}; "
+                 f"protegidas_fuente_superior={protected_rows}; dias={days}; "
+                 f"umbral_ars={DATA912_MIN_LIQUIDITY_ARS}"),
             )
             connection.commit()
         result = {
@@ -191,6 +238,7 @@ def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
             "without_history": empty,
             "failed": failed,
             "rows_written": rows_written,
+            "protected_rows": protected_rows,
             "finished_at": finished,
             "execution_allowed": DATA912_EXECUTION_ALLOWED,
         }
@@ -206,7 +254,7 @@ def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
 
 def ensure_symbol(symbol: str, asset_class: str,
                   days: int = hist.HIST_DEFAULT_DAYS) -> int:
-    """Completa bajo demanda un símbolo descubierto por PPI que falta localmente."""
+    """Completa un símbolo sin sobreescribir fuentes históricas superiores."""
     config = GROUPS.get(asset_class)
     if not config:
         return 0
@@ -214,7 +262,8 @@ def ensure_symbol(symbol: str, asset_class: str,
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     raw = _get_json(client, config[1].format(ticker=symbol))
     candles = _normalize(raw, cutoff)
-    return hist.guardar_velas(symbol, asset_class, candles, "DATA912", adjusted=False)
+    written, _protected = _store_data912_candles(symbol, asset_class, candles)
+    return written
 
 
 def refresh_symbols(targets: Iterable[Tuple[str, str]],
@@ -222,10 +271,10 @@ def refresh_symbols(targets: Iterable[Tuple[str, str]],
                     *, batch_limit: Optional[int] = None) -> dict:
     """Repara automáticamente históricos elegidos por Porota.
 
-    ``targets`` contiene pares ``(symbol, asset_class)`` provenientes del
-    catálogo/readiness de Porota. Sólo se aceptan familias explícitamente
-    soportadas por Data912. Esta función escribe exclusivamente en la base
-    histórica y nunca devuelve un precio apto para ejecutar una orden.
+    Sólo se aceptan familias explícitamente soportadas por Data912. Esta
+    función escribe exclusivamente histórico y nunca devuelve un precio apto
+    para ejecutar una orden. Las filas PPI/BYMA/IOL existentes quedan
+    protegidas frente al fallback.
     """
     if not DATA912_REFRESH_ENABLED:
         return {"ok": False, "disabled": True, "reason": "DATA912_REFRESH_ENABLED=false",
@@ -248,10 +297,11 @@ def refresh_symbols(targets: Iterable[Tuple[str, str]],
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     client = _session()
     hist.init_db()
-    successful = empty = failed = rows_written = 0
+    successful = empty = failed = rows_written = protected_rows = 0
     results = []
     _write_state({"status": "running", "started_at": started,
-                  "mode": "porota_targets", "selected": len(normalized)})
+                  "mode": "porota_targets", "selected": len(normalized),
+                  "execution_allowed": False})
 
     for symbol, family in normalized:
         path = GROUPS[family][1].format(ticker=symbol)
@@ -261,19 +311,22 @@ def refresh_symbols(targets: Iterable[Tuple[str, str]],
             if not candles:
                 empty += 1
                 state = "EMPTY_OR_INVALID"
-                written = 0
+                written = protected = 0
             else:
-                written = hist.guardar_velas(symbol, family, candles, "DATA912", adjusted=False)
+                written, protected = _store_data912_candles(symbol, family, candles)
                 rows_written += written
+                protected_rows += protected
                 successful += 1
-                state = "HISTORICAL_ROWS_WRITTEN"
+                state = "HISTORICAL_ROWS_WRITTEN" if written else "ONLY_AUTHORITATIVE_ROWS_PRESENT"
             results.append({"symbol": symbol, "asset_class": family,
-                            "state": state, "rows_written": written})
+                            "state": state, "rows_written": written,
+                            "protected_rows": protected})
         except Exception as exc:
             failed += 1
             results.append({"symbol": symbol, "asset_class": family,
                             "state": "ERROR", "error_class": type(exc).__name__,
-                            "detail": str(exc)[:300], "rows_written": 0})
+                            "detail": str(exc)[:300], "rows_written": 0,
+                            "protected_rows": 0})
             logger.warning("Data912 batch %s/%s falló: %s", family, symbol, exc)
         time.sleep(hist.HIST_BATCH_SLEEP)
 
@@ -286,7 +339,8 @@ def refresh_symbols(targets: Iterable[Tuple[str, str]],
             (started, finished, "DATA912_POROTA_BATCH", successful, failed + empty,
              rows_written,
              f"seleccionados_por_porota={len(normalized)}; sin_historico={empty}; "
-             f"errores={failed}; dias={days}; execution_allowed=false"),
+             f"errores={failed}; protegidas_fuente_superior={protected_rows}; "
+             f"dias={days}; execution_allowed=false"),
         )
         connection.commit()
 
@@ -297,6 +351,7 @@ def refresh_symbols(targets: Iterable[Tuple[str, str]],
         "without_history": empty,
         "failed": failed,
         "rows_written": rows_written,
+        "protected_rows": protected_rows,
         "started_at": started,
         "finished_at": finished,
         "execution_allowed": DATA912_EXECUTION_ALLOWED,
