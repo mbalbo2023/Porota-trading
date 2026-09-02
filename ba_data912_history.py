@@ -1,7 +1,14 @@
 """Archivo histórico de respaldo basado en la API pública Data912.
 
-Data912 se usa únicamente para contexto diario, indicadores y preselección.
-Nunca reemplaza a PPI para cotización vigente, book, saldo ni ejecución.
+Data912 se usa únicamente para contexto diario, indicadores, backtesting,
+aprendizaje y reparación batch de históricos. Nunca reemplaza a PPI para
+cotización vigente, book, saldo, sizing, decisión de entrada/salida ni
+ejecución.
+
+HF6-v2 añade dos invariantes explícitos:
+- DATA912_EXECUTION_ALLOWED=False;
+- la actualización batch puede ser dirigida por el universo de Porota mediante
+  ``refresh_symbols`` en lugar de dejar que Data912 decida qué especies cubrir.
 """
 
 import json
@@ -10,7 +17,7 @@ import os
 import re
 import time
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import requests
 
@@ -22,6 +29,7 @@ DATA912_BASE = os.getenv("DATA912_BASE", "https://data912.com").rstrip("/")
 DATA912_TIMEOUT_SECONDS = float(os.getenv("DATA912_TIMEOUT_SECONDS", "30"))
 DATA912_RETRIES = int(os.getenv("DATA912_RETRIES", "5"))
 DATA912_REFRESH_ENABLED = os.getenv("DATA912_REFRESH_ENABLED", "true").lower() == "true"
+DATA912_EXECUTION_ALLOWED = False
 DATA912_MIN_LIQUIDITY_ARS = float(
     os.getenv("DATA912_MIN_LIQUIDITY_ARS", os.getenv("MIN_LIQUIDITY_ARS", "5000000"))
 )
@@ -43,7 +51,7 @@ def _number(value) -> float:
 
 def _session() -> requests.Session:
     client = requests.Session()
-    client.headers.update({"User-Agent": "Porota-Trading/16.2 historical-backup"})
+    client.headers.update({"User-Agent": "Porota-Trading/17.0 hf6 historical-backup"})
     return client
 
 
@@ -124,7 +132,12 @@ def _write_state(payload: dict) -> None:
 
 
 def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
-    """Actualiza el universo líquido y contabiliza vacío como falta, no como OK."""
+    """Actualiza el universo líquido propio de Data912.
+
+    Se conserva por compatibilidad y como control complementario, pero HF6-v2
+    no usa esta selección como universo autoritativo de Porota. Para reparar
+    el histórico del catálogo de Porota se debe usar ``refresh_symbols``.
+    """
     if not DATA912_REFRESH_ENABLED:
         return {"ok": False, "disabled": True, "reason": "DATA912_REFRESH_ENABLED=false"}
 
@@ -133,7 +146,7 @@ def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
     client = _session()
     selected = successful = empty = failed = rows_written = 0
     hist.init_db()
-    _write_state({"status": "running", "started_at": started})
+    _write_state({"status": "running", "started_at": started, "mode": "provider_universe"})
 
     try:
         for asset_class, (live_path, historical_path) in GROUPS.items():
@@ -179,6 +192,7 @@ def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
             "failed": failed,
             "rows_written": rows_written,
             "finished_at": finished,
+            "execution_allowed": DATA912_EXECUTION_ALLOWED,
         }
         _write_state({"status": "ok" if result["ok"] else "error", **result})
         if not result["ok"]:
@@ -201,6 +215,95 @@ def ensure_symbol(symbol: str, asset_class: str,
     raw = _get_json(client, config[1].format(ticker=symbol))
     candles = _normalize(raw, cutoff)
     return hist.guardar_velas(symbol, asset_class, candles, "DATA912", adjusted=False)
+
+
+def refresh_symbols(targets: Iterable[Tuple[str, str]],
+                    days: int = hist.HIST_DEFAULT_DAYS,
+                    *, batch_limit: Optional[int] = None) -> dict:
+    """Repara automáticamente históricos elegidos por Porota.
+
+    ``targets`` contiene pares ``(symbol, asset_class)`` provenientes del
+    catálogo/readiness de Porota. Sólo se aceptan familias explícitamente
+    soportadas por Data912. Esta función escribe exclusivamente en la base
+    histórica y nunca devuelve un precio apto para ejecutar una orden.
+    """
+    if not DATA912_REFRESH_ENABLED:
+        return {"ok": False, "disabled": True, "reason": "DATA912_REFRESH_ENABLED=false",
+                "execution_allowed": DATA912_EXECUTION_ALLOWED}
+
+    normalized: list[Tuple[str, str]] = []
+    seen = set()
+    for raw_symbol, raw_family in targets:
+        symbol = str(raw_symbol or "").strip().upper()
+        family = str(raw_family or "").strip().upper()
+        key = (symbol, family)
+        if not symbol or family not in GROUPS or key in seen:
+            continue
+        seen.add(key)
+        normalized.append(key)
+    if batch_limit is not None:
+        normalized = normalized[:max(0, int(batch_limit))]
+
+    started = datetime.now().isoformat()
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    client = _session()
+    hist.init_db()
+    successful = empty = failed = rows_written = 0
+    results = []
+    _write_state({"status": "running", "started_at": started,
+                  "mode": "porota_targets", "selected": len(normalized)})
+
+    for symbol, family in normalized:
+        path = GROUPS[family][1].format(ticker=symbol)
+        try:
+            raw = _get_json(client, path)
+            candles = _normalize(raw, cutoff)
+            if not candles:
+                empty += 1
+                state = "EMPTY_OR_INVALID"
+                written = 0
+            else:
+                written = hist.guardar_velas(symbol, family, candles, "DATA912", adjusted=False)
+                rows_written += written
+                successful += 1
+                state = "HISTORICAL_ROWS_WRITTEN"
+            results.append({"symbol": symbol, "asset_class": family,
+                            "state": state, "rows_written": written})
+        except Exception as exc:
+            failed += 1
+            results.append({"symbol": symbol, "asset_class": family,
+                            "state": "ERROR", "error_class": type(exc).__name__,
+                            "detail": str(exc)[:300], "rows_written": 0})
+            logger.warning("Data912 batch %s/%s falló: %s", family, symbol, exc)
+        time.sleep(hist.HIST_BATCH_SLEEP)
+
+    finished = datetime.now().isoformat()
+    with hist._conn() as connection:
+        connection.execute(
+            """INSERT INTO ingest_runs
+               (started_at, finished_at, source, symbols_ok, symbols_failed,
+                rows_written, notes) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (started, finished, "DATA912_POROTA_BATCH", successful, failed + empty,
+             rows_written,
+             f"seleccionados_por_porota={len(normalized)}; sin_historico={empty}; "
+             f"errores={failed}; dias={days}; execution_allowed=false"),
+        )
+        connection.commit()
+
+    result = {
+        "ok": failed == 0 and empty == 0 if normalized else True,
+        "selected": len(normalized),
+        "successful": successful,
+        "without_history": empty,
+        "failed": failed,
+        "rows_written": rows_written,
+        "started_at": started,
+        "finished_at": finished,
+        "execution_allowed": DATA912_EXECUTION_ALLOWED,
+        "results": results,
+    }
+    _write_state({"status": "ok" if result["ok"] else "partial", **result})
+    return result
 
 
 def archived_instruments(min_candles: int = hist.HIST_MIN_DAYS_USABLE) -> List[dict]:
