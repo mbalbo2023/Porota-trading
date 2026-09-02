@@ -37,9 +37,7 @@
     "state": "EMPTY_FILTER_RESULTS"
   },
   "changes": [
-    "trading.open: 5 -> 4",
-    "trading.closed_today: 0 -> 1",
-    "trading.net_pnl_today: 0 -> -246.673"
+    "Sin cambios funcionales contra el snapshot anterior."
   ],
   "coherence": {
     "closed_without_sell": 0,
@@ -51,18 +49,18 @@
   "currency_funnel": [
     {
       "currency": "ARS",
-      "last_observed_at": "2026-09-02T17:15:06.955591+00:00",
-      "observed_symbols": 558
+      "last_observed_at": "2026-09-02T18:15:24.494415+00:00",
+      "observed_symbols": 577
     },
     {
       "currency": "USD_CCL",
-      "last_observed_at": "2026-09-02T17:14:35.282519+00:00",
-      "observed_symbols": 110
+      "last_observed_at": "2026-09-02T18:15:11.828939+00:00",
+      "observed_symbols": 114
     },
     {
       "currency": "USD_MEP",
-      "last_observed_at": "2026-09-02T17:14:56.819034+00:00",
-      "observed_symbols": 123
+      "last_observed_at": "2026-09-02T18:15:22.688882+00:00",
+      "observed_symbols": 124
     }
   ],
   "economics": {
@@ -287,16 +285,16 @@
     "branch": "runtime-observability",
     "day": "2026-09-02",
     "detail": null,
-    "recorded_at": "2026-09-02T16:20:07.675743+00:00",
+    "recorded_at": "2026-09-02T17:20:33.603632+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
   "ingestion": {
-    "candle_versions": 12078,
+    "candle_versions": 12714,
     "instruments": 65,
     "last_download": "2026-09-02T13:03:09.186548+00:00",
     "last_market_date": "2026-09-02",
-    "latest_candle_known_at": "2026-09-02T17:15:01.436097+00:00",
+    "latest_candle_known_at": "2026-09-02T18:15:10.924407+00:00",
     "raw": 7549,
     "rows": 15586
   },
@@ -320,20 +318,20 @@
   ],
   "market_regime_observation": {
     "binding": false,
-    "falling": 74,
+    "falling": 95,
     "method": "FIRST_LAST_TRADE_SAMPLE_BREADTH_NOT_AN_INDEX",
     "minimum_symbols": 4,
     "policy": "ALERT_ONLY",
-    "rising": 106,
+    "rising": 143,
     "state": "MIXED_OR_POSITIVE",
-    "symbols": 330,
-    "unchanged": 150
+    "symbols": 348,
+    "unchanged": 110
   },
   "observer": {
-    "heartbeat_at": "2026-09-02T17:14:46.418418+00:00",
-    "http_allowed": 19526,
+    "heartbeat_at": "2026-09-02T18:15:18.986313+00:00",
+    "http_allowed": 21121,
     "http_blocked": 0,
-    "last_market_data_at": "2026-09-02T17:14:29.638495+00:00",
+    "last_market_data_at": "2026-09-02T18:15:16.845519+00:00",
     "mode": "PRODUCTION_PAPER",
     "ppi_auth": "OK",
     "process_state": "RUNNING",
@@ -342,15 +340,15 @@
   },
   "ppi_errors_1h": [
     {
-      "count": 4,
+      "count": 3,
       "event_type": "DATA_ERROR"
     },
     {
-      "count": 4,
+      "count": 3,
       "event_type": "DATA_ERROR"
     },
     {
-      "count": 2,
+      "count": 3,
       "event_type": "DATA_ERROR"
     },
     {
@@ -441,24 +439,24 @@
     "unmapped_positions": 4
   },
   "storage": {
-    "database_bytes": 452669440,
-    "filesystem_free": 17515020288,
+    "database_bytes": 457158656,
+    "filesystem_free": 16006922240,
     "filesystem_total": 24883167232,
-    "filesystem_used": 7351369728,
-    "filesystem_used_pct": 29.54,
+    "filesystem_used": 8859467776,
+    "filesystem_used_pct": 35.6,
     "wal_bytes": 5001712
   },
   "telegram": {
     "SENT": 55
   },
-  "timestamp": "2026-09-02T14:15:01-03:00",
+  "timestamp": "2026-09-02T15:15:03-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 1,
-    "decisions_1h": 577,
+    "decisions_1h": 582,
     "net_pnl_today": -246.673,
     "open": 4,
-    "sells_1h": 1
+    "sells_1h": 0
   },
   "verdict": "WARN",
   "version": "17.0.0-rc3-hf6",
@@ -467,28 +465,28 @@
   ],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": -5.715659,
-      "heartbeat_at": "2026-09-02T17:15:07.491856+00:00",
+      "heartbeat_age_seconds": -19.381287,
+      "heartbeat_at": "2026-09-02T18:15:23.368765+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": -6.188781,
-      "heartbeat_at": "2026-09-02T17:15:07.964978+00:00",
+      "heartbeat_age_seconds": -19.71894,
+      "heartbeat_at": "2026-09-02T18:15:23.706418+00:00",
       "state": "READY"
     },
     "scalping": {
-      "heartbeat_age_seconds": 105.697369,
-      "heartbeat_at": "2026-09-02T17:13:16.078828+00:00",
+      "heartbeat_age_seconds": 36.649945,
+      "heartbeat_at": "2026-09-02T18:14:27.337533+00:00",
       "state": "RUNNING"
     },
     "supervisor": {
-      "heartbeat_age_seconds": -2.687891,
-      "heartbeat_at": "2026-09-02T17:15:04.464088+00:00",
+      "heartbeat_age_seconds": -19.547005,
+      "heartbeat_at": "2026-09-02T18:15:23.534483+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": -5.590577,
-      "heartbeat_at": "2026-09-02T17:15:07.366774+00:00",
+      "heartbeat_age_seconds": -21.035496,
+      "heartbeat_at": "2026-09-02T18:15:25.022974+00:00",
       "state": "RUNNING"
     }
   }
