@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/porota-contract-evidence-dashboard-hf6-overlay.sh
+ExecStart=/usr/local/sbin/porota-contract-evidence-dashboard-overlay-hf6.sh
 TimeoutStartSec=5min
 Restart=on-failure
 RestartSec=30s
