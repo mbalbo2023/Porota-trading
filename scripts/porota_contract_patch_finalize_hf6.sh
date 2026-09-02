@@ -7,9 +7,8 @@ PATCH_BRANCH="patch/hf6-contract-evidence"
 REQUIRED_ANCESTOR="b8f3992da559cf3e21339fc1eaac688d5b455c68"
 REPO="/opt/porota-trading"
 PATCH_ROOT="/opt/porota-runtime-patches/hf6-contract-evidence"
-DATA="$REPO/data"
-DB="$DATA/paper_v17/observer_v17.db"
-WEB_JSON="$DATA/contract_evidence/ppi_web_all_families/latest.json"
+DB="$REPO/data/paper_v17/observer_v17.db"
+WEB_JSON="$REPO/data/contract_evidence/ppi_web_all_families/latest.json"
 OBS="porota_production_observer"
 DASH="porota_production_dashboard"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -22,7 +21,6 @@ trap cleanup EXIT
 
 echo "================================================================"
 echo " POROTA HF6 - CONTRACT PATCH FINALIZER"
-echo " Corrige los 2 fallos de integración del despliegue anterior"
 echo "================================================================"
 date -u
 
@@ -50,7 +48,7 @@ c.close()
 PY
 
 echo
-echo "========== 2. OBTENER CORRECCIONES CANÓNICAS DESDE GITHUB =========="
+echo "========== 2. FETCH CORRECCIONES GITHUB =========="
 cd "$REPO"
 git fetch --quiet origin "$PATCH_BRANCH"
 PATCH_HEAD="$(git rev-parse "origin/$PATCH_BRANCH")"
@@ -64,14 +62,15 @@ for f in scripts/porota_ppi_authenticated_all_families_hf6.sh deploy/systemd/por
 done
 
 echo
-echo "========== 3. INSTALAR LAS DOS CORRECCIONES =========="
+echo "========== 3. INSTALAR CORRECCIONES =========="
+sudo -n install -d -m 0755 "$PATCH_ROOT"
 sudo -n install -m 0755 "$STAGE/scripts/porota_ppi_authenticated_all_families_hf6.sh" /usr/local/sbin/porota-ppi-authenticated-all-families-hf6.sh
 sudo -n install -m 0755 "$STAGE/scripts/porota_contract_evidence_dashboard_overlay_hf6.sh" /usr/local/sbin/porota-contract-evidence-dashboard-overlay-hf6.sh
 sudo -n install -m 0644 "$STAGE/cn_ppi_authenticated_family_scraper_hf6.py" "$PATCH_ROOT/cn_ppi_authenticated_family_scraper_hf6.py"
 sudo -n install -m 0644 "$STAGE/deploy/systemd/porota-contract-evidence-dashboard-hf6.service" /etc/systemd/system/porota-contract-evidence-dashboard-hf6.service
 sudo -n systemctl daemon-reload
-echo "FIX_1_SYSTEMD_CREDENTIAL_BOUND_NAME=INSTALLED"
-echo "FIX_2_DASHBOARD_EXECSTART_PATH=INSTALLED"
+echo "FIX_CREDENTIAL_BOUND_NAME=INSTALLED"
+echo "FIX_DASHBOARD_EXECSTART_PATH=INSTALLED"
 
 echo
 echo "========== 4. AUTH READ-ONLY TODAS LAS FAMILIAS =========="
@@ -86,9 +85,9 @@ if sudo -n test -s "$WEB_JSON"; then
 import json,sys
 d=json.load(open(sys.argv[1],encoding='utf-8'))
 s=d.get('safety') or {}
+if int(s.get('order_posts',0) or 0)!=0: raise SystemExit(41)
+if int(s.get('mutation_requests',0) or 0)!=0: raise SystemExit(42)
 print((d.get('auth') or {}).get('status','UNKNOWN'))
-if int(s.get('order_posts',0) or 0) != 0: raise SystemExit(41)
-if int(s.get('mutation_requests',0) or 0) != 0: raise SystemExit(42)
 PY
 )"
 fi
@@ -117,14 +116,11 @@ for fam,info in sorted(families.items()):
     for x in (info.get('sources') or [])[:20]:
         sources.append({k:x.get(k) for k in ('route','http','final_url','authenticated_target_reached','title','table_count','detected_fields','tables','error')})
     if status=='AUTHENTICATED_WEB_EVIDENCE_COLLECTED_REVIEW_REQUIRED':
-        owner='POROTA_CONTRACT_VALIDATION'; missing=['provider_field_semantics_validation','family_specific_paper_executor_validation']
-        detail='Authenticated PPI read-only evidence collected. No automatic READY_PAPER promotion.'
+        owner='POROTA_CONTRACT_VALIDATION'; missing=['provider_field_semantics_validation','family_specific_paper_executor_validation']; detail='Authenticated PPI read-only evidence collected. No automatic READY_PAPER promotion.'
     elif auth=='TWO_FACTOR_REQUIRED_FAIL_CLOSED':
-        owner='PPI_AUTH_2FA_OR_SUPPORT'; missing=['authenticated_provider_evidence']
-        detail='PPI required 2FA; collector stopped fail-closed. No bypass and no mutation/order requests.'
+        owner='PPI_AUTH_2FA_OR_SUPPORT'; missing=['authenticated_provider_evidence']; detail='PPI required 2FA; collector stopped fail-closed. No bypass and no mutation/order requests.'
     else:
-        owner='PPI_SUPPORT_OR_POROTA_DISCOVERY'; missing=['provider_backed_contract_evidence']
-        detail='No complete authenticated contract evidence obtained; family remains fail-closed.'
+        owner='PPI_SUPPORT_OR_POROTA_DISCOVERY'; missing=['provider_backed_contract_evidence']; detail='No complete authenticated contract evidence obtained; family remains fail-closed.'
     evidence={'schema':d.get('schema'),'auth_status':auth,'automatic_ready_paper':False,'sources':sources}
     c.execute('''INSERT INTO contract_evidence VALUES(?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(instrument_type,ticker,market) DO UPDATE SET status=excluded.status,owner=excluded.owner,
@@ -152,7 +148,8 @@ for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 
 if sudo -n docker exec "$DASH" grep -q 'import cl_contract_evidence_dashboard_hf6' /app/o_dashboard.py; then echo "DASHBOARD_CONTRACT_IMPORT=OK"; else echo "DASHBOARD_CONTRACT_IMPORT=MISSING"; fi
 
 echo
-echo "========== 7. VALIDACIÓN FINAL =========="nFINAL_HEALTH="$(curl -fsS http://127.0.0.1:8000/health)"
+echo "========== 7. VALIDACION FINAL =========="
+FINAL_HEALTH="$(curl -fsS http://127.0.0.1:8000/health)"
 echo "$FINAL_HEALTH"
 FINAL_OBS="$(sudo -n docker inspect --format='{{.State.Status}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}|{{.State.StartedAt}}' "$OBS")"
 FINAL_DASH="$(sudo -n docker inspect --format='{{.State.Status}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}|{{.State.StartedAt}}' "$DASH")"
@@ -168,7 +165,7 @@ c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True)
 print('QUICK_CHECK_FINAL='+c.execute('PRAGMA quick_check').fetchone()[0])
 r=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent FROM observer_state WHERE id=1').fetchone()
 print('OBSERVER_STATE_FINAL='+repr(r))
-if not r or r[0] != 'PRODUCTION_PAPER' or int(r[-1] or 0) != 0: raise SystemExit(4)
+if not r or r[0] != 'PRODUCTION_PAPER' or int(r[-1] or 0)!=0: raise SystemExit(4)
 for fam,status,owner in c.execute('SELECT instrument_type,status,owner FROM contract_evidence WHERE market="WEB" ORDER BY instrument_type'):
     print(f'WEB_FAMILY={fam}|{status}|{owner}')
 c.close()
@@ -180,7 +177,8 @@ FINAL="PATCH_COMPLETED"
 if [ "$WEB_RC" -ne 0 ] && [ "$DASH_RC" -ne 0 ]; then FINAL="PATCH_CORE_SAFE_BUT_AUXILIARY_FAILURES_REMAIN"; fi
 
 echo
-echo "========== 8. RESUMEN =========="necho "FINAL_STATUS=$FINAL"
+echo "========== 8. RESUMEN =========="
+echo "FINAL_STATUS=$FINAL"
 echo "AUTH_STATUS=$AUTH_STATUS"
 echo "REAL_ORDERS_SENT=0"
 echo "OBSERVER_RESTARTED=NO"
@@ -191,8 +189,10 @@ echo "UNRESOLVED_FAMILIES_FAIL_CLOSED=SI"
 echo "FULL_LOG=$OUT"
 echo "WEB_EVIDENCE=$WEB_JSON"
 
-exec 1>&-; exec 2>&-
-mv -f "$OUT.tmp" "$OUT"; chmod 600 "$OUT"
+exec 1>&-
+exec 2>&-
+mv -f "$OUT.tmp" "$OUT"
+chmod 600 "$OUT"
 exec >/dev/tty 2>/dev/tty || true
 printf '\nFINAL_STATUS=%s\nAUTH_STATUS=%s\nREAL_ORDERS_SENT=0\nOBSERVER_RESTARTED=NO\nFULL_LOG=%s\n' "$FINAL" "$AUTH_STATUS" "$OUT"
 SUMMARY="FINAL_STATUS=$FINAL
