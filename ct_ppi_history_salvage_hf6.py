@@ -8,8 +8,7 @@ histórico no habilita una familia para PAPER.
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import al_historical_ingest as hist
 import cp_history_ingest_policy_hf6 as policy
@@ -26,6 +25,33 @@ def _to_candle(row: dict) -> tuple:
         float(row["price"]),
         float(row["volume"]),
     )
+
+
+def _date_bound(value):
+    """Normalize scheduler/date inputs to ``date`` for policy comparisons."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+    except (TypeError, ValueError) as exc:
+        raise ValueError("HISTORY_REQUEST_BOUND_INVALID") from exc
+
+
+def _as_of(value) -> datetime:
+    if value in (None, ""):
+        return datetime.now(timezone.utc)
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("HISTORY_ATTEMPTED_AT_INVALID") from exc
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _init_rejections(store) -> None:
@@ -52,12 +78,15 @@ def ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
     Returns storage/context information only. It intentionally has no
     READY_PAPER field and no execution side effect.
     """
-    attempted_at = attempted_at or datetime.now(timezone.utc).isoformat()
+    attempted_dt = _as_of(attempted_at)
+    attempted_iso = attempted_dt.isoformat()
+    requested_from_date = _date_bound(requested_from)
+    requested_to_date = _date_bound(requested_to)
     result = policy.validate_provider_history(
         payload,
-        as_of=datetime.fromisoformat(str(attempted_at).replace("Z", "+00:00")),
-        date_from=requested_from,
-        date_to=requested_to,
+        as_of=attempted_dt,
+        date_from=requested_from_date,
+        date_to=requested_to_date,
     )
 
     candles = [_to_candle(row) for row in result.valid_rows]
@@ -73,9 +102,9 @@ def ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
         instrument_type=str(instrument_type).upper(),
         settlement=str(settlement),
         source="PPI_PRODUCTION_HISTORY",
-        requested_from=(requested_from.isoformat() if hasattr(requested_from, "isoformat") else requested_from),
-        requested_to=(requested_to.isoformat() if hasattr(requested_to, "isoformat") else requested_to),
-        attempted_at=str(attempted_at),
+        requested_from=requested_from_date.isoformat() if requested_from_date else None,
+        requested_to=requested_to_date.isoformat() if requested_to_date else None,
+        attempted_at=attempted_iso,
         completed_at=datetime.now(timezone.utc).isoformat(),
         provider_rows=result.provider_rows,
         valid_rows=result.valid_count,
@@ -102,7 +131,7 @@ def ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
                   VALUES(?,?,?,?,?,?,?)""",
                 [
                     (attempt_id, str(symbol).upper(), str(instrument_type).upper(),
-                     str(settlement), int(item.index), str(item.reason), str(attempted_at))
+                     str(settlement), int(item.index), str(item.reason), attempted_iso)
                     for item in result.rejected_rows
                 ],
             )
