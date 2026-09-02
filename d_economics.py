@@ -522,9 +522,9 @@ def calculate_position_size(available_capital_ars: float, entry_price: float,
         arriesga más del doble de lo que el propio kill switch tolera
         para TODA la cuenta — el sistema se apagaría solo con la
         primera pérdida, si es que no se ejecuta antes.
-      - MAX_DAILY_LOSS_PCT está en 1% por default. Una sola operación al
-        10% de riesgo dispara el corte diario diez veces más rápido de
-        lo que ese límite fue pensado para tolerar.
+      - MAX_DAILY_LOSS_PCT está en 2,5% por decisión operativa HF6. Una operación al
+        10% de riesgo cuadruplica el corte diario autorizado; una sola
+        pérdida ya excedería ampliamente lo tolerado por ese límite.
       - Con MAX_OPEN_POSITIONS=3 y 10% de riesgo cada una, el peor caso
         (las tres tocan stop-loss el mismo día) es una pérdida del 30%
         de la cuenta en un día — completamente incompatible con

@@ -17,7 +17,8 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
-from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolation
+from bd_ppi_readonly_guard import (ProductionMarketReader, ReadOnlyPolicyViolation,
+                                   retry_read, session_invalid, classify_read_error)
 from be_paper_engine import D, PaperBroker, PaperStore, Quote, now_iso
 import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
@@ -58,7 +59,7 @@ CORE_SYMBOLS = (
 # Núcleo operativo observado en todos los ciclos. La lista no habilita un
 # contrato: catálogo, identidad monetaria, puntas y profundidad siguen siendo
 # obligatorios. Las posiciones abiertas conservan prioridad absoluta.
-FOCUS_SYMBOLS = (
+DEFAULT_FOCUS_SYMBOLS = (
     ("GGAL", "ACCIONES", "A-24HS"),
     ("YPFD", "ACCIONES", "A-24HS"),
     ("PAMP", "ACCIONES", "A-24HS"),
@@ -68,6 +69,26 @@ FOCUS_SYMBOLS = (
     ("CEPU", "ACCIONES", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
 )
+
+
+def configured_focus(raw=None):
+    """Foco versionado configurable, con estructura estricta y sin duplicados."""
+    raw = os.getenv("PAPER_FOCUS_SYMBOLS", "") if raw is None else raw
+    if not str(raw).strip():
+        return DEFAULT_FOCUS_SYMBOLS
+    result = []
+    for item in str(raw).split(","):
+        parts = tuple(part.strip().upper() for part in item.split(":"))
+        if len(parts) != 3 or not all(parts):
+            raise ValueError("PAPER_FOCUS_SYMBOLS requiere SIMBOLO:CLASE:PLAZO")
+        if parts not in result:
+            result.append(parts)
+    if not 1 <= len(result) <= 24:
+        raise ValueError("PAPER_FOCUS_SYMBOLS admite entre 1 y 24 identidades")
+    return tuple(result)
+
+
+FOCUS_SYMBOLS = configured_focus()
 FOCUS_MINIMUM_FOR_OPENINGS = max(
     1, min(int(os.getenv("PAPER_FOCUS_MINIMUM_FOR_OPENINGS", "4")), len(FOCUS_SYMBOLS))
 )
@@ -78,7 +99,7 @@ DISCOVERY_SEEDS = {
     "ACCIONES": ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "TXAR",
                  "ALUA", "LOMA", "COME", "EDN", "TGSU2", "TGNO4", "TRAN", "BYMA",
                  "CRES", "HARG", "IRSA", "TECO2", "VALO", "MIRG", "MOLI", "AGRO"),
-    "CEDEARS": ("AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "SPY",
+    "CEDEARS": ("AAPL", "AAPLD", "AAPLC", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "SPY",
                 "DIA", "QQQ", "IWM", "KO", "MCD", "WMT", "DIS", "NFLX", "AMD",
                 "INTC", "AVGO", "ORCL", "IBM", "CRM", "JPM", "BAC", "V", "MA",
                 "XOM", "CVX", "GOLD", "VALE", "PBR", "BABA", "MELI", "NU"),
@@ -688,11 +709,13 @@ def _economic_shadow_summary(store):
 
 def _publish_economic_shadow_health(store):
     summary = _economic_shadow_summary(store)
+    binding = os.getenv("PAPER_ECONOMIC_GATE_MODE", "BINDING").upper() == "BINDING"
     if not summary["evaluated"]:
         state = "AMARILLO"
         detail = "Sin señales BUY evaluadas hoy; esperando evidencia de rueda."
     elif summary["failed"]:
-        state = "AMARILLO"
+        state = ("ROJO" if binding and summary["opened_with_failure"] else
+                 "VERDE" if binding else "AMARILLO")
         detail = (
             f"Evaluadas={summary['evaluated']}; aprueban={summary['passed']}; "
             f"fallan={summary['failed']}; abrieron simuladas pese al fallo="
@@ -701,7 +724,9 @@ def _publish_economic_shadow_health(store):
     else:
         state = "VERDE"
         detail = f"Evaluadas={summary['evaluated']}; todas superaron el umbral económico."
-    detail += " SHADOW valida el pipeline; no demuestra rentabilidad ni habilita dinero real."
+    detail += (" BINDING bloquea toda señal que no cubra costos y reward/risk neto; "
+               "no habilita dinero real." if binding else
+               " SHADOW valida el pipeline; no demuestra rentabilidad ni habilita dinero real.")
     _health(store, "PAPER_ECONOMIC_GATE_SHADOW", state, detail,
             "Motor matemático Python", success=state == "VERDE")
     return summary
@@ -955,6 +980,7 @@ def _run_command(store, reader, command, gemini_gate=None):
             key, secret = _secret()
             reader = ProductionMarketReader(key, secret, audit=store.audit_http)
             reader.login_once()
+            store.event("PPI_LOGIN", "owner=scanner_manual")
     except Exception as exc:
         detail = f"{type(exc).__name__}: {str(exc)[:500]}"
         _health(store, "PPI_PRODUCTION_AUTH", "ROJO", detail, "PPI Producción")
@@ -991,6 +1017,33 @@ def _run_command(store, reader, command, gemini_gate=None):
     return reader
 
 
+def _announce_phase(store, previous, current):
+    """Aviso idempotente por transición; nunca confunde arranque con rueda."""
+    if previous is None or previous == current:
+        return
+    messages = {
+        "PREOPEN": ("🟡 POROTA — PREAPERTURA",
+                    "Login e ingesta activos. Cero evaluaciones y cero operaciones."),
+        "OPEN": ("🟢 POROTA — RUEDA ABIERTA",
+                 "Motor Python evaluando. Operaciones 100% simuladas. Órdenes reales: NINGUNA."),
+        "CLOSED": ("🌙 POROTA — RUEDA CERRADA",
+                   "Estrategia detenida. Ingesta histórica y dashboard continúan activos."),
+    }
+    if current not in messages:
+        return
+    from bn_telegram_bus import enqueue
+    title, detail = messages[current]
+    at = now_iso()
+    local_day = datetime.now(TZ).date().isoformat()
+    try:
+        with store.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            enqueue(c, f"session-phase:{current}:{local_day}", "SESSION_PHASE",
+                    f"{title}\n{detail}\n{at}", at, priority=15)
+    except Exception as exc:
+        store.event("PHASE_NOTICE_ERROR", f"{current}: {type(exc).__name__}")
+
+
 def run():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
@@ -1017,6 +1070,7 @@ def run():
     last_public_check = 0.0
     last_readiness_check = 0.0
     next_login_at = 0.0
+    last_phase = _market_phase()
     try:
         while not STOP:
             # Una caución vence por contrato, aunque el mercado esté cerrado
@@ -1032,6 +1086,9 @@ def run():
             if command:
                 reader = _run_command(store, reader, command, None)
             phase = _market_phase()
+            if phase != last_phase:
+                _announce_phase(store, last_phase, phase)
+                last_phase = phase
             # Autenticación, catálogo e históricos son útiles también durante
             # noches, fines de semana y feriados. Sólo current/book y la
             # estrategia quedan condicionados a rueda abierta.
@@ -1046,6 +1103,7 @@ def run():
                 reader = ProductionMarketReader(key, secret, audit=store.audit_http)
                 try:
                     reader.login_once()
+                    store.event("PPI_LOGIN", "owner=scanner")
                     _health(store, "PPI_PRODUCTION_AUTH", "VERDE",
                             "Login automático de solo lectura correcto.",
                             "PPI Producción", success=True)
@@ -1090,14 +1148,17 @@ def run():
             cycle_clock = time.perf_counter()
             cycle_ok = 0
             cycle_failures = 0
+            cycle_session_invalid = False
             latencies = []
             for symbol, asset_class, settlement in symbols:
                 if STOP:
                     break
                 symbol_clock = time.perf_counter()
                 try:
-                    current = reader.current(symbol, asset_class, settlement)
-                    book = reader.book(symbol, asset_class, settlement)
+                    current = retry_read(
+                        lambda: reader.current(symbol, asset_class, settlement), retries=1)
+                    book = retry_read(
+                        lambda: reader.book(symbol, asset_class, settlement), retries=1)
                     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement)
                     q = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
                     store.add_quote(q)
@@ -1123,7 +1184,12 @@ def run():
                     store.state(process_state="DEGRADED", detail="La barrera bloqueo una ruta no permitida.")
                 except Exception as exc:
                     cycle_failures += 1
-                    store.event("DATA_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
+                    store.event("DATA_ERROR", f"{symbol}: {classify_read_error(exc)}")
+                    if session_invalid(exc):
+                        cycle_session_invalid = True
+                        store.event("PPI_SESSION_INVALID",
+                                    "Sesión de market data expirada; ciclo interrumpido y relogin controlado")
+                        break
                 finally:
                     latency = round((time.perf_counter() - symbol_clock) * 1000, 2)
                     latencies.append(latency)
@@ -1151,8 +1217,9 @@ def run():
                 c.execute("DELETE FROM symbol_cycle_metrics WHERE id NOT IN (SELECT id FROM symbol_cycle_metrics ORDER BY id DESC LIMIT 10000)")
                 c.execute("DELETE FROM universe_cycle_metrics WHERE id NOT IN (SELECT id FROM universe_cycle_metrics ORDER BY id DESC LIMIT 5000)")
             metrics = reader.metrics
-            store.state(process_state="RUNNING" if cycle_ok else "DEGRADED",
+            store.state(process_state="DEGRADED" if cycle_session_invalid or not cycle_ok else "RUNNING",
                         session_state="MARKET_OPEN", heartbeat_at=now_iso(),
+                        ppi_auth="ERROR" if cycle_session_invalid else "OK",
                         http_allowed=metrics["http_allowed"],
                         http_blocked=metrics["http_blocked"], real_orders_sent=0,
                         detail=(f"{cycle_ok}/{len(symbols)} instrumentos actualizados de "
@@ -1162,6 +1229,10 @@ def run():
                     f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil.",
                     "PPI Producción", success=bool(cycle_ok))
             _publish_economic_shadow_health(store)
+            if cycle_session_invalid:
+                reader.close()
+                reader = None
+                next_login_at = time.time() + 60
             time.sleep(INTERVAL)
     finally:
         if reader:

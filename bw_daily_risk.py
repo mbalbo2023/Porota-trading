@@ -51,11 +51,25 @@ def caucion_pnl(p, at, *, exclusive=False):
 
 
 class DailyRisk:
-    def __init__(self, broker, limit_pct):
+    def __init__(self, broker, limit_pct, *, soft_limit_pct=None):
         self.broker, self.store = broker, broker.store
         self.limit_pct = decimal_value(limit_pct,'pérdida diaria %',positive=True)
+        self.soft_limit_explicit = soft_limit_pct is not None
+        self.soft_limit_pct = (self.limit_pct if soft_limit_pct is None else
+                               decimal_value(soft_limit_pct,'freno diario blando %',positive=True))
         if self.limit_pct > 100:
             raise ValueError('Pérdida diaria expresada en porcentaje: 1 significa 1%')
+        if self.soft_limit_pct > self.limit_pct:
+            raise ValueError('El freno blando no puede superar al límite duro')
+
+    def soft_stop_crossed(self, row):
+        """Frena aperturas sin crear intenciones de salida ni tocar el latch."""
+        baseline = row.get('baseline_equity')
+        daily = row.get('daily_pnl')
+        if baseline is None or daily is None:
+            return False
+        budget = decimal_value(baseline,'base diaria',positive=True)*self.soft_limit_pct/100
+        return decimal_value(daily,'PnL diario') <= -budget
 
     def evaluate(self, at, *, connection=None, quotes=None):
         at = aware_datetime(at)
@@ -180,8 +194,10 @@ class DailyRisk:
         return results
 
     def admission_error(self, currency, at, *, connection=None, quotes=None):
-        state = self.evaluate(at,connection=connection,quotes=quotes)[cash_currency(currency)]['state']
-        return '' if state=='READY' else 'DAILY_RISK_' + state
+        row = self.evaluate(at,connection=connection,quotes=quotes)[cash_currency(currency)]
+        if row['state'] != 'READY':
+            return 'DAILY_RISK_' + row['state']
+        return 'DAILY_RISK_SOFT_STOP' if self.soft_stop_crossed(row) else ''
 
     def projected_admission_error(self, currency, at, committed_cost, *, connection=None):
         """Costo de caución comprometido hoy, incluso si se cobra al vencer.
@@ -194,4 +210,9 @@ class DailyRisk:
         if row['state'] != 'READY':
             return 'DAILY_RISK_' + row['state']
         projected = decimal_value(row['daily_pnl'], 'PnL diario') - cost
-        return 'DAILY_RISK_PROJECTED_LOSS' if loss_limit_crossed(projected,ZERO,row['loss_budget']) else ''
+        soft_budget = (decimal_value(row['baseline_equity'],'base diaria',positive=True)
+                       * self.soft_limit_pct / 100)
+        if projected > -soft_budget:
+            return ''
+        return ('DAILY_RISK_PROJECTED_SOFT_STOP' if self.soft_limit_explicit
+                else 'DAILY_RISK_PROJECTED_LOSS')

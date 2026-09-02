@@ -318,7 +318,8 @@ def test_no_hay_dos_contadores_y_todas_las_paginas_tienen_subir(monkeypatch):
     import bg_paper_dashboard
     bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
     page = bg_paper_dashboard.motor_page()
-    assert page.count("Actualización visual única") == 1
+    assert page.count("Actualización parcial") == 1
+    assert "window.setInterval" in page
     assert "Próxima actualización:" not in page
     assert page.count("↑ Ir al principio") == 1
     assert "← Volver" not in page

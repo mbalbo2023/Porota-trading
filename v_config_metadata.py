@@ -34,7 +34,8 @@ CONFIG_METADATA = [
     ("MAX_PCT_OF_BOOK_DEPTH", "Riesgo", "% máximo de la profundidad del libro por orden.", "10.0", False),
     ("TARGET_HOLD_DAYS", "Riesgo", "Días esperados de tenencia, para prorratear el hurdle.", "5", False),
     # --- Kill switch ---
-    ("MAX_DAILY_LOSS_PCT", "Kill switch", "% de pérdida diaria que corta las alertas nuevas.", "1.0", False),
+    ("PAPER_DAILY_SOFT_STOP_PCT", "Riesgo", "% de pérdida diaria que suspende aperturas sin liquidar.", "1.5", False),
+    ("MAX_DAILY_LOSS_PCT", "Kill switch", "% de pérdida diaria que activa salidas PAPER y bloquea aperturas.", "2.5", False),
     ("MAX_DRAWDOWN_PCT", "Kill switch", "% de caída desde el máximo que corta las alertas.", "5.0", False),
     ("MAX_CONSECUTIVE_STOP_LOSSES", "Kill switch", "Pérdidas seguidas que activan el corte.", "3", False),
     ("CCL_INTRADAY_CIRCUIT_BREAKER_PCT", "Kill switch", "% que el CCL puede moverse en el día antes de cortar.", "3.0", False),
@@ -55,7 +56,7 @@ CONFIG_METADATA = [
     ("PRICE_REVALIDATION_TOLERANCE_PCT", "Ejecución", "% máximo que el precio puede moverse antes de ejecutar/confirmar.", "1.0", False),
     ("POLL_CONFIRMATIONS_INTERVAL_SECONDS", "Ejecución", "Cada cuántos segundos se revisan los botones de Telegram (modo confirm).", "4", False),
     # --- Scalping (nuevo en v10.5) ---
-    ("SCALPING_MODE", "Scalping", "Solicita scalping; queda bloqueado hasta disponer de intradía contractual de PPI.", "false", False),
+    ("SCALPING_MODE", "Scalping", "Bandera del motor heredado; el runtime PAPER usa PAPER_SCALPING_MODE.", "false", False),
     ("SCALPING_TARGET_HOLD_MINUTES", "Scalping", "Minutos de mantenimiento esperado de una posición en modo scalping.", "30", False),
     ("SCALPING_SCAN_INTERVAL_SECONDS", "Scalping", "Segundos de pausa entre instrumentos en modo scalping.", "10", False),
     ("WIN_RATE_LOOKBACK_DAYS", "Scalping", "Días hacia atrás para el win rate mostrado en cada ejecución automática.", "30", False),

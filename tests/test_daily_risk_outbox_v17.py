@@ -469,7 +469,7 @@ def test_runtime_reusa_porcentaje_existente_y_panel_no_confunde_entrega(store,mo
     import porota_mode_manager as mode
     monkeypatch.setenv('MAX_DAILY_LOSS_PCT','1.25')
     assert broker_from_environment(store).daily_risk.limit_pct==D('1.25')
-    assert mode.paper_settings({'MAX_DAILY_LOSS_PCT':'1.25'})['MAX_DAILY_LOSS_PCT']=='1.25'
+    assert mode.paper_settings({'MAX_DAILY_LOSS_PCT':'1.25'})['MAX_DAILY_LOSS_PCT']=='2.5'
     queue(store)
     monkeypatch.setattr(dashboard,'DB_PATH',store.path)
     assert 'PENDING' in dashboard.telegram_page() and 'ACK' in dashboard.telegram_page()

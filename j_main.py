@@ -1513,7 +1513,7 @@ def main():
                 open_positions=len(position_manager.get_open_positions()),
                 max_open_positions=MAX_OPEN_POSITIONS,
                 daily_loss_pct=diario.get("pct"),
-                max_daily_loss_pct=float(os.getenv("MAX_DAILY_LOSS_PCT", "1.0")),
+                max_daily_loss_pct=float(os.getenv("MAX_DAILY_LOSS_PCT", "2.5")),
                 drawdown_pct=dd.get("pct"),
                 max_drawdown_pct=float(os.getenv("MAX_DRAWDOWN_PCT", "5.0")),
                 available_capital_ars=equity_base or 0.0,

@@ -29,7 +29,7 @@ import ax_equity  # NUEVO EN v16.2 — patrimonio real (efectivo + tenencia)
 logger = logging.getLogger("risk_guardian")
 DB_PATH = os.getenv("DB_PATH", "data/trading_system.db")
 
-MAX_DAILY_LOSS_PCT = float(os.getenv("MAX_DAILY_LOSS_PCT", "1.0"))
+MAX_DAILY_LOSS_PCT = float(os.getenv("MAX_DAILY_LOSS_PCT", "2.5"))
 MAX_DRAWDOWN_PCT = float(os.getenv("MAX_DRAWDOWN_PCT", "5.0"))
 MAX_CONSECUTIVE_STOP_LOSSES = int(os.getenv("MAX_CONSECUTIVE_STOP_LOSSES", "3"))
 # NUEVO EN v10.5 (segunda revisión) — ver check_and_halt_if_needed(), punto 4.
@@ -237,7 +237,7 @@ def check_and_halt_if_needed(ppi_client, notifier) -> bool:
     # opuestas:
     #
     #   (a) FALSO POSITIVO GARANTIZADO. Comprar reduce la caja sin reducir el
-    #       patrimonio. Con MAX_DAILY_LOSS_PCT=1,0 bastaba una orden que
+    #       patrimonio. Aun con MAX_DAILY_LOSS_PCT=2,5 una orden que
     #       consumiera más del 1% del efectivo para que el sistema declarara
     #       "pérdida diaria". Como es un corte FINANCIERO, nunca se
     #       auto-libera: exige intervención humana. En la práctica el bot se

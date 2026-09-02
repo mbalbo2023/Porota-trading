@@ -30,8 +30,8 @@ def broker_from_environment(store, **overrides):
         initial_cash_usd=os.getenv("PAPER_INITIAL_CAPITAL_USD", "0"),
         initial_cash_by_currency={"USD_MEP": os.getenv("PAPER_INITIAL_CAPITAL_USD_MEP", "0"),
                                   "USD_CCL": os.getenv("PAPER_INITIAL_CAPITAL_USD_CCL", "0")},
-        risk_pct=os.getenv("PAPER_RISK_PER_TRADE", "0.005"),
-        max_positions=os.getenv("PAPER_MAX_OPEN_POSITIONS", "3"),
+        risk_pct=os.getenv("PAPER_RISK_PER_TRADE", "0.002"),
+        max_positions=os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"),
         max_position_pct=os.getenv("PAPER_MAX_POSITION_PCT", "0.25"),
         max_total_exposure_pct=os.getenv("PAPER_MAX_TOTAL_EXPOSURE_PCT", "0.60"),
         clock_fn=now_iso, session_policy=PaperSessionPolicy(), require_supervisor=True,
@@ -41,11 +41,12 @@ def broker_from_environment(store, **overrides):
         signal_window_minutes=int(os.getenv("PAPER_SIGNAL_WINDOW_MINUTES", "90")),
         score_threshold=os.getenv("PAPER_SCORE_THRESHOLD", "0.62"),
         ai_mode=os.getenv("PAPER_AI_GATE_MODE", "OFF"),
-        economics_mode=os.getenv("PAPER_ECONOMIC_GATE_MODE", "SHADOW"),
+        economics_mode=os.getenv("PAPER_ECONOMIC_GATE_MODE", "BINDING"),
         min_net_reward_risk=os.getenv("PAPER_MIN_NET_REWARD_RISK", "1.20"),
         stop_loss_pct=os.getenv("PAPER_STOP_LOSS_PCT", "0.02"),
-        target_gain_pct=os.getenv("PAPER_TARGET_GAIN_PCT", "0.035"),
-        daily_loss_pct=os.getenv('MAX_DAILY_LOSS_PCT','1.0'))
+        target_gain_pct=os.getenv("PAPER_TARGET_GAIN_PCT", "0.05"),
+        daily_loss_pct=os.getenv('MAX_DAILY_LOSS_PCT','2.5'),
+        daily_soft_stop_pct=os.getenv('PAPER_DAILY_SOFT_STOP_PCT'))
     values.update(overrides)
     return PaperBroker(store, **values)
 
@@ -86,7 +87,7 @@ def run_clock(store, children, stop, *, clock_fn=now_iso, interval=5):
     broker = broker_from_environment(store, clock_fn=clock_fn)
     supervisor = PositionExitSupervisor(broker, clock_fn=clock_fn,
         session_policy=broker.session_policy,
-        max_hold_minutes=int(os.getenv("PAPER_MAX_HOLD_MINUTES", "180")))
+        max_hold_minutes=int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360")))
     last_valuation = 0.0
     try:
         while not stop.is_set():
@@ -106,19 +107,23 @@ def run_clock(store, children, stop, *, clock_fn=now_iso, interval=5):
             children.close()
 
 
-def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False, pause=lambda: None):
+def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
+                       pause=lambda: None, beat=lambda: None):
     """Un book por abierta; jamás depende de último negocio o de Gemini."""
     from bf_production_paper_observer import normalize_quote
+    from bd_ppi_readonly_guard import retry_read, session_invalid
     import bu_instrument_catalog as catalog
     positions, invalid = store.exit_positions()
     failures = len(invalid)
     for p in positions:
         if should_stop():
             break
+        beat()
         try:
             if policy.execution_error(p, at):
                 continue
-            book = reader.book(p["symbol"],p["asset_class"],p["settlement"])
+            book = retry_read(lambda: reader.book(
+                p["symbol"],p["asset_class"],p["settlement"]), retries=1)
             metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"])
             q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,metadata=metadata)
             store.add_quote(q)
@@ -126,6 +131,8 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False, 
                 failures += 1
             q.monetary_identity()
         except Exception as exc:
+            if session_invalid(exc):
+                raise
             failures += 1
             store.event("EXIT_BOOK_ERROR", f"{p['symbol']}: {type(exc).__name__}", p["paper_id"])
         pause()
@@ -135,7 +142,7 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False, 
 def run_reader(store, stop):
     # Imports de red sólo en el hijo. El reloj padre no instala interceptores
     # ni comparte cliente HTTP mutable con el escáner.
-    from bd_ppi_readonly_guard import ProductionMarketReader
+    from bd_ppi_readonly_guard import ProductionMarketReader, session_invalid
     from bf_production_paper_observer import _secret, _support_schema, _market_phase
     _support_schema(store)
     policy = PaperSessionPolicy()
@@ -158,6 +165,7 @@ def run_reader(store, stop):
                 try:
                     reader = ProductionMarketReader(*_secret(), audit=store.audit_http)
                     reader.login_once()
+                    store.event("PPI_LOGIN", "owner=exit_reader")
                     status("READY", "Sesión de lectura iniciada; sin órdenes")
                 except Exception as exc:
                     if reader:
@@ -167,10 +175,23 @@ def run_reader(store, stop):
                     store.event("EXIT_READER_LOGIN_ERROR", type(exc).__name__)
                     status("ERROR",type(exc).__name__)
                     continue
-            failures = collect_exit_books(reader,store,policy,now_iso(),should_stop=stop.is_set,
-                                         pause=lambda: stop.wait(1))
+            try:
+                failures = collect_exit_books(
+                    reader, store, policy, now_iso(), should_stop=stop.is_set,
+                    pause=lambda: stop.wait(1),
+                    beat=lambda: status("READY", "Recorriendo posiciones abiertas"))
+            except Exception as exc:
+                if not session_invalid(exc):
+                    raise
+                store.event("EXIT_READER_SESSION_INVALID", type(exc).__name__)
+                status("ERROR", "Sesión PPI expirada; nuevas aperturas bloqueadas hasta reautenticar")
+                reader.close()
+                reader = None
+                next_login = time.monotonic() + 60
+                stop.wait(5)
+                continue
             status("DEGRADED" if failures else "READY",f"{failures} errores de lectura de abiertas")
-            stop.wait(10)
+            stop.wait(5)
     finally:
         try:
             status("STOPPED")
@@ -181,7 +202,8 @@ def run_reader(store, stop):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker']):
+    if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'],
+                    ['--intraday-scalping-worker']):
         raise ValueError("Argumentos desconocidos del runtime paper")
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -200,6 +222,10 @@ def main(argv=None):
         from bl_candle_engine import run_worker
         run_worker(store,stop,clock_fn=now_iso)
         return 0
+    if argv == ["--intraday-scalping-worker"]:
+        from cf_intraday_scalping import run_worker
+        run_worker(store,stop,clock_fn=now_iso)
+        return 0
     # Un reloj por libro, incluso si se intenta iniciar otro contenedor.
     with open(store.path + ".runtime.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -208,6 +234,7 @@ def main(argv=None):
             "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
             "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
             "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],
+            "intraday_scalping": [sys.executable, str(Path(__file__).resolve()), "--intraday-scalping-worker"],
         })
         run_clock(store,children,stop)
     return 0

@@ -486,10 +486,14 @@ def _pdf(story, path):
         color = "#16833b" if float(op.get("pnl_neto") or 0) > 0 else "#c62828" if float(op.get("pnl_neto") or 0) < 0 else "#667085"
         blocks += [Paragraph(f"<font color='{color}'><b>{html.escape(str(op['instrumento']))} · {html.escape(str(op['estado']))} · PnL {html.escape(op.get('moneda_plaza', 'ARS'))} {float(op.get('pnl_neto') or 0):,.2f}</b></font>", styles["Heading3"]),
                    Paragraph(html.escape(op["leccion"]), styles["BodyText"]), Spacer(1, 5)]
-    blocks += [PageBreak(), Paragraph("Noticias financieras, económicas y geopolíticas", styles["Heading2"])]
-    for item in story["noticias_relevantes"][:20]:
-        blocks.append(Paragraph(f"<b>{html.escape(item['category'])} · {html.escape(item['source'])}</b>: {html.escape(item['title'])}", styles["BodyText"]))
-        blocks.append(Spacer(1, 3))
+    blocks += [PageBreak()]
+    if story["noticias_relevantes"]:
+        blocks.append(Paragraph("Noticias financieras, económicas y geopolíticas", styles["Heading2"]))
+        for item in story["noticias_relevantes"][:20]:
+            blocks.append(Paragraph(f"<b>{html.escape(item['category'])} · {html.escape(item['source'])}</b>: {html.escape(item['title'])}", styles["BodyText"]))
+            blocks.append(Spacer(1, 3))
+    else:
+        blocks.append(Paragraph("Noticias excluidas del aprendizaje por configuración HF5.", styles["BodyText"]))
     blocks += [Spacer(1, 10), Paragraph("Trazabilidad de portones", styles["Heading2"])]
     for gate in story["secuencia_de_portones"][-30:]:
         blocks.append(Paragraph(html.escape(
@@ -505,6 +509,10 @@ def generate_report(store, period_type, period_key, start, end):
     pdf_path = REPORT_DIR / f"informe_{period_type.lower()}_{safe_key}.pdf"
     ai_path = REPORT_DIR / f"lecciones_ia_{period_type.lower()}_{safe_key}.json"
     data = _period_data(store, start, end)
+    if os.getenv("PAPER_NEWS_INGEST_ENABLED", "false").lower() not in {"1", "true", "yes"}:
+        # Conservar evidencia ya persistida, pero no mezclarla con nuevas
+        # muestras de trading ni con el paquete de aprendizaje.
+        data["news"] = []
     story = _report_story(f"Informe {period_type.lower()} — Porota Trading", f"{start} a {end}", data)
     try:
         _pdf(story, pdf_path)
@@ -527,13 +535,16 @@ def generate_report(store, period_type, period_key, start, end):
 
 
 def ensure_reports(store, include_today=False):
-    """Diario, semanal y mensual. El mensual elimina semanales integrados."""
+    """PDF diario y consolidaciones; un único paquete IA móvil de siete días."""
     init_schema(store)
     today = datetime.now(TZ).date()
     target = today if include_today else today - timedelta(days=1)
     start = datetime.combine(target, datetime.min.time(), TZ).isoformat()
     end = datetime.combine(target + timedelta(days=1), datetime.min.time(), TZ).isoformat()
     generate_report(store, "DIARIO", target.isoformat(), start, end)
+    rolling_start = target - timedelta(days=6)
+    generate_report(store, "IA_SEMANAL", f"{rolling_start}_{target}",
+                    datetime.combine(rolling_start, datetime.min.time(), TZ).isoformat(), end)
     # Backfill de fechas observadas: deja descarga día por día aun si el
     # servicio fue instalado después de esas operaciones.
     with store.connect() as c:
@@ -624,8 +635,12 @@ def service_tick(store, phase, force=False):
         create_backup(store, force=force)
     if force or _job_due(store, "FINANCIAL_REFRESH", 12 * 3600):
         refresh_financial(store)
-    if force or _job_due(store, "NEWS_REFRESH", 45 * 60):
+    news_enabled = os.getenv("PAPER_NEWS_INGEST_ENABLED", "false").lower() in {"1", "true", "yes"}
+    if news_enabled and (force or _job_due(store, "NEWS_REFRESH", 45 * 60)):
         refresh_news(store)
+    elif not news_enabled and (force or _job_due(store, "NEWS_REFRESH", 12 * 3600)):
+        _job(store, "NEWS_REFRESH", "NO_APLICA",
+             "Ingesta deshabilitada por HF5; evidencia histórica preservada", success=False)
     hour = datetime.now(TZ).hour
     if phase == "CLOSED" and hour >= int(os.getenv("MARKET_CLOSE_HOUR", "17")):
         if force or _job_due(store, "REPORTS", 6 * 3600):

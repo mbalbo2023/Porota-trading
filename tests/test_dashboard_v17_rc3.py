@@ -73,7 +73,7 @@ def test_real_money_mode_is_permanently_disabled():
 
 
 def test_rc3_version_and_image_are_consistent():
-    assert dashboard.VERSION == o_dashboard.VERSION == "17.0.0-rc3-hf2"
-    assert workspace.IMAGE == "porota-trading-bot:17.0.0-rc3-hf2"
+    assert dashboard.VERSION == o_dashboard.VERSION == "17.0.0-rc3-hf6"
+    assert workspace.IMAGE == "porota-trading-bot:17.0.0-rc3-hf6"
     compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
     assert compose.count(workspace.IMAGE) == 2

@@ -136,7 +136,7 @@ def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypat
     assert calls == [("history", "GGAL", "ACCIONES", "A-24HS")]
 
 
-def test_dashboard_expone_shadow_y_guardas_hf2(tmp_path, monkeypatch):
+def test_dashboard_expone_binding_y_guardas_hf3(tmp_path, monkeypatch):
     store = engine.PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
     observer._health(store, "PAPER_FOCUS_COVERAGE", "ROJO", "Foco 0/8", "test")
@@ -147,4 +147,5 @@ def test_dashboard_expone_shadow_y_guardas_hf2(tmp_path, monkeypatch):
     assert "PAPER_FOCUS_COVERAGE" in keys
     assert "PPI_BACKGROUND_INGEST" in keys
     page = dashboard.motor_page()
-    assert "VALIDACIÓN DE PIPELINE - NO VALIDACIÓN DE RENTABILIDAD" in page
+    assert "PORTÓN ECONÓMICO OBLIGATORIO" in page
+    assert "Economía matemática BINDING" in page

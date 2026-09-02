@@ -1,4 +1,6 @@
 """Reloj de salidas PAPER sin red ni IA; intención persistente separada del fill."""
+import json
+import os
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -108,8 +110,18 @@ class PositionExitSupervisor:
                 return verdict("WATCH_INVALID_CLOCK", "Apertura posterior al reloj")
             if not cause and self.session_policy and self.session_policy.exit_due(p, at):
                 cause = "EOD_PAPER"
-            if not cause and age >= self.max_hold_minutes:
-                cause = "MAX_HOLD_PAPER"
+            hold_limit = self.max_hold_minutes
+            is_scalping = False
+            try:
+                features = json.loads(p.get("features_json") or "{}")
+                is_scalping = features.get("execution_style") == "SCALPING_PAPER"
+                if is_scalping:
+                    hold_limit = min(hold_limit, int(features.get("scalping_max_hold_minutes") or
+                                      os.getenv("PAPER_SCALPING_MAX_HOLD_MINUTES", "30")))
+            except (ValueError, TypeError, AttributeError):
+                hold_limit = self.max_hold_minutes
+            if not cause and age >= hold_limit:
+                cause = "SCALPING_MAX_HOLD_PAPER" if is_scalping else "MAX_HOLD_PAPER"
         except (ValueError, TypeError):
             return verdict("WATCH_INVALID_CLOCK", "Fecha de apertura inválida")
         prefix = "EXIT_PENDING_" if cause else "WATCH_"

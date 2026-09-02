@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_DOWN
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import (CASH_CURRENCIES, InstrumentContract, SPOT_FAMILIES,
                                      aware_datetime, cash_currency, decimal_value, family_name)
@@ -24,8 +25,9 @@ import cd_spot_ledger as spot_ledger
 
 
 SOURCE = "PRODUCTION_PAPER"
-STRATEGY_VERSION = "paper-momentum-v17.0-rc3-hf1"
+STRATEGY_VERSION = "paper-momentum-v17.0-rc3-hf4"
 ZERO = Decimal("0")
+TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 def D(value, default="0") -> Decimal:
@@ -398,6 +400,15 @@ class PaperStore:
                      ai: str, patrimonial: str, final: str, reason: str,
                      paper_id=None, detail=None):
         """Conserva la secuencia completa; APPROVE de IA no equivale a fill."""
+        detail = detail or {}
+        economics = detail.get("economics") if isinstance(detail, dict) else None
+        contradiction = (final == "OPENED_SIMULATED" and
+            (technical != "APPROVE" or patrimonial != "APPROVE" or
+             not isinstance(economics, dict) or economics.get("passed") is not True))
+        if contradiction:
+            # Nunca reescribir el fill: conservar la anomalía de forma
+            # explícita para que introspección bloquee el GO.
+            reason = "INVARIANTE_DE_PORTONES_INCUMPLIDA: " + str(reason)
         with self.connect() as c:
             c.execute("""INSERT OR REPLACE INTO trade_gate_evaluations
               (evaluated_at,decision_key,symbol,technical_gate,ai_gate,
@@ -405,7 +416,11 @@ class PaperStore:
               VALUES(?,?,?,?,?,?,?,?,?,?)""",
               (q.observed_at, decision_key, q.symbol, technical, ai,
                patrimonial, final, str(reason)[:1000], paper_id,
-               json.dumps(detail or {}, ensure_ascii=False, default=str)[:8000]))
+               json.dumps(detail, ensure_ascii=False, default=str)[:8000]))
+            if contradiction:
+                c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
+                          (q.observed_at, SOURCE, "GATE_INVARIANT_ERROR", paper_id,
+                           str(reason)[:1000]))
 
 
 class PaperBroker:
@@ -421,7 +436,8 @@ class PaperBroker:
                  score_threshold="0.62", ai_mode="BINDING",
                  economics_mode="SHADOW", min_net_reward_risk="1.20",
                  stop_loss_pct="0.02", target_gain_pct="0.035",
-                 daily_loss_pct=None):
+                 daily_loss_pct=None, daily_soft_stop_pct=None,
+                 intraday_fee_rebate=None):
         self.store = store
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
@@ -463,8 +479,21 @@ class PaperBroker:
         self.min_net_reward_risk = decimal_value(min_net_reward_risk, "reward/risk neto", nonnegative=True)
         self.stop_loss_pct = decimal_value(stop_loss_pct, "stop", positive=True)
         self.target_gain_pct = decimal_value(target_gain_pct, "objetivo", positive=True)
+        if intraday_fee_rebate is None:
+            intraday_fee_rebate = os.getenv("PAPER_INTRADAY_FEE_REBATE", "true")
+        requested_rebate = (intraday_fee_rebate if isinstance(intraday_fee_rebate, bool)
+                            else str(intraday_fee_rebate).strip().lower()
+                            in {"1", "true", "yes", "si", "sí"})
+        # El beneficio solo puede anticiparse cuando el contrato obliga a
+        # cerrar dentro de la jornada. Sin esa garantia se vuelve al costo
+        # completo y conservador.
+        self.intraday_fee_rebate = bool(
+            requested_rebate and self.session_policy is not None
+            and getattr(self.session_policy, "close_at_eod", False)
+        )
         from bw_daily_risk import DailyRisk
-        self.daily_risk = DailyRisk(self,daily_loss_pct) if daily_loss_pct is not None else None
+        self.daily_risk = (DailyRisk(self,daily_loss_pct,soft_limit_pct=daily_soft_stop_pct)
+                           if daily_loss_pct is not None else None)
 
     def execution_time(self, q):
         return self.clock_fn() if self.clock_fn else q.observed_at
@@ -502,6 +531,21 @@ class PaperBroker:
         if rate < 0:
             raise ValueError("tarifario no valido para el costo por tramo")
         return (D(price) * D(qty) * rate).quantize(Decimal("0.01"))
+
+    def _leg_rate(self, asset_class, *, rebated=False):
+        """Tasa de una punta; la reducida exige elegibilidad intradiaria."""
+        import au_fee_schedule
+        family = family_name(asset_class)
+        if family not in SPOT_FAMILIES:
+            raise ValueError("La familia requiere un cálculo de costos específico")
+        if (rebated and self.intraday_fee_rebate
+                and family in au_fee_schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA):
+            rate = D(au_fee_schedule.costo_por_tramo_bonificado(family), "-1")
+        else:
+            rate = D(au_fee_schedule.costo_por_tramo(family), "-1")
+        if rate < 0:
+            raise ValueError("tarifario no valido para el costo por tramo")
+        return rate
 
     @staticmethod
     def _quantity_in_budget(unit_amount, budget, extra_cost):
@@ -595,8 +639,14 @@ class PaperBroker:
     def decide(self, q: Quote):
         try:
             currency, market = q.monetary_identity()
+            family = family_name(q.asset_class)
         except ValueError as exc:
             return "HOLD", ZERO, str(exc), {"samples": 0}
+        if family not in SPOT_FAMILIES:
+            return ("HOLD", ZERO,
+                    f"{family}: requiere su ciclo financiero específico; "
+                    "el ejecutor de contado no dimensiona prima ni garantía",
+                    {"samples": 0, "family": family})
         if q.opening_block_reason:
             return "HOLD", ZERO, q.opening_block_reason, {"samples": 0}
         at = self.execution_time(q)
@@ -632,22 +682,28 @@ class PaperBroker:
         return "BUY", score, "Momentum positivo y friccion admisible", features
 
     def _economic_diagnostics(self, q):
-        """Economía ex ante del contrato vigente, sin inventar alpha esperado."""
+        """Economía ex ante coherente con el cierre intradiario obligatorio."""
         entry = q.ask * (1 + self.slippage)
         stop = entry * (1 - self.stop_loss_pct)
         target = entry * (1 + self.target_gain_pct)
         stop_fill = stop * (1 - self.slippage)
         target_fill = target * (1 - self.slippage)
-        entry_cost = self._cost(entry, D(1), q.asset_class)
-        stop_cost = self._cost(stop_fill, D(1), q.asset_class)
-        target_cost = self._cost(target_fill, D(1), q.asset_class)
-        net_reward = target_fill - entry - entry_cost - target_cost
-        net_loss = entry - stop_fill + entry_cost + stop_cost
+        full = self._leg_rate(q.asset_class, rebated=False)
+        low = self._leg_rate(q.asset_class, rebated=True)
+        # La bonificacion corresponde a la operacion de menor valor. En una
+        # ganancia es la compra; en una perdida, la venta. Si no es elegible,
+        # low == full y se conserva el modelo previo.
+        net_reward = target_fill - entry - entry * low - target_fill * full
+        net_loss = entry - stop_fill + entry * full + stop_fill * low
         ratio = net_reward / net_loss if net_loss > 0 else ZERO
         breakeven = net_loss / (net_loss + max(ZERO, net_reward)) if net_loss > 0 else D(1)
         passed = net_reward > 0 and ratio >= self.min_net_reward_risk
         return {
-            "modeled_tariff": "FULL_PER_LEG_CONSERVATIVE_NO_INTRADAY_REBATE",
+            "modeled_tariff": ("PPI_INTRADAY_REBATE_ON_SMALLER_LEG"
+                               if self.intraday_fee_rebate else
+                               "FULL_PER_LEG_CONSERVATIVE_NO_INTRADAY_REBATE"),
+            "full_leg_rate": str(full),
+            "rebated_leg_rate": str(low),
             "net_reward_per_unit": str(net_reward),
             "net_loss_per_unit": str(net_loss),
             "net_reward_risk": str(ratio),
@@ -671,7 +727,15 @@ class PaperBroker:
             return
         self.store.event("DECISION_PAPER", f"{q.symbol} {action}: {reason}")
         if action == "BUY":
-            economics = self._economic_diagnostics(q)
+            try:
+                economics = self._economic_diagnostics(q)
+            except ValueError as exc:
+                features["economics"] = {"passed": False, "error": str(exc)}
+                self.store.record_gates(
+                    q, key, "APPROVE", "NOT_EVALUATED", "NOT_EVALUATED",
+                    "BLOCKED", f"Economía no evaluable: {exc}", detail=features)
+                self.store.event("ECONOMIC_GATE_UNSUPPORTED", f"{q.symbol}: {exc}")
+                return
             features["economics"] = economics
             if not economics["passed"]:
                 self.store.event("ECONOMIC_GATE_" + self.economics_mode,
@@ -870,7 +934,7 @@ class PaperBroker:
         at = self.execution_time(q)
         supervisor = PositionExitSupervisor(self, clock_fn=lambda: at,
             session_policy=self.session_policy,
-            max_hold_minutes=int(os.getenv("PAPER_MAX_HOLD_MINUTES", "180")))
+            max_hold_minutes=int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360")))
         return supervisor.supervise(p, q, at).state == "CLOSED"
 
     def _close(self, p: dict, q: Quote, reason: str, *, as_of=None):
@@ -947,6 +1011,22 @@ class PaperBroker:
             if exit_price <= 0:
                 return False
             exit_cost = self._cost(exit_price*factor,qty,p['asset_class'])
+            rebate = ZERO
+            family = family_name(p['asset_class'])
+            same_day = opened.astimezone(TZ).date() == observed.astimezone(TZ).date()
+            if (self.intraday_fee_rebate and same_day and p['market'] == 'BYMA'):
+                import au_fee_schedule
+                if family in au_fee_schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA:
+                    full = self._leg_rate(family, rebated=False)
+                    low = self._leg_rate(family, rebated=True)
+                    matched_buy = D(root['entry_price']) * qty * factor
+                    matched_sell = exit_price * qty * factor
+                    # Por fills parciales se acredita por la porcion
+                    # emparejada. Es conservador frente a netear fills mixtos
+                    # y nunca concede mas que la bonificacion oficial.
+                    rebate = (min(matched_buy, matched_sell) * (full-low)).quantize(
+                        Decimal('0.01'))
+                    exit_cost = max(ZERO, exit_cost-rebate)
             gross = (exit_price-D(root['entry_price']))*qty*factor
             net = gross-entry_cost-exit_cost
             proceeds = exit_price*qty*factor-exit_cost
@@ -992,6 +1072,11 @@ class PaperBroker:
                 (at,SOURCE,'PAPER_FILLED_SELL',p['paper_id'],
                  f'Venta simulada {qty} {q.symbol} @ {exit_price}; PnL de este fill {net}; '
                  f'remanente {remaining-qty}; posición {state}'))
+            if rebate > 0:
+                c.execute('INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)',
+                    (at,SOURCE,'PPI_INTRADAY_FEE_REBATE',p['paper_id'],
+                     f'Bonificación PAPER sobre punta menor emparejada: {rebate}; '
+                     'derechos de mercado conservados'))
             if self.daily_risk:
                 self.daily_risk.evaluate(at,connection=c,quotes={q.symbol:q})
         return True

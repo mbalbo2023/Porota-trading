@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
+from json import JSONDecodeError
 from typing import Callable, Optional
 from urllib.parse import urlsplit
 
@@ -43,6 +44,77 @@ _GET_PATHS = {
 
 class ReadOnlyPolicyViolation(RuntimeError):
     """La solicitud fue bloqueada localmente; no salio a la red."""
+
+
+def session_invalid(error: BaseException) -> bool:
+    """Reconoce autenticación expirada sin depender de una clase privada del SDK."""
+    current = error
+    for _ in range(6):
+        response = getattr(current, "response", None)
+        if getattr(response, "status_code", None) in {401, 403}:
+            return True
+        text = str(current).lower()
+        if any(token in text for token in (
+            "unauthorized", "not authorized", "no autorizado", "token expired",
+            "invalid token", "authentication required", "sesión expirada",
+        )):
+            return True
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+        if current is None:
+            break
+    return False
+
+
+def transient_payload_error(error: BaseException) -> bool:
+    """Limita el retry a cuerpos vacíos/incompletos y fallos transitorios HTTP."""
+    current = error
+    for _ in range(6):
+        if isinstance(current, JSONDecodeError):
+            return True
+        response = getattr(current, "response", None)
+        if getattr(response, "status_code", None) in {408, 429, 500, 502, 503, 504}:
+            return True
+        text = str(current).lower()
+        if any(token in text for token in (
+            "expecting value: line 1 column 1", "empty response", "empty body",
+            "temporarily unavailable", "connection reset", "remote disconnected",
+        )):
+            return True
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+        if current is None:
+            break
+    return False
+
+
+def classify_read_error(error: BaseException) -> str:
+    """Etiqueta estable para observabilidad sin almacenar cuerpos sensibles."""
+    if session_invalid(error):
+        return "PPI_SESSION_INVALID"
+    current = error
+    for _ in range(6):
+        response = getattr(current, "response", None)
+        status = getattr(response, "status_code", None)
+        if status:
+            return f"PPI_HTTP_{status}"
+        if isinstance(current, JSONDecodeError):
+            return "PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+        if current is None:
+            break
+    return "PPI_" + type(error).__name__.upper()
+
+
+def retry_read(call, *, retries: int = 1, pause=time.sleep, delay: float = 0.35):
+    """Reintento acotado para GET idempotente; nunca reintenta autenticación."""
+    if retries not in {0, 1, 2}:
+        raise ValueError("PPI_READ_RETRIES_OUT_OF_RANGE")
+    for attempt in range(retries + 1):
+        try:
+            return call()
+        except Exception as exc:
+            if session_invalid(exc) or not transient_payload_error(exc) or attempt >= retries:
+                raise
+            pause(delay)
 
 
 def _normal_path(value: str) -> str:

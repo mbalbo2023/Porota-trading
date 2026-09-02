@@ -34,26 +34,92 @@ TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 KNOWN = ("porota_production_observer", "porota_production_dashboard",
          "porota_dashboard_preview", "porota_sandbox_engine", "porota_production_engine")
 PAPER_DEFAULTS = {
-    "PAPER_INITIAL_CAPITAL_ARS": "1000000", "PAPER_INITIAL_CAPITAL_USD": "0",
-    "PAPER_INITIAL_CAPITAL_USD_MEP": "0", "PAPER_INITIAL_CAPITAL_USD_CCL": "0",
-    "PAPER_RISK_PER_TRADE": "0.005", "PAPER_MAX_OPEN_POSITIONS": "3",
+    "PAPER_INITIAL_CAPITAL_ARS": "1000000", "PAPER_INITIAL_CAPITAL_USD": "1000",
+    "PAPER_INITIAL_CAPITAL_USD_MEP": "1000", "PAPER_INITIAL_CAPITAL_USD_CCL": "1000",
+    "PAPER_RISK_PER_TRADE": "0.002", "PAPER_MAX_OPEN_POSITIONS": "5",
     "PAPER_MAX_POSITION_PCT": "0.25", "PAPER_MAX_TOTAL_EXPOSURE_PCT": "0.60",
-    "PAPER_MAX_HOLD_MINUTES": "180", "PAPER_ACTIVE_SYMBOL_LIMIT": "20",
+    "PAPER_MAX_HOLD_MINUTES": "360", "PAPER_ACTIVE_SYMBOL_LIMIT": "20",
     "PAPER_FOCUS_MINIMUM_FOR_OPENINGS": "4",
     "PAPER_READINESS_CHECK_SECONDS": "300",
-    "MAX_DAILY_LOSS_PCT": "1.0",
+    # HF6: el freno blando deja de abrir; el límite duro recién entonces
+    # ordena liquidar. El operador autorizó ampliar el duro a 2,5%.
+    "PAPER_DAILY_SOFT_STOP_PCT": "1.5",
+    "MAX_DAILY_LOSS_PCT": "2.5",
     "PAPER_SIGNAL_MIN_SAMPLES": "6", "PAPER_SIGNAL_WINDOW_MINUTES": "90",
     "PAPER_SCORE_THRESHOLD": "0.62", "PAPER_BOOK_MAX_AGE_SECONDS": "120",
     "PAPER_TRADE_MAX_AGE_SECONDS": "900", "PAPER_AI_GATE_MODE": "OFF",
-    "PAPER_ECONOMIC_GATE_MODE": "SHADOW",
+    "PAPER_ECONOMIC_GATE_MODE": "BINDING",
+    # Decisiones explícitas del operador para HF6. Registran contexto y
+    # alertas sin convertirse en portones ni reducir la operatoria.
+    "PAPER_EXPECTANCY_POLICY": "OBSERVATION_ONLY",
+    "PAPER_MARKET_REGIME_POLICY": "ALERT_ONLY",
+    "PAPER_SECTOR_CONCENTRATION_POLICY": "OBSERVATION_ONLY",
     "PAPER_MIN_NET_REWARD_RISK": "1.20",
-    "PAPER_STOP_LOSS_PCT": "0.02", "PAPER_TARGET_GAIN_PCT": "0.035",
-    "PPI_BACKGROUND_INGEST_SECONDS": "21600",
+    "PAPER_STOP_LOSS_PCT": "0.02", "PAPER_TARGET_GAIN_PCT": "0.05",
+    "PAPER_INTRADAY_FEE_REBATE": "true",
+    "PPI_BACKGROUND_INGEST_SECONDS": "7200",
+    "PAPER_NEWS_INGEST_ENABLED": "false",
+    # Foco configurable. AAPLD/AAPLC agregan identidades MEP/CCL sin quitar
+    # ninguna de las ocho identidades HF5; catálogo, libro y portones siguen
+    # siendo obligatorios antes de cualquier fill PAPER.
+    "PAPER_FOCUS_SYMBOLS": (
+        "GGAL:ACCIONES:A-24HS,YPFD:ACCIONES:A-24HS,"
+        "PAMP:ACCIONES:A-24HS,BMA:ACCIONES:A-24HS,"
+        "BBAR:ACCIONES:A-24HS,SUPV:ACCIONES:A-24HS,"
+        "CEPU:ACCIONES:A-24HS,AAPL:CEDEARS:A-24HS,"
+        "AAPLD:CEDEARS:A-24HS,AAPLC:CEDEARS:A-24HS"
+    ),
+    "PAPER_SCALPING_MODE": "ACTIVE_PAPER",
+    "PAPER_INTRADAY_SCAN_SECONDS": "180", "PAPER_INTRADAY_BATCH_LIMIT": "24",
+    "PAPER_SCALPING_MIN_NET_MARGIN": "0.005",
+    "PAPER_SCALPING_MAX_SPREAD": "0.005",
+    "PAPER_SCALPING_SCORE_THRESHOLD": "0.68",
+    "PAPER_SCALPING_RISK_PER_TRADE": "0.001",
+    "PAPER_SCALPING_MAX_OPEN_POSITIONS": "1",
+    "PAPER_SCALPING_MAX_HOLD_MINUTES": "30",
+    "PAPER_SCALPING_STOP_LOSS_PCT": "0.008",
+    "PAPER_SCALPING_TARGET_GAIN_PCT": "0.02",
+}
+HF3_FROZEN_PAPER_SETTINGS = {
+    # Resultado de la rueda 31/08: estas barreras no pueden heredarse de un
+    # .env viejo porque volvería a abrir con economía negativa o riesgo HF2.
+    "PAPER_RISK_PER_TRADE": "0.002",
+    "PAPER_MAX_OPEN_POSITIONS": "5",
+    "PAPER_MAX_HOLD_MINUTES": "360",
+    "PAPER_DAILY_SOFT_STOP_PCT": "1.5",
+    "MAX_DAILY_LOSS_PCT": "2.5",
+    "PAPER_ECONOMIC_GATE_MODE": "BINDING",
+    "PAPER_EXPECTANCY_POLICY": "OBSERVATION_ONLY",
+    "PAPER_MARKET_REGIME_POLICY": "ALERT_ONLY",
+    "PAPER_SECTOR_CONCENTRATION_POLICY": "OBSERVATION_ONLY",
+    "PAPER_FOCUS_SYMBOLS": (
+        "GGAL:ACCIONES:A-24HS,YPFD:ACCIONES:A-24HS,"
+        "PAMP:ACCIONES:A-24HS,BMA:ACCIONES:A-24HS,"
+        "BBAR:ACCIONES:A-24HS,SUPV:ACCIONES:A-24HS,"
+        "CEPU:ACCIONES:A-24HS,AAPL:CEDEARS:A-24HS,"
+        "AAPLD:CEDEARS:A-24HS,AAPLC:CEDEARS:A-24HS"
+    ),
+    "PAPER_TARGET_GAIN_PCT": "0.05",
+    "PAPER_SCALPING_MODE": "ACTIVE_PAPER",
+    "PAPER_INTRADAY_SCAN_SECONDS": "180",
+    "PAPER_INTRADAY_BATCH_LIMIT": "24",
+    "PAPER_SCALPING_MIN_NET_MARGIN": "0.005",
+    "PAPER_SCALPING_MAX_SPREAD": "0.005",
+    "PAPER_SCALPING_SCORE_THRESHOLD": "0.68",
+    "PPI_BACKGROUND_INGEST_SECONDS": "7200",
+    "PAPER_NEWS_INGEST_ENABLED": "false",
+    "PAPER_SCALPING_RISK_PER_TRADE": "0.001",
+    "PAPER_SCALPING_MAX_OPEN_POSITIONS": "1",
+    "PAPER_SCALPING_MAX_HOLD_MINUTES": "30",
+    "PAPER_SCALPING_STOP_LOSS_PCT": "0.008",
+    "PAPER_SCALPING_TARGET_GAIN_PCT": "0.02",
 }
 
 
 def paper_settings(env):
-    return {key: env.get(key, "").strip() or default for key, default in PAPER_DEFAULTS.items()}
+    values = {key: env.get(key, "").strip() or default for key, default in PAPER_DEFAULTS.items()}
+    values.update(HF3_FROZEN_PAPER_SETTINGS)
+    return values
 
 
 def run(*args, check=True, capture=False):

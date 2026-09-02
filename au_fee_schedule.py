@@ -215,6 +215,32 @@ def costo_por_tramo(clase: Optional[str], stress_factor: float = 1.0) -> float:
     return round(comision + derecho + prima, 8)
 
 
+# PPI, tarifario vigente desde 01/07/2026: en una compra y venta del mismo
+# activo durante el mismo dia, mercado local, moneda y liquidacion, bonifica
+# el arancel de la operacion de menor valor. Los derechos de mercado y el IVA
+# sobre esos derechos no forman parte de la bonificacion. No se extrapola a
+# derivados ni a instrumentos cuyo ciclo no ejecuta este broker de contado.
+FAMILIAS_CON_BONIFICACION_INTRADIARIA = frozenset({
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "OBLIGACIONES", "LETRAS",
+})
+
+
+def costo_por_tramo_bonificado(clase: Optional[str]) -> float:
+    """Costo de la punta menor tras la bonificacion intradiaria de PPI.
+
+    Devuelve solamente derechos de mercado y sus impuestos aplicables. La
+    elegibilidad temporal, de mercado, moneda y liquidacion se valida en el
+    motor; esta funcion no supone que cualquier operacion recibe el beneficio.
+    """
+    normalizada = normalizar_clase(clase)
+    if normalizada not in FAMILIAS_CON_BONIFICACION_INTRADIARIA:
+        raise ValueError("Familia sin bonificacion intradiaria modelada")
+    a = arancel_de(normalizada)
+    derecho = a.derecho * (1 + IVA_PCT if a.derecho_iva else 1)
+    prima = a.derecho_sobre_prima * (1 + IVA_PCT if a.prima_iva else 1)
+    return round(derecho + prima, 8)
+
+
 def costo_redondo(clase: Optional[str], spread_pct: float = 0.0,
                   stress_factor: float = 1.0) -> float:
     """Fracción del monto que se lleva la operación completa (ida y vuelta).
