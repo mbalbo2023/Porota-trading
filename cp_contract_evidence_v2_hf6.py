@@ -2,7 +2,7 @@
 
 The v1 registry keeps the latest evaluation per instrument. v2 complements it
 with immutable snapshots and change events so a changed contract can never be
-silently overwritten. This module has no PPI order capability.
+silently overwritten. This module has no broker order capability.
 """
 from __future__ import annotations
 
@@ -11,12 +11,17 @@ import json
 from datetime import datetime, timezone
 
 SCHEMA = "porota-contract-evidence-v2"
+# Lower rank means higher authority inside the same provider-backed field set.
+# Providers are NEVER relabelled as one another; provenance remains explicit.
 SOURCE_RANK = {
-    "PPI_STRUCTURED_API": 1,
-    "PPI_AUTHENTICATED_XHR": 2,
-    "PPI_OFFICIAL_DOCUMENTATION": 3,
-    "PPI_AUTHENTICATED_WEB": 4,
-    "PPI_SUPPORT": 5,
+    "PPI_STRUCTURED_API": 10,
+    "PPI_AUTHENTICATED_XHR": 20,
+    "PPI_OFFICIAL_DOCUMENTATION": 30,
+    "PPI_AUTHENTICATED_WEB": 40,
+    "PPI_SUPPORT": 50,
+    "A3_PRIMARY_API": 10,
+    "A3_RISK_POSTTRADE": 10,
+    "A3_OFFICIAL_DOCUMENTATION": 30,
 }
 
 
