@@ -18,6 +18,7 @@ sys.path.insert(0, "/app")
 
 import ci_ppi_bond_estimate_patch_hf6  # noqa: F401 - installs GET-only extension
 import ch_contract_evidence_hf6 as evidence
+import cm_special_family_discovery_hf6 as discovery
 from bd_ppi_readonly_guard import ProductionMarketReader
 
 
@@ -67,7 +68,9 @@ def main():
         reader.login_once()
         run_id = "contract-evidence-" + uuid.uuid4().hex
         result = evidence.collect(reader, store, run_id=run_id)
+        probes = discovery.probe(reader, store)
         print("EVIDENCE_RESULT=" + json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print("DISCOVERY_PROBES=" + json.dumps(probes, ensure_ascii=False, sort_keys=True))
         print("PPI_READER_METRICS=" + json.dumps(reader.metrics, sort_keys=True))
     finally:
         reader.close()
