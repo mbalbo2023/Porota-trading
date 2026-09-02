@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Porota HF6 contract evidence refresh after market close
+
+[Timer]
+OnCalendar=*-*-* 20:10:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+Unit=porota-contract-evidence-hf6.service
+
+[Install]
+WantedBy=timers.target
