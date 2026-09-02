@@ -6,6 +6,7 @@ PATCH_ROOT="/opt/porota-runtime-patches/hf6-contract-evidence"
 OUT_DIR="/opt/porota-trading/data/contract_evidence/ppi_web_all_families"
 OUT="$OUT_DIR/latest.json"
 CRED="/etc/credstore.encrypted/porota-ppi-web.cred"
+CRED_NAME="ppi_web_credentials"
 
 if [ "$(docker inspect --format='{{.State.Status}}' "$OBS" 2>/dev/null || true)" != "running" ]; then
   echo "STATUS=SKIPPED_OBSERVER_NOT_RUNNING"
@@ -29,16 +30,16 @@ TMP="$(mktemp /dev/shm/porota-ppi-web-XXXXXX.json)"
 trap 'rm -f "$TMP"' EXIT
 chmod 600 "$TMP"
 
-# Credential is decrypted only into tmpfs and piped directly to the immutable
-# observer's Python process. It is never printed, committed, or written to DB.
-sudo -n systemd-creds decrypt "$CRED" - 2>/dev/null \
+# The credential was encrypted with --name=ppi_web_credentials. systemd-creds
+# binds the encrypted payload to that name, so decryption must supply the same
+# name. Plaintext exists only in the pipe/tmpfs path and is never logged.
+sudo -n systemd-creds decrypt --name="$CRED_NAME" "$CRED" - 2>/dev/null \
   | docker exec -i -e PYTHONDONTWRITEBYTECODE=1 "$OBS" python -c "$CODE" > "$TMP"
 
 python3 - "$TMP" <<'PY'
 import json,sys
 p=sys.argv[1]
 d=json.load(open(p,encoding='utf-8'))
-# Fail closed if the collector ever reports a mutation/order attempt.
 s=d.get('safety') or {}
 if int(s.get('order_posts',0) or 0) != 0 or int(s.get('mutation_requests',0) or 0) != 0:
     raise SystemExit('SAFETY_ASSERTION_FAILED')
