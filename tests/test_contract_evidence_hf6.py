@@ -126,3 +126,11 @@ def test_special_probe_never_writes_trading_catalog(tmp_path):
     assert etf["owner"] == "POROTA"
     assert cau["status"] == "PPI_SEARCH_HTTP200_EMPTY_SUPPORT_REQUIRED"
     assert cau["owner"] == "PPI_SUPPORT"
+
+
+def test_runtime_overlay_respects_read_only_observer_rootfs():
+    script = Path("scripts/porota_contract_evidence_hf6_runtime.sh").read_text(encoding="utf-8")
+    assert "docker cp" not in script
+    assert "/app/data/runtime_patches/hf6_contract_evidence" in script
+    assert "ReadonlyRootfs" in script
+    assert "FAIL_CLOSED_OBSERVER_NOT_READONLY" in script
