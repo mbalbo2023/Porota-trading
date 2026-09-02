@@ -1,39 +1,33 @@
-"""HF6 Contract/Data v2: pure policy for progressive historical ingestion.
+"""HF6 Contract/Data v2: policy for progressive historical ingestion.
 
-This module deliberately does NOT enable trading. Historical availability and
-paper readiness are separate states. A HOLD family may accumulate verified
-history before its contract/sizing/settlement adapter is ready.
+Historical collection and PAPER readiness are deliberately independent. A HOLD
+family may accumulate verified history before contract/sizing/settlement rules
+are ready.
 
-Policy goals:
-- validate provider rows independently instead of rejecting a whole instrument
-  because one row is malformed;
-- never interpolate or invent missing bars;
-- preserve rejected rows/reasons as evidence;
-- rank retries without hammering the same identity;
-- support data collection for HOLD families when their market-data identity is
-  explicit enough to query safely.
+Policy proven from the 02-Sep-2026 HF6 audit:
+- 169 PPI payloads were PARTIAL but contained 31,654 valid daily bars;
+- 157/169 partial identities already had >=90 valid bars;
+- one malformed provider row must not invalidate all valid rows;
+- no interpolation, forward-fill or synthetic OHLC is allowed;
+- PPI remains primary; Data912 is historical batch fallback only for explicitly
+  supported families and is never an execution/live-price source.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping
 from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
-# Data collection capability is intentionally broader than trading capability.
-# Inclusion here means "may query historical read-only data", NOT READY_PAPER.
 HISTORY_DATA_FAMILIES = frozenset({
     "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "ON", "OBLIGACIONES",
     "OPCIONES", "FUTUROS", "ETF", "ETFS", "INDICES",
 })
-
-# Families whose useful history is normally not a daily OHLC instrument series
-# in the same semantic sense. They require a specialized adapter, so generic
-# PPI history must not be forced onto them.
 SPECIALIZED_HISTORY_FAMILIES = frozenset({"CAUCIONES", "FCI", "FCIS", "LICITACIONES"})
+DATA912_FALLBACK_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "BONOS"})
 
 MIN_CONTEXT_BARS = 30
 PREFERRED_CONTEXT_BARS = 90
@@ -80,10 +74,7 @@ class ValidatedHistory:
 
     @property
     def storage_quality(self) -> str:
-        """Storage status only; never a trading-readiness state."""
-        if not self.provider_rows:
-            return "EMPTY_OR_INVALID"
-        if not self.valid_count:
+        if not self.provider_rows or not self.valid_count:
             return "EMPTY_OR_INVALID"
         if not self.rejected_count:
             return "VALID_PAYLOAD"
@@ -120,13 +111,7 @@ def _decimal(value, name: str, *, positive=False, nonnegative=False) -> Decimal:
 
 def validate_provider_history(payload, *, as_of: datetime | None = None,
                               date_from=None, date_to=None) -> ValidatedHistory:
-    """Validate PPI-style OHLC rows one-by-one without repairing them.
-
-    Invalid rows are rejected with an explicit reason. No interpolation,
-    forward-fill, duplicate collapse, timezone guessing or synthetic OHLC is
-    allowed. A duplicate date is rejected rather than silently replacing the
-    earlier provider row.
-    """
+    """Validate PPI-style daily rows independently without repairing them."""
     if not isinstance(payload, list):
         return ValidatedHistory((), (RejectedRow(-1, "PAYLOAD_NOT_LIST"),), 0, None, None)
 
@@ -161,7 +146,6 @@ def validate_provider_history(payload, *, as_of: datetime | None = None,
             if not low <= min(opening, close) <= max(opening, close) <= high:
                 raise ValueError("OHLC_INCONSISTENT")
 
-            # Preserve provider fields; add no invented values.
             accepted.append((source_at, dict(row)))
             seen.add(key)
         except ValueError as exc:
@@ -190,8 +174,41 @@ def history_collection_capability(instrument_type: str, *, status: str,
     return "UNSUPPORTED_HISTORY_FAMILY"
 
 
+def context_state(valid_rows: int) -> str:
+    n = max(0, int(valid_rows or 0))
+    if n >= STRONG_CONTEXT_BARS:
+        return "STRONG_CONTEXT"
+    if n >= PREFERRED_CONTEXT_BARS:
+        return "PREFERRED_CONTEXT"
+    if n >= MIN_CONTEXT_BARS:
+        return "MINIMUM_CONTEXT"
+    if n:
+        return "INSUFFICIENT_CONTEXT"
+    return "NO_VALID_HISTORY"
+
+
+def data912_fallback_allowed(instrument_type: str) -> bool:
+    """Historical fallback permission only; never execution permission."""
+    return str(instrument_type or "").upper() in DATA912_FALLBACK_FAMILIES
+
+
+def needs_data912_reconciliation(instrument_type: str, valid_rows: int,
+                                 latest_state: str | None) -> bool:
+    """Select a Porota identity for post-close Data912 batch repair.
+
+    Preferred context is 90 valid daily bars. Stronger context can continue to
+    be accumulated later, but Data912 is not hammered merely because an
+    otherwise usable PPI series has fewer than 180 bars.
+    """
+    if not data912_fallback_allowed(instrument_type):
+        return False
+    state = str(latest_state or "").upper()
+    if state in {"EMPTY_OR_INVALID", "ERROR"}:
+        return True
+    return max(0, int(valid_rows or 0)) < PREFERRED_CONTEXT_BARS
+
+
 def retry_delay(status: str, attempt_count: int) -> timedelta:
-    """Backoff policy; successful but incomplete data retries much less often."""
     n = max(1, int(attempt_count or 1))
     state = str(status or "").upper()
     if state == "VALID_PAYLOAD":
@@ -208,7 +225,6 @@ def retry_delay(status: str, attempt_count: int) -> timedelta:
 def rank_history_target(*, context_state: str, latest_status: str | None,
                         last_attempt_at: datetime | None, attempt_count: int,
                         now: datetime | None = None) -> tuple:
-    """Stable priority key: missing usable context first, then oldest due retry."""
     now = now or datetime.now(TZ)
     if now.tzinfo is None:
         now = now.replace(tzinfo=TZ)
