@@ -80,12 +80,17 @@ def history_db_path() -> Path:
 def v2_store_metrics(path: Path | None = None) -> dict:
     db=(path or history_db_path()).resolve()
     if not db.exists() or not db.is_file():
-        return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,"by_family":{}}
+        return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,"by_family":{},
+                "reason":"V2_DB_NOT_PRESENT"}
     c=sqlite3.connect("file:"+str(db)+"?mode=ro",uri=True,timeout=5)
     try:
         tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "history_canonical_v2" not in tables:
-            return {"available":True,"path":str(db),"canonical_rows":0,"identities":0,"by_family":{}}
+            # A legacy history database may exist without the v2 schema.  That
+            # is not an available v2 store and must not suppress the truthful
+            # legacy coverage numerator in the dashboard.
+            return {"available":False,"path":str(db),"canonical_rows":0,
+                    "identities":0,"by_family":{},"reason":"V2_SCHEMA_NOT_PRESENT"}
         row=c.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()
         identities=c.execute(
             """SELECT COUNT(*) FROM (
@@ -101,7 +106,7 @@ def v2_store_metrics(path: Path | None = None) -> dict:
             by[str(r[0])]={"symbols":int(r[1] or 0),"rows":int(r[2] or 0),
                            "first_date":r[3],"last_date":r[4]}
         return {"available":True,"path":str(db),"canonical_rows":int(row[0] or 0),
-                "identities":int(identities[0] or 0),"by_family":by}
+                "identities":int(identities[0] or 0),"by_family":by,"reason":"V2_SCHEMA_PRESENT"}
     finally:
         c.close()
 
