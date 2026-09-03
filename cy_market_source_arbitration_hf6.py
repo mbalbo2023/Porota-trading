@@ -7,6 +7,13 @@ A3/Primary is NOT consulted synchronously to validate a PPI trading decision.
 It is a background evidence source for derivative contracts, histories and
 post-close/feed-quality analysis. This avoids adding latency or creating false
 conflicts from observations taken at different instants.
+
+AUTHORITATIVE RULE
+------------------
+If PPI has all live fields required by the family and they are fresh, PPI wins
+because it is the broker used by Porota. A difference observed later against A3
+MUST NOT put a live instrument or position in HOLD and MUST NOT veto a PPI
+trading decision. Background differences are diagnostics only.
 """
 from __future__ import annotations
 
@@ -16,6 +23,7 @@ from typing import Any, Mapping, Optional
 
 LIVE_FIELD_MIXING_ALLOWED = False
 SYNCHRONOUS_SECONDARY_VALIDATION_ALLOWED = False
+BACKGROUND_DIVERGENCE_CAN_HOLD_LIVE = False
 REAL_ORDER_ROUTING_ALLOWED = False
 
 
@@ -74,6 +82,9 @@ def select_live_snapshot(
     If PPI is missing/stale/incomplete for the live requirements of the family,
     the result is HOLD until a separately approved family-level source policy
     says otherwise.
+
+    If PPI is complete and fresh, a background A3 difference is irrelevant to
+    this function and cannot change the returned READY result.
     """
     fam = str(family).upper()
     primary = primary_live_source(fam)
@@ -95,7 +106,7 @@ def select_live_snapshot(
         )
     return ArbitrationResult(
         fam, primary, "PRIMARY_SOURCE_READY", snap,
-        "WHOLE_PRIMARY_SOURCE_SELECTED_NO_SECONDARY_CALL",
+        "PPI_AUTHORITATIVE_WHEN_COMPLETE_AND_FRESH",
     )
 
 
@@ -107,8 +118,10 @@ def compare_background_numeric(
 ) -> str:
     """Offline/asynchronous quality comparison only.
 
-    This function must never be used as a live trading gate. Its output is for
-    diagnostics, source-quality statistics and post-close review.
+    This function must never be used as a live trading gate, must never change
+    a live readiness state and must never put an instrument/position in HOLD.
+    Its output is for diagnostics, source-quality statistics and post-close
+    review only.
     """
     if primary_value is None or evidence_value is None:
         return "BACKGROUND_COMPARISON_INCOMPLETE"
@@ -125,6 +138,8 @@ def assert_source_invariants() -> None:
         raise AssertionError("LIVE_FIELD_MIXING_ALLOWED must remain false")
     if SYNCHRONOUS_SECONDARY_VALIDATION_ALLOWED is not False:
         raise AssertionError("SYNCHRONOUS_SECONDARY_VALIDATION_ALLOWED must remain false")
+    if BACKGROUND_DIVERGENCE_CAN_HOLD_LIVE is not False:
+        raise AssertionError("Background divergence must never hold live PPI data")
     if REAL_ORDER_ROUTING_ALLOWED is not False:
         raise AssertionError("REAL_ORDER_ROUTING_ALLOWED must remain false")
     for family in ("FUTUROS", "OPCIONES"):
