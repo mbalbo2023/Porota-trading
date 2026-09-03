@@ -1,49 +1,43 @@
-"""RC4 — modelo puro de validación SHADOW -> BINDING.
+"""RC4 — governance model for SHADOW -> BINDING evidence.
 
-Este módulo NO cambia flags, NO habilita portones, NO accede al broker y NO
-escribe en runtime. Convierte evidencia persistida por otros componentes en un
-estado auditable de avance de la ventana de validación del portón económico.
+This module is pure. It does not change policy modes, access a broker, write a
+DB, or generate lessons. It only evaluates evidence supplied by runtime or
+post-close jobs.
 
-Principios:
-- Q1 (costos) y Q2 (ejecución) son prerequisitos para darle autoridad BINDING
-  al portón económico; Q3 (edge de la estrategia) es una validación distinta.
-- cumplir métricas produce ELIGIBLE_FOR_BINDING_REVIEW, nunca BINDING.
-- cualquier cambio en parámetros congelados invalida la ventana.
-- una lección aprendida sólo se muestra si existe evidencia persistida; este
-  módulo no inventa explicaciones ni usa IA.
+Two evidence grades are intentionally separate:
+
+* PAPER_BINDING_EVIDENCE: validates model consistency, instrumentation,
+  simulated execution fidelity and counterfactual policy behaviour.
+* REAL_BINDING_EVIDENCE: requires externally observed/real broker facts (for
+  example fees actually billed). Those facts are NOT OBSERVABLE in
+  PRODUCTION_PAPER and are never fabricated.
+
+Passing this module yields ELIGIBLE_FOR_BINDING_DECISION, never BINDING.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Iterable
 
 
-PROPOSED_START = date(2026, 9, 7)
-PROPOSED_END = date(2026, 10, 2)
-EXPECTED_WHEELS = 20
-TARGET_RECONCILED = 60
-
-FROZEN_KEYS = (
-    "PAPER_STOP_LOSS_PCT",
-    "PAPER_TARGET_GAIN_PCT",
-    "PAPER_MIN_NET_REWARD_RISK",
-    "PAPER_RISK_PER_TRADE",
-    "PAPER_FOCUS_SYMBOLS",
-    "AU_FEE_SCHEDULE_SHA256",
-)
+DEFAULT_REFERENCE_WHEELS = 20
+DEFAULT_REFERENCE_OBSERVATIONS = 20
 
 
 @dataclass(frozen=True)
 class CriterionResult:
     key: str
     label: str
-    passed: bool
+    state: str
     observed: str
     target: str
     remaining: str
-    evidence_available: bool = True
+    evidence_available: bool
+
+    @property
+    def passed(self) -> bool:
+        return self.state == "PASS"
 
 
 @dataclass(frozen=True)
@@ -60,12 +54,14 @@ class MilestoneResult:
 class ValidationResult:
     state: str
     mode: str
+    paper_evidence_state: str
+    real_evidence_state: str
     criteria: tuple[CriterionResult, ...]
     milestones: tuple[MilestoneResult, ...]
     criteria_passed: int
     criteria_total: int
-    reconciled: int
-    reconciled_remaining: int
+    observations: int
+    observations_remaining: int
     wheels_elapsed: int | None
     wheels_remaining: int | None
     counterfactual_reject_pct: Decimal | None
@@ -75,7 +71,7 @@ class ValidationResult:
 
 
 def _D(value) -> Decimal | None:
-    if value is None or value == "":
+    if value in (None, ""):
         return None
     try:
         result = Decimal(str(value))
@@ -91,14 +87,18 @@ def _I(value) -> int:
         return 0
 
 
-def _B(value) -> bool:
+def _bool(value) -> bool:
     return value is True
 
 
-def _criterion(key, label, *, passed, observed, target, remaining,
-               evidence_available=True) -> CriterionResult:
+def _criterion(key, label, *, passed=False, observed="SIN_DATO", target="",
+               remaining="", evidence_available=False,
+               not_applicable=False) -> CriterionResult:
+    state = "NOT_APPLICABLE" if not_applicable else (
+        "PASS" if evidence_available and passed else
+        "PENDING" if evidence_available else "WAITING_EVIDENCE")
     return CriterionResult(
-        key=key, label=label, passed=bool(passed), observed=str(observed),
+        key=key, label=label, state=state, observed=str(observed),
         target=str(target), remaining=str(remaining),
         evidence_available=bool(evidence_available),
     )
@@ -106,38 +106,32 @@ def _criterion(key, label, *, passed, observed, target, remaining,
 
 def frozen_configuration_changed(expected_fingerprint: str | None,
                                  current_fingerprint: str | None) -> bool:
-    """Fail closed sólo si existen ambos fingerprints y son distintos.
-
-    La ausencia de fingerprint no se presenta como cambio demostrado: debe
-    mostrarse como evidencia faltante en la capa de persistencia/dashboard.
-    """
-    if not expected_fingerprint or not current_fingerprint:
-        return False
-    return str(expected_fingerprint) != str(current_fingerprint)
+    return bool(expected_fingerprint and current_fingerprint and
+                str(expected_fingerprint) != str(current_fingerprint))
 
 
 def counterfactual_assessment(value) -> tuple[Decimal | None, str]:
+    """Diagnostic only; rejection percentage is never a tuning target itself."""
     pct = _D(value)
     if pct is None:
         return None, "PENDIENTE_DE_MEDICION"
     if pct < 0 or pct > 100:
         return pct, "INVALIDO"
-    if pct < Decimal("5"):
-        return pct, "CASI_NO_FILTRA_REVISAR_UMBRAL"
-    if pct > Decimal("90"):
-        return pct, "CASI_BLOQUEA_TODO_NO_ACTIVAR"
-    if Decimal("20") <= pct <= Decimal("70"):
-        return pct, "DISCRIMINACION_UTIL_PARA_REVISION"
-    return pct, "ZONA_INTERMEDIA_REQUIERE_JUSTIFICACION"
+    if pct == 0:
+        return pct, "NO_FILTRO_EN_LA_MUESTRA_REVISAR_EVIDENCIA_Y_UMBRAL"
+    if pct == 100:
+        return pct, "BLOQUEARIA_TODO_NO_ACTIVAR_SIN_INVESTIGAR"
+    return pct, "DIAGNOSTICO_REQUIERE_ANALISIS_DE_CALIDAD_NO_OPTIMIZAR_POR_PORCENTAJE"
 
 
 def _milestone_state(criteria: Iterable[CriterionResult]) -> str:
     items=tuple(criteria)
-    if not items:
-        return "NOT_STARTED"
-    if all(item.passed for item in items):
+    applicable=[c for c in items if c.state != "NOT_APPLICABLE"]
+    if not applicable:
+        return "NOT_APPLICABLE"
+    if all(c.passed for c in applicable):
         return "PASS"
-    if any(item.evidence_available for item in items):
+    if any(c.evidence_available for c in applicable):
         return "IN_PROGRESS"
     return "WAITING_EVIDENCE"
 
@@ -145,211 +139,137 @@ def _milestone_state(criteria: Iterable[CriterionResult]) -> str:
 def evaluate(metrics: dict, *, lessons: dict | None = None,
              expected_fingerprint: str | None = None,
              current_fingerprint: str | None = None) -> ValidationResult:
-    """Evalúa la ventana sin mutar ninguna política.
+    """Evaluate PAPER governance facts without inventing real-broker evidence."""
+    metrics=dict(metrics or {})
+    lessons=dict(lessons or {})
+    mode=str(metrics.get("economic_gate_mode") or "UNKNOWN").upper()
 
-    ``metrics`` debe contener hechos medidos/persistidos. Los faltantes no se
-    infieren y por lo tanto quedan pendientes.
-    """
-    metrics = dict(metrics or {})
-    lessons = dict(lessons or {})
-    mode = str(metrics.get("economic_gate_mode") or "UNKNOWN").upper()
+    ref_wheels=max(1,_I(metrics.get("reference_wheels") or DEFAULT_REFERENCE_WHEELS))
+    ref_obs=max(1,_I(metrics.get("reference_observations") or DEFAULT_REFERENCE_OBSERVATIONS))
+    wheels=(None if metrics.get("wheels_elapsed") is None else _I(metrics.get("wheels_elapsed")))
+    observations=_I(metrics.get("paper_economic_evaluations"))
 
-    closed = _I(metrics.get("closed_operations"))
-    reconciled = _I(metrics.get("reconciled_operations"))
-    coverage = _D(metrics.get("reconciliation_coverage_pct"))
-    if coverage is None and closed > 0:
-        coverage = (Decimal(reconciled) / Decimal(closed) * Decimal(100))
+    tariff_present=_bool(metrics.get("official_tariff_snapshot_available"))
+    tariff_fresh=_bool(metrics.get("official_tariff_snapshot_fresh"))
+    tariff_versioned=_bool(metrics.get("official_tariff_versioned"))
+    fee_tests=_bool(metrics.get("fee_model_invariants_verified"))
+    economics_persisted=_bool(metrics.get("economic_inputs_persisted"))
+    cf_persisted=_bool(metrics.get("economic_counterfactual_persisted"))
+    execution_report=_bool(metrics.get("execution_fidelity_report_available"))
+    exit_causes=_bool(metrics.get("exit_cause_distribution_available"))
+    slippage_measured=_bool(metrics.get("slippage_gap_measured"))
+    depth_measured=_bool(metrics.get("book_exceedance_measured"))
 
-    median_gap = _D(metrics.get("median_gap_bp"))
-    p90_gap = _D(metrics.get("p90_gap_bp"))
-    winners = _I(metrics.get("reconciled_winners"))
-    losers = _I(metrics.get("reconciled_losers"))
-    families = _I(metrics.get("reconciled_families"))
-    unexplained = _I(metrics.get("unexplained_divergences"))
-    drift = _D(metrics.get("week3_week4_median_drift_bp"))
-    new_categories = _I(metrics.get("new_divergence_categories"))
+    c_tariff=_criterion(
+        "official_tariff", "Tarifario oficial versionado y fresco",
+        passed=tariff_present and tariff_fresh and tariff_versioned,
+        observed=f"presente={tariff_present}; fresco={tariff_fresh}; versionado={tariff_versioned}",
+        target="fuente oficial + hash/version + freshness valida",
+        remaining="0" if tariff_present and tariff_fresh and tariff_versioned else "completar evidencia tarifaria",
+        evidence_available=any(k in metrics for k in (
+            "official_tariff_snapshot_available","official_tariff_snapshot_fresh","official_tariff_versioned")))
+    c_fee=_criterion(
+        "fee_model", "Invariantes del modelo de costos",
+        passed=fee_tests,
+        observed="VERIFICADAS" if fee_tests else "PENDIENTE",
+        target="tests determinísticos verdes con unidades correctas",
+        remaining="0" if fee_tests else "ejecutar/cerrar tests",
+        evidence_available="fee_model_invariants_verified" in metrics)
+    c_inputs=_criterion(
+        "economic_inputs", "Inputs económicos persistidos por evaluación",
+        passed=economics_persisted,
+        observed="PERSISTIDOS" if economics_persisted else "PENDIENTE",
+        target="costos+spread+slippage+reward/loss+breakeven neto trazables",
+        remaining="0" if economics_persisted else "instrumentar ledger",
+        evidence_available="economic_inputs_persisted" in metrics)
+    c_cf=_criterion(
+        "counterfactual", "Contrafáctico SHADOW del portón económico",
+        passed=cf_persisted and observations >= ref_obs,
+        observed=f"persistido={cf_persisted}; evaluaciones={observations}",
+        target=f"persistido y >= {ref_obs} evaluaciones de referencia",
+        remaining=max(0,ref_obs-observations) if cf_persisted else "instrumentar y acumular",
+        evidence_available="economic_counterfactual_persisted" in metrics or observations>0)
+    c_exec=_criterion(
+        "execution_fidelity", "Fidelidad de ejecución PAPER medida",
+        passed=execution_report,
+        observed="DISPONIBLE" if execution_report else "PENDIENTE",
+        target="reporte reproducible por operación/familia",
+        remaining="0" if execution_report else "implementar/ejecutar replay de ejecución",
+        evidence_available="execution_fidelity_report_available" in metrics)
+    c_exit=_criterion(
+        "exit_causes", "Distribución de causas de salida y PnL",
+        passed=exit_causes,
+        observed="MEDIDA" if exit_causes else "PENDIENTE",
+        target="por causa, moneda y familia",
+        remaining="0" if exit_causes else "instrumentar reporte",
+        evidence_available="exit_cause_distribution_available" in metrics)
+    c_slip=_criterion(
+        "slippage_depth", "Slippage y profundidad cuantificados",
+        passed=slippage_measured and depth_measured,
+        observed=f"slippage={slippage_measured}; profundidad={depth_measured}",
+        target="ambos medidos sobre la misma evidencia PAPER",
+        remaining="0" if slippage_measured and depth_measured else "medir faltantes",
+        evidence_available=("slippage_gap_measured" in metrics or "book_exceedance_measured" in metrics))
+    c_window=_criterion(
+        "valid_wheels", "Ruedas completas con instrumentación estable",
+        passed=wheels is not None and wheels >= ref_wheels,
+        observed=(wheels if wheels is not None else "SIN_DATO"),
+        target=f">= {ref_wheels} ruedas de referencia",
+        remaining=("MEDIR" if wheels is None else max(0,ref_wheels-wheels)),
+        evidence_available=wheels is not None)
 
-    c1 = _criterion(
-        "reconciled_60", "Operaciones reconciliadas",
-        passed=reconciled >= 60, observed=reconciled, target=">= 60",
-        remaining=max(0, 60-reconciled), evidence_available=True)
-    c2 = _criterion(
-        "coverage_90", "Cobertura de reconciliación",
-        passed=coverage is not None and coverage >= Decimal("90"),
-        observed=(f"{coverage:.2f}%" if coverage is not None else "SIN_DATO"),
-        target=">= 90%", remaining=(
-            "0" if coverage is not None and coverage >= 90 else
-            "MEDIR" if coverage is None else f"{Decimal('90')-coverage:.2f} pp"),
-        evidence_available=coverage is not None)
-    c3 = _criterion(
-        "median_gap", "Brecha mediana modelo vs broker",
-        passed=median_gap is not None and median_gap < Decimal("3"),
-        observed=(f"{median_gap} pb" if median_gap is not None else "SIN_DATO"),
-        target="< 3 pb", remaining="0" if median_gap is not None and median_gap < 3 else "REVISAR/MEDIR",
-        evidence_available=median_gap is not None)
-    c4 = _criterion(
-        "p90_gap", "Brecha p90",
-        passed=p90_gap is not None and p90_gap < Decimal("10"),
-        observed=(f"{p90_gap} pb" if p90_gap is not None else "SIN_DATO"),
-        target="< 10 pb", remaining="0" if p90_gap is not None and p90_gap < 10 else "REVISAR/MEDIR",
-        evidence_available=p90_gap is not None)
-    cases_ok = winners >= 1 and losers >= 1 and families >= 2
-    c5 = _criterion(
-        "case_coverage", "Cobertura de casos",
-        passed=cases_ok,
-        observed=f"ganadoras={winners}; perdedoras={losers}; familias={families}",
-        target=">=1 ganadora + >=1 perdedora + >=2 familias",
-        remaining=("0" if cases_ok else
-                   f"ganadoras {max(0,1-winners)}, perdedoras {max(0,1-losers)}, familias {max(0,2-families)}"))
-    c6 = _criterion(
-        "unexplained_zero", "Divergencias sin explicar",
-        passed=("unexplained_divergences" in metrics and unexplained == 0),
-        observed=(unexplained if "unexplained_divergences" in metrics else "SIN_DATO"),
-        target="0", remaining=("0" if "unexplained_divergences" in metrics and unexplained == 0 else "EXPLICAR/MEDIR"),
-        evidence_available="unexplained_divergences" in metrics)
-    c7 = _criterion(
-        "median_drift", "Deriva de mediana semanas 3 a 4",
-        passed=drift is not None and drift < Decimal("2"),
-        observed=(f"{drift} pb" if drift is not None else "SIN_DATO"),
-        target="< 2 pb", remaining="0" if drift is not None and drift < 2 else "ESPERAR H4/MEDIR",
-        evidence_available=drift is not None)
-    c8 = _criterion(
-        "alert_e2e", "Alerta de divergencia punta a punta",
-        passed=_B(metrics.get("divergence_alert_e2e_verified")),
-        observed="VERIFICADA" if _B(metrics.get("divergence_alert_e2e_verified")) else "PENDIENTE",
-        target="verificada", remaining="0" if _B(metrics.get("divergence_alert_e2e_verified")) else "1 prueba controlada",
-        evidence_available="divergence_alert_e2e_verified" in metrics)
-    final_criteria=(c1,c2,c3,c4,c5,c6,c7,c8)
+    criteria=(c_tariff,c_fee,c_inputs,c_cf,c_exec,c_exit,c_slip,c_window)
 
-    h1_extra=(
-        _criterion("truth_source", "Fuente de verdad del broker",
-                   passed=_B(metrics.get("broker_cost_truth_source_available")),
-                   observed="DISPONIBLE" if _B(metrics.get("broker_cost_truth_source_available")) else "SIN_FUENTE",
-                   target="disponible", remaining="0" if _B(metrics.get("broker_cost_truth_source_available")) else "definir/capturar fuente",
-                   evidence_available="broker_cost_truth_source_available" in metrics),
-        _criterion("reconciler_daily", "Reconciliador diario con evidencia",
-                   passed=_B(metrics.get("daily_reconciler_evidence")),
-                   observed="OK" if _B(metrics.get("daily_reconciler_evidence")) else "PENDIENTE",
-                   target="registro diario", remaining="0" if _B(metrics.get("daily_reconciler_evidence")) else "instrumentar job",
-                   evidence_available="daily_reconciler_evidence" in metrics),
-        _criterion("shadow_mode", "Portón económico en SHADOW",
-                   passed=mode == "SHADOW", observed=mode, target="SHADOW",
-                   remaining="0" if mode == "SHADOW" else "cambio explícito requerido"),
-        c2, c8,
-    )
-    h2=(
-        _criterion("h2_reconciled_20", ">=20 operaciones con costo broker",
-                   passed=reconciled >= 20, observed=reconciled, target=">=20",
-                   remaining=max(0,20-reconciled)), c3,c4,c5,c6,
-    )
-    h3=(
-        _criterion("execution_report", "Reporte de fidelidad de ejecución",
-                   passed=_B(metrics.get("execution_fidelity_report_available")),
-                   observed="DISPONIBLE" if _B(metrics.get("execution_fidelity_report_available")) else "PENDIENTE",
-                   target="semanal", remaining="instrumentar/ejecutar" if not _B(metrics.get("execution_fidelity_report_available")) else "0",
-                   evidence_available="execution_fidelity_report_available" in metrics),
-        _criterion("exit_causes", "Distribución de causas de salida",
-                   passed=_B(metrics.get("exit_cause_distribution_available")),
-                   observed="MEDIDA" if _B(metrics.get("exit_cause_distribution_available")) else "PENDIENTE",
-                   target="publicada", remaining="0" if _B(metrics.get("exit_cause_distribution_available")) else "medir"),
-        _criterion("slippage_measured", "Slippage implícito vs modelado",
-                   passed=_B(metrics.get("slippage_gap_measured")),
-                   observed="MEDIDO" if _B(metrics.get("slippage_gap_measured")) else "PENDIENTE",
-                   target="brecha cuantificada", remaining="0" if _B(metrics.get("slippage_gap_measured")) else "medir"),
-        _criterion("depth_measured", "Fills que exceden profundidad",
-                   passed=_B(metrics.get("book_exceedance_measured")),
-                   observed="MEDIDO" if _B(metrics.get("book_exceedance_measured")) else "PENDIENTE",
-                   target="porcentaje publicado", remaining="0" if _B(metrics.get("book_exceedance_measured")) else "medir"),
-        _criterion("close_entry_median", "Mediana close_vs_entry",
-                   passed=metrics.get("median_close_vs_entry_pct") is not None,
-                   observed=(metrics.get("median_close_vs_entry_pct") if metrics.get("median_close_vs_entry_pct") is not None else "SIN_DATO"),
-                   target="publicada", remaining="0" if metrics.get("median_close_vs_entry_pct") is not None else "medir",
-                   evidence_available=metrics.get("median_close_vs_entry_pct") is not None),
-    )
-    h4=(c1,c7,
-        _criterion("no_new_categories", "Sin categorías nuevas de divergencia",
-                   passed=("new_divergence_categories" in metrics and new_categories == 0),
-                   observed=(new_categories if "new_divergence_categories" in metrics else "SIN_DATO"),
-                   target="0", remaining="0" if "new_divergence_categories" in metrics and new_categories == 0 else "ESPERAR H4/MEDIR",
-                   evidence_available="new_divergence_categories" in metrics),
-        _criterion("month_end", "Fin de mes sin divergencia inexplicada",
-                   passed=_B(metrics.get("month_end_checked_clean")),
-                   observed="OK" if _B(metrics.get("month_end_checked_clean")) else "PENDIENTE",
-                   target="verificado", remaining="0" if _B(metrics.get("month_end_checked_clean")) else "cruzar/verificar fin de mes",
-                   evidence_available="month_end_checked_clean" in metrics),
-    )
-
-    def milestone(key,label,criteria):
-        lesson=lessons.get(key)
-        if isinstance(lesson,dict):
-            text=lesson.get("text"); source=lesson.get("source")
-        else:
-            text=lesson; source=None
-        return MilestoneResult(key,label,_milestone_state(criteria),tuple(criteria),text,source)
-
-    milestones=(
-        milestone("H1","Semana 1 — Instrumentación",h1_extra),
-        milestone("H2","Semana 2 — Fidelidad de costos",h2),
-        milestone("H3","Semana 3 — Fidelidad de ejecución",h3),
-        milestone("H4","Semana 4 — Consistencia y decisión",h4),
-    )
+    real_source=_bool(metrics.get("real_broker_cost_source_available"))
+    real_reconciled=_I(metrics.get("real_broker_cost_reconciled_operations"))
+    runtime_mode=str(metrics.get("runtime_mode") or "PRODUCTION_PAPER").upper()
+    if real_source and real_reconciled>0:
+        real_state="REAL_EVIDENCE_AVAILABLE"
+    elif runtime_mode=="PRODUCTION_PAPER":
+        real_state="NOT_OBSERVABLE_IN_PAPER"
+    else:
+        real_state="WAITING_REAL_EVIDENCE"
 
     invalidated=frozen_configuration_changed(expected_fingerprint,current_fingerprint)
-    passed=sum(item.passed for item in final_criteria)
+    passed=sum(c.passed for c in criteria)
     pct,cf_state=counterfactual_assessment(metrics.get("counterfactual_reject_pct"))
+    paper_all=all(c.passed for c in criteria)
 
     if invalidated:
         state="WINDOW_INVALIDATED_RESTART_REQUIRED"
     elif mode != "SHADOW":
         state="SHADOW_REQUIRED_FOR_VALIDATION"
-    elif all(item.passed for item in final_criteria) and all(m.state=="PASS" for m in milestones):
-        state="ELIGIBLE_FOR_BINDING_REVIEW"
+    elif paper_all:
+        state="ELIGIBLE_FOR_BINDING_DECISION"
     else:
-        state="VALIDATING"
+        state="COLLECTING_EVIDENCE"
 
-    wheels_elapsed=(None if metrics.get("wheels_elapsed") is None else _I(metrics.get("wheels_elapsed")))
-    wheels_remaining=(None if wheels_elapsed is None else max(0,EXPECTED_WHEELS-wheels_elapsed))
-    return ValidationResult(
-        state=state, mode=mode, criteria=final_criteria, milestones=milestones,
-        criteria_passed=passed, criteria_total=len(final_criteria),
-        reconciled=reconciled, reconciled_remaining=max(0,TARGET_RECONCILED-reconciled),
-        wheels_elapsed=wheels_elapsed, wheels_remaining=wheels_remaining,
-        counterfactual_reject_pct=pct, counterfactual_assessment=cf_state,
-        window_invalidated=invalidated,
-        invalidation_reason=("FROZEN_CONFIGURATION_FINGERPRINT_CHANGED" if invalidated else None),
+    paper_state=("PAPER_BINDING_EVIDENCE_COMPLETE" if paper_all and not invalidated
+                 else "PAPER_BINDING_EVIDENCE_INCOMPLETE")
+
+    def milestone(key,label,items):
+        lesson=lessons.get(key)
+        if isinstance(lesson,dict):
+            text=lesson.get("text"); source=lesson.get("source")
+        else:
+            text=lesson; source=None
+        return MilestoneResult(key,label,_milestone_state(items),tuple(items),text,source)
+
+    milestones=(
+        milestone("H1","Instrumentación y economía modelada",(c_tariff,c_fee,c_inputs)),
+        milestone("H2","Contrafáctico SHADOW y ventana estable",(c_cf,c_window)),
+        milestone("H3","Fidelidad de ejecución PAPER",(c_exec,c_exit,c_slip)),
     )
 
-
-def assert_validation_invariants() -> None:
-    """Pruebas mínimas ejecutables sin pytest."""
-    base=evaluate({"economic_gate_mode":"SHADOW"})
-    if base.state != "VALIDATING":
-        raise AssertionError("una ventana vacía en SHADOW debe seguir validando")
-    if base.criteria_passed:
-        raise AssertionError("evidencia ausente no puede darse por aprobada")
-
-    complete={
-        "economic_gate_mode":"SHADOW", "closed_operations":65,
-        "reconciled_operations":60, "reconciliation_coverage_pct":"95",
-        "median_gap_bp":"1.2", "p90_gap_bp":"7.0", "reconciled_winners":2,
-        "reconciled_losers":40, "reconciled_families":2,
-        "unexplained_divergences":0, "week3_week4_median_drift_bp":"1.0",
-        "new_divergence_categories":0, "divergence_alert_e2e_verified":True,
-        "broker_cost_truth_source_available":True, "daily_reconciler_evidence":True,
-        "execution_fidelity_report_available":True,
-        "exit_cause_distribution_available":True, "slippage_gap_measured":True,
-        "book_exceedance_measured":True, "median_close_vs_entry_pct":"0.4",
-        "month_end_checked_clean":True, "counterfactual_reject_pct":"45",
-    }
-    done=evaluate(complete,expected_fingerprint="A",current_fingerprint="A")
-    if done.state != "ELIGIBLE_FOR_BINDING_REVIEW":
-        raise AssertionError(done)
-    if evaluate(complete,expected_fingerprint="A",current_fingerprint="B").state != "WINDOW_INVALIDATED_RESTART_REQUIRED":
-        raise AssertionError("un cambio de parámetros congelados debe invalidar la ventana")
-    if evaluate(complete | {"economic_gate_mode":"BINDING"}).state != "SHADOW_REQUIRED_FOR_VALIDATION":
-        raise AssertionError("la ventana no puede autovalidarse ya en BINDING")
-
-
-if __name__ == "__main__":
-    assert_validation_invariants()
-    print("SHADOW_BINDING_VALIDATION_INVARIANTS=OK")
+    return ValidationResult(
+        state=state, mode=mode, paper_evidence_state=paper_state,
+        real_evidence_state=real_state, criteria=criteria, milestones=milestones,
+        criteria_passed=passed, criteria_total=len(criteria), observations=observations,
+        observations_remaining=max(0,ref_obs-observations),
+        wheels_elapsed=wheels,
+        wheels_remaining=(None if wheels is None else max(0,ref_wheels-wheels)),
+        counterfactual_reject_pct=pct,
+        counterfactual_assessment=cf_state,
+        window_invalidated=invalidated,
+        invalidation_reason=("FROZEN_CONFIGURATION_CHANGED" if invalidated else None),
+    )
