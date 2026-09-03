@@ -68,26 +68,26 @@ def full_trade_stop_risk(*, entry_price, modeled_stop_fill, quantity, cash_multi
     return price_loss + buy_cost + sell_cost
 
 
-def capacity(*, baseline_equity, soft_stop_pct, realized_pnl_today,
+def capacity(*, baseline_equity, soft_stop_pct, realized_loss_consumed,
              open_stop_risk, candidate_stop_risk) -> ConcurrentRiskSnapshot:
     """Admission capacity anchored to the daily soft-stop budget.
 
-    Only the negative part of already-realized PnL consumes additional capacity.
-    Positive realized PnL never increases the budget. Open stop risk is reserved
-    in full, so unrealized loss is not deducted separately and cannot be counted
-    twice.
+    `realized_loss_consumed` is already the non-negative sum of realized losing
+    fills/closures for the local day. Winning realizations are intentionally not
+    netted against that amount, so gains can never expand the risk budget.
+    Open stop risk is reserved in full, so unrealized loss is not deducted
+    separately and cannot be counted twice.
     """
     baseline = D(baseline_equity, "baseline", positive=True)
     soft_pct = D(soft_stop_pct, "soft stop %", positive=True)
     if soft_pct > ONE_HUNDRED:
         raise ValueError("soft stop % fuera de rango")
-    realized = D(realized_pnl_today, "PnL realizado del día")
+    realized_loss = D(realized_loss_consumed, "pérdida realizada consumida", nonnegative=True)
     open_risk = D(open_stop_risk, "riesgo abierto", nonnegative=True)
     candidate = D(candidate_stop_risk, "riesgo candidato", nonnegative=True)
 
     soft_budget = baseline * soft_pct / ONE_HUNDRED
-    realized_loss_consumed = max(ZERO, -realized)
-    remaining_before = max(ZERO, soft_budget - realized_loss_consumed - open_risk)
+    remaining_before = max(ZERO, soft_budget - realized_loss - open_risk)
     remaining_after = remaining_before - candidate
     admitted = candidate > ZERO and remaining_after >= ZERO
     if candidate <= ZERO:
@@ -102,7 +102,7 @@ def capacity(*, baseline_equity, soft_stop_pct, realized_pnl_today,
         baseline_equity=baseline,
         soft_stop_pct=soft_pct,
         soft_stop_budget=soft_budget,
-        realized_loss_consumed=realized_loss_consumed,
+        realized_loss_consumed=realized_loss,
         open_stop_risk=open_risk,
         candidate_stop_risk=candidate,
         remaining_before_candidate=remaining_before,
