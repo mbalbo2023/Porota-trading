@@ -1,0 +1,108 @@
+"""Canonical UX/navigation model for HF6 v2.
+
+Pure definitions only: no runtime mutation, no order routing, no broker access.
+Legacy URLs remain compatible, but the canonical navigation stops presenting
+Scalping as a top-level peer while all other trading families are hidden.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable
+
+
+@dataclass(frozen=True)
+class NavItem:
+    href: str
+    label: str
+
+
+TOP_NAV = (
+    NavItem("/", "Panel"),
+    NavItem("/en-vivo", "En vivo"),
+    NavItem("/trading", "Trading"),
+    NavItem("/instrumentos", "Instrumentos y contratos"),
+    NavItem("/historicos", "Históricos"),
+    NavItem("/aprendizaje", "Aprendizaje"),
+    NavItem("/reportes", "Reportes"),
+    NavItem("/sistema", "Sistema"),
+)
+
+TRADING_NAV = (
+    NavItem("/trading", "Resumen"),
+    NavItem("/trading/estrategias", "Estrategias"),
+    NavItem("/trading/acciones-cedears", "Acciones y CEDEAR"),
+    NavItem("/trading/renta-fija", "Renta fija"),
+    NavItem("/trading/cauciones", "Cauciones"),
+    NavItem("/trading/opciones", "Opciones"),
+    NavItem("/trading/futuros", "Futuros"),
+    NavItem("/trading/fci", "FCI"),
+    NavItem("/trading/licitaciones", "Licitaciones"),
+)
+
+# Legacy routes are kept intentionally so bookmarks and old links do not break.
+LEGACY_ROUTE_REDIRECTS = {
+    "/motor-trading": "/trading",
+    "/scalping": "/trading/estrategias",
+    "/informacion-financiera": "/instrumentos",
+}
+
+FAMILY_GROUPS = {
+    "acciones-cedears": ("ACCIONES", "CEDEARS"),
+    "renta-fija": ("BONOS", "LETRAS", "ON"),
+    "cauciones": ("CAUCIONES",),
+    "opciones": ("OPCIONES",),
+    "futuros": ("FUTUROS",),
+    "fci": ("FCI", "FCI_LOCAL", "FCI_EXTERIOR"),
+    "licitaciones": ("LICITACIONES", "CANJES"),
+}
+
+FAMILY_LABELS = {
+    "ACCIONES": "Acciones",
+    "CEDEARS": "CEDEAR",
+    "BONOS": "Bonos",
+    "LETRAS": "Letras",
+    "ON": "Obligaciones Negociables",
+    "CAUCIONES": "Cauciones",
+    "OPCIONES": "Opciones",
+    "FUTUROS": "Futuros",
+    "FCI": "FCI",
+    "FCI_LOCAL": "FCI local",
+    "FCI_EXTERIOR": "FCI exterior",
+    "LICITACIONES": "Licitaciones",
+    "CANJES": "Canjes",
+    "ETF": "ETF",
+    "ACCIONES_USA": "Acciones USA",
+}
+
+
+def nav_html(items: Iterable[NavItem], *, css_class: str = "") -> str:
+    cls = f" class='{css_class}'" if css_class else ""
+    return "<nav" + cls + ">" + "".join(
+        f"<a href='{item.href}'>{item.label}</a>" for item in items
+    ) + "</nav>"
+
+
+def top_nav_html() -> str:
+    return "<nav id='porota-canonical-nav'>" + "".join(
+        f"<a href='{item.href}'>{item.label}</a>" for item in TOP_NAV
+    ) + "</nav>"
+
+
+def trading_nav_html() -> str:
+    return nav_html(TRADING_NAV, css_class="subnav")
+
+
+def families_for_group(group: str) -> tuple[str, ...]:
+    return FAMILY_GROUPS.get(str(group or "").lower(), ())
+
+
+def assert_ux_invariants() -> None:
+    hrefs = [item.href for item in TOP_NAV]
+    if len(hrefs) != len(set(hrefs)):
+        raise AssertionError("duplicate top-level navigation route")
+    if "/scalping" in hrefs:
+        raise AssertionError("Scalping must not be a top-level navigation item")
+    if "/trading" not in hrefs or "/instrumentos" not in hrefs:
+        raise AssertionError("canonical Trading/Instrumentos destinations missing")
+    if "FUTUROS" not in FAMILY_GROUPS["futuros"]:
+        raise AssertionError("Futures page must remain visible")
