@@ -1,10 +1,6 @@
 # ============================================================================
-# .dockerignore — Porota Trading v16.2
+# .dockerignore — Porota Trading RC4
 # ============================================================================
-# No existía. El `COPY . .` del Dockerfile metía dentro de la imagen todo lo
-# que hubiera en el directorio: archivos de entorno con credenciales, la base
-# de datos operativa y el índice vectorial. Una imagen con secretos adentro se
-# distribuye, se cachea y se sube a un registry sin que nadie lo note.
 .env
 .env.*
 !.env.example
@@ -18,6 +14,14 @@ model_cache/
 *.db-wal
 *.db-shm
 *.log
+*.ses
+:memory:*
+
+# Builder/patcher debris must never enter the immutable image.
+*.bak
+*.pre-hf6*
+*.pre-hf6v2-*
+*.pre-rc*
 
 .git/
 __pycache__/
@@ -30,12 +34,10 @@ venv/
 .venv/
 docs/
 *.pdf
-.secrets
-data/observer
-porota_production_paper_v1634.sh
+.secrets/
 
+# Legacy deployment helpers intentionally excluded from application image.
+porota_production_paper_v1634.sh
 porota_dashboard_hotfix_v1634.sh
 porota_hotfix_integral_v1634.sh
-data/reports
-data/backups
 porota_production_paper_v1635.sh
