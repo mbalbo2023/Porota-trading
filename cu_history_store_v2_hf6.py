@@ -30,6 +30,7 @@ SOURCE_RANK = {
     "PPI_API": 10,
     "BYMA_EOD": 20,
     "BYMA": 20,
+    "A3_CEM_CLOSING": 20,
     "IOL": 30,
     "DATA912": 50,
     "DATA912_POROTA_BATCH": 50,
