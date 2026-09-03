@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generate an auditable lifecycle map for Porota source modules.
 
-Static analysis cannot prove that dynamically imported code is dead, so the
-output deliberately uses ORPHAN_REVIEW rather than deleting anything.  Shell,
-systemd, Docker and workflow references are considered entrypoints too.
+Static analysis cannot prove that dynamically imported/launched code is dead,
+so the output deliberately uses ORPHAN_REVIEW rather than deleting anything.
+Imports, Python string/subprocess references, shell, systemd, Docker and workflow
+references are all considered before a module can be called unexplained.
 """
 from __future__ import annotations
 
@@ -39,7 +40,7 @@ OVERRIDES = {
     "cy_a3_contract_bridge_hf6": Override("RC4_INTEGRATION_PENDING", "Contract Evidence enrichment bridge awaiting explicit scheduler wiring."),
     "cy_market_source_arbitration_hf6": Override("POLICY_LIBRARY_PENDING", "Background source policy; must be imported by the eventual A3/history job or deferred."),
     "co_contract_ingestion_policy_hf6": Override("RC4_INTEGRATION_PENDING", "Contract Evidence cadence policy awaiting scraping scheduler integration."),
-    "cq_contract_readiness_hf6": Override("RC4_INTEGRATION_PENDING", "Readiness rules must be called by the canonical Contract Evidence reconciliation path."),
+    "cq_contract_readiness_hf6": Override("RC4_INTEGRATION_PENDING", "Readiness rules must be called by canonical Contract Evidence reconciliation."),
 }
 
 TEXT_ROOTS = ("scripts", "deploy", ".github")
@@ -74,6 +75,7 @@ def _imports(path: Path, known: set[str]) -> set[str]:
 
 
 def _text_entrypoints(root: Path, modules: set[str]) -> dict[str, set[str]]:
+    """Find non-import launch references, including subprocess Python strings."""
     refs=defaultdict(set)
     candidates=[]
     for folder in TEXT_ROOTS:
@@ -81,13 +83,19 @@ def _text_entrypoints(root: Path, modules: set[str]) -> dict[str, set[str]]:
         if base.exists():
             candidates.extend(p for p in base.rglob("*") if p.is_file())
     candidates.extend(root/name for name in TEXT_FILES if (root/name).is_file())
+    # Python can launch another module by filename/subprocess without importing
+    # it. Scan production root modules textually as a second independent arm.
+    candidates.extend(p for p in root.glob("*.py") if p.is_file() and not p.stem.startswith("test_"))
     for path in candidates:
         try:
             text=path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         rel=str(path.relative_to(root))
+        source_module=path.stem if path.parent == root and path.suffix == ".py" else None
         for module in modules:
+            if module == source_module:
+                continue
             if re.search(rf"(?<![A-Za-z0-9_]){re.escape(module)}(?:\.py)?(?![A-Za-z0-9_])", text):
                 refs[module].add(rel)
     return refs
@@ -121,12 +129,14 @@ def analyze(root: Path) -> list[dict]:
                 status,reason="ACTIVE_SCHEDULED_ENTRYPOINT","Referenced by a versioned systemd unit."
             elif any(ref in {"Dockerfile","docker-compose.yml","docker-compose.yaml","entrypoint.sh"} for ref in external[module]):
                 status,reason="ACTIVE_RUNTIME_ENTRYPOINT","Referenced by Docker/application entrypoint configuration."
+            elif any(ref.endswith(".py") for ref in external[module]):
+                status,reason="ACTIVE_DYNAMIC_ENTRYPOINT","Referenced textually by production Python (for example subprocess/dynamic launch)."
             else:
                 status,reason="ACTIVE_TOOLING_ENTRYPOINT","Referenced by scripts/workflows but not imported by runtime Python."
         elif any(word in doc.upper() for word in ("DEPRECATED", "RETIRADO", "LEGADO NO VALIDADO")):
             status,reason="DEPRECATED_RETAINED","Self-declared deprecated/retired source; retain only with documented replacement."
         else:
-            status,reason="ORPHAN_REVIEW","No production import or external entrypoint reference found."
+            status,reason="ORPHAN_REVIEW","No production import or external/dynamic entrypoint reference found."
         rows.append({
             "module":module,"path":path.name,"status":status,"reason":reason,
             "production_inbound":sorted(production_inbound[module]),
