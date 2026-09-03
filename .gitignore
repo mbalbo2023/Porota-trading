@@ -1,10 +1,6 @@
 # ============================================================================
-# .gitignore — Porota Trading v16.2
+# .gitignore — Porota Trading RC4
 # ============================================================================
-# El patrón .env solo excluía UN nombre de archivo. Cualquier variante
-# (.env.testing, .env.produccion, .env.bak) entraba al repositorio sin que
-# nada avisara. Ahora se excluye la familia entera y se admite una sola
-# excepción explícita: la plantilla sin valores.
 .env
 .env.*
 !.env.example
@@ -17,8 +13,16 @@ model_cache/
 *.db-wal
 *.db-shm
 *.log
+*.ses
+:memory:*
 
-# Artefactos fuera del paquete (se entregan aparte, nunca se versionan)
+# Artefactos de patchers/builders: nunca son source de release
+*.bak
+*.pre-hf6*
+*.pre-hf6v2-*
+*.pre-rc*
+
+# Artefactos fuera del paquete
 Secret.txt
 ACCESO_DASHBOARD_DROPLET.txt
 
