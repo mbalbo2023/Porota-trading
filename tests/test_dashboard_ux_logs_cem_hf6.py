@@ -26,6 +26,17 @@ def test_log_resolver_stays_under_root(tmp_path: Path):
     assert logs.source_by_id("observer",tmp_path).path == observer.resolve()
 
 
+def test_bot_log_is_first_class_and_preferred_when_exported(tmp_path: Path):
+    bot=tmp_path/"bot_runtime.log"
+    bot.write_text("bot-line\n",encoding="utf-8")
+    observer=tmp_path/"observer_runtime.log"
+    observer.write_text("observer-line\n",encoding="utf-8")
+    sources=logs.discover_sources(tmp_path)
+    assert [s.source_id for s in sources[:2]] == ["bot","observer"]
+    assert logs.primary_source(tmp_path).source_id == "bot"
+    assert logs.source_by_id("bot",tmp_path).path == bot.resolve()
+
+
 def test_log_resolver_does_not_follow_symlink(tmp_path: Path):
     outside=tmp_path.parent/(tmp_path.name+"-outside.log")
     outside.write_text("secret",encoding="utf-8")
