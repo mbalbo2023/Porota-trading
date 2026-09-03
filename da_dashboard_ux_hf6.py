@@ -1,9 +1,9 @@
-"""Canonical UX/navigation model for HF6 v2.
+"""Canonical UX/navigation model for HF6 v2 / RC4.
 
 Pure definitions only: no runtime mutation, no order routing, no broker access.
 Legacy URLs remain compatible. RC4 restores Scalping as an explicit top-level
-operational destination because it has its own scanner, risk profile and PAPER
-position lifecycle, while keeping Trading as the family/strategy aggregate.
+operational destination and adds a dedicated validation/governance destination
+for SHADOW -> BINDING evidence. Trading remains the family/strategy aggregate.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ TOP_NAV = (
     NavItem("/en-vivo", "En vivo"),
     NavItem("/trading", "Trading"),
     NavItem("/scalping", "Scalping"),
+    NavItem("/validacion", "Validación"),
     NavItem("/instrumentos", "Instrumentos y contratos"),
     NavItem("/historicos", "Históricos"),
     NavItem("/aprendizaje", "Aprendizaje"),
@@ -103,6 +104,8 @@ def assert_ux_invariants() -> None:
         raise AssertionError("duplicate top-level navigation route")
     if "/scalping" not in hrefs:
         raise AssertionError("Scalping must be a top-level operational destination in RC4")
+    if "/validacion" not in hrefs:
+        raise AssertionError("Shadow-to-Binding validation must be top-level in RC4")
     if "/trading" not in hrefs or "/instrumentos" not in hrefs:
         raise AssertionError("canonical Trading/Instrumentos destinations missing")
     if "FUTUROS" not in FAMILY_GROUPS["futuros"]:
