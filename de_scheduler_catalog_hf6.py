@@ -70,6 +70,7 @@ SYSTEMD_DESCRIPTIONS = {
     "porota-introspection-publish.timer": "Publica a GitHub una copia sanitizada de observabilidad; GitHub nunca controla el runtime.",
     "porota-contract-evidence-hf6.timer": "Actualiza Contract Evidence HF6 read-only y conserva historial/versiones de cambios.",
     "porota-log-export-hf6.timer": "Exporta snapshots sanitizados y acotados de logs del observer/dashboard para la UI.",
+    "porota-scheduler-export-hf6.timer": "Actualiza esta misma vista de scheduler con estado systemd sanitizado y read-only.",
     "porota-preopen.timer": "LEGACY: pre-open monolítico. HF6 v2 propone retirarlo y reemplazarlo por readiness continuo y sesiones por familia.",
     "porota-history-postclose-hf6.timer": "Ejecuta reconciliación histórica post-cierre cuando la sesión/calendario lo permiten.",
     "porota-a3-cem-history-hf6.timer": "Actualiza referencia/históricos públicos A3 CEM fuera del hot path.",
