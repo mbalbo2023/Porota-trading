@@ -1,0 +1,116 @@
+"""Dynamic concurrent-risk capacity for HF6 PAPER.
+
+Financial policy:
+- normal admission is NOT governed by a small fixed number of open positions;
+- the normal concurrent-risk budget is derived from the PAPER daily soft stop;
+- already-consumed daily losses reduce capacity; daily gains never increase it;
+- open-position risk is measured conservatively to the modeled stop, including
+  modeled exit friction supplied by the caller;
+- a separate high emergency position cap may exist only as a runaway/bug guard.
+
+Pure calculations only. No broker/network access and no order routing.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal
+
+ZERO = Decimal("0")
+ONE_HUNDRED = Decimal("100")
+
+
+def D(value, label: str, *, nonnegative: bool = False, positive: bool = False) -> Decimal:
+    try:
+        result = Decimal(str(value))
+    except Exception as exc:
+        raise ValueError(f"{label} inválido") from exc
+    if not result.is_finite():
+        raise ValueError(f"{label} no finito")
+    if positive and result <= 0:
+        raise ValueError(f"{label} debe ser positivo")
+    if nonnegative and result < 0:
+        raise ValueError(f"{label} debe ser no negativo")
+    return result
+
+
+@dataclass(frozen=True)
+class ConcurrentRiskSnapshot:
+    baseline_equity: Decimal
+    soft_stop_pct: Decimal
+    soft_stop_budget: Decimal
+    realized_loss_consumed: Decimal
+    open_stop_risk: Decimal
+    candidate_stop_risk: Decimal
+    remaining_before_candidate: Decimal
+    remaining_after_candidate: Decimal
+    admitted: bool
+    reason: str
+
+
+def full_trade_stop_risk(*, entry_price, modeled_stop_fill, quantity, cash_multiplier=1,
+                         entry_cost=0, modeled_exit_cost=0) -> Decimal:
+    """Conservative full-trade loss from entry through modeled stop.
+
+    Used for both existing positions and a candidate. It intentionally does not
+    count unrealized gains as new capacity. A gap can be worse than this model,
+    so other portfolio/exposure/liquidity gates remain mandatory.
+    """
+    entry = D(entry_price, "precio de entrada", positive=True)
+    stop = D(modeled_stop_fill, "fill de stop modelado", nonnegative=True)
+    qty = D(quantity, "cantidad", positive=True)
+    multiplier = D(cash_multiplier, "multiplicador", positive=True)
+    buy_cost = D(entry_cost, "costo de entrada", nonnegative=True)
+    sell_cost = D(modeled_exit_cost, "costo de salida", nonnegative=True)
+    price_loss = max(ZERO, entry - stop) * qty * multiplier
+    return price_loss + buy_cost + sell_cost
+
+
+def capacity(*, baseline_equity, soft_stop_pct, daily_pnl, open_stop_risk,
+             candidate_stop_risk) -> ConcurrentRiskSnapshot:
+    """Admission capacity anchored to the daily soft-stop budget.
+
+    `daily_pnl` is used only to consume capacity when negative. Positive daily
+    PnL never increases the risk budget. Open stop risk is then reserved in full.
+    """
+    baseline = D(baseline_equity, "baseline", positive=True)
+    soft_pct = D(soft_stop_pct, "soft stop %", positive=True)
+    if soft_pct > ONE_HUNDRED:
+        raise ValueError("soft stop % fuera de rango")
+    pnl = D(daily_pnl, "PnL diario")
+    open_risk = D(open_stop_risk, "riesgo abierto", nonnegative=True)
+    candidate = D(candidate_stop_risk, "riesgo candidato", nonnegative=True)
+
+    soft_budget = baseline * soft_pct / ONE_HUNDRED
+    realized_loss_consumed = max(ZERO, -pnl)
+    remaining_before = max(ZERO, soft_budget - realized_loss_consumed - open_risk)
+    remaining_after = remaining_before - candidate
+    admitted = candidate > ZERO and remaining_after >= ZERO
+    if candidate <= ZERO:
+        reason = "CANDIDATE_RISK_NOT_POSITIVE"
+    elif remaining_before <= ZERO:
+        reason = "CONCURRENT_RISK_BUDGET_EXHAUSTED"
+    elif not admitted:
+        reason = "CANDIDATE_EXCEEDS_REMAINING_CONCURRENT_RISK"
+    else:
+        reason = "CONCURRENT_RISK_CAPACITY_AVAILABLE"
+    return ConcurrentRiskSnapshot(
+        baseline_equity=baseline,
+        soft_stop_pct=soft_pct,
+        soft_stop_budget=soft_budget,
+        realized_loss_consumed=realized_loss_consumed,
+        open_stop_risk=open_risk,
+        candidate_stop_risk=candidate,
+        remaining_before_candidate=remaining_before,
+        remaining_after_candidate=max(ZERO, remaining_after),
+        admitted=admitted,
+        reason=reason,
+    )
+
+
+def emergency_position_guard(open_count, *, emergency_cap) -> str:
+    """Runaway protection only; never the normal financial admission rule."""
+    count = int(open_count)
+    cap = int(emergency_cap)
+    if count < 0 or cap < 1:
+        raise ValueError("contador/cap técnico inválido")
+    return "EMERGENCY_POSITION_CAP" if count >= cap else ""
