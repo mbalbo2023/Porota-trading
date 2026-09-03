@@ -40,8 +40,11 @@ INTERNAL_JOBS = (
                 "Actualiza RSS sólo si la política de noticias está habilitada; HF6 la mantiene desactivada.", 45*60,
                 "PAPER_NEWS_INGEST_ENABLED=true; si está OFF registra NO_APLICA con cadencia de control extendida."),
     InternalJob("REPORTS", "Reportes",
-                "Genera reportes diarios y paquetes de lecciones IA a partir de evidencia PAPER persistida.", 6*3600,
+                "Genera reportes operativos PAPER desde evidencia persistida. Artefactos IA heredados no participan del runtime HF6-v2.", 6*3600,
                 "Sólo con mercado CLOSED y luego del cierre configurado."),
+    InternalJob("CAUCION_CASH_SWEEP", "Barrido de caja a caución",
+                "Evalúa caja ARS liquidada al final de rueda y propone/coloca sólo una caución PAPER con vencimiento antes del próximo deadline de liquidez.", 300,
+                "Sólo dentro de la ventana final verificada. Requiere contrato/cutoff/costos/obligaciones VERIFIED; si falta evidencia queda HOLD."),
     InternalJob("PPI_BACKGROUND_INGEST", "Históricos PPI",
                 "Ingesta histórica/background PPI. En HF6 v2 se complementa con History Store v2 y fuentes batch.",
                 int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200"))),
@@ -74,6 +77,7 @@ SYSTEMD_DESCRIPTIONS = {
     "porota-preopen.timer": "LEGACY: pre-open monolítico. HF6 v2 propone retirarlo y reemplazarlo por readiness continuo y sesiones por familia.",
     "porota-history-postclose-hf6.timer": "Ejecuta reconciliación histórica post-cierre cuando la sesión/calendario lo permiten.",
     "porota-a3-cem-history-hf6.timer": "Actualiza referencia/históricos públicos A3 CEM fuera del hot path.",
+    "porota-caucion-cash-sweep-hf6.timer": "Evalúa el cash sweep PAPER al final de rueda. Sin evidencia contractual/sesión/obligaciones completa debe registrar HOLD y no colocar.",
 }
 
 
@@ -148,5 +152,7 @@ def assert_scheduler_invariants() -> None:
     keys=[j.key for j in INTERNAL_JOBS]
     if len(keys)!=len(set(keys)):
         raise AssertionError("duplicate internal scheduler job")
+    if "CAUCION_CASH_SWEEP" not in keys:
+        raise AssertionError("caucion cash sweep must be visible in scheduler")
     if "porota-preopen.timer" not in SYSTEMD_DESCRIPTIONS:
         raise AssertionError("legacy preopen timer must remain visible until retirement is verified")
