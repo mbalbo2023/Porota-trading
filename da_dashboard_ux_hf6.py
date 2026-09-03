@@ -1,8 +1,9 @@
 """Canonical UX/navigation model for HF6 v2.
 
 Pure definitions only: no runtime mutation, no order routing, no broker access.
-Legacy URLs remain compatible, but the canonical navigation stops presenting
-Scalping as a top-level peer while all other trading families are hidden.
+Legacy URLs remain compatible. RC4 restores Scalping as an explicit top-level
+operational destination because it has its own scanner, risk profile and PAPER
+position lifecycle, while keeping Trading as the family/strategy aggregate.
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ TOP_NAV = (
     NavItem("/", "Panel"),
     NavItem("/en-vivo", "En vivo"),
     NavItem("/trading", "Trading"),
+    NavItem("/scalping", "Scalping"),
     NavItem("/instrumentos", "Instrumentos y contratos"),
     NavItem("/historicos", "Históricos"),
     NavItem("/aprendizaje", "Aprendizaje"),
@@ -42,7 +44,6 @@ TRADING_NAV = (
 # Legacy routes are kept intentionally so bookmarks and old links do not break.
 LEGACY_ROUTE_REDIRECTS = {
     "/motor-trading": "/trading",
-    "/scalping": "/trading/estrategias",
     "/informacion-financiera": "/instrumentos",
 }
 
@@ -100,8 +101,8 @@ def assert_ux_invariants() -> None:
     hrefs = [item.href for item in TOP_NAV]
     if len(hrefs) != len(set(hrefs)):
         raise AssertionError("duplicate top-level navigation route")
-    if "/scalping" in hrefs:
-        raise AssertionError("Scalping must not be a top-level navigation item")
+    if "/scalping" not in hrefs:
+        raise AssertionError("Scalping must be a top-level operational destination in RC4")
     if "/trading" not in hrefs or "/instrumentos" not in hrefs:
         raise AssertionError("canonical Trading/Instrumentos destinations missing")
     if "FUTUROS" not in FAMILY_GROUPS["futuros"]:
