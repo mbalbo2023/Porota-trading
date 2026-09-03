@@ -7,13 +7,13 @@ import db_dashboard_logs_hf6 as logs
 import db_a3_cem_normalizer_hf6 as cem
 
 
-def test_scalping_is_strategy_not_top_level():
+def test_scalping_is_top_level_operational_destination():
     ux.assert_ux_invariants()
     top={item.href for item in ux.TOP_NAV}
     assert "/trading" in top
     assert "/instrumentos" in top
-    assert "/scalping" not in top
-    assert ux.LEGACY_ROUTE_REDIRECTS["/scalping"] == "/trading/estrategias"
+    assert "/scalping" in top
+    assert "/scalping" not in ux.LEGACY_ROUTE_REDIRECTS
     assert ux.families_for_group("futuros") == ("FUTUROS",)
 
 
