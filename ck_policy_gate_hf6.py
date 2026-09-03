@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 import os
+import re
 
 ZERO=Decimal("0")
 EXPECTANCY_ENV="PAPER_EXPECTANCY_POLICY"
@@ -58,7 +59,6 @@ def regime_block(observation) -> str:
         return "REGIME_EVIDENCE_REQUIRED"
     state=str(observation.get("state") or "").upper()
     if state == "INSUFFICIENT_SAMPLE":
-        # Insufficient evidence is not evidence of a bearish regime.
         return ""
     if state == "BEARISH_BREADTH":
         return "BEARISH_BREADTH_NO_LONG_ENTRIES"
@@ -99,8 +99,6 @@ def sector_block(observation, candidate_sector=None, *, limit=None,
                 stable=re.sub(r"[^A-Z0-9]+","_",sector.upper()).strip("_") or "SECTOR"
                 return f"SECTOR_CONCENTRATION_LIMIT_{stable}"
             return ""
-    # No open position in the candidate sector: the candidate diversifies the
-    # mapped book and is not rejected by this gate.
     return ""
 
 
