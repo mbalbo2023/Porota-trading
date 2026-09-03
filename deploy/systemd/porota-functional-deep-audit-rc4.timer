@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC4 hourly functional deep audit at minute 15
+
+[Timer]
+OnCalendar=*-*-* *:15:00
+Persistent=true
+AccuracySec=30s
+Unit=porota-functional-deep-audit-rc4.service
+
+[Install]
+WantedBy=timers.target
