@@ -1,0 +1,24 @@
+[Unit]
+Description=Porota RC4 hourly functional deep audit
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec porota_production_observer python /app/ops_introspection_hf4.py
+SuccessExitStatus=2
+TimeoutStartSec=180
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
