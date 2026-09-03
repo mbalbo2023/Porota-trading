@@ -110,10 +110,12 @@ def _candle(symbol,family,market,settlement,source,close=100,adjusted=False,obse
 def test_history_v2_identity_prevents_cross_family_collision():
     store=MemoryStore()
     history_v2.append_candle(store,_candle("ABC","ACCIONES","BYMA","A-24HS","PPI_PRODUCTION_HISTORY",100))
-    history_v2.append_candle(store,_candle("ABC","BONOS","BYMA","A-24HS","PPI_PRODUCTION_HISTORY",80))
+    # Keep the second candle financially valid: the purpose of this test is
+    # identity isolation, not rejection of malformed OHLC rows.
+    history_v2.append_candle(store,_candle("ABC","BONOS","BYMA","A-24HS","PPI_PRODUCTION_HISTORY",92))
     with store.connect() as c:
         rows=c.execute("SELECT instrument_type,close FROM history_canonical_v2 ORDER BY instrument_type").fetchall()
-    assert [(r[0],r[1]) for r in rows]==[("ACCIONES",100.0),("BONOS",80.0)]
+    assert [(r[0],r[1]) for r in rows]==[("ACCIONES",100.0),("BONOS",92.0)]
 
 
 def test_data912_cannot_replace_ppi_but_version_is_preserved():
@@ -162,7 +164,8 @@ def test_complete_static_contract_does_not_expire_only_by_age():
     fields={name:"X" for name in contract_rules.FAMILY_CONTRACT_FIELDS["ACCIONES"]}
     dynamic={name:True for name in contract_rules.FAMILY_DYNAMIC_FIELDS["ACCIONES"]}
     result=contract_rules.evaluate_family("ACCIONES",[
-        _record("PPI_API",old,fields),_record("PPI_API",now.isoformat(),dynamic)
+        _record("PPI_STRUCTURED_API",old,fields),
+        _record("PPI_STRUCTURED_API",now.isoformat(),dynamic),
     ],now=now)
     assert result["status"]=="READY_PAPER_CANDIDATE"
 
@@ -172,8 +175,8 @@ def test_stale_dynamic_evidence_blocks_candidate():
     fields={name:"X" for name in contract_rules.FAMILY_CONTRACT_FIELDS["ACCIONES"]}
     dynamic={name:True for name in contract_rules.FAMILY_DYNAMIC_FIELDS["ACCIONES"]}
     result=contract_rules.evaluate_family("ACCIONES",[
-        _record("PPI_API",now.isoformat(),fields),
-        _record("PPI_API","2026-09-02T20:00:00+00:00",dynamic),
+        _record("PPI_STRUCTURED_API",now.isoformat(),fields),
+        _record("PPI_STRUCTURED_API","2026-09-02T20:00:00+00:00",dynamic),
     ],now=now)
     assert result["status"]=="STALE_DYNAMIC"
     assert result["stale_dynamic"]
@@ -182,7 +185,17 @@ def test_stale_dynamic_evidence_blocks_candidate():
 def test_contract_missing_stays_fail_closed_before_dynamic_layer():
     now=datetime(2026,9,2,22,0,tzinfo=timezone.utc)
     result=contract_rules.evaluate_family("FUTUROS",[
-        _record("PPI_API",now.isoformat(),{"market":"ROFEX","currency":"ARS"})
+        _record("PPI_STRUCTURED_API",now.isoformat(),{"market":"ROFEX","currency":"ARS"})
     ],now=now)
     assert result["status"]=="MISSING_CONTRACT"
     assert "contract_multiplier" in result["missing_contract"]
+
+
+def test_unknown_source_class_is_ignored_fail_closed():
+    now=datetime(2026,9,2,22,0,tzinfo=timezone.utc)
+    fields={name:"X" for name in contract_rules.FAMILY_CONTRACT_FIELDS["ACCIONES"]}
+    dynamic={name:True for name in contract_rules.FAMILY_DYNAMIC_FIELDS["ACCIONES"]}
+    result=contract_rules.evaluate_family("ACCIONES",[
+        _record("PPI_API",now.isoformat(),fields | dynamic)
+    ],now=now)
+    assert result["status"]=="MISSING_CONTRACT"
