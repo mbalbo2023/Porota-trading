@@ -47,7 +47,10 @@ def test_importer_versions_distinct_routes_without_false_change(tmp_path):
     assert result["recorded"] == 2
     assert result.get("changed",0) == 0
     with store.connect() as c:
-        current=c.execute("SELECT family,ticker,source_ref FROM contract_evidence_v2_current JOIN contract_evidence_v2_snapshots USING(snapshot_id) ORDER BY ticker").fetchall()
+        current=c.execute("""SELECT cur.family,cur.ticker,snap.source_ref
+          FROM contract_evidence_v2_current cur
+          JOIN contract_evidence_v2_snapshots snap ON snap.snapshot_id=cur.snapshot_id
+          ORDER BY cur.ticker""").fetchall()
         assert len(current) == 2
         assert {row["family"] for row in current} == {"FCI_EXTERIOR"}
         assert len({row["ticker"] for row in current}) == 2
