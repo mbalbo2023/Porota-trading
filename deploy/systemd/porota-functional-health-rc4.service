@@ -1,0 +1,29 @@
+[Unit]
+Description=Porota RC4 lightweight functional health snapshot
+After=local-fs.target
+ConditionPathExists=/opt/porota-trading/data/paper_v17/observer_v17.db
+
+[Service]
+Type=oneshot
+User=porotaadmin
+Group=porotaadmin
+WorkingDirectory=/opt/porota-trading
+ExecStart=/usr/bin/python3 /opt/porota-trading/rc4_functional_health_snapshot.py --db /opt/porota-trading/data/paper_v17/observer_v17.db --output /opt/porota-trading/data/functional_health/latest.json
+SuccessExitStatus=2
+TimeoutStartSec=30
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+ReadOnlyPaths=/opt/porota-trading
+ReadWritePaths=/opt/porota-trading/data/functional_health
+
+[Install]
+WantedBy=multi-user.target
