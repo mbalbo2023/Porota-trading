@@ -4,7 +4,7 @@ Documento WIP. No habilita órdenes ni modifica el runtime HF6 activo.
 
 ## Objetivo
 
-Agregar A3 Mercados / Primary como fuente oficial para futuros y opciones, separando cuatro capacidades:
+Agregar A3 Mercados / Primary reMarkets como fuente oficial complementaria para derivados, separando cuatro capacidades:
 
 1. metadata contractual;
 2. históricos;
@@ -17,10 +17,11 @@ Ninguna de estas capacidades, por sí sola, habilita un instrumento para operar 
 
 - `A3_ORDER_ROUTING_ALLOWED=false`.
 - No se implementan métodos de alta, reemplazo ni cancelación de órdenes en este patch.
-- A3 no reemplaza PPI como broker/read path vigente de Porota para las familias ya operativas.
-- El servicio A3 sólo publica datos sanitizados y versionados hacia Porota.
-- Token, usuario, contraseña y cuenta nunca se guardan en GitHub, Contract Evidence, History Store, logs o artefactos compartibles.
-- Ausencia de credenciales, API, market data, contrato o risk => `HOLD`, nunca valores inferidos.
+- PPI sigue siendo el broker/read path de referencia de Porota para las familias ya operativas.
+- A3 no se utiliza como fallback campo-por-campo dentro de una decisión.
+- Una decisión no puede mezclar bid de PPI con ask de A3, ni precio de una fuente con profundidad de otra.
+- Token, usuario, contraseña y cuenta nunca se guardan en GitHub, Contract Evidence, History Store, logs ni artefactos compartibles.
+- Ausencia de API, market data, contrato, identidad inequívoca o risk requerido => `HOLD`, nunca valores inferidos.
 
 ## Por qué debe ser un servicio separado
 
@@ -30,29 +31,67 @@ El entorno Python principal de Porota contiene `ppi-client==1.2.4`, que requiere
 
 Por lo tanto no se debe forzar la resolución de dependencias ni alterar el entorno PPI. A3/Primary se ejecutará en un sidecar/servicio independiente, con su propio entorno y lifecycle.
 
-## Credenciales y acceso
+## Credenciales y cifrado
 
-A3 documenta autenticación por token contra Primary/reMarkets. Las credenciales se almacenarán únicamente en el host, por ejemplo:
+Las credenciales reMarkets existen fuera del repositorio. Sus valores no se incorporan a `.env`, GitHub, scripts descargables ni documentación.
 
-`/home/porotaadmin/.porota-secrets/a3_primary.env`
+El mecanismo aprobado es `systemd-creds`:
 
-Permisos requeridos: `0600`, propietario `porotaadmin`.
+- credencial cifrada en reposo mediante AES-256-GCM;
+- cifrado ligado al host mediante `--with-key=host` (y TPM2 además si el host lo soporta y se decide usarlo);
+- archivo cifrado bajo `/etc/credstore.encrypted/`;
+- plaintext disponible sólo transitoriamente durante provisioning/ejecución;
+- token `X-Auth-Token` sólo en memoria y nunca persistido;
+- scripts de provisioning no contienen credenciales en claro.
 
-Variables lógicas, sin valores en GitHub:
+Para evitar reescribir secretos por accesibilidad, el provisioning usa una clave pública RSA temporal generada en el Droplet. El paquete posterior contiene únicamente ciphertext destinado a ese host. Después del provisioning exitoso, la clave RSA temporal se elimina.
+
+Variables lógicas internas, sin valores en GitHub:
 
 - `A3_PRIMARY_USER`
 - `A3_PRIMARY_PASSWORD`
-- `A3_PRIMARY_ACCOUNT` cuando una capacidad lo requiera
-- `A3_PRIMARY_ENVIRONMENT=REMARKETS|PRODUCTION`
+- `A3_PRIMARY_ACCOUNT`
+- `A3_PRIMARY_ENVIRONMENT=REMARKETS`
+- `A3_PRIMARY_BASE_URL=https://api.remarkets.primary.com.ar`
 - `A3_ORDER_ROUTING_ALLOWED=false`
 
-El token de sesión es efímero y no debe persistirse en DB ni logs.
+## Política de fuentes: PPI vs A3
+
+### PPI
+
+PPI conserva autoridad para:
+
+- broker y operabilidad disponible para la cuenta;
+- saldos/accounting PPI;
+- costos/tarifario PPI;
+- settlement/reglas específicas del broker;
+- market data live de las familias que hoy ya consumen PPI como fuente primaria.
+
+### A3/Primary
+
+A3 tiene autoridad para:
+
+- identidad y metadata contractual del derivado de mercado A3;
+- `contractMultiplier`, `minPriceIncrement`, `minTradeVol`, `maxTradeVol`, `tickSize`, `roundLot`, vencimiento y demás campos oficiales disponibles;
+- históricos/trades de A3;
+- calendario/segmento y especificaciones del mercado;
+- market data A3 para validación y, sólo después de homologación interna, eventual fuente live primaria de una familia completa.
+
+### Regla de no mezcla
+
+Cada snapshot de decisión lleva un `source_bundle` coherente. No existe fallback por campo.
+
+Si PPI live está stale o ausente y A3 todavía no fue promovido formalmente a fuente live primaria de esa familia, la decisión queda `HOLD_DATA_SOURCE`; no se completa el hueco silenciosamente con A3.
+
+A3 puede validar PPI en paralelo. Una divergencia superior a tolerancia temporal/precio configurada produce `SOURCE_CONFLICT` y bloquea la decisión hasta reconciliar.
+
+La promoción futura de A3 live para Futuros/Opciones será explícita, versionada, probada por familia y requerirá GO de deploy.
 
 ## Etapas de readiness
 
 ### A3_ACCESS_READY
 
-- credenciales presentes localmente;
+- credencial cifrada presente;
 - autenticación responde correctamente;
 - token recibido pero no impreso ni persistido;
 - health read-only verde.
@@ -62,105 +101,66 @@ El token de sesión es efímero y no debe persistirse en DB ni logs.
 - segmentos disponibles;
 - catálogo de instrumentos disponible;
 - detalles contractuales disponibles;
-- `contractMultiplier`, `minPriceIncrement`, `minTradeVol`, `maxTradeVol`, `tickSize`, `roundLot`, vencimiento y otros campos oficiales se normalizan con provenance;
+- campos contractuales se normalizan con provenance;
 - Contract Evidence v2 registra snapshot/hash/source.
 
 ### A3_HISTORY_INGEST_READY
 
-- endpoint histórico de trades responde para instrumentos representativos;
+- `rest/data/getTrades` responde para instrumentos representativos;
 - trades raw se validan;
 - barras derivadas se escriben en History Store v2 con identidad completa;
-- fuente A3 queda versionada y no sobreescribe silenciosamente evidencia de mayor autoridad.
+- fuente A3 queda versionada.
 
 ### A3_LIVE_MD_READY
 
-- WebSocket recibe eventos reales de market data durante la sesión correspondiente;
+- REST puede validar snapshots;
+- WebSocket recibe eventos reales durante la sesión correspondiente;
 - freshness, reconnect/backoff y heartbeat funcionan;
-- no se utiliza polling REST continuo como sustituto de WebSocket;
+- no se utiliza polling REST continuo para realtime;
 - ninguna función de order routing queda cargada.
 
 ### A3_RISK_DATA_READY
 
-- Risk/Post Trade accesible cuando el permiso contratado lo permite;
-- márgenes, garantías/collateral y restricciones se obtienen desde fuente oficial;
-- no se prorratea un margen agregado ni se inventa garantía por contrato.
+- Risk/Post Trade accesible si reMarkets/permiso correspondiente lo expone;
+- márgenes/garantías se obtienen desde fuente oficial verificable;
+- un margen agregado no se transforma en garantía unitaria por inferencia.
 
 ### FUTURES_READY_PAPER_CANDIDATE
 
-Sólo puede evaluarse cuando las capacidades requeridas por la familia estén verdes y además existan:
+Sólo puede evaluarse cuando existan contrato completo, histórico suficiente, market data fresco, sizing específico, costos, horarios, settlement/ajuste, risk requerido, simulador de entrada/salida y tests agrupados verdes.
 
-- contrato completo;
-- histórico suficiente;
-- market data live fresco;
-- sizing específico de futuros;
-- costos;
-- horario de la serie/segmento;
-- reglas de settlement/ajuste;
-- margin/risk verificado cuando corresponda;
-- simulador y salida específicos;
-- tests agrupados verdes.
+El resultado previo al GO sigue siendo `READY_PAPER_CANDIDATE`, nunca auto-promoción.
 
-Aun así el resultado es `READY_PAPER_CANDIDATE`; la promoción a `READY_PAPER` requiere revisión y aprobación del deploy.
-
-## Flujo de datos
+## Frecuencias
 
 ### Contratos
 
 `A3 Primary instruments/details -> sanitización -> Contract Evidence v2`
 
-Frecuencia: baseline post-cierre, refresh diario, evento inmediato ante serie nueva/cambio de hash.
+- baseline post-cierre;
+- refresh diario;
+- recaptura inmediata ante serie nueva/cambio de hash.
 
 ### Históricos
 
-`A3 Primary getTrades / fuente histórica oficial -> raw validado -> barras -> History Store v2`
+`A3 Primary getTrades -> raw validado -> barras -> History Store v2`
 
-Frecuencia: batch post-cierre. Las familias HOLD también pueden acumular historia.
+- batch post-cierre;
+- familias HOLD también acumulan historia;
+- respetar buena práctica oficial: no consultar `getTrades` más frecuentemente que lo necesario; la documentación indica actualización cada 30 segundos, pero Porota lo usa en batch, no polling.
 
 ### Live
 
-`A3 Primary WebSocket -> normalizador live -> freshness/cache read-only -> motor PAPER`
+- REST sólo para smoke/snapshot/cierre;
+- WebSocket para realtime una vez validado;
+- sólo durante la sesión oficial del segmento.
 
-Sólo durante la sesión oficial de cada segmento. No existe una hora global de apertura.
+## Almacenamiento
 
-### Risk/Post Trade
-
-`A3 Risk/Post Trade -> snapshot dinámico -> Contract/Execution Evidence -> readiness`
-
-TTL corto y fail-closed.
-
-## Almacenamiento y aislamiento
-
-Se prefiere un único escritor por DB.
-
-El sidecar A3 guardará su spool/evidencia sanitizada bajo un namespace dedicado, por ejemplo `data/a3/`, y Porota importará snapshots verificados hacia Contract Evidence / History Store v2. No compartir credenciales ni token a través de la DB.
-
-El raw se somete a la política `STORAGE_LIFECYCLE_HF6_V2.md`: retención caliente limitada, compresión posterior y deduplicación por hash cuando sea seguro.
-
-## Horarios
-
-No hardcodear `MARKET_OPEN_HOUR` global.
-
-La referencia vigente de A3 distingue segmentos. Por ejemplo, la tabla pública de A3 muestra Dólar/Yuan con negociación 10:00–15:00 y RFX20/acciones/BTC/Oro/WTI/Títulos/CER/CAUC con negociación 10:30–17:00. Los horarios deben versionarse por segmento/producto y fecha efectiva.
-
-## Qué falta externamente
-
-Para confirmar la ingesta real hace falta contar con un usuario Primary/reMarkets habilitado para las APIs necesarias. Si no existe, debe solicitarse a A3 por su canal oficial. No se deben pegar credenciales en ChatGPT ni en GitHub.
+El sidecar A3 usa namespace dedicado `data/a3/`. Raw reciente tiene retención limitada y compresión según `STORAGE_LIFECYCLE_HF6_V2.md`; históricos canónicos y Contract Evidence permanecen versionados. Credenciales y tokens nunca entran a `data/a3/`.
 
 ## Validación antes de deploy
 
-Una única batería agrupada deberá probar:
+Una única batería agrupada probará autenticación, segmentos, catálogo, detalle contractual, snapshot Market Data REST, históricos representativos, presencia/ausencia de Risk/Post Trade, Contract Evidence v2, History Store v2, fail-closed, ausencia de métodos de orden y `real_orders_sent=0`.
 
-- dependencia A3 aislada de PPI;
-- auth sin filtrar secretos;
-- segmentos;
-- catálogo y detalle contractual;
-- histórico representative;
-- WebSocket live en horario de mercado;
-- Risk/Post Trade si existe permiso;
-- History Store v2;
-- Contract Evidence v2;
-- fail-closed;
-- observer HF6 sin restart accidental;
-- `real_orders_sent=0`.
-
-No se despliega el sidecar ni se habilitan futuros/opciones sin GO explícito del propietario.
+La prueba WebSocket live se completa durante horario de mercado. No se despliega el sidecar ni se habilitan futuros/opciones sin GO explícito del propietario.
