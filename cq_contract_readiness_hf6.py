@@ -82,11 +82,16 @@ ALIASES = {
     "FONDOS_LOCAL": "FCI_LOCAL",
     "ACCIONES_EXTERIOR": "ACCIONES_USA",
     "OBLIGACIONES_NEGOCIABLES": "ON",
+    "OBLIGACIONES": "ON",
 }
 
 
 def canonical_family(family: str) -> str:
-    key = str(family or "").upper().replace(" ", "_")
+    # Stored evidence historically used both hyphens and underscores.  These
+    # are aliases of the same family, not distinct financial products.
+    key = str(family or "").strip().upper().replace(" ", "_").replace("-", "_")
+    while "__" in key:
+        key=key.replace("__","_")
     return ALIASES.get(key, key)
 
 
