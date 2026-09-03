@@ -1,4 +1,4 @@
-"""Read-only log discovery/tailing for the HF6 v2 dashboard.
+"""Read-only log discovery/tailing for the HF6 v2 / RC4 dashboard.
 
 The dashboard never receives the Docker socket. A host exporter writes
 sanitized runtime snapshots into the shared log directory and this module
@@ -7,6 +7,7 @@ allows only regular files under that directory to be viewed/downloaded.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 import os
 
@@ -19,11 +20,19 @@ class LogSource:
     size_bytes: int
     modified_ns: int
 
+    @property
+    def modified_at(self) -> str:
+        return datetime.fromtimestamp(self.modified_ns / 1_000_000_000, tz=timezone.utc).isoformat()
+
 
 PREFERRED_FILES = (
-    ("observer", "Observer", "observer_runtime.log"),
-    ("dashboard", "Dashboard", "dashboard_runtime.log"),
-    ("application", "Aplicación", "trading_bot.log"),
+    ("bot", "Bot / aplicación", "bot_runtime.log"),
+    ("observer", "Observer runtime", "observer_runtime.log"),
+    ("dashboard", "Dashboard runtime", "dashboard_runtime.log"),
+    # Compatibilidad con instalaciones que todavía exponen el archivo rotado
+    # original directamente en el volumen compartido.
+    ("application", "Bot / aplicación (legacy)", "trading_bot.log"),
+    ("scraping", "Scraping / Contract Evidence", "contract_evidence_runtime.log"),
 )
 
 
@@ -79,6 +88,14 @@ def tail_lines(source: LogSource, lines: int = 50) -> list[str]:
         return source.path.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]
     except OSError:
         return []
+
+
+def source_freshness(source: LogSource, *, now_ns: int | None = None,
+                     stale_after_seconds: int = 180) -> str:
+    """Classify freshness without turning an absent source into a false OK."""
+    current = int(now_ns if now_ns is not None else datetime.now(timezone.utc).timestamp() * 1_000_000_000)
+    age = max(0, current - int(source.modified_ns)) / 1_000_000_000
+    return "FRESH" if age <= max(1, int(stale_after_seconds)) else "STALE"
 
 
 def assert_log_invariants() -> None:
