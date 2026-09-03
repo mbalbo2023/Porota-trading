@@ -7,6 +7,7 @@ automatically.  Structured XHR/API normalization is a separate RC4 step.
 from __future__ import annotations
 
 from collections import Counter
+import hashlib
 
 from cp_contract_evidence_v2_hf6 import finish_run, record_snapshot, start_run
 from cq_contract_readiness_hf6 import canonical_family
@@ -36,10 +37,13 @@ def _safe_source(source: dict) -> dict:
         "table_count":int(source.get("table_count") or 0),
         "detected_fields":[str(x)[:120] for x in (source.get("detected_fields") or [])[:100]],
         "tables":tables,
-        # Full sanitized scraper JSON remains the raw evidence artifact.  The DB
-        # stores the normalized audit summary and hash/version only.
         "automatic_ready_paper":False,
     }
+
+
+def _route_identity(route: str) -> str:
+    digest=hashlib.sha256(str(route).encode("utf-8")).hexdigest()[:16].upper()
+    return "__ROUTE__"+digest
 
 
 def import_payload(store, payload: dict, *, run_id: str) -> dict:
@@ -76,7 +80,7 @@ def import_payload(store, payload: dict, *, run_id: str) -> dict:
                 evidence=_safe_source(source)
                 route=evidence.get("route") or "PPI_AUTHENTICATED_WEB"
                 result=record_snapshot(
-                    store,family=canonical,ticker="*",market="PPI_WEB",
+                    store,family=canonical,ticker=_route_identity(route),market="PPI_WEB",
                     source_class=SOURCE_CLASS,source_ref=route,evidence=evidence,
                     observed_at=payload.get("observed_at"),
                 )
