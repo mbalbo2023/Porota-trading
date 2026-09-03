@@ -46,6 +46,49 @@ Correcto: no existe costo real cobrado por PPI porque no hay fill real. En PAPER
 
 No se puede afirmar que la bonificación fue efectivamente cobrada. Esa evidencia queda como requisito separado para eventual `REAL_ELIGIBLE`, alimentable por resumen de cuenta/fills externos autorizados en el futuro.
 
+## Confirmaciones finales del auditor — incorporadas 2026-09-03
+
+Estas respuestas ya no son bloqueantes y se aceptan con su etiqueta original:
+
+### A — `PAPER_EMERGENCY_MAX_OPEN_POSITIONS=12`
+**Clasificación del auditor: RECOMENDACIÓN.**
+
+- `50` se considera demasiado permisivo como anti-runaway.
+- `12` NO queda adoptado como valor canónico.
+- RC4 debe derivar el emergency cap cuantitativamente a partir de patrimonio/capital de riesgo, riesgo máximo concurrente, riesgo mínimo plausible por posición, exposición máxima y límites operativos.
+- Hasta esa derivación, cualquier número alternativo es hipótesis/configuración técnica, no política financiera demostrada.
+
+### B — `PAPER_MAX_HOLD_MINUTES=120`
+**Clasificación del auditor: HIPÓTESIS PARA REPLAY.**
+
+- El hallazgo de que `360` puede quedar dominado por EOD se mantiene.
+- `120` NO se adopta a ciegas.
+- RC4 debe replayar duraciones alternativas sobre los mismos trades y medir P&L neto, MFE, MAE, causas de salida y deterioro por tiempo antes de fijar el valor.
+
+### C — slippage `8/10/15 bp`
+**Clasificación del auditor: HIPÓTESIS CONSERVADORA.**
+
+- No existe respaldo empírico específico BYMA/PPI para esos números.
+- RC4 medirá la distribución del slippage PAPER observado/modelado contra el libro disponible: p10/p50/p90, por familia, liquidez, régimen y tipo de salida cuando sea posible.
+- Importante: ese valor NO se rotulará como "slippage real de mercado" porque los fills PAPER no son ejecuciones reales. Es una proxy empírica PAPER útil para calibración.
+- Cualquier valor nuevo del modelo se decidirá después del replay.
+
+### D — ATR período 20
+**Clasificación del auditor: CONVENCIÓN TÉCNICA.**
+
+- `20` puede ser default experimental, nunca ley.
+- ATR deberá ser parametrizable.
+- Replay mínimo previsto: 10/15/20/25/30 sobre exactamente los mismos datos.
+- La selección debe documentar su efecto sobre payoff neto, drawdown, estabilidad y sensibilidad; no optimizar sólo win-rate.
+
+### E — sector
+**Clasificación del auditor: REQUIERE EVIDENCIA EXTERNA.**
+
+- No se encontró sector verificable en candidate1 ni en las fuentes PPI/BYMA revisadas por el auditor.
+- `UNMAPPED` permanece como default.
+- Si se introduce `POROTA_SECTOR_MAP_V1`, debe ser un dataset explícito, versionado y auditable con al menos: `ticker`, `sector`, `source`, `author`, `effective_at/date`, `reviewed`, además de family/market cuando sean necesarios para evitar ambigüedad.
+- No se permitirá inferencia automática por ticker/nombre.
+
 ## Decisión preliminar por hallazgo de auditoría
 
 | Hallazgo | Decisión RC4 | Tratamiento |
@@ -57,15 +100,15 @@ No se puede afirmar que la bonificación fue efectivamente cobrada. Esa evidenci
 | P1-2 Scheduler SIN_REGISTRO | **ACEPTAR Y AMPLIAR** | Reconciliar `operational_jobs`, `source_sync`, `api_health` y snapshot systemd; mostrar fuente, last/next/duration/result/reason. |
 | P1-2b NEWS cadence | **ACEPTAR** | Mostrar cadencia efectiva; OFF != retrasado. |
 | P1-3 release no reproducible | **ACEPTAR** | Materializar patchers en Git una sola vez; build desde commit; excluir `.bak/.pre-*`; manifest y source SHA reproducibles. |
-| P1-4 `PAPER_MAX_OPEN_POSITIONS` fantasma | **ACEPTAR** | Retirarlo de acceptance como autoridad. Mantener sólo compatibilidad de API si hace falta. Emergency cap separado y documentado; valor final debe justificarse/testearse. |
-| P1-5 `PAPER_MAX_HOLD_MINUTES=360` muerto | **ACEPTAR hallazgo / PARCIAL remediación** | No fijar 120 a ciegas. Replay contrafáctico de 90/120/otros y elegir antes de iniciar ventana; luego congelar valor durante validación. |
+| P1-4 `PAPER_MAX_OPEN_POSITIONS` fantasma | **ACEPTAR** | Retirarlo de acceptance como autoridad. Mantener sólo compatibilidad de API si hace falta. Emergency cap separado y documentado; valor final se deriva cuantitativamente. |
+| P1-5 `PAPER_MAX_HOLD_MINUTES=360` muerto | **ACEPTAR hallazgo / PARCIAL remediación** | No fijar 120 a ciegas. Replay contrafáctico de múltiples duraciones y elegir antes de iniciar ventana; luego congelar valor durante validación. |
 | P1-6 bonificación PPI no reconciliada | **ACEPTAR riesgo / REFORMULAR para PAPER** | No fingir costos reportados. En PAPER: tarifario oficial versionado + modelo. Reconciliación real queda feature-gated para evidencia externa/futura. |
 | P2-1 settlement `time.max` | **ACEPTAR** | Mantener fail-closed hasta cutoff oficial; mostrar caja inmovilizada y provenance del supuesto. |
-| P2-2 concentración sectorial | **ACEPTAR** | Construir mapping autoritativo/versionado; SHADOW mientras coverage insuficiente. No inferir por ticker. |
+| P2-2 concentración sectorial | **ACEPTAR** | Construir mapping autoritativo/versionado si hay fuente; SHADOW mientras coverage insuficiente. No inferir por ticker. |
 | P2-3 señal momentum sobre ticks | **ACEPTAR** | Crear señal/candle counterfactual y replay; no reemplazar motor activo antes de evidencia. History/Candle quality es prerequisito. |
 | P2-4 artefacto `:memory:.ses` | **ACEPTAR** | Ignorar en release y encontrar productor; test de hygiene del paquete. |
 | P2-5 colisiones de prefijos | **ACEPTAR como deuda** | No renombrar RC4 masivamente. Generar `MODULOS.md`/inventario automático con capa, rol, callers y estado. |
-| P2-6 slippage 2 pb optimista | **ACEPTAR sospecha / NO aceptar 8/15 pb sin medición** | Reporte de fidelidad y counterfactual sobre mismos books/fills PAPER; calibrar luego. |
+| P2-6 slippage 2 pb optimista | **ACEPTAR sospecha / NO aceptar 8/15 pb sin medición** | Reporte de fidelidad PAPER y counterfactual sobre mismos books/fills; calibrar luego. |
 
 ## Nuevos requisitos RC4 derivados de la conversación
 
