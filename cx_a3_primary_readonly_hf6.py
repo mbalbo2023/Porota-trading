@@ -8,7 +8,7 @@ WebSocket dependencies into the main Porota/PPI Python environment.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 import os
 from typing import Any, Optional
@@ -26,9 +26,11 @@ class A3ReadOnlyError(RuntimeError):
 
 @dataclass(frozen=True)
 class A3Config:
-    username: str
-    password: str
-    account: str = ""
+    # Secret/account identifiers are excluded from repr so tracebacks/logging of
+    # the config object cannot expose them accidentally.
+    username: str = field(repr=False)
+    password: str = field(repr=False)
+    account: str = field(default="", repr=False)
     environment: str = "REMARKETS"
     base_url: str = ""
     timeout_seconds: float = 12.0
@@ -129,6 +131,21 @@ class A3PrimaryReadOnlyClient:
             params={"marketId": str(market_id), "symbol": symbol},
         )
 
+    def get_market_data(self, symbol: str, entries: str = "BI,OF,LA,OP,CL,SE,OI",
+                        depth: int = 3, market_id: str = "ROFX") -> dict[str, Any]:
+        symbol = str(symbol or "").strip()
+        if not symbol:
+            raise A3ReadOnlyError("A3_SYMBOL_MISSING")
+        return self._get(
+            "rest/marketdata/get",
+            params={
+                "marketId": str(market_id),
+                "symbol": symbol,
+                "entries": str(entries),
+                "depth": int(depth),
+            },
+        )
+
     def get_trade_history(self, symbol: str, trading_date: date | str,
                           market_id: str = "ROFX") -> dict[str, Any]:
         symbol = str(symbol or "").strip()
@@ -149,6 +166,7 @@ class A3PrimaryReadOnlyClient:
             "authenticated": False,
             "segments_readable": False,
             "instruments_readable": False,
+            "details_readable": False,
         }
         self.authenticate()
         result["authenticated"] = True
@@ -156,14 +174,17 @@ class A3PrimaryReadOnlyClient:
         result["segments_readable"] = True
         self.get_all_instruments()
         result["instruments_readable"] = True
+        self.get_detailed_instruments()
+        result["details_readable"] = True
         return result
 
 
 def assert_read_only_contract() -> None:
     if A3_ORDER_ROUTING_ALLOWED is not False:
         raise AssertionError("A3_ORDER_ROUTING_ALLOWED must stay false")
-    forbidden = ("send_order", "new_order", "replace_order", "cancel_order")
-    members = set(dir(A3PrimaryReadOnlyClient))
-    leaked = sorted(set(forbidden) & members)
+    forbidden_fragments = ("send_order", "new_order", "replace_order", "cancel_order",
+                           "order_create", "order_replace", "order_cancel")
+    members = {name.lower() for name in dir(A3PrimaryReadOnlyClient)}
+    leaked = sorted(name for name in members if any(frag in name for frag in forbidden_fragments))
     if leaked:
         raise AssertionError(f"Forbidden order methods exposed: {leaked}")
