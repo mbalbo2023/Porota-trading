@@ -1,8 +1,9 @@
 """Versioned, append-only Contract Evidence v2 storage.
 
-The v1 registry keeps the latest evaluation per instrument. v2 complements it
-with immutable snapshots and change events so a changed contract can never be
-silently overwritten. This module has no broker order capability.
+Snapshots and changes preserve provider-backed evidence.  RC4 also records a
+sanitized run ledger so Scheduler/System can explain when collection ran, what
+source class was used, what changed and why a run is blocked.  No secret,
+cookie, token, account id or raw HTML belongs in this schema.
 """
 from __future__ import annotations
 
@@ -11,8 +12,6 @@ import json
 from datetime import datetime, timezone
 
 SCHEMA = "porota-contract-evidence-v2"
-# Lower rank means higher authority inside the same provider-backed field set.
-# Providers are NEVER relabelled as one another; provenance remains explicit.
 SOURCE_RANK = {
     "PPI_STRUCTURED_API": 10,
     "PPI_AUTHENTICATED_XHR": 20,
@@ -76,11 +75,78 @@ def init_schema(store):
           status TEXT NOT NULL,
           detail TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS contract_evidence_v2_runs(
+          run_id TEXT PRIMARY KEY,
+          job_key TEXT NOT NULL,
+          source_class TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          finished_at TEXT,
+          state TEXT NOT NULL,
+          auth_state TEXT NOT NULL,
+          observed INTEGER NOT NULL DEFAULT 0,
+          recorded INTEGER NOT NULL DEFAULT 0,
+          changed INTEGER NOT NULL DEFAULT 0,
+          conflicts INTEGER NOT NULL DEFAULT 0,
+          blocked INTEGER NOT NULL DEFAULT 0,
+          errors INTEGER NOT NULL DEFAULT 0,
+          detail TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_contract_v2_snapshot_key
           ON contract_evidence_v2_snapshots(family,ticker,market,observed_at);
         CREATE INDEX IF NOT EXISTS idx_contract_v2_changes_key
           ON contract_evidence_v2_changes(family,ticker,market,detected_at);
+        CREATE INDEX IF NOT EXISTS idx_contract_v2_runs_job
+          ON contract_evidence_v2_runs(job_key,started_at);
         """)
+
+
+def _safe_text(value, limit=1000):
+    text=str(value or "").replace("\n"," ").replace("\r"," ").strip()
+    return text[:limit]
+
+
+def start_run(store, *, run_id, job_key, source_class, auth_state="NOT_REQUIRED",
+              started_at=None, detail=""):
+    if source_class not in SOURCE_RANK:
+        raise ValueError("CONTRACT_V2_UNSUPPORTED_SOURCE")
+    if not str(run_id or "").strip() or not str(job_key or "").strip():
+        raise ValueError("CONTRACT_V2_RUN_ID_REQUIRED")
+    init_schema(store)
+    started_at=started_at or now_iso()
+    with store.connect() as c:
+        c.execute("""INSERT INTO contract_evidence_v2_runs
+          (run_id,job_key,source_class,started_at,finished_at,state,auth_state,
+           observed,recorded,changed,conflicts,blocked,errors,detail)
+          VALUES(?,?,?,?,NULL,'RUNNING',?,0,0,0,0,0,0,?)""",
+          (str(run_id),str(job_key),source_class,started_at,_safe_text(auth_state,120),
+           _safe_text(detail)))
+    return str(run_id)
+
+
+def finish_run(store, *, run_id, state, auth_state=None, observed=0, recorded=0,
+               changed=0, conflicts=0, blocked=0, errors=0, detail="",
+               finished_at=None):
+    """Finish a sanitized run. Counts must be non-negative integers."""
+    counts=[observed,recorded,changed,conflicts,blocked,errors]
+    try:
+        counts=[int(value) for value in counts]
+    except (TypeError,ValueError) as exc:
+        raise ValueError("CONTRACT_V2_INVALID_RUN_COUNT") from exc
+    if any(value < 0 for value in counts):
+        raise ValueError("CONTRACT_V2_INVALID_RUN_COUNT")
+    finished_at=finished_at or now_iso()
+    init_schema(store)
+    with store.connect() as c:
+        row=c.execute("SELECT auth_state FROM contract_evidence_v2_runs WHERE run_id=?",
+                      (str(run_id),)).fetchone()
+        if not row:
+            raise ValueError("CONTRACT_V2_RUN_NOT_STARTED")
+        current_auth=row[0]
+        c.execute("""UPDATE contract_evidence_v2_runs SET
+          finished_at=?,state=?,auth_state=?,observed=?,recorded=?,changed=?,
+          conflicts=?,blocked=?,errors=?,detail=? WHERE run_id=?""",
+          (finished_at,_safe_text(state,80),_safe_text(auth_state or current_auth,120),
+           *counts,_safe_text(detail),str(run_id)))
 
 
 def record_snapshot(store, *, family, ticker, market, source_class,
