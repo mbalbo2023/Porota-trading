@@ -1,13 +1,18 @@
 """Import sanitized authenticated-PPI scraper output into Contract Evidence v2.
 
-This importer intentionally records FAMILY/ROUTE discovery evidence only.  It
-does not guess ticker contracts from HTML tables and it never calls readiness
-automatically.  Structured XHR/API normalization is a separate RC4 step.
+This importer intentionally records FAMILY/ROUTE discovery evidence only. It
+does not guess ticker contracts from HTML tables and never calls readiness
+automatically. Structured XHR/API normalization is a separate RC4 step.
 """
 from __future__ import annotations
 
+import argparse
 from collections import Counter
 import hashlib
+import json
+import sqlite3
+import uuid
+from pathlib import Path
 
 from cp_contract_evidence_v2_hf6 import finish_run, record_snapshot, start_run
 from cq_contract_readiness_hf6 import canonical_family
@@ -17,8 +22,17 @@ JOB_KEY="PPI_AUTHENTICATED_WEB_EVIDENCE"
 SOURCE_CLASS="PPI_AUTHENTICATED_WEB"
 
 
+class SQLiteStore:
+    def __init__(self,path):
+        self.path=str(path)
+    def connect(self):
+        c=sqlite3.connect(self.path,timeout=20)
+        c.row_factory=sqlite3.Row
+        c.execute("PRAGMA foreign_keys=ON")
+        return c
+
+
 def _safe_source(source: dict) -> dict:
-    """Keep useful non-secret route/table metadata without duplicating raw HTML."""
     tables=[]
     for table in (source.get("tables") or [])[:20]:
         if not isinstance(table,dict):
@@ -104,3 +118,20 @@ def import_payload(store, payload: dict, *, run_id: str) -> dict:
                        detail=f"{type(exc).__name__}: importación abortada")
         finally:
             raise
+
+
+def main(argv=None) -> int:
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--db",required=True)
+    parser.add_argument("--input",required=True)
+    parser.add_argument("--run-id",default="")
+    args=parser.parse_args(argv)
+    payload=json.loads(Path(args.input).read_text(encoding="utf-8"))
+    run_id=args.run_id or ("ppi-web-"+uuid.uuid4().hex)
+    result=import_payload(SQLiteStore(args.db),payload,run_id=run_id)
+    print(json.dumps({"run_id":run_id,**result},ensure_ascii=False,sort_keys=True))
+    return 0 if result.get("state") in {"OK","PARTIAL","BLOCKED_AUTH"} else 3
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
