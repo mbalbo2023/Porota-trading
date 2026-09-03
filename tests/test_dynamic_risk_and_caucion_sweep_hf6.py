@@ -13,7 +13,7 @@ def test_concurrent_risk_uses_soft_stop_budget_not_small_position_count():
     snap = capacity(
         baseline_equity="1000000",
         soft_stop_pct="1.5",
-        daily_pnl="0",
+        realized_pnl_today="0",
         open_stop_risk="10000",
         candidate_stop_risk="3000",
     )
@@ -24,7 +24,7 @@ def test_concurrent_risk_uses_soft_stop_budget_not_small_position_count():
     blocked = capacity(
         baseline_equity="1000000",
         soft_stop_pct="1.5",
-        daily_pnl="0",
+        realized_pnl_today="0",
         open_stop_risk="10000",
         candidate_stop_risk="6000",
     )
@@ -32,20 +32,20 @@ def test_concurrent_risk_uses_soft_stop_budget_not_small_position_count():
     assert blocked.reason == "CANDIDATE_EXCEEDS_REMAINING_CONCURRENT_RISK"
 
 
-def test_daily_gains_never_expand_concurrent_risk_budget():
+def test_realized_gains_never_expand_concurrent_risk_budget():
     flat = capacity(
-        baseline_equity="1000000", soft_stop_pct="1.5", daily_pnl="0",
+        baseline_equity="1000000", soft_stop_pct="1.5", realized_pnl_today="0",
         open_stop_risk="4000", candidate_stop_risk="1000")
     gain = capacity(
-        baseline_equity="1000000", soft_stop_pct="1.5", daily_pnl="50000",
+        baseline_equity="1000000", soft_stop_pct="1.5", realized_pnl_today="50000",
         open_stop_risk="4000", candidate_stop_risk="1000")
     assert gain.soft_stop_budget == flat.soft_stop_budget
     assert gain.remaining_before_candidate == flat.remaining_before_candidate
 
 
-def test_daily_loss_consumes_capacity_before_new_candidate():
+def test_realized_loss_consumes_capacity_before_new_candidate():
     snap = capacity(
-        baseline_equity="1000000", soft_stop_pct="1.5", daily_pnl="-5000",
+        baseline_equity="1000000", soft_stop_pct="1.5", realized_pnl_today="-5000",
         open_stop_risk="8000", candidate_stop_risk="3000")
     assert snap.realized_loss_consumed == Decimal("5000")
     assert snap.remaining_before_candidate == Decimal("2000")
