@@ -1,0 +1,154 @@
+name: Export HF6-v2 operative audit snapshot
+
+on:
+  push:
+    branches:
+      - audit/hf6-v2-operative-export-20260903
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Materialize exact deployed candidate source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SOURCE_SHA='a03cf47d5db01d8990a99f3f7836879c0606771b'
+          CANDIDATE_VERSION='17.0.0-rc3-hf6-v2-candidate1'
+          IMAGE_ID='sha256:ed5c110bdcf16ef3fc184b7cb5ec6148e288bd91b9d925377bd29aa5e04ccd27'
+          WORK="$RUNNER_TEMP/porota-operative"
+          mkdir -p "$WORK"
+          git archive "$SOURCE_SHA" | tar -x -C "$WORK"
+
+          bash "$WORK/scripts/porota_apply_dashboard_ux_logs_hf6.sh" "$WORK"
+          bash "$WORK/scripts/porota_apply_scheduler_dashboard_hf6.sh" "$WORK"
+          bash "$WORK/scripts/porota_apply_daily_results_responsive_hf6.sh" "$WORK" --apply
+          bash "$WORK/scripts/porota_apply_history_dashboard_metrics_hf6.sh" "$WORK"
+          bash "$WORK/scripts/porota_apply_dynamic_risk_gate_hf6.sh" "$WORK" --apply
+
+          python3 - "$WORK/cu_history_store_v2_hf6.py" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1]); text=p.read_text(encoding='utf-8')
+          if '"A3_CEM_CLOSING": 20,' not in text:
+              anchor='    "BYMA": 20,\n    "IOL": 30,\n'
+              if text.count(anchor)!=1:
+                  raise SystemExit('A3_CEM_SOURCE_RANK_ANCHOR_FAILED')
+              text=text.replace(anchor,'    "BYMA": 20,\n    "A3_CEM_CLOSING": 20,\n    "IOL": 30,\n',1)
+          p.write_text(text,encoding='utf-8')
+          PY
+
+          python3 - "$WORK/.env.example" "$WORK/v_config_metadata.py" <<'PY'
+          from pathlib import Path
+          import sys
+          envp,metap=map(Path,sys.argv[1:])
+          env=envp.read_text(encoding='utf-8'); meta=metap.read_text(encoding='utf-8')
+          pairs=[
+          ('# Hora de apertura de rueda (0-23, hora Argentina).\nMARKET_OPEN_HOUR=11',
+           '# LEGACY: hora global del motor histórico. HF6-v2 usa sesiones por familia/mercado/fecha.\nMARKET_OPEN_HOUR=11'),
+          ('# Hora de cierre de rueda.\nMARKET_CLOSE_HOUR=17',
+           '# LEGACY: cierre global del motor histórico. HF6-v2 usa sesiones por familia/mercado/fecha.\nMARKET_CLOSE_HOUR=17'),
+          ('# Operaciones simultáneas permitidas.\nMAX_OPEN_POSITIONS=3',
+           '# LEGACY: cap histórico. HF6-v2 usa riesgo concurrente dinámico y cap técnico anti-runaway.\nMAX_OPEN_POSITIONS=3'),
+          ]
+          for old,new in pairs:
+              if new not in env:
+                  if env.count(old)!=1: raise SystemExit('ENV_LEGACY_ANCHOR_FAILED')
+                  env=env.replace(old,new,1)
+          mpairs=[
+          ('("MARKET_OPEN_HOUR", "Horarios", "Hora de apertura de rueda (0-23, hora Argentina).", "11", False)',
+           '("MARKET_OPEN_HOUR", "Horarios", "LEGACY: hora global histórica; HF6-v2 usa sesiones versionadas por familia/mercado/fecha.", "11", False)'),
+          ('("MARKET_CLOSE_HOUR", "Horarios", "Hora de cierre de rueda.", "17", False)',
+           '("MARKET_CLOSE_HOUR", "Horarios", "LEGACY: cierre global histórico; HF6-v2 usa sesiones versionadas por familia/mercado/fecha.", "17", False)'),
+          ('("MAX_OPEN_POSITIONS", "Riesgo", "Operaciones simultáneas permitidas.", "3", False)',
+           '("MAX_OPEN_POSITIONS", "Riesgo", "LEGACY: cap histórico; HF6-v2 usa riesgo concurrente dinámico y cap técnico anti-runaway.", "3", False)'),
+          ]
+          for old,new in mpairs:
+              if new not in meta:
+                  if meta.count(old)!=1: raise SystemExit('META_LEGACY_ANCHOR_FAILED')
+                  meta=meta.replace(old,new,1)
+          envp.write_text(env,encoding='utf-8'); metap.write_text(meta,encoding='utf-8')
+          PY
+
+          python3 - "$WORK/_version.py" "$CANDIDATE_VERSION" "$SOURCE_SHA" <<'PY'
+          from pathlib import Path
+          import re,sys
+          p=Path(sys.argv[1]); version=sys.argv[2]; source=sys.argv[3]
+          text=p.read_text(encoding='utf-8')
+          text,n=re.subn(r'^VERSION\s*=\s*"[^"]+"',f'VERSION = "{version}"',text,count=1,flags=re.M)
+          if n!=1: raise SystemExit('VERSION_ANCHOR_FAILED')
+          if 'RELEASE_SOURCE_COMMIT' not in text:
+              text += f'\nRELEASE_SOURCE_COMMIT = "{source}"\n'
+          p.write_text(text,encoding='utf-8')
+          PY
+
+          cat > "$WORK/OPERATIVE_RELEASE_AUDIT_MANIFEST.txt" <<EOF
+          POROTA TRADING - HF6 V2 OPERATIVE SOURCE AUDIT SNAPSHOT
+          VERSION=$CANDIDATE_VERSION
+          RELEASE_SOURCE_SHA=$SOURCE_SHA
+          DEPLOYED_IMAGE_ID=$IMAGE_ID
+          MODE=PRODUCTION_PAPER
+          EXECUTION=SIMULATED
+          REAL_ORDER_CAPABILITY=BLOCKED
+          GENERATED_FROM_GIT_SOURCE_PLUS_EXACT_RELEASE_BUILDER_PATCHERS=YES
+          RUNTIME_DATA_INCLUDED=NO
+          DATABASE_INCLUDED=NO
+          ENV_OR_SECRETS_INCLUDED=NO
+          NOTE=This archive represents the source materialized by the validated release builder. It is not a docker-save image export.
+          EOF
+
+          python3 - "$WORK" <<'PY'
+          from pathlib import Path
+          import ast,sys
+          root=Path(sys.argv[1])
+          be=(root/'be_paper_engine.py').read_text(encoding='utf-8')
+          bg=(root/'bg_paper_dashboard.py').read_text(encoding='utf-8')
+          hist=(root/'cu_history_store_v2_hf6.py').read_text(encoding='utf-8')
+          tree=ast.parse(be); open_src=''
+          for node in ast.walk(tree):
+              if isinstance(node,ast.FunctionDef) and node.name=='_open':
+                  open_src=ast.get_source_segment(be,node) or ''; break
+          assert 'self.max_positions' not in open_src
+          assert 'concurrent_risk_locked' in open_src
+          assert 'PAPER_EMERGENCY_MAX_OPEN_POSITIONS' in open_src
+          assert '("scheduler", "Scheduler")' in bg
+          assert 'daily_results_html(days)' in bg
+          assert 'observer_history_metrics' in bg
+          assert 'docker.sock' not in bg
+          htree=ast.parse(hist); rank=None
+          for node in htree.body:
+              if isinstance(node,ast.Assign):
+                  for target in node.targets:
+                      if isinstance(target,ast.Name) and target.id=='SOURCE_RANK':
+                          rank=ast.literal_eval(node.value)
+          assert rank['PPI_PRODUCTION_HISTORY']==10
+          assert rank['A3_CEM_CLOSING']==20
+          print('OPERATIVE_STATIC_INVARIANTS=OK')
+          PY
+
+          find "$WORK" -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find "$WORK" -type d -name '.pytest_cache' -prune -exec rm -rf {} +
+          find "$WORK" -type f \( -name '*.db' -o -name '*.db-wal' -o -name '*.db-shm' -o -name '*.log' -o -name '.env' -o -name '.env.*' \) ! -name '.env.example' -delete
+
+          OUT="$RUNNER_TEMP/Porota-Trading-17.0.0-rc3-hf6-v2-candidate1-OPERATIVE-AUDIT.zip"
+          (cd "$WORK" && zip -q -r "$OUT" .)
+          sha256sum "$OUT" | tee "$OUT.sha256"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+
+      - name: Upload operative source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Porota-Trading-HF6-V2-OPERATIVE-AUDIT
+          path: |
+            ${{ env.OUT }}
+            ${{ env.OUT }}.sha256
+          if-no-files-found: error
+          retention-days: 7
