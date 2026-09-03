@@ -1,0 +1,126 @@
+{
+  "ap_api_verifier": {
+    "classification": "MANUAL_ADMIN_TOOL",
+    "reason": "Verificador end-to-end de APIs externas; se ejecuta a demanda y no pertenece al loop de trading."
+  },
+  "aq_macro_backtest": {
+    "classification": "OFFLINE_TOOL",
+    "reason": "Backtest macroeconómico offline; no debe importar autoridad al runtime."
+  },
+  "bh_paper_gemini": {
+    "classification": "DEPRECATED_WITH_REASON",
+    "reason": "Portón Gemini heredado; IA intradiaria está OFF. Se conserva por compatibilidad/tests hasta depuración posterior explícita."
+  },
+  "bj_sandbox_health_probe": {
+    "classification": "MANUAL_ADMIN_TOOL",
+    "reason": "Probe de autenticación Sandbox a demanda; el runtime actual usa PPI producción read-only."
+  },
+  "bo_signal_core": {
+    "classification": "OFFLINE_TOOL",
+    "reason": "Candidato de señal para replay/backtest; no está promovido al motor productivo."
+  },
+  "br_backtest_gate": {
+    "classification": "OFFLINE_TOOL",
+    "reason": "Controles de calidad/partición temporal para replay offline."
+  },
+  "bx_execution_replay": {
+    "classification": "OFFLINE_TOOL",
+    "reason": "Replay IOC offline; RC4 lo usará para calibración sin tocar runtime."
+  },
+  "by_strategy_backtest": {
+    "classification": "OFFLINE_TOOL",
+    "reason": "Evaluación offline de estrategia candidata."
+  },
+  "bz_replay_risk": {
+    "classification": "OFFLINE_TOOL",
+    "reason": "Modelo de riesgo para replay offline."
+  },
+  "co_contract_ingestion_policy_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Política de cadencia Contract Evidence v2; RC4 debe conectarla al scheduler de scraping/XHR."
+  },
+  "co_market_sessions_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Sesiones por familia/mercado; RC4 debe usarlas para cadencias y freshness sin asumir un horario global."
+  },
+  "cp_contract_evidence_v2_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Store append-only Contract Evidence v2; existe pero candidate1 no lo usa como fuente operacional."
+  },
+  "cp_history_ingest_policy_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Política de ingesta histórica V2; forma parte de la cadena huérfana que RC4 debe conectar."
+  },
+  "cq_contract_readiness_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Readiness fail-closed V2; RC4 debe conectarlo después de normalizar/materializar evidencia."
+  },
+  "cq_family_contract_rules_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Reglas contractuales por familia; actualmente sólo alcanzadas por tests/cadena no operacional."
+  },
+  "cq_history_attempt_ledger_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Ledger append-only de intentos históricos; debe quedar alcanzable por el job post-close RC4."
+  },
+  "cr_data912_reconcile_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Reconciliación Data912 post-close; fallback soportado, nunca autoridad live."
+  },
+  "cr_pending_settlement_diagnostics_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Diagnóstico read-only de settlement; RC4 lo conectará al panel con caja inmovilizada/fuente de cutoff."
+  },
+  "cs_postclose_history_scheduler_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Raíz lógica de History Store v2 sin entrypoint en candidate1; P0-3 exige conectarla."
+  },
+  "ct_ppi_history_salvage_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Salvage de históricos PPI dentro de la cadena V2 actualmente huérfana."
+  },
+  "cv_history_store_adapter_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Adapter al store histórico separado; queda alcanzable cuando se conecte History Store v2."
+  },
+  "cw_data912_history_v2_sink": {
+    "classification": "PENDING_WIRING",
+    "reason": "Sink Data912 hacia History Store v2; sólo post-close y con autoridad inferior a PPI."
+  },
+  "cx_a3_primary_readonly_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Cliente A3 Primary read-only; no debe ser autoridad live y su integración requiere evidencia de disponibilidad."
+  },
+  "cy_a3_contract_bridge_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Bridge A3 -> Contract Evidence; sólo enriquecimiento/background y no auto-READY."
+  },
+  "cy_market_source_arbitration_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Política de precedencia PPI/A3; debe gobernar History/Contract Evidence cuando la cadena V2 sea alcanzable."
+  },
+  "cz_a3_cem_public_history_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Cliente público A3 CEM para histórico/background; candidate1 no tiene timer/entrypoint activo."
+  },
+  "db_a3_cem_normalizer_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Normalizador A3 CEM usado por tests; debe quedar detrás del job A3 post-close."
+  },
+  "df_caucion_end_of_day_sweep_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Planner de cash sweep PAPER; permanece HOLD hasta contrato/cutoff/día-base/minimum/step verificados."
+  },
+  "di_caucion_cash_sweep_runtime_hf6": {
+    "classification": "PENDING_WIRING",
+    "reason": "Orquestación de caución con routing prohibido; no se activa hasta cerrar readiness contractual."
+  },
+  "q_backtest": {
+    "classification": "DEPRECATED_WITH_REASON",
+    "reason": "Experimento legado NO VALIDADO; se conserva temporalmente por referencias históricas/tests hasta decidir retiro explícito."
+  },
+  "r_clear_kill_switch": {
+    "classification": "MANUAL_ADMIN_TOOL",
+    "reason": "Herramienta manual de administración para liberar kill switch; por diseño nunca debe ser llamada automáticamente."
+  }
+}
