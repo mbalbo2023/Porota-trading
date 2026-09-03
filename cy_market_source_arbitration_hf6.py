@@ -1,8 +1,12 @@
-"""HF6 v2 market-source arbitration.
+"""HF6 v2 market-source policy.
 
-Live trading decisions must use one complete primary source per family.
-A secondary source may validate or raise conflicts, but cannot fill individual
-live fields into a decision assembled from another source.
+The live PAPER decision path uses one complete configured primary source per
+family. In the initial HF6-v2 policy that source is PPI.
+
+A3/Primary is NOT consulted synchronously to validate a PPI trading decision.
+It is a background evidence source for derivative contracts, histories and
+post-close/feed-quality analysis. This avoids adding latency or creating false
+conflicts from observations taken at different instants.
 """
 from __future__ import annotations
 
@@ -11,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
 LIVE_FIELD_MIXING_ALLOWED = False
+SYNCHRONOUS_SECONDARY_VALIDATION_ALLOWED = False
 REAL_ORDER_ROUTING_ALLOWED = False
 
 
@@ -30,12 +35,10 @@ class ArbitrationResult:
     status: str
     snapshot: Optional[SourceSnapshot]
     reason: str
-    secondary_source: Optional[str] = None
 
 
-# Initial HF6-v2 policy. A3 is validation/contract/history for derivatives,
-# not silent live fallback. Promotion of a family to A3 live requires an
-# explicit reviewed configuration change and deploy approval.
+# Initial HF6-v2 policy. PPI remains the live source for every family until a
+# family-level promotion is explicitly reviewed, tested and approved.
 PRIMARY_LIVE_SOURCE = {
     "ACCIONES": "PPI",
     "CEDEARS": "PPI",
@@ -49,7 +52,9 @@ PRIMARY_LIVE_SOURCE = {
     "FUTUROS": "PPI",
 }
 
-SECONDARY_VALIDATION_SOURCE = {
+# These sources may enrich Contract Evidence / History Store or be compared in
+# an asynchronous audit. They are not queried by select_live_snapshot().
+BACKGROUND_EVIDENCE_SOURCE = {
     "OPCIONES": "A3_PRIMARY",
     "FUTUROS": "A3_PRIMARY",
 }
@@ -63,61 +68,65 @@ def select_live_snapshot(
     family: str,
     snapshots: Mapping[str, SourceSnapshot],
 ) -> ArbitrationResult:
-    """Return a whole-source live snapshot or HOLD.
+    """Return the configured whole-source live snapshot or HOLD.
 
-    This deliberately refuses field-by-field fallback. If the configured
-    primary source is unavailable/stale, a secondary source does not silently
-    replace it unless the family itself has first been promoted by policy.
+    There is no field-by-field fallback and no synchronous secondary check.
+    If PPI is missing/stale/incomplete for the live requirements of the family,
+    the result is HOLD until a separately approved family-level source policy
+    says otherwise.
     """
     fam = str(family).upper()
     primary = primary_live_source(fam)
-    secondary = SECONDARY_VALIDATION_SOURCE.get(fam)
     snap = snapshots.get(primary)
     if snap is None:
         return ArbitrationResult(
             fam, primary, "HOLD_DATA_SOURCE", None,
-            f"PRIMARY_SOURCE_MISSING:{primary}", secondary,
+            f"PRIMARY_SOURCE_MISSING:{primary}",
         )
     if not snap.fresh:
         return ArbitrationResult(
             fam, primary, "HOLD_DATA_SOURCE", None,
-            f"PRIMARY_SOURCE_STALE:{primary}", secondary,
+            f"PRIMARY_SOURCE_STALE:{primary}",
         )
     if snap.family.upper() != fam:
         return ArbitrationResult(
             fam, primary, "HOLD_DATA_SOURCE", None,
-            f"PRIMARY_SOURCE_FAMILY_MISMATCH:{primary}", secondary,
+            f"PRIMARY_SOURCE_FAMILY_MISMATCH:{primary}",
         )
     return ArbitrationResult(
         fam, primary, "PRIMARY_SOURCE_READY", snap,
-        "WHOLE_SOURCE_SELECTED", secondary,
+        "WHOLE_PRIMARY_SOURCE_SELECTED_NO_SECONDARY_CALL",
     )
 
 
-def compare_parallel_numeric(
-    family: str,
+def compare_background_numeric(
     primary_value: Optional[float],
-    secondary_value: Optional[float],
+    evidence_value: Optional[float],
     *,
     tolerance_pct: float,
 ) -> str:
-    """Compare two independent observations without choosing/averaging them."""
-    if primary_value is None or secondary_value is None:
-        return "VALIDATION_INCOMPLETE"
+    """Offline/asynchronous quality comparison only.
+
+    This function must never be used as a live trading gate. Its output is for
+    diagnostics, source-quality statistics and post-close review.
+    """
+    if primary_value is None or evidence_value is None:
+        return "BACKGROUND_COMPARISON_INCOMPLETE"
     p = float(primary_value)
-    s = float(secondary_value)
+    s = float(evidence_value)
     if p == 0:
-        return "SOURCE_CONFLICT" if s != 0 else "SOURCES_ALIGNED"
+        return "BACKGROUND_DIVERGENCE" if s != 0 else "BACKGROUND_ALIGNED"
     diff_pct = abs(s - p) / abs(p) * 100.0
-    return "SOURCE_CONFLICT" if diff_pct > float(tolerance_pct) else "SOURCES_ALIGNED"
+    return "BACKGROUND_DIVERGENCE" if diff_pct > float(tolerance_pct) else "BACKGROUND_ALIGNED"
 
 
 def assert_source_invariants() -> None:
     if LIVE_FIELD_MIXING_ALLOWED is not False:
         raise AssertionError("LIVE_FIELD_MIXING_ALLOWED must remain false")
+    if SYNCHRONOUS_SECONDARY_VALIDATION_ALLOWED is not False:
+        raise AssertionError("SYNCHRONOUS_SECONDARY_VALIDATION_ALLOWED must remain false")
     if REAL_ORDER_ROUTING_ALLOWED is not False:
         raise AssertionError("REAL_ORDER_ROUTING_ALLOWED must remain false")
-    # Initial derivative policy must remain PPI-primary until explicitly promoted.
     for family in ("FUTUROS", "OPCIONES"):
         if PRIMARY_LIVE_SOURCE.get(family) != "PPI":
             raise AssertionError(f"{family} live source changed without reviewed promotion")
