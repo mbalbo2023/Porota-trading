@@ -3,9 +3,12 @@
 Financial policy:
 - normal admission is NOT governed by a small fixed number of open positions;
 - the normal concurrent-risk budget is derived from the PAPER daily soft stop;
-- already-consumed daily losses reduce capacity; daily gains never increase it;
-- open-position risk is measured conservatively to the modeled stop, including
-  modeled exit friction supplied by the caller;
+- realized losses already consumed today reduce capacity; realized gains never
+  increase it;
+- open-position risk is measured conservatively from entry to modeled stop,
+  including modeled exit friction supplied by the caller;
+- unrealized daily PnL is not subtracted a second time because the full open
+  stop risk already reserves that downside;
 - a separate high emergency position cap may exist only as a runaway/bug guard.
 
 Pure calculations only. No broker/network access and no order routing.
@@ -51,9 +54,9 @@ def full_trade_stop_risk(*, entry_price, modeled_stop_fill, quantity, cash_multi
                          entry_cost=0, modeled_exit_cost=0) -> Decimal:
     """Conservative full-trade loss from entry through modeled stop.
 
-    Used for both existing positions and a candidate. It intentionally does not
-    count unrealized gains as new capacity. A gap can be worse than this model,
-    so other portfolio/exposure/liquidity gates remain mandatory.
+    This is deliberately based on the original trade risk, not on favorable
+    unrealized PnL. A gap can still be worse than the modeled stop fill, so the
+    existing liquidity/exposure/daily-loss protections remain mandatory.
     """
     entry = D(entry_price, "precio de entrada", positive=True)
     stop = D(modeled_stop_fill, "fill de stop modelado", nonnegative=True)
@@ -65,23 +68,25 @@ def full_trade_stop_risk(*, entry_price, modeled_stop_fill, quantity, cash_multi
     return price_loss + buy_cost + sell_cost
 
 
-def capacity(*, baseline_equity, soft_stop_pct, daily_pnl, open_stop_risk,
-             candidate_stop_risk) -> ConcurrentRiskSnapshot:
+def capacity(*, baseline_equity, soft_stop_pct, realized_pnl_today,
+             open_stop_risk, candidate_stop_risk) -> ConcurrentRiskSnapshot:
     """Admission capacity anchored to the daily soft-stop budget.
 
-    `daily_pnl` is used only to consume capacity when negative. Positive daily
-    PnL never increases the risk budget. Open stop risk is then reserved in full.
+    Only the negative part of already-realized PnL consumes additional capacity.
+    Positive realized PnL never increases the budget. Open stop risk is reserved
+    in full, so unrealized loss is not deducted separately and cannot be counted
+    twice.
     """
     baseline = D(baseline_equity, "baseline", positive=True)
     soft_pct = D(soft_stop_pct, "soft stop %", positive=True)
     if soft_pct > ONE_HUNDRED:
         raise ValueError("soft stop % fuera de rango")
-    pnl = D(daily_pnl, "PnL diario")
+    realized = D(realized_pnl_today, "PnL realizado del día")
     open_risk = D(open_stop_risk, "riesgo abierto", nonnegative=True)
     candidate = D(candidate_stop_risk, "riesgo candidato", nonnegative=True)
 
     soft_budget = baseline * soft_pct / ONE_HUNDRED
-    realized_loss_consumed = max(ZERO, -pnl)
+    realized_loss_consumed = max(ZERO, -realized)
     remaining_before = max(ZERO, soft_budget - realized_loss_consumed - open_risk)
     remaining_after = remaining_before - candidate
     admitted = candidate > ZERO and remaining_after >= ZERO
