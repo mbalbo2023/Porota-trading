@@ -1,10 +1,15 @@
 """Scheduler catalog/model for RC4 dashboard.
 
 Read-only model. Jobs persist evidence in different stores; this module
-normalizes that evidence without pretending that absence from operational_jobs
-means a job did not run. Host systemd state is consumed separately from a
-sanitized JSON snapshot; the dashboard never receives systemctl or Docker
-privileges.
+normalizes that evidence without pretending that absence from
+``operational_jobs`` means a job did not run. Host systemd state is consumed
+separately from a sanitized JSON snapshot; the dashboard never receives
+systemctl or Docker privileges.
+
+RC4 adds explicit Contract Evidence jobs and distinguishes scheduled policy
+from observed evidence.  A grey row must have a reason such as
+``NUNCA_EJECUTADO``/``SIN_EVIDENCIA``/``NO_APLICA``; grey is never a generic
+"unknown" bucket.
 """
 from __future__ import annotations
 
@@ -22,7 +27,6 @@ SCHEDULER_STATE_PATH = Path(os.getenv(
 
 
 def _news_cadence_seconds() -> int:
-    """Return the effective control cadence, not the nominal RSS cadence."""
     enabled = str(os.getenv("PAPER_NEWS_INGEST_ENABLED", "false")).strip().lower()
     return 45 * 60 if enabled in {"1", "true", "yes", "si", "sí"} else 12 * 3600
 
@@ -34,6 +38,7 @@ class InternalJob:
     description: str
     cadence_seconds: int | None
     condition: str = ""
+    expected_source: str = "operational_jobs"
 
 
 INTERNAL_JOBS = (
@@ -55,44 +60,70 @@ INTERNAL_JOBS = (
                 "Sólo dentro de ventana final verificada; falta de evidencia contractual => HOLD."),
     InternalJob("PPI_BACKGROUND_INGEST", "Históricos PPI",
                 "Ingesta histórica/background PPI; nunca fuente de órdenes.",
-                int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200"))),
+                int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+                expected_source="api_health"),
     InternalJob("PPI_PRODUCTION_HISTORY", "Históricos PPI producción",
                 "Actualiza históricos PPI producción read-only.",
-                int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200"))),
+                int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+                expected_source="source_sync"),
     InternalJob("PPI_PRODUCTION_CATALOG", "Catálogo PPI",
                 "Actualiza catálogo/instrumentos observables y metadatos de operatoria.",
-                int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600"))),
+                int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")),
+                expected_source="source_sync"),
     InternalJob("BYMA_OPEN_DATA", "BYMA datos públicos",
                 "Actualiza evidencia pública BYMA usada para calendario/referencia.",
-                int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600"))),
+                int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")),
+                expected_source="source_sync"),
     InternalJob("PAPER_FOCUS_COVERAGE", "Cobertura del universo",
                 "Recalcula cobertura y disponibilidad sin habilitar familias por inferencia.",
-                int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"))),
+                int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
+                expected_source="api_health"),
     InternalJob("PAPER_SIGNAL_SAMPLING", "Muestreo de señales",
                 "Registra cobertura del motor de señales sobre el universo elegible.",
-                int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"))),
+                int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
+                expected_source="api_health"),
     InternalJob("PAPER_SIGNAL_ROTATION", "Rotación de universo",
                 "Rota la ventana evaluada para cubrir progresivamente el universo.",
-                int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"))),
+                int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
+                expected_source="api_health"),
+
+    # Contract Evidence collection policy approved on 2026-09-03. These jobs
+    # are read-only collectors and never make a family READY merely because a
+    # route/XHR exists.
+    InternalJob("PPI_CONTRACT_XHR_DYNAMIC", "PPI contrato dinámico / XHR",
+                "Captura campos contractuales dinámicos oficiales y versiona cambios.",
+                15*60,"Sólo lectura. Auth/2FA/stale/conflict => HOLD.",
+                "contract_evidence_v2_runs"),
+    InternalJob("PPI_CONTRACT_CAUCIONES_OPEN_AUCTIONS", "PPI cauciones / subastas abiertas",
+                "Actualiza términos dinámicos de cauciones/open auctions con cadencia corta.",
+                5*60,"Sólo lectura; nunca Continuar/Confirmar ni routing de órdenes.",
+                "contract_evidence_v2_runs"),
+    InternalJob("PPI_CONTRACT_DERIVATIVES", "PPI opciones y futuros",
+                "Actualiza metadata/contratos dinámicos de opciones y futuros.",
+                15*60,"Readiness sigue HOLD hasta contrato y simulador especializados completos.",
+                "contract_evidence_v2_runs"),
+    InternalJob("PPI_CONTRACT_STATIC_HASH", "PPI contrato estático / hash",
+                "Revalida páginas/datos contractuales estáticos por hash diario.",
+                24*3600,"Cambios de hash exigen revisión; no auto-promoción.",
+                "contract_evidence_v2_runs"),
+    InternalJob("PPI_AUTHENTICATED_WEB_EVIDENCE", "PPI navegador autenticado completo",
+                "Barrido browser completo para descubrimiento, snapshots y cambio contractual.",
+                7*24*3600,"Semanal y fuera de mercado; 2FA humana si PPI la exige; sin secretos persistidos.",
+                "contract_evidence_v2_runs"),
+    InternalJob("CONTRACT_READINESS_RECONCILE", "Reconciliación de readiness contractual",
+                "Normaliza aliases, autoridad, freshness y conflictos antes de recalcular readiness.",
+                15*60,"Nunca convierte evidencia incompleta en READY_PAPER.",
+                "contract_evidence_v2_runs"),
 )
 
-# Canonical evidence source per catalog job. operational_jobs has priority when
-# a row exists because it is the job's own ledger. These mappings complete jobs
-# whose implementation persists elsewhere.
-EVIDENCE_TABLE = {
-    "PPI_BACKGROUND_INGEST": "api_health",
-    "PPI_PRODUCTION_HISTORY": "source_sync",
-    "PPI_PRODUCTION_CATALOG": "source_sync",
-    "BYMA_OPEN_DATA": "source_sync",
-    "PAPER_FOCUS_COVERAGE": "api_health",
-    "PAPER_SIGNAL_SAMPLING": "api_health",
-    "PAPER_SIGNAL_ROTATION": "api_health",
-}
+EVIDENCE_TABLE = {job.key:job.expected_source for job in INTERNAL_JOBS}
 
 SYSTEMD_DESCRIPTIONS = {
-    "porota-introspeccion-hf5.timer": "Genera snapshot de introspección funcional; nombre HF5 legado.",
+    "porota-functional-health-rc4.timer": "Control funcional liviano read-only cada 5 minutos.",
+    "porota-functional-deep-audit-rc4.timer": "Introspección funcional profunda read-only cada hora.",
+    "porota-introspeccion-hf5.timer": "LEGACY: introspección horaria con nombre HF5; RC4 debe retirarlo al activar el reemplazo para evitar duplicados.",
     "porota-introspection-publish.timer": "Publica copia sanitizada; GitHub nunca controla runtime.",
-    "porota-contract-evidence-hf6.timer": "Actualiza Contract Evidence read-only y conserva historial de cambios.",
+    "porota-contract-evidence-hf6.timer": "LEGACY/HF6: Contract Evidence read-only; RC4 debe migrar a jobs versionados sin duplicar ejecución.",
     "porota-log-export-hf6.timer": "Exporta snapshots sanitizados de logs para UI.",
     "porota-scheduler-export-hf6.timer": "Exporta estado systemd sanitizado para esta vista.",
     "porota-preopen.timer": "LEGACY retirado; no debe reactivarse sin decisión explícita.",
@@ -114,6 +145,13 @@ def _parse(value: str | None) -> datetime | None:
         return None
 
 
+def _duration(started,finished):
+    a=_parse(started); b=_parse(finished)
+    if a is None or b is None or b<a:
+        return None
+    return (b-a).total_seconds()
+
+
 def next_due(last_run_at: str | None, cadence_seconds: int | None) -> str | None:
     if cadence_seconds is None:
         return None
@@ -131,12 +169,31 @@ def _normalize_evidence(row: dict, *, key_field: str, run_field: str,
         "last_success_at": row.get("last_success_at"),
         "state": row.get(state_field) or "SIN_REGISTRO",
         "detail": str(row.get("detail") or ""),
+        "duration_seconds":row.get("duration_seconds"),
         "evidence_source": table,
     }
 
 
+def _normalize_contract_run(row: dict) -> dict:
+    row=dict(row or {})
+    state=str(row.get("state") or "SIN_REGISTRO")
+    finished=row.get("finished_at")
+    return {
+        "job_key":str(row.get("job_key") or ""),
+        "last_run_at":row.get("started_at"),
+        "last_success_at":finished if state.upper() in {"OK","SUCCESS","VERDE"} else None,
+        "state":state,
+        "detail":str(row.get("detail") or ""),
+        "duration_seconds":_duration(row.get("started_at"),finished),
+        "auth_state":row.get("auth_state"),
+        "counts":{key:int(row.get(key) or 0) for key in
+                  ("observed","recorded","changed","conflicts","blocked","errors")},
+        "evidence_source":"contract_evidence_v2_runs",
+    }
+
+
 def _prefer(persisted: dict[str, dict], candidate: dict) -> None:
-    """Keep operational_jobs authoritative; otherwise prefer freshest evidence."""
+    """Prefer a job's own ledger; otherwise keep the freshest evidence."""
     key=candidate.get("job_key") or ""
     if not key:
         return
@@ -144,21 +201,52 @@ def _prefer(persisted: dict[str, dict], candidate: dict) -> None:
     if current is None:
         persisted[key]=candidate
         return
-    if current.get("evidence_source") == "operational_jobs":
+    priority={"operational_jobs":0,"contract_evidence_v2_runs":0,
+              "source_sync":1,"api_health":2}
+    cp=priority.get(current.get("evidence_source"),9)
+    np=priority.get(candidate.get("evidence_source"),9)
+    if np<cp:
+        persisted[key]=candidate; return
+    if np>cp:
         return
-    old=_parse(current.get("last_run_at"))
-    new=_parse(candidate.get("last_run_at"))
+    old=_parse(current.get("last_run_at")); new=_parse(candidate.get("last_run_at"))
     if new is not None and (old is None or new > old):
         persisted[key]=candidate
 
 
+def classify_row(row: dict, *, now=None, grace_seconds: int=120) -> dict:
+    """Return explicit UI state/reason; grey must never be unexplained."""
+    row=dict(row or {})
+    now_dt=_parse(now) if now else datetime.now(TZ)
+    state=str(row.get("state") or "SIN_REGISTRO").upper()
+    last=_parse(row.get("last_run_at")); due=_parse(row.get("next_run_at"))
+    if not row.get("last_run_at"):
+        ui="GRAY"; reason="NUNCA_EJECUTADO" if state=="SIN_REGISTRO" else state
+    elif state in {"NO_APLICA","NOT_APPLICABLE","DISABLED_BY_POLICY"}:
+        ui="GRAY"; reason="NO_APLICA"
+    elif state in {"ERROR","FAILED","FAIL","ROJO","CRITICAL"}:
+        ui="RED"; reason="ERROR_COMPROBADO"
+    elif state in {"BLOCKED_AUTH","AUTH_REQUIRED","HOLD","WAITING_CONDITION"}:
+        ui="YELLOW"; reason=state
+    elif due is not None and now_dt > due + timedelta(seconds=max(0,int(grace_seconds))):
+        ui="YELLOW"; reason="STALE_EVIDENCE"
+    elif state in {"OK","SUCCESS","VERDE","READY","RUNNING","PARTIAL","AMARILLO","WARN"}:
+        ui="GREEN" if state in {"OK","SUCCESS","VERDE","READY","RUNNING"} else "YELLOW"
+        reason="EVIDENCE_CURRENT" if ui=="GREEN" else state
+    else:
+        ui="GRAY"; reason="SIN_EVIDENCIA_CLASIFICABLE"
+    row["ui_state"]=ui; row["ui_reason"]=reason
+    row["age_seconds"]=(None if last is None else max(0.0,(now_dt-last).total_seconds()))
+    return row
+
+
 def internal_rows(db_rows: list[dict], *, source_sync_rows=None,
-                  api_health_rows=None) -> list[dict]:
-    """Merge the three persisted evidence stores without duplicate jobs."""
+                  api_health_rows=None, contract_run_rows=None,
+                  now=None) -> list[dict]:
+    """Merge persisted evidence stores without duplicate jobs."""
     persisted={}
     for raw in db_rows or []:
-        row=dict(raw)
-        row["evidence_source"]="operational_jobs"
+        row=dict(raw); row["evidence_source"]="operational_jobs"
         _prefer(persisted,row)
     for raw in source_sync_rows or []:
         _prefer(persisted,_normalize_evidence(
@@ -168,35 +256,40 @@ def internal_rows(db_rows: list[dict], *, source_sync_rows=None,
         _prefer(persisted,_normalize_evidence(
             dict(raw), key_field="component", run_field="checked_at",
             state_field="state", table="api_health"))
+    for raw in contract_run_rows or []:
+        _prefer(persisted,_normalize_contract_run(dict(raw)))
 
     result=[]
     known={j.key for j in INTERNAL_JOBS}
     for job in INTERNAL_JOBS:
         row=persisted.get(job.key,{})
-        source=row.get("evidence_source") or EVIDENCE_TABLE.get(job.key) or "operational_jobs"
-        result.append({
-            "key":job.key,
-            "label":job.label,
-            "description":job.description,
-            "condition":job.condition,
-            "cadence_seconds":job.cadence_seconds,
-            "last_run_at":row.get("last_run_at"),
-            "last_success_at":row.get("last_success_at"),
-            "state":row.get("state") or "SIN_REGISTRO",
-            "detail":row.get("detail") or "Todavía no existe evidencia persistida en la fuente esperada.",
+        source=row.get("evidence_source") or job.expected_source
+        item={
+            "key":job.key,"label":job.label,"description":job.description,
+            "condition":job.condition,"cadence_seconds":job.cadence_seconds,
+            "last_run_at":row.get("last_run_at"),"last_success_at":row.get("last_success_at"),
+            "state":row.get("state") or "SIN_REGISTRO","detail":row.get("detail") or
+                f"Todavía no existe evidencia persistida en {job.expected_source}.",
             "next_run_at":next_due(row.get("last_run_at"),job.cadence_seconds),
-            "source":source,
-        })
+            "duration_seconds":row.get("duration_seconds"),"source":source,
+            "expected_source":job.expected_source,"auth_state":row.get("auth_state"),
+            "counts":row.get("counts"),
+        }
+        result.append(classify_row(item,now=now))
     for key,row in sorted(persisted.items()):
         if key in known:
             continue
-        result.append({
+        item={
             "key":key,"label":key,"description":"Job interno descubierto en evidencia persistida.",
             "condition":"","cadence_seconds":None,"last_run_at":row.get("last_run_at"),
             "last_success_at":row.get("last_success_at"),"state":row.get("state") or "UNKNOWN",
             "detail":row.get("detail") or "","next_run_at":None,
+            "duration_seconds":row.get("duration_seconds"),
             "source":row.get("evidence_source") or "DISCOVERED",
-        })
+            "expected_source":"DISCOVERED","auth_state":row.get("auth_state"),
+            "counts":row.get("counts"),
+        }
+        result.append(classify_row(item,now=now))
     return result
 
 
@@ -219,7 +312,13 @@ def assert_scheduler_invariants() -> None:
     keys=[j.key for j in INTERNAL_JOBS]
     if len(keys)!=len(set(keys)):
         raise AssertionError("duplicate internal scheduler job")
-    if "CAUCION_CASH_SWEEP" not in keys:
-        raise AssertionError("caucion cash sweep must be visible in scheduler")
+    required={"CAUCION_CASH_SWEEP","PPI_CONTRACT_XHR_DYNAMIC",
+              "PPI_CONTRACT_CAUCIONES_OPEN_AUCTIONS","PPI_CONTRACT_DERIVATIVES",
+              "PPI_CONTRACT_STATIC_HASH","PPI_AUTHENTICATED_WEB_EVIDENCE",
+              "CONTRACT_READINESS_RECONCILE"}
+    if not required.issubset(keys):
+        raise AssertionError("required RC4 scheduler jobs missing")
     if "porota-preopen.timer" not in SYSTEMD_DESCRIPTIONS:
         raise AssertionError("legacy preopen timer must remain visible for retirement evidence")
+    if "porota-functional-health-rc4.timer" not in SYSTEMD_DESCRIPTIONS:
+        raise AssertionError("RC4 functional health timer must be visible")
