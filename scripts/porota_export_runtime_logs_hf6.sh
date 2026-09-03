@@ -28,7 +28,14 @@ for raw in sys.stdin:
 '
 }
 
-export_one() {
+publish_tmp() {
+  local tmp="$1" filename="$2"
+  chmod 0640 "$tmp"
+  chown 1000:1000 "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$OUTDIR/$filename"
+}
+
+export_container_log() {
   local container="$1" filename="$2" tmp
   tmp="$(mktemp "$OUTDIR/.${filename}.XXXXXX")"
   if sudo -n docker inspect "$container" >/dev/null 2>&1; then
@@ -36,13 +43,26 @@ export_one() {
   else
     printf 'Container %s no disponible al %s\n' "$container" "$(date -Is)" >"$tmp"
   fi
-  chmod 0640 "$tmp"
-  chown 1000:1000 "$tmp" 2>/dev/null || true
-  mv -f "$tmp" "$OUTDIR/$filename"
+  publish_tmp "$tmp" "$filename"
 }
 
-export_one porota_production_observer observer_runtime.log
-export_one porota_production_dashboard dashboard_runtime.log
+export_bot_application_log() {
+  # El logger Python del bot escribe en el volumen compartido data/logs.
+  # Se vuelve a sanitizar antes de exponerlo al dashboard. No se sigue ningún
+  # symlink y la salida queda acotada a las últimas TAIL_LINES líneas.
+  local source="$ROOT/data/logs/trading_bot.log" filename="bot_runtime.log" tmp
+  tmp="$(mktemp "$OUTDIR/.${filename}.XXXXXX")"
+  if [ -f "$source" ] && [ ! -L "$source" ]; then
+    tail -n "$TAIL_LINES" -- "$source" 2>/dev/null | sanitize >"$tmp" || true
+  else
+    printf 'Bot application log no disponible al %s; source=%s\n' "$(date -Is)" "$source" >"$tmp"
+  fi
+  publish_tmp "$tmp" "$filename"
+}
+
+export_bot_application_log
+export_container_log porota_production_observer observer_runtime.log
+export_container_log porota_production_dashboard dashboard_runtime.log
 
 # Manifest contains metadata only, never log contents or secrets.
 python3 - "$OUTDIR" <<'PY'
@@ -51,9 +71,9 @@ from pathlib import Path
 from datetime import datetime,timezone
 root=Path(sys.argv[1])
 items=[]
-for name in ("observer_runtime.log","dashboard_runtime.log"):
+for name in ("bot_runtime.log","observer_runtime.log","dashboard_runtime.log"):
     p=root/name
-    if p.exists():
+    if p.exists() and p.is_file() and not p.is_symlink():
         st=p.stat()
         items.append({"file":name,"bytes":st.st_size,"mtime_ns":st.st_mtime_ns})
 (root/"runtime_log_export_status.json").write_text(json.dumps({
