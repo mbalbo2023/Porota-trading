@@ -9,6 +9,13 @@ mkdir -p "$OUTDIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$OUTDIR/contract_${STAMP}.json"
 
+# RC4-HF1: materializar el schema v2 antes de consultar cadencias. Esto hace
+# que dashboard/scheduler puedan mostrar BLOCKED_AUTH de forma explícita y
+# evita depender de que la primera captura autenticada sea también quien cree
+# tablas bajo carga de rueda.
+/usr/bin/docker exec "$OBSERVER" python -c \
+  'from rc4_contract_import_job import Store,DB; from cp_contract_evidence_v2_hf6 import init_schema; init_schema(Store(DB)); print("CONTRACT_V2_SCHEMA=READY")'
+
 DUE_JSON="$(/usr/bin/docker exec "$OBSERVER" python /app/rc4_contract_due_job.py 2>/dev/null || printf '%s' '{"state":"ERROR","due_jobs":[]}')"
 JOBS="$(printf '%s' "$DUE_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(d.get("due_jobs") or []))' 2>/dev/null || true)"
 if [[ -z "$JOBS" ]]; then echo 'STATUS=CACHED_NOT_DUE'; exit 0; fi
@@ -43,5 +50,7 @@ else
 fi
 
 REL="${OUT#$ROOT/data/}"
-/usr/bin/docker exec "$OBSERVER" python /app/rc4_contract_import_job.py --input "/app/data/$REL"
-printf 'STATUS=COMPLETE\nOUTPUT=%s\nJOBS=%s\n' "$OUT" "$JOBS"
+IMPORT_JSON="$(/usr/bin/docker exec "$OBSERVER" python /app/rc4_contract_import_job.py --input "/app/data/$REL")"
+printf '%s\n' "$IMPORT_JSON"
+printf 'STATUS=COMPLETE\nOUTPUT=%s\nJOBS=%s\nPROFILE_CONFIGURED=%s\n' \
+  "$OUT" "$JOBS" "$([[ -n "$PROFILE" && -d "$PROFILE" ]] && echo YES || echo NO)"
