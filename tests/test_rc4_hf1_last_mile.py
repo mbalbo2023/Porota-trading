@@ -70,9 +70,12 @@ def test_contract_evidence_service_loads_host_profile_and_precreates_v2_schema()
 
 def test_contract_evidence_sanitized_capture_is_readable_by_observer_importer():
     collector = Path("scripts/porota_contract_evidence_trusted_rc4.sh").read_text(encoding="utf-8")
-    chown_at = collector.index('chown 1000:1000 "$OUT"')
-    chmod_at = collector.index('chmod 0640 "$OUT"')
+    gid_at = collector.index('RUNTIME_GID=')
+    dir_chmod_at = collector.index('chmod 0750 "$OUTDIR"')
+    file_chmod_at = collector.index('chmod 0640 "$OUT"')
     import_at = collector.index('rc4_contract_import_job.py --input')
-    assert chown_at < import_at
-    assert chmod_at < import_at
+    assert gid_at < dir_chmod_at < import_at
+    assert file_chmod_at < import_at
+    assert 'chown 0:"$RUNTIME_GID" "$OUTDIR"' in collector
+    assert 'chown 0:"$RUNTIME_GID" "$OUT"' in collector
     assert "credenciales de sesión" in collector
