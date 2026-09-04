@@ -75,4 +75,4 @@ def test_contract_evidence_sanitized_capture_is_readable_by_observer_importer():
     import_at = collector.index('rc4_contract_import_job.py --input')
     assert chown_at < import_at
     assert chmod_at < import_at
-    assert "cookies/OTP/tokens" in collector
+    assert "credenciales de sesión" in collector
