@@ -30,6 +30,7 @@ SOURCE_RANK = {
     "PPI_API": 10,
     "BYMA_EOD": 20,
     "BYMA": 20,
+    "A3_CEM_CLOSING": 20,
     "IOL": 30,
     "DATA912": 50,
     "DATA912_POROTA_BATCH": 50,
@@ -205,16 +206,30 @@ def append_candle(store, candle: Candle) -> dict:
     metadata_json = _canonical_json(value.metadata or {})
     rank = source_rank(value.source)
     with store.connect() as c:
-        cur = c.execute(
-            """INSERT INTO history_versions_v2(
-              symbol,instrument_type,market,settlement,date,open,high,low,close,
-              volume,source,adjusted,observed_at,payload_hash,metadata_json)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        # Prevent identical-version growth: an unchanged provider candle for the
+        # same complete financial identity/date is evidence already preserved.
+        duplicate = c.execute(
+            """SELECT id FROM history_versions_v2
+               WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
+                 AND date=? AND source=? AND adjusted=? AND payload_hash=?
+               ORDER BY id DESC LIMIT 1""",
             (value.symbol,value.instrument_type,value.market,value.settlement,value.date,
-             value.open,value.high,value.low,value.close,value.volume,value.source,
-             int(value.adjusted),value.observed_at,payload_hash,metadata_json),
-        )
-        version_id = int(cur.lastrowid)
+             value.source,int(value.adjusted),payload_hash),
+        ).fetchone()
+        version_appended = duplicate is None
+        if duplicate is None:
+            cur = c.execute(
+                """INSERT INTO history_versions_v2(
+                  symbol,instrument_type,market,settlement,date,open,high,low,close,
+                  volume,source,adjusted,observed_at,payload_hash,metadata_json)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (value.symbol,value.instrument_type,value.market,value.settlement,value.date,
+                 value.open,value.high,value.low,value.close,value.volume,value.source,
+                 int(value.adjusted),value.observed_at,payload_hash,metadata_json),
+            )
+            version_id = int(cur.lastrowid)
+        else:
+            version_id = int(duplicate[0])
         current = c.execute(
             """SELECT * FROM history_canonical_v2
                WHERE symbol=? AND instrument_type=? AND market=? AND settlement=? AND date=?""",
@@ -238,6 +253,7 @@ def append_candle(store, candle: Candle) -> dict:
             )
     return {
         "version_id": version_id,
+        "version_appended": version_appended,
         "canonical_updated": chosen,
         "source_rank": rank,
         "payload_hash": payload_hash,
@@ -249,7 +265,7 @@ def append_many(store, candles: Iterable[Candle]) -> dict:
     protected = 0
     for candle in candles:
         result = append_candle(store, candle)
-        versions += 1
+        versions += int(bool(result.get("version_appended", True)))
         if result["canonical_updated"]:
             canonical_updates += 1
         else:

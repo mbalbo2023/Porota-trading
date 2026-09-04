@@ -82,11 +82,17 @@ ALIASES = {
     "FONDOS_LOCAL": "FCI_LOCAL",
     "ACCIONES_EXTERIOR": "ACCIONES_USA",
     "OBLIGACIONES_NEGOCIABLES": "ON",
+    "OBLIGACIONES-NEGOCIABLES": "ON",
+    "ACCIONES-USA": "ACCIONES_USA",
+    "FCI-EXTERIOR": "FCI_EXTERIOR",
+    "FCI EXTERIOR": "FCI_EXTERIOR",
 }
 
 
 def canonical_family(family: str) -> str:
-    key = str(family or "").upper().replace(" ", "_")
+    key = str(family or "").upper().strip().replace("/", "_")
+    key = ALIASES.get(key, key)
+    key = key.replace(" ", "_")
     return ALIASES.get(key, key)
 
 

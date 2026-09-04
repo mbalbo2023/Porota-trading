@@ -7,13 +7,15 @@ import db_dashboard_logs_hf6 as logs
 import db_a3_cem_normalizer_hf6 as cem
 
 
-def test_scalping_is_strategy_not_top_level():
+def test_scalping_is_top_level_in_rc4():
+    # RC4 UX decision requested explicitly by the operator: Scalping is a
+    # first-class dashboard view, not a hidden Trading sub-link.
     ux.assert_ux_invariants()
     top={item.href for item in ux.TOP_NAV}
     assert "/trading" in top
     assert "/instrumentos" in top
-    assert "/scalping" not in top
-    assert ux.LEGACY_ROUTE_REDIRECTS["/scalping"] == "/trading/estrategias"
+    assert "/scalping" in top
+    assert "/validacion" in top
     assert ux.families_for_group("futuros") == ("FUTUROS",)
 
 
@@ -66,3 +68,23 @@ def test_cem_tick_never_becomes_execution_source():
     tick=cem.normalize_tick({"symbol":"DLR/OCT26","price":1455.0,"volume":3,"dateTime":"2026-09-02T16:59:59Z"})
     assert tick["execution_allowed"] is False
     assert tick["source"] == "A3_CEM_TICK"
+
+
+def test_bot_application_log_is_first_class_downloadable_source(tmp_path: Path):
+    (tmp_path/'observer_runtime.log').write_text('observer\n',encoding='utf-8')
+    bot=tmp_path/'bot_runtime.log'
+    bot.write_text('bot line 1\nbot line 2\n',encoding='utf-8')
+    sources={s.source_id:s for s in logs.discover_sources(tmp_path)}
+    assert 'bot' in sources
+    assert sources['bot'].label == 'Bot / aplicación'
+    assert logs.source_by_id('bot',tmp_path).path == bot.resolve()
+    assert logs.tail_lines(sources['bot'],1) == ['bot line 2']
+
+
+def test_host_log_exporter_publishes_sanitized_bot_snapshot():
+    src=Path('scripts/porota_export_runtime_logs_hf6.sh').read_text(encoding='utf-8')
+    assert 'bot_runtime.log' in src
+    assert 'trading_bot.log' in src
+    assert 'sanitize >"$BOT_TMP"' in src
+    assert 'api[_-]?secret' in src
+    assert '[REDACTED]' in src

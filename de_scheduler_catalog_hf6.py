@@ -14,11 +14,17 @@ from zoneinfo import ZoneInfo
 import json
 import os
 
+from co_contract_ingestion_policy_hf6 import ttl_seconds as contract_ttl_seconds
+
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 SCHEDULER_STATE_PATH = Path(os.getenv(
     "POROTA_SCHEDULER_STATE_PATH", "data/scheduler/systemd_timers.json"
 ))
 
+
+def _news_cadence_seconds():
+    enabled=str(os.getenv("PAPER_NEWS_INGEST_ENABLED","false")).strip().lower()
+    return 45*60 if enabled in {"1","true","yes","si","sí"} else 12*3600
 
 @dataclass(frozen=True)
 class InternalJob:
@@ -34,11 +40,15 @@ INTERNAL_JOBS = (
                 "Mide quick_check, espacio, WAL, memoria y latencia SQLite.", 300),
     InternalJob("DAILY_BACKUP", "Backup diario",
                 "Genera backup online SQLite, lo comprime y valida restauración con quick_check.", 20*3600),
+    InternalJob("HISTORY_BACKUP", "Backup History Store",
+                "Backup online SQLite de market_history.db con restore quick_check.", 20*3600),
+    InternalJob("HOST_GENERAL_BACKUP", "Backup general del host",
+                "Backup data/ + sre_vector_db sin secretos; SQLite usa backup online.", 24*3600),
     InternalJob("FINANCIAL_REFRESH", "Información financiera",
                 "Actualiza series públicas BCRA/INDEC usadas como contexto informativo.", 12*3600),
     InternalJob("NEWS_REFRESH", "Noticias",
-                "Actualiza RSS sólo si la política de noticias está habilitada; HF6 la mantiene desactivada.", 45*60,
-                "PAPER_NEWS_INGEST_ENABLED=true; si está OFF registra NO_APLICA con cadencia de control extendida."),
+                "Actualiza RSS sólo si la política de noticias está habilitada; con OFF sólo controla estado.", _news_cadence_seconds(),
+                "45 min con ON; 12 h con OFF y NO_APLICA."),
     InternalJob("REPORTS", "Reportes",
                 "Genera reportes operativos PAPER desde evidencia persistida. Artefactos IA heredados no participan del runtime HF6-v2.", 6*3600,
                 "Sólo con mercado CLOSED y luego del cierre configurado."),
@@ -66,6 +76,14 @@ INTERNAL_JOBS = (
     InternalJob("PAPER_SIGNAL_ROTATION", "Rotación de universo",
                 "Rota la ventana evaluada para cubrir progresivamente el universo sin depender de un lote fijo.",
                 int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"))),
+    InternalJob("CONTRACT_EVIDENCE_DYNAMIC", "Evidencia contractual dinámica", "XHR/web contractual read-only; no auto READY.", contract_ttl_seconds("OPERABILITY")),
+    InternalJob("CONTRACT_EVIDENCE_CAUCIONES", "Contrato cauciones", "Cauciones read-only; fail-closed.", contract_ttl_seconds("CAUCION_LIVE_CONTRACT")),
+    InternalJob("CONTRACT_EVIDENCE_AUCTIONS", "Licitaciones / subastas", "Estado de ventanas de licitación/subasta; fail-closed.", contract_ttl_seconds("AUCTION_STATUS")),
+    InternalJob("CONTRACT_EVIDENCE_DERIVATIVES", "Contrato opciones/futuros", "Series/contratos derivados read-only.", contract_ttl_seconds("DERIVATIVE_SERIES")),
+    InternalJob("CONTRACT_EVIDENCE_STATIC", "Contrato estático", "Hash/metadata contractual estática oficial.", contract_ttl_seconds("STATIC_CONTRACT")),
+    InternalJob("CONTRACT_EVIDENCE_FULL_BROWSER", "Auditoría browser contractual", "Barrido autenticado read-only fuera del hot path.", contract_ttl_seconds("FULL_BROWSER_AUDIT")),
+    InternalJob("FUNCTIONAL_HEALTH_SNAPSHOT", "Control funcional liviano", "Runtime/PPI/real_orders/marks/riesgo.", 5*60),
+    InternalJob("FUNCTIONAL_DEEP_AUDIT", "Control funcional integral", "Auditoría funcional read-only.", 60*60),
 )
 
 SYSTEMD_DESCRIPTIONS = {
@@ -78,6 +96,11 @@ SYSTEMD_DESCRIPTIONS = {
     "porota-history-postclose-hf6.timer": "Ejecuta reconciliación histórica post-cierre cuando la sesión/calendario lo permiten.",
     "porota-a3-cem-history-hf6.timer": "Actualiza referencia/históricos públicos A3 CEM fuera del hot path.",
     "porota-caucion-cash-sweep-hf6.timer": "Evalúa el cash sweep PAPER al final de rueda. Sin evidencia contractual/sesión/obligaciones completa debe registrar HOLD y no colocar.",
+    "porota-contract-evidence-rc4.timer": "Evalúa cada 5 min qué subjobs contractuales están vencidos; browser/XHR read-only, sin login automático ni órdenes.",
+    "porota-functional-health-rc4.timer": "Control funcional liviano cada 5 minutos.",
+    "porota-functional-deep-audit-rc4.timer": "Introspección funcional profunda cada 60 minutos.",
+    "porota-history-postclose-rc4.timer": "Evalúa elegibilidad post-cierre de History Store v2 sin horario global rígido.",
+    "porota-a3-cem-history-rc4.timer": "Ingesta A3 CEM background/history; nunca autoridad live.",
 }
 
 
@@ -102,8 +125,17 @@ def next_due(last_run_at: str | None, cadence_seconds: int | None) -> str | None
     return (last+timedelta(seconds=int(cadence_seconds))).isoformat()
 
 
-def internal_rows(db_rows: list[dict]) -> list[dict]:
-    persisted={str(r.get("job_key") or ""):r for r in (db_rows or [])}
+def internal_rows(db_rows: list[dict], *, source_sync_rows=None, api_health_rows=None, contract_run_rows=None) -> list[dict]:
+    persisted={str(r.get("job_key") or ""):dict(r,evidence_table="operational_jobs") for r in (db_rows or [])}
+    for raw in source_sync_rows or []:
+        key=str(raw.get("source") or "")
+        if key and key not in persisted:persisted[key]={"job_key":key,"last_run_at":raw.get("last_attempt_at"),"last_success_at":raw.get("last_success_at"),"state":raw.get("status") or "SIN_REGISTRO","detail":raw.get("detail") or "","evidence_table":"source_sync"}
+    for raw in api_health_rows or []:
+        key=str(raw.get("component") or "")
+        if key and key not in persisted:persisted[key]={"job_key":key,"last_run_at":raw.get("checked_at"),"last_success_at":raw.get("last_success_at"),"state":raw.get("state") or "SIN_REGISTRO","detail":raw.get("detail") or "","evidence_table":"api_health"}
+    for raw in contract_run_rows or []:
+        key=str(raw.get("job_key") or raw.get("run_type") or "")
+        if key and key not in persisted:persisted[key]={"job_key":key,"last_run_at":raw.get("started_at") or raw.get("created_at"),"last_success_at":raw.get("finished_at"),"state":raw.get("state") or "SIN_REGISTRO","detail":raw.get("detail") or "","evidence_table":"contract_evidence_runs"}
     result=[]
     known={j.key for j in INTERNAL_JOBS}
     for job in INTERNAL_JOBS:
@@ -120,6 +152,7 @@ def internal_rows(db_rows: list[dict]) -> list[dict]:
             "detail":row.get("detail") or "Todavía no existe ejecución persistida.",
             "next_run_at":next_due(row.get("last_run_at"),job.cadence_seconds),
             "source":"INTERNAL",
+            "evidence_table":row.get("evidence_table") or "SIN_EVIDENCIA",
         })
     for key,row in sorted(persisted.items()):
         if key in known:

@@ -84,8 +84,9 @@ def v2_store_metrics(path: Path | None = None) -> dict:
     c=sqlite3.connect("file:"+str(db)+"?mode=ro",uri=True,timeout=5)
     try:
         tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if "history_canonical_v2" not in tables:
-            return {"available":True,"path":str(db),"canonical_rows":0,"identities":0,"by_family":{}}
+        required={"history_versions_v2","history_canonical_v2"}
+        if not required.issubset(tables):
+            return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,"by_family":{},"reason":"V2_SCHEMA_NOT_PRESENT"}
         row=c.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()
         identities=c.execute(
             """SELECT COUNT(*) FROM (
@@ -105,6 +106,22 @@ def v2_store_metrics(path: Path | None = None) -> dict:
     finally:
         c.close()
 
+
+def legacy_family_metrics(connection) -> dict:
+    tables={r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "production_history" not in tables:return {}
+    cols={r[1] for r in connection.execute("PRAGMA table_info(production_history)")}
+    if not {"symbol","instrument_type"}.issubset(cols):return {}
+    out={}
+    for r in connection.execute("SELECT instrument_type,COUNT(DISTINCT symbol),COALESCE(SUM(row_count),0),MIN(date_from),MAX(date_to) FROM production_history GROUP BY instrument_type"):
+        out[str(r[0] or "UNKNOWN").upper()]={"symbols":int(r[1] or 0),"rows":int(r[2] or 0),"first_date":r[3],"last_date":r[4],"identity":"LEGACY_SYMBOL_TYPE"}
+    return out
+
+def effective_store_metrics(observer_connection,path=None):
+    v2=v2_store_metrics(path)
+    if v2.get("available"):return dict(v2,layer="V2")
+    legacy=legacy_family_metrics(observer_connection)
+    return {"available":False,"path":v2.get("path"),"canonical_rows":sum(x["rows"] for x in legacy.values()),"identities":sum(x["symbols"] for x in legacy.values()),"by_family":legacy,"reason":v2.get("reason") or "V2_UNAVAILABLE","layer":"LEGACY_FALLBACK"}
 
 def assert_history_metric_invariants() -> None:
     if "PROBE_REQUIRED" not in source_capabilities("ON"):

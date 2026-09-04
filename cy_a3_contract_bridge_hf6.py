@@ -4,6 +4,9 @@ Pure transformation/storage bridge: no authentication and no order capability.
 """
 from __future__ import annotations
 
+RC4_MODULE_ROLE = 'DEFERRED_INTEGRATION'
+RC4_MODULE_ROLE_REASON = 'Bridge A3 Primary contractual conservado; A3 Primary privado no está autenticado y no se fuerza wiring.'
+
 from typing import Any
 
 from cp_contract_evidence_v2_hf6 import record_snapshot

@@ -1,8 +1,8 @@
 """HF6-v2: scheduler lógico del batch histórico post-cierre.
 
-No reemplaza el calendario de mercado. Sólo permite Data912 cuando la fase
-está CLOSED, el día es hábil y ya pasó la hora configurada. Registra una
-corrida diaria y métricas del History Store v2.
+No reemplaza el calendario de mercado ni asume una hora global de cierre.
+Sólo permite Data912 cuando la fase está CLOSED, el día es hábil, existe
+evidencia de actividad de mercado en esa fecha y no hubo ya una corrida.
 """
 from __future__ import annotations
 
@@ -60,12 +60,21 @@ def should_run(store, *, phase: str, now=None) -> tuple[bool, str]:
             return False,"NON_BUSINESS_DAY"
     except Exception:
         return False,"CALENDAR_UNAVAILABLE"
-    if not reconcile.due_now(current):
-        return False,"BEFORE_POSTCLOSE_WINDOW"
-
     init_schema(store)
     day = current.date().isoformat()
     with store.connect() as c:
+        tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        activity=0
+        if "market_snapshots" in tables:
+            activity=int(c.execute(
+                "SELECT COUNT(*) FROM market_snapshots WHERE substr(observed_at,1,10)=?",
+                (day,)).fetchone()[0] or 0)
+        if not activity and "paper_decisions" in tables:
+            activity=int(c.execute(
+                "SELECT COUNT(*) FROM paper_decisions WHERE substr(decided_at,1,10)=?",
+                (day,)).fetchone()[0] or 0)
+        if not activity:
+            return False,"NO_MARKET_ACTIVITY_TODAY"
         done = c.execute(
             """SELECT 1 FROM postclose_history_runs_v2
                WHERE local_date=? AND source=?

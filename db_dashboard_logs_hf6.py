@@ -22,8 +22,9 @@ class LogSource:
 
 PREFERRED_FILES = (
     ("observer", "Observer", "observer_runtime.log"),
+    ("bot", "Bot / aplicación", "bot_runtime.log"),
     ("dashboard", "Dashboard", "dashboard_runtime.log"),
-    ("application", "Aplicación", "trading_bot.log"),
+    ("application", "Aplicación (archivo rotado)", "trading_bot.log"),
 )
 
 

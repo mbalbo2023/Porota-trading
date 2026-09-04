@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+ROOT="${POROTA_ROOT:-/opt/porota-trading}"
+PROFILE="${POROTA_CHROME_PROFILE:-}"
+OBSERVER="${POROTA_OBSERVER_CONTAINER:-porota_production_observer}"
+OUTDIR="$ROOT/data/contract_evidence/rc4_trusted"
+mkdir -p "$OUTDIR"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+OUT="$OUTDIR/contract_${STAMP}.json"
+
+DUE_JSON="$(/usr/bin/docker exec "$OBSERVER" python /app/rc4_contract_due_job.py 2>/dev/null || printf '%s' '{"state":"ERROR","due_jobs":[]}')"
+JOBS="$(printf '%s' "$DUE_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(d.get("due_jobs") or []))' 2>/dev/null || true)"
+if [[ -z "$JOBS" ]]; then echo 'STATUS=CACHED_NOT_DUE'; exit 0; fi
+
+write_blocked(){
+  local state="$1"
+  python3 - "$OUT" "$JOBS" "$state" <<'PY'
+import json,sys,os
+from datetime import datetime,timezone
+p,jobs,state=sys.argv[1:]
+d={'schema':'POROTA_RC4_PPI_TRUSTED_CONTRACT_1','generated_at':datetime.now(timezone.utc).isoformat(),
+   'auth_status':state,'jobs':[x for x in jobs.split(',') if x],'routes':[],'endpoints':{},'blocked_nonread':[],
+   'continue_clicked':False,'amount_filled':False,'price_filled':False,'real_orders_sent':0}
+open(p,'w',encoding='utf-8').write(json.dumps(d,ensure_ascii=False,indent=2)); os.chmod(p,0o600)
+PY
+}
+
+if [[ -z "$PROFILE" || ! -d "$PROFILE" ]]; then
+  write_blocked BLOCKED_AUTH_PROFILE_MISSING
+else
+  PY="${POROTA_BROWSER_PYTHON:-}"
+  if [[ -z "$PY" ]]; then
+    for c in "$ROOT/.browser-venv/bin/python" /opt/porota-browser-venv/bin/python /usr/bin/python3; do
+      if [[ -x "$c" ]] && "$c" -c 'import playwright' >/dev/null 2>&1; then PY="$c"; break; fi
+    done
+  fi
+  if [[ -z "$PY" ]]; then
+    write_blocked BLOCKED_PLAYWRIGHT_UNAVAILABLE
+  else
+    "$PY" "$ROOT/rc4_trusted_browser_contract_collector.py" --profile "$PROFILE" --jobs "$JOBS" --output "$OUT" || write_blocked BLOCKED_BROWSER_ERROR
+  fi
+fi
+
+REL="${OUT#$ROOT/data/}"
+/usr/bin/docker exec "$OBSERVER" python /app/rc4_contract_import_job.py --input "/app/data/$REL"
+printf 'STATUS=COMPLETE\nOUTPUT=%s\nJOBS=%s\n' "$OUT" "$JOBS"

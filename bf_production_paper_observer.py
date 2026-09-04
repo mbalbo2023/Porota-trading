@@ -868,6 +868,26 @@ def _download_histories(reader, store):
                     c.execute("INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)",
                               (symbol, instrument_type, settlement, start.isoformat(), end.isoformat(),
                                attempted, count, json.dumps(payload, ensure_ascii=False, default=str)))
+
+            # RC4 History Store v2 reuses the already downloaded PPI payload.
+            # It performs no second broker request and never changes PAPER readiness.
+            try:
+                market = str((metadata or {}).get("market") or "").strip().upper()
+                if not market:
+                    raise ValueError("HISTORY_V2_MARKET_IDENTITY_MISSING")
+                import ct_ppi_history_salvage_hf6 as history_salvage
+                v2_result = history_salvage.ingest_ppi_payload(
+                    store, symbol=symbol, instrument_type=instrument_type,
+                    market=market, settlement=settlement, payload=payload,
+                    requested_from=start, requested_to=end, attempted_at=attempted)
+                store.event("HISTORY_V2_INGEST",
+                            f"{symbol}: valid={v2_result.get('valid_rows',0)}; "
+                            f"versions={v2_result.get('versions_appended',0)}")
+            except Exception as exc:
+                # Legacy evidence remains available; v2 failure is explicit and
+                # must never be disguised as zero coverage.
+                store.event("HISTORY_V2_ERROR",
+                            f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
             total += count
             if status=='VALID_PAYLOAD':
                 successes += 1

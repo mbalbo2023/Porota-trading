@@ -179,6 +179,19 @@ def _reconcile_real_costs_today(ppi, closed_today: list) -> dict:
         except Exception as e:
             logger.warning("Reconciliación de costos: no se pudo estimar costo de %s (%s)", t.get("ticker"), e)
 
+    runtime_mode = (os.getenv("DASHBOARD_OPERATION_MODE") or
+                    os.getenv("ENVIRONMENT") or "").strip().upper()
+    execution_mode = os.getenv("ORDER_EXECUTION_MODE", "").strip().upper()
+    # PRODUCTION_PAPER/SANDBOX have no broker-billed commission for simulated
+    # fills. Never query a tax report and label it as reconciliation evidence.
+    if runtime_mode != "PRODUCTION_REAL" or execution_mode not in {"REAL", "PRODUCTION_REAL"}:
+        return {
+            "state": "NOT_OBSERVABLE_IN_PAPER",
+            "estimated_cost_ars": round(estimated_cost_ars, 2),
+            "real_cost_ars": None,
+            "diff_ars": None,
+        }
+
     real_cost_ars = None
     try:
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -246,6 +259,7 @@ def _reconcile_real_costs_today(ppi, closed_today: list) -> dict:
         logger.warning("No se pudo persistir la reconciliación de costos: %s", e)
 
     return {
+        "state": "RECONCILED_REAL" if real_cost_ars is not None else "REAL_COST_UNAVAILABLE",
         "estimated_cost_ars": round(estimated_cost_ars, 2),
         "real_cost_ars": real_cost_ars,
         "diff_ars": diff_ars,
@@ -385,7 +399,13 @@ def send_market_close_summary(ppi, notifier):
 
     reconciliation_txt = ""
     if cost_reconciliation:
-        if cost_reconciliation["real_cost_ars"] is not None:
+        if cost_reconciliation.get("state") == "NOT_OBSERVABLE_IN_PAPER":
+            reconciliation_txt = (
+                "\nCostos realmente cobrados por PPI: NOT_OBSERVABLE_IN_PAPER. "
+                "El informe conserva únicamente el costo modelado; no ajusta el tarifario "
+                "con fills simulados.\n"
+            )
+        elif cost_reconciliation["real_cost_ars"] is not None:
             reconciliation_txt = (
                 f"\nReconciliación de costos (estimado vs. real PPI): "
                 f"estimado ${cost_reconciliation['estimated_cost_ars']:.2f} vs. "

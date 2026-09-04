@@ -436,7 +436,7 @@ class PaperBroker:
                  score_threshold="0.62", ai_mode="BINDING",
                  economics_mode="SHADOW", min_net_reward_risk="1.20",
                  stop_loss_pct="0.02", target_gain_pct="0.035",
-                 daily_loss_pct=None, daily_soft_stop_pct=None,
+                 daily_loss_pct="2.5", daily_soft_stop_pct=None,
                  intraday_fee_rebate=None):
         self.store = store
         self.initial_cash = D(initial_cash)
@@ -492,8 +492,15 @@ class PaperBroker:
             and getattr(self.session_policy, "close_at_eod", False)
         )
         from bw_daily_risk import DailyRisk
-        self.daily_risk = (DailyRisk(self,daily_loss_pct,soft_limit_pct=daily_soft_stop_pct)
-                           if daily_loss_pct is not None else None)
+        if daily_loss_pct is None:
+            self.daily_risk = None
+        else:
+            # RC4: el runtime productivo pasa el soft-stop explícitamente desde env.
+            # Un caller aislado que NO lo suministra conserva la semántica histórica:
+            # DailyRisk usa el hard-stop como fallback interno pero lo marca como
+            # soft_limit_explicit=False, evitando inventar una barrera distinta.
+            hard_pct = decimal_value(daily_loss_pct, "pérdida diaria %", positive=True)
+            self.daily_risk = DailyRisk(self, hard_pct, soft_limit_pct=daily_soft_stop_pct)
 
     def execution_time(self, q):
         return self.clock_fn() if self.clock_fn else q.observed_at
@@ -796,6 +803,43 @@ class PaperBroker:
             return False, f"{family} requiere su ciclo financiero específico; no se compra como una acción", None
         if market != "BYMA":
             return False, "Ejecutor de contado pendiente para este mercado", None
+
+        # RC4: policies are evaluated on every candidate. Observation/SHADOW
+        # persists a counterfactual only; explicit BINDING grants veto authority
+        # and fails closed if required evidence is unavailable.
+        try:
+            import ck_policy_gate_hf6 as rc4_policy_gate
+            import rc4_policy_context
+            policy_context = rc4_policy_context.collect(
+                self.store, at=at, candidate={
+                    "symbol": q.symbol, "family": family, "market": market,
+                    "currency": currency, "settlement": q.settlement,
+                })
+            policy_evaluation = rc4_policy_gate.evaluate(
+                expectancy_samples=policy_context.get("expectancy_samples"),
+                breadth=policy_context.get("breadth"),
+                sectors=policy_context.get("sectors"),
+                candidate_sector=policy_context.get("candidate_sector"),
+            )
+            features["rc4_policy_context_source"] = policy_context.get("source")
+            features["rc4_policy_evaluation"] = policy_evaluation
+            if policy_evaluation.get("execute_block"):
+                self.store.event("POLICY_GATE_BLOCKED",
+                                 f"{q.symbol}: {policy_evaluation.get('verdict')}")
+                return False, str(policy_evaluation.get("verdict")), None
+        except Exception as exc:
+            # A provider/programming error must only stop entries when one of the
+            # RC4 policies was explicitly promoted to BINDING.
+            try:
+                import ck_policy_gate_hf6 as rc4_policy_gate
+                modes = rc4_policy_gate.active_policies()
+            except Exception:
+                modes = {}
+            features["rc4_policy_error"] = f"{type(exc).__name__}:{str(exc)[:240]}"
+            if any(str(modes.get(key) or "").upper() == "BINDING"
+                   for key in ("expectancy", "regime", "sector_concentration")):
+                return False, "POLICY_CONTEXT_UNAVAILABLE_BINDING", None
+
         capital, capital_source = self._risk_capital(currency)
         factor, step = D(1), D(1)
         if q.contract is not None:
@@ -812,9 +856,23 @@ class PaperBroker:
             return False, "Puntas o profundidad invalidas para una compra simulada", None
         if self.store.open_position(q.symbol):
             return False, "Ya existe una posicion abierta del simbolo", None
-        if len(self.store.open_positions()) >= self.max_positions:
-            self.store.event("REJECTED_PAPER", f"{q.symbol}: maximo de posiciones paper")
-            return False, "Límite máximo de posiciones paper alcanzado", None
+        from de_concurrent_risk_capacity_hf6 import derive_emergency_position_cap, emergency_position_guard
+        from dh_paper_dynamic_risk_gate_hf6 import (
+            ConcurrentRiskGateError, candidate_stop_risk, portfolio_capacity, snapshot_dict)
+        if self.daily_risk is None:
+            return False, "CONCURRENT_RISK_NOT_CONFIGURED", None
+        try:
+            emergency_cap, emergency_cap_source = derive_emergency_position_cap(
+                soft_stop_pct=self.daily_risk.soft_limit_pct,
+                risk_per_trade_fraction=self.risk_pct,
+                configured=os.getenv("PAPER_EMERGENCY_MAX_OPEN_POSITIONS", "AUTO"),
+            )
+        except ValueError:
+            return False, "EMERGENCY_POSITION_CAP_CONFIG_INVALID", None
+        opened_now = self.store.open_positions()
+        if emergency_position_guard(len(opened_now), emergency_cap=emergency_cap):
+            self.store.event("REJECTED_PAPER", f"{q.symbol}: cap técnico anti-runaway")
+            return False, "EMERGENCY_POSITION_CAP", None
         entry = (q.ask * (1 + self.slippage)).quantize(Decimal("0.0001"))
         if entry <= 0:
             return False, "Precio de entrada no representable", None
@@ -822,9 +880,22 @@ class PaperBroker:
         target = entry * (1 + self.target_gain_pct)
         modeled_stop_fill = (stop * (1 - self.slippage)).quantize(Decimal("0.0001"))
         # Incluye ambos tramos y deslizamiento de salida, sin afirmar que un
-        # stop garantice este precio ante gaps o falta de liquidez.
+        # stop garantice este precio ante gaps o falta de liquidez. La cantidad
+        # se acota por el menor entre el riesgo por trade y la capacidad
+        # concurrente que queda hasta el soft stop diario.
+        try:
+            concurrent_before = portfolio_capacity(
+                self, currency, at, quotes={q.symbol:q})
+        except ConcurrentRiskGateError as exc:
+            return False, str(exc), None
+        per_trade_risk_budget = capital * self.risk_pct
+        concurrent_risk_budget = min(
+            per_trade_risk_budget, concurrent_before.remaining_before_candidate)
+        if concurrent_risk_budget <= 0:
+            self.store.event("REJECTED_PAPER", f"{q.symbol}: riesgo concurrente agotado")
+            return False, "CONCURRENT_RISK_BUDGET_EXHAUSTED", None
         by_risk = self._quantity_in_budget(
-            (entry - modeled_stop_fill) * factor, capital * self.risk_pct,
+            (entry - modeled_stop_fill) * factor, concurrent_risk_budget,
             lambda qty: self._cost(entry * factor, qty, q.asset_class) +
                         self._cost(modeled_stop_fill * factor, qty, q.asset_class))
         by_cash = self._quantity_in_budget(
@@ -851,7 +922,11 @@ class PaperBroker:
             "capital_currency": currency, "market": market,
             "risk_capital": str(capital), "risk_capital_source": capital_source,
             "initial_capital": str(self.initial_balances[currency]),
-            "risk_budget": str(capital * self.risk_pct),
+            "risk_budget": str(concurrent_risk_budget),
+            "per_trade_risk_budget": str(per_trade_risk_budget),
+            "concurrent_risk_before": snapshot_dict(concurrent_before),
+            "emergency_position_cap": emergency_cap,
+            "emergency_position_cap_source": emergency_cap_source,
             "max_position_pct": str(self.max_position_pct),
             "max_total_exposure_pct": str(self.max_total_exposure_pct),
             "qty_by_risk": str(by_risk),
@@ -861,7 +936,7 @@ class PaperBroker:
             "qty_by_total_cap": str(by_total_cap),
         })
         if currency == "ARS":
-            features.update(initial_capital_ars=str(capital), risk_budget_ars=str(capital * self.risk_pct))
+            features.update(initial_capital_ars=str(capital), risk_budget_ars=str(concurrent_risk_budget))
         if qty < 1:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: capital/liquidez insuficiente")
             limits = {
@@ -871,6 +946,21 @@ class PaperBroker:
             binding = min(limits, key=lambda name: limits[name])
             return False, (f"Portón patrimonial/liquidez: {binding} dejó cantidad "
                            f"ejecutable en {limits[binding]}"), None
+        candidate_risk_value = candidate_stop_risk(
+            self, entry_price=entry, stop_price=stop, quantity=qty,
+            cash_multiplier=factor, asset_class=q.asset_class)
+        try:
+            concurrent_preview = portfolio_capacity(
+                self, currency, at, candidate_risk=candidate_risk_value,
+                quotes={q.symbol:q})
+        except ConcurrentRiskGateError as exc:
+            return False, str(exc), None
+        if not concurrent_preview.admitted:
+            self.store.event("REJECTED_PAPER", f"{q.symbol}: {concurrent_preview.reason}")
+            return False, concurrent_preview.reason, None
+        features.update(
+            candidate_stop_risk=str(candidate_risk_value),
+            concurrent_risk_preview=snapshot_dict(concurrent_preview))
         paper_id = "PAPER-" + uuid.uuid4().hex
         cost = self._cost(entry * factor, qty, q.asset_class)
         with self.store.connect() as c:
@@ -886,13 +976,24 @@ class PaperBroker:
                     return False, 'SPOT_BOOK_DEPTH_CHANGED', None
             except ValueError as exc:
                 return False, str(exc), None
-            opened = self.store.open_positions()
+            opened = spot_ledger.positions_at(c, at)[0]
+            if emergency_position_guard(len(opened), emergency_cap=emergency_cap):
+                return False, "EMERGENCY_POSITION_CAP", None
+            try:
+                concurrent_locked = portfolio_capacity(
+                    self, currency, at, candidate_risk=candidate_risk_value,
+                    connection=c, quotes={q.symbol:q})
+            except ConcurrentRiskGateError as exc:
+                return False, str(exc), None
+            if not concurrent_locked.admitted:
+                return False, concurrent_locked.reason, None
+            features["concurrent_risk_locked"] = snapshot_dict(concurrent_locked)
             exposure_now = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
                                 for p in opened if p["currency"] == currency), ZERO)
-            if (len(opened) >= self.max_positions or any(p["symbol"] == q.symbol for p in opened)
+            if (any(p["symbol"] == q.symbol for p in opened)
                     or entry * qty * factor + cost > self._cash(as_of=at, currency=currency, connection=c, for_execution=True)
                     or exposure_now + entry * qty * factor > capital * self.max_total_exposure_pct):
-                return False, "Caja, posiciones o exposición cambiaron antes de registrar la compra", None
+                return False, "Caja, identidad o exposición cambiaron antes de registrar la compra", None
             c.execute("""INSERT INTO paper_positions
               (paper_id,source,strategy_version,symbol,asset_class,settlement,status,
                quantity,entry_price,entry_cost,stop_price,target_price,opened_at,features_json,currency,market,currency_source)

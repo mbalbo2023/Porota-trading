@@ -44,6 +44,23 @@ export_one() {
 export_one porota_production_observer observer_runtime.log
 export_one porota_production_dashboard dashboard_runtime.log
 
+# Bot/application log: prefer the rotated application file inside the observer;
+# if unavailable, export the observer process log as an explicitly labelled
+# runtime fallback. Both paths are sanitized before publishing to the dashboard.
+BOT_TMP="$(mktemp "$OUTDIR/.bot_runtime.log.XXXXXX")"
+if sudo -n docker inspect porota_production_observer >/dev/null 2>&1; then
+  if sudo -n docker exec porota_production_observer sh -c 'test -f /app/data/logs/trading_bot.log' >/dev/null 2>&1; then
+    sudo -n docker exec porota_production_observer sh -c 'tail -n '"$TAIL_LINES"' /app/data/logs/trading_bot.log' 2>&1 | sanitize >"$BOT_TMP" || true
+  else
+    sudo -n docker logs --tail "$TAIL_LINES" porota_production_observer 2>&1 | sanitize >"$BOT_TMP" || true
+  fi
+else
+  printf 'Bot/observer no disponible al %s\n' "$(date -Is)" >"$BOT_TMP"
+fi
+chmod 0640 "$BOT_TMP"
+chown 1000:1000 "$BOT_TMP" 2>/dev/null || true
+mv -f "$BOT_TMP" "$OUTDIR/bot_runtime.log"
+
 # Manifest contains metadata only, never log contents or secrets.
 python3 - "$OUTDIR" <<'PY'
 import json,sys
@@ -51,7 +68,7 @@ from pathlib import Path
 from datetime import datetime,timezone
 root=Path(sys.argv[1])
 items=[]
-for name in ("observer_runtime.log","dashboard_runtime.log"):
+for name in ("observer_runtime.log","bot_runtime.log","dashboard_runtime.log"):
     p=root/name
     if p.exists():
         st=p.stat()

@@ -103,7 +103,7 @@ def test_synthetic_migration_does_not_repair_unknown_or_certify_currency(legacy_
         assert {r[0] for r in c.execute('SELECT currency_source FROM paper_positions')} == {'LEGACY_ASSUMED_ARS'}
         receipts = c.execute('SELECT basis FROM paper_sale_receivables').fetchall()
         assert len(receipts) == 6
-        assert {r[0] for r in receipts} == {'PAPER_CONSERVATIVE_CALENDAR'}
+        assert {r[0] for r in receipts} == {'PENDING_CONFIRMATION'}
     # Recibos modelados no convierten la posición desconocida en saldo libre.
     broker = PaperBroker(store, initial_cash='100000')
     with pytest.raises(ValueError, match='Cronología'):

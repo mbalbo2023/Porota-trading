@@ -112,6 +112,35 @@ def capacity(*, baseline_equity, soft_stop_pct, realized_loss_consumed,
     )
 
 
+def derive_emergency_position_cap(*, soft_stop_pct, risk_per_trade_fraction, configured="AUTO") -> tuple[int, str]:
+    """Derive the technical runaway cap from the same risk parameters as PAPER.
+
+    The normal admission authority remains ``capacity``.  This cap is only a
+    last-resort guard if the financial admission path misbehaves.  ``AUTO``
+    avoids embedding an arbitrary count such as 12 or the historical 50.
+    An explicit positive integer is permitted as a visible operator override.
+    """
+    raw = str(configured if configured is not None else "AUTO").strip().upper()
+    if raw not in {"", "AUTO", "DERIVED"}:
+        try:
+            cap = int(raw)
+        except Exception as exc:
+            raise ValueError("cap técnico explícito inválido") from exc
+        if cap < 1:
+            raise ValueError("cap técnico explícito debe ser positivo")
+        return cap, "OVERRIDE"
+
+    soft_pct = D(soft_stop_pct, "soft stop %", positive=True)
+    risk_fraction = D(risk_per_trade_fraction, "riesgo por trade", positive=True)
+    if soft_pct > ONE_HUNDRED or risk_fraction > Decimal("1"):
+        raise ValueError("parámetros de riesgo fuera de rango")
+    soft_fraction = soft_pct / ONE_HUNDRED
+    # Ceiling without float conversion. With 1.5% / 0.2% this yields 8.
+    ratio = soft_fraction / risk_fraction
+    cap = int(ratio.to_integral_value(rounding="ROUND_CEILING"))
+    return max(1, cap), "DERIVED"
+
+
 def emergency_position_guard(open_count, *, emergency_cap) -> str:
     """Runaway protection only; never the normal financial admission rule."""
     count = int(open_count)

@@ -11,6 +11,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime
+from cf_sale_settlement import modeled_sale_settlement_date
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 ZERO = Decimal("0")
@@ -39,6 +40,7 @@ def classify_receivable(row, as_of=None):
         "available_at": available_raw,
         "basis": basis,
         "state": state,
+        "expected_business_date": modeled_sale_settlement_date(row.get("settlement"), row.get("closed_at")) if row.get("closed_at") else None,
     }
 
 

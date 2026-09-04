@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+RC4_MODULE_ROLE = 'OPS_CLI_DIAGNOSTIC'
+RC4_MODULE_ROLE_REASON = 'Probe manual de Sandbox; requiere dependencia PPI y red; no scheduler de producción.'
+
 import json
 import os
 import time

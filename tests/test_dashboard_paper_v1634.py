@@ -138,11 +138,21 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
         assert entrada.headers["location"] == "/vivo"
         assert "porota_dashboard_session=" in entrada.headers["set-cookie"]
         assert "HttpOnly" in entrada.headers["set-cookie"]
-        for path in ("/vivo", "/observacion", "/testing"):
+        vivo = cliente.get("/vivo")
+        assert vivo.status_code == 200
+        assert "Operaciones abiertas ahora" in vivo.text
+        assert "Operaciones cerradas recientes" in vivo.text
+        assert "Scalping" in vivo.text
+        assert "Motores / workers" in vivo.text
+        assert vivo.text.count("id='porota-canonical-nav'") == 1
+        assert vivo.text.count("id='porota-paper-mode'") == 1
+        assert "MODO SIMULACIÓN PRODUCTIVA" in vivo.text
+        assert "órdenes reales: NINGUNA" in vivo.text
+        assert "R" * 40 not in vivo.text
+        for path in ("/observacion", "/testing"):
             respuesta = cliente.get(path)
             assert respuesta.status_code == 200
             assert "Panel de simulación productiva" in respuesta.text
-            assert "Una sola vista para estado, actividad y simulación" in respuesta.text
             assert respuesta.text.count("id='porota-canonical-nav'") == 1
             assert respuesta.text.count("id='porota-paper-mode'") == 1
             assert "MODO SIMULACIÓN PRODUCTIVA" in respuesta.text
@@ -182,11 +192,13 @@ def test_inyeccion_del_banner_es_idempotente(monkeypatch):
     assert second.count("id='porota-paper-mode'") == 1
     assert second.count("porota-paper-theme") == 1
     assert second.count("id='porota-canonical-nav'") == 1
-    assert "Motor de trading" in second
+    assert ">Trading<" in second
+    assert ">Scalping<" in second
+    assert ">Validación<" in second
     assert "Aprendizaje" in second
     assert "← Volver" not in second
     assert "↑ Ir al principio" in second
-    assert "Información financiera" in second
+    assert "Instrumentos y contratos" in second
     assert "Reportes" in second
 
 
@@ -269,7 +281,9 @@ def test_portada_y_logs_tienen_documento_moderno_sin_menu_repetido(tmp_path, mon
     for page in (bg_paper_dashboard.home_page(), bg_paper_dashboard.logs_page()):
         assert page.count("id='porota-canonical-nav'") == 1
         assert page.count("id='porota-paper-mode'") == 1
-        assert page.count("href='/motor-trading'") == 1
+        assert page.count("href='/trading'") == 1
+        assert page.count("href='/scalping'") == 1
+        assert page.count("href='/validacion'") == 1
         assert "porota-paper-theme" in page
     assert "Gestión de logs" in bg_paper_dashboard.logs_page()
 
@@ -336,7 +350,9 @@ def test_sre_reportes_finanzas_y_colores_explicitos(tmp_path, monkeypatch):
     bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
     assert "Backups y restauración" in bg_paper_dashboard.sre_page("backups")
     assert "Inflación vs performance" in bg_paper_dashboard.financial_page()
-    assert "Paquete IA" in bg_paper_dashboard.reports_page()
+    reports = bg_paper_dashboard.reports_page()
+    assert "Paquete IA" not in reports
+    assert "artefactos IA heredados" in reports
     assert "card-green" in bg_paper_dashboard.home_page()
     assert "Próximo chequeo" in bg_paper_dashboard.health_page()
 

@@ -1,5 +1,6 @@
 """Un parcial no libera caja por una fecha o fuente de liquidación inválida."""
 from pathlib import Path
+from dataclasses import replace
 import sys
 
 import pytest
@@ -24,18 +25,18 @@ def sold(partial_spot):
 
 
 @pytest.mark.parametrize('final',[False,True])
-@pytest.mark.parametrize('field,value',[
-    ('available_at','2026-08-25T11:01:00-03:00'),
-    ('available_at','2026-08-24T11:00:00-03:00'),
-    ('available_at','2026-08-27T11:00:00-03:00'),
-    ('available_at','2026-08-26T23:59:59.999999'),
-    ('available_at',None),('available_at',''),
-    ('basis','UNKNOWN'),('basis','PENDING_CONFIRMATION'),
+@pytest.mark.parametrize('value',[
+    '2026-08-25T11:01:00-03:00',
+    '2026-08-24T11:00:00-03:00',
+    '2026-08-27T11:00:00-03:00',
+    '2026-08-26T23:59:59.999999',
+    '',
 ])
-def test_fuente_o_fecha_inconsistente_no_libera_caja(sold,final,field,value):
+def test_t1_pendiente_con_timestamp_inventado_no_libera_caja(sold,final,value):
     b,p,_,sell=sold(final)
     with b.store.connect() as c:
-        c.execute('UPDATE paper_spot_sales SET '+field+'=? WHERE paper_id=?',(value,p['paper_id']))
+        c.execute("UPDATE paper_spot_sales SET basis='PENDING_CONFIRMATION',available_at=? WHERE paper_id=?",
+                  (value,p['paper_id']))
         before=list(c.iterdump())
     for at in (sell(2).observed_at,LATER):
         with pytest.raises(ValueError):
@@ -44,6 +45,26 @@ def test_fuente_o_fecha_inconsistente_no_libera_caja(sold,final,field,value):
             pending_proceeds(b.store,at)
     with b.store.connect() as c:
         assert list(c.iterdump())==before
+
+
+@pytest.mark.parametrize('final',[False,True])
+def test_t1_pending_confirmation_none_es_valido_y_conservador(sold,final):
+    b,p,q,_=sold(final)
+    before=b._cash(q.observed_at)
+    with b.store.connect() as c:
+        rows=c.execute('SELECT basis,available_at FROM paper_spot_sales WHERE paper_id=?',(p['paper_id'],)).fetchall()
+        assert rows and all(r['basis']=='PENDING_CONFIRMATION' and r['available_at'] is None for r in rows)
+    assert b._cash(LATER)==before
+    assert pending_proceeds(b.store,LATER)>0
+
+
+@pytest.mark.parametrize('final',[False,True])
+def test_t1_basis_desconocida_falla_cerrado(sold,final):
+    b,p,_,_=sold(final)
+    with b.store.connect() as c:
+        c.execute("UPDATE paper_spot_sales SET basis='UNKNOWN' WHERE paper_id=?",(p['paper_id'],))
+    with pytest.raises(ValueError):
+        b._cash(LATER)
 
 
 @pytest.mark.parametrize('final',[False,True])
@@ -56,24 +77,29 @@ def test_recibos_validos_conservan_caja_por_moneda_fecha_y_reinicio(sold,final,s
         rows=c.execute('SELECT * FROM paper_spot_sales').fetchall()
         proceeds=sum(D(r['net_proceeds']) for r in rows)
         original=list(c.iterdump())
-    expected=before+(proceeds if settlement=='INMEDIATA' else 0)
-    assert b._cash(sell(2).observed_at,currency)==expected
-    assert b._cash(LATER,currency)==before+proceeds
+    if settlement=='INMEDIATA':
+        assert b._cash(sell(2).observed_at,currency)==before+proceeds
+        assert b._cash(LATER,currency)==before+proceeds
+    else:
+        # T+1 stays frozen until an authoritative reconciliation exists.
+        assert b._cash(sell(2).observed_at,currency)==before
+        assert b._cash(LATER,currency)==before
+        assert all(r['basis']=='PENDING_CONFIRMATION' and r['available_at'] is None for r in rows)
     assert b._cash(LATER,'USD')==0
     def no_reprice(*args):
         raise AssertionError('No recalcular un costo histórico')
     monkeypatch.setattr(b,'_cost',no_reprice)
-    assert b._cash(LATER,currency)==before+proceeds
+    assert b._cash(LATER,currency)==(before+proceeds if settlement=='INMEDIATA' else before)
     with b.store.connect() as c:
         assert list(c.iterdump())==original
-        for r in rows:
-            # Misma fecha con otra representación de zona, sin cambiar instante.
-            from bs_instrument_contracts import aware_datetime
-            from datetime import timezone
-            equivalent=aware_datetime(r['available_at']).astimezone(timezone.utc).isoformat()
-            c.execute('UPDATE paper_spot_sales SET available_at=? WHERE fill_id=?',(equivalent,r['fill_id']))
+        if settlement=='INMEDIATA':
+            for r in rows:
+                from bs_instrument_contracts import aware_datetime
+                from datetime import timezone
+                equivalent=aware_datetime(r['available_at']).astimezone(timezone.utc).isoformat()
+                c.execute('UPDATE paper_spot_sales SET available_at=? WHERE fill_id=?',(equivalent,r['fill_id']))
     restarted=PaperBroker(PaperStore(b.store.path),initial_cash='10000',initial_cash_by_currency={currency:'10000'})
-    assert restarted._cash(LATER,currency)==before+proceeds
+    assert restarted._cash(LATER,currency)==(before+proceeds if settlement=='INMEDIATA' else before)
     assert restarted._cash(q.observed_at,currency)==before
 
 
@@ -88,14 +114,15 @@ def test_pendiente_real_sigue_inmovilizado_sin_inventar_acreditacion(sold,final)
     assert restarted._cash(LATER)==before
 
 
-def test_calendario_no_verificable_no_reescribe_recibos(sold,monkeypatch):
+def test_calendario_no_verificable_no_inventa_timestamp_ni_reescribe_recibos(sold,monkeypatch):
     import ak_byma_calendar as calendar
-    b,_,_,_=sold()
+    from cf_sale_settlement import modeled_sale_settlement_date
+    b,_,q,_=sold()
     with b.store.connect() as c:
         before=list(c.iterdump())
     monkeypatch.setattr(calendar,'ANIOS_AUDITADOS',set())
-    with pytest.raises(ValueError):
-        b._cash(LATER)
+    assert modeled_sale_settlement_date('A-24HS',q.observed_at) is None
+    assert b._cash(LATER)==b._cash(q.observed_at)
     with b.store.connect() as c:
         assert list(c.iterdump())==before
 
@@ -132,15 +159,14 @@ def test_caucion_no_usa_saldo_de_parcial_sin_fecha_conciliada(sold):
         assert list(c.iterdump())==before
 
 
-def test_recibo_roto_no_impide_reducir_otra_exposicion_valida(sold):
+def test_recibo_roto_no_impide_reducir_exposicion_abierta_valida(sold):
     from bm_exit_supervisor import PositionExitSupervisor
     b,_,_,sell=sold()
-    q=quote(symbol='ALUA',minute=2,ask_size='100')
-    assert b._open(q,D('.8'),{})[0]
-    good=next(p for p in b.store.open_positions() if p['symbol']=='ALUA')
+    good=b.store.open_positions()[0]
     with b.store.connect() as c:
         c.execute("UPDATE paper_spot_sales SET basis='UNKNOWN'")
-    next_quote=quote(symbol='ALUA',minute=3,price='90')
+    next_quote=replace(quote(symbol=good['symbol'],minute=3,price='90',bid_size='100'),
+                       settlement=good['settlement'],currency=good['currency'],market=good['market'])
     identity=tuple(good[k] for k in ('symbol','asset_class','settlement','currency','market'))
     verdicts=PositionExitSupervisor(b,clock_fn=lambda:next_quote.observed_at).tick({identity:next_quote})
     assert next(v for v in verdicts if v.paper_id==good['paper_id']).state=='CLOSED'

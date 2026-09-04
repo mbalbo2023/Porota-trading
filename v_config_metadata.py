@@ -23,18 +23,20 @@ CONFIG_METADATA = [
     ("ANTHROPIC_API_KEY", "Credenciales", "Opcional — respaldo si Gemini falla (motor Claude). Vacío = desactivado.", "sk-ant-...", True),
     ("ANTHROPIC_FALLBACK_MODEL", "Credenciales", "Modelo de Claude para el respaldo.", "claude-sonnet-5", False),
     # --- Horarios ---
-    ("MARKET_OPEN_HOUR", "Horarios", "Hora de apertura de rueda (0-23, hora Argentina).", "11", False),
-    ("MARKET_CLOSE_HOUR", "Horarios", "Hora de cierre de rueda.", "17", False),
+    ("MARKET_OPEN_HOUR", "Horarios", "LEGACY: hora global histórica; HF6-v2 usa sesiones versionadas por familia/mercado/fecha.", "11", False),
+    ("MARKET_CLOSE_HOUR", "Horarios", "LEGACY: cierre global histórico; HF6-v2 usa sesiones versionadas por familia/mercado/fecha.", "17", False),
     ("SERVER_TIMEZONE", "Horarios", "Zona horaria del servidor.", "America/Argentina/Buenos_Aires", False),
     # --- Riesgo ---
     ("RISK_PCT_PER_TRADE", "Riesgo", "% de tu cuenta que se arriesga por operación.", "1.0", False),
     ("STOP_LOSS_ATR_MULT", "Riesgo", "Distancia del stop-loss, en unidades de volatilidad (ATR).", "1.0", False),
     ("TAKE_PROFIT_ATR_MULT", "Riesgo", "Distancia del take-profit, en unidades de ATR.", "2.0", False),
-    ("MAX_OPEN_POSITIONS", "Riesgo", "Operaciones simultáneas permitidas.", "3", False),
+    ("MAX_OPEN_POSITIONS", "Riesgo", "LEGACY: cap histórico; HF6-v2 usa riesgo concurrente dinámico y cap técnico anti-runaway.", "3", False),
     ("MAX_PCT_OF_BOOK_DEPTH", "Riesgo", "% máximo de la profundidad del libro por orden.", "10.0", False),
     ("TARGET_HOLD_DAYS", "Riesgo", "Días esperados de tenencia, para prorratear el hurdle.", "5", False),
     # --- Kill switch ---
     ("PAPER_DAILY_SOFT_STOP_PCT", "Riesgo", "% de pérdida diaria que suspende aperturas sin liquidar.", "1.5", False),
+    ("PAPER_MAX_OPEN_POSITIONS", "Riesgo", "LEGACY: no gobierna admisión normal; RC4 usa riesgo concurrente dinámico.", "5", False),
+    ("PAPER_EMERGENCY_MAX_OPEN_POSITIONS", "Riesgo", "Cap técnico anti-runaway: AUTO lo deriva de soft-stop/riesgo por trade; un entero es override explícita.", "AUTO", False),
     ("MAX_DAILY_LOSS_PCT", "Kill switch", "% de pérdida diaria que activa salidas PAPER y bloquea aperturas.", "2.5", False),
     ("MAX_DRAWDOWN_PCT", "Kill switch", "% de caída desde el máximo que corta las alertas.", "5.0", False),
     ("MAX_CONSECUTIVE_STOP_LOSSES", "Kill switch", "Pérdidas seguidas que activan el corte.", "3", False),

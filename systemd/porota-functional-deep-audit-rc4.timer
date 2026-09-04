@@ -1,0 +1,9 @@
+[Unit]
+Description=Porota RC4 deep functional introspection hourly
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=60min
+AccuracySec=2min
+Persistent=true
+[Install]
+WantedBy=timers.target

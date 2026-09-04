@@ -1,0 +1,9 @@
+[Unit]
+Description=Porota RC4 post-close history eligibility poll
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=15min
+AccuracySec=2min
+Persistent=true
+[Install]
+WantedBy=timers.target

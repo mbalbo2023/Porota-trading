@@ -1,0 +1,6 @@
+[Unit]
+Description=Porota RC4 trusted-device Contract Evidence collector
+[Service]
+Type=oneshot
+Environment=POROTA_ROOT=/opt/porota-trading
+ExecStart=/opt/porota-trading/scripts/porota_contract_evidence_trusted_rc4.sh

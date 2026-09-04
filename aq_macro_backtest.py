@@ -37,6 +37,9 @@ desfasaje. Los resultados van a ser peores que sin esa precaución. Esa es
 justamente la señal de que la precaución sirve.
 """
 
+RC4_MODULE_ROLE = 'OPS_CLI_OFFLINE'
+RC4_MODULE_ROLE_REASON = 'Backtest macroeconómico offline; no forma parte del hot path.'
+
 import json
 import logging
 import os

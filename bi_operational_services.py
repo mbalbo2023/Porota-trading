@@ -227,6 +227,59 @@ def create_backup(store, force=False):
         return None
 
 
+def create_history_backup(store, force=False):
+    """Backup online SQLite del History Store v2 con restore test real."""
+    init_schema(store)
+    if not force and not _job_due(store, "HISTORY_BACKUP", 20 * 3600):
+        return None
+    source_path = Path(os.getenv("HIST_DB_PATH", "data/market_history.db")).resolve()
+    if not source_path.exists():
+        _job(store, "HISTORY_BACKUP", "NO_APLICA", "market_history.db todavía no existe")
+        return None
+    key = datetime.now(TZ).strftime("%Y-%m-%d")
+    target_dir = ROOT_DATA / "backups" / "history"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    raw = target_dir / f"market_history_{key}.db"
+    final = Path(str(raw) + ".gz")
+    test = target_dir / f".restore_test_{os.getpid()}.db"
+    try:
+        source = _connect(source_path)
+        target = sqlite3.connect(str(raw))
+        source.backup(target)
+        target.close(); source.close()
+        with open(raw, "rb") as src, gzip.open(final, "wb", compresslevel=6) as dst:
+            shutil.copyfileobj(src, dst)
+        _remove_sqlite_bundle(raw)
+        digest = hashlib.sha256(final.read_bytes()).hexdigest()
+        with gzip.open(final, "rb") as src, open(test, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+        with sqlite3.connect(str(test)) as c:
+            restore = str(c.execute("PRAGMA quick_check").fetchone()[0])
+        _remove_sqlite_bundle(test)
+        if restore != "ok":
+            raise RuntimeError("restore quick_check=" + restore)
+        size = final.stat().st_size
+        with store.connect() as c:
+            c.execute("""INSERT OR REPLACE INTO backup_runs
+              (created_at,kind,path,size_bytes,sha256,restore_test,state,detail)
+              VALUES(?,?,?,?,?,?,?,?)""",
+              (now_iso(), "HISTORY_DAILY", str(final), size, digest, "OK", "VERDE",
+               "History Store SQLite online backup + descompresión + PRAGMA quick_check"))
+        cutoff = datetime.now(TZ).date() - timedelta(days=30)
+        for old in target_dir.glob("market_history_????-??-??.db.gz"):
+            try:
+                if date.fromisoformat(old.name[15:25]) < cutoff:
+                    old.unlink()
+            except Exception:
+                pass
+        _job(store, "HISTORY_BACKUP", "VERDE", f"{final.name}; {size} bytes; restore OK", success=True)
+        return str(final)
+    except Exception as exc:
+        _remove_sqlite_bundle(raw); _remove_sqlite_bundle(test)
+        _job(store, "HISTORY_BACKUP", "ROJO", f"{type(exc).__name__}: {exc}")
+        return None
+
+
 def _save_financial(store, source, indicator, points, unit):
     with store.connect() as c:
         c.executemany("INSERT OR REPLACE INTO financial_series VALUES(?,?,?,?,?,?)",
@@ -633,6 +686,8 @@ def service_tick(store, phase, force=False):
         collect_sre(store)
     if force or _job_due(store, "DAILY_BACKUP", 20 * 3600):
         create_backup(store, force=force)
+    if force or _job_due(store, "HISTORY_BACKUP", 20 * 3600):
+        create_history_backup(store, force=force)
     if force or _job_due(store, "FINANCIAL_REFRESH", 12 * 3600):
         refresh_financial(store)
     news_enabled = os.getenv("PAPER_NEWS_INGEST_ENABLED", "false").lower() in {"1", "true", "yes"}

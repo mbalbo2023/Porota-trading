@@ -1,0 +1,6 @@
+[Unit]
+Description=Porota RC4 A3 CEM background history only
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+ExecStart=/usr/bin/docker exec porota_production_observer python /app/rc4_a3_cem_history_job.py

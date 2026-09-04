@@ -115,10 +115,13 @@ def test_actividad_en_vivo_responde_con_sesion_valida(monkeypatch):
 
     respuesta = cliente.get("/vivo")
     assert respuesta.status_code == 200
-    # En simulación productiva /vivo es un alias deliberado del panel
-    # consolidado: evita tres pantallas distintas para el mismo estado.
-    assert "Panel de simulación productiva" in respuesta.text
-    assert "Una sola vista para estado, actividad y simulación" in respuesta.text
+    # RC4 convierte /vivo en la vista operacional canónica: operaciones primero,
+    # decisiones y scalping después, motores al final.
+    assert "1. Operaciones abiertas ahora" in respuesta.text
+    assert "3. Decisiones — por qué aceptó o rechazó" in respuesta.text
+    assert "4. Scalping" in respuesta.text
+    assert "5. Motores / workers" in respuesta.text
+    assert "Embudo de rechazos — última hora" not in respuesta.text
     assert respuesta.text.count("id='porota-canonical-nav'") == 1
 
 def test_dashboard_usa_zona_horaria_del_mercado(monkeypatch):
@@ -156,8 +159,11 @@ def test_vivo_es_alias_del_panel_consolidado(monkeypatch, tmp_path):
     respuesta = cliente.get("/vivo")
 
     assert respuesta.status_code == 200
-    assert "Panel de simulación productiva" in respuesta.text
-    assert "Una sola vista para estado, actividad y simulación" in respuesta.text
+    assert "1. Operaciones abiertas ahora" in respuesta.text
+    assert "2. Operaciones cerradas recientes" in respuesta.text
+    assert "4. Scalping" in respuesta.text
+    assert "5. Motores / workers" in respuesta.text
+    assert "Embudo de rechazos — última hora" not in respuesta.text
     assert respuesta.text.count("id='porota-canonical-nav'") == 1
     # La ruta heredada conserva sus lecturas SQLite para no saltear la
     # autenticación y renovación de sesión existentes. Son exclusivamente

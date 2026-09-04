@@ -25,6 +25,9 @@ Uso: parar el bot, correr esto, prender el bot de nuevo.
     docker compose start bot
 """
 
+RC4_MODULE_ROLE = 'OPS_CLI_MANUAL'
+RC4_MODULE_ROLE_REASON = 'Comando humano de emergencia deliberadamente no invocado por runtime.'
+
 import p_risk_guardian as risk_guardian
 
 if __name__ == "__main__":

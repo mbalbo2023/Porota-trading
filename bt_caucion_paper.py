@@ -359,13 +359,6 @@ class CaucionBook:
             if previous["request_fingerprint"] != request_fingerprint:
                 raise ValueError("Clave de colocación reutilizada con términos diferentes")
             return dict(previous)
-        if admission:
-            error = admission(c,offer.currency,at,fees)
-            if error:
-                # Sólo se evaluó riesgo, todavía no existe colocación.
-                # Conservar el latch aunque la petición sea rechazada.
-                c.commit()
-                raise ValueError(error)
         age = (at - aware_datetime(offer.quoted_at)).total_seconds()
         if age < 0 or age > max_quote_age_seconds:
             raise ValueError("Cotización de caución vencida o futura")
@@ -376,9 +369,18 @@ class CaucionBook:
         if net <= 0:
             raise ValueError("La caución no tiene retorno neto positivo con estos costos")
         required = principal + (fees if offer.fee_payment == "UPFRONT" else ZERO)
+        # Validate ledger/cash before a risk evaluation that may persist state.
+        # A malformed pending receipt must fail without rewriting DailyRisk.
         cash = decimal_value(available_cash(offer.currency, at, c), 'caja disponible')
         if required + reserve > cash:
             raise ValueError("Caja liquidada insuficiente después de reservar fondos")
+        if admission:
+            error = admission(c,offer.currency,at,fees)
+            if error:
+                # Existing latch/state is intentionally preserved when the
+                # financial gate itself rejects an otherwise valid request.
+                c.commit()
+                raise ValueError(error)
         paper_id = "PAPER-CAUCION-" + uuid.uuid4().hex
         c.execute("""INSERT INTO paper_cauciones VALUES(
           ?,?,?,'PRODUCTION_PAPER',?,?,'OPEN',?,?,?,?,?,?,?,?,?,NULL,?)""",

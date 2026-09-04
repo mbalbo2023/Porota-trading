@@ -33,3 +33,10 @@ venv/
 .venv/
 .secrets/
 data/observer/
+
+:memory:*
+*.ses
+*.bak
+*.pre-hf6*
+**/*.bak
+**/*.pre-hf6*
