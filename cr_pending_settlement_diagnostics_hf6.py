@@ -11,7 +11,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime
-from cf_sale_settlement import modeled_sale_settlement_date
+from cf_sale_settlement import modeled_sale_settlement_date, conservative_unconfirmed_availability
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 ZERO = Decimal("0")
@@ -22,9 +22,14 @@ def classify_receivable(row, as_of=None):
     basis = str(row.get("basis") or "")
     available_raw = row.get("available_at")
     available = aware_datetime(available_raw).astimezone(TZ) if available_raw else None
+    expected_date = modeled_sale_settlement_date(row.get("settlement"), row.get("closed_at")) if row.get("closed_at") else None
 
     if basis == "PENDING_CONFIRMATION" or available is None:
-        state = "PENDING_CONFIRMATION"
+        boundary = conservative_unconfirmed_availability(row.get("settlement"), row.get("closed_at")) if row.get("closed_at") else None
+        if boundary is not None and boundary <= at:
+            state = "AVAILABLE_AFTER_FULL_SETTLEMENT_DATE"
+        else:
+            state = "PENDING_CONFIRMATION"
     elif available > at:
         state = "PENDING_EXPECTED"
     else:
@@ -40,7 +45,7 @@ def classify_receivable(row, as_of=None):
         "available_at": available_raw,
         "basis": basis,
         "state": state,
-        "expected_business_date": modeled_sale_settlement_date(row.get("settlement"), row.get("closed_at")) if row.get("closed_at") else None,
+        "expected_business_date": expected_date,
     }
 
 
@@ -53,7 +58,7 @@ def snapshot(store, as_of=None):
         if "paper_sale_receivables" not in tables:
             return {"state": "MISSING_TABLE", "as_of": at.isoformat(), "rows": []}
 
-        rows = [dict(r) for r in c.execute("""SELECT p.paper_id,p.ticker,p.currency,
+        rows = [dict(r) for r in c.execute("""SELECT p.paper_id,p.symbol AS ticker,p.currency,
           p.settlement,p.closed_at,r.net_proceeds,r.available_at,r.basis
           FROM paper_positions p JOIN paper_sale_receivables r USING(paper_id)
           WHERE p.status='CLOSED' ORDER BY datetime(p.closed_at) DESC""")]
@@ -68,7 +73,8 @@ def snapshot(store, as_of=None):
 
     totals={"PENDING_EXPECTED": ZERO,
             "PENDING_CONFIRMATION": ZERO,
-            "AVAILABLE_NOW": ZERO}
+            "AVAILABLE_NOW": ZERO,
+            "AVAILABLE_AFTER_FULL_SETTLEMENT_DATE": ZERO}
     counts={k:0 for k in totals}
     for row in classified:
         state=row["state"]
@@ -87,6 +93,8 @@ def snapshot(store, as_of=None):
         diagnosis="PENDING_EXPECTED_BY_AVAILABLE_AT"
     elif totals["PENDING_CONFIRMATION"] > ZERO:
         diagnosis="PENDING_CONFIRMATION_REQUIRES_CONTRACT"
+    elif totals["AVAILABLE_AFTER_FULL_SETTLEMENT_DATE"] > ZERO:
+        diagnosis="AVAILABLE_AFTER_FULL_SETTLEMENT_DATE"
     else:
         diagnosis="NO_PENDING_EVIDENCE"
 
