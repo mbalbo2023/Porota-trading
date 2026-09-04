@@ -49,12 +49,12 @@ else
   fi
 fi
 
-# La captura ya está sanitizada y no contiene cookies/OTP/tokens. El servicio
-# host corre como root, mientras el observer corre como botuser uid 1000. Si
-# el archivo queda root:root 0600, el importador dentro del observer no puede
-# leerlo y Contract Evidence v2 queda vacío aunque el collector haya corrido.
-# Dar lectura al uid del runtime es una frontera de permisos, no una exposición
-# de credenciales.
+# La captura ya está sanitizada y no contiene credenciales de sesión. El
+# servicio host corre como root, mientras el observer corre como botuser uid
+# 1000. Si el archivo queda root:root 0600, el importador dentro del observer
+# no puede leerlo y Contract Evidence v2 queda vacío aunque el collector haya
+# corrido. Dar lectura al uid del runtime es una frontera de permisos, no una
+# exposición de credenciales.
 chown 1000:1000 "$OUT" 2>/dev/null || true
 chmod 0640 "$OUT"
 
