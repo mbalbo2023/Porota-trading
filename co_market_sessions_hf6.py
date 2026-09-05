@@ -130,8 +130,8 @@ def _byma_business_day(local: datetime) -> bool:
         import ak_byma_calendar as calendar
         return bool(calendar.es_dia_habil_operativo(local.date()))
     except Exception:
-        # Fallback conservador ante indisponibilidad del calendario versionado.
-        return local.weekday() < 5
+        # Sin calendario verificable no se abre la sesión: fail-closed.
+        return False
 
 
 def byma_paper_spot_phase(now: datetime | None = None) -> str:
