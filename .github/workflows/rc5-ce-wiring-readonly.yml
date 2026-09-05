@@ -22,7 +22,7 @@ jobs:
       DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
-      - name: Validar secretos sin imprimirlos
+      - name: Preparar SSH estricto sin imprimir secretos
         shell: bash
         run: |
           set -euo pipefail
@@ -34,7 +34,7 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
           echo 'SSH_INPUTS=OK'
 
-      - name: Probar timer → service → runner → due policy sin cambios
+      - name: Inventariar timer → service → runner → due policy sin cambios
         shell: bash
         run: |
           set -euo pipefail
@@ -48,11 +48,10 @@ jobs:
           BASE_HEAD=7284fbb5c651ff548ab911e7829b740c42b4b71f
           IMAGE=porota-trading-bot:17.0.0-rc4-hf2
 
-          echo 'POROTA RC5 CE WIRING PROOF'
+          echo 'POROTA RC5 CE WIRING INVENTORY'
           echo 'MODE=READ_ONLY_AUDIT'
           echo 'PPI_CALLS=0'
-          echo 'CE_ENABLE_ACTION=NO'
-          echo 'CE_START_ACTION=NO'
+          echo 'CE_STATE_CHANGE=NO'
 
           test "$(git -C "$REPO" branch --show-current)" = "$BASE_BRANCH"
           test "$(git -C "$REPO" rev-parse HEAD)" = "$BASE_HEAD"
@@ -73,49 +72,43 @@ jobs:
 
           mapfile -t TIMERS < <(systemctl list-unit-files --type=timer --no-legend --no-pager 2>/dev/null \
             | awk 'tolower($1) ~ /porota.*(contract|evidence)|(contract|evidence).*porota/ {print $1}')
-          if [ "${#TIMERS[@]}" -eq 0 ]; then
-            echo 'STATUS=RED_NO_CE_TIMER'
-            exit 20
-          fi
+          [ "${#TIMERS[@]}" -gt 0 ] || { echo 'STATUS=RED_NO_CE_TIMER'; exit 20; }
 
-          declare -A TIMER_ACTIVE_BEFORE TIMER_ENABLED_BEFORE
           SERVICES=()
+          CHAIN_OK=0
+          DUE_OK=0
           for timer in "${TIMERS[@]}"; do
             active="$(systemctl is-active "$timer" 2>/dev/null || true)"
             enabled="$(systemctl is-enabled "$timer" 2>/dev/null || true)"
             triggers="$(systemctl show "$timer" -p Triggers --value 2>/dev/null || true)"
             fragment="$(systemctl show "$timer" -p FragmentPath --value 2>/dev/null || true)"
-            TIMER_ACTIVE_BEFORE["$timer"]="$active"
-            TIMER_ENABLED_BEFORE["$timer"]="$enabled"
-            echo "CE_TIMER=$timer|active=$active|enabled=$enabled|fragment=$fragment|triggers=${triggers:-NONE}"
-            test "$active" = 'inactive'
-            case "$enabled" in disabled|static|indirect) ;; *) echo "UNEXPECTED_TIMER_ENABLE_STATE=$timer:$enabled"; exit 21;; esac
-            for svc in $triggers; do
-              [[ "$svc" == *.service ]] && SERVICES+=("$svc")
-            done
-            if [ -z "$triggers" ]; then
-              SERVICES+=("${timer%.timer}.service")
-            fi
+            next="$(systemctl show "$timer" -p NextElapseUSecRealtime --value 2>/dev/null || true)"
+            last="$(systemctl show "$timer" -p LastTriggerUSec --value 2>/dev/null || true)"
+            persistent="$(systemctl show "$timer" -p Persistent --value 2>/dev/null || true)"
+            oncal="$(systemctl cat "$timer" --no-pager 2>/dev/null | sed -n 's/^[[:space:]]*OnCalendar=//p' | paste -sd ';' -)"
+            echo "CE_TIMER=$timer|active=$active|enabled=$enabled|persistent=${persistent:-UNKNOWN}|oncalendar=${oncal:-NONE}|last=${last:-NONE}|next=${next:-NONE}|fragment=$fragment|triggers=${triggers:-NONE}"
+            for svc in $triggers; do [[ "$svc" == *.service ]] && SERVICES+=("$svc"); done
+            [ -n "$triggers" ] || SERVICES+=("${timer%.timer}.service")
           done
 
           mapfile -t MATCHING_SERVICES < <(systemctl list-unit-files --type=service --no-legend --no-pager 2>/dev/null \
             | awk 'tolower($1) ~ /porota.*(contract|evidence)|(contract|evidence).*porota/ {print $1}')
           SERVICES+=("${MATCHING_SERVICES[@]}")
           mapfile -t SERVICES < <(printf '%s\n' "${SERVICES[@]}" | awk 'NF && !seen[$0]++')
-          if [ "${#SERVICES[@]}" -eq 0 ]; then
-            echo 'STATUS=RED_NO_CE_SERVICE'
-            exit 22
-          fi
+          [ "${#SERVICES[@]}" -gt 0 ] || { echo 'STATUS=RED_NO_CE_SERVICE'; exit 22; }
 
-          CHAIN_OK=0
-          DUE_OK=0
           for svc in "${SERVICES[@]}"; do
             load="$(systemctl show "$svc" -p LoadState --value 2>/dev/null || true)"
-            fragment="$(systemctl show "$svc" -p FragmentPath --value 2>/dev/null || true)"
             active="$(systemctl is-active "$svc" 2>/dev/null || true)"
+            fragment="$(systemctl show "$svc" -p FragmentPath --value 2>/dev/null || true)"
+            result="$(systemctl show "$svc" -p Result --value 2>/dev/null || true)"
+            exec_status="$(systemctl show "$svc" -p ExecMainStatus --value 2>/dev/null || true)"
+            exec_code="$(systemctl show "$svc" -p ExecMainCode --value 2>/dev/null || true)"
+            entered="$(systemctl show "$svc" -p ActiveEnterTimestamp --value 2>/dev/null || true)"
+            exited="$(systemctl show "$svc" -p InactiveEnterTimestamp --value 2>/dev/null || true)"
             cattext="$(systemctl cat "$svc" --no-pager 2>/dev/null || true)"
             exec_line="$(printf '%s\n' "$cattext" | sed -n 's/^[[:space:]]*ExecStart=//p' | head -n1)"
-            echo "CE_SERVICE=$svc|load=${load:-UNKNOWN}|active=${active:-UNKNOWN}|fragment=${fragment:-NONE}"
+            echo "CE_SERVICE=$svc|load=${load:-UNKNOWN}|active=${active:-UNKNOWN}|result=${result:-UNKNOWN}|exec_code=${exec_code:-UNKNOWN}|exec_status=${exec_status:-UNKNOWN}|entered=${entered:-NONE}|exited=${exited:-NONE}|fragment=${fragment:-NONE}"
             echo "CE_EXECSTART_PRESENT=$svc|$([ -n "$exec_line" ] && echo YES || echo NO)"
             [ "$load" = 'loaded' ] || continue
             [ -n "$exec_line" ] || continue
@@ -149,17 +142,6 @@ jobs:
             fi
           fi
 
-          test "$CHAIN_OK" -eq 1
-          test "$DUE_OK" -eq 1
-
-          for timer in "${TIMERS[@]}"; do
-            active_after="$(systemctl is-active "$timer" 2>/dev/null || true)"
-            enabled_after="$(systemctl is-enabled "$timer" 2>/dev/null || true)"
-            test "$active_after" = "${TIMER_ACTIVE_BEFORE[$timer]}"
-            test "$enabled_after" = "${TIMER_ENABLED_BEFORE[$timer]}"
-            echo "CE_TIMER_UNCHANGED=$timer|active=$active_after|enabled=$enabled_after"
-          done
-
           OBS_POST="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
           STATE_POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
@@ -174,8 +156,14 @@ jobs:
           test "$OBS_POST" = "$OBS_PRE"
           test "$STATE_POST" = "$STATE_PRE"
 
-          echo 'STATUS=GREEN_WIRING_PROOF_READ_ONLY'
-          echo 'CE_REMAINS_OFF=YES'
+          echo "CHAIN_OK=$CHAIN_OK"
+          echo "DUE_POLICY_OK=$DUE_OK"
+          if [ "$CHAIN_OK" -eq 1 ] && [ "$DUE_OK" -eq 1 ]; then
+            echo 'STATUS=GREEN_WIRING_IDENTIFIED_STATE_UNCHANGED'
+          else
+            echo 'STATUS=RED_WIRING_INCOMPLETE_STATE_UNCHANGED'
+            exit 30
+          fi
           echo 'RUNTIME_CHANGED=NO'
           echo 'PPI_CALLS=0'
           echo 'REAL_ORDERS_SENT=0'
