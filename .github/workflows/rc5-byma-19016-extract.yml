@@ -13,40 +13,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Obtener página oficial y descubrir adjunto
+      - name: Descargar tabla oficial vigente de BYMA
         shell: bash
         run: |
           set -euo pipefail
-          PAGE='https://www.byma.com.ar/comunicados/horarios-de-negociacion-liquidacion-y-recepcion-de-informacion'
-          curl -A 'Mozilla/5.0 Porota-Research/1.0' -fsSL --retry 2 --max-time 30 "$PAGE" -o /tmp/byma19016.html
-          echo "PAGE_BYTES=$(wc -c </tmp/byma19016.html)"
-          python3 - <<'PY'
-          import html,re
-          text=open('/tmp/byma19016.html',encoding='utf-8',errors='ignore').read()
-          urls=[]
-          for u in re.findall(r'https?://[^"\'<> ]+',html.unescape(text)):
-              u=u.replace('&amp;','&')
-              if ('.pdf' in u.lower() or '19016' in u.lower()) and u not in urls:
-                  urls.append(u)
-          for u in urls[:40]: print('CANDIDATE_URL='+u)
-          pdf=[u for u in urls if '.pdf' in u.lower()]
-          if not pdf:
-              raise SystemExit('PDF_URL_NOT_FOUND')
-          open('/tmp/pdf_url','w').write(pdf[0])
-          print('PDF_URL='+pdf[0])
-          PY
-
-      - name: Descargar PDF oficial y extraer texto
-        shell: bash
-        run: |
-          set -euo pipefail
-          URL="$(cat /tmp/pdf_url)"
-          curl -A 'Mozilla/5.0 Porota-Research/1.0' -fsSL --retry 2 --max-time 45 "$URL" -o /tmp/byma19016.pdf
+          URL='https://cdn.prod.website-files.com/6697a441a50c6b926e1972e0/6a984eb5fd2f133f28622aa4_INFORME%20BYMA%202026_v02sep.pdf'
+          echo "SOURCE_PAGE=https://www.byma.com.ar/mercado/horarios"
+          echo "SOURCE_COMMUNICATION=https://www.byma.com.ar/comunicados/horarios-de-negociacion-liquidacion-y-recepcion-de-informacion"
+          echo "COMMUNICATION=19016"
+          echo "COMMUNICATION_DATE=2026-09-01"
+          curl -A 'Mozilla/5.0 Porota-Research/1.0' -fL --retry 2 --max-time 45 "$URL" -o /tmp/byma19016.pdf
+          test "$(head -c 5 /tmp/byma19016.pdf)" = '%PDF-'
           echo "PDF_BYTES=$(wc -c </tmp/byma19016.pdf)"
           echo "PDF_SHA256=$(sha256sum /tmp/byma19016.pdf | awk '{print $1}')"
           file /tmp/byma19016.pdf
+
+      - name: Extraer texto sin OCR
+        shell: bash
+        run: |
+          set -euo pipefail
           command -v pdftotext >/dev/null
           pdftotext -layout /tmp/byma19016.pdf /tmp/byma19016.txt
+          test -s /tmp/byma19016.txt
           echo "TEXT_LINES=$(wc -l </tmp/byma19016.txt)"
           echo '--- BYMA 19016 EXTRACT BEGIN ---'
           cat /tmp/byma19016.txt
