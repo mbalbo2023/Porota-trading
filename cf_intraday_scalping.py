@@ -10,11 +10,12 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime, time as wall_time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, family_name
+from co_market_sessions_hf6 import byma_paper_spot_open
 
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -115,16 +116,8 @@ def _identity(record):
 
 
 def _market_open(at):
-    local = aware_datetime(at).astimezone(TZ)
-    try:
-        import ak_byma_calendar as calendar
-        if not calendar.es_dia_habil_operativo(local.date()):
-            return False
-    except Exception:
-        if local.weekday() >= 5:
-            return False
-    # El contrato observado comienza a las 10:30. El último punto aceptado es 17:00.
-    return wall_time(10, 30) <= local.time().replace(tzinfo=None) <= wall_time(17, 0)
+    # Fuente única RC5: intervalo regular BYMA PAPER [10:30,17:00).
+    return byma_paper_spot_open(aware_datetime(at))
 
 
 def select_batch(store, *, limit, cursor=0):
