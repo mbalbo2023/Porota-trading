@@ -54,15 +54,12 @@ jobs:
 
       - name: Build exacto de candidata
         shell: bash
-        run: |
-          docker build --pull=false -t porota-rc5-candidate:${GITHUB_SHA} .
+        run: docker build --pull=false -t porota-rc5-candidate:${GITHUB_SHA} .
 
       - name: Preflight release sin red
         shell: bash
         run: |
-          docker run --rm \
-            --network none \
-            --read-only \
+          docker run --rm --network none --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m \
             -e PYTHONDONTWRITEBYTECODE=1 \
             porota-rc5-candidate:${GITHUB_SHA} \
@@ -71,9 +68,7 @@ jobs:
       - name: Compilación sintáctica sin red
         shell: bash
         run: |
-          docker run --rm \
-            --network none \
-            --read-only \
+          docker run --rm --network none --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m \
             -e PYTHONDONTWRITEBYTECODE=1 \
             porota-rc5-candidate:${GITHUB_SHA} \
@@ -82,9 +77,7 @@ jobs:
       - name: Suite focal disponible sin red
         shell: bash
         run: |
-          docker run --rm \
-            --network none \
-            --read-only \
+          docker run --rm --network none --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=512m \
             -e PYTHONDONTWRITEBYTECODE=1 \
             --entrypoint bash \
@@ -108,9 +101,7 @@ jobs:
       - name: Invariantes de seguridad versionadas
         shell: bash
         run: |
-          docker run --rm \
-            --network none \
-            --read-only \
+          docker run --rm --network none --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=128m \
             --entrypoint python \
             porota-rc5-candidate:${GITHUB_SHA} - <<'PY'
