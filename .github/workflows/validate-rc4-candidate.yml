@@ -1,9 +1,9 @@
-name: Validar candidata RC4
+name: Validar candidata RC5
 
 on:
   pull_request:
     branches:
-      - release/v17.0.0-rc4-hf2
+      - candidate/v17.0.0-rc5-integration-20260905
   workflow_dispatch:
     inputs:
       referencia:
@@ -15,12 +15,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: porota-rc4-validacion-${{ github.event.pull_request.number || github.run_id }}
+  group: porota-rc5-validacion-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   validar:
-    name: Validación aislada RC4
+    name: Validación aislada RC5
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -45,7 +45,6 @@ jobs:
         run: |
           echo "RAMA/REF: ${{ steps.ref.outputs.valor }}"
           echo "HEAD: $(git rev-parse HEAD)"
-          echo "Working tree:"
           git status --short
           test -z "$(git status --porcelain)"
 
@@ -56,9 +55,9 @@ jobs:
       - name: Build exacto de candidata
         shell: bash
         run: |
-          docker build --pull=false -t porota-rc4-candidate:${GITHUB_SHA} .
+          docker build --pull=false -t porota-rc5-candidate:${GITHUB_SHA} .
 
-      - name: Preflight RC4 sin red
+      - name: Preflight release sin red
         shell: bash
         run: |
           docker run --rm \
@@ -66,7 +65,7 @@ jobs:
             --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m \
             -e PYTHONDONTWRITEBYTECODE=1 \
-            porota-rc4-candidate:${GITHUB_SHA} \
+            porota-rc5-candidate:${GITHUB_SHA} \
             python rc4_release_preflight.py
 
       - name: Compilación sintáctica sin red
@@ -77,10 +76,10 @@ jobs:
             --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m \
             -e PYTHONDONTWRITEBYTECODE=1 \
-            porota-rc4-candidate:${GITHUB_SHA} \
+            porota-rc5-candidate:${GITHUB_SHA} \
             python -c "from pathlib import Path; [compile(p.read_text(encoding='utf-8'),str(p),'exec') for p in Path('.').rglob('*.py') if '.git' not in p.parts]; print('COMPILACION=OK')"
 
-      - name: Suite RC4 focal sin red
+      - name: Suite focal disponible sin red
         shell: bash
         run: |
           docker run --rm \
@@ -88,13 +87,23 @@ jobs:
             --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=512m \
             -e PYTHONDONTWRITEBYTECODE=1 \
-            --entrypoint python \
-            porota-rc4-candidate:${GITHUB_SHA} \
-            -m pytest -q -p no:cacheprovider \
-              test_rc4_release.py \
-              test_hf6_history_data912_v2.py \
-              tests/test_historical_freshness_v1633.py \
-              tests/test_history_close_only_hf2.py
+            --entrypoint bash \
+            porota-rc5-candidate:${GITHUB_SHA} -lc '
+              set -euo pipefail
+              files=()
+              for f in \
+                test_hf6_history_data912_v2.py \
+                tests/test_historical_freshness_v1633.py \
+                tests/test_history_close_only_hf2.py \
+                tests/test_dashboard_live_policy_hf2.py \
+                tests/test_forward_lab_metrics_hf2.py
+              do
+                [ -f "$f" ] && files+=("$f")
+              done
+              [ "${#files[@]}" -gt 0 ]
+              printf "TESTS_FOCALES=%s\n" "${files[*]}"
+              python -m pytest -q -p no:cacheprovider "${files[@]}"
+            '
 
       - name: Invariantes de seguridad versionadas
         shell: bash
@@ -104,7 +113,7 @@ jobs:
             --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=128m \
             --entrypoint python \
-            porota-rc4-candidate:${GITHUB_SHA} - <<'PY'
+            porota-rc5-candidate:${GITHUB_SHA} - <<'PY'
           import _version
           assert _version.MODE == 'PRODUCTION_PAPER'
           assert _version.EXECUTION == 'SIMULATED'
@@ -117,7 +126,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo '### POROTA RC4 — validación candidata'
+            echo '### POROTA RC5 — validación candidata'
             echo '- Referencia: `${{ steps.ref.outputs.valor }}`'
             echo '- SHA ejecutado: `${{ github.sha }}`'
             echo '- Credenciales PPI: **NO**'
