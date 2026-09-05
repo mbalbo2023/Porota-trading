@@ -11,7 +11,7 @@ permissions:
 jobs:
   extraer:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Descargar tabla oficial vigente de BYMA
         shell: bash
@@ -26,7 +26,7 @@ jobs:
           test "$(head -c 5 /tmp/byma19016.pdf)" = '%PDF-'
           echo "PDF_BYTES=$(wc -c </tmp/byma19016.pdf)"
           echo "PDF_SHA256=$(sha256sum /tmp/byma19016.pdf | awk '{print $1}')"
-          pdfinfo /tmp/byma19016.pdf | grep -E '^(Pages|Page size|PDF version):'
+          file /tmp/byma19016.pdf
 
       - name: Intentar texto nativo y usar OCR sólo si es imagen
         shell: bash
@@ -38,8 +38,10 @@ jobs:
             echo 'EXTRACTION=NATIVE_TEXT'
           else
             echo 'EXTRACTION=OCR_IMAGE_ONLY'
-            command -v pdftoppm >/dev/null
-            command -v tesseract >/dev/null
+            if ! command -v pdftoppm >/dev/null || ! command -v tesseract >/dev/null; then
+              sudo apt-get update -qq
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq poppler-utils tesseract-ocr >/dev/null
+            fi
             mkdir -p /tmp/pages /tmp/ocr
             pdftoppm -r 220 -png /tmp/byma19016.pdf /tmp/pages/page >/dev/null 2>&1
             : > /tmp/final.txt
