@@ -1,0 +1,181 @@
+name: Publish POROTA external rollback image
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact audited commit SHA to archive
+        required: true
+        type: string
+      expected_version:
+        description: Exact POROTA version from _version.py
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: porota-publish-rollback-${{ inputs.target_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Validate input SHA shape
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Checkout exact audited source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          fetch-depth: 0
+
+      - name: Validate exact source and PAPER safety identity
+        id: identity
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --porcelain)"
+          git diff --check
+
+          python - "$EXPECTED_VERSION" <<'PY'
+          import sys
+          import _version
+
+          expected = sys.argv[1]
+          assert _version.VERSION == expected, (_version.VERSION, expected)
+          assert _version.IMAGE == f"porota-trading-bot:{expected}"
+          assert _version.MODE == "PRODUCTION_PAPER"
+          assert _version.EXECUTION == "SIMULATED"
+          assert _version.REAL_ORDER_CAPABILITY == "BLOCKED"
+          print("RELEASE_IDENTITY=GREEN")
+          PY
+
+          echo "short_sha=${TARGET_SHA:0:12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build exact image without network runtime tests
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          set -euo pipefail
+          docker build --pull=false \
+            --label "porota.commit=$TARGET_SHA" \
+            --label "porota.version=$EXPECTED_VERSION" \
+            -t "porota-archive:$TARGET_SHA" .
+
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            "porota-archive:$TARGET_SHA" python rc5_release_preflight.py
+
+      - name: Login to GitHub Container Registry
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Push immutable SHA-tagged archive
+        id: push
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          set -euo pipefail
+
+          OWNER="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          IMAGE="ghcr.io/${OWNER}/porota-trading"
+          SHA_TAG="sha-${TARGET_SHA}"
+          VERSION_SHA_TAG="${EXPECTED_VERSION}-${TARGET_SHA:0:12}"
+
+          docker tag "porota-archive:$TARGET_SHA" "$IMAGE:$SHA_TAG"
+          docker tag "porota-archive:$TARGET_SHA" "$IMAGE:$VERSION_SHA_TAG"
+
+          docker push "$IMAGE:$SHA_TAG"
+          docker push "$IMAGE:$VERSION_SHA_TAG"
+
+          DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$SHA_TAG" | sed 's/.*@//')"
+          test -n "$DIGEST"
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
+          echo "version_sha_tag=$VERSION_SHA_TAG" >> "$GITHUB_OUTPUT"
+
+          cat > rollback-image-manifest.txt <<EOF
+          POROTA_EXTERNAL_ROLLBACK_IMAGE_V1
+          repository=$GITHUB_REPOSITORY
+          source_commit=$TARGET_SHA
+          version=$EXPECTED_VERSION
+          image=$IMAGE
+          digest=$DIGEST
+          immutable_ref=$IMAGE@$DIGEST
+          sha_tag=$SHA_TAG
+          version_sha_tag=$VERSION_SHA_TAG
+          mode=PRODUCTION_PAPER
+          execution=SIMULATED
+          real_order_capability=BLOCKED
+          EOF
+
+          sha256sum rollback-image-manifest.txt > rollback-image-manifest.sha256
+          cat rollback-image-manifest.txt
+          cat rollback-image-manifest.sha256
+
+      - name: Verify remote digest by pull
+        shell: bash
+        env:
+          IMAGE: ${{ steps.push.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+          docker image rm "porota-archive:$TARGET_SHA" >/dev/null 2>&1 || true
+          docker pull "$IMAGE@$DIGEST"
+          test "$(docker inspect -f '{{index .Config.Labels "porota.commit"}}' "$IMAGE@$DIGEST")" = "$TARGET_SHA"
+
+      - name: Upload manifest evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: porota-rollback-manifest-${{ steps.identity.outputs.short_sha }}
+          path: |
+            rollback-image-manifest.txt
+            rollback-image-manifest.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Summary
+        shell: bash
+        env:
+          IMAGE: ${{ steps.push.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## POROTA external rollback image'
+            echo
+            echo "- Source: \`$TARGET_SHA\`"
+            echo "- Version: \`$EXPECTED_VERSION\`"
+            echo "- Immutable image: \`$IMAGE@$DIGEST\`"
+            echo '- Runtime was not modified.'
+            echo '- Real-money capability was not introduced.'
+          } >> "$GITHUB_STEP_SUMMARY"
