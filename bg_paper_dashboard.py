@@ -30,7 +30,8 @@ from dd_history_metrics_hf6 import observer_history_metrics, v2_store_metrics, e
 # HF6_V2_HISTORY_DASHBOARD_PATCH
 from df_daily_operation_summary_hf6 import summarize as daily_operation_summaries
 from dg_dashboard_daily_result_ux_hf6 import daily_results_html, report_cards_html, RESPONSIVE_CSS
-from dh_dashboard_compact_lists_hf6 import COMPACT_CSS
+from dh_dashboard_compact_lists_hf6 import COMPACT_CSS, pager_html
+import eb_dashboard_live_policy_hf2 as live_policy
 from da_dashboard_ux_hf6 import (TOP_NAV, TRADING_NAV, FAMILY_GROUPS, FAMILY_LABELS, top_nav_html, trading_nav_html, families_for_group)
 from db_dashboard_logs_hf6 import discover_sources, primary_source, source_by_id, tail_lines
 from de_scheduler_catalog_hf6 import internal_rows, load_systemd_snapshot, describe_systemd_timer
@@ -76,12 +77,12 @@ border:1px solid #c9d4e3;border-left:5px solid var(--nav);border-radius:10px;fon
 .paper-page h2{font-size:1.08rem;margin:4px 0 12px}.paper-page h3{font-size:1rem;margin:8px 0}
 .paper-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:14px 0}
 .paper-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px;
-box-shadow:0 3px 14px #14213d0c;margin:12px 0;overflow:auto}.paper-card b.metric{font-size:1.22rem}
+box-shadow:0 3px 14px #14213d0c;margin:12px 0;overflow:hidden;min-width:0}.paper-card b.metric{font-size:1.22rem}
 .card-green{background:var(--green-bg);border-color:#8bd0a2}.card-red{background:var(--red-bg);border-color:#ef9a9a}
 .card-yellow{background:var(--yellow-bg);border-color:#e4c46b}.card-gray{background:var(--gray-bg);border-color:#cfd5dd}
 .positive{color:var(--green)!important;font-weight:800}.negative{color:var(--red)!important;font-weight:800}.neutral{color:var(--gray)}
-.paper-table{width:100%;border-collapse:collapse;font-size:.86rem}.paper-table th{background:#e7edf4}
-.paper-table th,.paper-table td{padding:9px;border-bottom:1px solid #dce3ed;text-align:left;vertical-align:top}
+.paper-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;font-size:.86rem}.paper-table th{background:#e7edf4}
+.paper-table th,.paper-table td{padding:9px;border-bottom:1px solid #dce3ed;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}
 .paper-muted{color:var(--muted);font-size:.86rem}.paper-action{display:inline-block;background:var(--blue);color:#fff!important;
 border:0;border-radius:8px;padding:9px 13px;text-decoration:none;font-weight:700;cursor:pointer;margin:2px}
 .paper-status{display:inline-block;border-radius:999px;padding:3px 8px;font-weight:750;color:#fff;white-space:nowrap}
@@ -1616,24 +1617,18 @@ def telegram_page():
     return _document("Telegram",body,refresh=60)
 
 
-def live_page():
+def live_page(*, offset=0, limit=20):
     data=snapshot(); state=data['state']; now=datetime.now(TZ)
     positions=data.get('open',[])
-    closed_today=[]
-    for row in data.get('closed',[]):
-        try:
-            closed_at=aware_datetime(row.get('closed_at')).astimezone(TZ)
-        except Exception:
-            continue
-        if closed_at.date()==now.date():
-            closed_today.append(row)
-    closed=closed_today[:20]
+    closed_today=live_policy.closed_for_live(data.get('closed',[]),now=now)
+    closed_page=live_policy.page_for_tablet(closed_today,offset=0,limit=20)
+    closed=list(closed_page.items)
     intents={r.get('paper_id'):r for r in data.get('exit_intents',[])}
 
     gates=[]
     if _table('trade_gate_evaluations'):
-        gates=_rows("""SELECT * FROM trade_gate_evaluations
-          ORDER BY evaluated_at DESC,id DESC LIMIT 100""")
+        gates=live_policy.rows_for_today(_rows("""SELECT * FROM trade_gate_evaluations
+          ORDER BY evaluated_at DESC,id DESC LIMIT 500"""),'evaluated_at',now=now)
     gate_by_paper={r.get('paper_id'):r for r in gates if r.get('paper_id')}
     gate_by_symbol={}
     for row in gates:
@@ -1687,10 +1682,12 @@ def live_page():
     # sólo existe después de una decisión BUY que alcanzó los gates. Un gate viejo
     # nunca debe ocultar HOLD/abstenciones nuevas del motor.
     decision_rows=[]
-    live_decisions=(_rows(
+    all_live_decisions=live_policy.decisions_for_live((_rows(
         "SELECT decided_at,symbol,action,score,reason FROM paper_decisions "
-        "ORDER BY decided_at DESC LIMIT 50"
-    ) if _table('paper_decisions') else [])
+        "ORDER BY decided_at DESC LIMIT 500"
+    ) if _table('paper_decisions') else []),now=now)
+    decision_page=live_policy.page_for_tablet(all_live_decisions,offset=offset,limit=limit)
+    live_decisions=list(decision_page.items)
     for row in live_decisions:
         action=str(row.get('action') or '').upper()
         gate=gate_by_symbol.get(row.get('symbol')) if action=='BUY' else None
@@ -1705,7 +1702,8 @@ def live_page():
             f"<td>{_e(explanation)}</td></tr>"
         )
     if not decision_rows:
-        for row in gates[:50]:
+        decision_page=live_policy.page_for_tablet(gates,offset=offset,limit=limit)
+        for row in decision_page.items:
             result=str(row.get('final_result') or '')
             label='ACEPTADA' if result=='OPENED_SIMULATED' else 'RECHAZADA/BLOQUEADA'
             decision_rows.append(
@@ -1713,6 +1711,7 @@ def live_page():
                 f"<td>{_status(label)}</td><td>{_status(row.get('technical_gate'))}</td>"
                 f"<td>{_status(row.get('patrimonial_gate'))}</td><td>{_e(row.get('reason'))}</td></tr>"
             )
+    decision_pager=pager_html('/en-vivo',decision_page)
 
     settlement_diag_html=""
     try:
@@ -1772,7 +1771,7 @@ def live_page():
 
     cards=''.join((
       _card('Operaciones abiertas',len(positions),'Lo primero de /vivo: dinero PAPER y marks actuales','green' if positions else 'gray'),
-      _card('Cerradas recientes',len(closed),'Incluyen resultado, causa y lección','green' if closed else 'gray'),
+      _card('Cerradas hoy',closed_page.total,f'Mostrando {len(closed)} de {closed_page.total}; resultado, causa y lección','green' if closed else 'gray'),
       _card('PPI autenticación',state.get('ppi_auth','UNKNOWN'),f"Último mercado {_local_time(state.get('last_market_data_at'))}",'green' if state.get('ppi_auth')=='OK' else 'yellow'),
       _card('Órdenes reales',state.get('real_orders_sent',0),'Invariante permanente: cero','green' if state.get('real_orders_sent',0)==0 else 'red'),
     ))
@@ -1786,14 +1785,15 @@ def live_page():
           "<p class='paper-muted'>Fuente primaria: paper_decisions. Los gates técnico/patrimonial son event-driven y sólo aparecen cuando una señal BUY alcanza esa etapa; un gate antiguo no significa que el motor esté detenido.</p>"
           "<table class='paper-table'>"
           "<tr><th>Hora</th><th>Instrumento</th><th>Decisión</th><th>Técnico</th><th>Patrimonial</th><th>Explicación</th></tr>"+
-          (''.join(decision_rows) or "<tr><td colspan='6'>Sin decisiones.</td></tr>")+"</table></div>"
+          (''.join(decision_rows) or "<tr><td colspan='6'>Sin decisiones de hoy.</td></tr>")+"</table>"+
+          decision_pager+"<a class='paper-action' href='/en-vivo'>Actualizar ahora</a></div>"
           "<div class='paper-card'><h2>4. Scalping</h2>"
           f"<p>Estado: {_status(scalp_worker.get('state','NOT_STARTED'))} · candidatos última hora: {_e(scalp_recent)} · fills/posiciones visibles: {_e(scalp_fills)}.</p>"
           "<a class='paper-action' href='/scalping'>Abrir Scalping detallado</a></div>"
           "<div class='paper-card'><h2>5. Motores / workers</h2><p class='paper-muted'>Información técnica al final, después de las operaciones.</p>"
           "<table class='paper-table'><tr><th>Motor</th><th>Estado</th><th>Pulso</th><th>Antigüedad</th><th>Detalle</th></tr>"+
           ''.join(workers)+"</table></div>")
-    return _document("En vivo",body,refresh=15)
+    return _document("En vivo",body,refresh=0)
 
 
 def _family_ux_snapshot(families):
@@ -2367,7 +2367,9 @@ def install(app,check_auth):
     @app.get("/motor-trading",response_class=HTMLResponse)
     def motor(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(motor_page())
     @app.get("/en-vivo",response_class=HTMLResponse)
-    def en_vivo(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(live_page())
+    def en_vivo(request:Request,offset:int=Query(default=0,ge=0),limit:int=Query(default=20,ge=1,le=50),token:str=Query(default=""),authorization:str|None=Header(default=None)):
+        auth(request,token,authorization)
+        return HTMLResponse(live_page(offset=offset,limit=limit))
     @app.get("/trading",response_class=HTMLResponse)
     def trading(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(trading_page())
     @app.get("/trading/{section}",response_class=HTMLResponse)
