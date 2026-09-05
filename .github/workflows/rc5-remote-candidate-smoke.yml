@@ -1,0 +1,137 @@
+name: RC5 - smoke remoto candidatas
+
+on:
+  push:
+    branches:
+      - infra/rc5-remote-validation-20260905
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc5-remote-smoke
+  cancel-in-progress: false
+
+jobs:
+  validar-remoto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Validar secretos
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST"
+          test -n "$DO_USER"
+          test -n "$DO_SSH_KEY"
+          test -n "$DO_KNOWN_HOSTS"
+          echo 'SECRETOS=OK'
+
+      - name: Preparar SSH estricto
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DO_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DO_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Validar dashboard y auditoría en Droplet sin tocar runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          BASE_BRANCH=release/v17.0.0-rc4-hf2
+          BASE_HEAD=7284fbb5c651ff548ab911e7829b740c42b4b71f
+          IMAGE=porota-trading-bot:17.0.0-rc4-hf2
+          DASH_BRANCH=candidate/rc4-hf2-dashboard-a11y-20260905
+          DASH_HEAD=2c486910d67a9f07d9b2c8a7bf73ee2b75d87baa
+          AUDIT_BRANCH=candidate/rc4-hf2-audit-p0p1-20260905
+          AUDIT_HEAD=0c7ba1c7ed20a54921391474c99f230aa2a0b700
+          TMP=''
+
+          cleanup() {
+            if [ -n "$TMP" ] && [ -d "$TMP" ]; then
+              for wt in "$TMP"/*; do
+                [ -d "$wt" ] && git -C "$REPO" worktree remove --force "$wt" >/dev/null 2>&1 || true
+              done
+              rm -rf "$TMP" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          echo 'POROTA RC5 - VALIDACION REMOTA DE CANDIDATAS'
+          echo 'RED_PPI=NO'
+          echo 'RUNTIME_RESTART=NO'
+          echo 'ORDENES_REALES=BLOQUEADAS'
+
+          test "$(git -C "$REPO" branch --show-current)" = "$BASE_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$BASE_HEAD"
+
+          git -C "$REPO" fetch --no-tags origin \
+            "refs/heads/$DASH_BRANCH:refs/remotes/origin/$DASH_BRANCH" \
+            "refs/heads/$AUDIT_BRANCH:refs/remotes/origin/$AUDIT_BRANCH"
+          test "$(git -C "$REPO" rev-parse refs/remotes/origin/$DASH_BRANCH)" = "$DASH_HEAD"
+          test "$(git -C "$REPO" rev-parse refs/remotes/origin/$AUDIT_BRANCH)" = "$AUDIT_HEAD"
+
+          TMP="$(mktemp -d "$HOME/porota-rc5-remote.XXXXXX")"
+
+          echo '=== DASHBOARD A11Y ==='
+          DASH_WT="$TMP/dashboard"
+          git -C "$REPO" worktree add --detach "$DASH_WT" "$DASH_HEAD" >/dev/null
+          git -C "$DASH_WT" diff --check "$BASE_HEAD..$DASH_HEAD"
+          sudo -n docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=128m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -v "$DASH_WT:/candidate:ro" -w /candidate \
+            "$IMAGE" \
+            python -m pytest -q -p no:cacheprovider tests/test_dashboard_live_policy_hf2.py
+          echo 'DASHBOARD_A11Y=GREEN'
+
+          echo '=== AUDITORIA P0P1 ==='
+          AUDIT_WT="$TMP/audit"
+          git -C "$REPO" worktree add --detach "$AUDIT_WT" "$AUDIT_HEAD" >/dev/null
+          git -C "$AUDIT_WT" diff --check "$BASE_HEAD..$AUDIT_HEAD"
+          sudo -n docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=128m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -v "$AUDIT_WT:/candidate:ro" -w /candidate \
+            "$IMAGE" \
+            python -m pytest -q -p no:cacheprovider tests/test_forward_lab_metrics_hf2.py
+          echo 'AUDITORIA_P0P1=GREEN'
+
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+          STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True)
+          c.execute('PRAGMA query_only=ON')
+          r=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('|'.join(str(x) for x in r))
+          c.close()
+          PY
+          )"
+          echo "OBSERVER=$OBS"
+          echo "DASHBOARD=$DASH"
+          echo "OBSERVER_STATE=$STATE"
+          test "$OBS" = "true|$IMAGE|0|true"
+          printf '%s\n' "$STATE" | grep -Eq '^PRODUCTION_PAPER\|.*\|0$'
+          echo 'ESTADO=GREEN'
+          echo 'ACCION_RUNTIME=NINGUN_CAMBIO'
+          echo 'PPI_CONSULTAS=0'
+          echo 'ORDENES_REALES_ENVIADAS=0'
+          REMOTE
