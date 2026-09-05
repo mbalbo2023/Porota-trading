@@ -1,0 +1,194 @@
+name: RC5 - History Freshness V5 read-only
+
+on:
+  push:
+    branches:
+      - audit/rc5-history-freshness-v5-20260905
+
+permissions:
+  contents: read
+
+jobs:
+  auditar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Preparar SSH estricto
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST"; test -n "$DO_USER"; test -n "$DO_SSH_KEY"; test -n "$DO_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DO_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DO_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Auditar 246 identidades sin red ni escrituras
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          OBS_DB="$REPO/data/paper_v17/observer_v17.db"
+          HIST_DB="$REPO/data/market_history.db"
+          test "$(git -C "$REPO" branch --show-current)" = 'release/v17.0.0-rc4-hf2'
+          test "$(git -C "$REPO" rev-parse HEAD)" = '7284fbb5c651ff548ab911e7829b740c42b4b71f'
+          export REPO OBS_DB HIST_DB
+          echo 'POROTA HISTORY FRESHNESS V5'
+          echo 'MODE=READ_ONLY_AUDIT'
+          echo 'NETWORK_CALLS=0'
+          echo 'RUNTIME_CHANGED=NO'
+          python3 - <<'PY'
+          import json, os, sqlite3, sys
+          from collections import Counter, defaultdict
+          from datetime import date, datetime, timedelta
+
+          repo=os.environ['REPO']
+          obs_path=os.environ['OBS_DB']
+          hist_path=os.environ['HIST_DB']
+          sys.path.insert(0,repo)
+          import ak_byma_calendar as cal
+
+          def ro(path):
+              c=sqlite3.connect(f'file:{path}?mode=ro',uri=True)
+              c.execute('PRAGMA query_only=ON')
+              return c
+
+          obs=ro(obs_path); hist=ro(hist_path)
+          try:
+              oq=obs.execute('PRAGMA quick_check').fetchone()[0]
+              hq=hist.execute('PRAGMA quick_check').fetchone()[0]
+              print('DB_QUICK_CHECK='+str(oq))
+              print('HISTORY_DB_QUICK_CHECK='+str(hq))
+              if oq!='ok' or hq!='ok': raise SystemExit('DB_CHECK_FAILED')
+
+              cols=[r[1] for r in obs.execute('PRAGMA table_info(candidate_universe)')]
+              required={'ticker','instrument_type','market','settlement','status','can_simulate'}
+              missing=sorted(required-set(cols))
+              print('CANDIDATE_COLUMNS='+','.join(cols))
+              if missing: raise SystemExit('CANDIDATE_SCHEMA_MISSING:'+','.join(missing))
+
+              targets=obs.execute('''SELECT ticker,instrument_type,market,settlement,status,can_simulate
+                                     FROM candidate_universe
+                                     WHERE can_simulate=1
+                                     ORDER BY instrument_type,ticker,market,settlement''').fetchall()
+              print('TARGET_TOTAL='+str(len(targets)))
+              if len(targets)!=246:
+                  raise SystemExit('TARGET_TOTAL_UNEXPECTED:'+str(len(targets)))
+
+              hcols=[r[1] for r in hist.execute('PRAGMA table_info(history_canonical_v2)')]
+              hreq={'symbol','instrument_type','market','settlement','date'}
+              hmiss=sorted(hreq-set(hcols))
+              print('HISTORY_COLUMNS='+','.join(hcols))
+              if hmiss: raise SystemExit('HISTORY_SCHEMA_MISSING:'+','.join(hmiss))
+
+              latest_raw=hist.execute('SELECT MAX(date) FROM history_canonical_v2').fetchone()[0]
+              if not latest_raw: raise SystemExit('HISTORY_STORE_EMPTY')
+              latest=date.fromisoformat(str(latest_raw)[:10])
+              print('STORE_LATEST_DATE='+latest.isoformat())
+              print('CALENDAR_SOURCE=BYMA_AUDITED_2026_FOR_FRESHNESS;PRE2026_CLASSIFIED_SEVERELY_STALE_WITHOUT_INVENTED_CALENDAR')
+
+              groups={}
+              for row in hist.execute('''SELECT symbol,instrument_type,market,settlement,
+                                                COUNT(*),MIN(date),MAX(date)
+                                         FROM history_canonical_v2
+                                         GROUP BY symbol,instrument_type,market,settlement'''):
+                  groups[tuple(str(x).upper() for x in row[:4])]=(int(row[4]),row[5],row[6])
+
+              def business_gap(last_day):
+                  if last_day>=latest: return 0
+                  if last_day.year not in cal.ANIOS_AUDITADOS:
+                      # We need only the >10 threshold. Do not invent historical holidays.
+                      return None
+                  d=last_day+timedelta(days=1); n=0; guard=0
+                  while d<=latest:
+                      guard+=1
+                      if guard>400: raise RuntimeError('BUSINESS_GAP_GUARD_EXCEEDED')
+                      if cal.es_dia_habil_operativo(d): n+=1
+                      d+=timedelta(days=1)
+                  return n
+
+              def depth(n):
+                  if n==0:return 'NONE'
+                  if n<30:return 'LT30'
+                  if n<90:return 'LT90'
+                  if n<180:return 'LT180'
+                  return 'GE180'
+
+              depth_counts=Counter(); fresh_counts=Counter(); ready_counts=Counter(); cross=Counter()
+              family=defaultdict(Counter); stale_ge90=[]; anomalies=[]
+              fresh_ge30=fresh_ge90=fresh_ge180=0
+              for ticker,itype,market,settlement,status,can_sim in targets:
+                  key=(str(ticker).upper(),str(itype).upper(),str(market).upper(),str(settlement).upper())
+                  n,first,last=groups.get(key,(0,None,None))
+                  dep=depth(n)
+                  depth_counts[dep]+=1
+                  if n==0:
+                      fr='NO_HISTORY'; gap_label='NA'
+                  else:
+                      ld=date.fromisoformat(str(last)[:10])
+                      if ld>latest:
+                          fr='FUTURE_ANOMALY'; gap_label='NEGATIVE'
+                      elif ld.year not in cal.ANIOS_AUDITADOS:
+                          fr='SEVERELY_STALE'; gap_label='GT10_PRE2026'
+                      else:
+                          gap=business_gap(ld); gap_label=str(gap)
+                          fr='FRESH' if gap<=2 else ('STALE' if gap<=10 else 'SEVERELY_STALE')
+                  fresh_counts[fr]+=1; cross[(dep,fr)]+=1; family[str(itype).upper()][fr]+=1
+                  if fr=='FRESH' and n>=30: fresh_ge30+=1
+                  if fr=='FRESH' and n>=90: fresh_ge90+=1
+                  if fr=='FRESH' and n>=180: fresh_ge180+=1
+                  if fr=='FRESH' and n>=180: readiness='FRESH_GE180'
+                  elif fr=='FRESH' and n>=90: readiness='FRESH_GE90'
+                  elif fr=='FRESH' and n>=30: readiness='FRESH_GE30'
+                  elif fr=='FRESH': readiness='FRESH_LT30'
+                  elif fr=='NO_HISTORY': readiness='NO_HISTORY'
+                  else: readiness='STALE_HISTORY'
+                  ready_counts[readiness]+=1
+                  item={'ticker':key[0],'type':key[1],'market':key[2],'settlement':key[3],
+                        'rows':n,'first':first,'last':last,'depth':dep,'freshness':fr,'business_gap':gap_label,
+                        'status':status}
+                  if n>=90 and fr!='FRESH': stale_ge90.append(item)
+                  if fr!='FRESH' or n<90: anomalies.append(item)
+
+              def dump_counter(c): return json.dumps(dict(sorted(c.items())),ensure_ascii=False,sort_keys=True)
+              print('DEPTH_COUNTS='+dump_counter(depth_counts))
+              print('FRESHNESS_COUNTS='+dump_counter(fresh_counts))
+              print('READINESS_COUNTS='+dump_counter(ready_counts))
+              print('DEPTH_X_FRESHNESS='+json.dumps({f'{d}|{f}':n for (d,f),n in sorted(cross.items())},ensure_ascii=False,sort_keys=True))
+              print('FAMILY_FRESHNESS='+json.dumps({k:dict(sorted(v.items())) for k,v in sorted(family.items())},ensure_ascii=False,sort_keys=True))
+              print('HISTORY_FRESH_GE30='+str(fresh_ge30))
+              print('HISTORY_FRESH_GE90='+str(fresh_ge90))
+              print('HISTORY_FRESH_GE180='+str(fresh_ge180))
+              print('STALE_GE90_COUNT='+str(len(stale_ge90)))
+              print('STALE_GE90_BEGIN')
+              for x in stale_ge90: print(json.dumps(x,ensure_ascii=False,sort_keys=True))
+              print('STALE_GE90_END')
+              print('ANOMALY_COUNT='+str(len(anomalies)))
+              print('ANOMALY_SAMPLE_BEGIN')
+              for x in anomalies[:80]: print(json.dumps(x,ensure_ascii=False,sort_keys=True))
+              print('ANOMALY_SAMPLE_END')
+              print('STATUS=GREEN_READ_ONLY')
+          finally:
+              obs.close(); hist.close()
+          PY
+          STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.execute('PRAGMA query_only=ON')
+          print('|'.join(map(str,c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone())))
+          c.close()
+          PY
+          )"
+          test "$STATE" = 'PRODUCTION_PAPER|0'
+          echo 'REAL_ORDERS_SENT=0'
+          REMOTE
