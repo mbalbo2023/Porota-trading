@@ -52,9 +52,6 @@ def _freshness(last_day: date | None, latest: date) -> tuple[str, str]:
     if last_day > latest:
         return "FUTURE_ANOMALY", "NEGATIVE"
     if last_day.year not in byma_calendar.ANIOS_AUDITADOS:
-        # No se calcula un número falso de ruedas de años no auditados. En el
-        # dataset RC5 estas fechas están a muchos meses del latest; quedan
-        # fuera de fresh y explícitamente marcadas como calendario no auditado.
         return "STALE_UNVERIFIED_CALENDAR", "UNVERIFIED_PRE2026"
     gap=_business_gap_2026(last_day,latest)
     if gap <= 2:
@@ -75,6 +72,7 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None) -
         "fresh_ge180":0,
         "fresh_total":0,
         "stale_ge90":[],
+        "stale_ge90_count":0,
         "depth_counts":{},
         "freshness_counts":{},
         "readiness_implication":"NONE",
@@ -99,7 +97,7 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None) -
         for r in c.execute(
             """SELECT symbol,instrument_type,market,settlement,COUNT(*),MIN(date),MAX(date)
                FROM history_canonical_v2
-               GROUP BY symbol,instrument_type,market,settlement""
+               GROUP BY symbol,instrument_type,market,settlement"""
         ):
             groups[tuple(str(x or "").upper() for x in r[:4])]=(int(r[4] or 0),r[5],r[6])
 
@@ -111,12 +109,16 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None) -
             dep=_depth(rows)
             last_day=date.fromisoformat(str(last)[:10]) if last else None
             fr,gap=_freshness(last_day,latest)
-            depths[dep]+=1; freshness[fr]+=1
+            depths[dep]+=1
+            freshness[fr]+=1
             if fr == "FRESH":
                 fresh_total += 1
-                if rows >= 30: fresh_ge30 += 1
-                if rows >= 90: fresh_ge90 += 1
-                if rows >= 180: fresh_ge180 += 1
+                if rows >= 30:
+                    fresh_ge30 += 1
+                if rows >= 90:
+                    fresh_ge90 += 1
+                if rows >= 180:
+                    fresh_ge180 += 1
             if rows >= 90 and fr != "FRESH":
                 stale_ge90.append({
                     "symbol":item["symbol"],"family":item["family"],
