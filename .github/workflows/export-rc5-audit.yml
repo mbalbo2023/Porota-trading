@@ -1,0 +1,70 @@
+name: Export exact RC5 audit ZIP
+
+on:
+  push:
+    branches:
+      - audit/rc5-exact-export-20260905
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 852b812d610860b57b579212978443f7450e8855
+          fetch-depth: 0
+
+      - name: Verify exact deployed identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "852b812d610860b57b579212978443f7450e8855"
+          test -z "$(git status --porcelain)"
+          python - <<'PY'
+          import _version
+          assert _version.VERSION == '17.0.0-rc5'
+          assert _version.IMAGE == 'porota-trading-bot:17.0.0-rc5'
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          PY
+
+      - name: Build exact source archive and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP='POROTA_TRADING_17.0.0-rc5_EXACT_852b812d6108.zip'
+          PREFIX='Porota-Trading-17.0.0-rc5-852b812d6108/'
+          git archive --format=zip --prefix="$PREFIX" -o "$ZIP" 852b812d610860b57b579212978443f7450e8855
+          SHA256="$(sha256sum "$ZIP" | awk '{print $1}')"
+          FILES="$(git ls-tree -r --name-only 852b812d610860b57b579212978443f7450e8855 | wc -l | tr -d ' ')"
+          {
+            echo 'POROTA TRADING RC5 — EXACT AUDIT PACKAGE'
+            echo 'VERSION=17.0.0-rc5'
+            echo 'BRANCH=release/v17.0.0-rc5'
+            echo 'COMMIT=852b812d610860b57b579212978443f7450e8855'
+            echo 'MODE=PRODUCTION_PAPER'
+            echo 'EXECUTION=SIMULATED'
+            echo 'REAL_ORDER_CAPABILITY=BLOCKED'
+            echo "TRACKED_FILES=$FILES"
+            echo "ZIP=$ZIP"
+            echo "SHA256=$SHA256"
+            echo 'SECRETS_INCLUDED=NO'
+            echo 'RUNTIME_DATABASES_INCLUDED=NO'
+          } | tee POROTA_TRADING_17.0.0-rc5_EXACT_852b812d6108_MANIFEST.txt
+          sha256sum "$ZIP" > "$ZIP.sha256"
+
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: POROTA_TRADING_17.0.0-rc5_EXACT_852b812d6108
+          path: |
+            POROTA_TRADING_17.0.0-rc5_EXACT_852b812d6108.zip
+            POROTA_TRADING_17.0.0-rc5_EXACT_852b812d6108.zip.sha256
+            POROTA_TRADING_17.0.0-rc5_EXACT_852b812d6108_MANIFEST.txt
+          if-no-files-found: error
+          retention-days: 30
