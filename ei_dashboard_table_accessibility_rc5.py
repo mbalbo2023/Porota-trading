@@ -42,6 +42,7 @@ TABLE_A11Y_SCRIPT = r"""
 (function(){
   const PAGE_SIZE=20;
   let scheduled=false;
+  let observer=null;
 
   function safeKey(text){
     return String(text||'').replace(/\s+/g,' ').trim().slice(0,80);
@@ -143,15 +144,24 @@ TABLE_A11Y_SCRIPT = r"""
     paint(null);
   }
 
+  function startObserver(){
+    if(observer) observer.observe(document.documentElement,{childList:true,subtree:true});
+  }
+
   function init(){
-    const tables=Array.from(document.querySelectorAll('main.paper-page table, #porota-legacy-shell table'));
-    tables.forEach((table,index)=>{
-      table.classList.add('paper-table');
-      table.dataset.porotaCompact='1';
-      const headers=headersFor(table);
-      labelCells(table,headers);
-      progressive(table,index);
-    });
+    if(observer) observer.disconnect();
+    try{
+      const tables=Array.from(document.querySelectorAll('main.paper-page table, #porota-legacy-shell table'));
+      tables.forEach((table,index)=>{
+        table.classList.add('paper-table');
+        table.dataset.porotaCompact='1';
+        const headers=headersFor(table);
+        labelCells(table,headers);
+        progressive(table,index);
+      });
+    } finally {
+      startObserver();
+    }
   }
 
   function schedule(){
@@ -160,9 +170,13 @@ TABLE_A11Y_SCRIPT = r"""
     requestAnimationFrame(()=>{scheduled=false;init();});
   }
 
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init,{once:true});
-  else init();
-  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+  observer=new MutationObserver(schedule);
+  if(document.readyState==='loading'){
+    startObserver();
+    document.addEventListener('DOMContentLoaded',init,{once:true});
+  } else {
+    init();
+  }
   window.porotaInitCompactTables=init;
 })();
 </script>
@@ -178,3 +192,4 @@ def assert_table_accessibility_contract():
     assert "Mostrando '+shown+' de '+total" in TABLE_A11Y_SCRIPT
     assert "sessionStorage" in TABLE_A11Y_SCRIPT
     assert "MutationObserver" in TABLE_A11Y_SCRIPT
+    assert "observer.disconnect()" in TABLE_A11Y_SCRIPT
