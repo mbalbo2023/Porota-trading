@@ -1,8 +1,8 @@
 """HF6-v2: salva filas PPI históricas válidas sin aceptar filas defectuosas.
 
-Las velas salvadas se escriben en History Store v2, cuya identidad incluye
-familia, mercado y settlement. El esquema histórico legado no se modifica ni
-se usa para nuevas familias multi-mercado.
+Las velas FULL_OHLC válidas se escriben en History Store v2. Desde la candidata
+RC4-HF2, las filas rechazadas por FULL_OHLC pueden conservar sólo fecha+close
+en una serie paralela explícita, sin reparar ni sintetizar open/high/low/volumen.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from datetime import date, datetime, timezone
 import cp_history_ingest_policy_hf6 as policy
 import cq_history_attempt_ledger_hf6 as ledger
 import cu_history_store_v2_hf6 as history_v2
+import ea_history_close_series_hf2 as close_series
 from cv_history_store_adapter_hf6 import default_history_store
 
 
@@ -74,7 +75,7 @@ def _v2_candles(*, symbol, instrument_type, market, settlement,
             source="PPI_PRODUCTION_HISTORY",
             adjusted=False,
             observed_at=observed_at,
-            metadata={"ready_paper_implication":"NONE"},
+            metadata={"ready_paper_implication":"NONE","history_quality":"FULL_OHLC"},
         )
         for row in rows
     ]
@@ -84,10 +85,12 @@ def ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
                        market: str, settlement: str, payload,
                        requested_from=None, requested_to=None,
                        attempted_at=None, history_store=None) -> dict:
-    """Persist valid PPI rows and append immutable quality evidence.
+    """Persist full OHLC and, separately, safe close-only evidence.
 
     ``store`` is observer evidence/readiness storage. ``history_store`` defaults
     to the dedicated historical DB. No historical row grants trading readiness.
+    A close-only row never enters ``history_canonical_v2`` and therefore cannot
+    degrade or replace a FULL_OHLC canonical candle.
     """
     attempted_dt = _as_of(attempted_at)
     attempted_iso = attempted_dt.isoformat()
@@ -119,6 +122,24 @@ def ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
         "versions_appended":0,"canonical_updates":0,"protected_by_precedence":0
     }
 
+    close_rows = close_series.extract_rejected_close_evidence(
+        payload,
+        result.rejected_rows,
+        symbol=symbol,
+        instrument_type=instrument_type,
+        market=market,
+        settlement=settlement,
+        observed_at=attempted_iso,
+        as_of=attempted_dt,
+        date_from=requested_from_date,
+        date_to=requested_to_date,
+    )
+    close_stored = close_series.append_many(hstore, close_rows) if close_rows else {
+        "versions_appended":0,"canonical_updates":0
+    }
+    close_first = min((row.date for row in close_rows), default=None)
+    close_last = max((row.date for row in close_rows), default=None)
+
     ledger.init_schema(store)
     _init_rejections(store)
     attempt = ledger.HistoryAttempt(
@@ -135,7 +156,8 @@ def ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
         rejected_rows=result.rejected_count,
         state=result.storage_quality,
         detail=(f"market={market}; context={result.context_state}; "
-                f"ratio={result.valid_ratio:.6f}; sin interpolacion ni velas sinteticas"),
+                f"ratio={result.valid_ratio:.6f}; close_only={len(close_rows)}; "
+                "sin interpolacion ni velas sinteticas"),
         raw_body_hash=ledger.body_hash(payload),
         metadata={
             "market": market,
@@ -143,7 +165,14 @@ def ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
             "valid_ratio": result.valid_ratio,
             "first_date": result.first_date,
             "last_date": result.last_date,
+            "full_ohlc_rows": result.valid_count,
+            "close_only_rows": len(close_rows),
+            "close_only_first_date": close_first,
+            "close_only_last_date": close_last,
+            "close_only_quality": close_series.QUALITY,
+            "close_only_store": "history_close_canonical_v1",
             "ready_paper_implication": "NONE",
+            "execution_price_implication": "NONE",
             "history_store": "history_canonical_v2",
         },
     )
@@ -166,7 +195,11 @@ def ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
         "attempt_id": attempt_id,
         "provider_rows": result.provider_rows,
         "valid_rows": result.valid_count,
+        "full_ohlc_rows": result.valid_count,
         "rejected_rows": result.rejected_count,
+        "close_only_rows": len(close_rows),
+        "close_only_versions_appended": close_stored["versions_appended"],
+        "close_only_canonical_updates": close_stored["canonical_updates"],
         "versions_appended": stored["versions_appended"],
         "canonical_updates": stored["canonical_updates"],
         "protected_by_precedence": stored["protected_by_precedence"],
@@ -175,5 +208,8 @@ def ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
         "context_state": result.context_state,
         "first_date": result.first_date,
         "last_date": result.last_date,
+        "close_only_first_date": close_first,
+        "close_only_last_date": close_last,
         "ready_paper_implication": "NONE",
+        "execution_price_implication": "NONE",
     }
