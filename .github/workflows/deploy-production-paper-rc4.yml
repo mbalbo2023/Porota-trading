@@ -1,0 +1,248 @@
+name: Desplegar POROTA PRODUCTION_PAPER RC4
+
+on:
+  workflow_dispatch:
+    inputs:
+      referencia:
+        description: 'Rama, tag o SHA exacto a desplegar'
+        required: true
+        type: string
+      confirmacion:
+        description: 'Escribí DESPLEGAR_PAPER'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-production-paper
+  cancel-in-progress: false
+
+jobs:
+  preparar:
+    name: Resolver y validar referencia
+    if: inputs.confirmacion == 'DESPLEGAR_PAPER'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.identidad.outputs.sha }}
+      version: ${{ steps.identidad.outputs.version }}
+    steps:
+      - name: Checkout de la referencia solicitada
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.referencia }}
+          fetch-depth: 0
+
+      - name: Validar contrato PRODUCTION_PAPER
+        id: identidad
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          test -z "$(git status --porcelain)"
+          git diff --check
+          python - <<'PY'
+          import _version
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          print('CONTRATO_VERSIONADO=OK')
+          PY
+          VERSION="$(python -c 'import _version; print(_version.VERSION)')"
+          test -n "$VERSION"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "SHA exacto: $SHA"
+          echo "Versión: $VERSION"
+
+  desplegar:
+    name: Deploy transaccional al Droplet
+    needs: preparar
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Preparar SSH con host key fija
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY"
+          test -n "$KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_deploy"
+          chmod 600 "$HOME/.ssh/porota_deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Desplegar exacto y verificar
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ needs.preparar.outputs.sha }}
+          TARGET_VERSION: ${{ needs.preparar.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST"
+          test -n "$DO_USER"
+          test -n "$TARGET_SHA"
+          test -n "$TARGET_VERSION"
+
+          ssh -i "$HOME/.ssh/porota_deploy" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "TARGET_SHA='$TARGET_SHA' TARGET_VERSION='$TARGET_VERSION' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          REPO=/opt/porota-trading
+          TARGET_SHA="${TARGET_SHA:?}"
+          TARGET_VERSION="${TARGET_VERSION:?}"
+          TARGET_IMAGE="porota-trading-bot:${TARGET_VERSION}"
+          CURRENT_SHA="$(git -C "$REPO" rev-parse HEAD)"
+          CURRENT_IMAGE="$(sudo -n docker inspect -f '{{.Config.Image}}' porota_production_observer)"
+          CURRENT_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+
+          echo "CURRENT_SHA=$CURRENT_SHA"
+          echo "CURRENT_IMAGE=$CURRENT_IMAGE"
+          echo "TARGET_SHA=$TARGET_SHA"
+          echo "TARGET_IMAGE=$TARGET_IMAGE"
+
+          test "$TARGET_SHA" != "$CURRENT_SHA"
+          test "$TARGET_IMAGE" != "$CURRENT_IMAGE"
+
+          AVAIL_KB="$(df -Pk "$REPO" | awk 'NR==2{print $4}')"
+          test "$AVAIL_KB" -ge 6291456
+
+          OBS_PRE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          DASH_PRE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}' porota_production_dashboard)"
+          test "$OBS_PRE" = 'true|0|true'
+          test "$DASH_PRE" = 'true|0'
+
+          STATE_PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          r=c.execute('SELECT mode,ppi_auth,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('|'.join(map(str,(q,*r))))
+          c.close()
+          PY
+          )"
+          echo "STATE_PRE=$STATE_PRE"
+          printf '%s\n' "$STATE_PRE" | grep -Eq '^ok\|PRODUCTION_PAPER\|OK\|0$'
+
+          sudo -n git -C "$REPO" fetch origin --prune --tags
+          sudo -n git -C "$REPO" cat-file -e "${TARGET_SHA}^{commit}"
+
+          TMP="$(mktemp -d /tmp/porota-deploy.XXXXXX)"
+          WT="$TMP/source"
+          cleanup() {
+            sudo -n git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true
+            rmdir "$TMP" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          sudo -n git -C "$REPO" worktree add --detach "$WT" "$TARGET_SHA" >/dev/null
+          GOT_SHA="$(sudo -n git -C "$WT" rev-parse HEAD)"
+          test "$GOT_SHA" = "$TARGET_SHA"
+
+          SOURCE_VERSION="$(sudo -n python3 -c "import sys;sys.path.insert(0,'$WT');import _version;print(_version.VERSION)")"
+          test "$SOURCE_VERSION" = "$TARGET_VERSION"
+          sudo -n python3 -c "import sys;sys.path.insert(0,'$WT');import _version;assert _version.MODE=='PRODUCTION_PAPER';assert _version.EXECUTION=='SIMULATED';assert _version.REAL_ORDER_CAPABILITY=='BLOCKED'"
+
+          echo 'BUILD=START'
+          sudo -n docker build --pull=false \
+            --label "porota.commit=$TARGET_SHA" \
+            -t "$TARGET_IMAGE" "$WT"
+
+          echo 'TESTS=START'
+          sudo -n docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            "$TARGET_IMAGE" python rc4_release_preflight.py
+
+          sudo -n docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python "$TARGET_IMAGE" \
+            -m pytest -q -p no:cacheprovider \
+              test_rc4_release.py \
+              test_hf6_history_data912_v2.py \
+              tests/test_historical_freshness_v1633.py
+
+          rollback() {
+            echo "ROLLBACK=START"
+            sudo -n git -C "$REPO" checkout --detach "$CURRENT_SHA" || return 1
+            sudo -n python3 "$REPO/porota_mode_manager.py" simulation || return 1
+            echo "ROLLBACK=DONE"
+          }
+
+          trap 'rc=$?; if [ "$rc" -ne 0 ]; then rollback || true; fi; cleanup; exit "$rc"' EXIT
+
+          echo 'ACTIVACION=START'
+          sudo -n git -C "$REPO" checkout --detach "$TARGET_SHA"
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+
+          SANO=0
+          for i in $(seq 1 18); do
+            STATUS="$(curl -fsS http://127.0.0.1:8000/health 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)"
+            if [ "$STATUS" = 'ok' ]; then
+              SANO=1
+              break
+            fi
+            sleep 5
+          done
+          test "$SANO" -eq 1
+
+          OBS_POST="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          DASH_POST="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo "OBSERVER_POST=$OBS_POST"
+          echo "DASHBOARD_POST=$DASH_POST"
+          test "$OBS_POST" = "true|$TARGET_IMAGE|0|true"
+          test "$DASH_POST" = "true|$TARGET_IMAGE|0"
+
+          STATE_POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          h='/app/data/market_history.db'
+          out=[]
+          for path in (p,h):
+              c=sqlite3.connect(f'file:{path}?mode=ro',uri=True)
+              c.execute('PRAGMA query_only=ON')
+              out.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if path==p:
+                  r=c.execute('SELECT mode,ppi_auth,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*out,*r))))
+          PY
+          )"
+          echo "STATE_POST=$STATE_POST"
+          printf '%s\n' "$STATE_POST" | grep -Eq '^ok\|ok\|PRODUCTION_PAPER\|OK\|0$'
+
+          echo "DEPLOY_STATUS=GREEN"
+          echo "DEPLOYED_SHA=$TARGET_SHA"
+          echo "DEPLOYED_IMAGE=$TARGET_IMAGE"
+          echo "ROLLBACK_IMAGE_PRESERVED=$CURRENT_IMAGE"
+
+          trap - EXIT
+          cleanup
+          REMOTE
+
+      - name: Resumen
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### POROTA PRODUCTION_PAPER — deploy'
+            echo '- SHA solicitado: `${{ needs.preparar.outputs.sha }}`'
+            echo '- Versión: `${{ needs.preparar.outputs.version }}`'
+            echo '- Modo permitido: **PRODUCTION_PAPER / SIMULATED**'
+            echo '- Órdenes reales: **BLOCKED**'
+            echo '- Resultado: **${{ job.status }}**'
+          } >> "$GITHUB_STEP_SUMMARY"
