@@ -8,7 +8,7 @@ READY_PAPER ni se usa como precio de ejecución.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import json
@@ -182,7 +182,7 @@ def append_close_evidence(store, item: CloseEvidence) -> dict:
     })
     with store.connect() as c:
         existing=c.execute(
-            """SELECT id FROM history_close_versions_v1
+            """SELECT id,close,observed_at FROM history_close_versions_v1
                WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
                  AND date=? AND source=? AND quality=? AND raw_row_hash=?
                ORDER BY id DESC LIMIT 1""",
@@ -200,14 +200,21 @@ def append_close_evidence(store, item: CloseEvidence) -> dict:
                  item.close,SOURCE,QUALITY,item.observed_at,digest,metadata),
             )
             version_id=int(cur.lastrowid)
+            version_close=float(item.close)
+            version_observed_at=str(item.observed_at)
         else:
             version_id=int(existing[0])
+            version_close=float(existing[1])
+            version_observed_at=str(existing[2])
         current=c.execute(
-            """SELECT observed_at FROM history_close_canonical_v1
+            """SELECT observed_at,version_id FROM history_close_canonical_v1
                WHERE symbol=? AND instrument_type=? AND market=? AND settlement=? AND date=?""",
             (item.symbol,item.instrument_type,item.market,item.settlement,item.date),
         ).fetchone()
-        chosen=current is None or str(item.observed_at) >= str(current[0])
+        # If the exact raw row was already preserved, canonical evidence must
+        # keep the immutable version's original observed_at. A later retry of
+        # identical provider bytes is not a new market observation.
+        chosen=current is None or version_observed_at >= str(current[0])
         if chosen:
             c.execute(
                 """INSERT INTO history_close_canonical_v1(
@@ -218,7 +225,7 @@ def append_close_evidence(store, item: CloseEvidence) -> dict:
                     close=excluded.close,source=excluded.source,quality=excluded.quality,
                     observed_at=excluded.observed_at,version_id=excluded.version_id""",
                 (item.symbol,item.instrument_type,item.market,item.settlement,item.date,
-                 item.close,SOURCE,QUALITY,item.observed_at,version_id),
+                 version_close,SOURCE,QUALITY,version_observed_at,version_id),
             )
     return {"version_id":version_id,"version_appended":appended,
             "canonical_updated":chosen,"quality":QUALITY,"source":SOURCE}
