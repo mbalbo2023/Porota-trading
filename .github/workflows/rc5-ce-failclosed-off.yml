@@ -1,0 +1,99 @@
+name: RC5 - restaurar Contract Evidence OFF
+
+on:
+  push:
+    branches:
+      - audit/rc5-ce-wiring-readonly-20260905
+    paths:
+      - .github/workflows/rc5-ce-failclosed-off.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc5-ce-failclosed
+  cancel-in-progress: false
+
+jobs:
+  apagar-timer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Preparar SSH estricto
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST"; test -n "$DO_USER"; test -n "$DO_SSH_KEY"; test -n "$DO_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DO_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DO_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deshabilitar sólo timer CE HF6 y verificar invariantes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          UNIT=porota-contract-evidence-hf6.timer
+          IMAGE=porota-trading-bot:17.0.0-rc4-hf2
+
+          test "$(git -C "$REPO" branch --show-current)" = 'release/v17.0.0-rc4-hf2'
+          test "$(git -C "$REPO" rev-parse HEAD)" = '7284fbb5c651ff548ab911e7829b740c42b4b71f'
+          test "$(systemctl show "$UNIT" -p LoadState --value)" = 'loaded'
+
+          OBS_PRE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          STATE_PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True)
+          c.execute('PRAGMA query_only=ON')
+          print('|'.join(map(str,c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone())))
+          c.close()
+          PY
+          )"
+          test "$OBS_PRE" = "true|$IMAGE|0|true"
+          test "$STATE_PRE" = 'PRODUCTION_PAPER|0'
+
+          BEFORE_ACTIVE="$(systemctl is-active "$UNIT" 2>/dev/null || true)"
+          BEFORE_ENABLED="$(systemctl is-enabled "$UNIT" 2>/dev/null || true)"
+          SERVICE_ACTIVE="$(systemctl is-active porota-contract-evidence-hf6.service 2>/dev/null || true)"
+          case "$SERVICE_ACTIVE" in active|activating|reloading) echo "ABORT_SERVICE_RUNNING=$SERVICE_ACTIVE"; exit 30;; esac
+
+          echo "CE_TIMER_BEFORE=$BEFORE_ACTIVE|$BEFORE_ENABLED"
+          echo "CE_SERVICE_BEFORE=$SERVICE_ACTIVE"
+          sudo -n systemctl disable --now "$UNIT"
+
+          AFTER_ACTIVE="$(systemctl is-active "$UNIT" 2>/dev/null || true)"
+          AFTER_ENABLED="$(systemctl is-enabled "$UNIT" 2>/dev/null || true)"
+          test "$AFTER_ACTIVE" = 'inactive'
+          test "$AFTER_ENABLED" = 'disabled'
+
+          OBS_POST="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          STATE_POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True)
+          c.execute('PRAGMA query_only=ON')
+          print('|'.join(map(str,c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone())))
+          c.close()
+          PY
+          )"
+          test "$OBS_POST" = "$OBS_PRE"
+          test "$STATE_POST" = "$STATE_PRE"
+
+          echo "CE_TIMER_AFTER=$AFTER_ACTIVE|$AFTER_ENABLED"
+          echo 'STATUS=GREEN_FAIL_CLOSED_OFF'
+          echo 'PPI_CALLS=0'
+          echo 'RUNTIME_CONTAINERS_CHANGED=NO'
+          echo 'REAL_ORDERS_SENT=0'
+          REMOTE
