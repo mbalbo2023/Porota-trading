@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: |
           docker run --rm --network none --read-only \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m \
             -e PYTHONDONTWRITEBYTECODE=1 \
             --entrypoint bash \
             porota-rc5-candidate:${GITHUB_SHA} -lc '
@@ -88,7 +88,8 @@ jobs:
                 tests/test_history_close_only_hf2.py \
                 tests/test_dashboard_live_policy_hf2.py \
                 tests/test_dashboard_live_integration_rc5.py \
-                tests/test_forward_lab_metrics_hf2.py
+                tests/test_forward_lab_metrics_hf2.py \
+                tests/test_contract_evidence_rc5_runtime.py
               do
                 [ -f "$f" ] && files+=("$f")
               done
