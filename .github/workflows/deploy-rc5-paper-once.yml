@@ -169,7 +169,16 @@ jobs:
           git -C "$REPO" diff --cached --quiet
 
           AVAIL_KB="$(df -Pk "$REPO" | awk 'NR==2{print $4}')"
-          echo "DISK_AVAIL_KB=$AVAIL_KB"
+          echo "DISK_AVAIL_KB_BEFORE=$AVAIL_KB"
+          if [ "$AVAIL_KB" -lt 8388608 ]; then
+            echo 'DISK_RECLAIM=START_TARGETED'
+            TARGET_USERS="$(sudo -n docker ps -aq --filter "ancestor=$TARGET_IMAGE")"
+            test -z "$TARGET_USERS"
+            sudo -n docker image rm "$TARGET_IMAGE" >/dev/null 2>&1 || true
+            sudo -n docker builder prune --force >/dev/null
+            AVAIL_KB="$(df -Pk "$REPO" | awk 'NR==2{print $4}')"
+            echo "DISK_AVAIL_KB_AFTER_RECLAIM=$AVAIL_KB"
+          fi
           test "$AVAIL_KB" -ge 8388608
 
           OBS_PRE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
@@ -193,7 +202,17 @@ jobs:
           PY
           )"
           echo "STATE_PRE=$STATE_PRE"
-          printf '%s\n' "$STATE_PRE" | grep -Eq '^ok\|ok\|PRODUCTION_PAPER\|OK\|0$'
+          IFS='|' read -r QC_OBS_PRE QC_HIST_PRE MODE_PRE PPI_AUTH_PRE REAL_ORDERS_PRE <<<"$STATE_PRE"
+          test "$QC_OBS_PRE" = 'ok'
+          test "$QC_HIST_PRE" = 'ok'
+          test "$MODE_PRE" = 'PRODUCTION_PAPER'
+          test "$REAL_ORDERS_PRE" = '0'
+          if [ "$PPI_AUTH_PRE" = 'NOT_ATTEMPTED' ]; then
+            DOW_AR="$(TZ=America/Argentina/Buenos_Aires date +%u)"
+            test "$DOW_AR" -ge 6
+          else
+            test "$PPI_AUTH_PRE" = 'OK'
+          fi
 
           sudo -n systemctl disable --now porota-contract-evidence-hf6.timer >/dev/null 2>&1 || true
           sudo -n systemctl disable --now porota-contract-evidence-rc5.timer >/dev/null 2>&1 || true
