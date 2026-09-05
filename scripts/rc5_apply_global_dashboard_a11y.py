@@ -83,7 +83,7 @@ def test_dashboard_wires_global_contract_and_non_disruptive_refresh():
     assert 'TABLE_A11Y_SCRIPT' in s
     assert "active?.matches('a,button,input,select,textarea,summary')" in s
     assert "active?.closest('.trade-body,.porota-progressive-controls,.compact-pager')" in s
-    assert "replacement.focus({preventScroll:true})" in s
+    assert "replacement.focus({{preventScroll:true}})" in s
 
 
 def test_named_heavy_pages_keep_canonical_tables_for_global_enhancement():
