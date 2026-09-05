@@ -87,6 +87,7 @@ jobs:
                 tests/test_historical_freshness_v1633.py \
                 tests/test_history_close_only_hf2.py \
                 tests/test_dashboard_live_policy_hf2.py \
+                tests/test_dashboard_live_integration_rc5.py \
                 tests/test_forward_lab_metrics_hf2.py
               do
                 [ -f "$f" ] && files+=("$f")
