@@ -1,0 +1,115 @@
+name: RC5 - diagnosticar Contract Evidence exit 3
+
+on:
+  push:
+    branches:
+      - audit/rc5-ce-exit3-diagnostic-20260905
+
+permissions:
+  contents: read
+
+jobs:
+  diagnosticar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Preparar SSH estricto
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST"; test -n "$DO_USER"; test -n "$DO_SSH_KEY"; test -n "$DO_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DO_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DO_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Leer control flow y journal sanitizado
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          UNIT=porota-contract-evidence-hf6.service
+          TIMER=porota-contract-evidence-hf6.timer
+          RUNNER=/usr/local/sbin/porota-contract-evidence-hf6-runtime.sh
+
+          test "$(git -C "$REPO" branch --show-current)" = 'release/v17.0.0-rc4-hf2'
+          test "$(git -C "$REPO" rev-parse HEAD)" = '7284fbb5c651ff548ab911e7829b740c42b4b71f'
+          test -f "$RUNNER"
+          test "$(systemctl is-active "$TIMER" 2>/dev/null || true)" = 'inactive'
+          test "$(systemctl is-enabled "$TIMER" 2>/dev/null || true)" = 'disabled'
+
+          echo 'POROTA RC5 CE EXIT3 DIAGNOSTIC'
+          echo 'MODE=READ_ONLY'
+          echo 'PPI_CALLS=0'
+          echo 'CE_TIMER=inactive|disabled'
+          echo "SERVICE_RESULT=$(systemctl show "$UNIT" -p Result --value 2>/dev/null || true)"
+          echo "SERVICE_EXEC_STATUS=$(systemctl show "$UNIT" -p ExecMainStatus --value 2>/dev/null || true)"
+          echo "SERVICE_LAST_EXIT=$(systemctl show "$UNIT" -p InactiveEnterTimestamp --value 2>/dev/null || true)"
+
+          echo '--- RUNNER CONTROL FLOW ---'
+          # Sólo estructura de control; nunca valores de variables ni líneas que parezcan secretos.
+          nl -ba "$RUNNER" | awk '
+            BEGIN{IGNORECASE=1}
+            /token|secret|cookie|password|passwd|api[_-]?key|api[_-]?secret|authorization|bearer|session|otp|2fa/ {next}
+            /exit[[:space:]]+[0-9]+|return[[:space:]]+[0-9]+|case[[:space:]]|if[[:space:]]|elif[[:space:]]|else|fi|grep|python|runner|due|contract|evidence|status|fail|error|abort/ {print}
+          ' | head -n 180
+
+          echo '--- EXIT 3 CONTEXT ---'
+          mapfile -t EXIT3 < <(grep -nE '(^|[^0-9])exit[[:space:]]+3([^0-9]|$)|(^|[^0-9])return[[:space:]]+3([^0-9]|$)' "$RUNNER" 2>/dev/null | cut -d: -f1)
+          if [ "${#EXIT3[@]}" -eq 0 ]; then
+            echo 'EXIT3_LITERAL=NOT_FOUND'
+          else
+            for n in "${EXIT3[@]}"; do
+              start=$(( n>5 ? n-5 : 1 )); end=$((n+5))
+              sed -n "${start},${end}p" "$RUNNER" | awk '
+                BEGIN{IGNORECASE=1}
+                /token|secret|cookie|password|passwd|api[_-]?key|api[_-]?secret|authorization|bearer|session|otp|2fa/ {print "[REDACTED_SENSITIVE_LINE]"; next}
+                {print}
+              '
+            done
+          fi
+
+          echo '--- SANITIZED JOURNAL ---'
+          journalctl -u "$UNIT" --no-pager -n 120 -o cat 2>/dev/null | awk '
+            BEGIN{IGNORECASE=1}
+            {
+              line=$0
+              gsub(/(token|secret|cookie|password|passwd|api[_-]?key|api[_-]?secret|authorization|bearer|session|otp|2fa)[=:][^[:space:]]+/,"[REDACTED]",line)
+              gsub(/[A-Za-z0-9_\/-]{28,}/,"[LONG_VALUE_REDACTED]",line)
+              print line
+            }
+          ' | tail -n 100
+
+          echo '--- UNIT EXECSTART SHAPE ---'
+          systemctl cat "$UNIT" --no-pager 2>/dev/null | awk '
+            BEGIN{IGNORECASE=1}
+            /^ExecStart=/ {
+              line=$0
+              gsub(/(token|secret|cookie|password|passwd|api[_-]?key|api[_-]?secret|authorization|bearer|session|otp|2fa)[^[:space:]]*/,"[REDACTED]",line)
+              print line
+            }
+          '
+
+          STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.execute('PRAGMA query_only=ON')
+          print('|'.join(map(str,c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone())))
+          c.close()
+          PY
+          )"
+          test "$STATE" = 'PRODUCTION_PAPER|0'
+          echo 'STATUS=GREEN_DIAGNOSTIC_READ_ONLY'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'REAL_ORDERS_SENT=0'
+          REMOTE
