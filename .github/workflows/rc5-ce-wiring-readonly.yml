@@ -1,0 +1,182 @@
+name: RC5 - Contract Evidence wiring read-only
+
+on:
+  push:
+    branches:
+      - audit/rc5-ce-wiring-readonly-20260905
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc5-ce-wiring-readonly
+  cancel-in-progress: false
+
+jobs:
+  auditar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Validar secretos sin imprimirlos
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST"; test -n "$DO_USER"; test -n "$DO_SSH_KEY"; test -n "$DO_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DO_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DO_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          echo 'SSH_INPUTS=OK'
+
+      - name: Probar timer → service → runner → due policy sin cambios
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          BASE_BRANCH=release/v17.0.0-rc4-hf2
+          BASE_HEAD=7284fbb5c651ff548ab911e7829b740c42b4b71f
+          IMAGE=porota-trading-bot:17.0.0-rc4-hf2
+
+          echo 'POROTA RC5 CE WIRING PROOF'
+          echo 'MODE=READ_ONLY_AUDIT'
+          echo 'PPI_CALLS=0'
+          echo 'CE_ENABLE_ACTION=NO'
+          echo 'CE_START_ACTION=NO'
+
+          test "$(git -C "$REPO" branch --show-current)" = "$BASE_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$BASE_HEAD"
+
+          OBS_PRE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          STATE_PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True)
+          c.execute('PRAGMA query_only=ON')
+          r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('|'.join(map(str,r)))
+          c.close()
+          PY
+          )"
+          test "$OBS_PRE" = "true|$IMAGE|0|true"
+          test "$STATE_PRE" = 'PRODUCTION_PAPER|0'
+
+          mapfile -t TIMERS < <(systemctl list-unit-files --type=timer --no-legend --no-pager 2>/dev/null \
+            | awk 'tolower($1) ~ /porota.*(contract|evidence)|(contract|evidence).*porota/ {print $1}')
+          if [ "${#TIMERS[@]}" -eq 0 ]; then
+            echo 'STATUS=RED_NO_CE_TIMER'
+            exit 20
+          fi
+
+          declare -A TIMER_ACTIVE_BEFORE TIMER_ENABLED_BEFORE
+          SERVICES=()
+          for timer in "${TIMERS[@]}"; do
+            active="$(systemctl is-active "$timer" 2>/dev/null || true)"
+            enabled="$(systemctl is-enabled "$timer" 2>/dev/null || true)"
+            triggers="$(systemctl show "$timer" -p Triggers --value 2>/dev/null || true)"
+            fragment="$(systemctl show "$timer" -p FragmentPath --value 2>/dev/null || true)"
+            TIMER_ACTIVE_BEFORE["$timer"]="$active"
+            TIMER_ENABLED_BEFORE["$timer"]="$enabled"
+            echo "CE_TIMER=$timer|active=$active|enabled=$enabled|fragment=$fragment|triggers=${triggers:-NONE}"
+            test "$active" = 'inactive'
+            case "$enabled" in disabled|static|indirect) ;; *) echo "UNEXPECTED_TIMER_ENABLE_STATE=$timer:$enabled"; exit 21;; esac
+            for svc in $triggers; do
+              [[ "$svc" == *.service ]] && SERVICES+=("$svc")
+            done
+            if [ -z "$triggers" ]; then
+              SERVICES+=("${timer%.timer}.service")
+            fi
+          done
+
+          mapfile -t MATCHING_SERVICES < <(systemctl list-unit-files --type=service --no-legend --no-pager 2>/dev/null \
+            | awk 'tolower($1) ~ /porota.*(contract|evidence)|(contract|evidence).*porota/ {print $1}')
+          SERVICES+=("${MATCHING_SERVICES[@]}")
+          mapfile -t SERVICES < <(printf '%s\n' "${SERVICES[@]}" | awk 'NF && !seen[$0]++')
+          if [ "${#SERVICES[@]}" -eq 0 ]; then
+            echo 'STATUS=RED_NO_CE_SERVICE'
+            exit 22
+          fi
+
+          CHAIN_OK=0
+          DUE_OK=0
+          for svc in "${SERVICES[@]}"; do
+            load="$(systemctl show "$svc" -p LoadState --value 2>/dev/null || true)"
+            fragment="$(systemctl show "$svc" -p FragmentPath --value 2>/dev/null || true)"
+            active="$(systemctl is-active "$svc" 2>/dev/null || true)"
+            cattext="$(systemctl cat "$svc" --no-pager 2>/dev/null || true)"
+            exec_line="$(printf '%s\n' "$cattext" | sed -n 's/^[[:space:]]*ExecStart=//p' | head -n1)"
+            echo "CE_SERVICE=$svc|load=${load:-UNKNOWN}|active=${active:-UNKNOWN}|fragment=${fragment:-NONE}"
+            echo "CE_EXECSTART_PRESENT=$svc|$([ -n "$exec_line" ] && echo YES || echo NO)"
+            [ "$load" = 'loaded' ] || continue
+            [ -n "$exec_line" ] || continue
+
+            runner="$(printf '%s\n' "$exec_line" | grep -oE '/[^[:space:]";]+\.(py|sh)' | tail -n1 || true)"
+            module="$(printf '%s\n' "$exec_line" | sed -n 's/.*python[^ ]*[[:space:]]\+-m[[:space:]]\+\([A-Za-z0-9_.-]\+\).*/\1/p' | head -n1)"
+            if [ -z "$runner" ] && [ -n "$module" ]; then
+              candidate="$REPO/${module//./\/}.py"
+              [ -f "$candidate" ] && runner="$candidate"
+            fi
+            if [ -n "$runner" ] && [ -f "$runner" ]; then
+              CHAIN_OK=1
+              echo "CE_RUNNER=$svc|$runner|exists=YES"
+              if grep -Eqi '(^|[^a-z])(due|is_due|schedule|scheduler|dynamic|static|weekly|calendar)([^a-z]|$)' "$runner"; then
+                DUE_OK=1
+                echo "CE_DUE_POLICY_REFERENCE=$runner|YES"
+              else
+                echo "CE_DUE_POLICY_REFERENCE=$runner|NO_DIRECT_MATCH"
+              fi
+            else
+              echo "CE_RUNNER=$svc|${runner:-UNRESOLVED}|exists=NO"
+            fi
+          done
+
+          if [ "$DUE_OK" -eq 0 ]; then
+            mapfile -t DUE_FILES < <(git -C "$REPO" grep -l -Ei '(contract.?evidence|evidence.?contract)' "$BASE_HEAD" -- '*.py' '*.sh' 2>/dev/null \
+              | cut -d: -f2- | while read -r f; do grep -Eqi '(due|is_due|schedule|scheduler|dynamic|static|weekly|calendar)' "$REPO/$f" && printf '%s\n' "$REPO/$f"; done | head -n20)
+            if [ "${#DUE_FILES[@]}" -gt 0 ]; then
+              DUE_OK=1
+              printf 'CE_DUE_POLICY_FILE=%s\n' "${DUE_FILES[@]}"
+            fi
+          fi
+
+          test "$CHAIN_OK" -eq 1
+          test "$DUE_OK" -eq 1
+
+          for timer in "${TIMERS[@]}"; do
+            active_after="$(systemctl is-active "$timer" 2>/dev/null || true)"
+            enabled_after="$(systemctl is-enabled "$timer" 2>/dev/null || true)"
+            test "$active_after" = "${TIMER_ACTIVE_BEFORE[$timer]}"
+            test "$enabled_after" = "${TIMER_ENABLED_BEFORE[$timer]}"
+            echo "CE_TIMER_UNCHANGED=$timer|active=$active_after|enabled=$enabled_after"
+          done
+
+          OBS_POST="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          STATE_POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True)
+          c.execute('PRAGMA query_only=ON')
+          r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('|'.join(map(str,r)))
+          c.close()
+          PY
+          )"
+          test "$OBS_POST" = "$OBS_PRE"
+          test "$STATE_POST" = "$STATE_PRE"
+
+          echo 'STATUS=GREEN_WIRING_PROOF_READ_ONLY'
+          echo 'CE_REMAINS_OFF=YES'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'PPI_CALLS=0'
+          echo 'REAL_ORDERS_SENT=0'
+          REMOTE
