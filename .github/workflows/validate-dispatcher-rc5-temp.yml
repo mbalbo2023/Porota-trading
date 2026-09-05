@@ -1,0 +1,45 @@
+name: TEMP - validar dispatcher RC5
+
+on:
+  push:
+    branches:
+      - infra/production-paper-dispatcher-main-20260905
+    paths:
+      - .github/workflows/validate-dispatcher-rc5-temp.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parsear YAML y verificar guardas
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e "require 'yaml'; YAML.load_file('.github/workflows/deploy-production-paper-rc5.yml'); puts 'YAML=OK'"
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('.github/workflows/deploy-production-paper-rc5.yml').read_text(encoding='utf-8')
+          required=[
+              "VERSION\" = '17.0.0-rc5'",
+              "DESPLEGAR_RC5_PAPER",
+              "StrictHostKeyChecking=yes",
+              "REAL_ORDER_CAPABILITY == 'BLOCKED'",
+              "--network none",
+              "BACKUP_SQLITE=START",
+              "porota_mode_manager.py\" simulation",
+              "real_orders_sent",
+              "docker build --pull=false",
+          ]
+          missing=[x for x in required if x not in s]
+          if missing:
+              raise SystemExit('FALTAN_GUARDAS:'+repr(missing))
+          if 'docker compose up' in s or 'docker-compose up' in s:
+              raise SystemExit('COMPOSE_PRODUCTIVO_PROHIBIDO')
+          if 'test_rc4_release.py' in s:
+              raise SystemExit('TEST_OBSOLETO_PRESENTE')
+          print('GUARDAS_RC5=OK')
+          PY
