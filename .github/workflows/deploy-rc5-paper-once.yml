@@ -292,7 +292,25 @@ jobs:
           PY
           )"
           echo "STATE_POST=$STATE_POST"
-          printf '%s\n' "$STATE_POST" | grep -Eq '^ok\|ok\|PRODUCTION_PAPER\|OK\|0$'
+          IFS='|' read -r QC_OBS_POST QC_HIST_POST MODE_POST PPI_AUTH_POST REAL_ORDERS_POST <<<"$STATE_POST"
+          test "$QC_OBS_POST" = 'ok'
+          test "$QC_HIST_POST" = 'ok'
+          test "$MODE_POST" = 'PRODUCTION_PAPER'
+          test "$REAL_ORDERS_POST" = '0'
+          PHASE_POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import co_market_sessions_hf6 as m
+          print(m.byma_paper_spot_phase())
+          PY
+          )"
+          echo "MARKET_PHASE_POST=$PHASE_POST"
+          if [ "$PHASE_POST" = 'CLOSED' ]; then
+            case "$PPI_AUTH_POST" in
+              OK|NOT_ATTEMPTED) ;;
+              *) echo "PPI_AUTH_POST_INVALID_OFF_MARKET=$PPI_AUTH_POST"; exit 1 ;;
+            esac
+          else
+            test "$PPI_AUTH_POST" = 'OK'
+          fi
 
           ENV_POST="$(sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_observer | grep -E '^MARKET_(OPEN|CLOSE)_(HOUR|MINUTE)=' | sort | tr '\n' '|')"
           echo "MARKET_ENV_POST=$ENV_POST"
