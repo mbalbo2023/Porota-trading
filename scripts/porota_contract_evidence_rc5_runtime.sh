@@ -41,14 +41,16 @@ print(json.dumps({'quick_check':quick,'mode':row[0] if row else None,'real_order
 PY
 )" || fail_closed 3 OBSERVER_PREFLIGHT_FAILED
 
-PRECHECK="$preflight" python3 - <<'PY' || exit 3
+if ! PRECHECK="$preflight" python3 - <<'PY'
 import json, os, sys
 try: d=json.loads(os.environ['PRECHECK'])
 except Exception: sys.exit(1)
 if d.get('quick_check')!='ok' or d.get('mode')!='PRODUCTION_PAPER' or int(d.get('real_orders_sent') or 0)!=0:
     sys.exit(1)
 PY
-if [[ $? -ne 0 ]]; then fail_closed 3 OBSERVER_SAFETY_INVARIANT_FAILED; fi
+then
+  fail_closed 3 OBSERVER_SAFETY_INVARIANT_FAILED
+fi
 
 DUE_JSON="$($DOCKER_BIN exec -i "$CONTAINER" python /app/rc4_contract_due_job.py 2>/dev/null)" || fail_closed 3 DUE_POLICY_FAILED
 export DUE_JSON
@@ -82,10 +84,10 @@ LAST_JSON="$(printf '%s\n' "$RUN_OUT" | tail -n 1)"
 export LAST_JSON RUN_RC
 
 COLLECTION_STATE="$(python3 - <<'PY'
-import json, os, sys
+import json, os
 try: d=json.loads(os.environ['LAST_JSON'])
-except Exception: print('INVALID_JSON'); sys.exit(0)
-print(str(d.get('state') or 'UNKNOWN'))
+except Exception: print('INVALID_JSON')
+else: print(str(d.get('state') or 'UNKNOWN'))
 PY
 )"
 
