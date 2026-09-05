@@ -41,7 +41,6 @@ BYMA_HOURS_SOURCE = (
 BYMA_HOURS_SOURCE_DATE = date(2026, 9, 1)
 BYMA_HOURS_COMMUNICATION = "19016"
 BYMA_CURRENT_HOURS_PAGE = "https://www.byma.com.ar/mercado/horarios"
-BYMA_OPTIONS_SOURCE = "https://www.byma.com.ar/productos/productos-financieros/opciones"
 
 # Ventana operacional RC5 del simulador spot. Intervalo half-open: 17:00 ya no
 # admite nuevas evaluaciones regulares. El warm-up 10:15 es interno de POROTA,
@@ -114,6 +113,7 @@ def session_for(market: str, family: str) -> MarketSession | None:
 
 
 def phase_for(session: MarketSession | None, now: datetime | None = None) -> str:
+    """Pure clock phase. Calendar admission is market-specific."""
     if session is None:
         return "UNKNOWN"
     local = (now or datetime.now(TZ)).astimezone(TZ)
@@ -125,8 +125,20 @@ def phase_for(session: MarketSession | None, now: datetime | None = None) -> str
     return "CLOSED"
 
 
+def _byma_business_day(local: datetime) -> bool:
+    try:
+        import ak_byma_calendar as calendar
+        return bool(calendar.es_dia_habil_operativo(local.date()))
+    except Exception:
+        # Fallback conservador ante indisponibilidad del calendario versionado.
+        return local.weekday() < 5
+
+
 def byma_paper_spot_phase(now: datetime | None = None) -> str:
-    return phase_for(BYMA_PAPER_SPOT, now)
+    local = (now or datetime.now(TZ)).astimezone(TZ)
+    if not _byma_business_day(local):
+        return "CLOSED"
+    return phase_for(BYMA_PAPER_SPOT, local)
 
 
 def byma_paper_spot_open(now: datetime | None = None) -> bool:
@@ -147,7 +159,4 @@ def byma_schedule_status() -> dict:
         "extended_sessions_enabled": False,
         "unverified_special_sessions": "FAIL_CLOSED",
         "public_attachment_status": "MISLINKED_UNRELATED_PDF_OBSERVED_2026-09-05",
-        "options_expiry_trading_until": "15:30",
-        "options_expiry_instruction_until": "15:59",
-        "options_source": BYMA_OPTIONS_SOURCE,
     }
