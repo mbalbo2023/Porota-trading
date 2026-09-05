@@ -11,7 +11,7 @@ permissions:
 jobs:
   extraer:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Descargar tabla oficial vigente de BYMA
         shell: bash
@@ -26,16 +26,33 @@ jobs:
           test "$(head -c 5 /tmp/byma19016.pdf)" = '%PDF-'
           echo "PDF_BYTES=$(wc -c </tmp/byma19016.pdf)"
           echo "PDF_SHA256=$(sha256sum /tmp/byma19016.pdf | awk '{print $1}')"
-          file /tmp/byma19016.pdf
+          pdfinfo /tmp/byma19016.pdf | grep -E '^(Pages|Page size|PDF version):'
 
-      - name: Extraer texto sin OCR
+      - name: Intentar texto nativo y usar OCR sólo si es imagen
         shell: bash
         run: |
           set -euo pipefail
-          command -v pdftotext >/dev/null
-          pdftotext -layout /tmp/byma19016.pdf /tmp/byma19016.txt
-          test -s /tmp/byma19016.txt
-          echo "TEXT_LINES=$(wc -l </tmp/byma19016.txt)"
+          pdftotext -layout /tmp/byma19016.pdf /tmp/native.txt || true
+          if [ -s /tmp/native.txt ]; then
+            cp /tmp/native.txt /tmp/final.txt
+            echo 'EXTRACTION=NATIVE_TEXT'
+          else
+            echo 'EXTRACTION=OCR_IMAGE_ONLY'
+            command -v pdftoppm >/dev/null
+            command -v tesseract >/dev/null
+            mkdir -p /tmp/pages /tmp/ocr
+            pdftoppm -r 220 -png /tmp/byma19016.pdf /tmp/pages/page >/dev/null 2>&1
+            : > /tmp/final.txt
+            n=0
+            for img in /tmp/pages/page-*.png; do
+              n=$((n+1))
+              out="/tmp/ocr/page_${n}"
+              tesseract "$img" "$out" -l eng --psm 6 >/dev/null 2>&1
+              printf '\n===== PAGE %02d =====\n' "$n" >> /tmp/final.txt
+              cat "${out}.txt" >> /tmp/final.txt
+            done
+          fi
+          echo "TEXT_LINES=$(wc -l </tmp/final.txt)"
           echo '--- BYMA 19016 EXTRACT BEGIN ---'
-          cat /tmp/byma19016.txt
+          sed -n '1,1600p' /tmp/final.txt
           echo '--- BYMA 19016 EXTRACT END ---'
