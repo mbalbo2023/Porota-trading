@@ -31,6 +31,7 @@ from dd_history_metrics_hf6 import observer_history_metrics, v2_store_metrics, e
 from df_daily_operation_summary_hf6 import summarize as daily_operation_summaries
 from dg_dashboard_daily_result_ux_hf6 import daily_results_html, report_cards_html, RESPONSIVE_CSS
 from dh_dashboard_compact_lists_hf6 import COMPACT_CSS, pager_html
+from ei_dashboard_table_accessibility_rc5 import TABLE_A11Y_CSS, TABLE_A11Y_SCRIPT
 import eb_dashboard_live_policy_hf2 as live_policy
 from da_dashboard_ux_hf6 import (TOP_NAV, TRADING_NAV, FAMILY_GROUPS, FAMILY_LABELS, top_nav_html, trading_nav_html, families_for_group)
 from db_dashboard_logs_hf6 import discover_sources, primary_source, source_by_id, tail_lines
@@ -307,11 +308,14 @@ def _document(title, body, refresh=REFRESH_SECONDS):
         script = f"""<script>(function(){{
         const seconds={interval};
         async function refreshPorota(){{
+          const active=document.activeElement;
           if(document.hidden || document.querySelector('dialog[open]') ||
-             document.activeElement?.closest('.trade-body')) return;
+             active?.matches('a,button,input,select,textarea,summary') ||
+             active?.closest('.trade-body,.porota-progressive-controls,.compact-pager')) return;
           const opened=[...document.querySelectorAll('details.paper-trade[open]')]
             .map(x=>x.querySelector('[data-trade-id]')?.dataset.tradeId).filter(Boolean);
           const y=window.scrollY;
+          const activeId=active?.id || '';
           try{{
             const response=await fetch(location.href,{{headers:{{'X-Porota-Partial':'1'}},cache:'no-store'}});
             if(!response.ok) return;
@@ -328,6 +332,10 @@ def _document(title, body, refresh=REFRESH_SECONDS):
               if(node)node.open=true;
             }});
             window.scrollTo(0,y);
+            if(activeId){{
+              const replacement=document.getElementById(activeId);
+              if(replacement) replacement.focus({{preventScroll:true}});
+            }}
           }}catch(_error){{}}
         }}
         window.setInterval(refreshPorota,seconds*1000);
@@ -337,8 +345,8 @@ def _document(title, body, refresh=REFRESH_SECONDS):
                 "href='javascript:window.refreshPorota?window.refreshPorota():location.reload()' id='actualizar-pagina'>"
                 "🔄 Actualizar página</a></div>")
     return ("<!doctype html><html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-            f"<title>{_e(title)}</title>{THEME}{RESPONSIVE_CSS}{COMPACT_CSS}</head><body id='top'>{_nav()}{mode_banner()}"
-            f"<main class='paper-page'>{controls}{body}</main><footer class='paper-footer'><a class='up-link' href='#top'>↑ Ir al principio</a></footer>{script}</body></html>")
+            f"<title>{_e(title)}</title>{THEME}{RESPONSIVE_CSS}{COMPACT_CSS}{TABLE_A11Y_CSS}</head><body id='top'>{_nav()}{mode_banner()}"
+            f"<main class='paper-page'>{controls}{body}</main><footer class='paper-footer'><a class='up-link' href='#top'>↑ Ir al principio</a></footer>{script}{TABLE_A11Y_SCRIPT}</body></html>")
 
 
 def _canonicalize(content, path=""):
