@@ -1,0 +1,52 @@
+name: RC5 - aplicar métricas freshness históricos
+
+on:
+  push:
+    branches:
+      - candidate/rc5-history-freshness-metrics-20260905
+    paths:
+      - .github/workflows/rc5-apply-history-freshness-metrics.yml
+      - scripts/rc5_apply_history_freshness_dashboard.py
+      - ek_history_freshness_metrics_rc5.py
+
+permissions:
+  contents: write
+
+jobs:
+  aplicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/rc5-history-freshness-metrics-20260905
+          fetch-depth: 0
+
+      - name: Aplicar parche exacto
+        run: python scripts/rc5_apply_history_freshness_dashboard.py
+
+      - name: Validar sintaxis y contratos
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile bg_paper_dashboard.py ek_history_freshness_metrics_rc5.py
+          python - <<'PY'
+          import importlib.util
+          spec=importlib.util.spec_from_file_location('t','tests/test_history_freshness_metrics_rc5.py')
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          mod.test_freshness_metric_contract()
+          mod.test_dashboard_separates_any_depth_and_freshness()
+          print('HISTORY_FRESHNESS_DASHBOARD_CONTRACT=OK')
+          PY
+          git diff --check
+
+      - name: Commit del wiring probado
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Porota RC5 Automation'
+          git config user.email '151845499+mbalbo2023@users.noreply.github.com'
+          git add bg_paper_dashboard.py tests/test_history_freshness_metrics_rc5.py
+          git commit -m 'feat(rc5): mostrar históricos freshness-qualified'
+          git push origin HEAD:candidate/rc5-history-freshness-metrics-20260905
