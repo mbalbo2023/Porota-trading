@@ -76,5 +76,10 @@ def test_release_version_and_image_are_consistent():
     from _version import VERSION, IMAGE
     assert dashboard.VERSION == o_dashboard.VERSION == VERSION
     assert workspace.IMAGE == IMAGE
-    compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
-    assert compose.count(IMAGE) == 2
+    root = Path(__file__).resolve().parents[1]
+    compose = (root / "docker-compose.yml").read_text()
+    mode = (root / "porota_mode_manager.py").read_text()
+    assert "NO es el contrato canónico de PRODUCTION_PAPER" in compose
+    assert "from cg_paper_workspace import DB_ENV, CONTAINER_DB, IMAGE" in mode
+    assert 'IMAGE, "o_dashboard.py"' in mode
+    assert 'IMAGE, "bv_paper_runtime.py"' in mode

@@ -1225,24 +1225,57 @@ def health_page():
         info=rc4_health_explain.classify(item.get('state'),item.get('checked'),expected,item.get('detail',''))
         cause=info.get('cause')
         age=info.get('age_seconds')
+        key=str(item.get('key') or item.get('component') or item.get('name') or '').upper()
+        raw_state=str(item.get('state') or 'GRIS').upper()
+        semantic_state = raw_state
+        semantic_cause = cause
         action=("Revisar scheduler/evidence source" if cause=='RETRASADO' else
                 "Revisar error" if cause=='ERROR' else
                 "Esperar primera muestra" if cause=='NUNCA_EJECUTADO' else
                 "No requiere acción" if cause in {'OK','NO_APLICA'} else "Revisar degradación")
+
+        if raw_state == 'AMARILLO' and key in {'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST'}:
+            semantic_state='GRIS'
+            semantic_cause='EN_PROGRESO_COBERTURA_PARCIAL'
+            action='Sin acción mientras la ingesta avance según scheduler'
+        elif raw_state == 'AMARILLO' and key == 'PAPER_SIGNAL_ROTATION':
+            semantic_state='GRIS'
+            semantic_cause='FOCO_CUBIERTO_ROTACION_AMPLIADA_PARCIAL'
+            action='Informativo; el foco operativo sigue cubierto'
+        elif key == 'BYMA_INSTRUMENTS_API' and raw_state in {'GRIS','AMARILLO'}:
+            semantic_state='GRIS'
+            semantic_cause='NO_UTILIZADO_REQUIERE_PLAN'
+            action='No es falla del runtime'
+        elif key == 'ROFEX_MARKETDATA' and raw_state in {'GRIS','AMARILLO'}:
+            semantic_state='GRIS'
+            semantic_cause='CONTEXTO_NO_HABILITADO_PAPER'
+            action='Informativo; futuros siguen fail-closed'
         rows.append(
-            f"<tr><td><b>{_e(item['name'])}</b></td><td>{_health_status(item['state'])}</td>"
-            f"<td><b>{_e(cause)}</b><br><span class='paper-muted'>edad {_e('s/d' if age is None else f'{age:.0f}s')} · {_e(action)}</span></td>"
+            f"<tr><td><b>{_e(item['name'])}</b></td><td>{_health_status(semantic_state)}</td>"
+            f"<td><b>{_e(semantic_cause)}</b><br><span class='paper-muted'>edad {_e('s/d' if age is None else f'{age:.0f}s')} · {_e(action)}</span></td>"
             f"<td>{_e(item['detail'])}</td><td>{_local_time(item['checked'])}</td>"
             f"<td>{_local_time(item['last_success'])}</td><td>{_e(item['next_check'])}</td>"
             f"<td>{_e(item['mode'])}</td><td>{_e(item['use'])}</td></tr>")
     applicable = [item for item in components if item["applicable"]]
     red = sum(item["state"] == "ROJO" for item in applicable)
-    pending = sum(item["state"] in {"PENDIENTE", "AMARILLO"} for item in applicable)
+    neutral_partial_keys={'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST','PAPER_SIGNAL_ROTATION',
+                          'BYMA_INSTRUMENTS_API','ROFEX_MARKETDATA'}
+    pending = sum(
+        item["state"] in {"PENDIENTE","AMARILLO"} and
+        str(item.get('key') or item.get('component') or item.get('name') or '').upper() not in neutral_partial_keys
+        for item in applicable
+    )
+    informational = sum(
+        item["state"] in {"AMARILLO","GRIS"} and
+        str(item.get('key') or item.get('component') or item.get('name') or '').upper() in neutral_partial_keys
+        for item in applicable
+    )
     summary = ("VERDE: verificación exitosa. RETRASADO: evidencia más vieja que su cadencia esperada. "
-               "DEGRADADO: existe muestra parcial. NUNCA_EJECUTADO: falta primera evidencia. "
-               "NO_APLICA: feature/política apagada o fuera de alcance; no es una falla.")
+               "EN PROGRESO/PARCIAL: cobertura o rotación incompleta sin implicar caída del proceso. "
+               "NO UTILIZADO/CONTEXTO: fuente deliberadamente no operativa para PAPER. "
+               "NUNCA_EJECUTADO: falta primera evidencia. NO_APLICA: fuera de alcance; no es una falla.")
     body = (f"<h1>Salud de APIs y fuentes</h1><div class='paper-notice'><b>Resumen:</b> "
-            f"{red} en rojo y {pending} pendientes/degradadas entre fuentes aplicables. {_e(summary)}</div>"
+            f"{red} en rojo, {pending} pendientes/requieren atención y {informational} informativas entre fuentes aplicables. {_e(summary)}</div>"
             "<p class='paper-muted'>Abrir esta pantalla no consume APIs. Cada amarillo explica causa, edad y acción.</p>"
             "<div class='paper-card'><table class='paper-table'><tr><th>API / fuente</th><th>Estado</th><th>Diagnóstico</th>"
             "<th>Detalle</th><th>Último reporte / chequeo</th><th>Último éxito</th><th>Próximo chequeo</th>"
@@ -1276,14 +1309,19 @@ def history_page():
     history_count=int(store_v2.get('identities') or 0)
     history_rows=int(store_v2.get('canonical_rows') or 0)
     history_pct=min(100.0,history_count/max(1,history_target)*100) if history_target else 0.0
-    target_label=f"{history_count}/{history_target}" if history_target else f"{history_count}/objetivo dinámico pendiente"
-    coverage_detail=(f"{history_pct:.1f}% · {history_rows} filas canónicas · objetivo derivado del universo AVAILABLE"
+    coverage_complete=bool(history_target and history_count>=history_target)
+    coverage_state_label='COMPLETA' if coverage_complete else 'EN PROGRESO'
+    target_label=(f"{coverage_state_label} · {history_count}/{history_target}"
+                  if history_target else f"EN PROGRESO · {history_count}/objetivo dinámico pendiente")
+    coverage_detail=(f"{history_pct:.1f}% · {history_rows} filas canónicas · cobertura parcial incremental; objetivo derivado del universo AVAILABLE"
+                     if history_target and not coverage_complete else
+                     f"{history_pct:.1f}% · {history_rows} filas canónicas · objetivo dinámico cubierto"
                      if history_target else f"{history_rows} filas; esperando universo dinámico")
     cards="".join((
         _card("Catálogo PPI",catalog,"Inventario PPI observado; no equivale a READY PAPER","green" if catalog else "gray"),
         _card("Universo elegible",eligible,"Elegible para motor PAPER; distinto del universo histórico","green" if eligible else "gray"),
         _card("Cobertura histórica",target_label,coverage_detail,
-              "green" if history_target and history_count>=history_target else "yellow"),
+              "green" if coverage_complete else "gray"),
         _card("Historia efectiva",f"{store_v2.get('canonical_rows',0)} filas",
               f"capa {store_v2.get('layer','V2')} · {store_v2.get('reason','OK')}",
               "green" if store_v2.get('available') else "yellow"),
@@ -1291,7 +1329,13 @@ def history_page():
         _card("Última fecha PPI legacy",_e(last_market),"Dato de production_history; History Store v2 puede contener otras fuentes","gray"),
         _card("Última corrida PPI",_local_time(last_attempt),"La cadencia real es por fuente; ver Sistema → Scheduler","gray"),
         _card("Última ingesta PPI exitosa",_local_time(last_success),"Una fuente puede quedar parcial sin bloquear otras fuentes/familias","green" if last_success else "yellow")))
-    sync_rows="".join(f"<tr><td>{_e(r['source'])}</td><td>{_status(r['status'])}</td><td>{_local_time(r['last_attempt_at'])}</td><td>{_local_time(r['last_success_at'])}</td><td>{_e(r['items'])}</td><td>{_e(r['detail'])}</td></tr>" for r in sync) or "<tr><td colspan='6'>Sin corridas registradas.</td></tr>"
+    def _history_sync_state(row):
+        raw=str(row.get('status') or '').upper()
+        source=str(row.get('source') or '').upper()
+        if raw=='AMARILLO' and source in {'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST'}:
+            return 'EN_PROGRESO'
+        return raw
+    sync_rows="".join(f"<tr><td>{_e(r['source'])}</td><td>{_status(_history_sync_state(r))}</td><td>{_local_time(r['last_attempt_at'])}</td><td>{_local_time(r['last_success_at'])}</td><td>{_e(r['items'])}</td><td>{_e(r['detail'])}</td></tr>" for r in sync) or "<tr><td colspan='6'>Sin corridas registradas.</td></tr>"
     family_history_rows=[]
     by_family=store_v2.get('by_family',{}) if isinstance(store_v2,dict) else {}
     targets=dynamic.get('target_by_family',{}) if isinstance(dynamic,dict) else {}
@@ -1394,8 +1438,14 @@ def learning_page():
         f"<td>{_money(item['empirical_expectancy'])}</td><td>{_e(item['profit_factor'] or 's/d')}</td>"
         f"<td>{_status(item['sample_state'])}</td></tr>" for item in expectancy
     ) or "<tr><td colspan='8'>Sin operaciones cerradas para calcular resultados empíricos.</td></tr>"
+    latest_label=(_rows("SELECT MAX(label_timestamp) latest FROM paper_learning_samples") or [{}])[0].get('latest') if _table('paper_learning_samples') else None
+    latest_close=(data["closed"][0].get('closed_at') if data["closed"] else None)
     cards="".join((
+        _card("Aprendizaje EVENT-DRIVEN","ACTIVO",
+              "Sólo crea nuevas etiquetas cuando existen nuevos cierres PAPER; ausencia de cierres no es staleness","gray"),
         _card("Muestras cerradas",len(data["closed"]),"Etiquetas para aprendizaje","green" if data["closed"] else "gray"),
+        _card("Último cierre PAPER",_local_time(latest_close),"Fuente que habilita una nueva etiqueta","gray"),
+        _card("Última etiqueta",_local_time(latest_label),"Puede permanecer sin cambios si no hubo cierres nuevos","gray"),
         _card("Win rate","s/d" if wr is None else f"{wr:.1f}%",f"{wins}/{len(data['closed'])}","green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),
         *(_card(f"Resultado {item['currency']}", _money(item["net_total"]),
                 "Neto de costos y slippage PAPER en su propia moneda",
@@ -1403,7 +1453,8 @@ def learning_page():
           for item in expectancy),
     ))
     body=(f"<h1>Aprendizaje del sistema</h1><div class='paper-grid'>{cards}</div>"
-          "<div class='paper-notice'>Cada compra simulada conserva señal, economía, riesgo, liquidez, resultado y lección. "
+          "<div class='paper-notice'><b>Aprendizaje event-driven.</b> Cada compra simulada conserva señal, economía, riesgo, liquidez, resultado y lección. "
+          "Sólo un nuevo cierre PAPER produce una nueva etiqueta; por eso una etiqueta antigua sin cierres posteriores no significa pipeline detenido. "
           "La expectativa mostrada es descriptiva y neta sobre fills PAPER cerrados; no prueba ventaja futura, no bloquea operaciones y no cambia parámetros automáticamente.</div>"
           "<div class='paper-card'><h2>Expectativa empírica por moneda — últimas 100 cerradas</h2>"
           "<table class='paper-table'><tr><th>Moneda</th><th>Muestras</th><th>Win rate</th><th>Ganancia media</th>"
@@ -1568,7 +1619,15 @@ def telegram_page():
 def live_page():
     data=snapshot(); state=data['state']; now=datetime.now(TZ)
     positions=data.get('open',[])
-    closed=data.get('closed',[])[:20]
+    closed_today=[]
+    for row in data.get('closed',[]):
+        try:
+            closed_at=aware_datetime(row.get('closed_at')).astimezone(TZ)
+        except Exception:
+            continue
+        if closed_at.date()==now.date():
+            closed_today.append(row)
+    closed=closed_today[:20]
     intents={r.get('paper_id'):r for r in data.get('exit_intents',[])}
 
     gates=[]
@@ -1624,19 +1683,36 @@ def live_page():
             f"<h3>Lección aprendida</h3><p class='{cls}'>{_e(_trade_lesson(pos))}</p></div></details>"
         )
 
+    # paper_decisions es el stream vivo. trade_gate_evaluations es event-driven:
+    # sólo existe después de una decisión BUY que alcanzó los gates. Un gate viejo
+    # nunca debe ocultar HOLD/abstenciones nuevas del motor.
     decision_rows=[]
-    for row in gates[:50]:
-        result=str(row.get('final_result') or '')
-        label='ACEPTADA' if result=='OPENED_SIMULATED' else 'RECHAZADA/BLOQUEADA'
+    live_decisions=(_rows(
+        "SELECT decided_at,symbol,action,score,reason FROM paper_decisions "
+        "ORDER BY decided_at DESC LIMIT 50"
+    ) if _table('paper_decisions') else [])
+    for row in live_decisions:
+        action=str(row.get('action') or '').upper()
+        gate=gate_by_symbol.get(row.get('symbol')) if action=='BUY' else None
+        technical=_status(gate.get('technical_gate')) if gate else '—'
+        patrimonial=_status(gate.get('patrimonial_gate')) if gate else '—'
+        explanation=str(row.get('reason') or '')
+        if gate and gate.get('reason') and str(gate.get('reason')) not in explanation:
+            explanation=(explanation+' · gate: '+str(gate.get('reason'))).strip(' ·')
         decision_rows.append(
-            f"<tr><td>{_local_time(row.get('evaluated_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
-            f"<td>{_status(label)}</td><td>{_status(row.get('technical_gate'))}</td>"
-            f"<td>{_status(row.get('patrimonial_gate'))}</td><td>{_e(row.get('reason'))}</td></tr>"
+            f"<tr><td>{_local_time(row.get('decided_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+            f"<td>{_status(action)}</td><td>{technical}</td><td>{patrimonial}</td>"
+            f"<td>{_e(explanation)}</td></tr>"
         )
-    if not decision_rows and _table('paper_decisions'):
-        for row in _rows("SELECT decided_at,symbol,action,reason FROM paper_decisions ORDER BY decided_at DESC LIMIT 50"):
-            decision_rows.append(f"<tr><td>{_local_time(row.get('decided_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
-                                 f"<td>{_status(row.get('action'))}</td><td>—</td><td>—</td><td>{_e(row.get('reason'))}</td></tr>")
+    if not decision_rows:
+        for row in gates[:50]:
+            result=str(row.get('final_result') or '')
+            label='ACEPTADA' if result=='OPENED_SIMULATED' else 'RECHAZADA/BLOQUEADA'
+            decision_rows.append(
+                f"<tr><td>{_local_time(row.get('evaluated_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+                f"<td>{_status(label)}</td><td>{_status(row.get('technical_gate'))}</td>"
+                f"<td>{_status(row.get('patrimonial_gate'))}</td><td>{_e(row.get('reason'))}</td></tr>"
+            )
 
     settlement_diag_html=""
     try:
@@ -1646,22 +1722,28 @@ def live_page():
         diag=settlement_diag.snapshot(_SettlementStore(),as_of=now.isoformat())
         counts=diag.get('counts',{}) if isinstance(diag,dict) else {}
         rows_diag=diag.get('rows',[]) if isinstance(diag,dict) else []
+        active_states={'PENDING_EXPECTED','PENDING_CONFIRMATION'}
+        active_pending=[r for r in rows_diag if str(r.get('state') or '') in active_states]
+        released_count=(int(counts.get('AVAILABLE_NOW',0) or 0)+
+                        int(counts.get('AVAILABLE_AFTER_FULL_SETTLEMENT_DATE',0) or 0))
         items=[]
-        for item in rows_diag[:20]:
+        for item in active_pending[:20]:
             items.append(
                 f"<tr><td>{_e(item.get('ticker'))}</td><td>{_e(item.get('currency'))}</td>"
                 f"<td>{_e(item.get('settlement'))}</td><td>{_status(item.get('state'))}</td>"
                 f"<td>{_e(item.get('expected_business_date') or '—')}</td>"
-                f"<td>{_e(item.get('available_at') or 'PENDING_CONFIRMATION')}</td>"
+                f"<td>{_e(item.get('available_at') or 'PENDIENTE')}</td>"
                 f"<td>{_e(item.get('net_proceeds'))}</td></tr>")
         settlement_diag_html=(
             "<div class='paper-card'><h2>Liquidaciones pendientes</h2>"
             f"<p>Diagnóstico: <b>{_e(diag.get('diagnosis','UNKNOWN'))}</b> · "
             f"esperadas {_e(counts.get('PENDING_EXPECTED',0))} · "
             f"confirmación pendiente {_e(counts.get('PENDING_CONFIRMATION',0))} · "
-            f"disponibles {_e(counts.get('AVAILABLE_NOW',0))}.</p>"
-            "<p class='paper-muted'>T+1 muestra fecha hábil esperada pero no inventa hora de acreditación; "
-            "la caja no se libera hasta evidencia contractual/ledger.</p>"
+            f"ya liberadas/no listadas {_e(released_count)}.</p>"
+            "<p class='paper-muted'>En PAPER, T+1 sin cutoff contractual confirmado permanece bloqueado "
+            "durante toda la fecha hábil esperada. Si esa fecha puede demostrarse, al comenzar el día "
+            "calendario siguiente deja de contarse como pendiente por la frontera conservadora; no se "
+            "inventa una hora intradía del broker.</p>"
             "<table class='paper-table'><tr><th>Ticker</th><th>Moneda</th><th>Plazo</th><th>Estado</th>"
             "<th>Fecha hábil esperada</th><th>Disponible desde</th><th>Neto</th></tr>"+
             (''.join(items) or "<tr><td colspan='7'>Sin liquidaciones pendientes.</td></tr>")+"</table></div>")
@@ -1697,10 +1779,12 @@ def live_page():
     body=(f"<h1>En vivo — operaciones primero</h1><div class='paper-grid'>{cards}</div>"
           "<div class='paper-card'><h2>1. Operaciones abiertas ahora</h2><p class='paper-muted'>P&amp;L, marca y freshness visibles; abrir la flecha para gates y variables.</p>"+
           (''.join(open_details) or "<p>Sin posiciones abiertas.</p>")+"</div>"
-          "<div class='paper-card'><h2>2. Operaciones cerradas recientes</h2>"+
-          (''.join(closed_rows) or "<p>Sin cierres recientes.</p>")+"</div>"+
+          "<div class='paper-card'><h2>2. Operaciones cerradas hoy</h2>"+
+          (''.join(closed_rows) or "<p>Sin operaciones cerradas hoy.</p>")+"</div>"+
           settlement_diag_html+
-          "<div class='paper-card'><h2>3. Decisiones — por qué aceptó o rechazó</h2><table class='paper-table'>"
+          "<div class='paper-card'><h2>3. Decisiones en vivo — BUY / HOLD / abstenciones</h2>"
+          "<p class='paper-muted'>Fuente primaria: paper_decisions. Los gates técnico/patrimonial son event-driven y sólo aparecen cuando una señal BUY alcanza esa etapa; un gate antiguo no significa que el motor esté detenido.</p>"
+          "<table class='paper-table'>"
           "<tr><th>Hora</th><th>Instrumento</th><th>Decisión</th><th>Técnico</th><th>Patrimonial</th><th>Explicación</th></tr>"+
           (''.join(decision_rows) or "<tr><td colspan='6'>Sin decisiones.</td></tr>")+"</table></div>"
           "<div class='paper-card'><h2>4. Scalping</h2>"
@@ -2177,7 +2261,7 @@ def validation_page():
         mode=modes.get(modekey,'UNKNOWN')
         state='BINDING_ACTIVE' if mode=='BINDING' else 'COLLECTING_EVIDENCE'
         cards.append(_card(label,state,f"modo {mode} · would_block {would} · evidencia insuficiente {insufficient}",
-                           'green' if mode=='BINDING' else 'yellow'))
+                           'green' if mode=='BINDING' else 'gray'))
     body=("<h1>Validación — SHADOW → BINDING</h1>"
           "<div class='paper-warning'><b>El dashboard nunca promociona una policy.</b> Sólo puede mostrar "
           "ELIGIBLE_FOR_BINDING_DECISION; la activación requiere cambio versionado, tests, auditoría y autorización.</div>"

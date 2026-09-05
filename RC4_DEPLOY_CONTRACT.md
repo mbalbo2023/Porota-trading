@@ -1,14 +1,14 @@
 # POROTA TRADING RC4 — contrato canónico de testing/deploy
 
-**Estado:** TEST-READY candidate. Este documento no autoriza deploy.
+**Estado:** RC4 HF2 candidato. Este documento no autoriza deploy por sí solo. La ejecución de HF2 requiere autorización explícita del operador; esa autorización fue otorgada para esta ejecución. Producción real permanece bloqueada.
 
 ## Base reproducible
 
 - Baseline operativo: `17.0.0-rc3-hf6-v2-candidate1`.
 - Source congelado del builder baseline: `a03cf47d5db01d8990a99f3f7836879c0606771b`.
 - SHA256 ZIP operative-audit baseline: `8e8c7a2596e6575c5e680d6e5c01a79ebb3ac1e89a26f11f7ba5bb4e1cd38499`.
-- RC4 testing version: `17.0.0-rc4-test-ready1`.
-- Imagen esperada: `porota-trading-bot:17.0.0-rc4-test-ready1`.
+- RC4 hotfix version: `17.0.0-rc4-hf2`.
+- Imagen esperada: `porota-trading-bot:17.0.0-rc4-hf2`.
 
 Antes del deploy final, el source RC4 debe quedar committeado/taggeado en Git y la imagen debe construirse **directamente desde ese commit**, sin patchers externos. El commit/digest finales se incorporarán al manifest antes de autorizar deploy.
 
@@ -59,3 +59,16 @@ Antes del deploy final, el source RC4 debe quedar committeado/taggeado en Git y 
 7. imagen construida desde ese commit y digest registrado.
 8. preflight read-only del Droplet.
 9. autorización explícita del operador.
+
+
+## Consolidación HF2
+
+- Contract Evidence same-context runner formalizado en Git.
+- Materialización autenticada conservadora; campos contractuales faltantes no se infieren.
+- Dynamic Contract Evidence: lunes a viernes 10:40–17:00 AR.
+- Static/full-browser: fuera de la ventana dinámica, sólo días hábiles; fin de semana sin browser autenticado.
+- `/en-vivo`: `paper_decisions` es la fuente primaria; gates son secundarios/event-driven para BUY.
+- `/en-vivo`: operaciones cerradas limita el drill-down al día local actual; las abiertas permanecen visibles hasta cierre.
+- Liquidaciones que ya pasaron la frontera conservadora T+1 dejan de listarse como pendientes.
+- Históricos parciales y aprendizaje event-driven se presentan como estados informativos, no como fallas.
+- Ningún cambio habilita órdenes reales ni autoactivación por Contract Evidence.

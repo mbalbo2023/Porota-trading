@@ -1,5 +1,5 @@
-"""Identidad reproducible de POROTA RC4 HF1 para PRODUCTION_PAPER."""
-VERSION = "17.0.0-rc4-hf1"
+"""Identidad reproducible de POROTA RC4 HF2 para PRODUCTION_PAPER."""
+VERSION = "17.0.0-rc4-hf2"
 IMAGE = f"porota-trading-bot:{VERSION}"
 
 # HF6 historical audited base retained for traceability.
@@ -10,6 +10,8 @@ RELEASE_SOURCE_COMMIT = "a03cf47d5db01d8990a99f3f7836879c0606771b"
 OPERATIVE_BASE_SHA256 = "8e8c7a2596e6575c5e680d6e5c01a79ebb3ac1e89a26f11f7ba5bb4e1cd38499"
 # RC4 test-ready1 exact deployed base for this hotfix.
 RC4_HF1_BASE_COMMIT = "75c9ddf15e3b19dd4839df8cce8bb72b51a2c629"
+# Exact HF1 commit from which the HF2 consolidation was cut.
+RC4_HF2_BASE_COMMIT = "3e60501c4031b1c525e7d7515ed166c6712ae23d"
 
 MODE = "PRODUCTION_PAPER"
 EXECUTION = "SIMULATED"

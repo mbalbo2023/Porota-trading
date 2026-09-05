@@ -1,11 +1,15 @@
 """RC4 due-policy for Contract Evidence jobs.
 
-Single source of cadence truth is co_contract_ingestion_policy_hf6. This module
-only decides due/not-due; it performs no HTTP, login or broker operation.
+Single source of cadence truth is co_contract_ingestion_policy_hf6.
+This module adds the operational time-window policy only; it performs no HTTP,
+login, broker operation or database mutation.
 """
 from __future__ import annotations
-from datetime import datetime, timezone
-from co_contract_ingestion_policy_hf6 import ttl_seconds
+
+from datetime import datetime, time, timezone
+from zoneinfo import ZoneInfo
+
+from co_contract_ingestion_policy_hf6 import CADENCES, ttl_seconds
 
 JOB_TO_CADENCE = {
     "CONTRACT_EVIDENCE_DYNAMIC": "OPERABILITY",
@@ -16,12 +20,50 @@ JOB_TO_CADENCE = {
     "CONTRACT_EVIDENCE_FULL_BROWSER": "FULL_BROWSER_AUDIT",
 }
 
+AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+DYNAMIC_START = time(10, 40)   # preapertura incluida
+DYNAMIC_END = time(17, 0)      # fin de consultas dinámicas repetitivas
+
+
 def cadence_seconds(job_key: str) -> int:
     return ttl_seconds(JOB_TO_CADENCE[str(job_key)])
 
-def due(last_run_at, job_key, now=None):
-    seconds = cadence_seconds(job_key)
+
+def _local(ref: datetime) -> datetime:
+    if ref.tzinfo is None:
+        ref = ref.replace(tzinfo=timezone.utc)
+    return ref.astimezone(AR_TZ)
+
+
+def window_allows(job_key: str, now=None) -> bool:
+    """Return whether this job is allowed to wake the authenticated browser now.
+
+    Dynamic jobs: weekdays 10:40 <= local time < 17:00 Argentina.
+    Static/full-browser jobs: outside that dynamic window on weekdays only. Their own 1-day /
+    7-day TTL still applies, and weekends never start the authenticated browser.
+    """
     ref = now or datetime.now(timezone.utc)
+    local = _local(ref)
+    cadence_name = JOB_TO_CADENCE[str(job_key)]
+    cadence = CADENCES[cadence_name]
+    clock = local.time().replace(tzinfo=None)
+    weekday = local.weekday() < 5
+
+    if cadence.during_market:
+        return weekday and DYNAMIC_START <= clock < DYNAMIC_END
+
+    # Static evidence/audit is intentionally outside the hot market window,
+    # but never on weekends. Friday post-close is the preferred weekly slot.
+    # TTL remains the primary repetition guard.
+    return weekday and (clock < DYNAMIC_START or clock >= DYNAMIC_END)
+
+
+def due(last_run_at, job_key, now=None):
+    ref = now or datetime.now(timezone.utc)
+    if not window_allows(job_key, ref):
+        return False
+
+    seconds = cadence_seconds(job_key)
     if not last_run_at:
         return True
     try:
