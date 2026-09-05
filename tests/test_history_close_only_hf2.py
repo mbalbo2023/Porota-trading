@@ -50,7 +50,9 @@ def test_open_zero_preserves_close_only_without_inventing_ohlc():
     assert result["full_ohlc_rows"]==0
     assert result["close_only_rows"]==1
     with history.connect() as c:
-        assert c.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()[0]==0
+        tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "history_canonical_v2" in tables:
+            assert c.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()[0]==0
         row=c.execute("SELECT * FROM history_close_canonical_v1").fetchone()
         assert row["date"]=="2026-09-03"
         assert row["close"]==0.21
