@@ -1,5 +1,4 @@
 """RC4-HF2 candidate tests for explicit close-only historical evidence."""
-from datetime import datetime
 import sqlite3
 
 import ct_ppi_history_salvage_hf6 as salvage
@@ -20,9 +19,9 @@ class _NonClosing:
     def __exit__(self,*_): self.connection.commit(); return False
 
 
-def _ingest(payload):
-    observer=MemoryStore()
-    history=MemoryStore()
+def _ingest(payload, *, attempted_at="2026-09-05T12:00:00+00:00", observer=None, history=None):
+    observer=observer or MemoryStore()
+    history=history or MemoryStore()
     result=salvage.ingest_ppi_payload(
         observer,
         symbol="ABC",
@@ -32,7 +31,7 @@ def _ingest(payload):
         payload=payload,
         requested_from="2026-09-01",
         requested_to="2026-09-04",
-        attempted_at="2026-09-05T12:00:00+00:00",
+        attempted_at=attempted_at,
         history_store=history,
     )
     return observer,history,result
@@ -127,3 +126,25 @@ def test_close_only_never_enters_full_ohlc_canonical_table():
         close_dates=[r[0] for r in c.execute("SELECT date FROM history_close_canonical_v1 ORDER BY date")]
     assert full_dates==["2026-09-03"]
     assert close_dates==["2026-09-04"]
+
+
+def test_identical_retry_dedupes_version_and_preserves_original_observed_at():
+    payload=[{
+        "date":"2026-09-04T00:00:00-03:00",
+        "openingPrice":7.11,
+        "max":0,
+        "min":0,
+        "price":7.11,
+        "volume":191.97,
+    }]
+    observer=MemoryStore()
+    history=MemoryStore()
+    _ingest(payload,attempted_at="2026-09-05T12:00:00+00:00",observer=observer,history=history)
+    _ingest(payload,attempted_at="2026-09-05T14:00:00+00:00",observer=observer,history=history)
+    with history.connect() as c:
+        versions=c.execute("SELECT COUNT(*) FROM history_close_versions_v1").fetchone()[0]
+        canonical=c.execute("SELECT observed_at,version_id FROM history_close_canonical_v1").fetchone()
+        version=c.execute("SELECT observed_at FROM history_close_versions_v1 WHERE id=?",(canonical["version_id"],)).fetchone()
+    assert versions==1
+    assert canonical["observed_at"]=="2026-09-05T12:00:00+00:00"
+    assert canonical["observed_at"]==version["observed_at"]
