@@ -1,0 +1,103 @@
+name: Validar release RC5
+
+on:
+  push:
+    branches:
+      - release/v17.0.0-rc5
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc5-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Identidad y árbol limpio
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current || true)" = '' || true
+          test -z "$(git status --porcelain)"
+          git diff --check
+          python - <<'PY'
+          import _version
+          assert _version.VERSION == '17.0.0-rc5'
+          assert _version.IMAGE == 'porota-trading-bot:17.0.0-rc5'
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          print('IDENTIDAD_RC5=GREEN')
+          PY
+
+      - name: Build exacto
+        shell: bash
+        run: docker build --pull=false -t porota-rc5-release:${GITHUB_SHA} .
+
+      - name: Preflight RC5 sin red
+        shell: bash
+        run: |
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            porota-rc5-release:${GITHUB_SHA} \
+            python rc5_release_preflight.py
+
+      - name: Compilación sintáctica sin red
+        shell: bash
+        run: |
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            porota-rc5-release:${GITHUB_SHA} \
+            python -c "from pathlib import Path; [compile(p.read_text(encoding='utf-8'),str(p),'exec') for p in Path('.').rglob('*.py') if '.git' not in p.parts]; print('COMPILACION=GREEN')"
+
+      - name: Suite focal RC5 sin red
+        shell: bash
+        run: |
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint bash \
+            porota-rc5-release:${GITHUB_SHA} -lc '
+              set -euo pipefail
+              files=()
+              for f in \
+                test_hf6_history_data912_v2.py \
+                tests/test_historical_freshness_v1633.py \
+                tests/test_history_close_only_hf2.py \
+                tests/test_dashboard_live_policy_hf2.py \
+                tests/test_dashboard_live_integration_rc5.py \
+                tests/test_forward_lab_metrics_hf2.py \
+                tests/test_contract_evidence_hf6.py \
+                tests/test_contract_evidence_rc5_runtime.py \
+                tests/test_byma_schedule_rc5.py
+              do
+                [ -f "$f" ] && files+=("$f")
+              done
+              [ "${#files[@]}" -gt 0 ]
+              printf "TESTS_FOCALES=%s\n" "${files[*]}"
+              python -m pytest -q -p no:cacheprovider "${files[@]}"
+            '
+
+      - name: Resumen
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### POROTA 17.0.0-rc5 — release gate'
+            echo '- SHA: `${{ github.sha }}`'
+            echo '- Modo: **PRODUCTION_PAPER / SIMULATED**'
+            echo '- Órdenes reales: **BLOCKED**'
+            echo '- PPI durante pruebas: **NO**'
+            echo '- Resultado: **${{ job.status }}**'
+          } >> "$GITHUB_STEP_SUMMARY"
