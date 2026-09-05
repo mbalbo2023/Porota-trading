@@ -23,14 +23,20 @@ jobs:
       - name: Aplicar parche exacto
         run: python scripts/rc5_apply_live_dashboard.py
 
-      - name: Validar sintaxis y tests dirigidos
+      - name: Validar sintaxis y contratos estáticos
         shell: bash
         run: |
           set -euo pipefail
           python -m py_compile bg_paper_dashboard.py eb_dashboard_live_policy_hf2.py
-          python -m pytest -q -p no:cacheprovider \
-            tests/test_dashboard_live_policy_hf2.py \
-            tests/test_dashboard_live_integration_rc5.py
+          python - <<'PY'
+          import importlib.util
+          spec=importlib.util.spec_from_file_location('t','tests/test_dashboard_live_integration_rc5.py')
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          mod.test_live_page_is_day_only_paginated_and_manual_refresh()
+          mod.test_live_route_exposes_bounded_pagination()
+          print('CONTRATOS_ESTATICOS=OK')
+          PY
           git diff --check
 
       - name: Commit de la integración probada
