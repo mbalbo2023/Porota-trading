@@ -1,0 +1,124 @@
+name: Validar candidata RC5
+
+on:
+  pull_request:
+    branches:
+      - candidate/v17.0.0-rc5-integration-20260905
+  workflow_dispatch:
+    inputs:
+      referencia:
+        description: 'Rama, tag o SHA a validar'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc5-validacion-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  validar:
+    name: Validación aislada RC5
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Resolver referencia
+        id: ref
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "valor=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "valor=${{ inputs.referencia }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout exacto
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.valor }}
+          fetch-depth: 0
+
+      - name: Identidad y árbol limpio
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "REFERENCIA=${{ steps.ref.outputs.valor }}"
+          echo "HEAD=$(git rev-parse HEAD)"
+          git status --short
+          test -z "$(git status --porcelain)"
+          git diff --check
+
+      - name: Build exacto de candidata
+        shell: bash
+        run: docker build --pull=false -t porota-rc5-candidate:${GITHUB_SHA} .
+
+      - name: Preflight release sin red
+        shell: bash
+        run: |
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            porota-rc5-candidate:${GITHUB_SHA} \
+            python rc4_release_preflight.py
+
+      - name: Compilación sintáctica sin red
+        shell: bash
+        run: |
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            porota-rc5-candidate:${GITHUB_SHA} \
+            python -c "from pathlib import Path; [compile(p.read_text(encoding='utf-8'),str(p),'exec') for p in Path('.').rglob('*.py') if '.git' not in p.parts]; print('COMPILACION=OK')"
+
+      - name: Suite focal RC5 sin red
+        shell: bash
+        run: |
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint bash \
+            porota-rc5-candidate:${GITHUB_SHA} -lc '
+              set -euo pipefail
+              files=()
+              for f in \
+                test_hf6_history_data912_v2.py \
+                tests/test_historical_freshness_v1633.py \
+                tests/test_history_close_only_hf2.py \
+                tests/test_dashboard_live_policy_hf2.py \
+                tests/test_forward_lab_metrics_hf2.py
+              do
+                [ -f "$f" ] && files+=("$f")
+              done
+              [ "${#files[@]}" -gt 0 ]
+              printf "TESTS_FOCALES=%s\n" "${files[*]}"
+              python -m pytest -q -p no:cacheprovider "${files[@]}"
+            '
+
+      - name: Invariantes PAPER-only
+        shell: bash
+        run: |
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=128m \
+            --entrypoint python \
+            porota-rc5-candidate:${GITHUB_SHA} - <<'PY'
+          import _version
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          print('SEGURIDAD_VERSIONADA=OK')
+          PY
+
+      - name: Resumen
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### POROTA RC5 — validación candidata'
+            echo '- Referencia: `${{ steps.ref.outputs.valor }}`'
+            echo '- PPI: **NO**'
+            echo '- Red dentro de pruebas: **BLOQUEADA**'
+            echo '- Deploy: **NO**'
+            echo '- Resultado: **${{ job.status }}**'
+          } >> "$GITHUB_STEP_SUMMARY"
