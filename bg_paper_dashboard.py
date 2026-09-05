@@ -27,6 +27,7 @@ from bt_caucion_paper import validate_position, pending_proceeds
 from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
 from _version import VERSION
 from dd_history_metrics_hf6 import observer_history_metrics, v2_store_metrics, effective_store_metrics
+from ek_history_freshness_metrics_rc5 import freshness_qualified_metrics
 # HF6_V2_HISTORY_DASHBOARD_PATCH
 from df_daily_operation_summary_hf6 import summarize as daily_operation_summaries
 from dg_dashboard_daily_result_ux_hf6 import daily_results_html, report_cards_html, RESPONSIVE_CSS
@@ -1313,6 +1314,13 @@ def history_page():
             store_v2=effective_store_metrics(c)
     except Exception:
         store_v2=v2_store_metrics()
+    try:
+        with closing(_conn()) as c:
+            fresh_v5=freshness_qualified_metrics(c)
+    except Exception as exc:
+        fresh_v5={"available":False,"reason":type(exc).__name__,"target_total":0,
+                  "fresh_total":0,"fresh_ge30":0,"fresh_ge90":0,"fresh_ge180":0,
+                  "stale_ge90_count":0,"store_latest_date":None}
     history_target=int(dynamic.get('target_total') or 0)
     legacy_history_count=int(history.get('instruments') or 0)
     history_count=int(store_v2.get('identities') or 0)
@@ -1329,10 +1337,22 @@ def history_page():
     cards="".join((
         _card("Catálogo PPI",catalog,"Inventario PPI observado; no equivale a READY PAPER","green" if catalog else "gray"),
         _card("Universo elegible",eligible,"Elegible para motor PAPER; distinto del universo histórico","green" if eligible else "gray"),
-        _card("Cobertura histórica",target_label,coverage_detail,
+        _card("Cobertura histórica ANY",target_label,coverage_detail+" · profundidad/freshness se informan por separado",
               "green" if coverage_complete else "gray"),
+        _card("Historia fresca ≥30",
+              f"{fresh_v5.get('fresh_ge30',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
+              f"FULL_OHLC · última fecha store {_e(fresh_v5.get('store_latest_date'))} · no implica READY PAPER",
+              "green" if fresh_v5.get('available') else "yellow"),
+        _card("Historia fresca ≥90",
+              f"{fresh_v5.get('fresh_ge90',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
+              f"FULL_OHLC + freshness ≤2 ruedas · stale ≥90: {fresh_v5.get('stale_ge90_count',0)}",
+              "green" if fresh_v5.get('available') else "yellow"),
+        _card("Historia fresca ≥180",
+              f"{fresh_v5.get('fresh_ge180',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
+              "FULL_OHLC profundo y fresco; no es precio de ejecución ni autorización PAPER",
+              "green" if fresh_v5.get('available') else "yellow"),
         _card("Historia efectiva",f"{store_v2.get('canonical_rows',0)} filas",
-              f"capa {store_v2.get('layer','V2')} · {store_v2.get('reason','OK')}",
+              f"capa {store_v2.get('layer','V2')} · {store_v2.get('reason','OK')} · ANY no equivale a fresh",
               "green" if store_v2.get('available') else "yellow"),
         _card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,"Ventana rotativa del motor; no limita la cola histórica","green"),
         _card("Última fecha PPI legacy",_e(last_market),"Dato de production_history; History Store v2 puede contener otras fuentes","gray"),
@@ -1359,7 +1379,14 @@ def history_page():
             f"<td>{_e(current.get('rows',0))}</td><td>{_e(current.get('first_date'))}</td>"
             f"<td>{_e(current.get('last_date'))}</td><td>{_e(', '.join(caps.get(family,())) or 'PROBE_REQUIRED')}</td></tr>")
     family_history=''.join(family_history_rows) or "<tr><td colspan='6'>Esperando métricas multi-familia.</td></tr>"
-    body=f"<h1>Históricos y universo</h1><div class='paper-grid'>{cards}</div><div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
+    freshness_notice=(
+        "<div class='paper-notice'><b>Profundidad y freshness son métricas distintas.</b> "
+        f"Fresh FULL_OHLC: ≥30 {fresh_v5.get('fresh_ge30',0)}, ≥90 {fresh_v5.get('fresh_ge90',0)}, "
+        f"≥180 {fresh_v5.get('fresh_ge180',0)} de {fresh_v5.get('target_total') or history_target or '—'} identidades. "
+        f"Hay {fresh_v5.get('stale_ge90_count',0)} identidades con al menos 90 barras pero historia stale; no cuentan como fresh ≥90. "
+        "CLOSE_ONLY se informa por separado y nunca habilita ATR, VWAP, precio de ejecución ni READY PAPER.</div>"
+    )
+    body=f"<h1>Históricos y universo</h1><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
     return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
 
 
