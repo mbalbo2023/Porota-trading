@@ -89,7 +89,8 @@ jobs:
                 tests/test_dashboard_live_policy_hf2.py \
                 tests/test_dashboard_live_integration_rc5.py \
                 tests/test_forward_lab_metrics_hf2.py \
-                tests/test_contract_evidence_rc5_runtime.py
+                tests/test_contract_evidence_rc5_runtime.py \
+                tests/test_byma_schedule_rc5.py
               do
                 [ -f "$f" ] && files+=("$f")
               done

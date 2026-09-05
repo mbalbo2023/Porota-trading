@@ -1,9 +1,8 @@
 """Ventana conservadora del simulador de contado, no calendario universal.
 
-BYMA COM18782: el cierre regular depende de modalidad/segmento. El modelo
-paper se limita a la ventana 11:00-16:55 de contado regular CI/24h; no simula
-subastas, after-market, ruedas concentradas ni horarios de derivados/FCI.
-Antes de ejecución real hay que confirmar segmento y sesión de cada especie.
+RC5 toma la ventana regular del PAPER spot desde ``co_market_sessions_hf6``.
+No simula subastas, sesiones extendidas, after-market ni horarios no verificados.
+La salida EOD conserva buffers propios de riesgo antes del cierre regular.
 """
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
@@ -11,21 +10,27 @@ from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as calendar
 from bs_instrument_contracts import SPOT_FAMILIES, aware_datetime, family_name
+from co_market_sessions_hf6 import (
+    BYMA_HOURS_COMMUNICATION,
+    BYMA_HOURS_SOURCE,
+    BYMA_PAPER_SPOT_CLOSE,
+    BYMA_PAPER_SPOT_OPEN,
+)
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
-SESSION_SOURCE = "PAPER_REGULAR_MODEL; BYMA COM18782 checked 2026-08-28"
+SESSION_SOURCE = f"BYMA COM{BYMA_HOURS_COMMUNICATION}; {BYMA_HOURS_SOURCE}; RC5 PAPER spot regular"
 
 
 @dataclass(frozen=True)
 class PaperSessionPolicy:
-    open_time: time = time(11, 0)
-    close_time: time = time(16, 55)
+    open_time: time = BYMA_PAPER_SPOT_OPEN
+    close_time: time = BYMA_PAPER_SPOT_CLOSE
     no_entry_minutes: int = 30
     exit_minutes: int = 10
     close_at_eod: bool = True
 
     def __post_init__(self):
-        if not time(10, 30) <= self.open_time < self.close_time <= time(16, 55):
+        if not time(10, 30) <= self.open_time < self.close_time <= time(17, 0):
             raise ValueError("Ventana paper fuera del modelo regular conservador")
         span = (datetime.combine(datetime.min.date(), self.close_time) -
                 datetime.combine(datetime.min.date(), self.open_time)).total_seconds() / 60

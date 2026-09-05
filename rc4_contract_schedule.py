@@ -1,8 +1,12 @@
-"""RC4 due-policy for Contract Evidence jobs.
+"""RC4/RC5 due-policy for Contract Evidence jobs.
 
 Single source of cadence truth is co_contract_ingestion_policy_hf6.
 This module adds the operational time-window policy only; it performs no HTTP,
 login, broker operation or database mutation.
+
+RC5 alinea el inicio dinámico con la ventana regular PAPER spot verificada de
+BYMA (10:30). El navegador autenticado continúa fuera del hot path y nunca se
+inicia durante fines de semana.
 """
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
 
 from co_contract_ingestion_policy_hf6 import CADENCES, ttl_seconds
+from co_market_sessions_hf6 import BYMA_PAPER_SPOT_CLOSE, BYMA_PAPER_SPOT_OPEN
 
 JOB_TO_CADENCE = {
     "CONTRACT_EVIDENCE_DYNAMIC": "OPERABILITY",
@@ -21,8 +26,8 @@ JOB_TO_CADENCE = {
 }
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
-DYNAMIC_START = time(10, 40)   # preapertura incluida
-DYNAMIC_END = time(17, 0)      # fin de consultas dinámicas repetitivas
+DYNAMIC_START = BYMA_PAPER_SPOT_OPEN
+DYNAMIC_END = BYMA_PAPER_SPOT_CLOSE
 
 
 def cadence_seconds(job_key: str) -> int:
@@ -36,11 +41,12 @@ def _local(ref: datetime) -> datetime:
 
 
 def window_allows(job_key: str, now=None) -> bool:
-    """Return whether this job is allowed to wake the authenticated browser now.
+    """Return whether this job may wake the authenticated browser now.
 
-    Dynamic jobs: weekdays 10:40 <= local time < 17:00 Argentina.
-    Static/full-browser jobs: outside that dynamic window on weekdays only. Their own 1-day /
-    7-day TTL still applies, and weekends never start the authenticated browser.
+    Dynamic jobs: weekdays 10:30 <= local time < 17:00 Argentina.
+    Static/full-browser jobs: outside that dynamic window on weekdays only.
+    Their own 1-day / 7-day TTL still applies. Weekends never start the
+    authenticated browser.
     """
     ref = now or datetime.now(timezone.utc)
     local = _local(ref)
