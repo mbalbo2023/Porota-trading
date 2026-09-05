@@ -4,6 +4,9 @@ The denominator is never hardcoded. Target identities come from Porota's
 AVAILABLE candidate universe independently of can_simulate. Source capability
 is reported separately so HOLD families can accumulate history without being
 presented as PAPER-ready.
+
+RC4-HF2 candidate keeps FULL_OHLC and CLOSE_ONLY_PROVIDER_PARTIAL metrics
+separate. Close-only evidence never inflates the canonical FULL_OHLC counters.
 """
 from __future__ import annotations
 
@@ -77,16 +80,45 @@ def history_db_path() -> Path:
     return Path(os.getenv("HIST_DB_PATH","data/market_history.db")).resolve()
 
 
+def _close_series_metrics(connection, tables) -> dict:
+    required={"history_close_versions_v1","history_close_canonical_v1"}
+    if not required.issubset(tables):
+        return {"available":False,"canonical_rows":0,"identities":0,"by_family":{},
+                "quality":"CLOSE_ONLY_PROVIDER_PARTIAL"}
+    rows=int(connection.execute("SELECT COUNT(*) FROM history_close_canonical_v1").fetchone()[0] or 0)
+    identities=int(connection.execute(
+        """SELECT COUNT(*) FROM (
+           SELECT symbol,instrument_type,market,settlement
+           FROM history_close_canonical_v1
+           GROUP BY symbol,instrument_type,market,settlement)"""
+    ).fetchone()[0] or 0)
+    by={}
+    for r in connection.execute(
+        """SELECT instrument_type,COUNT(DISTINCT symbol),COUNT(*),MIN(date),MAX(date)
+           FROM history_close_canonical_v1 GROUP BY instrument_type ORDER BY instrument_type"""
+    ):
+        by[str(r[0])]={"symbols":int(r[1] or 0),"rows":int(r[2] or 0),
+                       "first_date":r[3],"last_date":r[4]}
+    return {"available":True,"canonical_rows":rows,"identities":identities,
+            "by_family":by,"quality":"CLOSE_ONLY_PROVIDER_PARTIAL",
+            "allowed_uses":["close_returns","close_momentum","close_trend"],
+            "forbidden_uses":["atr","high_low_range","candlestick_patterns","volume","vwap","execution_price","ready_paper"]}
+
+
 def v2_store_metrics(path: Path | None = None) -> dict:
     db=(path or history_db_path()).resolve()
     if not db.exists() or not db.is_file():
-        return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,"by_family":{}}
+        return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,
+                "by_family":{},"close_series":{"available":False,"canonical_rows":0,
+                "identities":0,"by_family":{},"quality":"CLOSE_ONLY_PROVIDER_PARTIAL"}}
     c=sqlite3.connect("file:"+str(db)+"?mode=ro",uri=True,timeout=5)
     try:
         tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         required={"history_versions_v2","history_canonical_v2"}
+        close=_close_series_metrics(c,tables)
         if not required.issubset(tables):
-            return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,"by_family":{},"reason":"V2_SCHEMA_NOT_PRESENT"}
+            return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,
+                    "by_family":{},"reason":"V2_SCHEMA_NOT_PRESENT","close_series":close}
         row=c.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()
         identities=c.execute(
             """SELECT COUNT(*) FROM (
@@ -102,7 +134,9 @@ def v2_store_metrics(path: Path | None = None) -> dict:
             by[str(r[0])]={"symbols":int(r[1] or 0),"rows":int(r[2] or 0),
                            "first_date":r[3],"last_date":r[4]}
         return {"available":True,"path":str(db),"canonical_rows":int(row[0] or 0),
-                "identities":int(identities[0] or 0),"by_family":by}
+                "full_ohlc_canonical_rows":int(row[0] or 0),
+                "identities":int(identities[0] or 0),"by_family":by,
+                "full_ohlc_quality":"FULL_OHLC","close_series":close}
     finally:
         c.close()
 
@@ -117,11 +151,13 @@ def legacy_family_metrics(connection) -> dict:
         out[str(r[0] or "UNKNOWN").upper()]={"symbols":int(r[1] or 0),"rows":int(r[2] or 0),"first_date":r[3],"last_date":r[4],"identity":"LEGACY_SYMBOL_TYPE"}
     return out
 
+
 def effective_store_metrics(observer_connection,path=None):
     v2=v2_store_metrics(path)
     if v2.get("available"):return dict(v2,layer="V2")
     legacy=legacy_family_metrics(observer_connection)
-    return {"available":False,"path":v2.get("path"),"canonical_rows":sum(x["rows"] for x in legacy.values()),"identities":sum(x["symbols"] for x in legacy.values()),"by_family":legacy,"reason":v2.get("reason") or "V2_UNAVAILABLE","layer":"LEGACY_FALLBACK"}
+    return {"available":False,"path":v2.get("path"),"canonical_rows":sum(x["rows"] for x in legacy.values()),"identities":sum(x["symbols"] for x in legacy.values()),"by_family":legacy,"reason":v2.get("reason") or "V2_UNAVAILABLE","layer":"LEGACY_FALLBACK","close_series":v2.get("close_series",{})}
+
 
 def assert_history_metric_invariants() -> None:
     if "PROBE_REQUIRED" not in source_capabilities("ON"):
