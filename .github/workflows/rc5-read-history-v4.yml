@@ -29,7 +29,7 @@ jobs:
           printf '%s\n' "$DO_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Leer sólo resultado existente
+      - name: Leer resultado y diagnóstico existentes
         shell: bash
         run: |
           set -euo pipefail
@@ -39,40 +39,19 @@ jobs:
           set -euo pipefail
           REPO=/opt/porota-trading
           SRC="$HOME/POROTA_HISTORY_FRESHNESS_V4_NOHUP.out"
-          PIDFILE="$HOME/POROTA_HISTORY_FRESHNESS_V4_NOHUP.pid"
           test "$(git -C "$REPO" branch --show-current)" = 'release/v17.0.0-rc4-hf2'
           test "$(git -C "$REPO" rev-parse HEAD)" = '7284fbb5c651ff548ab911e7829b740c42b4b71f'
-          echo 'POROTA HISTORY FRESHNESS V4 RETRIEVAL'
+          [ -f "$SRC" ] || { echo 'STATUS=ERROR_OUTPUT_NOT_FOUND'; exit 20; }
+          echo 'POROTA HISTORY FRESHNESS V4 DIAGNOSTIC RETRIEVAL'
           echo 'ACTION=READ_EXISTING_OUTPUT_ONLY'
           echo 'NETWORK_CALLS=0'
           echo 'RUNTIME_CHANGED=NO'
-          [ -f "$SRC" ] || { echo 'STATUS=ERROR_OUTPUT_NOT_FOUND'; exit 20; }
-          PID="$(cat "$PIDFILE" 2>/dev/null || true)"
-          PSTAT="$(ps -p "$PID" -o stat= 2>/dev/null | tr -d ' ' || true)"
-          echo "PID=${PID:-UNKNOWN}"
-          echo "PROCESS_STATE=${PSTAT:-FINISHED_OR_UNKNOWN}"
-          awk '
-          /^STATUS=/ ||
-          /^DB_QUICK_CHECK=/ ||
-          /^HISTORY_DB_QUICK_CHECK=/ ||
-          /^OBSERVER_STATE=/ ||
-          /^CALENDAR_SOURCE=/ ||
-          /^STORE_LATEST_DATE=/ ||
-          /^WINDOW_CUTOFFS=/ ||
-          /^TARGET_TOTAL=/ ||
-          /^DEPTH_COUNTS=/ ||
-          /^FRESHNESS_COUNTS=/ ||
-          /^READINESS_COUNTS=/ ||
-          /^DEPTH_X_FRESHNESS=/ ||
-          /^HISTORY_FRESH_GE30=/ ||
-          /^HISTORY_FRESH_GE90=/ ||
-          /^HISTORY_FRESH_GE180=/ ||
-          /^STALE_GE90_COUNT=/ ||
-          /^ANOMALY_COUNT=/ {print; next}
-          /^STALE_GE90_BEGIN$/ {p=1; print; next}
-          p {print; if ($0=="STALE_GE90_END") p=0; next}
-          /^ANOMALY_SUMMARY_BEGIN$/ {a=1; print; next}
-          a {print; if ($0=="ANOMALY_SUMMARY_END") a=0}
-          ' "$SRC"
+          echo "OUTPUT_BYTES=$(wc -c < "$SRC")"
+          echo "OUTPUT_LINES=$(wc -l < "$SRC")"
+          echo '--- KEY DIAGNOSTIC LINES ---'
+          grep -Ei '^(STATUS|ERROR|EXCEPTION|TRACEBACK|FAILED|FAIL|SCHEMA|MISSING|ABORT|DIAGNOSTIC|DB_|HISTORY_|OBSERVER_|CALENDAR_|STORE_|TARGET_|DEPTH_|FRESHNESS_|READINESS_|STALE_|ANOMALY_)|no such|OperationalError|KeyError|ValueError|TypeError|AssertionError' "$SRC" | tail -n 120 || true
+          echo '--- OUTPUT TAIL ---'
+          tail -n 80 "$SRC"
+          echo '--- END ---'
           echo 'REAL_ORDERS_SENT=0'
           REMOTE
