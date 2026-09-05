@@ -26,6 +26,10 @@ jobs:
           python -m py_compile rc4_contract_schedule.py scripts/porota_contract_evidence_session_runner_rc4.py tests/test_contract_evidence_rc5_runtime.py
           git diff --check
 
+      - name: Preparar runner focal
+        shell: bash
+        run: python -m pip install --disable-pip-version-check -q pytest
+
       - name: Contrato CE RC5 focal
         shell: bash
         run: |
