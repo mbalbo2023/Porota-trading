@@ -1,0 +1,53 @@
+name: RC5 - validar Contract Evidence candidate
+
+on:
+  push:
+    branches:
+      - candidate/rc5-contract-evidence-green-v2-20260905
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/rc5-contract-evidence-green-v2-20260905
+          fetch-depth: 0
+
+      - name: Sintaxis shell y Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/porota_contract_evidence_rc5_runtime.sh
+          python -m py_compile rc4_contract_schedule.py scripts/porota_contract_evidence_session_runner_rc4.py tests/test_contract_evidence_rc5_runtime.py
+          git diff --check
+
+      - name: Contrato CE RC5 focal
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_contract_evidence_rc5_runtime.py \
+            tests/test_contract_evidence_hf6.py
+
+      - name: Seguridad estática
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'POROTA_CONTRACT_EVIDENCE_EXPECTED_IMAGE' scripts/porota_contract_evidence_rc5_runtime.sh
+          grep -F 'STATUS=GREEN_NOT_DUE' scripts/porota_contract_evidence_rc5_runtime.sh
+          grep -F 'AUTH_BROWSER_STARTED=NO' scripts/porota_contract_evidence_rc5_runtime.sh
+          ! grep -F 'porota-trading-bot:17.0.0-rc3-hf6*' scripts/porota_contract_evidence_rc5_runtime.sh
+          ! grep -F -- '--force' deploy/systemd/porota-contract-evidence-rc5.service
+          grep -F 'OnUnitActiveSec=5min' deploy/systemd/porota-contract-evidence-rc5.timer
+
+      - name: Resumen
+        if: always()
+        run: |
+          echo "CONTRACT_EVIDENCE_CANDIDATE=${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "PPI=NO" >> "$GITHUB_STEP_SUMMARY"
+          echo "DEPLOY=NO" >> "$GITHUB_STEP_SUMMARY"
