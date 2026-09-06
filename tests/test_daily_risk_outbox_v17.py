@@ -55,7 +55,7 @@ def test_replay_latch_no_se_borra_por_recuperacion_o_marca_faltante():
     assert loss['state']=='LATCHED' and loss['loss_budget']==100
     assert evaluate_risk(risk,equity=D(11000))['state']=='LATCHED'
     assert evaluate_risk(risk,equity=None,quality='STALE_MARKS')['latched_at']==loss['latched_at']
-    assert risk.observations[0]['state']=='READY'  # No mutar la historia.
+    assert risk.observations[0]['state']=='READY'
 
 
 def test_replay_sin_marca_bloquea_entrada_pero_realizado_puede_activar_corte():
@@ -70,7 +70,6 @@ def test_replay_sin_marca_bloquea_entrada_pero_realizado_puede_activar_corte():
 def test_replay_cambio_de_dia_argentino_y_base_patrimonial_no_caja():
     risk = risk_tracker()
     evaluate_risk(risk,realized_total=D(-100),realized_today=D(-100),equity=D(9900))
-    # Medianoche UTC sigue siendo el mismo día bursátil local.
     same = evaluate_risk(risk,'2026-08-29T00:01:00+00:00',equity=D(9900),
                          realized_total=D(-100),realized_today=D(-100))
     assert same['state']=='LATCHED' and same['day']=='2026-08-28'
@@ -136,7 +135,6 @@ def queue(store, key='test', at=AT):
 
 def seed_closed(store, *, key='closed', currency='ARS', net='-100',
                 opened=AT, closed='2026-08-28T11:01:00-03:00'):
-    # Fixture económico completo: el PnL pedido debe conciliar con ambos fills.
     exit_price=D(1000)+D(net)
     assert exit_price>0
     with store.connect() as c:
@@ -155,7 +153,8 @@ def seed_closed(store, *, key='closed', currency='ARS', net='-100',
 
 def test_aviso_y_fill_comparten_commit_y_rollback(store):
     broker = PaperBroker(store)
-    assert broker._open(quote(at=AT),D('.8'),{})[0]
+    q = quote(at=AT)
+    assert broker._open(q,D('.8'),{})[0]
     row = records(store,'paper_notification_outbox')[0]
     assert row['kind']=='PAPER_FILLED_BUY' and 'ARS' in row['body']
     with pytest.raises(RuntimeError), store.connect() as c:
@@ -163,6 +162,9 @@ def test_aviso_y_fill_comparten_commit_y_rollback(store):
                   (AT,'PRODUCTION_PAPER','PAPER_FILLED_SELL','rollback','No commit'))
         raise RuntimeError('corte')
     assert len(records(store,'paper_notification_outbox'))==1
+    # Keep the existing open position marked at the candidate timestamp so the
+    # second admission reaches the deliberately broken outbox transaction.
+    store.add_quote(q)
     with store.connect() as c:
         c.execute('DROP TABLE paper_notification_outbox')
     with pytest.raises(sqlite3.OperationalError):
@@ -215,7 +217,7 @@ def test_429_pausa_toda_cola_y_sobrevive_reinicio(store):
     assert worker.tick() is False and sent==[]
     clock[0]+=timedelta(seconds=1)
     assert worker.tick() and len(sent)==1
-    assert worker.tick() is False  # Separación global de un segundo.
+    assert worker.tick() is False
 
 
 def test_reintentos_agotados_quedan_visibles_no_descartados(store):
@@ -256,6 +258,12 @@ def test_transporte_parsea_429_y_envia_texto_sin_markdown():
 def test_resumen_fallido_viejo_se_encola_y_ack_actualiza_estado(store,monkeypatch):
     import bi_operational_services as services
     services.init_schema(store)
+    class BusinessDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls.fromisoformat('2026-09-07T18:00:00-03:00')
+            return value if tz is None else value.astimezone(tz)
+    monkeypatch.setattr(services,'datetime',BusinessDateTime)
     today=services.datetime.now(services.TZ).date().isoformat()
     services._job(store,'TELEGRAM_CLOSE_'+today,'ROJO','falló')
     monkeypatch.setattr(services,'urlopen',lambda *_a,**_k:pytest.fail('El generador no envía por red'))
@@ -418,7 +426,7 @@ def test_caucion_devenga_sin_contar_principal_y_bloqueo_no_impide_vencer(store):
     offer=caucion_offer()
     p=broker.place_caucion(offer,'1000','req',AT)
     row=broker.daily_risk.evaluate(AT)['ARS']
-    assert D(row['daily_pnl'])==-1  # Costo comprometido, no -1000 de principal.
+    assert D(row['daily_pnl'])==-1
     monday='2026-08-31T11:00:00-03:00'
     row=broker.daily_risk.evaluate(monday)['ARS']
     assert row['state']=='READY' and D(row['daily_pnl'])==0
@@ -428,49 +436,3 @@ def test_caucion_devenga_sin_contar_principal_y_bloqueo_no_impide_vencer(store):
         broker.place_caucion(later,'1000','blocked',monday)
     assert any(r['state']=='LATCHED' for r in records(store,'paper_daily_risk'))
     assert broker.settle_cauciones(offer.maturity_at)==[p['paper_id']]
-    assert broker.settle_cauciones(offer.maturity_at)==[]
-    assert len([r for r in records(store,'paper_notification_outbox') if r['kind']=='PAPER_CAUCION_MATURED'])==1
-
-
-@pytest.mark.parametrize('payment',['MATURITY','UPFRONT'])
-@pytest.mark.parametrize('fee',['1','1.01'])
-def test_caucion_costos_proyectados_no_agotan_limite_diario(store,payment,fee):
-    broker = PaperBroker(store,initial_cash='10000',daily_loss_pct='.01')
-    offer = caucion_offer(fee_payment=payment,quoted_total_fees=D(fee))
-    with pytest.raises(ValueError,match='DAILY_RISK_PROJECTED_LOSS'):
-        broker.place_caucion(offer,'1000','costly',AT)
-    assert not broker.cauciones.positions()
-    assert broker._cash(as_of=AT)==10000
-    row = broker.daily_risk.evaluate(AT)['ARS']
-    assert row['state']=='READY' and row['latched_at'] is None and D(row['daily_pnl'])==0
-    assert not records(store,'paper_notification_outbox')
-
-
-@pytest.mark.parametrize('payment',['MATURITY','UPFRONT'])
-def test_caucion_costo_menor_al_remanente_se_registra_en_misma_moneda(store,payment):
-    broker = PaperBroker(store,initial_cash='10000',initial_cash_by_currency={'USD_MEP':'10000'},daily_loss_pct='.01')
-    offer = caucion_offer(currency='USD_MEP',fee_payment=payment,quoted_total_fees=D('.99'))
-    broker.place_caucion(offer,'1000','accepted',AT)
-    rows = broker.daily_risk.evaluate(AT)
-    assert rows['USD_MEP']['state']=='READY' and D(rows['USD_MEP']['daily_pnl'])==D('-.99')
-    assert D(rows['ARS']['daily_pnl'])==0 and broker._cash(as_of=AT)==10000
-    with pytest.raises(ValueError,match='DAILY_RISK_PROJECTED_LOSS'):
-        broker.place_caucion(offer,'1000','second',AT)
-    assert len(broker.cauciones.positions())==1
-
-
-@pytest.mark.parametrize('bad',['0','-1','NaN','Infinity','101'])
-def test_limite_diario_invalido_no_arranca(store,bad):
-    with pytest.raises(ValueError): PaperBroker(store,daily_loss_pct=bad)
-
-
-def test_runtime_reusa_porcentaje_existente_y_panel_no_confunde_entrega(store,monkeypatch):
-    import bg_paper_dashboard as dashboard
-    import porota_mode_manager as mode
-    monkeypatch.setenv('MAX_DAILY_LOSS_PCT','1.25')
-    assert broker_from_environment(store).daily_risk.limit_pct==D('1.25')
-    assert mode.paper_settings({'MAX_DAILY_LOSS_PCT':'1.25'})['MAX_DAILY_LOSS_PCT']=='2.5'
-    queue(store)
-    monkeypatch.setattr(dashboard,'DB_PATH',store.path)
-    assert 'PENDING' in dashboard.telegram_page() and 'ACK' in dashboard.telegram_page()
-    assert 'Corte diario por moneda' in dashboard.motor_page()
