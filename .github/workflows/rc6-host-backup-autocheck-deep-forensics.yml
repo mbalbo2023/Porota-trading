@@ -1,5 +1,6 @@
 name: RC6 host backup and auto-check deep forensics
 
+# Sunday 2026-09-06 evidence refresh before deciding RC6-native replacement versus retirement.
 on:
   push:
     branches: [candidate/v17.0.0-rc6-weekend-20260905]
