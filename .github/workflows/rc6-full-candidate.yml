@@ -34,6 +34,7 @@ jobs:
           git diff --check
           python - <<'PY'
           import _version
+          assert _version.VERSION == '17.0.0-rc6'
           assert _version.MODE == 'PRODUCTION_PAPER'
           assert _version.EXECUTION == 'SIMULATED'
           assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
@@ -129,6 +130,7 @@ jobs:
               grep -q 'execution_allowed.*False' ew_a3_history_rc6.py
               ! grep -Eq 'send_order|new_order|replace_order|cancel_order' ew_a3_history_rc6.py ex_a3_history_job_rc6.py
               grep -q 'REAL_ORDER_CAPABILITY = \"BLOCKED\"' _version.py
+              grep -q 'VERSION = \"17.0.0-rc6\"' _version.py
             '
 
       - name: Candidate summary
@@ -143,4 +145,108 @@ jobs:
             echo '- Release-pinned RC3/RC4 archive suites are classification history, not RC6 acceptance authority.'
             echo '- Root filesystem stays read-only; only /tmp and /app/data are ephemeral tmpfs for tests.'
             echo '- Real-money capability remains BLOCKED.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  immutable-archive:
+    name: Immutable GHCR archive proof
+    needs: full-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact tested release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+          python - <<'PY'
+          import _version
+          assert _version.VERSION == '17.0.0-rc6'
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          PY
+
+      - name: Log in to GitHub Container Registry
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and publish exact tested SHA
+        id: publish
+        shell: bash
+        env:
+          IMAGE: ghcr.io/mbalbo2023/porota-trading
+        run: |
+          set -euo pipefail
+          REF="$IMAGE:rc6-candidate-${GITHUB_SHA}"
+          docker build --pull=false \
+            --label "porota.commit=${GITHUB_SHA}" \
+            --label "porota.version=17.0.0-rc6" \
+            -t "$REF" .
+          docker push "$REF" 2>&1 | tee /tmp/rc6-ghcr-push.log
+          DIGEST="$(sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' /tmp/rc6-ghcr-push.log | tail -n 1)"
+          if [ -z "$DIGEST" ]; then
+            DIGEST="$(docker image inspect "$REF" --format '{{index .RepoDigests 0}}' | sed 's/.*@//')"
+          fi
+          case "$DIGEST" in sha256:*) ;; *) echo 'INVALID_DIGEST'; exit 1;; esac
+          TREE_SHA="$(git rev-parse "${GITHUB_SHA}^{tree}")"
+          printf 'version=17.0.0-rc6\ncommit=%s\ntree=%s\nimage=%s\ndigest=%s\n' \
+            "$GITHUB_SHA" "$TREE_SHA" "$IMAGE" "$DIGEST" > /tmp/rc6-ghcr-manifest.txt
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Remove local tag and re-pull exact digest
+        shell: bash
+        env:
+          IMAGE: ghcr.io/mbalbo2023/porota-trading
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker image rm "${{ steps.publish.outputs.ref }}"
+          docker pull "$IMAGE@$DIGEST"
+          LABEL_COMMIT="$(docker image inspect "$IMAGE@$DIGEST" --format '{{index .Config.Labels "porota.commit"}}')"
+          LABEL_VERSION="$(docker image inspect "$IMAGE@$DIGEST" --format '{{index .Config.Labels "porota.version"}}')"
+          test "$LABEL_COMMIT" = "$GITHUB_SHA"
+          test "$LABEL_VERSION" = '17.0.0-rc6'
+          docker run --rm -i --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=128m \
+            --entrypoint python "$IMAGE@$DIGEST" - <<'PY'
+          import _version
+          assert _version.VERSION == '17.0.0-rc6'
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          print('GHCR_REPULL_SAFETY=GREEN')
+          PY
+
+      - name: Upload immutable manifest evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-ghcr-manifest-${{ github.sha }}
+          path: /tmp/rc6-ghcr-manifest.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Archive evidence summary
+        shell: bash
+        run: |
+          {
+            echo '### RC6 immutable archive proof'
+            echo "- Exact tested commit: $GITHUB_SHA"
+            echo "- Image ref: ${{ steps.publish.outputs.ref }}"
+            echo "- Immutable digest: ${{ steps.publish.outputs.digest }}"
+            echo '- Local tag was removed before re-pull by digest.'
+            echo '- Re-pulled image preserved commit, RC6 version and PAPER safety identity.'
           } >> "$GITHUB_STEP_SUMMARY"
