@@ -1,5 +1,6 @@
 name: RC6 host legacy timer forensics
 
+# Sunday 2026-09-06 recheck before any RC4 scheduler retirement/migration.
 on:
   push:
     branches: [candidate/v17.0.0-rc6-weekend-20260905]
