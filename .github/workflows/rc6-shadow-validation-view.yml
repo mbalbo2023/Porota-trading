@@ -7,6 +7,8 @@ on:
       - 'et_shadow_learning_rc6.py'
       - 'ev_shadow_validation_view_rc6.py'
       - 'tests/test_shadow_learning_rc6.py'
+      - 'tests/test_validation_campaign_rc6.py'
+      - 'tests/test_shadow_binding_contract_rc6.py'
       - 'scripts/rc6_wire_shadow_validation_view.py'
       - '.github/workflows/rc6-shadow-validation-view.yml'
 
@@ -27,12 +29,15 @@ jobs:
           ref: candidate/v17.0.0-rc6-weekend-20260905
           fetch-depth: 0
       - run: git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+      - name: Install focused test dependency
+        run: python -m pip install --disable-pip-version-check pytest
       - run: python scripts/rc6_wire_shadow_validation_view.py
       - run: python -m py_compile et_shadow_learning_rc6.py ev_shadow_validation_view_rc6.py en_validation_project_dashboard_rc6.py
-      - run: pytest -q tests/test_shadow_learning_rc6.py tests/test_validation_campaign_rc6.py tests/test_shadow_binding_contract_rc6.py
+      - run: python -m pytest -q tests/test_shadow_learning_rc6.py tests/test_validation_campaign_rc6.py tests/test_shadow_binding_contract_rc6.py
       - name: Static no-promotion proof
         shell: bash
         run: |
+          set -euo pipefail
           grep -q 'shadow_view.render()' en_validation_project_dashboard_rc6.py
           grep -q 'NO bloquea PAPER' ev_shadow_validation_view_rc6.py
           grep -q 'real_money_authorized.*False' et_shadow_learning_rc6.py
