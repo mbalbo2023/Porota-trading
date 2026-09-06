@@ -1,0 +1,52 @@
+name: RC6 dashboard text context 2026-09-06
+on:
+  push:
+    branches: [audit/rc6-dashboard-text-context-20260906]
+permissions:
+  contents: read
+jobs:
+  context:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_text_context"
+          chmod 600 "$HOME/.ssh/porota_text_context"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Print sanitized text matches only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_text_context" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          test "$(git -C "$REPO" rev-parse HEAD)" = db26c76723bb988c956589c572b87cbcb4191731
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,re,urllib.request,html
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          for path in ['/sistema?section=introspeccion','/historicos','/vivo','/']:
+              req=urllib.request.Request('http://127.0.0.1:8000'+path,headers={'Authorization':'Bearer '+token})
+              body=urllib.request.urlopen(req,timeout=20).read().decode('utf-8','replace')
+              text=re.sub(r'<script.*?</script>|<style.*?</style>',' ',body,flags=re.I|re.S)
+              text=html.unescape(re.sub(r'<[^>]+>','\n',text))
+              text=re.sub(r'[ \t]+',' ',text)
+              lines=[x.strip() for x in text.splitlines() if x.strip()]
+              print('PATH='+path)
+              for i,line in enumerate(lines):
+                  if re.search(r'no disponible|unavailable|snapshot|workers|base objetiva|cobertura',line,re.I):
+                      lo=max(0,i-2); hi=min(len(lines),i+3)
+                      print('CONTEXT='+' | '.join(lines[lo:hi])[:1200])
+          PY
+          echo MUTATION=0
+          HOST
