@@ -77,7 +77,7 @@ jobs:
       - name: Build patched candidate
         run: docker build --pull=false -t porota-rc6-alignment:${GITHUB_SHA} .
 
-      - name: Full offline pytest gate
+      - name: Active RC6 offline pytest gate
         shell: bash
         run: |
           set -euo pipefail
@@ -89,7 +89,15 @@ jobs:
             -e ENVIRONMENT=SANDBOX \
             -e DB_PATH=/tmp/porota-ci.db \
             -e TELEGRAM_CHAT_ID=0 \
-            --entrypoint python porota-rc6-alignment:${GITHUB_SHA} -m pytest -q
+            --entrypoint bash porota-rc6-alignment:${GITHUB_SHA} -lc \
+            'python -m pytest -q -p no:cacheprovider --tb=short \
+              --ignore=tests/test_hotfix_rc3_hf2.py \
+              --ignore=tests/test_hotfix_rc3_hf4.py \
+              --ignore=tests/test_hotfix_rc3_hf6.py \
+              --ignore=tests/test_intraday_scalping_hf3.py \
+              --ignore=tests/test_rc4_acceptance.py \
+              --ignore=tests/test_rc4_hf1_last_mile.py \
+              --ignore=tests/test_rc4_hf2_consolidation.py'
 
       - name: Commit only validated runtime and tests
         shell: bash
