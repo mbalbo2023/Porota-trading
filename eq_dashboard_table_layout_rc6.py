@@ -11,6 +11,7 @@ Presentation only.  No database/network/trading behavior.
 from __future__ import annotations
 
 import bg_paper_dashboard as bg
+from er_dashboard_table_semantics_rc6 import should_force_compact
 
 _installed = False
 
@@ -43,8 +44,7 @@ FORCE_COMPACT_SCRIPT = r"""
       const card=table.closest('.paper-card,.system-content,main.paper-page') || table.parentElement;
       const available=Math.max(1, card?.clientWidth || table.clientWidth || 1);
       const perColumn=available/columns;
-      /* 7+ columns in a normal tablet card are almost never voice-readable.
-         The 128px threshold catches narrower content columns even with 5–6 columns. */
+      /* Keep this JS predicate synchronized with er_dashboard_table_semantics_rc6.py. */
       const force=(columns>=7 || perColumn<128 || table.scrollWidth>available+4);
       table.dataset.porotaForceCompact=force?'1':'0';
     });
@@ -62,15 +62,6 @@ FORCE_COMPACT_SCRIPT = r"""
 })();
 </script>
 """
-
-
-def should_force_compact(columns: int, available_width: float, scroll_width: float | None = None) -> bool:
-    if columns <= 1:
-        return False
-    available = max(float(available_width or 0), 1.0)
-    per_column = available / columns
-    overflow = scroll_width is not None and float(scroll_width) > available + 4
-    return columns >= 7 or per_column < 128 or overflow
 
 
 def install() -> None:
