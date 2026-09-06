@@ -14,21 +14,33 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Lineage, compile and native safety tests
+      - name: Lineage and compile
         shell: bash
         run: |
           set -euo pipefail
           git merge-base --is-ancestor 5bdad270c2a23bb2456a320d41e18940ce70ec6f HEAD
           python -m py_compile rc6_contract_schedule.py rc6_contract_due_job.py rc6_ppi_contract_normalizer.py rc6_trusted_browser_contract_collector.py rc6_contract_capture_importer.py
-          python -m pytest -q -p no:cacheprovider tests/test_contract_evidence_rc6_native.py
           grep -Rni 'rc4' rc6_contract_schedule.py rc6_contract_due_job.py rc6_ppi_contract_normalizer.py rc6_trusted_browser_contract_collector.py rc6_contract_capture_importer.py scripts/porota_contract_evidence_rc6_runtime.sh systemd/porota-contract-evidence-rc6.* && exit 1 || true
           ! grep -REn 'send_order\(|new_order\(|replace_order\(|cancel_order\(' rc6_contract_*.py rc6_trusted_browser_contract_collector.py scripts/porota_contract_evidence_rc6_runtime.sh
+      - name: Build exact RC6 native CE candidate
+        run: docker build --pull=false -t porota-rc6-ce-native:${GITHUB_SHA} .
+      - name: Native CE tests offline inside candidate image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e PYTHONPATH=/app:/app/tests \
+            --entrypoint bash porota-rc6-ce-native:${GITHUB_SHA} -lc \
+            'python -m pytest -q -p no:cacheprovider tests/test_contract_evidence_rc6_native.py'
 
   deploy:
     needs: validate
@@ -108,7 +120,6 @@ jobs:
           sudo -n systemctl disable --now porota-contract-evidence-rc5.timer porota-contract-evidence-rc4.timer >/dev/null 2>&1 || true
           sudo -n systemctl daemon-reload
 
-          # Sunday/non-operational proof: due policy must not open the browser.
           OUT="$(sudo -n /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh)"
           printf '%s\n' "$OUT"
           printf '%s\n' "$OUT" | grep -q '^STATUS=GREEN_NOT_DUE$'
