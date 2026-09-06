@@ -5,9 +5,34 @@ SearchInstrument no prueba multiplicador, margen ni vencimiento estructurado.
 """
 
 import json
+from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import InstrumentContract, cash_currency, family_name, contract_from_metadata
+
+AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+US_UNDERLYING_HOLIDAY_BLOCKS = {
+    "2026-09-07": frozenset({"AAPL", "AAPLD", "AAPLC"}),
+}
+
+
+def rc6_underlying_opening_block(ticker, instrument_type, now=None):
+    """Bloquea sólo nuevas aperturas PAPER cuyo subyacente externo está cerrado.
+
+    El 07/09/2026 BYMA Argentina opera, pero EE.UU. permanece cerrado por Labor Day.
+    El foco RC6 contiene únicamente las identidades Apple AAPL/AAPLD/AAPLC entre
+    los CEDEARs a los que este release da prioridad. La cotización sigue siendo
+    observada y persistida; este texto llega a Quote.opening_block_reason y sólo
+    convierte la decisión de apertura en HOLD.
+    """
+    local = (now or datetime.now(AR_TZ)).astimezone(AR_TZ)
+    kind = str(instrument_type or "").strip().upper()
+    symbol = str(ticker or "").strip().upper()
+    blocked = US_UNDERLYING_HOLIDAY_BLOCKS.get(local.date().isoformat(), frozenset())
+    if kind in {"CEDEARS", "CEDEAR"} and symbol in blocked:
+        return "UNDERLYING_MARKET_CLOSED: US_LABOR_DAY"
+    return ""
 
 
 def init_schema(store):
@@ -200,5 +225,8 @@ def quote_terms(record):
     reason = "" if record["capability"] == "READY_PAPER_SPOT" else record["capability"]
     if record["status"] != "AVAILABLE":
         reason = "Catálogo no confirmado en la última actualización"
+    holiday_reason = rc6_underlying_opening_block(record["ticker"], record["instrument_type"])
+    if holiday_reason:
+        reason = holiday_reason if not reason else f"{reason}; {holiday_reason}"
     return {"currency": record["currency"], "market": record["market"], "contract": spec,
             "metadata_source": f"PPI_CATALOG:{record['last_seen_at']}", "opening_block_reason": reason}
