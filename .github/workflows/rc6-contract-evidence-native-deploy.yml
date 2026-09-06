@@ -1,0 +1,133 @@
+name: RC6 native Contract Evidence deploy
+
+on:
+  push:
+    branches: [candidate/v17.0.0-rc6-contract-evidence-native-20260906]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-contract-evidence-native
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Lineage, compile and native safety tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 5bdad270c2a23bb2456a320d41e18940ce70ec6f HEAD
+          python -m py_compile rc6_contract_schedule.py rc6_contract_due_job.py rc6_ppi_contract_normalizer.py rc6_trusted_browser_contract_collector.py rc6_contract_capture_importer.py
+          python -m pytest -q -p no:cacheprovider tests/test_contract_evidence_rc6_native.py
+          grep -Rni 'rc4' rc6_contract_schedule.py rc6_contract_due_job.py rc6_ppi_contract_normalizer.py rc6_trusted_browser_contract_collector.py rc6_contract_capture_importer.py scripts/porota_contract_evidence_rc6_runtime.sh systemd/porota-contract-evidence-rc6.* && exit 1 || true
+          ! grep -REn 'send_order\(|new_order\(|replace_order\(|cancel_order\(' rc6_contract_*.py rc6_trusted_browser_contract_collector.py scripts/porota_contract_evidence_rc6_runtime.sh
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ce"
+          chmod 600 "$HOME/.ssh/porota_ce"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Stage RC6-native files on host
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          TAR=/tmp/porota-ce-${GITHUB_SHA}.tgz
+          tar -czf "$TAR" \
+            rc6_contract_schedule.py rc6_contract_due_job.py rc6_ppi_contract_normalizer.py \
+            rc6_trusted_browser_contract_collector.py rc6_contract_capture_importer.py \
+            scripts/porota_contract_evidence_rc6_runtime.sh \
+            systemd/porota-contract-evidence-rc6.service systemd/porota-contract-evidence-rc6.timer
+          scp -i "$HOME/.ssh/porota_ce" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$TAR" "$USER@$HOST:/tmp/porota-ce-rc6.tgz"
+
+      - name: Install, prove NOT_DUE Sunday and activate timer
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ce" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          LIVE_SHA=5bdad270c2a23bb2456a320d41e18940ce70ec6f
+          LIVE_BRANCH=release-candidate/v17.0.0-rc6-deploy3-20260906
+          LIVE_IMAGE=porota-trading-bot:17.0.0-rc6
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$LIVE_SHA"
+          test "$(git -C "$ROOT" branch --show-current)" = "$LIVE_BRANCH"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$LIVE_IMAGE|0|true"
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('|'.join(map(str,(*c.execute('pragma quick_check').fetchone(),*c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))); c.close()
+          PY
+          )"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+
+          TMP="$(mktemp -d /tmp/porota-ce-native.XXXXXX)"
+          trap 'rm -rf "$TMP" /tmp/porota-ce-rc6.tgz' EXIT
+          tar -xzf /tmp/porota-ce-rc6.tgz -C "$TMP"
+          sudo -n install -d -m 0755 /usr/local/lib/porota-contract-evidence-rc6
+          for f in rc6_contract_schedule.py rc6_contract_due_job.py rc6_ppi_contract_normalizer.py rc6_trusted_browser_contract_collector.py rc6_contract_capture_importer.py; do
+            sudo -n install -m 0644 "$TMP/$f" "/usr/local/lib/porota-contract-evidence-rc6/$f"
+          done
+          sudo -n install -m 0755 "$TMP/scripts/porota_contract_evidence_rc6_runtime.sh" /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          sudo -n install -m 0644 "$TMP/systemd/porota-contract-evidence-rc6.service" /etc/systemd/system/porota-contract-evidence-rc6.service
+          sudo -n install -m 0644 "$TMP/systemd/porota-contract-evidence-rc6.timer" /etc/systemd/system/porota-contract-evidence-rc6.timer
+
+          ! grep -Rni 'rc4' /usr/local/lib/porota-contract-evidence-rc6 /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh /etc/systemd/system/porota-contract-evidence-rc6.*
+          sudo -n systemctl disable --now porota-contract-evidence-rc5.timer porota-contract-evidence-rc4.timer >/dev/null 2>&1 || true
+          sudo -n systemctl daemon-reload
+
+          # Sunday/non-operational proof: due policy must not open the browser.
+          OUT="$(sudo -n /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh)"
+          printf '%s\n' "$OUT"
+          printf '%s\n' "$OUT" | grep -q '^STATUS=GREEN_NOT_DUE$'
+          printf '%s\n' "$OUT" | grep -q '^AUTH_BROWSER_STARTED=NO$'
+          printf '%s\n' "$OUT" | grep -q '^REAL_ORDERS_SENT=0$'
+
+          sudo -n systemctl enable --now porota-contract-evidence-rc6.timer >/dev/null
+          test "$(sudo -n systemctl is-enabled porota-contract-evidence-rc6.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc6.timer)" = active
+          ! sudo -n systemctl list-timers --all --no-legend --no-pager | grep -Eq 'porota-contract-evidence-(rc4|rc5)'
+
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('|'.join(map(str,(*c.execute('pragma quick_check').fetchone(),*c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))); c.close()
+          PY
+          )"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$LIVE_IMAGE|0|true"
+          echo 'CONTRACT_EVIDENCE_RC6_NATIVE=GREEN_ACTIVE_NOT_DUE_SUNDAY'
+          echo 'REAL_ORDERS_SENT=0'
+          REMOTE
