@@ -4,9 +4,10 @@ from be_paper_engine import PaperBroker, PaperStore
 from cf_sale_settlement import modeled_sale_settlement, validated_sale_settlement
 
 
-def test_isolated_broker_does_not_invent_daily_risk_policy(tmp_path):
+def test_isolated_broker_keeps_canonical_daily_risk_guard(tmp_path):
     broker = PaperBroker(PaperStore(str(tmp_path / 'isolated.db')))
-    assert broker.daily_risk is None
+    assert broker.daily_risk is not None
+    assert str(broker.daily_risk.limit_pct) == '2.5'
     assert broker.economics_mode == 'SHADOW'
 
 
