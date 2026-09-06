@@ -696,8 +696,16 @@ def service_tick(store, phase, force=False):
     elif not news_enabled and (force or _job_due(store, "NEWS_REFRESH", 12 * 3600)):
         _job(store, "NEWS_REFRESH", "NO_APLICA",
              "Ingesta deshabilitada por HF5; evidencia histórica preservada", success=False)
-    hour = datetime.now(TZ).hour
-    if phase == "CLOSED" and hour >= int(os.getenv("MARKET_CLOSE_HOUR", "17")):
+    now = datetime.now(TZ)
+    hour = now.hour
+    # Routine close summaries only belong to an actual BYMA business day.
+    # Critical infrastructure alerts use their own paths and are never suppressed here.
+    try:
+        import ak_byma_calendar as byma_calendar
+        business_day = bool(byma_calendar.es_dia_habil_operativo(now.date()))
+    except Exception:
+        business_day = False  # fail closed for routine weekend/holiday messaging
+    if phase == "CLOSED" and business_day and hour >= int(os.getenv("MARKET_CLOSE_HOUR", "17")):
         if force or _job_due(store, "REPORTS", 6 * 3600):
             ensure_reports(store, include_today=True)
         send_closing_summary(store)

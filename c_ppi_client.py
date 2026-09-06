@@ -1210,8 +1210,9 @@ class ResilientPPIClient:
                             "operation": terms['operation'], "status": "SIMULADA",
                             "instrumentType": terms['instrumentType'],
                             "quantityType": terms['quantityType'], "settlement": terms['settlement']}
-            except ImportError:
-                pass  # sin el portón instalado, el comportamiento es el de siempre
+            except ImportError as exc:
+                # Safety control missing at the only real-order choke point must fail closed.
+                raise RuntimeError("ORDER_GATE_MISSING: ao_startup_gate no disponible") from exc
 
         from ppi_client.models.order_confirm import OrderConfirm
         from ppi_client.models.disclaimer import Disclaimer

@@ -5,7 +5,6 @@ Description=Refresh Porota HF6 scheduler dashboard snapshot
 OnBootSec=2min
 OnUnitActiveSec=1min
 AccuracySec=15s
-Persistent=true
 Unit=porota-scheduler-export-hf6.service
 
 [Install]

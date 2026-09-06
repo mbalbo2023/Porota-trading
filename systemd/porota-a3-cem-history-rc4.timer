@@ -4,6 +4,5 @@ Description=Porota RC4 A3 CEM background history poll
 OnBootSec=20min
 OnUnitActiveSec=60min
 AccuracySec=5min
-Persistent=true
 [Install]
 WantedBy=timers.target

@@ -5,7 +5,6 @@ Description=Refresh Porota HF6 dashboard log snapshots
 OnBootSec=2min
 OnUnitActiveSec=1min
 AccuracySec=15s
-Persistent=true
 Unit=porota-log-export-hf6.service
 
 [Install]
