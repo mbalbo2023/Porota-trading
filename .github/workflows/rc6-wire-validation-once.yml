@@ -1,0 +1,74 @@
+name: RC6 wire validation dashboard
+
+on:
+  push:
+    branches:
+      - candidate/v17.0.0-rc6-weekend-20260905
+    paths:
+      - 'em_validation_campaign_rc6.py'
+      - 'en_validation_project_dashboard_rc6.py'
+      - 'scripts/rc6_wire_validation_dashboard.py'
+      - '.github/workflows/rc6-wire-validation-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-wire-validation
+  cancel-in-progress: false
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/v17.0.0-rc6-weekend-20260905
+          fetch-depth: 0
+
+      - name: Verify exact RC5 ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+
+      - name: Wire validation extension deterministically
+        run: python scripts/rc6_wire_validation_dashboard.py
+
+      - name: Compile changed Python
+        run: python -m py_compile em_validation_campaign_rc6.py en_validation_project_dashboard_rc6.py o_dashboard.py
+
+      - name: Pure ledger safety smoke
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+          import em_validation_campaign_rc6 as c
+          with TemporaryDirectory() as d:
+              p=Path(d)
+              a=c.append_record({'milestone':'M0','state':'GREEN','compliance_pct':100},root=p)
+              b=c.append_record({'milestone':'M1','state':'GREEN','compliance_pct':100},root=p)
+              rows=c.load_records(root=p,verify=True)
+              assert len(rows)==2
+              assert b['previous_hash']==a['record_hash']
+              s=c.project_summary(rows)
+              assert s['real_money_authorized'] is False
+              assert s['weighted_readiness_pct'] is None
+          print('RC6_VALIDATION_LEDGER_SMOKE=GREEN')
+          PY
+
+      - name: Commit wiring only if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- o_dashboard.py; then
+            echo 'RC6_VALIDATION_WIRING_COMMIT=NOT_NEEDED'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add o_dashboard.py
+          git commit -m 'RC6: wire Camino a Produccion dashboard [skip ci]'
+          git push origin HEAD:candidate/v17.0.0-rc6-weekend-20260905
