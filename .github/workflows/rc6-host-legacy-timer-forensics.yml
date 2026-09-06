@@ -1,0 +1,66 @@
+name: RC6 host legacy timer forensics
+
+on:
+  push:
+    branches: [candidate/v17.0.0-rc6-weekend-20260905]
+    paths:
+      - '.github/workflows/rc6-host-legacy-timer-forensics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Audit scheduler truth without writes
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/timers.txt
+          set -euo pipefail
+          echo 'POROTA_TIMER_FORENSICS=START'
+          cd /opt/porota-trading
+          echo "BRANCH=$(git branch --show-current)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          mapfile -t timers < <(sudo -n systemctl list-unit-files --type=timer --no-legend | awk '$1 ~ /^porota-/ {print $1}' | sort)
+          for t in "${timers[@]}"; do
+            echo "TIMER=$t"
+            echo "ENABLED=$(sudo -n systemctl is-enabled "$t" 2>/dev/null || true)"
+            echo "ACTIVE=$(sudo -n systemctl is-active "$t" 2>/dev/null || true)"
+            sudo -n systemctl show "$t" --no-pager \
+              -p NextElapseUSecRealtime -p LastTriggerUSec -p Unit -p Persistent -p OnCalendar 2>/dev/null || true
+            service="$(sudo -n systemctl show "$t" -p Unit --value 2>/dev/null || true)"
+            if [ -n "$service" ]; then
+              sudo -n systemctl show "$service" --no-pager -p Description -p ExecStart -p ActiveState -p Result 2>/dev/null || true
+            fi
+            echo '---'
+          done
+          echo 'PREOPEN_CANONICAL:'
+          sudo -n systemctl cat porota-preopen.timer porota-preopen.service --no-pager 2>/dev/null || true
+          echo 'FAILED_UNITS:'
+          sudo -n systemctl --failed --no-pager --no-legend | grep -i porota || true
+          echo 'POROTA_TIMER_FORENSICS=END'
+          REMOTE
+          {
+            echo '### POROTA live timer forensics — read only'
+            echo '```text'
+            sed -n '1,260p' /tmp/timers.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
