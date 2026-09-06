@@ -262,7 +262,7 @@ Prioridad cero agregada por el operador el 2026-09-05. Aplica a **todo** el dash
 
 ### Hallazgos de campo
 
-1. En `/motor-trading` se mostraba `Economía matemática BINDING` de forma que podía leerse como si BINDING fuera el modo global. Eso es semánticamente incorrecto: `BINDING` es la política del portón económico PAPER; el modo global continúa `PRODUCTION_PAPER` y la ejecución `SIMULATED`.
+1. En `/motor-trading` se mostraba `Economía matemática BINDING` de forma que podía leerse como si BINDING fuera el modo global. Eso es semánticamente incorrecto: el portón económico estaba efectivamente BINDING en RC5 y eso contradice el plan de aprendizaje; RC6 lo restaura a SHADOW. El modo global continúa `PRODUCTION_PAPER` y la ejecución `SIMULATED`.
 2. En mercado cerrado el panel mostraba `Reloj independiente: RUNNING`. El runtime puede mantener vivo el watchdog para conservar heartbeat/fail-closed, mientras el lector ya informa `WAITING_MARKET`; presentar RUNNING como estado operativo de mercado es engañoso. La UI debe distinguir liveness interna de actividad de mercado.
 3. El mismo principio debe aplicarse a scanner, workers y cualquier componente market-sensitive: proceso vivo != mercado abierto != capacidad de ejecutar.
 4. Las tablas deformadas observadas en Samsung/Voice Access siguen P0: cero scroll horizontal de página, representación legible y controles textuales.
@@ -309,4 +309,25 @@ La UI nunca debe inferir “operando” sólo porque un proceso está `RUNNING`.
 - tablas P0 corregidas y verificadas en dispositivo.
 
 Esta prioridad se integra a P0-5 Sunday Readiness y al tablero `/validacion`.
+
+## 17. P0-APRENDIZAJE — SHADOW → BINDING → REAL-MONEY GOVERNANCE
+
+Decisión fundamental del operador, 2026-09-05: durante las primeras ruedas PAPER se prefiere perder dinero ficticio y aprender antes que bloquear prematuramente oportunidades. Los controles de selección/rentabilidad calculan y persisten su contrafactual pero no tienen autoridad de veto.
+
+### Learning gates actuales
+- Portón económico: `SHADOW` — NO bloquea PAPER.
+- Expectancy: `SHADOW/OBSERVATION_ONLY` — NO bloquea PAPER.
+- Régimen: `SHADOW/ALERT_ONLY` — NO bloquea PAPER.
+- Concentración sectorial: `SHADOW/OBSERVATION_ONLY` — NO bloquea PAPER. La decisión antigua de hacerlo BINDING desde el inicio queda superada para esta campaña.
+
+### Hard safety separado
+No son experimentos ni deben llamarse BINDING en la UI: `REAL_ORDER_CAPABILITY=BLOCKED`, ejecución `SIMULATED`, `real_orders_sent=0`, order routing real bloqueado, sesión cerrada sin nueva ejecución, libro stale/missing sin fill inventado, DB/config crítica fail-closed y derivados reales bloqueados. Mostrar como `SAFETY HARD BLOCK — NO APRENDIBLE / NO PROMOCIONABLE`.
+
+### Camino por policy
+`COLLECTING_EVIDENCE → SHADOW → SHADOW_VALIDATION → EVIDENCE_SUFFICIENT → ELIGIBLE_FOR_BINDING_DECISION → autorización explícita + release versionada → BINDING_PAPER → BINDING_VALIDATION → BINDING_PAPER_PROVEN → REAL_MONEY_GOVERNANCE → CANARY_REAL_MONEY`.
+
+No hay promoción automática por porcentaje, tiempo, número de ruedas, dashboard o backtest. La ventana ~20 ruedas/4 semanas es objetivo de observación, no gatillo.
+
+### Evidencia contrafactual mínima
+Por operación/policy: would_allow/would_block, motivo/inputs/provenance, resultado PAPER, pérdida que habría evitado, ganancia que habría eliminado, false positives/false negatives, PnL real vs contrafactual, precision, cohortes y lecciones. `/validacion` debe mostrar el camino global M0→M11 y un carril independiente SHADOW→BINDING para cada gate. Real-money permanece BLOCKED.
 

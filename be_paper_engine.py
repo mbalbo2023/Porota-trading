@@ -402,9 +402,11 @@ class PaperStore:
         """Conserva la secuencia completa; APPROVE de IA no equivale a fill."""
         detail = detail or {}
         economics = detail.get("economics") if isinstance(detail, dict) else None
+        economics_mode = str(detail.get("economics_mode") or "BINDING").upper() if isinstance(detail, dict) else "BINDING"
+        economic_violation = (economics_mode == "BINDING" and
+                              (not isinstance(economics, dict) or economics.get("passed") is not True))
         contradiction = (final == "OPENED_SIMULATED" and
-            (technical != "APPROVE" or patrimonial != "APPROVE" or
-             not isinstance(economics, dict) or economics.get("passed") is not True))
+            (technical != "APPROVE" or patrimonial != "APPROVE" or economic_violation))
         if contradiction:
             # Nunca reescribir el fill: conservar la anomalía de forma
             # explícita para que introspección bloquee el GO.
@@ -744,6 +746,7 @@ class PaperBroker:
                 self.store.event("ECONOMIC_GATE_UNSUPPORTED", f"{q.symbol}: {exc}")
                 return
             features["economics"] = economics
+            features["economics_mode"] = self.economics_mode
             if not economics["passed"]:
                 self.store.event("ECONOMIC_GATE_" + self.economics_mode,
                                  f"{q.symbol}: reward/risk neto {economics['net_reward_risk']}")

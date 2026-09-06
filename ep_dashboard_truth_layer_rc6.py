@@ -160,12 +160,12 @@ def _patched_economic_panel():
     metrics = bg._economic_shadow_metrics()
     truth = runtime_truth()
     policy = str(bg.PAPER_ECONOMIC_GATE_MODE or "UNKNOWN").upper()
-    policy_ok = policy == "BINDING"
+    policy_shadow = policy == "SHADOW"
     cards = "".join((
         bg._card("Evaluaciones económicas", metrics["evaluated"], "Señales BUY PAPER evaluadas hoy", "gray"),
-        bg._card("Aprueban economía", metrics["passed"], "Superan el portón matemático vigente", "green"),
-        bg._card("Fallan economía", metrics["failed"], "Con BINDING deben quedar bloqueadas", "red" if policy_ok and metrics["failed"] else "gray"),
-        bg._card("Abren pese al fallo", metrics["opened_with_failure"], "Invariante: cero cuando la política es BINDING", "red" if metrics["opened_with_failure"] else "green"),
+        bg._card("Would allow", metrics["passed"], "SHADOW habría permitido estas señales; no es autorización real", "green"),
+        bg._card("Would block", metrics["failed"], "SHADOW habría bloqueado, pero PAPER sigue para aprender", "yellow" if metrics["failed"] else "gray"),
+        bg._card("PAPER pese a would-block", metrics["opened_with_failure"], "Esperado en SHADOW: conserva el contrafactual para aprender", "green" if policy_shadow else "yellow"),
     ))
     closed_note = (
         " La sesión está cerrada: esta política permanece configurada, pero no significa que el motor esté operando ahora."
@@ -175,10 +175,10 @@ def _patched_economic_panel():
         "<div class='paper-card'><h2>Portón económico de aperturas PAPER</h2>"
         f"<div class='paper-notice'><b>Política del portón: {bg._e(policy)}.</b> "
         f"{bg._e(policy_description(policy))}{bg._e(closed_note)}</div>"
-        "<div class='paper-warning'><b>No es un “modo BINDING” del sistema.</b> "
+        "<div class='paper-warning'><b>Etapa de aprendizaje SHADOW.</b> "
         f"El modo global observado es <b>{bg._e(truth['mode'])}</b>, ejecución <b>{bg._e(truth['execution'])}</b>, "
-        f"sesión <b>{bg._e(truth['session_state'])}</b>. El portón sólo decide si una señal simulada puede abrir "
-        "cuando no cubre comisión, derechos, spread, deslizamiento y reward/risk neto.</div>"
+        f"sesión <b>{bg._e(truth['session_state'])}</b>. En SHADOW el portón calcula costos, spread, slippage y reward/risk, "
+        "pero NO veta PAPER: registra qué habría bloqueado y luego se contrasta contra el resultado realizado.</div>"
         f"<div class='paper-grid'>{cards}</div></div>"
     )
 

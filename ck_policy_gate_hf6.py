@@ -1,4 +1,4 @@
-"""RC4 policy gates: evaluate always; only BINDING has blocking authority.
+"""Policy gates: evaluate always; only explicitly promoted BINDING has blocking authority.
 
 SHADOW/OBSERVATION modes always persist a counterfactual verdict.  When a
 policy is explicitly BINDING, missing evidence is itself fail-closed rather

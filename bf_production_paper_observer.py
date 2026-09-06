@@ -709,7 +709,7 @@ def _economic_shadow_summary(store):
 
 def _publish_economic_shadow_health(store):
     summary = _economic_shadow_summary(store)
-    binding = os.getenv("PAPER_ECONOMIC_GATE_MODE", "BINDING").upper() == "BINDING"
+    binding = os.getenv("PAPER_ECONOMIC_GATE_MODE", "SHADOW").upper() == "BINDING"
     if not summary["evaluated"]:
         state = "AMARILLO"
         detail = "Sin señales BUY evaluadas hoy; esperando evidencia de rueda."
