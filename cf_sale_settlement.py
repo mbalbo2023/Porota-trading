@@ -1,10 +1,9 @@
 """Disponibilidad de ventas PAPER: fail-closed sin inventar un cutoff intradía.
 
-CI puede acreditarse en el mismo instante modelado. Para T+1 se calcula la
-fecha hábil esperada. Si no existe una hora contractual confirmada, la venta
-permanece bloqueada durante toda esa fecha y sólo se libera a partir de las
-00:00 del día calendario siguiente. Ese límite es una espera conservadora,
-no una hora de liquidación atribuida al broker.
+CI puede acreditarse en el mismo instante modelado. Para T+1 se calcula sólo
+la fecha hábil esperada como evidencia diagnóstica. Sin una acreditación
+reconciliada/autoritativa no se inventa una hora ni una frontera automática:
+el producido permanece bloqueado hasta confirmación explícita.
 """
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -28,12 +27,11 @@ def modeled_sale_settlement_date(settlement, traded_at):
     return None
 
 def conservative_unconfirmed_availability(settlement, traded_at):
-    """Límite seguro para un T+1 sin cutoff confirmado.
+    """Frontera diagnóstica conservadora, no autorización para liberar caja.
 
-    Nunca pretende conocer la hora real de acreditación. Si la fecha hábil
-    esperada es defendible, espera hasta que esa fecha haya transcurrido por
-    completo y devuelve 00:00 del día calendario siguiente. Si la fecha no se
-    puede demostrar, retorna None y la caja sigue bloqueada.
+    Puede expresar el comienzo del día posterior a la fecha hábil esperada,
+    pero no constituye evidencia del broker y por sí sola jamás acredita un
+    producido T+1. Si ni siquiera la fecha es demostrable, retorna ``None``.
     """
     expected=modeled_sale_settlement_date(settlement,traded_at)
     if expected is None:
@@ -57,13 +55,12 @@ def modeled_sale_settlement(settlement, traded_at):
     return None
 
 def validated_sale_settlement(settlement, traded_at, available_at, basis):
-    """Aceptar sólo disponibilidad reconciliada o una espera conservadora.
+    """Aceptar sólo disponibilidad defendible por la procedencia declarada.
 
-    ``PENDING_CONFIRMATION`` continúa bloqueando durante toda la fecha hábil
-    esperada. Una vez terminada esa fecha, se puede liberar el PAPER sin
-    inventar un cutoff intradía: la frontera derivada es el comienzo del día
-    calendario siguiente. Si ni siquiera la fecha hábil es demostrable, queda
-    bloqueado indefinidamente hasta conciliación.
+    ``PENDING_CONFIRMATION`` nunca se auto-acredita por el mero paso del
+    tiempo. Si ni siquiera la fecha hábil es demostrable, también permanece
+    bloqueado hasta conciliación. Una marca ``PAPER_CONSERVATIVE_CALENDAR``
+    sólo es válida para plazos cuyo timestamp modelado sí esté definido (CI).
     """
     traded=aware_datetime(traded_at)
     available=aware_datetime(available_at) if available_at is not None else None
