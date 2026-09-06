@@ -33,7 +33,26 @@ jobs:
           grep -q 'c.commit()' dh_paper_dynamic_risk_gate_hf6.py
 
       - name: Align only exact stale test forms
-        run: python .github/workflows/rc6_apply_patch.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/workflows/rc6_apply_patch.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tests/test_partial_allocation_integrity_v17.py')
+          text=p.read_text(encoding='utf-8')
+          old='from pathlib import Path\nimport sys\n'
+          new='from pathlib import Path\nfrom dataclasses import replace\nimport sys\n'
+          if old in text:
+              if text.count(old) != 1:
+                  raise SystemExit('partial-allocation import anchor ambiguous')
+              p.write_text(text.replace(old,new),encoding='utf-8')
+              print('RC6_PARTIAL_REPLACE_IMPORT=APPLIED')
+          elif new in text:
+              print('RC6_PARTIAL_REPLACE_IMPORT=ALREADY_APPLIED')
+          else:
+              raise SystemExit('partial-allocation import anchor not recognized')
+          PY
 
       - name: Verify test-only diff
         shell: bash
