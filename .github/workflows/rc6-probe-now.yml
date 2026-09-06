@@ -1,0 +1,27 @@
+name: RC6 targeted probes now
+on:
+  push:
+    branches:
+      - candidate/v17.0.0-rc6-weekend-20260905
+    paths:
+      - '.github/workflows/rc6-probe-now.yml'
+      - 'scripts/rc6_targeted_probe.py'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/v17.0.0-rc6-weekend-20260905
+      - name: Build candidate
+        run: docker build --pull=false -t porota-probe:${GITHUB_SHA} .
+      - name: Run probes offline
+        run: |
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python porota-probe:${GITHUB_SHA} scripts/rc6_targeted_probe.py
