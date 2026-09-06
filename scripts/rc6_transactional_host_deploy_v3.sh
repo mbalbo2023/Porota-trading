@@ -100,7 +100,7 @@ rollback_runtime() {
     done
     restore_legacy_timers
   fi
-  git -C "$REPO" checkout -B "$CURRENT_BRANCH" "$CURRENT_SHA"
+  git -C "$REPO" checkout -f -B "$CURRENT_BRANCH" "$CURRENT_SHA"
   restore_exporter_exec_bits
   git -C "$REPO" branch --set-upstream-to="origin/$CURRENT_BRANCH" "$CURRENT_BRANCH" >/dev/null 2>&1 || true
   sudo -n python3 "$REPO/porota_mode_manager.py" simulation
@@ -220,17 +220,21 @@ print(json.dumps(out,sort_keys=True))
 PY
 
 echo 'RC6_ACTIVATION=START'
-git -C "$REPO" checkout -B "$TARGET_BRANCH" "$TARGET_SHA"
+# The only tracked host drift has already been proven above as content-identical
+# exporter chmod 0644->0755, and target RC6 tracks those same blobs as 0755.
+# -f is therefore scoped to the proven transition; untracked files are preserved
+# and were separately checked for target collisions before this point.
+git -C "$REPO" checkout -f -B "$TARGET_BRANCH" "$TARGET_SHA"
+ACTIVATED=1
 git -C "$REPO" branch --set-upstream-to="origin/$TARGET_BRANCH" "$TARGET_BRANCH"
 test -z "$(git -C "$REPO" diff --name-only)"
-ACTIVATED=1
 sudo -n python3 "$REPO/porota_mode_manager.py" simulation
 wait_health
 verify_runtime "$TARGET_IMAGE"
 echo 'RC6_ACTIVATION=GREEN'
 
 echo 'CONTROLLED_LOCAL_ROLLBACK_REHEARSAL=START'
-git -C "$REPO" checkout -B "$CURRENT_BRANCH" "$CURRENT_SHA"
+git -C "$REPO" checkout -f -B "$CURRENT_BRANCH" "$CURRENT_SHA"
 restore_exporter_exec_bits
 sudo -n python3 "$REPO/porota_mode_manager.py" simulation
 wait_health
@@ -239,7 +243,8 @@ sudo -n docker run --rm --pull never --network none --read-only --tmpfs /tmp:rw,
   --entrypoint python "$CURRENT_IMAGE" -c "import _version; assert _version.VERSION=='17.0.0-rc5'; print('ROLLBACK_PULL_NEVER=GREEN')"
 echo 'CONTROLLED_LOCAL_ROLLBACK_REHEARSAL_RC5=GREEN'
 
-git -C "$REPO" checkout -B "$TARGET_BRANCH" "$TARGET_SHA"
+# Returning to RC6 repeats the same already-proven mode-only transition.
+git -C "$REPO" checkout -f -B "$TARGET_BRANCH" "$TARGET_SHA"
 sudo -n python3 "$REPO/porota_mode_manager.py" simulation
 wait_health
 verify_runtime "$TARGET_IMAGE"
