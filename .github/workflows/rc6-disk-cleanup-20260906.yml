@@ -1,0 +1,155 @@
+name: RC6 controlled disk cleanup 2026-09-06
+
+on:
+  push:
+    branches:
+      - ops/rc6-disk-cleanup-20260906
+    paths:
+      - .github/workflows/rc6-disk-cleanup-20260906.yml
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Controlled Docker cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_cleanup"
+          chmod 600 "$HOME/.ssh/porota_cleanup"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Verify live identity, remove only classified Docker residues, postflight
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_cleanup" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-disk-cleanup.txt
+          set -Eeuo pipefail
+          umask 077
+
+          REPO=/opt/porota-trading
+          LIVE_BRANCH='hotfix/rc6-cedear-us-labor-day-20260906'
+          LIVE_SHA='db26c76723bb988c956589c572b87cbcb4191731'
+          LIVE_IMAGE='porota-trading-bot:17.0.0-rc6'
+          PREHOTFIX_IMAGE='porota-trading-bot:17.0.0-rc6-prehotfix-5bdad270c2a2'
+          RC5_IMAGE='porota-trading-bot:17.0.0-rc5'
+          EXPECTED_PREHOTFIX_ID='sha256:76006b385d77274f8fd1ebd21a28559271306deaeeae23189a62e7153a495159'
+          EXPECTED_RC5_ID='sha256:bc3603df37d0fb277a89a7ae82803aa89e766ce4fb31cc7050de7a7594b0f766'
+
+          verify_runtime() {
+            local obs dash label state
+            obs="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+            dash="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+            echo "VERIFY_OBSERVER=$obs"
+            echo "VERIFY_DASHBOARD=$dash"
+            test "$obs" = "true|$LIVE_IMAGE|0|true"
+            test "$dash" = "true|$LIVE_IMAGE|0"
+            label="$(sudo -n docker image inspect "$LIVE_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')"
+            echo "LIVE_IMAGE_COMMIT_LABEL=$label"
+            test "$label" = "$LIVE_SHA"
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          out=[]
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20)
+              c.execute('PRAGMA query_only=ON')
+              out.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'):
+                  row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*out,*row))))
+          PY
+          )"
+            echo "VERIFY_DB=$state"
+            test "$state" = 'ok|ok|PRODUCTION_PAPER|0'
+            curl -fsS http://127.0.0.1:8000/health | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('status')=='ok'; assert d.get('version')=='17.0.0-rc6'"
+          }
+
+          echo '=== POROTA RC6 CONTROLLED DOCKER CLEANUP ==='
+          echo "UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
+          test "$(git -C "$REPO" branch --show-current)" = "$LIVE_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$LIVE_SHA"
+          git -C "$REPO" diff --quiet
+          git -C "$REPO" diff --cached --quiet
+
+          # Abort rather than add disk I/O while a heavy background history/browser job is active.
+          test -z "$(sudo -n systemctl list-units --type=service --state=active --no-legend 'porota-a3-history-rc6@*.service' 2>/dev/null | awk '{print $1}' || true)"
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)" != active
+
+          verify_runtime
+
+          LIVE_ID="$(sudo -n docker image inspect "$LIVE_IMAGE" --format '{{.Id}}')"
+          PREHOTFIX_ID="$(sudo -n docker image inspect "$PREHOTFIX_IMAGE" --format '{{.Id}}')"
+          RC5_ID="$(sudo -n docker image inspect "$RC5_IMAGE" --format '{{.Id}}')"
+          echo "LIVE_ID=$LIVE_ID"
+          echo "PREHOTFIX_ID=$PREHOTFIX_ID"
+          echo "RC5_ID=$RC5_ID"
+          test "$PREHOTFIX_ID" = "$EXPECTED_PREHOTFIX_ID"
+          test "$RC5_ID" = "$EXPECTED_RC5_ID"
+          test "$LIVE_ID" != "$PREHOTFIX_ID"
+          test "$LIVE_ID" != "$RC5_ID"
+
+          # Exact no-reference gate: neither old image may be referenced by any container.
+          for old_id in "$PREHOTFIX_ID" "$RC5_ID"; do
+            refs="$(sudo -n docker ps -aq --filter ancestor="$old_id" || true)"
+            echo "CONTAINER_REFS_${old_id#sha256:}=${refs:-NONE}"
+            test -z "$refs"
+          done
+
+          echo '--- BEFORE ---'
+          df -hT /
+          sudo -n docker system df
+          BEFORE_AVAIL="$(df -PB1 / | awk 'NR==2{print $4}')"
+
+          # Classified cleanup only. No docker system prune, no volumes, no runtime image.
+          sudo -n docker image rm "$PREHOTFIX_IMAGE"
+          sudo -n docker image rm "$RC5_IMAGE"
+          sudo -n docker builder prune -af
+
+          echo '--- AFTER CLEANUP ---'
+          df -hT /
+          sudo -n docker system df
+          AFTER_AVAIL="$(df -PB1 / | awk 'NR==2{print $4}')"
+          RECLAIMED="$((AFTER_AVAIL-BEFORE_AVAIL))"
+          echo "BEFORE_AVAIL_BYTES=$BEFORE_AVAIL"
+          echo "AFTER_AVAIL_BYTES=$AFTER_AVAIL"
+          echo "RECLAIMED_BYTES=$RECLAIMED"
+
+          # Exact negative/positive assertions.
+          ! sudo -n docker image inspect "$PREHOTFIX_IMAGE" >/dev/null 2>&1
+          ! sudo -n docker image inspect "$RC5_IMAGE" >/dev/null 2>&1
+          test "$(sudo -n docker image inspect "$LIVE_IMAGE" --format '{{.Id}}')" = "$LIVE_ID"
+
+          verify_runtime
+
+          echo 'CLEANUP_POLICY=GITHUB_SHA_AND_ACTIONS_RECOVERY_NO_LOCAL_APP_ROLLBACK'
+          echo 'DATA_BACKUPS_TOUCHED=NO'
+          echo 'BROWSER_PROFILE_TOUCHED=NO'
+          echo 'DOCKER_VOLUMES_TOUCHED=NO'
+          echo 'DOCKER_SYSTEM_PRUNE_USED=NO'
+          echo 'RC6_DISK_CLEANUP=GREEN'
+          HOST
+
+          {
+            echo '### RC6 controlled disk cleanup'
+            echo '```text'
+            cat /tmp/rc6-disk-cleanup.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
