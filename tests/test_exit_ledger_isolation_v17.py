@@ -24,8 +24,11 @@ def key(p):
 @pytest.fixture
 def positions(tmp_path):
     b=PaperBroker(PaperStore(str(tmp_path/'isolation.db')),initial_cash='10000')
-    for symbol in ('GGAL','ALUA'):
-        assert b._open(quote(symbol=symbol,ask_size='100',at=AT),D('.8'),{})[0]
+    first=quote(symbol='GGAL',ask_size='100',at=AT)
+    assert b._open(first,D('.8'),{})[0]
+    b.store.add_quote(first)
+    second=quote(symbol='ALUA',ask_size='100',at=AT)
+    assert b._open(second,D('.8'),{})[0]
     good,bad=sorted(b.store.open_positions(),key=lambda p:p['symbol'],reverse=True)
     assert good['symbol']=='GGAL'
     assert b._close(bad,quote(symbol='ALUA',bid_size='10',at='2026-08-28T11:01:00-03:00'),'TEST_PARTIAL')
@@ -81,7 +84,6 @@ def test_lector_continua_con_posiciones_validas_y_cuenta_inconsistencias(positio
     with b.store.connect() as c:
         observer.financial_catalog.persist(c,record)
     corrupt(b,bad)
-
     monkeypatch.setattr(observer,'now_iso',lambda:LATER)
     calls=[]
     class Reader:
