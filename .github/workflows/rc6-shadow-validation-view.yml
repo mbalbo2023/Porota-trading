@@ -1,0 +1,49 @@
+name: RC6 SHADOW validation view
+
+on:
+  push:
+    branches: [candidate/v17.0.0-rc6-weekend-20260905]
+    paths:
+      - 'et_shadow_learning_rc6.py'
+      - 'ev_shadow_validation_view_rc6.py'
+      - 'tests/test_shadow_learning_rc6.py'
+      - 'scripts/rc6_wire_shadow_validation_view.py'
+      - '.github/workflows/rc6-shadow-validation-view.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-shadow-validation
+  cancel-in-progress: false
+
+jobs:
+  prove-wire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/v17.0.0-rc6-weekend-20260905
+          fetch-depth: 0
+      - run: git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+      - run: python scripts/rc6_wire_shadow_validation_view.py
+      - run: python -m py_compile et_shadow_learning_rc6.py ev_shadow_validation_view_rc6.py en_validation_project_dashboard_rc6.py
+      - run: pytest -q tests/test_shadow_learning_rc6.py tests/test_validation_campaign_rc6.py tests/test_shadow_binding_contract_rc6.py
+      - name: Static no-promotion proof
+        shell: bash
+        run: |
+          grep -q 'shadow_view.render()' en_validation_project_dashboard_rc6.py
+          grep -q 'NO bloquea PAPER' ev_shadow_validation_view_rc6.py
+          grep -q 'real_money_authorized.*False' et_shadow_learning_rc6.py
+      - name: Commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- en_validation_project_dashboard_rc6.py; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add en_validation_project_dashboard_rc6.py
+          git commit -m 'RC6: show SHADOW counterfactual learning in Validacion [skip ci]'
+          git pull --rebase origin candidate/v17.0.0-rc6-weekend-20260905
+          git push origin HEAD:candidate/v17.0.0-rc6-weekend-20260905
