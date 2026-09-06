@@ -1,0 +1,174 @@
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/bi_operational_services.py b/bi_operational_services.py
+--- pkg/a/bi_operational_services.py	2026-09-05 21:22:24.000000000 +0000
++++ b/bi_operational_services.py	2026-09-05 22:23:16.161948855 +0000
+@@ -644,6 +644,16 @@
+     _job(store, "REPORTS", "VERDE", "Informes actualizados", success=True)
+ 
+ 
++
++def _is_business_day(day):
++    """Sin calendario verificable no se emite cierre: fail-closed (RC5-08)."""
++    try:
++        import ak_byma_calendar as calendar
++        return bool(calendar.es_dia_habil_operativo(day))
++    except Exception:
++        return False
++
++
+ def send_closing_summary(store):
+     """Un resumen por fecha en outbox; generar no equivale a entregar."""
+     from bn_telegram_bus import enqueue
+@@ -696,8 +706,10 @@
+     elif not news_enabled and (force or _job_due(store, "NEWS_REFRESH", 12 * 3600)):
+         _job(store, "NEWS_REFRESH", "NO_APLICA",
+              "Ingesta deshabilitada por HF5; evidencia histórica preservada", success=False)
+-    hour = datetime.now(TZ).hour
+-    if phase == "CLOSED" and hour >= int(os.getenv("MARKET_CLOSE_HOUR", "17")):
++    now_local = datetime.now(TZ)
++    hour = now_local.hour
++    if (phase == "CLOSED" and hour >= int(os.getenv("MARKET_CLOSE_HOUR", "17"))
++            and _is_business_day(now_local.date())):
+         if force or _job_due(store, "REPORTS", 6 * 3600):
+             ensure_reports(store, include_today=True)
+         send_closing_summary(store)
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/c_ppi_client.py b/c_ppi_client.py
+--- pkg/a/c_ppi_client.py	2026-09-05 21:22:24.000000000 +0000
++++ b/c_ppi_client.py	2026-09-05 22:23:16.162317487 +0000
+@@ -1210,8 +1210,12 @@
+                             "operation": terms['operation'], "status": "SIMULADA",
+                             "instrumentType": terms['instrumentType'],
+                             "quantityType": terms['quantityType'], "settlement": terms['settlement']}
+-            except ImportError:
+-                pass  # sin el portón instalado, el comportamiento es el de siempre
++            except ImportError as exc:
++                # RC5-06: el portón es la única barrera de este punto. Su
++                # ausencia NO puede degradar a "enviar la orden igual".
++                raise RuntimeError(
++                    "ORDER_GATE_MISSING: ao_startup_gate no disponible; orden abortada."
++                ) from exc
+ 
+         from ppi_client.models.order_confirm import OrderConfirm
+         from ppi_client.models.disclaimer import Disclaimer
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/deploy/systemd/porota-log-export-hf6.timer b/deploy/systemd/porota-log-export-hf6.timer
+--- pkg/a/deploy/systemd/porota-log-export-hf6.timer	2026-09-05 21:22:24.000000000 +0000
++++ b/deploy/systemd/porota-log-export-hf6.timer	2026-09-05 22:23:16.163242503 +0000
+@@ -5,7 +5,6 @@
+ OnBootSec=2min
+ OnUnitActiveSec=1min
+ AccuracySec=15s
+-Persistent=true
+ Unit=porota-log-export-hf6.service
+ 
+ [Install]
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/deploy/systemd/porota-scheduler-export-hf6.timer b/deploy/systemd/porota-scheduler-export-hf6.timer
+--- pkg/a/deploy/systemd/porota-scheduler-export-hf6.timer	2026-09-05 21:22:24.000000000 +0000
++++ b/deploy/systemd/porota-scheduler-export-hf6.timer	2026-09-05 22:23:16.163182452 +0000
+@@ -5,7 +5,6 @@
+ OnBootSec=2min
+ OnUnitActiveSec=1min
+ AccuracySec=15s
+-Persistent=true
+ Unit=porota-scheduler-export-hf6.service
+ 
+ [Install]
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/deploy/systemd/porota-scheduler-export-hf6.timer b/deploy/systemd/porota-scheduler-export-hf6.timer
+--- pkg/a/deploy/systemd/porota-scheduler-export-hf6.timer	2026-09-05 21:22:24.000000000 +0000
++++ b/deploy/systemd/porota-scheduler-export-hf6.timer	2026-09-05 22:23:16.163182452 +0000
+@@ -5,7 +5,6 @@
+ OnBootSec=2min
+ OnUnitActiveSec=1min
+ AccuracySec=15s
+-Persistent=true
+ Unit=porota-scheduler-export-hf6.service
+ 
+ [Install]
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/rc4_release_preflight.py b/rc4_release_preflight.py
+--- pkg/a/rc4_release_preflight.py	2026-09-05 21:22:24.000000000 +0000
++++ b/rc4_release_preflight.py	2026-09-05 22:23:16.163328758 +0000
+@@ -33,9 +33,10 @@
+ legacy_scraper='cn_ppi_authenticated_family_scraper_hf6'
+ check('rc4_contract_uses_trusted_collector_only', legacy_scraper not in rc4_contract_service and legacy_scraper not in rc4_contract_script and 'rc4_trusted_browser_contract_collector.py' in rc4_contract_script, 'trusted-device GET-only path')
+ 
+-for name,ok,detail in checks:
+-    print(f"{'GREEN' if ok else 'RED'}|{name}|{detail}")
+-failed=[x for x in checks if not x[1]]
+-print(f'RC4_PREFLIGHT={"GREEN" if not failed else "RED"}')
+-print(f'CHECKS={len(checks)} FAILED={len(failed)}')
+-raise SystemExit(0 if not failed else 2)
++if __name__ == "__main__":
++    for name,ok,detail in checks:
++        print(f"{'GREEN' if ok else 'RED'}|{name}|{detail}")
++    failed=[x for x in checks if not x[1]]
++    print(f'RC4_PREFLIGHT={"GREEN" if not failed else "RED"}')
++    print(f'CHECKS={len(checks)} FAILED={len(failed)}')
++    raise SystemExit(0 if not failed else 2)
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/rc5_release_preflight.py b/rc5_release_preflight.py
+--- pkg/a/rc5_release_preflight.py	2026-09-05 21:22:24.000000000 +0000
++++ b/rc5_release_preflight.py	2026-09-05 22:23:16.163411714 +0000
+@@ -62,9 +62,10 @@
+ check("byma_half_open", status.get("interval") == "[10:30,17:00)", status.get("interval"))
+ check("byma_special_fail_closed", status.get("extended_sessions_enabled") is False and status.get("unverified_special_sessions") == "FAIL_CLOSED", status)
+ 
+-for name, ok, detail in checks:
+-    print(f"{'GREEN' if ok else 'RED'}|{name}|{detail}")
+-failed = [row for row in checks if not row[1]]
+-print(f"RC5_PREFLIGHT={'GREEN' if not failed else 'RED'}")
+-print(f"CHECKS={len(checks)} FAILED={len(failed)}")
+-raise SystemExit(0 if not failed else 2)
++if __name__ == "__main__":
++    for name, ok, detail in checks:
++        print(f"{'GREEN' if ok else 'RED'}|{name}|{detail}")
++    failed = [row for row in checks if not row[1]]
++    print(f"RC5_PREFLIGHT={'GREEN' if not failed else 'RED'}")
++    print(f"CHECKS={len(checks)} FAILED={len(failed)}")
++    raise SystemExit(0 if not failed else 2)
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/systemd/porota-a3-cem-history-rc4.timer b/systemd/porota-a3-cem-history-rc4.timer
+--- pkg/a/systemd/porota-a3-cem-history-rc4.timer	2026-09-05 21:22:24.000000000 +0000
++++ b/systemd/porota-a3-cem-history-rc4.timer	2026-09-05 22:23:16.162887568 +0000
+@@ -4,6 +4,5 @@
+ OnBootSec=20min
+ OnUnitActiveSec=60min
+ AccuracySec=5min
+-Persistent=true
+ [Install]
+ WantedBy=timers.target
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/systemd/porota-contract-evidence-rc4.timer b/systemd/porota-contract-evidence-rc4.timer
+--- pkg/a/systemd/porota-contract-evidence-rc4.timer	2026-09-05 21:22:24.000000000 +0000
++++ b/systemd/porota-contract-evidence-rc4.timer	2026-09-05 22:23:16.163087052 +0000
+@@ -4,6 +4,5 @@
+ OnBootSec=5min
+ OnUnitActiveSec=5min
+ AccuracySec=30s
+-Persistent=true
+ [Install]
+ WantedBy=timers.target
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/systemd/porota-functional-deep-audit-rc4.timer b/systemd/porota-functional-deep-audit-rc4.timer
+--- pkg/a/systemd/porota-functional-deep-audit-rc4.timer	2026-09-05 21:22:24.000000000 +0000
++++ b/systemd/porota-functional-deep-audit-rc4.timer	2026-09-05 22:23:16.162804486 +0000
+@@ -4,6 +4,5 @@
+ OnBootSec=10min
+ OnUnitActiveSec=60min
+ AccuracySec=2min
+-Persistent=true
+ [Install]
+ WantedBy=timers.target
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/systemd/porota-functional-health-rc4.timer b/systemd/porota-functional-health-rc4.timer
+--- pkg/a/systemd/porota-functional-health-rc4.timer	2026-09-05 21:22:24.000000000 +0000
++++ b/systemd/porota-functional-health-rc4.timer	2026-09-05 22:23:16.162952117 +0000
+@@ -4,6 +4,5 @@
+ OnBootSec=3min
+ OnUnitActiveSec=5min
+ AccuracySec=30s
+-Persistent=true
+ [Install]
+ WantedBy=timers.target
+diff -ruN -x __pycache__ -x '*.pyc' pkg/a/systemd/porota-history-postclose-rc4.timer b/systemd/porota-history-postclose-rc4.timer
+--- pkg/a/systemd/porota-history-postclose-rc4.timer	2026-09-05 21:22:24.000000000 +0000
++++ b/systemd/porota-history-postclose-rc4.timer	2026-09-05 22:23:16.163012588 +0000
+@@ -4,6 +4,5 @@
+ OnBootSec=15min
+ OnUnitActiveSec=15min
+ AccuracySec=2min
+-Persistent=true
+ [Install]
+ WantedBy=timers.target
