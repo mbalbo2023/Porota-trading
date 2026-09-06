@@ -1,0 +1,5 @@
+POROTA TRADING RC6 FINAL CANDIDATE GATE
+Date: 2026-09-06
+Purpose: trigger the full RC6 candidate acceptance workflow after fixing the CI-only quoting defect in the safety-invariants step.
+Safety identity: PRODUCTION_PAPER / SIMULATED / REAL_ORDER_CAPABILITY=BLOCKED.
+RC5 runtime remains unchanged until all RC6 gates, immutable archive proof, host truth, offline rollback rehearsal and Sunday readiness are GREEN.
