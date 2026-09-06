@@ -12,6 +12,7 @@ from datetime import datetime
 from fastapi.responses import HTMLResponse
 
 import bg_paper_dashboard as bg
+import ev_shadow_validation_view_rc6 as shadow_view
 from em_validation_campaign_rc6 import (
     MILESTONES,
     load_records,
@@ -136,7 +137,8 @@ def page(limit_days=10):
         "Realismo de ejecución → Evidencia estadística → Operabilidad/A11Y → Campaña sostenida → Auditoría/consenso → "
         "Governance futura → Real-money.</p>"
         f"<div class='paper-grid'>{cards}</div>"
-        "<div class='paper-card'><h2>Hitos del camino crítico M0–M11</h2>"
+        + shadow_view.render()
+        + "<div class='paper-card'><h2>Hitos del camino crítico M0–M11</h2>"
         "<p>Cada hito muestra objetivo, evidencia esperada/observada, desviación, blocker y próximo paso.</p>"
         f"{roadmap}</div>"
         + controls
