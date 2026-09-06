@@ -3,6 +3,9 @@ name: RC6 full candidate gate
 on:
   push:
     branches: [candidate/v17.0.0-rc6-weekend-20260905]
+    paths-ignore:
+      - '.github/workflows/**'
+      - '*.md'
   workflow_dispatch:
 
 permissions:
