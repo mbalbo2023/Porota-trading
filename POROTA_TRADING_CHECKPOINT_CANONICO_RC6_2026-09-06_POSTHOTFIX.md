@@ -41,7 +41,17 @@ Runtime probado postdeploy:
 - `real_orders_sent=0`;
 - real-order capability bloqueada.
 
-Rollback local preservado: `porota-trading-bot:17.0.0-rc6-prehotfix-5bdad270c2a2`.
+### Política canónica de recuperación de aplicación
+
+**NO se mantiene rollback de aplicación en el disco del Droplet.**
+
+- la identidad recuperable es el commit/SHA exacto en GitHub;
+- GitHub Actions es el mecanismo preferido de redeploy/recovery;
+- se puede reutilizar una imagen/artefacto inmutable de registry si existe y está verificado;
+- si no existe, se reconstruye desde el commit exacto mediante el pipeline gobernado;
+- imágenes Docker antiguas no quedan protegidas por el solo hecho de ser “rollback”; si no están referenciadas por runtime activo ni constituyen evidencia única indispensable, son candidatas a limpieza.
+
+Esta regla prevalece sobre cualquier texto anterior que indicara conservar una imagen local pre-hotfix o de rollback.
 
 ## 2. Auditoría de ingesta/históricos/aprendizaje — resultado
 
@@ -182,8 +192,8 @@ Quedan incorporados al backlog y deben auditarse/implementarse sin mezclar con e
 
 ## 5. `/validacion` — criterio para completar hitos
 
-- M0 Infraestructura/capacidad: usar deploy transaccional, rollback probado, disk gate, containers, timers, backups y health; cerrar criterio por criterio con evidencia.
-- M1 Safety: real-order block, readonly, DB integrity, calendar fail-closed, rollback, safety gates.
+- M0 Infraestructura/capacidad: usar deploy transaccional, recuperabilidad por SHA exacto desde GitHub/GitHub Actions, disk gate, containers, timers, backups de datos cuando correspondan y health; cerrar criterio por criterio con evidencia.
+- M1 Safety: real-order block, readonly, DB integrity, calendar fail-closed, recovery runbook desde GitHub, safety gates.
 - M2 Fuentes/contratos: PPI read-only + Contract Evidence DUE real + provenance/contratos por familia.
 - M3 Mercado/históricos: progreso sostenido PPI/Data912/A3, freshness/gaps/coverage suficiente; scheduler instalado no equivale a completo.
 - M4–M8: campaña PAPER forward, realismo, estabilidad, estadística, A11Y y jornadas sostenidas.
@@ -221,12 +231,15 @@ Antes de borrar:
 - dbstat/atribución por tablas;
 - inventario Docker;
 - inventario untracked/backups;
-- preservar imagen exacta de rollback;
+- verificar recuperabilidad del SHA exacto desde GitHub/GitHub Actions;
+- **no reservar imagen Docker local de rollback**;
 - definir retention;
-- borrar sólo elementos clasificados.
+- borrar sólo elementos clasificados y autorizados.
+
+Imágenes anteriores no referenciadas —incluida cualquier imagen pre-hotfix— son candidatas si no constituyen evidencia única indispensable.
 
 Prohibido como limpieza genérica:
-- `docker system prune`;
+- `docker system prune -a`;
 - `git clean`;
 - `VACUUM` ciego.
 
@@ -246,7 +259,7 @@ Prohibido como limpieza genérica:
 
 ### P2
 - retention v2 después de dbstat.
-- lifecycle untracked/backups/imágenes Docker.
+- lifecycle untracked/backups/imágenes Docker con recuperación de aplicación basada en GitHub, no en rollback local.
 - sector map/correlation/family normalization.
 - close-only salvage effectiveness.
 - candle integrity longitudinal.
@@ -275,4 +288,5 @@ En cualquier chat futuro:
 5. no mover la branch live por documentación;
 6. registrar cada hallazgo en `/validacion` y siguiente checkpoint;
 7. no transformar pendientes P1/P2 en blockers sin evidencia nueva;
-8. no declarar GREEN una fuente sólo porque el timer existe.
+8. no declarar GREEN una fuente sólo porque el timer existe;
+9. no conservar rollback de aplicación en disco: recovery desde GitHub/GitHub Actions por SHA exacto.
