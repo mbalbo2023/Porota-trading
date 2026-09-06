@@ -15,6 +15,10 @@ def host(tmp_path, monkeypatch):
     data.mkdir(parents=True)
     monkeypatch.setattr(prep, 'ROOT', root)
     monkeypatch.setattr(prep, 'EXPECTED_ID', os.geteuid())
+    # Functional unit tests run inside a deliberately small ephemeral tmpfs.
+    # Capacity policy is validated independently at deployment/preflight level;
+    # do not let the CI runner's tmpfs size mask directory semantics.
+    monkeypatch.setattr(prep, 'MIN_AVAILABLE', 0)
     rows = [dict(name='/'+name, running=False, restart='no',
                  image='sha256:'+'a'*64, user='botuser') for name in prep.ENGINES]
     monkeypatch.setattr(prep.subprocess, 'run', lambda *a, **k:SimpleNamespace(
