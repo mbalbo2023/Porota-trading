@@ -804,38 +804,38 @@ class PaperBroker:
         if market != "BYMA":
             return False, "Ejecutor de contado pendiente para este mercado", None
 
-        # RC4: policies are evaluated on every candidate. Observation/SHADOW
+        # RC6: learning policies are evaluated on every candidate. Observation/SHADOW
         # persists a counterfactual only; explicit BINDING grants veto authority
         # and fails closed if required evidence is unavailable.
         try:
-            import ck_policy_gate_hf6 as rc4_policy_gate
-            import rc4_policy_context
-            policy_context = rc4_policy_context.collect(
+            import ck_policy_gate_hf6 as policy_gate
+            import es_policy_context_rc6 as policy_context_provider
+            policy_context = policy_context_provider.collect(
                 self.store, at=at, candidate={
                     "symbol": q.symbol, "family": family, "market": market,
                     "currency": currency, "settlement": q.settlement,
                 })
-            policy_evaluation = rc4_policy_gate.evaluate(
+            policy_evaluation = policy_gate.evaluate(
                 expectancy_samples=policy_context.get("expectancy_samples"),
                 breadth=policy_context.get("breadth"),
                 sectors=policy_context.get("sectors"),
                 candidate_sector=policy_context.get("candidate_sector"),
             )
-            features["rc4_policy_context_source"] = policy_context.get("source")
-            features["rc4_policy_evaluation"] = policy_evaluation
+            features["policy_context_source"] = policy_context.get("source")
+            features["policy_evaluation"] = policy_evaluation
             if policy_evaluation.get("execute_block"):
                 self.store.event("POLICY_GATE_BLOCKED",
                                  f"{q.symbol}: {policy_evaluation.get('verdict')}")
                 return False, str(policy_evaluation.get("verdict")), None
         except Exception as exc:
             # A provider/programming error must only stop entries when one of the
-            # RC4 policies was explicitly promoted to BINDING.
+            # a learning policy was explicitly promoted to BINDING_PAPER authority.
             try:
-                import ck_policy_gate_hf6 as rc4_policy_gate
-                modes = rc4_policy_gate.active_policies()
+                import ck_policy_gate_hf6 as policy_gate
+                modes = policy_gate.active_policies()
             except Exception:
                 modes = {}
-            features["rc4_policy_error"] = f"{type(exc).__name__}:{str(exc)[:240]}"
+            features["policy_error"] = f"{type(exc).__name__}:{str(exc)[:240]}"
             if any(str(modes.get(key) or "").upper() == "BINDING"
                    for key in ("expectancy", "regime", "sector_concentration")):
                 return False, "POLICY_CONTEXT_UNAVAILABLE_BINDING", None
