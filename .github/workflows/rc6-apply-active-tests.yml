@@ -1,4 +1,4 @@
-name: RC6 apply active-test alignment
+name: RC6 apply validated runtime/test alignment
 
 on:
   push:
@@ -17,28 +17,68 @@ concurrency:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           ref: candidate/v17.0.0-rc6-weekend-20260905
           fetch-depth: 0
+
       - name: Verify RC5 ancestry
         run: git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
-      - name: Apply deterministic patch
+
+      - name: Fix locked daily-risk rejection persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('be_paper_engine.py')
+          text = p.read_text(encoding='utf-8')
+          old = '''            error = self.admission_error(q, at, connection=c)\n            if error:\n                return False, error, None\n'''
+          new = '''            error = self.admission_error(q, at, connection=c)\n            if error:\n                # Locked admission may persist fail-closed DailyRisk/audit state.\n                # No fill mutation has occurred yet, so preserve that state before\n                # rejecting the simulated entry instead of rolling it back.\n                c.commit()\n                return False, error, None\n'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one locked-admission branch, found {count}')
+          p.write_text(text.replace(old, new), encoding='utf-8')
+          print('RC6_DAILY_RISK_LOCK_COMMIT_PATCH=OK')
+          PY
+
+      - name: Align stale tests with fail-closed semantics
         run: python .github/workflows/rc6_apply_patch.py
-      - name: Verify diff
+
+      - name: Verify source diff
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
-          test -n "$(git status --porcelain tests/)"
-      - name: Commit aligned tests
+          test -n "$(git status --porcelain be_paper_engine.py tests/)"
+          git diff -- be_paper_engine.py tests/
+
+      - name: Build patched candidate
+        run: docker build --pull=false -t porota-rc6-alignment:${GITHUB_SHA} .
+
+      - name: Full offline pytest gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e PYTHONPATH=/app:/app/tests \
+            -e ENVIRONMENT=SANDBOX \
+            -e DB_PATH=/tmp/porota-ci.db \
+            -e TELEGRAM_CHAT_ID=0 \
+            --entrypoint python porota-rc6-alignment:${GITHUB_SHA} -m pytest -q
+
+      - name: Commit only validated runtime and tests
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'Porota RC6 CI'
           git config user.email '151845499+mbalbo2023@users.noreply.github.com'
-          git add tests/
-          git commit -m 'RC6 tests: align active semantics with fail-closed runtime'
+          git add be_paper_engine.py tests/
+          git diff --cached --check
+          git commit -m 'RC6: persist risk latch and align fail-closed tests'
           git push origin HEAD:candidate/v17.0.0-rc6-weekend-20260905
