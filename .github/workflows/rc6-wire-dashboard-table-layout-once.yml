@@ -1,0 +1,58 @@
+name: RC6 wire dashboard table layout
+
+on:
+  push:
+    branches:
+      - candidate/v17.0.0-rc6-weekend-20260905
+    paths:
+      - 'eq_dashboard_table_layout_rc6.py'
+      - 'scripts/rc6_wire_dashboard_table_layout.py'
+      - 'tests/test_dashboard_table_layout_rc6.py'
+      - '.github/workflows/rc6-wire-dashboard-table-layout-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-wire-dashboard-table-layout
+  cancel-in-progress: false
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/v17.0.0-rc6-weekend-20260905
+          fetch-depth: 0
+      - name: Verify RC5 ancestry
+        run: git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+      - name: Wire table layout
+        run: python scripts/rc6_wire_dashboard_table_layout.py
+      - name: Compile and smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile eq_dashboard_table_layout_rc6.py o_dashboard.py
+          python - <<'PY'
+          import eq_dashboard_table_layout_rc6 as t
+          assert t.should_force_compact(10,1200)
+          assert t.should_force_compact(6,700)
+          assert not t.should_force_compact(4,900,850)
+          assert t.should_force_compact(4,900,1100)
+          print('RC6_TABLE_LAYOUT_SMOKE=GREEN')
+          PY
+      - name: Commit wiring only if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- o_dashboard.py; then
+            echo 'RC6_TABLE_LAYOUT_WIRING_COMMIT=NOT_NEEDED'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add o_dashboard.py
+          git commit -m 'RC6: wire content-width table layout [skip ci]'
+          git push origin HEAD:candidate/v17.0.0-rc6-weekend-20260905
