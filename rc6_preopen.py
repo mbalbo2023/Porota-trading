@@ -102,13 +102,18 @@ def foreign_market_policy(today):
     if today.isoformat() != '2026-09-07':
         return {'state':'GREEN','event':None}
     probe = datetime(2026,9,7,10,15,tzinfo=TZ)
-    symbols = ('AAPL','AAPLD','AAPLC')
-    reasons = {s:rc6_underlying_opening_block(s,'CEDEARS',probe) for s in symbols}
+    focus_symbols = ('AAPL','AAPLD','AAPLC')
+    nonfocus_symbols = ('MSFT','KO')
+    focus_reasons = {s:rc6_underlying_opening_block(s,'CEDEARS',probe) for s in focus_symbols}
+    nonfocus_reasons = {s:rc6_underlying_opening_block(s,'CEDEARS',probe) for s in nonfocus_symbols}
     argentina_equity = rc6_underlying_opening_block('GGAL','ACCIONES',probe)
-    ok = all(v == 'UNDERLYING_MARKET_CLOSED: US_LABOR_DAY' for v in reasons.values()) and not argentina_equity
+    all_reasons = tuple(focus_reasons.values()) + tuple(nonfocus_reasons.values())
+    ok = all(v == 'UNDERLYING_MARKET_CLOSED: US_LABOR_DAY' for v in all_reasons) and not argentina_equity
     return {'state':'GREEN' if ok else 'RED','event':'US_LABOR_DAY',
-            'blocked_focus_cedears':reasons,'argentina_equity_block':argentina_equity or None,
-            'policy':'OBSERVE_AND_RECORD_QUOTES; HOLD_NEW_APPLE_CEDEAR_OPENINGS'}
+            'blocked_focus_cedears':focus_reasons,
+            'blocked_nonfocus_cedear_probes':nonfocus_reasons,
+            'argentina_equity_block':argentina_equity or None,
+            'policy':'OBSERVE_AND_RECORD_QUOTES; HOLD_NEW_CEDEAR_OPENINGS_WHILE_US_MARKET_CLOSED'}
 
 
 def main():
