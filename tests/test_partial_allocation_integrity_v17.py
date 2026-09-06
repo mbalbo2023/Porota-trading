@@ -94,6 +94,10 @@ def test_precio_agregado_de_cierre_debe_concordar_con_sus_fills(sold, price):
 @pytest.mark.parametrize('kind', ['source', 'allocation'])
 def test_error_bloquea_caja_riesgo_y_caucion_sin_cegar_otro_stop(sold, kind):
     b, bad, _, sell = sold()
+    # Este caso fabrica una segunda posición para luego corromper sólo la primera.
+    # La admisión/riesgo concurrente se prueba en otras suites; aquí se aísla el
+    # comportamiento del ledger y del supervisor ante una posición dañada.
+    b.daily_risk = None
     good_q = quote(symbol='ALUA', minute=2, ask_size='100')
     assert b._open(good_q, D('.8'), {})[0]
     good = next(p for p in b.store.open_positions() if p['symbol'] == 'ALUA')
