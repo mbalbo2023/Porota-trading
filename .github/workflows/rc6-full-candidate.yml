@@ -49,7 +49,7 @@ jobs:
       - name: Full pytest suite without network
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
           docker run --rm --network none --read-only \
             --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m \
             --tmpfs /app/data:rw,nosuid,nodev,size=128m \
@@ -59,7 +59,21 @@ jobs:
             -e TELEGRAM_CHAT_ID=0 \
             -e STARTUP_REQUIRE_AUTH=false \
             --entrypoint bash porota-rc6-candidate:${GITHUB_SHA} -lc \
-            'python -m pytest -q -p no:cacheprovider'
+            'python -m pytest -q -p no:cacheprovider --tb=short' \
+            > rc6-pytest.log 2>&1
+          rc=$?
+          set -e
+          echo '===== PYTEST COMPACT TAIL ====='
+          tail -n 260 rc6-pytest.log || true
+          {
+            echo '### Full pytest compact result'
+            echo "- exit_code: ${rc}"
+            echo '```text'
+            grep -E '^(FAILED|ERROR) ' rc6-pytest.log | tail -n 180 || true
+            grep -E '^[0-9]+ failed|^[0-9]+ passed|^[0-9]+ error|^=+ .* in [0-9]' rc6-pytest.log | tail -n 5 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
 
       - name: RC6 safety and semantics invariants
         shell: bash
