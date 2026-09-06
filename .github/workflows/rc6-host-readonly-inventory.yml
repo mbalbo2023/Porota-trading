@@ -1,5 +1,6 @@
 name: RC6 host truth read-only
 
+# Sunday 2026-09-06 recheck; strictly read-only host inventory.
 on:
   push:
     branches: [candidate/v17.0.0-rc6-weekend-20260905]
