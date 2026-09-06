@@ -1,0 +1,185 @@
+name: RC6 PPI history prime 2026-09-06
+
+on:
+  push:
+    branches:
+      - ops/rc6-ppi-history-prime-20260906
+    paths:
+      - .github/workflows/rc6-ppi-history-prime-20260906.yml
+
+permissions:
+  contents: read
+
+jobs:
+  prime:
+    name: One bounded read-only PPI history batch
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_history_prime"
+          chmod 600 "$HOME/.ssh/porota_history_prime"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Preflight, bounded history batch, postflight
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_history_prime" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-ppi-history-prime.txt
+          set -Eeuo pipefail
+          umask 077
+          REPO=/opt/porota-trading
+          LIVE_BRANCH='hotfix/rc6-cedear-us-labor-day-20260906'
+          LIVE_SHA='db26c76723bb988c956589c572b87cbcb4191731'
+          LIVE_IMAGE='porota-trading-bot:17.0.0-rc6'
+
+          verify_runtime() {
+            local obs dash label state phase
+            obs="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+            dash="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+            echo "VERIFY_OBSERVER=$obs"
+            echo "VERIFY_DASHBOARD=$dash"
+            test "$obs" = "true|$LIVE_IMAGE|0|true"
+            test "$dash" = "true|$LIVE_IMAGE|0"
+            label="$(sudo -n docker image inspect "$LIVE_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')"
+            echo "LIVE_IMAGE_COMMIT_LABEL=$label"
+            test "$label" = "$LIVE_SHA"
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          out=[]
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+              c.execute('PRAGMA query_only=ON')
+              out.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'):
+                  row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*out,*row))))
+          PY
+          )"
+            echo "VERIFY_DB=$state"
+            test "$state" = 'ok|ok|PRODUCTION_PAPER|0'
+            phase="$(sudo -n docker exec porota_production_observer python -c 'import bf_production_paper_observer as b; print(b._market_phase())')"
+            echo "MARKET_PHASE=$phase"
+            test "$phase" = 'CLOSED'
+            curl -fsS http://127.0.0.1:8000/health | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('status')=='ok'; assert d.get('version')=='17.0.0-rc6'"
+          }
+
+          snapshot() {
+            local label="$1"
+            echo "--- SNAPSHOT_$label ---"
+            sudo -n docker exec -i porota_production_observer python - "$label" <<'PY'
+          import json,sqlite3,sys
+          label=sys.argv[1]
+          op='/app/data/paper_v17/observer_v17.db'
+          hp='/app/data/market_history.db'
+          c=sqlite3.connect(f'file:{op}?mode=ro',uri=True,timeout=30)
+          c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          src=c.execute("SELECT status,last_attempt_at,last_success_at,items,detail FROM source_sync WHERE source='PPI_PRODUCTION_HISTORY'").fetchone()
+          attempts={str(r[0]):int(r[1]) for r in c.execute("SELECT state,COUNT(*) FROM production_history_attempts GROUP BY state")}
+          covered=int(c.execute("SELECT COUNT(*) FROM production_history WHERE row_count>0").fetchone()[0])
+          candidates=int(c.execute("SELECT COUNT(*) FROM candidate_universe WHERE status='AVAILABLE' AND (can_simulate=1 OR instrument_type='INDICES')").fetchone()[0])
+          orders=int(c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] or 0)
+          c.close()
+          h=sqlite3.connect(f'file:{hp}?mode=ro',uri=True,timeout=30)
+          h.execute('PRAGMA query_only=ON')
+          def count_if(name):
+              exists=h.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(name,)).fetchone()
+              return int(h.execute(f'SELECT COUNT(*) FROM {name}').fetchone()[0]) if exists else None
+          out={
+              'label':label,
+              'source_sync':dict(src) if src else None,
+              'attempt_states':attempts,
+              'covered_production_history':covered,
+              'eligible_candidates':candidates,
+              'history_canonical_v2_rows':count_if('history_canonical_v2'),
+              'history_versions_v2_rows':count_if('history_versions_v2'),
+              'history_row_rejections_v2_rows':count_if('history_row_rejections_v2'),
+              'real_orders_sent':orders,
+          }
+          h.close()
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True))
+          PY
+          }
+
+          echo '=== POROTA RC6 PPI HISTORY PRIME ==='
+          echo "UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
+          test "$(git -C "$REPO" branch --show-current)" = "$LIVE_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$LIVE_SHA"
+          git -C "$REPO" diff --quiet
+          git -C "$REPO" diff --cached --quiet
+          test "$(df -P / | awk 'NR==2{gsub("%","",$5); print $5}')" -lt 70
+
+          # Do not overlap with the separate A3/browser background workers.
+          test -z "$(sudo -n systemctl list-units --type=service --state=active --no-legend 'porota-a3-history-rc6@*.service' 2>/dev/null | awk '{print $1}' || true)"
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)" != active
+
+          verify_runtime
+          snapshot BEFORE
+
+          echo '--- BOUNDED_PPI_HISTORY_BATCH ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json
+          from bd_ppi_readonly_guard import ProductionMarketReader
+          from bf_production_paper_observer import _background_ingest, _secret, HISTORY_BATCH_LIMIT
+          from cg_paper_workspace import runtime_store
+          store=runtime_store()
+          reader=None
+          try:
+              reader=ProductionMarketReader(*_secret(), audit=store.audit_http)
+              reader.login_once()
+              rows=_background_ingest(reader,store,force=True)
+              if rows is None:
+                  raise RuntimeError('BACKGROUND_INGEST_RETURNED_NONE')
+              with store.connect() as c:
+                  src=c.execute("SELECT status,last_attempt_at,last_success_at,items,detail FROM source_sync WHERE source='PPI_PRODUCTION_HISTORY'").fetchone()
+                  orders=int(c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()[0] or 0)
+              result={
+                  'schema':'POROTA_RC6_FORCED_BOUNDED_PPI_HISTORY_V1',
+                  'history_batch_limit':HISTORY_BATCH_LIMIT,
+                  'valid_rows_seen':int(rows),
+                  'source_status':str(src[0]) if src else 'MISSING',
+                  'last_attempt_at':str(src[1]) if src else None,
+                  'last_success_at':str(src[2]) if src else None,
+                  'items':int(src[3]) if src else 0,
+                  'detail':str(src[4]) if src else '',
+                  'real_orders_sent':orders,
+                  'network_order_test_performed':False,
+              }
+              print(json.dumps(result,ensure_ascii=False,sort_keys=True))
+              assert orders==0
+          finally:
+              if reader is not None:
+                  try: reader.close()
+                  except Exception: pass
+          PY
+
+          snapshot AFTER
+          verify_runtime
+          echo 'PRIME_POLICY=BACKGROUND_READONLY_ONE_BATCH_NO_STRATEGY_CHANGE'
+          echo 'REAL_ORDER_CAPABILITY=BLOCKED'
+          echo 'RC6_PPI_HISTORY_PRIME=GREEN'
+          HOST
+
+          {
+            echo '### RC6 PPI history prime'
+            echo '```text'
+            cat /tmp/rc6-ppi-history-prime.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
