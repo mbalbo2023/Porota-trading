@@ -71,7 +71,7 @@ El crecimiento de históricos debe concentrarse en barras normalizadas, no en du
 - ejecutar `PRAGMA quick_check` como gate;
 - no usar `VACUUM` rutinario dentro de la rueda;
 - `wal_checkpoint` sólo en ventana segura y después de verificar lectores/escritores;
-- considerar `VACUUM` únicamente si existe espacio recuperable significativo y con backup/rollback comprobado;
+- considerar `VACUUM` únicamente si existe espacio recuperable significativo y con procedimiento de protección de datos y recuperación comprobado;
 - medir tamaño antes/después de cualquier mantenimiento.
 
 ## Logs
@@ -83,25 +83,37 @@ El crecimiento de históricos debe concentrarse en barras normalizadas, no en du
 - incidentes, deploys y errores críticos se preservan como evidencia asociada aunque superen la retención normal;
 - nunca eliminar el único log que explica un fallo activo.
 
-## Docker
+## Docker y recuperación de aplicación
+
+Política canónica: **NO se conserva una imagen Docker local de rollback sólo por si hubiera que volver atrás.** El disco del Droplet no es el repositorio de rollback de la aplicación.
+
+La recuperabilidad de aplicación se basa en:
+
+- commit/SHA exacto y trazable en GitHub;
+- GitHub Actions como mecanismo preferido de redeploy/recovery;
+- artefacto o imagen inmutable de registry cuando exista y esté verificado;
+- si no existe artefacto inmutable utilizable, reconstrucción desde el commit exacto de GitHub mediante el pipeline gobernado.
 
 Después de un deploy VERDE:
 
-1. identificar imagen activa por digest;
-2. identificar UNA imagen de rollback previamente validada;
-3. conservar ambas;
+1. identificar la imagen activa por digest y los contenedores que la referencian;
+2. verificar que el SHA exacto desplegado y su procedimiento de reconstrucción/redeploy estén disponibles en GitHub/GitHub Actions;
+3. conservar localmente sólo la imagen necesaria para el runtime activo, salvo otra necesidad explícita y documentada distinta de rollback;
 4. listar imágenes anteriores no referenciadas;
 5. listar contenedores detenidos y build cache no referenciado;
 6. presentar los candidatos y GB recuperables;
-7. sólo con autorización, eliminar candidatos;
-8. volver a medir disco y ejecutar smoke/health.
+7. sólo con autorización del propietario, eliminar candidatos;
+8. volver a medir disco y ejecutar smoke/health/DB checks.
+
+Una imagen vieja, incluida una imagen pre-hotfix, **no queda protegida por política de rollback local**. Si no está referenciada por un runtime activo ni constituye evidencia única indispensable, es candidata a limpieza.
 
 Está prohibido usar `docker system prune -a` a ciegas.
 
 ## Artefactos de deploy y pruebas
 
 - bundles temporales, tarballs, ZIP heredados, scripts de instalación ya consumidos y outputs intermedios tienen TTL corto;
-- el artefacto canónico de auditoría y el rollback validado se preservan;
+- la evidencia canónica de auditoría, identidad de release, SHA/digest y manifiestos necesarios para reconstrucción se preservan en GitHub/registry según corresponda;
+- no se conserva una imagen Docker local antigua sólo como rollback de aplicación;
 - después de cada implementación operativa y VERDE se ejecuta un inventario automático de residuos;
 - la limpieza destructiva requiere lista explícita y autorización del propietario.
 
@@ -142,6 +154,6 @@ Registrar diariamente:
 
 ## Ciclo obligatorio post-deploy
 
-`deploy -> smoke -> health -> quick_check -> real_orders_sent=0 -> declarar VERDE -> inventario de residuos -> presentar limpieza -> autorización -> limpieza -> medición final -> smoke final`.
+`deploy -> smoke -> health -> quick_check -> real_orders_sent=0 -> declarar VERDE -> verificar recuperabilidad GitHub -> inventario de residuos -> presentar limpieza -> autorización -> limpieza -> medición final -> smoke final`.
 
-El deploy no se considera completamente cerrado hasta registrar el estado final de disco y los residuos deliberadamente conservados.
+El deploy no se considera completamente cerrado hasta registrar el estado final de disco, la recuperabilidad por SHA exacto y los residuos deliberadamente conservados.
