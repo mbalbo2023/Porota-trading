@@ -5,6 +5,7 @@ on:
     branches: [candidate/v17.0.0-rc6-weekend-20260905]
     paths:
       - '.github/workflows/rc6-host-legacy-timer-forensics.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
