@@ -71,3 +71,22 @@ jobs:
           PY
           python /tmp/rc6_probe.py
           '
+      - name: Daily loss outbox isolated regression
+        shell: bash
+        run: |
+          set +e
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e ENVIRONMENT=SANDBOX \
+            -e DB_PATH=/tmp/porota-ci.db \
+            -e TELEGRAM_CHAT_ID=0 \
+            -e STARTUP_REQUIRE_AUTH=false \
+            --entrypoint bash porota-rc6-diag:${GITHUB_SHA} -lc '
+              cd /app
+              python -m pytest -vv -s -p no:cacheprovider --tb=long tests/test_daily_risk_outbox_v17.py::test_limite_se_revalida_dentro_del_lock_antes_del_fill
+            '
+          rc=$?
+          echo DAILY_LOSS_ATOMIC_TEST_RC=$rc
+          exit 0
