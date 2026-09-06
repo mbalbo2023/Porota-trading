@@ -33,18 +33,7 @@ jobs:
             -e STARTUP_REQUIRE_AUTH=false \
             --entrypoint bash porota-rc6-diag:${GITHUB_SHA} -lc '
               set +e
-              python - <<"PY"
-from pathlib import Path
-import tempfile
-from be_paper_engine import PaperBroker,PaperStore,D
-from tests.test_production_paper_v1634 import quote
-root=Path(tempfile.mkdtemp())
-b=PaperBroker(PaperStore(str(root/"p.db")),initial_cash="10000")
-for sym in ("ALUA","GGAL","YPFD","PAMP","COME","BMA"):
-    ok,reason,pid=b._open(quote(symbol=sym,at="2026-08-28T11:00:00-03:00",ask_size="100"),D(".8"),{})
-    print(f"OPEN_PROBE|{sym}|ok={ok}|reason={reason}|pid={pid}|opens={len(b.store.open_positions())}")
-print("DAILY_RISK", None if b.daily_risk is None else (str(b.daily_risk.limit_pct),str(b.daily_risk.soft_limit_pct)))
-PY
+              python -c "from pathlib import Path; import tempfile; from be_paper_engine import PaperBroker,PaperStore,D; from tests.test_production_paper_v1634 import quote; root=Path(tempfile.mkdtemp()); b=PaperBroker(PaperStore(str(root / '\''p.db'\'')),initial_cash='\''10000'\''); [(lambda r,s: print(f'\''OPEN_PROBE|{s}|ok={r[0]}|reason={r[1]}|pid={r[2]}|opens={len(b.store.open_positions())}'\''))(b._open(quote(symbol=s,at='\''2026-08-28T11:00:00-03:00'\'',ask_size='\''100'\''),D('\''.8'\''),{}),s) for s in ('\''ALUA'\'','\''GGAL'\'','\''YPFD'\'','\''PAMP'\'','\''COME'\'','\''BMA'\'')]; print('\''DAILY_RISK'\'',None if b.daily_risk is None else (str(b.daily_risk.limit_pct),str(b.daily_risk.soft_limit_pct)))"
               for spec in \
                 "tests/test_daily_risk_outbox_v17.py::test_aviso_y_fill_comparten_commit_y_rollback" \
                 "tests/test_daily_risk_outbox_v17.py::test_resumen_fallido_viejo_se_encola_y_ack_actualiza_estado" \
@@ -60,6 +49,7 @@ PY
                 python -m pytest -p no:cacheprovider -vv --tb=long "$spec"
                 echo "RC=$?"
               done
+              exit 0
             ' | tee rc6-diag.log
           {
             echo '### RC6 diagnostic failure probes'
