@@ -1,0 +1,190 @@
+name: RC6 A3 first operational proof and PPI history diagnostics
+
+on:
+  push:
+    branches: [ops/rc6-a3-first-proof-20260906]
+    paths:
+      - '.github/workflows/rc6-a3-first-operational-proof.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-a3-first-proof
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ops"
+          chmod 600 "$HOME/.ssh/porota_ops"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Safe A3 WEEKEND_DEEP first execution and diagnostics
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ops" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          EXPECTED_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          EXPECTED_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          UNIT='porota-a3-history-rc6@WEEKEND_DEEP.service'
+
+          echo '=== RC6 A3 FIRST OPERATIONAL PROOF ==='
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
+          echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(git -C "$REPO" branch --show-current)" = "$EXPECTED_BRANCH"
+          git -C "$REPO" diff --quiet
+          git -C "$REPO" diff --cached --quiet
+
+          echo '--- PRECHECK RUNTIME/DB ---'
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|{{.Config.Image}}|restarts={{.RestartCount}}|readonly={{.HostConfig.ReadonlyRootfs}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|{{.Config.Image}}|restarts={{.RestartCount}}' porota_production_dashboard
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          obs=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          obs.execute('PRAGMA query_only=ON')
+          qc1=obs.execute('PRAGMA quick_check').fetchone()[0]
+          row=obs.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          obs.close()
+          hist=sqlite3.connect('file:/app/data/market_history.db?mode=ro',uri=True,timeout=30)
+          hist.execute('PRAGMA query_only=ON')
+          qc2=hist.execute('PRAGMA quick_check').fetchone()[0]
+          hist.close()
+          print('|'.join(map(str,(qc1,qc2,*row))))
+          PY
+          )"
+          echo "PRECHECK=$PRE"
+          IFS='|' read -r QC1 QC2 MODE PROCESS SESSION AUTH ORDERS <<< "$PRE"
+          test "$QC1" = ok
+          test "$QC2" = ok
+          test "$MODE" = PRODUCTION_PAPER
+          test "$SESSION" = MARKET_CLOSED
+          test "$ORDERS" = 0
+          for u in porota-a3-history-rc6@DAILY_INCREMENTAL.service porota-a3-history-rc6@RECONCILE.service porota-a3-history-rc6@WEEKEND_DEEP.service; do
+            test "$(sudo -n systemctl is-active "$u" 2>/dev/null || true)" != active
+          done
+          echo 'A3_EXECUTION_GATE=GREEN_MARKET_CLOSED_REAL_ORDERS_ZERO'
+
+          echo '--- PRE-RUN COUNTS ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          obs=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          obs.execute('PRAGMA query_only=ON')
+          exists=obs.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='a3_history_ingest_state_rc6'").fetchone() is not None
+          print('A3_STATE_TABLE_PRE='+str(exists))
+          if exists:
+              print('A3_STATE_ROWS_PRE='+str(obs.execute('SELECT COUNT(*) FROM a3_history_ingest_state_rc6').fetchone()[0]))
+          obs.close()
+          hist=sqlite3.connect('file:/app/data/market_history.db?mode=ro',uri=True,timeout=30)
+          hist.execute('PRAGMA query_only=ON')
+          n=hist.execute("SELECT COUNT(*) FROM history_versions_v2 WHERE source='A3_CEM_CLOSING'").fetchone()[0]
+          c=hist.execute("SELECT COUNT(*) FROM history_canonical_v2 WHERE source='A3_CEM_CLOSING'").fetchone()[0]
+          print(f'A3_VERSIONS_PRE={n}')
+          print(f'A3_CANONICAL_PRE={c}')
+          hist.close()
+          PY
+
+          echo '--- START CONTROLLED A3 WEEKEND_DEEP ---'
+          set +e
+          sudo -n systemctl start "$UNIT"
+          RC=$?
+          set -e
+          echo "A3_SYSTEMCTL_RC=$RC"
+          sudo -n systemctl show "$UNIT" -p Result -p ExecMainStatus -p ActiveState -p InactiveExitTimestamp --no-pager
+          sudo -n journalctl -u "$UNIT" -n 120 --no-pager || true
+          test "$RC" -eq 0
+          test "$(sudo -n systemctl show "$UNIT" -p Result --value)" = success
+          test "$(sudo -n systemctl show "$UNIT" -p ExecMainStatus --value)" = 0
+
+          echo '--- POST-RUN A3 EVIDENCE ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          obs=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          obs.row_factory=sqlite3.Row; obs.execute('PRAGMA query_only=ON')
+          assert obs.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+          runtime=obs.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('RUNTIME_POST='+json.dumps(dict(runtime),sort_keys=True))
+          assert runtime['mode']=='PRODUCTION_PAPER'
+          assert int(runtime['real_orders_sent'] or 0)==0
+          exists=obs.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='a3_history_ingest_state_rc6'").fetchone() is not None
+          print('A3_STATE_TABLE_POST='+str(exists))
+          assert exists
+          rows=obs.execute('SELECT * FROM a3_history_ingest_state_rc6 ORDER BY instrument_type,symbol,market,settlement').fetchall()
+          print('A3_STATE_ROWS_POST='+str(len(rows)))
+          status={}
+          for r in rows: status[str(r['status'])]=status.get(str(r['status']),0)+1
+          print('A3_STATUS_COUNTS='+json.dumps(status,sort_keys=True))
+          print('A3_LAST_ATTEMPT='+str(obs.execute('SELECT MAX(last_attempt_at) FROM a3_history_ingest_state_rc6').fetchone()[0]))
+          print('A3_LAST_SUCCESS='+str(obs.execute('SELECT MAX(last_success_at) FROM a3_history_ingest_state_rc6').fetchone()[0]))
+          print('A3_LAST_COMPLETE_DAY='+str(obs.execute('SELECT MAX(last_complete_day) FROM a3_history_ingest_state_rc6').fetchone()[0]))
+          for r in rows[:20]:
+              print('A3_TARGET='+json.dumps(dict(r),sort_keys=True,default=str))
+          obs.close()
+
+          hist=sqlite3.connect('file:/app/data/market_history.db?mode=ro',uri=True,timeout=30)
+          hist.row_factory=sqlite3.Row; hist.execute('PRAGMA query_only=ON')
+          assert hist.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+          versions=hist.execute("SELECT COUNT(*) FROM history_versions_v2 WHERE source='A3_CEM_CLOSING'").fetchone()[0]
+          canonical=hist.execute("SELECT COUNT(*) FROM history_canonical_v2 WHERE source='A3_CEM_CLOSING'").fetchone()[0]
+          identities=hist.execute("SELECT COUNT(DISTINCT symbol||'|'||instrument_type||'|'||market||'|'||settlement) FROM history_versions_v2 WHERE source='A3_CEM_CLOSING'").fetchone()[0]
+          latest=hist.execute("SELECT MAX(date) FROM history_versions_v2 WHERE source='A3_CEM_CLOSING'").fetchone()[0]
+          print(f'A3_VERSIONS_POST={versions}')
+          print(f'A3_CANONICAL_POST={canonical}')
+          print(f'A3_IDENTITIES_POST={identities}')
+          print(f'A3_LATEST_DAY_POST={latest}')
+          hist.close()
+          PY
+
+          echo '--- PPI HISTORY FAILURE/REJECTION DIAGNOSTICS READ-ONLY ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          def cols(t): return [r[1] for r in c.execute(f'PRAGMA table_info("{t}")')]
+          def exists(t): return c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(t,)).fetchone() is not None
+          for t in ('production_history_attempts','history_attempt_ledger_v2','history_row_rejections_v2'):
+              print('TABLE='+t+'|exists='+str(exists(t)))
+              if not exists(t): continue
+              cs=cols(t); print('COLUMNS='+t+'|'+','.join(cs))
+              print('ROWS='+t+'|'+str(c.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]))
+              for col in ('status','state','reason','error','error_type','detail','source','instrument_type','family'):
+                  if col not in cs: continue
+                  rows=c.execute(f'''SELECT COALESCE(CAST("{col}" AS TEXT),'NULL') v,COUNT(*) n
+                    FROM "{t}" GROUP BY "{col}" ORDER BY n DESC LIMIT 20''').fetchall()
+                  print('GROUP='+t+'.'+col+'|'+json.dumps({r['v']:r['n'] for r in rows},ensure_ascii=False,sort_keys=True))
+          if exists('production_history_attempts'):
+              cs=cols('production_history_attempts')
+              order=next((x for x in ('attempted_at','id') if x in cs),None)
+              if order:
+                  rows=c.execute(f'SELECT * FROM production_history_attempts ORDER BY "{order}" DESC LIMIT 40').fetchall()
+                  for r in rows: print('PPI_RECENT_ATTEMPT='+json.dumps(dict(r),ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+
+          echo '--- FINAL SAFETY ---'
+          sudo -n docker inspect -f 'OBSERVER_POST={{.State.Running}}|{{.Config.Image}}|restarts={{.RestartCount}}|readonly={{.HostConfig.ReadonlyRootfs}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD_POST={{.State.Running}}|{{.Config.Image}}|restarts={{.RestartCount}}' porota_production_dashboard
+          POST_ORDERS="$(sudo -n docker exec porota_production_observer python -c "import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);print(c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()[0])")"
+          echo "REAL_ORDERS_SENT_POST=$POST_ORDERS"
+          test "$POST_ORDERS" = 0
+          echo 'A3_FIRST_OPERATIONAL_PROOF=COMPLETE'
+          HOST
