@@ -52,8 +52,8 @@ jobs:
         run: |
           set +e
           docker run --rm --network none --read-only \
-            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m \
-            --tmpfs /app/data:rw,nosuid,nodev,size=128m \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
             -e PYTHONDONTWRITEBYTECODE=1 \
             -e ENVIRONMENT=SANDBOX \
             -e DB_PATH=/tmp/porota-ci.db \
@@ -80,8 +80,8 @@ jobs:
         run: |
           set +e
           docker run --rm --network none --read-only \
-            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m \
-            --tmpfs /app/data:rw,nosuid,nodev,size=128m \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
             -e PYTHONDONTWRITEBYTECODE=1 \
             -e ENVIRONMENT=SANDBOX \
             -e DB_PATH=/tmp/porota-ci.db \
@@ -109,8 +109,8 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --network none --read-only \
-            --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m \
-            --tmpfs /app/data:rw,nosuid,nodev,size=64m \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0770 \
             -e PYTHONDONTWRITEBYTECODE=1 \
             --entrypoint bash porota-rc6-candidate:${GITHUB_SHA} -lc '
               set -euo pipefail
