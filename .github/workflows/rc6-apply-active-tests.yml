@@ -24,57 +24,27 @@ jobs:
           ref: candidate/v17.0.0-rc6-weekend-20260905
           fetch-depth: 0
 
-      - name: Verify RC5 ancestry
-        run: git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
-
-      - name: Fix locked daily-risk rejection persistence
+      - name: Verify RC5 ancestry and committed DailyRisk persistence fix
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('be_paper_engine.py')
-          text = p.read_text(encoding='utf-8')
-          old = '''            error = self.admission_error(q, at, connection=c)\n            if error:\n                return False, error, None\n'''
-          new = '''            error = self.admission_error(q, at, connection=c)\n            if error:\n                # Locked admission may persist fail-closed DailyRisk/audit state.\n                # No fill mutation has occurred yet, so preserve that state before\n                # rejecting the simulated entry instead of rolling it back.\n                c.commit()\n                return False, error, None\n'''
-          if old in text:
-              if text.count(old) != 1:
-                  raise SystemExit('ambiguous locked-admission branch')
-              p.write_text(text.replace(old, new), encoding='utf-8')
-              print('RC6_DAILY_RISK_LOCK_COMMIT_PATCH=APPLIED')
-          elif new in text:
-              print('RC6_DAILY_RISK_LOCK_COMMIT_PATCH=ALREADY_APPLIED')
-          else:
-              raise SystemExit('locked-admission branch not recognized')
-          PY
-
-      - name: Make deterministic alignment patch tolerant of already-evolved tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          p=Path('.github/workflows/rc6_apply_patch.py')
-          text=p.read_text(encoding='utf-8')
-          old='''    if count != expected:\n        raise SystemExit(f"{path}: expected {expected} occurrences, found {count}: {old[:100]!r}")\n    p.write_text(text.replace(old, new), encoding="utf-8")\n'''
-          new='''    if count == expected:\n        p.write_text(text.replace(old, new), encoding="utf-8")\n        return\n    if count == 0:\n        print(f"{path}: exact legacy form absent; leave current test unchanged")\n        return\n    raise SystemExit(f"{path}: ambiguous legacy form count={count}: {old[:100]!r}")\n'''
-          if old not in text:
-              raise SystemExit('alignment helper shape not recognized')
-          p.write_text(text.replace(old,new),encoding='utf-8')
-          PY
+          git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+          grep -q 'except ConcurrentRiskGateError:' dh_paper_dynamic_risk_gate_hf6.py
+          grep -q 'c.commit()' dh_paper_dynamic_risk_gate_hf6.py
 
       - name: Align only exact stale test forms
         run: python .github/workflows/rc6_apply_patch.py
 
-      - name: Verify source diff
+      - name: Verify test-only diff
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
-          test -n "$(git status --porcelain be_paper_engine.py tests/)"
-          git diff -- be_paper_engine.py tests/
+          test -n "$(git status --porcelain tests/)"
+          test -z "$(git status --porcelain --untracked-files=no | grep -v '^.. tests/' || true)"
+          git diff -- tests/
 
-      - name: Build patched candidate
+      - name: Build current runtime with aligned tests
         run: docker build --pull=false -t porota-rc6-alignment:${GITHUB_SHA} .
 
       - name: Active RC6 offline pytest gate
@@ -99,13 +69,13 @@ jobs:
               --ignore=tests/test_rc4_hf1_last_mile.py \
               --ignore=tests/test_rc4_hf2_consolidation.py'
 
-      - name: Commit only validated runtime and tests
+      - name: Commit only validated active tests
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'Porota RC6 CI'
           git config user.email '151845499+mbalbo2023@users.noreply.github.com'
-          git add be_paper_engine.py tests/
+          git add tests/
           git diff --cached --check
-          git commit -m 'RC6: persist risk latch and align fail-closed tests'
+          git commit -m 'RC6 tests: align active fail-closed semantics'
           git push origin HEAD:candidate/v17.0.0-rc6-weekend-20260905
