@@ -5,9 +5,13 @@ def replace(path, old, new, expected=1):
     p = Path(path)
     text = p.read_text(encoding="utf-8")
     count = text.count(old)
-    if count != expected:
-        raise SystemExit(f"{path}: expected {expected} occurrences, found {count}: {old[:100]!r}")
-    p.write_text(text.replace(old, new), encoding="utf-8")
+    if count == expected:
+        p.write_text(text.replace(old, new), encoding="utf-8")
+        return
+    if count == 0:
+        print(f"{path}: exact legacy form absent; leave current test unchanged")
+        return
+    raise SystemExit(f"{path}: ambiguous legacy form count={count}: {old[:100]!r}")
 
 
 # Dashboard canonical wording.
@@ -49,6 +53,12 @@ replace(p,
     b.store.add_quote(base_q)
     good_q = quote(symbol='ALUA', minute=2, ask_size='100')
 ''')
+# Current RC6 fixture: the mark used for the remaining INMEDIATA position must
+# preserve the complete economic identity. A default A-24HS quote is correctly
+# rejected by DailyRisk as STALE_MARKS and is not a valid way to isolate ledger corruption.
+replace(p,
+"    b.store.add_quote(quote(symbol=bad['symbol'], minute=2, ask_size='100'))\n",
+"    b.store.add_quote(replace(quote(symbol=bad['symbol'], minute=2, ask_size='100'),\n        settlement=bad['settlement'], currency=bad['currency'], market=bad['market']))\n")
 
 p = "tests/test_production_paper_v1634.py"
 replace(p,
