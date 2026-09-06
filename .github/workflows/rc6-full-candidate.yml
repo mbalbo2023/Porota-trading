@@ -46,6 +46,35 @@ jobs:
       - name: Build candidate image
         run: docker build --pull=false -t porota-rc6-candidate:${GITHUB_SHA} .
 
+      - name: Classification probes
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e ENVIRONMENT=SANDBOX \
+            -e DB_PATH=/tmp/porota-ci.db \
+            -e TELEGRAM_CHAT_ID=0 \
+            -e STARTUP_REQUIRE_AUTH=false \
+            --entrypoint bash porota-rc6-candidate:${GITHUB_SHA} -lc '
+              set +e
+              for spec in \
+                tests/test_daily_risk_outbox_v17.py \
+                tests/test_partial_receipts_v17.py \
+                tests/test_open_entry_terms_v17.py \
+                tests/test_ledger_copy_preflight_v17.py \
+                tests/test_production_paper_v1634.py
+              do
+                echo "===== PROBE ${spec} ====="
+                python -m pytest -q -p no:cacheprovider --tb=short -x "$spec"
+                echo "PROBE_RC=$?"
+              done
+              exit 0
+            '
+
       - name: Full pytest suite without network
         shell: bash
         run: |
