@@ -1569,6 +1569,10 @@ bg_paper_dashboard.install(app, _check_auth)
 import bh_universe_dashboard_hf6
 bh_universe_dashboard_hf6.install(app, _check_auth)
 
+# RC6: project-management path-to-production view. Read-only HTTP surface.
+import en_validation_project_dashboard_rc6
+en_validation_project_dashboard_rc6.install(app, _check_auth)
+
 
 
 if __name__ == "__main__":
