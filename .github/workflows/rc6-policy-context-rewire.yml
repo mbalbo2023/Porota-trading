@@ -1,0 +1,49 @@
+name: RC6 policy context rewire
+
+on:
+  push:
+    branches: [candidate/v17.0.0-rc6-weekend-20260905]
+    paths:
+      - 'es_policy_context_rc6.py'
+      - 'scripts/rc6_remove_active_rc4_policy_dependency.py'
+      - '.github/workflows/rc6-policy-context-rewire.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-policy-context-rewire
+  cancel-in-progress: false
+
+jobs:
+  rewire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/v17.0.0-rc6-weekend-20260905
+          fetch-depth: 0
+      - run: git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+      - name: Rewire active policy context
+        run: python scripts/rc6_remove_active_rc4_policy_dependency.py
+      - name: Compile
+        run: python -m py_compile es_policy_context_rc6.py ck_policy_gate_hf6.py be_paper_engine.py
+      - name: Prove provider is read-only and source-neutral
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -q 'import rc4_policy_context' be_paper_engine.py
+          ! grep -q 'rc4_policy_gate' be_paper_engine.py
+          grep -q 'RC6_POLICY_CONTEXT_READONLY' es_policy_context_rc6.py
+          grep -q 'policy_context_provider.collect' be_paper_engine.py
+      - name: Commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- be_paper_engine.py; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add be_paper_engine.py
+          git commit -m 'RC6: remove active RC4 policy context dependency [skip ci]'
+          git push origin HEAD:candidate/v17.0.0-rc6-weekend-20260905
