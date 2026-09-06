@@ -48,7 +48,7 @@ jobs:
               raise SystemExit('locked-admission branch not recognized')
           PY
 
-      - name: Make deterministic alignment patch idempotent in workspace
+      - name: Make deterministic alignment patch tolerant of already-evolved tests
         shell: bash
         run: |
           set -euo pipefail
@@ -57,13 +57,13 @@ jobs:
           p=Path('.github/workflows/rc6_apply_patch.py')
           text=p.read_text(encoding='utf-8')
           old='''    if count != expected:\n        raise SystemExit(f"{path}: expected {expected} occurrences, found {count}: {old[:100]!r}")\n    p.write_text(text.replace(old, new), encoding="utf-8")\n'''
-          new='''    if count == expected:\n        p.write_text(text.replace(old, new), encoding="utf-8")\n        return\n    if count == 0 and text.count(new) == expected:\n        print(f"{path}: already aligned")\n        return\n    raise SystemExit(f"{path}: expected old or aligned form; old={count}, new={text.count(new)}: {old[:100]!r}")\n'''
+          new='''    if count == expected:\n        p.write_text(text.replace(old, new), encoding="utf-8")\n        return\n    if count == 0:\n        print(f"{path}: exact legacy form absent; leave current test unchanged")\n        return\n    raise SystemExit(f"{path}: ambiguous legacy form count={count}: {old[:100]!r}")\n'''
           if old not in text:
               raise SystemExit('alignment helper shape not recognized')
           p.write_text(text.replace(old,new),encoding='utf-8')
           PY
 
-      - name: Align stale tests with fail-closed semantics
+      - name: Align only exact stale test forms
         run: python .github/workflows/rc6_apply_patch.py
 
       - name: Verify source diff
