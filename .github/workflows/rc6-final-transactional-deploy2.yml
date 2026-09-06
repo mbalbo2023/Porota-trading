@@ -261,7 +261,10 @@ jobs:
               parts=meta.split()
               assert path in expected
               assert parts[0]==':100644' and parts[1]=='100755'
-              assert parts[2]==parts[3], line
+              assert parts[3] == '0'*40, line
+              head_blob=subprocess.check_output(['git','-C',repo,'rev-parse',f'HEAD:{path}'],text=True).strip()
+              work_blob=subprocess.check_output(['git','-C',repo,'hash-object',f'{repo}/{path}'],text=True).strip()
+              assert parts[2] == head_blob == work_blob, (line,head_blob,work_blob)
           print('KNOWN_HOST_MODE_ONLY_DIFF=GREEN')
           PY
           AVAIL="$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"; echo "DISK_FREE_PRE=$AVAIL"; test "$AVAIL" -ge 8589934592
