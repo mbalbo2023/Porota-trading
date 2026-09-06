@@ -7,6 +7,7 @@ from cf_sale_settlement import validated_sale_settlement
 def test_isolated_broker_does_not_invent_daily_risk_policy(tmp_path):
     broker = PaperBroker(PaperStore(str(tmp_path / 'isolated.db')))
     assert broker.daily_risk is None
+    assert broker.economics_mode == 'SHADOW'
 
 
 def test_runtime_explicitly_builds_daily_risk_and_defaults_economics_to_shadow(tmp_path, monkeypatch):
