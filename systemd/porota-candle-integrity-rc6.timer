@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 candle integrity every 10 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+AccuracySec=30s
+Unit=porota-candle-integrity-rc6.service
+
+[Install]
+WantedBy=timers.target
