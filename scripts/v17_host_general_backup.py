@@ -52,8 +52,11 @@ def _copy_tree(source: Path, staging: Path) -> list[str]:
             continue
         if path.name in SECRET_FILENAMES:
             continue
+        # Los symlinks son metadatos/atajos del árbol vivo. Nunca se siguen ni
+        # se archivan: el archivo regular de destino, si pertenece al árbol,
+        # aparece por su propia ruta en el recorrido y se copia por separado.
         if path.is_symlink():
-            raise RuntimeError(f"No se siguen enlaces simbólicos: {path}")
+            continue
         if path.is_dir():
             continue
         if path.name.endswith(("-wal", "-shm")):
