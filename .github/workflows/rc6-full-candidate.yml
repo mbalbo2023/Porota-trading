@@ -52,6 +52,7 @@ jobs:
           set -euo pipefail
           docker run --rm --network none --read-only \
             --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m \
             -e PYTHONDONTWRITEBYTECODE=1 \
             -e ENVIRONMENT=SANDBOX \
             -e DB_PATH=/tmp/porota-ci.db \
@@ -66,6 +67,7 @@ jobs:
           set -euo pipefail
           docker run --rm --network none --read-only \
             --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m \
+            --tmpfs /app/data:rw,nosuid,nodev,size=64m \
             -e PYTHONDONTWRITEBYTECODE=1 \
             --entrypoint bash porota-rc6-candidate:${GITHUB_SHA} -lc '
               set -euo pipefail
@@ -87,5 +89,6 @@ jobs:
             echo "- SHA: ${GITHUB_SHA}"
             echo '- Base RC5 exact lineage checked.'
             echo '- Full pytest executed inside candidate image with network disabled.'
+            echo '- Root filesystem stays read-only; only /tmp and /app/data are ephemeral tmpfs for tests.'
             echo '- Real-money capability remains BLOCKED.'
           } >> "$GITHUB_STEP_SUMMARY"
