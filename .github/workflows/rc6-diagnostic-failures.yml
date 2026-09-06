@@ -19,6 +19,50 @@ jobs:
         with:
           ref: candidate/v17.0.0-rc6-weekend-20260905
       - run: docker build --pull=false -t porota-rc6-diag:${GITHUB_SHA} .
+      - name: Residual partial-allocation admission reason
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e PYTHONPATH=/app:/app/tests \
+            --entrypoint bash porota-rc6-diag:${GITHUB_SHA} -lc '
+              set -euo pipefail
+              cat >/tmp/partial_probe.py <<"PY"
+          from dataclasses import replace
+          from pathlib import Path
+          import tempfile
+          from be_paper_engine import D, PaperBroker, PaperStore
+          from test_production_paper_v1634 import quote
+
+          root=Path(tempfile.mkdtemp())
+          b=PaperBroker(PaperStore(str(root/"partial.db")), initial_cash="10000",
+                        initial_cash_by_currency={"ARS":"10000"}, daily_loss_pct="100")
+          base=replace(quote(ask_size="100"), settlement="INMEDIATA", currency="ARS")
+          print("FIRST_OPEN", b._open(base,D(".8"),{}))
+          p=b.store.open_positions()[0]
+          first=replace(quote(minute=1,bid_size="40",price="110"), settlement="INMEDIATA", currency="ARS")
+          print("PARTIAL_CLOSE", b._close(p,first,"TEST_PARTIAL"))
+          remaining=b.store.open_positions()[0]
+          candidate=quote(symbol="ALUA",minute=2,ask_size="100")
+
+          wrong_mark=quote(symbol=remaining["symbol"],minute=2,ask_size="100")
+          print("WRONG_MARK_SETTLEMENT", wrong_mark.settlement, "POSITION_SETTLEMENT", remaining["settlement"])
+          b.store.add_quote(wrong_mark)
+          print("ADMISSION_WITH_WRONG_MARK", b.admission_error(candidate,candidate.observed_at))
+          print("OPEN_WITH_WRONG_MARK", b._open(candidate,D(".8"),{}))
+
+          right_mark=replace(wrong_mark, settlement=remaining["settlement"], currency=remaining["currency"], market=remaining["market"])
+          b.store.add_quote(right_mark)
+          print("RIGHT_MARK_SETTLEMENT", right_mark.settlement)
+          print("ADMISSION_WITH_RIGHT_MARK", b.admission_error(candidate,candidate.observed_at))
+          print("OPEN_WITH_RIGHT_MARK", b._open(candidate,D(".8"),{}))
+          PY
+              python /tmp/partial_probe.py
+            '
+
       - name: Targeted admission and risk probes
         shell: bash
         run: |
