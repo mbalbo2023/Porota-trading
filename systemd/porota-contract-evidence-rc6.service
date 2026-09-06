@@ -1,0 +1,12 @@
+[Unit]
+Description=Porota RC6 native authenticated Contract Evidence (read-only PPI web)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+ExecStart=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+TimeoutStartSec=20min
+TimeoutStopSec=2min
+Nice=10
