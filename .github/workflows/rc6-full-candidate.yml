@@ -22,13 +22,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: candidate/v17.0.0-rc6-weekend-20260905
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Exact lineage and repository hygiene
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
           test -z "$(git status --porcelain)"
           git diff --check
@@ -155,7 +156,7 @@ jobs:
           {
             echo '### RC6 full candidate gate'
             echo "- SHA: ${GITHUB_SHA}"
-            echo '- Base RC5 exact lineage checked.'
+            echo '- Triggering SHA was checked out exactly and RC5 ancestry verified.'
             echo '- Active RC6 pytest suite executed inside candidate image with network disabled.'
             echo '- Release-pinned RC3/RC4 archive suites are classification history, not RC6 acceptance authority.'
             echo '- Root filesystem stays read-only; only /tmp and /app/data are ephemeral tmpfs for tests.'
