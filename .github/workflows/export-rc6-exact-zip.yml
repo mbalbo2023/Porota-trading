@@ -1,0 +1,47 @@
+name: Export exact deployed RC6 ZIP
+
+on:
+  push:
+    branches: [export/rc6-deployed-20260906]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 5bdad270c2a23bb2456a320d41e18940ce70ec6f
+          fetch-depth: 0
+      - name: Verify exact deployed identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '5bdad270c2a23bb2456a320d41e18940ce70ec6f'
+          python - <<'PY'
+          import _version
+          assert _version.VERSION == '17.0.0-rc6'
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          PY
+      - name: Build exact source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME='POROTA_TRADING_17.0.0-rc6_EXACT_5bdad270c2a2.zip'
+          git archive --format=zip --prefix=Porota-Trading-17.0.0-rc6/ -o "$NAME" 5bdad270c2a23bb2456a320d41e18940ce70ec6f
+          sha256sum "$NAME" > "$NAME.sha256"
+          printf 'release=17.0.0-rc6\ncommit=5bdad270c2a23bb2456a320d41e18940ce70ec6f\nmode=PRODUCTION_PAPER\nexecution=SIMULATED\nreal_order_capability=BLOCKED\n' > RC6_EXPORT_MANIFEST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: porota-rc6-exact-source
+          path: |
+            POROTA_TRADING_17.0.0-rc6_EXACT_5bdad270c2a2.zip
+            POROTA_TRADING_17.0.0-rc6_EXACT_5bdad270c2a2.zip.sha256
+            RC6_EXPORT_MANIFEST.txt
+          if-no-files-found: error
+          retention-days: 30
