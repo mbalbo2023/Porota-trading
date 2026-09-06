@@ -313,8 +313,27 @@ for unit in "${RC6_CORE_TIMERS[@]}"; do
   test "$(sudo -n systemctl is-enabled "$unit")" = enabled
   test "$(sudo -n systemctl is-active "$unit")" = active
 done
-if sudo -n systemctl list-timers --all --no-legend --no-pager | grep -Eiq 'porota-.*rc4'; then
+
+# Some legacy timers may still be loaded/active even if their unit-file
+# state is not reported as enabled. Retire the actual active timer set
+# explicitly, then verify the scheduler truth rather than assuming that
+# list-unit-files was exhaustive. This is runtime retirement only; inert
+# legacy unit files remain available as rollback evidence.
+mapfile -t RC4_ACTIVE_TIMERS < <(
+  sudo -n systemctl list-timers --all --no-legend --no-pager     | awk '{for(i=1;i<=NF;i++) if($i ~ /^porota-.*rc4\.timer$/) print $i}'     | sort -u
+)
+for unit in "${RC4_ACTIVE_TIMERS[@]}"; do
+  [ -n "$unit" ] || continue
+  echo "RETIRE_ACTIVE_RC4_TIMER=$unit"
+  sudo -n systemctl disable --now "$unit" >/dev/null 2>&1 || sudo -n systemctl stop "$unit"
+  sudo -n systemctl reset-failed "$unit" >/dev/null 2>&1 || true
+done
+sudo -n systemctl daemon-reload
+sleep 2
+REMAINING_RC4_TIMERS="$(sudo -n systemctl list-timers --all --no-legend --no-pager | grep -Ei 'porota-.*rc4' || true)"
+if [ -n "$REMAINING_RC4_TIMERS" ]; then
   echo 'RC4_ACTIVE_TIMERS_REMAIN'
+  printf '%s\n' "$REMAINING_RC4_TIMERS"
   exit 1
 fi
 echo 'SYSTEMD_RC6_MIGRATION=GREEN'
