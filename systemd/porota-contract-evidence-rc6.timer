@@ -1,0 +1,12 @@
+[Unit]
+Description=Porota RC6 Contract Evidence due poll every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=20s
+RandomizedDelaySec=20s
+Unit=porota-contract-evidence-rc6.service
+
+[Install]
+WantedBy=timers.target
