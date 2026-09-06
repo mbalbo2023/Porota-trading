@@ -1,0 +1,68 @@
+name: RC6 A3 PPI identity alignment diagnostic
+
+on:
+  push:
+    branches: [ops/rc6-a3-first-proof-20260906]
+    paths:
+      - '.github/workflows/rc6-a3-alignment-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_audit"
+          chmod 600 "$HOME/.ssh/porota_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Compare exact PPI candidates with A3 public symbol schema
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_audit" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n docker exec -i -w /app porota_production_observer python -" <<'PY'
+          import json, sqlite3
+          from collections import Counter
+          from cz_a3_cem_public_history_hf6 import A3CEMPublicReadOnlyClient
+          from db_a3_cem_normalizer_hf6 import normalize_symbols
+
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          ppi=[dict(r) for r in c.execute("""SELECT ticker,instrument_type,market,settlement
+             FROM candidate_universe WHERE status='AVAILABLE' AND instrument_type IN ('FUTUROS','OPCIONES')
+             ORDER BY instrument_type,ticker LIMIT 120""")]
+          c.close()
+          payload=A3CEMPublicReadOnlyClient().symbols()
+          a3=normalize_symbols(payload)
+          print('PPI_COUNT_SAMPLE='+str(len(ppi)))
+          for r in ppi[:80]: print('PPI='+json.dumps(r,ensure_ascii=False,sort_keys=True))
+          print('A3_NORMALIZED_COUNT='+str(len(a3)))
+          print('A3_FAMILY_COUNTS='+json.dumps(Counter(x.family for x in a3),sort_keys=True))
+          dlr=[x for x in a3 if 'DLR' in x.symbol.upper() or 'DOLAR' in str(x.product or '').upper() or 'DOLAR' in str(x.description or '').upper()]
+          print('A3_DLR_RELATED='+str(len(dlr)))
+          for x in dlr[:120]: print('A3='+json.dumps(x.__dict__,ensure_ascii=False,sort_keys=True,default=str))
+          exact={(x.symbol,x.family) for x in a3}
+          matches=[r for r in ppi if (r['ticker'],r['instrument_type']) in exact]
+          print('EXACT_MATCHES='+str(len(matches)))
+          for r in matches[:50]: print('MATCH='+json.dumps(r,sort_keys=True))
+          raw_rows=payload.get('data',[]) if isinstance(payload,dict) else []
+          print('RAW_CFI_PREFIX='+json.dumps(Counter(str(r.get('cfiCode') or '')[:1].upper() for r in raw_rows),sort_keys=True))
+          for r in raw_rows[:5]: print('RAW_SAMPLE='+json.dumps(r,ensure_ascii=False,sort_keys=True,default=str))
+          PY
