@@ -73,7 +73,10 @@ def install() -> None:
         bg.TABLE_A11Y_CSS += FORCE_COMPACT_CSS
     if "porota-rc6-force-compact-script" not in bg.TABLE_A11Y_SCRIPT:
         bg.TABLE_A11Y_SCRIPT += FORCE_COMPACT_SCRIPT
-    # Final operator-facing layer for the 07-Sep PAPER go-live.  It is loaded
-    # here because this extension is already wired after the RC6 truth layers.
+    # Operator-facing layer for the 07-Sep PAPER go-live.
     import es_dashboard_go_live_ux_rc6 as go_live_ux
     go_live_ux.install()
+    # Final observability truth correction: prefer current RC6 snapshots over
+    # legacy HF snapshots without touching producers, strategy or DBs.
+    import et_dashboard_runtime_truth_fixes_rc6 as runtime_truth
+    runtime_truth.install()
