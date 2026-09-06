@@ -1,4 +1,4 @@
-import ep_dashboard_truth_layer_rc6 as truth
+import eo_dashboard_truth_semantics_rc6 as truth
 
 
 def test_closed_market_running_watchdog_is_not_presented_as_market_activity():
@@ -31,3 +31,8 @@ def test_binding_is_a_gate_policy_not_global_mode():
 
 def test_unknown_policy_is_explicit_not_silently_green():
     assert "requiere revisión" in truth.policy_description("MYSTERY")
+
+
+def test_session_window_is_not_trade_authorization():
+    assert truth.session_permits_market_activity("MARKET_OPEN") is True
+    assert truth.session_permits_market_activity("MARKET_CLOSED") is False
