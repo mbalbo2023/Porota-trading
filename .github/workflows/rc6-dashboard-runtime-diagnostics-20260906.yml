@@ -1,0 +1,127 @@
+name: RC6 dashboard runtime diagnostics 2026-09-06
+
+on:
+  push:
+    branches:
+      - audit/rc6-dashboard-runtime-diagnostics-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_dash_diag"
+          chmod 600 "$HOME/.ssh/porota_dash_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only host and dashboard diagnostics
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_dash_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-dashboard-runtime-diag.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          LIVE_BRANCH='hotfix/rc6-cedear-us-labor-day-20260906'
+          LIVE_SHA='db26c76723bb988c956589c572b87cbcb4191731'
+          LIVE_IMAGE='porota-trading-bot:17.0.0-rc6'
+          test "$(git -C "$REPO" branch --show-current)" = "$LIVE_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$LIVE_SHA"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$LIVE_IMAGE|0|true"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$LIVE_IMAGE|0"
+
+          echo '=== RC6 DASHBOARD RUNTIME DIAGNOSTICS READ ONLY ==='
+          echo "UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo '--- SCHEDULER SNAPSHOT FILE ---'
+          SNAP="$REPO/data/scheduler/systemd_timers.json"
+          if [ -f "$SNAP" ]; then
+            stat -c 'SNAPSHOT_SIZE=%s MTIME=%y' "$SNAP"
+            python3 - "$SNAP" <<'PY'
+          import json,sys
+          p=sys.argv[1]
+          d=json.load(open(p,encoding='utf-8'))
+          safe={k:v for k,v in d.items() if k not in {'environment','secrets','token','authorization'}}
+          print('SNAPSHOT_JSON='+json.dumps(safe,ensure_ascii=False,sort_keys=True,default=str))
+          PY
+          else
+            echo 'SNAPSHOT_FILE=MISSING'
+          fi
+
+          echo '--- RELEVANT SYSTEMD UNITS ---'
+          sudo -n systemctl list-unit-files --no-pager | grep -Ei 'porota.*(scheduler|log|export|introspect|functional|contract|history|backup)' | sed -n '1,240p' || true
+          echo '--- RELEVANT ACTIVE/FAILED UNITS ---'
+          sudo -n systemctl list-units --all --no-pager | grep -Ei 'porota.*(scheduler|log|export|introspect|functional|contract|history|backup)' | sed -n '1,240p' || true
+          for unit in \
+            porota-scheduler-export-hf6.timer porota-scheduler-export-hf6.service \
+            porota-log-export-hf6.timer porota-log-export-hf6.service \
+            porota-introspection-publish.timer porota-introspection-publish.service; do
+            echo "UNIT=$unit"
+            sudo -n systemctl show "$unit" -p LoadState -p ActiveState -p UnitFileState -p Result -p ExecMainStatus -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager 2>/dev/null || true
+          done
+
+          echo '--- LOG FILES ---'
+          sudo -n find "$REPO/data/logs" -maxdepth 1 -type f -printf '%f|%s|%TY-%Tm-%TdT%TH:%TM:%TS\n' 2>/dev/null | sort || true
+          echo '--- CONTAINER LOG METRICS ---'
+          for c in porota_production_observer porota_production_dashboard; do
+            echo "CONTAINER=$c"
+            sudo -n docker inspect -f 'LOG_PATH={{.LogPath}} LOG_DRIVER={{.HostConfig.LogConfig.Type}}' "$c"
+            count="$(sudo -n docker logs --tail 200 "$c" 2>&1 | wc -l)"
+            bytes="$(sudo -n docker logs --tail 200 "$c" 2>&1 | wc -c)"
+            echo "DOCKER_LOG_TAIL_LINES=$count BYTES=$bytes"
+          done
+
+          echo '--- SYSTEM SIDEBAR ROUTE CHECKS ---'
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,re,urllib.request,urllib.parse,json
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          sections=['introspeccion','salud','scheduler','scraping','backups','configuracion','logs','telegram']
+          out=[]
+          for sec in sections:
+              path='/sistema?'+urllib.parse.urlencode({'section':sec})
+              req=urllib.request.Request('http://127.0.0.1:8000'+path,headers={'Authorization':'Bearer '+token,'User-Agent':'PorotaDashRuntimeDiag/RC6'})
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r:
+                      body=r.read(2_000_000).decode('utf-8','replace')
+                  out.append({'section':sec,'status':200,'system_nav':bool(re.search(r'class=["\'][^"\']*system-nav',body,re.I)),'no_disponible':len(re.findall(r'no disponible|unavailable',body,re.I)),'bytes':len(body.encode())})
+              except Exception as e:
+                  out.append({'section':sec,'error':type(e).__name__+':'+str(e)[:160]})
+          print('SYSTEM_SECTIONS='+json.dumps(out,ensure_ascii=False,sort_keys=True))
+          PY
+
+          echo '--- DB/HEALTH POSTCHECK ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30); c.execute('PRAGMA query_only=ON')
+              print(p,c.execute('PRAGMA quick_check').fetchone()[0]); c.close()
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True)
+          print('REAL_ORDERS_SENT='+str(c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()[0])); c.close()
+          PY
+          curl -fsS http://127.0.0.1:8000/health
+          echo
+          echo 'MUTATION=0'
+          echo 'RC6_DASHBOARD_RUNTIME_DIAGNOSTICS=COMPLETE'
+          HOST
+
+          {
+            echo '### RC6 dashboard runtime diagnostics'
+            echo '```text'
+            sed -n '1,1800p' /tmp/rc6-dashboard-runtime-diag.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
