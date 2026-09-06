@@ -19,13 +19,13 @@ jobs:
         with:
           ref: candidate/v17.0.0-rc6-weekend-20260905
       - run: docker build --pull=false -t porota-rc6-diag:${GITHUB_SHA} .
-      - name: Exact open and failure probes
+      - name: Modern exact failure probes
         shell: bash
         run: |
           set -euo pipefail
           docker run --rm --network none --read-only \
-            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m \
-            --tmpfs /app/data:rw,nosuid,nodev,size=128m \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
             -e PYTHONDONTWRITEBYTECODE=1 \
             -e ENVIRONMENT=SANDBOX \
             -e DB_PATH=/tmp/porota-ci.db \
@@ -33,27 +33,28 @@ jobs:
             -e STARTUP_REQUIRE_AUTH=false \
             --entrypoint bash porota-rc6-diag:${GITHUB_SHA} -lc '
               set +e
-              python -c "from pathlib import Path; import tempfile; from be_paper_engine import PaperBroker,PaperStore,D; from tests.test_production_paper_v1634 import quote; root=Path(tempfile.mkdtemp()); b=PaperBroker(PaperStore(str(root / '\''p.db'\'')),initial_cash='\''10000'\''); [(lambda r,s: print(f'\''OPEN_PROBE|{s}|ok={r[0]}|reason={r[1]}|pid={r[2]}|opens={len(b.store.open_positions())}'\''))(b._open(quote(symbol=s,at='\''2026-08-28T11:00:00-03:00'\'',ask_size='\''100'\''),D('\''.8'\''),{}),s) for s in ('\''ALUA'\'','\''GGAL'\'','\''YPFD'\'','\''PAMP'\'','\''COME'\'','\''BMA'\'')]; print('\''DAILY_RISK'\'',None if b.daily_risk is None else (str(b.daily_risk.limit_pct),str(b.daily_risk.soft_limit_pct)))"
               for spec in \
-                "tests/test_daily_risk_outbox_v17.py::test_aviso_y_fill_comparten_commit_y_rollback" \
-                "tests/test_daily_risk_outbox_v17.py::test_resumen_fallido_viejo_se_encola_y_ack_actualiza_estado" \
-                "tests/test_daily_risk_outbox_v17.py::test_limite_se_revalida_dentro_del_lock_antes_del_fill" \
-                "tests/test_dashboard_paper_v1634.py::test_vivo_esta_enrutado_al_panel_consolidado" \
-                "tests/test_dashboard_session.py::test_actividad_en_vivo_responde_con_sesion_valida" \
-                "tests/test_exit_supervision_v17.py::test_no_fabrica_fill_con_mercado_cerrado_ni_calendario_desconocido[2026-08-28T16:55:00-03:00]" \
-                "tests/test_operational_safety_v163.py::test_motor_heredado_no_supera_datos_incompletos_ni_en_scalping[False-OK]" \
-                "tests/test_partial_allocation_integrity_v17.py::test_error_bloquea_caja_riesgo_y_caucion_sin_cegar_otro_stop[source]" \
-                "tests/test_prepare_directory_v17.py::test_prepares_exact_empty_directory_and_removes_probe"
+                tests/test_daily_risk_outbox_v17.py \
+                tests/test_dashboard_paper_v1634.py \
+                tests/test_dashboard_session.py \
+                tests/test_exit_supervision_v17.py \
+                tests/test_operational_safety_v163.py \
+                tests/test_partial_allocation_integrity_v17.py \
+                tests/test_prepare_directory_v17.py \
+                tests/test_open_entry_terms_v17.py \
+                tests/test_production_paper_v1634.py \
+                tests/test_rc6_runtime_safety.py \
+                tests/test_rc6_host_backup_symlink.py
               do
                 echo "===== $spec ====="
-                python -m pytest -p no:cacheprovider -vv --tb=long "$spec"
+                python -m pytest -q -p no:cacheprovider --tb=short "$spec"
                 echo "RC=$?"
               done
               exit 0
             ' | tee rc6-diag.log
           {
-            echo '### RC6 diagnostic failure probes'
+            echo '### RC6 modern diagnostic probes'
             echo '```text'
-            tail -n 700 rc6-diag.log
+            tail -n 900 rc6-diag.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
