@@ -1,0 +1,165 @@
+name: RC6 posthotfix data learning read-only audit
+
+on:
+  push:
+    branches: [audit/rc6-data-learning-posthotfix-20260906]
+    paths:
+      - '.github/workflows/rc6-data-learning-posthotfix-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_audit"
+          chmod 600 "$HOME/.ssh/porota_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Audit live data history A3 Contract Evidence and SHADOW
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_audit" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          echo 'SCHEMA=POROTA_RC6_POSTHOTFIX_DATA_AUDIT_V2'
+          echo "HOST_SHA=$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo "HOST_BRANCH=$(git -C /opt/porota-trading branch --show-current)"
+          echo '--- CONTAINERS ---'
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|{{.Config.Image}}|restarts={{.RestartCount}}|readonly={{.HostConfig.ReadonlyRootfs}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|{{.Config.Image}}|restarts={{.RestartCount}}' porota_production_dashboard
+          echo '--- DATABASE / DATA / LEARNING ---'
+          sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+
+          OBS='/app/data/paper_v17/observer_v17.db'
+          HIST='/app/data/market_history.db'
+          def conn(path):
+              c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=30)
+              c.row_factory=sqlite3.Row
+              c.execute('PRAGMA query_only=ON')
+              return c
+          def tables(c): return {r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          def count(c,t): return c.execute(f'select count(*) from "{t}"').fetchone()[0]
+          def maxv(c,t,col): return c.execute(f'select max("{col}") from "{t}"').fetchone()[0]
+          def grouped(c,t,col):
+              return {str(r[0]):int(r[1]) for r in c.execute(f'select "{col}",count(*) from "{t}" group by "{col}" order by count(*) desc')}
+
+          out={'read_only':True,'network_calls':False,'orders':False}
+          with conn(OBS) as c:
+              ts=tables(c)
+              out['observer_quick_check']=c.execute('pragma quick_check').fetchone()[0]
+              row=c.execute('select * from observer_state where id=1').fetchone()
+              out['observer_state']=dict(row) if row else None
+              out['table_count']=len(ts)
+              if 'market_snapshots' in ts:
+                  out['live_market']={
+                    'rows':count(c,'market_snapshots'),
+                    'symbols':c.execute('select count(distinct symbol) from market_snapshots').fetchone()[0],
+                    'latest_observed_at':maxv(c,'market_snapshots','observed_at'),
+                    'latest_book_at':maxv(c,'market_snapshots','book_at'),
+                    'latest_trade_at':maxv(c,'market_snapshots','trade_at')}
+              if 'candle_versions' in ts:
+                  out['candles']={'versions':count(c,'candle_versions'),'series':count(c,'candle_series'),
+                    'latest_bar_end':maxv(c,'candle_versions','bar_end'),'latest_known_at':maxv(c,'candle_versions','known_at'),
+                    'raw_archive':count(c,'historical_raw_archive') if 'historical_raw_archive' in ts else 0}
+              if 'candle_worker_state' in ts:
+                  r=c.execute('select * from candle_worker_state where id=1').fetchone(); out['candle_worker']=dict(r) if r else None
+              if 'paper_decisions' in ts:
+                  out['decisions']={'rows':count(c,'paper_decisions'),'latest':maxv(c,'paper_decisions','decided_at'),'actions':grouped(c,'paper_decisions','action')}
+              if 'trade_gate_evaluations' in ts:
+                  out['trade_gates']={'rows':count(c,'trade_gate_evaluations'),'latest':maxv(c,'trade_gate_evaluations','evaluated_at'),'results':grouped(c,'trade_gate_evaluations','final_result')}
+              if 'paper_learning_samples' in ts:
+                  out['paper_learning']={'rows':count(c,'paper_learning_samples'),'feature_latest':maxv(c,'paper_learning_samples','feature_timestamp'),
+                    'label_latest':maxv(c,'paper_learning_samples','label_timestamp'),'outcomes':grouped(c,'paper_learning_samples','outcome')}
+              out['a3_table_present']='a3_history_ingest_state_rc6' in ts
+              if out['a3_table_present']:
+                  out['a3']={'rows':count(c,'a3_history_ingest_state_rc6'),'statuses':grouped(c,'a3_history_ingest_state_rc6','status'),
+                    'last_attempt':maxv(c,'a3_history_ingest_state_rc6','last_attempt_at'),'last_success':maxv(c,'a3_history_ingest_state_rc6','last_success_at'),
+                    'last_complete_day':maxv(c,'a3_history_ingest_state_rc6','last_complete_day')}
+              if 'source_sync' in ts:
+                  out['source_sync']=[dict(r) for r in c.execute('select * from source_sync order by source')]
+              if 'health_events' in ts:
+                  cols={r[1] for r in c.execute('pragma table_info(health_events)')}
+                  if 'source' in cols:
+                      out['health_sources']=grouped(c,'health_events','source')
+          with conn(HIST) as c:
+              ts=tables(c)
+              out['history_quick_check']=c.execute('pragma quick_check').fetchone()[0]
+              if 'history_canonical_v2' in ts:
+                  out['history_canonical_v2']={'rows':count(c,'history_canonical_v2'),
+                    'identities':c.execute("select count(distinct symbol||'|'||instrument_type||'|'||market||'|'||settlement||'|'||currency) from history_canonical_v2").fetchone()[0],
+                    'first_day':c.execute('select min(date) from history_canonical_v2').fetchone()[0],
+                    'latest_day':maxv(c,'history_canonical_v2','date'),
+                    'latest_observed':maxv(c,'history_canonical_v2','observed_at'),
+                    'sources':grouped(c,'history_canonical_v2','source')}
+              if 'history_versions_v2' in ts:
+                  out['history_versions_v2']={'rows':count(c,'history_versions_v2'),'sources':grouped(c,'history_versions_v2','source'),'latest_observed':maxv(c,'history_versions_v2','observed_at')}
+          try:
+              import et_shadow_learning_rc6 as sl
+              out['shadow_learning']=sl.collect(Path(OBS))
+          except Exception as exc:
+              out['shadow_learning']={'state':'RED','error':f'{type(exc).__name__}:{exc}'}
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,indent=2,default=str))
+          assert out['observer_quick_check']=='ok'
+          assert out['history_quick_check']=='ok'
+          assert int((out['observer_state'] or {}).get('real_orders_sent') or 0)==0
+          assert out['history_canonical_v2']['rows']>0
+          PY
+
+          echo '--- SYSTEMD TIMERS ---'
+          for unit in \
+            porota-history-postclose-rc6.timer \
+            porota-candle-integrity-rc6.timer \
+            porota-a3-history-daily-rc6.timer \
+            porota-a3-history-reconcile-rc6.timer \
+            porota-a3-history-weekend-rc6.timer \
+            porota-contract-evidence-rc6.timer; do
+            enabled="$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || true)"
+            active="$(sudo -n systemctl is-active "$unit" 2>/dev/null || true)"
+            printf 'TIMER=%s|enabled=%s|active=%s\n' "$unit" "$enabled" "$active"
+            sudo -n systemctl show "$unit" -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager 2>/dev/null || true
+          done
+
+          echo '--- SERVICE RESULTS ---'
+          for svc in \
+            porota-history-postclose-rc6.service \
+            porota-candle-integrity-rc6.service \
+            porota-a3-history-rc6@DAILY_INCREMENTAL.service \
+            porota-a3-history-rc6@RECONCILE.service \
+            porota-a3-history-rc6@WEEKEND_DEEP.service \
+            porota-contract-evidence-rc6.service; do
+            echo "SERVICE=$svc"
+            sudo -n systemctl show "$svc" -p ActiveState -p Result -p ExecMainStatus -p InactiveExitTimestamp --no-pager 2>/dev/null || true
+          done
+
+          echo '--- A3 JOURNAL ---'
+          for svc in porota-a3-history-rc6@DAILY_INCREMENTAL.service porota-a3-history-rc6@RECONCILE.service porota-a3-history-rc6@WEEKEND_DEEP.service; do
+            echo "JOURNAL=$svc"
+            sudo -n journalctl -u "$svc" -n 40 --no-pager 2>/dev/null | tail -n 40 || true
+          done
+
+          echo '--- CONTRACT EVIDENCE ---'
+          test -d /usr/local/lib/porota-contract-evidence-rc6
+          test -x /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          echo 'CONTRACT_EVIDENCE_OVERLAY=GREEN_PRESENT'
+          sudo -n journalctl -u porota-contract-evidence-rc6.service -n 80 --no-pager 2>/dev/null | tail -n 80 || true
+          echo 'AUDIT_COMPLETE=YES'
+          HOST
