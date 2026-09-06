@@ -1,0 +1,52 @@
+name: RC6 targeted reasons
+on:
+  push:
+    branches: [candidate/v17.0.0-rc6-weekend-20260905]
+    paths: ['.github/workflows/rc6-targeted-reasons.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/v17.0.0-rc6-weekend-20260905
+      - run: docker build --pull=false -t porota-probe:${GITHUB_SHA} .
+      - shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 --entrypoint python porota-probe:${GITHUB_SHA} -c '
+import tempfile
+from pathlib import Path
+from dataclasses import replace
+from datetime import datetime,timedelta
+from be_paper_engine import D,PaperBroker,PaperStore
+from tests.test_production_paper_v1634 import quote
+import bf_production_paper_observer as observer
+import bu_instrument_catalog as catalog
+
+root=Path(tempfile.mkdtemp())
+# MEP contract fixture reconstructed minimally from catalog terms
+from bs_instrument_contracts import InstrumentContract
+at="2026-08-28T11:00:00-03:00"
+base=quote(symbol="AAPLD",at=at,ask_size="10000",bid_size="10000")
+contract=InstrumentContract(symbol="AAPLD",family="CEDEARS",settlement="INMEDIATA",currency="USD_MEP",market="BYMA",cash_multiplier=D("1"),quantity_step=D("1"),source="FIXTURE")
+q=replace(base,asset_class="CEDEARS",settlement="INMEDIATA",currency="USD_MEP",market="BYMA",contract=contract)
+b=PaperBroker(PaperStore(str(root/"mep.db")),initial_cash_by_currency={"USD_MEP":"10000"})
+print("MEP",b._open(q,D(".8"),{}))
+
+# repeated opens
+b=PaperBroker(PaperStore(str(root/"multi.db")),initial_cash="100000")
+for i in range(5):
+    s=f"ABIERTA{i}"
+    qi=quote(symbol=s,at=at,ask_size="1000")
+    for p in b.store.open_positions():
+        b.store.add_quote(quote(symbol=p["symbol"],at=at,ask_size="1000"))
+    print("MULTI",i,b._open(qi,D(".8"),{}))
+'
