@@ -1,0 +1,65 @@
+name: RC6 introspection path audit 2026-09-06
+on:
+  push:
+    branches: [audit/rc6-introspection-path-20260906]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_intro_path"
+          chmod 600 "$HOME/.ssh/porota_intro_path"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Locate snapshots read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_intro_path" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          test "$(git -C "$REPO" rev-parse HEAD)" = db26c76723bb988c956589c572b87cbcb4191731
+          echo '=== INTROSPECTION PATH AUDIT ==='
+          date -u '+UTC=%Y-%m-%dT%H:%M:%SZ'
+          echo '--- FILES ---'
+          sudo -n find "$REPO/data/introspection" "$REPO/data/introspection_publish" "$REPO/data/functional_health" \
+            -maxdepth 3 -type f -printf '%T@|%s|%p\n' 2>/dev/null | sort -nr | head -n 120 || true
+          echo '--- JSON METADATA ---'
+          python3 - "$REPO" <<'PY'
+          import glob,json,os,sys
+          repo=sys.argv[1]
+          patterns=[repo+'/data/introspection/*.json',repo+'/data/introspection_publish/**/*.json',repo+'/data/functional_health/**/*.json']
+          files=[]
+          for pat in patterns: files.extend(glob.glob(pat,recursive=True))
+          files=sorted(set(files),key=lambda p:os.path.getmtime(p),reverse=True)[:80]
+          for p in files:
+              try:
+                  d=json.load(open(p,encoding='utf-8'))
+                  if isinstance(d,dict):
+                      pick={k:d.get(k) for k in ('schema','timestamp','generated_at','generated_at_utc','status','state','verdict','recorded_at','published_at') if k in d}
+                  else: pick={'type':type(d).__name__}
+                  print(p+'|mtime='+str(os.path.getmtime(p))+'|'+json.dumps(pick,ensure_ascii=False,sort_keys=True,default=str))
+              except Exception as e:
+                  print(p+'|ERROR='+type(e).__name__+':'+str(e)[:120])
+          PY
+          echo '--- TIMER/JOURNAL ---'
+          for u in porota-introspeccion-hf5.timer porota-introspeccion-hf5.service porota-introspection-publish.timer porota-introspection-publish.service; do
+            echo "UNIT=$u"
+            sudo -n systemctl show "$u" -p LoadState -p ActiveState -p UnitFileState -p Result -p ExecMainStatus -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager 2>/dev/null || true
+            sudo -n journalctl -u "$u" -n 20 --no-pager 2>/dev/null | tail -n 20 || true
+          done
+          echo MUTATION=0
+          HOST
