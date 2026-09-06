@@ -1,0 +1,44 @@
+name: RC6 apply active-test alignment
+
+on:
+  push:
+    branches:
+      - candidate/v17.0.0-rc6-weekend-20260905
+    paths:
+      - '.github/workflows/rc6-apply-active-tests.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-apply-active-tests
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/v17.0.0-rc6-weekend-20260905
+          fetch-depth: 0
+      - name: Verify RC5 ancestry
+        run: git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+      - name: Apply deterministic patch
+        run: python .github/workflows/rc6_apply_patch.py
+      - name: Verify diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -n "$(git status --porcelain tests/)"
+      - name: Commit aligned tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Porota RC6 CI'
+          git config user.email '151845499+mbalbo2023@users.noreply.github.com'
+          git add tests/
+          git commit -m 'RC6 tests: align active semantics with fail-closed runtime'
+          git push origin HEAD:candidate/v17.0.0-rc6-weekend-20260905
