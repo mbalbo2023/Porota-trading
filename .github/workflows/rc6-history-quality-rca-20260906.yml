@@ -1,0 +1,224 @@
+name: RC6 history quality RCA 2026-09-06
+
+on:
+  push:
+    branches:
+      - audit/rc6-history-quality-rca-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  history-quality-rca:
+    name: Read-only PPI historical quality RCA
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_history_rca"
+          chmod 600 "$HOME/.ssh/porota_history_rca"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Collect offline history quality evidence
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_history_rca" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-history-quality-rca.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          LIVE_BRANCH='hotfix/rc6-cedear-us-labor-day-20260906'
+          LIVE_SHA='db26c76723bb988c956589c572b87cbcb4191731'
+          LIVE_IMAGE='porota-trading-bot:17.0.0-rc6'
+
+          echo '=== POROTA RC6 HISTORY QUALITY RCA READ ONLY ==='
+          echo "UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
+          test "$(git -C "$REPO" branch --show-current)" = "$LIVE_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$LIVE_SHA"
+          git -C "$REPO" diff --quiet
+          git -C "$REPO" diff --cached --quiet
+
+          obs="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          dash="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo "OBSERVER=$obs"
+          echo "DASHBOARD=$dash"
+          test "$obs" = "true|$LIVE_IMAGE|0|true"
+          test "$dash" = "true|$LIVE_IMAGE|0"
+          test "$(sudo -n docker image inspect "$LIVE_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$LIVE_SHA"
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from collections import Counter, defaultdict
+          from cg_paper_workspace import runtime_store
+          from bf_production_paper_observer import _historical_targets
+
+          OP='/app/data/paper_v17/observer_v17.db'
+          HP='/app/data/market_history.db'
+
+          def ro(path):
+              c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=30)
+              c.row_factory=sqlite3.Row
+              c.execute('PRAGMA query_only=ON')
+              return c
+
+          def tables(c):
+              return [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+
+          def cols(c,t):
+              return [r[1] for r in c.execute(f'PRAGMA table_info({t})')]
+
+          def q(c,sql,args=()):
+              return [dict(r) for r in c.execute(sql,args).fetchall()]
+
+          out={
+            'schema':'POROTA_RC6_HISTORY_QUALITY_RCA_V1',
+            'network_calls_performed':False,
+            'real_order_capability':'BLOCKED',
+          }
+
+          with ro(OP) as c:
+              out['observer_quick_check']=c.execute('PRAGMA quick_check').fetchone()[0]
+              st=c.execute('SELECT mode,real_orders_sent,ppi_auth,session FROM observer_state WHERE id=1').fetchone()
+              out['observer_state']=dict(st) if st else None
+
+              out['candidate_by_family']=q(c,"""SELECT instrument_type,COUNT(*) identities,
+                    SUM(CASE WHEN can_simulate=1 THEN 1 ELSE 0 END) can_simulate
+                    FROM candidate_universe WHERE status='AVAILABLE'
+                    GROUP BY instrument_type ORDER BY instrument_type""")
+              out['candidate_by_settlement']=q(c,"""SELECT instrument_type,settlement,COUNT(*) identities
+                    FROM candidate_universe WHERE status='AVAILABLE'
+                    GROUP BY instrument_type,settlement ORDER BY instrument_type,settlement""")
+
+              out['coverage_by_family']=q(c,"""SELECT u.instrument_type,
+                    COUNT(*) eligible,
+                    SUM(CASE WHEN h.row_count>0 THEN 1 ELSE 0 END) covered,
+                    SUM(CASE WHEN h.row_count IS NULL OR h.row_count<=0 THEN 1 ELSE 0 END) uncovered
+                    FROM candidate_universe u
+                    LEFT JOIN production_history h ON h.symbol=u.ticker
+                      AND h.instrument_type=u.instrument_type AND h.settlement=u.settlement
+                    WHERE u.status='AVAILABLE' AND (u.can_simulate=1 OR u.instrument_type='INDICES')
+                    GROUP BY u.instrument_type ORDER BY u.instrument_type""")
+
+              out['attempt_state_by_family']=q(c,"""SELECT instrument_type,state,COUNT(*) identities,
+                    SUM(valid_rows) valid_rows
+                    FROM production_history_attempts
+                    GROUP BY instrument_type,state ORDER BY instrument_type,state""")
+              out['attempt_state_total']=q(c,"""SELECT state,COUNT(*) identities,SUM(valid_rows) valid_rows
+                    FROM production_history_attempts GROUP BY state ORDER BY state""")
+
+              out['recent_nonvalid']=q(c,"""SELECT symbol,instrument_type,settlement,state,valid_rows,detail,attempted_at
+                    FROM production_history_attempts
+                    WHERE state!='VALID_PAYLOAD'
+                    ORDER BY julianday(attempted_at) DESC LIMIT 80""")
+
+              out['uncovered']=q(c,"""SELECT u.ticker symbol,u.instrument_type,u.settlement,u.market,
+                    a.state last_state,a.valid_rows,a.detail,a.attempted_at
+                    FROM candidate_universe u
+                    LEFT JOIN production_history h ON h.symbol=u.ticker
+                      AND h.instrument_type=u.instrument_type AND h.settlement=u.settlement
+                    LEFT JOIN production_history_attempts a ON a.symbol=u.ticker
+                      AND a.instrument_type=u.instrument_type AND a.settlement=u.settlement
+                    WHERE u.status='AVAILABLE' AND (u.can_simulate=1 OR u.instrument_type='INDICES')
+                      AND (h.row_count IS NULL OR h.row_count<=0)
+                    ORDER BY a.attempted_at IS NOT NULL,a.attempted_at,u.instrument_type,u.ticker
+                    LIMIT 120""")
+
+              store=runtime_store()
+              ordered=_historical_targets(store)[:100]
+              annotated=[]
+              for pos,(symbol,kind,settle) in enumerate(ordered,1):
+                  h=c.execute('SELECT row_count,downloaded_at FROM production_history WHERE symbol=? AND instrument_type=? AND settlement=?',(symbol,kind,settle)).fetchone()
+                  a=c.execute('SELECT state,valid_rows,detail,attempted_at FROM production_history_attempts WHERE symbol=? AND instrument_type=? AND settlement=?',(symbol,kind,settle)).fetchone()
+                  annotated.append({'rank':pos,'symbol':symbol,'instrument_type':kind,'settlement':settle,
+                    'covered':bool(h and int(h['row_count'] or 0)>0),'history_rows':int(h['row_count'] or 0) if h else 0,
+                    'history_downloaded_at':h['downloaded_at'] if h else None,
+                    'last_attempt':dict(a) if a else None})
+              out['historical_target_order_first100']=annotated
+              out['target_order_summary']={
+                'first40_covered':sum(1 for x in annotated[:40] if x['covered']),
+                'first40_uncovered':sum(1 for x in annotated[:40] if not x['covered']),
+                'first100_covered':sum(1 for x in annotated if x['covered']),
+                'first100_uncovered':sum(1 for x in annotated if not x['covered']),
+              }
+
+          with ro(HP) as h:
+              out['history_quick_check']=h.execute('PRAGMA quick_check').fetchone()[0]
+              ts=tables(h)
+              out['history_tables_matching']=[t for t in ts if any(k in t.lower() for k in ('history','reject','raw','archive','version'))]
+              for t in ('history_canonical_v2','history_versions_v2','history_row_rejections_v2'):
+                  if t not in ts: continue
+                  cset=cols(h,t)
+                  item={'columns':cset,'rows':h.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]}
+                  if t=='history_canonical_v2':
+                      group=[]
+                      for key in ('source','instrument_type','asset_class','family'):
+                          if key in cset:
+                              group=q(h,f'SELECT {key} key,COUNT(*) rows FROM {t} GROUP BY {key} ORDER BY rows DESC')
+                              break
+                      item['by_primary_dimension']=group
+                  if t=='history_row_rejections_v2':
+                      reason_col=next((x for x in ('reason','reject_reason','rejection_reason','code','quality') if x in cset),None)
+                      symbol_col=next((x for x in ('symbol','ticker') if x in cset),None)
+                      family_col=next((x for x in ('instrument_type','asset_class','family') if x in cset),None)
+                      source_col=next((x for x in ('source','origin') if x in cset),None)
+                      if reason_col:
+                          item['by_reason']=q(h,f'SELECT {reason_col} reason,COUNT(*) rows FROM {t} GROUP BY {reason_col} ORDER BY rows DESC LIMIT 40')
+                          if symbol_col:
+                              item['top_symbols']=q(h,f'SELECT {symbol_col} symbol,COUNT(*) rows FROM {t} GROUP BY {symbol_col} ORDER BY rows DESC LIMIT 40')
+                          if family_col:
+                              item['by_family_reason']=q(h,f'SELECT {family_col} family,{reason_col} reason,COUNT(*) rows FROM {t} GROUP BY {family_col},{reason_col} ORDER BY rows DESC LIMIT 80')
+                          if source_col:
+                              item['by_source_reason']=q(h,f'SELECT {source_col} source,{reason_col} reason,COUNT(*) rows FROM {t} GROUP BY {source_col},{reason_col} ORDER BY rows DESC LIMIT 80')
+                          sample_cols=[x for x in (symbol_col,family_col,source_col,reason_col,'recorded_at','attempted_at','date','source_at','detail') if x and x in cset]
+                          if sample_cols:
+                              item['samples']=q(h,'SELECT '+','.join(sample_cols)+f' FROM {t} ORDER BY rowid DESC LIMIT 80')
+                  out[t]=item
+
+              # Inspect raw/archive tables without assuming their schema.
+              raw=[]
+              for t in ts:
+                  low=t.lower()
+                  if not any(k in low for k in ('raw','archive')): continue
+                  cset=cols(h,t)
+                  rec={'table':t,'rows':h.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0],'columns':cset}
+                  quality=next((x for x in ('quality','state','status') if x in cset),None)
+                  origin=next((x for x in ('origin','source') if x in cset),None)
+                  if quality:
+                      rec['by_quality']=q(h,f'SELECT {quality} key,COUNT(*) rows FROM {t} GROUP BY {quality} ORDER BY rows DESC LIMIT 30')
+                  if origin:
+                      rec['by_origin']=q(h,f'SELECT {origin} key,COUNT(*) rows FROM {t} GROUP BY {origin} ORDER BY rows DESC LIMIT 30')
+                  raw.append(rec)
+              out['raw_archive_inventory']=raw
+
+          assert out['observer_quick_check']=='ok'
+          assert out['history_quick_check']=='ok'
+          assert out['observer_state'] and int(out['observer_state']['real_orders_sent'] or 0)==0
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          PY
+
+          curl -fsS http://127.0.0.1:8000/health | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('status')=='ok'; print('HEALTH=OK version='+str(d.get('version')))"
+          echo 'NETWORK_PPI_CALLS=0'
+          echo 'DATA_MUTATION=0'
+          echo 'RC6_HISTORY_QUALITY_RCA=COMPLETE'
+          HOST
+
+          {
+            echo '### RC6 history quality RCA — read only'
+            echo '```text'
+            sed -n '1,1400p' /tmp/rc6-history-quality-rca.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
