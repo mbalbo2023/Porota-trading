@@ -16,12 +16,14 @@ LATER='2026-08-28T11:01:00-03:00'
 
 @pytest.fixture
 def opened(tmp_path):
-    # This fixture fabricates two imported positions before explicitly attaching
-    # the 1% DailyRisk under test. Disable admission risk only for that setup;
-    # production/runtime keeps the canonical 2.5% guard.
-    b=PaperBroker(PaperStore(str(tmp_path/'open.db')),initial_cash='10000',daily_loss_pct=None)
-    for symbol in ('ALUA','GGAL'):
-        assert b._open(quote(symbol=symbol,at=AT,ask_size='100'),D('.8'),{})[0]
+    b=PaperBroker(PaperStore(str(tmp_path/'open.db')),initial_cash='10000')
+    first=quote(symbol='ALUA',at=AT,ask_size='100')
+    assert b._open(first,D('.8'),{})[0]
+    # The concurrent-risk gate requires a current mark for already-open risk.
+    # Persist the first instrument's book before admitting the second fixture.
+    b.store.add_quote(first)
+    second=quote(symbol='GGAL',at=AT,ask_size='100')
+    assert b._open(second,D('.8'),{})[0]
     bad,good=sorted(b.store.open_positions(),key=lambda p:p['symbol'])
     b.daily_risk=DailyRisk(b,'1')
     return b,bad,good
