@@ -24,4 +24,5 @@ jobs:
             --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=1777 \
             --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
             -e PYTHONDONTWRITEBYTECODE=1 \
+            -e PYTHONPATH=/app \
             --entrypoint python porota-probe:${GITHUB_SHA} scripts/rc6_targeted_probe.py
