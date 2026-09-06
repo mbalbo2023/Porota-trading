@@ -12,26 +12,25 @@ from zoneinfo import ZoneInfo
 from bs_instrument_contracts import InstrumentContract, cash_currency, family_name, contract_from_metadata
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
-US_UNDERLYING_HOLIDAY_BLOCKS = {
-    "2026-09-07": frozenset({"AAPL", "AAPLD", "AAPLC"}),
+US_MARKET_WIDE_CEDEAR_HOLIDAYS = {
+    "2026-09-07": "US_LABOR_DAY",
 }
 
 
 def rc6_underlying_opening_block(ticker, instrument_type, now=None):
-    """Bloquea sólo nuevas aperturas PAPER cuyo subyacente externo está cerrado.
+    """Bloquea sólo nuevas aperturas PAPER de CEDEAR ante cierre total de EE.UU.
 
-    El 07/09/2026 BYMA Argentina opera, pero EE.UU. permanece cerrado por Labor Day.
-    El foco RC6 contiene únicamente las identidades Apple AAPL/AAPLD/AAPLC entre
-    los CEDEARs a los que este release da prioridad. La cotización sigue siendo
-    observada y persistida; este texto llega a Quote.opening_block_reason y sólo
-    convierte la decisión de apertura en HOLD.
+    Fail-safe RC6: hasta contar con un mapping autoritativo CEDEAR -> mercado
+    subyacente, un cierre total del mercado estadounidense bloquea toda nueva
+    apertura CEDEAR. Cotizaciones, persistencia y observación continúan activas;
+    este texto llega a Quote.opening_block_reason y sólo convierte la decisión
+    de apertura en HOLD. El ticker se conserva por compatibilidad de interfaz.
     """
     local = (now or datetime.now(AR_TZ)).astimezone(AR_TZ)
     kind = str(instrument_type or "").strip().upper()
-    symbol = str(ticker or "").strip().upper()
-    blocked = US_UNDERLYING_HOLIDAY_BLOCKS.get(local.date().isoformat(), frozenset())
-    if kind in {"CEDEARS", "CEDEAR"} and symbol in blocked:
-        return "UNDERLYING_MARKET_CLOSED: US_LABOR_DAY"
+    event = US_MARKET_WIDE_CEDEAR_HOLIDAYS.get(local.date().isoformat())
+    if kind in {"CEDEARS", "CEDEAR"} and event:
+        return f"UNDERLYING_MARKET_CLOSED: {event}"
     return ""
 
 
