@@ -1,4 +1,4 @@
-"""Invariantes críticas incorporadas por HF5."""
+"""Invariantes críticas incorporadas por HF5 y preservadas por releases posteriores."""
 import importlib
 import json
 from pathlib import Path
@@ -49,7 +49,11 @@ def test_guard_clasifica_json_vacio():
     assert classify_read_error(error)=="PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"
 
 
-def test_version_hf5():
-    from _version import VERSION, IMAGE
-    assert VERSION=="17.0.0-rc3-hf6"
-    assert IMAGE.endswith(":17.0.0-rc3-hf6")
+def test_release_identity_and_safety_invariants():
+    """HF5's old version string is history; test the invariant, not a stale tag."""
+    import _version as version
+    assert version.VERSION.startswith("17.0.0-")
+    assert version.IMAGE == f"porota-trading-bot:{version.VERSION}"
+    assert version.MODE == "PRODUCTION_PAPER"
+    assert version.EXECUTION == "SIMULATED"
+    assert version.REAL_ORDER_CAPABILITY == "BLOCKED"
