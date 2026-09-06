@@ -3,8 +3,9 @@
 
 Read-only and fail-closed. It never sends an order, edits configuration, restarts
 units or sends Telegram directly. On a non-operational BYMA day it returns
-NOT_DUE. The 2026-09-07 US Labor Day policy is proven through the same catalog
-opening-block function used by the PAPER scanner.
+NOT_DUE. Legacy release units are deliberately not part of this RC6 readiness
+contract: deployment owns one-time retirement; daily RC6 health depends only on
+RC6-native runtime state.
 """
 from __future__ import annotations
 
@@ -62,8 +63,6 @@ def observer_db():
         c.close()
         state = dict(row) if row else {}
         auth = str(state.get('ppi_auth') or '').upper()
-        # Outside OPEN/PREOPEN the observer may legitimately not have attempted
-        # a fresh PPI login yet. The 10:15 run itself requires OK/AUTHENTICATED.
         phase = str(state.get('session_state') or '').upper()
         auth_ok = auth in {'OK','AUTHENTICATED'} or (phase == 'MARKET_CLOSED' and auth == 'NOT_ATTEMPTED')
         ok = (qc == 'ok' and state.get('mode') == 'PRODUCTION_PAPER' and
@@ -71,24 +70,6 @@ def observer_db():
         return {'state':'GREEN' if ok else 'RED','quick_check':qc,'observer_state':state}
     except Exception as exc:
         return {'state':'RED','detail':f'{type(exc).__name__}:{exc}'}
-
-
-def rc4_units():
-    rc, out, err = cmd(['systemctl','list-units','--all','--no-legend','--no-pager'])
-    lines = []
-    for line in out.splitlines():
-        fields = line.split()
-        if fields and 'rc4' in fields[0].lower():
-            active = fields[2].lower() if len(fields) > 2 else ''
-            if active not in {'inactive','failed'}:
-                lines.append(line)
-    return {'state':'GREEN' if rc == 0 and not lines else 'RED','lines':lines,'error':err}
-
-
-def rc4_unit_files():
-    rc, out, err = cmd(['systemctl','list-unit-files','--no-pager','--no-legend'])
-    lines = [x for x in out.splitlines() if 'rc4' in x.lower()]
-    return {'state':'GREEN' if rc == 0 and not lines else 'RED','lines':lines,'error':err}
 
 
 def required_timers():
@@ -126,7 +107,7 @@ def foreign_market_policy(today):
     argentina_equity = rc6_underlying_opening_block('GGAL','ACCIONES',probe)
     ok = all(v == 'UNDERLYING_MARKET_CLOSED: US_LABOR_DAY' for v in reasons.values()) and not argentina_equity
     return {'state':'GREEN' if ok else 'RED','event':'US_LABOR_DAY',
-            'blocked_focus_ce.dears':reasons,'argentina_equity_block':argentina_equity or None,
+            'blocked_focus_cedears':reasons,'argentina_equity_block':argentina_equity or None,
             'policy':'OBSERVE_AND_RECORD_QUOTES; HOLD_NEW_APPLE_CEDEAR_OPENINGS'}
 
 
@@ -134,7 +115,7 @@ def main():
     now = datetime.now(TZ)
     today = now.date()
     if not byma.es_dia_habil_operativo(today):
-        print(json.dumps({'schema':'POROTA_RC6_PREOPEN_V1','generated_at_ar':now.isoformat(timespec='seconds'),
+        print(json.dumps({'schema':'POROTA_RC6_PREOPEN_V2','generated_at_ar':now.isoformat(timespec='seconds'),
                           'status':'NOT_DUE','reason':'BYMA_NON_OPERATIONAL_DAY',
                           'read_only':True,'network_order_test_performed':False}, ensure_ascii=False, sort_keys=True))
         return 0
@@ -146,13 +127,11 @@ def main():
         'dashboard_container': container('porota_production_dashboard', False),
         'observer_db': observer_db(),
         'disk': {'state':'GREEN' if free >= MIN_FREE_BYTES else 'RED','free':free,'minimum':MIN_FREE_BYTES},
-        'active_rc4_units': rc4_units(),
-        'rc4_unit_files': rc4_unit_files(),
         'required_rc6_timers': required_timers(),
         'foreign_market_policy': foreign_market_policy(today),
     }
     reds = [k for k,v in checks.items() if v.get('state') == 'RED']
-    result = {'schema':'POROTA_RC6_PREOPEN_V1','generated_at_ar':now.isoformat(timespec='seconds'),
+    result = {'schema':'POROTA_RC6_PREOPEN_V2','generated_at_ar':now.isoformat(timespec='seconds'),
               'status':'GREEN' if not reds else 'RED','red_checks':reds,'checks':checks,
               'read_only':True,'network_order_test_performed':False,'direct_telegram_send':False}
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
