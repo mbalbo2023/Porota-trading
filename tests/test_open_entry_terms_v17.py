@@ -16,7 +16,10 @@ LATER='2026-08-28T11:01:00-03:00'
 
 @pytest.fixture
 def opened(tmp_path):
-    b=PaperBroker(PaperStore(str(tmp_path/'open.db')),initial_cash='10000')
+    # This fixture fabricates two imported positions before explicitly attaching
+    # the 1% DailyRisk under test. Disable admission risk only for that setup;
+    # production/runtime keeps the canonical 2.5% guard.
+    b=PaperBroker(PaperStore(str(tmp_path/'open.db')),initial_cash='10000',daily_loss_pct=None)
     for symbol in ('ALUA','GGAL'):
         assert b._open(quote(symbol=symbol,at=AT,ask_size='100'),D('.8'),{})[0]
     bad,good=sorted(b.store.open_positions(),key=lambda p:p['symbol'])
