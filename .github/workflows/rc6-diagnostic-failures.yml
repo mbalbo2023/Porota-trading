@@ -32,13 +32,16 @@ jobs:
             -e TELEGRAM_CHAT_ID=0 \
             -e STARTUP_REQUIRE_AUTH=false \
             --entrypoint bash porota-rc6-diag:${GITHUB_SHA} -lc '
+          cd /app
           cat >/tmp/rc6_probe.py <<"PY"
           from pathlib import Path
           from dataclasses import replace
-          import tempfile
+          import sys, tempfile
+          sys.path.insert(0,"/app")
+          sys.path.insert(0,"/app/tests")
           from be_paper_engine import D, PaperBroker, PaperStore
           from bs_instrument_contracts import InstrumentContract
-          from tests.test_production_paper_v1634 import quote, partial_spot
+          from test_production_paper_v1634 import quote
 
           root=Path(tempfile.mkdtemp())
           at="2026-08-28T11:00:00-03:00"
@@ -49,24 +52,20 @@ jobs:
               except Exception as exc:
                   print(label, "EXC", type(exc).__name__, str(exc))
 
-          # MEP funded
           base=quote(symbol="AAPLD",at=at,ask_size="10000",bid_size="10000")
-          contract=InstrumentContract(symbol="AAPLD",family="CEDEARS",settlement="INMEDIATA",currency="USD_MEP",market="BYMA",cash_multiplier=D("1"),quantity_step=D("1"),source="FIXTURE")
+          contract=InstrumentContract("AAPLD","CEDEARS","USD_MEP","BYMA","INMEDIATA",D("1"),D("1"),"FIXTURE")
           q=replace(base,asset_class="CEDEARS",settlement="INMEDIATA",currency="USD_MEP",market="BYMA",contract=contract)
           show("MEP", PaperBroker(PaperStore(str(root/"mep.db")),initial_cash_by_currency={"USD_MEP":"10000"}), q)
 
-          # repeated opens with canonical risk
           b=PaperBroker(PaperStore(str(root/"multi.db")),initial_cash="100000",max_positions=5)
           for i in range(5):
               qi=quote(symbol=f"ABIERTA{i}",at=at,ask_size="1000")
               show(f"MULTI{i}",b,qi)
 
-          # quantity outcomes
           b=PaperBroker(PaperStore(str(root/"qty.db")),initial_cash="1000",risk_pct="1",max_position_pct="1",max_total_exposure_pct="1",slippage_bps="0")
           show("QTY",b,replace(quote(ask_size="100000"),ask=D("100")))
           if b.store.open_positions(): print("QTY_VALUE",b.store.open_positions()[0]["quantity"])
 
-          # no risk is expected fail-closed
           b=PaperBroker(PaperStore(str(root/"norisk.db")),initial_cash="10000",daily_loss_pct=None)
           show("NO_RISK",b,quote(at=at,ask_size="100"))
           PY
