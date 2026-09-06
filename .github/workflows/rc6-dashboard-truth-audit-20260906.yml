@@ -1,0 +1,221 @@
+name: RC6 dashboard truth audit 2026-09-06
+
+on:
+  push:
+    branches:
+      - audit/rc6-dashboard-truth-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-truth:
+    name: Dashboard route, cards and source-of-truth audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_dashboard_audit"
+          chmod 600 "$HOME/.ssh/porota_dashboard_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Audit live dashboard read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_dashboard_audit" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-dashboard-truth-audit.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          LIVE_BRANCH='hotfix/rc6-cedear-us-labor-day-20260906'
+          LIVE_SHA='db26c76723bb988c956589c572b87cbcb4191731'
+          LIVE_IMAGE='porota-trading-bot:17.0.0-rc6'
+
+          echo '=== POROTA RC6 DASHBOARD TRUTH AUDIT READ ONLY ==='
+          echo "UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
+          test "$(git -C "$REPO" branch --show-current)" = "$LIVE_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$LIVE_SHA"
+          git -C "$REPO" diff --quiet
+          git -C "$REPO" diff --cached --quiet
+
+          obs="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          dash="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo "OBSERVER=$obs"
+          echo "DASHBOARD=$dash"
+          test "$obs" = "true|$LIVE_IMAGE|0|true"
+          test "$dash" = "true|$LIVE_IMAGE|0"
+          test "$(sudo -n docker image inspect "$LIVE_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$LIVE_SHA"
+
+          echo '--- ROUTES_AND_RENDERED_PAGES ---'
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import json, os, re, urllib.request, urllib.error
+          import o_dashboard
+
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          if not token:
+              raise RuntimeError('DASHBOARD_ACCESS_TOKEN_MISSING_IN_CONTAINER')
+
+          routes=[]
+          for r in o_dashboard.app.routes:
+              path=getattr(r,'path','')
+              methods=sorted(getattr(r,'methods',[]) or [])
+              name=getattr(r,'name','')
+              routes.append({'path':path,'methods':methods,'name':name})
+          print('ROUTES_JSON='+json.dumps(routes,ensure_ascii=False,sort_keys=True))
+
+          exact_prefixes=(
+              '/', '/paper', '/observacion', '/vivo', '/histor', '/aprendiz', '/salud', '/sistema',
+              '/sre', '/univers', '/scalping', '/config', '/validacion', '/report', '/instrument',
+              '/caucion', '/learning', '/backups', '/scraping', '/jobs'
+          )
+          skip=('/openapi.json','/docs','/docs/oauth2-redirect','/redoc','/reports/monthly')
+          candidates=[]
+          for r in routes:
+              p=r['path']
+              if 'GET' not in r['methods'] or '{' in p or p in skip: continue
+              if p=='/' or any(p.startswith(x) for x in exact_prefixes[1:]):
+                  candidates.append(p)
+          candidates=sorted(set(candidates),key=lambda x:(x.count('/'),x))
+
+          pages=[]
+          for p in candidates:
+              req=urllib.request.Request('http://127.0.0.1:8000'+p,headers={'Authorization':'Bearer '+token,'User-Agent':'PorotaDashboardTruthAudit/RC6'})
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as resp:
+                      body=resp.read(2_000_000).decode('utf-8','replace')
+                      ctype=resp.headers.get('Content-Type','')
+                      headings=[re.sub('<[^>]+>',' ',x).strip() for x in re.findall(r'<h[12][^>]*>(.*?)</h[12]>',body,re.I|re.S)]
+                      headings=[re.sub(r'\s+',' ',x)[:160] for x in headings[:16]]
+                      rec={
+                        'path':p,'status':resp.status,'content_type':ctype,'bytes':len(body.encode('utf-8')),
+                        'tables':len(re.findall(r'<table\b',body,re.I)),
+                        'paper_cards':len(re.findall(r"class=['\"][^'\"]*paper-card",body,re.I)),
+                        'details':len(re.findall(r'<details\b',body,re.I)),
+                        'headings':headings,
+                        'no_disponible':len(re.findall(r'no disponible|unavailable',body,re.I)),
+                        'zero_bytes':len(re.findall(r'0\s*bytes|0\s*B\b',body,re.I)),
+                        'workers':len(re.findall(r'workers?',body,re.I)),
+                        'base_objetiva':len(re.findall(r'base objetiva',body,re.I)),
+                        'cobertura':len(re.findall(r'cobertura',body,re.I)),
+                        'left_system_nav':bool(re.search(r'class=["\'][^"\']*system-nav',body,re.I)),
+                      }
+                      pages.append(rec)
+              except urllib.error.HTTPError as e:
+                  pages.append({'path':p,'status':e.code,'error':'HTTPError'})
+              except Exception as e:
+                  pages.append({'path':p,'status':None,'error':type(e).__name__+':'+str(e)[:180]})
+          print('PAGES_JSON='+json.dumps(pages,ensure_ascii=False,sort_keys=True))
+          PY
+
+          echo '--- DASHBOARD_LOCAL_SOURCE_TRUTH ---'
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import json, os
+          from pathlib import Path
+          import bg_paper_dashboard as b
+          from db_dashboard_logs_hf6 import discover_sources, primary_source
+          from de_scheduler_catalog_hf6 import load_systemd_snapshot, internal_rows
+
+          out={
+            'schema':'POROTA_RC6_DASHBOARD_LOCAL_TRUTH_V1',
+            'effective_mode':b._effective_mode(),
+            'configured_mode':b.CONFIGURED_MODE,
+            'mode_mismatch':b._mode_mismatch(),
+          }
+          spot=b._spot_snapshot()
+          cauc=b._caucion_snapshot()
+          out['spot_state']=spot.get('state')
+          out['spot_open_count']=len(spot.get('open',[]))
+          out['spot_closed_count']=len(spot.get('closed',[]))
+          out['caucion_state']=cauc.get('state')
+          out['caucion_count']=len(cauc.get('positions',[]))
+          try:
+              sources=discover_sources()
+              safe=[]
+              for s in sources:
+                  if isinstance(s,dict):
+                      safe.append({k:s.get(k) for k in ('id','label','path','exists','size','bytes','updated_at','source') if k in s})
+                  else:
+                      safe.append(str(s))
+              out['log_sources']=safe
+              p=primary_source(sources) if sources else None
+              if isinstance(p,dict):
+                  out['primary_log_source']={k:p.get(k) for k in ('id','label','path','exists','size','bytes','updated_at','source') if k in p}
+              else:
+                  out['primary_log_source']=str(p) if p else None
+          except Exception as e:
+              out['logs_error']=type(e).__name__+':'+str(e)[:200]
+          try:
+              snap=load_systemd_snapshot()
+              out['systemd_snapshot_type']=type(snap).__name__
+              out['systemd_snapshot_present']=bool(snap)
+              if isinstance(snap,dict):
+                  out['systemd_snapshot_keys']=sorted(snap.keys())[:80]
+              rows=internal_rows(snap)
+              out['internal_jobs_count']=len(rows)
+              out['internal_jobs_sample']=rows[:12]
+          except Exception as e:
+              out['systemd_snapshot_error']=type(e).__name__+':'+str(e)[:200]
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          PY
+
+          echo '--- DB_CARD_TRUTH ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,sqlite3
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          TZ=ZoneInfo('America/Argentina/Buenos_Aires')
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+          c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          tabs={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          out={'quick_check':c.execute('PRAGMA quick_check').fetchone()[0]}
+          state=c.execute('SELECT * FROM observer_state WHERE id=1').fetchone()
+          if state:
+              keys=set(state.keys())
+              out['observer_state']={k:state[k] for k in ('mode','session','ppi_auth','real_orders_sent','detail','updated_at') if k in keys}
+          if 'paper_positions' in tabs:
+              out['paper_positions_by_status']={str(r[0]):int(r[1]) for r in c.execute('SELECT status,COUNT(*) FROM paper_positions GROUP BY status')}
+              cols={r[1] for r in c.execute('PRAGMA table_info(paper_positions)')}
+              tcol='closed_at' if 'closed_at' in cols else 'opened_at' if 'opened_at' in cols else None
+              if tcol:
+                  rows=c.execute(f'SELECT status,{tcol} ts FROM paper_positions ORDER BY julianday({tcol}) DESC LIMIT 12').fetchall()
+                  out['recent_position_dates']=[dict(r) for r in rows]
+          if 'api_health' in tabs:
+              out['api_health']=[dict(r) for r in c.execute('SELECT component,state,detail,checked_at,last_success_at,source FROM api_health ORDER BY component')]
+          if 'source_sync' in tabs:
+              out['source_sync']=[dict(r) for r in c.execute('SELECT source,status,last_attempt_at,last_success_at,items,detail FROM source_sync ORDER BY source')]
+          if 'production_history_attempts' in tabs:
+              out['history_attempt_states']={str(r[0]):int(r[1]) for r in c.execute('SELECT state,COUNT(*) FROM production_history_attempts GROUP BY state')}
+          if 'paper_learning_samples' in tabs:
+              out['learning_samples']=int(c.execute('SELECT COUNT(*) FROM paper_learning_samples').fetchone()[0])
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+
+          curl -fsS http://127.0.0.1:8000/health | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('status')=='ok'; print('HEALTH=OK version='+str(d.get('version')))"
+          echo 'DATA_MUTATION=0'
+          echo 'NETWORK_ORDER_TEST=NO'
+          echo 'RC6_DASHBOARD_TRUTH_AUDIT=COMPLETE'
+          HOST
+
+          {
+            echo '### RC6 dashboard truth audit — read only'
+            echo '```text'
+            sed -n '1,1800p' /tmp/rc6-dashboard-truth-audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
