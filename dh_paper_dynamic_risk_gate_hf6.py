@@ -108,9 +108,18 @@ def portfolio_capacity(broker, currency, at, *, candidate_risk=ZERO,
     if connection is None:
         with broker.store.connect() as c:
             c.execute("BEGIN IMMEDIATE")
-            return portfolio_capacity(
-                broker, currency, at, candidate_risk=candidate_risk,
-                connection=c, quotes=quotes)
+            try:
+                return portfolio_capacity(
+                    broker, currency, at, candidate_risk=candidate_risk,
+                    connection=c, quotes=quotes)
+            except ConcurrentRiskGateError:
+                # DailyRisk is allowed to persist a fail-closed latch, its audit
+                # event and transactional notification before this read-side
+                # capacity API reports the blocking state to its caller. Without
+                # this explicit commit, sqlite's context manager would roll back
+                # the safety transition merely because the gate correctly raised.
+                c.commit()
+                raise
     c = connection
     currency = cash_currency(currency)
     at = aware_datetime(at)
