@@ -117,21 +117,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm --network none --read-only \
+          docker run --rm -i --network none --read-only \
             --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
             --tmpfs /app/data:rw,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0770 \
             -e PYTHONDONTWRITEBYTECODE=1 \
-            --entrypoint bash porota-rc6-candidate:${GITHUB_SHA} -lc '
-              set -euo pipefail
-              grep -q '\"PAPER_ECONOMIC_GATE_MODE\": \"SHADOW\"' porota_mode_manager.py
-              grep -q 'PAPER_ECONOMIC_GATE_MODE = os.getenv(\"PAPER_ECONOMIC_GATE_MODE\", \"SHADOW\")' bg_paper_dashboard.py
-              grep -q 'shadow_view.render()' en_validation_project_dashboard_rc6.py
-              grep -q 'telegram_delivery_decision(row, at)' bn_telegram_bus.py
-              grep -q 'execution_allowed.*False' ew_a3_history_rc6.py
-              ! grep -Eq 'send_order|new_order|replace_order|cancel_order' ew_a3_history_rc6.py ex_a3_history_job_rc6.py
-              grep -q 'REAL_ORDER_CAPABILITY = \"BLOCKED\"' _version.py
-              grep -q 'VERSION = \"17.0.0-rc6\"' _version.py
-            '
+            --entrypoint python porota-rc6-candidate:${GITHUB_SHA} - <<'PY'
+          from pathlib import Path
+          import re
+
+          def text(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          mode_manager = text('porota_mode_manager.py')
+          dashboard = text('bg_paper_dashboard.py')
+          validation = text('en_validation_project_dashboard_rc6.py')
+          telegram = text('bn_telegram_bus.py')
+          a3_core = text('ew_a3_history_rc6.py')
+          a3_job = text('ex_a3_history_job_rc6.py')
+          version = text('_version.py')
+
+          assert '"PAPER_ECONOMIC_GATE_MODE": "SHADOW"' in mode_manager
+          assert 'PAPER_ECONOMIC_GATE_MODE = os.getenv("PAPER_ECONOMIC_GATE_MODE", "SHADOW")' in dashboard
+          assert 'shadow_view.render()' in validation
+          assert 'telegram_delivery_decision(row, at)' in telegram
+          assert re.search(r'execution_allowed.*False', a3_core)
+          forbidden = re.compile(r'send_order|new_order|replace_order|cancel_order')
+          assert not forbidden.search(a3_core + '\n' + a3_job)
+          assert 'REAL_ORDER_CAPABILITY = "BLOCKED"' in version
+          assert 'VERSION = "17.0.0-rc6"' in version
+          print('RC6_SAFETY_SEMANTICS_INVARIANTS=GREEN')
+          PY
 
       - name: Candidate summary
         if: always()
