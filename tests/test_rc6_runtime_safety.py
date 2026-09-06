@@ -4,6 +4,8 @@ from be_paper_engine import PaperBroker, PaperStore
 from cf_sale_settlement import modeled_sale_settlement, validated_sale_settlement
 
 
+# Bare PaperBroker remains guarded too: _open() requires DailyRisk for the
+# concurrent-risk budget, so the canonical 2.5% hard limit is not optional.
 def test_isolated_broker_keeps_canonical_daily_risk_guard(tmp_path):
     broker = PaperBroker(PaperStore(str(tmp_path / 'isolated.db')))
     assert broker.daily_risk is not None
