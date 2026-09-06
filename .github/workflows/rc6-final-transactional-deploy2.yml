@@ -1,0 +1,412 @@
+name: RC6 final transactional deploy2
+
+on:
+  push:
+    branches: [release-candidate/v17.0.0-rc6-deploy2-20260906]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-final-deploy2
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Exact SHA acceptance gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Lineage and safety identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+          test -z "$(git status --porcelain)"
+          git diff --check
+          python - <<'PY'
+          import _version
+          assert _version.VERSION == '17.0.0-rc6'
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          print('RC6_RELEASE_IDENTITY=GREEN')
+          PY
+      - name: Compile source tree
+        run: python -m compileall -q .
+      - name: Build exact candidate
+        run: docker build --pull=false --label "porota.commit=$GITHUB_SHA" --label "porota.version=17.0.0-rc6" -t porota-rc6-release2:${GITHUB_SHA} .
+      - name: Active pytest suite offline
+        shell: bash
+        run: |
+          set +e
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX -e DB_PATH=/tmp/porota-ci.db \
+            -e TELEGRAM_CHAT_ID=0 -e STARTUP_REQUIRE_AUTH=false \
+            --entrypoint bash porota-rc6-release2:${GITHUB_SHA} -lc \
+            'python -m pytest -q -p no:cacheprovider --tb=short \
+              --ignore=tests/test_hotfix_rc3_hf2.py \
+              --ignore=tests/test_hotfix_rc3_hf4.py \
+              --ignore=tests/test_hotfix_rc3_hf6.py \
+              --ignore=tests/test_intraday_scalping_hf3.py \
+              --ignore=tests/test_rc4_acceptance.py \
+              --ignore=tests/test_rc4_hf1_last_mile.py \
+              --ignore=tests/test_rc4_hf2_consolidation.py' > rc6-release2-pytest.log 2>&1
+          rc=$?
+          set -e
+          tail -n 260 rc6-release2-pytest.log || true
+          exit "$rc"
+      - name: RC6 no-legacy-runtime and order invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -i --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0770 \
+            --entrypoint python porota-rc6-release2:${GITHUB_SHA} - <<'PY'
+          from pathlib import Path
+          import _version
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          pre = Path('rc6_preopen.py').read_text(encoding='utf-8').lower()
+          assert 'rc4' not in pre
+          for name in ('rc6_preopen.py','rc6_functional_health.py','rc6_candle_integrity.py','rc6_postclose_history_job.py'):
+              text=Path(name).read_text(encoding='utf-8')
+              for token in ('send_order(','new_order(','replace_order(','cancel_order('):
+                  assert token not in text
+          for name in ('porota-functional-health-rc6.timer','porota-history-postclose-rc6.timer','porota-candle-integrity-rc6.timer'):
+              text=Path('systemd',name).read_text(encoding='utf-8').lower()
+              assert 'rc4' not in text and 'persistent=' not in text
+          print('RC6_RUNTIME_DEPENDENCY_GATE=GREEN')
+          PY
+
+  archive:
+    name: Immutable GHCR archive proof
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Login GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Publish exact SHA and capture digest
+        id: publish
+        shell: bash
+        env:
+          IMAGE: ghcr.io/mbalbo2023/porota-trading
+        run: |
+          set -euo pipefail
+          REF="$IMAGE:rc6-release2-${GITHUB_SHA}"
+          docker build --pull=false --label "porota.commit=${GITHUB_SHA}" --label "porota.version=17.0.0-rc6" -t "$REF" .
+          docker push "$REF" 2>&1 | tee /tmp/push.log
+          DIGEST="$(sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' /tmp/push.log | tail -n1)"
+          if [ -z "$DIGEST" ]; then DIGEST="$(docker image inspect "$REF" --format '{{index .RepoDigests 0}}' | sed 's/.*@//')"; fi
+          case "$DIGEST" in sha256:*) ;; *) echo INVALID_DIGEST; exit 1;; esac
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          printf 'version=17.0.0-rc6\ncommit=%s\ntree=%s\nimage=%s\ndigest=%s\n' \
+            "$GITHUB_SHA" "$(git rev-parse "${GITHUB_SHA}^{tree}")" "$IMAGE" "$DIGEST" > /tmp/manifest.txt
+      - name: Delete local tag and re-pull exact digest
+        shell: bash
+        env:
+          IMAGE: ghcr.io/mbalbo2023/porota-trading
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker image rm "$IMAGE:rc6-release2-${GITHUB_SHA}"
+          docker pull "$IMAGE@$DIGEST"
+          test "$(docker image inspect "$IMAGE@$DIGEST" --format '{{index .Config.Labels "porota.commit"}}')" = "$GITHUB_SHA"
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+            --entrypoint python "$IMAGE@$DIGEST" -c "import _version; assert _version.VERSION=='17.0.0-rc6'; assert _version.REAL_ORDER_CAPABILITY=='BLOCKED'; print('GHCR_REPULL=GREEN')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc6-release2-manifest-${{ github.sha }}
+          path: /tmp/manifest.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy:
+    name: Transactional Droplet deploy and offline rollback rehearsal
+    needs: [validate, archive]
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_deploy"
+          chmod 600 "$HOME/.ssh/porota_deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Deploy exact RC6 SHA transactionally
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          ARCHIVE_DIGEST: ${{ needs.archive.outputs.digest }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_deploy" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+          REPO=/opt/porota-trading
+          TARGET_SHA="${TARGET_SHA:?}"
+          ARCHIVE_DIGEST="${ARCHIVE_DIGEST:?}"
+          TARGET_BRANCH='release-candidate/v17.0.0-rc6-deploy2-20260906'
+          TARGET_IMAGE='porota-trading-bot:17.0.0-rc6'
+          CURRENT_BRANCH="$(git -C "$REPO" branch --show-current)"
+          CURRENT_SHA="$(git -C "$REPO" rev-parse HEAD)"
+          CURRENT_IMAGE="$(sudo -n docker inspect -f '{{.Config.Image}}' porota_production_observer)"
+          TMP=''; WT=''; ACTIVATED=0; MIGRATED=0
+          LEGACY_TIMERS_FILE="$(mktemp "$HOME/porota-legacy-timers.XXXXXX")"
+
+          wait_health() {
+            local ok=0
+            for _ in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:8000/health 2>/dev/null | python3 -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('status')=='ok' else 1)" 2>/dev/null; then ok=1; break; fi
+              sleep 4
+            done
+            test "$ok" -eq 1
+          }
+          verify_runtime() {
+            local image="$1" obs dash state
+            obs="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+            dash="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+            echo "VERIFY_OBSERVER=$obs"; echo "VERIFY_DASHBOARD=$dash"
+            test "$obs" = "true|$image|0|true"; test "$dash" = "true|$image|0"
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          vals=[]
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20); c.execute('PRAGMA query_only=ON')
+              vals.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'): row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*vals,*row))))
+          PY
+          )"
+            echo "VERIFY_DB=$state"; test "$state" = 'ok|ok|PRODUCTION_PAPER|0'
+          }
+          cleanup() {
+            if [ -n "$WT" ] && [ -d "$WT" ]; then git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true; fi
+            [ -z "$TMP" ] || rmdir "$TMP" >/dev/null 2>&1 || true
+            rm -f "$LEGACY_TIMERS_FILE"
+          }
+          restore_legacy_timers() {
+            [ -s "$LEGACY_TIMERS_FILE" ] || return 0
+            sudo -n systemctl daemon-reload
+            while IFS= read -r u; do [ -n "$u" ] && sudo -n systemctl enable --now "$u" >/dev/null 2>&1 || true; done < "$LEGACY_TIMERS_FILE"
+          }
+          rollback_runtime() {
+            echo 'ROLLBACK_RUNTIME=START'
+            if [ "$MIGRATED" -eq 1 ]; then
+              for u in porota-functional-health-rc6.timer porota-history-postclose-rc6.timer porota-host-general-backup-rc6.timer porota-preopen-rc6.timer porota-candle-integrity-rc6.timer porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer; do sudo -n systemctl disable --now "$u" >/dev/null 2>&1 || true; done
+              restore_legacy_timers
+            fi
+            git -C "$REPO" checkout -B "$CURRENT_BRANCH" "$CURRENT_SHA"
+            git -C "$REPO" branch --set-upstream-to="origin/$CURRENT_BRANCH" "$CURRENT_BRANCH" >/dev/null 2>&1 || true
+            sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+            wait_health; verify_runtime "$CURRENT_IMAGE"
+            echo 'ROLLBACK_RUNTIME=GREEN'
+          }
+          on_exit() {
+            rc=$?
+            if [ "$rc" -ne 0 ] && [ "$ACTIVATED" -eq 1 ]; then rollback_runtime || true; fi
+            cleanup
+            exit "$rc"
+          }
+          trap on_exit EXIT
+
+          echo '=== POROTA RC6 DEPLOY2 PREDEPLOY ==='
+          echo "CURRENT_BRANCH=$CURRENT_BRANCH"; echo "CURRENT_SHA=$CURRENT_SHA"; echo "CURRENT_IMAGE=$CURRENT_IMAGE"
+          echo "TARGET_SHA=$TARGET_SHA"; echo "TARGET_IMAGE=$TARGET_IMAGE"; echo "GHCR_ARCHIVE_DIGEST=$ARCHIVE_DIGEST"
+          test "$CURRENT_BRANCH" = 'release/v17.0.0-rc5'
+          test "$CURRENT_SHA" = '852b812d610860b57b579212978443f7450e8855'
+          test "$CURRENT_IMAGE" = 'porota-trading-bot:17.0.0-rc5'
+          test -z "$(git -C "$REPO" diff --cached --name-only)"
+
+          python3 - "$REPO" <<'PY'
+          import subprocess,sys
+          repo=sys.argv[1]
+          raw=subprocess.check_output(['git','-C',repo,'diff','--raw','--no-abbrev','--','scripts/porota_export_runtime_logs_hf6.sh','scripts/porota_export_scheduler_state_hf6.sh'],text=True).splitlines()
+          names=subprocess.check_output(['git','-C',repo,'diff','--name-only'],text=True).splitlines()
+          expected=['scripts/porota_export_runtime_logs_hf6.sh','scripts/porota_export_scheduler_state_hf6.sh']
+          assert sorted(names)==sorted(expected), (names,expected)
+          assert len(raw)==2, raw
+          for line in raw:
+              meta,path=line.split('\t',1)
+              parts=meta.split()
+              assert path in expected
+              assert parts[0]==':100644' and parts[1]=='100755'
+              assert parts[2]==parts[3], line
+          print('KNOWN_HOST_MODE_ONLY_DIFF=GREEN')
+          PY
+          AVAIL="$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"; echo "DISK_FREE_PRE=$AVAIL"; test "$AVAIL" -ge 8589934592
+          verify_runtime "$CURRENT_IMAGE"
+
+          echo 'LOCAL_ROLLBACK_ARTIFACT_PROOF=START'
+          sudo -n docker image inspect "$CURRENT_IMAGE" >/dev/null
+          sudo -n docker run --rm --pull never --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+            --entrypoint python "$CURRENT_IMAGE" -c "import _version; assert _version.VERSION=='17.0.0-rc5'; assert _version.REAL_ORDER_CAPABILITY=='BLOCKED'; print('RC5_LOCAL_OFFLINE_IMAGE=GREEN')"
+          echo 'LOCAL_ROLLBACK_ARTIFACT_PROOF=GREEN'
+
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          git -C "$REPO" merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 "$TARGET_SHA"
+          python3 - "$REPO" "$TARGET_SHA" <<'PY'
+          import subprocess,sys
+          repo,sha=sys.argv[1:]
+          untracked=set(subprocess.check_output(['git','-C',repo,'ls-files','--others','--exclude-standard'],text=True).splitlines())
+          tracked=set(subprocess.check_output(['git','-C',repo,'ls-tree','-r','--name-only',sha],text=True).splitlines())
+          collisions=sorted(untracked & tracked)
+          assert not collisions, 'UNTRACKED_TARGET_COLLISION:'+','.join(collisions[:20])
+          print(f'UNTRACKED_COLLISION_GATE=GREEN count={len(untracked)}')
+          PY
+
+          TMP="$(mktemp -d "$HOME/porota-rc6-deploy2.XXXXXX")"; WT="$TMP/source"
+          git -C "$REPO" worktree add --detach "$WT" "$TARGET_SHA" >/dev/null
+          python3 - "$WT" <<'PY'
+          import sys
+          sys.path.insert(0,sys.argv[1]); import _version
+          assert _version.VERSION=='17.0.0-rc6' and _version.EXECUTION=='SIMULATED' and _version.REAL_ORDER_CAPABILITY=='BLOCKED'
+          PY
+          echo 'HOST_BUILD=START'
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label 'porota.version=17.0.0-rc6' -t "$TARGET_IMAGE" "$WT"
+          test "$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$TARGET_SHA"
+          AVAIL="$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"; echo "DISK_FREE_POST_BUILD=$AVAIL"; test "$AVAIL" -ge 8589934592
+
+          sudo -n docker run --rm --network none --read-only --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0770 --entrypoint bash "$TARGET_IMAGE" -lc \
+            'python -m pytest -q -p no:cacheprovider tests/test_rc6_sunday_host_policy.py tests/test_rc6_no_rc4_runtime_dependency.py tests/test_a3_history_rc6.py tests/test_byma_schedule_rc5.py'
+          echo 'HOST_OFFLINE_TESTS=GREEN'
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY' > /tmp/porota_schema_before.json
+          import json,sqlite3
+          out={}
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True);c.execute('pragma query_only=on')
+              out[p]=dict(c.execute("select name,coalesce(sql,'') from sqlite_master where type in ('table','index','trigger','view') and name not like 'sqlite_%'"))
+              c.close()
+          print(json.dumps(out,sort_keys=True))
+          PY
+
+          echo 'RC6_ACTIVATION=START'
+          git -C "$REPO" checkout -B "$TARGET_BRANCH" "$TARGET_SHA"
+          git -C "$REPO" branch --set-upstream-to="origin/$TARGET_BRANCH" "$TARGET_BRANCH"
+          test -z "$(git -C "$REPO" diff --name-only)"
+          ACTIVATED=1
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+          wait_health; verify_runtime "$TARGET_IMAGE"
+          echo 'RC6_ACTIVATION=GREEN'
+
+          echo 'CONTROLLED_LOCAL_ROLLBACK_REHEARSAL=START'
+          git -C "$REPO" checkout -B "$CURRENT_BRANCH" "$CURRENT_SHA"
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+          wait_health; verify_runtime "$CURRENT_IMAGE"
+          sudo -n docker run --rm --pull never --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+            --entrypoint python "$CURRENT_IMAGE" -c "import _version; assert _version.VERSION=='17.0.0-rc5'; print('ROLLBACK_PULL_NEVER=GREEN')"
+          echo 'CONTROLLED_LOCAL_ROLLBACK_REHEARSAL_RC5=GREEN'
+          git -C "$REPO" checkout -B "$TARGET_BRANCH" "$TARGET_SHA"
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+          wait_health; verify_runtime "$TARGET_IMAGE"
+          echo 'CONTROLLED_LOCAL_ROLLBACK_REHEARSAL=GREEN'
+
+          echo 'SCHEMA_COMPATIBILITY=START'
+          sudo -n docker exec -i porota_production_observer python - <<'PY' > /tmp/porota_schema_after.json
+          import json,sqlite3
+          out={}
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True);c.execute('pragma query_only=on')
+              out[p]=dict(c.execute("select name,coalesce(sql,'') from sqlite_master where type in ('table','index','trigger','view') and name not like 'sqlite_%'"))
+              c.close()
+          print(json.dumps(out,sort_keys=True))
+          PY
+          python3 - <<'PY'
+          import json
+          before=json.load(open('/tmp/porota_schema_before.json')); after=json.load(open('/tmp/porota_schema_after.json'))
+          for db,objects in before.items():
+              missing=[k for k in objects if k not in after[db]]
+              changed=[k for k,v in objects.items() if after[db].get(k)!=v]
+              assert not missing and not changed, (db,missing,changed)
+          print('SCHEMA_COMPATIBILITY=GREEN_ADDITIVE_ONLY')
+          PY
+
+          echo 'SYSTEMD_RC6_MIGRATION=START'
+          {
+            sudo -n systemctl list-unit-files --state=enabled --no-legend --no-pager | awk '$1 ~ /^porota-.*rc4\.timer$/ {print $1}'
+            for u in porota-contract-evidence-rc5.timer porota-preopen.timer; do [ "$(sudo -n systemctl is-enabled "$u" 2>/dev/null || true)" = enabled ] && echo "$u"; done
+          } | sort -u > "$LEGACY_TIMERS_FILE"
+          mapfile -t RC4_UNITS < <(sudo -n systemctl list-unit-files --no-legend --no-pager | awk '$1 ~ /^porota-.*rc4\.(service|timer)$/ {print $1}')
+          for u in "${RC4_UNITS[@]}"; do sudo -n systemctl disable --now "$u" >/dev/null 2>&1 || true; sudo -n systemctl reset-failed "$u" >/dev/null 2>&1 || true; done
+          for u in porota-contract-evidence-rc5.timer porota-contract-evidence-rc5.service porota-preopen.timer porota-preopen.service; do sudo -n systemctl disable --now "$u" >/dev/null 2>&1 || true; sudo -n systemctl reset-failed "$u" >/dev/null 2>&1 || true; done
+          CORE_FILES=(porota-functional-health-rc6.service porota-functional-health-rc6.timer porota-history-postclose-rc6.service porota-history-postclose-rc6.timer porota-host-general-backup-rc6.service porota-host-general-backup-rc6.timer porota-preopen-rc6.service porota-preopen-rc6.timer porota-candle-integrity-rc6.service porota-candle-integrity-rc6.timer)
+          A3_FILES=(porota-a3-history-rc6@.service porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer)
+          for f in "${CORE_FILES[@]}" "${A3_FILES[@]}"; do sudo -n install -m 0644 "$REPO/systemd/$f" "/etc/systemd/system/$f"; done
+          sudo -n systemd-analyze calendar 'Mon..Fri *-*-* 10:15:00 America/Argentina/Buenos_Aires' >/dev/null
+          sudo -n systemctl daemon-reload; MIGRATED=1
+          for u in porota-functional-health-rc6.timer porota-history-postclose-rc6.timer porota-host-general-backup-rc6.timer porota-preopen-rc6.timer porota-candle-integrity-rc6.timer; do sudo -n systemctl enable --now "$u" >/dev/null; test "$(sudo -n systemctl is-enabled "$u")" = enabled; test "$(sudo -n systemctl is-active "$u")" = active; done
+          if sudo -n systemctl list-timers --all --no-legend --no-pager | grep -Eiq 'porota-.*rc4'; then echo 'RC4_ACTIVE_TIMERS_REMAIN'; exit 1; fi
+          echo 'SYSTEMD_RC6_MIGRATION=GREEN'
+
+          sudo -n systemctl start porota-functional-health-rc6.service
+          sudo -n systemctl start porota-candle-integrity-rc6.service
+          sudo -n systemctl start porota-history-postclose-rc6.service
+          sudo -n python3 "$REPO/rc6_preopen.py"
+          verify_runtime "$TARGET_IMAGE"
+          echo 'RC6_HOST_PROBES=GREEN'
+
+          echo 'SOAK=START'; sleep 90
+          verify_runtime "$TARGET_IMAGE"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C "$REPO" branch --show-current)" = "$TARGET_BRANCH"
+          AVAIL="$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"; echo "DISK_FREE_FINAL=$AVAIL"; test "$AVAIL" -ge 8589934592
+          echo 'SOAK=GREEN'
+
+          A3_STATUS=GREEN
+          for u in porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer; do if ! sudo -n systemctl enable --now "$u" >/dev/null; then A3_STATUS=DEGRADED_FAIL_CLOSED; fi; done
+          sleep 5; verify_runtime "$TARGET_IMAGE"
+          echo "A3_BACKGROUND=$A3_STATUS"
+          echo 'CONTRACT_EVIDENCE=BLOCKED_PENDING_RC6_NATIVE_WIRING'
+          echo 'REAL_ORDERS_SENT=0'
+          echo 'NETWORK_ORDER_TEST=NOT_PERFORMED'
+          echo "RC6_DEPLOYED_SHA=$TARGET_SHA"
+          echo "RC6_ARCHIVE_DIGEST=$ARCHIVE_DIGEST"
+          echo 'RC6_DEPLOY=GREEN'
+          trap - EXIT; cleanup
+          REMOTE
+      - name: Deployment summary
+        if: success()
+        run: |
+          {
+            echo '### POROTA RC6 deployment GREEN'
+            echo "- Exact SHA: $GITHUB_SHA"
+            echo "- Immutable GHCR digest: ${{ needs.archive.outputs.digest }}"
+            echo '- Runtime: PRODUCTION_PAPER / SIMULATED / REAL_ORDER_CAPABILITY=BLOCKED.'
+            echo '- RC5 local image retained and RC6→RC5→RC6 rollback rehearsal passed with --pull never.'
+            echo '- RC4 runtime timers disabled; RC6-native core timers enabled. Legacy unit files are retained only as inert rollback evidence, never as RC6 dependencies.'
+            echo '- Schema gate proved pre-existing SQLite objects unchanged; only additive objects are allowed.'
+            echo '- Contract Evidence remains fail-closed pending RC6-native wiring.'
+          } >> "$GITHUB_STEP_SUMMARY"
