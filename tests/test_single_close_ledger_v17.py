@@ -83,12 +83,13 @@ def test_cierres_validos_conservan_caja_historica_y_costos(closed,settlement,cur
     def no_reprice(*args):
         raise AssertionError('No recalcular tarifas de un fill histórico')
     monkeypatch.setattr(b,'_cost',no_reprice)
-    assert b._cash(LATER,currency)==10000+D(p['net_pnl'])
+    later_expected=10000+D(p['net_pnl']) if settlement=='INMEDIATA' else before
+    assert b._cash(LATER,currency)==later_expected
     assert b._cash('2026-08-28T10:59:00-03:00',currency)==10000
     with b.store.connect() as c:
         c.execute('UPDATE paper_positions SET closed_at=? WHERE paper_id=?',
                   ('2026-08-28T14:01:00+00:00',p['paper_id']))
-    assert b._cash(LATER,currency)==10000+D(p['net_pnl'])
+    assert b._cash(LATER,currency)==later_expected
 
 
 def test_reinicio_no_crea_recibo_a_partir_de_cierre_roto(closed):

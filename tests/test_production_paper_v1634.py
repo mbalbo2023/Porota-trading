@@ -17,6 +17,7 @@ from be_paper_engine import D, PaperBroker, PaperStore, Quote
 import bf_production_paper_observer as observer
 from bh_paper_gemini import CURRENT_TEXT_MODELS, rank_models
 from bt_caucion_paper import CaucionOffer, modeled_sale_settlement, pending_proceeds
+from cf_sale_settlement import modeled_sale_settlement_date
 from bs_instrument_contracts import InstrumentContract
 from bs_instrument_contracts import cash_currency
 from ca_caucion_allocator import CaucionPolicy, choose
@@ -78,7 +79,8 @@ def test_parcial_caja_creditos_y_costo_original_por_fecha(partial_spot,settlemen
         assert sum(D(r['net_pnl']) for r in rows)==D(final['net_pnl'])
         assert c.execute('SELECT COUNT(*) FROM paper_sale_receivables').fetchone()[0]==0
     restarted=PaperBroker(PaperStore(b.store.path),initial_cash='10000',initial_cash_by_currency={currency:'10000'})
-    assert restarted._cash(as_of='2026-09-01T00:00:00+00:00',currency=currency)==10000+D(final['net_pnl'])
+    expected_later=10000+D(final['net_pnl']) if settlement=='INMEDIATA' else before
+    assert restarted._cash(as_of='2026-09-01T00:00:00+00:00',currency=currency)==expected_later
     assert restarted._cash(as_of=first.observed_at,currency=currency)==cash
     assert restarted._cash(as_of=q.observed_at,currency=currency)==before
     with restarted.store.connect() as c:
@@ -248,10 +250,10 @@ def test_parcial_cada_venta_conserva_su_fecha_de_liquidacion(partial_spot):
     second=replace(sell(2,'100'),observed_at='2026-08-27T14:00:00+00:00',book_at='2026-08-27T14:00:00+00:00')
     assert b._close(b.store.open_positions()[0],second,'TEST')
     with b.store.connect() as c:rows=ledger.sales(c,p['paper_id'])
-    assert rows[0]['available_at']!=rows[1]['available_at']
-    assert b._cash(as_of=second.observed_at)==before+D(rows[0]['net_proceeds'])
-    assert pending_proceeds(b.store,second.observed_at)==D(rows[1]['net_proceeds'])
-    assert b._cash(as_of='2026-09-01T00:00:00+00:00')==before+sum(D(r['net_proceeds']) for r in rows)
+    assert rows[0]['available_at'] is None and rows[1]['available_at'] is None
+    assert b._cash(as_of=second.observed_at)==before
+    assert pending_proceeds(b.store,second.observed_at)==sum(D(r['net_proceeds']) for r in rows)
+    assert b._cash(as_of='2026-09-01T00:00:00+00:00')==before
 
 
 def test_parcial_credito_desconocido_no_es_caja_y_valuacion_conserva_patrimonio(partial_spot):
@@ -449,9 +451,12 @@ def test_cotizacion_mep_del_catalogo_no_gasta_ars_ni_usd_generico(tmp_path, real
     assert q.currency == "USD_MEP" and q.contract.currency == "USD_MEP"
     assert broker._open(q, D("0.8"), {})[0] is False
     assert broker._cash(currency="USD") == 10000
-    funded = PaperBroker(store, initial_cash_by_currency={"USD_MEP": "10000"})
+    # El capital por moneda es identidad persistente: un caso financiado usa
+    # una cuenta PAPER separada, no reinterpreta la misma DB durante el día.
+    funded_store = PaperStore(str(tmp_path / "funded-mep.db"))
+    funded = PaperBroker(funded_store, initial_cash_by_currency={"USD_MEP": "10000"}, daily_loss_pct="100")
     assert funded._open(q, D("0.8"), {})[0]
-    p = store.open_positions()[0]
+    p = funded_store.open_positions()[0]
     assert p["currency"] == "USD_MEP"
     assert funded._cash() == 1000000
     assert funded._cash(currency="USD_MEP") < 10000
@@ -460,7 +465,7 @@ def test_cotizacion_mep_del_catalogo_no_gasta_ars_ni_usd_generico(tmp_path, real
     closing_at = (datetime.fromisoformat(q.observed_at)+timedelta(minutes=1)).isoformat()
     closing = replace(q, bid=D("110"), ask=D("111"), observed_at=closing_at, book_at=closing_at)
     assert funded._close(p, closing, "TEST")
-    closed = store.recent_closed()[0]
+    closed = funded_store.recent_closed()[0]
     assert funded._cash(currency="USD_MEP", as_of=closing.observed_at) == 10000 + D(closed["net_pnl"])
     assert funded._cash() == 1000000
     assert funded._cash(currency="USD_CCL") == 0
@@ -666,7 +671,7 @@ def test_asignacion_y_colocacion_comparten_rollback(tmp_path):
 
 
 def test_asignador_requiere_riesgo_y_sesion_sin_aplicar_config_defaults(tmp_path):
-    broker=PaperBroker(PaperStore(str(tmp_path/'no-risk.db')))
+    broker=PaperBroker(PaperStore(str(tmp_path/'no-risk.db')),daily_loss_pct=None)
     result=broker.allocate_caucion([caucion_offer()],caucion_policy(),'none',as_of=caucion_offer().quoted_at)
     assert result['code']=='DAILY_RISK_NOT_CONFIGURED'
     broker,result=allocated(tmp_path,[caucion_offer()],at='2026-08-28T16:00:00-03:00')
@@ -1006,7 +1011,7 @@ def test_v17_venta_t1_no_es_caja_hasta_liquidacion_modelada(tmp_path):
     assert broker._close(position, sell, "TEST")
     assert broker._cash(as_of=sell.observed_at) == before
     assert broker._cash(as_of="2026-08-31T12:00:00-03:00") == before
-    assert broker._cash(as_of="2026-09-01T00:00:00-03:00") == 10000 + D(broker.store.recent_closed()[0]["net_pnl"])
+    assert broker._cash(as_of="2026-09-01T00:00:00-03:00") == before
     assert pending_proceeds(broker.store, sell.observed_at) > 0
     broker.mark_equity({}, as_of=sell.observed_at)
     with broker.store.connect() as c:
@@ -1015,9 +1020,11 @@ def test_v17_venta_t1_no_es_caja_hasta_liquidacion_modelada(tmp_path):
 
 
 def test_v17_calendario_caja_respeta_dia_sin_liquidacion_y_ano_desconocido():
-    # Viernes 6/11 no liquida: jueves T+1 pasa al lunes 9.
-    assert modeled_sale_settlement("A-24HS", "2026-11-05T11:00:00-03:00").startswith("2026-11-09")
-    assert modeled_sale_settlement("A-24HS", "2026-12-30T11:00:00-03:00") is None
+    # La fecha hábil esperada es sólo diagnóstica; sin confirmación del broker
+    # T+1 nunca inventa hora de acreditación ni libera caja.
+    assert modeled_sale_settlement_date("A-24HS", "2026-11-05T11:00:00-03:00") == "2026-11-09"
+    assert modeled_sale_settlement("A-24HS", "2026-11-05T11:00:00-03:00") is None
+    assert modeled_sale_settlement_date("A-24HS", "2026-12-30T11:00:00-03:00") is None
     assert modeled_sale_settlement("PLAZO-DESCONOCIDO", "2026-08-28T11:00:00-03:00") is None
 
 
@@ -1031,7 +1038,7 @@ def test_v17_no_ejecuta_familias_especiales_como_acciones(tmp_path, family):
 @pytest.mark.parametrize("family", ["BONOS", "LETRAS", "ON"])
 def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, family):
     path = str(tmp_path / "paper.db")
-    broker = PaperBroker(PaperStore(path), initial_cash="10000", risk_pct="1",
+    broker = PaperBroker(PaperStore(path), initial_cash="10000", risk_pct="1", daily_loss_pct="100",
                          max_position_pct="1", max_total_exposure_pct="1", slippage_bps="0")
     q = replace(quote(ask_size="1000000", bid_size="1000000"), asset_class=family,
                 ask=D("100"), settlement="INMEDIATA")
@@ -1103,7 +1110,7 @@ def test_v17_diagnostico_exporta_catalogo_y_copia_json_sin_cuentas(tmp_path):
 
 def test_v17_compra_reserva_comision_dentro_de_la_caja(tmp_path):
     store = PaperStore(str(tmp_path / "paper.db"))
-    broker = PaperBroker(store, initial_cash="1000", risk_pct="1",
+    broker = PaperBroker(store, initial_cash="1000", risk_pct="1", daily_loss_pct="100",
                          max_position_pct="1", max_total_exposure_pct="1",
                          slippage_bps="0")
     q = replace(quote(ask_size="100000"), ask=D("100"))
@@ -1186,9 +1193,11 @@ def test_v17_sin_tarifario_no_se_inventa_comision(tmp_path, monkeypatch):
 def test_v17_prioridad_de_abiertas_incluso_fuera_del_universo(tmp_path, monkeypatch):
     store = PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
-    broker = PaperBroker(store, max_positions=5)
+    broker = PaperBroker(store, max_positions=5, daily_loss_pct="100")
     for i in range(4):
-        assert broker._open(quote(symbol=f"ABIERTA{i}"), D("0.8"), {})[0]
+        q=quote(symbol=f"ABIERTA{i}")
+        assert broker._open(q, D("0.8"), {})[0]
+        store.add_quote(q)
     monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 2)
     selected, _, _, _ = observer._cycle_symbols(store)
     assert {v[0] for v in selected} == {f"ABIERTA{i}" for i in range(4)}
@@ -1372,8 +1381,8 @@ def test_busqueda_ppi_envia_ticker_y_name_no_vacios():
 def test_fases_de_mercado_impiden_operar_fuera_de_rueda(monkeypatch):
     monkeypatch.setattr(observer, "_business_day", lambda _day: True)
     closed = datetime(2026, 8, 26, 9, 0, tzinfo=observer.TZ)
-    preopen = datetime(2026, 8, 26, 10, 50, tzinfo=observer.TZ)
-    opened = datetime(2026, 8, 26, 11, 5, tzinfo=observer.TZ)
+    preopen = datetime(2026, 8, 26, 10, 20, tzinfo=observer.TZ)
+    opened = datetime(2026, 8, 26, 10, 35, tzinfo=observer.TZ)
     after = datetime(2026, 8, 26, 17, 1, tzinfo=observer.TZ)
     assert observer._market_phase(closed) == "CLOSED"
     assert observer._market_phase(preopen) == "PREOPEN"

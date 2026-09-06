@@ -118,7 +118,7 @@ def test_actividad_en_vivo_responde_con_sesion_valida(monkeypatch):
     # RC4 convierte /vivo en la vista operacional canónica: operaciones primero,
     # decisiones y scalping después, motores al final.
     assert "1. Operaciones abiertas ahora" in respuesta.text
-    assert "3. Decisiones — por qué aceptó o rechazó" in respuesta.text
+    assert "3. Decisiones en vivo — BUY / HOLD / abstenciones" in respuesta.text
     assert "4. Scalping" in respuesta.text
     assert "5. Motores / workers" in respuesta.text
     assert "Embudo de rechazos — última hora" not in respuesta.text
@@ -160,7 +160,7 @@ def test_vivo_es_alias_del_panel_consolidado(monkeypatch, tmp_path):
 
     assert respuesta.status_code == 200
     assert "1. Operaciones abiertas ahora" in respuesta.text
-    assert "2. Operaciones cerradas recientes" in respuesta.text
+    assert "2. Operaciones cerradas hoy" in respuesta.text
     assert "4. Scalping" in respuesta.text
     assert "5. Motores / workers" in respuesta.text
     assert "Embudo de rechazos — última hora" not in respuesta.text

@@ -141,7 +141,7 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
         vivo = cliente.get("/vivo")
         assert vivo.status_code == 200
         assert "Operaciones abiertas ahora" in vivo.text
-        assert "Operaciones cerradas recientes" in vivo.text
+        assert "Operaciones cerradas hoy" in vivo.text
         assert "Scalping" in vivo.text
         assert "Motores / workers" in vivo.text
         assert vivo.text.count("id='porota-canonical-nav'") == 1

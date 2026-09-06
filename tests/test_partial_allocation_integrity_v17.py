@@ -1,5 +1,6 @@
 """Parciales: procedencia, reparto histórico y precio agregado conciliados."""
 from pathlib import Path
+from dataclasses import replace
 import sys
 
 import pytest
@@ -18,7 +19,7 @@ LATER = '2026-09-01T11:00:00-03:00'
 @pytest.fixture
 def sold(partial_spot):
     def make(final=False, currency='ARS'):
-        b, p, q, sell = partial_spot('INMEDIATA', currency)
+        b, p, q, sell = partial_spot('INMEDIATA', currency, daily_loss_pct='100')
         assert b._close(p, sell(), 'TEST_PARTIAL')
         if final:
             assert b._close(b.store.open_positions()[0], sell(2, '100', '105'), 'TEST_FINAL')
@@ -96,7 +97,8 @@ def test_error_bloquea_caja_riesgo_y_caucion_sin_cegar_otro_stop(sold, kind):
     b, bad, _, sell = sold()
     # Keep the remaining partially sold position marked at the candidate time so
     # concurrent risk is valid while this fixture adds an unrelated position.
-    b.store.add_quote(quote(symbol=bad['symbol'], minute=2, ask_size='100'))
+    b.store.add_quote(replace(quote(symbol=bad['symbol'], minute=2, ask_size='100'),
+        settlement=bad['settlement'], currency=bad['currency'], market=bad['market']))
     good_q = quote(symbol='ALUA', minute=2, ask_size='100')
     assert b._open(good_q, D('.8'), {})[0]
     good = next(p for p in b.store.open_positions() if p['symbol'] == 'ALUA')
