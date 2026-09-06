@@ -12,6 +12,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from bs_instrument_contracts import aware_datetime
+from eu_telegram_policy_rc6 import decide_row as telegram_delivery_decision
 
 
 def init_schema(store):
@@ -142,6 +143,21 @@ class OutboxWorker:
         row = self.claim()
         if not row:
             return False
+        at = aware_datetime(self.clock_fn())
+        policy = telegram_delivery_decision(row, at)
+        if not policy.allow:
+            # Terminal suppression: routine weekend/holiday messages must not
+            # remain PENDING and replay on the next business day.
+            with self.store.connect() as c:
+                c.execute("BEGIN IMMEDIATE")
+                updated = c.execute("""UPDATE paper_notification_outbox
+                  SET state=?,last_error=?,lease_token=NULL,lease_until=NULL
+                  WHERE id=? AND state='SENDING' AND lease_token=?""",
+                  (policy.terminal_state,policy.reason,row['id'],row['lease_token']))
+                if updated.rowcount:
+                    c.execute("""UPDATE paper_notification_worker SET heartbeat_at=?,state=?,detail=? WHERE id=1""",
+                              (at.isoformat(),'SUPPRESSED_ROUTINE',policy.reason))
+            return bool(updated.rowcount)
         message_id, error = None, None
         try:
             message_id = self.send(row['body'] + "\nID: " + row['event_key'])
