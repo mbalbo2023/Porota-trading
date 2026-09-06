@@ -1,15 +1,7 @@
 """RC6 dashboard truth layer.
 
-Purpose: make every dashboard page distinguish three different concepts that
-must never be conflated:
-
-1. process/service liveness (a watchdog may be RUNNING 24x7),
-2. market session activity (MARKET_OPEN vs closed/waiting), and
-3. trading policy (for example the economic gate may be BINDING).
-
-This module is read-only.  It does not import an order client, does not write the
-PAPER database and does not alter the trading engine.  It only changes visual
-semantics and exposes an authenticated read-only truth endpoint.
+Distinguishes process/service liveness, market-session activity and trading
+policy.  Read-only presentation: no broker/order client and no DB writes.
 """
 from __future__ import annotations
 
@@ -19,6 +11,12 @@ from fastapi import Header, Query, Request
 from fastapi.responses import JSONResponse
 
 import bg_paper_dashboard as bg
+from eo_dashboard_truth_semantics_rc6 import (
+    MARKET_OPEN,
+    market_sensitive_display_state,
+    policy_description,
+    session_permits_market_activity,
+)
 
 _installed = False
 _original_mode_banner = None
@@ -26,17 +24,18 @@ _original_exit_panel = None
 _original_economic_panel = None
 _original_card = None
 
-MARKET_OPEN = "MARKET_OPEN"
-ERROR_STATES = {"ERROR", "FAILED", "ROJO", "DEGRADED", "STALE", "UNKNOWN"}
-
 
 def runtime_truth() -> dict:
-    """Return one authoritative, compact dashboard context from observer_state."""
-    row = (bg._rows("SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,detail "
-                    "FROM observer_state WHERE id=1") or [{}])[0]
+    """Return one authoritative dashboard context from observer_state."""
+    row = (bg._rows(
+        "SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,detail "
+        "FROM observer_state WHERE id=1"
+    ) or [{}])[0]
     open_count = 0
     if bg._table("paper_positions"):
-        open_count = int((bg._rows("SELECT COUNT(*) n FROM paper_positions WHERE status='OPEN'") or [{"n": 0}])[0]["n"] or 0)
+        open_count = int((bg._rows(
+            "SELECT COUNT(*) n FROM paper_positions WHERE status='OPEN'"
+        ) or [{"n": 0}])[0]["n"] or 0)
     mode = str(row.get("mode") or bg._effective_mode() or "UNKNOWN").upper()
     process = str(row.get("process_state") or "UNKNOWN").upper()
     session = str(row.get("session_state") or "UNKNOWN").upper()
@@ -48,7 +47,7 @@ def runtime_truth() -> dict:
         "execution": "SIMULATED" if mode == "PRODUCTION_PAPER" else "UNKNOWN",
         "process_state": process,
         "session_state": session,
-        "market_open": session == MARKET_OPEN,
+        "market_open": session_permits_market_activity(session),
         "ppi_auth": ppi_auth,
         "real_orders_sent": real_orders,
         "open_positions": open_count,
@@ -69,34 +68,13 @@ def _fresh_internal_state(row: dict, default="NOT_STARTED", max_age_seconds=20) 
     return state
 
 
-def market_sensitive_display_state(raw_state: str, *, session_state: str,
-                                   open_positions: int = 0) -> str:
-    """Derive visual state without hiding real faults.
-
-    RUNNING outside market is process liveness, not market activity.  Errors and
-    stale heartbeats remain visible and are never cosmetically downgraded.
-    """
-    raw = str(raw_state or "UNKNOWN").upper()
-    session = str(session_state or "UNKNOWN").upper()
-    if raw in ERROR_STATES:
-        return raw
-    if session != MARKET_OPEN:
-        return "MONITOREO_PASIVO" if open_positions else "EN_ESPERA_MERCADO_CERRADO"
-    return raw
-
-
-def policy_description(policy: str) -> str:
-    key = str(policy or "UNKNOWN").upper()
-    if key == "BINDING":
-        return "BINDING = una señal PAPER que falla la economía queda bloqueada; no es el modo global del sistema."
-    if key in {"SHADOW", "OBSERVATION_ONLY", "OBSERVE"}:
-        return f"{key} = sólo observación; no bloquea por esta política."
-    return f"{key} = política no reconocida; requiere revisión."
-
-
 def _truth_banner() -> str:
     truth = runtime_truth()
-    session_label = "MERCADO ABIERTO" if truth["market_open"] else "MERCADO CERRADO / SIN EJECUCIÓN DE MERCADO"
+    session_label = (
+        "MERCADO ABIERTO"
+        if truth["market_open"]
+        else "MERCADO CERRADO / SIN EJECUCIÓN DE MERCADO"
+    )
     css = "paper-notice" if truth["real_orders_sent"] == 0 else "paper-warning"
     return (
         f"<div id='porota-runtime-truth' class='{css}'>"
@@ -122,9 +100,15 @@ def _patched_exit_supervision_panel():
     raw_reader = _fresh_internal_state(reader)
     open_count = len(data["open"])
     supervisor_view = market_sensitive_display_state(
-        raw_supervisor, session_state=truth["session_state"], open_positions=open_count)
+        raw_supervisor,
+        session_state=truth["session_state"],
+        open_positions=open_count,
+    )
     reader_view = market_sensitive_display_state(
-        raw_reader, session_state=truth["session_state"], open_positions=open_count)
+        raw_reader,
+        session_state=truth["session_state"],
+        open_positions=open_count,
+    )
 
     intents = {r["paper_id"]: r for r in data["exit_intents"]}
     rows = []
@@ -183,8 +167,10 @@ def _patched_economic_panel():
         bg._card("Fallan economía", metrics["failed"], "Con BINDING deben quedar bloqueadas", "red" if policy_ok and metrics["failed"] else "gray"),
         bg._card("Abren pese al fallo", metrics["opened_with_failure"], "Invariante: cero cuando la política es BINDING", "red" if metrics["opened_with_failure"] else "green"),
     ))
-    closed_note = (" La sesión está cerrada: esta política permanece configurada, pero no significa que el motor esté operando ahora."
-                   if not truth["market_open"] else "")
+    closed_note = (
+        " La sesión está cerrada: esta política permanece configurada, pero no significa que el motor esté operando ahora."
+        if not truth["market_open"] else ""
+    )
     return (
         "<div class='paper-card'><h2>Portón económico de aperturas PAPER</h2>"
         f"<div class='paper-notice'><b>Política del portón: {bg._e(policy)}.</b> "
@@ -198,15 +184,21 @@ def _patched_economic_panel():
 
 
 def _patched_card(title, value, detail, state="gray", value_class=""):
-    """Make market-sensitive worker cards session-aware without hiding faults."""
+    """Make the market-sensitive Scanner card session-aware without hiding faults."""
     if str(title) == "Scanner":
         truth = runtime_truth()
         raw = str(value or "UNKNOWN").upper()
-        view = market_sensitive_display_state(raw, session_state=truth["session_state"],
-                                              open_positions=truth["open_positions"])
+        view = market_sensitive_display_state(
+            raw,
+            session_state=truth["session_state"],
+            open_positions=truth["open_positions"],
+        )
         if view != raw:
             value = view
-            detail = f"{detail} · estado interno {raw}; sin evaluación/apertura de mercado durante sesión cerrada"
+            detail = (
+                f"{detail} · estado interno {raw}; sin evaluación/apertura de mercado "
+                "durante sesión cerrada"
+            )
             state = "gray"
     return _original_card(title, value, detail, state, value_class)
 
@@ -228,13 +220,17 @@ def install(app, check_auth):
     bg._card = _patched_card
 
     @app.get("/api/dashboard/truth")
-    def dashboard_truth(request: Request, token: str = Query(default=""),
-                        authorization: str | None = Header(default=None)):
+    def dashboard_truth(
+        request: Request,
+        token: str = Query(default=""),
+        authorization: str | None = Header(default=None),
+    ):
         bg._authorize(check_auth, request, token, authorization)
         truth = runtime_truth()
         truth["invariants"] = {
             "real_orders_zero": truth["real_orders_sent"] == 0,
-            "market_actions_currently_possible": truth["market_open"],
+            "session_permits_market_activity": truth["market_open"],
+            "session_open_is_trade_authorization": False,
             "policy_binding_is_global_mode": False,
         }
         return JSONResponse(truth)
