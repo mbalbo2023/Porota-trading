@@ -1573,6 +1573,10 @@ bh_universe_dashboard_hf6.install(app, _check_auth)
 import ep_dashboard_truth_layer_rc6
 ep_dashboard_truth_layer_rc6.install(app, _check_auth)
 
+# RC6 P0: content-width aware tables for tablet/Voice Access.
+import eq_dashboard_table_layout_rc6
+eq_dashboard_table_layout_rc6.install()
+
 # RC6: project-management path-to-production view. Read-only HTTP surface.
 import en_validation_project_dashboard_rc6
 en_validation_project_dashboard_rc6.install(app, _check_auth)
