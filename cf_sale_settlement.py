@@ -69,7 +69,9 @@ def validated_sale_settlement(settlement, traded_at, available_at, basis):
     available=aware_datetime(available_at) if available_at is not None else None
     if basis=='PENDING_CONFIRMATION':
         if available is not None: raise ValueError('Recibo pendiente con acreditación no confirmada')
-        return conservative_unconfirmed_availability(settlement,traded)
+        # Sin evidencia del broker no existe una hora de disponibilidad defendible.
+        # La fecha hábil esperada sirve para diagnóstico, jamás para liberar caja.
+        return None
     if basis=='PAPER_CONSERVATIVE_CALENDAR':
         modeled=modeled_sale_settlement(settlement,traded)
         if modeled is None or available is None or available!=aware_datetime(modeled):

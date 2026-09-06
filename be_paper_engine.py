@@ -438,7 +438,7 @@ class PaperBroker:
                  score_threshold="0.62", ai_mode="BINDING",
                  economics_mode="SHADOW", min_net_reward_risk="1.20",
                  stop_loss_pct="0.02", target_gain_pct="0.035",
-                 daily_loss_pct="2.5", daily_soft_stop_pct=None,
+                 daily_loss_pct=None, daily_soft_stop_pct=None,
                  intraday_fee_rebate=None):
         self.store = store
         self.initial_cash = D(initial_cash)
