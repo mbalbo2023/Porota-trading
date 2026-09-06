@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from be_paper_engine import PaperBroker, PaperStore
-from cf_sale_settlement import validated_sale_settlement
+from cf_sale_settlement import modeled_sale_settlement, validated_sale_settlement
 
 
 def test_isolated_broker_does_not_invent_daily_risk_policy(tmp_path):
@@ -26,6 +26,8 @@ def test_runtime_explicitly_builds_daily_risk_and_defaults_economics_to_shadow(t
 
 def test_t1_pending_confirmation_never_releases_cash_by_inferred_clock():
     traded = '2026-09-04T16:00:00-03:00'
+    assert modeled_sale_settlement('A-24HS', traded) is None
+    assert modeled_sale_settlement('T+1', traded) is None
     assert validated_sale_settlement('A-24HS', traded, None, 'PENDING_CONFIRMATION') is None
     # This is deliberately independent of how many days have elapsed: this
     # function validates evidence, not the current clock.
