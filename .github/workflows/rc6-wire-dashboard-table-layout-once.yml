@@ -5,6 +5,7 @@ on:
     branches:
       - candidate/v17.0.0-rc6-weekend-20260905
     paths:
+      - 'er_dashboard_table_semantics_rc6.py'
       - 'eq_dashboard_table_layout_rc6.py'
       - 'scripts/rc6_wire_dashboard_table_layout.py'
       - 'tests/test_dashboard_table_layout_rc6.py'
@@ -30,13 +31,13 @@ jobs:
         run: git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
       - name: Wire table layout
         run: python scripts/rc6_wire_dashboard_table_layout.py
-      - name: Compile and smoke
+      - name: Compile and pure smoke
         shell: bash
         run: |
           set -euo pipefail
-          python -m py_compile eq_dashboard_table_layout_rc6.py o_dashboard.py
+          python -m py_compile er_dashboard_table_semantics_rc6.py eq_dashboard_table_layout_rc6.py o_dashboard.py
           python - <<'PY'
-          import eq_dashboard_table_layout_rc6 as t
+          import er_dashboard_table_semantics_rc6 as t
           assert t.should_force_compact(10,1200)
           assert t.should_force_compact(6,700)
           assert not t.should_force_compact(4,900,850)
