@@ -96,16 +96,12 @@ jobs:
                     'last_complete_day':maxv(c,'a3_history_ingest_state_rc6','last_complete_day')}
               if 'source_sync' in ts:
                   out['source_sync']=[dict(r) for r in c.execute('select * from source_sync order by source')]
-              if 'health_events' in ts:
-                  cols={r[1] for r in c.execute('pragma table_info(health_events)')}
-                  if 'source' in cols:
-                      out['health_sources']=grouped(c,'health_events','source')
           with conn(HIST) as c:
               ts=tables(c)
               out['history_quick_check']=c.execute('pragma quick_check').fetchone()[0]
               if 'history_canonical_v2' in ts:
                   out['history_canonical_v2']={'rows':count(c,'history_canonical_v2'),
-                    'identities':c.execute("select count(distinct symbol||'|'||instrument_type||'|'||market||'|'||settlement||'|'||currency) from history_canonical_v2").fetchone()[0],
+                    'identities':c.execute("select count(distinct symbol||'|'||instrument_type||'|'||market||'|'||settlement) from history_canonical_v2").fetchone()[0],
                     'first_day':c.execute('select min(date) from history_canonical_v2').fetchone()[0],
                     'latest_day':maxv(c,'history_canonical_v2','date'),
                     'latest_observed':maxv(c,'history_canonical_v2','observed_at'),
