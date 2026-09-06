@@ -29,7 +29,7 @@ with store.connect() as c:
 from bs_instrument_contracts import InstrumentContract
 at = '2026-08-28T11:00:00-03:00'
 base = quote(symbol='AAPLD', at=at, ask_size='10000', bid_size='10000')
-contract = InstrumentContract(symbol='AAPLD', family='CEDEARS', settlement='INMEDIATA', currency='USD_MEP', market='BYMA', cash_multiplier=D('1'), quantity_step=D('1'), source='FIXTURE')
+contract = InstrumentContract(symbol='AAPLD', family='CEDEARS', settlement='INMEDIATA', currency='USD_MEP', market='BYMA', cash_multiplier=D('1'), quantity_step=D('1'), metadata_source='FIXTURE')
 q = replace(base, asset_class='CEDEARS', settlement='INMEDIATA', currency='USD_MEP', market='BYMA', contract=contract)
 b = PaperBroker(PaperStore(str(root / 'mep.db')), initial_cash_by_currency={'USD_MEP':'10000'})
 print('MEP', b._open(q, D('.8'), {}))
