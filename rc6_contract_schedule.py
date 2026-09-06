@@ -42,11 +42,18 @@ def window_allows(job_key: str, now=None) -> bool:
     local = _local(ref)
     if not byma_calendar.es_dia_habil_operativo(local.date()):
         return False
-    cadence = CADENCES[JOB_TO_CADENCE[str(job_key)]]
+    cadence_name = JOB_TO_CADENCE[str(job_key)]
+    cadence = CADENCES[cadence_name]
     clock = local.time().replace(tzinfo=None)
     if cadence.during_market:
         return DYNAMIC_START <= clock < DYNAMIC_END
-    return clock < DYNAMIC_START or clock >= DYNAMIC_END
+    # Static/browser evidence stays away from preopen and the trading session.
+    if clock < DYNAMIC_END:
+        return False
+    # Full browser is a weekly Friday post-close audit; TTL remains the repeat guard.
+    if cadence_name == "FULL_BROWSER_AUDIT":
+        return local.weekday() == 4
+    return True
 
 
 def due(last_run_at, job_key: str, now=None) -> bool:
