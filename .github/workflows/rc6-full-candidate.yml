@@ -1,0 +1,88 @@
+name: RC6 full candidate gate
+
+on:
+  push:
+    branches: [candidate/v17.0.0-rc6-weekend-20260905]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-full-candidate
+  cancel-in-progress: true
+
+jobs:
+  full-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/v17.0.0-rc6-weekend-20260905
+          fetch-depth: 0
+
+      - name: Exact lineage and repository hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+          test -z "$(git status --porcelain)"
+          git diff --check
+          python - <<'PY'
+          import _version
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          print('RELEASE_SAFETY_IDENTITY=GREEN')
+          PY
+
+      - name: Compile complete source tree
+        run: python -m compileall -q .
+
+      - name: Build candidate image
+        run: docker build --pull=false -t porota-rc6-candidate:${GITHUB_SHA} .
+
+      - name: Full pytest suite without network
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e ENVIRONMENT=SANDBOX \
+            -e DB_PATH=/tmp/porota-ci.db \
+            -e TELEGRAM_CHAT_ID=0 \
+            -e STARTUP_REQUIRE_AUTH=false \
+            --entrypoint bash porota-rc6-candidate:${GITHUB_SHA} -lc \
+            'python -m pytest -q -p no:cacheprovider'
+
+      - name: RC6 safety and semantics invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint bash porota-rc6-candidate:${GITHUB_SHA} -lc '
+              set -euo pipefail
+              grep -q '\"PAPER_ECONOMIC_GATE_MODE\": \"SHADOW\"' porota_mode_manager.py
+              grep -q 'PAPER_ECONOMIC_GATE_MODE = os.getenv(\"PAPER_ECONOMIC_GATE_MODE\", \"SHADOW\")' bg_paper_dashboard.py
+              grep -q 'shadow_view.render()' en_validation_project_dashboard_rc6.py
+              grep -q 'telegram_delivery_decision(row, at)' bn_telegram_bus.py
+              grep -q 'execution_allowed.*False' ew_a3_history_rc6.py
+              ! grep -Eq 'send_order|new_order|replace_order|cancel_order' ew_a3_history_rc6.py ex_a3_history_job_rc6.py
+              grep -q 'REAL_ORDER_CAPABILITY = \"BLOCKED\"' _version.py
+            '
+
+      - name: Candidate summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC6 full candidate gate'
+            echo "- SHA: ${GITHUB_SHA}"
+            echo '- Base RC5 exact lineage checked.'
+            echo '- Full pytest executed inside candidate image with network disabled.'
+            echo '- Real-money capability remains BLOCKED.'
+          } >> "$GITHUB_STEP_SUMMARY"
