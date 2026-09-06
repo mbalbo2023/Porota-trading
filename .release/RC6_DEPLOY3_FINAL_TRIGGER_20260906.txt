@@ -1,0 +1,4 @@
+POROTA RC6 deploy3 final transactional trigger
+Date: 2026-09-06
+Purpose: trigger exact-SHA validation, immutable GHCR archive, local RC5 rollback rehearsal, RC6 activation, scheduler migration and soak.
+Safety: PRODUCTION_PAPER / SIMULATED / REAL_ORDER_CAPABILITY=BLOCKED / no network order test.
