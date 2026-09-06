@@ -1,6 +1,6 @@
 name: RC6 host truth read-only
 
-# Sunday 2026-09-06 recheck; strictly read-only host inventory.
+# Sunday 2026-09-06 exact host-state refresh immediately before RC6 deployment.
 on:
   push:
     branches: [candidate/v17.0.0-rc6-weekend-20260905]
@@ -47,6 +47,8 @@ jobs:
           done
           echo "--- RC4_UNITS ---"
           sudo -n systemctl list-units --all --no-pager --no-legend | grep -i 'porota.*rc4' || true
+          echo "--- RC4_UNIT_FILES ---"
+          sudo -n systemctl list-unit-files --no-pager --no-legend | grep -i 'porota.*rc4' || true
           echo "--- RC4_TIMERS ---"
           sudo -n systemctl list-timers --all --no-pager --no-legend | grep -i 'porota.*rc4' || true
           echo "--- POROTA_TIMERS ---"
@@ -65,6 +67,6 @@ jobs:
           {
             echo '### RC6 host truth — read-only'
             echo '```text'
-            sed -n '1,160p' /tmp/host.txt
+            sed -n '1,220p' /tmp/host.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
