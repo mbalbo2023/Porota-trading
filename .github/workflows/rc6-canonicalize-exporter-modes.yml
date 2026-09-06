@@ -1,0 +1,38 @@
+name: RC6 canonicalize exporter executable modes
+
+on:
+  push:
+    branches: [release-candidate/v17.0.0-rc6-deploy2-20260906]
+    paths:
+      - '.github/workflows/rc6-canonicalize-exporter-modes.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  canonicalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release-candidate/v17.0.0-rc6-deploy2-20260906
+          fetch-depth: 0
+      - name: Verify exact contents and set executable bits
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 852b812d610860b57b579212978443f7450e8855 HEAD
+          test "$(git hash-object scripts/porota_export_runtime_logs_hf6.sh)" = '458116779ac1e068ad35e9ffa0a3a7341bf27dbd'
+          test "$(git hash-object scripts/porota_export_scheduler_state_hf6.sh)" = 'c6af79fad6a74772e8f10dac999459dddfe49492'
+          git update-index --chmod=+x scripts/porota_export_runtime_logs_hf6.sh scripts/porota_export_scheduler_state_hf6.sh
+          git diff --cached --summary
+          test "$(git diff --cached --summary | grep -c 'mode change 100644 => 100755')" -eq 2
+      - name: Commit canonical operational modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Porota RC6 CI'
+          git config user.email '151845499+mbalbo2023@users.noreply.github.com'
+          git commit -m 'RC6: track exporter scripts as executable'
+          git push origin HEAD:release-candidate/v17.0.0-rc6-deploy2-20260906
