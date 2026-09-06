@@ -1,0 +1,4 @@
+POROTA RC6 DEPLOY2 FINAL TRIGGER
+branch=release-candidate/v17.0.0-rc6-deploy2-20260906
+purpose=execute exact-SHA validation, immutable GHCR archive, transactional Droplet activation, local RC5 rollback rehearsal, RC6 reactivation, scheduler migration and soak
+safety=PRODUCTION_PAPER|SIMULATED|REAL_ORDER_CAPABILITY_BLOCKED|NO_NETWORK_ORDER_TEST
