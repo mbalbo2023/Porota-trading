@@ -1,0 +1,44 @@
+name: RC6 deploy2 fix host mode proof
+
+on:
+  push:
+    branches: [release-candidate/v17.0.0-rc6-deploy2-20260906]
+    paths:
+      - '.github/workflows/rc6-deploy2-fix-host-mode-proof.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release-candidate/v17.0.0-rc6-deploy2-20260906
+          fetch-depth: 0
+      - name: Fix mode-only host proof without weakening content validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/rc6-final-transactional-deploy2.yml')
+          text=p.read_text(encoding='utf-8')
+          old="""              assert parts[0]==':100644' and parts[1]=='100755'\n              assert parts[2]==parts[3], line\n          print('KNOWN_HOST_MODE_ONLY_DIFF=GREEN')\n"""
+          new="""              assert parts[0]==':100644' and parts[1]=='100755'\n              assert parts[3] == '0'*40, line\n              head_blob=subprocess.check_output(['git','-C',repo,'rev-parse',f'HEAD:{path}'],text=True).strip()\n              work_blob=subprocess.check_output(['git','-C',repo,'hash-object',f'{repo}/{path}'],text=True).strip()\n              assert parts[2] == head_blob == work_blob, (line,head_blob,work_blob)\n          print('KNOWN_HOST_MODE_ONLY_DIFF=GREEN')\n"""
+          if text.count(old)!=1:
+              raise SystemExit(f'HOST_MODE_PROOF_ANCHOR_COUNT={text.count(old)}')
+          p.write_text(text.replace(old,new,1),encoding='utf-8')
+          PY
+          git diff --check
+          git diff -- .github/workflows/rc6-final-transactional-deploy2.yml
+      - name: Commit validated workflow correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Porota RC6 CI'
+          git config user.email '151845499+mbalbo2023@users.noreply.github.com'
+          git add .github/workflows/rc6-final-transactional-deploy2.yml
+          git commit -m 'RC6 deploy2: prove host mode-only drift by blob identity'
+          git push origin HEAD:release-candidate/v17.0.0-rc6-deploy2-20260906
