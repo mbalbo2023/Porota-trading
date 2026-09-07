@@ -1,0 +1,191 @@
+POROTA RC6 HISTORICAL RAW ARCHIVE — ARCHITECTURE AUDIT READ ONLY
+UTC=2026-09-07T19:10:38Z
+MUTATIONS=NONE
+FULL_PAYLOAD_HASH_SCAN=NOT_PERFORMED_DURING_MARKET_WINDOW
+PAYLOAD_CONTENT_PRINTED=NO
+
+======================================================================
+01 RUNTIME AND STORAGE IDENTITY
+======================================================================
+BRANCH=hotfix/rc6-paper-t1-settlement-20260907
+HEAD=5076b6dff8c644ed73160b4148eb7a1cf9ca7e43
+Filesystem     Type  Size  Used Avail Use% Mounted on
+/dev/vda1      ext4   24G   11G   13G  48% /
+OBSERVER_DB_BYTES=1506082816 MTIME=2026-09-07 19:10:18.517159899 +0000
+HISTORY_DB_BYTES=53985280 MTIME=2026-09-07 13:41:10.403225461 +0000
+
+======================================================================
+02 CODE WRITER/READER MAP — EXACT TERM
+======================================================================
+bg_paper_dashboard.py:1445:    raw=(_rows('SELECT COUNT(*) n FROM historical_raw_archive') or [{'n':0}])[0]['n'] if _table('historical_raw_archive') else 0
+bl_candle_engine.py:153:        CREATE TABLE IF NOT EXISTS historical_raw_archive(
+bl_candle_engine.py:313:    return c.execute('INSERT OR IGNORE INTO historical_raw_archive VALUES(NULL,?,?,?,?,?,?)',
+docs/V17_AUDITORIA_Y_PLAN.md:415:- Cada respuesta recibida se conserva en `historical_raw_archive` con petición,
+ops_introspection_hf4.py:137:            "raw": one(c, "SELECT COUNT(*) FROM historical_raw_archive") if table(c,"historical_raw_archive") else 0,
+scripts/rc6_data_learning_readonly_audit.py:96:                    'raw_archive_rows': table_count(c, 'historical_raw_archive') if 'historical_raw_archive' in ts else 0,
+scripts/v17_rc3_hf6_deploy.py:40:                  "production_history", "candle_versions", "historical_raw_archive")
+tests/test_candle_archive_v17.py:226:    raw=rows(store,'historical_raw_archive')[0]
+tests/test_candle_archive_v17.py:252:    assert len(rows(store,'historical_raw_archive'))==2
+
+======================================================================
+03 CODE MAP — HISTORICAL STORE / RAW / ARCHIVE INSERTS
+======================================================================
+al_historical_ingest.py:90:CREATE TABLE IF NOT EXISTS market_historical_ohlcv (
+al_historical_ingest.py:100:CREATE INDEX IF NOT EXISTS idx_symbol_date ON market_historical_ohlcv(symbol, date);
+al_historical_ingest.py:152:        INSERT INTO market_historical_ohlcv
+al_historical_ingest.py:265:            FROM market_historical_ohlcv
+al_historical_ingest.py:317:            FROM market_historical_ohlcv WHERE symbol=? ORDER BY date ASC
+aq_macro_backtest.py:166:                f"SELECT DISTINCT symbol FROM market_historical_ohlcv WHERE symbol IN ({marcadores})",
+aq_macro_backtest.py:170:                "SELECT DISTINCT symbol FROM market_historical_ohlcv")]
+aq_macro_backtest.py:179:            "SELECT date, open, high, low, close FROM market_historical_ohlcv "
+ba_data912_history.py:150:            f"""SELECT date,source,adjusted FROM market_historical_ohlcv
+ba_data912_history.py:369:               FROM market_historical_ohlcv
+ba_data912_history.py:384:            """SELECT close, volume FROM market_historical_ohlcv
+bf_production_paper_observer.py:271:        CREATE TABLE IF NOT EXISTS production_history(
+bf_production_paper_observer.py:276:        CREATE TABLE IF NOT EXISTS production_history_attempts(
+bl_candle_engine.py:153:        CREATE TABLE IF NOT EXISTS historical_raw_archive(
+bl_candle_engine.py:329:    origin=str(path)+'#market_historical_ohlcv'
+bl_candle_engine.py:333:        if not source.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='market_historical_ohlcv'").fetchone():
+bl_candle_engine.py:335:        rows=source.execute('SELECT * FROM market_historical_ohlcv ORDER BY symbol,date')
+cq_history_attempt_ledger_hf6.py:22:CREATE TABLE IF NOT EXISTS history_attempt_ledger_v2(
+cq_history_attempt_ledger_hf6.py:97:        cur=c.execute("""INSERT INTO history_attempt_ledger_v2(
+cq_history_attempt_ledger_hf6.py:146:            c.execute("""INSERT INTO history_attempt_ledger_v2(
+cs_postclose_history_scheduler_hf6.py:21:CREATE TABLE IF NOT EXISTS postclose_history_runs_v2(
+cs_postclose_history_scheduler_hf6.py:100:            """INSERT INTO postclose_history_runs_v2(
+ct_ppi_history_salvage_hf6.py:46:        c.execute("""CREATE TABLE IF NOT EXISTS history_row_rejections_v2(
+ct_ppi_history_salvage_hf6.py:92:    A close-only row never enters ``history_canonical_v2`` and therefore cannot
+ct_ppi_history_salvage_hf6.py:176:            "history_store": "history_canonical_v2",
+ct_ppi_history_salvage_hf6.py:184:                """INSERT INTO history_row_rejections_v2(
+cu_history_store_v2_hf6.py:5:El esquema legado ``market_historical_ohlcv`` usa PRIMARY KEY(symbol,date).
+cu_history_store_v2_hf6.py:13:- cada observación entra primero a history_versions_v2 (append-only);
+cu_history_store_v2_hf6.py:14:- history_canonical_v2 conserva una sola vela elegida por identidad/fecha;
+cu_history_store_v2_hf6.py:42:CREATE TABLE IF NOT EXISTS history_versions_v2(
+cu_history_store_v2_hf6.py:60:CREATE INDEX IF NOT EXISTS idx_history_versions_v2_identity
+cu_history_store_v2_hf6.py:61:  ON history_versions_v2(symbol,instrument_type,market,settlement,date,id DESC);
+cu_history_store_v2_hf6.py:62:CREATE INDEX IF NOT EXISTS idx_history_versions_v2_source
+cu_history_store_v2_hf6.py:63:  ON history_versions_v2(source,observed_at DESC);
+cu_history_store_v2_hf6.py:65:CREATE TABLE IF NOT EXISTS history_canonical_v2(
+cu_history_store_v2_hf6.py:82:  FOREIGN KEY(version_id) REFERENCES history_versions_v2(id)
+cu_history_store_v2_hf6.py:84:CREATE INDEX IF NOT EXISTS idx_history_canonical_v2_lookup
+cu_history_store_v2_hf6.py:85:  ON history_canonical_v2(instrument_type,market,settlement,symbol,date);
+cu_history_store_v2_hf6.py:212:            """SELECT id FROM history_versions_v2
+cu_history_store_v2_hf6.py:222:                """INSERT INTO history_versions_v2(
+cu_history_store_v2_hf6.py:234:            """SELECT * FROM history_canonical_v2
+cu_history_store_v2_hf6.py:241:                """INSERT INTO history_canonical_v2(
+cu_history_store_v2_hf6.py:285:           FROM history_canonical_v2
+cv_history_store_adapter_hf6.py:10:class HistoricalStore:
+cv_history_store_adapter_hf6.py:27:def default_history_store() -> HistoricalStore:
+cv_history_store_adapter_hf6.py:28:    return HistoricalStore()
+cw_data912_history_v2_sink.py:4:persiste en ``history_versions_v2/history_canonical_v2``. No toca el esquema
+cw_data912_history_v2_sink.py:5:legado ``market_historical_ohlcv``.
+dd_history_metrics_hf6.py:117:        required={"history_versions_v2","history_canonical_v2"}
+dd_history_metrics_hf6.py:122:        row=c.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()
+dd_history_metrics_hf6.py:126:               FROM history_canonical_v2
+dd_history_metrics_hf6.py:132:               FROM history_canonical_v2 GROUP BY instrument_type ORDER BY instrument_type"""
+ea_history_close_series_hf2.py:23:CREATE TABLE IF NOT EXISTS history_close_versions_v1(
+ea_history_close_series_hf2.py:45:CREATE TABLE IF NOT EXISTS history_close_canonical_v1(
+ea_history_close_series_hf2.py:195:                """INSERT INTO history_close_versions_v1(
+ea_history_close_series_hf2.py:220:                """INSERT INTO history_close_canonical_v1(
+ek_history_freshness_metrics_rc5.py:87:        if "history_canonical_v2" not in tables:
+ek_history_freshness_metrics_rc5.py:89:        latest_raw=c.execute("SELECT MAX(date) FROM history_canonical_v2").fetchone()[0]
+ek_history_freshness_metrics_rc5.py:99:               FROM history_canonical_v2
+ew_a3_history_rc6.py:23:CREATE TABLE IF NOT EXISTS a3_history_ingest_state_rc6(
+ew_a3_history_rc6.py:80:        c.execute('''INSERT INTO a3_history_ingest_state_rc6(
+i_auto_tuner.py:65:        CREATE TABLE IF NOT EXISTS auto_tune_history (
+i_auto_tuner.py:277:            "INSERT INTO auto_tune_history (date, sample_size, previous_config, proposed_config, "
+rc4_replay_analysis.py:68:                if 'history_canonical_v2' in ht:
+rc4_replay_analysis.py:69:                    rows=list(h.execute("SELECT symbol,instrument_type,market,settlement,date,open,high,low,close FROM history_canonical_v2 ORDER BY symbol,instrument_type,market,settlement,date"))
+scripts/rc6_data_learning_readonly_audit.py:156:            if 'history_versions_v2' in ts:
+scripts/rc6_data_learning_readonly_audit.py:158:                    'rows': table_count(c, 'history_versions_v2'),
+scripts/rc6_data_learning_readonly_audit.py:159:                    'identities': int(scalar(c, "SELECT COUNT(DISTINCT symbol||'|'||instrument_type||'|'||market||'|'||settlement) FROM history_versions_v2") or 0),
+scripts/rc6_data_learning_readonly_audit.py:160:                    'first_day': scalar(c, 'SELECT MIN(date) FROM history_versions_v2'),
+scripts/rc6_data_learning_readonly_audit.py:161:                    'latest_day': scalar(c, 'SELECT MAX(date) FROM history_versions_v2'),
+scripts/rc6_data_learning_readonly_audit.py:162:                    'latest_observed': scalar(c, 'SELECT MAX(observed_at) FROM history_versions_v2'),
+scripts/rc6_data_learning_readonly_audit.py:163:                    'sources': grouped(c, 'history_versions_v2', 'source'),
+scripts/rc6_data_learning_readonly_audit.py:165:            if 'history_canonical_v2' in ts:
+scripts/rc6_data_learning_readonly_audit.py:167:                    'rows': table_count(c, 'history_canonical_v2'),
+scripts/rc6_data_learning_readonly_audit.py:168:                    'identities': int(scalar(c, "SELECT COUNT(DISTINCT symbol||'|'||instrument_type||'|'||market||'|'||settlement) FROM history_canonical_v2") or 0),
+scripts/rc6_data_learning_readonly_audit.py:169:                    'first_day': scalar(c, 'SELECT MIN(date) FROM history_canonical_v2'),
+scripts/rc6_data_learning_readonly_audit.py:170:                    'latest_day': scalar(c, 'SELECT MAX(date) FROM history_canonical_v2'),
+scripts/rc6_data_learning_readonly_audit.py:171:                    'latest_observed': scalar(c, 'SELECT MAX(observed_at) FROM history_canonical_v2'),
+scripts/rc6_data_learning_readonly_audit.py:172:                    'sources': grouped(c, 'history_canonical_v2', 'source'),
+scripts/rc6_data_learning_readonly_audit.py:182:            if 'market_historical_ohlcv' in ts:
+scripts/rc6_data_learning_readonly_audit.py:183:                cols = {r[1] for r in c.execute('PRAGMA table_info(market_historical_ohlcv)')}
+scripts/rc6_data_learning_readonly_audit.py:184:                item = {'rows': table_count(c, 'market_historical_ohlcv')}
+scripts/rc6_data_learning_readonly_audit.py:186:                    item['symbols'] = int(scalar(c, 'SELECT COUNT(DISTINCT symbol) FROM market_historical_ohlcv') or 0)
+scripts/rc6_data_learning_readonly_audit.py:188:                    item['first_day'] = scalar(c, 'SELECT MIN(date) FROM market_historical_ohlcv')
+scripts/rc6_data_learning_readonly_audit.py:189:                    item['latest_day'] = scalar(c, 'SELECT MAX(date) FROM market_historical_ohlcv')
+test_hf6_history_data912_v2.py:71:    c.execute("""CREATE TABLE production_history_attempts(
+test_hf6_history_data912_v2.py:81:    c.executemany("INSERT INTO production_history_attempts VALUES(?,?,?,?,?)",[
+test_hf6_history_data912_v2.py:117:        rows=c.execute("SELECT instrument_type,close FROM history_canonical_v2 ORDER BY instrument_type").fetchall()
+test_hf6_history_data912_v2.py:128:        canonical=c.execute("SELECT close,source FROM history_canonical_v2").fetchone()
+test_hf6_history_data912_v2.py:129:        versions=c.execute("SELECT COUNT(*) FROM history_versions_v2").fetchone()[0]
+test_hf6_history_data912_v2.py:141:        row=c.execute("SELECT close,adjusted,source FROM history_canonical_v2").fetchone()
+tests/test_a3_history_rc6.py:48:        row=c.execute("SELECT symbol,instrument_type,market,settlement,source,date FROM history_canonical_v2").fetchone()
+tests/test_a3_history_rc6.py:70:        assert c.execute("SELECT COUNT(*) FROM history_versions_v2").fetchone()[0]==0
+tests/test_candle_archive_v17.py:217:        c.execute('CREATE TABLE market_historical_ohlcv(symbol TEXT,date TEXT,close REAL,source TEXT)')
+tests/test_candle_archive_v17.py:218:        c.execute("INSERT INTO market_historical_ohlcv VALUES('GGAL','2026-08-20',100,'DATA912')")
+tests/test_history_close_only_hf2.py:54:        if "history_canonical_v2" in tables:
+tests/test_history_close_only_hf2.py:55:            assert c.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()[0]==0
+tests/test_history_close_only_hf2.py:78:        full=c.execute("SELECT open,high,low,close FROM history_canonical_v2").fetchone()
+tests/test_history_close_only_hf2.py:127:        full_dates=[r[0] for r in c.execute("SELECT date FROM history_canonical_v2 ORDER BY date")]
+tests/test_rc4_acceptance.py:73:    with s.connect() as c: n=c.execute('SELECT COUNT(*) FROM history_versions_v2').fetchone()[0]
+tests/test_rc4_acceptance.py:79:    c.execute('CREATE TABLE production_history(symbol TEXT,instrument_type TEXT,row_count INTEGER,date_from TEXT,date_to TEXT)')
+tests/test_rc4_acceptance.py:80:    c.execute("INSERT INTO production_history VALUES('GGAL','ACCIONES',100,'2026-01-01','2026-09-01')")
+
+======================================================================
+04 OBSERVER DB TABLE METADATA
+======================================================================
+TABLE_EXISTS=YES
+TABLE_SCHEMA=CREATE TABLE historical_raw_archive(           id INTEGER PRIMARY KEY AUTOINCREMENT, origin TEXT NOT NULL, row_key TEXT NOT NULL,           body_hash TEXT NOT NULL, recorded_at TEXT NOT NULL, quality TEXT NOT NULL,           body_json TEXT NOT NULL, UNIQUE(origin,row_key,body_hash))
+COLUMNS=[{"cid": 0, "name": "id", "type": "INTEGER", "notnull": 0, "default": null, "pk": 1}, {"cid": 1, "name": "origin", "type": "TEXT", "notnull": 1, "default": null, "pk": 0}, {"cid": 2, "name": "row_key", "type": "TEXT", "notnull": 1, "default": null, "pk": 0}, {"cid": 3, "name": "body_hash", "type": "TEXT", "notnull": 1, "default": null, "pk": 0}, {"cid": 4, "name": "recorded_at", "type": "TEXT", "notnull": 1, "default": null, "pk": 0}, {"cid": 5, "name": "quality", "type": "TEXT", "notnull": 1, "default": null, "pk": 0}, {"cid": 6, "name": "body_json", "type": "TEXT", "notnull": 1, "default": null, "pk": 0}]
+INDEX_LIST=[[0, "sqlite_autoindex_historical_raw_archive_1", 1, "u", 0]]
+INDEX_INFO sqlite_autoindex_historical_raw_archive_1=[[0, 1, "origin"], [1, 2, "row_key"], [2, 3, "body_hash"]]
+DBSTAT_PAGES=309085 DBSTAT_BYTES=1266012160 DBSTAT_PAYLOAD_BYTES=1244652069 DBSTAT_UNUSED_BYTES=19606780
+ROWID_MIN=1 ROWID_MAX=25860
+COLUMN_NAMES=id,origin,row_key,body_hash,recorded_at,quality,body_json
+SAMPLE_ROWS=21
+SAMPLE_LENGTH_COLUMNS=body_hash,body_json
+SAMPLE_LENGTH body_hash min=64 max=64 avg=64.0
+SAMPLE_LENGTH body_json min=699 max=53465 avg=48016.2
+
+======================================================================
+05 HISTORY STORE METADATA
+======================================================================
+TABLE=history_versions_v2 EXISTS=YES
+SCHEMA=CREATE TABLE history_versions_v2(   id INTEGER PRIMARY KEY AUTOINCREMENT,   symbol TEXT NOT NULL,   instrument_type TEXT NOT NULL,   market TEXT NOT NULL,   settlement TEXT NOT NULL,   date TEXT NOT NULL,   open REAL,   high REAL,   low REAL,   close REAL NOT NULL,   volume REAL,   source TEXT NOT NULL,   adjusted INTEGER NOT NULL DEFAULT 0,   observed_at TEXT NOT NULL,   payload_hash TEXT NOT NULL,   metadata_json TEXT NOT NULL DEFAULT '{}' )
+COLUMNS=["id", "symbol", "instrument_type", "market", "settlement", "date", "open", "high", "low", "close", "volume", "source", "adjusted", "observed_at", "payload_hash", "metadata_json"]
+DBSTAT_PAGES=2904 DBSTAT_BYTES=11894784
+ROWID_MIN=1 ROWID_MAX=48691
+INDEX_LIST=[[0, "idx_history_versions_v2_source", 0, "c", 0], [1, "idx_history_versions_v2_identity", 0, "c", 0]]
+TABLE=history_canonical_v2 EXISTS=YES
+SCHEMA=CREATE TABLE history_canonical_v2(   symbol TEXT NOT NULL,   instrument_type TEXT NOT NULL,   market TEXT NOT NULL,   settlement TEXT NOT NULL,   date TEXT NOT NULL,   open REAL,   high REAL,   low REAL,   close REAL NOT NULL,   volume REAL,   source TEXT NOT NULL,   adjusted INTEGER NOT NULL DEFAULT 0,   source_rank INTEGER NOT NULL,   observed_at TEXT NOT NULL,   version_id INTEGER NOT NULL,   PRIMARY KEY(symbol,instrument_type,market,settlement,date),   FOREIGN KEY(version_id) REFERENCES history_versions_v2(id) )
+COLUMNS=["symbol", "instrument_type", "market", "settlement", "date", "open", "high", "low", "close", "volume", "source", "adjusted", "source_rank", "observed_at", "version_id"]
+DBSTAT_PAGES=1661 DBSTAT_BYTES=6803456
+ROWID_MIN=1 ROWID_MAX=48323
+INDEX_LIST=[[0, "idx_history_canonical_v2_lookup", 0, "c", 0], [1, "sqlite_autoindex_history_canonical_v2_1", 1, "pk", 0]]
+TABLE=market_historical_ohlcv EXISTS=YES
+SCHEMA=CREATE TABLE market_historical_ohlcv (     symbol TEXT NOT NULL,     asset_class TEXT NOT NULL,     date TEXT NOT NULL,     open REAL, high REAL, low REAL, close REAL, volume REAL,     source TEXT NOT NULL,     adjusted INTEGER DEFAULT 0,     ingested_at TEXT DEFAULT CURRENT_TIMESTAMP,     PRIMARY KEY (symbol, date) )
+COLUMNS=["symbol", "asset_class", "date", "open", "high", "low", "close", "volume", "source", "adjusted", "ingested_at"]
+DBSTAT_PAGES=2290 DBSTAT_BYTES=9379840
+ROWID_MIN=1 ROWID_MAX=107538
+INDEX_LIST=[[0, "idx_symbol_date", 0, "c", 0], [1, "sqlite_autoindex_market_historical_ohlcv_1", 1, "pk", 0]]
+
+======================================================================
+06 OPERATIONAL SAFETY PROOF
+======================================================================
+OBSERVER_STATE=PRODUCTION_PAPER|0
+CONTAINER=/porota_production_observer RUNNING=true RESTARTS=0 HEALTH=none IMAGE=porota-trading-bot:17.0.0-rc6
+CONTAINER=/porota_production_dashboard RUNNING=true RESTARTS=0 HEALTH=healthy IMAGE=porota-trading-dashboard:17.0.0-rc6-operator-ux
+CONTAINER=/porota_critical_approval_rc6 RUNNING=true RESTARTS=0 HEALTH=healthy IMAGE=porota-trading-bot:17.0.0-rc6
+
+======================================================================
+07 AUDIT BOUNDARY
+======================================================================
+NO_DELETE=YES
+NO_VACUUM=YES
+NO_CHECKPOINT_WAL=YES
+NO_SCHEMA_CHANGE=YES
+NO_PAYLOAD_CONTENT_EXPORTED=YES
+NEXT_DEEP_STEP=POST_CLOSE_FULL_DUPLICATE_HASH_AND_CROSS_STORE_RECONCILIATION_IF_JUSTIFIED
+AUDIT_STATUS=COMPLETE_READ_ONLY
