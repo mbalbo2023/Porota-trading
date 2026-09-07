@@ -15,6 +15,46 @@ Checkpoint arquitectónico abierto. No autoriza borrado ni transformación de da
 - El procedimiento de rollback debe reconstruir/descargar desde GitHub y ejecutar preflight + activación transaccional + postflight.
 - Los backups generales de datos son una política distinta al rollback de aplicación y no deben confundirse con éste.
 
+## Resultado de limpieza autorizada 2026-09-07
+
+La limpieza de residuos fue ejecutada mediante GitHub Actions + SSH estricto, con gates SQLite y de seguridad antes/después.
+
+Estado filesystem:
+
+- antes: 24 GB, 15 GB usados, 8.7 GB libres, 63% usado;
+- después: 24 GB, ~11 GB usados, ~13 GB libres, 48% usado;
+- recuperación aproximada observada: ~4.3 GB;
+- objetivo `<65%` restablecido con margen amplio.
+
+Acciones ejecutadas:
+
+- eliminada copia local RC5 predeploy/rollback, de acuerdo con política GitHub-only;
+- conservado únicamente el backup general host más reciente y verificado; generaciones anteriores retiradas;
+- eliminado instalador `.deb` de Chrome ya instalado, preservando `chrome-profile` y venv;
+- limpiado cache APT;
+- journal reducido a ~146 MB;
+- eliminadas imágenes antiguas del dashboard que no estaban activas ni referenciadas;
+- preservadas imágenes activas y `porota-iol-history-shadow`;
+- builder cache quedó en 0 B;
+- podada únicamente metadata Git de worktrees inválidos; no se eliminaron directorios de backup/worktree en este paso.
+
+Postflight:
+
+- `observer_v17.db`: `PRAGMA quick_check=ok`;
+- `market_history.db`: `PRAGMA quick_check=ok`;
+- `real_orders_sent=0`;
+- observer: running, restart=0;
+- dashboard: running, healthy, restart=0;
+- `historical_raw_archive`: no modificado;
+- `observer_v17.db`: no VACUUM;
+- `market_history.db`: no modificado por cleanup.
+
+Evidencia canónica de este paso:
+
+- `POROTA_DISK_AUDIT_RC6_2026-09-07.txt` en rama de auditoría;
+- `POROTA_DISK_DEEP_AUDIT_RC6_2026-09-07.txt` en rama de auditoría;
+- `POROTA_DISK_POSTCLEANUP_PROOF_RC6_2026-09-07.txt` en rama `cleanup/rc6-disk-safe-20260907`.
+
 ## Hallazgo arquitectónico principal de almacenamiento
 
 La auditoría de disco del 2026-09-07 encontró que `data/paper_v17/observer_v17.db` ocupa aproximadamente 1.4 GiB y que el objeto SQLite `historical_raw_archive` explica aproximadamente 1.266 GB del archivo.
@@ -72,8 +112,14 @@ Registrar diariamente:
 - journal/logs;
 - estimación de días hasta 65%, 75% y 85% del filesystem.
 
+## Hallazgo operacional separado — no atribuido a cleanup
+
+El post-cleanup inventory observó un tercer contenedor, `porota_critical_approval_rc6`, en estado `unhealthy` y ejecutándose con la misma imagen activa `porota-trading-bot:17.0.0-rc6`.
+
+La limpieza NO eliminó ni reemplazó esa imagen y no reinició este contenedor. El observer y dashboard permanecieron correctos. Este estado debe auditarse como checkpoint operacional separado antes de considerarlo resuelto.
+
 ## Estado del checkpoint
 
 `OPEN_ARCHITECTURE_REVIEW`
 
-La limpieza segura de residuos puede continuar en paralelo, pero este checkpoint sólo se cierra con auditoría de writers, equivalencia de datos y plan reversible aprobado.
+La limpieza de residuos quedó completada. Este checkpoint sólo se cierra con auditoría de writers, equivalencia de datos y plan reversible aprobado.
