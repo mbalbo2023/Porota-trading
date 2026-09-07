@@ -53,7 +53,9 @@ Auto-reauth:
 - prior E2E run `34165743278` terminó `BLOCKED_AUTH_USERNAME_REQUIRED` con `CE_RUNS_BEFORE=84`, secreto restringido y órdenes reales 0;
 - el usuario actualizó localmente la credencial web después de ese intento;
 - rerun por push seguro commit `de0d0b04e66ef747d4069e21c1a4a6c55d25e080`;
-- run nuevo `34171303368` estaba IN_PROGRESS al publicar este checkpoint.
+- run nuevo `34171303368` terminó FAILURE de forma fail-closed;
+- evidencia exacta del rerun: live SHA `c17b0d777ba49d88c53c5a7ed14218d8eaa94638`, DB `ok|PRODUCTION_PAPER|0`, secreto presente/restringido, `CE_RUNS_BEFORE=84`, luego `BLOCKED_AUTH_USERNAME_REQUIRED`;
+- por lo tanto el campo username estaba visible/vacío y el helper no recibió un valor no vacío bajo la clave exacta `PPI_WEB_USERNAME`.
 
 ## 5. NUEVO P1 — PPI Web History SHADOW
 
@@ -78,7 +80,14 @@ Seguridad del probe:
 - evidencia sanitizada: host/path, status, schema, hash, family/symbol context;
 - observer/dashboard deben mantener IDs/estado y `real_orders_sent=0`.
 
-Validación offline del run `34171351827`: GREEN. El probe live GET-only estaba ejecutándose al publicar este checkpoint.
+Resultado run `34171351827`:
+- validate_offline=SUCCESS;
+- probe_droplet_readonly=SUCCESS;
+- `PPI_WEB_HISTORY_AUTH=BLOCKED_AUTH_SESSION_EXPIRED`;
+- JSON responses=0, historical candidates=0, FULL_OHLCV candidates=0 por falta de sesión autenticada;
+- `canonical_write=DENY`, observer unchanged, dashboard unchanged, `REAL_ORDERS_SENT=0`.
+
+Interpretación: infraestructura y seguridad del descubridor web-histórico quedaron GREEN; el proof de cobertura histórica real permanece bloqueado únicamente detrás del mismo login web que Contract Evidence.
 
 Condiciones para que PPI Web pueda reemplazar la dependencia histórica obligatoria de IOL/A3:
 1. profundidad temporal suficiente;
@@ -111,16 +120,17 @@ Objetivo Fase A: RAW Evidence Store content-addressed + manifests + único Histo
 ## 8. Pendientes hasta checkpoint funcional final
 
 P1 bloqueantes:
-1. Contract Evidence auto-reauth GREEN con sesión real autenticada.
-2. Primer E2E DUE auténtico con incremento de `contract_evidence_v2_runs` y timer GREEN.
-3. Full Contract Sweep de todas las familias PPI y matriz campo/valor/fuente/timestamp/hash/confianza/estado.
-4. PPI Web History SHADOW: inventario real de endpoints/XHR históricos, cobertura y calidad.
-5. Integración History Store de `completeness` + `price_basis` con replay/regresión.
-6. Decisión de source policy final: PPI API + PPI Web core; IOL/A3 sólo fallback/cross-check si Web proof alcanza.
-7. CI/security regression completa.
-8. Deploy funcional final sólo de componentes que lo requieran, transaccional.
-9. Postflight final: observer/dashboard health, dos DB integrity checks según política SRE, PPI auth, CE timer, history freshness, `real_orders_sent=0`.
-10. Consolidación del checkpoint canónico con SHA/run IDs y UNKNOWNs restantes.
+1. Hacer disponible un valor no vacío `PPI_WEB_USERNAME` en el secreto local exacto `/etc/porota/contract-evidence-web.env` y rerun del auto-reauth.
+2. Contract Evidence auto-reauth GREEN con sesión real autenticada.
+3. Primer E2E DUE auténtico con incremento de `contract_evidence_v2_runs` (>84 cuando DUE) y timer GREEN.
+4. Full Contract Sweep de todas las familias PPI y matriz campo/valor/fuente/timestamp/hash/confianza/estado.
+5. PPI Web History SHADOW autenticado: inventario real de endpoints/XHR históricos, cobertura y calidad.
+6. Integración History Store de `completeness` + `price_basis` con replay/regresión.
+7. Decisión de source policy final: PPI API + PPI Web core; IOL/A3 sólo fallback/cross-check si Web proof alcanza.
+8. CI/security regression completa.
+9. Deploy funcional final sólo de componentes que lo requieran, transaccional.
+10. Postflight final: observer/dashboard health, DB integrity según política SRE, PPI auth, CE timer, history freshness, `real_orders_sent=0`.
+11. Consolidación del checkpoint canónico con SHA/run IDs y UNKNOWNs restantes.
 
 Paralelizables/no necesariamente bloqueantes del checkpoint funcional si permanecen SHADOW/offline:
 - MFE/MAE integración;
@@ -143,3 +153,11 @@ Paralelizables/no necesariamente bloqueantes del checkpoint funcional si permane
 - no secretos/cookies/tokens en evidencia;
 - no secondary canonical write hasta cerrar identidad/completitud/price_basis;
 - no storage destructive work antes de Gate 0 final.
+
+## 10. Estado de concurrencia al último corte
+
+Los dos workflows funcionales lanzados en paralelo ya terminaron:
+- Contract Evidence auto-reauth run `34171303368`: YELLOW/fail-closed por username requerido;
+- PPI Web History SHADOW run `34171351827`: workflow SUCCESS, seguridad GREEN, cobertura bloqueada por sesión web expirada.
+
+No hubo modificación del observer ni del dashboard por esos probes. La única línea live sigue `c17b0d777ba49d88c53c5a7ed14218d8eaa94638` y `real_orders_sent=0`.
