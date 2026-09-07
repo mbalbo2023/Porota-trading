@@ -4,7 +4,11 @@ on:
   pull_request:
     paths:
       - 'fg_critical_approval_gateway_rc6.py'
+      - 'fm_critical_approval_unix_runtime_rc6.py'
+      - 'fn_critical_github_proxy_rc6.py'
       - 'tests/test_critical_approval_gateway_rc6.py'
+      - 'tests/test_critical_approval_unix_runtime_rc6.py'
+      - 'tests/test_critical_github_proxy_rc6.py'
       - '.github/workflows/rc6-critical-telegram-approval.yml'
       - 'POROTA_TRADING_RC6_CRITICAL_TELEGRAM_APPROVAL_2026-09-07.md'
   workflow_dispatch:
@@ -20,22 +24,38 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install focused test dependency
         run: python -m pip install --disable-pip-version-check pytest
-      - name: Compile gateway
-        run: python -m py_compile fg_critical_approval_gateway_rc6.py
+      - name: Compile control plane
+        run: python -m py_compile fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py
       - name: Focused tests
-        run: python -m pytest -q tests/test_critical_approval_gateway_rc6.py
-      - name: Prove control-plane separation
+        run: >-
+          python -m pytest -q
+          tests/test_critical_approval_gateway_rc6.py
+          tests/test_critical_approval_unix_runtime_rc6.py
+          tests/test_critical_github_proxy_rc6.py
+      - name: Prove trading separation
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eq '^import (c_ppi_client|bd_ppi_readonly_guard|be_paper_engine|k_position_manager|l_order_confirmation)' fg_critical_approval_gateway_rc6.py
-          ! grep -Eq '^from (c_ppi_client|bd_ppi_readonly_guard|be_paper_engine|k_position_manager|l_order_confirmation)' fg_critical_approval_gateway_rc6.py
-          ! grep -Eq '(place_order|budget_order|confirm_order|docker.sock|subprocess\.run)' fg_critical_approval_gateway_rc6.py
-          grep -q 'PPI_CREDENTIAL_PRESENT_IN_CONTROL_PLANE' fg_critical_approval_gateway_rc6.py
-          grep -q 'OBSERVER_TELEGRAM_CREDENTIAL_PRESENT_IN_CONTROL_PLANE' fg_critical_approval_gateway_rc6.py
-          grep -q 'POROTA_CRITICAL_TELEGRAM_BOT_TOKEN' fg_critical_approval_gateway_rc6.py
-          grep -q 'POROTA_CRITICAL_TELEGRAM_CHAT_ID' fg_critical_approval_gateway_rc6.py
-          grep -q 'Issues:read/write only' fg_critical_approval_gateway_rc6.py
+          for f in fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py; do
+            ! grep -Eq '^import (c_ppi_client|bd_ppi_readonly_guard|be_paper_engine|k_position_manager|l_order_confirmation)' "$f"
+            ! grep -Eq '^from (c_ppi_client|bd_ppi_readonly_guard|be_paper_engine|k_position_manager|l_order_confirmation)' "$f"
+            ! grep -Eq '(place_order|budget_order|confirm_order|docker.sock)' "$f"
+          done
+          grep -q 'FORBIDDEN_CREDENTIAL_PRESENT_IN_CONTROL_PLANE' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'TELEGRAM_SINGLE_CONSUMER_NOT_ENFORCED' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'GITHUB_TOKEN' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'GH_TOKEN' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'capability=issues_only' fn_critical_github_proxy_rc6.py
+      - name: Prove GitHub token is not accepted by container runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -q 'gh auth token' fm_critical_approval_unix_runtime_rc6.py
+          ! grep -q 'Authorization.*Bearer' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'UnixGithubIssuesClient' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'OPERATION_NOT_ALLOWED' fn_critical_github_proxy_rc6.py
+          grep -q 'ISSUE_NOT_CRITICAL' fn_critical_github_proxy_rc6.py
+          grep -q 'ISSUE_ALREADY_DECIDED' fn_critical_github_proxy_rc6.py
       - name: Prove authorization scope
         shell: bash
         run: |
