@@ -1,0 +1,88 @@
+name: RC6 Critical Telegram approval safety
+
+on:
+  pull_request:
+    paths:
+      - 'fg_critical_approval_gateway_rc6.py'
+      - 'fm_critical_approval_unix_runtime_rc6.py'
+      - 'fn_critical_github_proxy_rc6.py'
+      - 'fo_critical_approval_health_rc6.py'
+      - 'ops/rc6_deploy_critical_control_plane.sh'
+      - 'ops/rc6_apply_critical_control_plane_healthcheck.sh'
+      - '.github/workflows/rc6-critical-control-plane-deploy.yml'
+      - 'tests/test_critical_approval_gateway_rc6.py'
+      - 'tests/test_critical_approval_unix_runtime_rc6.py'
+      - 'tests/test_critical_github_proxy_rc6.py'
+      - 'tests/test_critical_approval_healthcheck_rc6.py'
+      - '.github/workflows/rc6-critical-telegram-approval.yml'
+      - 'POROTA_TRADING_RC6_CRITICAL_TELEGRAM_APPROVAL_2026-09-07.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safety-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install focused test dependency
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Compile control plane
+        run: python -m py_compile fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py fo_critical_approval_health_rc6.py
+      - name: Validate deploy script syntax
+        run: |
+          bash -n ops/rc6_deploy_critical_control_plane.sh
+          bash -n ops/rc6_apply_critical_control_plane_healthcheck.sh
+      - name: Focused tests
+        run: >-
+          python -m pytest -q
+          tests/test_critical_approval_gateway_rc6.py
+          tests/test_critical_approval_unix_runtime_rc6.py
+          tests/test_critical_github_proxy_rc6.py
+          tests/test_critical_approval_healthcheck_rc6.py
+      - name: Prove trading separation
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py fo_critical_approval_health_rc6.py; do
+            ! grep -Eq '^import (c_ppi_client|bd_ppi_readonly_guard|be_paper_engine|k_position_manager|l_order_confirmation)' "$f"
+            ! grep -Eq '^from (c_ppi_client|bd_ppi_readonly_guard|be_paper_engine|k_position_manager|l_order_confirmation)' "$f"
+            ! grep -Eq '(place_order|budget_order|confirm_order|docker.sock)' "$f"
+          done
+          grep -q 'FORBIDDEN_CREDENTIAL_PRESENT_IN_CONTROL_PLANE' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'TELEGRAM_SINGLE_CONSUMER_NOT_ENFORCED' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'GITHUB_TOKEN' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'GH_TOKEN' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'capability=issues_only' fn_critical_github_proxy_rc6.py
+      - name: Prove tokenless container and authenticated local broker
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -q 'gh auth token' fm_critical_approval_unix_runtime_rc6.py
+          ! grep -q 'Authorization.*Bearer' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'UnixGithubIssuesClient' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'UnixGithubIssuesClient' fo_critical_approval_health_rc6.py
+          grep -q 'CAPABILITY_DENIED' fn_critical_github_proxy_rc6.py
+          grep -q 'hmac.compare_digest' fn_critical_github_proxy_rc6.py
+          grep -q 'POROTA_CRITICAL_BROKER_TOKEN_FILE' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'broker_capability.token' ops/rc6_deploy_critical_control_plane.sh
+          grep -q 'OPERATION_NOT_ALLOWED' fn_critical_github_proxy_rc6.py
+          grep -q 'ISSUE_NOT_CRITICAL' fn_critical_github_proxy_rc6.py
+          grep -q 'ISSUE_ALREADY_DECIDED' fn_critical_github_proxy_rc6.py
+      - name: Prove dedicated gateway healthcheck wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'fo_critical_approval_health_rc6.py' .github/workflows/rc6-critical-control-plane-deploy.yml
+          grep -q 'rc6_apply_critical_control_plane_healthcheck.sh' .github/workflows/rc6-critical-control-plane-deploy.yml
+          grep -q -- '--health-cmd="python /code/fo_critical_approval_health_rc6.py"' ops/rc6_apply_critical_control_plane_healthcheck.sh
+          ! grep -q '127.0.0.1.*8000.*/health' fo_critical_approval_health_rc6.py
+      - name: Prove authorization scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'HOTFIX_AUTHORIZATION=AUTHORIZED_TELEGRAM' fg_critical_approval_gateway_rc6.py
+          grep -q 'NO se autorizó merge, deploy ni órdenes reales' fg_critical_approval_gateway_rc6.py
+          grep -q 'AUTORIZAR HOTFIX PAPER' fg_critical_approval_gateway_rc6.py

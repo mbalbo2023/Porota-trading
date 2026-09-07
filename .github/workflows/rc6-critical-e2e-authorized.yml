@@ -1,0 +1,317 @@
+name: RC6 Critical approval authorized E2E
+
+on:
+  push:
+    branches: [feature/rc6-critical-telegram-approval-20260907]
+    paths:
+      - 'fh_critical_approval_e2e_rc6.py'
+      - 'tests/test_critical_approval_e2e_rc6.py'
+      - 'POROTA_TRADING_RC6_CONTROL_PLANE_E2E_AUTHORIZED_2026-09-07.md'
+      - '.github/workflows/rc6-critical-e2e-authorized.yml'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: porota-rc6-critical-approval-e2e-40
+  cancel-in-progress: false
+
+env:
+  EXPECTED_BRANCH: feature/rc6-critical-telegram-approval-20260907
+  E2E_ISSUE: '40'
+  E2E_CONTAINER: porota_critical_approval_e2e_40
+  LIVE_IMAGE: porota-trading-bot:17.0.0-rc6
+  AUTH_FILE: POROTA_TRADING_RC6_CONTROL_PLANE_E2E_AUTHORIZED_2026-09-07.md
+
+jobs:
+  e2e:
+    name: Isolated Issue-40 control-plane E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Hard authorization, tests and Issue-40 token probe
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH"
+          test "$E2E_ISSUE" = '40'
+          test -f "$AUTH_FILE"
+          grep -Fxq 'CONTROL_PLANE_E2E_DEPLOY=AUTHORIZED_USER' <(sed -n 's/^`\(CONTROL_PLANE_E2E_DEPLOY=AUTHORIZED_USER\)`$/\1/p' "$AUTH_FILE")
+          grep -q 'Issue sintético #40' "$AUTH_FILE"
+          grep -q 'real_orders_sent=0' "$AUTH_FILE"
+          echo 'E2E_DEPLOY_AUTHORIZATION=GREEN'
+
+          python -m py_compile fg_critical_approval_gateway_rc6.py fh_critical_approval_e2e_rc6.py
+          python -m pip install --disable-pip-version-check pytest >/dev/null
+          python -m pytest -q tests/test_critical_approval_gateway_rc6.py tests/test_critical_approval_e2e_rc6.py
+
+          code="$(curl -sS -o "$RUNNER_TEMP/issue40.json" -w '%{http_code}' \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${E2E_ISSUE}")"
+          echo "ISSUE40_READ_HTTP=$code"
+          test "$code" = '200'
+          ISSUE_JSON="$(cat "$RUNNER_TEMP/issue40.json")" python - <<'PY'
+          import json, os
+          x=json.loads(os.environ['ISSUE_JSON'])
+          body=str(x.get('body') or '')
+          assert x.get('number') == 40
+          assert x.get('state') == 'open'
+          assert str(x.get('title') or '').startswith('[POROTA][RED][E2E-TEST]')
+          assert 'E2E_TEST=true' in body
+          assert 'HOTFIX_AUTOMATION_ALLOWED=false' in body
+          assert 'HOTFIX_AUTHORIZATION=AWAITING' in body
+          print('E2E_SYNTHETIC_ISSUE_GUARD=GREEN')
+          PY
+
+          printf '{"body":"E2E_GATEWAY_TOKEN_PROBE=GREEN\\nRun: %s\\nThis is not a hotfix authorization."}' "$GITHUB_RUN_ID" > "$RUNNER_TEMP/probe.json"
+          code="$(curl -sS -o "$RUNNER_TEMP/probe-response.json" -w '%{http_code}' -X POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            -H 'Content-Type: application/json' \
+            --data-binary @"$RUNNER_TEMP/probe.json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${E2E_ISSUE}/comments")"
+          echo "ISSUE40_WRITE_PROBE_HTTP=$code"
+          test "$code" = '201'
+          echo 'ISSUE40_READ_WRITE_TOKEN=GREEN'
+
+      - name: Prepare strict SSH
+        id: sshprep
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_e2e"
+          chmod 600 "$HOME/.ssh/porota_e2e"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only host preflight
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          ssh -i "$HOME/.ssh/porota_e2e" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "E2E_CONTAINER='$E2E_CONTAINER' LIVE_IMAGE='$LIVE_IMAGE' bash -s" <<'HOST'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          echo '=== RC6 CRITICAL CONTROL E2E READ-ONLY PREFLIGHT ==='
+          test -d "$REPO/.git"
+          obs="$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}|{{json .Config.Cmd}}' porota_production_observer)"
+          dash="$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)"
+          echo "OBSERVER_PREFLIGHT=$obs"
+          echo "DASHBOARD_PREFLIGHT=$dash"
+          case "$obs" in *'|true|0|true|'*'bv_paper_runtime.py'* ) ;; *) echo 'OBSERVER_PREFLIGHT=RED'; exit 1;; esac
+          case "$dash" in *'|true|0|'* ) ;; *) echo 'DASHBOARD_PREFLIGHT=RED'; exit 1;; esac
+          for legacy in porota_trading_bot porota_sandbox_engine porota_production_engine; do
+            if sudo -n docker ps --format '{{.Names}}' | grep -Fxq "$legacy"; then
+              echo "LEGACY_TELEGRAM_CONSUMER_RISK=$legacy"; exit 1
+            fi
+          done
+          if sudo -n docker ps --format '{{.Names}}' | grep -Fxq "$E2E_CONTAINER"; then
+            echo 'STALE_E2E_CONTAINER=RED'; exit 1
+          fi
+          state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          quick=c.execute('PRAGMA quick_check').fetchone()[0]
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(quick,*row))))
+          PY
+          )"
+          echo "OBSERVER_DB_PREFLIGHT=$state"
+          test "$state" = 'ok|PRODUCTION_PAPER|0'
+          if ps -eo args= | grep -E '[j]_[m]ain\.py|[l]_[o]rder_confirmation\.py|[a]r_telegram_commands\.py' >/dev/null; then
+            echo 'HOST_LEGACY_TELEGRAM_PROCESS=RED'; exit 1
+          fi
+          test -f "$REPO/.env"
+          for key in TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            awk -F= -v k="$key" '$1==k {v=$0; sub(/^[^=]*=/,"",v); if(length(v)>0) ok=1} END{exit ok?0:1}' "$REPO/.env"
+          done
+          echo 'CURRENT_TELEGRAM_CREDENTIALS_PRESENT=YES_VALUES_NOT_LOGGED'
+          echo 'E2E_EXISTING_BOT_EXCEPTION=SAFE_ONLY_WHILE_PRODUCTION_PAPER_HAS_NO_GETUPDATES_CONSUMER'
+          echo 'E2E_PREFLIGHT=GREEN'
+          HOST
+
+      - name: Stage ephemeral E2E files and start isolated gateway
+        id: stage
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          GH_ISSUE_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REMOTE_DIR="/tmp/porota-critical-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s' "$GH_ISSUE_TOKEN" > "$RUNNER_TEMP/github_issue_control.token"
+          chmod 600 "$RUNNER_TEMP/github_issue_control.token"
+          ssh -i "$HOME/.ssh/porota_e2e" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "umask 077; mkdir -p '$REMOTE_DIR'; chmod 700 '$REMOTE_DIR'"
+          scp -i "$HOME/.ssh/porota_e2e" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            fg_critical_approval_gateway_rc6.py fh_critical_approval_e2e_rc6.py \
+            "$RUNNER_TEMP/github_issue_control.token" \
+            "$DO_USER@$DO_HOST:$REMOTE_DIR/"
+          rm -f "$RUNNER_TEMP/github_issue_control.token"
+          ssh -i "$HOME/.ssh/porota_e2e" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "REMOTE_DIR='$REMOTE_DIR' E2E_CONTAINER='$E2E_CONTAINER' LIVE_IMAGE='$LIVE_IMAGE' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          umask 077
+          cleanup_on_fail() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              sudo -n docker rm -f "$E2E_CONTAINER" >/dev/null 2>&1 || true
+              sudo -n rm -rf "$REMOTE_DIR" >/dev/null 2>&1 || true
+            fi
+            exit "$rc"
+          }
+          trap cleanup_on_fail EXIT
+          extract_env() {
+            local key="$1" value
+            value="$(awk -F= -v k="$key" '$1==k {v=$0; sub(/^[^=]*=/,"",v); print v; exit}' "$REPO/.env")"
+            value="${value%$'\r'}"
+            if [[ "$value" == \"*\" && "$value" == *\" ]]; then value="${value:1:${#value}-2}"; fi
+            if [[ "$value" == \'*\' && "$value" == *\' ]]; then value="${value:1:${#value}-2}"; fi
+            printf '%s' "$value"
+          }
+          telegram_token="$(extract_env TELEGRAM_BOT_TOKEN)"
+          telegram_chat="$(extract_env TELEGRAM_CHAT_ID)"
+          test -n "$telegram_token" && test -n "$telegram_chat"
+          printf '%s' "$telegram_token" > "$REMOTE_DIR/telegram.token"
+          printf '%s' "$telegram_chat" > "$REMOTE_DIR/telegram.chat"
+          sudo -n chown -R 1000:1000 "$REMOTE_DIR"
+          sudo -n chmod 700 "$REMOTE_DIR"
+          sudo -n chmod 600 "$REMOTE_DIR/github_issue_control.token" "$REMOTE_DIR/telegram.token" "$REMOTE_DIR/telegram.chat"
+          sudo -n chmod 644 "$REMOTE_DIR/fg_critical_approval_gateway_rc6.py" "$REMOTE_DIR/fh_critical_approval_e2e_rc6.py"
+          sudo -n test -s "$REMOTE_DIR/github_issue_control.token"
+          sudo -n test -s "$REMOTE_DIR/telegram.token"
+          sudo -n test -s "$REMOTE_DIR/telegram.chat"
+          sudo -n docker run -d --name "$E2E_CONTAINER" --pull never --restart no \
+            --read-only --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
+            --pids-limit 64 --memory 192m --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/e2e \
+            -e POROTA_RUNTIME_MODE=PRODUCTION_PAPER \
+            -e POROTA_CRITICAL_APPROVAL_ENABLED=true \
+            -e POROTA_CRITICAL_E2E=true \
+            -e POROTA_CRITICAL_E2E_ONLY_ISSUE=40 \
+            -e POROTA_CRITICAL_APPROVAL_POLL_SECONDS=10 \
+            -e POROTA_CRITICAL_APPROVAL_DB=/tmp/critical_approval_e2e.db \
+            -e POROTA_GITHUB_ISSUE_TOKEN_FILE=/run/secrets/github_issue_control.token \
+            -e POROTA_CRITICAL_TELEGRAM_TOKEN_FILE=/run/secrets/telegram.token \
+            -e POROTA_CRITICAL_TELEGRAM_CHAT_FILE=/run/secrets/telegram.chat \
+            -v "$REMOTE_DIR:/e2e:ro" \
+            -v "$REMOTE_DIR/github_issue_control.token:/run/secrets/github_issue_control.token:ro" \
+            -v "$REMOTE_DIR/telegram.token:/run/secrets/telegram.token:ro" \
+            -v "$REMOTE_DIR/telegram.chat:/run/secrets/telegram.chat:ro" \
+            --entrypoint python "$LIVE_IMAGE" /e2e/fh_critical_approval_e2e_rc6.py >/dev/null
+          sleep 5
+          running="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' "$E2E_CONTAINER")"
+          echo "E2E_GATEWAY=$running"
+          test "$running" = "true|0|true|$LIVE_IMAGE"
+          mounts="$(sudo -n docker inspect -f '{{range .Mounts}}{{.Source}}=>{{.Destination}};{{end}}' "$E2E_CONTAINER")"
+          case "$mounts" in *docker.sock*|*ppi_production* ) echo 'E2E_FORBIDDEN_MOUNT=RED'; exit 1;; esac
+          echo 'E2E_GATEWAY_STARTED=GREEN'
+          trap - EXIT
+          HOST
+          echo "REMOTE_DIR=$REMOTE_DIR" >> "$GITHUB_ENV"
+
+      - name: Wait for controlled Telegram decision
+        id: wait
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo 'E2E_GATEWAY_IS_RUNNING=YES'
+          echo 'E2E_WAITING_FOR_ISSUE_40_DECISION=YES'
+          decision=''
+          for _ in $(seq 1 180); do
+            code="$(curl -sS -o "$RUNNER_TEMP/comments40.json" -w '%{http_code}' \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${E2E_ISSUE}/comments?per_page=100")"
+            test "$code" = '200'
+            decision="$(COMMENTS_JSON="$(cat "$RUNNER_TEMP/comments40.json")" python - <<'PY'
+          import json, os
+          rows=json.loads(os.environ['COMMENTS_JSON'])
+          state=''
+          for row in rows:
+              body=str(row.get('body') or '')
+              if 'HOTFIX_AUTHORIZATION=AUTHORIZED_TELEGRAM' in body: state='AUTHORIZED_TELEGRAM'
+              if 'HOTFIX_AUTHORIZATION=REJECTED_TELEGRAM' in body: state='REJECTED_TELEGRAM'
+          print(state)
+          PY
+            )"
+            [ -z "$decision" ] || break
+            sleep 5
+          done
+          test -n "$decision"
+          echo "E2E_DECISION=$decision"
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
+
+      - name: Prove trading runtime unchanged and clean E2E
+        if: ${{ always() && steps.sshprep.outcome == 'success' }}
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_e2e" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "REMOTE_DIR='${REMOTE_DIR:-}' E2E_CONTAINER='$E2E_CONTAINER' bash -s" <<'HOST'
+          set -euo pipefail
+          echo '=== RC6 CRITICAL E2E POSTCHECK ==='
+          obs="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}|{{json .Config.Cmd}}' porota_production_observer)"
+          dash="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)"
+          echo "OBSERVER_POST=$obs"
+          echo "DASHBOARD_POST=$dash"
+          case "$obs" in 'true|0|true|'*'bv_paper_runtime.py'* ) ;; *) exit 1;; esac
+          case "$dash" in 'true|0|'* ) ;; *) exit 1;; esac
+          state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,*row))))
+          PY
+          )"
+          echo "OBSERVER_DB_POST=$state"
+          test "$state" = 'ok|PRODUCTION_PAPER|0'
+          sudo -n docker rm -f "$E2E_CONTAINER" >/dev/null 2>&1 || true
+          if [ -n "$REMOTE_DIR" ] && [[ "$REMOTE_DIR" == /tmp/porota-critical-e2e-* ]]; then
+            sudo -n rm -rf "$REMOTE_DIR"
+          fi
+          test -z "$(sudo -n docker ps -aq -f name=^/${E2E_CONTAINER}$)"
+          echo 'REAL_ORDERS_SENT=0'
+          echo 'TRADING_RUNTIME_UNCHANGED=GREEN'
+          echo 'E2E_TEMPORARY_CONTROL_PLANE_REMOVED=GREEN'
+          HOST
