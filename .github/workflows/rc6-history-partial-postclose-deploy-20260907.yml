@@ -83,20 +83,26 @@ jobs:
           WT=''; TMP=''; ACTIVATED=0
           dashboard_id="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)"
           dashboard_state="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)"
-          verify(){
+          verify_runtime(){
             local label="$1"
             test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$TARGET_IMAGE|0|true"
             test "$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$label"
             sudo -n docker exec -i porota_production_observer python - <<'PY'
           import os,sqlite3
-          import bf_production_paper_observer as m
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30);c.execute('PRAGMA query_only=ON')
           assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'
           mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone();c.close()
           assert mode=='PRODUCTION_PAPER' and int(orders)==0
           assert os.getenv('PAPER_T1_FULL_DATE_RELEASE')=='true'
-          assert m._history_batch_semantics(['PARTIAL'])['hard_failures']==0
-          print('OBSERVER_HISTORY_SAFETY=GREEN')
+          print('OBSERVER_RUNTIME_SAFETY=GREEN')
+          PY
+          }
+          verify_target_semantics(){
+            sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import bf_production_paper_observer as m
+          x=m._history_batch_semantics(['PARTIAL'])
+          assert x['state']=='AMARILLO' and x['usable']==1 and x['hard_failures']==0
+          print('OBSERVER_HISTORY_SEMANTICS=GREEN')
           PY
           }
           rollback(){
@@ -104,7 +110,7 @@ jobs:
             sudo -n docker tag "$ROLLBACK_IMAGE" "$TARGET_IMAGE"
             git -C "$REPO" checkout -f -B "$BASE_LIVE_BRANCH" "$BASE_LIVE_SHA"
             sudo -n docker run -d --name porota_production_observer --pull never --restart unless-stopped --no-healthcheck --user botuser --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m -e PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json -e PAPER_DB_PATH=/app/data/paper_v17/observer_v17.db -e PAPER_T1_FULL_DATE_RELEASE=true -e MARKET_OPEN_HOUR=10 -e MARKET_OPEN_MINUTE=30 -e MARKET_CLOSE_HOUR=17 -e MARKET_CLOSE_MINUTE=0 -e PAPER_PREOPEN_MINUTES=15 -e PPI_LOGIN_COOLDOWN_SECONDS=900 -e PPI_HISTORY_BATCH_LIMIT=40 -e DATA_DIR=/app/data -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires --env-file "$RUNTIME_ENV" -v "$REPO/data:/app/data" -v "$SECRET:/run/secrets/ppi_production.json:ro" --entrypoint python "$TARGET_IMAGE" bv_paper_runtime.py >/dev/null
-            sleep 8; verify "$BASE_LIVE_SHA"
+            sleep 8; verify_runtime "$BASE_LIVE_SHA"
             echo HISTORY_PARTIAL_ROLLBACK=GREEN
           }
           cleanup(){ [ -z "$WT" ] || git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true; [ -z "$TMP" ] || rmdir "$TMP" >/dev/null 2>&1 || true; }
@@ -117,7 +123,7 @@ jobs:
           test "$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$BASE_LIVE_SHA"
           test -f "$SECRET" && test -f "$RUNTIME_ENV"
           git -C "$REPO" diff --quiet && git -C "$REPO" diff --cached --quiet
-          verify "$BASE_LIVE_SHA"
+          verify_runtime "$BASE_LIVE_SHA"
 
           current_id="$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{.Id}}')"
           sudo -n docker tag "$current_id" "$ROLLBACK_IMAGE"
@@ -145,7 +151,8 @@ jobs:
           ACTIVATED=1
           sudo -n docker run -d --name porota_production_observer --pull never --restart unless-stopped --no-healthcheck --user botuser --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m -e PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json -e PAPER_DB_PATH=/app/data/paper_v17/observer_v17.db -e PAPER_T1_FULL_DATE_RELEASE=true -e MARKET_OPEN_HOUR=10 -e MARKET_OPEN_MINUTE=30 -e MARKET_CLOSE_HOUR=17 -e MARKET_CLOSE_MINUTE=0 -e PAPER_PREOPEN_MINUTES=15 -e PPI_LOGIN_COOLDOWN_SECONDS=900 -e PPI_HISTORY_BATCH_LIMIT=40 -e DATA_DIR=/app/data -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires --env-file "$RUNTIME_ENV" -v "$REPO/data:/app/data" -v "$SECRET:/run/secrets/ppi_production.json:ro" --entrypoint python "$TARGET_IMAGE" bv_paper_runtime.py >/dev/null
           sleep 10
-          verify "$TARGET_SHA"
+          verify_runtime "$TARGET_SHA"
+          verify_target_semantics
           git -C "$REPO" checkout -f -B "$TARGET_BRANCH" "$TARGET_SHA"
           test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)" = "$dashboard_id"
           test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)" = "$dashboard_state"
