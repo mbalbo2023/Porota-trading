@@ -1,0 +1,167 @@
+name: RC6 deep disk audit containerd sqlite
+
+on:
+  push:
+    branches:
+      - audit/rc6-disk-usage-20260907
+    paths:
+      - '.github/workflows/rc6-disk-deep-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deep-disk-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/rc6-disk-usage-20260907
+          fetch-depth: 0
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_audit"
+          chmod 600 "$HOME/.ssh/porota_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Collect containerd and SQLite deep inventory
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_DISK_DEEP_AUDIT_RC6_2026-09-07.txt'
+          ssh -i "$HOME/.ssh/porota_audit" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' > "$REPORT" <<'REMOTE'
+          set -u
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          HIST="$REPO/data/market_history.db"
+          sep(){ printf '\n======================================================================\n%s\n======================================================================\n' "$1"; }
+
+          echo 'POROTA RC6 DEEP DISK AUDIT — READ ONLY'
+          echo 'MUTATIONS=NONE'
+          echo "UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          sep '01. /VAR BREAKDOWN'
+          sudo -n du -x -h -d 2 /var 2>/dev/null | sort -h | tail -n 180 || true
+
+          sep '02. CONTAINERD BREAKDOWN'
+          if [ -d /var/lib/containerd ]; then
+            sudo -n du -x -h -d 3 /var/lib/containerd 2>/dev/null | sort -h | tail -n 220 || true
+          else
+            echo 'CONTAINERD_DIR=NOT_FOUND'
+          fi
+
+          sep '03. DOCKER STORAGE BACKEND INFO'
+          sudo -n docker info --format 'DockerRootDir={{.DockerRootDir}} Driver={{.Driver}} ContainerdAddress={{.Containerd.Address}}' 2>&1 || true
+          sudo -n docker system df -v 2>&1 || true
+
+          sep '04. OBSERVER SQLITE PHYSICAL STRUCTURE'
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3, sys, os
+          p=sys.argv[1]
+          print('PATH='+p)
+          print('FILE_BYTES='+str(os.path.getsize(p) if os.path.exists(p) else -1))
+          try:
+              c=sqlite3.connect(f'file:{p}?mode=ro', uri=True, timeout=30)
+              c.execute('PRAGMA query_only=ON')
+              page_size=c.execute('PRAGMA page_size').fetchone()[0]
+              page_count=c.execute('PRAGMA page_count').fetchone()[0]
+              freelist=c.execute('PRAGMA freelist_count').fetchone()[0]
+              print(f'PAGE_SIZE={page_size}')
+              print(f'PAGE_COUNT={page_count}')
+              print(f'FREELIST_COUNT={freelist}')
+              print(f'FREELIST_BYTES={freelist*page_size}')
+              print(f'FREELIST_PCT={(freelist/page_count*100 if page_count else 0):.4f}')
+              print('JOURNAL_MODE='+str(c.execute('PRAGMA journal_mode').fetchone()[0]))
+              print('QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+              print('-- DBSTAT TOP OBJECTS --')
+              try:
+                  rows=c.execute("SELECT name, SUM(pgsize) bytes, COUNT(*) pages FROM dbstat GROUP BY name ORDER BY bytes DESC LIMIT 40").fetchall()
+                  for name,b,pages in rows:
+                      print(f'{b}\t{pages}\t{name}')
+              except Exception as e:
+                  print('DBSTAT_ERROR='+repr(e))
+              print('-- TABLES AND INDEXES --')
+              for typ,name,tbl in c.execute("SELECT type,name,tbl_name FROM sqlite_master WHERE type IN ('table','index') ORDER BY type,name"):
+                  print(f'{typ}\t{name}\t{tbl}')
+              c.close()
+          except Exception as e:
+              print('SQLITE_ERROR='+repr(e))
+          PY
+
+          sep '05. MARKET HISTORY SQLITE PHYSICAL STRUCTURE'
+          sudo -n python3 - "$HIST" <<'PY'
+          import sqlite3, sys, os
+          p=sys.argv[1]
+          print('PATH='+p)
+          print('FILE_BYTES='+str(os.path.getsize(p) if os.path.exists(p) else -1))
+          try:
+              c=sqlite3.connect(f'file:{p}?mode=ro', uri=True, timeout=30)
+              c.execute('PRAGMA query_only=ON')
+              ps=c.execute('PRAGMA page_size').fetchone()[0]
+              pc=c.execute('PRAGMA page_count').fetchone()[0]
+              fl=c.execute('PRAGMA freelist_count').fetchone()[0]
+              print(f'PAGE_SIZE={ps}')
+              print(f'PAGE_COUNT={pc}')
+              print(f'FREELIST_COUNT={fl}')
+              print(f'FREELIST_BYTES={fl*ps}')
+              print(f'FREELIST_PCT={(fl/pc*100 if pc else 0):.4f}')
+              print('QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+              print('-- DBSTAT TOP OBJECTS --')
+              try:
+                  for name,b,pages in c.execute("SELECT name, SUM(pgsize) bytes, COUNT(*) pages FROM dbstat GROUP BY name ORDER BY bytes DESC LIMIT 40"):
+                      print(f'{b}\t{pages}\t{name}')
+              except Exception as e:
+                  print('DBSTAT_ERROR='+repr(e))
+              c.close()
+          except Exception as e:
+              print('SQLITE_ERROR='+repr(e))
+          PY
+
+          sep '06. OBSERVER ARTIFACT BACKUP RETENTION INVENTORY'
+          ART="$REPO/data/paper_v17/artifacts/observer_v17.db/backups"
+          if [ -d "$ART" ]; then
+            sudo -n find "$ART" -type f -printf '%s\t%TY-%Tm-%Td %TH:%TM\t%p\n' 2>/dev/null | sort -nr | head -n 120 || true
+            echo '-- TOTAL --'
+            sudo -n du -sh "$ART" 2>/dev/null || true
+            echo '-- COUNTS BY DIRECTORY --'
+            for d in "$ART"/*; do [ -d "$d" ] && printf '%s\t' "$d" && sudo -n find "$d" -type f | wc -l; done
+          fi
+
+          sep '07. GENERAL BACKUP CONTENTS'
+          if [ -d /opt/porota-backups ]; then
+            sudo -n du -x -h -d 2 /opt/porota-backups 2>/dev/null | sort -h || true
+          fi
+
+          sep '08. COMPLETION'
+          echo 'AUDIT_STATUS=COMPLETE_READ_ONLY'
+          REMOTE
+          test -s "$REPORT"
+
+      - name: Commit deep audit report
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_DISK_DEEP_AUDIT_RC6_2026-09-07.txt'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$REPORT"
+          git commit -m 'audit: capture RC6 containerd and SQLite disk detail'
+          git push origin HEAD:audit/rc6-disk-usage-20260907
