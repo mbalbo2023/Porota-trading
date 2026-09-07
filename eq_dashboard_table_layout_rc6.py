@@ -76,6 +76,10 @@ def install() -> None:
     # Operator-facing layer for the 07-Sep PAPER go-live.
     import es_dashboard_go_live_ux_rc6 as go_live_ux
     go_live_ux.install()
+    # Preserve the real component colour/state; classify PAPER blocking
+    # independently so an informative YELLOW is not repainted as GRAY.
+    import eu_dashboard_blocking_semantics_rc6 as blocking_semantics
+    blocking_semantics.install()
     # Final observability truth correction: prefer current RC6 snapshots over
     # legacy HF snapshots without touching producers, strategy or DBs.
     import et_dashboard_runtime_truth_fixes_rc6 as runtime_truth
