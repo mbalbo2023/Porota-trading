@@ -1,0 +1,20 @@
+name: RC6 A3 identity mapper validation 2026-09-07
+on:
+  push:
+    branches: [feature/rc6-a3-identity-mapper-20260907]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install -q pytest
+      - run: pytest -q tests/test_a3_identity_mapper_rc6.py
+      - run: python -m py_compile fd_a3_identity_mapper_rc6.py
+      - name: Prove validation only
+        run: |
+          ! grep -Eq 'DO_SSH_KEY|docker |ssh |scp |PPI_|IOL_' .github/workflows/rc6-a3-identity-mapper-validation-20260907.yml
