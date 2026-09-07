@@ -17,7 +17,7 @@ jobs:
         with: {ref: '${{ github.sha }}', fetch-depth: 0}
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
-      - run: python -m pip install -q pytest fastapi requests python-dotenv
+      - run: python -m pip install -q -r requirements.txt
       - name: Exact ancestry and diff scope
         run: |
           set -euo pipefail
