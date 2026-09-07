@@ -2,160 +2,287 @@
 
 **Continuidad:** leer después de `POROTA_TRADING_CHECKPOINT_CANONICO_RC6_2026-09-06_POSTHOTFIX.md`.
 
-## 1. Identidad live que NO cambia por este addendum
+## 1. Identidad vigente
 
-- Branch live: `hotfix/rc6-cedear-us-labor-day-20260906`
-- SHA observer/runtime: `db26c76723bb988c956589c572b87cbcb4191731`
-- Release: `17.0.0-rc6`
-- Modo: `PRODUCTION_PAPER`
-- Ejecución: `SIMULATED`
-- Real money: `BLOCKED`
-- La documentación vive en branch separada; no mover la branch live por documentación.
+### Observer / trading runtime — CONGELADO
+- branch live: `hotfix/rc6-cedear-us-labor-day-20260906`
+- SHA: `db26c76723bb988c956589c572b87cbcb4191731`
+- image: `porota-trading-bot:17.0.0-rc6`
+- release: `17.0.0-rc6`
+- modo: `PRODUCTION_PAPER`
+- ejecución: `SIMULATED`
+- real money: `BLOCKED`
+- observer restart=0, readonly rootfs=true.
 
-## 2. PPI historical — hallazgo de calidad
+### Dashboard — overlay operativo separado
+- branch: `ux/rc6-dashboard-go-live-20260906`
+- SHA dashboard: `318043805a9736eda77874ba72ee7abc93fcb0f1`
+- image activa: `porota-trading-dashboard:17.0.0-rc6-go-live-ux2`
+- workflow de deploy: `34069093749`
+- resultado: `SUCCESS`
+- observer no fue reiniciado;
+- estrategia/gates no cambiaron;
+- DB observer/history quick_check=ok;
+- `real_orders_sent=0`.
 
-La ingesta PPI sí corre. El problema observado ya no es ausencia de scheduler sino efectividad/calidad del material recibido y de la priorización del universo.
+La documentación continúa en branch `checkpoint/rc6-20260906-posthotfix`; no mover la branch live por documentación.
 
-Evidencia de auditoría read-only de la noche:
-- store `history_canonical_v2`: ~48.323 filas FULL_OHLC;
-- fuente PPI Production History: ~47.440 filas;
-- fuente Data912: ~883 filas;
-- evidencia close-only preservada: ~7.821 filas;
-- rechazos acumulados observados: ~210.345;
-- causas dominantes observadas: `OHLC_INCONSISTENT`, `HIGH_NONPOSITIVE`, `OPEN_NONPOSITIVE`;
-- el History Store v2 conserva las filas válidas y rechaza filas defectuosas individualmente; no se deben relajar validadores para inflar coverage;
-- el indicador legacy de cobertura completa por identidad (`production_history`) subestima el material útil almacenado porque una serie parcial no reemplaza la última serie declarada completa, aun cuando History Store v2 sí rescata barras válidas;
-- se observó que la selección de lotes puede incluir identidades ya completas junto con identidades todavía necesitadas, por lo que existe margen para mejorar priorización sin aumentar llamadas al broker.
+## 2. Priming nocturno — COMPLETADO
 
-### Pendiente P1
+Workflow `RC6 night data priming 2026-09-06`, run `34068494819`: `SUCCESS`.
 
-Diseñar/testear una priorización de `_historical_targets()` que favorezca, en este orden aproximado y sin fuzzy matching:
-1. `NO_ATTEMPT` / sin evidencia canónica;
-2. `ERROR` transitorio;
-3. `EMPTY_OR_INVALID`;
-4. `PARTIAL` con menor cantidad de filas válidas;
-5. refresco de identidades ya completas sólo cuando corresponda por freshness/TTL.
+PPI historical bounded:
+- estados antes: `EMPTY_OR_INVALID=10`, `ERROR=4`, `PARTIAL=169`, `VALID_PAYLOAD=63`;
+- lote previo: 6/40 completos, 6.896 filas válidas vistas;
+- lote forzado: 11/40 completos, 8.108 filas válidas vistas;
+- estados después: `EMPTY_OR_INVALID=10`, `ERROR=2`, `PARTIAL=169`, `VALID_PAYLOAD=65`;
+- la cobertura legacy completa permaneció 67/246;
+- `real_orders_sent=0`.
 
-No desplegar un cambio de scheduler histórico en el hot path durante la rueda del lunes. Primero tests y prueba read-only/offline.
+Data912 batch 40:
+- selected=40;
+- successful=2;
+- without_history=20;
+- failed=18;
+- canonical_updates potenciales=243;
+- protected_rows=243;
+- versions_appended=0;
+- la precedencia existente protegió las velas PPI; no hubo overwrite silencioso.
 
-## 3. Priming nocturno
+Candle integrity:
+- GREEN;
+- 5.000 versiones chequeadas;
+- dirty_bars=0;
+- quick_check=ok;
+- read_only=true;
+- worker RUNNING, cursor 49.764.
 
-Workflow: `RC6 night data priming 2026-09-06`, run `34068494819`.
+Conclusión: priming operacionalmente GREEN. No seguir forzando PPI inmediatamente; respetar TTL/backoff.
 
-Estado del workflow: `SUCCESS`.
+Documento de evidencia: `RC6_NIGHT_DATA_PRIMING_EVIDENCE_2026-09-06.md`.
 
-Objetivo: PPI historical bounded + Data912 reconciliation + candle integrity + pre/postflight, manteniendo observer exacto y `real_orders_sent=0`.
+## 3. PPI historical — RCA profundo de calidad
 
-Pendiente de continuidad: conservar los resultados before/after de esta corrida como evidencia M3 y no volver a forzar PPI inmediatamente; respetar TTL/backoff.
+Workflow read-only `RC6 history quality deep audit 2026-09-06`, run `34069228668`: `SUCCESS`, `NETWORK_CALLS=NO`, `RUNTIME_CHANGED=NO`.
 
-## 4. Dashboard para el Go Live
+### Rechazos acumulados al último corte: 218.878
 
-Branch UX separada: `ux/rc6-dashboard-go-live-20260906`.
+Por causa:
+- `OHLC_INCONSISTENT`: 145.292 filas / 179 identidades;
+- `HIGH_NONPOSITIVE`: 61.188 / 87;
+- `OPEN_NONPOSITIVE`: 12.398 / 2.
 
-Cambios candidatos preparados:
-- panel ejecutivo con últimas 5 operaciones PAPER de días operativos;
-- no presentar sábado/domingo/feriado como trading normal;
-- retirar bloque técnico `Motores / workers` de En Vivo;
-- Histórico más operativo y tabular;
-- BCRA/INDEC/macro y performance vs inflación dentro de Reportes;
-- Configuración alineada a parámetros efectivos RC6;
-- corrección de selección de snapshots de introspección RC6 (el dashboard anterior buscaba sólo patrón HF y podía ignorar snapshots RC6 actuales);
-- tablas compactas/responsive/Voice Access para las vistas solicitadas;
-- logs presentados con semántica de evidencia y no convertir `0 bytes` automáticamente en GREEN.
+Por familia:
+- CEDEARS `OHLC_INCONSISTENT`: 123.485;
+- CEDEARS `HIGH_NONPOSITIVE`: 51.752;
+- CEDEARS `OPEN_NONPOSITIVE`: 12.398;
+- ACCIONES `OHLC_INCONSISTENT`: 21.810;
+- ACCIONES `HIGH_NONPOSITIVE`: 9.436.
 
-### Resultado de validación v2
+Existe fuerte concentración diagnóstica en variantes cuyo símbolo termina en C/D, pero **no se debe inferir equivalencia financiera ni copiar la serie base**. Ejemplos de alto rechazo: AVYC, IRSAC, VODC, AMATC, NVSC, GGALC, AAPLC, YPFDC.
 
-Run `34067923761`:
-- build: GREEN;
-- compile: GREEN;
-- targeted dashboard regression tests: GREEN;
-- deploy: NO ACTIVADO; falló durante preview antes de tocar producción.
+History Store v2 sigue comportándose correctamente:
+- conserva cada barra FULL_OHLC válida;
+- rechaza cada fila defectuosa con causa explícita;
+- puede preservar close-only por separado;
+- ninguna fila histórica concede READY_PAPER ni precio de ejecución.
 
-Diagnóstico posterior run `34068457128`:
-- el candidato puede renderizar directamente `home_page` con datos reales;
-- varias rutas HTTP de la preview fallaron porque la preview montó `/app/data` read-only mientras componentes legacy de `o_dashboard/ac_db` intentan pragmas SQLite (`WAL` / `synchronous`) sobre `trading_system.db`;
-- producción quedó sin cambios: observer y dashboard continuaron en la imagen RC6 live, restart=0;
-- por tanto el fallo es del diseño de la preview no-equivalente al runtime, no evidencia de corrupción del runtime productivo.
+### Hallazgo de eficiencia de `_historical_targets()`
 
-### Regla para continuar el dashboard
+Primer lote de 40 según el orden actual después del priming:
+- 22 identidades ya `VALID_PAYLOAD` / legacy complete;
+- 18 `PARTIAL`.
 
-No activar el candidato hasta tener una prueba product-equivalent segura. Preferencia:
-- validar directamente todos los renderers modificados contra data real en modo read-only;
-- comprobar las rutas HTTP no modificadas contra el dashboard productivo actual;
-- activar únicamente el container dashboard;
-- postflight inmediato de todas las rutas críticas;
-- si el candidato HTTP falla tras activación, volver a levantar el dashboard con la imagen RC6 base sin reiniciar observer.
+Una prioridad diagnóstica, sin ejecutar ni persistir cambio, produjo:
+- 0 completas;
+- 10 `EMPTY_OR_INVALID`;
+- 30 `PARTIAL`.
 
-El observer/estrategia/gates no se modifican por esta tarea.
+Conclusión: hoy casi la mitad de un batch puede gastarse refrescando identidades ya completas. Es posible mejorar mucho la cobertura sin incrementar el número de llamadas.
 
-## 5. InvertirOnline (IOL) como nueva fuente histórica — NUEVO PENDIENTE
+### Hallazgo arquitectónico adicional
 
-Se incorpora formalmente la investigación de IOL como fuente adicional/independiente para históricos y Contract Evidence.
+Los intentos PPI históricos actuales observados corresponden sólo a:
+- ACCIONES: 55 identidades;
+- CEDEARS: 191 identidades.
 
-### Evidencia pública/official encontrada 2026-09-06
+No aparecen BONOS PPI en `production_history_attempts`, aunque History Store tiene 25 BONOS / 883 filas desde Data912.
 
-IOL publica una API oficial que declara:
-- datos de mercado y cotizaciones en tiempo real;
-- series de cotizaciones históricas;
+La causa visible es que `_historical_targets()` usa el `candidate_universe` filtrado por `can_simulate=1 OR INDICES`. Esto mezcla dos conceptos que deben separarse:
+
+- `PAPER_TRADING_UNIVERSE`: qué puede operar/simular el motor;
+- `HISTORY_INGEST_UNIVERSE`: qué familias/instrumentos tienen un contrato histórico verificable y conviene almacenar aunque no sean operables PAPER todavía.
+
+### Pendiente P1 de históricos
+
+Diseñar y probar fuera del hot path:
+1. prioridad por necesidad/freshness, evitando refrescos innecesarios de completos;
+2. separación trading-universe vs history-universe;
+3. contrato histórico por familia, sin forzar OHLC donde no corresponda;
+4. retry/backoff por error y no por simple posición en una rotación;
+5. proof con fuente independiente para series problemáticas;
+6. métricas nuevas de `useful canonical coverage`, distintas de la vieja métrica `VALID_PAYLOAD completo`.
+
+Documento: `RC6_HISTORY_QUALITY_DEEP_AUDIT_2026-09-06.md`.
+
+## 4. Dashboard Go Live — DESPLEGADO Y VALIDADO
+
+### Cambios activos
+
+- panel ejecutivo agrega últimas 5 operaciones PAPER válidas y excluye fechas BYMA no operativas;
+- En Vivo ya no muestra el bloque técnico `5. Motores / workers`;
+- Histórico prioriza store canónico/fuentes/estado de ingesta/últimos intentos y retira `Base objetiva` y `coverage` de la vista del operador;
+- Reportes vuelve a integrar BCRA/INDEC/macro y performance vs inflación;
+- Configuración muestra parámetros efectivos RC6 y `IA intradía=OFF`;
+- Sistema/Introspección prefiere snapshots RC6 actuales en vez de ignorarlos por el patrón legacy HF;
+- el menú lateral de Sistema permanece en drill-down;
+- tablas compactas/responsive/Voice Access se mantienen;
+- logs distinguen ausencia real de evidencia de un estado saludable;
+- un AMARILLO no bloqueante conserva color/estado AMARILLO y se clasifica por separado con `paper_blocking=false`; no se repinta artificialmente a GRIS.
+
+### Deploy v3
+
+Run `34069093749`: `SUCCESS`.
+
+Validaciones:
+- build GREEN;
+- compile GREEN;
+- suite dashboard GREEN;
+- todas las rutas críticas del dashboard anterior respondían 200 antes de activar;
+- render directo del candidato contra datos live pasó en modo read-only;
+- se activó sólo `porota_production_dashboard`;
+- post-activation HTTP matrix GREEN para `/`, `/vivo`, `/historicos`, `/reportes`, `/config`, `/sistema?section=introspeccion`, `/salud`, `/universo-operativo`, `/scalping`, `/instrumentos`, `/aprendizaje`, `/dashboard/logs`;
+- DB postflight `ok|ok|PRODUCTION_PAPER|0`;
+- observer SHA quedó `db26c...`, restart=0;
+- strategy changed=NO;
+- real-order capability=BLOCKED.
+
+### Auditoría de verdad de tarjetas
+
+Workflow `RC6 dashboard card truth audit 2026-09-06`, run `34069373182`: `SUCCESS`.
+
+La auditoría cruzó los valores del dashboard con las tablas SQLite directas y verificó los renderers activos.
+
+Valores observados al corte:
+- observer: `WAITING_MARKET / MARKET_CLOSED / PPI_AUTH=OK / real_orders_sent=0`;
+- DBs observer/history: quick_check=ok;
+- spot readiness=READY;
+- caucion readiness=READY;
+- posiciones cerradas: 26 = 1 WIN / 25 LOSS;
+- learning samples: 26, labeled=26;
+- históricos: 48.323 filas / 261 identidades;
+- PPI fuente: 47.440 / 236;
+- Data912: 883 / 25;
+- scalping worker: WAITING_MARKET;
+- intraday points: 130.862;
+- contratos de volumen confirmados: 198;
+- scalping real_orders_sent=0;
+- universo del último ciclo: selected=20, eligible_total=823, successful=14, recommended_limit=29.
+
+Caja/patrimonio que el dashboard lee de su source-of-truth:
+- ARS: cash `-375964.0007`, pending proceeds `1353617.5893`, equity `977653.5886`, realized cumulative `-22346.4114`;
+- USD: cash/equity `1000`;
+- USD_CCL: cash/equity `1000`;
+- USD_MEP: cash `913.9830`, pending proceeds `84.5530`, equity `998.5360`, realized cumulative `-1.4640`.
+
+Estos valores son PAPER/simulados y la auditoría confirma consistencia UI↔DB; no deben reinterpretarse como saldo PPI real.
+
+Últimas cinco posiciones operativas seleccionadas por la nueva regla al corte:
+`YPFD`, `SUPV`, `BBAR`, `AAPLD`, `GGAL`, todas del 2026-09-03; no aparecen operaciones de fin de semana.
+
+### Estados de salud relevantes al corte
+
+- PPI auth: VERDE;
+- PPI catálogo: VERDE, 824 identidades únicas / 0 búsquedas fallidas en el último refresh observado;
+- PPI historical: AMARILLO, no bloqueante por sí solo;
+- PPI background history: AMARILLO, no bloqueante por sí solo;
+- errores PPI última hora: VERDE / ninguno clasificado;
+- PPI market data: NO_APLICA mientras rueda cerrada;
+- foco PAPER: VERDE 10/10;
+- sampling foco: VERDE;
+- rotación universo: AMARILLO y no bloqueante por sí sola;
+- Economic Gate SHADOW: AMARILLO porque no hay BUY evaluadas en domingo; sigue siendo evidencia SHADOW, no rentabilidad demostrada;
+- Telegram: VERDE según último informe persistido, pero timestamp antiguo (22-Ago) debe refrescarse/confirmarse en preopen;
+- BCRA/INDEC: VERDE;
+- BYMA Open Data: VERDE;
+- SRE snapshot: AMARILLO aunque `quick_check=ok` y había ~43,4% libre; revisar semántica/freshness del SRE card en preopen para que el color corresponda a la causa real.
+
+## 5. InvertirOnline (IOL) — fuente histórica independiente / Contract Evidence
+
+Se incorpora como P1 formal.
+
+### Hechos confirmados en documentación oficial IOL al 2026-09-06
+
+La API oficial declara:
+- cotizaciones actuales e históricas;
 - históricas ajustadas;
-- familias del mercado argentino que incluyen Acciones, Bonos, Opciones, Cauciones, Futuros, Monedas y Cheques de Pago Diferido;
+- Acciones, Bonos, Opciones, Cauciones, Futuros, Monedas y Cheques de Pago Diferido del mercado argentino;
 - JSON sobre HTTPS;
-- autenticación con bearer token + refresh token;
-- bearer de vida corta (~15 minutos);
-- requiere cuenta IOL, habilitación del servicio API y aceptación de términos;
-- el entorno productivo de la API también contiene métodos operativos, por lo cual cualquier integración POROTA debe ser estrictamente GET/read-only con allowlist y bloqueo local de rutas de órdenes.
+- cuenta IOL + activación previa del servicio;
+- bearer token válido ~15 minutos + refresh token;
+- la API productiva también permite operar, y la propia documentación advierte que las acciones allí impactan en entorno real.
 
-Endpoint de serie histórica documentado públicamente en implementaciones que reflejan la API v2:
-`GET /api/v2/{mercado}/Titulos/{simbolo}/Cotizacion/seriehistorica/{fechaDesde}/{fechaHasta}/{ajustada}`
+El MCP oficial IOL ofrece un permiso explícito `solo lectura`, default-deny para capacidades operativas y, entre sus herramientas GET, `get_price_history` (OHLCV), `get_asset_info`, `get_options_chain`, `get_caucion_rates`, `get_fixed_income_analytics`, `get_fci_funds`, etc.
 
-IOL además publica actualmente un MCP oficial con opción explícita de permiso `solo lectura`; dentro de las herramientas read-only declara `get_price_history`, `get_asset_info`, `get_options_chain`, `get_caucion_rates`, `get_fixed_income_analytics`, FCI y otras consultas. Esto puede ser útil como vía de investigación/contract evidence, pero no debe asumirse automáticamente como mecanismo de ingesta runtime sin una integración gobernada.
+Tarifa oficial observada: API bonificada hasta 25.000 API calls por mes; luego aplica el costo publicado por IOL.
 
-Tarifa pública observada: servicio API bonificado hasta 25.000 API calls por mes; luego existe cargo según tarifario vigente. Por ello cualquier uso debe tener cache, batch lógico, TTL y presupuesto de llamadas.
+**No queda registrado como canónico ningún endpoint raw de serie histórica cuya forma exacta no haya sido verificada en la documentación oficial autenticada/Explore.** El proof debe tomar el endpoint/contrato directamente de la documentación oficial habilitada para la cuenta.
 
-### Hipótesis de valor para POROTA
+### Valor esperado para POROTA
 
-IOL es un candidato fuerte como **segunda fuente histórica independiente** porque puede permitir:
-- contraste PPI vs IOL por símbolo/fecha;
-- rescate de huecos donde PPI devuelva payload parcial o filas inválidas;
-- comparar series `ajustada` vs sin ajustar, especialmente CEDEARs/acciones;
-- validar si anomalías `HIGH_NONPOSITIVE` / `OHLC_INCONSISTENT` son específicas de PPI o del instrumento/mercado;
-- ampliar Contract Evidence de familias, símbolos, mercados y metadatos.
+IOL es candidato fuerte a segunda fuente histórica porque permitiría:
+- PPI vs IOL por identidad/fecha;
+- distinguir defectos de PPI de semántica real del instrumento;
+- estudiar variantes C/D con otra fuente sin hacer equivalencias heurísticas;
+- comparar ajustada vs no ajustada;
+- contrastar OHLCV/gaps/freshness;
+- cubrir familias que hoy no entran en el universo PPI historical del observer;
+- enriquecer Contract Evidence con metadata de instrumento, opciones, cauciones, renta fija y FCI.
 
-### Política propuesta para IOL
+### Política IOL obligatoria
 
-Antes de integrarlo al History Store:
-1. confirmar acceso API en una cuenta IOL y aceptar términos del servicio;
-2. construir `IOL_READONLY_GUARD` con allowlist exclusiva de GET de market data/history; ningún POST/DELETE operativo accesible;
-3. cero reutilización de credenciales fuera de secrets; no guardar tokens en Git;
-4. hacer proof con un conjunto pequeño de instrumentos que hoy presentan problemas en PPI y controles sanos;
-5. comparar campos, timezone, ajuste, market/symbol grammar, volumen y OHLC;
-6. mapear identidad IOL → identidad canónica POROTA sólo con reglas determinísticas verificadas;
-7. guardar provenance `IOL_HISTORY` separado; no sobrescribir PPI silenciosamente;
-8. definir precedencia/reconciliación en History Store v2;
-9. budget de llamadas mensual + cache por período;
-10. no usar IOL para live/sizing/órdenes mientras este pendiente se evalúa; objetivo inicial: históricos + evidencia.
+Antes de cualquier integración:
+1. acceso API habilitado/aceptación de términos;
+2. credenciales/tokens sólo en secrets;
+3. `IOL_READONLY_GUARD` con allowlist positiva de host, método y rutas GET permitidas;
+4. cliente histórico separado de cualquier cliente operativo;
+5. ningún POST/DELETE/place/cancel accesible desde el proceso history;
+6. auditoría de request/response sin secretos;
+7. cache/TTL/backoff + budget de calls;
+8. mapping IOL→Porota determinístico, fail-closed;
+9. provenance `IOL_HISTORY` separado;
+10. primero proof sin modificar canonical; sólo después decidir precedencia.
 
-### Scraping IOL
+El código actual de History Store ya conoce un source rank `IOL=30`, pero **no existe todavía integración IOL en el repositorio**. PPI hoy tiene rank 10 y Data912 rank 50. La precedencia final debe ser revisada con evidencia antes de escribir IOL al store.
 
-No usar scraping como fuente primaria si la API oficial cubre el dato. IOL tiene páginas web públicas de datos históricos que pueden servir para spot-check/Contract Evidence, pero el scraping es más frágil y debe considerarse sólo complementario.
+## 6. IOL scraping — criterio
 
-Uso aceptable a investigar:
-- verificar visualmente columnas/campos/ajustes publicados;
-- Contract Evidence de familias o metadatos no expuestos claramente por API;
-- detectar divergencias API vs web.
+Prioridad: **API oficial / MCP read-only antes que scraping**.
 
-No convertir el scraping en sustituto automático de la API sin revisar términos, estabilidad, rate limits y autorización. La automatización robótica puede estar restringida en determinados términos/servicios del sitio; por eso API/MCP read-only tienen prioridad.
+El scraping sólo se considera complementario para Contract Evidence/spot-check cuando el dato necesario no pueda obtenerse adecuadamente por API. La web puede servir para:
+- verificar columnas/metadatos visibles;
+- confirmar contratos/ajustes;
+- contrastar API vs UI;
+- documentar familias/campos que no estén claros en el endpoint estructurado.
 
-### Prioridad
+No se aprueba scraping masivo IOL como ingesta primaria. Razones:
+- HTML/JS es más frágil que API;
+- menor claridad de rate limits/contrato;
+- términos IOL contemplan medidas ante técnicas automáticas/robóticas cuando sean consideradas fraudulentas;
+- existen restricciones de redistribución/publicación para determinados datos de mercado.
 
-- IOL historical API proof: `P1` para mejorar M3/history quality, pero **no blocker del PAPER del lunes**.
-- IOL scraping/Contract Evidence: `P1/P2` según huecos que queden después del proof de API.
-- Real money permanece `BLOCKED`.
+Si se investiga web IOL: read-only, frecuencia baja, sin operar, sin modificar cuenta/2FA, sin guardar cookies/tokens, y sólo evidencia necesaria.
 
-## 6. Continuidad inmediata
+Documento dedicado: `IOL_HISTORY_AND_CONTRACT_EVIDENCE_RESEARCH_2026-09-06.md`.
 
-1. finalizar y registrar métricas del priming nocturno;
-2. corregir la estrategia de validación/deploy dashboard sin tocar observer;
-3. mantener PPI backoff;
-4. mañana preopen sigue exigiendo gate completo 10:15–10:30;
-5. luego del Go Live PAPER, ejecutar proof read-only de IOL en branch/runner separado, nunca mezclado con el hot path sin evidencia previa.
+## 7. Continuidad inmediata para mañana
+
+1. No forzar más PPI esta noche; respetar TTL/backoff.
+2. No forzar A3 hasta corregir mapping de identidad.
+3. No forzar browser Contract Evidence fuera de DUE.
+4. Dashboard UX `ux2` queda activo; observer permanece congelado en `db26c...`.
+5. Preopen 10:15–10:30 debe volver a validar todas las fuentes/tarjetas con timestamps actuales, especialmente Telegram/SRE/PPI/DB/calendar/real_orders.
+6. El Economic Gate SHADOW y warnings no bloqueantes deben distinguirse de blockers operativos reales.
+7. Después del Go Live PAPER, ejecutar proof IOL read-only sobre una cohorte pequeña y comparar PPI vs IOL antes de integrar IOL a History Store.
+8. Diseñar P1 de históricos: priorización + history universe separado del trading universe.
+9. Real money permanece `NO-GO / BLOCKED`.
