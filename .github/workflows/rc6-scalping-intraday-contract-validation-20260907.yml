@@ -7,12 +7,12 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
-      - run: python -m pip install -q pytest
+      - run: python -m pip install -q pytest fastapi requests
       - run: python -m pytest -q tests/test_intraday_contract_policy_rc6.py tests/test_intraday_scalping_hf3.py
       - run: python -m py_compile fg_intraday_contract_policy_rc6.py
       - run: python -c "import fg_intraday_contract_policy_rc6 as m; m.assert_fail_closed(); print('INTRADAY_POLICY=GREEN_OFFLINE')"
