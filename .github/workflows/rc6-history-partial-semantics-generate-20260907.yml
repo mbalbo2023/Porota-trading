@@ -1,0 +1,46 @@
+name: RC6 history partial semantics generate 2026-09-07
+on:
+  push:
+    branches: [fix/rc6-history-partial-semantics-20260907]
+    paths:
+      - 'scripts/rc6_patch_history_partial_semantics.py'
+      - 'tests/test_rc6_history_partial_semantics.py'
+      - '.github/workflows/rc6-history-partial-semantics-generate-20260907.yml'
+permissions:
+  contents: write
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: 'fix/rc6-history-partial-semantics-20260907', fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify exact live ancestry
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 6f47ec943d7b18756d93f17364903def1d7a1746 HEAD
+      - name: Generate source change
+        run: python scripts/rc6_patch_history_partial_semantics.py
+      - name: Compile and focused tests
+        run: |
+          python -m pip install -q pytest fastapi requests
+          python -m py_compile bf_production_paper_observer.py
+          python -m pytest -q tests/test_rc6_history_partial_semantics.py
+      - name: Guard narrow generated diff
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "bf_production_paper_observer.py"
+          grep -q 'partial_with_valid_evidence' bf_production_paper_observer.py
+          grep -q 'PARTIAL conserva evidencia válida' bf_production_paper_observer.py
+          if grep -q 'success=bool(successes)' bf_production_paper_observer.py; then exit 1; fi
+          echo HISTORY_PARTIAL_GENERATED=GREEN
+      - name: Commit generated source
+        run: |
+          set -euo pipefail
+          git config user.name 'mbalbo2023'
+          git config user.email '151845499+mbalbo2023@users.noreply.github.com'
+          git add bf_production_paper_observer.py
+          git commit -m 'fix(rc6): distinguish partial history evidence from hard failures'
+          git push origin HEAD:fix/rc6-history-partial-semantics-20260907
