@@ -1,276 +1,140 @@
 # POROTA TRADING — PENDIENTES GO LIVE PAPER Y SEMANA
 
-**Corte:** 2026-09-06 19:30 AR  
+**Corte actualizado:** 2026-09-06 22:18 AR  
 **Objetivo inmediato:** Go Live `PRODUCTION_PAPER` del lunes 2026-09-07 condicionado a preopen GREEN.  
-**Runtime base:** `17.0.0-rc6`  
-**Hotfix live probado:** `db26c76723bb988c956589c572b87cbcb4191731`  
+**Runtime:** `17.0.0-rc6`  
+**Observer live:** `db26c76723bb988c956589c572b87cbcb4191731`  
+**Dashboard RC6 final:** `da2c87936d90cda17512de3bc529d13f4693c1c1` / `porota-trading-dashboard:17.0.0-rc6-go-live-final`  
 **Modo:** `PRODUCTION_PAPER` / `SIMULATED` / real-money `BLOCKED`.
 
-> Este archivo concentra los trabajos que deben auditarse mañana y durante la semana. No autoriza dinero real ni reemplaza el preopen. Toda evidencia nueva debe registrarse también en `/validacion` y en el checkpoint canónico.
+> Este archivo se lee junto con `POROTA_TRADING_CHECKPOINT_CANONICO_RC6_2026-09-06_POSTHOTFIX.md`. El checkpoint canónico actualizado al cierre nocturno prevalece ante cualquier contradicción histórica.
 
----
+## 1. CERRADO ESTA NOCHE
 
-## 1. MAÑANA — PREOPEN 10:15–10:30 AR
+- Hotfix Labor Day para todos los CEDEARs USA: deployed/validado.
+- Auditoría extensa de ingesta/históricos/aprendizaje: realizada.
+- RCA de PPI historical: ingesta funcional; problema concentrado en calidad/semántica/rechazos y priorización, no corrupción general del store.
+- Auditoría de tarjetas/source-of-truth del dashboard: realizada.
+- Dashboard RC6 final: deployed GREEN; matriz HTTP completa GREEN.
+- Telegram dashboard: usa evidencia runtime vigente del notification worker/outbox/jobs.
+- SRE dashboard: muestra AMARILLO real con causa explícita de latencia y no lo confunde con corrupción/disco.
+- Introspección dashboard: selecciona snapshots RC6 actuales y usa ventana coherente con productor horario.
+- Control postdeploy de introspección automática: GREEN; snapshot 22:15 AR generado después del deploy y mostrado como FRESH.
+- Navegación `system-nav` preservada en drill-down.
+- Limpieza de disco controlada completada sin prune/git-clean/VACUUM ciegos.
+- Política de recovery: GitHub/GitHub Actions por SHA exacto; no rollback local como política de retención.
+- Investigación IOL: arquitectura legacy existente identificada y plan GET-only RC6 definido.
 
-### 1.1 Gate operativo obligatorio
-- Verificar branch/SHA/image exactos y que el runtime siga en el hotfix RC6 validado.
-- Observer y dashboard running, restart=0; observer `readonly=true`.
-- `/health=ok`.
-- observer DB y history DB `quick_check=ok`.
-- `PRODUCTION_PAPER`, `SIMULATED`, `REAL_ORDER_CAPABILITY=BLOCKED`.
-- `real_orders_sent=0`.
-- PPI auth GREEN/read-only.
-- Disco por encima del gate mínimo y sin crecimiento anómalo.
-- Timers RC6 enabled/active y sin timers RC4 activos.
-- Preopen RC6 GREEN antes de permitir PAPER.
+## 2. MAÑANA — PREOPEN 10:15–10:30 AR
 
-### 1.2 Calendarios y días no operables — P0 lógico a verificar
-- El motor NO debe abrir/operar en sábados, domingos ni feriados del mercado local.
-- En feriados de mercado subyacente extranjero, aplicar la política específica por familia; para 2026-09-07 todos los CEDEARs con subyacente USA deben quedar `HOLD — UNDERLYING_MARKET_CLOSED: US_LABOR_DAY` para nuevas aperturas.
-- Las acciones argentinas no deben quedar bloqueadas por Labor Day de USA si BYMA local está abierto.
-- La ingesta histórica/background debe poder continuar fuera de rueda conforme a su política, sin confundir `mercado cerrado` con `ingesta deshabilitada`.
-- Auditar que el panel ejecutivo no fabrique ni muestre operaciones en fechas no operables. Mostrar como máximo las últimas cinco operaciones reales/PAPER válidas.
+Gate obligatorio:
+- observer branch/SHA exactos `hotfix/rc6-cedear-us-labor-day-20260906` / `db26c...`;
+- dashboard RC6 final running, restart=0;
+- observer running, restart=0, readonly=true;
+- `/health=ok`;
+- observer DB/history DB `quick_check=ok`;
+- `PRODUCTION_PAPER` / `SIMULATED` / real-order capability BLOCKED;
+- `real_orders_sent=0`;
+- PPI auth GREEN/read-only;
+- disk por encima de gate y sin crecimiento anómalo;
+- timers RC6 enabled/active;
+- BYMA calendar local GREEN;
+- CEDEAR USA: nuevas aperturas HOLD por `US_LABOR_DAY`;
+- acciones locales no bloqueadas por feriado USA cuando BYMA está abierto;
+- field test Samsung/Voice Access sobre dashboard final.
 
-### 1.3 Ingesta e históricos — prueba de funcionamiento real
-Verificar cada capa con evidencia de avance, no sólo presencia de timers:
-- PPI real-time quotes/snapshots: freshness, cantidad de símbolos, último timestamp, errores y staleness.
-- Candles intradía: cursor de snapshots, última vela, integridad OHLC, gaps, duplicados y candle-integrity.
-- PPI historical: attempts, `VALID/PARTIAL/EMPTY_OR_INVALID/ERROR`, filas incorporadas, cobertura y causas de rechazo.
-- Data912: reconciliación, provenance, fallback controlado y ausencia de mezcla con PPI.
-- A3: jobs diarios/reconcile/weekend, checkpoints, provenance, cobertura y `ALIGNMENT_UNVERIFIED`.
-- Contract Evidence/scraping: scheduler, estado DUE/NOT_DUE, auth/2FA/stale fail-closed, métodos GET/HEAD/OPTIONS solamente, cero acciones de orden.
-- Históricos canónicos: `quick_check`, rango temporal, identidades, fuentes y versionado.
-- Backfill: comprobar progreso entre dos snapshots horarios para demostrar avance real.
+Si cualquiera de los invariantes críticos falla: NO iniciar PAPER hasta resolver/rollback gobernado. No improvisar cambios durante rueda.
 
-### 1.4 Aprendizaje
-- Confirmar que IA intradía permanece OFF.
-- Confirmar collector SHADOW `read_only=true`, `real_money_authorized=false`, `automatic_promotion=false`.
-- Registrar `would_allow/would_block`, winners/losers, PnL PAPER y contrafactual por gate.
-- Confirmar que Expectancy, régimen y concentración siguen SHADOW/observación y no se autopromueven.
-- Verificar que los learning samples reciban operaciones cerradas y timestamps/provenance válidos.
-
-### 1.5 Dashboard/operabilidad antes de apertura
-- Verificar `snapshot`: actualmente se reportó “no disponible”; encontrar causa y corregir sin ocultar un fault real.
-- Verificar logs observer/bot: actualmente se reportan 0 bytes; determinar si es un problema de lectura/ruta/UX o falta real de archivo.
-- Field test Samsung/Voice Access de navegación esencial.
-
----
-
-## 2. DURANTE LA RUEDA 10:30–17:00 AR
+## 3. DURANTE LA RUEDA 10:30–17:00 AR
 
 - PAPER only; ninguna orden real.
-- No cambiar código/configuración durante la rueda salvo incidente que requiera rollback.
-- Monitorear PPI auth, quotes, freshness, decisiones, gates SHADOW, fills PAPER, posiciones, marks, PnL y realismo de ejecución.
-- Verificar que CEDEARs USA no abran nuevas posiciones el 2026-09-07 pero sí sigan siendo observados/registrados.
-- Verificar que acciones locales y otras familias habilitadas funcionen según calendario/contrato.
-- Vigilar candles, históricos y backfill sin que los jobs background bloqueen el hot path PPI.
-- Verificar introspección/early-warning y distinguir warning informativo de incidente accionable.
-- Verificar primera ejecución real DUE de Contract Evidence cuando corresponda; si auth/2FA/stale falla, debe cerrar fail-closed.
+- No cambiar código/configuración salvo incidente.
+- Monitorear PPI auth, quotes/freshness, decisiones, gates SHADOW, fills, posiciones, marks y PnL.
+- Confirmar que CEDEARs USA se observen pero no abran nuevas posiciones.
+- Verificar que acciones/locales y demás familias habilitadas sigan política de calendario/contrato.
+- Vigilar candles/history/backfill sin bloquear el hot path.
+- Observar introspección horaria y early-warning.
+- Verificar primera ejecución Contract Evidence realmente DUE si corresponde.
 - Registrar evidencia por hora en `/validacion`.
 
----
+## 4. CIERRE 17:00+
 
-## 3. CIERRE 17:00+
-
-- Reconciliar operaciones PAPER, posiciones, marks y PnL.
+- Reconciliar PAPER, posiciones, marks y PnL.
 - Confirmar `real_orders_sent=0`.
-- Ejecutar/observar postclose historical ingestion y comprobar avance de cobertura.
-- Revisar candle integrity del día.
-- Comparar PPI historical antes/después y registrar errores/reintentos.
-- Registrar aprendizaje SHADOW y contrafactual.
-- Actualizar `/validacion`, lecciones, blockers y siguiente acción.
+- Observar postclose historical ingestion y avance real.
+- Candle integrity del día.
+- Comparar PPI historical antes/después.
+- Registrar learning SHADOW/contrafactual.
+- Actualizar `/validacion` y checkpoint.
 
----
+## 5. P1 — HISTÓRICOS / DATOS
 
-## 4. P1 DE DATOS YA IDENTIFICADOS
+### PPI historical
+- mejorar priorización de identidades incompletas y reducir ciclos sobre series ya cubiertas;
+- retry/backoff acotado;
+- clasificar `OHLC_INCONSISTENT`, `HIGH_NONPOSITIVE`, `OPEN_NONPOSITIVE` y errores JSON/transitorios;
+- mantener validación fail-closed;
+- no aceptar datos inválidos para elevar coverage.
 
-### 4.1 A3 identity alignment
-**Estado:** P1, no blocker del PAPER del lunes.
+### IOL_HISTORY_READONLY
+- construir cliente aislado GET-only;
+- no activar `j_main.py` legacy;
+- no exponer POST de `estimar_operacion()`;
+- proof pequeño PPI↔IOL sin persistencia canonical inicial;
+- comparar OHLCV, gaps, <=0, adjusted/unadjusted, identidad y divergencia;
+- si el proof es bueno, integrar como fuente separada al History Store v2 con provenance/versionado;
+- scraping IOL sólo para Contract Evidence/spot checks si API insuficiente y términos lo permiten; no scraping masivo histórico.
 
-Evidencia observada:
-- servicio/conexión A3 responden;
-- primera ejecución controlada `WEEKEND_DEEP` seleccionó 40 y terminó sin fallos de transporte;
-- 40/40 quedaron `ALIGNMENT_UNVERIFIED`;
-- no se incorporaron filas A3 al histórico canónico;
-- ejemplo de identidad: PPI `DLR/SEP26` vs A3 `DLR092026`.
+### A3
+- corregir identity alignment determinístico PPI↔A3;
+- preservar símbolo A3 original;
+- mantener `ALIGNMENT_UNVERIFIED` ante ambigüedad;
+- tests antes de nueva ingesta.
 
-Pendiente:
-- construir mapping canónico producto + vencimiento + mercado/familia;
-- preservar siempre el símbolo A3 original como provenance;
-- no hacer matching ambiguo;
-- mantener fail-closed en `ALIGNMENT_UNVERIFIED`;
-- agregar tests y luego repetir ingesta controlada.
+### Contract Evidence
+- primera ejecución realmente DUE todavía debe observarse;
+- browser/auth fuera de DUE no se fuerza;
+- read-only/fail-closed.
 
-### 4.2 PPI historical coverage/calidad
-**Estado:** P1, no blocker del hot path PAPER.
+## 6. P1 — OPERACIÓN / ARQUITECTURA
 
-Última evidencia registrada:
-- store canónico sano;
-- PPI historical continúa parcial;
-- investigar concentración de rechazos `HIGH_NONPOSITIVE` y casos `OHLC_INCONSISTENT`;
-- clasificar respuestas JSON defectuosas/transitorias por instrumento;
-- continuar backfill bounded con retry/backoff;
-- no contaminar el store aceptando datos inválidos sólo para elevar cobertura.
-
-### 4.3 Contract Evidence RC6
-- Verificar primera ejecución DUE real.
-- Mantener read-only y fail-closed.
-- No forzar browser autenticado fuera de política sólo para obtener un GREEN artificial.
-
----
-
-## 5. LIMPIEZA DE DISCO — HACER CON EVIDENCIA, NO A CIEGAS
-
-Objetivo: eliminar únicamente lo que no sea necesario para funcionamiento, rollback, auditoría o continuidad RC6.
-
-Secuencia obligatoria:
-1. `dbstat`/atribución de espacio por DB y tabla.
-2. Inventario de imágenes Docker, capas, contenedores detenidos, build cache y volúmenes.
-3. Clasificar los artefactos untracked operacionales y backups por fecha/función.
-4. Confirmar qué imagen de rollback debe preservarse.
-5. Definir retention por `trading_day_ar` y por tipo de evidencia.
-6. Borrar sólo elementos explícitamente clasificados como prescindibles.
-7. Verificar DB/health/runtime y espacio después.
-
-Prohibido como limpieza genérica:
-- `docker system prune`;
-- `git clean`;
-- `VACUUM` ciego;
-- borrar backups/artefactos sin inventario previo.
-
----
-
-## 6. MEJORAS VISUALES / UX SOLICITADAS
-
-### Panel ejecutivo
-- No mostrar operaciones de sábados, domingos o feriados como si fueran actividad válida.
-- Mostrar sólo las últimas cinco operaciones.
-- `Caja y patrimonio por moneda`: convertir a tabla.
-
-### En vivo
-- Quitar el bloque/contador de workers (dato técnico que no aporta al operador).
-
-### Histórico de trading
-- Convertir a tabla la presentación principal.
-- Retirar de la vista operativa `universo por moneda y familia` si no aporta decisión.
-- Retirar de la vista operativa `caja y patrimonio por moneda` si duplica información.
-- Eliminar `base objetiva` de la vista histórica por irrelevante para operador.
-- Eliminar `cobertura` de esa vista si no aporta al operador; mantener métricas técnicas donde correspondan para auditoría.
-
-### Universo operativo
-- `Matriz por familia`: convertir a tabla legible/responsive.
-
-### Scalping
-- `Contrato intradiario`: convertir a tabla.
-
-### Instrumentos y contratos
-- Convertir a tabla.
-
-### Aprendizaje
-- `Cobertura empírica`: convertir a tabla.
-
-### Sistema
-- Corregir navegación: al hacer drill-down en introspección no debe desaparecer el menú izquierdo.
-- Corregir `snapshot no disponible` o explicar claramente el estado real.
-- `Salud de APIs`: convertir a tabla.
-- `Jobs internos`: convertir a tabla.
-- `Scraping`: convertir a tabla.
-- `Backups`: convertir a tabla.
-- Actualizar `Configuración` para reflejar variables reales de RC6 y ocultar/deprecar las que ya no aplican.
-- Investigar logs observer/bot mostrados como 0 bytes.
-
-### Reportes macro
-- Recuperar/ubicar en Reportes la información BCRA, INDEC y otros indicadores macro.
-- Recuperar la comparación mensual de performance del bot vs inflación, con fuente, fecha y metodología visibles.
-
-Todas las tablas deben ser responsive, Voice Access friendly, sin scroll horizontal global y con controles textuales claros.
-
----
-
-## 7. `/validacion` — CÓMO COMPLETAR HITOS
-
-No completar un hito por “sensación”; cerrarlo por evidencia reproducible.
-
-### M0 Infraestructura/capacidad
-Puede avanzar materialmente con evidencia ya disponible: deploy transaccional, rollback probado, disk gate, containers, timers, backups y health. Revisar evidencias faltantes y marcar cada criterio individualmente.
-
-### M1 Safety
-Cerrar sólo con real-order block, readonly, DB integrity, rollback, calendar fail-closed y safety gates probados.
-
-### M2 Fuentes/contratos
-Requiere PPI read-only, Contract Evidence nativo/DUE probado, provenance y contratos por familia.
-
-### M3 Mercado/históricos
-Requiere avance sostenido y medible de PPI/Data912/A3, freshness, gaps y coverage suficiente; scheduler instalado no equivale a completo.
-
-### M4–M8
-Se completan con la campaña PAPER forward: estabilidad, realismo, estadística, A11Y y jornadas sostenidas.
-
-### M9–M11
-M9 auditoría/consenso; M10 governance candidate; M11 real-money continúa bloqueado hasta autorización futura explícita.
-
----
-
-## 8. PRIMING DE DATOS SEGURO PARA LA NOCHE ANTES DEL GO LIVE
-
-### Sí conviene forzar/ejecutar ahora, siempre read-only/background
-1. **PPI historical bounded backfill**: otro lote limitado con retry/backoff, sin tocar el hot path.
-2. **Data912 reconciliation**: reconciliar y versionar sin mezclar fuentes.
-3. **History integrity/freshness snapshot antes y después**: `quick_check`, filas, identidades, fuentes, latest timestamp, gaps/rechazos.
-4. **Candle integrity/reconciliation** sobre lo ya almacenado; no fabricar candles de domingo.
-5. **Backfill de instrumentos con errores transitorios** priorizando retries acotados, sin relajar validadores.
-
-### No conviene forzar esta noche
-- Browser Contract Evidence autenticado si el scheduler dice `NOT_DUE`.
-- Ingesta A3 adicional mientras siga roto el identity alignment; sólo generaría más `ALIGNMENT_UNVERIFIED`.
-- Cualquier job que modifique estrategia, gates SHADOW o parámetros de trading.
-- Limpieza de disco agresiva antes del inventario.
-
-### Criterio de éxito del priming
-El valor no es “job exit 0”. Debemos demostrar:
-- más filas válidas o mejor coverage;
-- checkpoints avanzados;
-- provenance intacto;
-- errores clasificados/reducidos;
-- DB `quick_check=ok`;
-- runtime PAPER sano;
-- `real_orders_sent=0`.
-
----
-
-## 9. BACKLOG SEMANAL CONSOLIDADO
-
-### P1
-- A3 identity alignment + repetición controlada.
-- PPI historical full-universe/quality y retries.
-- Contract Evidence RC6 primera ejecución DUE real.
+- SRE measurement latency: entender/optimizar la medición que excede el umbral de 250 ms sin confundirla con DB/disk health.
 - Forward Lab v2.
 - MFE/MAE executable + provenance.
-- Campaña SHADOW sostenida.
-- A11Y Samsung/Voice Access continuo.
-- Calendar local/USA fail-closed completo y tests por familia.
-- Kill-switch fail-closed antes de cualquier reutilización.
-- Resolver snapshot/logs inconsistentes del dashboard.
+- campaña SHADOW sostenida.
+- A11Y Samsung/Voice Access en campo.
+- calendar local/USA fail-closed completo por familia.
+- kill-switch fail-closed antes de cualquier reutilización/real money.
 
-### P2
-- Retention v2 después de dbstat.
-- Lifecycle de untracked/backups/imágenes Docker con inventario explícito.
-- Sector map/correlation/family normalization.
-- Close-only salvage effectiveness.
-- Candle integrity longitudinal.
-- Telegram noise/suppression, CRITICAL no suprimible.
-- Todas las conversiones de dashboard a tablas solicitadas.
-- Recuperar reportes BCRA/INDEC/performance vs inflación.
-- Actualizar menú Configuración a la realidad RC6.
+## 7. P2
 
----
+- lifecycle de nuevos residuos Docker/untracked cuando aparezcan; ninguna imagen anterior queda protegida como rollback.
+- sector map/correlation/family normalization.
+- close-only salvage effectiveness.
+- candle integrity longitudinal.
+- Telegram noise/suppression con CRITICAL no suprimible.
+- refinamientos visuales adicionales únicamente si el field test real detecta problemas.
 
-## 10. VEREDICTO DE CONTINUIDAD
+## 8. `/validacion`
 
-- P0 conocidos abiertos para PAPER mañana: 0 al corte de este archivo.
-- Labor Day CEDEAR: corregido y desplegado en hotfix RC6.
-- PPI historical: funcional pero parcial; P1.
-- A3: conexión/job funcional, identity alignment pendiente; P1.
-- Contract Evidence: esperar primera ejecución DUE; no forzar fuera de política.
-- Go Live PAPER: condicionado exclusivamente a preopen GREEN y ausencia de nueva evidencia crítica.
+- M0: infraestructura/capacidad por evidencia reproducible.
+- M1: safety por real-order block, readonly, DB, calendars y gates.
+- M2: fuentes/contratos con PPI read-only + Contract Evidence DUE + provenance.
+- M3: progreso medible y sostenido de históricos; timer instalado no equivale a completo.
+- M4–M8: campaña PAPER forward, estabilidad, realismo, estadística y A11Y.
+- M9: auditoría/consenso.
+- M10: governance candidate.
+- M11: real-money sigue BLOCKED.
+
+## 9. VEREDICTO DE CIERRE
+
+- **P0 conocidos abiertos para PAPER: 0.**
+- Dashboard RC6: GREEN.
+- Introspección postdeploy automática: GREEN.
+- Runtime: GREEN de integridad/safety para cierre nocturno.
+- PPI historical: P1 parcial, no blocker hot path.
+- IOL: P1 proof read-only pendiente, no blocker.
+- A3: P1 alignment pendiente, no blocker.
+- Contract Evidence: P1 primera ejecución DUE pendiente, no blocker hot path.
+- Go Live PAPER: condicionado a preopen GREEN.
 - Real-money: NO-GO / BLOCKED.
