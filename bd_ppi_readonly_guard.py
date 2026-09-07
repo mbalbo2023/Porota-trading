@@ -7,6 +7,7 @@ rechaza antes de que requests entregue el paquete al adaptador de red.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -40,6 +41,28 @@ _GET_PATHS = {
     "/api/1.0/marketdata/book",
     "/api/1.0/marketdata/intraday",
 }
+
+# PPI confirmó oficialmente que cauciones se buscan por cantidad de días y
+# ticker MONEDA+días. Estos plazos fueron probados contra producción en modo
+# GET/read-only el 2026-09-07. La lista es configurable para ampliar cobertura
+# sin volver al filtro inválido "CAUCION" ni cambiar lógica de órdenes.
+DEFAULT_CAUCION_DISCOVERY_DAYS = (1, 2, 7, 30, 120)
+
+
+def caucion_discovery_days(raw: str | None = None) -> tuple[int, ...]:
+    raw = os.getenv("PPI_CAUCION_DISCOVERY_DAYS", "") if raw is None else raw
+    if not str(raw).strip():
+        return DEFAULT_CAUCION_DISCOVERY_DAYS
+    days = []
+    for part in str(raw).split(","):
+        value = int(part.strip())
+        if not 1 <= value <= 365:
+            raise ValueError("PPI_CAUCION_DISCOVERY_DAYS_OUT_OF_RANGE")
+        if value not in days:
+            days.append(value)
+    if not days or len(days) > 120:
+        raise ValueError("PPI_CAUCION_DISCOVERY_DAYS_INVALID_COUNT")
+    return tuple(days)
 
 
 class ReadOnlyPolicyViolation(RuntimeError):
@@ -283,21 +306,56 @@ class ProductionMarketReader:
             raise ValueError('PPI_CONFIGURATION_INVALID_SHAPE')
         return values
 
+    def _search_cauciones_official(self, market: str = "BYMA"):
+        """Expande el alias legado CAUCION al contrato oficial PPI.
+
+        PPI confirmó: Name=cantidad de días y ticker MONEDA+días. Se consultan
+        únicamente plazos configurados/probados y se devuelve una lista directa
+        compatible con el catálogo existente. No consulta cuentas ni Order/Budget.
+        """
+        records = []
+        seen = set()
+        for days in caucion_discovery_days():
+            name = str(days)
+            for currency in ("PESOS", "DOLAR"):
+                ticker = f"{currency}{days}"
+                payload = self._market().search_instrument(
+                    ticker, name, str(market or "BYMA"), "CAUCIONES"
+                )
+                if not isinstance(payload, list):
+                    raise ValueError("PPI_CAUCION_SEARCH_INVALID_SHAPE")
+                for raw in payload:
+                    if not isinstance(raw, dict):
+                        raise ValueError("PPI_CAUCION_SEARCH_INVALID_ROW")
+                    key = (
+                        str(raw.get("ticker") or "").upper(),
+                        str(raw.get("type") or "").upper(),
+                        str(raw.get("market") or "").upper(),
+                        str(raw.get("currency") or "").upper(),
+                    )
+                    if key not in seen:
+                        seen.add(key)
+                        records.append(raw)
+        return records
+
     def search_instruments(self, ticker: str, instrument_type: str,
                            name: str | None = None, market: str = "BYMA"):
         """Busca un candidato concreto sin consultar saldos ni permisos.
 
-        El SDK productivo exige ``Ticker`` y ``Name``. La implementación
-        anterior intentaba usar esta operación como un listado sin filtros y
-        enviaba ambos campos vacíos; PPI autenticaba correctamente y luego
-        rechazaba el catálogo con ``Field 'Name'/'Ticker' is required``.
+        El SDK productivo exige ``Ticker`` y ``Name``. Para CAUCIONES se conserva
+        el alias histórico ``CAUCION`` sólo como señal interna y se transforma
+        localmente al contrato oficial ``PESOS{días}``/``DOLAR{días}``,
+        ``Name={días}`` antes de emitir GETs.
         """
         ticker = str(ticker or "").strip()
         name = str(name or ticker).strip()
+        instrument_type = str(instrument_type or "").strip().upper()
+        if instrument_type == "CAUCIONES" and ticker.upper() == "CAUCION" and name.upper() == "CAUCION":
+            return self._search_cauciones_official(market)
         if not ticker or not name:
             raise ValueError("PPI requiere Ticker y Name no vacíos para buscar instrumentos.")
         return self._market().search_instrument(
-            ticker, name, str(market or "BYMA"), str(instrument_type or "")
+            ticker, name, str(market or "BYMA"), instrument_type
         )
 
     def history(self, ticker: str, instrument_type: str, settlement: str,
