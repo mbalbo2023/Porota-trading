@@ -1,0 +1,130 @@
+name: RC6 Contract Evidence browser least-privilege deploy
+
+on:
+  push:
+    branches:
+      - hotfix/rc6-contract-evidence-browser-user-20260907
+    paths:
+      - scripts/porota_contract_evidence_rc6_runtime.sh
+      - .github/workflows/rc6-contract-evidence-browser-user-deploy.yml
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Validate offline
+        run: |
+          set -euo pipefail
+          bash -n scripts/porota_contract_evidence_rc6_runtime.sh
+          grep -q 'BROWSER_USER_UNPRIVILEGED=YES' scripts/porota_contract_evidence_rc6_runtime.sh
+          grep -q 'runuser' scripts/porota_contract_evidence_rc6_runtime.sh
+          echo OFFLINE_VALIDATION=GREEN
+
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ce_browser_user"
+          chmod 600 "$HOME/.ssh/porota_ce_browser_user"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Deploy isolated runtime and repair profile ownership
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/porota_ce_browser_user" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            scripts/porota_contract_evidence_rc6_runtime.sh \
+            "$DO_USER@$DO_HOST:/tmp/porota_contract_evidence_rc6_runtime.sh"
+
+          ssh -i "$HOME/.ssh/porota_ce_browser_user" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          RUNTIME=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          CE_PY=/opt/porota-contract-evidence-venv/bin/python
+          OBS=porota_production_observer
+          DASH=porota_production_dashboard
+
+          echo '=== SAFETY PRECHECK ==='
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' "$OBS"
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' "$DASH"
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10); c.execute('PRAGMA query_only=ON')
+          qc=c.execute('PRAGMA quick_check').fetchone()[0]
+          r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print(f'DB={qc}|MODE={r[0] if r else None}|REAL_ORDERS={r[1] if r else None}')
+          assert qc=='ok' and r and r[0]=='PRODUCTION_PAPER' and int(r[1] or 0)==0
+          PY
+
+          sudo -n test -d "$PROFILE"
+          PROFILE_OWNER=$(sudo -n stat -c '%U' "$PROFILE")
+          PROFILE_GROUP=$(sudo -n stat -c '%G' "$PROFILE")
+          test -n "$PROFILE_OWNER" && test "$PROFILE_OWNER" != root
+          echo "PROFILE_OWNER=$PROFILE_OWNER"
+
+          echo '=== TRANSACTIONAL RUNTIME INSTALL ==='
+          sudo -n install -m 0755 -o root -g root /tmp/porota_contract_evidence_rc6_runtime.sh "$RUNTIME.new"
+          sudo -n bash -n "$RUNTIME.new"
+          if sudo -n test -e "$RUNTIME"; then
+            sudo -n cp -a "$RUNTIME" "$RUNTIME.rollback"
+          fi
+          sudo -n mv "$RUNTIME.new" "$RUNTIME"
+          sudo -n rm -f /tmp/porota_contract_evidence_rc6_runtime.sh
+
+          echo '=== PROFILE OWNERSHIP REPAIR ==='
+          BEFORE=$(sudo -n find "$PROFILE" -xdev \( ! -user "$PROFILE_OWNER" -o ! -group "$PROFILE_GROUP" \) -print | wc -l)
+          echo "PROFILE_WRONG_OWNERSHIP_BEFORE=$BEFORE"
+          if [ "$BEFORE" -gt 0 ]; then
+            sudo -n find "$PROFILE" -xdev \( ! -user "$PROFILE_OWNER" -o ! -group "$PROFILE_GROUP" \) -exec chown "$PROFILE_OWNER:$PROFILE_GROUP" {} +
+          fi
+          AFTER=$(sudo -n find "$PROFILE" -xdev \( ! -user "$PROFILE_OWNER" -o ! -group "$PROFILE_GROUP" \) -print | wc -l)
+          echo "PROFILE_WRONG_OWNERSHIP_AFTER=$AFTER"
+          test "$AFTER" -eq 0
+
+          echo '=== UNPRIVILEGED PLAYWRIGHT SMOKE ==='
+          sudo -n -u "$PROFILE_OWNER" "$CE_PY" - <<'PY'
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              b=p.chromium.launch(executable_path='/usr/bin/google-chrome-stable', headless=True, args=['--no-sandbox'])
+              page=b.new_page(); page.set_content('<title>porota-ce-smoke</title>')
+              assert page.title()=='porota-ce-smoke'
+              b.close()
+          print('BROWSER_USER_SMOKE=GREEN')
+          PY
+
+          echo '=== POSTCHECK ==='
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' "$OBS"
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' "$DASH"
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10); c.execute('PRAGMA query_only=ON')
+          qc=c.execute('PRAGMA quick_check').fetchone()[0]
+          r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print(f'DB={qc}|MODE={r[0] if r else None}|REAL_ORDERS={r[1] if r else None}')
+          assert qc=='ok' and r and r[0]=='PRODUCTION_PAPER' and int(r[1] or 0)==0
+          PY
+          sudo -n systemctl is-enabled porota-contract-evidence-rc6.timer
+          sudo -n systemctl is-active porota-contract-evidence-rc6.timer
+          echo BROWSER_USER_UNPRIVILEGED=YES
+          echo REAL_ORDERS_SENT=0
+          REMOTE
