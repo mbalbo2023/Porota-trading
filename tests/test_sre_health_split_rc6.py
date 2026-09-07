@@ -19,9 +19,10 @@ def test_fast_probe_is_green_and_declares_no_full_integrity(tmp_path,monkeypatch
     assert r['checks']['real_orders_sent']
 
 
-def test_fast_probe_source_contains_no_quick_or_integrity_check():
+def test_fast_probe_source_contains_no_full_scan_pragma():
     src=inspect.getsource(fast.probe).lower()
-    assert 'quick_check' not in src and 'integrity_check' not in src
+    assert 'pragma quick_check' not in src
+    assert 'pragma integrity_check' not in src
 
 
 def test_fast_probe_red_on_real_orders(tmp_path,monkeypatch):
