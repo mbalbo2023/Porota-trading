@@ -1,0 +1,50 @@
+name: RC6 Critical control-plane postfail diagnostic
+
+on:
+  push:
+    branches: [feature/rc6-critical-telegram-approval-20260907]
+    paths:
+      - '.github/workflows/rc6-critical-control-plane-postfail-diag.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Diagnose failed control-plane start read-only
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            echo '=== CONTROL PLANE POSTFAIL DIAG ==='
+            echo "PROXY_UNIT_PRESENT=$(test -f /etc/systemd/system/porota-critical-github-proxy-rc6.service && echo YES || echo NO)"
+            echo "GATEWAY_UNIT_PRESENT=$(test -f /etc/systemd/system/porota-critical-approval-rc6.service && echo YES || echo NO)"
+            echo "GATEWAY_CONTAINER_PRESENT=$(sudo -n docker ps -aq -f name='^/porota_critical_approval_rc6$' | grep -q . && echo YES || echo NO)"
+            if [ -d /opt/porota-control-plane-rc6 ]; then
+              stat -c 'BASE_MODE=%a BASE_OWNER=%U:%G' /opt/porota-control-plane-rc6
+            fi
+            if [ -d /opt/porota-control-plane-rc6/secrets ]; then
+              stat -c 'SECRETS_MODE=%a SECRETS_OWNER=%U:%G' /opt/porota-control-plane-rc6/secrets
+            fi
+            echo '--- proxy journal ---'
+            sudo -n journalctl -u porota-critical-github-proxy-rc6.service -n 60 --no-pager 2>&1 | sed -E 's/(token|secret|capability)[=:][^ ]+/<redacted>/Ig' || true
+            echo '--- runtime invariants ---'
+            sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}|{{json .Config.Cmd}}' porota_production_observer
+            sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard
+            sudo -n docker exec -i porota_production_observer python - <<'PY'
+            import sqlite3
+            p='/app/data/paper_v17/observer_v17.db'
+            c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20)
+            c.execute('PRAGMA query_only=ON')
+            q=c.execute('PRAGMA quick_check').fetchone()[0]
+            row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+            c.close(); print('OBSERVER_DB='+'|'.join(map(str,(q,*row))))
+            PY
+            echo 'DIAG_MUTATION=NO'
