@@ -1,0 +1,69 @@
+name: RC6 Contract Evidence login DOM audit 2026-09-07
+on:
+  push:
+    branches: [feature/rc6-contract-evidence-reauth-cauciones-20260907]
+    paths:
+      - '.github/workflows/rc6-contract-evidence-login-dom-audit-20260907.yml'
+permissions:
+  contents: read
+concurrency:
+  group: porota-rc6-ce-login-dom-audit
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect auth page safely
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'python3 -' <<'PY' | tee /tmp/ce-login-dom.txt
+          import json
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          from playwright.sync_api import sync_playwright
+          profile='/home/porotaadmin/porota-browser-lab/chrome-profile'
+          out={'profile_exists':Path(profile).is_dir(),'nonread_blocked':0,'real_orders_sent':0}
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(user_data_dir=profile, executable_path='/usr/bin/google-chrome-stable', headless=True,
+                  locale='es-AR', timezone_id='America/Argentina/Buenos_Aires', viewport={'width':1440,'height':1000}, args=['--no-sandbox','--disable-dev-shm-usage'])
+              def guard(route,request):
+                  if request.method.upper() not in {'GET','HEAD','OPTIONS'}:
+                      out['nonread_blocked']+=1; return route.abort()
+                  return route.continue_()
+              ctx.route('**/*',guard)
+              p=ctx.pages[0] if ctx.pages else ctx.new_page()
+              p.goto('https://trading.portfoliopersonal.com/',wait_until='domcontentloaded',timeout=45000)
+              p.wait_for_timeout(1200)
+              u=urlsplit(p.url)
+              out['final_url']=f'{u.scheme}://{u.netloc}{u.path}'
+              out['title']=p.title()[:160]
+              is_login='login' in u.path.lower() or u.netloc!='trading.portfoliopersonal.com'
+              out['is_login']=is_login
+              if is_login:
+                  out['inputs']=p.locator('input').evaluate_all("els => els.map(e => ({type:e.type,name:e.name,id:e.id,autocomplete:e.autocomplete,placeholder:e.placeholder,aria:e.getAttribute('aria-label')}))")[:20]
+                  out['buttons']=p.locator('button, input[type=submit], a[role=button]').evaluate_all("els => els.map(e => ({tag:e.tagName.toLowerCase(),type:e.type||'',id:e.id||'',name:e.name||'',text:(e.innerText||e.value||'').trim().slice(0,120),aria:e.getAttribute('aria-label')}))")[:30]
+                  out['forms']=p.locator('form').evaluate_all("els => els.map(e => ({method:(e.method||'').toUpperCase(),action:e.action ? (new URL(e.action)).pathname : '',id:e.id||''}))")[:10]
+              ctx.close()
+          print('PPI_WEB_LOGIN_DOM_AUDIT='+json.dumps(out,ensure_ascii=False,sort_keys=True))
+          PY
+          {
+            echo '### PPI web login DOM audit (no credentials/cookies/body values)'
+            echo '```text'
+            cat /tmp/ce-login-dom.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
