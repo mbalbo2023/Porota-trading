@@ -1,0 +1,114 @@
+name: RC6 postclose live audit 2026-09-07
+on:
+  push:
+    branches: [diag/rc6-postclose-live-20260907]
+    paths:
+      - '.github/workflows/rc6-postclose-live-audit-20260907.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Postclose host and DB audit read-only
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/postclose.txt
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo 'POSTCLOSE_AUDIT=START'
+          date -u '+UTC=%Y-%m-%dT%H:%M:%SZ'
+          TZ=America/Argentina/Buenos_Aires date '+ART=%Y-%m-%dT%H:%M:%S%z'
+          echo "HOST_BRANCH=$(git branch --show-current 2>/dev/null || true)"
+          echo "HOST_HEAD=$(git rev-parse HEAD 2>/dev/null || true)"
+          echo "DISK=$(df -hP / | awk 'NR==2{print $2"|"$3"|"$4"|"$5}')"
+          for c in porota_production_observer porota_production_dashboard; do
+            echo "$c=$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' "$c" 2>/dev/null || echo MISSING)"
+          done
+          echo '--- HEALTH ---'
+          curl -fsS --max-time 5 http://127.0.0.1:8000/health 2>/dev/null || true; echo
+          echo '--- TIMERS ---'
+          sudo -n systemctl list-timers --all --no-pager --no-legend | grep -i porota | sed -n '1,120p' || true
+          echo '--- FAILED UNITS ---'
+          sudo -n systemctl --failed --no-pager --no-legend | grep -i porota | sed -n '1,120p' || true
+          echo '--- OBSERVER DB ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          tabs={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          out={}
+          out['quick_check']=c.execute('PRAGMA quick_check').fetchone()[0]
+          if 'observer_state' in tabs:
+              r=c.execute('SELECT * FROM observer_state WHERE id=1').fetchone(); out['observer_state']=dict(r) if r else None
+          if 'paper_positions' in tabs:
+              out['positions_open']=c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]
+              out['opened_today']=c.execute("SELECT COUNT(*) FROM paper_positions WHERE substr(opened_at,1,10)='2026-09-07'").fetchone()[0]
+              out['closed_today']=c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='CLOSED' AND substr(closed_at,1,10)='2026-09-07'").fetchone()[0]
+              out['pnl_closed_today']=c.execute("SELECT COALESCE(SUM(net_pnl),0) FROM paper_positions WHERE status='CLOSED' AND substr(closed_at,1,10)='2026-09-07'").fetchone()[0]
+          if 'trade_gate_evaluations' in tabs:
+              out['gates_today']=c.execute("SELECT COUNT(*) FROM trade_gate_evaluations WHERE substr(evaluated_at,1,10)='2026-09-07'").fetchone()[0]
+              out['gate_results']={str(k):v for k,v in c.execute("SELECT final_result,COUNT(*) FROM trade_gate_evaluations WHERE substr(evaluated_at,1,10)='2026-09-07' GROUP BY final_result")}
+          if 'market_snapshots' in tabs:
+              out['snapshots_today']=c.execute("SELECT COUNT(*) FROM market_snapshots WHERE substr(observed_at,1,10)='2026-09-07'").fetchone()[0]
+              out['last_snapshot']=c.execute('SELECT MAX(observed_at) FROM market_snapshots').fetchone()[0]
+          if 'scalping_candidates' in tabs:
+              out['scalping_eval_today']=c.execute("SELECT COUNT(*) FROM scalping_candidates WHERE substr(evaluated_at,1,10)='2026-09-07'").fetchone()[0]
+              out['scalping_buy_candidates_today']=c.execute("SELECT COUNT(*) FROM scalping_candidates WHERE substr(evaluated_at,1,10)='2026-09-07' AND action='BUY_CANDIDATE'").fetchone()[0]
+              out['scalping_reasons_top']=[list(r) for r in c.execute("SELECT reason,COUNT(*) n FROM scalping_candidates WHERE substr(evaluated_at,1,10)='2026-09-07' GROUP BY reason ORDER BY n DESC LIMIT 12")]
+          if 'ppi_intraday_contract_state' in tabs:
+              out['intraday_states']={str(k):v for k,v in c.execute('SELECT state,COUNT(*) FROM ppi_intraday_contract_state GROUP BY state')}
+          if 'intraday_scalping_worker_state' in tabs:
+              r=c.execute('SELECT * FROM intraday_scalping_worker_state WHERE id=1').fetchone(); out['scalping_worker']=dict(r) if r else None
+          for name in ['shadow_learning_runs','shadow_counterfactuals','learning_events','paper_learning_samples']:
+              if name in tabs:
+                  out[name]=c.execute(f'SELECT COUNT(*) FROM {name}').fetchone()[0]
+          print(json.dumps(out,sort_keys=True,default=str))
+          c.close()
+          PY
+          echo '--- HISTORY DB ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,sqlite3
+          p='/app/data/market_history.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30); c.execute('PRAGMA query_only=ON')
+          tabs={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          out={'quick_check':c.execute('PRAGMA quick_check').fetchone()[0],'tables':sorted(tabs)}
+          for t in ['market_history','history_canonical_v2','history_versions_v2']:
+              if t in tabs:
+                  out[t+'_rows']=c.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]
+                  cols=[r[1] for r in c.execute(f'PRAGMA table_info({t})')]
+                  for dcol in ['date','trading_day','session_date']:
+                      if dcol in cols:
+                          out[t+'_max_date']=c.execute(f'SELECT MAX({dcol}) FROM {t}').fetchone()[0]; break
+          print(json.dumps(out,sort_keys=True,default=str))
+          c.close()
+          PY
+          echo '--- CONTRACT EVIDENCE STATUS ---'
+          sudo -n systemctl status porota-contract-evidence-rc6.timer porota-contract-evidence-rc6.service --no-pager -l 2>/dev/null | sed -n '1,180p' || true
+          echo '--- SRE STATUS ---'
+          sudo -n systemctl list-unit-files --no-pager --no-legend | grep -E 'porota.*(health|integrity|introspect)' | sed -n '1,120p' || true
+          echo 'POSTCLOSE_AUDIT=END'
+          REMOTE
+          {
+            echo '### RC6 postclose live audit — read-only'
+            echo '```text'
+            sed -n '1,850p' /tmp/postclose.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
