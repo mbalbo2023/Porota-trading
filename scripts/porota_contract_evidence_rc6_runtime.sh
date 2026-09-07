@@ -9,6 +9,7 @@ LIB="${POROTA_RC6_CE_LIB:-/usr/local/lib/porota-contract-evidence-rc6}"
 PROFILE="${POROTA_CHROME_PROFILE:-/home/porotaadmin/porota-browser-lab/chrome-profile}"
 CE_PYTHON="${POROTA_CE_PYTHON:-/opt/porota-contract-evidence-venv/bin/python}"
 BROWSER_USER="${POROTA_CE_BROWSER_USER:-porotaadmin}"
+PPI_WEB_SECRET_FILE="${POROTA_PPI_WEB_SECRET_FILE:-/etc/porota/contract-evidence-web.env}"
 OUTDIR="$ROOT/data/contract_evidence/rc6_trusted"
 STATE="$OUTDIR/runtime_state.json"
 EXPECTED_IMAGE="porota-trading-bot:17.0.0-rc6"
@@ -18,6 +19,13 @@ fail_closed() {
   exit 3
 }
 
+write_auth_state() {
+  local auth_state="$1" retry="${2:-3600}"
+  printf '{"blocked_at":"%s","state":"%s","retry_after_seconds":%s}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$auth_state" "$retry" > "$STATE"
+  chmod 0600 "$STATE"
+}
+
 RUNNING="$($DOCKER_BIN inspect --format='{{.State.Running}}' "$CONTAINER" 2>/dev/null || true)"
 [[ "$RUNNING" == true ]] || fail_closed OBSERVER_NOT_RUNNING
 IMAGE="$($DOCKER_BIN inspect --format='{{.Config.Image}}' "$CONTAINER" 2>/dev/null || true)"
@@ -25,10 +33,11 @@ IMAGE="$($DOCKER_BIN inspect --format='{{.Config.Image}}' "$CONTAINER" 2>/dev/nu
 READONLY="$($DOCKER_BIN inspect --format='{{.HostConfig.ReadonlyRootfs}}' "$CONTAINER" 2>/dev/null || true)"
 [[ "$READONLY" == true ]] || fail_closed OBSERVER_NOT_READONLY
 
-for f in rc6_contract_due_job.py rc6_contract_schedule.py rc6_ppi_contract_normalizer.py rc6_trusted_browser_contract_collector.py rc6_contract_capture_importer.py; do
+for f in rc6_contract_due_job.py rc6_contract_schedule.py rc6_ppi_contract_normalizer.py rc6_trusted_browser_contract_collector.py rc6_contract_capture_importer.py rc6_ppi_web_reauth.py; do
   [[ -r "$LIB/$f" ]] || fail_closed "MISSING_NATIVE_COMPONENT:$f"
 done
 
+# Safety preflight is intentionally retained until the SRE split is deployed.
 preflight="$($DOCKER_BIN exec -i "$CONTAINER" python - <<'PY'
 import json,sqlite3
 p='/app/data/paper_v17/observer_v17.db'
@@ -47,15 +56,21 @@ PY
 mkdir -p "$OUTDIR"
 chmod 0750 "$OUTDIR"
 
-# Avoid hammering an expired trusted session. Auth/2FA is never solved inside this job.
+# Back off hard authentication states, but SESSION_EXPIRED itself is now
+# recoverable by the isolated reauth helper and must not be frozen for an hour.
 if [[ -s "$STATE" ]]; then
   if python3 - "$STATE" <<'PY'
 import json,sys
 from datetime import datetime,timezone,timedelta
 try:
- d=json.load(open(sys.argv[1],encoding='utf-8')); at=datetime.fromisoformat(d.get('blocked_at','').replace('Z','+00:00'))
+ d=json.load(open(sys.argv[1],encoding='utf-8'))
+ state=str(d.get('state') or '')
+ if state in {'BLOCKED_AUTH_SESSION_EXPIRED','AUTHENTICATED_TRUSTED_DEVICE'}: raise SystemExit(1)
+ at=datetime.fromisoformat(d.get('blocked_at','').replace('Z','+00:00'))
  if at.tzinfo is None: at=at.replace(tzinfo=timezone.utc)
- raise SystemExit(0 if datetime.now(timezone.utc)-at < timedelta(hours=1) else 1)
+ retry=max(300,int(d.get('retry_after_seconds') or 3600))
+ raise SystemExit(0 if datetime.now(timezone.utc)-at < timedelta(seconds=retry) else 1)
+except SystemExit: raise
 except Exception: raise SystemExit(1)
 PY
   then
@@ -79,8 +94,6 @@ if [[ -z "$JOBS" ]]; then
   exit 0
 fi
 
-# Browser/profile work must never run as root. The root wrapper is retained only
-# for Docker read-only pre/postflight, protected state and evidence import.
 command -v runuser >/dev/null 2>&1 || fail_closed RUNUSER_MISSING
 id "$BROWSER_USER" >/dev/null 2>&1 || fail_closed BROWSER_USER_MISSING
 BROWSER_HOME="$(getent passwd "$BROWSER_USER" | cut -d: -f6)"
@@ -106,29 +119,74 @@ stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 STAGE_CAPTURE="$BROWSER_STAGE/contract_${stamp}.json"
 CAPTURE="$OUTDIR/contract_${stamp}.json"
 
+collect_once() {
+  rm -f "$STAGE_CAPTURE"
+  set +e
+  runuser -u "$BROWSER_USER" -- env HOME="$BROWSER_HOME" PYTHONPATH="$LIB:$ROOT" \
+    "$CE_PYTHON" "$LIB/rc6_trusted_browser_contract_collector.py" \
+    --profile "$PROFILE" --jobs "$JOBS" --output "$STAGE_CAPTURE"
+  local rc=$?
+  set -e
+  [[ -f "$STAGE_CAPTURE" ]] || fail_closed COLLECTOR_CAPTURE_MISSING
+  return "$rc"
+}
+
 set +e
-runuser -u "$BROWSER_USER" -- env \
-  HOME="$BROWSER_HOME" \
-  PYTHONPATH="$LIB:$ROOT" \
-  "$CE_PYTHON" "$LIB/rc6_trusted_browser_contract_collector.py" \
-  --profile "$PROFILE" --jobs "$JOBS" --output "$STAGE_CAPTURE"
+collect_once
 COLLECT_RC=$?
 set -e
 
-[[ -f "$STAGE_CAPTURE" ]] || fail_closed COLLECTOR_CAPTURE_MISSING
-install -o root -g root -m 0600 "$STAGE_CAPTURE" "$CAPTURE"
-rm -f "$STAGE_CAPTURE"
-
-if [[ "$COLLECT_RC" -ne 0 ]]; then
-  AUTH_STATE="$(python3 - "$CAPTURE" <<'PY'
+AUTH_STATE="$(python3 - "$STAGE_CAPTURE" <<'PY'
 import json,sys
 try: print(json.load(open(sys.argv[1],encoding='utf-8')).get('auth_status','UNKNOWN'))
 except Exception: print('INVALID_CAPTURE')
 PY
 )"
-  printf '{"blocked_at":"%s","state":"%s","retry_after_seconds":3600}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$AUTH_STATE" > "$STATE"
-  chmod 0600 "$STATE"
-  printf 'STATUS=AMARILLO_AUTH_BLOCKED\nAUTH_STATUS=%s\nAUTH_BROWSER_STARTED=YES\nBROWSER_USER_UNPRIVILEGED=YES\nREAL_ORDERS_SENT=0\n' "$AUTH_STATE"
+
+if [[ "$COLLECT_RC" -ne 0 && "$AUTH_STATE" == "BLOCKED_AUTH_SESSION_EXPIRED" ]]; then
+  if [[ ! -f "$PPI_WEB_SECRET_FILE" ]]; then
+    write_auth_state BLOCKED_AUTH_LOCAL_SECRET_MISSING 3600
+    printf 'STATUS=AMARILLO_AUTH_BLOCKED\nAUTH_STATUS=BLOCKED_AUTH_LOCAL_SECRET_MISSING\nAUTH_BROWSER_STARTED=YES\nREAUTH_ATTEMPTED=NO\nREAL_ORDERS_SENT=0\n'
+    exit 0
+  fi
+  [[ "$(stat -c '%U' "$PPI_WEB_SECRET_FILE")" == "$BROWSER_USER" ]] || fail_closed PPI_WEB_SECRET_OWNER_MISMATCH
+  [[ "$(stat -c '%a' "$PPI_WEB_SECRET_FILE")" == "600" ]] || fail_closed PPI_WEB_SECRET_MODE_MISMATCH
+  set +e
+  REAUTH_OUT="$(runuser -u "$BROWSER_USER" -- env HOME="$BROWSER_HOME" PYTHONPATH="$LIB:$ROOT" \
+    "$CE_PYTHON" "$LIB/rc6_ppi_web_reauth.py" --profile "$PROFILE" --secret "$PPI_WEB_SECRET_FILE" 2>&1)"
+  REAUTH_RC=$?
+  set -e
+  REAUTH_STATE="$(REAUTH_OUT="$REAUTH_OUT" python3 - <<'PY'
+import json,os
+try: print(json.loads(os.environ.get('REAUTH_OUT','{}')).get('status','UNKNOWN'))
+except Exception: print('INVALID_REAUTH_OUTPUT')
+PY
+)"
+  if [[ "$REAUTH_RC" -ne 0 || "$REAUTH_STATE" != "AUTHENTICATED_TRUSTED_DEVICE" ]]; then
+    write_auth_state "$REAUTH_STATE" 3600
+    printf 'STATUS=AMARILLO_AUTH_BLOCKED\nAUTH_STATUS=%s\nAUTH_BROWSER_STARTED=YES\nREAUTH_ATTEMPTED=YES\nREAL_ORDERS_SENT=0\n' "$REAUTH_STATE"
+    exit 0
+  fi
+  # Reauthentication and collection remain separate processes. After a clean
+  # login, re-run only the GET-only collector.
+  set +e
+  collect_once
+  COLLECT_RC=$?
+  set -e
+  AUTH_STATE="$(python3 - "$STAGE_CAPTURE" <<'PY'
+import json,sys
+try: print(json.load(open(sys.argv[1],encoding='utf-8')).get('auth_status','UNKNOWN'))
+except Exception: print('INVALID_CAPTURE')
+PY
+)"
+fi
+
+install -o root -g root -m 0600 "$STAGE_CAPTURE" "$CAPTURE"
+rm -f "$STAGE_CAPTURE"
+
+if [[ "$COLLECT_RC" -ne 0 || "$AUTH_STATE" != "AUTHENTICATED_TRUSTED_DEVICE" ]]; then
+  write_auth_state "$AUTH_STATE" 3600
+  printf 'STATUS=AMARILLO_AUTH_BLOCKED\nAUTH_STATUS=%s\nAUTH_BROWSER_STARTED=YES\nREAUTH_ATTEMPTED=YES\nBROWSER_USER_UNPRIVILEGED=YES\nREAL_ORDERS_SENT=0\n' "$AUTH_STATE"
   exit 0
 fi
 
