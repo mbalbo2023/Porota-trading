@@ -1,0 +1,66 @@
+name: RC6 Contract Evidence host browser audit 2026-09-07
+on:
+  push:
+    branches: [feature/rc6-contract-evidence-reauth-cauciones-20260907]
+    paths:
+      - '.github/workflows/rc6-contract-evidence-host-browser-audit-20260907.yml'
+permissions:
+  contents: read
+concurrency:
+  group: porota-rc6-ce-host-browser-audit
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Discover browser runtime without mutation
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/browser-audit.txt
+          set -euo pipefail
+          echo "HOST_BRANCH=$(git -C /opt/porota-trading branch --show-current)"
+          echo "HOST_HEAD=$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo "CHROME=$(command -v google-chrome-stable || true)"
+          echo "PROFILE_DIR=$([ -d /home/porotaadmin/porota-browser-lab/chrome-profile ] && echo YES || echo NO)"
+          echo '--- PYTHON CANDIDATES ---'
+          for p in /usr/bin/python3 /home/porotaadmin/porota-browser-lab/venv/bin/python /home/porotaadmin/porota-browser-lab/.venv/bin/python /opt/porota-browser-lab/venv/bin/python /opt/porota-browser-lab/.venv/bin/python; do
+            [ -x "$p" ] || continue
+            printf '%s|' "$p"
+            "$p" - <<'PY' || true
+          try:
+              import playwright
+              print('PLAYWRIGHT=YES')
+          except Exception as e:
+              print('PLAYWRIGHT=NO|'+type(e).__name__)
+          PY
+          done
+          echo '--- RELEVANT VENV PYTHONS ---'
+          find /home/porotaadmin/porota-browser-lab /opt/porota-browser-lab -maxdepth 4 -type f -path '*/bin/python*' -executable -print 2>/dev/null | sed -n '1,40p' || true
+          echo '--- INSTALLED CE UNIT ---'
+          sudo -n systemctl cat porota-contract-evidence-rc6.service --no-pager 2>/dev/null | sed -n '1,120p' || true
+          echo '--- CE RUNTIME HEAD ---'
+          sudo -n sed -n '1,100p' /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh 2>/dev/null || true
+          echo 'HOST_MUTATION=NO'
+          echo 'REAL_ORDERS_SENT=0'
+          REMOTE
+          {
+            echo '### Contract Evidence host browser audit'
+            echo '```text'
+            sed -n '1,260p' /tmp/browser-audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
