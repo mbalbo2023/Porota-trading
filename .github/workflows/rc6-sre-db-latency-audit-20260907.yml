@@ -1,0 +1,26 @@
+name: RC6 SRE DB latency audit 2026-09-07
+on:
+  push:
+    branches: [diag/rc6-sre-latency-20260907]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only DB timing
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n docker exec -i porota_production_observer python -c \"import sqlite3,time,json; db='/app/data/paper_v17/observer_v17.db'; c=sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=30); c.execute('PRAGMA query_only=ON'); tests=[('quick','PRAGMA quick_check'),('state','SELECT heartbeat_at,last_market_data_at,real_orders_sent FROM observer_state WHERE id=1'),('gates','SELECT final_result,COUNT(*) FROM trade_gate_evaluations GROUP BY final_result'),('books','SELECT COUNT(*),MAX(observed_at) FROM market_snapshots')]; print('SRE_DB_READONLY'); [(lambda t0,n,r: print(n+'|ms='+format((time.perf_counter()-t0)*1000,'.3f')+'|rows='+str(len(r))))(time.perf_counter(),n,c.execute(q).fetchall()) for n,q in tests]; print('REAL_ORDERS_SENT='+str(c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()[0])); c.close()\""
