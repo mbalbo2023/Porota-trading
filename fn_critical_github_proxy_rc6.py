@@ -1,8 +1,8 @@
 """RC6 host-side GitHub Issues capability broker.
 
 Runs on the Droplet as the existing non-root POROTA admin user and uses that
-user's authenticated `gh` session.  The broad underlying gh credential is NEVER
-mounted into the critical-approval container.  Instead, this broker exposes a
+user's authenticated `gh` session. The broad underlying gh credential is NEVER
+mounted into the critical-approval container. Instead, this broker exposes a
 local Unix socket with a deliberately tiny, fixed capability surface:
 
 - health
@@ -13,10 +13,15 @@ local Unix socket with a deliberately tiny, fixed capability surface:
 
 The repository is hard-coded and callers cannot supply arbitrary GitHub paths,
 HTTP methods, request bodies, workflow operations, contents operations or shell
-commands.  Authorization comments are constructed by this broker itself.
+commands. Authorization comments are constructed by this broker itself.
+
+Every request must also carry a random local capability key provisioned during
+deploy. Possession of the Unix socket alone is therefore insufficient to invoke
+the broker.
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
@@ -30,16 +35,37 @@ SOCKET_PATH = os.getenv(
     "POROTA_CRITICAL_GITHUB_SOCKET",
     "/run/porota-critical-approval-rc6/github.sock",
 )
+CAPABILITY_FILE = os.getenv(
+    "POROTA_CRITICAL_BROKER_TOKEN_FILE",
+    "/opt/porota-control-plane-rc6/secrets/broker_capability.host",
+)
 INCIDENT_PREFIX = "[POROTA][RED]"
 AWAITING_MARKER = "HOTFIX_AUTHORIZATION=AWAITING"
 APPROVED_MARKER = "HOTFIX_AUTHORIZATION=AUTHORIZED_TELEGRAM"
 REJECTED_MARKER = "HOTFIX_AUTHORIZATION=REJECTED_TELEGRAM"
 HASH_RE = re.compile(r"^[0-9a-f]{16}$")
 MAX_REQUEST = 65536
+CAPABILITY_TOKEN = ""
 
 
 class BrokerError(RuntimeError):
     pass
+
+
+def _read_secret(path: str, label: str) -> str:
+    p = Path(path)
+    if not p.is_file():
+        raise BrokerError(f"{label}_FILE_MISSING")
+    value = p.read_text(encoding="utf-8").strip()
+    if len(value) < 32:
+        raise BrokerError(f"{label}_INVALID")
+    return value
+
+
+def _require_capability(request: dict[str, Any], expected: str) -> None:
+    supplied = str(request.pop("capability_token", "") or "")
+    if not expected or not hmac.compare_digest(supplied, expected):
+        raise BrokerError("CAPABILITY_DENIED")
 
 
 def _gh_api(method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
@@ -207,6 +233,7 @@ class Handler(socketserver.StreamRequestHandler):
             request = json.loads(raw.decode("utf-8"))
             if not isinstance(request, dict):
                 raise BrokerError("REQUEST_NOT_OBJECT")
+            _require_capability(request, CAPABILITY_TOKEN)
             result = BROKER.dispatch(request)
             response = {"ok": True, "result": result}
         except Exception as exc:
@@ -219,6 +246,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
 
 
 def main() -> None:
+    global CAPABILITY_TOKEN
     auth = subprocess.run(
         ["gh", "auth", "status", "-h", "github.com"],
         stdout=subprocess.DEVNULL,
@@ -228,13 +256,14 @@ def main() -> None:
     )
     if auth.returncode != 0:
         raise SystemExit("GH_AUTH_NOT_AVAILABLE")
+    CAPABILITY_TOKEN = _read_secret(CAPABILITY_FILE, "BROKER_CAPABILITY")
     path = Path(SOCKET_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() or path.is_socket():
         path.unlink()
     with Server(str(path), Handler) as server:
         os.chmod(path, 0o666)
-        print(f"critical-github-broker: READY socket={path} capability=issues_only", flush=True)
+        print(f"critical-github-broker: READY socket={path} capability=issues_only auth=local-key", flush=True)
         server.serve_forever(poll_interval=0.5)
 
 
