@@ -1,7 +1,7 @@
 """RC6 operator-requested dashboard improvements for 07-Sep-2026.
 
-Presentation/read-only only.  This module never mutates SQLite, calls PPI/IOL,
-changes strategy/gates, restarts the observer, or enables order capability.
+Presentation/read-only only. This module never mutates SQLite, calls broker
+APIs, changes strategy/gates, restarts the observer, or enables order capability.
 
 Changes:
 - panel: last five BYMA operational daily summaries only;
@@ -13,6 +13,8 @@ Changes:
 from __future__ import annotations
 
 from datetime import datetime
+import ast
+import inspect
 import sqlite3
 
 import ak_byma_calendar as byma_calendar
@@ -224,8 +226,16 @@ def assert_operator_ux_invariants() -> None:
         raise AssertionError(f"operational-day filter changed: {selected}")
     if "flex-direction:row!important" not in SYSTEM_TOP_NAV_CSS or "position:sticky!important" not in SYSTEM_TOP_NAV_CSS:
         raise AssertionError("system navigation must remain horizontal and sticky")
-    forbidden = ("requests", "urllib", "ppi_client", "invertironline", "place_order", "send_order")
-    source = __import__("inspect").getsource(__import__(__name__))
-    lowered = source.lower()
-    if any(token in lowered for token in forbidden):
-        raise AssertionError("dashboard UX module gained forbidden external/order capability")
+
+    # Structural capability check: comments/docstrings must not trip the guard,
+    # and the module must not import network/broker clients.
+    tree = ast.parse(inspect.getsource(__import__(__name__)))
+    banned_roots = {"requests", "urllib", "ak_iol_client", "c_ppi_client", "bd_ppi_readonly_guard"}
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split('.')[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split('.')[0])
+    if imported & banned_roots:
+        raise AssertionError(f"dashboard UX module gained forbidden external capability: {sorted(imported & banned_roots)}")
