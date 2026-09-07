@@ -25,8 +25,8 @@ if [ -s "$OUT/runtime_state.json" ]; then python3 -c "import json;d=json.load(op
 if [ -r "$LIB/rc6_contract_due_job.py" ] && [ -f "$DB" ]; then echo -n 'DUE_POLICY='; PYTHONPATH="$LIB:$ROOT" PAPER_V17_DB_PATH="$DB" python3 "$LIB/rc6_contract_due_job.py" || true; fi
 python3 -c "import sqlite3;p='$DB';c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=15);c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON');print('DB_QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]));names={r[0] for r in c.execute(\"SELECT name FROM sqlite_master WHERE type='table'\")};print('CE_RUN_TABLE='+('YES' if 'contract_evidence_v2_runs' in names else 'NO'));r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone();print('OBSERVER_STATE='+('|'.join(map(str,r)) if r else 'MISSING'));print('CE_RUN_COUNT='+str(c.execute('SELECT COUNT(*) FROM contract_evidence_v2_runs').fetchone()[0]) if 'contract_evidence_v2_runs' in names else 'CE_RUN_COUNT=NA');c.close()" || true
 echo 'SAFE_JOURNAL_BEGIN'
-journalctl -u "$UNIT" --since '2026-09-07 00:00:00' --no-pager -o cat 2>/dev/null \
-  | grep -E '^(STATUS=|REASON=|DUE_JOBS=|AUTH_STATUS=|AUTH_BROWSER_STARTED=|PPI_CALLS=|IMPORT_RC=|OBSERVER_READONLY=|DB_QUICK_CHECK=|REAL_ORDERS_SENT=|T1_|CAPTURE_)' \
-  | tail -n 80 || true
+sudo -n journalctl -u "$UNIT" --since '2026-09-07 00:00:00' --no-pager -o cat 2>/dev/null \
+  | grep -E '(STATUS=|REASON=|DUE_JOBS=|AUTH_STATUS=|AUTH_BROWSER_STARTED=|PPI_CALLS=|IMPORT_RC=|OBSERVER_READONLY=|DB_QUICK_CHECK=|REAL_ORDERS_SENT=|CAPTURE_)' \
+  | tail -n 100 || true
 echo 'SAFE_JOURNAL_END'
 echo MUTATION=NO
