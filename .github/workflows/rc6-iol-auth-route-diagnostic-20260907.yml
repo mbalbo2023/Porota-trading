@@ -1,0 +1,86 @@
+name: RC6 IOL auth route diagnostic 2026-09-07
+
+on:
+  push:
+    branches:
+      - diag/rc6-iol-auth-route-20260907
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_iol_auth_diag"
+          chmod 600 "$HOME/.ssh/porota_iol_auth_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Test token endpoints only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_iol_auth_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' <<'PY' | tee /tmp/iol-auth-diag.txt
+          from pathlib import Path
+          import json
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+
+          vals={}
+          path=Path('/opt/porota-trading/.env')
+          for raw in path.read_text(encoding='utf-8',errors='replace').splitlines():
+              line=raw.strip()
+              if not line or line.startswith('#') or '=' not in line:
+                  continue
+              key,value=line.split('=',1)
+              vals[key.strip()]=value.strip()
+          raw_u=vals.get('IOL_USERNAME','')
+          raw_p=vals.get('IOL_PASSWORD','')
+          def norm(v): return v.strip().strip('"').strip("'")
+          user,password=norm(raw_u),norm(raw_p)
+          print('IOL_USERNAME_PRESENT=' + ('YES' if user else 'NO'))
+          print('IOL_PASSWORD_PRESENT=' + ('YES' if password else 'NO'))
+          print('IOL_USERNAME_WRAPPED_QUOTES=' + ('YES' if raw_u[:1] in {'"',"'"} and raw_u[-1:] == raw_u[:1] else 'NO'))
+          print('IOL_PASSWORD_WRAPPED_QUOTES=' + ('YES' if raw_p[:1] in {'"',"'"} and raw_p[-1:] == raw_p[:1] else 'NO'))
+          base=norm(vals.get('IOL_BASE_URL','')) or 'https://api.invertironline.com'
+          payload=urlencode({'username':user,'password':password,'grant_type':'password'}).encode()
+          for route in ('/api/v2/token','/token'):
+              req=Request(base.rstrip('/')+route,data=payload,headers={'Content-Type':'application/x-www-form-urlencoded','User-Agent':'PorotaRC6-IOL-AuthDiag'},method='POST')
+              try:
+                  with urlopen(req,timeout=15) as r:
+                      body=r.read(200000)
+                      status=r.status
+              except HTTPError as e:
+                  status=e.code; body=e.read(200000)
+              except URLError as e:
+                  print(route+' NETWORK_ERROR='+type(e.reason).__name__)
+                  continue
+              has_token=False
+              try:
+                  data=json.loads(body.decode('utf-8','replace'))
+                  has_token=bool(data.get('access_token')) if isinstance(data,dict) else False
+              except Exception:
+                  pass
+              print(route+' HTTP_STATUS='+str(status))
+              print(route+' ACCESS_TOKEN_PRESENT='+('YES' if has_token else 'NO'))
+          print('HOST_MUTATION=NO')
+          PY
+          {
+            echo '### RC6 IOL auth route diagnostic'
+            echo '```text'
+            cat /tmp/iol-auth-diag.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
