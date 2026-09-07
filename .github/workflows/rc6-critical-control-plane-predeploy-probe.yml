@@ -80,18 +80,21 @@ jobs:
 
           if command -v gh >/dev/null 2>&1; then
             echo 'GH_CLI=PRESENT'
-            if gh auth status -h github.com >/dev/null 2>&1; then echo 'GH_CLI_AUTH=AUTHENTICATED'; else echo 'GH_CLI_AUTH=NOT_AUTHENTICATED'; fi
+            if gh auth status -h github.com >/dev/null 2>&1; then
+              echo 'GH_CLI_AUTH=AUTHENTICATED'
+              status="$(gh auth status -h github.com 2>&1 || true)"
+              printf '%s\n' "$status" | grep -Ei 'Token scopes|Active account|Logged in to' | sed -E 's/(account )[[:alnum:]_.-]+/account [REDACTED]/I' || true
+              if gh api "repos/mbalbo2023/Porota-trading/issues/40" >/dev/null 2>&1; then echo 'GH_CAP_ISSUE_READ=YES'; else echo 'GH_CAP_ISSUE_READ=NO'; fi
+              if gh api "repos/mbalbo2023/Porota-trading/contents/README.md" >/dev/null 2>&1; then echo 'GH_CAP_CONTENTS_READ=YES'; else echo 'GH_CAP_CONTENTS_READ=NO'; fi
+              if gh api "repos/mbalbo2023/Porota-trading/actions/runs?per_page=1" >/dev/null 2>&1; then echo 'GH_CAP_ACTIONS_READ=YES'; else echo 'GH_CAP_ACTIONS_READ=NO'; fi
+            else
+              echo 'GH_CLI_AUTH=NOT_AUTHENTICATED'
+            fi
           else
             echo 'GH_CLI=ABSENT'
           fi
           helper="$(git config --global credential.helper 2>/dev/null || true)"
           if [ -n "$helper" ]; then echo 'GIT_CREDENTIAL_HELPER=PRESENT'; else echo 'GIT_CREDENTIAL_HELPER=ABSENT'; fi
-          if [ -d "$REPO/secrets" ]; then
-            names="$(find "$REPO/secrets" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | grep -Ei 'github|(^|[_-])gh([_.-]|$)' || true)"
-            if [ -n "$names" ]; then printf '%s\n' "$names" | sed 's/^/GITHUB_LIKE_SECRET_FILENAME=/' ; else echo 'GITHUB_LIKE_SECRET_FILENAME=NONE'; fi
-          else
-            echo 'GITHUB_LIKE_SECRET_FILENAME=NONE'
-          fi
 
           if sudo -n docker ps -aq -f name='^/porota_critical_approval_rc6$' | grep -q .; then
             echo 'PERMANENT_GATEWAY_CONTAINER=EXISTS'
