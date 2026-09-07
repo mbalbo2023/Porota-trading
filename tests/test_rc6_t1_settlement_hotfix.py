@@ -164,15 +164,24 @@ def test_observer_runtime_explicitly_enables_t1_policy(tmp_path, monkeypatch):
     assert path.stat().st_mode & 0o777 == 0o600
 
 
-def test_mep_catalog_funding_on_deterministic_non_holiday_date(tmp_path):
-    """Reemplaza la dependencia de ``now_iso`` del test legacy durante Labor Day.
+def test_mep_catalog_funding_on_deterministic_non_holiday_date(tmp_path, monkeypatch):
+    """Valida USD_MEP en fecha normal sin depender del reloj real de CI.
 
-    Valida exactamente el contrato que interesa: AAPLD usa USD_MEP y no ARS/USD,
-    en una fecha en la que BYMA y el subyacente US están abiertos. No debilita el
-    bloqueo específico del 07/09, que se valida en la suite Labor Day separada.
+    La política real de CEDEAR se evalúa contra 04/09/2026 y luego se inyecta
+    únicamente en este test. La suite Labor Day separada conserva la prueba de
+    bloqueo obligatorio para el 07/09.
     """
     import bf_production_paper_observer as observer
     import bu_instrument_catalog as catalog
+
+    fixed_now = datetime.fromisoformat("2026-09-04T11:00:00-03:00")
+    real_block = catalog.rc6_underlying_opening_block
+    assert real_block("AAPLD", "CEDEARS", fixed_now) == ""
+    monkeypatch.setattr(
+        catalog,
+        "rc6_underlying_opening_block",
+        lambda ticker, kind, now=None: real_block(ticker, kind, fixed_now),
+    )
 
     records = json.loads((ROOT / "tests/fixtures/ppi_catalog_20260827.json").read_text())["records"]
     raw = next(r for r in records if r["ticker"] == "AAPLD")
