@@ -110,6 +110,27 @@ test "$(sudo -n systemctl is-active porota-fast-functional-health-rc6.timer)" = 
 test "$(sudo -n systemctl is-enabled porota-full-db-integrity-rc6.timer)" = enabled
 test "$(sudo -n systemctl is-active porota-full-db-integrity-rc6.timer)" = active
 
+# A concurrent observer activation can briefly leave observer_state at STARTING/CHECKING.
+# Wait for the persisted postclose session to settle before proving preopen policy.
+READY=0
+for _ in $(seq 1 36); do
+  if python3 - "$DB" <<'PY'
+import sqlite3,sys
+p=sys.argv[1]
+c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=15); c.execute('PRAGMA query_only=ON')
+r=c.execute('SELECT mode,session_state,ppi_auth,real_orders_sent FROM observer_state WHERE id=1').fetchone(); c.close()
+if not r: raise SystemExit(1)
+mode,session,auth,orders=r
+ok=(mode=='PRODUCTION_PAPER' and str(session).upper()=='MARKET_CLOSED' and
+    str(auth).upper() in {'OK','AUTHENTICATED','NOT_ATTEMPTED'} and int(orders or 0)==0)
+raise SystemExit(0 if ok else 1)
+PY
+  then READY=1; break; fi
+  sleep 5
+done
+test "$READY" -eq 1
+echo OBSERVER_SESSION_READY=GREEN
+
 # Re-evaluate today's preopen contract with the same 8 GiB disk floor.
 set +e
 sudo -n systemctl start porota-preopen-rc6.service
@@ -125,7 +146,7 @@ sudo -n systemctl reset-failed porota-preopen-rc6.service porota-contract-eviden
 test "$(sudo -n systemctl is-active porota-contract-evidence-hf6.timer 2>/dev/null || true)" != active
 test "$(sudo -n systemctl is-active porota-rc4-auto-check.timer 2>/dev/null || true)" != active
 
-# Host-only deployment must not replace observer or repository identity.
+# Host-only deployment must not replace observer or repository identity during this run.
 test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)" = "$BEFORE_ID"
 test "$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$BEFORE_LABEL"
 test "$(git -C "$ROOT" branch --show-current)" = "$BEFORE_BRANCH"
