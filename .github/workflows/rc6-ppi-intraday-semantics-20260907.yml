@@ -1,0 +1,114 @@
+name: RC6 PPI intraday semantics audit 2026-09-07
+on:
+  push:
+    branches: [diag/rc6-ppi-intraday-semantics-20260907]
+permissions:
+  contents: write
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diag/rc6-ppi-intraday-semantics-20260907
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_intraday_diag"
+          chmod 600 "$HOME/.ssh/porota_intraday_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Compare consecutive PPI intraday payloads read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_intraday_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-ppi-intraday-semantics.txt
+          set -Eeuo pipefail
+          echo '=== RC6 PPI INTRADAY SEMANTICS / READ ONLY ==='
+          date -u '+UTC=%Y-%m-%dT%H:%M:%SZ'
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|restarts={{.RestartCount}}|readonly={{.HostConfig.ReadonlyRootfs}}|image={{.Config.Image}}' porota_production_observer
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,time,hashlib
+          from collections import defaultdict
+          from datetime import datetime,timezone
+          from bd_ppi_readonly_guard import ProductionMarketReader
+          from bf_production_paper_observer import _secret
+
+          SYMBOLS=[('GGAL','ACCIONES','A-24HS'),('CEPU','ACCIONES','A-24HS'),('YPFD','ACCIONES','A-24HS')]
+          def field(row,name): return {str(k).lower():v for k,v in row.items()}.get(name.lower())
+          def normalize(payload):
+              out={}
+              for r in payload if isinstance(payload,list) else []:
+                  dt=str(field(r,'date')); out[dt]={'price':field(r,'price'),'volume':field(r,'volume')}
+              return out
+          reader=ProductionMarketReader(*_secret())
+          reader.login_once()
+          snapshots=[]
+          for round_no in range(3):
+              batch={}
+              for sym,fam,settle in SYMBOLS:
+                  raw=reader.intraday(sym,fam,settle)
+                  batch[sym]=normalize(raw)
+                  print(f'ROUND={round_no+1}|SYMBOL={sym}|ROWS={len(batch[sym])}|FIRST={min(batch[sym],default="-")}|LAST={max(batch[sym],default="-")}')
+              snapshots.append(batch)
+              if round_no<2: time.sleep(12)
+          for sym,_,_ in SYMBOLS:
+              print(f'--- {sym} REVISION ANALYSIS ---')
+              for i in (1,2):
+                  old=snapshots[i-1][sym]; new=snapshots[i][sym]
+                  overlap=set(old)&set(new); pricechg=[]; volchg=[]; both=[]
+                  now=datetime.now(timezone.utc)
+                  ages=[]
+                  for k in sorted(overlap):
+                      p=old[k]['price']!=new[k]['price']; v=old[k]['volume']!=new[k]['volume']
+                      if p: pricechg.append(k)
+                      if v: volchg.append(k)
+                      if p and v: both.append(k)
+                      if p or v:
+                          try:
+                              dt=datetime.fromisoformat(k.replace('Z','+00:00')).astimezone(timezone.utc)
+                              ages.append((now-dt).total_seconds()/60)
+                          except Exception: pass
+                  print(f'PAIR={i}->{i+1}|OVERLAP={len(overlap)}|NEW={len(set(new)-set(old))}|DROPPED={len(set(old)-set(new))}|PRICE_CHANGED={len(pricechg)}|VOLUME_CHANGED={len(volchg)}|BOTH_CHANGED={len(both)}|OLDEST_CHANGED_MIN={max(ages) if ages else 0:.1f}|NEWEST_CHANGED_MIN={min(ages) if ages else 0:.1f}')
+                  # no raw prices are persisted; only event timestamps for up to 8 revised points
+                  print('CHANGED_EVENT_SAMPLE='+json.dumps(sorted(set(pricechg+volchg))[:8]))
+              # Determine adjacent-volume direction in latest payload.
+              latest=snapshots[-1][sym]
+              seq=[]
+              for k in sorted(latest):
+                  try: seq.append(float(latest[k]['volume']))
+                  except Exception: pass
+              downs=sum(1 for a,b in zip(seq,seq[1:]) if b<a); ups=sum(1 for a,b in zip(seq,seq[1:]) if b>a); eq=sum(1 for a,b in zip(seq,seq[1:]) if b==a)
+              print(f'LATEST_VOLUME_ADJACENCY|SYMBOL={sym}|UP={ups}|DOWN={downs}|EQUAL={eq}|N={len(seq)}')
+          print('HTTP_METRICS='+json.dumps(reader.metrics,sort_keys=True))
+          reader.close()
+          print('PPI_INTRADAY_FORENSIC=GREEN_READONLY')
+          PY
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('PRAGMA query_only=ON')
+          print('DB_QUICK_CHECK='+c.execute('PRAGMA quick_check').fetchone()[0])
+          r=c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone(); print('REAL_ORDERS_SENT='+str(r[0] if r else -1)); c.close()
+          PY
+          echo 'HOST_MUTATION=NO'
+          echo 'OBSERVER_RESTART_REQUESTED=NO'
+          echo 'NETWORK_ORDER_TEST=NO'
+          HOST
+      - name: Persist sanitized evidence
+        run: |
+          set -euo pipefail
+          mkdir -p audit/evidence
+          cp /tmp/rc6-ppi-intraday-semantics.txt audit/evidence/RC6_PPI_INTRADAY_SEMANTICS_20260907.txt
+          git config user.name porota-ci
+          git config user.email porota-ci@users.noreply.github.com
+          git add audit/evidence/RC6_PPI_INTRADAY_SEMANTICS_20260907.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'diag(rc6): persist PPI intraday semantics evidence'
+          git push origin HEAD:diag/rc6-ppi-intraday-semantics-20260907
