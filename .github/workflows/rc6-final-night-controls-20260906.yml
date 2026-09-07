@@ -1,0 +1,137 @@
+name: RC6 final night controls 2026-09-06
+
+on:
+  push:
+    branches:
+      - diag/rc6-final-night-controls-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_final"
+          chmod 600 "$HOME/.ssh/porota_rc6_final"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Verify post-deploy introspection and runtime
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_final" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-final-night-controls.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DATA="$REPO/data"
+          OBS_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          OBS_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          OBS_IMAGE=porota-trading-bot:17.0.0-rc6
+          DASH_IMAGE=porota-trading-dashboard:17.0.0-rc6-go-live-final
+          DEPLOY_EPOCH=$(date -u -d '2026-09-07T01:08:15Z' +%s)
+
+          runtime_check(){
+            test "$(git -C "$REPO" branch --show-current)" = "$OBS_BRANCH"
+            test "$(git -C "$REPO" rev-parse HEAD)" = "$OBS_SHA"
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$OBS_IMAGE|0|true"
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$DASH_IMAGE|0"
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          vals=[]; row=None
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+              c.execute('PRAGMA query_only=ON')
+              vals.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'):
+                  row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*vals,*row))))
+          PY
+          )"
+            echo "RUNTIME=$state"
+            test "$state" = 'ok|ok|PRODUCTION_PAPER|0'
+          }
+
+          echo '=== RC6 FINAL NIGHT CONTROL ==='
+          runtime_check
+
+          echo '--- INTROSPECTION TIMER ---'
+          test "$(sudo -n systemctl is-enabled porota-introspeccion-hf5.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-introspeccion-hf5.timer)" = active
+          sudo -n systemctl show porota-introspeccion-hf5.timer -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager
+
+          echo '--- WAIT FOR FIRST SNAPSHOT AFTER DASHBOARD DEPLOY ---'
+          latest=''
+          latest_epoch=0
+          for _ in $(seq 1 30); do
+            latest="$(sudo -n find "$DATA/introspection" -maxdepth 1 -type f -name 'porota_introspection_rc6_*.json' -printf '%T@|%p\n' 2>/dev/null | sort -nr | head -n1 || true)"
+            if [ -n "$latest" ]; then
+              latest_epoch="$(printf '%s' "$latest" | cut -d'|' -f1 | cut -d'.' -f1)"
+              if [ "$latest_epoch" -gt "$DEPLOY_EPOCH" ]; then break; fi
+            fi
+            sleep 20
+          done
+          echo "LATEST_RAW=$latest"
+          test -n "$latest"
+          test "$latest_epoch" -gt "$DEPLOY_EPOCH"
+          latest_path="${latest#*|}"
+          echo "LATEST_PATH=$latest_path"
+          sudo -n python3 - "$latest_path" <<'PY'
+          import json,sys
+          from datetime import datetime,timezone
+          p=sys.argv[1]
+          data=json.load(open(p,encoding='utf-8'))
+          stamp=data.get('timestamp')
+          assert stamp, data.keys()
+          dt=datetime.fromisoformat(stamp.replace('Z','+00:00'))
+          age=(datetime.now(timezone.utc)-dt.astimezone(timezone.utc)).total_seconds()
+          print('SNAPSHOT_TIMESTAMP='+stamp)
+          print(f'SNAPSHOT_AGE_SECONDS={age:.1f}')
+          assert 0 <= age <= 4500
+          print('POST_DEPLOY_INTROSPECTION=GREEN')
+          PY
+
+          echo '--- DASHBOARD INTROSPECTION HTTP ---'
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,urllib.request
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN',''); assert token
+          req=urllib.request.Request('http://127.0.0.1:8000/sistema?section=introspeccion',headers={'Authorization':'Bearer '+token,'User-Agent':'PorotaRC6FinalNightControl'})
+          with urllib.request.urlopen(req,timeout=25) as r:
+              body=r.read(4_000_000).decode('utf-8','replace')
+              print('HTTP_STATUS=',r.status)
+              print('HTTP_LEN=',len(body))
+              assert r.status==200 and len(body)>200
+              assert 'system-nav' in body
+              assert 'Snapshot de introspección no vigente' not in body
+              assert 'Snapshot de introspección vigente' in body
+          print('DASHBOARD_INTROSPECTION=GREEN')
+          PY
+
+          runtime_check
+          echo 'OBSERVER_RESTARTED=NO'
+          echo 'STRATEGY_CHANGED=NO'
+          echo 'REAL_ORDER_CAPABILITY=BLOCKED'
+          echo 'RC6_FINAL_NIGHT_CONTROL=GREEN'
+          HOST
+
+          {
+            echo '### POROTA TRADING RC6 final night controls'
+            echo '```text'
+            cat /tmp/rc6-final-night-controls.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
