@@ -1,0 +1,76 @@
+POROTA RC6 DISK POST-CLEANUP PROOF — READ ONLY
+UTC=2026-09-07T18:45:22Z
+BRANCH=hotfix/rc6-paper-t1-settlement-20260907
+HEAD=5076b6dff8c644ed73160b4148eb7a1cf9ca7e43
+
+======================================================================
+01 FILESYSTEM
+======================================================================
+  1B-blocks        Used       Avail Use% Mounted on
+24883167232 11789094912 13077295104  48% /
+Filesystem     Type  Size  Used Avail Use% Mounted on
+/dev/vda1      ext4   24G   11G   13G  48% /
+
+======================================================================
+02 POROTA STORAGE
+======================================================================
+2.3G	/opt/porota-trading/data
+165M	/opt/porota-backups
+240M	/home/porotaadmin/porota-browser-lab
+RC5_LOCAL_PREDEPLOY=ABSENT
+-- general host backups --
+172507041	2026-09-07 07:16	/opt/porota-backups/porota-general-20260907T071518Z.tar.gz
+-- chrome deb installers >50M --
+-- apt cache --
+32K	/var/cache/apt
+
+======================================================================
+03 JOURNAL
+======================================================================
+Archived and active journals take up 146.2M in the file system.
+147M	/var/log/journal
+
+======================================================================
+04 DOCKER
+======================================================================
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          3         2         2.789GB   12.49MB (0%)
+Containers      3         3         53.25kB   0B (0%)
+Local Volumes   0         0         0B        0B
+Build Cache     0         0         0B        0B
+-- images --
+REPOSITORY                  TAG                      IMAGE ID       SIZE
+porota-iol-history-shadow   17.0.0-rc6               c3346759a1f8   1.61GB
+porota-trading-dashboard    17.0.0-rc6-operator-ux   2de65e36d890   1.61GB
+porota-trading-bot          17.0.0-rc6               b67c12a8d5ed   1.61GB
+-- active containers --
+NAMES                          IMAGE                                             STATUS
+porota_critical_approval_rc6   porota-trading-bot:17.0.0-rc6                     Up 51 minutes (unhealthy)
+porota_production_dashboard    porota-trading-dashboard:17.0.0-rc6-operator-ux   Up 2 hours (healthy)
+porota_production_observer     porota-trading-bot:17.0.0-rc6                     Up 4 hours
+-- builder --
+ID        RECLAIMABLE   SIZE      LAST ACCESSED
+Reclaimable:	0B
+Total:		0B
+
+======================================================================
+05 SQLITE AND ORDER SAFETY
+======================================================================
+QUICK_CHECK path=/opt/porota-trading/data/paper_v17/observer_v17.db result=ok bytes=1504440320
+REAL_ORDERS_SENT=0
+QUICK_CHECK path=/opt/porota-trading/data/market_history.db result=ok bytes=53985280
+
+======================================================================
+06 CONTAINER SAFETY
+======================================================================
+CONTAINER=porota_production_observer STATE=running HEALTH=none RESTARTS=0 IMAGE=porota-trading-bot:17.0.0-rc6
+CONTAINER=porota_production_dashboard STATE=running HEALTH=healthy RESTARTS=0 IMAGE=porota-trading-dashboard:17.0.0-rc6-operator-ux
+
+======================================================================
+07 PROTECTED ARCHITECTURE CHECKPOINT
+======================================================================
+historical_raw_archive=NOT_MODIFIED
+observer_v17.db=NOT_VACUUMED
+market_history.db=NOT_MODIFIED_BY_CLEANUP
+rollback_policy=GITHUB_ONLY
+PROOF_STATUS=COMPLETE_READ_ONLY
