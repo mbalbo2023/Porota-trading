@@ -1,0 +1,833 @@
+POROTA TRADING — RC6 READ-ONLY DISK AUDIT
+MUTATIONS=NONE
+DELETE=NONE
+PRUNE=NONE
+VACUUM=NONE
+UTC=2026-09-07T17:48:11Z
+AR=2026-09-07T14:48:11-0300
+HOST=ubuntu-s-1vcpu-1gb-nyc1
+USER=porotaadmin
+
+======================================================================
+01. FILESYSTEM CAPACITY AND INODES
+======================================================================
+
+$ df -hT /
+Filesystem     Type  Size  Used Avail Use% Mounted on
+/dev/vda1      ext4   24G   15G  8.7G  63% /
+
+$ df -hT /opt/porota-trading
+Filesystem     Type  Size  Used Avail Use% Mounted on
+/dev/vda1      ext4   24G   15G  8.7G  63% /
+
+$ df -ih /
+Filesystem     Inodes IUsed IFree IUse% Mounted on
+/dev/vda1        3.0M  294K  2.8M   10% /
+
+$ lsblk -o NAME,SIZE,FSTYPE,TYPE,MOUNTPOINTS
+NAME     SIZE FSTYPE  TYPE MOUNTPOINTS
+vda       25G         disk 
+├─vda1    24G ext4    part /
+├─vda14    4M         part 
+├─vda15  106M vfat    part /boot/efi
+└─vda16  913M ext4    part /boot
+vdb      488K iso9660 disk 
+
+======================================================================
+02. TOP-LEVEL DISK CONSUMPTION ON ROOT FILESYSTEM
+======================================================================
+Description: size of each first-level directory; this identifies whether /var, /opt, /home, /usr, etc. dominates.
+4.0K	/bin.usr-is-merged
+4.0K	/lib.usr-is-merged
+4.0K	/media
+4.0K	/mnt
+4.0K	/sbin.usr-is-merged
+4.0K	/srv
+8.0K	/snap
+12K	/.local
+16K	/lost+found
+888K	/root
+7.4M	/etc
+14M	/tmp
+399M	/home
+2.5G	/usr
+4.2G	/opt
+5.5G	/var
+15G	/
+
+======================================================================
+03. /OPT BREAKDOWN
+======================================================================
+Description: POROTA runtime, staging, backups, and other application data under /opt.
+4.0K	/opt/containerd/bin
+4.0K	/opt/containerd/lib
+4.0K	/opt/porota-control-plane-rc6/data
+4.0K	/opt/porota-control-plane-rc6/secrets
+8.0K	/opt/porota-trading/.secrets
+12K	/opt/containerd
+12K	/opt/digitalocean/droplet-agent
+20K	/opt/porota-trading/.release
+28K	/opt/porota-contract-evidence-venv/include
+44K	/opt/porota-contract-evidence-venv/bin
+44K	/opt/porota-control-plane-rc6/releases
+60K	/opt/porota-control-plane-rc6
+60K	/opt/porota-trading/deploy
+76K	/opt/porota-runtime-patches/hf6-contract-evidence
+80K	/opt/porota-runtime-patches
+108K	/opt/porota-trading/systemd
+112K	/opt/porota-trading/__pycache__
+184K	/opt/porota-trading/docs
+284K	/opt/porota-trading/.github
+408K	/opt/porota-staging/incoming
+412K	/opt/porota-staging
+428K	/opt/porota-trading/scripts
+960K	/opt/porota-trading/tests
+3.1M	/opt/porota-builds/hf1-20260830T031945Z
+3.2M	/opt/porota-builds/hf2-20260830T133128Z
+3.2M	/opt/porota-builds/hf2-20260830T134422Z
+3.2M	/opt/porota-builds/hf2-20260830T135526Z
+3.2M	/opt/porota-builds/hf2-20260830T151512Z
+13M	/opt/porota-trading/.git
+15M	/opt/digitalocean
+15M	/opt/digitalocean/bin
+16M	/opt/porota-builds
+153M	/opt/porota-contract-evidence-venv
+153M	/opt/porota-contract-evidence-venv/lib
+188M	/opt/porota-backups
+434M	/opt/google
+434M	/opt/google/chrome
+3.4G	/opt/porota-trading
+3.4G	/opt/porota-trading/data
+4.2G	/opt
+
+======================================================================
+04. POROTA REPOSITORY BREAKDOWN
+======================================================================
+Description: code checkout vs persistent runtime data and local Git metadata.
+8.0K	/opt/porota-trading/.secrets
+20K	/opt/porota-trading/.release
+60K	/opt/porota-trading/deploy
+108K	/opt/porota-trading/systemd
+112K	/opt/porota-trading/__pycache__
+184K	/opt/porota-trading/docs
+284K	/opt/porota-trading/.github
+428K	/opt/porota-trading/scripts
+960K	/opt/porota-trading/tests
+13M	/opt/porota-trading/.git
+3.4G	/opt/porota-trading
+3.4G	/opt/porota-trading/data
+-- Git identity --
+hotfix/rc6-paper-t1-settlement-20260907
+5076b6dff8c644ed73160b4148eb7a1cf9ca7e43
+-- Git object storage --
+13M	/opt/porota-trading/.git
+count: 1268
+size: 7.78 MiB
+in-pack: 2444
+packs: 7
+size-pack: 2.55 MiB
+prune-packable: 8
+garbage: 0
+size-garbage: 0 bytes
+-- Worktrees --
+/opt/porota-trading                                              5076b6d [hotfix/rc6-paper-t1-settlement-20260907]
+/home/porotaadmin/RC4_HF1_BACKUP_20260904T162510Z/worktree       6e2c560 (detached HEAD) prunable
+/home/porotaadmin/RC4_HF1_BACKUP_20260904T163506Z/worktree       6e2c560 (detached HEAD) prunable
+/home/porotaadmin/RC4_HF1_BACKUP_20260904T172511Z/worktree       f70414d (detached HEAD) prunable
+/home/porotaadmin/RC4_HF1_BACKUP_20260904T173411Z/worktree       c311334 (detached HEAD) prunable
+/home/porotaadmin/RC4_HF1_BACKUP_20260904T174250Z/worktree       3e60501 (detached HEAD) prunable
+/home/porotaadmin/porota_rc4_git_gate_20260904T031732Z/worktree  75c9ddf (detached HEAD)
+/opt/porota-staging/rc4-final-20260904T120511Z/source            75c9ddf (detached HEAD) prunable
+/opt/porota-staging/rc4-final-20260904T121109Z/source            75c9ddf (detached HEAD) prunable
+-- Status counts only (contents are not printed) --
+UNTRACKED_COUNT=58
+MODIFIED_OR_STAGED_COUNT=0
+
+======================================================================
+05. POROTA DATA — DIRECTORY BREAKDOWN
+======================================================================
+Description: persistent trading DBs, historical market data, introspection, diagnostics, runtime patches, logs, backups and evidence.
+4.0K	/opt/porota-trading/data/proposals
+8.0K	/opt/porota-trading/data/contract_evidence/ppi_web_cauciones
+12K	/opt/porota-trading/data/diagnosticos/integrity
+16K	/opt/porota-trading/data/contract_evidence/ppi_web_all_families
+16K	/opt/porota-trading/data/paper_v17/observability
+24K	/opt/porota-trading/data/logs
+28K	/opt/porota-trading/data/contract_evidence/rc6_trusted
+28K	/opt/porota-trading/data/scheduler
+32K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260825_213248
+32K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_002722
+32K	/opt/porota-trading/data/deployments
+36K	/opt/porota-trading/data/runtime_patches/hf6_contract_evidence
+40K	/opt/porota-trading/data/runtime_patches
+44K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_010951
+48K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_014402
+56K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_015556
+68K	/opt/porota-trading/data/diagnosticos/cierre_rueda
+76K	/opt/porota-trading/data/backups/preopen-retire
+84K	/opt/porota-trading/data/diagnosticos/auto_checks
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_192702
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_193818
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_200030
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_201353
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_201732
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_203013
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260826_225316
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260826_231857
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_030847
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_031513
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_033133
+348K	/opt/porota-trading/data/introspection_publish/daily
+368K	/opt/porota-trading/data/introspection_publish
+532K	/opt/porota-trading/data/backups/patch_v163_20260824_160012
+1.2M	/opt/porota-trading/data/diagnosticos
+3.1M	/opt/porota-trading/data/reports
+4.2M	/opt/porota-trading/data/introspection
+4.9M	/opt/porota-trading/data/functional_health
+16M	/opt/porota-trading/data/contract_evidence
+16M	/opt/porota-trading/data/contract_evidence/rc4_trusted
+752M	/opt/porota-trading/data/paper_v17/artifacts
+1.2G	/opt/porota-trading/data/backups
+1.2G	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651
+2.2G	/opt/porota-trading/data/paper_v17
+3.4G	/opt/porota-trading/data
+
+======================================================================
+06. POROTA DATA — 60 LARGEST FILES
+======================================================================
+Description: exact files consuming most space inside /opt/porota-trading/data. File contents are never read.
+1.4GiB	2026-09-07 17:46	/opt/porota-trading/data/paper_v17/observer_v17.db
+1.1GiB	2026-09-05 21:29	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651/observer_v17.db
+152MiB	2026-09-07 14:46	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-07.db.gz
+132MiB	2026-09-06 21:58	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-06.db.gz
+117MiB	2026-09-05 21:31	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-05.db.gz
+108MiB	2026-09-05 02:02	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-04.db.gz
+73MiB	2026-09-04 00:09	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-03.db.gz
+52MiB	2026-09-07 13:41	/opt/porota-trading/data/market_history.db
+48MiB	2026-09-02 19:56	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-02.db.gz
+45MiB	2026-09-05 21:29	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651/market_history.db
+24MiB	2026-09-01 23:54	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-01.db.gz
+13MiB	2026-09-01 00:18	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-08-31.db.gz
+12MiB	2026-09-07 17:48	/opt/porota-trading/data/paper_v17/observer_v17.db-wal
+11MiB	2026-09-04 20:18	/opt/porota-trading/data/contract_evidence/rc4_trusted/contract_20260904T194055Z.json
+11MiB	2026-09-05 21:32	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_ia_semanal_2026-08-30_2026-09-05.json
+11MiB	2026-09-05 02:02	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_ia_semanal_2026-08-29_2026-09-04.json
+9.0MiB	2026-09-07 14:47	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-07.db.gz
+9.0MiB	2026-09-06 21:58	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-06.db.gz
+8.0MiB	2026-09-05 21:32	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-05.db.gz
+7.9MiB	2026-09-05 02:02	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-04.db.gz
+7.8MiB	2026-09-04 02:00	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_ia_semanal_2026-08-28_2026-09-03.json
+5.8MiB	2026-09-03 02:01	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_ia_semanal_2026-08-27_2026-09-02.json
+4.1MiB	2026-09-04 20:43	/opt/porota-trading/data/contract_evidence/rc4_trusted/contract_20260904T203757Z.json
+3.9MiB	2026-09-01 23:54	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_ia_semanal_2026-08-26_2026-09-01.json
+2.5MiB	2026-08-29 21:29	/opt/porota-trading/data/paper_v17/artifacts/finalization/observer_v17_rc3_accepted_20260829T212917Z.db
+2.4MiB	2026-09-05 02:02	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_diario_2026-09-04.json
+2.1MiB	2026-09-01 23:54	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_diario_2026-09-01.json
+2.0MiB	2026-09-04 02:00	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_diario_2026-09-03.json
+2.0MiB	2026-09-03 02:01	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_diario_2026-09-02.json
+1.9MiB	2026-09-01 00:18	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_diario_2026-08-31.json
+1.9MiB	2026-09-04 02:00	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/lecciones_ia_mensual_2026-08.json
+1.9MiB	2026-08-27 20:01	/opt/porota-trading/data/reports/lecciones_ia_diario_2026-08-26.json
+1.2MiB	2026-08-28 02:01	/opt/porota-trading/data/reports/lecciones_ia_diario_2026-08-27.json
+1.1MiB	2026-08-30 15:19	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-08-30.db.gz
+780KiB	2026-08-29 21:12	/opt/porota-trading/data/paper_v17/artifacts/migrations/observer_v17_pre_history_import_20260829T211244Z.db
+776KiB	2026-08-29 21:07	/opt/porota-trading/data/paper_v17/artifacts/migrations/observer_v17_pre_history_import_20260829T210717Z.db
+336KiB	2026-08-29 21:12	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-08-29.db.gz
+298KiB	2026-09-03 02:20	/opt/porota-trading/data/introspection_publish/daily/2026-09-02.json
+185KiB	2026-09-04 19:16	/opt/porota-trading/data/contract_evidence/rc4_trusted/contract_20260904T190436Z.json
+151KiB	2026-08-25 20:31	/opt/porota-trading/data/diagnosticos/instalar_production_paper_v1634.log
+142KiB	2026-08-27 03:33	/opt/porota-trading/data/diagnosticos/instalar_production_paper_v1635.log
+127KiB	2026-08-27 03:31	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_033133/source_before.tar.gz
+127KiB	2026-08-27 03:15	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_031513/source_before.tar.gz
+127KiB	2026-08-27 03:08	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_030847/source_before.tar.gz
+127KiB	2026-08-26 23:18	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260826_231857/source_before.tar.gz
+102KiB	2026-08-24 14:04	/opt/porota-trading/data/diagnosticos/analisis_arranque_20260824.txt
+98KiB	2026-09-01 12:28	/opt/porota-trading/data/diagnosticos/hf4_critical_deploy_20260901T122019Z.log
+81KiB	2026-08-26 18:14	/opt/porota-trading/data/porota_hotfix_gemini_resiliente_v1634.sh
+80KiB	2026-08-26 22:53	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260826_225316/source_before.tar.gz
+80KiB	2026-08-23 22:41	/opt/porota-trading/data/backups/patch_v163_20260824_160012/o_dashboard.py
+79KiB	2026-08-24 14:09	/opt/porota-trading/data/backups/patch_v163_20260824_160012/j_main.py
+79KiB	2026-09-04 20:50	/opt/porota-trading/data/contract_evidence/rc4_trusted/contract_20260904T204847Z.json
+78KiB	2026-09-04 20:29	/opt/porota-trading/data/contract_evidence/rc4_trusted/contract_20260904T202756Z.json
+77KiB	2026-08-25 20:30	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_203013/source_before.tar.gz
+77KiB	2026-08-25 20:17	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_201732/source_before.tar.gz
+77KiB	2026-08-25 20:13	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_201353/source_before.tar.gz
+77KiB	2026-08-25 20:00	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_200030/source_before.tar.gz
+77KiB	2026-08-25 19:38	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_193818/source_before.tar.gz
+77KiB	2026-08-25 19:27	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_192702/source_before.tar.gz
+64KiB	2026-08-24 17:40	/opt/porota-trading/data/diagnosticos/pruebas_v1631.log
+
+======================================================================
+07. SQLITE DB / WAL / SHM FOOTPRINT
+======================================================================
+Description: active SQLite databases and sidecar WAL/SHM files; these are PROTECTED and are inventory-only.
+1.4GiB	2026-09-07 17:46	/opt/porota-trading/data/paper_v17/observer_v17.db
+1.1GiB	2026-09-05 21:29	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651/observer_v17.db
+52MiB	2026-09-07 13:41	/opt/porota-trading/data/market_history.db
+45MiB	2026-09-05 21:29	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651/market_history.db
+12MiB	2026-09-07 17:48	/opt/porota-trading/data/paper_v17/observer_v17.db-wal
+2.5MiB	2026-08-29 21:29	/opt/porota-trading/data/paper_v17/artifacts/finalization/observer_v17_rc3_accepted_20260829T212917Z.db
+780KiB	2026-08-29 21:12	/opt/porota-trading/data/paper_v17/artifacts/migrations/observer_v17_pre_history_import_20260829T211244Z.db
+776KiB	2026-08-29 21:07	/opt/porota-trading/data/paper_v17/artifacts/migrations/observer_v17_pre_history_import_20260829T210717Z.db
+36KiB	2026-09-01 00:18	/opt/porota-trading/data/trading_system.db
+32KiB	2026-09-07 17:48	/opt/porota-trading/data/paper_v17/observer_v17.db-shm
+32KiB	2026-09-07 17:32	/opt/porota-trading/data/market_history.db-shm
+32KiB	2026-09-07 07:15	/opt/porota-trading/data/paper_v17/artifacts/migrations/observer_v17_pre_history_import_20260829T211244Z.db-shm
+32KiB	2026-09-07 07:15	/opt/porota-trading/data/paper_v17/artifacts/migrations/observer_v17_pre_history_import_20260829T210717Z.db-shm
+32KiB	2026-09-07 07:15	/opt/porota-trading/data/paper_v17/artifacts/finalization/observer_v17_rc3_accepted_20260829T212917Z.db-shm
+32KiB	2026-09-05 23:32	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651/observer_v17.db-shm
+32KiB	2026-09-05 23:20	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651/market_history.db-shm
+0B	2026-09-07 17:30	/opt/porota-trading/data/market_history.db-wal
+0B	2026-09-05 21:29	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651/observer_v17.db-wal
+0B	2026-09-05 21:29	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651/market_history.db-wal
+0B	2026-08-30 13:46	/opt/porota-trading/data/paper_v17/artifacts/migrations/observer_v17_pre_history_import_20260829T211244Z.db-wal
+0B	2026-08-30 13:46	/opt/porota-trading/data/paper_v17/artifacts/migrations/observer_v17_pre_history_import_20260829T210717Z.db-wal
+0B	2026-08-29 21:29	/opt/porota-trading/data/paper_v17/artifacts/finalization/observer_v17_rc3_accepted_20260829T212917Z.db-wal
+
+======================================================================
+08. BACKUPS / STAGING / DEPLOY ARTIFACTS
+======================================================================
+Description: backup sets and deploy bundles are common reclaim candidates only after retention validation.
+-- /opt/porota-trading/data/backups --
+32K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260825_213248
+32K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_002722
+36K	/opt/porota-trading/data/backups/preopen-retire/20260903T040159Z
+36K	/opt/porota-trading/data/backups/preopen-retire/20260903T040633Z
+44K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_010951
+48K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_014402
+56K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_015556
+76K	/opt/porota-trading/data/backups/preopen-retire
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_192702
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_193818
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_200030
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_201353
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_201732
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_203013
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260826_225316
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260826_231857
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_030847
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_031513
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_033133
+532K	/opt/porota-trading/data/backups/patch_v163_20260824_160012
+1.2G	/opt/porota-trading/data/backups
+1.2G	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651
+-- /opt/porota-staging --
+404K	/opt/porota-staging/incoming/hf6-20260901T225614955996Z
+408K	/opt/porota-staging/incoming
+412K	/opt/porota-staging
+-- /opt/porota-backups --
+188M	/opt/porota-backups
+-- /home/porotaadmin --
+4.0K	/home/porotaadmin/RC4_AUTO_CHECK_BACKUP_20260904T141132Z
+4.0K	/home/porotaadmin/RC4_HF2_RESUME_V6_BACKUP_20260905T020034Z
+4.0K	/home/porotaadmin/RC4_PREOPEN_CHECKER_BACKUP_20260904T135327Z
+4.0K	/home/porotaadmin/porota-browser-lab/rc6-runtime
+4.0K	/home/porotaadmin/porota-hf6-v2-deploy-backup-20260903T034223Z
+8.0K	/home/porotaadmin/.cache/dconf
+8.0K	/home/porotaadmin/RC4_CE_SESSION_RUNNER_BACKUP_20260904T192130Z
+8.0K	/home/porotaadmin/RC4_CONTRACT_PROFILE_BACKUP_20260904T184733Z
+8.0K	/home/porotaadmin/porota-hf6-v2-deploy-backup-20260903T033637Z
+12K	/home/porotaadmin/.config/gh
+12K	/home/porotaadmin/.porota-secrets
+12K	/home/porotaadmin/.ssh
+12K	/home/porotaadmin/POROTA_WEEKEND_AUTOMATION_BACKUP_20260905T035004Z
+12K	/home/porotaadmin/RC4_HF2_RESUME_V2_BACKUP_20260905T013824Z
+12K	/home/porotaadmin/RC4_HF2_RESUME_V3_BACKUP_20260905T014126Z/tests
+12K	/home/porotaadmin/RC4_UNTRACKED_COLLISION_BACKUP_20260904T123029Z/scripts
+16K	/home/porotaadmin/POROTA_SMART_INGEST_V3_BACKUP_20260905T151956Z
+16K	/home/porotaadmin/RC4_HF2_RESUME_BACKUP_20260905T013005Z
+16K	/home/porotaadmin/RC4_HF2_RESUME_V4_BACKUP_20260905T014540Z
+24K	/home/porotaadmin/.docker/buildx
+28K	/home/porotaadmin/.docker
+28K	/home/porotaadmin/RC4_CE_MATERIALIZER_BACKUP_20260904T194037Z
+28K	/home/porotaadmin/RC4_HF2_RESUME_V3_BACKUP_20260905T014126Z/scripts
+28K	/home/porotaadmin/RC4_PREOPEN_CHECKER_BACKUP_20260904T135721Z
+28K	/home/porotaadmin/RC4_UNTRACKED_COLLISION_BACKUP_20260904T123029Z
+36K	/home/porotaadmin/porota-hf6-v2-deploy-backup-20260903T040147Z/host-artifacts
+36K	/home/porotaadmin/porota-hf6-v2-deploy-backup-20260903T040619Z/host-artifacts
+40K	/home/porotaadmin/POROTA_SMART_INGEST_CANDLES_BACKUP_20260905T132511Z
+44K	/home/porotaadmin/RC4_HF2_RESUME_V5_BACKUP_20260905T014926Z
+44K	/home/porotaadmin/porota-hf6-v2-deploy-backup-20260903T040147Z
+48K	/home/porotaadmin/porota-hf6-v2-deploy-backup-20260903T040619Z
+76K	/home/porotaadmin/.cache/fontconfig
+84K	/home/porotaadmin/.local/share
+88K	/home/porotaadmin/.cache
+88K	/home/porotaadmin/.local
+120K	/home/porotaadmin/porota_instaladores_anteriores_20260826_225314
+148K	/home/porotaadmin/.config/google-chrome
+164K	/home/porotaadmin/.config
+168K	/home/porotaadmin/RC4_DASHBOARD_SEMANTIC_BACKUP_20260904T203607Z
+168K	/home/porotaadmin/RC4_DASHBOARD_SEMANTIC_BACKUP_20260904T203754Z
+168K	/home/porotaadmin/RC4_DASHBOARD_SEMANTIC_V2_BACKUP_20260904T204448Z
+220K	/home/porotaadmin/RC4_REMAINING_SOURCE_BACKUP_20260904T210230Z
+232K	/home/porotaadmin/RC4_HF2_RESUME_V3_BACKUP_20260905T014126Z
+268K	/home/porotaadmin/RC4_HF2_FINAL_DEPLOY_BACKUP_20260905T012137Z
+280K	/home/porotaadmin/.porota-jobs
+420K	/home/porotaadmin/rc4_dashboard_audit_20260904T181127Z
+420K	/home/porotaadmin/rc4_dashboard_audit_v2_20260904T182556Z
+420K	/home/porotaadmin/rc4_dashboard_audit_v2_20260904T183405Z
+420K	/home/porotaadmin/rc4_dashboard_audit_v2_20260904T183541Z
+4.2M	/home/porotaadmin/porota_rc4_git_gate_20260904T031732Z/worktree
+8.4M	/home/porotaadmin/porota_rc4_git_gate_20260904T031732Z/buildctx
+8.6M	/home/porotaadmin/porota-browser-lab/chrome-profile-existing-clone-20260902T173325Z
+13M	/home/porotaadmin/porota_rc4_git_gate_20260904T031732Z
+77M	/home/porotaadmin/porota-browser-lab/chrome-profile
+153M	/home/porotaadmin/porota-browser-lab/venv
+374M	/home/porotaadmin/porota-browser-lab
+399M	/home/porotaadmin
+-- /tmp --
+4.0K	/tmp/.ICE-unix
+4.0K	/tmp/.X11-unix
+4.0K	/tmp/.XIM-unix
+4.0K	/tmp/.font-unix
+4.0K	/tmp/0Zu3MZoAWj
+4.0K	/tmp/com.google.Chrome.MOgUvp
+4.0K	/tmp/com.google.Chrome.SgbwOh
+4.0K	/tmp/playwright-artifacts-YLH4dY
+4.0K	/tmp/playwright-artifacts-nTdlvg
+4.0K	/tmp/porota_suite_v163.zUKcId/data
+4.0K	/tmp/snap-private-tmp
+4.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-ModemManager.service-gb1aOD/tmp
+4.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-fwupd.service-d0wLDv/tmp
+4.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-polkit.service-ALDBPI/tmp
+4.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-systemd-logind.service-dFw7Iq/tmp
+4.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-systemd-resolved.service-sbEqaU/tmp
+4.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-systemd-timesyncd.service-sal3vK/tmp
+8.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-ModemManager.service-gb1aOD
+8.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-fwupd.service-d0wLDv
+8.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-polkit.service-ALDBPI
+8.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-systemd-logind.service-dFw7Iq
+8.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-systemd-resolved.service-sbEqaU
+8.0K	/tmp/systemd-private-843900c76284418099d95f0281a520f6-systemd-timesyncd.service-sal3vK
+12K	/tmp/gh-cli-cache
+16K	/tmp/porota-v1634-payload.7KFyAi/tests
+16K	/tmp/porota-v1634-payload.UGlT4A/tests
+16K	/tmp/porota-v1634-payload.ZZKHda/tests
+16K	/tmp/porota-v1634-payload.rQi8RG/tests
+16K	/tmp/porota-v1634-payload.xriaWJ/tests
+20K	/tmp/porota-dashboard-v1634.KkMgYq/tests
+28K	/tmp/.config/google-chrome
+28K	/tmp/porota_rc4_preopen_business_gate_20260904T130217Z
+28K	/tmp/porota_v4_bundle
+32K	/tmp/.config
+32K	/tmp/porota_suite_v163.18ep5h/.github
+32K	/tmp/porota_suite_v163.zUKcId/.github
+36K	/tmp/__pycache__
+36K	/tmp/porota-integral-v1634.0hCjzO/tests
+36K	/tmp/porota-preopen-fix1.Wyt15j/preopen_scheduler_bundle
+36K	/tmp/porota-preopen-installer.WalAph/preopen_scheduler_bundle
+36K	/tmp/porota-v1634-payload.TbaFgD/tests
+36K	/tmp/porota-v1635-payload.ABfoef/tests
+36K	/tmp/porota-v1635-payload.HxYKoK/tests
+36K	/tmp/porota-v1635-payload.OaGEYy/tests
+36K	/tmp/porota-v1635-payload.h1zOV6/tests
+40K	/tmp/porota-preopen-fix1.Wyt15j
+40K	/tmp/porota-preopen-installer.WalAph
+44K	/tmp/porota-integral-v1634.0uqCgH/tests
+44K	/tmp/porota-integral-v1634.aJKC3M/tests
+80K	/tmp/.local/share
+84K	/tmp/.local
+96K	/tmp/porota-v1634-payload.TbaFgD/__pycache__
+108K	/tmp/porota-v1634-payload.7KFyAi
+108K	/tmp/porota-v1634-payload.UGlT4A
+108K	/tmp/porota-v1634-payload.ZZKHda
+108K	/tmp/porota-v1634-payload.rQi8RG
+108K	/tmp/porota-v1634-payload.xriaWJ
+124K	/tmp/porota-hf6-universe-20260902T021307492779Z/__pycache__
+148K	/tmp/porota-dashboard-v1634.KkMgYq
+204K	/tmp/porota_compare_hf5
+204K	/tmp/porota_compare_hf6
+264K	/tmp/porota-v1634-payload.TbaFgD
+280K	/tmp/porota-v1635-payload.ABfoef
+280K	/tmp/porota-v1635-payload.HxYKoK
+280K	/tmp/porota-v1635-payload.OaGEYy
+280K	/tmp/porota-v1635-payload.h1zOV6
+316K	/tmp/porota-integral-v1634.0hCjzO
+324K	/tmp/porota-integral-v1634.0uqCgH
+324K	/tmp/porota-integral-v1634.aJKC3M
+344K	/tmp/porota_v163_bundle/payload
+364K	/tmp/porota_v163_bundle
+472K	/tmp/porota_suite_v163.18ep5h/tests
+472K	/tmp/porota_suite_v163.zUKcId/tests
+548K	/tmp/porota-hf6-universe-20260902T021307492779Z
+1.8M	/tmp/porota_suite_v163.18ep5h
+1.8M	/tmp/porota_suite_v163.zUKcId
+14M	/tmp
+
+======================================================================
+09. ARCHIVES AND LARGE DEPLOY FILES
+======================================================================
+Description: tar/zip/gzip artifacts outside live DBs; candidates depend on provenance and retention.
+165MiB	2026-09-07	/opt/porota-backups/porota-general-20260907T071518Z.tar.gz
+152MiB	2026-09-07	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-07.db.gz
+132MiB	2026-09-06	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-06.db.gz
+117MiB	2026-09-05	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-05.db.gz
+108MiB	2026-09-05	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-04.db.gz
+73MiB	2026-09-04	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-03.db.gz
+48MiB	2026-09-02	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-02.db.gz
+24MiB	2026-09-01	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-01.db.gz
+16MiB	2026-08-30	/opt/porota-backups/porota-general-20260830T134628Z.tar.gz
+13MiB	2026-09-01	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-08-31.db.gz
+9.0MiB	2026-09-07	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-07.db.gz
+9.0MiB	2026-09-06	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-06.db.gz
+8.0MiB	2026-09-05	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-05.db.gz
+7.9MiB	2026-09-05	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-04.db.gz
+7.0MiB	2026-08-30	/opt/porota-backups/porota-general-20260830T151903Z.tar.gz
+1.3MiB	2026-09-05	/home/porotaadmin/POROTA_TRADING_17.0.0-rc4-hf2_EXACT_7284fbb5c651.zip
+1.2MiB	2026-09-04	/home/porotaadmin/Porota-Trading-17.0.0-rc4-test-ready1.zip
+1.1MiB	2026-08-30	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-08-30.db.gz
+1.1MiB	2026-09-01	/tmp/Porota-Trading-17.0.0-rc3-hf5-auditoria-20260901T200703Z.zip
+1.1MiB	2026-09-02	/home/porotaadmin/Porota-Trading-17.0.0-rc3-hf6-auditoria-20260902T004053Z.zip
+336KiB	2026-08-29	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-08-29.db.gz
+190KiB	2026-09-01	/home/porotaadmin/Porota-Trading-HF6-bundle-20260901T225614955996Z.zip
+184KiB	2026-09-01	/opt/porota-staging/incoming/hf6-20260901T225614955996Z/Porota-Trading-17.0.0-rc3-hf6-delta-retry3.tar.gz
+180KiB	2026-09-01	/opt/porota-staging/incoming/hf6-20260901T225614955996Z/Porota-Trading-17.0.0-rc3-hf6-delta-20260901T225614955996Z.tar.gz
+127KiB	2026-08-27	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_033133/source_before.tar.gz
+127KiB	2026-08-27	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_031513/source_before.tar.gz
+127KiB	2026-08-27	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_030847/source_before.tar.gz
+127KiB	2026-08-26	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260826_231857/source_before.tar.gz
+99KiB	2026-08-24	/tmp/porota_v163_bundle.tar.gz
+99KiB	2026-08-24	/tmp/0cc8f782-803e-410c-a189-bf862b0f801b.gz
+80KiB	2026-08-26	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260826_225316/source_before.tar.gz
+77KiB	2026-08-25	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_203013/source_before.tar.gz
+77KiB	2026-08-25	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_201732/source_before.tar.gz
+77KiB	2026-08-25	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_201353/source_before.tar.gz
+77KiB	2026-08-25	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_200030/source_before.tar.gz
+77KiB	2026-08-25	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_193818/source_before.tar.gz
+77KiB	2026-08-25	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_192702/source_before.tar.gz
+64KiB	2026-08-26	/tmp/porota-integral-v1634.0uqCgH/payload.tar.gz
+64KiB	2026-08-26	/tmp/porota-integral-v1634.aJKC3M/payload.tar.gz
+63KiB	2026-08-26	/tmp/porota-integral-v1634.0hCjzO/payload.tar.gz
+58KiB	2026-08-25	/tmp/porota-v1634-payload.TbaFgD/payload.tar.gz
+56KiB	2026-08-27	/tmp/porota-v1635-payload.HxYKoK/payload.tar.gz
+56KiB	2026-08-27	/tmp/porota-v1635-payload.ABfoef/payload.tar.gz
+56KiB	2026-08-26	/tmp/porota-v1635-payload.OaGEYy/payload.tar.gz
+56KiB	2026-08-26	/tmp/porota-v1635-payload.h1zOV6/payload.tar.gz
+49KiB	2026-08-26	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_015556/source_before.tar.gz
+44KiB	2026-08-26	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_014402/source_before.tar.gz
+39KiB	2026-08-26	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_010951/source_before.tar.gz
+28KiB	2026-08-25	/tmp/porota-dashboard-v1634.KkMgYq/payload.tar.gz
+28KiB	2026-08-26	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_002722/source_before.tar.gz
+28KiB	2026-08-25	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260825_213248/source_before.tar.gz
+18KiB	2026-08-25	/tmp/porota-v1634-payload.7KFyAi/payload.tar.gz
+18KiB	2026-08-25	/tmp/porota-v1634-payload.rQi8RG/payload.tar.gz
+18KiB	2026-08-25	/tmp/porota-v1634-payload.ZZKHda/payload.tar.gz
+18KiB	2026-08-25	/tmp/porota-v1634-payload.UGlT4A/payload.tar.gz
+18KiB	2026-08-25	/tmp/porota-v1634-payload.xriaWJ/payload.tar.gz
+18KiB	2026-08-28	/tmp/porota_ledger_preflight_v17_r3.zip
+16KiB	2026-08-28	/tmp/porota_ledger_preflight_v17.zip
+9.2KiB	2026-09-04	/home/porotaadmin/POROTA_RC4_FINAL_GATED_DEPLOY_2026-09-04_V2.zip
+8.6KiB	2026-09-04	/home/porotaadmin/POROTA_RC4_FINAL_GATED_DEPLOY_2026-09-04.zip
+8.6KiB	2026-08-28	/tmp/porota_ppi_diagnostico_v17.zip
+7.9KiB	2026-08-23	/tmp/gh-cli-cache/run-log-32673165729-1787527036.zip
+6.6KiB	2026-08-24	/tmp/porota_v4_bundle.tar.gz
+6.3KiB	2026-09-02	/home/porotaadmin/porota_hf6_contract_patch_FINAL_all_families.zip
+6.2KiB	2026-09-04	/home/porotaadmin/POROTA_RC4_RESUME_SOURCE_SWITCH_2026-09-04.zip
+5.5KiB	2026-09-02	/home/porotaadmin/porota_hf6_secure_ppi_web_bundle.zip
+5.5KiB	2026-09-02	/home/porotaadmin/porota_hf6_ppi_authenticated_cauciones_v7.zip
+5.2KiB	2026-09-02	/home/porotaadmin/porota_hf6_install_secure_ppi_web_probe_v2.zip
+5.0KiB	2026-09-02	/home/porotaadmin/porota_hf6_ppi_cuenta_flow_diag_v9_1.zip
+5.0KiB	2026-09-04	/home/porotaadmin/POROTA_RC4_PREOPEN_BUSINESS_GATE_2026-09-04.zip
+4.9KiB	2026-09-02	/home/porotaadmin/porota_hf6_ppi_cuenta_flow_diag_v9.zip
+4.8KiB	2026-09-02	/home/porotaadmin/porota_hf6_ppi_authenticated_cauciones_v6.zip
+4.7KiB	2026-09-02	/home/porotaadmin/porota_chrome_playwright_probe_hf6_unattended.zip
+3.8KiB	2026-09-02	/home/porotaadmin/porota_ppi_trusted_device_scrape_FINAL.zip
+3.5KiB	2026-09-02	/home/porotaadmin/porota_hf6_ppi_auth_module_v10.zip
+3.3KiB	2026-09-04	/home/porotaadmin/POROTA_RC4_PREOPEN_FORENSIC_2026-09-04.zip
+3.0KiB	2026-09-02	/home/porotaadmin/porota_ppi_existing_session_discovery_hf6.zip
+2.6KiB	2026-09-02	/home/porotaadmin/porota_hf6_secure_ppi_web_probe_v4.zip
+2.6KiB	2026-09-02	/home/porotaadmin/porota_hf6_secure_ppi_web_probe_v3.zip
+2.2KiB	2026-09-02	/home/porotaadmin/porota_hf6_ppi_web_recovery_v5.zip
+1.5KiB	2026-09-02	/home/porotaadmin/porota_hf6_contract_patch_FINALIZER.zip
+
+======================================================================
+10. DOCKER SUMMARY
+======================================================================
+Description: images, containers, local volumes and build cache. No prune is executed.
+
+$ sudo -n docker system df
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          7         2         2.839GB   62.28MB (2%)
+Containers      2         2         28.67kB   0B (0%)
+Local Volumes   0         0         0B        0B
+Build Cache     34        0         2.738GB   72.85MB
+-- Images --
+REPOSITORY                  TAG                         IMAGE ID       CREATED             SIZE      DIGEST
+porota-iol-history-shadow   17.0.0-rc6                  c3346759a1f8   About an hour ago   1.61GB    sha256:c3346759a1f8c91e9f8be3b57203f4ede8bcdc1d2e9ae00de48b0561be6146e3
+porota-trading-dashboard    17.0.0-rc6-operator-ux      2de65e36d890   About an hour ago   1.61GB    sha256:2de65e36d890f2115ed9dc5a5a84dd41fca4977375e860ec35411dbbb42e8456
+porota-trading-bot          17.0.0-rc6                  b67c12a8d5ed   3 hours ago         1.61GB    sha256:b67c12a8d5ed7bf7ac5679a72d11a174cf9039702f62c09764c31d85f357eff1
+porota-trading-dashboard    17.0.0-rc6-classic-tables   94778188b016   5 hours ago         1.61GB    sha256:94778188b016ca4c65d560189221cd126e23b590a78a06fb0dd4d4fdfeac5688
+porota-trading-dashboard    17.0.0-rc6-go-live-ux3      51150977cb88   17 hours ago        1.61GB    sha256:51150977cb88d15b5cacd2cb22cb69caa651dd6ec250176faadc83ac357c2fbf
+porota-trading-dashboard    17.0.0-rc6-go-live-ux2      ee783e046504   18 hours ago        1.61GB    sha256:ee783e046504afc7f566f0428593f23b717671e4ddc2e86e82faafe1a1ab334b
+porota-trading-dashboard    17.0.0-rc6-go-live-ux1      ead732d63f77   18 hours ago        1.61GB    sha256:ead732d63f77f456013c5fab6cb3a4f0cb65ae5cf244085b91a8adbc08a06b29
+-- Containers incl. writable size --
+NAMES                         IMAGE                                             STATUS                       SIZE
+porota_production_dashboard   porota-trading-dashboard:17.0.0-rc6-operator-ux   Up About an hour (healthy)   16.4kB (virtual 1.25GB)
+porota_production_observer    porota-trading-bot:17.0.0-rc6                     Up 3 hours                   12.3kB (virtual 1.25GB)
+-- Volumes --
+DRIVER    VOLUME NAME
+-- Build cache --
+ID                           RECLAIMABLE   SIZE       LAST ACCESSED
+emhrckp3jl8kf8t30pgkb3bng    true          249B*      18 hours ago
+q7dqyxo3fs65n0fe849htrkdv*   true          8.192kB    About an hour ago
+ydih78i3vehu1pj4suxiidi11*   true          8.192kB    About an hour ago
+nxh6z4ate241d5p2qm26ylx8r    true          8.285kB*   17 hours ago
+q4y9csljq099ix9eezaco6nxd    true          18.7kB*    17 hours ago
+3gcm3tqz9hr2myspqqapjf7rr    true          18.7kB*    18 hours ago
+95qipzs5dzxnjpb1fl1cdzmbz    true          4.265MB*   18 hours ago
+0md0s4t3wocpjntipk7fhh1c1*   true          5.038MB    About an hour ago
+attwmbkjkw4o3bre3ge3x9whg*   true          5.063MB    5 hours ago
+zoasjgo36hykpn60yjmomsdtu    true          6.124MB*   3 hours ago
+tjcx59r418gl51qwcwu651w4d    true          6.139MB*   18 hours ago
+bdcfy01r8pm79qxtn2jx2458r    true          6.151MB*   18 hours ago
+ph77z1fbeu7x1unko53q0zke0    true          6.167MB*   17 hours ago
+l10zbd4p4kijm9dy2grt05spl    true          6.179MB    About an hour ago
+n6wsw8f07bsouuhr5z5ysvgdd    true          6.187MB    17 hours ago
+c5z7509cbryrzu2po7cw3542r    true          6.192MB    About an hour ago
+ri8nwrxpli7v8dziod0ub7xe5    true          6.22MB     5 hours ago
+mbzl5h0lk3wt6s5xh62e4dk2b    true          6.22MB     5 hours ago
+7m1whx7mdxatwgp7bp9w98vko    true          6.271MB*   About an hour ago
+scdwg4ft3zg8bvyzy6ozxwksv    true          6.271MB*   3 hours ago
+d37i8w4kjx9g4pqvlp5zg12gb    true          6.288MB*   18 hours ago
+lngbz26m4utpwiqejkrq0tjxr    true          6.298MB*   18 hours ago
+txv3boj1fp81n74n0okj6xez4    true          6.316MB*   17 hours ago
+2yezf6mt0anifvp12352ovwz6    true          6.326MB    About an hour ago
+ztvsg98yjy6wh8jrgh3ktdt7h    true          6.334MB    17 hours ago
+lg88a7w8iouhljnsn9yjri9aa    true          6.339MB    About an hour ago
+tpwy5c6qzjnz7pfrxym315fka    true          6.367MB    5 hours ago
+yngxt6simh15ahmz4mit6nrko    true          6.367MB    5 hours ago
+kmqxgk0hoxadwm23e57aouzf2    true          6.418MB*   About an hour ago
+0k6it8dv27nz3mvdp7ww8bsj7    true          14.45MB*   18 hours ago
+jc4kujiolwjil7wmq4nhgp9ww    true          29.79MB*   18 hours ago
+vvt5ygbqa1j4jgfwa5wvshy5n    true          244.2MB*   18 hours ago
+sskweu1bbi5c1tmht4o63z7l9    true          1.155GB*   About an hour ago
+58bjiic1rkqsylwbffk231jf6    true          1.155GB*   3 hours ago
+Shared:		2.665GB
+Private:	72.85MB
+Reclaimable:	2.738GB
+Total:		2.738GB
+
+======================================================================
+11. DOCKER ROOT BREAKDOWN
+======================================================================
+Description: physical Docker storage areas such as overlay2, containers, volumes, buildkit and image metadata.
+4.0K	/var/lib/docker/buildkit/net
+4.0K	/var/lib/docker/plugins/storage
+4.0K	/var/lib/docker/plugins/tmp
+4.0K	/var/lib/docker/rootfs/overlayfs
+4.0K	/var/lib/docker/runtimes
+4.0K	/var/lib/docker/swarm
+4.0K	/var/lib/docker/tmp/moby-detect-rro444929954
+8.0K	/var/lib/docker/buildkit/executor
+8.0K	/var/lib/docker/rootfs
+8.0K	/var/lib/docker/tmp
+12K	/var/lib/docker/plugins
+28K	/var/lib/docker/volumes
+40K	/var/lib/docker/containers/2f29948e60507f99d607d3390536535da93cdba68ccc33e6891d09f34909d2b0
+60K	/var/lib/docker/image
+64K	/var/lib/docker/network/files
+68K	/var/lib/docker/network
+76K	/var/lib/docker/containers/6b0402943d319131ed4f92bfc9b5fdd0dd957d6607322491ae698c2cebae2359
+120K	/var/lib/docker/containers
+656K	/var/lib/docker/buildkit/containerd-overlayfs
+2.5M	/var/lib/docker/buildkit
+2.8M	/var/lib/docker
+
+======================================================================
+12. DOCKER CONTAINER JSON LOGS
+======================================================================
+Description: container stdout/stderr JSON logs can grow even when the application itself is healthy.
+0B	porota_production_observer	/var/lib/docker/containers/2f29948e60507f99d607d3390536535da93cdba68ccc33e6891d09f34909d2b0/2f29948e60507f99d607d3390536535da93cdba68ccc33e6891d09f34909d2b0-json.log
+31KiB	porota_production_dashboard	/var/lib/docker/containers/6b0402943d319131ed4f92bfc9b5fdd0dd957d6607322491ae698c2cebae2359/6b0402943d319131ed4f92bfc9b5fdd0dd957d6607322491ae698c2cebae2359-json.log
+
+======================================================================
+13. SYSTEM JOURNAL AND /VAR/LOG
+======================================================================
+Description: OS/systemd/Docker service logs outside POROTA data.
+
+$ sudo -n journalctl --disk-usage
+Archived and active journals take up 334.6M in the file system.
+4.0K	/var/log/dist-upgrade
+4.0K	/var/log/landscape
+4.0K	/var/log/private
+76K	/var/log/unattended-upgrades
+148K	/var/log/apt
+7.3M	/var/log/sysstat
+335M	/var/log/journal
+335M	/var/log/journal/741c1aa9b86f46c98b8060832f38711c
+464M	/var/log
+-- 40 largest files in /var/log --
+48MiB	2026-09-06 20:48	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-00000000000644c2-00065abce1d0202d.journal
+48MiB	2026-09-05 14:05	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-00000000000508d4-00065a92b7bb3d6d.journal
+48MiB	2026-09-03 11:47	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-0000000000042626-00065a7b070d9aa4.journal
+48MiB	2026-09-02 07:31	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-00000000000344bd-00065a5f292c2533.journal
+48MiB	2026-08-31 22:17	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-0000000000027684-00065a3300fe6cbb.journal
+48MiB	2026-08-29 17:36	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-000000000001a5e7-000659fce50fc823.journal
+32MiB	2026-09-07 17:48	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system.journal
+25MiB	2026-09-06 00:00	/var/log/auth.log.1
+19MiB	2026-09-07 17:45	/var/log/btmp
+17MiB	2026-09-06 00:00	/var/log/syslog.1
+12MiB	2026-08-31 23:59	/var/log/btmp.1
+11MiB	2026-09-07 17:48	/var/log/auth.log
+8.2MiB	2026-09-05 23:59	/var/log/kern.log.1
+8.0MiB	2026-09-07 17:48	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/user-1000.journal
+8.0MiB	2026-09-06 20:48	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/user-1000@e0496964b29045b0ba840a4b44017f58-00000000000645be-00065abd16febadb.journal
+8.0MiB	2026-09-05 14:05	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/user-1000@e0496964b29045b0ba840a4b44017f58-0000000000050a17-00065a92d5699c77.journal
+8.0MiB	2026-09-03 11:47	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/user-1000@e0496964b29045b0ba840a4b44017f58-0000000000042cf5-00065a7bb42cceb7.journal
+8.0MiB	2026-09-02 07:31	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/user-1000@e0496964b29045b0ba840a4b44017f58-00000000000344c9-00065a5f2cbf67c8.journal
+8.0MiB	2026-08-31 22:17	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/user-1000@e0496964b29045b0ba840a4b44017f58-00000000000276cc-00065a330d197752.journal
+8.0MiB	2026-08-29 17:36	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/user-1000@e0496964b29045b0ba840a4b44017f58-000000000001ac5f-000659fea774be8e.journal
+8.0MiB	2026-08-27 01:02	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/user-1000@e0496964b29045b0ba840a4b44017f58-000000000000e8cb-000659bc9e57b5d2.journal
+8.0MiB	2026-09-05 23:59	/var/log/ufw.log.1
+7.0MiB	2026-09-07 17:48	/var/log/syslog
+6.2MiB	2026-09-06 00:00	/var/log/fail2ban.log.1
+2.1MiB	2026-09-07 17:48	/var/log/kern.log
+2.0MiB	2026-09-07 17:48	/var/log/ufw.log
+1.7MiB	2026-08-29 23:59	/var/log/auth.log.2.gz
+1.1MiB	2026-08-30 00:00	/var/log/syslog.2.gz
+822KiB	2026-08-30 00:00	/var/log/kern.log.2.gz
+809KiB	2026-09-07 17:45	/var/log/fail2ban.log
+648KiB	2026-08-28 23:59	/var/log/ufw.log.3.gz
+526KiB	2026-09-06 00:07	/var/log/sysstat/sar05
+526KiB	2026-08-31 00:07	/var/log/sysstat/sar30
+525KiB	2026-09-05 00:07	/var/log/sysstat/sar04
+525KiB	2026-09-03 00:07	/var/log/sysstat/sar02
+525KiB	2026-09-01 00:07	/var/log/sysstat/sar31
+525KiB	2026-09-07 00:07	/var/log/sysstat/sar06
+525KiB	2026-09-04 00:07	/var/log/sysstat/sar03
+525KiB	2026-09-02 00:07	/var/log/sysstat/sar01
+430KiB	2026-08-23 00:00	/var/log/auth.log.3.gz
+
+======================================================================
+14. PACKAGE / SNAP / CACHE FOOTPRINT
+======================================================================
+Description: usually low-risk OS caches, but nothing is removed by this audit.
+154M	/var/cache
+110M	/var/cache/apt
+196M	/var/lib/apt/lists
+8.0K	/var/lib/snapd/snaps
+4.0K	/var/lib/systemd/coredump
+
+======================================================================
+15. OPEN-DELETED FILES
+======================================================================
+Description: deleted files still held open by a process continue consuming disk until the process closes them.
+COMMAND       PID        USER   FD   TYPE DEVICE SIZE/OFF NLINK  NODE NAME
+agetty        842        root  txt    REG  253,1    60992     0 22829 /usr/sbin/agetty (deleted)
+agetty        865        root  txt    REG  253,1    60992     0 22829 /usr/sbin/agetty (deleted)
+unattende     873        root  txt    REG  253,1  8020928     0  8241 /usr/bin/python3.12 (deleted)
+timeout     96222 porotaadmin  txt    REG  253,1    39880     0  2017 /usr/bin/timeout (deleted)
+timeout     96222 porotaadmin    0u   CHR  136,0      0t0     0     3 /dev/pts/0 (deleted)
+sudo        96223        root    0u   CHR  136,0      0t0     0     3 /dev/pts/0 (deleted)
+sudo        96224        root    0u   CHR  136,0      0t0     0     3 /dev/pts/0 (deleted)
+timeout     98395 porotaadmin  txt    REG  253,1    39880     0  2017 /usr/bin/timeout (deleted)
+timeout     98395 porotaadmin    0u   CHR  136,2      0t0     0     5 /dev/pts/2 (deleted)
+sudo        98396        root    0u   CHR  136,2      0t0     0     5 /dev/pts/2 (deleted)
+sudo        98397        root    0u   CHR  136,2      0t0     0     5 /dev/pts/2 (deleted)
+sshd      1183301        root  txt    REG  253,1   921416     0 39456 /usr/sbin/sshd (deleted)
+sshd      1183467 porotaadmin  txt    REG  253,1   921416     0 39456 /usr/sbin/sshd (deleted)
+
+======================================================================
+16. LARGEST FILES UNDER /OPT, /VAR, /HOME AND /TMP
+======================================================================
+Description: cross-check for unexpectedly large files outside known POROTA paths.
+1.4GiB	2026-09-07 17:48	/opt/porota-trading/data/paper_v17/observer_v17.db
+1.1GiB	2026-09-05 21:29	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651/observer_v17.db
+278MiB	2026-08-31 22:47	/opt/google/chrome/chrome
+234MiB	2026-09-06 23:54	/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/81ad338afbe023b2c8a963211c456e40d87b50a0fe8b53ae288e042668eff5a5
+234MiB	2026-09-07 00:47	/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/d45c1c4e0b5fed69cffc4a547260040c1ae40b16b344b3bd804b312091c46c63
+165MiB	2026-09-07 07:16	/opt/porota-backups/porota-general-20260907T071518Z.tar.gz
+152MiB	2026-09-07 14:46	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-07.db.gz
+135MiB	2026-09-02 17:18	/home/porotaadmin/porota-browser-lab/google-chrome-stable_current_amd64.deb
+132MiB	2026-09-06 21:58	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-06.db.gz
+118MiB	2026-09-07 15:12	/opt/porota-contract-evidence-venv/lib/python3.12/site-packages/playwright/driver/node
+118MiB	2026-09-02 17:19	/home/porotaadmin/porota-browser-lab/venv/lib/python3.12/site-packages/playwright/driver/node
+117MiB	2026-09-05 21:31	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-05.db.gz
+108MiB	2026-09-05 02:02	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-04.db.gz
+73MiB	2026-09-04 00:09	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-03.db.gz
+70MiB	2024-04-25 11:56	/var/lib/apt/lists/mirrors.digitalocean.com_ubuntu_dists_noble_universe_binary-amd64_Packages
+65MiB	2026-09-06 23:53	/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/3cece6a905fdf30246676b64046fecc5401773435e52dc6641fa7a50cd792a93
+55MiB	2026-09-07 15:14	/var/cache/apt/pkgcache.bin
+55MiB	2026-09-07 15:14	/var/cache/apt/srcpkgcache.bin
+52MiB	2026-09-07 13:41	/opt/porota-trading/data/market_history.db
+48MiB	2026-09-06 20:48	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-00000000000644c2-00065abce1d0202d.journal
+48MiB	2026-09-05 14:05	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-00000000000508d4-00065a92b7bb3d6d.journal
+48MiB	2026-09-03 11:47	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-0000000000042626-00065a7b070d9aa4.journal
+48MiB	2026-09-02 07:31	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-00000000000344bd-00065a5f292c2533.journal
+48MiB	2026-08-31 22:17	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-0000000000027684-00065a3300fe6cbb.journal
+48MiB	2026-08-29 17:36	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system@e0496964b29045b0ba840a4b44017f58-000000000001a5e7-000659fce50fc823.journal
+48MiB	2026-09-02 19:56	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-02.db.gz
+45MiB	2026-09-05 21:29	/opt/porota-trading/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651/market_history.db
+37MiB	2026-09-07 00:44	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1667/fs/usr/local/lib/python3.11/site-packages/curl_cffi/_wrapper.abi3.so
+37MiB	2026-09-07 00:44	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1659/fs/usr/local/lib/python3.11/site-packages/curl_cffi/_wrapper.abi3.so
+37MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1639/fs/usr/local/lib/python3.11/site-packages/curl_cffi/_wrapper.abi3.so
+37MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1626/fs/usr/local/lib/python3.11/site-packages/curl_cffi/_wrapper.abi3.so
+33MiB	2025-03-15 01:47	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1636/fs/usr/libexec/gcc/x86_64-linux-gnu/14/cc1
+33MiB	2025-03-15 01:47	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1623/fs/usr/libexec/gcc/x86_64-linux-gnu/14/cc1
+32MiB	2026-09-07 17:48	/var/log/journal/741c1aa9b86f46c98b8060832f38711c/system.journal
+32MiB	2025-03-15 01:47	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1636/fs/usr/libexec/gcc/x86_64-linux-gnu/14/lto1
+32MiB	2025-03-15 01:47	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1623/fs/usr/libexec/gcc/x86_64-linux-gnu/14/lto1
+32MiB	2025-03-15 01:47	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1636/fs/usr/bin/x86_64-linux-gnu-lto-dump-14
+32MiB	2025-03-15 01:47	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1623/fs/usr/bin/x86_64-linux-gnu-lto-dump-14
+31MiB	2024-04-25 11:02	/var/lib/apt/lists/mirrors.digitalocean.com_ubuntu_dists_noble_universe_i18n_Translation-en
+29MiB	2026-09-07 00:43	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1667/fs/usr/local/lib/python3.11/site-packages/onnxruntime/capi/onnxruntime_pybind11_state.cpython-311-x86_64-linux-gnu.so
+29MiB	2026-09-07 00:43	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1659/fs/usr/local/lib/python3.11/site-packages/onnxruntime/capi/onnxruntime_pybind11_state.cpython-311-x86_64-linux-gnu.so
+29MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1639/fs/usr/local/lib/python3.11/site-packages/onnxruntime/capi/onnxruntime_pybind11_state.cpython-311-x86_64-linux-gnu.so
+29MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1626/fs/usr/local/lib/python3.11/site-packages/onnxruntime/capi/onnxruntime_pybind11_state.cpython-311-x86_64-linux-gnu.so
+29MiB	2026-08-25 19:38	/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be
+28MiB	2026-09-07 00:43	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1667/fs/usr/local/lib/python3.11/site-packages/onnxruntime/capi/libonnxruntime.so.1.29.0
+28MiB	2026-09-07 00:43	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1659/fs/usr/local/lib/python3.11/site-packages/onnxruntime/capi/libonnxruntime.so.1.29.0
+28MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1639/fs/usr/local/lib/python3.11/site-packages/onnxruntime/capi/libonnxruntime.so.1.29.0
+28MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1626/fs/usr/local/lib/python3.11/site-packages/onnxruntime/capi/libonnxruntime.so.1.29.0
+25MiB	2026-09-06 00:00	/var/log/auth.log.1
+25MiB	2026-09-07 00:43	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1667/fs/usr/local/lib/python3.11/site-packages/numpy.libs/libscipy_openblas64_-32a4b2a6.so
+25MiB	2026-09-07 00:43	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1659/fs/usr/local/lib/python3.11/site-packages/numpy.libs/libscipy_openblas64_-32a4b2a6.so
+25MiB	2026-09-06 23:51	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1639/fs/usr/local/lib/python3.11/site-packages/numpy.libs/libscipy_openblas64_-32a4b2a6.so
+25MiB	2026-09-06 23:51	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1626/fs/usr/local/lib/python3.11/site-packages/numpy.libs/libscipy_openblas64_-32a4b2a6.so
+24MiB	2026-09-07 00:43	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1667/fs/usr/local/lib/python3.11/site-packages/scipy.libs/libscipy_openblas-6cdc3b4a.so
+24MiB	2026-09-07 00:43	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1659/fs/usr/local/lib/python3.11/site-packages/scipy.libs/libscipy_openblas-6cdc3b4a.so
+24MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1639/fs/usr/local/lib/python3.11/site-packages/scipy.libs/libscipy_openblas-6cdc3b4a.so
+24MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1626/fs/usr/local/lib/python3.11/site-packages/scipy.libs/libscipy_openblas-6cdc3b4a.so
+24MiB	2026-09-01 23:54	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-01.db.gz
+23MiB	2026-08-31 22:47	/opt/google/chrome/resources.pak
+21MiB	2026-08-31 22:47	/opt/google/chrome/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so
+21MiB	2026-08-31 22:47	/opt/google/chrome/liboptimization_guide_internal.so
+19MiB	2026-09-07 17:45	/var/log/btmp
+17MiB	2026-09-06 00:00	/var/log/syslog.1
+16MiB	2026-08-30 13:46	/opt/porota-backups/porota-general-20260830T134628Z.tar.gz
+16MiB	2026-09-07 00:44	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1667/fs/usr/local/lib/python3.11/site-packages/grpc/_cython/cygrpc.cpython-311-x86_64-linux-gnu.so
+16MiB	2026-09-07 00:44	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1659/fs/usr/local/lib/python3.11/site-packages/grpc/_cython/cygrpc.cpython-311-x86_64-linux-gnu.so
+16MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1639/fs/usr/local/lib/python3.11/site-packages/grpc/_cython/cygrpc.cpython-311-x86_64-linux-gnu.so
+16MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1626/fs/usr/local/lib/python3.11/site-packages/grpc/_cython/cygrpc.cpython-311-x86_64-linux-gnu.so
+16MiB	2026-09-07 06:53	/var/cache/fwupd/metadata.xmlb
+15MiB	2026-08-31 22:47	/opt/google/chrome/libLiteRtWebGpuAccelerator.so
+15MiB	2026-08-18 16:00	/opt/digitalocean/bin/droplet-agent
+14MiB	2026-09-01 12:20	/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/db840d086b65cf73e0feea3bd0cf11063818114e466846ae3f2b2fb1a8c2b143
+14MiB	2026-09-07 00:44	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1667/fs/usr/local/lib/python3.11/site-packages/cryptography/hazmat/bindings/_rust.abi3.so
+14MiB	2026-09-07 00:44	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1659/fs/usr/local/lib/python3.11/site-packages/cryptography/hazmat/bindings/_rust.abi3.so
+14MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1639/fs/usr/local/lib/python3.11/site-packages/cryptography/hazmat/bindings/_rust.abi3.so
+14MiB	2026-09-06 23:52	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1626/fs/usr/local/lib/python3.11/site-packages/cryptography/hazmat/bindings/_rust.abi3.so
+13MiB	2026-09-07 00:43	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1667/fs/usr/local/lib/python3.11/site-packages/uvloop/loop.cpython-311-x86_64-linux-gnu.so
+13MiB	2026-09-07 00:43	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1659/fs/usr/local/lib/python3.11/site-packages/uvloop/loop.cpython-311-x86_64-linux-gnu.so
+13MiB	2026-09-06 23:51	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1639/fs/usr/local/lib/python3.11/site-packages/uvloop/loop.cpython-311-x86_64-linux-gnu.so
+13MiB	2026-09-06 23:51	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1626/fs/usr/local/lib/python3.11/site-packages/uvloop/loop.cpython-311-x86_64-linux-gnu.so
+
+======================================================================
+17. PROTECTED POROTA PATHS — DO NOT DELETE DURING CLEANUP
+======================================================================
+/opt/porota-trading/data
+/opt/porota-trading/data/paper_v17/observer_v17.db
+/opt/porota-trading/data/paper_v17/observer_v17.db-wal (if present)
+/opt/porota-trading/data/paper_v17/observer_v17.db-shm (if present)
+/opt/porota-trading/data/market_history.db
+/opt/porota-trading/.env
+/opt/porota-trading/.secrets
+Current RC6 Docker image(s) used by running observer/dashboard
+Operational untracked artifacts until classified
+
+======================================================================
+18. AUDIT COMPLETION
+======================================================================
+AUDIT_STATUS=COMPLETE_READ_ONLY
+NEXT_ACTION=CLASSIFY_CANDIDATES_BEFORE_ANY_DELETE
+No files, images, containers, volumes, logs, journals, caches, DBs or Git objects were modified.
