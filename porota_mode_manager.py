@@ -211,6 +211,9 @@ def observer_runtime_env():
         "TELEGRAM_CHAT_ID": env.get("TELEGRAM_CHAT_ID", "").strip(),
     }
     values.update(paper_settings(env))
+    # RC6 settlement hotfix: autoridad explícita sólo en el observer PAPER.
+    # El módulo de settlement permanece fail-closed fuera de este runtime.
+    values["PAPER_T1_FULL_DATE_RELEASE"] = "true"
     values[DB_ENV] = CONTAINER_DB
     target.write_text("\n".join(f"{name}={value}" for name, value in values.items()) + "\n",
                       encoding="utf-8")
