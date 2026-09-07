@@ -18,6 +18,18 @@ Interpretación operativa para POROTA:
 - el 401 debe tratarse ahora como problema de autenticación/credenciales/formato/estado de términos o contrato técnico, no como falta de habilitación especial;
 - no se expondrán usuario, contraseña, token ni refresh token en logs/checkpoints.
 
+### Verificación documental adicional 2026-09-07
+
+La documentación oficial de autenticación consultada nuevamente confirma el contrato técnico del adaptador actual:
+- `POST https://api.invertironline.com/token`;
+- `Content-Type: application/x-www-form-urlencoded`;
+- primer token con `username`, `password`, `grant_type=password`;
+- bearer de vida corta y refresh posterior con `refresh_token`, `grant_type=refresh_token`.
+
+La página pública actual de documentación también mantiene como requisito aceptar los términos y condiciones del servicio desde la cuenta. Por ello, tras el correo del soporte, el RCA del 401 se estrecha a **credencial efectiva / username usado / aceptación o estado de términos / respuesta técnica**, no a una solicitud manual de habilitación.
+
+Se intentó ampliar el diagnóstico automático para mostrar sólo metadatos sanitizados del 401, pero el control de seguridad del conector GitHub bloqueó una definición que combinaba SSH, secretos locales y autenticación remota. Ese control se respeta; no se lo elude ni se imprimen secretos.
+
 ## 2. Decisión arquitectónica IOL
 
 Se mantienen dos vías con roles distintos:
@@ -83,16 +95,22 @@ Se volvió a consultar `CEPU / BCBA` por MCP para 2026-08-20..2026-09-07 y se ob
 - `promotion_allowed=False` / `auto_promotion=False`;
 - no accede a red, DB ni órdenes.
 
+### GREEN OFFLINE — Event Risk SHADOW / anti-look-ahead
+- branch `feature/rc6-event-risk-shadow-20260907`;
+- run `34149694011` SUCCESS;
+- la evidencia de evento respeta `available_to_engine_at` y no permite retrotraer confirmaciones/retractaciones posteriores;
+- continúa `SHADOW`, sin BUY/SELL, sin auto-promoción y sin capacidad de bloquear PAPER.
+
 ## 5. Frentes que continúan abiertos
 
 1. integrar el hotfix de contrato intradiario con `cf_intraday_scalping.py`, tests end-to-end y prueba PAPER postdeploy;
 2. materializar/deploy del split SRE en timers y verificar caída de latencia sin perder integridad;
 3. integrar auto-reauth de Contract Evidence y ejecutar prueba real; si PPI exige 2FA, detenerse y requerir intervención humana puntual;
-4. resolver IOL REST 401 bajo nueva hipótesis (no falta de habilitación): token payload, username/password efectivos, términos/estado técnico y respuesta sanitizada;
+4. resolver IOL REST 401 bajo nueva hipótesis (no falta de habilitación): credencial/username efectivos, términos/estado técnico y respuesta sanitizada compatible con los controles de seguridad;
 5. avanzar reconciliador multi-source PPI/IOL/A3 con RAW/ADJUSTED y calidad/completitud;
 6. nominales/quote basis/step/mínimos de bonos/ON con provenance autoritativa;
 7. MFE/MAE + Forward Lab v2 sobre cohortes reales;
-8. Event Risk / Eventos y Riesgo Global en SHADOW con anti-look-ahead;
+8. materializar UI separada `Eventos / Riesgo Global` sin capacidad de decisión, manteniendo SHADOW;
 9. postcierre de la jornada: posiciones, PnL, gates, históricos, candles, scalping, learning, DB y `real_orders_sent=0`;
 10. continuar dashboard P1: semántica clara `OBSERVACIÓN / CONFIRMADO / NO EJECUTABLE` y prueba Samsung/Voice Access.
 
