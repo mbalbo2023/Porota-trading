@@ -1,0 +1,124 @@
+name: RC6 scalping live audit 2026-09-07
+
+on:
+  push:
+    branches:
+      - diag/rc6-scalping-live-audit-20260907
+    paths:
+      - '.github/workflows/rc6-scalping-live-audit-20260907.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diag/rc6-scalping-live-audit-20260907
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_scalping_diag"
+          chmod 600 "$HOME/.ssh/porota_scalping_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Collect live scalping evidence read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_scalping_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-scalping-live-audit.txt
+          set -Eeuo pipefail
+          echo '=== RC6 SCALPING LIVE AUDIT / READ ONLY ==='
+          date -u '+UTC=%Y-%m-%dT%H:%M:%SZ'
+          echo "REPO_BRANCH=$(git -C /opt/porota-trading branch --show-current)"
+          echo "REPO_HEAD=$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo "OBSERVER=$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          echo '--- PROCESS SNAPSHOT ---'
+          sudo -n docker top porota_production_observer -eo pid,ppid,etimes,args | grep -E 'cf_intraday_scalping|bv_paper_runtime|bf_production_paper_observer' || true
+          echo '--- DB EVIDENCE ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          from datetime import datetime,timezone
+          DB='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{DB}?mode=ro',uri=True,timeout=30)
+          c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          print('DB_QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+          st=c.execute('SELECT mode,process_state,session_state,ppi_auth,heartbeat_at,last_market_data_at,real_orders_sent,http_allowed,http_blocked,detail FROM observer_state WHERE id=1').fetchone()
+          print('OBSERVER_STATE='+json.dumps(dict(st),ensure_ascii=False,default=str))
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          print('HAS_SCALPING_TABLES='+str(all(x in tables for x in ('intraday_scalping_worker_state','ppi_intraday_contract_state','scalping_candidates'))))
+          if 'intraday_scalping_worker_state' in tables:
+              r=c.execute('SELECT * FROM intraday_scalping_worker_state WHERE id=1').fetchone()
+              if r:
+                  d=dict(r); print('WORKER_STATE='+json.dumps(d,ensure_ascii=False,default=str))
+                  try:
+                      hb=datetime.fromisoformat(str(d['heartbeat_at']).replace('Z','+00:00'))
+                      if hb.tzinfo is None: hb=hb.replace(tzinfo=timezone.utc)
+                      age=(datetime.now(timezone.utc)-hb.astimezone(timezone.utc)).total_seconds()
+                      print(f'WORKER_HEARTBEAT_AGE_SECONDS={age:.1f}')
+                  except Exception as e: print('WORKER_HEARTBEAT_AGE_ERROR='+type(e).__name__)
+          if 'ppi_intraday_contract_state' in tables:
+              print('--- CONTRACT STATES ---')
+              for r in c.execute('SELECT state,COUNT(*) n,MAX(checked_at) last_checked,MAX(observations) max_obs,MAX(stable_overlap) max_stable,MAX(changed_closed_points) max_changed FROM ppi_intraday_contract_state GROUP BY state ORDER BY n DESC'):
+                  print(json.dumps(dict(r),sort_keys=True,default=str))
+              print('--- LATEST CONTRACT SAMPLE ---')
+              for r in c.execute('SELECT symbol,asset_class,market,currency,settlement,state,observations,stable_overlap,changed_closed_points,new_points,last_source_at,checked_at,detail FROM ppi_intraday_contract_state ORDER BY checked_at DESC LIMIT 35'):
+                  print(json.dumps(dict(r),sort_keys=True,default=str))
+          if 'scalping_candidates' in tables:
+              print('--- CANDIDATE COUNTS / LAST 2500 ---')
+              for r in c.execute('SELECT action,reason,COUNT(*) n,MAX(evaluated_at) last_at FROM (SELECT * FROM scalping_candidates ORDER BY id DESC LIMIT 2500) GROUP BY action,reason ORDER BY n DESC'):
+                  print(json.dumps(dict(r),sort_keys=True,default=str))
+              totals=c.execute("SELECT COUNT(*) total,SUM(CASE WHEN action='BUY_CANDIDATE' THEN 1 ELSE 0 END) buys,MAX(evaluated_at) last_at FROM scalping_candidates").fetchone()
+              print('CANDIDATE_TOTALS='+json.dumps(dict(totals),sort_keys=True,default=str))
+              print('--- LATEST BUY CANDIDATES ---')
+              for r in c.execute("SELECT evaluated_at,symbol,asset_class,market,currency,settlement,score,price,volume,points,reason,economics_json FROM scalping_candidates WHERE action='BUY_CANDIDATE' ORDER BY id DESC LIMIT 20"):
+                  print(json.dumps(dict(r),sort_keys=True,default=str))
+          if 'paper_positions' in tables:
+              print('--- SCALPING PAPER POSITIONS ---')
+              rows=[]
+              for r in c.execute("SELECT paper_id,symbol,status,quantity,entry_price,opened_at,closed_at,exit_price,net_pnl,close_reason,features_json FROM paper_positions ORDER BY opened_at DESC"):
+                  d=dict(r)
+                  try: f=json.loads(d.get('features_json') or '{}')
+                  except Exception: f={}
+                  if f.get('execution_style')=='SCALPING_PAPER': rows.append(d)
+              print('SCALPING_POSITION_COUNT='+str(len(rows)))
+              print('SCALPING_OPEN_COUNT='+str(sum(1 for x in rows if x.get('status')=='OPEN')))
+              print('SCALPING_CLOSED_COUNT='+str(sum(1 for x in rows if x.get('status')=='CLOSED')))
+              for d in rows[:30]: print(json.dumps(d,sort_keys=True,default=str))
+          c.close()
+          print('READ_ONLY_DB_AUDIT=GREEN')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          echo 'HOST_MUTATION=NO'
+          echo 'OBSERVER_RESTART_REQUESTED=NO'
+          echo 'NETWORK_ORDER_TEST=NO'
+          HOST
+      - name: Persist evidence on diagnostic branch
+        run: |
+          set -euo pipefail
+          mkdir -p audit/evidence
+          cp /tmp/rc6-scalping-live-audit.txt audit/evidence/RC6_SCALPING_LIVE_AUDIT_20260907.txt
+          git config user.name 'porota-ci'
+          git config user.email 'porota-ci@users.noreply.github.com'
+          git add audit/evidence/RC6_SCALPING_LIVE_AUDIT_20260907.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'diag(rc6): persist scalping live audit evidence'
+          git push origin HEAD:diag/rc6-scalping-live-audit-20260907
+      - name: Summary
+        run: |
+          echo '### RC6 scalping live audit' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          sed -n '1,900p' /tmp/rc6-scalping-live-audit.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
