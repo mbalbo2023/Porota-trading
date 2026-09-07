@@ -1,0 +1,151 @@
+name: RC6 live decision audit 2026-09-07
+
+on:
+  push:
+    branches:
+      - diag/rc6-live-decision-audit-20260907
+    paths:
+      - '.github/workflows/rc6-live-decision-audit-20260907.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Audit live decisions and metadata read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-live-decision-audit.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          OBS_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          OBS_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          OBS_IMAGE=porota-trading-bot:17.0.0-rc6
+
+          runtime_check(){
+            test "$(git -C "$REPO" branch --show-current)" = "$OBS_BRANCH"
+            test "$(git -C "$REPO" rev-parse HEAD)" = "$OBS_SHA"
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$OBS_IMAGE|0|true"
+          }
+
+          echo '=== RC6 LIVE DECISION AUDIT / READ ONLY ==='
+          date -u '+UTC=%Y-%m-%dT%H:%M:%SZ'
+          runtime_check
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3, re
+          from datetime import datetime, timezone
+
+          DB='/app/data/paper_v17/observer_v17.db'
+          TARGETS=['MRCXC','TX28D','CVX','AAPLC','AAPLD','SUPVD','CEPU','BBAR','BMA','YPFD','GFGC6200DI','GFGC6000SE','DLR/SEP26/OCT26','DLR/SEP26/NOV26 M']
+          c=sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=30)
+          c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          print('DB_QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+          state=c.execute('SELECT mode,process_state,session_state,ppi_auth,heartbeat_at,last_market_data_at,real_orders_sent,http_allowed,http_blocked,detail FROM observer_state WHERE id=1').fetchone()
+          print('OBSERVER_STATE='+json.dumps(dict(state),ensure_ascii=False,default=str))
+
+          print('--- LATEST DECISION PER TARGET ---')
+          for s in TARGETS:
+              r=c.execute('''SELECT decided_at,symbol,action,score,reason,features_json
+                             FROM paper_decisions WHERE symbol=? ORDER BY id DESC LIMIT 1''',(s,)).fetchone()
+              print(json.dumps({'target':s,'decision':dict(r) if r else None},ensure_ascii=False,default=str))
+
+          print('--- LATEST SNAPSHOT PER TARGET ---')
+          snap_cols={r[1] for r in c.execute('PRAGMA table_info(market_snapshots)')}
+          wanted=['observed_at','symbol','asset_class','settlement','currency','market','last','bid','ask','bid_size','ask_size','book_at','trade_at','last_kind','metadata_source','opening_block_reason','contract_json']
+          selected=[x for x in wanted if x in snap_cols]
+          for s in TARGETS:
+              q='SELECT '+','.join(selected)+' FROM market_snapshots WHERE symbol=? ORDER BY id DESC LIMIT 1'
+              r=c.execute(q,(s,)).fetchone()
+              row=dict(r) if r else None
+              if row and row.get('contract_json'):
+                  try: row['contract_json']=json.loads(row['contract_json'])
+                  except Exception: pass
+              print(json.dumps({'target':s,'snapshot':row},ensure_ascii=False,default=str))
+
+          print('--- LATEST TRADE GATE PER TARGET ---')
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          if 'trade_gate_evaluations' in tables:
+              for s in TARGETS:
+                  r=c.execute('''SELECT evaluated_at,symbol,technical_gate,ai_gate,patrimonial_gate,final_result,reason,detail_json
+                                 FROM trade_gate_evaluations WHERE symbol=? ORDER BY id DESC LIMIT 1''',(s,)).fetchone()
+                  print(json.dumps({'target':s,'gate':dict(r) if r else None},ensure_ascii=False,default=str))
+
+          print('--- RECENT REASON COUNTS ---')
+          for r in c.execute('''SELECT reason,COUNT(*) n FROM (SELECT reason FROM paper_decisions ORDER BY id DESC LIMIT 1500)
+                                GROUP BY reason ORDER BY n DESC,reason LIMIT 40'''):
+              print(f"{r['n']:4d} | {r['reason']}")
+
+          print('--- NOMINAL / LOT / QUANTITY METADATA DISCOVERY ---')
+          ident=re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+          keywords=('nominal','unit','lot','quantity','minimum','min_','face','par_value')
+          for table in sorted(tables):
+              if not ident.match(table): continue
+              cols=[r[1] for r in c.execute(f'PRAGMA table_info("{table}")')]
+              key=next((x for x in ('symbol','ticker') if x in cols),None)
+              interesting=[x for x in cols if any(k in x.lower() for k in keywords)]
+              if not key or not interesting: continue
+              select=[key]+interesting
+              if any(not ident.match(x) for x in select): continue
+              marks=','.join('?' for _ in TARGETS)
+              sql='SELECT '+','.join('"'+x+'"' for x in select)+f' FROM "{table}" WHERE "{key}" IN ({marks}) LIMIT 100'
+              try:
+                  rows=[dict(r) for r in c.execute(sql,TARGETS)]
+              except Exception as exc:
+                  print(json.dumps({'table':table,'error':type(exc).__name__},ensure_ascii=False)); continue
+              if rows:
+                  print(json.dumps({'table':table,'columns':select,'rows':rows},ensure_ascii=False,default=str))
+
+          c.close()
+          print('READ_ONLY_DB_AUDIT=GREEN')
+          PY
+
+          echo '--- DASHBOARD VISIBLE REASONS ---'
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,urllib.request
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN',''); assert token
+          req=urllib.request.Request('http://127.0.0.1:8000/en-vivo',headers={'Authorization':'Bearer '+token,'User-Agent':'PorotaRC6DecisionAudit'})
+          with urllib.request.urlopen(req,timeout=25) as r:
+              body=r.read(5_000_000).decode('utf-8','replace')
+          print('HTTP_STATUS='+str(r.status))
+          for needle in ['NEEDS_NOMINAL_UNITS','UNDERLYING_MARKET_CLOSED: US_LABOR_DAY','FUTUROS: requiere su ciclo financiero específico','OPCIONES: requiere su ciclo financiero específico','Score paper debajo del umbral versionado','Aprendiendo serie']:
+              print(needle+'='+str(needle in body))
+          assert r.status==200
+          PY
+
+          runtime_check
+          echo 'OBSERVER_RESTARTED=NO'
+          echo 'RUNTIME_MUTATED=NO'
+          echo 'REAL_ORDER_CAPABILITY=BLOCKED'
+          echo 'RC6_LIVE_DECISION_AUDIT=GREEN'
+          HOST
+
+          {
+            echo '### POROTA TRADING RC6 live decision audit'
+            echo '```text'
+            cat /tmp/rc6-live-decision-audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
