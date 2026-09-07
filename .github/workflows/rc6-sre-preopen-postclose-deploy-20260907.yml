@@ -1,0 +1,176 @@
+name: RC6 SRE split and preopen hardening deploy 2026-09-07
+on:
+  push:
+    branches: [feature/rc6-sre-health-split-20260907]
+    paths: ['.github/workflows/rc6-sre-preopen-postclose-deploy-20260907.yml']
+permissions: {contents: read}
+concurrency:
+  group: porota-rc6-host-sre-postclose
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Compile and static safety
+        run: |
+          python -m py_compile rc6_fast_functional_health.py rc6_full_db_integrity.py rc6_preopen_host_hardened.py
+          python - <<'PY'
+          from pathlib import Path
+          f=Path('rc6_fast_functional_health.py').read_text(); q=Path('rc6_full_db_integrity.py').read_text(); p=Path('rc6_preopen_host_hardened.py').read_text()
+          assert 'quick_check' not in f and 'integrity_check' not in f
+          assert 'PRAGMA quick_check' in q
+          assert 'porota-fast-functional-health-rc6.timer' in p
+          assert 'DASHBOARD_PREFIX = "porota-trading-dashboard:17.0.0-rc6"' in p
+          assert 'MIN_FREE_BYTES' not in p  # wrapper cannot relax base disk threshold
+          for text in (f,q,p):
+              assert 'send_order' not in text and 'place_order' not in text and 'cancel_order' not in text
+          print('SRE_PREOPEN_STATIC=GREEN')
+          PY
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env: {SSH_KEY: '${{ secrets.DO_SSH_KEY }}', KNOWN_HOSTS: '${{ secrets.DO_KNOWN_HOSTS }}'}
+        run: |
+          set -euo pipefail; install -m 700 -d ~/.ssh; printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519; printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts; chmod 600 ~/.ssh/known_hosts
+      - name: Stage read-only probes
+        env: {HOST: '${{ secrets.DO_HOST }}', USER: '${{ secrets.DO_USER }}'}
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/porota-sre.tgz rc6_fast_functional_health.py rc6_full_db_integrity.py rc6_preopen_host_hardened.py
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes /tmp/porota-sre.tgz "$USER@$HOST:/tmp/porota-sre-rc6.tgz"
+      - name: Install host probes transactionally
+        env: {HOST: '${{ secrets.DO_HOST }}', USER: '${{ secrets.DO_USER }}'}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/sre-deploy.txt
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          DB=$ROOT/data/paper_v17/observer_v17.db
+          TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
+          echo SRE_PREDEPLOY=START
+          # Wait for any concurrent observer-only postclose deploy to settle.
+          for i in $(seq 1 30); do
+            obs="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer 2>/dev/null || true)"
+            [ "$obs" = "true|$TARGET_IMAGE|0|true" ] && break
+            sleep 4
+          done
+          test "$obs" = "true|$TARGET_IMAGE|0|true"
+          BEFORE_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)"
+          BEFORE_LABEL="$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')"
+          BEFORE_BRANCH="$(git -C "$ROOT" branch --show-current)"; BEFORE_HEAD="$(git -C "$ROOT" rev-parse HEAD)"
+          python3 - <<PY
+import sqlite3
+c=sqlite3.connect('file:$DB?mode=ro',uri=True,timeout=30);c.execute('PRAGMA query_only=ON')
+assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'; mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone();c.close()
+assert mode=='PRODUCTION_PAPER' and int(orders)==0
+print('SRE_PRE_DB=GREEN')
+PY
+          TMP="$(mktemp -d /tmp/porota-sre.XXXXXX)"; trap 'rm -rf "$TMP" /tmp/porota-sre-rc6.tgz' EXIT
+          tar -xzf /tmp/porota-sre-rc6.tgz -C "$TMP"
+          sudo -n install -d -m 0755 /usr/local/lib/porota-sre-rc6
+          sudo -n install -m 0644 "$TMP/rc6_fast_functional_health.py" /usr/local/lib/porota-sre-rc6/rc6_fast_functional_health.py
+          sudo -n install -m 0644 "$TMP/rc6_full_db_integrity.py" /usr/local/lib/porota-sre-rc6/rc6_full_db_integrity.py
+          sudo -n install -m 0644 "$TMP/rc6_preopen_host_hardened.py" /usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py
+          sudo -n tee /etc/systemd/system/porota-fast-functional-health-rc6.service >/dev/null <<'UNIT'
+[Unit]
+Description=Porota RC6 fast functional health (read-only, no full DB scan)
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+Environment=PYTHONPATH=/opt/porota-trading
+Environment=PAPER_V17_DB_PATH=/opt/porota-trading/data/paper_v17/observer_v17.db
+ExecStart=/usr/bin/python3 /usr/local/lib/porota-sre-rc6/rc6_fast_functional_health.py
+TimeoutStartSec=30s
+UNIT
+          sudo -n tee /etc/systemd/system/porota-fast-functional-health-rc6.timer >/dev/null <<'UNIT'
+[Unit]
+Description=Porota RC6 fast functional health every 5 minutes
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=porota-fast-functional-health-rc6.service
+[Install]
+WantedBy=timers.target
+UNIT
+          sudo -n tee /etc/systemd/system/porota-full-db-integrity-rc6.service >/dev/null <<'UNIT'
+[Unit]
+Description=Porota RC6 full SQLite quick_check (read-only, postclose)
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+Environment=PAPER_V17_DB_PATH=/opt/porota-trading/data/paper_v17/observer_v17.db
+ExecStart=/usr/bin/python3 /usr/local/lib/porota-sre-rc6/rc6_full_db_integrity.py
+TimeoutStartSec=3min
+Nice=10
+UNIT
+          sudo -n tee /etc/systemd/system/porota-full-db-integrity-rc6.timer >/dev/null <<'UNIT'
+[Unit]
+Description=Porota RC6 full DB integrity once postclose on weekdays
+[Timer]
+OnCalendar=Mon..Fri *-*-* 17:20:00 America/Argentina/Buenos_Aires
+Persistent=true
+RandomizedDelaySec=120
+Unit=porota-full-db-integrity-rc6.service
+[Install]
+WantedBy=timers.target
+UNIT
+          sudo -n tee /etc/systemd/system/porota-preopen-rc6.service >/dev/null <<'UNIT'
+[Unit]
+Description=Porota RC6 10:15 preopen fail-closed readiness
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+Environment=PYTHONPATH=/opt/porota-trading
+ExecStart=/usr/bin/python3 /usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py
+TimeoutStartSec=5min
+UNIT
+          sudo -n systemctl daemon-reload
+          # Prove both new paths before retiring the slow frequent timer.
+          FAST_START=$(date +%s%N); sudo -n systemctl start porota-fast-functional-health-rc6.service; FAST_END=$(date +%s%N)
+          FAST_MS=$(( (FAST_END-FAST_START)/1000000 )); echo "FAST_HEALTH_MS=$FAST_MS"
+          sudo -n systemctl start porota-full-db-integrity-rc6.service
+          sudo -n systemctl enable --now porota-fast-functional-health-rc6.timer porota-full-db-integrity-rc6.timer >/dev/null
+          sudo -n systemctl disable --now porota-functional-health-rc6.timer >/dev/null 2>&1 || true
+          test "$(sudo -n systemctl is-enabled porota-fast-functional-health-rc6.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-fast-functional-health-rc6.timer)" = active
+          test "$(sudo -n systemctl is-enabled porota-full-db-integrity-rc6.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-full-db-integrity-rc6.timer)" = active
+          # Re-evaluate preopen contract postclose: disk floor remains 8 GiB and dashboard uses its own RC6 image family.
+          set +e; PREOUT="$(sudo -n systemctl start porota-preopen-rc6.service 2>&1; sudo -n journalctl -u porota-preopen-rc6.service -n 80 --no-pager -o cat)"; PRC=$?; set -e
+          printf '%s\n' "$PREOUT" | tail -n 80
+          test "$PRC" -eq 0
+          sudo -n systemctl reset-failed porota-preopen-rc6.service porota-contract-evidence-hf6.service porota-rc4-auto-check.service 2>/dev/null || true
+          # Legacy timers are already disabled; assert they remain non-active.
+          test "$(sudo -n systemctl is-active porota-contract-evidence-hf6.timer 2>/dev/null || true)" != active
+          test "$(sudo -n systemctl is-active porota-rc4-auto-check.timer 2>/dev/null || true)" != active
+          # Observer and repository identity must remain untouched by this host-only deployment.
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)" = "$BEFORE_ID"
+          test "$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$BEFORE_LABEL"
+          test "$(git -C "$ROOT" branch --show-current)" = "$BEFORE_BRANCH"
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$BEFORE_HEAD"
+          python3 - <<PY
+import sqlite3
+c=sqlite3.connect('file:$DB?mode=ro',uri=True,timeout=30);c.execute('PRAGMA query_only=ON'); assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'; mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone();c.close(); assert mode=='PRODUCTION_PAPER' and int(orders)==0
+print('SRE_POST_DB=GREEN')
+PY
+          echo SRE_FAST_FULL_SPLIT=GREEN_LIVE
+          echo PREOPEN_HOST_CONTRACT=GREEN_LIVE
+          echo LEGACY_FAILED_STATE_CLEANED=YES
+          echo REAL_ORDERS_SENT=0
+          REMOTE
+          { echo '### SRE/preopen postclose deploy'; echo '```text'; sed -n '1,260p' /tmp/sre-deploy.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
