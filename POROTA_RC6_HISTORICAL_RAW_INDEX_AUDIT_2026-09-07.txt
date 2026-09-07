@@ -1,0 +1,38 @@
+POROTA RC6 HISTORICAL RAW INDEX AUDIT — READ ONLY
+UTC=2026-09-07T19:12:31Z
+BODY_JSON_READ=NO_FOR_AGGREGATES
+
+======================================================================
+01 WRITER CALL GRAPH
+======================================================================
+bf_production_paper_observer.py:858:                archive_raw(c,origin='PPI_HISTORY',row_key=canonical([symbol,instrument_type,settlement,attempted]),
+bl_candle_engine.py:311:def archive_raw(c,*,origin,row_key,payload,recorded_at,quality='UNVERIFIED'):
+bl_candle_engine.py:317:def migrate_legacy(source_path,store,*,recorded_at,batch_size=500):
+bl_candle_engine.py:341:                    new=archive_raw(c,origin=origin,row_key=canonical([payload['symbol'],payload['date']]),
+tests/test_candle_archive_v17.py:220:    first=migrate_legacy(path,store,recorded_at=AT)
+tests/test_candle_archive_v17.py:221:    second=migrate_legacy(path,store,recorded_at=END)
+tests/test_candle_archive_v17.py:229:    with pytest.raises(FileNotFoundError): migrate_legacy(missing,store,recorded_at=AT)
+
+======================================================================
+02 COVERING-INDEX AGGREGATES
+======================================================================
+ROWS_EXACT=25860
+ORIGIN_COUNT=1
+ORIGIN rows=25860 row_keys=25860 body_hashes=25423 value='PPI_HISTORY'
+UNIQUE_ORIGIN_ROW_KEYS=25860
+UNIQUE_BODY_HASHES=25423
+REVISIONED_KEYS=0 EXTRA_VERSION_ROWS=0 MAX_VERSIONS_PER_KEY=0
+REPEATED_BODY_HASHES=437 REPEATED_HASH_EXTRA_ROWS=437 MAX_HASH_MULTIPLICITY=2
+ROW_KEYS_REPEATED_ACROSS_ALL_ROWS=0 ROW_KEY_EXTRA_ROWS=0 MAX_ROW_KEY_MULTIPLICITY=0
+VERSION_MULTIPLICITY_HISTOGRAM=[[1, 25860]]
+SQLITE_SEQUENCE=25860
+STRATIFIED_METADATA_SAMPLES=41
+SAMPLE_QUALITY={"EMPTY_OR_INVALID": 2, "PARTIAL": 26, "VALID_PAYLOAD": 13}
+SAMPLE_RECORDED_AT_MIN=2026-08-30T03:34:39.021219+00:00 SAMPLE_RECORDED_AT_MAX=2026-09-07T13:04:17.897188+00:00
+
+======================================================================
+03 SAFETY
+======================================================================
+OBSERVER_STATE=PRODUCTION_PAPER|0
+MUTATIONS=NONE
+AUDIT_STATUS=COMPLETE_READ_ONLY
