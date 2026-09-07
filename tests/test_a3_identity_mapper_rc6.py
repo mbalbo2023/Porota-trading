@@ -30,8 +30,20 @@ def test_unknown_product_is_not_guessed():
 
 
 def test_malformed_or_ambiguous_is_not_guessed():
-    for p,a in [('DLR/SE26','DLR092026'),('DLR/SEP26','DLR92026'),('DLR/SEP99','DLR092099')]:
+    fixtures=[
+        ('DLR/SE26','DLR092026'),
+        ('DLR/SEP26','DLR92026'),
+        ('DLR/XYZ26','DLR092026'),
+        ('DLR/SEP2X','DLR092026'),
+        ('DLR/SEP26','DLR132026'),
+    ]
+    for p,a in fixtures:
         assert m.alignment_or_unverified(porota_symbol=p,a3_symbol=a)['status']=='ALIGNMENT_UNVERIFIED'
+
+
+def test_far_future_but_well_formed_contract_is_deterministic_not_arbitrarily_rejected():
+    assert m.porota_to_a3_dlr('DLR/SEP99') == 'DLR092099'
+    assert m.a3_to_porota_dlr('DLR092099') == 'DLR/SEP99'
 
 
 def test_module_has_no_network_db_or_order_capability():
