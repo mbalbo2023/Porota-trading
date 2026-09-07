@@ -34,7 +34,7 @@ def install() -> None:
         return
     _installed = True
 
-    # Replace the previously imported responsive/card layer at runtime.  This
+    # Replace the previously imported responsive/card layer at runtime. This
     # avoids touching dashboard backend code while guaranteeing classic native
     # table semantics before any operator-facing page is rendered.
     bg.TABLE_A11Y_CSS = classic_tables.TABLE_A11Y_CSS + CLASSIC_TABLE_INVARIANT_CSS
@@ -50,6 +50,11 @@ def install() -> None:
     blocking_semantics.install()
 
     # Final observability truth correction: prefer current RC6 snapshots over
-    # legacy snapshots without touching producers, strategy or DBs.
+    # older/stale dashboard snapshots without touching producers, strategy or DBs.
     import et_dashboard_runtime_truth_fixes_rc6 as runtime_truth
     runtime_truth.install()
+
+    # Latest operator-requested presentation/read-only changes. Install last so
+    # they wrap the final truth layers rather than bypassing them.
+    import ez_dashboard_operator_improvements_rc6 as operator_ux
+    operator_ux.install()
