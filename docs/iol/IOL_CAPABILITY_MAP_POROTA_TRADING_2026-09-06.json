@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-06",
+  "status": "research_complete_no_operations",
+  "rest": {
+    "base_url": "https://api.invertironline.com",
+    "token_endpoint": "/token",
+    "access_token_ttl_minutes": 15,
+    "auth": "password_grant_then_refresh_token",
+    "production_is_real_environment": true,
+    "sandbox_exists": true,
+    "sandbox_url_verified": false,
+    "monthly_bonified_api_calls": 25000
+  },
+  "mcp": {
+    "url": "https://mcp.invertironline.com",
+    "transport": "Streamable HTTP",
+    "auth": "OAuth 2.0",
+    "read_only_supported": true,
+    "published_tool_count": 27,
+    "observed_tool_count": 30
+  },
+  "porota_policy": {
+    "roles": [
+      "secondary_market_data_source",
+      "cross_validation_source",
+      "fixed_income_analytics_source",
+      "options_analytics_source",
+      "caucion_reference_source",
+      "corporate_events_source",
+      "fci_catalog_source"
+    ],
+    "order_execution_mode": "BLOCKED",
+    "http_default_deny": true,
+    "allowed_methods": {
+      "POST": [
+        "/token"
+      ],
+      "GET": [
+        "read_only_resources"
+      ]
+    }
+  },
+  "validated_read_only": {
+    "asset_info": "PASS",
+    "quote": "PASS",
+    "daily_ohlcv": "PASS",
+    "fixed_income_analytics": "PASS",
+    "caucion_structure": "PASS",
+    "options_chain": "PASS",
+    "fci_catalog": "PASS",
+    "intraday": "WARN_intraday_unavailable"
+  },
+  "operations_performed": []
+}
