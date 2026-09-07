@@ -1,0 +1,286 @@
+name: RC6 dashboard-only go-live UX deploy v3 2026-09-06
+
+on:
+  push:
+    branches:
+      - ux/rc6-dashboard-go-live-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate dashboard UX candidate v3
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build candidate image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull=false --label "porota.commit=${GITHUB_SHA}" --label 'porota.scope=DASHBOARD_ONLY_GO_LIVE_UX_V3' -t porota-dashboard-ux-v3:test .
+      - name: Compile presentation layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=1777 \
+            -e PYTHONPYCACHEPREFIX=/tmp/pycache \
+            --entrypoint python porota-dashboard-ux-v3:test -m compileall -q \
+              es_dashboard_go_live_ux_rc6.py eu_dashboard_blocking_semantics_rc6.py \
+              et_dashboard_runtime_truth_fixes_rc6.py eq_dashboard_table_layout_rc6.py \
+              o_dashboard.py bg_paper_dashboard.py
+      - name: Run dashboard regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=192m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python porota-dashboard-ux-v3:test -m pytest -q -p no:cacheprovider \
+              tests/test_dashboard_go_live_ux_rc6.py \
+              tests/test_dashboard_blocking_semantics_rc6.py \
+              tests/test_dashboard_truth_layer_rc6.py \
+              tests/test_dashboard_table_layout_rc6.py \
+              tests/test_dashboard_global_a11y_rc5.py \
+              tests/test_dashboard_daily_responsive_hf6.py \
+              tests/test_dashboard_ux_logs_cem_hf6.py \
+              tests/test_scheduler_dashboard_hf6.py
+
+  deploy-dashboard-only:
+    name: Product-equivalent proof and dashboard-only activation v3
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_dashboard_deploy_v3"
+          chmod 600 "$HOME/.ssh/porota_dashboard_deploy_v3"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Validate live data, activate only dashboard, and postflight
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_dashboard_deploy_v3" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'HOST' | tee /tmp/rc6-dashboard-ux-deploy-v3.txt
+          set -Eeuo pipefail
+          umask 077
+          REPO=/opt/porota-trading
+          DATA="$REPO/data"
+          LIVE_BRANCH='hotfix/rc6-cedear-us-labor-day-20260906'
+          LIVE_SHA='db26c76723bb988c956589c572b87cbcb4191731'
+          BASE_IMAGE='porota-trading-bot:17.0.0-rc6'
+          CANDIDATE_IMAGE='porota-trading-dashboard:17.0.0-rc6-go-live-ux2'
+          ENV_FILE="$DATA/diagnosticos/dashboard_mode_v17.env"
+          TMP=''; WT=''; ACTIVATED=0
+
+          start_dashboard() {
+            local image="$1"
+            sudo -n docker run -d --name porota_production_dashboard \
+              --pull never --restart unless-stopped --user botuser --cap-drop ALL \
+              --security-opt no-new-privileges:true -p 127.0.0.1:8000:8000 \
+              --env-file "$ENV_FILE" -v "$DATA:/app/data" \
+              --entrypoint python "$image" o_dashboard.py >/dev/null
+          }
+
+          verify_runtime() {
+            local state
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          out=[]; row=None
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+              c.execute('PRAGMA query_only=ON')
+              out.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'):
+                  row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*out,*row))))
+          PY
+          )"
+            echo "VERIFY_DB=$state"
+            test "$state" = 'ok|ok|PRODUCTION_PAPER|0'
+          }
+
+          http_matrix() {
+            local container="$1"
+            sudo -n docker exec -i "$container" python - <<'PY'
+          import os,urllib.request,json
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          assert token
+          paths=['/','/vivo','/historicos','/reportes','/config','/sistema?section=introspeccion','/salud','/universo-operativo','/scalping','/instrumentos','/aprendizaje','/dashboard/logs']
+          result={}
+          for path in paths:
+              req=urllib.request.Request('http://127.0.0.1:8000'+path,headers={'Authorization':'Bearer '+token,'User-Agent':'PorotaGoLiveUXV3/RC6'})
+              with urllib.request.urlopen(req,timeout=25) as r:
+                  body=r.read(4_000_000).decode('utf-8','replace')
+                  assert r.status==200 and len(body)>200
+                  result[path]=len(body)
+                  if path=='/':
+                      assert 'Últimas 5 operaciones PAPER válidas' in body
+                  elif path=='/vivo':
+                      assert '5. Motores / workers' not in body
+                  elif path=='/historicos':
+                      assert 'Base objetiva' not in body
+                      assert 'Fuentes del store canónico' in body
+                  elif path=='/reportes':
+                      assert 'BCRA / INDEC / macro y performance vs inflación' in body
+                  elif path=='/config':
+                      assert 'IA intradía' in body and '>OFF<' in body
+                  elif path=='/sistema?section=introspeccion':
+                      assert 'system-nav' in body
+                      assert 'Snapshot de introspección no vigente' not in body
+              
+          print(json.dumps(result,sort_keys=True))
+          print('DASHBOARD_HTTP_MATRIX=GREEN')
+          PY
+          }
+
+          fallback_base() {
+            echo 'DASHBOARD_TRANSACTION_FALLBACK=START'
+            sudo -n docker rm -f porota_production_dashboard >/dev/null 2>&1 || true
+            start_dashboard "$BASE_IMAGE"
+            for _ in $(seq 1 40); do
+              if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then break; fi
+              sleep 1
+            done
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$BASE_IMAGE|0"
+            curl -fsS http://127.0.0.1:8000/health >/dev/null
+            echo 'DASHBOARD_TRANSACTION_FALLBACK=GREEN'
+          }
+
+          cleanup() {
+            if [ -n "$WT" ] && [ -d "$WT" ]; then git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true; fi
+            [ -z "$TMP" ] || rmdir "$TMP" >/dev/null 2>&1 || true
+          }
+          on_exit() {
+            rc=$?
+            if [ "$rc" -ne 0 ] && [ "$ACTIVATED" -eq 1 ]; then fallback_base || true; fi
+            cleanup
+            exit "$rc"
+          }
+          trap on_exit EXIT
+
+          echo '=== RC6 DASHBOARD GO-LIVE UX V3 ==='
+          echo "UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
+          echo "TARGET_SHA=$TARGET_SHA"
+          test "$(git -C "$REPO" branch --show-current)" = "$LIVE_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$LIVE_SHA"
+          git -C "$REPO" diff --quiet
+          git -C "$REPO" diff --cached --quiet
+          test -s "$ENV_FILE"
+          test "$(df -P / | awk 'NR==2{gsub("%","",$5); print $5}')" -lt 70
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$BASE_IMAGE|0|true"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$BASE_IMAGE|0"
+          verify_runtime
+          test -z "$(sudo -n systemctl list-units --type=service --state=active --no-legend 'porota-a3-history-rc6@*.service' 2>/dev/null | awk '{print $1}' || true)"
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)" != active
+
+          echo '--- CURRENT PRODUCTION HTTP BASELINE ---'
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,urllib.request,json
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN',''); assert token
+          result={}
+          for path in ['/','/vivo','/historicos','/reportes','/config','/sistema?section=introspeccion','/salud','/universo-operativo','/scalping','/instrumentos','/aprendizaje','/dashboard/logs']:
+              req=urllib.request.Request('http://127.0.0.1:8000'+path,headers={'Authorization':'Bearer '+token,'User-Agent':'PorotaBaseline/RC6'})
+              with urllib.request.urlopen(req,timeout=25) as r:
+                  body=r.read(4_000_000); assert r.status==200 and len(body)>200; result[path]=len(body)
+          print(json.dumps(result,sort_keys=True))
+          print('CURRENT_DASHBOARD_HTTP_BASELINE=GREEN')
+          PY
+
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          git -C "$REPO" merge-base --is-ancestor "$LIVE_SHA" "$TARGET_SHA"
+          TMP="$(mktemp -d "$HOME/porota-dashboard-ux-v3.XXXXXX")"
+          WT="$TMP/source"
+          git -C "$REPO" worktree add --detach "$WT" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label 'porota.scope=DASHBOARD_ONLY_GO_LIVE_UX_V3' -t "$CANDIDATE_IMAGE" "$WT"
+          test "$(sudo -n docker image inspect "$CANDIDATE_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$TARGET_SHA"
+
+          echo '--- DIRECT RENDER PROOF AGAINST LIVE DATA, READ-ONLY ---'
+          sudo -n docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=192m,uid=1000,gid=1000,mode=1777 \
+            --env-file "$ENV_FILE" -v "$DATA:/app/data:ro" \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python "$CANDIDATE_IMAGE" - <<'PY'
+          import json
+          import bg_paper_dashboard as bg
+          import eq_dashboard_table_layout_rc6 as eq
+          eq.install()
+          pages={
+            '/':bg.home_page(),
+            '/vivo':bg.live_page(),
+            '/historicos':bg.history_page(),
+            '/reportes':bg.reports_page(),
+            '/config':bg.config_page(),
+            '/salud':bg.health_page(),
+            '/scalping':bg.scalping_page(),
+            '/aprendizaje':bg.learning_page(),
+            '/sistema?section=introspeccion':bg.system_page('introspeccion'),
+          }
+          assert 'Últimas 5 operaciones PAPER válidas' in pages['/']
+          assert '5. Motores / workers' not in pages['/vivo']
+          assert 'Base objetiva' not in pages['/historicos'] and 'Fuentes del store canónico' in pages['/historicos']
+          assert 'BCRA / INDEC / macro y performance vs inflación' in pages['/reportes']
+          assert 'IA intradía' in pages['/config'] and '>OFF<' in pages['/config']
+          assert 'system-nav' in pages['/sistema?section=introspeccion']
+          assert 'Snapshot de introspección no vigente' not in pages['/sistema?section=introspeccion']
+          components=bg._health_components()
+          hist=[x for x in components if str(x.get('key')).upper()=='PPI_PRODUCTION_HISTORY']
+          if hist and str(hist[0].get('state')).upper()=='AMARILLO':
+              assert hist[0].get('paper_blocking') is False
+          print(json.dumps({k:len(v) for k,v in pages.items()},sort_keys=True))
+          print('DIRECT_RENDER_LIVE_DATA=GREEN')
+          PY
+
+          verify_runtime
+          echo '--- ACTIVATE DASHBOARD CONTAINER ONLY ---'
+          ACTIVATED=1
+          sudo -n docker rm -f porota_production_dashboard >/dev/null
+          start_dashboard "$CANDIDATE_IMAGE"
+          for _ in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$CANDIDATE_IMAGE|0"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$BASE_IMAGE|0|true"
+          http_matrix porota_production_dashboard
+          verify_runtime
+          curl -fsS http://127.0.0.1:8000/health >/dev/null
+          echo "OBSERVER_SHA_UNCHANGED=$LIVE_SHA"
+          echo "DASHBOARD_SHA=$TARGET_SHA"
+          echo "DASHBOARD_IMAGE=$CANDIDATE_IMAGE"
+          echo 'OBSERVER_RESTARTED=NO'
+          echo 'STRATEGY_CHANGED=NO'
+          echo 'REAL_ORDER_CAPABILITY=BLOCKED'
+          echo 'DASHBOARD_ONLY_UX_DEPLOY_V3=GREEN'
+          ACTIVATED=0
+          HOST
+
+          {
+            echo '### RC6 dashboard-only go-live UX deploy v3'
+            echo '```text'
+            sed -n '1,2000p' /tmp/rc6-dashboard-ux-deploy-v3.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
