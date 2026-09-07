@@ -35,20 +35,22 @@ jobs:
             "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/iol-preflight.txt
           set -euo pipefail
           REPO=/opt/porota-trading
-          OBS_SHA=db26c76723bb988c956589c572b87cbcb4191731
-          OBS_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          OBS_SHA=5076b6dff8c644ed73160b4148eb7a1cf9ca7e43
+          OBS_BRANCH=hotfix/rc6-paper-t1-settlement-20260907
           test "$(git -C "$REPO" branch --show-current)" = "$OBS_BRANCH"
           test "$(git -C "$REPO" rev-parse HEAD)" = "$OBS_SHA"
           test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = 'true|0|true'
+          test "$(sudo -n docker image inspect porota-trading-bot:17.0.0-rc6 --format '{{index .Config.Labels "porota.commit"}}')" = "$OBS_SHA"
           state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
-          import sqlite3
+          import os,sqlite3
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True)
           c.execute('PRAGMA query_only=ON')
-          print('|'.join(map(str,c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone())))
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
           c.close()
+          print('|'.join(map(str,(*row,os.getenv('PAPER_T1_FULL_DATE_RELEASE','')))))
           PY
           )"
-          test "$state" = 'PRODUCTION_PAPER|0'
+          test "$state" = 'PRODUCTION_PAPER|0|true'
           ENV="$REPO/.env"
           has_nonempty(){ awk -F= -v k="$1" '$1==k {v=substr($0,index($0,"=")+1); gsub(/^[[:space:]"'"']+|[[:space:]"'"']+$/,"",v); if(length(v)>0){found=1}} END{exit(found?0:1)}' "$ENV" 2>/dev/null; }
           if has_nonempty IOL_USERNAME; then echo IOL_USERNAME_PRESENT=YES; else echo IOL_USERNAME_PRESENT=NO; fi
