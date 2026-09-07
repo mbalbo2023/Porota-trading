@@ -13,6 +13,6 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
       - run: python -m pip install -q pytest
-      - run: pytest -q tests/test_fixed_income_nominal_contract_rc6.py
+      - run: python -m pytest -q tests/test_fixed_income_nominal_contract_rc6.py
       - run: python -m py_compile fe_fixed_income_nominal_contract_rc6.py
       - run: python -c "import fe_fixed_income_nominal_contract_rc6 as m; m.assert_shadow_only(); print('NOMINAL_CONTRACT_SHADOW=GREEN')"
