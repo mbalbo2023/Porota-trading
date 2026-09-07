@@ -1,0 +1,66 @@
+name: RC6 IOL host preflight 2026-09-07
+
+on:
+  push:
+    branches:
+      - feature/rc6-iol-history-readonly-20260907
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_iol_preflight"
+          chmod 600 "$HOME/.ssh/porota_iol_preflight"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only host readiness check
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_iol_preflight" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/iol-preflight.txt
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          OBS_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          OBS_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          test "$(git -C "$REPO" branch --show-current)" = "$OBS_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$OBS_SHA"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = 'true|0|true'
+          state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True)
+          c.execute('PRAGMA query_only=ON')
+          print('|'.join(map(str,c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone())))
+          c.close()
+          PY
+          )"
+          test "$state" = 'PRODUCTION_PAPER|0'
+          ENV="$REPO/.env"
+          has_nonempty(){ awk -F= -v k="$1" '$1==k {v=substr($0,index($0,"=")+1); gsub(/^[[:space:]"'"']+|[[:space:]"'"']+$/,"",v); if(length(v)>0){found=1}} END{exit(found?0:1)}' "$ENV" 2>/dev/null; }
+          if has_nonempty IOL_USERNAME; then echo IOL_USERNAME_PRESENT=YES; else echo IOL_USERNAME_PRESENT=NO; fi
+          if has_nonempty IOL_PASSWORD; then echo IOL_PASSWORD_PRESENT=YES; else echo IOL_PASSWORD_PRESENT=NO; fi
+          if grep -q '^IOL_ENABLED=' "$ENV" 2>/dev/null; then echo IOL_CONFIG_KEY_PRESENT=YES; else echo IOL_CONFIG_KEY_PRESENT=NO; fi
+          echo OBSERVER_SHA_UNCHANGED="$OBS_SHA"
+          echo REAL_ORDERS_SENT=0
+          echo HOST_MUTATION=NO
+          HOST
+          {
+            echo '### RC6 IOL host preflight'
+            echo '```text'
+            cat /tmp/iol-preflight.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
