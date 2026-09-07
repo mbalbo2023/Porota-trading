@@ -1,0 +1,59 @@
+name: RC6 dashboard operator improvements validate 2026-09-07
+
+on:
+  push:
+    branches:
+      - ux/rc6-dashboard-operator-improvements-20260907
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-dashboard-operator-improvements-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build dashboard candidate
+        run: |
+          set -euo pipefail
+          docker build --pull=false --label "porota.commit=${GITHUB_SHA}" \
+            -t porota-dashboard-rc6-operator-ux:test .
+
+      - name: Operator presentation/read-only tests
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=192m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python porota-dashboard-rc6-operator-ux:test \
+            -m pytest -q -p no:cacheprovider \
+            tests/test_dashboard_operator_improvements_rc6.py \
+            tests/test_dashboard_table_layout_rc6.py \
+            tests/test_dashboard_runtime_truth_fixes_rc6.py \
+            tests/test_dashboard_go_live_ux_rc6.py \
+            tests/test_dashboard_blocking_semantics_rc6.py \
+            tests/test_dashboard_truth_layer_rc6.py
+
+      - name: Compile presentation modules in memory
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=1777 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python porota-dashboard-rc6-operator-ux:test \
+            -c "paths=('ez_dashboard_operator_improvements_rc6.py','eq_dashboard_table_layout_rc6.py'); [compile(open(p,encoding='utf-8').read(),p,'exec') for p in paths]; print('COMPILE_IN_MEMORY=GREEN')"
+
+      - name: Assert dashboard-only scope
+        run: |
+          set -euo pipefail
+          ! grep -Eq 'DO_SSH_KEY|DO_HOST|ssh |docker run -d|deploy:' .github/workflows/rc6-dashboard-operator-improvements-validate-20260907.yml
+          ! grep -Eq 'PPI_|IOL_|place_order|send_order|requests|urllib' ez_dashboard_operator_improvements_rc6.py
+          echo 'VALIDATION_ONLY=YES'
+          echo 'DASHBOARD_ONLY=YES'
