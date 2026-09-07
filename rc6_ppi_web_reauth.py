@@ -7,8 +7,12 @@ host, without exposing them and without visiting trading/order routes.
 Safety contract:
 - no DB access, broker imports, orders, quantities or prices;
 - credentials are read only from a local secret file and never printed/written;
+- a trusted profile may require only PPI_WEB_PASSWORD; username is optional;
 - navigation is restricted to PPI account/login and trading landing pages;
-- if OTP/PIN/2FA is requested in unattended mode, fail closed;
+- POST is permitted only to the exact account /login endpoint;
+- the optional trusted-device prompt may be dismissed with "Ahora no" only if
+  it does not require an additional unapproved POST route;
+- if a real OTP/PIN/2FA code is required, fail closed and never automate email;
 - after successful login this helper exits; Contract Evidence collection remains
   a separate GET-only process.
 """
@@ -23,13 +27,21 @@ from urllib.parse import urlsplit
 
 LOGIN_URL = "https://cuenta.portfoliopersonal.com/login"
 TRADING_ROOT = "https://trading.portfoliopersonal.com/"
-ALLOWED_HOSTS = {"cuenta.portfoliopersonal.com", "trading.portfoliopersonal.com"}
-OTP_HINT = re.compile(
+ALLOWED_PAGE_HOSTS = {"cuenta.portfoliopersonal.com", "trading.portfoliopersonal.com"}
+ORDER_PATH_HINT = re.compile(r"(^|/)(operar|orden|orders?|trade|confirm|cancel)(/|$)", re.I)
+OTP_INPUT_HINT = re.compile(r"(pin|otp|token|one[-_ ]?time|verification[-_ ]?code|codigo|c[oó]digo)", re.I)
+OTP_TEXT_HINT = re.compile(
     r"(pin|otp|token|c[oó]digo).{0,120}(mail|correo|email|verific|seguridad|autentic)|"
     r"(mail|correo|email).{0,120}(pin|otp|token|c[oó]digo)|segundo factor|"
-    r"dispositivo de confianza|validaci[oó]n de dispositivo",
+    r"doble factor|autenticaci[oó]n de dos factores",
     re.I | re.S,
 )
+TRUST_PROMPT_HINT = re.compile(
+    r"dispositivo.{0,80}(confianza|confiable|seguro)|"
+    r"(confiar|recordar|verificar).{0,80}dispositivo",
+    re.I | re.S,
+)
+NOW_NOT_HINT = re.compile(r"ahora\s+no|no\s+ahora|m[aá]s\s+tarde|omitir", re.I)
 
 
 def clean_url(value: str) -> str:
@@ -39,10 +51,9 @@ def clean_url(value: str) -> str:
 
 def safe_page_url(value: str) -> bool:
     u = urlsplit(str(value))
-    if u.scheme != "https" or u.netloc not in ALLOWED_HOSTS:
+    if u.scheme != "https" or u.netloc not in ALLOWED_PAGE_HOSTS:
         return False
-    p = u.path.lower()
-    return not (p.startswith("/operar") or "/orden" in p or "/confirm" in p or "/cancel" in p)
+    return ORDER_PATH_HINT.search(u.path.lower()) is None
 
 
 def authenticated_url(value: str) -> bool:
@@ -52,7 +63,7 @@ def authenticated_url(value: str) -> bool:
         and u.netloc == "trading.portfoliopersonal.com"
         and "login" not in u.path.lower()
         and "logout" not in u.path.lower()
-        and not u.path.lower().startswith("/operar")
+        and ORDER_PATH_HINT.search(u.path.lower()) is None
     )
 
 
@@ -87,20 +98,37 @@ def first_visible(page, selectors):
     return None
 
 
-def otp_required(page) -> bool:
+def trust_prompt_present(page) -> bool:
     text = body_text(page)
-    if OTP_HINT.search(text):
+    return bool(TRUST_PROMPT_HINT.search(text) and NOW_NOT_HINT.search(text))
+
+
+def otp_required(page) -> bool:
+    # Optional trusted-device enrollment is explicitly NOT a mandatory OTP.
+    if trust_prompt_present(page):
+        return False
+    text = body_text(page)
+    if OTP_TEXT_HINT.search(text):
         return True
-    return first_visible(page, [
+    candidates = [
         "input[autocomplete='one-time-code']", "input[name*='pin' i]", "input[id*='pin' i]",
         "input[name*='otp' i]", "input[id*='otp' i]", "input[name*='token' i]",
         "input[id*='token' i]", "input[name*='code' i]", "input[id*='code' i]",
-    ]) is not None
+    ]
+    return first_visible(page, candidates) is not None
 
 
-def status_payload(status: str, *, attempts: int = 0) -> str:
-    return json.dumps({"status": status, "attempts": attempts, "credentials_exposed": False,
-                       "orders_visited": False, "real_orders_sent": 0}, sort_keys=True)
+def status_payload(status: str, *, attempts: int = 0, blocked_post_path: str = "") -> str:
+    payload = {
+        "status": status,
+        "attempts": attempts,
+        "credentials_exposed": False,
+        "orders_visited": False,
+        "real_orders_sent": 0,
+    }
+    if blocked_post_path:
+        payload["blocked_post_path"] = blocked_post_path[:240]
+    return json.dumps(payload, sort_keys=True)
 
 
 def main() -> int:
@@ -116,7 +144,7 @@ def main() -> int:
     if not secret.is_file():
         print(status_payload("BLOCKED_AUTH_LOCAL_SECRET_MISSING")); return 4
     user, password = parse_secret(secret)
-    if not user or not password:
+    if not password:
         print(status_payload("BLOCKED_AUTH_LOCAL_SECRET_INCOMPLETE")); return 4
     try:
         from playwright.sync_api import sync_playwright
@@ -124,6 +152,7 @@ def main() -> int:
         print(status_payload("BLOCKED_PLAYWRIGHT_UNAVAILABLE")); return 4
 
     attempts = 0
+    blocked_post_path = ""
     try:
         with sync_playwright() as pw:
             ctx = pw.chromium.launch_persistent_context(
@@ -132,6 +161,27 @@ def main() -> int:
                 viewport={"width": 1440, "height": 1000},
                 args=["--no-sandbox", "--disable-dev-shm-usage"],
             )
+
+            # Authentication helper is default-deny for mutations. Exact /login
+            # is the only permitted POST. GET/HEAD/OPTIONS assets may load over
+            # HTTPS so the login UI can function. Any other POST is blocked and
+            # only its sanitized host/path is retained for diagnosis.
+            def guard(route, request):
+                nonlocal blocked_post_path
+                method = request.method.upper()
+                u = urlsplit(request.url)
+                if u.scheme != "https":
+                    return route.abort()
+                if method in {"GET", "HEAD", "OPTIONS"}:
+                    if u.netloc in ALLOWED_PAGE_HOSTS and ORDER_PATH_HINT.search(u.path.lower()):
+                        return route.abort()
+                    return route.continue_()
+                if method == "POST" and u.netloc == "cuenta.portfoliopersonal.com" and u.path.rstrip("/") == "/login":
+                    return route.continue_()
+                blocked_post_path = f"{u.netloc}{u.path}"[:240]
+                return route.abort()
+
+            ctx.route("**/*", guard)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(TRADING_ROOT, wait_until="domcontentloaded", timeout=45000)
             page.wait_for_timeout(800)
@@ -140,11 +190,28 @@ def main() -> int:
 
             page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=45000)
             page.wait_for_timeout(800)
-            for attempts in range(1, 5):
+            for attempts in range(1, 6):
                 if not safe_page_url(page.url):
                     ctx.close(); print(status_payload("BLOCKED_AUTH_UNEXPECTED_PAGE", attempts=attempts)); return 4
                 if authenticated_url(page.url):
                     ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts)); return 0
+
+                if trust_prompt_present(page):
+                    skip = first_visible(page, [
+                        "button:has-text('Ahora no')", "a:has-text('Ahora no')",
+                        "button:has-text('No ahora')", "a:has-text('No ahora')",
+                        "button:has-text('Más tarde')", "a:has-text('Más tarde')",
+                        "button:has-text('Omitir')", "a:has-text('Omitir')",
+                    ])
+                    if skip is None:
+                        ctx.close(); print(status_payload("BLOCKED_TRUST_DEVICE_SKIP_NOT_FOUND", attempts=attempts)); return 4
+                    blocked_post_path = ""
+                    skip.click(); page.wait_for_timeout(1800)
+                    if blocked_post_path:
+                        ctx.close(); print(status_payload("BLOCKED_TRUST_DEVICE_SKIP_ROUTE", attempts=attempts,
+                                                          blocked_post_path=blocked_post_path)); return 4
+                    continue
+
                 if otp_required(page):
                     ctx.close(); print(status_payload("BLOCKED_AUTH_2FA_REQUIRED", attempts=attempts)); return 4
 
@@ -160,6 +227,8 @@ def main() -> int:
                 ])
                 acted = False
                 if username is not None:
+                    if not user:
+                        ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_REQUIRED", attempts=attempts)); return 4
                     try:
                         if not username.input_value():
                             username.fill(user)
@@ -179,7 +248,11 @@ def main() -> int:
                     ])
                     if submit is None:
                         ctx.close(); print(status_payload("BLOCKED_AUTH_LOGIN_SUBMIT_NOT_FOUND", attempts=attempts)); return 4
+                    blocked_post_path = ""
                     submit.click(); page.wait_for_timeout(2500)
+                    if blocked_post_path:
+                        ctx.close(); print(status_payload("BLOCKED_AUTH_UNAPPROVED_POST", attempts=attempts,
+                                                          blocked_post_path=blocked_post_path)); return 4
                     continue
 
                 back = first_visible(page, [
@@ -193,7 +266,8 @@ def main() -> int:
 
             ok = authenticated_url(page.url)
             ctx.close()
-            print(status_payload("AUTHENTICATED_TRUSTED_DEVICE" if ok else "BLOCKED_AUTH_SESSION_EXPIRED", attempts=attempts))
+            print(status_payload("AUTHENTICATED_TRUSTED_DEVICE" if ok else "BLOCKED_AUTH_SESSION_EXPIRED",
+                                 attempts=attempts, blocked_post_path=blocked_post_path))
             return 0 if ok else 4
     except Exception as exc:
         print(json.dumps({"status": "BLOCKED_BROWSER_ERROR", "error_type": type(exc).__name__,
