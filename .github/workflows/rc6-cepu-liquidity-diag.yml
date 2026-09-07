@@ -1,0 +1,46 @@
+name: RC6 CEPU liquidity diagnostic
+
+on:
+  push:
+    branches:
+      - diag/rc6-cepu-liquidity-20260907
+    paths:
+      - scripts/rc6_cepu_liquidity_diag_20260907.sh
+      - .github/workflows/rc6-cepu-liquidity-diag.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Validate diagnostic script
+        run: |
+          set -euo pipefail
+          bash -n scripts/rc6_cepu_liquidity_diag_20260907.sh
+          echo OFFLINE_VALIDATION=GREEN
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_diag"
+          chmod 600 "$HOME/.ssh/porota_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read live PAPER decision evidence only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_diag" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' < scripts/rc6_cepu_liquidity_diag_20260907.sh
