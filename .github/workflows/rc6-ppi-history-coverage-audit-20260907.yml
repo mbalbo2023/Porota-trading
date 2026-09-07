@@ -1,0 +1,148 @@
+name: RC6 PPI history coverage audit 2026-09-07
+
+on:
+  push:
+    branches:
+      - audit/rc6-ppi-history-coverage-20260907
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-ppi-history-coverage-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_hist_audit"
+          chmod 600 "$HOME/.ssh/porota_hist_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only coverage and attempt audit
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_hist_audit" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY' | tee /tmp/ppi-history-audit.txt
+          import json, os, sqlite3
+          from pathlib import Path
+
+          REPO=Path('/opt/porota-trading')
+          DATA=REPO/'data'
+          OBS=DATA/'paper_v17'/'observer_v17.db'
+          HIST=DATA/'market_history.db'
+
+          def ro(path):
+              c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=30)
+              c.row_factory=sqlite3.Row
+              c.execute('PRAGMA query_only=ON')
+              return c
+          def tables(c):
+              return {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          def one(c,sql,args=()):
+              r=c.execute(sql,args).fetchone(); return dict(r) if r else None
+          def allrows(c,sql,args=()):
+              return [dict(r) for r in c.execute(sql,args).fetchall()]
+
+          assert OBS.exists(), 'OBSERVER_DB_MISSING'
+          assert HIST.exists(), 'HISTORY_DB_MISSING'
+          with ro(OBS) as c:
+              assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+              state=one(c,'SELECT mode,session_state,real_orders_sent FROM observer_state WHERE id=1')
+              assert state and state['mode']=='PRODUCTION_PAPER' and int(state['real_orders_sent'] or 0)==0
+              ot=tables(c)
+              attempts=[]; rejects=[]
+              if 'history_attempt_ledger_v2' in ot:
+                  attempts=allrows(c,"""SELECT symbol,instrument_type,settlement,source,state,
+                    COUNT(*) attempts,MAX(attempted_at) last_attempt,
+                    SUM(provider_rows) provider_rows,SUM(valid_rows) valid_rows,SUM(rejected_rows) rejected_rows
+                    FROM history_attempt_ledger_v2 GROUP BY symbol,instrument_type,settlement,source,state
+                    ORDER BY last_attempt DESC""")
+              if 'history_row_rejections_v2' in ot:
+                  rejects=allrows(c,"""SELECT symbol,instrument_type,market,settlement,reason,
+                    COUNT(*) n,MAX(recorded_at) last_seen FROM history_row_rejections_v2
+                    GROUP BY symbol,instrument_type,market,settlement,reason ORDER BY n DESC,last_seen DESC""")
+              legacy=[]
+              if 'production_history_attempts' in ot:
+                  legacy=allrows(c,"""SELECT symbol,instrument_type,settlement,state,valid_rows,attempted_at,detail
+                    FROM production_history_attempts ORDER BY attempted_at DESC""")
+          with ro(HIST) as h:
+              assert h.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+              ht=tables(h)
+              canonical=[]; versions=[]; incomplete=[]; close_only=[]; ingest=[]
+              if 'history_canonical_v2' in ht:
+                  canonical=allrows(h,"""SELECT symbol,instrument_type,market,settlement,source,adjusted,
+                    COUNT(*) rows,MIN(date) first_date,MAX(date) last_date,
+                    SUM(CASE WHEN open IS NULL OR high IS NULL OR low IS NULL OR volume IS NULL THEN 1 ELSE 0 END) incomplete_rows
+                    FROM history_canonical_v2
+                    GROUP BY symbol,instrument_type,market,settlement,source,adjusted
+                    ORDER BY rows DESC,symbol""")
+                  incomplete=allrows(h,"""SELECT symbol,instrument_type,market,settlement,date,source,adjusted,
+                    open,high,low,close,volume FROM history_canonical_v2
+                    WHERE open IS NULL OR high IS NULL OR low IS NULL OR volume IS NULL
+                    ORDER BY date DESC,symbol LIMIT 250""")
+              if 'history_versions_v2' in ht:
+                  versions=allrows(h,"""SELECT source,adjusted,COUNT(*) versions,COUNT(DISTINCT symbol||'|'||instrument_type||'|'||market||'|'||settlement||'|'||date) identities,
+                    MIN(date) first_date,MAX(date) last_date,MAX(observed_at) last_observed
+                    FROM history_versions_v2 GROUP BY source,adjusted ORDER BY source,adjusted""")
+              if 'history_close_canonical_v1' in ht:
+                  close_only=allrows(h,"""SELECT source,COUNT(*) rows,COUNT(DISTINCT symbol) symbols,
+                    MIN(date) first_date,MAX(date) last_date FROM history_close_canonical_v1 GROUP BY source ORDER BY rows DESC""")
+              if 'ingest_runs' in ht:
+                  ingest=allrows(h,"""SELECT run_id,started_at,finished_at,source,symbols_ok,symbols_failed,rows_written,notes
+                    FROM ingest_runs ORDER BY run_id DESC LIMIT 30""")
+          ppi_rows=[r for r in canonical if str(r.get('source','')).startswith('PPI')]
+          summary={
+            'observer':state,
+            'history_db_quick_check':'ok',
+            'canonical_groups':len(canonical),
+            'canonical_rows':sum(int(r['rows'] or 0) for r in canonical),
+            'ppi_groups':len(ppi_rows),
+            'ppi_rows':sum(int(r['rows'] or 0) for r in ppi_rows),
+            'ppi_symbols':len({r['symbol'] for r in ppi_rows}),
+            'ppi_first_date':min((r['first_date'] for r in ppi_rows if r['first_date']),default=None),
+            'ppi_last_date':max((r['last_date'] for r in ppi_rows if r['last_date']),default=None),
+            'canonical_incomplete_rows':sum(int(r['incomplete_rows'] or 0) for r in canonical),
+            'attempt_groups':len(attempts),
+            'rejection_groups':len(rejects),
+            'legacy_attempt_rows':len(legacy),
+          }
+          print('PPI_HISTORY_AUDIT=GREEN_READONLY')
+          print('SUMMARY='+json.dumps(summary,sort_keys=True))
+          print('--- CANONICAL_BY_IDENTITY_SOURCE ---')
+          for r in canonical[:500]: print(json.dumps(r,sort_keys=True))
+          print('--- VERSION_SOURCE_SUMMARY ---')
+          for r in versions: print(json.dumps(r,sort_keys=True))
+          print('--- ATTEMPT_SUMMARY ---')
+          for r in attempts[:500]: print(json.dumps(r,sort_keys=True))
+          print('--- REJECTION_SUMMARY ---')
+          for r in rejects[:300]: print(json.dumps(r,sort_keys=True))
+          print('--- CLOSE_ONLY_SUMMARY ---')
+          for r in close_only: print(json.dumps(r,sort_keys=True))
+          print('--- RECENT_INGEST_RUNS ---')
+          for r in ingest: print(json.dumps(r,sort_keys=True))
+          print('--- CANONICAL_INCOMPLETE_SAMPLE ---')
+          for r in incomplete: print(json.dumps(r,sort_keys=True))
+          print('HOST_MUTATION=NO')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          {
+            echo '### RC6 PPI/history coverage audit'
+            echo '```text'
+            sed -n '1,2200p' /tmp/ppi-history-audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
