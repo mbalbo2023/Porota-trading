@@ -164,45 +164,45 @@ def test_observer_runtime_explicitly_enables_t1_policy(tmp_path, monkeypatch):
     assert path.stat().st_mode & 0o777 == 0o600
 
 
-def test_mep_catalog_funding_on_deterministic_non_holiday_date(tmp_path, monkeypatch):
-    """Valida USD_MEP en fecha normal sin depender del reloj real de CI.
+def test_mep_catalog_funding_isolated_from_labor_day_policy(tmp_path, monkeypatch):
+    """Valida USD_MEP sin debilitar ni depender del bloqueo CEDEAR del 07/09.
 
-    La política real de CEDEAR se evalúa contra 04/09/2026 y luego se inyecta
-    únicamente en este test. La suite Labor Day separada conserva la prueba de
-    bloqueo obligatorio para el 07/09.
+    El contrato de calendario se prueba por separado con una fecha US/BYMA normal.
+    La apertura PAPER usa un book fresco porque esta prueba verifica únicamente
+    identidad monetaria y aislamiento de caja, no replay histórico.
     """
     import bf_production_paper_observer as observer
     import bu_instrument_catalog as catalog
 
-    fixed_now = datetime.fromisoformat("2026-09-04T11:00:00-03:00")
+    fixed_normal_day = datetime.fromisoformat("2026-09-04T11:00:00-03:00")
     real_block = catalog.rc6_underlying_opening_block
-    assert real_block("AAPLD", "CEDEARS", fixed_now) == ""
+    assert real_block("AAPLD", "CEDEARS", fixed_normal_day) == ""
     monkeypatch.setattr(
         catalog,
         "rc6_underlying_opening_block",
-        lambda ticker, kind, now=None: real_block(ticker, kind, fixed_now),
+        lambda ticker, kind, now=None: real_block(ticker, kind, fixed_normal_day),
     )
 
     records = json.loads((ROOT / "tests/fixtures/ppi_catalog_20260827.json").read_text())["records"]
     raw = next(r for r in records if r["ticker"] == "AAPLD")
     metadata = catalog.normalize_record(raw, "INMEDIATA", "2026-08-27T13:45:03Z", "test")
-    source_at = "2026-09-04T14:00:00+00:00"
+    fresh_at = datetime.now(timezone.utc).isoformat()
     q = observer.normalize_quote(
         "AAPLD", "CEDEARS", "INMEDIATA",
-        {"price": 100, "date": source_at},
-        {"bid": 99, "ask": 100, "bidsize": 10000, "asksize": 10000, "date": source_at},
+        {"price": 100, "date": fresh_at},
+        {"bid": 99, "ask": 100, "bidsize": 10000, "asksize": 10000, "date": fresh_at},
         metadata=metadata,
     )
     assert q.currency == "USD_MEP" and q.contract.currency == "USD_MEP"
     assert not q.opening_block_reason
     funded = PaperBroker(
-        PaperStore(str(tmp_path / "funded-mep-fixed-date.db")),
+        PaperStore(str(tmp_path / "funded-mep-fresh-book.db")),
         initial_cash_by_currency={"USD_MEP": "10000"},
         daily_loss_pct="100",
     )
     opened, reason, _ = funded._open(q, D("0.8"), {})
     assert opened, reason
     assert funded.store.open_positions()[0]["currency"] == "USD_MEP"
-    assert funded._cash(currency="USD_MEP", as_of=source_at) < D("10000")
-    assert funded._cash(currency="ARS", as_of=source_at) == D("1000000")
-    assert funded._cash(currency="USD", as_of=source_at) == D("0")
+    assert funded._cash(currency="USD_MEP", as_of=fresh_at) < D("10000")
+    assert funded._cash(currency="ARS", as_of=fresh_at) == D("1000000")
+    assert funded._cash(currency="USD", as_of=fresh_at) == D("0")
