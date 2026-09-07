@@ -1,0 +1,146 @@
+name: RC6 critical approval health audit
+
+on:
+  push:
+    branches:
+      - audit/rc6-critical-health-20260907
+    paths:
+      - '.github/workflows/rc6-critical-health-audit.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/rc6-critical-health-20260907
+          fetch-depth: 0
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_audit"
+          chmod 600 "$HOME/.ssh/porota_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Collect read-only critical control-plane evidence
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_RC6_CRITICAL_APPROVAL_HEALTH_AUDIT_2026-09-07.txt'
+          ssh -i "$HOME/.ssh/porota_audit" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' > "$REPORT" <<'REMOTE'
+          set -u
+          C=porota_critical_approval_rc6
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          sep(){ printf '\n======================================================================\n%s\n======================================================================\n' "$1"; }
+
+          echo 'POROTA RC6 CRITICAL APPROVAL — HEALTH AUDIT READ ONLY'
+          echo "UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo 'MUTATIONS=NONE'
+
+          sep '01 RUNTIME IDENTITY'
+          git -C /opt/porota-trading branch --show-current || true
+          git -C /opt/porota-trading rev-parse HEAD || true
+          readlink -f /opt/porota-control-plane-rc6/current || true
+          sudo -n docker ps -a --filter "name=^/${C}$" --format 'NAME={{.Names}} IMAGE={{.Image}} STATUS={{.Status}}'
+          sudo -n systemctl is-active porota-critical-approval-rc6.service || true
+          sudo -n systemctl is-active porota-critical-github-proxy-rc6.service || true
+          sudo -n systemctl is-enabled porota-critical-approval-rc6.service || true
+          sudo -n systemctl is-enabled porota-critical-github-proxy-rc6.service || true
+
+          sep '02 DOCKER HEALTH CONFIG AND STATE'
+          sudo -n docker inspect -f 'RUNNING={{.State.Running}} RESTARTS={{.RestartCount}} STATUS={{.State.Status}} HEALTH={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} IMAGE={{.Config.Image}} USER={{.Config.User}} READONLY={{.HostConfig.ReadonlyRootfs}}' "$C" || true
+          echo '-- healthcheck inherited/configured --'
+          sudo -n docker inspect -f '{{json .Config.Healthcheck}}' "$C" || true
+          echo '-- last Docker health attempts --'
+          sudo -n docker inspect -f '{{if .State.Health}}{{range .State.Health.Log}}{{.Start}} EXIT={{.ExitCode}} OUTPUT={{printf "%q" .Output}}{{println}}{{end}}{{else}}NO_HEALTH_LOG{{end}}' "$C" || true
+
+          sep '03 COMMAND MOUNTS NETWORK AND SAFE ENV NAMES'
+          sudo -n docker inspect -f 'ENTRYPOINT={{json .Config.Entrypoint}} CMD={{json .Config.Cmd}} NETWORK={{.HostConfig.NetworkMode}} RESTART_POLICY={{.HostConfig.RestartPolicy.Name}}' "$C" || true
+          sudo -n docker inspect -f '{{range .Mounts}}MOUNT={{.Source}}=>{{.Destination}} RW={{.RW}}{{println}}{{end}}' "$C" || true
+          sudo -n docker inspect "$C" 2>/dev/null | python3 -c 'import json,sys; o=json.load(sys.stdin)[0]; print("ENV_NAMES="+",".join(sorted(x.split("=",1)[0] for x in o.get("Config",{}).get("Env",[]))))' || true
+
+          sep '04 MAIN PROCESS AND APPLICATION LOGS'
+          sudo -n docker exec "$C" python - <<'PY' 2>/dev/null || true
+          from pathlib import Path
+          p=Path('/proc/1/cmdline')
+          print('PID1_CMD='+p.read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip())
+          print('PID1_STATUS='+Path('/proc/1/status').read_text().splitlines()[0])
+          PY
+          echo '-- docker logs tail --'
+          sudo -n docker logs --tail 120 "$C" 2>&1 || true
+          echo '-- systemd gateway journal tail --'
+          sudo -n journalctl -u porota-critical-approval-rc6.service -n 100 --no-pager 2>&1 || true
+          echo '-- broker journal tail --'
+          sudo -n journalctl -u porota-critical-github-proxy-rc6.service -n 100 --no-pager 2>&1 || true
+
+          sep '05 FUNCTIONAL BROKER PROBE FROM GATEWAY'
+          sudo -n docker exec "$C" python - <<'PY' 2>&1 || true
+          from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient
+          h=UnixGithubIssuesClient().health()
+          print('BROKER_HEALTH='+repr(h))
+          ok=(h.get('status')=='ok' and h.get('capability')=='issues_only')
+          print('BROKER_PROBE='+('GREEN' if ok else 'RED'))
+          raise SystemExit(0 if ok else 2)
+          PY
+
+          sep '06 SYSTEMD UNIT EFFECTIVE CONFIG'
+          sudo -n systemctl cat porota-critical-approval-rc6.service 2>&1 || true
+          sudo -n systemctl cat porota-critical-github-proxy-rc6.service 2>&1 || true
+
+          sep '07 TRADING SAFETY'
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          p=sys.argv[1]
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+          c.execute('PRAGMA query_only=ON')
+          print('QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+          r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('OBSERVER_STATE='+('|'.join(map(str,r)) if r else 'MISSING'))
+          c.close()
+          PY
+          for x in porota_production_observer porota_production_dashboard; do
+            sudo -n docker inspect -f 'CONTAINER={{.Name}} RUNNING={{.State.Running}} RESTARTS={{.RestartCount}} HEALTH={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} IMAGE={{.Config.Image}}' "$x" 2>/dev/null || true
+          done
+
+          sep '08 STATIC DIAGNOSIS'
+          HC="$(sudo -n docker inspect -f '{{json .Config.Healthcheck.Test}}' "$C" 2>/dev/null || true)"
+          CMD="$(sudo -n docker inspect -f '{{json .Config.Cmd}}' "$C" 2>/dev/null || true)"
+          if printf '%s' "$HC" | grep -q '127.0.0.1' && printf '%s' "$HC" | grep -q '/health' && printf '%s' "$CMD" | grep -q 'fm_critical_approval_unix_runtime_rc6.py'; then
+            echo 'ROOT_CAUSE_CLASS=INHERITED_HTTP_HEALTHCHECK_MISMATCH'
+            echo 'EXPECTED_FIX=DEDICATED_CONTROL_PLANE_HEALTHCHECK'
+          else
+            echo 'ROOT_CAUSE_CLASS=REQUIRES_FURTHER_ANALYSIS'
+          fi
+          echo 'AUDIT_STATUS=COMPLETE_READ_ONLY'
+          REMOTE
+          test -s "$REPORT"
+
+      - name: Publish audit evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_RC6_CRITICAL_APPROVAL_HEALTH_AUDIT_2026-09-07.txt'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$REPORT"
+          git commit -m 'audit: record RC6 critical approval health evidence'
+          git push origin HEAD:audit/rc6-critical-health-20260907
