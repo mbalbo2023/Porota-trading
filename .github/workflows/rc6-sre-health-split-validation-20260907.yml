@@ -1,0 +1,17 @@
+name: RC6 SRE health split validation 2026-09-07
+on:
+  push:
+    branches: [feature/rc6-sre-health-split-20260907]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install -q pytest
+      - run: python -m pytest -q tests/test_sre_health_split_rc6.py
+      - run: python -m py_compile rc6_fast_functional_health.py rc6_full_db_integrity.py
