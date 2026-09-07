@@ -1,0 +1,182 @@
+name: RC6 dashboard runtime truth deploy v4 2026-09-06
+
+on:
+  push:
+    branches:
+      - ux/rc6-dashboard-go-live-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build --pull=false --label "porota.commit=${GITHUB_SHA}" -t porota-dashboard-truth-v4:test .
+      - name: Presentation tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=192m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 --entrypoint python porota-dashboard-truth-v4:test \
+            -m pytest -q -p no:cacheprovider \
+            tests/test_dashboard_runtime_truth_fixes_rc6.py \
+            tests/test_dashboard_go_live_ux_rc6.py \
+            tests/test_dashboard_blocking_semantics_rc6.py \
+            tests/test_dashboard_truth_layer_rc6.py \
+            tests/test_dashboard_table_layout_rc6.py \
+            tests/test_dashboard_global_a11y_rc5.py
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_dash_truth"
+          chmod 600 "$HOME/.ssh/porota_dash_truth"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Dashboard-only transaction
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_dash_truth" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'HOST' | tee /tmp/dash-truth-v4.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DATA="$REPO/data"
+          OBS_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          OBS_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          OBS_IMAGE=porota-trading-bot:17.0.0-rc6
+          OLD_DASH=porota-trading-dashboard:17.0.0-rc6-go-live-ux2
+          OLD_DASH_SHA=318043805a9736eda77874ba72ee7abc93fcb0f1
+          NEW_DASH=porota-trading-dashboard:17.0.0-rc6-go-live-ux3
+          ENV_FILE="$DATA/diagnosticos/dashboard_mode_v17.env"
+          TMP=''; WT=''; ACTIVATED=0
+
+          start_dash(){
+            sudo -n docker run -d --name porota_production_dashboard --pull never --restart unless-stopped \
+              --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
+              -p 127.0.0.1:8000:8000 --env-file "$ENV_FILE" -v "$DATA:/app/data" \
+              --entrypoint python "$1" o_dashboard.py >/dev/null
+          }
+          runtime_check(){
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$OBS_IMAGE|0|true"
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          vals=[]; row=None
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30); c.execute('PRAGMA query_only=ON')
+              vals.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'): row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*vals,*row))))
+          PY
+          )"
+            echo "RUNTIME=$state"; test "$state" = 'ok|ok|PRODUCTION_PAPER|0'
+          }
+          matrix(){
+            sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,urllib.request,json
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN',''); assert token
+          paths=['/','/vivo','/historicos','/reportes','/config','/sistema?section=introspeccion','/salud','/universo-operativo','/scalping','/instrumentos','/aprendizaje','/dashboard/logs']
+          sizes={}
+          for path in paths:
+              req=urllib.request.Request('http://127.0.0.1:8000'+path,headers={'Authorization':'Bearer '+token,'User-Agent':'PorotaTruthV4/RC6'})
+              with urllib.request.urlopen(req,timeout=25) as r:
+                  body=r.read(4_000_000).decode('utf-8','replace'); assert r.status==200 and len(body)>200; sizes[path]=len(body)
+                  if path=='/salud':
+                      assert 'Notification worker' in body or 'Worker RUNNING' in body
+                      assert 'medición SRE=' in body
+                  if path=='/sistema?section=introspeccion':
+                      assert 'system-nav' in body and 'Snapshot de introspección no vigente' not in body
+          print(json.dumps(sizes,sort_keys=True)); print('HTTP_MATRIX=GREEN')
+          PY
+          }
+          fallback(){
+            echo FALLBACK_START
+            sudo -n docker rm -f porota_production_dashboard >/dev/null 2>&1 || true
+            start_dash "$OLD_DASH"
+            for _ in $(seq 1 50); do curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && break; sleep 1; done
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$OLD_DASH|0"
+            echo FALLBACK_GREEN
+          }
+          cleanup(){ [ -z "$WT" ] || git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true; [ -z "$TMP" ] || rmdir "$TMP" >/dev/null 2>&1 || true; }
+          onexit(){ rc=$?; if [ "$rc" -ne 0 ] && [ "$ACTIVATED" -eq 1 ]; then fallback || true; fi; cleanup; exit "$rc"; }
+          trap onexit EXIT
+
+          echo '=== RC6 DASHBOARD RUNTIME TRUTH V4 ==='
+          test "$(git -C "$REPO" branch --show-current)" = "$OBS_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$OBS_SHA"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$OLD_DASH|0"
+          test "$(sudo -n docker image inspect "$OLD_DASH" --format '{{index .Config.Labels "porota.commit"}}')" = "$OLD_DASH_SHA"
+          test "$(df -P / | awk 'NR==2{gsub("%","",$5);print $5}')" -lt 70
+          runtime_check
+          echo '--- BASELINE HTTP ---'; matrix
+
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          git -C "$REPO" merge-base --is-ancestor "$OBS_SHA" "$TARGET_SHA"
+          TMP="$(mktemp -d "$HOME/porota-dash-truth.XXXXXX")"; WT="$TMP/source"
+          git -C "$REPO" worktree add --detach "$WT" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label porota.scope=DASHBOARD_RUNTIME_TRUTH_V4 -t "$NEW_DASH" "$WT"
+
+          echo '--- READ-ONLY DIRECT TRUTH PROOF ---'
+          sudo -n docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=192m,uid=1000,gid=1000,mode=1777 \
+            --env-file "$ENV_FILE" -v "$DATA:/app/data:ro" -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python "$NEW_DASH" - <<'PY'
+          import bg_paper_dashboard as bg, eq_dashboard_table_layout_rc6 as eq
+          eq.install()
+          rows={str(r.get('key')).upper():r for r in bg._health_components()}
+          tg=rows['TELEGRAM']; sre=rows['SRE_SNAPSHOT']
+          assert 'Worker RUNNING' in str(tg.get('detail'))
+          assert str(tg.get('checked') or '').startswith('2026-09')
+          assert int(tg.get('paper_blocking') or 0)==0
+          assert 'medición SRE=' in str(sre.get('detail'))
+          if str(sre.get('state')).upper()=='AMARILLO' and 'latencia de la medición SRE' in str(sre.get('detail')):
+              assert sre.get('paper_blocking') is False
+          assert 'Snapshot de introspección no vigente' not in bg.system_page('introspeccion')
+          print('TRUTH_DIRECT_PROOF=GREEN')
+          PY
+
+          runtime_check
+          ACTIVATED=1
+          sudo -n docker rm -f porota_production_dashboard >/dev/null
+          start_dash "$NEW_DASH"
+          for _ in $(seq 1 50); do curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && break; sleep 1; done
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$NEW_DASH|0"
+          matrix
+          runtime_check
+          echo "DASHBOARD_SHA=$TARGET_SHA"
+          echo "DASHBOARD_IMAGE=$NEW_DASH"
+          echo "OBSERVER_SHA_UNCHANGED=$OBS_SHA"
+          echo 'OBSERVER_RESTARTED=NO'
+          echo 'STRATEGY_CHANGED=NO'
+          echo 'REAL_ORDER_CAPABILITY=BLOCKED'
+          echo 'DASHBOARD_RUNTIME_TRUTH_V4=GREEN'
+          ACTIVATED=0
+          HOST
+          {
+            echo '### RC6 dashboard runtime truth v4'
+            echo '```text'; sed -n '1,1600p' /tmp/dash-truth-v4.txt; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
