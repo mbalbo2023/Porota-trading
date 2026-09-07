@@ -1,0 +1,92 @@
+name: RC6 Critical control-plane predeploy probe
+
+on:
+  push:
+    branches: [feature/rc6-critical-telegram-approval-20260907]
+    paths:
+      - '.github/workflows/rc6-critical-control-plane-predeploy-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Read-only permanent control-plane prerequisites
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_probe"
+          chmod 600 "$HOME/.ssh/porota_probe"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only Droplet probe
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          ssh -i "$HOME/.ssh/porota_probe" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          echo '=== RC6 CRITICAL CONTROL PLANE PREDEPLOY PROBE ==='
+          test -d "$REPO/.git"
+          obs="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}|{{json .Config.Cmd}}' porota_production_observer)"
+          dash="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)"
+          echo "OBSERVER=$obs"
+          echo "DASHBOARD=$dash"
+          case "$obs" in 'true|0|true|'*'bv_paper_runtime.py'* ) ;; *) echo 'OBSERVER_SAFE=NO'; exit 1;; esac
+          case "$dash" in 'true|0|'* ) ;; *) echo 'DASHBOARD_SAFE=NO'; exit 1;; esac
+          state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,*row))))
+          PY
+          )"
+          echo "OBSERVER_DB=$state"
+          test "$state" = 'ok|PRODUCTION_PAPER|0'
+
+          test -f "$REPO/.env"
+          has_env_key() {
+            awk -F= -v k="$1" '$1==k {v=$0; sub(/^[^=]*=/,"",v); if(length(v)>0) ok=1} END{exit ok?0:1}' "$REPO/.env"
+          }
+          for k in POROTA_CRITICAL_TELEGRAM_BOT_TOKEN POROTA_CRITICAL_TELEGRAM_CHAT_ID POROTA_GITHUB_ISSUE_CONTROL_TOKEN; do
+            if has_env_key "$k"; then echo "$k=PRESENT"; else echo "$k=MISSING"; fi
+          done
+
+          for f in \
+            /opt/porota-trading/secrets/github_issue_control.token \
+            /opt/porota-trading/secrets/critical_telegram.token \
+            /opt/porota-trading/secrets/critical_telegram.chat; do
+            if sudo -n test -s "$f"; then echo "SECRET_FILE_PRESENT=$(basename "$f")"; else echo "SECRET_FILE_MISSING=$(basename "$f")"; fi
+          done
+
+          if sudo -n docker ps -aq -f name='^/porota_critical_approval_rc6$' | grep -q .; then
+            echo 'PERMANENT_GATEWAY_CONTAINER=EXISTS'
+          else
+            echo 'PERMANENT_GATEWAY_CONTAINER=ABSENT'
+          fi
+          if systemctl list-unit-files --no-legend 2>/dev/null | grep -q '^porota-critical-approval-rc6.service'; then
+            echo 'PERMANENT_GATEWAY_SYSTEMD=EXISTS'
+          else
+            echo 'PERMANENT_GATEWAY_SYSTEMD=ABSENT'
+          fi
+          echo 'PREDEPLOY_PROBE_MUTATION=NO'
+          HOST
