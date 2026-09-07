@@ -51,11 +51,21 @@ jobs:
           PY
           )"
           test "$state" = 'PRODUCTION_PAPER|0|true'
-          ENV="$REPO/.env"
-          has_nonempty(){ awk -F= -v k="$1" '$1==k {v=substr($0,index($0,"=")+1); gsub(/^[[:space:]"'"']+|[[:space:]"'"']+$/,"",v); if(length(v)>0){found=1}} END{exit(found?0:1)}' "$ENV" 2>/dev/null; }
-          if has_nonempty IOL_USERNAME; then echo IOL_USERNAME_PRESENT=YES; else echo IOL_USERNAME_PRESENT=NO; fi
-          if has_nonempty IOL_PASSWORD; then echo IOL_PASSWORD_PRESENT=YES; else echo IOL_PASSWORD_PRESENT=NO; fi
-          if grep -q '^IOL_ENABLED=' "$ENV" 2>/dev/null; then echo IOL_CONFIG_KEY_PRESENT=YES; else echo IOL_CONFIG_KEY_PRESENT=NO; fi
+          python3 - <<'PY'
+          from pathlib import Path
+          path=Path('/opt/porota-trading/.env')
+          vals={}
+          if path.exists():
+              for raw in path.read_text(encoding='utf-8',errors='replace').splitlines():
+                  line=raw.strip()
+                  if not line or line.startswith('#') or '=' not in line:
+                      continue
+                  key,value=line.split('=',1)
+                  vals[key.strip()]=value.strip().strip('"').strip("'")
+          print('IOL_USERNAME_PRESENT=' + ('YES' if vals.get('IOL_USERNAME') else 'NO'))
+          print('IOL_PASSWORD_PRESENT=' + ('YES' if vals.get('IOL_PASSWORD') else 'NO'))
+          print('IOL_CONFIG_KEY_PRESENT=' + ('YES' if 'IOL_ENABLED' in vals else 'NO'))
+          PY
           echo OBSERVER_SHA_UNCHANGED="$OBS_SHA"
           echo REAL_ORDERS_SENT=0
           echo HOST_MUTATION=NO
