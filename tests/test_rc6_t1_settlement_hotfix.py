@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from dataclasses import replace
@@ -161,3 +162,38 @@ def test_observer_runtime_explicitly_enables_t1_policy(tmp_path, monkeypatch):
     text = path.read_text(encoding="utf-8")
     assert "PAPER_T1_FULL_DATE_RELEASE=true\n" in text
     assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_mep_catalog_funding_on_deterministic_non_holiday_date(tmp_path):
+    """Reemplaza la dependencia de ``now_iso`` del test legacy durante Labor Day.
+
+    Valida exactamente el contrato que interesa: AAPLD usa USD_MEP y no ARS/USD,
+    en una fecha en la que BYMA y el subyacente US están abiertos. No debilita el
+    bloqueo específico del 07/09, que se valida en la suite Labor Day separada.
+    """
+    import bf_production_paper_observer as observer
+    import bu_instrument_catalog as catalog
+
+    records = json.loads((ROOT / "tests/fixtures/ppi_catalog_20260827.json").read_text())["records"]
+    raw = next(r for r in records if r["ticker"] == "AAPLD")
+    metadata = catalog.normalize_record(raw, "INMEDIATA", "2026-08-27T13:45:03Z", "test")
+    source_at = "2026-09-04T14:00:00+00:00"
+    q = observer.normalize_quote(
+        "AAPLD", "CEDEARS", "INMEDIATA",
+        {"price": 100, "date": source_at},
+        {"bid": 99, "ask": 100, "bidsize": 10000, "asksize": 10000, "date": source_at},
+        metadata=metadata,
+    )
+    assert q.currency == "USD_MEP" and q.contract.currency == "USD_MEP"
+    assert not q.opening_block_reason
+    funded = PaperBroker(
+        PaperStore(str(tmp_path / "funded-mep-fixed-date.db")),
+        initial_cash_by_currency={"USD_MEP": "10000"},
+        daily_loss_pct="100",
+    )
+    opened, reason, _ = funded._open(q, D("0.8"), {})
+    assert opened, reason
+    assert funded.store.open_positions()[0]["currency"] == "USD_MEP"
+    assert funded._cash(currency="USD_MEP", as_of=source_at) < D("10000")
+    assert funded._cash(currency="ARS", as_of=source_at) == D("1000000")
+    assert funded._cash(currency="USD", as_of=source_at) == D("0")
