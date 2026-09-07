@@ -50,13 +50,17 @@ jobs:
           grep -q 'GITHUB_TOKEN' fm_critical_approval_unix_runtime_rc6.py
           grep -q 'GH_TOKEN' fm_critical_approval_unix_runtime_rc6.py
           grep -q 'capability=issues_only' fn_critical_github_proxy_rc6.py
-      - name: Prove GitHub token is not accepted by container runtime
+      - name: Prove tokenless container and authenticated local broker
         shell: bash
         run: |
           set -euo pipefail
           ! grep -q 'gh auth token' fm_critical_approval_unix_runtime_rc6.py
           ! grep -q 'Authorization.*Bearer' fm_critical_approval_unix_runtime_rc6.py
           grep -q 'UnixGithubIssuesClient' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'CAPABILITY_DENIED' fn_critical_github_proxy_rc6.py
+          grep -q 'hmac.compare_digest' fn_critical_github_proxy_rc6.py
+          grep -q 'POROTA_CRITICAL_BROKER_TOKEN_FILE' fm_critical_approval_unix_runtime_rc6.py
+          grep -q 'broker_capability.token' ops/rc6_deploy_critical_control_plane.sh
           grep -q 'OPERATION_NOT_ALLOWED' fn_critical_github_proxy_rc6.py
           grep -q 'ISSUE_NOT_CRITICAL' fn_critical_github_proxy_rc6.py
           grep -q 'ISSUE_ALREADY_DECIDED' fn_critical_github_proxy_rc6.py
