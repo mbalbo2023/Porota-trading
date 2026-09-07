@@ -210,8 +210,6 @@ def main() -> int:
                 try:
                     page.goto(url, wait_until="commit", timeout=15000)
                 except PlaywrightTimeoutError:
-                    # A commit timeout is diagnosable from the current URL and
-                    # blocked POST path; do not wait another 45 seconds blindly.
                     raise
                 try:
                     page.wait_for_load_state("domcontentloaded", timeout=7000)
@@ -274,15 +272,23 @@ def main() -> int:
                 ])
                 acted = False
                 if username is not None:
-                    if not user:
-                        ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_REQUIRED", attempts=attempts,
-                                                          stage=stage, page_url=page.url)); return 4
+                    # Trusted Chrome profiles may expose a visible username field
+                    # that is already populated. Requiring a second local secret in
+                    # that case is unnecessary and previously caused a false block.
                     try:
-                        if not username.input_value():
-                            username.fill(user)
-                        acted = True
+                        current_username = (username.input_value() or "").strip()
                     except Exception:
-                        pass
+                        current_username = ""
+                    if not current_username:
+                        if not user:
+                            ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_REQUIRED", attempts=attempts,
+                                                              stage=stage, page_url=page.url)); return 4
+                        try:
+                            username.fill(user)
+                        except Exception:
+                            ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_FILL_FAILED", attempts=attempts,
+                                                              stage=stage, page_url=page.url)); return 4
+                    acted = True
                 if passwd is not None:
                     try:
                         passwd.fill(password); acted = True
