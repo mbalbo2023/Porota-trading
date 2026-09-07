@@ -1,5 +1,6 @@
 import inspect, sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 import rc6_fast_functional_health as fast
 import rc6_full_db_integrity as full
 
@@ -35,3 +36,18 @@ def test_full_probe_owns_quick_check(tmp_path):
     p=str(tmp_path/'x.db'); make_db(p)
     r=full.probe(p); assert r['quick_check']=='ok' and r['status']=='GREEN' and r['read_only']
     assert 'PRAGMA quick_check' in inspect.getsource(full.probe)
+
+
+def test_systemd_candidate_keeps_five_minute_liveness_without_full_scan():
+    service=Path('systemd/porota-fast-functional-health-rc6.service').read_text()
+    timer=Path('systemd/porota-fast-functional-health-rc6.timer').read_text()
+    assert '/app/rc6_fast_functional_health.py' in service
+    assert 'OnUnitActiveSec=5min' in timer
+    assert 'porota-fast-functional-health-rc6.service' in timer
+    assert 'quick_check' not in service.lower()
+
+
+def test_full_integrity_is_explicit_service_not_five_minute_timer():
+    service=Path('systemd/porota-full-db-integrity-rc6.service').read_text()
+    assert '/app/rc6_full_db_integrity.py' in service
+    assert not Path('systemd/porota-full-db-integrity-rc6.timer').exists()
