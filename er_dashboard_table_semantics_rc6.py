@@ -1,16 +1,35 @@
-"""Pure RC6 table compaction decision rules.
+"""Pure RC6 table layout policy.
 
-No FastAPI/dashboard imports so CI can exercise the responsive decision logic
-without installing the runtime web stack.
+The operator-facing contract is invariant: native rows/columns are preserved on
+all viewport widths.  Width pressure is handled by local table scrolling and
+visual density, never by converting records into cards.
+
+No FastAPI/dashboard imports so CI can exercise this policy directly.
 """
 from __future__ import annotations
 
 
+CLASSIC_TABLE_POLICY = "CLASSIC_ROWS_COLUMNS"
+
+
 def should_force_compact(columns: int, available_width: float,
                          scroll_width: float | None = None) -> bool:
-    if columns <= 1:
-        return False
-    available = max(float(available_width or 0), 1.0)
-    per_column = available / columns
-    overflow = scroll_width is not None and float(scroll_width) > available + 4
-    return columns >= 7 or per_column < 128 or overflow
+    """Compatibility predicate: RC6 never converts a table into cards."""
+    _ = (columns, available_width, scroll_width)
+    return False
+
+
+def recommended_table_min_width(columns: int) -> int:
+    """Readable local width used by the browser scroll container.
+
+    Tables with fewer than six columns normally fit the card. Wider tables get
+    a bounded minimum width so cells do not collapse into unreadable strips.
+    """
+    count = max(0, int(columns or 0))
+    if count < 6:
+        return 0
+    return min(1320, max(700, count * 116))
+
+
+def table_layout_policy() -> str:
+    return CLASSIC_TABLE_POLICY
