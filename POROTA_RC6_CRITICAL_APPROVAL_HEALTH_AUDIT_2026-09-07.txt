@@ -1,0 +1,219 @@
+POROTA RC6 CRITICAL APPROVAL — HEALTH AUDIT READ ONLY
+UTC=2026-09-07T18:52:59Z
+MUTATIONS=NONE
+
+======================================================================
+01 RUNTIME IDENTITY
+======================================================================
+hotfix/rc6-paper-t1-settlement-20260907
+5076b6dff8c644ed73160b4148eb7a1cf9ca7e43
+/opt/porota-control-plane-rc6/releases/cf2ebf2ca6afe80dfa618437befd6734db708efe
+NAME=porota_critical_approval_rc6 IMAGE=porota-trading-bot:17.0.0-rc6 STATUS=Up 59 minutes (unhealthy)
+active
+active
+enabled
+enabled
+
+======================================================================
+02 DOCKER HEALTH CONFIG AND STATE
+======================================================================
+RUNNING=true RESTARTS=0 STATUS=running HEALTH=unhealthy IMAGE=porota-trading-bot:17.0.0-rc6 USER=botuser READONLY=true
+-- healthcheck inherited/configured --
+{"Test":["CMD-SHELL","python -c \"import os,urllib.request,sys; p=os.getenv('DASHBOARD_PORT','8000'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{p}/health', timeout=5).status==200 else 1)\" || exit 1"],"Interval":30000000000,"Timeout":10000000000,"StartPeriod":40000000000,"Retries":3}
+-- last Docker health attempts --
+2026-09-07 18:50:34.532845788 +0000 UTC EXIT=1 OUTPUT="Traceback (most recent call last):\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1348, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1351, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1397, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1346, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1106, in _send_output\n    self.send(msg)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1044, in send\n    self.connect()\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1010, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/socket.py\", line 863, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/python3.11/socket.py\", line 848, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 216, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 519, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 536, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 496, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1377, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1351, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+2026-09-07 18:51:05.073537465 +0000 UTC EXIT=1 OUTPUT="Traceback (most recent call last):\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1348, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1351, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1397, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1346, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1106, in _send_output\n    self.send(msg)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1044, in send\n    self.connect()\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1010, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/socket.py\", line 863, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/python3.11/socket.py\", line 848, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 216, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 519, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 536, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 496, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1377, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1351, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+2026-09-07 18:51:35.597065573 +0000 UTC EXIT=1 OUTPUT="Traceback (most recent call last):\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1348, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1351, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1397, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1346, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1106, in _send_output\n    self.send(msg)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1044, in send\n    self.connect()\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1010, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/socket.py\", line 863, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/python3.11/socket.py\", line 848, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 216, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 519, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 536, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 496, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1377, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1351, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+2026-09-07 18:52:06.406067274 +0000 UTC EXIT=1 OUTPUT="Traceback (most recent call last):\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1348, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1351, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1397, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1346, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1106, in _send_output\n    self.send(msg)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1044, in send\n    self.connect()\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1010, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/socket.py\", line 863, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/python3.11/socket.py\", line 848, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 216, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 519, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 536, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 496, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1377, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1351, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+2026-09-07 18:52:36.898634895 +0000 UTC EXIT=1 OUTPUT="Traceback (most recent call last):\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1348, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1351, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1397, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1346, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1106, in _send_output\n    self.send(msg)\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1044, in send\n    self.connect()\n  File \"/usr/local/lib/python3.11/http/client.py\", line 1010, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/socket.py\", line 863, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/python3.11/socket.py\", line 848, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 216, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 519, in open\n    response = self._open(req, data)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 536, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 496, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1377, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.11/urllib/request.py\", line 1351, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 111] Connection refused>\n"
+
+
+======================================================================
+03 COMMAND MOUNTS NETWORK AND SAFE ENV NAMES
+======================================================================
+ENTRYPOINT=["python"] CMD=["/code/fm_critical_approval_unix_runtime_rc6.py"] NETWORK=bridge RESTART_POLICY=no
+MOUNT=/opt/porota-control-plane-rc6/secrets/broker_capability.token=>/run/secrets/broker_capability.token RW=false
+MOUNT=/opt/porota-control-plane-rc6/secrets/critical_telegram.token=>/run/secrets/critical_telegram.token RW=false
+MOUNT=/opt/porota-control-plane-rc6/secrets/critical_telegram.chat=>/run/secrets/critical_telegram.chat RW=false
+MOUNT=/opt/porota-control-plane-rc6/data=>/data RW=true
+MOUNT=/run/porota-critical-approval-rc6=>/run/control RW=true
+MOUNT=/opt/porota-control-plane-rc6/current=>/code RW=false
+
+ENV_NAMES=GPG_KEY,LANG,MPLCONFIGDIR,PATH,POROTA_CRITICAL_APPROVAL_DB,POROTA_CRITICAL_APPROVAL_ENABLED,POROTA_CRITICAL_APPROVAL_POLL_SECONDS,POROTA_CRITICAL_BROKER_TOKEN_FILE,POROTA_CRITICAL_GITHUB_SOCKET,POROTA_CRITICAL_TELEGRAM_CHAT_FILE,POROTA_CRITICAL_TELEGRAM_TOKEN_FILE,POROTA_RUNTIME_MODE,POROTA_TELEGRAM_SINGLE_CONSUMER_ENFORCED,PYTHONDONTWRITEBYTECODE,PYTHONPATH,PYTHONUNBUFFERED,PYTHON_SHA256,PYTHON_VERSION,XDG_CACHE_HOME
+
+======================================================================
+04 MAIN PROCESS AND APPLICATION LOGS
+======================================================================
+-- docker logs tail --
+critical-approval-runtime: READY mode=PRODUCTION_PAPER github=unix-issues-only+capability-key telegram=canonical-single-consumer
+-- systemd gateway journal tail --
+Sep 07 17:53:54 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: Starting porota-critical-approval-rc6.service - POROTA RC6 critical Telegram approval gateway...
+Sep 07 17:53:54 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: Started porota-critical-approval-rc6.service - POROTA RC6 critical Telegram approval gateway.
+Sep 07 17:53:55 ubuntu-s-1vcpu-1gb-nyc1 docker[2216701]: critical-approval-runtime: READY mode=PRODUCTION_PAPER github=unix-issues-only+capability-key telegram=canonical-single-consumer
+-- broker journal tail --
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]:                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 57, in _read_secret
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]:     if not p.is_file():
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]:            ^^^^^^^^^^^
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]:   File "/usr/lib/python3.12/pathlib.py", line 894, in is_file
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]:     return S_ISREG(self.stat().st_mode)
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]:                    ^^^^^^^^^^^
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]:   File "/usr/lib/python3.12/pathlib.py", line 842, in stat
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]:     return os.stat(self, follow_symlinks=follow_symlinks)
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 python3[2213333]: PermissionError: [Errno 13] Permission denied: '/opt/porota-control-plane-rc6/secrets/broker_capability.host'
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Main process exited, code=exited, status=1/FAILURE
+Sep 07 17:46:46 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Failed with result 'exit-code'.
+Sep 07 17:46:50 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Scheduled restart job, restart counter is at 3.
+Sep 07 17:46:50 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: Started porota-critical-github-proxy-rc6.service - POROTA RC6 critical GitHub Issues capability broker.
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]: Traceback (most recent call last):
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 271, in <module>
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:     main()
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 259, in main
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:     CAPABILITY_TOKEN = _read_secret(CAPABILITY_FILE, "BROKER_CAPABILITY")
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 57, in _read_secret
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:     if not p.is_file():
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:            ^^^^^^^^^^^
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:   File "/usr/lib/python3.12/pathlib.py", line 894, in is_file
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:     return S_ISREG(self.stat().st_mode)
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:                    ^^^^^^^^^^^
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:   File "/usr/lib/python3.12/pathlib.py", line 842, in stat
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:     return os.stat(self, follow_symlinks=follow_symlinks)
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 python3[2213357]: PermissionError: [Errno 13] Permission denied: '/opt/porota-control-plane-rc6/secrets/broker_capability.host'
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Main process exited, code=exited, status=1/FAILURE
+Sep 07 17:46:51 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Failed with result 'exit-code'.
+Sep 07 17:46:54 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Scheduled restart job, restart counter is at 4.
+Sep 07 17:46:54 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: Started porota-critical-github-proxy-rc6.service - POROTA RC6 critical GitHub Issues capability broker.
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]: Traceback (most recent call last):
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 271, in <module>
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:     main()
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 259, in main
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:     CAPABILITY_TOKEN = _read_secret(CAPABILITY_FILE, "BROKER_CAPABILITY")
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 57, in _read_secret
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:     if not p.is_file():
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:            ^^^^^^^^^^^
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:   File "/usr/lib/python3.12/pathlib.py", line 894, in is_file
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:     return S_ISREG(self.stat().st_mode)
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:                    ^^^^^^^^^^^
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:   File "/usr/lib/python3.12/pathlib.py", line 842, in stat
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:     return os.stat(self, follow_symlinks=follow_symlinks)
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 python3[2213384]: PermissionError: [Errno 13] Permission denied: '/opt/porota-control-plane-rc6/secrets/broker_capability.host'
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Main process exited, code=exited, status=1/FAILURE
+Sep 07 17:46:55 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Failed with result 'exit-code'.
+Sep 07 17:46:58 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Scheduled restart job, restart counter is at 5.
+Sep 07 17:46:58 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: Started porota-critical-github-proxy-rc6.service - POROTA RC6 critical GitHub Issues capability broker.
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]: Traceback (most recent call last):
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 271, in <module>
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:     main()
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 259, in main
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:     CAPABILITY_TOKEN = _read_secret(CAPABILITY_FILE, "BROKER_CAPABILITY")
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 57, in _read_secret
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:     if not p.is_file():
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:            ^^^^^^^^^^^
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:   File "/usr/lib/python3.12/pathlib.py", line 894, in is_file
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:     return S_ISREG(self.stat().st_mode)
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:                    ^^^^^^^^^^^
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:   File "/usr/lib/python3.12/pathlib.py", line 842, in stat
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:     return os.stat(self, follow_symlinks=follow_symlinks)
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 python3[2213411]: PermissionError: [Errno 13] Permission denied: '/opt/porota-control-plane-rc6/secrets/broker_capability.host'
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Main process exited, code=exited, status=1/FAILURE
+Sep 07 17:46:59 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Failed with result 'exit-code'.
+Sep 07 17:47:02 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Scheduled restart job, restart counter is at 6.
+Sep 07 17:47:02 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: Started porota-critical-github-proxy-rc6.service - POROTA RC6 critical GitHub Issues capability broker.
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]: Traceback (most recent call last):
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 271, in <module>
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:     main()
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 259, in main
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:     CAPABILITY_TOKEN = _read_secret(CAPABILITY_FILE, "BROKER_CAPABILITY")
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:   File "/opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py", line 57, in _read_secret
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:     if not p.is_file():
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:            ^^^^^^^^^^^
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:   File "/usr/lib/python3.12/pathlib.py", line 894, in is_file
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:     return S_ISREG(self.stat().st_mode)
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:                    ^^^^^^^^^^^
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:   File "/usr/lib/python3.12/pathlib.py", line 842, in stat
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:     return os.stat(self, follow_symlinks=follow_symlinks)
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 python3[2213485]: PermissionError: [Errno 13] Permission denied: '/opt/porota-control-plane-rc6/secrets/broker_capability.host'
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Main process exited, code=exited, status=1/FAILURE
+Sep 07 17:47:04 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Failed with result 'exit-code'.
+Sep 07 17:47:07 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Scheduled restart job, restart counter is at 7.
+Sep 07 17:47:07 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: Started porota-critical-github-proxy-rc6.service - POROTA RC6 critical GitHub Issues capability broker.
+Sep 07 17:47:09 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: Stopping porota-critical-github-proxy-rc6.service - POROTA RC6 critical GitHub Issues capability broker...
+Sep 07 17:47:09 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: porota-critical-github-proxy-rc6.service: Deactivated successfully.
+Sep 07 17:47:09 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: Stopped porota-critical-github-proxy-rc6.service - POROTA RC6 critical GitHub Issues capability broker.
+Sep 07 17:53:52 ubuntu-s-1vcpu-1gb-nyc1 systemd[1]: Started porota-critical-github-proxy-rc6.service - POROTA RC6 critical GitHub Issues capability broker.
+Sep 07 17:53:53 ubuntu-s-1vcpu-1gb-nyc1 python3[2216628]: critical-github-broker: READY socket=/run/porota-critical-approval-rc6/github.sock capability=issues_only auth=local-key
+
+======================================================================
+05 FUNCTIONAL BROKER PROBE FROM GATEWAY
+======================================================================
+
+======================================================================
+06 SYSTEMD UNIT EFFECTIVE CONFIG
+======================================================================
+# /etc/systemd/system/porota-critical-approval-rc6.service
+[Unit]
+Description=POROTA RC6 critical Telegram approval gateway
+Requires=docker.service porota-critical-github-proxy-rc6.service
+After=docker.service porota-critical-github-proxy-rc6.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sh -c 'i=0; while [ ! -S /run/porota-critical-approval-rc6/github.sock ]; do i=$((i+1)); [ $i -lt 30 ] || exit 1; sleep 1; done'
+ExecStartPre=-/usr/bin/docker rm -f porota_critical_approval_rc6
+ExecStart=/usr/bin/docker run --rm --name porota_critical_approval_rc6 --pull never --read-only --user botuser --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 64 --memory 192m --tmpfs /tmp:rw,noexec,nosuid,size=32m -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/code -e POROTA_RUNTIME_MODE=PRODUCTION_PAPER -e POROTA_CRITICAL_APPROVAL_ENABLED=true -e POROTA_TELEGRAM_SINGLE_CONSUMER_ENFORCED=true -e POROTA_CRITICAL_APPROVAL_POLL_SECONDS=10 -e POROTA_CRITICAL_APPROVAL_DB=/data/critical_approval_rc6.db -e POROTA_CRITICAL_GITHUB_SOCKET=/run/control/github.sock -e POROTA_CRITICAL_BROKER_TOKEN_FILE=/run/secrets/broker_capability.token -e POROTA_CRITICAL_TELEGRAM_TOKEN_FILE=/run/secrets/critical_telegram.token -e POROTA_CRITICAL_TELEGRAM_CHAT_FILE=/run/secrets/critical_telegram.chat -v /opt/porota-control-plane-rc6/current:/code:ro -v /opt/porota-control-plane-rc6/secrets/broker_capability.token:/run/secrets/broker_capability.token:ro -v /opt/porota-control-plane-rc6/secrets/critical_telegram.token:/run/secrets/critical_telegram.token:ro -v /opt/porota-control-plane-rc6/secrets/critical_telegram.chat:/run/secrets/critical_telegram.chat:ro -v /opt/porota-control-plane-rc6/data:/data:rw -v /run/porota-critical-approval-rc6:/run/control:rw --entrypoint python porota-trading-bot:17.0.0-rc6 /code/fm_critical_approval_unix_runtime_rc6.py
+ExecStop=-/usr/bin/docker stop -t 10 porota_critical_approval_rc6
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+# /etc/systemd/system/porota-critical-github-proxy-rc6.service
+[Unit]
+Description=POROTA RC6 critical GitHub Issues capability broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=porotaadmin
+Group=porotaadmin
+Environment=HOME=/home/porotaadmin
+Environment=GH_CONFIG_DIR=/home/porotaadmin/.config/gh
+Environment=POROTA_CRITICAL_GITHUB_SOCKET=/run/porota-critical-approval-rc6/github.sock
+Environment=POROTA_CRITICAL_BROKER_TOKEN_FILE=/opt/porota-control-plane-rc6/secrets/broker_capability.host
+RuntimeDirectory=porota-critical-approval-rc6
+RuntimeDirectoryMode=0755
+ExecStart=/usr/bin/python3 /opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+
+======================================================================
+07 TRADING SAFETY
+======================================================================
+QUICK_CHECK=ok
+OBSERVER_STATE=PRODUCTION_PAPER|0
+CONTAINER=/porota_production_observer RUNNING=true RESTARTS=0 HEALTH=none IMAGE=porota-trading-bot:17.0.0-rc6
+CONTAINER=/porota_production_dashboard RUNNING=true RESTARTS=0 HEALTH=healthy IMAGE=porota-trading-dashboard:17.0.0-rc6-operator-ux
+
+======================================================================
+08 STATIC DIAGNOSIS
+======================================================================
+ROOT_CAUSE_CLASS=INHERITED_HTTP_HEALTHCHECK_MISMATCH
+EXPECTED_FIX=DEDICATED_CONTROL_PLANE_HEALTHCHECK
+AUDIT_STATUS=COMPLETE_READ_ONLY
