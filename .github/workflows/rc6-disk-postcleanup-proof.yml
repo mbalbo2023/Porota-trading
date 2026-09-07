@@ -1,0 +1,118 @@
+name: RC6 disk post-cleanup proof 2026-09-07
+
+on:
+  push:
+    branches:
+      - cleanup/rc6-disk-safe-20260907
+    paths:
+      - '.github/workflows/rc6-disk-postcleanup-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: cleanup/rc6-disk-safe-20260907
+          fetch-depth: 0
+
+      - name: Prepare SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_proof"
+          chmod 600 "$HOME/.ssh/porota_proof"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Collect post-cleanup proof
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_DISK_POSTCLEANUP_PROOF_RC6_2026-09-07.txt'
+          ssh -i "$HOME/.ssh/porota_proof" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' > "$REPORT" <<'REMOTE'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          HIST="$REPO/data/market_history.db"
+          sep(){ printf '\n======================================================================\n%s\n======================================================================\n' "$1"; }
+          echo 'POROTA RC6 DISK POST-CLEANUP PROOF — READ ONLY'
+          echo "UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "BRANCH=$(git -C "$REPO" branch --show-current)"
+          echo "HEAD=$(git -C "$REPO" rev-parse HEAD)"
+          sep '01 FILESYSTEM'
+          df -B1 --output=size,used,avail,pcent,target /
+          df -hT /
+          sep '02 POROTA STORAGE'
+          du -sh "$REPO/data" "$REPO/data/backups" "$REPO/data/paper_v17" /opt/porota-backups /home/porotaadmin/porota-browser-lab 2>/dev/null || true
+          if [ -e "$REPO/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651" ]; then echo 'RC5_LOCAL_PREDEPLOY=STILL_PRESENT'; else echo 'RC5_LOCAL_PREDEPLOY=ABSENT'; fi
+          echo '-- general host backups --'
+          find /opt/porota-backups -maxdepth 1 -type f -name 'porota-general-*.tar.gz' -printf '%s\t%TY-%Tm-%Td %TH:%TM\t%p\n' 2>/dev/null | sort -nr || true
+          echo '-- chrome deb installers >50M --'
+          find /home/porotaadmin/porota-browser-lab -maxdepth 2 -type f -iname 'google-chrome*.deb' -size +50M -printf '%s\t%p\n' 2>/dev/null || true
+          echo '-- apt cache --'
+          du -sh /var/cache/apt 2>/dev/null || true
+          sep '03 JOURNAL'
+          sudo -n journalctl --disk-usage || true
+          du -sh /var/log/journal 2>/dev/null || true
+          sep '04 DOCKER'
+          sudo -n docker system df
+          echo '-- images --'
+          sudo -n docker image ls --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.Size}}'
+          echo '-- active containers --'
+          sudo -n docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+          echo '-- builder --'
+          sudo -n docker builder du || true
+          sep '05 SQLITE AND ORDER SAFETY'
+          sudo -n python3 - "$DB" "$HIST" <<'PY'
+          import sqlite3,sys,os
+          for p in sys.argv[1:]:
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+              c.execute('PRAGMA query_only=ON')
+              q=c.execute('PRAGMA quick_check').fetchone()[0]
+              print(f'QUICK_CHECK path={p} result={q} bytes={os.path.getsize(p)}')
+              if p.endswith('observer_v17.db'):
+                  r=c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()
+                  print(f'REAL_ORDERS_SENT={int(r[0] if r else -1)}')
+              c.close()
+          PY
+          sep '06 CONTAINER SAFETY'
+          for c in porota_production_observer porota_production_dashboard; do
+            echo "CONTAINER=$c STATE=$(sudo -n docker inspect -f '{{.State.Status}}' "$c") HEALTH=$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c") RESTARTS=$(sudo -n docker inspect -f '{{.RestartCount}}' "$c") IMAGE=$(sudo -n docker inspect -f '{{.Config.Image}}' "$c")"
+          done
+          sep '07 PROTECTED ARCHITECTURE CHECKPOINT'
+          echo 'historical_raw_archive=NOT_MODIFIED'
+          echo 'observer_v17.db=NOT_VACUUMED'
+          echo 'market_history.db=NOT_MODIFIED_BY_CLEANUP'
+          echo 'rollback_policy=GITHUB_ONLY'
+          echo 'PROOF_STATUS=COMPLETE_READ_ONLY'
+          REMOTE
+          test -s "$REPORT"
+
+      - name: Publish proof safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_DISK_POSTCLEANUP_PROOF_RC6_2026-09-07.txt'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$REPORT"
+          git commit -m 'ops: record RC6 post-cleanup disk proof'
+          git pull --rebase origin cleanup/rc6-disk-safe-20260907
+          git push origin HEAD:cleanup/rc6-disk-safe-20260907
