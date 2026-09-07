@@ -74,8 +74,8 @@ jobs:
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           DATA="$REPO/data"
-          OBS_SHA=db26c76723bb988c956589c572b87cbcb4191731
-          OBS_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          OBS_SHA=5076b6dff8c644ed73160b4148eb7a1cf9ca7e43
+          OBS_BRANCH=hotfix/rc6-paper-t1-settlement-20260907
           OBS_IMAGE=porota-trading-bot:17.0.0-rc6
           ROLLBACK_DASH=porota-trading-dashboard:17.0.0-rc6-classic-tables
           ROLLBACK_DASH_SHA=87abde19f38ce7b70f553373acd1088db2a4293c
@@ -93,18 +93,19 @@ jobs:
             test "$(git -C "$REPO" branch --show-current)" = "$OBS_BRANCH"
             test "$(git -C "$REPO" rev-parse HEAD)" = "$OBS_SHA"
             test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$OBS_IMAGE|0|true"
+            test "$(sudo -n docker image inspect "$OBS_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$OBS_SHA"
             state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
-          import sqlite3
+          import os,sqlite3
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
           c.execute('PRAGMA query_only=ON')
           qc=c.execute('PRAGMA quick_check').fetchone()[0]
           row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
           c.close()
-          print('|'.join(map(str,(qc,*row))))
+          print('|'.join(map(str,(qc,*row,os.getenv('PAPER_T1_FULL_DATE_RELEASE','')))))
           PY
           )"
             echo "RUNTIME=$state"
-            test "$state" = 'ok|PRODUCTION_PAPER|0'
+            test "$state" = 'ok|PRODUCTION_PAPER|0|true'
           }
           wait_dash(){
             for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && return 0; sleep 1; done
