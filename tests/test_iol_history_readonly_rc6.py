@@ -105,7 +105,7 @@ def test_current_bcba_daily_bar_is_incomplete_while_market_open():
     assert today.canonical_block_reason == 'INCOMPLETE_CURRENT_SESSION'
 
 
-def test_raw_and_adjusted_are_explicit_distinct_series():
+def test_raw_and_adjusted_are_explicit_distinct_series_with_cached_token():
     c = IOLHistoryReadOnlyClient(username='u', password='p', session=FakeSession())
     raw = c.get_history_evidence(
         identity(False), from_date='2026-09-04', to_date='2026-09-04',
@@ -117,8 +117,10 @@ def test_raw_and_adjusted_are_explicit_distinct_series():
     )[0]
     assert raw.price_basis == 'RAW'
     assert adj.price_basis == 'ADJUSTED'
+    # One token POST is reused; the two history GETs remain distinct by price basis.
+    assert [call[0] for call in c.session.calls] == ['POST','GET','GET']
     assert '/false' in c.session.calls[1][1]
-    assert '/true' in c.session.calls[3][1]
+    assert '/true' in c.session.calls[2][1]
 
 
 def test_no_legacy_iol_client_dependency():
