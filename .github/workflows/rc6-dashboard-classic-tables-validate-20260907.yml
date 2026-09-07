@@ -41,14 +41,14 @@ jobs:
             tests/test_dashboard_truth_layer_rc6.py \
             tests/test_dashboard_global_a11y_rc5.py
 
-      - name: Compile changed presentation modules
+      - name: Compile changed presentation modules in memory
         run: |
           set -euo pipefail
           docker run --rm --network none --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=1777 \
             -e PYTHONDONTWRITEBYTECODE=1 \
             --entrypoint python porota-dashboard-rc6-classic:test \
-            -c "import py_compile; [py_compile.compile(p,doraise=True) for p in ('ev_dashboard_table_accessibility_rc6.py','eq_dashboard_table_layout_rc6.py','er_dashboard_table_semantics_rc6.py')]"
+            -c "paths=('ev_dashboard_table_accessibility_rc6.py','eq_dashboard_table_layout_rc6.py','er_dashboard_table_semantics_rc6.py'); [compile(open(p,encoding='utf-8').read(),p,'exec') for p in paths]; print('COMPILE_IN_MEMORY=GREEN')"
 
       - name: Assert no deployment capability in this workflow
         run: |
