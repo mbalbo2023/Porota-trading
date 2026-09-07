@@ -59,8 +59,9 @@ def test_regular_search_is_unchanged():
 
 
 def test_no_budget_or_order_surface_added():
-    source=open(m.__file__,encoding='utf-8').read().lower()
-    assert 'order/budget' not in source
-    assert 'send_order' not in source
-    assert 'place_order' not in source
-    assert 'cancel_order' not in source
+    # Validate executable capability, not harmless documentation strings.
+    forbidden_post_fragments = ('order', 'budget', 'cancel', 'operar', 'trade')
+    assert all(not any(token in path.lower() for token in forbidden_post_fragments)
+               for path in m._POST_PATHS)
+    for name in ('order_budget','budget','send_order','place_order','cancel_order','order'):
+        assert not hasattr(m.ProductionMarketReader, name)
