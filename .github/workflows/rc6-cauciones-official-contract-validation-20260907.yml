@@ -1,0 +1,32 @@
+name: RC6 cauciones official contract validation 2026-09-07
+on:
+  push:
+    branches: [feature/rc6-contract-evidence-reauth-cauciones-20260907]
+    paths:
+      - 'bd_ppi_readonly_guard.py'
+      - 'tests/test_rc6_cauciones_official_contract.py'
+      - '.github/workflows/rc6-cauciones-official-contract-validation-20260907.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install -q pytest requests
+      - run: python -m pytest -q tests/test_rc6_cauciones_official_contract.py
+      - run: python -m py_compile bd_ppi_readonly_guard.py
+      - name: Static safety
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('bd_ppi_readonly_guard.py').read_text(encoding='utf-8').lower()
+          assert '/api/1.0/marketdata/searchinstrument' in s
+          assert 'order/budget' not in s
+          assert 'send_order' not in s and 'place_order' not in s and 'cancel_order' not in s
+          assert 'default_caucion_discovery_days = (1, 2, 7, 30, 120)' in s
+          print('CAUCIONES_STATIC_SAFETY=GREEN')
+          PY
