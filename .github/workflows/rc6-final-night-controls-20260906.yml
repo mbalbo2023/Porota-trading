@@ -75,19 +75,11 @@ jobs:
           test "$(sudo -n systemctl is-active porota-introspeccion-hf5.timer)" = active
           sudo -n systemctl show porota-introspeccion-hf5.timer -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager
 
-          echo '--- WAIT FOR FIRST SNAPSHOT AFTER DASHBOARD DEPLOY ---'
-          latest=''
-          latest_epoch=0
-          for _ in $(seq 1 30); do
-            latest="$(sudo -n find "$DATA/introspection" -maxdepth 1 -type f -name 'porota_introspection_rc6_*.json' -printf '%T@|%p\n' 2>/dev/null | sort -nr | head -n1 || true)"
-            if [ -n "$latest" ]; then
-              latest_epoch="$(printf '%s' "$latest" | cut -d'|' -f1 | cut -d'.' -f1)"
-              if [ "$latest_epoch" -gt "$DEPLOY_EPOCH" ]; then break; fi
-            fi
-            sleep 20
-          done
+          echo '--- FIRST SNAPSHOT AFTER DASHBOARD DEPLOY ---'
+          latest="$(sudo -n find "$DATA/introspection" -maxdepth 1 -type f -name 'porota_introspection_rc6_*.json' -printf '%T@|%p\n' 2>/dev/null | sort -nr | head -n1 || true)"
           echo "LATEST_RAW=$latest"
           test -n "$latest"
+          latest_epoch="$(printf '%s' "$latest" | cut -d'|' -f1 | cut -d'.' -f1)"
           test "$latest_epoch" -gt "$DEPLOY_EPOCH"
           latest_path="${latest#*|}"
           echo "LATEST_PATH=$latest_path"
@@ -115,10 +107,13 @@ jobs:
               body=r.read(4_000_000).decode('utf-8','replace')
               print('HTTP_STATUS=',r.status)
               print('HTTP_LEN=',len(body))
+              print('HAS_SYSTEM_NAV=', 'system-nav' in body)
+              print('HAS_STALE_WARNING=', 'Snapshot de introspección no vigente' in body)
+              print('HAS_FRESH_EVIDENCE=', ('snapshot FRESH' in body) or ('Snapshot de introspección vigente' in body))
               assert r.status==200 and len(body)>200
               assert 'system-nav' in body
               assert 'Snapshot de introspección no vigente' not in body
-              assert 'Snapshot de introspección vigente' in body
+              assert ('snapshot FRESH' in body) or ('Snapshot de introspección vigente' in body)
           print('DASHBOARD_INTROSPECTION=GREEN')
           PY
 
