@@ -32,23 +32,33 @@ jobs:
           echo HISTORY_TARGETED_AUDIT=START
           sudo -n systemctl show porota-history-postclose-rc6.service -p ActiveState -p SubState -p Result -p ExecMainStatus --no-pager 2>/dev/null || true
           echo '--- POSTCLOSE HISTORY JOURNAL ---'
-          sudo -n journalctl -u porota-history-postclose-rc6.service --since '2026-09-07 16:45:00' --no-pager -o short-iso | tail -n 160 || true
+          sudo -n journalctl -u porota-history-postclose-rc6.service --since '2026-09-07 16:45:00' --no-pager -o short-iso | tail -n 180 || true
           echo '--- CURRENT CANONICAL SUMMARY ---'
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import json,sqlite3
           p='/app/data/market_history.db'
           c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON')
           print('QUICK_CHECK='+c.execute('PRAGMA quick_check').fetchone()[0])
+          cols=[r['name'] for r in c.execute('PRAGMA table_info(history_canonical_v2)')]
+          print('CANONICAL_COLUMNS='+json.dumps(cols))
           rows=c.execute("""SELECT source,instrument_type,COUNT(*) rows,COUNT(DISTINCT symbol) symbols,MIN(date) first_date,MAX(date) last_date
           FROM history_canonical_v2 GROUP BY source,instrument_type ORDER BY source,instrument_type""").fetchall()
           for r in rows: print('SOURCE_SUMMARY='+json.dumps(dict(r),sort_keys=True))
-          for sym in ('GGAL','AAPL','GD30'):
-              rs=c.execute("""SELECT symbol,instrument_type,market,settlement,date,open,high,low,close,volume,source,adjusted,winner_version_id
-              FROM history_canonical_v2 WHERE symbol=? AND date BETWEEN '2026-09-01' AND '2026-09-07' ORDER BY date""",(sym,)).fetchall()
+          sample_cols=[x for x in ('symbol','instrument_type','market','settlement','date','open','high','low','close','volume','source','adjusted','version_id','canonical_version_id','known_at','observed_at') if x in cols]
+          select=','.join(sample_cols)
+          for sym in ('GGAL','AAPL','GD30','CEPU','YPFD'):
+              rs=c.execute(f"SELECT {select} FROM history_canonical_v2 WHERE symbol=? AND date BETWEEN '2026-09-01' AND '2026-09-07' ORDER BY date",(sym,)).fetchall()
               for r in rs: print('SAMPLE='+json.dumps(dict(r),sort_keys=True,default=str))
           print('--- SEP07 SOURCE DISTRIBUTION ---')
           for r in c.execute("SELECT source,instrument_type,COUNT(*) n FROM history_canonical_v2 WHERE date='2026-09-07' GROUP BY source,instrument_type ORDER BY n DESC"):
               print('SEP07='+json.dumps(dict(r),sort_keys=True))
+          if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='history_versions_v2'").fetchone():
+              print('VERSION_ROWS='+str(c.execute('SELECT COUNT(*) FROM history_versions_v2').fetchone()[0]))
+              vcols=[r['name'] for r in c.execute('PRAGMA table_info(history_versions_v2)')]
+              print('VERSION_COLUMNS='+json.dumps(vcols))
+              if 'date' in vcols:
+                  for r in c.execute("SELECT source,instrument_type,COUNT(*) n,MAX(date) last_date FROM history_versions_v2 GROUP BY source,instrument_type ORDER BY source,instrument_type"):
+                      print('VERSION_SUMMARY='+json.dumps(dict(r),sort_keys=True))
           c.close()
           PY
           echo '--- ATTEMPT LEDGER RECENT ---'
@@ -56,13 +66,20 @@ jobs:
           import json,sqlite3
           p='/app/data/paper_v17/observer_v17.db'
           c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON')
+          print('OBSERVER_QUICK_CHECK='+c.execute('PRAGMA quick_check').fetchone()[0])
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print(f'RUNTIME={mode}|{orders}')
           if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='history_attempt_ledger_v2'").fetchone():
-              for r in c.execute("""SELECT symbol,instrument_type,settlement,source,state,provider_rows,valid_rows,rejected_rows,attempted_at
-              FROM history_attempt_ledger_v2 ORDER BY attempted_at DESC LIMIT 40"""):
-                  print('ATTEMPT='+json.dumps(dict(r),sort_keys=True))
+              cols=[r['name'] for r in c.execute('PRAGMA table_info(history_attempt_ledger_v2)')]
+              wanted=[x for x in ('symbol','instrument_type','settlement','source','state','provider_rows','valid_rows','rejected_rows','attempted_at','detail') if x in cols]
+              for r in c.execute(f"SELECT {','.join(wanted)} FROM history_attempt_ledger_v2 ORDER BY attempted_at DESC LIMIT 80"):
+                  print('ATTEMPT='+json.dumps(dict(r),sort_keys=True,default=str))
+          for source in ('PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST'):
+              r=c.execute('SELECT source,status,last_attempt_at,last_success_at,items,detail FROM source_sync WHERE source=?',(source,)).fetchone()
+              if r: print('SYNC='+json.dumps(dict(r),sort_keys=True,default=str))
           c.close()
           PY
           echo HISTORY_TARGETED_AUDIT=END
           echo REAL_ORDERS_SENT=0
           REMOTE
-          { echo '### RC6 targeted history postclose audit'; echo '```text'; sed -n '1,650p' /tmp/history-targeted.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '### RC6 targeted history postclose audit'; echo '```text'; sed -n '1,900p' /tmp/history-targeted.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
