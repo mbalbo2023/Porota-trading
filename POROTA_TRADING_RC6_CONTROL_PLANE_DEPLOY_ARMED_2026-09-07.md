@@ -5,7 +5,7 @@ Fecha: 2026-09-07
 `CONTROL_PLANE_PROD_DEPLOY=AUTHORIZED_USER`
 `CANONICAL_TELEGRAM_SINGLE_CONSUMER=AUTHORIZED_USER`
 
-SOURCE_SHA=fe36e16b48a189e820308d2f42b0810fc6bb292b
+SOURCE_SHA=cf2ebf2ca6afe80dfa618437befd6734db708efe
 
 ## Alcance exacto
 
@@ -18,6 +18,7 @@ Se autoriza exclusivamente desplegar el plano de control de aprobación crítica
 - broker local GitHub limitado a operaciones de Issues;
 - credencial amplia de `gh` permanece en el host y nunca se monta en el contenedor;
 - broker protegido además por capability key local aleatoria;
+- directorio de secretos `0711 root:root` sólo para traversal; archivos secretos `0400` con propietario específico;
 - sin credenciales PPI;
 - sin Docker socket dentro del gateway;
 - sin capacidad de órdenes;
@@ -31,5 +32,7 @@ Se autoriza exclusivamente desplegar el plano de control de aprobación crítica
 - `PRODUCTION_PAPER`;
 - `real_orders_sent=0`;
 - capacidad de órdenes reales bloqueada.
+
+Reintento autorizado después de que el primer intento fallara cerrado y el journal confirmara `PermissionError` sobre `broker_capability.host`; el rollback anterior quedó completo.
 
 Este armado NO autoriza merge del PR #39 ni despliegue de ningún hotfix de trading.
