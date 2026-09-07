@@ -71,28 +71,38 @@ También se verificó:
 - run `34150404026` SUCCESS;
 - requiere calendario/sesión explícitos, intentos acotados, fuente primaria/fallback y no inventa ruedas.
 
-### GREEN OFFLINE — Scalping intraday contract policy
+### GREEN SOURCE-INTEGRATED OFFLINE — Scalping intraday contract
 - branch `hotfix/rc6-scalping-intraday-contract-20260907`;
-- run `34153216769` SUCCESS;
-- corrige dos defectos demostrados en el análisis forense: refresco de baseline para minuto todavía mutable y reset de counters al cambiar de rueda;
-- una modificación de un minuto realmente cerrado continúa siendo hard reject;
-- este GREEN valida la política offline, NO significa todavía que el hotfix esté integrado/desplegado en `cf_intraday_scalping.py` live.
+- policy run `34153216769` SUCCESS;
+- integration run `34155090175` SUCCESS;
+- persistence run `34155288329` SUCCESS;
+- source integrado persistido en commit `fbd3ea89de970059398690a3e0ebebc4e0480022`;
+- `cf_intraday_scalping.py` ya usa `classify_revision` + `previous_for_session`;
+- una revisión de un minuto todavía mutable refresca `price/volume/last_verified_at` y actualiza el baseline;
+- una revisión genuina de un minuto cerrado continúa hard reject;
+- counters/rechazo previo no contaminan la rueda siguiente;
+- este GREEN es de **source + CI offline**. Aún NO está desplegado al observer live y requiere postclose deploy + prueba PAPER.
 
-### GREEN OFFLINE — SRE fast/full health split
+### GREEN OFFLINE — SRE fast/full health split + wiring candidato
 - branch `feature/rc6-sre-health-split-20260907`;
-- run `34153288906` SUCCESS;
+- run base `34153288906` SUCCESS;
+- run wiring `34154742970` SUCCESS;
 - fast probe evita PRAGMA de full scan;
 - full DB integrity conserva `PRAGMA quick_check` como prueba separada;
-- todavía pendiente decidir/desplegar la frecuencia/timers sin afectar hot path.
+- candidato systemd: `porota-fast-functional-health-rc6.service/.timer` mantiene liveness cada 5 min sin full scan;
+- `porota-full-db-integrity-rc6.service` mantiene integridad completa como tarea explícita; deliberadamente no existe timer de full integrity cada 5 min;
+- pendiente deploy postclose y comparación de latencia antes/después sin perder control de integridad.
 
-### GREEN OFFLINE — Contract Evidence auto-reauth helper
+### GREEN SOURCE-INTEGRATED OFFLINE — Contract Evidence auto-reauth
 - branch `hotfix/rc6-contract-evidence-auto-reauth-20260907`;
-- run `34153485609` SUCCESS;
-- helper aislado admite usuario/contraseña sólo desde env local/secreto y nunca los persiste;
-- detecta 2FA y falla cerrado (`BLOCKED_AUTH_2FA_REQUIRED`);
-- no contiene imports de broker/órdenes;
-- el collector contractual sigue separado y GET-only tras sesión autenticada;
-- pendiente: integrar helper en runtime host y probar recuperación real de la sesión sin exponer secretos.
+- helper run `34153485609` SUCCESS;
+- runtime wiring run `34155223743` SUCCESS;
+- helper `rc6_ppi_web_reauth.py` admite usuario/contraseña sólo desde secreto local, no los imprime ni persiste, no navega rutas de órdenes y no contiene broker/order imports;
+- `BLOCKED_AUTH_2FA_REQUIRED` continúa fail-closed;
+- runtime candidato ahora trata `BLOCKED_AUTH_SESSION_EXPIRED` como recuperable: ejecuta helper separado y sólo si obtiene `AUTHENTICATED_TRUSTED_DEVICE` vuelve a lanzar el collector Contract Evidence GET-only;
+- secreto local requiere owner del browser-user y mode 0600; secreto ausente/owner/mode incorrecto => fail-closed;
+- el systemd unit admite configuración protegida vía `/etc/porota/contract-evidence-rc6.conf` sin credenciales embebidas;
+- pendiente host deploy y prueba real. Si PPI exige 2FA, se detiene y requiere intervención humana puntual.
 
 ### GREEN OFFLINE — Forward Lab v2
 - branch `feature/rc6-forward-lab-v2-20260907`;
@@ -119,16 +129,16 @@ También se verificó:
 
 ## 5. Frentes que continúan abiertos
 
-1. integrar el hotfix de contrato intradiario con `cf_intraday_scalping.py`, tests end-to-end y prueba PAPER postdeploy;
-2. materializar/deploy del split SRE en timers y verificar caída de latencia sin perder integridad;
-3. integrar auto-reauth de Contract Evidence y ejecutar prueba real; si PPI exige 2FA, detenerse y requerir intervención humana puntual;
-4. resolver IOL REST 401 bajo nueva hipótesis (no falta de habilitación): credencial/username efectivos, términos/estado técnico y respuesta sanitizada compatible con los controles de seguridad;
-5. avanzar reconciliador multi-source PPI/IOL/A3 con RAW/ADJUSTED y calidad/completitud;
-6. nominales/quote basis/step/mínimos de bonos/ON con provenance autoritativa;
-7. MFE/MAE + Forward Lab v2 sobre cohortes reales;
-8. cablear la vista separada `Eventos / Riesgo Global` al dashboard sin capacidad de decisión y manteniendo SHADOW;
-9. postcierre de la jornada: posiciones, PnL, gates, históricos, candles, scalping, learning, DB y `real_orders_sent=0`;
-10. continuar dashboard P1: semántica clara `OBSERVACIÓN / CONFIRMADO / NO EJECUTABLE` y prueba Samsung/Voice Access.
+1. **Scalping:** deploy postclose del source integrado `fbd3ea89...`, pre/postflight y prueba PAPER end-to-end `scanner → contract → candidate → gates → fill simulado` sin alterar thresholds;
+2. **SRE:** deploy postclose del split fast/full, desactivar el viejo full-scan cada 5 min y medir latencia antes/después;
+3. **Contract Evidence:** deploy host del auto-reauth wiring y prueba real; si aparece 2FA, detenerse y pedir intervención puntual;
+4. **IOL REST:** resolver 401 bajo nueva hipótesis (no falta de habilitación): credencial/username efectivos, términos/estado técnico y respuesta sanitizada compatible con controles de seguridad;
+5. **Históricos multi-source:** llevar reconciliador PPI/IOL/A3 a campaña shadow con RAW/ADJUSTED, calidad/completitud y canonical-write todavía DENY para IOL/A3;
+6. **Nominales:** completar quote basis/step/mínimos de bonos/ON con provenance autoritativa; `units_per_lot` por sí solo no habilita;
+7. **MFE/MAE + Forward Lab v2:** ejecutar sobre cohortes reales y ampliar robustez estadística;
+8. **Eventos / Riesgo Global:** cablear la vista separada al dashboard manteniendo SHADOW y sin capacidad de decisión;
+9. **Postcierre:** posiciones, PnL, gates, históricos, candles, scalping, learning, DB y `real_orders_sent=0` antes de cualquier deploy del observer;
+10. **Dashboard P1:** semántica `OBSERVACIÓN / CONFIRMADO / NO EJECUTABLE`, tablas clásicas y prueba Samsung/Voice Access.
 
 ## 6. Invariantes
 
