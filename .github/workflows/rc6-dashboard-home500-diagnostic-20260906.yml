@@ -1,0 +1,126 @@
+name: RC6 dashboard home 500 diagnostic 2026-09-06
+
+on:
+  push:
+    branches:
+      - diag/rc6-dashboard-home500-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_diag"
+          chmod 600 "$HOME/.ssh/porota_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Diagnose preview only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: 27f4df391b41c869b602166eb55907514c869874
+          TARGET_BRANCH: ux/rc6-dashboard-go-live-20260906
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'HOST' | tee /tmp/diag.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DATA="$REPO/data"
+          LIVE_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          LIVE_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          LIVE_IMAGE=porota-trading-bot:17.0.0-rc6
+          CANDIDATE_IMAGE=porota-trading-dashboard:17.0.0-rc6-go-live-ux1
+          ENV_FILE="$DATA/diagnosticos/dashboard_mode_v17.env"
+          PREVIEW=porota_dashboard_home500_diag
+          TMP=''; WT=''
+          cleanup(){ sudo -n docker rm -f "$PREVIEW" >/dev/null 2>&1 || true; [ -z "$WT" ] || git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true; [ -z "$TMP" ] || rmdir "$TMP" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          echo '=== RC6 DASHBOARD HOME500 DIAGNOSTIC ==='
+          echo "UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          test "$(git -C "$REPO" branch --show-current)" = "$LIVE_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$LIVE_SHA"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$LIVE_IMAGE|0|true"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$LIVE_IMAGE|0"
+          test -s "$ENV_FILE"
+
+          if ! sudo -n docker image inspect "$CANDIDATE_IMAGE" >/dev/null 2>&1 || [ "$(sudo -n docker image inspect "$CANDIDATE_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" != "$TARGET_SHA" ]; then
+            git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+            test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+            TMP="$(mktemp -d "$HOME/porota-dashboard-diag.XXXXXX")"
+            WT="$TMP/source"
+            git -C "$REPO" worktree add --detach "$WT" "$TARGET_SHA" >/dev/null
+            sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" -t "$CANDIDATE_IMAGE" "$WT" >/dev/null
+          fi
+          test "$(sudo -n docker image inspect "$CANDIDATE_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$TARGET_SHA"
+
+          sudo -n docker rm -f "$PREVIEW" >/dev/null 2>&1 || true
+          sudo -n docker run -d --name "$PREVIEW" --pull never --user botuser --cap-drop ALL \
+            --security-opt no-new-privileges:true -p 127.0.0.1:18000:8000 \
+            --env-file "$ENV_FILE" -v "$DATA:/app/data:ro" \
+            --entrypoint python "$CANDIDATE_IMAGE" o_dashboard.py >/dev/null
+          for _ in $(seq 1 40); do
+            if sudo -n docker exec "$PREVIEW" python -c "import urllib.request,json; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)); assert d['status']=='ok'" >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+
+          echo '--- DIRECT HOME RENDER TRACE ---'
+          sudo -n docker exec -i "$PREVIEW" python - <<'PY' || true
+          import traceback
+          try:
+              import bg_paper_dashboard as bg
+              import eq_dashboard_table_layout_rc6 as eq
+              eq.install()
+              out=bg.home_page()
+              print('DIRECT_HOME_OK',len(out))
+          except Exception:
+              traceback.print_exc()
+          PY
+
+          echo '--- HTTP PATH MATRIX ---'
+          sudo -n docker exec -i "$PREVIEW" python - <<'PY' || true
+          import os, urllib.request, urllib.error
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          for path in ['/', '/vivo','/historicos','/reportes','/config','/sistema?section=introspeccion','/salud','/universo-operativo','/scalping','/instrumentos','/aprendizaje']:
+              req=urllib.request.Request('http://127.0.0.1:8000'+path,headers={'Authorization':'Bearer '+token,'User-Agent':'PorotaDiag/RC6'})
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r:
+                      body=r.read(400000).decode('utf-8','replace')
+                      print(f'PATH={path} CODE={r.status} BYTES={len(body)}')
+              except urllib.error.HTTPError as e:
+                  body=e.read(8000).decode('utf-8','replace')
+                  print(f'PATH={path} CODE={e.code} BODY={body[:1000]!r}')
+              except Exception as e:
+                  print(f'PATH={path} ERROR={type(e).__name__}:{e}')
+          PY
+
+          echo '--- PREVIEW LOGS ---'
+          sudo -n docker logs "$PREVIEW" 2>&1 | tail -n 240 || true
+          echo '--- PRODUCTION STILL UNCHANGED ---'
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard
+          echo 'DASHBOARD_DIAGNOSTIC_ONLY=GREEN'
+          HOST
+
+          {
+            echo '### RC6 dashboard home500 diagnostic'
+            echo '```text'
+            sed -n '1,1400p' /tmp/diag.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
