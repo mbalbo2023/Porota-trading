@@ -1,0 +1,36 @@
+name: RC6 preopen failed unit forensics 2026-09-07
+on:
+  push:
+    branches: [diag/rc6-postclose-live-20260907]
+    paths: ['.github/workflows/rc6-preopen-failure-forensics-20260907.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH setup
+        env: {SSH_KEY: '${{ secrets.DO_SSH_KEY }}', KNOWN_HOSTS: '${{ secrets.DO_KNOWN_HOSTS }}'}
+        run: |
+          set -euo pipefail; install -m 700 -d ~/.ssh; printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519; printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts; chmod 600 ~/.ssh/known_hosts
+      - name: Read-only unit forensics
+        env: {HOST: '${{ secrets.DO_HOST }}', USER: '${{ secrets.DO_USER }}'}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/preopen.txt
+          set -euo pipefail
+          echo 'PREOPEN_FORENSICS=START'
+          for u in porota-preopen-rc6.service porota-preopen-rc6.timer porota-contract-evidence-hf6.service porota-contract-evidence-hf6.timer porota-rc4-auto-check.service porota-rc4-auto-check.timer; do
+            echo "=== $u ==="
+            sudo -n systemctl show "$u" -p LoadState -p ActiveState -p SubState -p UnitFileState -p Result -p ExecMainStatus -p FragmentPath --no-pager 2>/dev/null || true
+            sudo -n systemctl cat "$u" --no-pager 2>/dev/null || true
+          done
+          echo '--- PREOPEN JOURNAL TODAY ---'
+          sudo -n journalctl -u porota-preopen-rc6.service --since '2026-09-07 00:00:00' --until '2026-09-07 23:59:59' --no-pager -o short-iso | tail -n 180 || true
+          echo '--- LEGACY CE JOURNAL TAIL ---'
+          sudo -n journalctl -u porota-contract-evidence-hf6.service -n 60 --no-pager -o short-iso || true
+          echo '--- LEGACY RC4 JOURNAL TAIL ---'
+          sudo -n journalctl -u porota-rc4-auto-check.service -n 60 --no-pager -o short-iso || true
+          echo 'PREOPEN_FORENSICS=END'
+          REMOTE
+          { echo '### RC6 preopen/legacy failed-unit forensics'; echo '```text'; sed -n '1,700p' /tmp/preopen.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
