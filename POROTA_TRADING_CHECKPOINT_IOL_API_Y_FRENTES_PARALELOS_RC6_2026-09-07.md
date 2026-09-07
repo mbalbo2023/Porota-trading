@@ -52,6 +52,12 @@ Se mantienen dos vías con roles distintos:
 
 Se volvió a consultar `CEPU / BCBA` por MCP para 2026-08-20..2026-09-07 y se obtuvieron barras diarias OHLCV, incluida la sesión 2026-09-07. La vela del día en curso/cierre reciente no debe usarse como evidencia intradía ni asumir cierre oficial sin la política de sesión correspondiente.
 
+También se verificó:
+- `TX28D / BCBA`: Título Público, USD, `units_per_lot=100`, `term=T1`, relacionado con `TX28` en ARS;
+- `MRCXC / BCBA`: `not_found` en el catálogo IOL consultable por ese símbolo.
+
+`units_per_lot=100` se conserva como evidencia de lote/unidad reportada por IOL, pero **no se interpreta automáticamente como lámina mínima o step nominal**. `MRCXC` queda para reconciliación de identidad; no se adivina.
+
 ## 4. Estado de frentes paralelos
 
 ### GREEN — A3 identity mapper
@@ -101,6 +107,16 @@ Se volvió a consultar `CEPU / BCBA` por MCP para 2026-08-20..2026-09-07 y se ob
 - la evidencia de evento respeta `available_to_engine_at` y no permite retrotraer confirmaciones/retractaciones posteriores;
 - continúa `SHADOW`, sin BUY/SELL, sin auto-promoción y sin capacidad de bloquear PAPER.
 
+### GREEN OFFLINE — Vista `Eventos / Riesgo Global`
+- branch `feature/rc6-event-risk-dashboard-view-20260907`;
+- run `34154585438` SUCCESS;
+- renderer separado `fj_event_risk_dashboard_rc6.py` con tabla semántica clásica y accesible;
+- presenta `GLOBAL_EVENT_RISK`, timestamp, evento, región, nivel de confirmación, resumen factual, exposiciones, identidades POROTA, sesgo no operativo, confianza, freshness, fuente/tier, `available_to_engine_at`, retorno observado, análogo histórico y provenance;
+- valida escaping de contenido no confiable;
+- pruebas verifican ausencia de DB, red, broker y órdenes;
+- `CAN_BLOCK_PAPER=NO`, `CAN_SEND_ORDER=NO`, `AUTO_PROMOTION=NO`;
+- pendiente únicamente el wiring al dashboard separado y su deploy posterior; no se publica durante la rueda.
+
 ## 5. Frentes que continúan abiertos
 
 1. integrar el hotfix de contrato intradiario con `cf_intraday_scalping.py`, tests end-to-end y prueba PAPER postdeploy;
@@ -110,7 +126,7 @@ Se volvió a consultar `CEPU / BCBA` por MCP para 2026-08-20..2026-09-07 y se ob
 5. avanzar reconciliador multi-source PPI/IOL/A3 con RAW/ADJUSTED y calidad/completitud;
 6. nominales/quote basis/step/mínimos de bonos/ON con provenance autoritativa;
 7. MFE/MAE + Forward Lab v2 sobre cohortes reales;
-8. materializar UI separada `Eventos / Riesgo Global` sin capacidad de decisión, manteniendo SHADOW;
+8. cablear la vista separada `Eventos / Riesgo Global` al dashboard sin capacidad de decisión y manteniendo SHADOW;
 9. postcierre de la jornada: posiciones, PnL, gates, históricos, candles, scalping, learning, DB y `real_orders_sent=0`;
 10. continuar dashboard P1: semántica clara `OBSERVACIÓN / CONFIRMADO / NO EJECUTABLE` y prueba Samsung/Voice Access.
 
