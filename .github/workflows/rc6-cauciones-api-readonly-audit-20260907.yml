@@ -1,0 +1,99 @@
+name: RC6 PPI cauciones read-only audit 2026-09-07
+on:
+  push:
+    branches: [feature/rc6-contract-evidence-reauth-cauciones-20260907]
+    paths:
+      - '.github/workflows/rc6-cauciones-api-readonly-audit-20260907.yml'
+permissions:
+  contents: read
+concurrency:
+  group: porota-rc6-cauciones-readonly-audit
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Read-only PPI cauciones proof
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/cauciones.txt
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo "HOST_BRANCH=$(git branch --show-current)"
+          echo "HOST_HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import inspect,json,os,sqlite3
+          from bd_ppi_readonly_guard import ProductionMarketReader
+          db='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{db}?mode=ro',uri=True); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          state=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          assert qc=='ok' and state and state[0]=='PRODUCTION_PAPER' and int(state[1] or 0)==0
+          key=os.getenv('PPI_API_KEY',''); secret=os.getenv('PPI_API_SECRET','')
+          print('PPI_CREDENTIAL_PRESENCE='+('GREEN' if key and secret else 'RED'))
+          if not (key and secret): raise SystemExit(2)
+          r=ProductionMarketReader(key,secret)
+          try:
+              r.login_once()
+              md=r._ProductionMarketReader__client.marketdata
+              print('SDK_SEARCH_SIGNATURE='+str(inspect.signature(md.search_instrument)))
+              def safe_rows(x):
+                  if isinstance(x,dict):
+                      for k in ('payload','data','items','results'):
+                          if isinstance(x.get(k),list): x=x[k]; break
+                  if not isinstance(x,list): return []
+                  out=[]
+                  for row in x[:20]:
+                      if not isinstance(row,dict): continue
+                      out.append({k:row.get(k) for k in ('ticker','description','currency','type','market','nominalInPrice') if k in row})
+                  return out
+              for days in (1,2,7,30,120):
+                  for ticker in (f'PESOS{days}',f'DOLAR{days}'):
+                      try:
+                          x=r.search_instruments(ticker,'CAUCIONES',str(days),'BYMA')
+                          rows=safe_rows(x)
+                          print('SEARCH='+json.dumps({'days':days,'ticker':ticker,'rows':rows,'count':len(rows)},ensure_ascii=False,sort_keys=True))
+                      except Exception as e:
+                          print('SEARCH_ERROR='+json.dumps({'days':days,'ticker':ticker,'type':type(e).__name__,'msg':str(e)[:160]},ensure_ascii=False,sort_keys=True))
+              for ticker in ('PESOS1','DOLAR1'):
+                  for fn in ('current','book'):
+                      try:
+                          x=getattr(r,fn)(ticker,'CAUCIONES','INMEDIATA')
+                          def sanitize(v,depth=0):
+                              if depth>3:return None
+                              if isinstance(v,dict): return {str(k):sanitize(n,depth+1) for k,n in v.items() if str(k).lower() in {'ticker','description','currency','type','market','settlement','price','quantity','bids','offers','date','datetime','time'}}
+                              if isinstance(v,list): return [sanitize(z,depth+1) for z in v[:10]]
+                              if isinstance(v,(str,int,float,bool)) or v is None:return v
+                              return str(v)[:80]
+                          print(fn.upper()+'='+json.dumps({'ticker':ticker,'payload':sanitize(x)},ensure_ascii=False,sort_keys=True))
+                      except Exception as e:
+                          print(fn.upper()+'_ERROR='+json.dumps({'ticker':ticker,'type':type(e).__name__,'msg':str(e)[:160]},ensure_ascii=False,sort_keys=True))
+              print('PPI_GUARD_METRICS='+json.dumps(r.metrics,sort_keys=True))
+          finally:
+              r.close()
+          print('ORDER_BUDGET_CALLED=NO')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          REMOTE
+          {
+            echo '### Official PPI cauciones read-only live proof'
+            echo '```text'
+            sed -n '1,260p' /tmp/cauciones.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
