@@ -6,6 +6,11 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/porota-trading
+# Optional protected host configuration. It may define
+# POROTA_PPI_WEB_SECRET_FILE=/path/to/0600-browser-user-owned-secret.env.
+# The service fails closed if reauthentication is needed and the referenced
+# local secret is absent; no credentials are embedded in this unit.
+EnvironmentFile=-/etc/porota/contract-evidence-rc6.conf
 ExecStart=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
 TimeoutStartSec=20min
 TimeoutStopSec=2min
