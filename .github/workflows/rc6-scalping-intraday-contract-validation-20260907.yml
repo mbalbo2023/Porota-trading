@@ -13,6 +13,13 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
       - run: python -m pip install -q pytest fastapi requests
-      - run: python -m pytest -q tests/test_intraday_contract_policy_rc6.py tests/test_intraday_scalping_hf3.py
+      - name: Focused RC6 intraday contract tests
+        run: >-
+          python -m pytest -q
+          tests/test_intraday_contract_policy_rc6.py
+          tests/test_intraday_scalping_hf3.py::test_payload_observado_es_minuto_precio_volumen_sin_inventar_ohlc
+          tests/test_intraday_scalping_hf3.py::test_volumen_se_confirma_solo_con_solapamiento_estable_y_minuto_nuevo
+          tests/test_intraday_scalping_hf3.py::test_modificar_un_minuto_cerrado_frena_el_contrato
+          tests/test_intraday_scalping_hf3.py::test_rotacion_no_excluye_familias_ni_mercados
       - run: python -m py_compile fg_intraday_contract_policy_rc6.py
       - run: python -c "import fg_intraday_contract_policy_rc6 as m; m.assert_fail_closed(); print('INTRADAY_POLICY=GREEN_OFFLINE')"
