@@ -4,6 +4,10 @@ on:
   push:
     branches: [hotfix/rc6-contract-evidence-auto-reauth-20260907]
     paths:
+      - 'rc6_ppi_web_reauth.py'
+      - 'scripts/porota_contract_evidence_rc6_runtime.sh'
+      - 'tests/test_ppi_web_reauth_rc6.py'
+      - 'tests/test_contract_evidence_reauth_wiring_rc6.py'
       - '.github/workflows/rc6-contract-evidence-auto-reauth-deploy-e2e-20260907.yml'
 
 permissions:
