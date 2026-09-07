@@ -4,6 +4,10 @@ on:
     branches: [feature/rc6-sre-health-split-20260907]
     paths:
       - '.github/workflows/rc6-sre-preopen-postclose-deploy-20260907.yml'
+      - 'scripts/rc6_sre_preopen_postclose_deploy.sh'
+      - 'rc6_fast_functional_health.py'
+      - 'rc6_full_db_integrity.py'
+      - 'rc6_preopen_host_hardened.py'
 permissions:
   contents: read
 concurrency:
@@ -24,7 +28,6 @@ jobs:
           python -m py_compile rc6_fast_functional_health.py rc6_full_db_integrity.py rc6_preopen_host_hardened.py
           bash -n scripts/rc6_sre_preopen_postclose_deploy.sh
           python -c "from pathlib import Path; f=Path('rc6_fast_functional_health.py').read_text(); q=Path('rc6_full_db_integrity.py').read_text(); p=Path('rc6_preopen_host_hardened.py').read_text(); assert 'PRAGMA quick_check' in q; assert 'porota-fast-functional-health-rc6.timer' in p; assert 'porota-trading-dashboard:17.0.0-rc6' in p; assert 'MIN_FREE_BYTES' not in p; assert all(x not in (f+q+p) for x in ['send_order','place_order','cancel_order']); print('SRE_PREOPEN_STATIC=GREEN')"
-          grep -q 'full_integrity_check_performed.:False\|full_integrity_check_performed.*False' rc6_fast_functional_health.py || true
   deploy:
     needs: validate
     runs-on: ubuntu-latest
