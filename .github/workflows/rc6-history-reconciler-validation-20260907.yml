@@ -13,6 +13,6 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
       - run: python -m pip install -q pytest
-      - run: pytest -q tests/test_history_reconciler_rc6.py
+      - run: python -m pytest -q tests/test_history_reconciler_rc6.py
       - run: python -m py_compile fb_history_reconciler_rc6.py
       - run: python -c "import fb_history_reconciler_rc6 as m; m.assert_shadow_only(); print('HISTORY_RECONCILER_SHADOW=GREEN')"
