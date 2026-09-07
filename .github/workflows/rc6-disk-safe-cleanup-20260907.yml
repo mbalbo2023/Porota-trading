@@ -1,0 +1,274 @@
+name: RC6 authorized safe disk cleanup 2026-09-07
+
+on:
+  push:
+    branches:
+      - cleanup/rc6-disk-safe-20260907
+    paths:
+      - '.github/workflows/rc6-disk-safe-cleanup-20260907.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout cleanup branch
+        uses: actions/checkout@v4
+        with:
+          ref: cleanup/rc6-disk-safe-20260907
+          fetch-depth: 0
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST"
+          test -n "$DO_USER"
+          test -n "$SSH_KEY"
+          test -n "$KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_cleanup"
+          chmod 600 "$HOME/.ssh/porota_cleanup"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Execute authorized cleanup with gates
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_DISK_CLEANUP_RESULT_RC6_2026-09-07.txt'
+          ssh -i "$HOME/.ssh/porota_cleanup" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' > "$REPORT" <<'REMOTE'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          HIST="$REPO/data/market_history.db"
+          RC5_BACKUP="$REPO/data/backups/rc5-predeploy-20260905T212922Z-7284fbb5c651"
+          GENERAL_BACKUPS=/opt/porota-backups
+          BROWSER_LAB=/home/porotaadmin/porota-browser-lab
+
+          sep(){ printf '\n======================================================================\n%s\n======================================================================\n' "$1"; }
+          bytes_used(){ df -B1 --output=used / | tail -1 | tr -d ' '; }
+          bytes_avail(){ df -B1 --output=avail / | tail -1 | tr -d ' '; }
+          sqlite_check(){
+            sudo -n python3 - "$1" <<'PY'
+          import sqlite3,sys
+          p=sys.argv[1]
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+          c.execute('PRAGMA query_only=ON')
+          print(c.execute('PRAGMA quick_check').fetchone()[0])
+          c.close()
+          PY
+          }
+          real_orders(){
+            sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          p=sys.argv[1]
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+          c.execute('PRAGMA query_only=ON')
+          try:
+              r=c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              print(int(r[0] if r else -1))
+          finally:
+              c.close()
+          PY
+          }
+
+          echo 'POROTA TRADING — AUTHORIZED SAFE DISK CLEANUP'
+          echo 'DATE=2026-09-07'
+          echo 'ROLLBACK_POLICY=GITHUB_ONLY_NO_LOCAL_ROLLBACK'
+          echo 'OBSERVER_DB_STRUCTURE=PROTECTED_NOT_MODIFIED'
+          echo 'HISTORICAL_RAW_ARCHIVE=PROTECTED_ARCHITECTURE_CHECKPOINT'
+          echo "UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "HOST=$(hostname)"
+
+          sep '01. PREFLIGHT IDENTITY AND CAPACITY'
+          test -d "$REPO/.git"
+          echo "BRANCH=$(git -C "$REPO" branch --show-current)"
+          echo "HEAD=$(git -C "$REPO" rev-parse HEAD)"
+          BEFORE_USED=$(bytes_used)
+          BEFORE_AVAIL=$(bytes_avail)
+          echo "BEFORE_USED_BYTES=$BEFORE_USED"
+          echo "BEFORE_AVAIL_BYTES=$BEFORE_AVAIL"
+          df -hT /
+          sudo -n docker system df || true
+          sudo -n journalctl --disk-usage || true
+
+          sep '02. SAFETY GATES'
+          OBS_CHECK=$(sqlite_check "$DB")
+          HIST_CHECK=$(sqlite_check "$HIST")
+          ORDERS=$(real_orders)
+          echo "OBSERVER_QUICK_CHECK=$OBS_CHECK"
+          echo "HISTORY_QUICK_CHECK=$HIST_CHECK"
+          echo "REAL_ORDERS_SENT=$ORDERS"
+          test "$OBS_CHECK" = 'ok'
+          test "$HIST_CHECK" = 'ok'
+          test "$ORDERS" = '0'
+          for c in porota_production_observer porota_production_dashboard; do
+            state=$(sudo -n docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo missing)
+            health=$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null || echo missing)
+            restarts=$(sudo -n docker inspect -f '{{.RestartCount}}' "$c" 2>/dev/null || echo missing)
+            image=$(sudo -n docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null || echo missing)
+            echo "CONTAINER=$c STATE=$state HEALTH=$health RESTARTS=$restarts IMAGE=$image"
+            test "$state" = 'running'
+            if [ "$health" != 'none' ]; then test "$health" = 'healthy'; fi
+          done
+
+          sep '03. REMOVE LOCAL RC5 PREDEPLOY ROLLBACK COPY'
+          echo 'Reason: owner confirmed rollback artifacts are retrieved from GitHub; local rollback copies are not part of policy.'
+          if [ -e "$RC5_BACKUP" ]; then
+            test -d "$RC5_BACKUP"
+            test ! -L "$RC5_BACKUP"
+            REAL=$(realpath "$RC5_BACKUP")
+            case "$REAL" in "$REPO"/data/backups/rc5-predeploy-*) ;; *) echo "UNSAFE_PATH=$REAL"; exit 31;; esac
+            RC5_BYTES=$(sudo -n du -sb "$RC5_BACKUP" | awk '{print $1}')
+            echo "RC5_BACKUP_PATH=$RC5_BACKUP"
+            echo "RC5_BACKUP_BYTES_BEFORE=$RC5_BYTES"
+            sudo -n rm -rf -- "$RC5_BACKUP"
+            test ! -e "$RC5_BACKUP"
+            echo 'RC5_BACKUP_REMOVED=YES'
+          else
+            echo 'RC5_BACKUP_REMOVED=ALREADY_ABSENT'
+          fi
+
+          sep '04. GENERAL HOST BACKUP RETENTION'
+          echo 'Policy for this pass: preserve newest verified general backup; remove older local generations.'
+          if [ -d "$GENERAL_BACKUPS" ]; then
+            mapfile -t GENS < <(find "$GENERAL_BACKUPS" -maxdepth 1 -type f -name 'porota-general-*.tar.gz' -printf '%T@\t%p\n' | sort -nr | cut -f2-)
+            echo "GENERAL_BACKUP_COUNT_BEFORE=${#GENS[@]}"
+            if [ "${#GENS[@]}" -gt 0 ]; then
+              NEWEST="${GENS[0]}"
+              echo "GENERAL_BACKUP_PRESERVED=$NEWEST"
+              sudo -n gzip -t "$NEWEST"
+              for ((i=1;i<${#GENS[@]};i++)); do
+                OLD="${GENS[$i]}"
+                OLD_BYTES=$(sudo -n stat -c '%s' "$OLD")
+                echo "GENERAL_BACKUP_REMOVE=$OLD BYTES=$OLD_BYTES"
+                sudo -n rm -f -- "$OLD"
+              done
+            fi
+          fi
+
+          sep '05. CHROME INSTALLER CACHE'
+          echo 'Chrome profile, cookies/session state and browser venv are explicitly protected.'
+          if command -v google-chrome >/dev/null 2>&1 || dpkg-query -W google-chrome-stable >/dev/null 2>&1; then
+            while IFS= read -r -d '' DEB; do
+              DEB_REAL=$(realpath "$DEB")
+              case "$DEB_REAL" in "$BROWSER_LAB"/*) ;; *) echo "SKIP_UNSAFE_DEB=$DEB_REAL"; continue;; esac
+              DEB_BYTES=$(stat -c '%s' "$DEB")
+              echo "CHROME_DEB_REMOVE=$DEB_REAL BYTES=$DEB_BYTES"
+              rm -f -- "$DEB"
+            done < <(find "$BROWSER_LAB" -maxdepth 2 -type f -iname 'google-chrome*.deb' -size +50M -print0 2>/dev/null)
+          else
+            echo 'CHROME_DEB_REMOVE=SKIPPED_CHROME_NOT_INSTALLED'
+          fi
+
+          sep '06. APT CACHE'
+          APT_BEFORE=$(sudo -n du -sb /var/cache/apt 2>/dev/null | awk '{print $1}' || echo 0)
+          echo "APT_CACHE_BYTES_BEFORE=$APT_BEFORE"
+          sudo -n apt-get clean
+          APT_AFTER=$(sudo -n du -sb /var/cache/apt 2>/dev/null | awk '{print $1}' || echo 0)
+          echo "APT_CACHE_BYTES_AFTER=$APT_AFTER"
+
+          sep '07. SYSTEMD JOURNAL RETENTION'
+          sudo -n journalctl --disk-usage || true
+          sudo -n journalctl --vacuum-size=150M
+          sudo -n journalctl --disk-usage || true
+
+          sep '08. DOCKER UNUSED DASHBOARD IMAGES'
+          ACTIVE_DASH=$(sudo -n docker inspect -f '{{.Config.Image}}' porota_production_dashboard)
+          echo "ACTIVE_DASHBOARD_IMAGE=$ACTIVE_DASH"
+          mapfile -t DASH_REFS < <(sudo -n docker image ls porota-trading-dashboard --format '{{.Repository}}:{{.Tag}}' | sort -u)
+          for REF in "${DASH_REFS[@]}"; do
+            [ "$REF" = "$ACTIVE_DASH" ] && { echo "DOCKER_IMAGE_KEEP_ACTIVE=$REF"; continue; }
+            [ "$REF" = 'porota-trading-dashboard:<none>' ] && continue
+            if sudo -n docker ps -a --format '{{.Image}}' | grep -Fxq "$REF"; then
+              echo "DOCKER_IMAGE_KEEP_REFERENCED_CONTAINER=$REF"
+              continue
+            fi
+            if sudo -n grep -R -F -q -- "$REF" /etc/systemd/system /etc/cron.d /etc/crontab /home/porotaadmin/.config/systemd 2>/dev/null; then
+              echo "DOCKER_IMAGE_KEEP_REFERENCED_HOST_CONFIG=$REF"
+              continue
+            fi
+            echo "DOCKER_IMAGE_REMOVE=$REF"
+            sudo -n docker image rm "$REF" || { echo "DOCKER_IMAGE_REMOVE_FAILED=$REF"; exit 41; }
+          done
+
+          sep '09. DOCKER BUILD CACHE'
+          echo 'Only unused builder cache is removed; no docker system prune and no volumes are touched.'
+          sudo -n docker builder prune -af
+
+          sep '10. GIT STALE WORKTREE METADATA'
+          echo 'Only prunable metadata is removed; backup/worktree directories themselves are not deleted in this pass.'
+          git -C "$REPO" worktree prune -v || true
+
+          sep '11. POSTFLIGHT SAFETY'
+          OBS_CHECK2=$(sqlite_check "$DB")
+          HIST_CHECK2=$(sqlite_check "$HIST")
+          ORDERS2=$(real_orders)
+          echo "OBSERVER_QUICK_CHECK_POST=$OBS_CHECK2"
+          echo "HISTORY_QUICK_CHECK_POST=$HIST_CHECK2"
+          echo "REAL_ORDERS_SENT_POST=$ORDERS2"
+          test "$OBS_CHECK2" = 'ok'
+          test "$HIST_CHECK2" = 'ok'
+          test "$ORDERS2" = '0'
+          for c in porota_production_observer porota_production_dashboard; do
+            state=$(sudo -n docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo missing)
+            health=$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null || echo missing)
+            restarts=$(sudo -n docker inspect -f '{{.RestartCount}}' "$c" 2>/dev/null || echo missing)
+            image=$(sudo -n docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null || echo missing)
+            echo "POST_CONTAINER=$c STATE=$state HEALTH=$health RESTARTS=$restarts IMAGE=$image"
+            test "$state" = 'running'
+            if [ "$health" != 'none' ]; then test "$health" = 'healthy'; fi
+          done
+          curl -fsS --max-time 10 http://127.0.0.1:8000/health 2>/dev/null || echo 'HTTP_HEALTH_8000=UNAVAILABLE_OR_AUTH_REQUIRED'
+
+          sep '12. FINAL CAPACITY'
+          AFTER_USED=$(bytes_used)
+          AFTER_AVAIL=$(bytes_avail)
+          FREED=$(( BEFORE_USED - AFTER_USED ))
+          AVAIL_GAIN=$(( AFTER_AVAIL - BEFORE_AVAIL ))
+          echo "AFTER_USED_BYTES=$AFTER_USED"
+          echo "AFTER_AVAIL_BYTES=$AFTER_AVAIL"
+          echo "FREED_BYTES_DF=$FREED"
+          echo "AVAILABLE_GAIN_BYTES=$AVAIL_GAIN"
+          df -hT /
+          sudo -n docker system df || true
+          sudo -n journalctl --disk-usage || true
+          du -sh "$REPO/data" "$REPO/data/backups" "$REPO/data/paper_v17" "$GENERAL_BACKUPS" "$BROWSER_LAB" 2>/dev/null || true
+
+          sep '13. COMPLETION'
+          echo 'CLEANUP_STATUS=GREEN'
+          echo 'OBSERVER_DB_CONTENT_MODIFIED=NO'
+          echo 'MARKET_HISTORY_DB_CONTENT_MODIFIED=NO'
+          echo 'ROLLBACK_LOCAL_COPY=REMOVED_PER_OWNER_POLICY'
+          echo 'ROLLBACK_SOURCE=GITHUB'
+          echo 'ARCHITECTURE_CHECKPOINT=historical_raw_archive_in_observer_v17.db'
+          REMOTE
+          test -s "$REPORT"
+          echo "REPORT=$REPORT"
+
+      - name: Commit cleanup evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_DISK_CLEANUP_RESULT_RC6_2026-09-07.txt'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$REPORT"
+          git commit -m 'ops: record authorized RC6 disk cleanup result'
+          git push origin HEAD:cleanup/rc6-disk-safe-20260907
