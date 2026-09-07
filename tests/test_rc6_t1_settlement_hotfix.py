@@ -156,6 +156,7 @@ def test_observer_runtime_explicitly_enables_t1_policy(tmp_path, monkeypatch):
     import porota_mode_manager as manager
 
     monkeypatch.setattr(manager, "DATA", tmp_path)
+    (tmp_path / "diagnosticos").mkdir()
     path = manager.observer_runtime_env()
     text = path.read_text(encoding="utf-8")
     assert "PAPER_T1_FULL_DATE_RELEASE=true\n" in text
