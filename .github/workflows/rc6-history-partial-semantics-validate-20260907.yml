@@ -1,0 +1,64 @@
+name: RC6 history partial semantics validate 2026-09-07
+on:
+  push:
+    branches: [fix/rc6-history-partial-semantics-20260907]
+    paths:
+      - 'bf_production_paper_observer.py'
+      - 'tests/test_rc6_history_partial_semantics.py'
+      - '.github/workflows/rc6-history-partial-semantics-validate-20260907.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.sha }}', fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install -q pytest fastapi requests
+      - name: Exact ancestry and diff scope
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 6f47ec943d7b18756d93f17364903def1d7a1746 HEAD
+          python - <<'PY'
+          import subprocess
+          base='6f47ec943d7b18756d93f17364903def1d7a1746'
+          allowed={
+            'bf_production_paper_observer.py',
+            'scripts/rc6_patch_history_partial_semantics.py',
+            'tests/test_rc6_history_partial_semantics.py',
+            '.github/workflows/rc6-history-partial-semantics-generate-20260907.yml',
+            '.github/workflows/rc6-history-partial-semantics-validate-20260907.yml'}
+          changed=set(subprocess.check_output(['git','diff','--name-only',f'{base}..HEAD'],text=True).splitlines())
+          assert not (changed-allowed), f'UNEXPECTED_DIFF={sorted(changed-allowed)}'
+          assert 'bf_production_paper_observer.py' in changed
+          print('HISTORY_NARROW_DIFF=GREEN',sorted(changed))
+          PY
+      - name: Compile and semantic tests
+        run: |
+          python -m py_compile bf_production_paper_observer.py
+          python -m pytest -q tests/test_rc6_history_partial_semantics.py
+      - name: History regressions
+        run: |
+          python -m pytest -q tests/test_history_close_only_hf2.py tests/test_hf6_history_data912_v2.py test_cp_history_ingest_policy_hf6.py tests/test_historical_freshness_v1633.py
+      - name: Static invariants
+        run: |
+          python - <<'PY'
+          import bf_production_paper_observer as m
+          cases={
+            ('VALID_PAYLOAD',):('VERDE',1,0),
+            ('PARTIAL',):('AMARILLO',1,0),
+            ('EMPTY_OR_INVALID','ERROR'):('ROJO',0,2),
+            ('VALID_PAYLOAD','PARTIAL','ERROR'):('AMARILLO',2,1),
+          }
+          for statuses, expected in cases.items():
+              x=m._history_batch_semantics(statuses)
+              assert (x['state'],x['usable'],x['hard_failures'])==expected
+          print('HISTORY_SEMANTICS_STATIC=GREEN')
+          PY
+      - name: Container no-network regression
+        run: |
+          docker build --pull=false --label "porota.commit=${GITHUB_SHA}" --label porota.version=17.0.0-rc6 -t porota-history-semantics:${GITHUB_SHA} .
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX -e DB_PATH=/tmp/porota-ci.db -e TELEGRAM_CHAT_ID=0 -e STARTUP_REQUIRE_AUTH=false --entrypoint python porota-history-semantics:${GITHUB_SHA} -m pytest -q -p no:cacheprovider tests/test_rc6_history_partial_semantics.py tests/test_history_close_only_hf2.py tests/test_rc6_t1_settlement_hotfix.py tests/test_intraday_contract_policy_rc6.py tests/test_rc6_cauciones_official_contract.py
