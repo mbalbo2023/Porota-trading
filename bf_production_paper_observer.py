@@ -837,10 +837,44 @@ def _historical_targets(store):
     return list(CORE_SYMBOLS)
 
 
+def _history_batch_semantics(statuses):
+    """Resume calidad de lote sin llamar fallo a PARTIAL con evidencia válida.
+
+    Esta función sólo corrige observabilidad/source_sync. No modifica aceptación,
+    canonicalización, provenance, retries ni presión sobre PPI.
+    """
+    statuses = tuple(str(value or "").upper() for value in statuses)
+    full_valid = sum(value == "VALID_PAYLOAD" for value in statuses)
+    partial_with_valid_evidence = sum(value == "PARTIAL" for value in statuses)
+    empty_invalid = sum(value == "EMPTY_OR_INVALID" for value in statuses)
+    errors = sum(value == "ERROR" for value in statuses)
+    known = full_valid + partial_with_valid_evidence + empty_invalid + errors
+    if known != len(statuses):
+        raise ValueError("PPI_HISTORY_BATCH_UNKNOWN_STATUS")
+    usable = full_valid + partial_with_valid_evidence
+    hard_failures = empty_invalid + errors
+    if full_valid and not partial_with_valid_evidence and not hard_failures:
+        state = "VERDE"
+    elif usable:
+        state = "AMARILLO"
+    else:
+        state = "ROJO"
+    return {
+        "full_valid": full_valid,
+        "partial_with_valid_evidence": partial_with_valid_evidence,
+        "empty_invalid": empty_invalid,
+        "errors": errors,
+        "usable": usable,
+        "hard_failures": hard_failures,
+        "state": state,
+    }
+
+
 def _download_histories(reader, store):
     end = datetime.now(TZ).date()
     start = end - timedelta(days=365)
-    total = successes = failures = 0
+    total = 0
+    batch_statuses = []
     all_symbols = _historical_targets(store)
     symbols = all_symbols[:HISTORY_BATCH_LIMIT]
     for symbol, instrument_type, settlement in symbols:
@@ -889,26 +923,30 @@ def _download_histories(reader, store):
                 store.event("HISTORY_V2_ERROR",
                             f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
             total += count
-            if status=='VALID_PAYLOAD':
-                successes += 1
-            else:
-                failures += 1
+            batch_statuses.append(status)
         except Exception as exc:
-            failures += 1
+            batch_statuses.append("ERROR")
             with store.connect() as c:
                 c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
                           (symbol,instrument_type,settlement,attempted,'ERROR',0,type(exc).__name__))
             store.event("HISTORY_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
-    state = "VERDE" if successes and not failures else "AMARILLO" if successes else "ROJO"
+    semantics = _history_batch_semantics(batch_statuses)
+    state = semantics["state"]
     with store.connect() as c:
         covered = c.execute("SELECT COUNT(*) FROM production_history WHERE row_count>0").fetchone()[0]
-    detail = (f"Lote histórico {successes}/{len(symbols)}; cobertura acumulada "
-              f"{covered}/{len(all_symbols)} instrumentos; {total} filas en este lote; "
-              f"{failures} fallidos. La descarga completa es incremental para no saturar PPI.")
-    _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail,
-                success=bool(successes))
+    detail = (
+        f"Lote histórico: completos={semantics['full_valid']}; "
+        f"parciales_con_evidencia_valida={semantics['partial_with_valid_evidence']}; "
+        f"vacíos_o_inválidos={semantics['empty_invalid']}; errores={semantics['errors']}; "
+        f"cobertura acumulada {covered}/{len(all_symbols)} instrumentos; "
+        f"{total} filas válidas en este lote. PARTIAL conserva evidencia válida pero "
+        f"permanece AMARILLO; sólo vacío/inválido y ERROR son fallos duros. "
+        f"La descarga completa es incremental para no saturar PPI."
+    )
+    usable = bool(semantics["usable"])
+    _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail, success=usable)
     _health(store, "PPI_PRODUCTION_HISTORY", state, detail, "PPI Producción",
-            success=bool(successes))
+            success=usable)
     return total
 
 
