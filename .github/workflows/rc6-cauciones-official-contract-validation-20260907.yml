@@ -22,11 +22,13 @@ jobs:
       - name: Static safety
         run: |
           python - <<'PY'
+          import bd_ppi_readonly_guard as m
           from pathlib import Path
           s=Path('bd_ppi_readonly_guard.py').read_text(encoding='utf-8').lower()
           assert '/api/1.0/marketdata/searchinstrument' in s
-          assert 'order/budget' not in s
-          assert 'send_order' not in s and 'place_order' not in s and 'cancel_order' not in s
-          assert 'default_caucion_discovery_days = (1, 2, 7, 30, 120)' in s
+          assert m._POST_PATHS == {'/api/1.0/account/loginapi','/api/1.0/account/refreshtoken'}
+          for name in ('order_budget','budget','send_order','place_order','cancel_order','order'):
+              assert not hasattr(m.ProductionMarketReader,name)
+          assert m.DEFAULT_CAUCION_DISCOVERY_DAYS == (1,2,7,30,120)
           print('CAUCIONES_STATIC_SAFETY=GREEN')
           PY
