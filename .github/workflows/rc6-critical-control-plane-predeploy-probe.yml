@@ -67,7 +67,7 @@ jobs:
           has_env_key() {
             awk -F= -v k="$1" '$1==k {v=$0; sub(/^[^=]*=/,"",v); if(length(v)>0) ok=1} END{exit ok?0:1}' "$REPO/.env"
           }
-          for k in POROTA_CRITICAL_TELEGRAM_BOT_TOKEN POROTA_CRITICAL_TELEGRAM_CHAT_ID POROTA_GITHUB_ISSUE_CONTROL_TOKEN; do
+          for k in TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID POROTA_CRITICAL_TELEGRAM_BOT_TOKEN POROTA_CRITICAL_TELEGRAM_CHAT_ID POROTA_GITHUB_ISSUE_CONTROL_TOKEN GITHUB_TOKEN GH_TOKEN GITHUB_PAT GH_PAT POROTA_GITHUB_TOKEN; do
             if has_env_key "$k"; then echo "$k=PRESENT"; else echo "$k=MISSING"; fi
           done
 
@@ -77,6 +77,21 @@ jobs:
             /opt/porota-trading/secrets/critical_telegram.chat; do
             if sudo -n test -s "$f"; then echo "SECRET_FILE_PRESENT=$(basename "$f")"; else echo "SECRET_FILE_MISSING=$(basename "$f")"; fi
           done
+
+          if command -v gh >/dev/null 2>&1; then
+            echo 'GH_CLI=PRESENT'
+            if gh auth status -h github.com >/dev/null 2>&1; then echo 'GH_CLI_AUTH=AUTHENTICATED'; else echo 'GH_CLI_AUTH=NOT_AUTHENTICATED'; fi
+          else
+            echo 'GH_CLI=ABSENT'
+          fi
+          helper="$(git config --global credential.helper 2>/dev/null || true)"
+          if [ -n "$helper" ]; then echo 'GIT_CREDENTIAL_HELPER=PRESENT'; else echo 'GIT_CREDENTIAL_HELPER=ABSENT'; fi
+          if [ -d "$REPO/secrets" ]; then
+            names="$(find "$REPO/secrets" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | grep -Ei 'github|(^|[_-])gh([_.-]|$)' || true)"
+            if [ -n "$names" ]; then printf '%s\n' "$names" | sed 's/^/GITHUB_LIKE_SECRET_FILENAME=/' ; else echo 'GITHUB_LIKE_SECRET_FILENAME=NONE'; fi
+          else
+            echo 'GITHUB_LIKE_SECRET_FILENAME=NONE'
+          fi
 
           if sudo -n docker ps -aq -f name='^/porota_critical_approval_rc6$' | grep -q .; then
             echo 'PERMANENT_GATEWAY_CONTAINER=EXISTS'
