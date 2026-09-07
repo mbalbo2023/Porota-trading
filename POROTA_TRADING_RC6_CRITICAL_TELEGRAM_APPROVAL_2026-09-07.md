@@ -1,9 +1,9 @@
 # POROTA TRADING RC6 — CONTROL DE INCIDENTES CRÍTICOS POR TELEGRAM
 
 Fecha: 2026-09-07  
-Estado: **PREPARADO EN RAMA / NO DESPLEGADO**  
-Base exacta: `5076b6dff8c644ed73160b4148eb7a1cf9ca7e43` (`hotfix/rc6-paper-t1-settlement-20260907`)  
-Rama: `feature/rc6-critical-telegram-approval-20260907`
+Estado: **E2E PROBADO / PREPARANDO DEPLOY PERMANENTE**  
+Base exacta observer: `5076b6dff8c644ed73160b4148eb7a1cf9ca7e43` (`hotfix/rc6-paper-t1-settlement-20260907`)  
+Rama control plane: `feature/rc6-critical-telegram-approval-20260907`
 
 ## Objetivo
 
@@ -20,7 +20,7 @@ El botón **NO ejecuta trading, NO habilita órdenes reales, NO hace merge y NO 
 5. Sólo acepta el toque del chat autorizado y vuelve a verificar que el Issue siga abierto, crítico, pendiente y sin decisión terminal.
 6. Si se aprueba agrega `HOTFIX_AUTHORIZATION=AUTHORIZED_TELEGRAM`; si se rechaza agrega `HOTFIX_AUTHORIZATION=REJECTED_TELEGRAM`.
 7. En la siguiente revisión, Health Watch puede preparar exclusivamente rama hotfix + corrección PAPER + tests + checkpoint + CI + PR.
-8. **Merge y deploy permanecen bloqueados y requieren autorización separada.**
+8. **Merge y deploy del hotfix permanecen bloqueados y requieren autorización separada.**
 
 ## Separación de seguridad
 
@@ -34,31 +34,29 @@ El botón **NO ejecuta trading, NO habilita órdenes reales, NO hace merge y NO 
 - exige `POROTA_CRITICAL_APPROVAL_ENABLED=true`;
 - conserva SQLite de auditoría separado del ledger PAPER.
 
-### Bot Telegram DEDICADO — requisito obligatorio
+## Telegram canónico con consumidor único
 
-POROTA ya posee un consumidor canónico de `getUpdates`. Dos procesos usando el mismo bot/token competirían por offsets y podrían perder callbacks. Por eso el gateway **NO reutiliza** el bot operacional del observer.
+El diseño permanente reutiliza **el mismo bot Telegram operativo de POROTA** para mantener un solo chat y simplificar la accesibilidad. El riesgo no está en que varios componentes envíen mensajes con el mismo bot; el riesgo aparece si dos procesos distintos consumen `getUpdates`/callbacks y compiten por el mismo offset.
 
-Debe recibir exclusivamente:
+Política aprobada:
 
-- `POROTA_CRITICAL_TELEGRAM_BOT_TOKEN`
-- `POROTA_CRITICAL_TELEGRAM_CHAT_ID`
+- observer, dashboard y otros componentes pueden **enviar** mensajes con el bot canónico;
+- el gateway crítico es el **único consumidor de `getUpdates`/callback_query`**;
+- el preflight debe abortar si detecta un consumidor legacy/concurrente;
+- el token/chat existentes se copian a archivos secretos separados para el control plane y nunca se inyectan como `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` dentro del contenedor;
+- el contenedor no recibe Docker socket ni credenciales PPI.
 
-Y falla cerrado si en su entorno aparecen `TELEGRAM_BOT_TOKEN` o `TELEGRAM_CHAT_ID` del observer. Esto evita por construcción un segundo consumidor del mismo bot.
+Los nombres `POROTA_CRITICAL_TELEGRAM_*` se mantienen como namespace interno del control plane, aunque sus valores provengan del bot canónico autorizado.
 
-## GitHub con privilegio mínimo
+## GitHub
 
-El gateway usa un fine-grained token limitado a `mbalbo2023/Porota-trading` con:
-
-- Metadata: Read
-- Issues: Read/Write
-
-No necesita Contents, Actions, Pull Requests, Administration, Secrets, Packages ni otros repositorios. El secreto se monta read-only como `/run/secrets/github_issue_control.token` (ruta configurable con `POROTA_GITHUB_ISSUE_TOKEN_FILE`) y nunca se guarda en Git, logs, checkpoint o Telegram.
+El gateway necesita leer Issues críticos y registrar únicamente el comentario de aprobación/rechazo. La preferencia es una credencial mínima limitada al repositorio con Issues read/write. Si se reutiliza una sesión existente de `gh`, sus capacidades deben auditarse antes del deploy y no deben exponerse valores de token.
 
 ## Persistencia e idempotencia
 
 SQLite: `data/paper_v17/critical_approval_rc6.db`.
 
-Registra número de Issue, primer avistamiento, aviso, decisión, hash corto no reversible del actor, comentario GitHub y offset del bot dedicado. GitHub es la autoridad canónica; una decisión terminal no puede sobrescribirse.
+Registra número de Issue, primer avistamiento, aviso, decisión, hash corto no reversible del actor, comentario GitHub y offset Telegram. GitHub es la autoridad canónica; una decisión terminal no puede sobrescribirse.
 
 ## Semántica de autorización
 
@@ -68,28 +66,35 @@ No autoriza merge, deploy, cambio de modo, reinicio, credenciales, órdenes real
 
 `❌ NO AUTORIZAR` registra el rechazo y el monitor no prepara hotfix para ese incidente.
 
+## E2E probado 2026-09-07
+
+Issue sintético #40 `[POROTA][RED][E2E-TEST]`:
+
+- gateway temporal aislado levantado;
+- botón Telegram recibido y pulsado;
+- decisión registrada como `HOTFIX_AUTHORIZATION=AUTHORIZED_TELEGRAM`;
+- observer siguió running/restart 0/readonly;
+- dashboard siguió running/restart 0;
+- DB `quick_check=ok`;
+- `PRODUCTION_PAPER`;
+- `real_orders_sent=0`;
+- runtime de trading sin cambios;
+- contenedor E2E eliminado al finalizar.
+
 ## Integración con Health Watch
 
-La tarea automática quedó configurada para crear Issues `[POROTA][RED]` idempotentes, registrar `HOTFIX_AUTHORIZATION=AWAITING`, leer la decisión, preparar hotfix/CI/PR sólo tras autorización y nunca hacer merge/deploy. `real_orders_sent=0` y capacidad real bloqueada siguen siendo invariantes.
+La tarea automática quedó configurada para crear Issues `[POROTA][RED]` idempotentes, registrar `HOTFIX_AUTHORIZATION=AWAITING`, leer la decisión, preparar hotfix/CI/PR sólo tras autorización y nunca hacer merge/deploy. Los Issues `[E2E-TEST]` están excluidos de cualquier hotfix automático.
 
-## Tests y CI
+## Pendientes para activar runtime permanente
 
-`tests/test_critical_approval_gateway_rc6.py` cubre aviso único, autorización, rechazo, sender incorrecto, Issue cerrado/no autorizable, idempotencia, offset, rechazo de credenciales PPI, modo obligatorio y DB sin tablas de trading.
+1. Mantener CI GREEN sobre la rama de control plane.
+2. Auditar la capacidad GitHub disponible sin exponer tokens.
+3. Instalar servicio/contenedor separado con bot canónico y single-consumer enforcement.
+4. Ejecutar postflight: observer/dashboard inalterados, DB OK, `PRODUCTION_PAPER`, `real_orders_sent=0`.
+5. Rollback automático del control plane ante cualquier rojo.
 
-`.github/workflows/rc6-critical-telegram-approval.yml` compila, ejecuta pytest y prueba estáticamente la separación del control plane, ausencia de capacidad operativa y alcance limitado de la autorización.
+## Source identity
 
-## Pendientes antes de activar runtime
+El plano de control es independiente del observer. No se debe avanzar la rama live del observer ni cambiar su image/source identity sólo para desplegar este servicio. El observer permanece sobre `5076b6dff8c644ed73160b4148eb7a1cf9ca7e43` hasta una decisión de release separada.
 
-1. CI GREEN y revisión del PR.
-2. Crear bot Telegram dedicado para aprobaciones y registrar únicamente su token/chat en el control plane.
-3. Provisionar token GitHub Issues-only como secreto de host.
-4. Crear/validar servicio separado sin PPI credentials y sin Docker socket.
-5. Prueba E2E con Issue crítico ficticio controlado.
-6. Verificar que el toque sólo crea el comentario GitHub y no modifica runtime.
-7. Pedir autorización explícita del usuario para desplegar este control plane.
-
-## Estado actual
-
-Este trabajo **no altera el runtime RC6 vigente**. El observer PAPER continúa sobre la línea T+1 validada. `real_orders_sent=0` debe permanecer invariante.
-
-**Veredicto:** preparado para CI/PR; **NO autorizado para despliegue**.
+**Veredicto:** E2E probado; deploy permanente autorizado por el operador, condicionado a preflight y postflight GREEN.
