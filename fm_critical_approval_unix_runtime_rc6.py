@@ -1,11 +1,13 @@
 """RC6 permanent critical-approval runtime using a local Unix capability broker.
 
-The container receives no GitHub token.  GitHub access is delegated to the
+The container receives no GitHub token. GitHub access is delegated to the
 host-side `fn_critical_github_proxy_rc6.py` through a Unix socket that exposes
-only the fixed Issues operations needed by the approval gateway.
+only the fixed Issues operations needed by the approval gateway. Every broker
+request carries a random local capability key mounted read-only into this
+container; the broad host `gh` credential never enters the container.
 
 Telegram uses the existing canonical POROTA bot, copied into control-plane
-secret files.  This process is allowed to consume `getUpdates` only when the
+secret files. This process is allowed to consume `getUpdates` only when the
 deployment preflight has proven it is the single callback consumer.
 """
 from __future__ import annotations
@@ -30,6 +32,10 @@ SOCKET_PATH = os.getenv(
     "POROTA_CRITICAL_GITHUB_SOCKET",
     "/run/control/github.sock",
 ).strip()
+BROKER_TOKEN_FILE = os.getenv(
+    "POROTA_CRITICAL_BROKER_TOKEN_FILE",
+    "/run/secrets/broker_capability.token",
+).strip()
 TOKEN_FILE = os.getenv(
     "POROTA_CRITICAL_TELEGRAM_TOKEN_FILE",
     "/run/secrets/critical_telegram.token",
@@ -41,13 +47,13 @@ CHAT_FILE = os.getenv(
 POLL_SECONDS = max(10, int(os.getenv("POROTA_CRITICAL_APPROVAL_POLL_SECONDS", "30")))
 
 
-def _read_secret(path: str, label: str) -> str:
+def _read_secret(path: str, label: str, min_len: int = 1) -> str:
     p = Path(path)
     if not p.is_file():
         raise GatewayError(f"{label}_FILE_MISSING")
     value = p.read_text(encoding="utf-8").strip()
-    if not value:
-        raise GatewayError(f"{label}_EMPTY")
+    if len(value) < min_len:
+        raise GatewayError(f"{label}_INVALID")
     return value
 
 
@@ -68,11 +74,14 @@ def _validate_runtime() -> None:
 
 
 class UnixGithubIssuesClient:
-    def __init__(self, socket_path: str = SOCKET_PATH):
+    def __init__(self, socket_path: str = SOCKET_PATH, capability_token: str | None = None):
         self.socket_path = socket_path
+        self.capability_token = capability_token or _read_secret(
+            BROKER_TOKEN_FILE, "BROKER_CAPABILITY", min_len=32
+        )
 
     def _call(self, op: str, **kwargs: Any) -> Any:
-        payload = {"op": op, **kwargs}
+        payload = {"op": op, "capability_token": self.capability_token, **kwargs}
         raw = (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
         if len(raw) > 65536:
             raise GatewayError("BROKER_REQUEST_TOO_LARGE")
@@ -150,7 +159,7 @@ def run() -> None:
         TelegramClient(telegram_token, telegram_chat),
         ApprovalStore(),
     )
-    print("critical-approval-runtime: READY mode=PRODUCTION_PAPER github=unix-issues-only telegram=canonical-single-consumer", flush=True)
+    print("critical-approval-runtime: READY mode=PRODUCTION_PAPER github=unix-issues-only+capability-key telegram=canonical-single-consumer", flush=True)
     while True:
         try:
             gateway.scan_once()
