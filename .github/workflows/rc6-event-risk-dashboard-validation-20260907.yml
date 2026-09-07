@@ -1,0 +1,18 @@
+name: RC6 event risk dashboard validation 2026-09-07
+on:
+  push:
+    branches: [feature/rc6-event-risk-dashboard-view-20260907]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install -q pytest
+      - run: python -m pytest -q tests/test_event_risk_dashboard_rc6.py tests/test_event_risk_shadow_rc6.py
+      - run: python -m py_compile fj_event_risk_dashboard_rc6.py fi_event_risk_shadow_rc6.py
+      - run: python -c "import fj_event_risk_dashboard_rc6 as m; m.assert_shadow_only(); print('EVENT_RISK_DASHBOARD=GREEN_OFFLINE')"
