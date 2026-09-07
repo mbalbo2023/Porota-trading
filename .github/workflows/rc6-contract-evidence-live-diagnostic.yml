@@ -2,9 +2,8 @@ name: RC6 Contract Evidence live diagnostic
 
 on:
   push:
-    branches: [diag/rc6-contract-evidence-live-20260907]
-    paths:
-      - '.github/workflows/rc6-contract-evidence-live-diagnostic.yml'
+    branches:
+      - diag/rc6-contract-evidence-live-20260907
 
 permissions:
   contents: read
@@ -14,6 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Checkout diagnostic
+        uses: actions/checkout@v4
+
       - name: Prepare strict SSH
         shell: bash
         env:
@@ -34,75 +36,10 @@ jobs:
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
-          ssh -i "$HOME/.ssh/porota_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
-          set -euo pipefail
-          ROOT=/opt/porota-trading
-          UNIT=porota-contract-evidence-rc6.service
-          TIMER=porota-contract-evidence-rc6.timer
-          LIB=/usr/local/lib/porota-contract-evidence-rc6
-          OUT="$ROOT/data/contract_evidence/rc6_trusted"
-          DB="$ROOT/data/paper_v17/observer_v17.db"
-
-          echo '=== RC6 CONTRACT EVIDENCE READONLY DIAGNOSTIC ==='
-          echo "UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          echo "LOCAL=$(TZ=America/Argentina/Buenos_Aires date +%Y-%m-%dT%H:%M:%S%z)"
-          echo "TIMER_ENABLED=$(systemctl is-enabled "$TIMER" 2>/dev/null || true)"
-          echo "TIMER_ACTIVE=$(systemctl is-active "$TIMER" 2>/dev/null || true)"
-          echo "SERVICE_ACTIVE=$(systemctl is-active "$UNIT" 2>/dev/null || true)"
-          systemctl show "$TIMER" -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager || true
-          systemctl show "$UNIT" -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp --no-pager || true
-          echo "RUNTIME_SCRIPT=$(test -x /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh && echo PRESENT_EXECUTABLE || echo MISSING)"
-          echo "LIB_PRESENT=$(test -d "$LIB" && echo YES || echo NO)"
-          for f in rc6_contract_due_job.py rc6_contract_schedule.py rc6_trusted_browser_contract_collector.py rc6_contract_capture_importer.py; do
-            echo "COMPONENT_${f}=$(test -r "$LIB/$f" && echo PRESENT || echo MISSING)"
-          done
-          echo "PROFILE_DIR=$(test -d /home/porotaadmin/porota-browser-lab/chrome-profile && echo PRESENT || echo MISSING)"
-          echo "OUTDIR=$(test -d "$OUT" && echo PRESENT || echo MISSING)"
-          if [ -d "$OUT" ]; then
-            find "$OUT" -maxdepth 1 -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ|%f|%s\n' 2>/dev/null | sort -r | head -n 10 | sed 's/^/CAPTURE_FILE=/' || true
-          fi
-          if [ -s "$OUT/runtime_state.json" ]; then
-            python3 - "$OUT/runtime_state.json" <<'PY'
-import json,sys
-try:
- d=json.load(open(sys.argv[1],encoding='utf-8'))
- print('AUTH_BACKOFF_STATE='+str(d.get('state','UNKNOWN')))
- print('AUTH_BLOCKED_AT='+str(d.get('blocked_at','UNKNOWN')))
-except Exception as e:
- print('AUTH_BACKOFF_STATE=INVALID_STATE_FILE')
-PY
-          else
-            echo 'AUTH_BACKOFF_STATE=NONE'
-          fi
-
-          if [ -r "$LIB/rc6_contract_due_job.py" ] && [ -f "$DB" ]; then
-            echo -n 'DUE_POLICY='
-            PYTHONPATH="$LIB:$ROOT" PAPER_V17_DB_PATH="$DB" python3 "$LIB/rc6_contract_due_job.py" || true
-          fi
-
-          python3 - "$DB" <<'PY'
-import sqlite3,sys,json
-p=sys.argv[1]
-try:
- c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=15); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
- print('DB_QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
- names={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
- print('CE_RUN_TABLE='+('YES' if 'contract_evidence_v2_runs' in names else 'NO'))
- if 'contract_evidence_v2_runs' in names:
-  cols=[r[1] for r in c.execute('PRAGMA table_info(contract_evidence_v2_runs)')]
-  print('CE_RUN_COLUMNS='+','.join(cols))
-  rows=c.execute('SELECT * FROM contract_evidence_v2_runs ORDER BY rowid DESC LIMIT 5').fetchall()
-  for r in rows:
-   safe={k:r[k] for k in r.keys() if k.lower() not in {'payload','raw_json','cookie','cookies','token','secret','password'}}
-   print('CE_RUN='+json.dumps(safe,ensure_ascii=False,default=str,sort_keys=True))
- if 'observer_state' in names:
-  r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
-  print('OBSERVER_STATE='+('|'.join(map(str,r)) if r else 'MISSING'))
- c.close()
-except Exception as e:
- print('DB_DIAG_ERROR='+type(e).__name__+':'+str(e)[:180])
-PY
-          echo 'MUTATION=NO'
-          HOST
+          test -r scripts/rc6_contract_evidence_live_diag.sh
+          ssh -i "$HOME/.ssh/porota_diag" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' < scripts/rc6_contract_evidence_live_diag.sh
