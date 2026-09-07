@@ -1,0 +1,31 @@
+name: RC6 Contract Evidence auto-reauth validation
+on:
+  push:
+    branches: [hotfix/rc6-contract-evidence-auto-reauth-20260907]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install -q pytest
+      - run: python -m pytest -q tests/test_ppi_web_reauth_rc6.py
+      - run: python -m py_compile rc6_ppi_web_reauth.py
+      - name: Static safety proof
+        run: |
+          python - <<'PY'
+          import ast, pathlib
+          src=pathlib.Path('rc6_ppi_web_reauth.py').read_text(encoding='utf-8')
+          tree=ast.parse(src)
+          imports=[]
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Import): imports.extend(a.name for a in n.names)
+              elif isinstance(n,ast.ImportFrom) and n.module: imports.append(n.module)
+          forbidden={'sqlite3','requests','httpx'}
+          assert not any(x in forbidden or 'ppi_client' in x.lower() or 'broker' in x.lower() for x in imports)
+          print('AUTO_REAUTH_SAFETY=GREEN_OFFLINE')
+          PY
