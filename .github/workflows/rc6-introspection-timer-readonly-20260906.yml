@@ -1,0 +1,77 @@
+name: RC6 introspection timer read-only 2026-09-06
+
+on:
+  push:
+    branches:
+      - diag/rc6-introspection-timer-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_diag"
+          chmod 600 "$HOME/.ssh/porota_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Inspect host timers and latest introspection
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/introspection-timer.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DATA="$REPO/data"
+          test "$(git -C "$REPO" branch --show-current)" = 'hotfix/rc6-cedear-us-labor-day-20260906'
+          test "$(git -C "$REPO" rev-parse HEAD)" = 'db26c76723bb988c956589c572b87cbcb4191731'
+          echo '=== ACTIVE INTROSPECTION TIMERS ==='
+          sudo -n systemctl list-timers --all --no-pager | grep -Ei 'porota.*introspec' || true
+          echo '=== ENABLED/ACTIVE ==='
+          for unit in porota-introspeccion-hf5.timer porota-introspection-publish.timer; do
+            echo "UNIT=$unit"
+            sudo -n systemctl is-enabled "$unit" 2>/dev/null || true
+            sudo -n systemctl is-active "$unit" 2>/dev/null || true
+            sudo -n systemctl show "$unit" -p NextElapseUSecRealtime -p LastTriggerUSec -p Unit -p ActiveState -p SubState --no-pager 2>/dev/null || true
+            sudo -n systemctl cat "$unit" --no-pager 2>/dev/null || true
+          done
+          echo '=== LATEST INTROSPECTION FILES ==='
+          sudo -n find "$DATA/introspection" -maxdepth 1 -type f \( -name 'porota_introspection_rc*_*.json' -o -name 'porota_introspection_hf*_*.json' \) \
+            -printf '%T@|%TY-%Tm-%Td %TH:%TM:%TS|%f\n' 2>/dev/null | sort -nr | head -n 8 || true
+          echo '=== OBSERVER SAFETY ==='
+          sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          vals=[]; row=None
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30); c.execute('PRAGMA query_only=ON')
+              vals.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'): row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*vals,*row))))
+          PY
+          echo 'RUNTIME_CHANGED=NO'
+          HOST
+
+          {
+            echo '### RC6 introspection timer read-only'
+            echo '```text'
+            cat /tmp/introspection-timer.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
