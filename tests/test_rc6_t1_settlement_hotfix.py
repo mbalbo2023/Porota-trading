@@ -203,6 +203,8 @@ def test_mep_catalog_funding_isolated_from_labor_day_policy(tmp_path, monkeypatc
     opened, reason, _ = funded._open(q, D("0.8"), {})
     assert opened, reason
     assert funded.store.open_positions()[0]["currency"] == "USD_MEP"
-    assert funded._cash(currency="USD_MEP", as_of=fresh_at) < D("10000")
-    assert funded._cash(currency="ARS", as_of=fresh_at) == D("1000000")
-    assert funded._cash(currency="USD", as_of=fresh_at) == D("0")
+    # Consultamos después del fill real. Usar fresh_at aquí sería un corte
+    # temporal anterior por microsegundos al timestamp que el broker asigna al fill.
+    assert funded._cash(currency="USD_MEP") < D("10000")
+    assert funded._cash(currency="ARS") == D("1000000")
+    assert funded._cash(currency="USD") == D("0")
