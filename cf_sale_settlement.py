@@ -1,14 +1,14 @@
 """Disponibilidad de ventas PAPER: fail-closed sin inventar un cutoff intradía.
 
 CI puede acreditarse en el mismo instante modelado. Para T+1 se calcula sólo
-la fecha hábil esperada como evidencia diagnóstica. Por defecto, sin una
-acreditación reconciliada/autoritativa, el producido permanece bloqueado.
+la fecha hábil esperada como evidencia diagnóstica.
 
-RC6 hotfix 2026-09-07: cuando ``PAPER_T1_FULL_DATE_RELEASE=true`` el motor PAPER
-puede liberar un T+1 únicamente DESPUÉS de haber transcurrido por completo la
-fecha hábil esperada de liquidación. No se inventa una hora de broker: se usa
-00:00 del día calendario siguiente como frontera conservadora. Esta regla es
-sólo del simulador PAPER y nunca autoriza órdenes reales ni acredita saldos PPI.
+RC6 hotfix 2026-09-07: T+1 se libera únicamente DESPUÉS de haber transcurrido
+por completo la fecha hábil esperada de liquidación. No se inventa una hora de
+broker: se usa 00:00 del día calendario siguiente como frontera conservadora.
+La regla está habilitada por defecto en este hotfix PAPER y puede deshabilitarse
+explícitamente con PAPER_T1_FULL_DATE_RELEASE=false como kill-switch. Nunca
+autoriza órdenes reales ni acredita saldos PPI reales.
 """
 import os
 from datetime import date, datetime, time, timedelta
@@ -19,10 +19,14 @@ TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 
 
 def t1_full_date_release_enabled():
-    """Feature flag explícito del runtime PAPER; apagado fuera del modo versionado."""
-    return str(os.getenv('PAPER_T1_FULL_DATE_RELEASE', '')).strip().lower() in {
-        '1', 'true', 'yes', 'si', 'sí'
-    }
+    """Política RC6 PAPER; true por defecto, false explícito actúa como kill-switch."""
+    value = str(os.getenv('PAPER_T1_FULL_DATE_RELEASE', 'true')).strip().lower()
+    if value in {'0', 'false', 'no', 'off'}:
+        return False
+    if value in {'1', 'true', 'yes', 'si', 'sí', 'on'}:
+        return True
+    # Configuración ambigua: fail-closed.
+    return False
 
 
 def modeled_sale_settlement_date(settlement, traded_at):
@@ -42,11 +46,10 @@ def modeled_sale_settlement_date(settlement, traded_at):
 
 
 def conservative_unconfirmed_availability(settlement, traded_at):
-    """Frontera diagnóstica conservadora, no una hora atribuida al broker.
+    """Frontera PAPER conservadora, no una hora atribuida al broker.
 
-    Expresa el comienzo del día posterior a la fecha hábil esperada. No libera
-    nada por sí sola: ``validated_sale_settlement`` sólo la reconoce para T+1
-    cuando el feature flag versionado del runtime PAPER está habilitado.
+    Expresa el comienzo del día posterior a la fecha hábil esperada. El caller
+    todavía debe comparar esta frontera con su ``as_of`` antes de liberar caja.
     """
     expected=modeled_sale_settlement_date(settlement,traded_at)
     if expected is None:
@@ -59,8 +62,8 @@ def modeled_sale_settlement(settlement, traded_at):
     """Timestamp persistible cuando el modelo tiene una frontera contractual.
 
     CI retorna el instante de venta. T+1 retorna ``None`` deliberadamente:
-    la DB no persiste una hora de broker no observada. El hotfix puede calcular
-    una frontera PAPER efectiva al leer, sin reescribir la procedencia histórica.
+    la DB no persiste una hora de broker no observada. El hotfix calcula la
+    frontera PAPER efectiva al leer, sin reescribir la procedencia histórica.
     """
     at=aware_datetime(traded_at).astimezone(TZ)
     if not isinstance(settlement,str): raise ValueError('Plazo de liquidación no textual')
@@ -76,10 +79,10 @@ def validated_sale_settlement(settlement, traded_at, available_at, basis):
     """Disponibilidad efectiva defendible por procedencia y política PAPER.
 
     ``PENDING_CONFIRMATION`` jamás acepta un ``available_at`` inventado. Con el
-    flag T+1 apagado conserva la semántica histórica y permanece bloqueado. Con
-    el flag encendido, sólo para un T+1 reconocido y con fecha hábil demostrable,
-    devuelve la frontera conservadora posterior al día completo de settlement.
-    El caller todavía debe comparar esa frontera contra su ``as_of``.
+    kill-switch apagado conserva la semántica histórica y permanece bloqueado.
+    Con la política RC6 activa, sólo para T+1 reconocido y con fecha hábil
+    demostrable devuelve la frontera conservadora posterior al día completo de
+    settlement. El caller todavía debe compararla contra su ``as_of``.
     """
     traded=aware_datetime(traded_at)
     available=aware_datetime(available_at) if available_at is not None else None
