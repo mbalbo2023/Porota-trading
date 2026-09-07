@@ -70,12 +70,19 @@ jobs:
             git fetch origin 'feature/rc6-critical-telegram-approval-20260907' --quiet
             git cat-file -e "${SOURCE_SHA}^{commit}"
             stage="/tmp/porota-critical-control-${SOURCE_SHA}"
+            health_probe="/tmp/porota-critical-health-probe-${SOURCE_SHA}.py"
+            health_apply="/tmp/porota-critical-health-apply-${SOURCE_SHA}.sh"
             rm -rf "$stage"
+            rm -f "$health_probe" "$health_apply"
             umask 077
             mkdir -p "$stage"
             for f in fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py; do
               git show "${SOURCE_SHA}:$f" > "$stage/$f"
             done
+            git show "${SOURCE_SHA}:fo_critical_approval_health_rc6.py" > "$health_probe"
+            git show "${SOURCE_SHA}:ops/rc6_apply_critical_control_plane_healthcheck.sh" > "$health_apply"
             git show "${SOURCE_SHA}:ops/rc6_deploy_critical_control_plane.sh" > "$stage/rc6_deploy_critical_control_plane.sh"
-            chmod 700 "$stage/rc6_deploy_critical_control_plane.sh"
+            chmod 700 "$stage/rc6_deploy_critical_control_plane.sh" "$health_apply"
             SOURCE_SHA="$SOURCE_SHA" REMOTE_STAGE="$stage" LIVE_IMAGE='porota-trading-bot:17.0.0-rc6' GATEWAY_CONTAINER='porota_critical_approval_rc6' "$stage/rc6_deploy_critical_control_plane.sh"
+            SOURCE_SHA="$SOURCE_SHA" HEALTH_PROBE_PATH="$health_probe" GATEWAY_CONTAINER='porota_critical_approval_rc6' "$health_apply"
+            rm -f "$health_apply"
