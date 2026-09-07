@@ -1,0 +1,145 @@
+name: RC6 PPI Web History SHADOW 2026-09-07
+
+on:
+  push:
+    branches: [feature/rc6-ppi-web-history-shadow-20260907]
+    paths:
+      - 'rc6_ppi_web_history_shadow.py'
+      - 'tests/test_rc6_ppi_web_history_shadow.py'
+      - '.github/workflows/rc6-ppi-web-history-shadow-20260907.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-ppi-web-history-shadow
+  cancel-in-progress: false
+
+env:
+  EXPECTED_LIVE_SHA: c17b0d777ba49d88c53c5a7ed14218d8eaa94638
+
+jobs:
+  validate_offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install -q pytest
+      - name: Compile and focused tests
+        run: |
+          set -euo pipefail
+          python -m py_compile rc6_ppi_web_history_shadow.py
+          python -m pytest -q tests/test_rc6_ppi_web_history_shadow.py
+      - name: Static fail-closed invariants
+        run: |
+          set -euo pipefail
+          ! grep -Eq 'sqlite3|history_canonical_v2|history_versions_v2|send_order|place_order|order_budget' rc6_ppi_web_history_shadow.py
+          grep -q 'canonical_write.*DENY' rc6_ppi_web_history_shadow.py
+
+  probe_droplet_readonly:
+    needs: validate_offline
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_web_history"
+          chmod 600 "$HOME/.ssh/porota_web_history"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage shadow probe only
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/porota_web_history" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            rc6_ppi_web_history_shadow.py "$USER@$HOST:/tmp/rc6_ppi_web_history_shadow.py"
+      - name: Execute isolated GET-only browser shadow
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_web_history" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$USER@$HOST" "EXPECTED_LIVE_SHA='$EXPECTED_LIVE_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          VENV=/opt/porota-contract-evidence-venv
+          OUTDIR="$ROOT/data/contract_evidence/ppi_web_history_shadow"
+          OUT="$OUTDIR/latest.json"
+
+          OBS_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)"
+          OBS_STATE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)"
+          DASH_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)"
+          DASH_STATE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)"
+          LIVE_SHA="$(sudo -n docker image inspect "$(sudo -n docker inspect -f '{{.Config.Image}}' porota_production_observer)" --format '{{index .Config.Labels "porota.commit"}}')"
+          test "$LIVE_SHA" = "$EXPECTED_LIVE_SHA"
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          print('|'.join(map(str,(*c.execute('pragma quick_check').fetchone(),*c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))); c.close()
+          PY
+          )"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+          test -d "$PROFILE" && test "$(stat -c '%U' "$PROFILE")" = porotaadmin
+          test -x "$VENV/bin/python" && test -x /usr/bin/google-chrome-stable
+          sudo -n install -d -o porotaadmin -g porotaadmin -m 0700 "$OUTDIR"
+          sudo -n install -o porotaadmin -g porotaadmin -m 0755 /tmp/rc6_ppi_web_history_shadow.py /tmp/rc6_ppi_web_history_shadow.run.py
+          sudo -n rm -f /tmp/rc6_ppi_web_history_shadow.py
+
+          set +e
+          SUMMARY="$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin \
+            "$VENV/bin/python" /tmp/rc6_ppi_web_history_shadow.run.py \
+            --profile "$PROFILE" --output "$OUT" 2>&1)"
+          RC=$?
+          set -e
+          sudo -n rm -f /tmp/rc6_ppi_web_history_shadow.run.py
+          printf 'PPI_WEB_HISTORY_PROBE_RC=%s\n' "$RC"
+          printf '%s\n' "$SUMMARY"
+          test "$RC" -eq 0 -o "$RC" -eq 4
+          test -s "$OUT" && test "$(stat -c '%a' "$OUT")" = 600
+          python3 - "$OUT" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert x['canonical_write']=='DENY'
+          assert x['db_write']=='NO'
+          assert int(x['real_orders_sent'])==0
+          s=x['summary']
+          print('PPI_WEB_HISTORY_AUTH='+x['auth_status'])
+          print('PPI_WEB_HISTORY_JSON_RESPONSES='+str(s['responses']))
+          print('PPI_WEB_HISTORY_CANDIDATES='+str(s['historical_candidates']))
+          print('PPI_WEB_HISTORY_FULL_OHLCV_CANDIDATES='+str(s['full_ohlcv_candidates']))
+          print('PPI_WEB_HISTORY_BLOCKED_NONREAD='+str(s['blocked_nonread']))
+          print('PPI_WEB_HISTORY_CANONICAL_WRITE=DENY')
+          PY
+
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          print('|'.join(map(str,(*c.execute('pragma quick_check').fetchone(),*c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))); c.close()
+          PY
+          )"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)" = "$OBS_ID"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)" = "$OBS_STATE"
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)" = "$DASH_ID"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)" = "$DASH_STATE"
+          echo PPI_WEB_HISTORY_OBSERVER_CHANGED=NO
+          echo PPI_WEB_HISTORY_DASHBOARD_CHANGED=NO
+          echo REAL_ORDERS_SENT=0
+          HOST
