@@ -1,0 +1,196 @@
+name: RC6 Contract Evidence auto-reauth deploy E2E 2026-09-07
+
+on:
+  push:
+    branches: [hotfix/rc6-contract-evidence-auto-reauth-20260907]
+    paths:
+      - '.github/workflows/rc6-contract-evidence-auto-reauth-deploy-e2e-20260907.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-contract-evidence-runtime
+  cancel-in-progress: false
+
+jobs:
+  deploy-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Offline reauth tests
+        run: |
+          python -m pip install -q pytest
+          python -m pytest -q tests/test_ppi_web_reauth_rc6.py tests/test_contract_evidence_reauth_wiring_rc6.py
+          python -m py_compile rc6_ppi_web_reauth.py
+          bash -n scripts/porota_contract_evidence_rc6_runtime.sh
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ce"
+          chmod 600 "$HOME/.ssh/porota_ce"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Stage isolated Contract Evidence files
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/porota_ce" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            rc6_ppi_web_reauth.py scripts/porota_contract_evidence_rc6_runtime.sh \
+            "$DO_USER@$DO_HOST:/tmp/"
+
+      - name: Install, renew session, and run policy E2E
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ce" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          DB="$ROOT/data/paper_v17/observer_v17.db"
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          RUNTIME=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          HELPER="$LIB/rc6_ppi_web_reauth.py"
+          SECRET=/etc/porota/contract-evidence-web.env
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          VENV=/opt/porota-contract-evidence-venv
+          TIMER=porota-contract-evidence-rc6.timer
+
+          echo '=== CONTRACT EVIDENCE AUTO-REAUTH DEPLOY E2E ==='
+          OBS_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)"
+          OBS_STATE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)"
+          DASH_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)"
+          DASH_STATE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)"
+          case "$OBS_STATE" in true\|0\|true\|*) ;; *) echo "OBSERVER_PRECHECK=RED:$OBS_STATE"; exit 1;; esac
+          case "$DASH_STATE" in true\|0\|*) ;; *) echo "DASHBOARD_PRECHECK=RED:$DASH_STATE"; exit 1;; esac
+          LIVE_SHA="$(sudo -n docker image inspect "$(sudo -n docker inspect -f '{{.Config.Image}}' porota_production_observer)" --format '{{index .Config.Labels "porota.commit"}}' 2>/dev/null || true)"
+          test -n "$LIVE_SHA"
+          printf 'LIVE_OBSERVER_SHA=%s\n' "$LIVE_SHA"
+
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'{qc}|{mode}|{orders}'); c.close()
+          PY
+          )"
+          printf 'OBSERVER_DB_BEFORE=%s\n' "$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+
+          test -f "$SECRET" || { echo 'PPI_WEB_SECRET=RED_MISSING'; exit 2; }
+          test "$(stat -c '%U' "$SECRET")" = porotaadmin || { echo 'PPI_WEB_SECRET=RED_OWNER'; exit 2; }
+          test "$(stat -c '%a' "$SECRET")" = 600 || { echo 'PPI_WEB_SECRET=RED_MODE'; exit 2; }
+          SECRET_KEYS="$(sudo -n -u porotaadmin awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/{print $1}' "$SECRET" | sort -u | tr '\n' ',' )"
+          case ",$SECRET_KEYS," in *,PPI_WEB_PASSWORD,*) ;; *) echo 'PPI_WEB_SECRET=RED_PASSWORD_KEY_MISSING'; exit 2;; esac
+          echo 'PPI_WEB_SECRET=PRESENT_RESTRICTED'
+          echo 'PPI_WEB_SECRET_VALUES_PRINTED=NO'
+
+          test -d "$PROFILE"
+          test "$(stat -c '%U' "$PROFILE")" = porotaadmin
+          test -x "$VENV/bin/python"
+          sudo -n install -d -o root -g root -m 0755 "$LIB"
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_reauth.py "$HELPER"
+          sudo -n install -o root -g root -m 0755 /tmp/porota_contract_evidence_rc6_runtime.sh "$RUNTIME"
+          sudo -n rm -f /tmp/rc6_ppi_web_reauth.py /tmp/porota_contract_evidence_rc6_runtime.sh
+          echo 'CONTRACT_EVIDENCE_RUNTIME_INSTALLED=YES'
+
+          RUNS_BEFORE="$(python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          exists=c.execute("select 1 from sqlite_master where type='table' and name='contract_evidence_v2_runs'").fetchone()
+          print(c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0] if exists else 0); c.close()
+          PY
+          )"
+          printf 'CE_RUNS_BEFORE=%s\n' "$RUNS_BEFORE"
+
+          set +e
+          REAUTH_OUT="$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$LIB:$ROOT" \
+            "$VENV/bin/python" "$HELPER" --profile "$PROFILE" --secret "$SECRET" 2>&1)"
+          REAUTH_RC=$?
+          set -e
+          printf 'REAUTH_RC=%s\n' "$REAUTH_RC"
+          printf '%s\n' "$REAUTH_OUT"
+          REAUTH_STATE="$(REAUTH_OUT="$REAUTH_OUT" python3 - <<'PY'
+          import json,os
+          try: print(json.loads(os.environ['REAUTH_OUT']).get('status','UNKNOWN'))
+          except Exception: print('INVALID_REAUTH_OUTPUT')
+          PY
+          )"
+          printf 'REAUTH_STATE=%s\n' "$REAUTH_STATE"
+          if [ "$REAUTH_RC" -ne 0 ] || [ "$REAUTH_STATE" != AUTHENTICATED_TRUSTED_DEVICE ]; then
+            echo 'CONTRACT_EVIDENCE_REAUTH=YELLOW'
+            exit 2
+          fi
+          echo 'CONTRACT_EVIDENCE_REAUTH=GREEN'
+
+          set +e
+          CE_OUT="$(sudo -n "$RUNTIME" 2>&1)"
+          CE_RC=$?
+          set -e
+          printf '%s\n' "$CE_OUT"
+          printf 'CONTRACT_EVIDENCE_RUNTIME_RC=%s\n' "$CE_RC"
+          test "$CE_RC" -eq 0
+          if printf '%s\n' "$CE_OUT" | grep -q '^STATUS=GREEN_COLLECTION$'; then
+            CE_RESULT=GREEN_COLLECTION
+          elif printf '%s\n' "$CE_OUT" | grep -q '^STATUS=GREEN_NOT_DUE$'; then
+            CE_RESULT=GREEN_NOT_DUE_AUTH_READY
+          else
+            echo 'CONTRACT_EVIDENCE_E2E=YELLOW_UNEXPECTED_RUNTIME_STATUS'
+            exit 2
+          fi
+          printf 'CONTRACT_EVIDENCE_E2E=%s\n' "$CE_RESULT"
+
+          sudo -n systemctl enable --now "$TIMER" >/dev/null
+          test "$(sudo -n systemctl is-enabled "$TIMER")" = enabled
+          test "$(sudo -n systemctl is-active "$TIMER")" = active
+          echo 'CONTRACT_EVIDENCE_TIMER=GREEN'
+
+          RUNS_AFTER="$(python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          exists=c.execute("select 1 from sqlite_master where type='table' and name='contract_evidence_v2_runs'").fetchone()
+          print(c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0] if exists else 0); c.close()
+          PY
+          )"
+          printf 'CE_RUNS_AFTER=%s\n' "$RUNS_AFTER"
+          if [ "$CE_RESULT" = GREEN_COLLECTION ]; then test "$RUNS_AFTER" -gt "$RUNS_BEFORE"; fi
+
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'{qc}|{mode}|{orders}'); c.close()
+          PY
+          )"
+          printf 'OBSERVER_DB_AFTER=%s\n' "$POST"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)" = "$OBS_ID"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)" = "$OBS_STATE"
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)" = "$DASH_ID"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)" = "$DASH_STATE"
+          curl -fsS http://127.0.0.1:8000/health | python3 -c "import sys,json; assert json.load(sys.stdin).get('status')=='ok'"
+          echo 'OBSERVER_CHANGED=NO'
+          echo 'DASHBOARD_CHANGED=NO'
+          echo 'REAL_ORDERS_SENT=0'
+          echo 'CONTRACT_EVIDENCE_DEPLOY=GREEN'
+          HOST
