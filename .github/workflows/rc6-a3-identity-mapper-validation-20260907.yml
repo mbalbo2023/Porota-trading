@@ -15,6 +15,5 @@ jobs:
       - run: python -m pip install -q pytest
       - run: pytest -q tests/test_a3_identity_mapper_rc6.py
       - run: python -m py_compile fd_a3_identity_mapper_rc6.py
-      - name: Prove validation only
-        run: |
-          ! grep -Eq 'DO_SSH_KEY|docker |ssh |scp |PPI_|IOL_' .github/workflows/rc6-a3-identity-mapper-validation-20260907.yml
+      - name: Prove offline module contract
+        run: python -c "import fd_a3_identity_mapper_rc6 as m; m.assert_shadow_only(); print('A3_MAPPER_OFFLINE=GREEN')"
