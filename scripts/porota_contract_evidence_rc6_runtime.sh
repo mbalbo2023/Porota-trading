@@ -7,6 +7,7 @@ CONTAINER="${POROTA_OBSERVER_CONTAINER:-porota_production_observer}"
 DOCKER_BIN="${POROTA_DOCKER_BIN:-/usr/bin/docker}"
 LIB="${POROTA_RC6_CE_LIB:-/usr/local/lib/porota-contract-evidence-rc6}"
 PROFILE="${POROTA_CHROME_PROFILE:-/home/porotaadmin/porota-browser-lab/chrome-profile}"
+CE_PYTHON="${POROTA_CE_PYTHON:-/opt/porota-contract-evidence-venv/bin/python}"
 OUTDIR="$ROOT/data/contract_evidence/rc6_trusted"
 STATE="$OUTDIR/runtime_state.json"
 EXPECTED_IMAGE="porota-trading-bot:17.0.0-rc6"
@@ -77,10 +78,16 @@ if [[ -z "$JOBS" ]]; then
   exit 0
 fi
 
+[[ -x "$CE_PYTHON" ]] || fail_closed CE_PYTHON_MISSING
+"$CE_PYTHON" - <<'PY' || fail_closed PLAYWRIGHT_MODULE_MISSING
+from playwright.sync_api import sync_playwright
+print('PLAYWRIGHT_IMPORT=OK')
+PY
+
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 CAPTURE="$OUTDIR/contract_${stamp}.json"
 set +e
-PYTHONPATH="$LIB:$ROOT" python3 "$LIB/rc6_trusted_browser_contract_collector.py" \
+PYTHONPATH="$LIB:$ROOT" "$CE_PYTHON" "$LIB/rc6_trusted_browser_contract_collector.py" \
   --profile "$PROFILE" --jobs "$JOBS" --output "$CAPTURE"
 COLLECT_RC=$?
 set -e
@@ -123,5 +130,5 @@ d=json.loads(os.environ['POSTCHECK'])
 sys.exit(0 if d.get('quick_check')=='ok' and d.get('mode')=='PRODUCTION_PAPER' and int(d.get('real_orders_sent') or 0)==0 else 1)
 PY
 
-printf 'STATUS=GREEN_COLLECTION\nDUE_JOBS=%s\nAUTH_STATUS=AUTHENTICATED_TRUSTED_DEVICE\nIMPORT_RC=0\nOBSERVER_READONLY=true\nDB_QUICK_CHECK=ok\nREAL_ORDERS_SENT=0\n' "$JOBS"
+printf 'STATUS=GREEN_COLLECTION\nDUE_JOBS=%s\nAUTH_STATUS=AUTHENTICATED_TRUSTED_DEVICE\nPLAYWRIGHT_RUNTIME=ISOLATED_VENV\nIMPORT_RC=0\nOBSERVER_READONLY=true\nDB_QUICK_CHECK=ok\nREAL_ORDERS_SENT=0\n' "$JOBS"
 printf '%s\n' "$IMPORT_OUT" | tail -n 1
