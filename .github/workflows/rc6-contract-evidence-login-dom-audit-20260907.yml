@@ -31,7 +31,8 @@ jobs:
           USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'python3 -' <<'PY' | tee /tmp/ce-login-dom.txt
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" \
+            "sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin /opt/porota-contract-evidence-venv/bin/python -" <<'PY' | tee /tmp/ce-login-dom.txt
           import json
           from pathlib import Path
           from urllib.parse import urlsplit
@@ -48,7 +49,7 @@ jobs:
               ctx.route('**/*',guard)
               p=ctx.pages[0] if ctx.pages else ctx.new_page()
               p.goto('https://trading.portfoliopersonal.com/',wait_until='domcontentloaded',timeout=45000)
-              p.wait_for_timeout(1200)
+              p.wait_for_timeout(1500)
               u=urlsplit(p.url)
               out['final_url']=f'{u.scheme}://{u.netloc}{u.path}'
               out['title']=p.title()[:160]
