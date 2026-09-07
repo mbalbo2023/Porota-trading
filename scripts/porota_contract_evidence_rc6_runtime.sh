@@ -8,6 +8,7 @@ DOCKER_BIN="${POROTA_DOCKER_BIN:-/usr/bin/docker}"
 LIB="${POROTA_RC6_CE_LIB:-/usr/local/lib/porota-contract-evidence-rc6}"
 PROFILE="${POROTA_CHROME_PROFILE:-/home/porotaadmin/porota-browser-lab/chrome-profile}"
 CE_PYTHON="${POROTA_CE_PYTHON:-/opt/porota-contract-evidence-venv/bin/python}"
+BROWSER_USER="${POROTA_CE_BROWSER_USER:-porotaadmin}"
 OUTDIR="$ROOT/data/contract_evidence/rc6_trusted"
 STATE="$OUTDIR/runtime_state.json"
 EXPECTED_IMAGE="porota-trading-bot:17.0.0-rc6"
@@ -78,19 +79,45 @@ if [[ -z "$JOBS" ]]; then
   exit 0
 fi
 
+# Browser/profile work must never run as root. The root wrapper is retained only
+# for Docker read-only pre/postflight, protected state and evidence import.
+command -v runuser >/dev/null 2>&1 || fail_closed RUNUSER_MISSING
+id "$BROWSER_USER" >/dev/null 2>&1 || fail_closed BROWSER_USER_MISSING
+BROWSER_HOME="$(getent passwd "$BROWSER_USER" | cut -d: -f6)"
+BROWSER_GROUP="$(id -gn "$BROWSER_USER")"
+[[ -n "$BROWSER_HOME" && -d "$BROWSER_HOME" ]] || fail_closed BROWSER_HOME_INVALID
+[[ -d "$PROFILE" ]] || fail_closed BROWSER_PROFILE_MISSING
+[[ "$(stat -c '%U' "$PROFILE")" == "$BROWSER_USER" ]] || fail_closed BROWSER_PROFILE_OWNER_MISMATCH
+for p in "$PROFILE/Default" "$PROFILE/Default/Preferences" "$PROFILE/Default/Secure Preferences" "$PROFILE/Local State"; do
+  if [[ -e "$p" && "$(stat -c '%U' "$p")" != "$BROWSER_USER" ]]; then
+    fail_closed BROWSER_PROFILE_KEYFILE_OWNER_MISMATCH
+  fi
+done
+
 [[ -x "$CE_PYTHON" ]] || fail_closed CE_PYTHON_MISSING
-"$CE_PYTHON" - <<'PY' || fail_closed PLAYWRIGHT_MODULE_MISSING
+runuser -u "$BROWSER_USER" -- env HOME="$BROWSER_HOME" "$CE_PYTHON" - <<'PY' || fail_closed PLAYWRIGHT_MODULE_MISSING
 from playwright.sync_api import sync_playwright
 print('PLAYWRIGHT_IMPORT=OK')
 PY
 
+BROWSER_STAGE="$BROWSER_HOME/porota-browser-lab/rc6-runtime"
+install -d -o "$BROWSER_USER" -g "$BROWSER_GROUP" -m 0700 "$BROWSER_STAGE"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+STAGE_CAPTURE="$BROWSER_STAGE/contract_${stamp}.json"
 CAPTURE="$OUTDIR/contract_${stamp}.json"
+
 set +e
-PYTHONPATH="$LIB:$ROOT" "$CE_PYTHON" "$LIB/rc6_trusted_browser_contract_collector.py" \
-  --profile "$PROFILE" --jobs "$JOBS" --output "$CAPTURE"
+runuser -u "$BROWSER_USER" -- env \
+  HOME="$BROWSER_HOME" \
+  PYTHONPATH="$LIB:$ROOT" \
+  "$CE_PYTHON" "$LIB/rc6_trusted_browser_contract_collector.py" \
+  --profile "$PROFILE" --jobs "$JOBS" --output "$STAGE_CAPTURE"
 COLLECT_RC=$?
 set -e
+
+[[ -f "$STAGE_CAPTURE" ]] || fail_closed COLLECTOR_CAPTURE_MISSING
+install -o root -g root -m 0600 "$STAGE_CAPTURE" "$CAPTURE"
+rm -f "$STAGE_CAPTURE"
 
 if [[ "$COLLECT_RC" -ne 0 ]]; then
   AUTH_STATE="$(python3 - "$CAPTURE" <<'PY'
@@ -101,7 +128,7 @@ PY
 )"
   printf '{"blocked_at":"%s","state":"%s","retry_after_seconds":3600}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$AUTH_STATE" > "$STATE"
   chmod 0600 "$STATE"
-  printf 'STATUS=AMARILLO_AUTH_BLOCKED\nAUTH_STATUS=%s\nAUTH_BROWSER_STARTED=YES\nREAL_ORDERS_SENT=0\n' "$AUTH_STATE"
+  printf 'STATUS=AMARILLO_AUTH_BLOCKED\nAUTH_STATUS=%s\nAUTH_BROWSER_STARTED=YES\nBROWSER_USER_UNPRIVILEGED=YES\nREAL_ORDERS_SENT=0\n' "$AUTH_STATE"
   exit 0
 fi
 
@@ -130,5 +157,5 @@ d=json.loads(os.environ['POSTCHECK'])
 sys.exit(0 if d.get('quick_check')=='ok' and d.get('mode')=='PRODUCTION_PAPER' and int(d.get('real_orders_sent') or 0)==0 else 1)
 PY
 
-printf 'STATUS=GREEN_COLLECTION\nDUE_JOBS=%s\nAUTH_STATUS=AUTHENTICATED_TRUSTED_DEVICE\nPLAYWRIGHT_RUNTIME=ISOLATED_VENV\nIMPORT_RC=0\nOBSERVER_READONLY=true\nDB_QUICK_CHECK=ok\nREAL_ORDERS_SENT=0\n' "$JOBS"
+printf 'STATUS=GREEN_COLLECTION\nDUE_JOBS=%s\nAUTH_STATUS=AUTHENTICATED_TRUSTED_DEVICE\nPLAYWRIGHT_RUNTIME=ISOLATED_VENV\nBROWSER_USER_UNPRIVILEGED=YES\nIMPORT_RC=0\nOBSERVER_READONLY=true\nDB_QUICK_CHECK=ok\nREAL_ORDERS_SENT=0\n' "$JOBS"
 printf '%s\n' "$IMPORT_OUT" | tail -n 1
