@@ -38,14 +38,15 @@ jobs:
           echo "HOST_HEAD=$(git rev-parse HEAD)"
           sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer
           sudo -n docker exec -i porota_production_observer python - <<'PY'
-          import inspect,json,os,sqlite3
+          import inspect,json,sqlite3
           from bd_ppi_readonly_guard import ProductionMarketReader
           db='/app/data/paper_v17/observer_v17.db'
           c=sqlite3.connect(f'file:{db}?mode=ro',uri=True); c.execute('pragma query_only=on')
           qc=c.execute('pragma quick_check').fetchone()[0]
           state=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
           assert qc=='ok' and state and state[0]=='PRODUCTION_PAPER' and int(state[1] or 0)==0
-          key=os.getenv('PPI_API_KEY',''); secret=os.getenv('PPI_API_SECRET','')
+          with open('/run/secrets/ppi_production.json',encoding='utf-8') as f: cred=json.load(f)
+          key,secret=cred.get('api_key',''),cred.get('api_secret','')
           print('PPI_CREDENTIAL_PRESENCE='+('GREEN' if key and secret else 'RED'))
           if not (key and secret): raise SystemExit(2)
           r=ProductionMarketReader(key,secret)
@@ -58,11 +59,8 @@ jobs:
                       for k in ('payload','data','items','results'):
                           if isinstance(x.get(k),list): x=x[k]; break
                   if not isinstance(x,list): return []
-                  out=[]
-                  for row in x[:20]:
-                      if not isinstance(row,dict): continue
-                      out.append({k:row.get(k) for k in ('ticker','description','currency','type','market','nominalInPrice') if k in row})
-                  return out
+                  return [{k:row.get(k) for k in ('ticker','description','currency','type','market','nominalInPrice') if k in row}
+                          for row in x[:20] if isinstance(row,dict)]
               for days in (1,2,7,30,120):
                   for ticker in (f'PESOS{days}',f'DOLAR{days}'):
                       try:
@@ -71,16 +69,18 @@ jobs:
                           print('SEARCH='+json.dumps({'days':days,'ticker':ticker,'rows':rows,'count':len(rows)},ensure_ascii=False,sort_keys=True))
                       except Exception as e:
                           print('SEARCH_ERROR='+json.dumps({'days':days,'ticker':ticker,'type':type(e).__name__,'msg':str(e)[:160]},ensure_ascii=False,sort_keys=True))
+              def sanitize(v,depth=0):
+                  if depth>4:return None
+                  if isinstance(v,dict):
+                      allowed={'ticker','description','currency','type','market','settlement','price','quantity','bids','offers','date','datetime','time'}
+                      return {str(k):sanitize(n,depth+1) for k,n in v.items() if str(k).lower() in allowed}
+                  if isinstance(v,list): return [sanitize(z,depth+1) for z in v[:10]]
+                  if isinstance(v,(str,int,float,bool)) or v is None:return v
+                  return str(v)[:80]
               for ticker in ('PESOS1','DOLAR1'):
                   for fn in ('current','book'):
                       try:
                           x=getattr(r,fn)(ticker,'CAUCIONES','INMEDIATA')
-                          def sanitize(v,depth=0):
-                              if depth>3:return None
-                              if isinstance(v,dict): return {str(k):sanitize(n,depth+1) for k,n in v.items() if str(k).lower() in {'ticker','description','currency','type','market','settlement','price','quantity','bids','offers','date','datetime','time'}}
-                              if isinstance(v,list): return [sanitize(z,depth+1) for z in v[:10]]
-                              if isinstance(v,(str,int,float,bool)) or v is None:return v
-                              return str(v)[:80]
                           print(fn.upper()+'='+json.dumps({'ticker':ticker,'payload':sanitize(x)},ensure_ascii=False,sort_keys=True))
                       except Exception as e:
                           print(fn.upper()+'_ERROR='+json.dumps({'ticker':ticker,'type':type(e).__name__,'msg':str(e)[:160]},ensure_ascii=False,sort_keys=True))
