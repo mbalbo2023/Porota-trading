@@ -1,0 +1,118 @@
+name: RC6 historical raw growth-driver audit
+
+on:
+  push:
+    branches:
+      - audit/rc6-historical-raw-architecture-20260907
+    paths:
+      - '.github/workflows/rc6-historical-raw-growth-audit.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/rc6-historical-raw-architecture-20260907
+          fetch-depth: 0
+      - name: Prepare SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Collect growth evidence
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_RC6_HISTORICAL_RAW_GROWTH_AUDIT_2026-09-07.txt'
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' > "$REPORT" <<'REMOTE'
+          set -u
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          C=porota_production_observer
+          sep(){ printf '\n======================================================================\n%s\n======================================================================\n' "$1"; }
+          echo 'POROTA RC6 HISTORICAL RAW GROWTH-DRIVER AUDIT — READ ONLY'
+          echo "UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          sep '01 EFFECTIVE RUNTIME INGEST CONFIG'
+          sudo -n docker exec "$C" python - <<'PY' 2>/dev/null || true
+          import os
+          for k in ['PPI_BACKGROUND_INGEST_SECONDS','PPI_HISTORY_BATCH_LIMIT','SERVER_TIMEZONE','MARKET_OPEN_HOUR','MARKET_OPEN_MINUTE','MARKET_CLOSE_HOUR','MARKET_CLOSE_MINUTE']:
+              print(f'{k}={os.getenv(k,"<unset>")}')
+          PY
+          sep '02 EXACT ROW GROWTH BY DAY AND QUALITY'
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True,timeout=15)
+          c.execute('PRAGMA query_only=ON'); c.execute('PRAGMA busy_timeout=15000'); c.execute('PRAGMA temp_store=MEMORY')
+          t='historical_raw_archive'
+          rows=c.execute(f'''SELECT substr(recorded_at,1,10) day,quality,count(*) n
+                             FROM {t} GROUP BY day,quality ORDER BY day,quality''').fetchall()
+          totals={}
+          for day,q,n in rows:
+              totals[day]=totals.get(day,0)+n
+              print(f'DAY_QUALITY day={day} quality={q} rows={n}')
+          for day,n in sorted(totals.items()): print(f'DAY_TOTAL day={day} rows={n}')
+          print('DAYS_OBSERVED='+str(len(totals)))
+          if totals:
+              vals=list(totals.values())
+              print(f'DAILY_ROWS_MIN={min(vals)} DAILY_ROWS_MAX={max(vals)} DAILY_ROWS_AVG={sum(vals)/len(vals):.2f}')
+          print('QUALITY_TOTALS')
+          for q,n in c.execute(f'SELECT quality,count(*) FROM {t} GROUP BY quality ORDER BY count(*) DESC'):
+              print(f'QUALITY quality={q} rows={n}')
+          print('RECORDED_RANGE='+repr(c.execute(f'SELECT min(recorded_at),max(recorded_at) FROM {t}').fetchone()))
+          c.close()
+          PY
+          sep '03 TARGET UNIVERSE AND LATEST SYNC STATE'
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True,timeout=15); c.execute('PRAGMA query_only=ON')
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          if 'candidate_universe' in tables:
+              q="SELECT instrument_type,count(*) FROM candidate_universe WHERE status='AVAILABLE' AND (can_simulate=1 OR instrument_type='INDICES') GROUP BY instrument_type ORDER BY count(*) DESC"
+              rows=c.execute(q).fetchall(); print('TARGET_UNIVERSE_TOTAL='+str(sum(r[1] for r in rows)))
+              for kind,n in rows: print(f'TARGET_TYPE type={kind} rows={n}')
+          if 'production_history' in tables:
+              print('PRODUCTION_HISTORY_ROWS='+str(c.execute('SELECT count(*) FROM production_history').fetchone()[0]))
+          if 'production_history_attempts' in tables:
+              print('PRODUCTION_HISTORY_ATTEMPT_KEYS='+str(c.execute('SELECT count(*) FROM production_history_attempts').fetchone()[0]))
+          if 'source_sync' in tables:
+              for r in c.execute("SELECT source,status,last_attempt_at,last_success_at,detail FROM source_sync WHERE source LIKE 'PPI_PRODUCTION_HISTORY%' OR source='PPI_PRODUCTION_HISTORY' ORDER BY source"):
+                  detail=str(r[4] or '').replace('\n',' ')[:300]
+                  print(f'SOURCE_SYNC source={r[0]} status={r[1]} last_attempt={r[2]} last_success={r[3]} detail={detail!r}')
+          c.close()
+          PY
+          sep '04 CURRENT SAFETY'
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True,timeout=15); c.execute('PRAGMA query_only=ON')
+          r=c.execute('SELECT mode,session_state,real_orders_sent FROM observer_state WHERE id=1').fetchone(); c.close()
+          print('OBSERVER_STATE='+('|'.join(map(str,r)) if r else 'MISSING'))
+          PY
+          echo 'MUTATIONS=NONE'
+          echo 'BODY_JSON_SELECTED=NO'
+          echo 'AUDIT_STATUS=COMPLETE_READ_ONLY'
+          REMOTE
+          test -s "$REPORT"
+      - name: Publish evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_RC6_HISTORICAL_RAW_GROWTH_AUDIT_2026-09-07.txt'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$REPORT"
+          git commit -m 'audit(rc6): record raw archive growth drivers'
+          git push origin HEAD:audit/rc6-historical-raw-architecture-20260907
