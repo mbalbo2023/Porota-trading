@@ -1,0 +1,210 @@
+name: RC6 night data priming 2026-09-06
+
+on:
+  push:
+    branches:
+      - ops/rc6-night-data-priming-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  prime:
+    name: Bounded historical priming on live RC6
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_prime"
+          chmod 600 "$HOME/.ssh/porota_prime"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Prime PPI history then Data912 and verify integrity
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_prime" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-night-data-priming.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          LIVE_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          LIVE_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          LIVE_IMAGE=porota-trading-bot:17.0.0-rc6
+
+          echo '=== POROTA RC6 NIGHT DATA PRIMING ==='
+          echo "UTC=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
+
+          test "$(git -C "$REPO" branch --show-current)" = "$LIVE_BRANCH"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$LIVE_SHA"
+          git -C "$REPO" diff --quiet
+          git -C "$REPO" diff --cached --quiet
+          test "$(df -P / | awk 'NR==2{gsub("%","",$5); print $5}')" -lt 70
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$LIVE_IMAGE|0|true"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$LIVE_IMAGE|0"
+          test -z "$(sudo -n systemctl list-units --type=service --state=active --no-legend 'porota-a3-history-rc6@*.service' 2>/dev/null | awk '{print $1}' || true)"
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)" != active
+
+          echo '--- PRECHECK RUNTIME + DB ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          import ak_byma_calendar as byma
+          tz=ZoneInfo('America/Argentina/Buenos_Aires')
+          now=datetime.now(tz)
+          assert not byma.es_dia_habil_operativo(now.date()), 'REFUSE_PRIMING_ON_BYMA_OPERATIONAL_DAY'
+          out=[]; row=None
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+              c.execute('PRAGMA query_only=ON')
+              out.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'):
+                  row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          assert tuple(out)==('ok','ok')
+          assert row and row[0]=='PRODUCTION_PAPER' and int(row[1] or 0)==0
+          print('BYMA_OPERATIONAL_DAY=NO')
+          print('VERIFY_DB='+'|'.join(map(str,(*out,*row))))
+          PY
+
+          snapshot(){
+            local label="$1"
+            echo "--- SNAPSHOT_${label} ---"
+            sudo -n docker exec -i porota_production_observer python - "$label" <<'PY'
+          import sqlite3,sys,json
+          label=sys.argv[1]
+          obs='/app/data/paper_v17/observer_v17.db'
+          hist='/app/data/market_history.db'
+          result={'label':label}
+          c=sqlite3.connect(f'file:{obs}?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          result['observer_quick_check']=c.execute('PRAGMA quick_check').fetchone()[0]
+          result['mode_orders']=dict(c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone())
+          if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='production_history_attempts'").fetchone():
+              result['attempt_states']={r['state']:int(r['n']) for r in c.execute('SELECT state,COUNT(*) n FROM production_history_attempts GROUP BY state')}
+              result['attempt_latest']=c.execute('SELECT MAX(attempted_at) FROM production_history_attempts').fetchone()[0]
+          if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_sync'").fetchone():
+              result['source_sync']=[dict(r) for r in c.execute("SELECT source,status,last_attempt_at,last_success_at,items,detail FROM source_sync WHERE source IN ('PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST') ORDER BY source")]
+          c.close()
+          h=sqlite3.connect(f'file:{hist}?mode=ro',uri=True,timeout=30); h.row_factory=sqlite3.Row; h.execute('PRAGMA query_only=ON')
+          result['history_quick_check']=h.execute('PRAGMA quick_check').fetchone()[0]
+          if h.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='history_canonical_v2'").fetchone():
+              result['canonical']=dict(h.execute("SELECT COUNT(*) rows,COUNT(DISTINCT symbol||'|'||instrument_type||'|'||market||'|'||settlement) identities,MIN(date) first_day,MAX(date) latest_day FROM history_canonical_v2").fetchone())
+              result['sources']=[dict(r) for r in h.execute('SELECT source,COUNT(*) rows,COUNT(DISTINCT symbol||\'|\'||instrument_type||\'|\'||market||\'|\'||settlement) identities,MAX(date) latest FROM history_canonical_v2 GROUP BY source ORDER BY rows DESC')]
+          if h.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='history_versions_v2'").fetchone():
+              result['versions']=int(h.execute('SELECT COUNT(*) FROM history_versions_v2').fetchone()[0])
+          if h.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='history_row_rejections_v2'").fetchone():
+              result['rejections']={r['reason']:int(r['n']) for r in h.execute('SELECT reason,COUNT(*) n FROM history_row_rejections_v2 GROUP BY reason ORDER BY n DESC')}
+          h.close()
+          print(json.dumps(result,ensure_ascii=False,sort_keys=True))
+          PY
+          }
+
+          snapshot BEFORE
+
+          echo '--- PPI FORCED BACKGROUND HISTORY (BOUNDED, READ-ONLY BROKER) ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from bd_ppi_readonly_guard import ProductionMarketReader
+          from cg_paper_workspace import runtime_store
+          import bf_production_paper_observer as obs
+          store=runtime_store()
+          # Avoid overlapping/hot retry if another history batch just ran.
+          with store.connect() as c:
+              row=c.execute('SELECT MAX(attempted_at) FROM production_history_attempts').fetchone()
+              state=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          assert state and state[0]=='PRODUCTION_PAPER' and int(state[1] or 0)==0
+          last=row[0] if row else None
+          if last:
+              try:
+                  dt=datetime.fromisoformat(str(last).replace('Z','+00:00'))
+                  if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
+                  age=(datetime.now(timezone.utc)-dt.astimezone(timezone.utc)).total_seconds()
+              except Exception:
+                  age=999999
+          else:
+              age=999999
+          if age < 900:
+              print(json.dumps({'status':'SKIPPED_RECENT_HISTORY_ATTEMPT','age_seconds':round(age,1)},sort_keys=True))
+          else:
+              reader=None
+              try:
+                  reader=ProductionMarketReader(*obs._secret(),audit=store.audit_http)
+                  reader.login_once()
+                  rows=obs._background_ingest(reader,store,force=True)
+                  with store.connect() as c:
+                      orders=int(c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()[0] or 0)
+                      states={str(r[0]):int(r[1]) for r in c.execute('SELECT state,COUNT(*) FROM production_history_attempts GROUP BY state')}
+                  assert orders==0
+                  print(json.dumps({'status':'DONE','valid_rows_reported':rows,'attempt_states':states,'real_orders_sent':orders},ensure_ascii=False,sort_keys=True))
+              finally:
+                  if reader is not None:
+                      try: reader.close()
+                      except Exception: pass
+          PY
+
+          echo '--- DATA912 RECONCILIATION (HISTORICAL ONLY, BATCH 40) ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json
+          from cg_paper_workspace import runtime_store
+          import cr_data912_reconcile_hf6 as reconcile
+          store=runtime_store()
+          with store.connect() as c:
+              row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          assert row and row[0]=='PRODUCTION_PAPER' and int(row[1] or 0)==0
+          try:
+              result=reconcile.run(store,batch_limit=40)
+          except Exception as exc:
+              result={'ok':False,'error':f'{type(exc).__name__}:{str(exc)[:300]}','execution_allowed':False}
+          print(json.dumps(result,ensure_ascii=False,sort_keys=True))
+          PY
+
+          echo '--- CANDLE INTEGRITY READ-ONLY AUDIT ---'
+          sudo -n systemctl start porota-candle-integrity-rc6.service
+          test "$(sudo -n systemctl show porota-candle-integrity-rc6.service -p Result --value)" = success
+          sudo -n journalctl -u porota-candle-integrity-rc6.service -n 40 --no-pager || true
+
+          snapshot AFTER
+
+          echo '--- POSTFLIGHT ---'
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$LIVE_IMAGE|0|true"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$LIVE_IMAGE|0"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30); c.execute('PRAGMA query_only=ON')
+              assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'; c.close()
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('PRAGMA query_only=ON')
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone(); c.close()
+          assert mode=='PRODUCTION_PAPER' and int(orders or 0)==0
+          print(f'MODE={mode}')
+          print(f'REAL_ORDERS_SENT={int(orders or 0)}')
+          print('DB_QUICK_CHECKS=OK')
+          PY
+          echo 'A3_FORCED=NO'
+          echo 'CONTRACT_EVIDENCE_BROWSER_FORCED=NO'
+          echo 'STRATEGY_CHANGED=NO'
+          echo 'RUNTIME_CODE_CHANGED=NO'
+          echo 'RC6_NIGHT_DATA_PRIMING=GREEN'
+          HOST
+
+          {
+            echo '### RC6 night data priming'
+            echo '```text'
+            sed -n '1,1800p' /tmp/rc6-night-data-priming.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
