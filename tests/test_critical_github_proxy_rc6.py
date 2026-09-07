@@ -33,6 +33,17 @@ def broker():
     return mod.GithubIssueBroker(api), api
 
 
+def test_capability_key_is_required_and_removed_before_dispatch():
+    expected = "a" * 64
+    request = {"op": "health", "capability_token": expected}
+    mod._require_capability(request, expected)
+    assert "capability_token" not in request
+    with pytest.raises(mod.BrokerError, match="CAPABILITY_DENIED"):
+        mod._require_capability({"op": "health", "capability_token": "b" * 64}, expected)
+    with pytest.raises(mod.BrokerError, match="CAPABILITY_DENIED"):
+        mod._require_capability({"op": "health"}, expected)
+
+
 def test_list_is_filtered_to_critical_awaiting():
     b, api = broker()
     rows = b.dispatch({"op": "list_open_critical"})
