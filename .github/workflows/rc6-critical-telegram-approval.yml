@@ -1,0 +1,42 @@
+name: RC6 Critical Telegram approval safety
+
+on:
+  pull_request:
+    paths:
+      - 'fg_critical_approval_gateway_rc6.py'
+      - 'tests/test_critical_approval_gateway_rc6.py'
+      - '.github/workflows/rc6-critical-telegram-approval.yml'
+      - 'POROTA_TRADING_RC6_CRITICAL_TELEGRAM_APPROVAL_2026-09-07.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safety-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install focused test dependency
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Compile gateway
+        run: python -m py_compile fg_critical_approval_gateway_rc6.py
+      - name: Focused tests
+        run: python -m pytest -q tests/test_critical_approval_gateway_rc6.py
+      - name: Prove control-plane separation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Eq '^import (c_ppi_client|bd_ppi_readonly_guard|be_paper_engine|k_position_manager|l_order_confirmation)' fg_critical_approval_gateway_rc6.py
+          ! grep -Eq '^from (c_ppi_client|bd_ppi_readonly_guard|be_paper_engine|k_position_manager|l_order_confirmation)' fg_critical_approval_gateway_rc6.py
+          ! grep -Eq '(place_order|budget_order|confirm_order|docker.sock|subprocess\.run)' fg_critical_approval_gateway_rc6.py
+          grep -q 'PPI_CREDENTIAL_PRESENT_IN_CONTROL_PLANE' fg_critical_approval_gateway_rc6.py
+          grep -q 'Issues:read/write only' fg_critical_approval_gateway_rc6.py
+      - name: Prove authorization scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'HOTFIX_AUTHORIZATION=AUTHORIZED_TELEGRAM' fg_critical_approval_gateway_rc6.py
+          grep -q 'NO se autorizó merge, deploy ni órdenes reales' fg_critical_approval_gateway_rc6.py
+          grep -q 'AUTORIZAR HOTFIX PAPER' fg_critical_approval_gateway_rc6.py
