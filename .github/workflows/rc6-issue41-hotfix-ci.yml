@@ -1,0 +1,33 @@
+name: RC6 Issue 41 PAPER hotfix CI
+
+on:
+  push:
+    branches:
+      - hotfix/rc6-control-plane-broker-permissions-issue-41
+  pull_request:
+    branches:
+      - feature/rc6-critical-telegram-approval-20260907
+
+permissions:
+  contents: read
+
+jobs:
+  focused-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: bash -n ops/rc6_deploy_critical_control_plane.sh
+      - name: Focused regression tests
+        run: python -m pytest -q tests/test_rc6_control_plane_deploy_permissions.py
+      - name: Safety guards remain present
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=ops/rc6_deploy_critical_control_plane.sh
+          grep -Fq "test \"\$state_post\" = 'ok|PRODUCTION_PAPER|0'" "$f"
+          grep -Fq "echo 'REAL_ORDERS_SENT=0'" "$f"
+          grep -Fq 'CONTAINER_SECRET_ENV_GUARD=GREEN' "$f"
+          grep -Fq 'BROKER_HOST_CAPABILITY_ACCESS=GREEN' "$f"
+          echo 'ISSUE_41_PAPER_HOTFIX_CI=GREEN'
