@@ -1,0 +1,58 @@
+name: RC6 IOL history read-only validate 2026-09-07
+
+on:
+  push:
+    branches:
+      - feature/rc6-iol-history-readonly-20260907
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-iol-history-readonly-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build isolated candidate
+        run: |
+          set -euo pipefail
+          docker build --pull=false --label "porota.commit=${GITHUB_SHA}" -t porota-iol-history-rc6:test .
+      - name: Offline read-only contract tests
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python porota-iol-history-rc6:test \
+            -m pytest -q -p no:cacheprovider tests/test_iol_history_readonly_rc6.py
+      - name: Static mutation-surface guard
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python porota-iol-history-rc6:test - <<'PY'
+          import ast, inspect
+          import fa_iol_history_readonly_rc6 as m
+          m.assert_iol_readonly_invariants()
+          source=inspect.getsource(m)
+          tree=ast.parse(source)
+          calls=[]
+          for node in ast.walk(tree):
+              if isinstance(node,ast.Attribute) and node.attr.lower() in {'put','patch','delete'}:
+                  calls.append(node.attr)
+          assert not calls, calls
+          assert 'ak_iol_client' in source  # isolation is documented/tested; no import dependency below
+          assert 'import ak_iol_client' not in source and 'from ak_iol_client' not in source
+          assert 'canonical_write_allowed=allowed' in source
+          print('IOL_READONLY_STATIC_GUARD=GREEN')
+          PY
+      - name: Assert validation-only workflow
+        run: |
+          set -euo pipefail
+          ! grep -Eq 'DO_SSH_KEY|DO_HOST|ssh |docker run -d|deploy:' .github/workflows/rc6-iol-history-readonly-validate-20260907.yml
+          echo 'VALIDATION_ONLY=YES'
