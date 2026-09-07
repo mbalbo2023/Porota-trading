@@ -3,7 +3,7 @@ on:
   push:
     branches: [hotfix/rc6-scalping-intraday-contract-20260907]
 permissions:
-  contents: read
+  contents: write
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -30,3 +30,16 @@ jobs:
           tests/test_intraday_scalping_hf3.py::test_modificar_un_minuto_cerrado_frena_el_contrato
           tests/test_intraday_scalping_hf3.py::test_rotacion_no_excluye_familias_ni_mercados
       - run: python -c "import fg_intraday_contract_policy_rc6 as m; m.assert_fail_closed(); print('INTRADAY_POLICY_AND_INTEGRATION=GREEN_OFFLINE')"
+      - name: Persist proven source change on isolated branch only
+        run: |
+          set -euo pipefail
+          git add cf_intraday_scalping.py
+          if git diff --cached --quiet; then
+            echo 'SCALPING_SOURCE_ALREADY_PERSISTED=YES'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(rc6): integrate scalping mutable-minute policy [skip ci]'
+          git push origin HEAD:hotfix/rc6-scalping-intraday-contract-20260907
+          echo 'SCALPING_SOURCE_PERSISTED=YES'
