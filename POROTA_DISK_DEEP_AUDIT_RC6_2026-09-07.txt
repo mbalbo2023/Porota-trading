@@ -1,0 +1,501 @@
+POROTA RC6 DEEP DISK AUDIT — READ ONLY
+MUTATIONS=NONE
+UTC=2026-09-07T17:50:04Z
+
+======================================================================
+01. /VAR BREAKDOWN
+======================================================================
+4.0K	/var/cache/adduser
+4.0K	/var/cache/fwupdmgr
+4.0K	/var/cache/pollinate
+4.0K	/var/cache/private
+4.0K	/var/lib/boltd
+4.0K	/var/lib/dbus
+4.0K	/var/lib/dhcpcd
+4.0K	/var/lib/git
+4.0K	/var/lib/ieee-data
+4.0K	/var/lib/libuuid
+4.0K	/var/lib/man-db
+4.0K	/var/lib/misc
+4.0K	/var/lib/os-prober
+4.0K	/var/lib/plymouth
+4.0K	/var/lib/private
+4.0K	/var/lib/python
+4.0K	/var/lib/tpm
+4.0K	/var/lib/ubuntu-release-upgrader
+4.0K	/var/lib/udisks2
+4.0K	/var/lib/unattended-upgrades
+4.0K	/var/lib/usb_modeswitch
+4.0K	/var/local
+4.0K	/var/log/dist-upgrade
+4.0K	/var/log/landscape
+4.0K	/var/log/private
+4.0K	/var/mail
+4.0K	/var/opt
+4.0K	/var/snap
+4.0K	/var/spool/rsyslog
+4.0K	/var/tmp/cloud-init
+8.0K	/var/cache/PackageKit
+8.0K	/var/cache/app-info
+8.0K	/var/lib/apport
+8.0K	/var/lib/landscape
+8.0K	/var/lib/logrotate
+8.0K	/var/lib/shim-signed
+8.0K	/var/lib/sudo
+8.0K	/var/lib/vim
+8.0K	/var/spool/cron
+8.0K	/var/tmp/systemd-private-843900c76284418099d95f0281a520f6-ModemManager.service-nA28r6
+8.0K	/var/tmp/systemd-private-843900c76284418099d95f0281a520f6-fwupd.service-uHBaZO
+8.0K	/var/tmp/systemd-private-843900c76284418099d95f0281a520f6-polkit.service-NOzeLb
+8.0K	/var/tmp/systemd-private-843900c76284418099d95f0281a520f6-systemd-logind.service-ki9A0K
+8.0K	/var/tmp/systemd-private-843900c76284418099d95f0281a520f6-systemd-resolved.service-mXCe7g
+8.0K	/var/tmp/systemd-private-843900c76284418099d95f0281a520f6-systemd-timesyncd.service-deeIIx
+12K	/var/lib/sgml-base
+12K	/var/lib/update-manager
+16K	/var/lib/grub
+16K	/var/lib/polkit-1
+16K	/var/lib/xml-core
+16K	/var/spool
+20K	/var/lib/update-notifier
+28K	/var/lib/pam
+32K	/var/cache/ldconfig
+36K	/var/lib/PackageKit
+56K	/var/tmp
+68K	/var/lib/swcatalog
+76K	/var/log/unattended-upgrades
+116K	/var/lib/fail2ban
+116K	/var/lib/ucf
+144K	/var/cache/fontconfig
+148K	/var/log/apt
+372K	/var/lib/cloud
+384K	/var/lib/snapd
+728K	/var/lib/systemd
+1.6M	/var/cache/apparmor
+2.0M	/var/cache/man
+2.0M	/var/lib/fwupd
+2.2M	/var/backups
+2.4M	/var/lib/porota-observability
+2.8M	/var/lib/docker
+3.8M	/var/lib/command-not-found
+4.2M	/var/cache/snapd
+4.8M	/var/cache/debconf
+6.4M	/var/crash
+6.5M	/var/lib/ubuntu-advantage
+7.3M	/var/log/sysstat
+7.8M	/var/cache/swcatalog
+24M	/var/cache/fwupd
+37M	/var/lib/dpkg
+110M	/var/cache/apt
+154M	/var/cache
+196M	/var/lib/apt
+335M	/var/log/journal
+464M	/var/log
+4.7G	/var/lib/containerd
+4.9G	/var/lib
+5.5G	/var
+
+======================================================================
+02. CONTAINERD BREAKDOWN
+======================================================================
+4.0K	/var/lib/containerd/io.containerd.content.v1.content/ingest
+4.0K	/var/lib/containerd/io.containerd.runtime.v2.task/moby/2f29948e60507f99d607d3390536535da93cdba68ccc33e6891d09f34909d2b0
+4.0K	/var/lib/containerd/io.containerd.runtime.v2.task/moby/6b0402943d319131ed4f92bfc9b5fdd0dd957d6607322491ae698c2cebae2359
+4.0K	/var/lib/containerd/io.containerd.sandbox.controller.v1.shim
+4.0K	/var/lib/containerd/io.containerd.snapshotter.v1.blockfile
+4.0K	/var/lib/containerd/io.containerd.snapshotter.v1.btrfs
+4.0K	/var/lib/containerd/io.containerd.snapshotter.v1.erofs
+4.0K	/var/lib/containerd/io.containerd.snapshotter.v1.native/snapshots
+4.0K	/var/lib/containerd/tmpmounts
+8.0K	/var/lib/containerd/io.containerd.grpc.v1.introspection
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.native
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1629
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1630
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1631
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1632
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1633
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1634
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1650
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1662
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1663
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1664
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1682
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1692
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1700
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1711
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1721
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1729
+8.0K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1737
+12K	/var/lib/containerd/io.containerd.runtime.v2.task/moby
+16K	/var/lib/containerd/io.containerd.runtime.v2.task
+16K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1620
+16K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1621
+16K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1637
+20K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1624
+24K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1638
+24K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1666
+24K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1718
+24K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/931
+28K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1625
+28K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1658
+28K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1726
+32K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1717
+32K	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1725
+4.7M	/var/lib/containerd/io.containerd.metadata.v1.bolt
+4.8M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1627
+4.8M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1640
+4.8M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1648
+4.8M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1652
+4.8M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1668
+4.8M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1709
+4.8M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1713
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1622
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1641
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1653
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1660
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1669
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1680
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1690
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1698
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1702
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1708
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1714
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1719
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1723
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1727
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1735
+4.9M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1739
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1628
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1649
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1661
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1681
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1691
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1699
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1703
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1710
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1724
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1728
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1736
+5.0M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1740
+5.1M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1720
+13M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/929
+47M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/930
+84M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/485
+168M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1636
+169M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1623
+614M	/var/lib/containerd/io.containerd.content.v1.content
+614M	/var/lib/containerd/io.containerd.content.v1.content/blobs
+614M	/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256
+869M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1626
+869M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1639
+869M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1659
+869M	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1667
+4.1G	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+4.1G	/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots
+4.7G	/var/lib/containerd
+
+======================================================================
+03. DOCKER STORAGE BACKEND INFO
+======================================================================
+DockerRootDir=/var/lib/docker Driver=overlayfs ContainerdAddress=/run/containerd/containerd.sock
+Images space usage:
+
+REPOSITORY                  TAG                         IMAGE ID       CREATED             SIZE      SHARED SIZE   UNIQUE SIZE   CONTAINERS
+porota-iol-history-shadow   17.0.0-rc6                  c3346759a1f8   About an hour ago   1.61GB    1.596GB       12.49MB       0
+porota-trading-dashboard    17.0.0-rc6-operator-ux      2de65e36d890   About an hour ago   1.61GB    1.596GB       12.65MB       1
+porota-trading-bot          17.0.0-rc6                  b67c12a8d5ed   3 hours ago         1.61GB    1.596GB       12.36MB       1
+porota-trading-dashboard    17.0.0-rc6-classic-tables   94778188b016   5 hours ago         1.61GB    1.596GB       12.55MB       0
+porota-trading-dashboard    17.0.0-rc6-go-live-ux3      51150977cb88   17 hours ago        1.61GB    1.596GB       12.44MB       0
+porota-trading-dashboard    17.0.0-rc6-go-live-ux2      ee783e046504   18 hours ago        1.61GB    1.596GB       12.41MB       0
+porota-trading-dashboard    17.0.0-rc6-go-live-ux1      ead732d63f77   18 hours ago        1.61GB    1.596GB       12.38MB       0
+
+Containers space usage:
+
+CONTAINER ID   IMAGE                                             COMMAND                  LOCAL VOLUMES   SIZE      CREATED             STATUS                       NAMES
+6b0402943d31   porota-trading-dashboard:17.0.0-rc6-operator-ux   "python o_dashboard.…"   0               16.4kB    About an hour ago   Up About an hour (healthy)   porota_production_dashboard
+2f29948e6050   porota-trading-bot:17.0.0-rc6                     "python bv_paper_run…"   0               12.3kB    3 hours ago         Up 3 hours                   porota_production_observer
+
+Local Volumes space usage:
+
+VOLUME NAME   LINKS     SIZE
+
+Build cache usage: 2.738GB
+
+CACHE ID       CACHE TYPE     SIZE      CREATED             LAST USED           USAGE     SHARED
+jc4kujiolwji   regular        29.8MB    18 hours ago        18 hours ago        1         true
+95qipzs5dzxn   regular        4.27MB    18 hours ago        18 hours ago        1         true
+0k6it8dv27nz   regular        14.5MB    18 hours ago        18 hours ago        1         true
+3gcm3tqz9hr2   regular        18.7kB    18 hours ago        18 hours ago        1         true
+tjcx59r418gl   regular        6.14MB    18 hours ago        18 hours ago        1         true
+d37i8w4kjx9g   regular        6.29MB    18 hours ago        18 hours ago        1         true
+emhrckp3jl8k   regular        249B      18 hours ago        18 hours ago        1         true
+vvt5ygbqa1j4   regular        244MB     18 hours ago        18 hours ago        1         true
+lngbz26m4utp   regular        6.3MB     18 hours ago        18 hours ago        1         true
+bdcfy01r8pm7   regular        6.15MB    18 hours ago        18 hours ago        1         true
+txv3boj1fp81   regular        6.32MB    17 hours ago        17 hours ago        1         true
+nxh6z4ate241   regular        8.29kB    18 hours ago        17 hours ago        2         true
+q4y9csljq099   regular        18.7kB    17 hours ago        17 hours ago        1         true
+ph77z1fbeu7x   regular        6.17MB    17 hours ago        17 hours ago        1         true
+n6wsw8f07bso   regular        6.19MB    17 hours ago        17 hours ago        1         false
+ztvsg98yjy6w   regular        6.33MB    17 hours ago        17 hours ago        1         false
+ri8nwrxpli7v   regular        6.22MB    5 hours ago         5 hours ago         1         false
+tpwy5c6qzjnz   regular        6.37MB    5 hours ago         5 hours ago         1         false
+attwmbkjkw4o   source.local   5.06MB    18 hours ago        5 hours ago         6         false
+mbzl5h0lk3wt   regular        6.22MB    5 hours ago         5 hours ago         1         false
+yngxt6simh15   regular        6.37MB    5 hours ago         5 hours ago         1         false
+58bjiic1rkqs   regular        1.16GB    18 hours ago        3 hours ago         3         true
+zoasjgo36hyk   regular        6.12MB    3 hours ago         3 hours ago         1         true
+scdwg4ft3zg8   regular        6.27MB    3 hours ago         3 hours ago         1         true
+7m1whx7mdxat   regular        6.27MB    About an hour ago   About an hour ago   1         true
+kmqxgk0hoxad   regular        6.42MB    About an hour ago   About an hour ago   1         true
+l10zbd4p4kij   regular        6.18MB    About an hour ago   About an hour ago   1         false
+2yezf6mt0ani   regular        6.33MB    About an hour ago   About an hour ago   1         false
+0md0s4t3wocp   source.local   5.04MB    3 hours ago         About an hour ago   4         false
+lg88a7w8iouh   regular        6.34MB    About an hour ago   About an hour ago   1         false
+q7dqyxo3fs65   source.local   8.19kB    18 hours ago        About an hour ago   10        false
+ydih78i3vehu   source.local   8.19kB    18 hours ago        About an hour ago   10        false
+sskweu1bbi5c   regular        1.16GB    17 hours ago        About an hour ago   7         true
+c5z7509cbryr   regular        6.19MB    About an hour ago   About an hour ago   1         false
+
+======================================================================
+04. OBSERVER SQLITE PHYSICAL STRUCTURE
+======================================================================
+PATH=/opt/porota-trading/data/paper_v17/observer_v17.db
+FILE_BYTES=1499471872
+PAGE_SIZE=4096
+PAGE_COUNT=366105
+FREELIST_COUNT=0
+FREELIST_BYTES=0
+FREELIST_PCT=0.0000
+JOURNAL_MODE=wal
+QUICK_CHECK=ok
+-- DBSTAT TOP OBJECTS --
+1266012160	309085	historical_raw_archive
+28880896	7051	history_row_rejections_v2
+26038272	6357	ppi_intraday_points
+25464832	6217	market_snapshots
+14548992	3552	http_audit
+13471744	3289	candle_versions
+13074432	3192	idx_history_rejections_v2_identity
+11907072	2907	sqlite_autoindex_ppi_intraday_points_1
+11907072	2907	idx_intraday_identity_time
+8429568	2058	paper_equity_by_currency
+8163328	1993	history_attempt_ledger_v2
+7344128	1793	paper_decisions
+5636096	1376	catalog_query_results
+5623808	1373	paper_events
+4861952	1187	candle_samples
+4636672	1132	sqlite_autoindex_historical_raw_archive_1
+4149248	1013	sqlite_autoindex_candle_versions_1
+4149248	1013	idx_candle_asof
+4055040	990	sqlite_autoindex_candle_samples_1
+3944448	963	sqlite_autoindex_catalog_query_results_1
+3076096	751	production_history
+2576384	629	paper_equity
+2576384	629	idx_snapshot_identity
+2293760	560	sqlite_autoindex_paper_decisions_1
+2252800	550	scalping_candidates
+1892352	462	candle_rejections
+1269760	310	idx_history_attempt_v2_state
+1097728	268	symbol_cycle_metrics
+1040384	254	sqlite_autoindex_scalping_candidates_1
+1003520	245	contract_evidence
+991232	242	idx_snap_symbol
+720896	176	idx_history_attempt_v2_identity
+688128	168	universe_cycle_metrics
+675840	165	contract_evidence_v2_snapshots
+602112	147	idx_scalping_candidates_at
+593920	145	sre_snapshots
+425984	104	candle_series
+372736	91	contract_evidence_v2_changes
+364544	89	financial_instrument_catalog
+290816	71	ppi_intraday_contract_state
+-- TABLES AND INDEXES --
+index	idx_book_consumption	paper_book_consumption
+index	idx_candle_asof	candle_versions
+index	idx_contract_v2_changes_key	contract_evidence_v2_changes
+index	idx_contract_v2_runs_job	contract_evidence_v2_runs
+index	idx_contract_v2_snapshot_key	contract_evidence_v2_snapshots
+index	idx_history_attempt_v2_identity	history_attempt_ledger_v2
+index	idx_history_attempt_v2_state	history_attempt_ledger_v2
+index	idx_history_rejections_v2_identity	history_row_rejections_v2
+index	idx_intraday_identity_time	ppi_intraday_points
+index	idx_scalping_candidates_at	scalping_candidates
+index	idx_snap_symbol	market_snapshots
+index	idx_snapshot_identity	market_snapshots
+index	idx_spot_fills_position_side	paper_fills
+index	idx_spot_sales_position	paper_spot_sales
+index	sqlite_autoindex_a3_history_ingest_state_rc6_1	a3_history_ingest_state_rc6
+index	sqlite_autoindex_api_health_1	api_health
+index	sqlite_autoindex_backup_runs_1	backup_runs
+index	sqlite_autoindex_broker_market_configuration_1	broker_market_configuration
+index	sqlite_autoindex_candidate_universe_1	candidate_universe
+index	sqlite_autoindex_candle_dirty_1	candle_dirty
+index	sqlite_autoindex_candle_samples_1	candle_samples
+index	sqlite_autoindex_candle_series_1	candle_series
+index	sqlite_autoindex_candle_versions_1	candle_versions
+index	sqlite_autoindex_catalog_family_coverage_1	catalog_family_coverage
+index	sqlite_autoindex_catalog_query_results_1	catalog_query_results
+index	sqlite_autoindex_contract_evidence_1	contract_evidence
+index	sqlite_autoindex_contract_evidence_runs_1	contract_evidence_runs
+index	sqlite_autoindex_contract_evidence_v2_current_1	contract_evidence_v2_current
+index	sqlite_autoindex_contract_evidence_v2_runs_1	contract_evidence_v2_runs
+index	sqlite_autoindex_contract_evidence_v2_snapshots_1	contract_evidence_v2_snapshots
+index	sqlite_autoindex_financial_instrument_catalog_1	financial_instrument_catalog
+index	sqlite_autoindex_financial_news_1	financial_news
+index	sqlite_autoindex_financial_series_1	financial_series
+index	sqlite_autoindex_historical_raw_archive_1	historical_raw_archive
+index	sqlite_autoindex_instrument_catalog_1	instrument_catalog
+index	sqlite_autoindex_operational_jobs_1	operational_jobs
+index	sqlite_autoindex_paper_caucion_allocations_1	paper_caucion_allocations
+index	sqlite_autoindex_paper_caucion_allocations_2	paper_caucion_allocations
+index	sqlite_autoindex_paper_cauciones_1	paper_cauciones
+index	sqlite_autoindex_paper_cauciones_2	paper_cauciones
+index	sqlite_autoindex_paper_daily_risk_1	paper_daily_risk
+index	sqlite_autoindex_paper_decisions_1	paper_decisions
+index	sqlite_autoindex_paper_exit_intents_1	paper_exit_intents
+index	sqlite_autoindex_paper_learning_samples_1	paper_learning_samples
+index	sqlite_autoindex_paper_notification_outbox_1	paper_notification_outbox
+index	sqlite_autoindex_paper_position_marks_1	paper_position_marks
+index	sqlite_autoindex_paper_positions_1	paper_positions
+index	sqlite_autoindex_paper_risk_capital_1	paper_risk_capital
+index	sqlite_autoindex_paper_sale_receivables_1	paper_sale_receivables
+index	sqlite_autoindex_paper_valuation_quality_1	paper_valuation_quality
+index	sqlite_autoindex_ppi_intraday_contract_state_1	ppi_intraday_contract_state
+index	sqlite_autoindex_ppi_intraday_points_1	ppi_intraday_points
+index	sqlite_autoindex_production_history_1	production_history
+index	sqlite_autoindex_production_history_attempts_1	production_history_attempts
+index	sqlite_autoindex_report_registry_1	report_registry
+index	sqlite_autoindex_scalping_candidates_1	scalping_candidates
+index	sqlite_autoindex_source_sync_1	source_sync
+index	sqlite_autoindex_trade_gate_evaluations_1	trade_gate_evaluations
+table	a3_history_ingest_state_rc6	a3_history_ingest_state_rc6
+table	ai_shadow_evaluations	ai_shadow_evaluations
+table	api_health	api_health
+table	backup_runs	backup_runs
+table	broker_market_configuration	broker_market_configuration
+table	candidate_universe	candidate_universe
+table	candle_dirty	candle_dirty
+table	candle_rejections	candle_rejections
+table	candle_samples	candle_samples
+table	candle_series	candle_series
+table	candle_versions	candle_versions
+table	candle_worker_state	candle_worker_state
+table	catalog_family_coverage	catalog_family_coverage
+table	catalog_query_results	catalog_query_results
+table	contract_evidence	contract_evidence
+table	contract_evidence_runs	contract_evidence_runs
+table	contract_evidence_v2_changes	contract_evidence_v2_changes
+table	contract_evidence_v2_current	contract_evidence_v2_current
+table	contract_evidence_v2_runs	contract_evidence_v2_runs
+table	contract_evidence_v2_snapshots	contract_evidence_v2_snapshots
+table	financial_instrument_catalog	financial_instrument_catalog
+table	financial_news	financial_news
+table	financial_series	financial_series
+table	historical_raw_archive	historical_raw_archive
+table	history_attempt_ledger_v2	history_attempt_ledger_v2
+table	history_row_rejections_v2	history_row_rejections_v2
+table	http_audit	http_audit
+table	instrument_catalog	instrument_catalog
+table	intraday_scalping_worker_state	intraday_scalping_worker_state
+table	market_snapshots	market_snapshots
+table	observer_commands	observer_commands
+table	observer_state	observer_state
+table	operational_jobs	operational_jobs
+table	paper_book_consumption	paper_book_consumption
+table	paper_caucion_allocations	paper_caucion_allocations
+table	paper_cauciones	paper_cauciones
+table	paper_daily_risk	paper_daily_risk
+table	paper_decisions	paper_decisions
+table	paper_equity	paper_equity
+table	paper_equity_by_currency	paper_equity_by_currency
+table	paper_events	paper_events
+table	paper_exit_intents	paper_exit_intents
+table	paper_exit_reader_state	paper_exit_reader_state
+table	paper_fills	paper_fills
+table	paper_learning_samples	paper_learning_samples
+table	paper_notification_outbox	paper_notification_outbox
+table	paper_notification_worker	paper_notification_worker
+table	paper_position_marks	paper_position_marks
+table	paper_positions	paper_positions
+table	paper_risk_capital	paper_risk_capital
+table	paper_sale_receivables	paper_sale_receivables
+table	paper_spot_sales	paper_spot_sales
+table	paper_supervisor_state	paper_supervisor_state
+table	paper_valuation_quality	paper_valuation_quality
+table	paper_workspace	paper_workspace
+table	ppi_intraday_contract_state	ppi_intraday_contract_state
+table	ppi_intraday_points	ppi_intraday_points
+table	production_history	production_history
+table	production_history_attempts	production_history_attempts
+table	report_registry	report_registry
+table	scalping_candidates	scalping_candidates
+table	source_sync	source_sync
+table	sqlite_sequence	sqlite_sequence
+table	sre_snapshots	sre_snapshots
+table	symbol_cycle_metrics	symbol_cycle_metrics
+table	trade_gate_evaluations	trade_gate_evaluations
+table	universe_cycle_metrics	universe_cycle_metrics
+
+======================================================================
+05. MARKET HISTORY SQLITE PHYSICAL STRUCTURE
+======================================================================
+PATH=/opt/porota-trading/data/market_history.db
+FILE_BYTES=53985280
+PAGE_SIZE=4096
+PAGE_COUNT=13180
+FREELIST_COUNT=0
+FREELIST_BYTES=0
+FREELIST_PCT=0.0000
+QUICK_CHECK=ok
+-- DBSTAT TOP OBJECTS --
+11894784	2904	history_versions_v2
+9379840	2290	market_historical_ohlcv
+6803456	1661	history_canonical_v2
+5115904	1249	idx_history_versions_v2_source
+3264512	797	history_close_versions_v1
+2912256	711	sqlite_autoindex_market_historical_ohlcv_1
+2912256	711	idx_symbol_date
+2625536	641	idx_history_versions_v2_identity
+2424832	592	idx_history_canonical_v2_lookup
+2404352	587	sqlite_autoindex_history_canonical_v2_1
+1511424	369	idx_history_close_version_dedupe_v1
+1196032	292	history_close_canonical_v1
+724992	177	idx_history_close_versions_identity_v1
+401408	98	idx_history_close_canonical_lookup_v1
+393216	96	sqlite_autoindex_history_close_canonical_v1_1
+12288	3	sqlite_schema
+4096	1	sqlite_sequence
+4096	1	ingest_runs
+
+======================================================================
+06. OBSERVER ARTIFACT BACKUP RETENTION INVENTORY
+======================================================================
+158604884	2026-09-07 14:46	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-07.db.gz
+137454122	2026-09-06 21:58	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-06.db.gz
+121779006	2026-09-05 21:31	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-05.db.gz
+113056082	2026-09-05 02:02	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-04.db.gz
+76153119	2026-09-04 00:09	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-03.db.gz
+49893804	2026-09-02 19:56	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-02.db.gz
+24605322	2026-09-01 23:54	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-09-01.db.gz
+12710210	2026-09-01 00:18	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-08-31.db.gz
+9433349	2026-09-07 14:47	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-07.db.gz
+9432984	2026-09-06 21:58	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-06.db.gz
+8337464	2026-09-05 21:32	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-05.db.gz
+8217669	2026-09-05 02:02	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_2026-09-04.db.gz
+1131675	2026-08-30 15:19	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-08-30.db.gz
+343548	2026-08-29 21:12	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_2026-08-29.db.gz
+-- TOTAL --
+698M	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups
+-- COUNTS BY DIRECTORY --
+/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history	4
+/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper	10
+
+======================================================================
+07. GENERAL BACKUP CONTENTS
+======================================================================
+188M	/opt/porota-backups
+
+======================================================================
+08. COMPLETION
+======================================================================
+AUDIT_STATUS=COMPLETE_READ_ONLY
