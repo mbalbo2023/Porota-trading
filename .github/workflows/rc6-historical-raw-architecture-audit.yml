@@ -1,0 +1,191 @@
+name: RC6 historical raw architecture audit
+
+on:
+  push:
+    branches:
+      - audit/rc6-historical-raw-architecture-20260907
+    paths:
+      - '.github/workflows/rc6-historical-raw-architecture-audit.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/rc6-historical-raw-architecture-20260907
+          fetch-depth: 0
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_raw_audit"
+          chmod 600 "$HOME/.ssh/porota_raw_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Collect read-only architecture evidence
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_RC6_HISTORICAL_RAW_ARCHITECTURE_AUDIT_2026-09-07.txt'
+          ssh -i "$HOME/.ssh/porota_raw_audit" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' > "$REPORT" <<'REMOTE'
+          set -u
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          HIST="$REPO/data/market_history.db"
+          sep(){ printf '\n======================================================================\n%s\n======================================================================\n' "$1"; }
+
+          echo 'POROTA RC6 HISTORICAL RAW ARCHIVE — ARCHITECTURE AUDIT READ ONLY'
+          echo "UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo 'MUTATIONS=NONE'
+          echo 'FULL_PAYLOAD_HASH_SCAN=NOT_PERFORMED_DURING_MARKET_WINDOW'
+          echo 'PAYLOAD_CONTENT_PRINTED=NO'
+
+          sep '01 RUNTIME AND STORAGE IDENTITY'
+          echo "BRANCH=$(git -C "$REPO" branch --show-current)"
+          echo "HEAD=$(git -C "$REPO" rev-parse HEAD)"
+          df -hT /
+          stat -c 'OBSERVER_DB_BYTES=%s MTIME=%y' "$DB"
+          stat -c 'HISTORY_DB_BYTES=%s MTIME=%y' "$HIST"
+
+          sep '02 CODE WRITER/READER MAP — EXACT TERM'
+          git -C "$REPO" grep -n -I -E 'historical_raw_archive|raw_archive' -- '*.py' '*.sh' '*.md' '*.yml' '*.yaml' 2>/dev/null || true
+
+          sep '03 CODE MAP — HISTORICAL STORE / RAW / ARCHIVE INSERTS'
+          git -C "$REPO" grep -n -I -E 'INSERT[[:space:]]+INTO.*histor|CREATE[[:space:]]+TABLE.*histor|HistoricalStore|history_versions_v2|history_canonical_v2|market_historical_ohlcv' -- '*.py' '*.sh' 2>/dev/null || true
+
+          sep '04 OBSERVER DB TABLE METADATA'
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys,json,hashlib
+          p=sys.argv[1]
+          c=sqlite3.connect(f'file:{p}?mode=ro', uri=True, timeout=15)
+          c.execute('PRAGMA query_only=ON')
+          c.execute('PRAGMA busy_timeout=15000')
+          table='historical_raw_archive'
+          exists=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(table,)).fetchone()
+          print('TABLE_EXISTS='+('YES' if exists else 'NO'))
+          if not exists:
+              c.close(); raise SystemExit(0)
+          schema=c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?",(table,)).fetchone()[0]
+          print('TABLE_SCHEMA='+schema.replace('\n',' '))
+          cols=c.execute(f'PRAGMA table_info({table})').fetchall()
+          print('COLUMNS='+json.dumps([{'cid':r[0],'name':r[1],'type':r[2],'notnull':r[3],'default':r[4],'pk':r[5]} for r in cols],ensure_ascii=False))
+          idx=c.execute(f'PRAGMA index_list({table})').fetchall()
+          print('INDEX_LIST='+json.dumps(idx,ensure_ascii=False))
+          for r in idx:
+              name=r[1]
+              print('INDEX_INFO '+name+'='+json.dumps(c.execute(f'PRAGMA index_info("{name}")').fetchall(),ensure_ascii=False))
+          try:
+              row=c.execute("SELECT count(*),coalesce(sum(pgsize),0),coalesce(sum(payload),0),coalesce(sum(unused),0) FROM dbstat WHERE name=?",(table,)).fetchone()
+              print(f'DBSTAT_PAGES={row[0]} DBSTAT_BYTES={row[1]} DBSTAT_PAYLOAD_BYTES={row[2]} DBSTAT_UNUSED_BYTES={row[3]}')
+          except Exception as e:
+              print('DBSTAT_ERROR='+type(e).__name__)
+          lo,hi=c.execute(f'SELECT min(rowid),max(rowid) FROM {table}').fetchone()
+          print(f'ROWID_MIN={lo} ROWID_MAX={hi}')
+          names=[r[1] for r in cols]
+          print('COLUMN_NAMES='+','.join(names))
+          # Low-impact stratified sample: indexed rowid seeks only; never prints raw values.
+          if hi is not None:
+              targets=sorted(set([int(hi*x/20) for x in range(0,21)] + [hi]))
+              sampled=[]
+              payload_candidates=[n for n in names if any(k in n.lower() for k in ('payload','raw','json','body','data'))]
+              for target in targets:
+                  q=f'SELECT rowid,{",".join(["length(\"%s\")"%n for n in payload_candidates])} FROM {table} WHERE rowid>=? ORDER BY rowid LIMIT 1' if payload_candidates else f'SELECT rowid FROM {table} WHERE rowid>=? ORDER BY rowid LIMIT 1'
+                  r=c.execute(q,(target,)).fetchone()
+                  if r: sampled.append(r)
+              print('SAMPLE_ROWS='+str(len(sampled)))
+              if payload_candidates:
+                  print('SAMPLE_LENGTH_COLUMNS='+','.join(payload_candidates))
+                  for j,n in enumerate(payload_candidates, start=1):
+                      vals=[r[j] for r in sampled if len(r)>j and r[j] is not None]
+                      if vals:
+                          print(f'SAMPLE_LENGTH {n} min={min(vals)} max={max(vals)} avg={sum(vals)/len(vals):.1f}')
+          # Only indexed/min-max style metadata on likely temporal columns; no full duplicate scan.
+          for n in names:
+              low=n.lower()
+              if low in ('id','rowid'): continue
+              if any(k in low for k in ('created','updated','timestamp','observed_at','fetched_at','date','time')):
+                  try:
+                      mn,mx=c.execute(f'SELECT min("{n}"),max("{n}") FROM {table}').fetchone()
+                      print(f'RANGE {n} min={mn!r} max={mx!r}')
+                  except Exception as e:
+                      print(f'RANGE_ERROR {n}={type(e).__name__}')
+          c.close()
+          PY
+
+          sep '05 HISTORY STORE METADATA'
+          sudo -n python3 - "$HIST" <<'PY'
+          import sqlite3,sys,json
+          p=sys.argv[1]
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=15)
+          c.execute('PRAGMA query_only=ON'); c.execute('PRAGMA busy_timeout=15000')
+          targets=['history_versions_v2','history_canonical_v2','market_historical_ohlcv']
+          for t in targets:
+              ex=c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?",(t,)).fetchone()
+              print(f'TABLE={t} EXISTS={"YES" if ex else "NO"}')
+              if not ex: continue
+              print('SCHEMA='+ex[0].replace('\n',' '))
+              cols=c.execute(f'PRAGMA table_info({t})').fetchall()
+              print('COLUMNS='+json.dumps([r[1] for r in cols]))
+              try:
+                  ds=c.execute("SELECT count(*),coalesce(sum(pgsize),0) FROM dbstat WHERE name=?",(t,)).fetchone()
+                  print(f'DBSTAT_PAGES={ds[0]} DBSTAT_BYTES={ds[1]}')
+              except Exception as e: print('DBSTAT_ERROR='+type(e).__name__)
+              lo,hi=c.execute(f'SELECT min(rowid),max(rowid) FROM {t}').fetchone()
+              print(f'ROWID_MIN={lo} ROWID_MAX={hi}')
+              idx=c.execute(f'PRAGMA index_list({t})').fetchall()
+              print('INDEX_LIST='+json.dumps(idx))
+          c.close()
+          PY
+
+          sep '06 OPERATIONAL SAFETY PROOF'
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True,timeout=15); c.execute('PRAGMA query_only=ON')
+          r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone(); c.close()
+          print('OBSERVER_STATE='+('|'.join(map(str,r)) if r else 'MISSING'))
+          PY
+          for x in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            sudo -n docker inspect -f 'CONTAINER={{.Name}} RUNNING={{.State.Running}} RESTARTS={{.RestartCount}} HEALTH={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} IMAGE={{.Config.Image}}' "$x" 2>/dev/null || true
+          done
+
+          sep '07 AUDIT BOUNDARY'
+          echo 'NO_DELETE=YES'
+          echo 'NO_VACUUM=YES'
+          echo 'NO_CHECKPOINT_WAL=YES'
+          echo 'NO_SCHEMA_CHANGE=YES'
+          echo 'NO_PAYLOAD_CONTENT_EXPORTED=YES'
+          echo 'NEXT_DEEP_STEP=POST_CLOSE_FULL_DUPLICATE_HASH_AND_CROSS_STORE_RECONCILIATION_IF_JUSTIFIED'
+          echo 'AUDIT_STATUS=COMPLETE_READ_ONLY'
+          REMOTE
+          test -s "$REPORT"
+
+      - name: Publish audit evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_RC6_HISTORICAL_RAW_ARCHITECTURE_AUDIT_2026-09-07.txt'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$REPORT"
+          git commit -m 'audit(rc6): record historical raw architecture evidence'
+          git push origin HEAD:audit/rc6-historical-raw-architecture-20260907
