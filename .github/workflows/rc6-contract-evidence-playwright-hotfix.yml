@@ -1,0 +1,229 @@
+name: RC6 Contract Evidence Playwright hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/rc6-contract-evidence-playwright-20260907
+    paths:
+      - 'requirements-contract-evidence.txt'
+      - 'scripts/porota_contract_evidence_rc6_runtime.sh'
+      - '.github/workflows/rc6-contract-evidence-playwright-hotfix.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-contract-evidence-playwright-hotfix
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Validate isolated browser hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/porota_contract_evidence_rc6_runtime.sh
+          python -m py_compile rc6_trusted_browser_contract_collector.py rc6_contract_due_job.py rc6_contract_capture_importer.py
+          grep -qx 'playwright==1.62.0' requirements-contract-evidence.txt
+          grep -q 'POROTA_CE_PYTHON' scripts/porota_contract_evidence_rc6_runtime.sh
+          grep -q 'PLAYWRIGHT_MODULE_MISSING' scripts/porota_contract_evidence_rc6_runtime.sh
+          ! grep -REn 'send_order\(|new_order\(|replace_order\(|cancel_order\(' \
+            rc6_trusted_browser_contract_collector.py scripts/porota_contract_evidence_rc6_runtime.sh
+          echo 'OFFLINE_VALIDATION=GREEN'
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ce_hotfix"
+          chmod 600 "$HOME/.ssh/porota_ce_hotfix"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage isolated Contract Evidence files
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/porota-ce-playwright-hotfix.tgz \
+            requirements-contract-evidence.txt \
+            scripts/porota_contract_evidence_rc6_runtime.sh
+          scp -i "$HOME/.ssh/porota_ce_hotfix" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            /tmp/porota-ce-playwright-hotfix.tgz "$DO_USER@$DO_HOST:/tmp/porota-ce-playwright-hotfix.tgz"
+      - name: Install isolated Playwright runtime and prove E2E
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          EXPECTED_OBSERVER_SHA: 5076b6dff8c644ed73160b4148eb7a1cf9ca7e43
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ce_hotfix" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "EXPECTED_OBSERVER_SHA='$EXPECTED_OBSERVER_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          umask 077
+          ROOT=/opt/porota-trading
+          DB="$ROOT/data/paper_v17/observer_v17.db"
+          OUT="$ROOT/data/contract_evidence/rc6_trusted"
+          STATE="$OUT/runtime_state.json"
+          VENV=/opt/porota-contract-evidence-venv
+          RUNTIME=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          TIMER=porota-contract-evidence-rc6.timer
+          TMP="$(mktemp -d /tmp/porota-ce-pw.XXXXXX)"
+          cleanup(){ rm -rf "$TMP" /tmp/porota-ce-playwright-hotfix.tgz; }
+          trap cleanup EXIT
+          tar -xzf /tmp/porota-ce-playwright-hotfix.tgz -C "$TMP"
+
+          echo '=== RC6 CONTRACT EVIDENCE PLAYWRIGHT HOTFIX PRECHECK ==='
+          OBS_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)"
+          OBS_STATE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)"
+          DASH_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)"
+          DASH_STATE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)"
+          IMAGE_LABEL="$(sudo -n docker image inspect porota-trading-bot:17.0.0-rc6 --format '{{index .Config.Labels "porota.commit"}}')"
+          printf 'OBSERVER_BEFORE=%s|%s\n' "$OBS_ID" "$OBS_STATE"
+          printf 'DASHBOARD_BEFORE=%s|%s\n' "$DASH_ID" "$DASH_STATE"
+          printf 'OBSERVER_IMAGE_LABEL=%s\n' "$IMAGE_LABEL"
+          test "$OBS_STATE" = 'true|0|true|porota-trading-bot:17.0.0-rc6'
+          test "$IMAGE_LABEL" = "$EXPECTED_OBSERVER_SHA"
+          test "$DASH_STATE" != ''
+          case "$DASH_STATE" in true\|0\|*) ;; *) exit 1;; esac
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print('|'.join(map(str,(qc,*r))))
+          PY
+          )"
+          printf 'OBSERVER_DB_BEFORE=%s\n' "$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+          RUNS_BEFORE="$(python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          print(c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0]); c.close()
+          PY
+          )"
+          printf 'CE_RUNS_BEFORE=%s\n' "$RUNS_BEFORE"
+
+          test -x /usr/bin/google-chrome-stable
+          if ! python3 -m venv "$TMP/venv-probe" >/dev/null 2>&1; then
+            echo 'PYTHON_VENV_PACKAGE=INSTALLING'
+            sudo -n apt-get update -qq
+            sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
+          fi
+          rm -rf "$TMP/venv-probe"
+
+          if [ ! -x "$VENV/bin/python" ]; then
+            sudo -n python3 -m venv "$VENV"
+          fi
+          sudo -n "$VENV/bin/python" -m pip install --disable-pip-version-check --no-cache-dir --upgrade pip
+          sudo -n "$VENV/bin/python" -m pip install --disable-pip-version-check --no-cache-dir -r "$TMP/requirements-contract-evidence.txt"
+          sudo -n "$VENV/bin/python" - <<'PY'
+          import importlib.metadata
+          from playwright.sync_api import sync_playwright
+          v=importlib.metadata.version('playwright')
+          assert v=='1.62.0', v
+          print('PLAYWRIGHT_IMPORT=OK')
+          print('PLAYWRIGHT_VERSION='+v)
+          PY
+
+          sudo -n systemctl stop "$TIMER" || true
+          if [ -r "$RUNTIME" ]; then
+            sudo -n cp -a "$RUNTIME" "$RUNTIME.pre-playwright-hotfix"
+          fi
+          sudo -n install -m 0755 "$TMP/scripts/porota_contract_evidence_rc6_runtime.sh" "$RUNTIME"
+          sudo -n bash -n "$RUNTIME"
+
+          # Clear only the obsolete dependency backoff. Never erase auth/2FA state.
+          if [ -s "$STATE" ]; then
+            OLD_STATE="$(python3 - "$STATE" <<'PY'
+          import json,sys
+          try: print(json.load(open(sys.argv[1],encoding='utf-8')).get('state',''))
+          except Exception: print('')
+          PY
+          )"
+            if [ "$OLD_STATE" = 'BLOCKED_PLAYWRIGHT_UNAVAILABLE' ]; then
+              sudo -n rm -f "$STATE"
+              echo 'STALE_PLAYWRIGHT_BACKOFF=CLEARED'
+            else
+              printf 'EXISTING_BACKOFF_PRESERVED=%s\n' "$OLD_STATE"
+            fi
+          fi
+
+          set +e
+          CE_OUT="$(sudo -n "$RUNTIME" 2>&1)"
+          CE_RC=$?
+          set -e
+          printf '%s\n' "$CE_OUT"
+          printf 'CONTRACT_EVIDENCE_RUNTIME_RC=%s\n' "$CE_RC"
+          test "$CE_RC" -eq 0
+          ! printf '%s\n' "$CE_OUT" | grep -Eq 'BLOCKED_PLAYWRIGHT_UNAVAILABLE|CE_PYTHON_MISSING|PLAYWRIGHT_MODULE_MISSING'
+
+          sudo -n systemctl enable --now "$TIMER" >/dev/null
+          test "$(sudo -n systemctl is-enabled "$TIMER")" = enabled
+          test "$(sudo -n systemctl is-active "$TIMER")" = active
+
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print('|'.join(map(str,(qc,*r))))
+          PY
+          )"
+          RUNS_AFTER="$(python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          print(c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0]); c.close()
+          PY
+          )"
+          printf 'OBSERVER_DB_AFTER=%s\n' "$POST"
+          printf 'CE_RUNS_AFTER=%s\n' "$RUNS_AFTER"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)" = "$OBS_ID"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)" = "$OBS_STATE"
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)" = "$DASH_ID"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)" = "$DASH_STATE"
+          curl -fsS http://127.0.0.1:8000/health | python3 -c "import sys,json; assert json.load(sys.stdin).get('status')=='ok'"
+
+          if printf '%s\n' "$CE_OUT" | grep -q '^STATUS=GREEN_COLLECTION$'; then
+            test "$RUNS_AFTER" -gt "$RUNS_BEFORE"
+            echo 'CONTRACT_EVIDENCE_E2E=GREEN_COLLECTION_IMPORTED'
+          elif printf '%s\n' "$CE_OUT" | grep -q '^STATUS=AMARILLO_AUTH_BLOCKED$'; then
+            echo 'CONTRACT_EVIDENCE_E2E=YELLOW_AUTH_REQUIRES_SEPARATE_ACTION'
+          elif printf '%s\n' "$CE_OUT" | grep -q '^STATUS=AMARILLO_AUTH_BACKOFF$'; then
+            echo 'CONTRACT_EVIDENCE_E2E=YELLOW_EXISTING_AUTH_BACKOFF'
+          elif printf '%s\n' "$CE_OUT" | grep -q '^STATUS=GREEN_NOT_DUE$'; then
+            echo 'CONTRACT_EVIDENCE_E2E=GREEN_NOT_DUE'
+          else
+            echo 'CONTRACT_EVIDENCE_E2E=UNEXPECTED_STATUS'
+            exit 1
+          fi
+          echo 'PLAYWRIGHT_HOTFIX=GREEN_INSTALLED_ISOLATED'
+          echo 'OBSERVER_CHANGED=NO'
+          echo 'DASHBOARD_CHANGED=NO'
+          echo 'REAL_ORDERS_SENT=0'
+          HOST
