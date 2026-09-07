@@ -59,3 +59,7 @@ def test_2fa_status_is_fail_closed_and_noninteractive():
     payload=m.status_payload('BLOCKED_AUTH_2FA_REQUIRED',attempts=2)
     assert 'BLOCKED_AUTH_2FA_REQUIRED' in payload
     assert 'real_orders_sent": 0' in payload
+
+
+# E2E rerun marker: local PPI web credential set was refreshed after the prior
+# BLOCKED_AUTH_USERNAME_REQUIRED result. No behavioral assertion is relaxed.
