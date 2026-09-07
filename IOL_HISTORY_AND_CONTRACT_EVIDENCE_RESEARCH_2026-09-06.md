@@ -4,6 +4,24 @@
 
 Evaluar InvertirOnline (IOL) como fuente independiente para mejorar la calidad/cobertura histórica de POROTA y como fuente complementaria de Contract Evidence. No se incorpora a trading live ni a ejecución en esta etapa.
 
+## Corrección importante después de auditar el SHA live exacto
+
+El repositorio **sí contiene código IOL previo**. No debe describirse como una integración inexistente.
+
+En el SHA live `db26c76723bb988c956589c572b87cbcb4191731` existen:
+
+- `ak_iol_client.py`: cliente IOL desactivado por default mediante `IOL_ENABLED=false`; usa credenciales desde entorno, maneja token/refresh, throttling y consultas API;
+- `al_historical_ingest.py`: ETL histórico legacy con `backfill_desde_iol()`, normalización OHLCV y persistencia en `market_historical_ohlcv`;
+- `j_main.py`: runtime legacy antiguo; **no forma parte del split `PRODUCTION_PAPER` RC6 y no debe activarse para habilitar IOL**.
+
+Por lo tanto el estado canónico es:
+
+**IOL está implementado parcialmente en código legacy, pero está dormido/no cableado al observer RC6, al scheduler histórico RC6 ni al History Store v2 actual.**
+
+Además, `ak_iol_client.py` no es estrictamente GET-only: aunque no expone envío/cancelación de órdenes, contiene `estimar_operacion()`, que realiza un `POST` al endpoint de estimación. Esa llamada se describe como simulación de costos y no como ejecución, pero impide considerar al módulo completo un guard histórico GET-only. Para un proof RC6 debemos aislar un cliente `IOL_HISTORY_READONLY` con allowlist positiva de GET y sin métodos POST alcanzables.
+
+El ETL legacy `al_historical_ingest.py` tampoco debe convertirse directamente en canonical porque su tabla `market_historical_ohlcv` tiene PK `(symbol,date)` y hace UPSERT reemplazando la fuente anterior. La arquitectura actual History Store v2 conserva versiones/provenance y es el destino correcto para una futura integración gobernada.
+
 ## Hechos confirmados en fuentes oficiales IOL
 
 La página oficial de API de IOL declara que el servicio permite obtener:
@@ -36,9 +54,11 @@ Casos de uso:
 
 Antes de una primera llamada autenticada desde POROTA:
 - credenciales/tokens exclusivamente en secrets; nunca Git;
-- `IOL_READONLY_GUARD` con allowlist positiva de hosts y métodos GET autorizados;
+- `IOL_HISTORY_READONLY` con allowlist positiva de host y rutas GET autorizadas;
+- no importar/exponer `estimar_operacion()` ni ningún POST desde el proceso de history proof;
 - rutas de orden/operación no deben ser alcanzables desde el cliente histórico;
 - no reutilizar el cliente histórico para trading;
+- no arrancar `j_main.py`;
 - timeout, retry limitado, backoff, rate budget y auditoría de cada request;
 - ningún dato IOL puede habilitar órdenes reales;
 - `real_orders_sent=0` sigue siendo invariante;
@@ -70,9 +90,9 @@ Para cada identidad comparar:
 
 ## Modelo de persistencia propuesto
 
-No sobrescribir PPI silenciosamente.
+Primera prueba: no escribir canonical.
 
-Guardar como fuente separada, por ejemplo `IOL_HISTORY`, dentro del esquema versionado. La reconciliación debe conservar:
+Si el proof es satisfactorio, conectar IOL al History Store v2 como fuente separada, por ejemplo `IOL_HISTORY`, conservando:
 - source;
 - observed_at;
 - raw fingerprint/hash;
@@ -82,7 +102,9 @@ Guardar como fuente separada, por ejemplo `IOL_HISTORY`, dentro del esquema vers
 - validación/razón de rechazo;
 - precedencia aplicada.
 
-La precedencia definitiva PPI/IOL/Data912 debe decidirse con evidencia, no por orden de implementación.
+No usar `market_historical_ohlcv` legacy como store canónico de la nueva integración porque su UPSERT puede reemplazar silenciosamente fuente/provenance por `(symbol,date)`.
+
+La precedencia definitiva PPI/IOL/Data912 debe decidirse con evidencia, no por orden de implementación. El History Store v2 ya tiene conocimiento de fuentes/ranking histórico; verificar el nombre/rank exacto de IOL antes de conectar el sink y revisar la política con datos comparativos reales.
 
 ## API vs scraping
 
@@ -106,12 +128,14 @@ Por eso no se debe convertir scraping IOL en una nueva ingesta masiva sin revisi
 
 ## Estado / prioridad
 
-- IOL historical proof: `P1`, útil para M3 y RCA de calidad histórica.
-- IOL Contract Evidence: `P1/P2` según huecos reales.
-- IOL scraping masivo: `NO APROBADO`; sólo investigar necesidad y términos.
-- No es blocker del Go Live PAPER del lunes.
-- No cambia PPI como fuente live actual.
-- Real money permanece `BLOCKED`.
+- código IOL legacy: PRESENTE pero DORMIDO/no cableado a RC6;
+- IOL historical proof RC6: `P1`, útil para M3 y RCA de calidad histórica;
+- migración del ETL IOL a History Store v2: P1 después del proof;
+- IOL Contract Evidence: `P1/P2` según huecos reales;
+- IOL scraping masivo: `NO APROBADO`; sólo investigar necesidad y términos;
+- no es blocker del Go Live PAPER del lunes;
+- no cambia PPI como fuente live actual;
+- real money permanece `BLOCKED`.
 
 ## Fuentes públicas consultadas
 
@@ -121,6 +145,8 @@ Por eso no se debe convertir scraping IOL en una nueva ingesta masiva sin revisi
 - Términos y condiciones IOL: `https://www.invertironline.com/terminos-y-condiciones-iol`
 - Términos de uso históricos del sitio: `https://iol.invertironline.com/home/terminos_y_condiciones`
 
-## Próxima acción autorizable después del Go Live
+## Próxima acción
 
-Construir un proof read-only aislado, inicialmente sin persistencia canónica, que consulte un conjunto pequeño de símbolos, guarde sólo evidencia de auditoría y entregue una matriz PPI vs IOL. Sólo después decidir si se conecta a History Store v2.
+Construir un proof RC6 read-only aislado, inicialmente sin persistencia canónica, que consulte un conjunto pequeño de símbolos, guarde evidencia de auditoría y entregue una matriz PPI vs IOL. Sólo después decidir si se conecta a History Store v2.
+
+No activar credenciales ni realizar llamadas autenticadas hasta que exista el guard GET-only y la cuenta/servicio IOL estén explícitamente habilitados para esa prueba.
