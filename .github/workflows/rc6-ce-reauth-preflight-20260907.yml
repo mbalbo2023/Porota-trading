@@ -10,38 +10,41 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: SSH setup
-        env: {SSH_KEY: '${{ secrets.DO_SSH_KEY }}', KNOWN_HOSTS: '${{ secrets.DO_KNOWN_HOSTS }}'}
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
-          set -euo pipefail; install -m 700 -d ~/.ssh; printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519; printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts; chmod 600 ~/.ssh/known_hosts
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
       - name: Check prerequisites without exposing secrets
-        env: {HOST: '${{ secrets.DO_HOST }}', USER: '${{ secrets.DO_USER }}'}
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          echo CE_REAUTH_PREFLIGHT=START
+          SECRET=/etc/porota/contract-evidence-web.env
           PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
           PY=/opt/porota-contract-evidence-venv/bin/python
-          for f in /opt/porota-trading/.secrets/ppi_web.env /opt/porota-trading/.secrets/ppi_web_credentials.env /home/porotaadmin/.config/porota/ppi_web.env; do
-            if sudo -n test -f "$f" 2>/dev/null || test -f "$f" 2>/dev/null; then
-              echo "PPI_WEB_SECRET_FILE_PRESENT=YES"
-              python3 - "$f" <<'PY' 2>/dev/null || sudo -n python3 - "$f" <<'PY'
-import sys
-p=sys.argv[1]; vals={}
-for raw in open(p,encoding='utf-8',errors='replace'):
- s=raw.strip()
- if s and not s.startswith('#') and '=' in s:
-  k,v=s.split('=',1); vals[k.strip()]=v.strip().strip('"').strip("'")
-print('PPI_WEB_USERNAME_PRESENT='+('YES' if bool(vals.get('PPI_WEB_USERNAME')) else 'NO'))
-print('PPI_WEB_PASSWORD_PRESENT='+('YES' if bool(vals.get('PPI_WEB_PASSWORD')) else 'NO'))
-PY
-              stat -c 'PPI_WEB_SECRET_OWNER_MODE=%U|%G|%a' "$f" 2>/dev/null || sudo -n stat -c 'PPI_WEB_SECRET_OWNER_MODE=%U|%G|%a' "$f" 2>/dev/null || true
-              break
-            fi
-          done
+          echo CE_REAUTH_PREFLIGHT=START
+          if sudo -n test -f "$SECRET"; then
+            echo PPI_WEB_SECRET_FILE_PRESENT=YES
+            sudo -n grep -Eq '^PPI_WEB_USERNAME=.+$' "$SECRET" && echo PPI_WEB_USERNAME_PRESENT=YES || echo PPI_WEB_USERNAME_PRESENT=NO
+            sudo -n grep -Eq '^PPI_WEB_PASSWORD=.+$' "$SECRET" && echo PPI_WEB_PASSWORD_PRESENT=YES || echo PPI_WEB_PASSWORD_PRESENT=NO
+            sudo -n stat -c 'PPI_WEB_SECRET_OWNER_MODE=%U|%G|%a' "$SECRET"
+          else
+            echo PPI_WEB_SECRET_FILE_PRESENT=NO
+            echo PPI_WEB_USERNAME_PRESENT=NO
+            echo PPI_WEB_PASSWORD_PRESENT=NO
+          fi
           if [ -d "$PROFILE" ]; then echo PROFILE_PRESENT=YES; stat -c 'PROFILE_OWNER=%U|%G' "$PROFILE"; else echo PROFILE_PRESENT=NO; fi
           if [ -x "$PY" ]; then echo PLAYWRIGHT_VENV=YES; "$PY" -c 'import playwright; print("PLAYWRIGHT_IMPORT=YES")' 2>/dev/null || echo PLAYWRIGHT_IMPORT=NO; else echo PLAYWRIGHT_VENV=NO; fi
-          if command -v google-chrome-stable >/dev/null 2>&1; then echo CHROME_PRESENT=YES; else echo CHROME_PRESENT=NO; fi
+          command -v google-chrome-stable >/dev/null 2>&1 && echo CHROME_PRESENT=YES || echo CHROME_PRESENT=NO
           test -f /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py && echo REAUTH_HELPER_LIVE=YES || echo REAUTH_HELPER_LIVE=NO
           test -f /opt/porota-trading/data/contract_evidence/rc6_trusted/runtime_state.json && echo BACKOFF_STATE_PRESENT=YES || echo BACKOFF_STATE_PRESENT=NO
           echo CE_REAUTH_PREFLIGHT=END
