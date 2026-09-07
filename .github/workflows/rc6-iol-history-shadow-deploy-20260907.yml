@@ -1,0 +1,184 @@
+name: RC6 IOL history shadow deploy 2026-09-07
+
+on:
+  push:
+    branches:
+      - feature/rc6-iol-history-shadow-deploy-20260907
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-iol-history-shadow-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build isolated IOL candidate
+        run: |
+          set -euo pipefail
+          docker build --pull=false --label "porota.commit=${GITHUB_SHA}" -t porota-iol-history-shadow:test .
+      - name: Offline strict read-only tests
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 --entrypoint python porota-iol-history-shadow:test \
+            -m pytest -q -p no:cacheprovider tests/test_iol_history_readonly_rc6.py
+      - name: Static guard
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python porota-iol-history-shadow:test - <<'PY'
+          import ast,inspect
+          import fa_iol_history_readonly_rc6 as m
+          m.assert_iol_readonly_invariants()
+          source=inspect.getsource(m)
+          tree=ast.parse(source)
+          imports=[]
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Import): imports.extend(a.name for a in n.names)
+              elif isinstance(n,ast.ImportFrom) and n.module: imports.append(n.module)
+          assert not any(x=='ak_iol_client' or x.startswith('ppi') for x in imports), imports
+          assert 'canonical_write_allowed=allowed' in source
+          print('IOL_SHADOW_STATIC_GUARD=GREEN')
+          PY
+
+  deploy-shadow:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_iol_shadow"
+          chmod 600 "$HOME/.ssh/porota_iol_shadow"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage image and run read-only canary
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_iol_shadow" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'HOST' | tee /tmp/iol-shadow-deploy.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          OBS_SHA=5076b6dff8c644ed73160b4148eb7a1cf9ca7e43
+          OBS_BRANCH=hotfix/rc6-paper-t1-settlement-20260907
+          OBS_IMAGE=porota-trading-bot:17.0.0-rc6
+          IOL_IMAGE=porota-iol-history-shadow:17.0.0-rc6
+          TMP=''; WT=''; IOL_ENV=''
+          cleanup(){ [ -z "$IOL_ENV" ] || rm -f "$IOL_ENV"; [ -z "$WT" ] || git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true; [ -z "$TMP" ] || rmdir "$TMP" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          observer_check(){
+            test "$(git -C "$REPO" branch --show-current)" = "$OBS_BRANCH"
+            test "$(git -C "$REPO" rev-parse HEAD)" = "$OBS_SHA"
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$OBS_IMAGE|0|true"
+            test "$(sudo -n docker image inspect "$OBS_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$OBS_SHA"
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import os,sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          c.execute('PRAGMA query_only=ON')
+          qc=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print('|'.join(map(str,(qc,mode,orders,os.getenv('PAPER_T1_FULL_DATE_RELEASE','')))))
+          PY
+          )"
+            echo "OBSERVER_RUNTIME=$state"
+            test "$state" = 'ok|PRODUCTION_PAPER|0|true'
+          }
+
+          echo '=== POROTA RC6 IOL HISTORY SHADOW DEPLOY ==='
+          observer_check
+          python3 - <<'PY'
+          from pathlib import Path
+          vals={}
+          for raw in Path('/opt/porota-trading/.env').read_text(encoding='utf-8',errors='replace').splitlines():
+              line=raw.strip()
+              if line and not line.startswith('#') and '=' in line:
+                  k,v=line.split('=',1); vals[k.strip()]=v.strip().strip('"').strip("'")
+          assert vals.get('IOL_USERNAME'), 'IOL_USERNAME_MISSING'
+          assert vals.get('IOL_PASSWORD'), 'IOL_PASSWORD_MISSING'
+          print('IOL_CREDENTIAL_PRESENCE=GREEN')
+          PY
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          TMP="$(mktemp -d "$HOME/porota-iol-shadow.XXXXXX")"; WT="$TMP/source"
+          git -C "$REPO" worktree add --detach "$WT" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label porota.scope=IOL_HISTORY_SHADOW_READONLY -t "$IOL_IMAGE" "$WT"
+          test "$(sudo -n docker image inspect "$IOL_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$TARGET_SHA"
+          IOL_ENV="$(mktemp "$HOME/porota-iol-env.XXXXXX")"; chmod 600 "$IOL_ENV"
+          python3 - "$IOL_ENV" <<'PY'
+          from pathlib import Path
+          import sys
+          src=Path('/opt/porota-trading/.env')
+          dst=Path(sys.argv[1])
+          allowed={'IOL_USERNAME','IOL_PASSWORD','IOL_BASE_URL'}
+          lines=[]
+          for raw in src.read_text(encoding='utf-8',errors='replace').splitlines():
+              if '=' not in raw or raw.lstrip().startswith('#'):
+                  continue
+              key=raw.split('=',1)[0].strip()
+              if key in allowed:
+                  lines.append(raw)
+          dst.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          PY
+          sudo -n docker run --rm --name porota_iol_history_shadow_canary \
+            --user botuser --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=1000,gid=1000,mode=1777 \
+            --env-file "$IOL_ENV" --entrypoint python "$IOL_IMAGE" - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from fa_iol_history_readonly_rc6 import IOLHistoryIdentity,IOLHistoryReadOnlyClient,assert_iol_readonly_invariants
+          assert_iol_readonly_invariants()
+          identity=IOLHistoryIdentity(symbol='CEPU',instrument_type='ACCIONES',market='bcba',settlement='A-24HS',source_term='T1',settlement_alignment_verified=False)
+          client=IOLHistoryReadOnlyClient()
+          bars=client.get_history_evidence(identity,from_date='2026-09-01',to_date='2026-09-04',price_basis='RAW',now=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')))
+          assert bars, 'IOL_NO_BARS'
+          assert all(b.quality_class=='FULL_OHLCV' for b in bars)
+          assert all(b.canonical_write_allowed is False for b in bars)
+          assert all(b.canonical_block_reason=='ALIGNMENT_UNVERIFIED' for b in bars)
+          print('IOL_SHADOW_CANARY=GREEN')
+          print('IOL_BARS='+str(len(bars)))
+          print('IOL_FIRST='+bars[0].date)
+          print('IOL_LAST='+bars[-1].date)
+          print('IOL_PRICE_BASIS='+bars[0].price_basis)
+          print('IOL_CANONICAL_WRITE=DENY')
+          print('IOL_ALIGNMENT=UNVERIFIED')
+          PY
+          rm -f "$IOL_ENV"; IOL_ENV=''
+          test -z "$(sudo -n docker ps -q --filter name=porota_iol_history_shadow_canary)"
+          observer_check
+          echo "IOL_IMAGE=$IOL_IMAGE"
+          echo "IOL_IMAGE_SHA=$TARGET_SHA"
+          echo IOL_RUNTIME_MODE=ONE_SHOT_SHADOW_READONLY
+          echo IOL_DB_MOUNT=NONE
+          echo IOL_PPI_SECRET_MOUNT=NONE
+          echo IOL_ORDER_CAPABILITY=NONE
+          echo IOL_CANONICAL_WRITE=DENY
+          echo OBSERVER_RESTARTED=NO
+          echo REAL_ORDERS_SENT=0
+          echo POROTA_RC6_IOL_SHADOW_DEPLOY=GREEN
+          HOST
+          {
+            echo '### RC6 IOL historical shadow deploy'
+            echo '```text'
+            sed -n '1,1200p' /tmp/iol-shadow-deploy.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
