@@ -1,0 +1,190 @@
+name: RC6 Critical control-plane healthcheck one-shot
+
+on:
+  push:
+    branches: [closure/rc6-critical-control-plane-20260907]
+    paths:
+      - '.github/workflows/rc6-critical-healthcheck-apply-once.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-critical-healthcheck-one-shot
+  cancel-in-progress: false
+
+env:
+  OLD_SOURCE_SHA: cf2ebf2ca6afe80dfa618437befd6734db708efe
+  NEW_SOURCE_SHA: 80f51c207cfbe7850ae3540cff77931736ac2c85
+  GATEWAY_CONTAINER: porota_critical_approval_rc6
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate one-shot scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'closure/rc6-critical-control-plane-20260907'
+          git cat-file -e "${NEW_SOURCE_SHA}^{commit}"
+          test -f fo_critical_approval_health_rc6.py
+          python -m py_compile fo_critical_approval_health_rc6.py
+          bash -n ops/rc6_apply_critical_control_plane_healthcheck.sh
+          echo 'HEALTHCHECK_ONE_SHOT_SCOPE=GREEN'
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_health_once"
+          chmod 600 "$HOME/.ssh/porota_health_once"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Apply dedicated gateway healthcheck transactionally
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          ssh -i "$HOME/.ssh/porota_health_once" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "OLD_SOURCE_SHA='$OLD_SOURCE_SHA' NEW_SOURCE_SHA='$NEW_SOURCE_SHA' GATEWAY_CONTAINER='$GATEWAY_CONTAINER' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          BASE=/opt/porota-control-plane-rc6
+          CURRENT="$BASE/current"
+          OLD_RELEASE="$BASE/releases/$OLD_SOURCE_SHA"
+          NEW_RELEASE="$BASE/releases/$NEW_SOURCE_SHA"
+          GW_UNIT=/etc/systemd/system/porota-critical-approval-rc6.service
+          TMP=/tmp/porota-critical-health-one-shot
+          ORIGINAL_UNIT="$TMP/original.service"
+          PATCHED_UNIT="$TMP/patched.service"
+          changed=0
+
+          cleanup() {
+            rc=$?
+            if [[ $rc -ne 0 && $changed -eq 1 ]]; then
+              echo "CRITICAL_HEALTHCHECK_ROLLBACK=START rc=$rc"
+              sudo -n ln -sfn "$OLD_RELEASE" "$CURRENT" || true
+              if [[ -f "$ORIGINAL_UNIT" ]]; then
+                sudo -n install -m 0644 "$ORIGINAL_UNIT" "$GW_UNIT" || true
+                sudo -n systemctl daemon-reload || true
+              fi
+              sudo -n systemctl restart porota-critical-approval-rc6.service || true
+              echo 'CRITICAL_HEALTHCHECK_ROLLBACK=COMPLETE'
+            fi
+            rm -rf "$TMP" >/dev/null 2>&1 || true
+            exit "$rc"
+          }
+          trap cleanup EXIT
+
+          echo '=== RC6 CRITICAL HEALTHCHECK PRECHECK ==='
+          test "$(readlink -f "$CURRENT")" = "$OLD_RELEASE"
+          test "$(sudo -n systemctl is-active porota-critical-approval-rc6.service)" = active
+          test "$(sudo -n systemctl is-active porota-critical-github-proxy-rc6.service)" = active
+          obs_id="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)"
+          dash_id="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)"
+          db_pre="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,*r))))
+          PY
+          )"
+          echo "OBSERVER_DB_PRE=$db_pre"
+          test "$db_pre" = 'ok|PRODUCTION_PAPER|0'
+
+          cd "$REPO"
+          git fetch origin 'feature/rc6-critical-telegram-approval-20260907' --quiet
+          git cat-file -e "${NEW_SOURCE_SHA}^{commit}"
+          mkdir -p "$TMP"
+          for f in fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py fo_critical_approval_health_rc6.py; do
+            git show "${NEW_SOURCE_SHA}:$f" > "$TMP/$f"
+            python3 -m py_compile "$TMP/$f"
+          done
+          sudo -n install -d -m 0755 "$NEW_RELEASE"
+          for f in fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py fo_critical_approval_health_rc6.py; do
+            sudo -n install -m 0644 "$TMP/$f" "$NEW_RELEASE/$f"
+          done
+          sudo -n cat "$GW_UNIT" > "$ORIGINAL_UNIT"
+          python3 - "$ORIGINAL_UNIT" "$PATCHED_UNIT" <<'PY'
+          import pathlib,sys
+          src=pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          health='--health-cmd="python /code/fo_critical_approval_health_rc6.py" --health-interval=10s --health-timeout=5s --health-start-period=10s --health-retries=3'
+          if health in src:
+              out=src
+          else:
+              needle='--memory 192m --tmpfs /tmp:rw,noexec,nosuid,size=32m'
+              if src.count(needle) != 1:
+                  raise SystemExit('CRITICAL_HEALTHCHECK_PATCH_NEEDLE_INVALID')
+              out=src.replace(needle,f'--memory 192m {health} --tmpfs /tmp:rw,noexec,nosuid,size=32m')
+          pathlib.Path(sys.argv[2]).write_text(out,encoding='utf-8')
+          PY
+          grep -Fq -- '--health-cmd="python /code/fo_critical_approval_health_rc6.py"' "$PATCHED_UNIT"
+          sudo -n systemd-analyze verify "$PATCHED_UNIT" >/dev/null
+          echo 'CRITICAL_HEALTHCHECK_UNIT_VERIFY=GREEN'
+
+          changed=1
+          sudo -n ln -sfn "$NEW_RELEASE" "$CURRENT"
+          sudo -n install -m 0644 "$PATCHED_UNIT" "$GW_UNIT"
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl restart porota-critical-approval-rc6.service
+
+          for _ in $(seq 1 20); do
+            h="$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$GATEWAY_CONTAINER" 2>/dev/null || echo missing)"
+            [[ "$h" == healthy ]] && break
+            sleep 5
+          done
+          h="$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$GATEWAY_CONTAINER")"
+          echo "CRITICAL_DOCKER_HEALTH=$h"
+          test "$h" = healthy
+          test "$(sudo -n systemctl is-active porota-critical-approval-rc6.service)" = active
+          test "$(sudo -n systemctl is-active porota-critical-github-proxy-rc6.service)" = active
+          sudo -n docker exec "$GATEWAY_CONTAINER" python -c "from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get('status')=='ok' and h.get('capability')=='issues_only',h; print('ISSUES_CAPABILITY_BROKER=GREEN')"
+          gateway_log="$(sudo -n journalctl -u porota-critical-approval-rc6.service -n 80 --no-pager)"
+          if printf '%s\n' "$gateway_log" | grep -Eiq 'HTTP_409|terminated by other getUpdates|TELEGRAM_SINGLE_CONSUMER_NOT_ENFORCED'; then
+            echo 'TELEGRAM_SINGLE_CONSUMER=RED'; exit 1
+          fi
+          echo 'TELEGRAM_SINGLE_CONSUMER=GREEN'
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)" = "$obs_id"
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)" = "$dash_id"
+          db_post="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,*r))))
+          PY
+          )"
+          echo "OBSERVER_DB_POST=$db_post"
+          test "$db_post" = 'ok|PRODUCTION_PAPER|0'
+          echo 'OBSERVER_RESTARTED=NO'
+          echo 'DASHBOARD_RESTARTED=NO'
+          echo 'REAL_ORDERS_SENT=0'
+          echo "CONTROL_PLANE_SOURCE_SHA=$NEW_SOURCE_SHA"
+          echo 'CRITICAL_HEALTHCHECK_PERSISTENCE=GREEN'
+          echo 'TRADING_RUNTIME_UNCHANGED=GREEN'
+          changed=0
+          rm -rf "$TMP"
+          trap - EXIT
+          HOST
