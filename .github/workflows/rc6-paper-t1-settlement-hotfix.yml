@@ -1,0 +1,378 @@
+name: RC6 PAPER T1 settlement hotfix
+
+on:
+  push:
+    branches: [hotfix/rc6-paper-t1-settlement-20260907]
+    paths:
+      - 'cf_sale_settlement.py'
+      - 'porota_mode_manager.py'
+      - 'tests/test_rc6_t1_settlement_hotfix.py'
+      - '.github/workflows/rc6-paper-t1-settlement-hotfix.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-paper-t1-settlement-hotfix
+  cancel-in-progress: false
+
+env:
+  BASE_LIVE_SHA: db26c76723bb988c956589c572b87cbcb4191731
+  BASE_LIVE_BRANCH: hotfix/rc6-cedear-us-labor-day-20260906
+  TARGET_BRANCH: hotfix/rc6-paper-t1-settlement-20260907
+
+jobs:
+  validate:
+    name: Offline validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Exact lineage and narrow diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$BASE_LIVE_SHA" HEAD
+          git diff --check
+          python - <<'PY'
+          import subprocess
+          allowed={
+            'cf_sale_settlement.py',
+            'porota_mode_manager.py',
+            'tests/test_rc6_t1_settlement_hotfix.py',
+            '.github/workflows/rc6-paper-t1-settlement-hotfix.yml',
+          }
+          changed=set(subprocess.check_output(
+              ['git','diff','--name-only','db26c76723bb988c956589c572b87cbcb4191731..HEAD'],
+              text=True).splitlines())
+          unexpected=changed-allowed
+          assert not unexpected, f'UNEXPECTED_DIFF={sorted(unexpected)}'
+          assert {'cf_sale_settlement.py','porota_mode_manager.py','tests/test_rc6_t1_settlement_hotfix.py'} <= changed
+          print('NARROW_DIFF=GREEN', sorted(changed))
+          PY
+
+      - name: Compile hotfix source
+        run: python -m py_compile cf_sale_settlement.py porota_mode_manager.py tests/test_rc6_t1_settlement_hotfix.py
+
+      - name: Build exact candidate
+        run: docker build --pull=false --label "porota.commit=$GITHUB_SHA" --label "porota.version=17.0.0-rc6" -t porota-rc6-t1:${GITHUB_SHA} .
+
+      - name: Focused settlement and Labor Day regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=96m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX -e DB_PATH=/tmp/porota-ci.db \
+            -e TELEGRAM_CHAT_ID=0 -e STARTUP_REQUIRE_AUTH=false \
+            --entrypoint python porota-rc6-t1:${GITHUB_SHA} \
+            -m pytest -q -p no:cacheprovider \
+            tests/test_rc6_t1_settlement_hotfix.py tests/test_rc6_us_underlying_holiday.py
+
+      - name: Existing PAPER ledger regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Default hotfix policy is fail-closed, therefore all pre-existing
+          # ledger tests retain their historical semantics unless they opt in.
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX -e DB_PATH=/tmp/porota-ci.db \
+            -e TELEGRAM_CHAT_ID=0 -e STARTUP_REQUIRE_AUTH=false \
+            --entrypoint bash porota-rc6-t1:${GITHUB_SHA} -lc \
+            'unset PAPER_T1_FULL_DATE_RELEASE; python -m pytest -q -p no:cacheprovider --tb=short \
+              --ignore=tests/test_hotfix_rc3_hf2.py \
+              --ignore=tests/test_hotfix_rc3_hf4.py \
+              --ignore=tests/test_hotfix_rc3_hf6.py \
+              --ignore=tests/test_intraday_scalping_hf3.py \
+              --ignore=tests/test_rc4_acceptance.py \
+              --ignore=tests/test_rc4_hf1_last_mile.py \
+              --ignore=tests/test_rc4_hf2_consolidation.py'
+
+      - name: Safety and runtime contract invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -i --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=1777 \
+            --entrypoint python porota-rc6-t1:${GITHUB_SHA} - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          import _version
+          import bu_instrument_catalog as catalog
+          import cf_sale_settlement as settlement
+          import porota_mode_manager as manager
+          os.environ.pop('PAPER_T1_FULL_DATE_RELEASE',None)
+          assert settlement.t1_full_date_release_enabled() is False
+          assert manager.production([]) is None  # unreachable: must raise
+          PY
+        continue-on-error: true
+
+      - name: Strict safety assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -i --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=1777 \
+            --entrypoint python porota-rc6-t1:${GITHUB_SHA} - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          import _version
+          import bu_instrument_catalog as catalog
+          import cf_sale_settlement as settlement
+          import porota_mode_manager as manager
+          assert _version.VERSION=='17.0.0-rc6'
+          assert _version.MODE=='PRODUCTION_PAPER'
+          assert _version.EXECUTION=='SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY=='BLOCKED'
+          os.environ.pop('PAPER_T1_FULL_DATE_RELEASE',None)
+          assert settlement.t1_full_date_release_enabled() is False
+          try:
+              manager.production([])
+          except RuntimeError as exc:
+              assert 'DESHABILITADA PERMANENTEMENTE' in str(exc)
+          else:
+              raise AssertionError('production() must remain disabled')
+          at=datetime(2026,9,7,10,15,tzinfo=ZoneInfo('America/Argentina/Buenos_Aires'))
+          expected='UNDERLYING_MARKET_CLOSED: US_LABOR_DAY'
+          for symbol in ('AAPL','AAPLD','AAPLC','MSFT','KO','MELI'):
+              assert catalog.rc6_underlying_opening_block(symbol,'CEDEARS',at)==expected
+          assert catalog.rc6_underlying_opening_block('GGAL','ACCIONES',at)==''
+          print('SAFETY_INVARIANTS=GREEN')
+          PY
+
+  deploy:
+    name: Observer-only transactional deployment
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_deploy"
+          chmod 600 "$HOME/.ssh/porota_deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Activate exact observer hotfix with rollback
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_deploy" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' BASE_LIVE_SHA='$BASE_LIVE_SHA' BASE_LIVE_BRANCH='$BASE_LIVE_BRANCH' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          umask 077
+          REPO=/opt/porota-trading
+          TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
+          CANDIDATE_IMAGE="porota-trading-bot:rc6-t1-${TARGET_SHA:0:12}"
+          ROLLBACK_IMAGE="porota-trading-bot:rc6-t1-rollback-${BASE_LIVE_SHA:0:12}"
+          SECRET="$REPO/.secrets/ppi_production.json"
+          RUNTIME_ENV="$REPO/data/diagnosticos/observer_runtime_v17.env"
+          TMP=''; WT=''; ACTIVATED=0
+
+          current_branch="$(git -C "$REPO" branch --show-current)"
+          current_sha="$(git -C "$REPO" rev-parse HEAD)"
+          current_label="$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')"
+          current_image_id="$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{.Id}}')"
+          dashboard_id="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)"
+          dashboard_state="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)"
+
+          verify_observer() {
+            local expected_label="$1"
+            local obs label state
+            obs="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+            echo "VERIFY_OBSERVER=$obs"
+            test "$obs" = "true|$TARGET_IMAGE|0|true"
+            label="$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')"
+            echo "VERIFY_LABEL=$label"
+            test "$label" = "$expected_label"
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import os,sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          quick=c.execute('PRAGMA quick_check').fetchone()[0]
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print('|'.join(map(str,(quick,*row,os.getenv('PAPER_T1_FULL_DATE_RELEASE','')))))
+          PY
+          )"
+            echo "VERIFY_DB_ENV=$state"
+            if [ "$expected_label" = "$TARGET_SHA" ]; then
+              test "$state" = 'ok|PRODUCTION_PAPER|0|true'
+            else
+              case "$state" in 'ok|PRODUCTION_PAPER|0|'|'ok|PRODUCTION_PAPER|0|false') ;; *) return 1;; esac
+            fi
+          }
+
+          rollback() {
+            echo 'T1_ROLLBACK=START'
+            sudo -n docker rm -f porota_production_observer >/dev/null 2>&1 || true
+            sudo -n docker tag "$ROLLBACK_IMAGE" "$TARGET_IMAGE"
+            git -C "$REPO" checkout -f -B "$BASE_LIVE_BRANCH" "$BASE_LIVE_SHA"
+            git -C "$REPO" branch --set-upstream-to="origin/$BASE_LIVE_BRANCH" "$BASE_LIVE_BRANCH" >/dev/null 2>&1 || true
+            sudo -n docker run -d --name porota_production_observer \
+              --pull never --restart unless-stopped --no-healthcheck --user botuser --read-only \
+              --cap-drop ALL --security-opt no-new-privileges:true \
+              --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+              -e PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json \
+              -e PAPER_DB_PATH=/app/data/paper_v17/observer_v17.db \
+              -e MARKET_OPEN_HOUR=10 -e MARKET_OPEN_MINUTE=30 \
+              -e MARKET_CLOSE_HOUR=17 -e MARKET_CLOSE_MINUTE=0 \
+              -e PAPER_PREOPEN_MINUTES=15 -e PPI_LOGIN_COOLDOWN_SECONDS=900 \
+              -e PPI_HISTORY_BATCH_LIMIT=40 -e DATA_DIR=/app/data \
+              -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
+              --env-file "$RUNTIME_ENV" -v "$REPO/data:/app/data" \
+              -v "$SECRET:/run/secrets/ppi_production.json:ro" \
+              --entrypoint python "$TARGET_IMAGE" bv_paper_runtime.py >/dev/null
+            sleep 8
+            verify_observer "$BASE_LIVE_SHA"
+            echo 'T1_ROLLBACK=GREEN'
+          }
+
+          cleanup() {
+            if [ -n "$WT" ] && [ -d "$WT" ]; then git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true; fi
+            [ -z "$TMP" ] || rmdir "$TMP" >/dev/null 2>&1 || true
+          }
+          on_exit() {
+            rc=$?
+            if [ "$rc" -ne 0 ] && [ "$ACTIVATED" -eq 1 ]; then rollback || true; fi
+            cleanup
+            exit "$rc"
+          }
+          trap on_exit EXIT
+
+          echo '=== RC6 T1 SETTLEMENT HOTFIX PREDEPLOY ==='
+          echo "CURRENT_BRANCH=$current_branch"
+          echo "CURRENT_SHA=$current_sha"
+          echo "CURRENT_LABEL=$current_label"
+          echo "DASHBOARD_BEFORE=$dashboard_id|$dashboard_state"
+          test "$current_branch" = "$BASE_LIVE_BRANCH"
+          test "$current_sha" = "$BASE_LIVE_SHA"
+          test "$current_label" = "$BASE_LIVE_SHA"
+          test "$dashboard_state" != ''
+          case "$dashboard_state" in true\|0\|*) ;; *) exit 1;; esac
+          test -f "$SECRET" && test -f "$RUNTIME_ENV"
+          git -C "$REPO" diff --quiet
+          git -C "$REPO" diff --cached --quiet
+          verify_observer "$BASE_LIVE_SHA"
+
+          sudo -n docker tag "$current_image_id" "$ROLLBACK_IMAGE"
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          git -C "$REPO" merge-base --is-ancestor "$BASE_LIVE_SHA" "$TARGET_SHA"
+          TMP="$(mktemp -d "$HOME/porota-rc6-t1.XXXXXX")"
+          WT="$TMP/source"
+          git -C "$REPO" worktree add --detach "$WT" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false \
+            --label "porota.commit=$TARGET_SHA" --label "porota.version=17.0.0-rc6" \
+            -t "$CANDIDATE_IMAGE" "$WT"
+
+          sudo -n docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=1777 \
+            --entrypoint python "$CANDIDATE_IMAGE" - <<'PY'
+          import os
+          import _version
+          import cf_sale_settlement as s
+          assert _version.REAL_ORDER_CAPABILITY=='BLOCKED'
+          assert _version.EXECUTION=='SIMULATED'
+          os.environ.pop('PAPER_T1_FULL_DATE_RELEASE',None)
+          assert s.t1_full_date_release_enabled() is False
+          print('REMOTE_CANDIDATE_INVARIANTS=GREEN')
+          PY
+
+          # Candidate becomes the canonical observer tag only immediately before recreation.
+          sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
+          sudo -n docker rm -f porota_production_observer >/dev/null
+          ACTIVATED=1
+          sudo -n docker run -d --name porota_production_observer \
+            --pull never --restart unless-stopped --no-healthcheck --user botuser --read-only \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -e PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json \
+            -e PAPER_DB_PATH=/app/data/paper_v17/observer_v17.db \
+            -e PAPER_T1_FULL_DATE_RELEASE=true \
+            -e MARKET_OPEN_HOUR=10 -e MARKET_OPEN_MINUTE=30 \
+            -e MARKET_CLOSE_HOUR=17 -e MARKET_CLOSE_MINUTE=0 \
+            -e PAPER_PREOPEN_MINUTES=15 -e PPI_LOGIN_COOLDOWN_SECONDS=900 \
+            -e PPI_HISTORY_BATCH_LIMIT=40 -e DATA_DIR=/app/data \
+            -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
+            --env-file "$RUNTIME_ENV" -v "$REPO/data:/app/data" \
+            -v "$SECRET:/run/secrets/ppi_production.json:ro" \
+            --entrypoint python "$TARGET_IMAGE" bv_paper_runtime.py >/dev/null
+          sleep 10
+          verify_observer "$TARGET_SHA"
+
+          # Read-only proof: no overdue T+1 receivable remains pending under the hotfix.
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          from datetime import datetime,timezone
+          from decimal import Decimal
+          from bs_instrument_contracts import aware_datetime
+          from cf_sale_settlement import validated_sale_settlement
+          DB='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{DB}?mode=ro',uri=True,timeout=20)
+          c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON')
+          now=datetime.now(timezone.utc)
+          overdue=[]; pending=[]
+          if c.execute("SELECT 1 FROM sqlite_master WHERE name='paper_spot_sales'").fetchone():
+              rows=c.execute('''SELECT p.paper_id,p.symbol,p.settlement,s.net_proceeds,s.available_at,s.basis,f.filled_at
+                 FROM paper_spot_sales s JOIN paper_positions p ON p.paper_id=s.paper_id
+                 JOIN paper_fills f ON f.id=s.fill_id''').fetchall()
+              for r in rows:
+                  a=validated_sale_settlement(r['settlement'],r['filled_at'],r['available_at'],r['basis'])
+                  if Decimal(r['net_proceeds'])>0 and (a is None or a>now): pending.append((r['symbol'],r['filled_at']))
+                  if a is not None and a<=now and (r['available_at'] is None): pass
+          rows=c.execute('''SELECT p.paper_id,p.symbol,p.settlement,r.net_proceeds,r.available_at,r.basis,p.closed_at
+              FROM paper_sale_receivables r JOIN paper_positions p USING(paper_id)''').fetchall()
+          for r in rows:
+              a=validated_sale_settlement(r['settlement'],r['closed_at'],r['available_at'],r['basis'])
+              if Decimal(r['net_proceeds'])>0 and (a is None or a>now): pending.append((r['symbol'],r['closed_at']))
+          c.close()
+          print('PENDING_EFFECTIVE_COUNT='+str(len(pending)))
+          print('PENDING_EFFECTIVE_SAMPLE='+repr(pending[:10]))
+          print('T1_READONLY_RECONCILIATION=GREEN')
+          PY
+
+          # Persist source identity for future mode-manager restarts only after runtime proof.
+          git -C "$REPO" checkout -f -B "$TARGET_BRANCH" "$TARGET_SHA"
+          git -C "$REPO" branch --set-upstream-to="origin/$TARGET_BRANCH" "$TARGET_BRANCH" >/dev/null 2>&1 || true
+
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)" = "$dashboard_id"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)" = "$dashboard_state"
+          curl -fsS http://127.0.0.1:8000/health | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('status')=='ok'"
+
+          sudo -n docker image rm "$ROLLBACK_IMAGE" >/dev/null 2>&1 || true
+          sudo -n docker image rm "$CANDIDATE_IMAGE" >/dev/null 2>&1 || true
+          ACTIVATED=0
+          echo "T1_HOTFIX_DEPLOY=GREEN"
+          echo "TARGET_SHA=$TARGET_SHA"
+          echo "DASHBOARD_UNCHANGED=YES"
+          echo "REAL_ORDERS_EXPECTED=0"
+          HOST
