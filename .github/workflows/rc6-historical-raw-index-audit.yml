@@ -1,0 +1,124 @@
+name: RC6 historical raw index-only duplication audit
+
+on:
+  push:
+    branches:
+      - audit/rc6-historical-raw-architecture-20260907
+    paths:
+      - '.github/workflows/rc6-historical-raw-index-audit.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/rc6-historical-raw-architecture-20260907
+          fetch-depth: 0
+      - name: Prepare SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Collect index-only evidence
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_RC6_HISTORICAL_RAW_INDEX_AUDIT_2026-09-07.txt'
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' > "$REPORT" <<'REMOTE'
+          set -u
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          sep(){ printf '\n======================================================================\n%s\n======================================================================\n' "$1"; }
+          echo 'POROTA RC6 HISTORICAL RAW INDEX AUDIT — READ ONLY'
+          echo "UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo 'BODY_JSON_READ=NO_FOR_AGGREGATES'
+          sep '01 WRITER CALL GRAPH'
+          git -C "$REPO" grep -n -I -E 'archive_raw\(|migrate_legacy\(' -- '*.py' '*.sh' 2>/dev/null || true
+          sep '02 COVERING-INDEX AGGREGATES'
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys,json
+          p=sys.argv[1]
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=15)
+          c.execute('PRAGMA query_only=ON'); c.execute('PRAGMA busy_timeout=15000')
+          t='historical_raw_archive'
+          idx='sqlite_autoindex_historical_raw_archive_1'
+          base=f'{t} INDEXED BY {idx}'
+          n=c.execute(f'SELECT count(*) FROM {base}').fetchone()[0]
+          print('ROWS_EXACT='+str(n))
+          origins=c.execute(f'SELECT origin,count(*),count(DISTINCT row_key),count(DISTINCT body_hash) FROM {base} GROUP BY origin ORDER BY count(*) DESC,origin').fetchall()
+          print('ORIGIN_COUNT='+str(len(origins)))
+          for origin,rows,keys,hashes in origins:
+              print(f'ORIGIN rows={rows} row_keys={keys} body_hashes={hashes} value={origin!r}')
+          total_keys=c.execute(f'SELECT count(*) FROM (SELECT origin,row_key FROM {base} GROUP BY origin,row_key)').fetchone()[0]
+          total_hashes=c.execute(f'SELECT count(*) FROM (SELECT body_hash FROM {base} GROUP BY body_hash)').fetchone()[0]
+          print(f'UNIQUE_ORIGIN_ROW_KEYS={total_keys}')
+          print(f'UNIQUE_BODY_HASHES={total_hashes}')
+          rev=c.execute(f'''SELECT count(*),coalesce(sum(n-1),0),coalesce(max(n),0)
+                            FROM (SELECT origin,row_key,count(*) n FROM {base}
+                                  GROUP BY origin,row_key HAVING count(*)>1)''').fetchone()
+          print(f'REVISIONED_KEYS={rev[0]} EXTRA_VERSION_ROWS={rev[1]} MAX_VERSIONS_PER_KEY={rev[2]}')
+          dup=c.execute(f'''SELECT count(*),coalesce(sum(n-1),0),coalesce(max(n),0)
+                            FROM (SELECT body_hash,count(*) n FROM {base}
+                                  GROUP BY body_hash HAVING count(*)>1)''').fetchone()
+          print(f'REPEATED_BODY_HASHES={dup[0]} REPEATED_HASH_EXTRA_ROWS={dup[1]} MAX_HASH_MULTIPLICITY={dup[2]}')
+          cross=c.execute(f'''SELECT count(*),coalesce(sum(n-1),0),coalesce(max(n),0)
+                              FROM (SELECT row_key,count(*) n FROM {base}
+                                    GROUP BY row_key HAVING count(*)>1)''').fetchone()
+          print(f'ROW_KEYS_REPEATED_ACROSS_ALL_ROWS={cross[0]} ROW_KEY_EXTRA_ROWS={cross[1]} MAX_ROW_KEY_MULTIPLICITY={cross[2]}')
+          # Top revision multiplicities; row_key values are intentionally not printed.
+          tops=c.execute(f'''SELECT n,count(*) FROM (
+                               SELECT origin,row_key,count(*) n FROM {base} GROUP BY origin,row_key
+                             ) GROUP BY n ORDER BY n DESC LIMIT 20''').fetchall()
+          print('VERSION_MULTIPLICITY_HISTOGRAM='+json.dumps(tops))
+          seq=c.execute("SELECT seq FROM sqlite_sequence WHERE name=?",(t,)).fetchone()
+          print('SQLITE_SEQUENCE='+str(seq[0] if seq else None))
+          # Stratified rowid seeks only for non-indexed quality/timestamp metadata; no JSON selected.
+          lo,hi=c.execute(f'SELECT min(rowid),max(rowid) FROM {t}').fetchone()
+          sample=[]
+          if hi:
+              for target in sorted(set(int(hi*x/40) for x in range(41))):
+                  r=c.execute(f'SELECT id,origin,recorded_at,quality FROM {t} WHERE rowid>=? ORDER BY rowid LIMIT 1',(target,)).fetchone()
+                  if r: sample.append(r)
+          print('STRATIFIED_METADATA_SAMPLES='+str(len(sample)))
+          from collections import Counter
+          print('SAMPLE_QUALITY='+json.dumps(Counter(r[3] for r in sample),sort_keys=True))
+          rec=[r[2] for r in sample if r[2]]
+          if rec: print(f'SAMPLE_RECORDED_AT_MIN={min(rec)} SAMPLE_RECORDED_AT_MAX={max(rec)}')
+          c.close()
+          PY
+          sep '03 SAFETY'
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True,timeout=15); c.execute('PRAGMA query_only=ON')
+          r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone(); c.close()
+          print('OBSERVER_STATE='+('|'.join(map(str,r)) if r else 'MISSING'))
+          PY
+          echo 'MUTATIONS=NONE'
+          echo 'AUDIT_STATUS=COMPLETE_READ_ONLY'
+          REMOTE
+          test -s "$REPORT"
+      - name: Publish evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT='POROTA_RC6_HISTORICAL_RAW_INDEX_AUDIT_2026-09-07.txt'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$REPORT"
+          git commit -m 'audit(rc6): record raw archive index evidence'
+          git push origin HEAD:audit/rc6-historical-raw-architecture-20260907
