@@ -1,15 +1,29 @@
 """Disponibilidad de ventas PAPER: fail-closed sin inventar un cutoff intradía.
 
 CI puede acreditarse en el mismo instante modelado. Para T+1 se calcula sólo
-la fecha hábil esperada como evidencia diagnóstica. Sin una acreditación
-reconciliada/autoritativa no se inventa una hora ni una frontera automática:
-el producido permanece bloqueado hasta confirmación explícita.
+la fecha hábil esperada como evidencia diagnóstica. Por defecto, sin una
+acreditación reconciliada/autoritativa, el producido permanece bloqueado.
+
+RC6 hotfix 2026-09-07: cuando ``PAPER_T1_FULL_DATE_RELEASE=true`` el motor PAPER
+puede liberar un T+1 únicamente DESPUÉS de haber transcurrido por completo la
+fecha hábil esperada de liquidación. No se inventa una hora de broker: se usa
+00:00 del día calendario siguiente como frontera conservadora. Esta regla es
+sólo del simulador PAPER y nunca autoriza órdenes reales ni acredita saldos PPI.
 """
+import os
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from bs_instrument_contracts import aware_datetime
 
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
+
+
+def t1_full_date_release_enabled():
+    """Feature flag explícito del runtime PAPER; apagado fuera del modo versionado."""
+    return str(os.getenv('PAPER_T1_FULL_DATE_RELEASE', '')).strip().lower() in {
+        '1', 'true', 'yes', 'si', 'sí'
+    }
+
 
 def modeled_sale_settlement_date(settlement, traded_at):
     """Fecha hábil esperada, sin hora contractual inventada."""
@@ -26,12 +40,13 @@ def modeled_sale_settlement_date(settlement, traded_at):
         if calendar.es_dia_habil_operativo(candidate): return candidate.isoformat()
     return None
 
-def conservative_unconfirmed_availability(settlement, traded_at):
-    """Frontera diagnóstica conservadora, no autorización para liberar caja.
 
-    Puede expresar el comienzo del día posterior a la fecha hábil esperada,
-    pero no constituye evidencia del broker y por sí sola jamás acredita un
-    producido T+1. Si ni siquiera la fecha es demostrable, retorna ``None``.
+def conservative_unconfirmed_availability(settlement, traded_at):
+    """Frontera diagnóstica conservadora, no una hora atribuida al broker.
+
+    Expresa el comienzo del día posterior a la fecha hábil esperada. No libera
+    nada por sí sola: ``validated_sale_settlement`` sólo la reconoce para T+1
+    cuando el feature flag versionado del runtime PAPER está habilitado.
     """
     expected=modeled_sale_settlement_date(settlement,traded_at)
     if expected is None:
@@ -39,11 +54,13 @@ def conservative_unconfirmed_availability(settlement, traded_at):
     boundary=date.fromisoformat(expected)+timedelta(days=1)
     return datetime.combine(boundary,time.min,tzinfo=TZ)
 
+
 def modeled_sale_settlement(settlement, traded_at):
-    """Timestamp de disponibilidad sólo cuando el modelo puede defenderlo.
+    """Timestamp persistible cuando el modelo tiene una frontera contractual.
 
     CI retorna el instante de venta. T+1 retorna ``None`` deliberadamente:
-    la DB no persiste una hora de broker no observada.
+    la DB no persiste una hora de broker no observada. El hotfix puede calcular
+    una frontera PAPER efectiva al leer, sin reescribir la procedencia histórica.
     """
     at=aware_datetime(traded_at).astimezone(TZ)
     if not isinstance(settlement,str): raise ValueError('Plazo de liquidación no textual')
@@ -54,20 +71,24 @@ def modeled_sale_settlement(settlement, traded_at):
         return None
     return None
 
-def validated_sale_settlement(settlement, traded_at, available_at, basis):
-    """Aceptar sólo disponibilidad defendible por la procedencia declarada.
 
-    ``PENDING_CONFIRMATION`` nunca se auto-acredita por el mero paso del
-    tiempo. Si ni siquiera la fecha hábil es demostrable, también permanece
-    bloqueado hasta conciliación. Una marca ``PAPER_CONSERVATIVE_CALENDAR``
-    sólo es válida para plazos cuyo timestamp modelado sí esté definido (CI).
+def validated_sale_settlement(settlement, traded_at, available_at, basis):
+    """Disponibilidad efectiva defendible por procedencia y política PAPER.
+
+    ``PENDING_CONFIRMATION`` jamás acepta un ``available_at`` inventado. Con el
+    flag T+1 apagado conserva la semántica histórica y permanece bloqueado. Con
+    el flag encendido, sólo para un T+1 reconocido y con fecha hábil demostrable,
+    devuelve la frontera conservadora posterior al día completo de settlement.
+    El caller todavía debe comparar esa frontera contra su ``as_of``.
     """
     traded=aware_datetime(traded_at)
     available=aware_datetime(available_at) if available_at is not None else None
     if basis=='PENDING_CONFIRMATION':
         if available is not None: raise ValueError('Recibo pendiente con acreditación no confirmada')
-        # Sin evidencia del broker no existe una hora de disponibilidad defendible.
-        # La fecha hábil esperada sirve para diagnóstico, jamás para liberar caja.
+        if t1_full_date_release_enabled():
+            key=str(settlement or '').upper().strip()
+            if key in {'A-24HS','24HS','T+1'}:
+                return conservative_unconfirmed_availability(settlement,traded)
         return None
     if basis=='PAPER_CONSERVATIVE_CALENDAR':
         modeled=modeled_sale_settlement(settlement,traded)
