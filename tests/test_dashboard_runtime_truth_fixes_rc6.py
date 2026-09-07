@@ -52,3 +52,31 @@ def test_sre_integrity_failure_remains_blocking(monkeypatch):
     }])
     row = truth._sre_runtime_evidence({"key":"SRE_SNAPSHOT","state":"AMARILLO","detail":"old","paper_blocking":False})
     assert row["paper_blocking"] is True
+
+
+def test_introspection_hourly_snapshot_is_not_mislabeled_stale(monkeypatch):
+    import et_dashboard_runtime_truth_fixes_rc6 as truth
+    truth = importlib.reload(truth)
+    now = datetime.now(truth.bg.TZ)
+    monkeypatch.setattr(truth, "latest_introspection_current", lambda: {"timestamp": (now-timedelta(minutes=42)).isoformat()})
+    monkeypatch.setattr(truth, "_original_system_page", lambda section: (
+        "<div class='paper-warning'><b>Snapshot de introspección no vigente:</b> STALE · edad 2520 s. "
+        "El estado del motor mostrado arriba se reconcilió con observer_state vivo.</div>"
+        "<div>snapshot STALE</div>"
+    ))
+    rendered = truth._system_page_current_truth("introspeccion")
+    assert "Snapshot de introspección no vigente" not in rendered
+    assert "Snapshot de introspección vigente" in rendered
+    assert "snapshot VIGENTE_CADENCIA_HORARIA" in rendered
+
+
+def test_introspection_missed_hour_remains_stale(monkeypatch):
+    import et_dashboard_runtime_truth_fixes_rc6 as truth
+    truth = importlib.reload(truth)
+    now = datetime.now(truth.bg.TZ)
+    stale = "<div class='paper-warning'><b>Snapshot de introspección no vigente:</b> STALE</div><div>snapshot STALE</div>"
+    monkeypatch.setattr(truth, "latest_introspection_current", lambda: {"timestamp": (now-timedelta(minutes=80)).isoformat()})
+    monkeypatch.setattr(truth, "_original_system_page", lambda section: stale)
+    rendered = truth._system_page_current_truth("introspeccion")
+    assert rendered == stale
+    assert "Snapshot de introspección no vigente" in rendered
