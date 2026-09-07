@@ -1,0 +1,184 @@
+name: RC6 dashboard operator improvements deploy 2026-09-07
+
+on:
+  push:
+    branches:
+      - ux/rc6-dashboard-operator-improvements-20260907
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-dashboard-operator-improvements-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dashboard candidate
+        run: |
+          set -euo pipefail
+          docker build --pull=false --label "porota.commit=${GITHUB_SHA}" -t porota-dashboard-rc6-operator-deploy:test .
+      - name: Operator dashboard tests
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=192m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python porota-dashboard-rc6-operator-deploy:test \
+            -m pytest -q -p no:cacheprovider \
+            tests/test_dashboard_operator_improvements_rc6.py \
+            tests/test_dashboard_table_layout_rc6.py \
+            tests/test_dashboard_runtime_truth_fixes_rc6.py \
+            tests/test_dashboard_go_live_ux_rc6.py \
+            tests/test_dashboard_blocking_semantics_rc6.py \
+            tests/test_dashboard_truth_layer_rc6.py
+      - name: Compile presentation modules
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+            -e PYTHONDONTWRITEBYTECODE=1 --entrypoint python porota-dashboard-rc6-operator-deploy:test \
+            -c "paths=('ez_dashboard_operator_improvements_rc6.py','eq_dashboard_table_layout_rc6.py','es_dashboard_go_live_ux_rc6.py'); [compile(open(p,encoding='utf-8').read(),p,'exec') for p in paths]; print('COMPILE=GREEN')"
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_dash_rc6_operator"
+          chmod 600 "$HOME/.ssh/porota_dash_rc6_operator"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Dashboard-only transactional activation
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_dash_rc6_operator" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'HOST' | tee /tmp/dashboard-operator-deploy.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DATA="$REPO/data"
+          OBS_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          OBS_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          OBS_IMAGE=porota-trading-bot:17.0.0-rc6
+          ROLLBACK_DASH=porota-trading-dashboard:17.0.0-rc6-classic-tables
+          ROLLBACK_DASH_SHA=87abde19f38ce7b70f553373acd1088db2a4293c
+          NEW_DASH=porota-trading-dashboard:17.0.0-rc6-operator-ux
+          ENV_FILE="$DATA/diagnosticos/dashboard_mode_v17.env"
+          TMP=''; WT=''; ACTIVATED=0
+
+          start_dash(){
+            sudo -n docker run -d --name porota_production_dashboard --pull never --restart unless-stopped \
+              --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
+              -p 127.0.0.1:8000:8000 --env-file "$ENV_FILE" -v "$DATA:/app/data" \
+              --entrypoint python "$1" o_dashboard.py >/dev/null
+          }
+          runtime_check(){
+            test "$(git -C "$REPO" branch --show-current)" = "$OBS_BRANCH"
+            test "$(git -C "$REPO" rev-parse HEAD)" = "$OBS_SHA"
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$OBS_IMAGE|0|true"
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          c.execute('PRAGMA query_only=ON')
+          qc=c.execute('PRAGMA quick_check').fetchone()[0]
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print('|'.join(map(str,(qc,*row))))
+          PY
+          )"
+            echo "RUNTIME=$state"
+            test "$state" = 'ok|PRODUCTION_PAPER|0'
+          }
+          wait_dash(){
+            for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && return 0; sleep 1; done
+            return 1
+          }
+          proof(){
+            sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os, urllib.request
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN',''); assert token
+          def get(path):
+              req=urllib.request.Request('http://127.0.0.1:8000'+path,headers={'Authorization':'Bearer '+token,'User-Agent':'PorotaRC6OperatorDeploy'})
+              with urllib.request.urlopen(req,timeout=25) as r:
+                  body=r.read(4_000_000).decode('utf-8','replace'); assert r.status==200; return body
+          home=get('/')
+          motor=get('/motor-trading')
+          uni=get('/universo-operativo')
+          system=get('/sistema?section=introspeccion')
+          assert 'Resultado de las últimas jornadas' in home
+          for forbidden in ('Corte por moneda','Supervisión de salidas','Embudo de rechazos','Universo por familia y moneda','Caja y patrimonio por moneda'):
+              assert forbidden not in motor, forbidden
+          assert 'Spot PAPER — mercado actual' in uni
+          assert 'Operaciones spot PAPER — ledger de fills' in uni
+          assert 'Observaciones no conciliadas con el catálogo actual' in uni
+          assert 'porota-rc6-system-horizontal-nav' in system
+          assert 'porota-rc6-table-a11y-classic' in home
+          assert 'data-porota-compact' not in home
+          print('OPERATOR_DASHBOARD_PROOF=GREEN')
+          PY
+          }
+          fallback(){
+            echo FALLBACK_START
+            sudo -n docker rm -f porota_production_dashboard >/dev/null 2>&1 || true
+            start_dash "$ROLLBACK_DASH"
+            wait_dash
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$ROLLBACK_DASH|0"
+            runtime_check
+            echo FALLBACK_GREEN
+          }
+          cleanup(){ [ -z "$WT" ] || git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true; [ -z "$TMP" ] || rmdir "$TMP" >/dev/null 2>&1 || true; }
+          onexit(){ rc=$?; if [ "$rc" -ne 0 ] && [ "$ACTIVATED" -eq 1 ]; then fallback || true; fi; cleanup; exit "$rc"; }
+          trap onexit EXIT
+
+          echo '=== POROTA RC6 DASHBOARD OPERATOR UX DEPLOY ==='
+          runtime_check
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$ROLLBACK_DASH|0"
+          test "$(sudo -n docker image inspect "$ROLLBACK_DASH" --format '{{index .Config.Labels "porota.commit"}}')" = "$ROLLBACK_DASH_SHA"
+          test "$(df -P / | awk 'NR==2{gsub("%","",$5);print $5}')" -lt 70
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          git -C "$REPO" merge-base --is-ancestor "$OBS_SHA" "$TARGET_SHA"
+          TMP="$(mktemp -d "$HOME/porota-dashboard-operator.XXXXXX")"; WT="$TMP/source"
+          git -C "$REPO" worktree add --detach "$WT" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label porota.scope=DASHBOARD_RC6_OPERATOR_UX -t "$NEW_DASH" "$WT"
+          runtime_check
+          ACTIVATED=1
+          sudo -n docker rm -f porota_production_dashboard >/dev/null
+          start_dash "$NEW_DASH"
+          wait_dash
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$NEW_DASH|0"
+          test "$(sudo -n docker image inspect "$NEW_DASH" --format '{{index .Config.Labels "porota.commit"}}')" = "$TARGET_SHA"
+          proof
+          runtime_check
+          echo "DASHBOARD_SHA=$TARGET_SHA"
+          echo "DASHBOARD_IMAGE=$NEW_DASH"
+          echo "ROLLBACK_IMAGE_RETAINED=$ROLLBACK_DASH"
+          echo "OBSERVER_SHA_UNCHANGED=$OBS_SHA"
+          echo 'OBSERVER_RESTARTED=NO'
+          echo 'REAL_ORDER_CAPABILITY=BLOCKED'
+          echo 'POROTA_RC6_DASHBOARD_OPERATOR_DEPLOY=GREEN'
+          ACTIVATED=0
+          HOST
+          {
+            echo '### RC6 dashboard operator improvements deploy'
+            echo '```text'
+            sed -n '1,1800p' /tmp/dashboard-operator-deploy.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
