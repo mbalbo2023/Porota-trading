@@ -32,6 +32,9 @@ jobs:
           ! grep -Eq '^from (c_ppi_client|bd_ppi_readonly_guard|be_paper_engine|k_position_manager|l_order_confirmation)' fg_critical_approval_gateway_rc6.py
           ! grep -Eq '(place_order|budget_order|confirm_order|docker.sock|subprocess\.run)' fg_critical_approval_gateway_rc6.py
           grep -q 'PPI_CREDENTIAL_PRESENT_IN_CONTROL_PLANE' fg_critical_approval_gateway_rc6.py
+          grep -q 'OBSERVER_TELEGRAM_CREDENTIAL_PRESENT_IN_CONTROL_PLANE' fg_critical_approval_gateway_rc6.py
+          grep -q 'POROTA_CRITICAL_TELEGRAM_BOT_TOKEN' fg_critical_approval_gateway_rc6.py
+          grep -q 'POROTA_CRITICAL_TELEGRAM_CHAT_ID' fg_critical_approval_gateway_rc6.py
           grep -q 'Issues:read/write only' fg_critical_approval_gateway_rc6.py
       - name: Prove authorization scope
         shell: bash
