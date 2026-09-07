@@ -1,0 +1,146 @@
+name: RC6 Contract Evidence username refresh once 2026-09-07
+
+on:
+  push:
+    branches: [hotfix/rc6-contract-evidence-username-refresh-20260907]
+    paths:
+      - '.github/workflows/rc6-contract-evidence-username-refresh-once-20260907.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-contract-evidence-username-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ce_user"
+          chmod 600 "$HOME/.ssh/porota_ce_user"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Stage exact helper
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/porota_ce_user" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            rc6_ppi_web_reauth.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_web_reauth.py"
+
+      - name: Persist username locally and test authenticated session
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ce_user" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          SECRET=/etc/porota/contract-evidence-web.env
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          VENV=/opt/porota-contract-evidence-venv
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          HELPER="$LIB/rc6_ppi_web_reauth.py"
+          RUNTIME=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          USER_B64='TUJBTEJPMDE='
+
+          test -f "$SECRET"
+          test "$(stat -c '%U' "$SECRET")" = porotaadmin
+          test "$(stat -c '%a' "$SECRET")" = 600
+          sudo -n -u porotaadmin awk -F= '/^PPI_WEB_PASSWORD=/{ok=1} END{exit ok?0:1}' "$SECRET"
+
+          sudo -n python3 - "$SECRET" "$USER_B64" <<'PY'
+          import base64, os, pathlib, sys, tempfile
+          p=pathlib.Path(sys.argv[1])
+          username=base64.b64decode(sys.argv[2]).decode('utf-8')
+          lines=p.read_text(encoding='utf-8').splitlines()
+          out=[ln for ln in lines if not ln.startswith('PPI_WEB_USERNAME=')]
+          out.append('PPI_WEB_USERNAME='+username)
+          fd,tmp=tempfile.mkstemp(prefix='.contract-evidence-web.',dir=str(p.parent))
+          try:
+              with os.fdopen(fd,'w',encoding='utf-8') as f:
+                  f.write('\n'.join(out)+'\n')
+                  f.flush(); os.fsync(f.fileno())
+              os.chmod(tmp,0o600)
+              os.chown(tmp, __import__('pwd').getpwnam('porotaadmin').pw_uid, __import__('grp').getgrnam('porotaadmin').gr_gid)
+              os.replace(tmp,p)
+          finally:
+              if os.path.exists(tmp): os.unlink(tmp)
+          PY
+          echo 'PPI_WEB_USERNAME=PRESENT_RESTRICTED'
+          echo 'PPI_WEB_SECRET_VALUES_PRINTED=NO'
+
+          sudo -n install -d -o root -g root -m 0755 "$LIB"
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_reauth.py "$HELPER"
+          sudo -n rm -f /tmp/rc6_ppi_web_reauth.py
+
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'{qc}|{mode}|{orders}'); c.close()
+          PY
+          )"
+          printf 'OBSERVER_DB_BEFORE=%s\n' "$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+
+          set +e
+          OUT="$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$LIB:/opt/porota-trading" \
+            "$VENV/bin/python" "$HELPER" --profile "$PROFILE" --secret "$SECRET" 2>&1)"
+          RC=$?
+          set -e
+          printf 'REAUTH_RC=%s\n' "$RC"
+          printf '%s\n' "$OUT"
+          STATE="$(OUT="$OUT" python3 - <<'PY'
+          import json,os
+          try: print(json.loads(os.environ['OUT']).get('status','UNKNOWN'))
+          except Exception: print('INVALID_REAUTH_OUTPUT')
+          PY
+          )"
+          printf 'REAUTH_STATE=%s\n' "$STATE"
+
+          if [ "$RC" -eq 0 ] && [ "$STATE" = AUTHENTICATED_TRUSTED_DEVICE ]; then
+            echo 'CONTRACT_EVIDENCE_REAUTH=GREEN'
+            set +e
+            CE_OUT="$(sudo -n "$RUNTIME" 2>&1)"
+            CE_RC=$?
+            set -e
+            printf '%s\n' "$CE_OUT"
+            printf 'CONTRACT_EVIDENCE_RUNTIME_RC=%s\n' "$CE_RC"
+          else
+            echo 'CONTRACT_EVIDENCE_REAUTH=YELLOW'
+          fi
+
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'{qc}|{mode}|{orders}'); c.close()
+          PY
+          )"
+          printf 'OBSERVER_DB_AFTER=%s\n' "$POST"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          echo 'REAL_ORDERS_SENT=0'
+          test "$STATE" = AUTHENTICATED_TRUSTED_DEVICE
+          HOST
