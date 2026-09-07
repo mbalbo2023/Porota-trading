@@ -1,0 +1,271 @@
+name: RC6 dashboard classic tables deploy 2026-09-07
+
+on:
+  push:
+    branches:
+      - ux/rc6-dashboard-classic-tables-20260907
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-dashboard-classic-tables-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build RC6 classic dashboard candidate
+        run: |
+          set -euo pipefail
+          docker build --pull=false --label "porota.commit=${GITHUB_SHA}" \
+            -t porota-dashboard-rc6-classic-deploy:test .
+
+      - name: RC6 dashboard presentation tests
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=192m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python porota-dashboard-rc6-classic-deploy:test \
+            -m pytest -q -p no:cacheprovider \
+            tests/test_dashboard_table_layout_rc6.py \
+            tests/test_dashboard_runtime_truth_fixes_rc6.py \
+            tests/test_dashboard_go_live_ux_rc6.py \
+            tests/test_dashboard_blocking_semantics_rc6.py \
+            tests/test_dashboard_truth_layer_rc6.py \
+            tests/test_dashboard_global_a11y_rc5.py
+
+      - name: Classic rows and columns contract
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python porota-dashboard-rc6-classic-deploy:test - <<'PY'
+          import er_dashboard_table_semantics_rc6 as semantics
+          import ev_dashboard_table_accessibility_rc6 as a11y
+          a11y.assert_table_accessibility_contract()
+          assert semantics.table_layout_policy() == 'CLASSIC_ROWS_COLUMNS'
+          for args in ((10, 1200, 1800), (7, 600, 1500), (4, 320, 900)):
+              assert semantics.should_force_compact(*args) is False
+          assert 'data-porota-compact' not in a11y.TABLE_A11Y_SCRIPT
+          assert 'porotaInitClassicTables' in a11y.TABLE_A11Y_SCRIPT
+          print('CLASSIC_ROWS_COLUMNS_CONTRACT=GREEN')
+          PY
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_dash_rc6_classic"
+          chmod 600 "$HOME/.ssh/porota_dash_rc6_classic"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: RC6 dashboard-only transactional activation
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_dash_rc6_classic" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'HOST' | tee /tmp/dashboard-rc6-classic.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DATA="$REPO/data"
+          OBS_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          OBS_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          OBS_IMAGE=porota-trading-bot:17.0.0-rc6
+          ROLLBACK_DASH=porota-trading-dashboard:17.0.0-rc6-go-live-final
+          ROLLBACK_DASH_SHA=da2c87936d90cda17512de3bc529d13f4693c1c1
+          NEW_DASH=porota-trading-dashboard:17.0.0-rc6-classic-tables
+          ENV_FILE="$DATA/diagnosticos/dashboard_mode_v17.env"
+          TMP=''; WT=''; ACTIVATED=0
+
+          start_dash(){
+            sudo -n docker run -d --name porota_production_dashboard --pull never --restart unless-stopped \
+              --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
+              -p 127.0.0.1:8000:8000 --env-file "$ENV_FILE" -v "$DATA:/app/data" \
+              --entrypoint python "$1" o_dashboard.py >/dev/null
+          }
+
+          runtime_check(){
+            test "$(git -C "$REPO" branch --show-current)" = "$OBS_BRANCH"
+            test "$(git -C "$REPO" rev-parse HEAD)" = "$OBS_SHA"
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$OBS_IMAGE|0|true"
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          vals=[]; row=None
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+              c.execute('PRAGMA query_only=ON')
+              vals.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'):
+                  row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*vals,*row))))
+          PY
+          )"
+            echo "RUNTIME=$state"
+            test "$state" = 'ok|ok|PRODUCTION_PAPER|0'
+          }
+
+          http_matrix(){
+            phase="$1"
+            sudo -n docker exec -i porota_production_dashboard python - "$phase" <<'PY'
+          import json, os, sys, urllib.request
+          phase=sys.argv[1]
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN',''); assert token
+          paths=['/','/vivo','/validacion','/historicos','/reportes','/config','/sistema?section=introspeccion','/salud','/universo-operativo','/scalping','/instrumentos','/aprendizaje','/dashboard/logs']
+          sizes={}
+          for path in paths:
+              req=urllib.request.Request('http://127.0.0.1:8000'+path,headers={'Authorization':'Bearer '+token,'User-Agent':'PorotaRC6Classic/'+phase})
+              with urllib.request.urlopen(req,timeout=25) as r:
+                  body=r.read(4_000_000).decode('utf-8','replace')
+                  assert r.status==200 and len(body)>200
+                  sizes[path]=len(body)
+                  if phase=='POST' and path in ('/vivo','/validacion'):
+                      assert 'porota-rc6-table-a11y-classic' in body
+                      assert 'porotaInitClassicTables' in body
+                      assert 'data-porota-compact' not in body
+                  if phase=='POST' and path=='/salud':
+                      assert 'Notification worker' in body or 'Worker RUNNING' in body
+                      assert 'medición SRE=' in body
+                  if phase=='POST' and path=='/sistema?section=introspeccion':
+                      assert 'system-nav' in body
+                      assert 'Snapshot de introspección no vigente' not in body
+                      assert 'Snapshot de introspección vigente' in body
+          print(json.dumps(sizes,sort_keys=True))
+          print(f'{phase}_HTTP_MATRIX=GREEN')
+          PY
+          }
+
+          fallback(){
+            echo FALLBACK_START
+            sudo -n docker rm -f porota_production_dashboard >/dev/null 2>&1 || true
+            start_dash "$ROLLBACK_DASH"
+            for _ in $(seq 1 60); do
+              curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && break
+              sleep 1
+            done
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$ROLLBACK_DASH|0"
+            runtime_check
+            echo FALLBACK_GREEN
+          }
+
+          cleanup(){
+            [ -z "$WT" ] || git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true
+            [ -z "$TMP" ] || rmdir "$TMP" >/dev/null 2>&1 || true
+          }
+          onexit(){
+            rc=$?
+            if [ "$rc" -ne 0 ] && [ "$ACTIVATED" -eq 1 ]; then fallback || true; fi
+            cleanup
+            exit "$rc"
+          }
+          trap onexit EXIT
+
+          echo '=== POROTA TRADING RC6 DASHBOARD CLASSIC TABLES DEPLOY ==='
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$ROLLBACK_DASH|0"
+          test "$(sudo -n docker image inspect "$ROLLBACK_DASH" --format '{{index .Config.Labels "porota.commit"}}')" = "$ROLLBACK_DASH_SHA"
+          test "$(df -P / | awk 'NR==2{gsub("%","",$5);print $5}')" -lt 70
+          runtime_check
+          http_matrix BASELINE
+
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          git -C "$REPO" merge-base --is-ancestor "$OBS_SHA" "$TARGET_SHA"
+          TMP="$(mktemp -d "$HOME/porota-dashboard-rc6-classic.XXXXXX")"
+          WT="$TMP/source"
+          git -C "$REPO" worktree add --detach "$WT" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false \
+            --label "porota.commit=$TARGET_SHA" \
+            --label porota.scope=DASHBOARD_RC6_CLASSIC_TABLES \
+            -t "$NEW_DASH" "$WT"
+
+          echo '--- RC6 CLASSIC TABLES DIRECT PROOF ---'
+          sudo -n docker run -i --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=192m,uid=1000,gid=1000,mode=1777 \
+            --env-file "$ENV_FILE" -v "$DATA:/app/data:ro" -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python "$NEW_DASH" - <<'PY'
+          from datetime import datetime
+          import bg_paper_dashboard as bg
+          import eq_dashboard_table_layout_rc6 as eq
+          import er_dashboard_table_semantics_rc6 as semantics
+          import ev_dashboard_table_accessibility_rc6 as a11y
+          a11y.assert_table_accessibility_contract()
+          assert semantics.table_layout_policy() == 'CLASSIC_ROWS_COLUMNS'
+          assert semantics.should_force_compact(10, 600, 1800) is False
+          eq.install()
+          assert 'porota-rc6-table-a11y-classic' in bg.TABLE_A11Y_CSS
+          assert 'porotaInitClassicTables' in bg.TABLE_A11Y_SCRIPT
+          assert 'data-porota-compact' not in bg.TABLE_A11Y_SCRIPT
+          payload=bg._latest_introspection(); assert isinstance(payload,dict) and payload.get('timestamp')
+          age=(datetime.now(bg.TZ)-bg.aware_datetime(payload['timestamp']).astimezone(bg.TZ)).total_seconds()
+          print('INTROSPECTION_AGE_SECONDS=',round(age,1))
+          assert 0 <= age <= 4500
+          page=bg.system_page('introspeccion')
+          assert 'Snapshot de introspección no vigente' not in page
+          assert 'Snapshot de introspección vigente' in page
+          rows={str(r.get('key')).upper():r for r in bg._health_components()}
+          tg=rows['TELEGRAM']; sre=rows['SRE_SNAPSHOT']
+          print('TELEGRAM=',tg.get('state'),tg.get('detail'))
+          print('SRE=',sre.get('state'),sre.get('detail'))
+          assert 'Worker RUNNING' in str(tg.get('detail'))
+          assert int(tg.get('paper_blocking') or 0)==0
+          assert 'medición SRE=' in str(sre.get('detail'))
+          if str(sre.get('state')).upper()=='AMARILLO' and 'latencia de la medición SRE' in str(sre.get('detail')):
+              assert sre.get('paper_blocking') is False
+          print('RC6_CLASSIC_DIRECT_PROOF=GREEN')
+          PY
+
+          runtime_check
+          ACTIVATED=1
+          sudo -n docker rm -f porota_production_dashboard >/dev/null
+          start_dash "$NEW_DASH"
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$NEW_DASH|0"
+          test "$(sudo -n docker image inspect "$NEW_DASH" --format '{{index .Config.Labels "porota.commit"}}')" = "$TARGET_SHA"
+          http_matrix POST
+          runtime_check
+          echo "DASHBOARD_SHA=$TARGET_SHA"
+          echo "DASHBOARD_IMAGE=$NEW_DASH"
+          echo "OBSERVER_SHA_UNCHANGED=$OBS_SHA"
+          echo 'OBSERVER_RESTARTED=NO'
+          echo 'STRATEGY_CHANGED=NO'
+          echo 'CLASSIC_ROWS_COLUMNS=GREEN'
+          echo 'REAL_ORDER_CAPABILITY=BLOCKED'
+          echo 'POROTA_TRADING_RC6_DASHBOARD_CLASSIC_DEPLOY=GREEN'
+          ACTIVATED=0
+          if sudo -n docker image rm "$ROLLBACK_DASH" >/dev/null 2>&1; then
+            echo 'OLD_DASH_TAG_REMOVED=YES'
+          else
+            echo 'OLD_DASH_TAG_REMOVED=NO'
+          fi
+          HOST
+
+          {
+            echo '### POROTA TRADING RC6 dashboard classic tables deploy'
+            echo '```text'
+            sed -n '1,1800p' /tmp/dashboard-rc6-classic.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
