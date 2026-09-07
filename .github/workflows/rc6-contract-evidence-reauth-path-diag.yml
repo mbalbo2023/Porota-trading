@@ -1,0 +1,55 @@
+name: RC6 Contract Evidence reauth path diagnostic
+
+on:
+  push:
+    branches:
+      - diag/rc6-contract-evidence-reauth-path-20260907
+    paths:
+      - 'scripts/rc6_contract_evidence_reauth_path_diag.sh'
+      - '.github/workflows/rc6-contract-evidence-reauth-path-diag.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-contract-evidence-reauth-path-diag
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Validate diagnostic script
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/rc6_contract_evidence_reauth_path_diag.sh
+          ! grep -En '(cat|sqlite3).*([Cc]ookies|Login Data|Local Storage)' scripts/rc6_contract_evidence_reauth_path_diag.sh
+          echo 'OFFLINE_VALIDATION=GREEN'
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ce_diag"
+          chmod 600 "$HOME/.ssh/porota_ce_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect trusted-profile reauthentication path read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ce_diag" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' < scripts/rc6_contract_evidence_reauth_path_diag.sh
