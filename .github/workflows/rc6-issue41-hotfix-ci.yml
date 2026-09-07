@@ -17,6 +17,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install focused test dependency
+        run: python -m pip install --disable-pip-version-check pytest
       - name: Shell syntax
         run: bash -n ops/rc6_deploy_critical_control_plane.sh
       - name: Focused regression tests
