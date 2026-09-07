@@ -1,0 +1,71 @@
+POROTA RC6 HISTORICAL RAW GROWTH-DRIVER AUDIT — READ ONLY
+UTC=2026-09-07T19:14:28Z
+
+======================================================================
+01 EFFECTIVE RUNTIME INGEST CONFIG
+======================================================================
+
+======================================================================
+02 EXACT ROW GROWTH BY DAY AND QUALITY
+======================================================================
+DAY_QUALITY day=2026-08-30 quality=EMPTY_OR_INVALID rows=4
+DAY_QUALITY day=2026-08-30 quality=PARTIAL rows=75
+DAY_QUALITY day=2026-08-30 quality=VALID_PAYLOAD rows=41
+DAY_QUALITY day=2026-08-31 quality=EMPTY_OR_INVALID rows=62
+DAY_QUALITY day=2026-08-31 quality=PARTIAL rows=1163
+DAY_QUALITY day=2026-08-31 quality=VALID_PAYLOAD rows=449
+DAY_QUALITY day=2026-09-01 quality=EMPTY_OR_INVALID rows=56
+DAY_QUALITY day=2026-09-01 quality=PARTIAL rows=1059
+DAY_QUALITY day=2026-09-01 quality=VALID_PAYLOAD rows=405
+DAY_QUALITY day=2026-09-02 quality=EMPTY_OR_INVALID rows=161
+DAY_QUALITY day=2026-09-02 quality=PARTIAL rows=2999
+DAY_QUALITY day=2026-09-02 quality=VALID_PAYLOAD rows=1155
+DAY_QUALITY day=2026-09-03 quality=EMPTY_OR_INVALID rows=170
+DAY_QUALITY day=2026-09-03 quality=PARTIAL rows=2884
+DAY_QUALITY day=2026-09-03 quality=VALID_PAYLOAD rows=1127
+DAY_QUALITY day=2026-09-04 quality=EMPTY_OR_INVALID rows=170
+DAY_QUALITY day=2026-09-04 quality=PARTIAL rows=2895
+DAY_QUALITY day=2026-09-04 quality=VALID_PAYLOAD rows=1124
+DAY_QUALITY day=2026-09-05 quality=EMPTY_OR_INVALID rows=156
+DAY_QUALITY day=2026-09-05 quality=PARTIAL rows=2637
+DAY_QUALITY day=2026-09-05 quality=VALID_PAYLOAD rows=999
+DAY_QUALITY day=2026-09-06 quality=EMPTY_OR_INVALID rows=109
+DAY_QUALITY day=2026-09-06 quality=PARTIAL rows=1845
+DAY_QUALITY day=2026-09-06 quality=VALID_PAYLOAD rows=719
+DAY_QUALITY day=2026-09-07 quality=EMPTY_OR_INVALID rows=137
+DAY_QUALITY day=2026-09-07 quality=PARTIAL rows=2344
+DAY_QUALITY day=2026-09-07 quality=VALID_PAYLOAD rows=915
+DAY_TOTAL day=2026-08-30 rows=120
+DAY_TOTAL day=2026-08-31 rows=1674
+DAY_TOTAL day=2026-09-01 rows=1520
+DAY_TOTAL day=2026-09-02 rows=4315
+DAY_TOTAL day=2026-09-03 rows=4181
+DAY_TOTAL day=2026-09-04 rows=4189
+DAY_TOTAL day=2026-09-05 rows=3792
+DAY_TOTAL day=2026-09-06 rows=2673
+DAY_TOTAL day=2026-09-07 rows=3396
+DAYS_OBSERVED=9
+DAILY_ROWS_MIN=120 DAILY_ROWS_MAX=4315 DAILY_ROWS_AVG=2873.33
+QUALITY_TOTALS
+QUALITY quality=PARTIAL rows=17901
+QUALITY quality=VALID_PAYLOAD rows=6934
+QUALITY quality=EMPTY_OR_INVALID rows=1025
+RECORDED_RANGE=('2026-08-30T03:34:39.021219+00:00', '2026-09-07T13:04:17.897188+00:00')
+
+======================================================================
+03 TARGET UNIVERSE AND LATEST SYNC STATE
+======================================================================
+TARGET_UNIVERSE_TOTAL=246
+TARGET_TYPE type=CEDEARS rows=191
+TARGET_TYPE type=ACCIONES rows=55
+PRODUCTION_HISTORY_ROWS=67
+PRODUCTION_HISTORY_ATTEMPT_KEYS=246
+SOURCE_SYNC source=PPI_PRODUCTION_HISTORY status=AMARILLO last_attempt=2026-09-07T13:04:18.400766+00:00 last_success=2026-09-07T13:04:18.400766+00:00 detail='Lote histórico 11/40; cobertura acumulada 67/246 instrumentos; 6943 filas en este lote; 29 fallidos. La descarga completa es incremental para no saturar PPI.'
+
+======================================================================
+04 CURRENT SAFETY
+======================================================================
+OBSERVER_STATE=PRODUCTION_PAPER|MARKET_OPEN|0
+MUTATIONS=NONE
+BODY_JSON_SELECTED=NO
+AUDIT_STATUS=COMPLETE_READ_ONLY
