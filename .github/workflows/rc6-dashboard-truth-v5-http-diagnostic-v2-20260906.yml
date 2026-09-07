@@ -1,0 +1,153 @@
+name: RC6 dashboard truth v5 HTTP diagnostic v2 2026-09-06
+
+on:
+  push:
+    branches:
+      - diag/rc6-dashboard-truth-v5-http-v2-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_diag"
+          chmod 600 "$HOME/.ssh/porota_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only candidate truth diagnostic with stdin attached
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/diag-v2.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DATA="$REPO/data"
+          OBS_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          OBS_BRANCH=hotfix/rc6-cedear-us-labor-day-20260906
+          OBS_IMAGE=porota-trading-bot:17.0.0-rc6
+          ACTIVE_DASH=porota-trading-dashboard:17.0.0-rc6-go-live-ux2
+          CANDIDATE=porota-trading-dashboard:17.0.0-rc6-go-live-ux3
+          ENV_FILE="$DATA/diagnosticos/dashboard_mode_v17.env"
+
+          runtime_check(){
+            test "$(git -C "$REPO" branch --show-current)" = "$OBS_BRANCH"
+            test "$(git -C "$REPO" rev-parse HEAD)" = "$OBS_SHA"
+            test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$OBS_IMAGE|0|true"
+            state="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          vals=[]; row=None
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30)
+              c.execute('PRAGMA query_only=ON')
+              vals.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'):
+                  row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*vals,*row))))
+          PY
+          )"
+            echo "RUNTIME=$state"
+            test "$state" = 'ok|ok|PRODUCTION_PAPER|0'
+          }
+
+          echo '=== RC6 DASH V5 HTTP READONLY DIAGNOSTIC V2 ==='
+          runtime_check
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$ACTIVE_DASH|0"
+          sudo -n docker image inspect "$CANDIDATE" >/dev/null
+
+          sudo -n docker run -i --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=192m,uid=1000,gid=1000,mode=1777 \
+            --env-file "$ENV_FILE" -v "$DATA:/app/data:ro" -e PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint python "$CANDIDATE" - <<'PY'
+          import os, json
+          from datetime import datetime
+          import bg_paper_dashboard as bg
+          import eq_dashboard_table_layout_rc6 as eq
+          eq.install()
+
+          payload=bg._latest_introspection()
+          print('LATEST_INTROSPECTION_PRESENT=', bool(payload))
+          if isinstance(payload,dict):
+              stamp=payload.get('timestamp')
+              print('LATEST_INTROSPECTION_TIMESTAMP=', stamp)
+              try:
+                  parsed=bg.aware_datetime(stamp).astimezone(bg.TZ)
+                  age=(datetime.now(bg.TZ)-parsed).total_seconds()
+                  print('LATEST_INTROSPECTION_AGE_SECONDS=', round(age,1))
+              except Exception as exc:
+                  print('LATEST_INTROSPECTION_AGE_ERROR=', type(exc).__name__)
+              print('LATEST_INTROSPECTION_KEYS=', ','.join(sorted(map(str,payload.keys()))[:30]))
+
+          direct=bg.system_page('introspeccion')
+          print('DIRECT_STALE=', 'Snapshot de introspección no vigente' in direct)
+          print('DIRECT_SYSTEM_NAV=', 'system-nav' in direct)
+          if 'Snapshot de introspección no vigente' in direct:
+              pos=direct.find('Snapshot de introspección no vigente')
+              print('DIRECT_STALE_CONTEXT=', direct[max(0,pos-220):pos+520].replace('\n',' ')[:760])
+
+          rows={str(r.get('key')).upper():r for r in bg._health_components()}
+          tg=rows.get('TELEGRAM') or {}
+          sre=rows.get('SRE_SNAPSHOT') or {}
+          print('TELEGRAM_STATE=',tg.get('state'))
+          print('TELEGRAM_CHECKED=',tg.get('checked'))
+          print('TELEGRAM_BLOCKING=',tg.get('paper_blocking'))
+          print('TELEGRAM_DETAIL=',str(tg.get('detail'))[:900])
+          print('SRE_STATE=',sre.get('state'))
+          print('SRE_CHECKED=',sre.get('checked'))
+          print('SRE_BLOCKING=',sre.get('paper_blocking'))
+          print('SRE_DETAIL=',str(sre.get('detail'))[:900])
+
+          import o_dashboard
+          from fastapi.testclient import TestClient
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          assert token
+          client=TestClient(o_dashboard.app)
+          for path in ('/salud','/sistema?section=introspeccion'):
+              r=client.get(path,headers={'Authorization':'Bearer '+token})
+              body=r.text
+              print('HTTP_PATH=',path,'STATUS=',r.status_code,'LEN=',len(body))
+              print('HAS_NOTIFICATION_WORKER=', 'Notification worker' in body or 'Worker RUNNING' in body)
+              print('HAS_SRE_MEASUREMENT=', 'medición SRE=' in body)
+              print('HAS_SYSTEM_NAV=', 'system-nav' in body)
+              stale='Snapshot de introspección no vigente' in body
+              print('HAS_STALE_INTROSPECTION=',stale)
+              if stale:
+                  pos=body.find('Snapshot de introspección no vigente')
+                  print('HTTP_STALE_CONTEXT=',body[max(0,pos-220):pos+520].replace('\n',' ')[:760])
+          for route in o_dashboard.app.routes:
+              if getattr(route,'path',None) in ('/sistema','/salud'):
+                  ep=getattr(route,'endpoint',None)
+                  print('ROUTE_OWNER=',route.path,getattr(ep,'__module__','?'),getattr(ep,'__name__','?'))
+          print('DIAGNOSTIC_EXECUTED=YES')
+          PY
+
+          runtime_check
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$ACTIVE_DASH|0"
+          echo 'ACTIVE_DASH_UNCHANGED=ux2'
+          echo 'OBSERVER_UNCHANGED=YES'
+          echo 'DIAGNOSTIC_READONLY=GREEN'
+          HOST
+
+          {
+            echo '### RC6 dashboard v5 HTTP diagnostic v2'
+            echo '```text'
+            cat /tmp/diag-v2.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
