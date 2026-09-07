@@ -1,0 +1,81 @@
+name: RC6 dashboard stale source audit 2026-09-06
+
+on:
+  push:
+    branches:
+      - audit/rc6-dashboard-stale-source-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_stale_audit"
+          chmod 600 "$HOME/.ssh/porota_stale_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only stale source diagnosis
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_stale_audit" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/stale-source.txt
+          set -Eeuo pipefail
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = 'db26c76723bb988c956589c572b87cbcb4191731'
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import sqlite3,json,os
+          from pathlib import Path
+          from datetime import datetime, timezone
+          obs='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{obs}?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          out={'quick_check':c.execute('PRAGMA quick_check').fetchone()[0]}
+          def exists(name): return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(name,)).fetchone())
+          if exists('api_health'):
+              out['api_health_selected']=[dict(r) for r in c.execute("SELECT * FROM api_health WHERE component IN ('SRE_SNAPSHOT','TELEGRAM','FINANCIAL_REFRESH','PPI_PRODUCTION_AUTH','PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST') ORDER BY component")]
+          if exists('sre_snapshots'):
+              out['sre_latest']=[dict(r) for r in c.execute('SELECT * FROM sre_snapshots ORDER BY id DESC LIMIT 5')]
+          if exists('operational_jobs'):
+              out['jobs_relevant']=[dict(r) for r in c.execute("SELECT * FROM operational_jobs WHERE lower(job_key) LIKE '%sre%' OR lower(job_key) LIKE '%telegram%' OR lower(job_key) LIKE '%backup%' ORDER BY job_key")]
+          if exists('paper_notification_outbox'):
+              out['notification_outbox_counts']=[dict(r) for r in c.execute('SELECT state,COUNT(*) n,MAX(COALESCE(sent_at,created_at)) latest FROM paper_notification_outbox GROUP BY state')]
+          if exists('paper_notification_worker'):
+              out['notification_worker']=[dict(r) for r in c.execute('SELECT * FROM paper_notification_worker')]
+          if exists('paper_events'):
+              out['telegram_events']=[dict(r) for r in c.execute("SELECT event_type,event_at,detail FROM paper_events WHERE upper(event_type) LIKE '%TELEGRAM%' OR upper(event_type) LIKE '%NOTIF%' ORDER BY id DESC LIMIT 30")]
+          files=[]
+          for root in (Path('/app/data'),Path('/app/data/diagnosticos'),Path('/app/data/logs')):
+              if not root.exists(): continue
+              for p in root.glob('*telegram*.json'):
+                  try: files.append({'path':str(p),'size':p.stat().st_size,'mtime':datetime.fromtimestamp(p.stat().st_mtime,timezone.utc).isoformat()})
+                  except OSError: pass
+          out['telegram_files']=sorted(files,key=lambda x:x['mtime'],reverse=True)[:30]
+          c.close()
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          assert out['quick_check']=='ok'
+          print('RC6_DASHBOARD_STALE_SOURCE_AUDIT=GREEN')
+          PY
+          echo "OBSERVER=$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          echo "DASHBOARD=$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo 'RUNTIME_CHANGED=NO'
+          HOST
+          {
+            echo '### RC6 dashboard stale source audit'
+            echo '```text'
+            sed -n '1,1600p' /tmp/stale-source.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
