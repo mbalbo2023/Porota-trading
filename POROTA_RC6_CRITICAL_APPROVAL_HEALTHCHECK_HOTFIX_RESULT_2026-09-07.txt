@@ -1,0 +1,55 @@
+POROTA RC6 CRITICAL APPROVAL — HEALTHCHECK HOTFIX V2
+UTC=2026-09-07T18:59:57Z
+HOTFIX_SHA=6bb2fa4039336dbfa41a1aa59ddbbfcf59092905
+OLD_RELEASE=/opt/porota-control-plane-rc6/releases/cf2ebf2ca6afe80dfa618437befd6734db708efe
+SCOPE=CRITICAL_APPROVAL_ONLY
+
+======================================================================
+01 PREFLIGHT
+======================================================================
+DOCKER_HEALTH_BEFORE=unhealthy
+DB_STATE_BEFORE=ok|PRODUCTION_PAPER|0
+BROKER_HEALTH_STATUS=ok
+BROKER_CAPABILITY=issues_only
+critical-approval-runtime: READY mode=PRODUCTION_PAPER github=unix-issues-only+capability-key telegram=canonical-single-consumer
+
+======================================================================
+02 PREPARE NEW CONTROL-PLANE RELEASE
+======================================================================
+NEW_RELEASE=/opt/porota-control-plane-rc6/releases/6bb2fa4039336dbfa41a1aa59ddbbfcf59092905
+
+======================================================================
+03 BUILD UNIT
+======================================================================
+UNIT_VERIFY=GREEN
+
+======================================================================
+04 ACTIVATE ONLY CRITICAL GATEWAY
+======================================================================
+HEALTH_WAIT=
+missing
+HEALTH_WAIT=starting
+HEALTH_WAIT=healthy
+
+======================================================================
+05 POSTFLIGHT
+======================================================================
+DOCKER_HEALTH_AFTER=healthy
+CONTROL_PLANE=RUNNING=true|RESTARTS=0|HEALTH=healthy|IMAGE=porota-trading-bot:17.0.0-rc6|USER=botuser|READONLY=true
+HEALTH_CONFIG={"Test":["CMD-SHELL","python /code/fo_critical_approval_health_rc6.py"],"Interval":10000000000,"Timeout":5000000000,"StartPeriod":10000000000,"Retries":3}
+BROKER_HEALTH_STATUS=ok
+BROKER_CAPABILITY=issues_only
+DB_STATE_AFTER=ok|PRODUCTION_PAPER|0
+OBSERVER=RUNNING=true|RESTARTS=0|IMAGE=porota-trading-bot:17.0.0-rc6
+DASHBOARD=RUNNING=true|RESTARTS=0|HEALTH=healthy|IMAGE=porota-trading-dashboard:17.0.0-rc6-operator-ux
+critical-approval-runtime: READY mode=PRODUCTION_PAPER github=unix-issues-only+capability-key telegram=canonical-single-consumer
+
+======================================================================
+06 RESULT
+======================================================================
+ROOT_CAUSE=INHERITED_DASHBOARD_HTTP_HEALTHCHECK_ON_NON_HTTP_GATEWAY
+FIX=DEDICATED_UNIX_BROKER_CAPABILITY_HEALTHCHECK
+OBSERVER_RESTARTED=NO
+DASHBOARD_RESTARTED=NO
+REAL_ORDERS_SENT=0
+HOTFIX_STATUS=GREEN
