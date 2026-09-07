@@ -3,12 +3,12 @@
 CI puede acreditarse en el mismo instante modelado. Para T+1 se calcula sólo
 la fecha hábil esperada como evidencia diagnóstica.
 
-RC6 hotfix 2026-09-07: T+1 se libera únicamente DESPUÉS de haber transcurrido
-por completo la fecha hábil esperada de liquidación. No se inventa una hora de
-broker: se usa 00:00 del día calendario siguiente como frontera conservadora.
-La regla está habilitada por defecto en este hotfix PAPER y puede deshabilitarse
-explícitamente con PAPER_T1_FULL_DATE_RELEASE=false como kill-switch. Nunca
-autoriza órdenes reales ni acredita saldos PPI reales.
+RC6 hotfix 2026-09-07: T+1 puede liberarse únicamente DESPUÉS de haber
+transcurrido por completo la fecha hábil esperada de liquidación. No se inventa
+una hora de broker: se usa 00:00 del día calendario siguiente como frontera
+conservadora. La política está apagada por defecto y PRODUCTION_PAPER debe
+habilitarla explícitamente con PAPER_T1_FULL_DATE_RELEASE=true. Nunca autoriza
+órdenes reales ni acredita saldos PPI reales.
 """
 import os
 from datetime import date, datetime, time, timedelta
@@ -19,13 +19,12 @@ TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 
 
 def t1_full_date_release_enabled():
-    """Política RC6 PAPER; true por defecto, false explícito actúa como kill-switch."""
-    value = str(os.getenv('PAPER_T1_FULL_DATE_RELEASE', 'true')).strip().lower()
-    if value in {'0', 'false', 'no', 'off'}:
+    """Política RC6 PAPER: false por defecto; configuración ambigua falla cerrada."""
+    value = str(os.getenv('PAPER_T1_FULL_DATE_RELEASE', 'false')).strip().lower()
+    if value in {'0', 'false', 'no', 'off', ''}:
         return False
     if value in {'1', 'true', 'yes', 'si', 'sí', 'on'}:
         return True
-    # Configuración ambigua: fail-closed.
     return False
 
 
@@ -78,11 +77,11 @@ def modeled_sale_settlement(settlement, traded_at):
 def validated_sale_settlement(settlement, traded_at, available_at, basis):
     """Disponibilidad efectiva defendible por procedencia y política PAPER.
 
-    ``PENDING_CONFIRMATION`` jamás acepta un ``available_at`` inventado. Con el
-    kill-switch apagado conserva la semántica histórica y permanece bloqueado.
-    Con la política RC6 activa, sólo para T+1 reconocido y con fecha hábil
-    demostrable devuelve la frontera conservadora posterior al día completo de
-    settlement. El caller todavía debe compararla contra su ``as_of``.
+    ``PENDING_CONFIRMATION`` jamás acepta un ``available_at`` inventado. Con la
+    política apagada conserva la semántica histórica y permanece bloqueado. Con
+    la política RC6 explícitamente activa, sólo para T+1 reconocido y con fecha
+    hábil demostrable devuelve la frontera conservadora posterior al día completo
+    de settlement. El caller todavía debe compararla contra su ``as_of``.
     """
     traded=aware_datetime(traded_at)
     available=aware_datetime(available_at) if available_at is not None else None
