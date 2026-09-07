@@ -4,6 +4,8 @@ Presentation/observability only.
 
 Fixes:
 - introspection selects current RC/HF snapshots instead of a legacy HF-only glob;
+- introspection freshness respects the real hourly :15 producer cadence with a
+  75-minute guard window, so a healthy hourly snapshot is not mislabeled stale;
 - Telegram health comes from the current notification worker/outbox/jobs, not a
   stale legacy JSON file;
 - SRE keeps its real AMARILLO state when the monitor query is slow, but exposes
@@ -16,11 +18,14 @@ from __future__ import annotations
 from datetime import datetime
 import json
 from pathlib import Path
+import re
 
 import bg_paper_dashboard as bg
 
 _installed = False
 _original_health_components = None
+_original_system_page = None
+INTROSPECTION_MAX_AGE_SECONDS = 75 * 60
 
 
 def latest_introspection_current():
@@ -48,6 +53,36 @@ def _age_seconds(value):
         return (datetime.now(bg.TZ) - bg.aware_datetime(value).astimezone(bg.TZ)).total_seconds()
     except Exception:
         return None
+
+
+def _system_page_current_truth(section):
+    rendered = _original_system_page(section)
+    if str(section or "").lower() != "introspeccion":
+        return rendered
+
+    payload = latest_introspection_current()
+    age = _age_seconds(payload.get("timestamp")) if isinstance(payload, dict) else None
+    if age is None or age < 0 or age > INTROSPECTION_MAX_AGE_SECONDS:
+        return rendered
+    if "Snapshot de introspección no vigente" not in rendered:
+        return rendered
+
+    # bg.system_page historically used a fixed 10-minute threshold even though
+    # the producer is hourly at :15. Only presentation is corrected here; the
+    # underlying snapshot, observer reconciliation and persisted data stay
+    # untouched. If the snapshot exceeds 75 minutes the original warning remains.
+    rendered = re.sub(
+        r"<div class='paper-warning'><b>Snapshot de introspección no vigente:</b>.*?</div>",
+        (
+            "<div class='paper-notice'><b>Snapshot de introspección vigente:</b> "
+            f"cadencia horaria · edad {age:.0f} s · guardia máxima {INTROSPECTION_MAX_AGE_SECONDS} s.</div>"
+        ),
+        rendered,
+        count=1,
+        flags=re.DOTALL,
+    )
+    rendered = rendered.replace("snapshot STALE", "snapshot VIGENTE_CADENCIA_HORARIA")
+    return rendered
 
 
 def _telegram_runtime_evidence(row):
@@ -145,10 +180,12 @@ def health_components_current_truth():
 
 
 def install() -> None:
-    global _installed, _original_health_components
+    global _installed, _original_health_components, _original_system_page
     if _installed:
         return
     _installed = True
     bg._latest_introspection = latest_introspection_current
     _original_health_components = bg._health_components
     bg._health_components = health_components_current_truth
+    _original_system_page = bg.system_page
+    bg.system_page = _system_page_current_truth
