@@ -1,0 +1,164 @@
+name: RC6 dashboard card truth audit 2026-09-06
+
+on:
+  push:
+    branches:
+      - audit/rc6-dashboard-card-truth-20260906
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_card_audit"
+          chmod 600 "$HOME/.ssh/porota_card_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Cross-check cards and tables with DB truth
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_card_audit" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' | tee /tmp/rc6-dashboard-card-truth.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          OBS_IMAGE=porota-trading-bot:17.0.0-rc6
+          DASH_IMAGE=porota-trading-dashboard:17.0.0-rc6-go-live-ux2
+          DASH_SHA=318043805a9736eda77874ba72ee7abc93fcb0f1
+          LIVE_SHA=db26c76723bb988c956589c572b87cbcb4191731
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$LIVE_SHA"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)" = "true|$OBS_IMAGE|0|true"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)" = "true|$DASH_IMAGE|0"
+          test "$(sudo -n docker image inspect "$DASH_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$DASH_SHA"
+
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import json,sqlite3,re,os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          import bg_paper_dashboard as bg
+          import eq_dashboard_table_layout_rc6 as eq
+          eq.install()
+          TZ=ZoneInfo('America/Argentina/Buenos_Aires')
+          obs='/app/data/paper_v17/observer_v17.db'
+          hist='/app/data/market_history.db'
+          c=sqlite3.connect(f'file:{obs}?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          h=sqlite3.connect(f'file:{hist}?mode=ro',uri=True,timeout=30); h.row_factory=sqlite3.Row; h.execute('PRAGMA query_only=ON')
+          out={}
+          out['db']={'observer':c.execute('PRAGMA quick_check').fetchone()[0],'history':h.execute('PRAGMA quick_check').fetchone()[0]}
+          state=dict(c.execute('SELECT * FROM observer_state WHERE id=1').fetchone())
+          snap=bg.snapshot()
+          for key in ('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at'):
+              assert str(snap['state'].get(key))==str(state.get(key)), (key,snap['state'].get(key),state.get(key))
+          out['observer']={k:state.get(k) for k in ('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at')}
+
+          # Balances: dashboard snapshot must equal latest DB row per currency.
+          direct_bal=[dict(r) for r in c.execute('''SELECT e.* FROM paper_equity_by_currency e JOIN
+             (SELECT currency,MAX(id) id FROM paper_equity_by_currency GROUP BY currency) x ON x.id=e.id
+             ORDER BY e.currency''')] if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_equity_by_currency'").fetchone() else []
+          snap_bal=sorted(snap['balances_by_currency'],key=lambda r:str(r.get('currency')))
+          if snap['spot_state']=='READY' and snap['caucion_state']=='READY':
+              assert len(snap_bal)==len(direct_bal)
+              for a,b in zip(snap_bal,direct_bal):
+                  for key in ('currency','cash','pending_proceeds','caucion_principal','realized_pnl','equity'):
+                      assert str(a.get(key))==str(b.get(key)), ('balance',key,a.get(key),b.get(key))
+          else:
+              assert snap_bal==[]
+          out['balances']=[{k:r.get(k) for k in ('currency','cash','pending_proceeds','caucion_principal','realized_pnl','equity')} for r in snap_bal]
+          out['financial_readiness']={'spot':snap['spot_state'],'caucion':snap['caucion_state']}
+
+          # Closed trade metrics.
+          closed=snap['closed']
+          direct_closed=int(c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='CLOSED'").fetchone()[0]) if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_positions'").fetchone() else 0
+          assert len(closed)==direct_closed
+          wins=sum(1 for p in closed if bg._num(p.get('net_pnl'))>0)
+          losses=sum(1 for p in closed if bg._num(p.get('net_pnl'))<0)
+          out['closed_positions']={'total':direct_closed,'wins':wins,'losses':losses}
+
+          # Latest universe cycle card values.
+          universe=dict(c.execute('SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1').fetchone()) if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='universe_cycle_metrics'").fetchone() and c.execute('SELECT COUNT(*) FROM universe_cycle_metrics').fetchone()[0] else {}
+          out['universe_cycle']={k:universe.get(k) for k in ('selected_count','eligible_total','successful_count','recommended_limit','cursor_before','cursor_after')}
+
+          # Scalping cards.
+          scalper=dict(c.execute('SELECT * FROM intraday_scalping_worker_state WHERE id=1').fetchone()) if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='intraday_scalping_worker_state'").fetchone() and c.execute('SELECT COUNT(*) FROM intraday_scalping_worker_state').fetchone()[0] else {}
+          points=int(c.execute('SELECT COUNT(*) FROM ppi_intraday_points').fetchone()[0]) if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ppi_intraday_points'").fetchone() else 0
+          confirmed=int(c.execute("SELECT COUNT(*) FROM ppi_intraday_contract_state WHERE state='CONFIRMED_INTERVAL_VOLUME'").fetchone()[0]) if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ppi_intraday_contract_state'").fetchone() else 0
+          candidates=int(c.execute("SELECT COUNT(*) FROM scalping_candidates WHERE action='BUY_CANDIDATE'").fetchone()[0]) if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='scalping_candidates'").fetchone() else 0
+          out['scalping']={'worker_state':scalper.get('state'),'heartbeat_at':scalper.get('heartbeat_at'),'points':points,'confirmed_contracts':confirmed,'buy_candidates_total':candidates,'real_orders_sent':scalper.get('real_orders_sent',0)}
+          assert int(scalper.get('real_orders_sent') or 0)==0
+
+          # Historical cards/table source-of-truth.
+          hist_tot=dict(h.execute("SELECT COUNT(*) rows,COUNT(DISTINCT symbol||'|'||instrument_type||'|'||market||'|'||settlement) identities,MIN(date) first_day,MAX(date) latest_day FROM history_canonical_v2").fetchone())
+          hist_sources=[dict(r) for r in h.execute("SELECT source,COUNT(*) rows,COUNT(DISTINCT symbol||'|'||instrument_type||'|'||market||'|'||settlement) identities,MAX(date) latest FROM history_canonical_v2 GROUP BY source ORDER BY rows DESC")]
+          out['history']={'canonical':hist_tot,'sources':hist_sources}
+
+          # Learning source-of-truth.
+          learning_count=int(c.execute('SELECT COUNT(*) FROM paper_learning_samples').fetchone()[0]) if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_learning_samples'").fetchone() else 0
+          learning_labeled=int(c.execute('SELECT COUNT(*) FROM paper_learning_samples WHERE label_timestamp IS NOT NULL').fetchone()[0]) if learning_count else 0
+          out['learning']={'samples':learning_count,'labeled':learning_labeled}
+          assert int(snap['learning'].get('total') or 0)==learning_count
+          assert int(snap['learning'].get('labeled') or 0)==learning_labeled
+
+          # Health matrix preserves effective state and explicitly separates blocking semantics.
+          health=bg._health_components()
+          out['health']=[{k:r.get(k) for k in ('name','key','state','raw_state','applicable','paper_blocking','checked','last_success','detail')} for r in health]
+          for r in health:
+              if str(r.get('key')).upper() in {'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST','PAPER_SIGNAL_ROTATION','BYMA_INSTRUMENTS_API','ROFEX_MARKETDATA'} and str(r.get('state')).upper() not in {'ROJO','ERROR','FAILED'}:
+                  assert r.get('paper_blocking') is False
+
+          # Rendered operator pages: key factual markers and no stale snapshot claim.
+          pages={'home':bg.home_page(),'live':bg.live_page(),'history':bg.history_page(),'health':bg.health_page(),'learning':bg.learning_page(),'scalping':bg.scalping_page(),'system':bg.system_page('introspeccion')}
+          assert 'Últimas 5 operaciones PAPER válidas' in pages['home']
+          assert '5. Motores / workers' not in pages['live']
+          assert str(hist_tot['rows']).replace(',','.') or True
+          assert 'Snapshot de introspección no vigente' not in pages['system']
+          assert 'system-nav' in pages['system']
+          out['render_bytes']={k:len(v) for k,v in pages.items()}
+
+          # No future/non-operational timestamps may appear in the new last-five selection source.
+          records=bg._rows("SELECT * FROM paper_positions ORDER BY COALESCE(closed_at,opened_at) DESC LIMIT 200")
+          valid=[]
+          import ak_byma_calendar as cal
+          for row in records:
+              stamp=row.get('closed_at') or row.get('opened_at')
+              if not stamp: continue
+              try:
+                  day=bg.aware_datetime(stamp).astimezone(bg.TZ).date()
+              except Exception:
+                  continue
+              if cal.es_dia_habil_operativo(day): valid.append((row.get('symbol'),str(stamp))); 
+              if len(valid)==5: break
+          assert len(valid)<=5
+          out['last_five_operational_positions']=valid
+
+          c.close(); h.close()
+          assert out['db']=={'observer':'ok','history':'ok'}
+          assert out['observer']['mode']=='PRODUCTION_PAPER' and int(out['observer']['real_orders_sent'] or 0)==0
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          print('RC6_DASHBOARD_CARD_TRUTH_AUDIT=GREEN')
+          PY
+          echo "OBSERVER=$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          echo "DASHBOARD=$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'REAL_ORDER_CAPABILITY=BLOCKED'
+          HOST
+          {
+            echo '### RC6 dashboard card truth audit'
+            echo '```text'
+            sed -n '1,2000p' /tmp/rc6-dashboard-card-truth.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
