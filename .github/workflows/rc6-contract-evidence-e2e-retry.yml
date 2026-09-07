@@ -1,0 +1,169 @@
+name: RC6 Contract Evidence E2E retry
+
+on:
+  push:
+    branches:
+      - hotfix/rc6-contract-evidence-playwright-20260907
+    paths:
+      - '.github/workflows/rc6-contract-evidence-e2e-retry.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-contract-evidence-e2e-retry
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ce_retry"
+          chmod 600 "$HOME/.ssh/porota_ce_retry"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Quiesce Contract Evidence and execute clean DUE cycle
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          EXPECTED_OBSERVER_SHA: 5076b6dff8c644ed73160b4148eb7a1cf9ca7e43
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ce_retry" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "EXPECTED_OBSERVER_SHA='$EXPECTED_OBSERVER_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          DB="$ROOT/data/paper_v17/observer_v17.db"
+          OUT="$ROOT/data/contract_evidence/rc6_trusted"
+          STATE="$OUT/runtime_state.json"
+          VENV=/opt/porota-contract-evidence-venv
+          RUNTIME=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          TIMER=porota-contract-evidence-rc6.timer
+          SERVICE=porota-contract-evidence-rc6.service
+
+          echo '=== RC6 CONTRACT EVIDENCE CLEAN E2E RETRY ==='
+          OBS_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)"
+          OBS_STATE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)"
+          DASH_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)"
+          DASH_STATE="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)"
+          LABEL="$(sudo -n docker image inspect porota-trading-bot:17.0.0-rc6 --format '{{index .Config.Labels "porota.commit"}}')"
+          test "$OBS_STATE" = 'true|0|true|porota-trading-bot:17.0.0-rc6'
+          test "$LABEL" = "$EXPECTED_OBSERVER_SHA"
+          case "$DASH_STATE" in true\|0\|*) ;; *) exit 1;; esac
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          print('|'.join(map(str,(*c.execute('pragma quick_check').fetchone(),*c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))); c.close()
+          PY
+          )"
+          printf 'OBSERVER_DB_BEFORE=%s\n' "$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+          RUNS_BEFORE="$(python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          print(c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0]); c.close()
+          PY
+          )"
+          printf 'CE_RUNS_BEFORE=%s\n' "$RUNS_BEFORE"
+
+          sudo -n systemctl stop "$TIMER" || true
+          sudo -n systemctl stop "$SERVICE" || true
+          for _ in $(seq 1 30); do
+            [ "$(sudo -n systemctl is-active "$SERVICE" 2>/dev/null || true)" != active ] && break
+            sleep 1
+          done
+          test "$(sudo -n systemctl is-active "$SERVICE" 2>/dev/null || true)" != active
+          echo 'CONTRACT_EVIDENCE_QUIESCED=YES'
+
+          test -x /usr/bin/google-chrome-stable
+          test -x "$VENV/bin/python"
+          sudo -n "$VENV/bin/python" - <<'PY'
+          import importlib.metadata
+          from playwright.sync_api import sync_playwright
+          v=importlib.metadata.version('playwright')
+          assert v=='1.62.0', v
+          print('PLAYWRIGHT_RUNTIME=GREEN:'+v)
+          PY
+          test -x "$RUNTIME"
+          sudo -n bash -n "$RUNTIME"
+
+          if [ -s "$STATE" ]; then
+            OLD_STATE="$(python3 - "$STATE" <<'PY'
+          import json,sys
+          try: print(json.load(open(sys.argv[1],encoding='utf-8')).get('state',''))
+          except Exception: print('INVALID')
+          PY
+          )"
+            printf 'BACKOFF_STATE_BEFORE=%s\n' "$OLD_STATE"
+            if [ "$OLD_STATE" = 'BLOCKED_PLAYWRIGHT_UNAVAILABLE' ]; then
+              sudo -n rm -f "$STATE"
+              echo 'STALE_PLAYWRIGHT_BACKOFF=CLEARED'
+            else
+              echo 'NON_PLAYWRIGHT_BACKOFF=PRESERVED'
+            fi
+          else
+            echo 'BACKOFF_STATE_BEFORE=NONE'
+          fi
+
+          set +e
+          CE_OUT="$(sudo -n "$RUNTIME" 2>&1)"
+          CE_RC=$?
+          set -e
+          printf '%s\n' "$CE_OUT"
+          printf 'CONTRACT_EVIDENCE_RUNTIME_RC=%s\n' "$CE_RC"
+          test "$CE_RC" -eq 0
+          ! printf '%s\n' "$CE_OUT" | grep -Eq 'BLOCKED_PLAYWRIGHT_UNAVAILABLE|CE_PYTHON_MISSING|PLAYWRIGHT_MODULE_MISSING'
+
+          sudo -n systemctl enable --now "$TIMER" >/dev/null
+          test "$(sudo -n systemctl is-enabled "$TIMER")" = enabled
+          test "$(sudo -n systemctl is-active "$TIMER")" = active
+
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          print('|'.join(map(str,(*c.execute('pragma quick_check').fetchone(),*c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))); c.close()
+          PY
+          )"
+          RUNS_AFTER="$(python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          print(c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0]); c.close()
+          PY
+          )"
+          printf 'OBSERVER_DB_AFTER=%s\n' "$POST"
+          printf 'CE_RUNS_AFTER=%s\n' "$RUNS_AFTER"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)" = "$OBS_ID"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)" = "$OBS_STATE"
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)" = "$DASH_ID"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)" = "$DASH_STATE"
+          curl -fsS http://127.0.0.1:8000/health | python3 -c "import sys,json; assert json.load(sys.stdin).get('status')=='ok'"
+
+          if printf '%s\n' "$CE_OUT" | grep -q '^STATUS=GREEN_COLLECTION$'; then
+            test "$RUNS_AFTER" -gt "$RUNS_BEFORE"
+            echo 'CONTRACT_EVIDENCE_E2E=GREEN_COLLECTION_IMPORTED'
+          elif printf '%s\n' "$CE_OUT" | grep -q '^STATUS=AMARILLO_AUTH_BLOCKED$'; then
+            echo 'CONTRACT_EVIDENCE_E2E=YELLOW_AUTH_REQUIRES_SEPARATE_ACTION'
+          elif printf '%s\n' "$CE_OUT" | grep -q '^STATUS=AMARILLO_AUTH_BACKOFF$'; then
+            echo 'CONTRACT_EVIDENCE_E2E=YELLOW_NON_PLAYWRIGHT_BACKOFF'
+          else
+            echo 'CONTRACT_EVIDENCE_E2E=UNEXPECTED_STATUS'
+            exit 1
+          fi
+          echo 'OBSERVER_CHANGED=NO'
+          echo 'DASHBOARD_CHANGED=NO'
+          echo 'REAL_ORDERS_SENT=0'
+          HOST
