@@ -1,0 +1,96 @@
+POROTA RC6 HISTORICAL RAW TRIGGER AUDIT — READ ONLY
+UTC=2026-09-07T19:16:02Z
+
+======================================================================
+01 EFFECTIVE NONSECRET CONTAINER CONFIG
+======================================================================
+
+======================================================================
+02 CODE TRIGGER MAP
+======================================================================
+.github/workflows/rc6-paper-t1-settlement-hotfix.yml:253:              -e PPI_HISTORY_BATCH_LIMIT=40 -e DATA_DIR=/app/data \
+.github/workflows/rc6-paper-t1-settlement-hotfix.yml:328:            -e PPI_HISTORY_BATCH_LIMIT=40 -e DATA_DIR=/app/data \
+bf_production_paper_observer.py:38:    3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
+bf_production_paper_observer.py:47:HISTORY_BATCH_LIMIT = max(5, min(int(os.getenv("PPI_HISTORY_BATCH_LIMIT", "40")), 100))
+bf_production_paper_observer.py:840:def _download_histories(reader, store):
+bf_production_paper_observer.py:931:        histories = _download_histories(reader, store)
+bf_production_paper_observer.py:957:def _background_ingest(reader, store, *, force=False):
+bf_production_paper_observer.py:962:        rows = _download_histories(reader, store)
+bf_production_paper_observer.py:995:    if name != "LOGIN_AND_SYNC":
+bf_production_paper_observer.py:1027:        histories = _download_histories(reader, store)
+bf_production_paper_observer.py:1147:                _background_ingest(reader, store)
+bg_paper_dashboard.py:1196:        "PPI_BACKGROUND_INGEST": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+bg_paper_dashboard.py:1197:        "PPI_PRODUCTION_HISTORY": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+bg_paper_dashboard.py:1222:        "PPI_BACKGROUND_INGEST": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+bg_paper_dashboard.py:1223:        "PPI_PRODUCTION_HISTORY": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+bg_paper_dashboard.py:2343:          "PPI_BACKGROUND_INGEST_SECONDS","PAPER_NEWS_INGEST_ENABLED","PAPER_FOCUS_SYMBOLS",
+de_scheduler_catalog_hf6.py:60:                int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200"))),
+de_scheduler_catalog_hf6.py:63:                int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200"))),
+porota_mode_manager.py:60:    "PPI_BACKGROUND_INGEST_SECONDS": "7200",
+porota_mode_manager.py:110:    "PPI_BACKGROUND_INGEST_SECONDS": "7200",
+porota_mode_manager.py:256:        "-e", "PPI_HISTORY_BATCH_LIMIT=40",
+rc6_postclose_history_job.py:63:        _download_histories(reader, store)
+scripts/v17_rc3_hf2_deploy.py:140:        "PPI_BACKGROUND_INGEST_SECONDS", "PAPER_FOCUS_MINIMUM_FOR_OPENINGS",
+scripts/v17_rc3_hf2_deploy.py:196:        "PPI_BACKGROUND_INGEST_SECONDS": "21600",
+scripts/v17_rc3_hf6_deploy.py:284:               "PAPER_FOCUS_SYMBOLS", "PAPER_SCALPING_MODE", "PPI_BACKGROUND_INGEST_SECONDS",
+scripts/v17_rc3_hf6_deploy.py:346:        "PAPER_SCALPING_MODE": "ACTIVE_PAPER", "PPI_BACKGROUND_INGEST_SECONDS": "7200",
+tests/test_candle_archive_v17.py:246:    assert observer._download_histories(reader,store)==1
+tests/test_candle_archive_v17.py:249:    assert observer._download_histories(reader,store)==0
+tests/test_candle_archive_v17.py:281:    observer._download_histories(Reader(),store)
+tests/test_hotfix_rc3_hf2.py:135:    assert observer._background_ingest(Reader(), store, force=True) == 1
+tests/test_hotfix_rc3_hf5.py:39:    assert settings["PPI_BACKGROUND_INGEST_SECONDS"]=="7200"
+tests/test_production_paper_v1634.py:1532:    observer._download_histories(Reader(), store)
+
+======================================================================
+03 RECENT RAW WRITES BY UTC HOUR
+======================================================================
+HOUR hour=2026-09-05T00 rows=1152
+HOUR hour=2026-09-05T01 rows=1080
+HOUR hour=2026-09-05T02 rows=1145
+HOUR hour=2026-09-05T03 rows=15
+HOUR hour=2026-09-05T05 rows=40
+HOUR hour=2026-09-05T07 rows=40
+HOUR hour=2026-09-05T09 rows=40
+HOUR hour=2026-09-05T11 rows=40
+HOUR hour=2026-09-05T13 rows=40
+HOUR hour=2026-09-05T15 rows=40
+HOUR hour=2026-09-05T17 rows=40
+HOUR hour=2026-09-05T19 rows=40
+HOUR hour=2026-09-05T21 rows=40
+HOUR hour=2026-09-05T23 rows=40
+HOUR hour=2026-09-06T01 rows=1032
+HOUR hour=2026-09-06T02 rows=1205
+HOUR hour=2026-09-06T05 rows=40
+HOUR hour=2026-09-06T07 rows=40
+HOUR hour=2026-09-06T09 rows=40
+HOUR hour=2026-09-06T11 rows=40
+HOUR hour=2026-09-06T13 rows=40
+HOUR hour=2026-09-06T15 rows=36
+HOUR hour=2026-09-06T17 rows=40
+HOUR hour=2026-09-06T19 rows=40
+HOUR hour=2026-09-06T21 rows=40
+HOUR hour=2026-09-06T23 rows=80
+HOUR hour=2026-09-07T00 rows=1000
+HOUR hour=2026-09-07T01 rows=1091
+HOUR hour=2026-09-07T02 rows=1106
+HOUR hour=2026-09-07T04 rows=14
+HOUR hour=2026-09-07T05 rows=26
+HOUR hour=2026-09-07T07 rows=40
+HOUR hour=2026-09-07T09 rows=40
+HOUR hour=2026-09-07T11 rows=40
+HOUR hour=2026-09-07T13 rows=39
+HOURS_WITH_WRITES=35
+ROWS_PER_ACTIVE_HOUR_MIN=14 MAX=1205 AVG=281.74
+TABLE_SCHEMA name=observer_commands sql=CREATE TABLE observer_commands(           id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,           command TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT,           finished_at TEXT, result TEXT NOT NULL DEFAULT '')
+TABLE_SCHEMA name=paper_events sql=CREATE TABLE paper_events(               id INTEGER PRIMARY KEY AUTOINCREMENT, event_at TEXT NOT NULL,               source TEXT NOT NULL, event_type TEXT NOT NULL, paper_id TEXT,               detail TEXT NOT NULL)
+
+======================================================================
+04 SYSTEMD/CRON REFERENCES TO SYNC COMMAND
+======================================================================
+
+======================================================================
+05 SAFETY
+======================================================================
+OBSERVER_STATE=PRODUCTION_PAPER|MARKET_OPEN|0
+MUTATIONS=NONE
+AUDIT_STATUS=COMPLETE_READ_ONLY
