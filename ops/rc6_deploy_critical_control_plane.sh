@@ -109,13 +109,15 @@ sudo -n install -d -m 0755 "$BASE" "$BASE/releases" "$RELEASE"
 for f in fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py; do
   sudo -n install -m 0644 "$REMOTE_STAGE/$f" "$RELEASE/$f"
 done
-sudo -n install -d -m 0700 "$SECRETS"
+sudo -n install -d -m 0711 "$SECRETS"
+sudo -n chown root:root "$SECRETS"
 sudo -n install -d -o 1000 -g 1000 -m 0750 "$DATA"
 printf '%s' "$telegram_token" | sudo -n tee "$SECRETS/critical_telegram.token" >/dev/null
 printf '%s' "$telegram_chat" | sudo -n tee "$SECRETS/critical_telegram.chat" >/dev/null
 sudo -n chown 1000:1000 "$SECRETS/critical_telegram.token" "$SECRETS/critical_telegram.chat"
 sudo -n chmod 0400 "$SECRETS/critical_telegram.token" "$SECRETS/critical_telegram.chat"
 
+echo 'SECRETS_DIRECTORY=0711_ROOT_TRAVERSE_ONLY'
 capability="$(python3 - <<'PY'
 import secrets
 print(secrets.token_hex(32))
