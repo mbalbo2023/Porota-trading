@@ -1,0 +1,81 @@
+name: RC6 no Budget permission probe validate v5 2026-09-08
+on:
+  push:
+    branches: [checkpoint/rc6-ppi-dom-api-operability-alerting-20260908]
+    paths: ['.github/workflows/rc6-no-budget-permission-probe-validate-v5-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-no-budget-permission-probe-v5
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch search-only permission evidence preserving all prior semantics
+        run: |
+          set -euo pipefail
+          git checkout -b fix/rc6-no-order-route-permission-probe-20260908
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('m_instrument_universe.py'); s=p.read_text(encoding='utf-8')
+          start=s.index('def detect_account_permissions(ppi_client) -> dict:\n')
+          end=s.index('\n\ndef _clase_del_subyacente',start)
+          new='''def detect_account_permissions(ppi_client) -> dict:\n    """Search visibility + local adapter truth; never call order routes.\n\n    RC6 forbids Budget/Confirm/Cancel as permission probes. Search visibility\n    proves discoverability only. ``order_param_adapter`` is pure local code and\n    is used only to distinguish local adapter support from broker permission.\n    Broker execution permission remains NOT_PROVEN.\n    """\n    import ac_db\n    from datetime import date\n    from c_ppi_client import order_param_adapter\n\n    permisos = {}\n    for asset_class, cfg in ALL_TYPES.items():\n        estado = {\n            "puede_operar": False,\n            "motivo": "",\n            "instrumentos_visibles": 0,\n            "estado_verificacion": "EXECUTION_NOT_PROVEN_NO_ORDER_ROUTE_PROBE",\n        }\n        kind = str(cfg.get("instrument_type") or "").upper().strip()\n        try:\n            order_param_adapter(kind)\n            local_adapter = True\n        except (NotImplementedError, TypeError, ValueError):\n            local_adapter = False\n            estado["estado_verificacion"] = "LOCAL_ADAPTER_UNAVAILABLE"\n\n        try:\n            resultados = ppi_client.search_instruments(kind) or []\n        except Exception as exc:\n            estado["motivo"] = f"La búsqueda read-only de instrumentos falló: {type(exc).__name__}."\n            if local_adapter:\n                estado["estado_verificacion"] = "SEARCH_FAILED_EXECUTION_NOT_PROVEN"\n            else:\n                estado["motivo"] += " Sin adaptador específico de orden; ni se verificó permiso PPI."\n            permisos[asset_class] = estado\n            continue\n\n        estado["instrumentos_visibles"] = len(resultados)\n        if not local_adapter:\n            estado["motivo"] = (\n                "Sin adaptador específico de orden; no se consultó presupuesto ni se verificó permiso PPI. "\n                "La búsqueda read-only sólo demuestra visibilidad y no constituye una denegación del broker."\n            )\n        elif resultados:\n            estado["motivo"] = (\n                "Instrumentos visibles y adaptador local genérico disponible; permiso de ejecución "\n                "del broker NOT_PROVEN. No se consultó Budget/Confirm/Cancel."\n            )\n        else:\n            estado["motivo"] = (\n                "Adaptador local genérico disponible, pero la búsqueda read-only no devolvió instrumentos; "\n                "permiso de ejecución del broker NOT_PROVEN. No se consultó Budget/Confirm/Cancel."\n            )\n        permisos[asset_class] = estado\n        logger.info("Capacidad de cuenta — %s: %s (%s)", asset_class,\n                    estado["estado_verificacion"], estado["motivo"])\n\n    try:\n        conn = ac_db.connect_raw()\n        c = conn.cursor()\n        c.execute("""CREATE TABLE IF NOT EXISTS account_permissions (\n            date TEXT PRIMARY KEY, data_json TEXT)""")\n        c.execute("INSERT OR REPLACE INTO account_permissions (date, data_json) VALUES (?, ?)",\n                  (date.today().isoformat(), json.dumps(permisos, ensure_ascii=False)))\n        conn.commit(); conn.close()\n    except Exception as exc:\n        logger.error("No se pudieron guardar los permisos de cuenta: %s", exc)\n    return permisos\n'''
+          p.write_text(s[:start]+new+s[end:],encoding='utf-8')
+          PY
+          cat > tests/test_rc6_no_budget_permission_probe.py <<'PY'
+          import m_instrument_universe as universe
+          class Client:
+              def __init__(self): self.calls=[]
+              def search_instruments(self,t): self.calls.append(('search',t)); return [{'ticker':'TEST'}]
+              def budget_order(self,*a,**k): raise AssertionError('NO_BUDGET')
+              def confirm_order(self,*a,**k): raise AssertionError('NO_CONFIRM')
+              def cancel_order(self,*a,**k): raise AssertionError('NO_CANCEL')
+          def test_generic_search_only(monkeypatch):
+              monkeypatch.setattr(universe,'ALL_TYPES',{'acciones':{'instrument_type':'ACCIONES'}})
+              c=Client(); r=universe.detect_account_permissions(c)['acciones']
+              assert r['puede_operar'] is False
+              assert r['estado_verificacion']=='EXECUTION_NOT_PROVEN_NO_ORDER_ROUTE_PROBE'
+              assert r['instrumentos_visibles']==1
+              assert c.calls==[('search','ACCIONES')]
+          def test_specialized_preserves_local_adapter_truth(monkeypatch):
+              monkeypatch.setattr(universe,'ALL_TYPES',{'cauciones':{'instrument_type':'CAUCIONES'}})
+              c=Client(); r=universe.detect_account_permissions(c)['cauciones']
+              assert r['puede_operar'] is False
+              assert r['estado_verificacion']=='LOCAL_ADAPTER_UNAVAILABLE'
+              assert 'ni se verificó permiso' in r['motivo']
+              assert c.calls==[('search','CAUCIONES')]
+          PY
+      - name: Syntax gate
+        run: python -m py_compile m_instrument_universe.py j_main.py
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run original and new contract tests
+        run: |
+          set -euo pipefail
+          pytest -q tests/test_rc6_no_budget_permission_probe.py tests/test_ppi_documented_contract_v17.py
+          block=$(sed -n '/def detect_account_permissions/,/^def _clase_del_subyacente/p' m_instrument_universe.py)
+          ! grep -q 'budget_order(' <<<"$block"
+          ! grep -q 'confirm_order(' <<<"$block"
+          ! grep -q 'cancel_order(' <<<"$block"
+          grep -q 'order_param_adapter' <<<"$block"
+      - name: Commit tested isolated fix
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add m_instrument_universe.py tests/test_rc6_no_budget_permission_probe.py
+          git commit -m 'fix(rc6): remove order-route permission probing safely'
+          git push -u origin fix/rc6-no-order-route-permission-probe-20260908
