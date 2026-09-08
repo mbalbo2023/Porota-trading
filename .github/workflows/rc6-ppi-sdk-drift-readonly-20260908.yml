@@ -1,0 +1,144 @@
+name: RC6 PPI SDK drift read-only 2026-09-08
+
+on:
+  push:
+    branches:
+      - checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+    paths:
+      - '.github/workflows/rc6-ppi-sdk-drift-readonly-20260908.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-ppi-sdk-drift-readonly-20260908
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download source distributions only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ppi-sdk/124 /tmp/ppi-sdk/130
+          python -m pip download --no-deps --no-binary=:all: --no-build-isolation \
+            ppi-client==1.2.4 -d /tmp/ppi-sdk/124
+          python -m pip download --no-deps --no-binary=:all: --no-build-isolation \
+            ppi-client==1.3.0 -d /tmp/ppi-sdk/130
+          sha256sum /tmp/ppi-sdk/124/* /tmp/ppi-sdk/130/* > /tmp/ppi-sdk/SHA256SUMS.txt
+          mkdir -p /tmp/ppi-sdk/src124 /tmp/ppi-sdk/src130
+          tar -xzf /tmp/ppi-sdk/124/*.tar.gz -C /tmp/ppi-sdk/src124 --strip-components=1
+          tar -xzf /tmp/ppi-sdk/130/*.tar.gz -C /tmp/ppi-sdk/src130 --strip-components=1
+
+      - name: Build static API/source comparison report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import ast, hashlib, json, difflib
+
+          a=Path('/tmp/ppi-sdk/src124'); b=Path('/tmp/ppi-sdk/src130')
+          out=[]
+          out += [
+            'POROTA RC6 — PPI SDK STATIC DRIFT AUDIT',
+            'DATE=2026-09-08',
+            'NETWORK_BROKER_CALLS=NONE',
+            'LIVE_HOST_INSTALL=NONE',
+            'ORDER_ROUTE_TEST=NONE',
+            'VERSIONS=1.2.4_vs_1.3.0',
+            '',
+            '=== SDIST HASHES ===',
+            Path('/tmp/ppi-sdk/SHA256SUMS.txt').read_text(),
+          ]
+
+          def files(root):
+            return {str(p.relative_to(root)):p for p in root.rglob('*') if p.is_file()}
+          fa,fb=files(a),files(b)
+          out.append('=== FILE INVENTORY ===')
+          out.append('ONLY_1_2_4='+json.dumps(sorted(set(fa)-set(fb))))
+          out.append('ONLY_1_3_0='+json.dumps(sorted(set(fb)-set(fa))))
+          changed=[]
+          for name in sorted(set(fa)&set(fb)):
+            if hashlib.sha256(fa[name].read_bytes()).digest()!=hashlib.sha256(fb[name].read_bytes()).digest():
+              changed.append(name)
+          out.append('CHANGED='+json.dumps(changed))
+
+          def signatures(root):
+            result={}
+            for p in sorted(root.rglob('*.py')):
+              rel=str(p.relative_to(root))
+              try: tree=ast.parse(p.read_text(encoding='utf-8'))
+              except Exception as exc:
+                result[rel]={'PARSE_ERROR':type(exc).__name__}; continue
+              rows=[]
+              for node in tree.body:
+                if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                  rows.append('function '+node.name+ast.unparse(node.args))
+                elif isinstance(node,ast.ClassDef):
+                  methods=[]
+                  for child in node.body:
+                    if isinstance(child,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                      methods.append(child.name+ast.unparse(child.args))
+                  rows.append('class '+node.name+' :: '+ ' | '.join(methods))
+              result[rel]=rows
+            return result
+          sa,sb=signatures(a),signatures(b)
+          out.append('')
+          out.append('=== PUBLIC PYTHON STRUCTURE 1.2.4 ===')
+          for k,v in sa.items(): out.append(k+'\n  '+'\n  '.join(v) if isinstance(v,list) else k+' '+str(v))
+          out.append('')
+          out.append('=== PUBLIC PYTHON STRUCTURE 1.3.0 ===')
+          for k,v in sb.items(): out.append(k+'\n  '+'\n  '.join(v) if isinstance(v,list) else k+' '+str(v))
+
+          out.append('')
+          out.append('=== SIGNATURE DELTA ===')
+          for name in sorted(set(sa)|set(sb)):
+            old=sa.get(name,[]); new=sb.get(name,[])
+            if old==new: continue
+            out.append('FILE='+name)
+            for line in difflib.unified_diff(
+                [str(x)+'\n' for x in (old if isinstance(old,list) else [old])],
+                [str(x)+'\n' for x in (new if isinstance(new,list) else [new])],
+                fromfile='1.2.4',tofile='1.3.0',n=3):
+              out.append(line.rstrip('\n'))
+
+          keywords=('order','market','instrument','configuration','settlement','operation','cancel','budget','confirm')
+          out.append('')
+          out.append('=== RELEVANT SOURCE DIFFS ===')
+          for name in changed:
+            if not name.endswith('.py'): continue
+            low=name.lower()
+            old=fa[name].read_text(encoding='utf-8',errors='replace').splitlines()
+            new=fb[name].read_text(encoding='utf-8',errors='replace').splitlines()
+            diff=list(difflib.unified_diff(old,new,fromfile='1.2.4/'+name,tofile='1.3.0/'+name,n=3))
+            if any(any(k in line.lower() for k in keywords) for line in diff):
+              out.extend(diff[:500])
+              if len(diff)>500: out.append(f'...DIFF_TRUNCATED_LINES={len(diff)-500}')
+
+          Path('POROTA_RC6_PPI_SDK_124_VS_130_STATIC_AUDIT_2026-09-08.txt').write_text('\n'.join(out)+'\n',encoding='utf-8')
+          PY
+          test -s POROTA_RC6_PPI_SDK_124_VS_130_STATIC_AUDIT_2026-09-08.txt
+
+      - name: Commit audit report
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_PPI_SDK_124_VS_130_STATIC_AUDIT_2026-09-08.txt
+          git commit -m 'audit(rc6): compare PPI SDK 1.2.4 vs 1.3.0 statically'
+          git push origin HEAD:checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
