@@ -1,0 +1,1071 @@
+POROTA RC6 — PPI AUTH ALERT COVERAGE AUDIT
+DATE=2026-09-08
+NOTIFICATIONS_SENT=NONE
+PPI_NETWORK_CALLS=NONE
+
+FILE=rc4_functional_health.py HITS=1
+  25:return {'generated_at':datetime.now(timezone.utc).isoformat(),'observer':{k:observer.get(k) for k in ('mode','process_state','session_state','ppi_auth','heartbeat_at','last_market_data_at','real_orders_sent')},
+FILE=o_dashboard.py HITS=22
+  420:"""NUEVO EN v10.5 (segunda revisión) — avisos de Telegram que no se
+  421:pudieron entregar tras 3 reintentos (ver b_notifiers.py). Si esta
+  423:hacia api.telegram.org — puede haber operaciones ejecutadas de las
+  645:"de salud por Telegram, que lo consulta desde el propio proceso del bot.</li>")
+  939:Telegram con dos botones. El bot <b>no se reinicia hasta que confirmes ahí</b>, y nunca
+  945:Pedir reinicio (confirmación por Telegram)
+  969:misma página, la opción de pedir el reinicio — que requiere tu confirmación por Telegram y
+  1060:"El reinicio va a pedirte confirmación explícita por Telegram.</p>")
+  1067:una confirmación a Telegram).</p>"""
+  1081:# confirmación por Telegram y dejar la solicitud grabada. El reinicio real
+  1088:# reiniciar el bot por su cuenta — como mucho puede mandarte un Telegram
+  1111:from b_notifiers import MultiChannelNotifier
+  1112:ok, detalle = env_guard.request_restart_confirmation(request_id, MultiChannelNotifier())
+  1116:mensaje += ("<p>Buscá el mensaje en Telegram y tocá <b>Confirmar reinicio</b>. "
+  1305:import am_api_health as health
+  1308:notificador = globals().get("_notifier_ref")
+  1458:pedido de confirmación a Telegram. La aplicación real solo ocurre cuando
+  1466:resultado = sre.encolar_para_confirmacion(propuesta, globals().get("_notifier_ref"))
+  1467:return {"ok": True, "mensaje": "Te mandé el pedido de confirmación por Telegram.",
+  1536:f"existe para cuando Telegram no está disponible. Lo normal es autorizar desde el "
+  1546:"""Autorización manual del arranque, para cuando Telegram no responde."""
+  1560:# Extensiones v16.3: seguridad, Telegram y diagnósticos sin red.
+FILE=ag_kill_switch_supervisor.py HITS=27
+  48:Telegram con el motivo, el estado de las posiciones y un botón de
+  60:de un botón de Telegram que ya nadie iba a apretar, posiciones abiertas con
+  78:El resultado de las cuatro va al mensaje de Telegram del corte. La idea es
+  102:COOLDOWN_MINUTES = float(os.getenv("KILL_SWITCH_COOLDOWN_MINUTES", "15"))
+  170:def drain_and_reconcile(ppi, notifier, position_manager, motivo: str = "") -> dict:
+  292:if notifier:
+  298:notifier.send_telegram_generic_confirmation(
+  307:notifier.send_telegram(
+  309:f"recuperarlo solo en los próximos {int(COOLDOWN_MINUTES)} minutos "
+  417:def intentar_recuperacion(ppi, notifier, position_manager) -> dict:
+  436:"libera solo: hace falta que una persona lo confirme (botón de Telegram "
+  444:# Cooldown: darle tiempo a la causa transitoria de resolverse sola.
+  446:if inicio and (datetime.now() - inicio) < timedelta(minutes=COOLDOWN_MINUTES):
+  447:resultado["accion"] = "EN_COOLDOWN"
+  448:resultado["explicacion"] = f"Esperando {COOLDOWN_MINUTES} minutos desde el corte."
+  460:if notifier:
+  462:notifier.send_telegram(
+  487:if notifier:
+  490:notifier.send_telegram(
+  512:def aprobar_desde_telegram(notifier=None) -> bool:
+  514:el handler del botón de Telegram en b_notifiers.py. Devuelve True si
+  521:logger.warning("Kill switch liberado por confirmación humana desde Telegram: %s", motivo)
+  522:if notifier:
+  524:notifier.send_telegram(
+  564:def __init__(self, ppi, notifier, position_manager):
+  566:self.notifier = notifier
+  574:r = intentar_recuperacion(self.ppi, self.notifier, self.position_manager)
+FILE=cy_market_source_arbitration_hf6.py HITS=1
+  109:"PPI_AUTHORITATIVE_WHEN_COMPLETE_AND_FRESH",
+FILE=p_risk_guardian.py HITS=23
+  15:condiciones. Si alguna se cumple, el bot deja de emitir alertas nuevas
+  17:avisa por Telegram. Reactivar requiere revisar el .env a mano — a
+  43:# NUEVO EN v13.0 — ver set_critical_notifier()/trigger_halt() más abajo.
+  44:_critical_notifier_callback = None
+  55:atadas. Mismo patrón que set_critical_notifier: callback opcional, no
+  61:def set_critical_notifier(callback):
+  70:import directo de b_notifiers, para que este módulo siga cumpliendo
+  73:corriendo sin necesitar un notifier real. j_main.py lo registra una
+  74:vez al arrancar, con notifier.notify_critical_event.
+  76:global _critical_notifier_callback
+  77:_critical_notifier_callback = callback
+  191:# NUEVO EN v13.0 — ver set_critical_notifier(). Nunca debe poder
+  192:# tumbar el propio halt si el notifier falla (ej. Telegram caído
+  195:if _critical_notifier_callback:
+  197:_critical_notifier_callback("KILL SWITCH ACTIVADO", reason)
+  209:# el mismo criterio que el notifier: el drenaje es importante, pero el
+  221:def check_and_halt_if_needed(ppi_client, notifier) -> bool:
+  270:notifier.send_telegram(
+  301:notifier.send_telegram(
+  324:notifier.send_telegram(
+  326:"cerraron en stop-loss. El bot dejó de emitir alertas nuevas hasta revisión manual."
+  365:notifier.send_telegram(
+  369:f"({CCL_INTRADAY_CIRCUIT_BREAKER_PCT}%). El bot dejó de emitir alertas "
+FILE=l_order_confirmation.py HITS=80
+  3:confirmación por Telegram (PRODUCTION) (v10.5)
+  7:automática. No quiero el botón de confirmación en Telegram".
+  13:— SIN botón, sin esperar nada — y manda un único mensaje de Telegram
+  18:mensaje con el resultado final — ver notify_order_result() en
+  19:b_notifiers.py.
+  20:- "confirm": el flujo anterior (botón Confirmar/Cancelar en Telegram)
+  78:# botón de Telegram, una vez tocado, ejecutaba solo o no). Ahora decide
+  90:"el modo 'confirm' (botón de Telegram) hasta que agregues esa "
+  110:# saber de scalping para nada más que etiquetar el mensaje de Telegram.
+  121:def _resolve_filled_quantity(ppi, notifier, ppi_order_id, requested_qty: int, ticker: str):
+  142:Telegram, en vez de asumir en silencio que se compró todo.
+  185:notifier.send_telegram(
+  265:pendientes de confirmar. Si dos alertas quedaban esperando
+  296:def process_button_taps(ppi, notifier, position_manager=None):
+  297:"""CONSUMIDOR ÚNICO de las actualizaciones de Telegram.
+  312:taps, new_offset = notifier.get_telegram_button_taps(process_button_taps._offset)
+  320:bb_runtime_status.record_telegram("ENTRANTE", tipo, "RECIBIDO", resumen)
+  339:resultado_arranque = startup_gate.procesar_respuesta_telegram(
+  340:tap["text"], origen="telegram"
+  344:notifier.send_telegram(
+  348:notifier.send_telegram(
+  353:import ar_telegram_commands as tg_cmd
+  354:tg_cmd.procesar_mensaje(tap["text"], notifier, ppi,
+  357:logger.error("Error procesando el comando de Telegram %r: %s",
+  362:notifier.answer_telegram_callback(tap["callback_id"], "Procesando...")
+  366:resultado_arranque = startup_gate.procesar_boton_telegram(tap["data"])
+  368:notifier.send_telegram(
+  372:notifier.send_telegram(
+  383:import ar_telegram_commands as tg_cmd
+  384:tg_cmd.procesar_boton(tap["data"], notifier, ppi,
+  387:logger.error("Error procesando el botón %r de Telegram: %s", action, e)
+  390:# NUEVO EN v14.0 — despacho por prefijo. Telegram entrega las
+  396:if env_guard.handle_telegram_tap(action, order_id, notifier):
+  407:if ks_supervisor.aprobar_desde_telegram(notifier):
+  408:logger.warning("Kill switch liberado por confirmación desde Telegram.")
+  410:notifier.send_telegram("El kill switch ya no estaba activo — no había nada que liberar.")
+  412:notifier.send_telegram(
+  420:notifier.send_telegram("Esa propuesta ya venció o ya fue procesada.")
+  425:notifier.send_telegram(f"❌ Cancelado: {pending['ticker']} — no se colocó ninguna orden.")
+  433:_handle_confirm(ppi, notifier, position_manager, pending)
+  436:def _handle_confirm(ppi, notifier, position_manager, pending):
+  441:notifier.send_telegram(
+  442:f"⏱️ La propuesta de {pending['ticker']} venció ({int(age_min)} min desde la alerta) — "
+  443:"el precio ya no es confiable. Esperá la próxima alerta."
+  451:notifier.send_telegram(f"⚠️ No pude obtener la cotización actual de {pending['ticker']}, no se ejecutó.")
+  457:notifier.send_telegram(
+  458:f"⚠️ El precio de {pending['ticker']} se movió {drift_pct:.2f}% desde la alerta "
+  460:"Esperá la próxima alerta si sigue conviniendo."
+  477:notifier.send_telegram(
+  484:_execute_real_order(ppi, notifier, position_manager, pending, current_price)
+  487:def _execute_real_order(ppi, notifier, position_manager, pending, current_price):
+  490:Telegram). "Transacciones atómicas" (auditoría 8.1 rev. 2): apenas PPI
+  492:ANTES de hacer cualquier otra cosa (avisar por Telegram, abrir la
+  504:notifier.send_telegram(
+  515:notifier.send_telegram(f"⚠️ PPI no devolvió presupuesto para {pending['ticker']}, no se ejecutó. "
+  542:notifier.send_telegram(f"🔴 Error al confirmar la orden de {pending['ticker']} en PPI — "
+  548:# de inmediato, antes de mandar el Telegram o abrir la posición.
+  555:ppi, notifier, ppi_order_id, pending["quantity"], pending["ticker"],
+  558:notifier.send_telegram(
+  565:notifier.send_telegram(
+  597:def recover_orphaned_orders(ppi, notifier, position_manager):
+  622:notifier.send_telegram(
+  629:def execute_directly(ppi, notifier, position_manager, ticker, quantity, current_price,
+  637:por el botón de Telegram — la oportunidad ya pasó los tres filtros
+  641:todos los casos ya avisó por Telegram el motivo).
+  650:notifier.send_telegram(
+  657:notifier.send_telegram(
+  668:notifier.send_telegram(f"⚠️ PPI no devolvió presupuesto para {ticker} — oportunidad descartada, no se ejecutó.")
+  681:notifier.send_telegram(f"🔴 Error al colocar la orden de {ticker} en PPI — revisá el estado en la app.")
+  687:filled_qty, fill_status = _resolve_filled_quantity(ppi, notifier, ppi_order_id, quantity, ticker)
+  689:notifier.send_telegram(
+  698:# qué pase con el envío del Telegram.
+  703:notifier.notify_order_auto_executed(
+  716:def arrancar_bombeo(notifier, ppi, stop_event, intervalo: float = 4.0):
+  717:"""Hilo que sondea Telegram MIENTRAS el bucle principal todavía no corre.
+  737:process_button_taps(ppi, notifier, None)
+  741:logger.warning("Fallo al sondear Telegram durante el arranque "
+  744:logger.error("La escucha de Telegram lleva 10 fallos seguidos. "
+  748:hilo = threading.Thread(target=bucle, name="telegram-arranque", daemon=True)
+  750:logger.info("Escucha de Telegram activa durante el arranque. Mandá AYUDA para ver la lista.")
+FILE=ao_startup_gate.py HITS=22
+  15:esperando. Manda un mensaje a Telegram diciendo que está listo y ofreciendo
+  31:POR QUÉ TELEGRAM Y NO UN BOTÓN EN EL PANEL
+  33:Porque el panel hay que ir a mirarlo y Telegram te busca. La diferencia
+  43:QUÉ PASA SI TELEGRAM ESTÁ CAÍDO
+  49:(POST /api/testing/autorizar) que sirve cuando Telegram no está disponible y
+  198:def solicitar_autorizacion(notifier=None) -> str:
+  230:if notifier is not None:
+  232:enviado = notifier.send(texto, reply_markup=teclado, parse_mode="Markdown")
+  234:raise RuntimeError("Telegram rechazó el pedido de autorización")
+  235:registrar_paso("ARRANQUE", "Pedido de autorización enviado a Telegram.", "Enviado")
+  237:registrar_paso("ARRANQUE", f"No se pudo avisar por Telegram: {e}",
+  239:logger.error("Telegram no disponible al pedir autorización: %s. El bot NO arranca "
+  247:def autorizar(modo: str, codigo: str = "", origen: str = "telegram") -> dict:
+  252:código sería redundante y solo agregaría fricción cuando Telegram está
+  274:def esperar_autorizacion(notifier=None) -> str:
+  291:solicitar_autorizacion(notifier)
+  296:# Viaja por el archivo de estado. El evento cubre el caso de Telegram
+  318:if notifier:
+  320:notifier.send("⏱️ Nadie autorizó el arranque, así que Porota Trading quedó "
+  329:def procesar_respuesta_telegram(texto: str, origen: str = "telegram") -> Optional[dict]:
+  333:inline a veces fallan en clientes viejos de Telegram, y quedarse sin
+  355:def procesar_boton_telegram(callback_data: str, origen: str = "telegram_boton") -> Optional[dict]:
+FILE=i_auto_tuner.py HITS=2
+  98:cursor.execute("SELECT COUNT(*) FROM signals WHERE status='EXECUTED_ALERT'")
+  108:report += f"✅ Alertas Emitidas: {executed}\n"
+FILE=ep_dashboard_truth_layer_rc6.py HITS=4
+  31:"SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,detail "
+  42:ppi_auth = str(row.get("ppi_auth") or "UNKNOWN").upper()
+  51:"ppi_auth": ppi_auth,
+  83:f"PPI auth {bg._e(truth['ppi_auth'])} · posiciones abiertas {truth['open_positions']} · "
+FILE=j_main.py HITS=83
+  11:l_order_confirmation.py) — un toque en Telegram ejecuta la orden real.
+  14:alertar hasta revisión manual (hallazgo de las auditorías 7.1/7.4).
+  51:from b_notifiers import MultiChannelNotifier
+  457:"TRADING_GATE", "BLOCKED_PPI_AUTH",
+  500:def send_weekly_report_job(notifier):
+  502:notifier.send_telegram(report)
+  505:def send_monthly_report_job(notifier):
+  507:con enfoque gerencial por Telegram. El informe completo con gráficos
+  508:queda descargable desde el dashboard; por Telegram va la síntesis, que
+  511:notifier.send_telegram(reports_engine.build_monthly_summary_text())
+  514:def scalping_preflight(notifier) -> dict:
+  522:algo falta, lo dice por Telegram con nombre y apellido en vez de arrancar
+  582:notifier.send_telegram("\n".join(lineas))
+  682:def market_open_job(ppi, notifier):
+  686:notifier.send_telegram(
+  692:daily_report.send_market_open_email(ppi, notifier)
+  695:def market_close_job(ppi, notifier):
+  696:daily_report.send_market_close_summary(ppi, notifier)
+  699:log_watch.send_daily_health_digest(notifier)
+  702:def eod_close_job(ppi, notifier):
+  707:position_manager.close_all_intraday_positions(ppi, notifier, economics.calculate_trade_costs_fraction)
+  710:def log_watch_job(notifier):
+  712:Telegram sólo lo que amerita atención, agrupado y sin repetir."""
+  713:log_watch.scan_and_alert(notifier)
+  716:def process_restart_requests_job(notifier):
+  721:encuentra ya confirmada por Telegram y, si el sistema está desocupado
+  744:notifier.send_telegram(
+  756:def check_exits_job(ppi, notifier):
+  757:position_manager.check_exits(ppi, notifier, economics.calculate_trade_costs_fraction, scalping=SCALPING_MODE)
+  760:def poll_confirmations(ppi, notifier):
+  761:order_confirmation.process_button_taps(ppi, notifier, position_manager)
+  764:def confirmations_thread_loop(ppi, notifier):
+  767:chequeo de botones de Telegram vivía adentro del mismo loop que
+  779:poll_confirmations(ppi, notifier)
+  792:def evaluate_instrument(inst, ppi, gemini, notifier, ccl_cached,
+  797:log_signal(ticker, "REJECTED_PPI_AUTH", "PPI no autenticado; operación bloqueada.")
+  808:# alertas el mismo día" se conviertan en una sola apuesta grande
+  959:ppi, notifier, gemini, risk_guardian, model_guardian,
+  970:ppi, notifier, gemini, risk_guardian, model_guardian,
+  1005:# confirmar, para no dimensionar dos alertas contra el mismo dinero.
+  1084:# caso más directo: "iban tres alertas seguidas del mismo papel y las
+  1107:ppi, notifier, position_manager, ticker, quantity, current_price,
+  1134:notifier.send_telegram_confirmation(msg, order_id)
+  1135:log_signal(ticker, "EXECUTED_ALERT", "Aprobado Técnico + Macro + Hurdle, esperando confirmación",
+  1190:# loop en régimen. El notifier se resuelve dentro del hook en
+  1192:# re-instala una vez que el notifier real existe más abajo.
+  1194:introspection_engine.install(notifier=None)
+  1198:notifier = MultiChannelNotifier()
+  1225:ppi = ResilientPPIClient(notifier)
+  1228:# Re-instala el hook ahora que existe un notifier real, para que los
+  1229:# crashes críticos posteriores al arranque manden aviso por Telegram
+  1231:introspection_engine.install(notifier=notifier)
+  1238:# Telegram (o desde el panel, si Telegram no responde).
+  1247:# Escucha de comandos de Telegram. Arranca ANTES del portón: si el bot va
+  1256:_hilo_bombeo = order_confirmation.arrancar_bombeo(notifier, ppi, _fin_bombeo)
+  1263:modo = startup_gate.esperar_autorizacion(notifier)
+  1281:# aviso inmediato y de alta prioridad por Telegram, además de quedar
+  1283:# "sin dependencias" (ver su ficha técnica) — el notifier se registra
+  1285:# el módulo sigue funcionando solo (y sus propios tests) sin notifier.
+  1286:risk_guardian.set_critical_notifier(notifier.notify_critical_event)
+  1294:gemini.set_notifier(notifier)
+  1295:model_registry.resolve_model(notifier=notifier, forzar=True)
+  1296:model_registry.ModelHealthWatcher(notifier=notifier).start()
+  1304:ppi, notifier, position_manager, motivo)
+  1308:ppi_api_watch.PPIAPIWatcher(notifier=notifier).start()
+  1370:ws_client = ppi_ws.PPIRealTimeClient(ppi_client=ppi, notifier=notifier)
+  1381:order_confirmation.recover_orphaned_orders(ppi, notifier, position_manager)
+  1385:# financieros esperando un toque de botón en Telegram. Ver el docstring
+  1387:ks_supervisor.KillSwitchSupervisor(ppi, notifier, position_manager).start()
+  1389:notifier.send_telegram(
+  1409:scalping_preflight(notifier)
+  1418:threading.Thread(target=confirmations_thread_loop, args=(ppi, notifier), daemon=True).start()
+  1425:timezone=SERVER_TIMEZONE, args=[ppi, notifier])
+  1427:timezone=SERVER_TIMEZONE, args=[ppi, notifier])
+  1435:timezone=SERVER_TIMEZONE, args=[ppi, notifier])
+  1436:# 2) Vigilancia automática de logs -> Telegram (Instrucción 9): reemplaza
+  1439:args=[notifier])
+  1441:#    Telegram (Instrucción 1). Corre seguido porque, una vez confirmado,
+  1445:args=[notifier])
+  1478:check_exits_job(ppi, notifier)
+  1479:risk_guardian.check_and_halt_if_needed(ppi, notifier)
+  1599:evaluate_instrument(inst, ppi, gemini, notifier, ccl_cached,
+  1608:notifier.notify_error(f"Falla bucle: {e}")
+FILE=f_gemini_decision_engine.py HITS=3
+  214:self.notifier = None  # lo setea j_main para que las degradaciones avisen
+  216:def set_notifier(self, notifier):
+  217:self.notifier = notifier
+FILE=bh_universe_dashboard_hf6.py HITS=2
+  177:ppi_auth,
+  738:f"PPI {bg._e(observer.get('ppi_auth'))} · "
+FILE=af_model_registry.py HITS=10
+  18:v14.0 tenía t_model_guardian.py, que avisa por Telegram si conviene revisar
+  41:- avisa por Telegram con el modelo viejo y el nuevo,
+  191:def resolve_model(notifier=None, forzar: bool = False) -> str:
+  224:if notifier:
+  226:notifier.send_telegram(
+  250:if notifier:
+  252:notifier.send_telegram(
+  295:def __init__(self, notifier=None):
+  296:self.notifier = notifier
+  302:resolve_model(notifier=self.notifier, forzar=True)
+FILE=ck_policy_gate_hf6.py HITS=2
+  92:_mode(REGIME_ENV, "ALERT_ONLY")),
+  109:"regime": _mode(REGIME_ENV, "ALERT_ONLY"),
+FILE=rc4_release_preflight.py HITS=1
+  33:legacy_scraper='cn_ppi_authenticated_family_scraper_hf6'
+FILE=rc6_contract_capture_importer.py HITS=6
+  87:source = str(item.get("source_url") or "PPI_AUTHENTICATED_XHR")
+  104:source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
+  121:settlement=settlement, source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
+  137:source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
+  147:source_class="PPI_AUTHENTICATED_XHR", source_ref=source,
+  160:source_class="PPI_AUTHENTICATED_XHR", source_ref=source,
+FILE=co_contract_ingestion_policy_hf6.py HITS=1
+  53:"FULL_BROWSER_AUDIT", timedelta(days=7), "PPI_AUTHENTICATED_WEB", False,
+FILE=ak_iol_client.py HITS=1
+  27:una alerta accionable sobre la tabla, no un misterio que aparece recién al
+FILE=eu_telegram_policy_rc6.py HITS=1
+  1:"""RC6 centralized Telegram delivery policy.
+FILE=c_ppi_client.py HITS=50
+  123:# notificaciones (Telegram/WhatsApp) puede terminar incluyendo, sin querer,
+  126:# función se aplica en el borde de salida (logger y notifier), nunca en el
+  138:# la estructura de tres partes de un JWT) y el token de Telegram (formato
+  140:# por logger/notifier — que es exactamente cómo terminaron transcriptas en
+  153:_TELEGRAM_TOKEN_PATTERN = re.compile(r"\b\d{8,12}:[A-Za-z0-9_\-]{30,}\b")
+  197:s = _TELEGRAM_TOKEN_PATTERN.sub(_mask, s)
+  255:# confirmaciones de Telegram corriendo en paralelo al loop principal — ver
+  266:# de Telegram (confirmations_thread_loop) mientras el hilo principal
+  359:def __init__(self, notifier):
+  371:self.notifier = notifier
+  384:self.AUTH_RETRY_COOLDOWN_SECONDS = int(
+  385:os.getenv("PPI_AUTH_RETRY_COOLDOWN_SECONDS", "900")
+  387:self.SERVER_RETRY_COOLDOWN_SECONDS = int(
+  388:os.getenv("PPI_SERVER_RETRY_COOLDOWN_SECONDS", "600")
+  390:self.RATE_LIMIT_COOLDOWN_SECONDS = int(
+  391:os.getenv("PPI_RATE_LIMIT_COOLDOWN_SECONDS", "3600")
+  393:self.AUTH_UNKNOWN_COOLDOWN_SECONDS = int(
+  394:os.getenv("PPI_AUTH_UNKNOWN_COOLDOWN_SECONDS", "3600")
+  413:# CIRCUIT_OPEN_COOLDOWN_SECONDS. Pasado ese tiempo, se prueba UNA
+  415:# falla, vuelve a OPEN y reinicia el cooldown.
+  421:self.CIRCUIT_OPEN_COOLDOWN_SECONDS = int(os.getenv("CIRCUIT_OPEN_COOLDOWN_SECONDS", "60"))
+  459:"COOLDOWN" if remaining else "DISCONNECTED"
+  461:"cooldown_remaining_seconds": remaining,
+  580:return False, self.AUTH_UNKNOWN_COOLDOWN_SECONDS
+  590:return "RATE_LIMIT", self.RATE_LIMIT_COOLDOWN_SECONDS
+  592:return "AUTH_REJECTED", self.AUTH_RETRY_COOLDOWN_SECONDS
+  594:return "UPSTREAM_TEMPORARY", self.SERVER_RETRY_COOLDOWN_SECONDS
+  596:return "PROTOCOL_TEMPORARY", self.SERVER_RETRY_COOLDOWN_SECONDS
+  597:return "CONFIGURATION_ERROR", self.AUTH_UNKNOWN_COOLDOWN_SECONDS
+  617:"PPI_AUTH", "LOCAL_LIMIT",
+  634:_persist_system_event("PPI_AUTH", "OK", "Sesión autenticada.")
+  636:self.notifier.notify_recovery("API PPI")
+  648:state, cooldown = self._login_failure_policy(
+  655:self._auth_blocked_until = time.time() + cooldown
+  657:"PPI_AUTH", state,
+  662:state, cooldown, safe_error,
+  665:self.notifier.notify_error(
+  667:f"intento será dentro de {cooldown // 60} minutos."
+  824:if time.time() - self._circuit_opened_at >= self.CIRCUIT_OPEN_COOLDOWN_SECONDS:
+  826:logger.info("Circuit Breaker: OPEN -> HALF_OPEN (cooldown cumplido, probando 1 llamada).")
+  854:self._circuit_failures, self.CIRCUIT_OPEN_COOLDOWN_SECONDS,
+  897:ae_ppi_api_watch.registrar_respuesta(nombre, resultado, self.notifier)
+  906:logger.debug("PPI sin autenticar — '%s' omitido durante cooldown.", label)
+  950:self._auth_blocked_until = time.time() + self.RATE_LIMIT_COOLDOWN_SECONDS
+  951:_persist_system_event("PPI_AUTH", "RATE_LIMIT", self._auth_last_error)
+  967:self.notifier.notify_error(
+  1017:alertar (ver hallazgo de fricción en el informe de auditoría)."""
+  1052:# Cuenta (necesario para validar fondos antes de alertar una compra)
+  1103:cruzar contra las alertas emitidas y saber cuáles se ejecutaron de
+  1130:# en Telegram. NUNCA se llaman directamente desde el loop de escaneo.
+FILE=v_config_metadata.py HITS=20
+  21:("TELEGRAM_BOT_TOKEN", "Credenciales", "Token del bot de Telegram (BotFather).", "123456789:AAE...", True),
+  22:("TELEGRAM_CHAT_ID", "Credenciales", "A qué chat de Telegram mandar los avisos.", "987654321", False),
+  41:("MAX_DRAWDOWN_PCT", "Kill switch", "% de caída desde el máximo que corta las alertas.", "5.0", False),
+  55:("ORDER_EXECUTION_MODE", "Ejecución", "'auto' (sin botón, ejecuta directo — default en SANDBOX) o 'confirm' (botón en Telegram — default en PRODUCTION). Vacío = automático según ENVIRONMENT.", "auto", False),
+  59:("POLL_CONFIRMATIONS_INTERVAL_SECONDS", "Ejecución", "Cada cuántos segundos se revisan los botones de Telegram (modo confirm).", "4", False),
+  73:("PPI_AUTH_RETRY_COOLDOWN_SECONDS", "Robustez API PPI", "Espera mínima tras un login fallido; compartida por todos los hilos.", "3600", False),
+  74:("PPI_RATE_LIMIT_COOLDOWN_SECONDS", "Robustez API PPI", "Espera tras una respuesta 429/cuota excedida.", "3600", False),
+  75:("AIOPS_ALERT_COOLDOWN_SECONDS", "AIOps (detección de anomalías)", "Tiempo mínimo entre alertas AIOps equivalentes.", "1800", False),
+  76:("AIOPS_CONFIRM_ANOMALY_SAMPLES", "AIOps (detección de anomalías)", "Muestras anómalas consecutivas para confirmar una alerta.", "3", False),
+  102:("INFRA_DISK_WARN_PCT", "Infraestructura", "% de uso de disco a partir del cual el panel de Infraestructura marca alerta roja.", "85", False),
+  114:("CIRCUIT_OPEN_COOLDOWN_SECONDS", "Robustez API PPI", "Segundos que el Circuit Breaker corta llamadas antes de probar de nuevo.", "60", False),
+  123:("PPI_STREAM_STALE_ALERT_SECONDS", "Tiempo real (streams PPI)", "Segundos sin recibir ningún tick antes de que llegue un aviso por Telegram.", "120", False),
+  131:("ENV_RESTART_CONFIRM_TIMEOUT_MINUTES", "Seguridad y reinicio", "Minutos para confirmar el reinicio por Telegram antes de que la solicitud venza.", "10", False),
+  135:("LOG_WATCH_ENABLED", "Vigilancia de logs", "Manda a Telegram, solo, lo que aparezca en los logs y amerite tu atención.", "true", False),
+  158:("LOG_WATCH_MAX_SIGNATURES_PER_MESSAGE", "Vigilancia de logs", "Cuántos tipos distintos de error como máximo entran en un mismo aviso de Telegram.", "6", False),
+  162:("STARTUP_REQUIRE_AUTH", "Arranque", "Si el bot pide autorización por Telegram antes de operar. En true no arranca solo.", "true", False),
+  201:("SRE_CONFIRM_TTL_SECONDS", "Salud y SRE", "Vigencia del código de confirmación de Telegram.", "900", False),
+  206:# --- v16.1 · Comandos de Telegram ---
+  207:("TELEGRAM_COMMAND_POLL_SECONDS", "Comandos Telegram", "Cada cuántos segundos se consultan comandos nuevos.", "5", False),
+  208:("TELEGRAM_CONFIRM_TTL_SECONDS", "Comandos Telegram", "Vigencia del código de confirmación de una parada de emergencia.", "300", False),
+FILE=rc4_contract_import_job.py HITS=2
+  44:market=ident.get('market'),settlement=ident.get('settlement'),source_class='PPI_AUTHENTICATED_XHR',source_ref=url,evidence=evidence)
+  54:market=ident.get('market'),settlement=ident.get('settlement'),source_class='PPI_AUTHENTICATED_XHR',source_ref=url,evidence=evidence)
+FILE=em_validation_campaign_rc6.py HITS=2
+  52:("multiple sessions", "no anomalous restarts", "daily reconciliation", "useful alerts")),
+  61:("tablet", "Voice Access", "Telegram", "dashboard", "scheduler host truth")),
+FILE=ops_publish_introspection_hf6.py HITS=3
+  62:"mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
+  150:"telegram": {
+  151:str(key): int(value or 0) for key, value in (report.get("telegram") or {}).items()
+FILE=an_sre_deploy.py HITS=13
+  10:que la confirmación llegue por Telegram, que se haga alrededor de las 20 h al
+  32:encola. La aplicación exige una confirmación por Telegram con un código de
+  352:def aplicar(propuesta: Propuesta, notifier=None, raiz: str = ".") -> dict:
+  376:_avisar(notifier, f"❌ Propuesta {propuesta.id} rechazada en autotest.\n{prueba['detalle']}")
+  394:_avisar(notifier, f"⚠️ Propuesta {propuesta.id} aplicada y REVERTIDA.\n{propuesta.motivo_falla}")
+  400:_avisar(notifier, f"✅ Propuesta {propuesta.id} aplicada correctamente: {propuesta.titulo}\n"
+  407:def _avisar(notifier, mensaje: str) -> None:
+  408:if notifier is None:
+  412:notifier.send(mensaje)
+  414:logger.warning("No se pudo notificar por Telegram: %s", e)
+  424:def encolar_para_confirmacion(propuesta: Propuesta, notifier=None) -> dict:
+  428:en el historial de Telegram es una llave permanente para modificar el
+  440:_avisar(notifier,
+FILE=ae_ppi_api_watch.py HITS=14
+  151:def registrar_respuesta(endpoint: str, respuesta: Any, notifier=None):
+  177:if notifier:
+  180:notifier.send_telegram(
+  204:def check_pypi(notifier=None) -> Optional[dict]:
+  214:if notifier:
+  215:notifier.send_telegram(
+  228:def check_docs(notifier=None) -> Optional[dict]:
+  244:if notifier:
+  245:notifier.send_telegram(
+  256:def check_all(notifier=None) -> dict:
+  258:return {"pypi": check_pypi(notifier), "docs": check_docs(notifier),
+  282:def __init__(self, notifier=None):
+  283:self.notifier = notifier
+  294:check_all(self.notifier)
+FILE=ci_operational_context.py HITS=1
+  43:"policy": "ALERT_ONLY", "binding": False,
+FILE=b_notifiers.py HITS=87
+  2:b_notifiers.py — Notificador (v7.0)
+  4:NUEVO EN v7.0: soporte de botones de confirmación en Telegram (Confirmar /
+  7:botón vive en Telegram y no dentro de la app de PPI.
+  22:logger = logging.getLogger("notifiers")
+  27:"""NUEVO EN v10.5 (segunda revisión) — ver docstring de send_telegram()."""
+  42:logger.critical("No se pudo enviar por Telegram tras 3 intentos — guardado en "
+  64:class MultiChannelNotifier:
+  66:self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+  67:self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+  70:"""Envía un mensaje Telegram con un teclado opcional.
+  76:if not self.telegram_token or not self.telegram_chat_id:
+  77:logger.warning("Telegram no configurado (falta TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID).")
+  78:runtime_status.record_telegram("SALIENTE", "MENSAJE", "NO_CONFIGURADO", message)
+  80:url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+  82:"chat_id": self.telegram_chat_id,
+  97:runtime_status.record_telegram("SALIENTE", "MENSAJE", "ENTREGADO", message)
+  100:logger.error("Telegram respondió %s: %s", res.status_code, res.text)
+  103:logger.error("Error enviando Telegram (intento %d/3): %s", intento + 1, e)
+  107:runtime_status.record_telegram("SALIENTE", "MENSAJE", "FALLIDO", message)
+  110:def send_telegram(self, message: str):
+  113:Telegram fallaba (corte de red, rate limit, timeout), el mensaje
+  124:if not self.telegram_token or not self.telegram_chat_id:
+  125:logger.warning("Telegram no configurado (falta TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID).")
+  126:runtime_status.record_telegram("SALIENTE", "MENSAJE", "NO_CONFIGURADO", message)
+  128:url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+  129:payload = {"chat_id": self.telegram_chat_id, "text": message, "parse_mode": "Markdown"}
+  139:runtime_status.record_telegram("SALIENTE", "MENSAJE", "ENTREGADO", message)
+  142:logger.error("Telegram respondió %s: %s", res.status_code, res.text)
+  145:logger.error("Error enviando Telegram (intento %d/3): %s", intento + 1, e)
+  149:runtime_status.record_telegram("SALIENTE", "MENSAJE", "FALLIDO", message)
+  152:def send_telegram_confirmation(self, message: str, order_id: str):
+  153:"""Igual que send_telegram, pero agrega dos botones (Confirmar/Cancelar)
+  155:if not self.telegram_token or not self.telegram_chat_id:
+  156:logger.warning("Telegram no configurado.")
+  158:url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+  160:"chat_id": self.telegram_chat_id,
+  177:logger.error("Telegram (confirmación) respondió %s: %s", res.status_code, res.text)
+  178:runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "FALLIDO", message)
+  180:runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "ENTREGADO", message)
+  183:logger.error("Error enviando confirmación por Telegram: %s", e)
+  184:runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "FALLIDO", message)
+  187:def send_telegram_generic_confirmation(self, message: str, confirm_data: str, cancel_data: str,
+  190:"""NUEVO EN v14.0 — mismo mecanismo que send_telegram_confirmation,
+  193:Hizo falta al implementar la confirmación de reinicio por Telegram
+  201:if not self.telegram_token or not self.telegram_chat_id:
+  202:logger.warning("Telegram no configurado.")
+  204:url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+  206:"chat_id": self.telegram_chat_id,
+  223:logger.error("Telegram (confirmación genérica) respondió %s: %s", res.status_code, res.text)
+  224:runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "FALLIDO", message)
+  226:runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "ENTREGADO", message)
+  229:logger.error("Error enviando confirmación genérica por Telegram: %s", e)
+  230:runtime_status.record_telegram("SALIENTE", "CONFIRMACION", "FALLIDO", message)
+  233:def get_telegram_button_taps(self, offset: int = 0):
+  240:POR QUÉ TIENE QUE HABER UN SOLO LECTOR: Telegram entrega las
+  247:este lector y un segundo bucle en ar_telegram_commands—, que además
+  260:callback_query["from"]["id"] coincidiera con TELEGRAM_CHAT_ID antes
+  267:confirmación por Telegram, este control sigue siendo obligatorio."""
+  268:if not self.telegram_token:
+  270:url = f"https://api.telegram.org/bot{self.telegram_token}/getUpdates"
+  283:if self.telegram_chat_id and sender_id != str(self.telegram_chat_id):
+  284:logger.warning("Tap de Telegram NO AUTORIZADO rechazado (sender_id=%s).", sender_id)
+  299:# Los botones inline fallan en clientes viejos de Telegram, y
+  307:if self.telegram_chat_id and sender_id != str(self.telegram_chat_id):
+  309:"Mensaje de Telegram NO AUTORIZADO rechazado (sender_id=%s, "
+  315:logger.error("Error consultando updates de Telegram: %s", e)
+  318:def answer_telegram_callback(self, callback_id: str, text: str = ""):
+  319:"""Obligatorio llamarlo tras procesar un tap — si no, Telegram muestra
+  321:if not self.telegram_token:
+  323:url = f"https://api.telegram.org/bot{self.telegram_token}/answerCallbackQuery"
+  327:logger.error("Error respondiendo callback de Telegram: %s", e)
+  329:def notify_order_auto_executed(self, ticker: str, asset_class: str, quantity: int,
+  349:self.send_telegram(
+  362:def notify_order_result(self, ticker: str, reason: str, pnl_ars: float, pnl_pct: float,
+  370:self.send_telegram(
+  376:def notify_error(self, error_msg: str):
+  381:# borde de salida hacia Telegram, sin tocar el valor real usado
+  384:self.send_telegram(
+  385:f"⚠️ *ALERTA SISTEMA TRADING*\nDetalle: {obfuscate_secret(error_msg)}\n"
+  389:def notify_recovery(self, service_name: str):
+  390:self.send_telegram(
+  395:def notify_critical_event(self, event_type: str, details: str):
+  400:set_critical_notifier(), llamado desde j_main.main()) para que
+  406:Reusa obfuscate_secret() (igual que notify_error) por las dudas
+  413:f"🔴 *ALERTA CRÍTICA: {event_type}*\n"
+  416:"El bot dejó de emitir alertas nuevas y quedó en modo seguro. Revisá el motivo antes "
+  419:self.send_telegram(message)
+FILE=cp_contract_evidence_v2_hf6.py HITS=2
+  16:"PPI_AUTHENTICATED_XHR": 20,
+  18:"PPI_AUTHENTICATED_WEB": 40,
+FILE=x_ppi_websocket.py HITS=19
+  69:- Un watchdog avisa por Telegram si el stream estaba vivo y se quedó mudo
+  96:STALE_ALERT_SECONDS = int(os.getenv("PPI_STREAM_STALE_ALERT_SECONDS", "120"))
+  116:#      Telegram; y si el stream de CUENTA (el que reporta las ejecuciones de
+  206:"healthy": bool(stats["connected"] and edad is not None and edad < STALE_ALERT_SECONDS),
+  224:def __init__(self, ppi_client, notifier=None, instruments: Optional[list] = None):
+  226:self.notifier = notifier
+  230:self._alerted_stale = False
+  279:self._alerted_stale = False
+  318:if self.notifier:
+  320:self.notifier.send(
+  379:elif self.notifier and msg.get("Message"):
+  383:self.notifier.send_telegram(
+  455:if self.notifier:
+  457:self.notifier.send_telegram(
+  482:"""Avisa por Telegram si el stream se quedó mudo. No intenta arreglar
+  492:if edad is not None and edad > STALE_ALERT_SECONDS and not self._alerted_stale:
+  493:self._alerted_stale = True
+  496:if self.notifier:
+  497:self.notifier.send_telegram(
+FILE=s_learning_engine.py HITS=3
+  54:def __init__(self, notifier):
+  55:self.notifier = notifier
+  122:self.notifier.send_telegram(
+FILE=t_model_guardian.py HITS=5
+  31:avisa por Telegram si conviene revisar algo — nunca edita el .env,
+  49:def check_model_status(notifier):
+  54:no se está usando, avisa por Telegram — la decisión de cambiar queda
+  74:notifier.send_telegram(
+  85:notifier.send_telegram(
+FILE=ar_telegram_commands.py HITS=66
+  2:ar_telegram_commands.py — Control remoto por Telegram
+  6:Hasta ahora Telegram servía para dos cosas: autorizar el arranque y confirmar
+  54:logger = logging.getLogger("telegram_commands")
+  56:COMMAND_POLL_SECONDS = int(os.getenv("TELEGRAM_COMMAND_POLL_SECONDS", "5"))
+  57:CONFIRM_TTL_SECONDS = int(os.getenv("TELEGRAM_CONFIRM_TTL_SECONDS", "300"))
+  187:def comando_parada_emergencia(notifier, ppi_client=None) -> dict:
+  236:_enviar(notifier, texto, teclado)
+  276:def confirmar_corte_seco(codigo: str, notifier) -> dict:
+  290:_enviar(notifier,
+  300:def ejecutar_parada(modo: str, notifier, ppi_client=None) -> dict:
+  312:_enviar(notifier,
+  319:cerradas, fallidas = _liquidar_todo(ppi_client, notifier)
+  328:_enviar(notifier, f"🔴 *Liquidación total*\n\n{detalle}\n\n"
+  341:_enviar(notifier,
+  352:def _liquidar_todo(ppi_client, notifier) -> tuple:
+  387:def comando_rearrancar(notifier, ppi_client=None) -> dict:
+  424:_enviar(notifier, "\n".join(texto), {"inline_keyboard": [[
+  431:def ejecutar_rearranque(notifier) -> dict:
+  437:origen="rearranque por Telegram")
+  438:_enviar(notifier, "✅ *Bot rearrancado.* Vuelve a evaluar el mercado en el próximo ciclo.", None)
+  442:_enviar(notifier, f"❌ No se pudo rearrancar: {e}", None)
+  446:def comando_estado(notifier, ppi_client=None) -> dict:
+  452:_enviar(notifier, f"{estado}\n\n{_formatear_foto(foto)}", None)
+  456:def comando_ayuda(notifier) -> None:
+  457:_enviar(notifier,
+  470:def procesar_mensaje(texto: str, notifier, ppi_client=None,
+  473:Interpreta un mensaje de Telegram y ejecuta el comando si corresponde.
+  490:comando_ayuda(notifier)
+  494:return comando_estado(notifier, ppi_client)
+  497:return comando_parada_emergencia(notifier, ppi_client)
+  501:_enviar(notifier, _formatear_foto(foto), None)
+  506:_enviar(notifier, "El código no es válido o ya venció. Mandá `PARADA` de nuevo.", None)
+  509:return ejecutar_parada(modo, notifier, ppi_client)
+  513:_enviar(notifier, "El código no es válido o ya venció. Mandá `PARADA` de nuevo.", None)
+  515:return confirmar_corte_seco(codigo, notifier)
+  520:return ejecutar_parada(MODO_CORTE_SECO, notifier, ppi_client)
+  522:return ejecutar_rearranque(notifier)
+  523:_enviar(notifier, "El código no es válido o ya venció.", None)
+  527:return comando_rearrancar(notifier, ppi_client)
+  532:def procesar_boton(callback_data: str, notifier, ppi_client=None,
+  547:_enviar(notifier, "Cancelado. No se tocó nada.", None)
+  550:_enviar(notifier, "El código venció. Mandá `PARADA` de nuevo.", None)
+  553:return ejecutar_parada(MODO_ORDENADA, notifier, ppi_client)
+  555:return ejecutar_parada(MODO_LIQUIDAR, notifier, ppi_client)
+  557:return confirmar_corte_seco(codigo, notifier)
+  560:return ejecutar_parada(MODO_CORTE_SECO, notifier, ppi_client)
+  563:return ejecutar_rearranque(notifier)
+  583:MAX_INTENTOS_FALLIDOS = int(os.getenv("TELEGRAM_MAX_INTENTOS_CODIGO", "3"))
+  595:El lector de b_notifiers ya filtra por remitente, pero esta validación se
+  602:autorizado = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+  606:logger.warning("Comando de Telegram NO AUTORIZADO rechazado (id=%s).", remitente_id)
+  611:def _registrar_intento_fallido(notifier) -> None:
+  625:logger.error("Se superó el límite de códigos inválidos de Telegram.")
+  626:_enviar(notifier,
+  643:def _enviar(notifier, texto: str, teclado: Optional[dict]) -> None:
+  644:if notifier is None:
+  645:logger.info("Telegram (sin notificador): %s", texto[:200])
+  649:notifier.send(texto, reply_markup=teclado, parse_mode="Markdown")
+  651:notifier.send(texto, parse_mode="Markdown")
+  653:logger.error("No se pudo enviar el mensaje a Telegram: %s", e)
+  677:# Acá vivía un segundo bucle que llamaba a notifier.get_telegram_button_taps()
+  681:#  1) Estaba roto por un error de contrato. get_telegram_button_taps()
+  683:#     `for act in notifier.get_telegram_button_taps(offset)` y después
+  689:#     l_order_confirmation por las mismas actualizaciones. Telegram las
+  695:# Ahora hay UN SOLO lector en todo el sistema —b_notifiers.get_telegram_
+  701:# Si algún módulo necesita reaccionar a Telegram, la forma correcta es sumar
+FILE=ab_log_watch.py HITS=13
+  7:automática de mandarme la información vía Telegram ya que no puedo acceder
+  19:solo y te manda a Telegram únicamente lo que amerita atención humana. La
+  25:1) VIGILANCIA CONTINUA (scan_and_alert, cada LOG_WATCH_INTERVAL_MINUTES):
+  32:puede escribir 200 líneas en 10 minutos. Mandar 200 mensajes de Telegram
+  40:notificaciones de Telegram que fallaron, edad del último backup, uso de
+  45:Una misma firma de error no se repite en Telegram antes de
+  158:def scan_and_alert(notifier) -> dict:
+  161:manda Telegram solo si hay algo que amerite."""
+  201:notifier.send_telegram("\n".join(partes))
+  223:reutilizarlo desde el dashboard y desde los tests sin mandar Telegram."""
+  253:lineas.append(f"⚠️ {n_fallidas} notificación(es) de Telegram fallaron y quedaron guardadas (ver /api/failed-notifications).")
+  318:def send_daily_health_digest(notifier):
+  320:notifier.send_telegram(build_daily_health_digest())
+FILE=bc_dashboard_v163.py HITS=15
+  87:"<a href='/telegram'>Telegram</a><a href='/salud'>Salud</a>"
+  153:extra = ("<p><a href='/telegram'>✈️ Telegram</a> · "
+  161:"Autorización manual del arranque, para cuando Telegram no responde.",
+  162:"Control manual de emergencia. El arranque normal lo autoriza el calendario BYMA; Telegram no lo bloquea.",
+  164:content = content.replace("Pedir autorización por Telegram", "Autorizar manualmente (emergencia)")
+  180:def _telegram_page() -> str:
+  181:rows = runtime_status.telegram_activity(150)
+  190:<meta http-equiv='refresh' content='10'><title>Telegram</title><style>
+  194:f"<h1>✈️ Actividad de Telegram</h1><p>Se refresca cada 10 segundos. " \
+  205:"ppi_auth": runtime_status.latest_event("PPI_AUTH"),
+  209:"telegram_recent": runtime_status.telegram_activity(100),
+  277:if "/telegram" not in paths:
+  278:def telegram(request: Request, token: str = Query(default=""),
+  285:return HTMLResponse(_telegram_page())
+  286:app.add_api_route("/telegram", telegram, methods=["GET"],
+FILE=rc6_preopen.py HITS=4
+  5:units or sends Telegram directly. On a non-operational BYMA day it returns
+  62:row = c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+  65:auth = str(state.get('ppi_auth') or '').upper()
+  136:'read_only':True,'network_order_test_performed':False,'direct_telegram_send':False}
+FILE=ck_contract_evidence_runner_hf6.py HITS=2
+  42:row = c.execute("""SELECT mode,process_state,session_state,ppi_auth,real_orders_sent
+  53:mode, process_state, session_state, ppi_auth, real_orders = before
+FILE=bf_production_paper_observer.py HITS=26
+  36:LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
+  264:CREATE TABLE IF NOT EXISTS api_health(
+  280:CREATE TABLE IF NOT EXISTS source_sync(
+  297:"SELECT last_success_at FROM api_health WHERE component=?", (component,)
+  300:c.execute("""INSERT INTO api_health VALUES(?,?,?,?,?,?)
+  311:"SELECT last_success_at FROM source_sync WHERE source=?", (source,)
+  314:c.execute("""INSERT INTO source_sync VALUES(?,?,?,?,?,?)
+  918:rows = connection.execute("""SELECT source,last_attempt_at FROM source_sync
+  944:row = connection.execute("""SELECT last_attempt_at FROM source_sync
+  964:source = connection.execute("""SELECT status,detail FROM source_sync
+  1006:_health(store, "PPI_PRODUCTION_AUTH", "ROJO", detail, "PPI Producción")
+  1008:store.state(ppi_auth="ERROR", detail=f"Prueba manual falló: {detail}")
+  1012:_health(store, "PPI_PRODUCTION_AUTH", "VERDE", "Login de solo lectura correcto.",
+  1014:store.state(ppi_auth="OK", detail="Login correcto; sincronizando configuración, catálogo e históricos.")
+  1054:from bn_telegram_bus import enqueue
+  1073:ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
+  1082:ppi_auth="NOT_ATTEMPTED", real_orders_sent=0,
+  1086:ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
+  1100:# backups, noticias, macro, reportes y resumen Telegram son 24x7.
+  1117:store.state(process_state="DEGRADED", ppi_auth="COOLDOWN",
+  1127:_health(store, "PPI_PRODUCTION_AUTH", "VERDE",
+  1130:store.state(ppi_auth="OK", session_state=phase,
+  1134:_health(store, "PPI_PRODUCTION_AUTH", "ROJO",
+  1136:store.state(process_state="DEGRADED", ppi_auth="ERROR",
+  1140:next_login_at = time.time() + LOGIN_COOLDOWN_SECONDS
+  1242:ppi_auth="ERROR" if cycle_session_invalid else "OK",
+FILE=rc4_module_inventory.py HITS=2
+  13:"cn_ppi_authenticated_family_scraper_hf6":"OPS_CLI_MANUAL_LEGACY",
+  20:"cn_ppi_authenticated_family_scraper_hf6":"Scraper HF6 legacy con login explícito. Se conserva sólo para trazabilidad/manual; los timers RC4 usan exclusivamente trusted-device GET-only.",
+FILE=cf_intraday_scalping.py HITS=1
+  390:_heartbeat(store,at=at,state="LOGIN_COOLDOWN",cursor=cursor)
+FILE=u_aiops_watcher.py HITS=4
+  34:AIOPS_ALERT_COOLDOWN_SECONDS = int(os.getenv("AIOPS_ALERT_COOLDOWN_SECONDS", "1800"))
+  114:self._last_alert_epoch = 0.0
+  173:time.time() - self._last_alert_epoch >= AIOPS_ALERT_COOLDOWN_SECONDS):
+  176:self._last_alert_epoch = time.time()
+FILE=w_agent_graph.py HITS=13
+  65:ver ResilientPPIClient(notifier) en c_ppi_client.py) en vez de crear
+  106:def build_risk_guardian_node(ppi_client, notifier, risk_guardian_module, model_guardian_module):
+  114:halted_now = risk_guardian_module.check_and_halt_if_needed(ppi_client, notifier)
+  119:model_ok = model_guardian_module.check_model_status(notifier)
+  145:def build_trading_graph(ppi_client, notifier, gemini_engine, technical_engine_module,
+  156:ppi_client, notifier, risk_guardian_module, model_guardian_module))
+  196:def real_gating_evaluate(ppi_client, notifier, gemini_engine, risk_guardian_module, model_guardian_module,
+  217:ppi_client, notifier, gemini_engine, None, risk_guardian_module, model_guardian_module,
+  233:def shadow_evaluate(ppi_client, notifier, gemini_engine, risk_guardian_module, model_guardian_module,
+  251:ppi_client, notifier, gemini_engine, None, risk_guardian_module, model_guardian_module,
+  284:def check_and_halt_if_needed(ppi_client, notifier):
+  293:def check_model_status(notifier):
+  297:ppi_client=None, notifier=None, gemini_engine=_FakeGemini(),
+FILE=k_position_manager.py HITS=16
+  5:mandaba una alerta de COMPRA con un precio sugerido, pero nunca decía
+  7:volvía a mirar la posición después de alertarla. El "P&L del día" que
+  12:1. Cuando j_main.py aprueba una alerta, calcula un STOP-LOSS y un
+  18:dos, manda un aviso de SALIDA por Telegram con el resultado real de
+  25:que vos ejecutaste la operación en PPI. Si el bot alertó pero no compraste,
+  28:órdenes reales de PPI para separar "alertado" de "efectivamente operado".
+  91:# check_exits()/notify_order_result() pero nunca se
+  112:guardaba el ticker, y h_daily_report.py cruzaba alertas contra
+  131:scalping — antes el flag viajaba hasta notify_order_result() y se
+  220:def check_exits(ppi, notifier, costs_pct_fn, scalping=False):
+  267:notifier.notify_order_result(
+  293:"""Win rate real de las operaciones CERRADAS (no de las alertadas) en los
+  295:funciona, no la cantidad de alertas enviadas."""
+  353:def close_all_intraday_positions(ppi, notifier, costs_pct_fn) -> dict:
+  394:notifier.notify_order_result(
+  413:notifier.send_telegram(resumen)
+FILE=be_paper_engine.py HITS=4
+  130:ppi_auth TEXT NOT NULL, heartbeat_at TEXT, last_market_data_at TEXT,
+  192:INSERT OR IGNORE INTO observer_state(id,mode,process_state,session_state,ppi_auth)
+  218:from bn_telegram_bus import init_schema as init_outbox_schema
+  231:allowed = {"process_state", "session_state", "ppi_auth", "heartbeat_at",
+FILE=am_api_health.py HITS=15
+  2:am_api_health.py — Chequeo de salud con semáforos de APIs y módulos
+  43:logger = logging.getLogger("api_health")
+  51:# panel, los informes en PDF y los mensajes de Telegram usen exactamente el
+  109:event = runtime_status.latest_event("PPI_AUTH")
+  126:elif state in ("RATE_LIMIT", "COOLDOWN"):
+  127:c.estado, c.detalle = ROJO, f"Autenticación en cooldown/cuota: {detail}"
+  178:def chequear_telegram(notifier) -> Chequeo:
+  179:"""Use persisted recent activity; opening this page never calls Telegram."""
+  180:c = Chequeo("Telegram — notificaciones y control", critico=False)
+  182:rows = runtime_status.telegram_activity(100)
+  193:c.estado, c.detalle = GRIS, "Bot activo, pero no existe actividad de Telegram en las últimas 24 horas."
+  197:c.estado, c.detalle = ROJO, "Bot activo sin configuración disponible de Telegram."
+  199:c.estado, c.detalle = ROJO, "El último intento de Telegram falló; revisar la cola y conectividad."
+  310:def tablero(ppi_client=None, notifier=None) -> dict:
+  324:_con_cache("telegram", lambda: chequear_telegram(notifier)),
+FILE=ap_api_verifier.py HITS=19
+  92:el veredicto de PPI, Gemini y Telegram en el mismo informe. Un
+  220:"""Evita que una prueba de conectividad genere alertas operativas."""
+  222:def notify_recovery(self, *args, **kwargs):
+  225:def notify_error(self, *args, **kwargs):
+  347:# Gemini, Telegram y fuentes públicas
+  427:def verificar_telegram(vf: Verificador) -> None:
+  428:print("\n[TELEGRAM] Notificaciones y control")
+  430:familia="Telegram", nombre="envio_mensaje",
+  431:proposito="Confirmar que las alertas llegan al chat correcto.",
+  435:modulo_del_bot="b_notifiers.send_telegram_alert()",
+  439:familia="Telegram", nombre="botones_inline",
+  450:import b_notifiers
+  451:n = b_notifiers.MultiChannelNotifier()
+  452:return bool(n.send_telegram(
+  458:import b_notifiers
+  459:n = b_notifiers.MultiChannelNotifier()
+  460:return bool(n.send_telegram_generic_confirmation(
+  642:parser.add_argument("--solo", choices=["iol", "ppi", "gemini", "telegram", "publicas"],
+  660:"telegram": verificar_telegram, "publicas": verificar_fuentes_publicas,
+FILE=y_infra_monitor.py HITS=2
+  42:# Umbral de alerta de disco — el mismo criterio que usaba el instalador legacy /
+  179:"text": f"Uso de disco al {disk['used_pct']}% — todavía por debajo del umbral de alerta "
+FILE=bg_paper_dashboard.py HITS=36
+  248:"s-amarillo" if key in {"HOLD","PARTIAL","COOLDOWN","WAITING","AMARILLO","PENDIENTE"} else "s-gris"
+  260:"AMARILLO" if key in {"PARTIAL","DEGRADED","COOLDOWN","AMARILLO"} else "GRIS"
+  365:known = ("/vivo","/testing","/salud","/historicos","/aprendizaje","/telegram","/sre","/dashboard/logs","/config")
+  380:state = (_rows("SELECT * FROM observer_state WHERE id=1") or [{"mode":_effective_mode(),"process_state":"STOPPED","session_state":"UNKNOWN","ppi_auth":"NOT_ATTEMPTED","real_orders_sent":0,"detail":"Observador todavía no iniciado."}])[0]
+  687:if key in {"PARTIAL", "DEGRADED", "COOLDOWN", "AMARILLO"}:
+  693:persisted = {r["component"]: r for r in _rows("SELECT * FROM api_health")} if _table("api_health") else {}
+  716:add("PPI Producción — autenticación", "PPI_PRODUCTION_AUTH", "SIMULACIÓN PRODUCTIVA",
+  760:tg = _report_state("telegram")
+  764:components.append({"name": "Telegram", "key": "TELEGRAM", "state":
+  767:"next_check": _next_check("TELEGRAM", tg[2]), "mode": tg_mode,
+  860:telegram = next((item["state"] for item in health if item["key"] == "TELEGRAM"), "PENDIENTE")
+  880:_card("Telegram", telegram, "Avisos de modo y resumen de cierre",
+  881:"green" if telegram == "VERDE" else "red" if telegram == "ROJO" else "yellow"),
+  884:_card("PPI solo lectura", state.get("ppi_auth"), "Órdenes reales bloqueadas por transporte",
+  885:"green" if state.get("ppi_auth") == "OK" else "yellow"
+  886:if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
+  909:_card("PPI Producción", state.get("ppi_auth"), "Sólo lectura", "green" if state.get("ppi_auth")=="OK" else "yellow"),
+  1301:FROM source_sync WHERE source LIKE 'PPI_%' ORDER BY last_attempt_at DESC""")
+  1302:if _table("source_sync") else [])
+  1625:_card("Disco libre",f"{free_pct:.1f}%","Alerta debajo de 20%","green" if free_pct>=20 else "red"),
+  1632:def telegram_page():
+  1633:jobs=_rows("SELECT * FROM operational_jobs WHERE job_key LIKE 'TELEGRAM%' ORDER BY last_run_at DESC LIMIT 30") if _table("operational_jobs") else []
+  1634:report=_report_state("telegram"); rows="".join(f"<tr><td>{_e(r['job_key'])}</td><td>{_health_status(r['state'])}</td><td>{_local_time(r['last_run_at'])}</td><td>{_e(r['detail'])}</td></tr>" for r in jobs) or "<tr><td colspan='4'>Aún no hay cierre enviado en esta base.</td></tr>"
+  1635:body=f"<h1>Telegram</h1><div class='paper-grid'>{_card('Canal',report[0],report[1],'green' if report[0]=='VERDE' else 'red' if report[0]=='ROJO' else 'gray')}{_card('Autorización paper','NO APLICA','La simulación no espera autorización por Telegram','green')}</div><div class='paper-card'><h2>Resúmenes de cierre</h2><ta
+  1652:return _document("Telegram",body,refresh=60)
+  1798:("Telegram","paper_notification_worker")):
+  1810:_card('PPI autenticación',state.get('ppi_auth','UNKNOWN'),f"Último mercado {_local_time(state.get('last_market_data_at'))}",'green' if state.get('ppi_auth')=='OK' else 'yellow'),
+  1983:("telegram", "Telegram"),
+  2072:f"Suben {regime.get('rising',0)} · bajan {regime.get('falling',0)} · política ALERT_ONLY",
+  2128:"<b>Régimen:</b> ALERT_ONLY. <b>Sector:</b> OBSERVATION_ONLY, sin límite vinculante.</p>"
+  2168:source_sync=_rows('SELECT * FROM source_sync') if _table('source_sync') else []
+  2169:api_health=_rows('SELECT * FROM api_health ORDER BY checked_at DESC') if _table('api_health') else []
+  2175:internal=internal_rows(db_jobs,source_sync_rows=source_sync,api_health_rows=api_health,contract_run_rows=contract_runs)
+  2327:elif section == "telegram":
+  2328:content = _main_fragment(telegram_page())
+  2465:replacements={"/":home_page,"/vivo":live_page,"/en-vivo":live_page,"/testing":lambda:paper_page(True),"/salud":health_page,"/scalping":scalping_page,"/validacion":validation_page,"/historicos":history_page,"/aprendizaje":learning_page,"/telegram":telegram_page,"/dashboard/logs":logs_page,"/config":config_page}
+FILE=az_maintenance_job.py HITS=7
+  35:def _notifier():
+  36:from b_notifiers import MultiChannelNotifier
+  37:return MultiChannelNotifier()
+  62:_notifier().send_telegram(AutoTuner().generate_weekly_report())
+  76:LearningEngine(_notifier()).analyze_and_diagnose()
+  79:t_model_guardian.check_model_status(_notifier())
+  82:_notifier().send_telegram(z_reports_engine.build_monthly_summary_text())
+FILE=es_policy_context_rc6.py HITS=1
+  113:{"state":"INSUFFICIENT_SAMPLE","symbols":0,"policy":"ALERT_ONLY","binding":False})
+FILE=e_technical_engine.py HITS=2
+  39:economics.py) — nunca se ejecuta ni se alerta con el precio del
+  527:de la actual). Se agrega al mensaje de alerta como dato extra para
+FILE=entrypoint.py HITS=10
+  22:BOT_RESTART_COOLDOWN_SECONDS = 30
+  93:def _notify_telegram(message):
+  94:"""Avisa sin convertir una caída de Telegram en una caída del supervisor."""
+  97:from b_notifiers import MultiChannelNotifier
+  98:enviado = MultiChannelNotifier().send_telegram(message)
+  100:print("entrypoint: Telegram no confirmó la notificación; "
+  103:print(f"entrypoint: no se pudo avisar por Telegram ({e}); "
+  174:_notify_telegram(
+  185:time.monotonic() - last_bot_exit >= BOT_RESTART_COOLDOWN_SECONDS)
+  188:_notify_telegram(
+FILE=bb_runtime_status.py HITS=6
+  228:def record_telegram(direction: str, event_type: str, status: str, summary: str = "") -> None:
+  229:"""Registra metadatos de Telegram; limita texto y ofusca secretos."""
+  238:"""CREATE TABLE IF NOT EXISTS telegram_activity (
+  248:"""INSERT INTO telegram_activity
+  257:def telegram_activity(limit: int = 100) -> list:
+  262:"SELECT * FROM telegram_activity ORDER BY id DESC LIMIT ?",
+FILE=bn_telegram_bus.py HITS=13
+  15:from eu_telegram_policy_rc6 import decide_row as telegram_delivery_decision
+  30:state TEXT NOT NULL, cooldown_until TEXT, detail TEXT NOT NULL);
+  31:CREATE TRIGGER IF NOT EXISTS paper_events_notify_v17 AFTER INSERT ON paper_events
+  68:class TelegramTransport:
+  74:request = Request(f"https://api.telegram.org/bot{self.token}/sendMessage",
+  116:if worker and worker['cooldown_until'] and aware_datetime(worker['cooldown_until']) > at:
+  147:policy = telegram_delivery_decision(row, at)
+  184:cooldown = at + timedelta(seconds=delay if error and error.code=='429' else 1)
+  185:c.execute("""UPDATE paper_notification_worker SET cooldown_until=?,heartbeat_at=?,
+  186:state=?,detail=? WHERE id=1""", (cooldown.isoformat(),at.isoformat(),
+  192:'ACK de Telegram confirmado' if not error else state+': '+error.code,row['event_key']))
+  198:token, chat = os.getenv('TELEGRAM_BOT_TOKEN',''), os.getenv('TELEGRAM_CHAT_ID','')
+  199:sender = TelegramTransport(token,chat) if token and chat else None
+FILE=aa_env_guard.py HITS=26
+  15:3. Que además pida confirmación por Telegram antes de reiniciar.
+  32:CONFIRMADA por Telegram y el sistema está desocupado, se apaga solo con el
+  44:Llave 3 — Confirmación humana por Telegram, con botones, validando que
+  45:el remitente sea el TELEGRAM_CHAT_ID autorizado (esa validación
+  46:ya la hace b_notifiers.get_telegram_button_taps desde v10.5).
+  79:# Cuánto tiempo se espera la confirmación por Telegram antes de dar la
+  88:# explícita por Telegram, y en el dashboard se muestran con la advertencia
+  115:"TELEGRAM_BOT_TOKEN": 20,
+  116:"TELEGRAM_CHAT_ID": 5,
+  129:"GEMINI_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
+  153:STATUS_PENDING_CONFIRM = "PENDING_TELEGRAM"
+  259:Telegram y en el dashboard: si el reinicio se posterga, se dice
+  361:# Paso 2: pedir confirmación por Telegram
+  363:def request_restart_confirmation(request_id: str, notifier) -> Tuple[bool, str]:
+  365:Manda el mensaje con botones y deja la solicitud en PENDING_TELEGRAM.
+  400:notifier.send_telegram_generic_confirmation(
+  408:return True, "Se envió la confirmación por Telegram. Revisá tu celular."
+  412:# Paso 3: procesar el tap del botón de Telegram
+  414:def handle_telegram_tap(action: str, request_id: str, notifier) -> bool:
+  420:Telegram entrega las actualizaciones con un offset incremental y
+  430:notifier.send_telegram("Esa solicitud de reinicio ya no existe.")
+  433:notifier.send_telegram(f"Esa solicitud de reinicio ya estaba en estado {req['status']}.")
+  438:notifier.send_telegram(
+  449:notifier.send_telegram("⏰ Esa solicitud de reinicio venció. Volvé a guardar los cambios en el panel.")
+  457:notifier.send_telegram("✅ Confirmado. El bot se va a reiniciar en los próximos segundos.")
+  459:notifier.send_telegram(
+FILE=rc6_functional_health.py HITS=2
+  5:orders, changes configuration, or emits Telegram. Non-zero exit means a safety
+  46:row = c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at FROM observer_state WHERE id=1').fetchone()
+FILE=h_daily_report.py HITS=22
+  5:email — van por Telegram, igual que el resto de las notificaciones del
+  12:2. Al cierre: cruza las alertas que el bot emitió hoy contra las
+  15:- PERDIDAS: se alertó pero no aparece ninguna orden (no la tomaste,
+  23:scores que el bot calculó antes de alertar.
+  51:alerts_sent INTEGER,
+  53:alerts_missed INTEGER,
+  111:def send_market_open_email(ppi, notifier):
+  123:notifier.send_telegram(f"{subject}\n\n{body}")
+  269:def _get_today_alert_tickers():
+  274:"SELECT ticker FROM signals WHERE status = 'EXECUTED_ALERT' "
+  303:def send_market_close_summary(ppi, notifier):
+  305:alerted_tickers = _get_today_alert_tickers()
+  320:if not is_ours and ticker not in alerted_tickers:
+  328:missed = [t for t in alerted_tickers if t not in executed and t not in errored]
+  360:"alerts_sent": len(alerted_tickers),
+  362:"alerts_missed": len(missed),
+  371:"(date, alerts_sent, orders_matched, alerts_missed, orders_error, net_pnl_ars) "
+  373:(date.today().isoformat(), outcomes["alerts_sent"], outcomes["orders_matched"],
+  374:outcomes["alerts_missed"], outcomes["orders_error"], outcomes["net_pnl_ars"]),
+  425:f"Alertas emitidas: {outcomes['alerts_sent']}\n"
+  427:f"Perdidas (alerta enviada, sin orden encontrada): {outcomes['alerts_missed']} — {missed}\n"
+  440:notifier.send_telegram(f"{subject}\n\n{body}")
+FILE=bd_ppi_readonly_guard.py HITS=3
+  135:login_cooldown_seconds: int = 900
+  168:now - self._last_login_at < self.login_cooldown_seconds):
+  170:"Login adicional bloqueado durante el cooldown."
+FILE=rc4_policy_context.py HITS=1
+  116:{"state":"INSUFFICIENT_SAMPLE","symbols":0,"policy":"ALERT_ONLY","binding":False})
+FILE=m_introspection_engine.py HITS=6
+  203:def sre_crash_handler(exc_type, exc_value, exc_traceback, notifier=None):
+  205:j_main.py con: sys.excepthook = lambda *a: sre_crash_handler(*a, notifier=notifier)
+  245:if notifier is not None:
+  247:notifier.notify_error(
+  255:def install(notifier=None):
+  259:sre_crash_handler(exc_type, exc_value, exc_traceback, notifier=notifier)
+FILE=ops_introspection_hf4.py HITS=8
+  5:Puede encolar una alerta CRITICAL en el outbox PAPER mediante una opcion
+  78:"mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
+  120:("telegram","paper_notification_worker"),
+  132:"sources": rows(c, "SELECT source,status,last_attempt_at,last_success_at,items,detail FROM source_sync ORDER BY source") if table(c,"source_sync") else [],
+  145:"health": rows(c, "SELECT component,state,checked_at,last_success_at,detail FROM api_health WHERE component LIKE 'PAPER_ECONOMIC%' ORDER BY checked_at DESC") if table(c,"api_health") else [],
+  261:result["telegram"] = ({r["state"]: r["count"] for r in rows(c,
+  296:result["warnings"].append("market_regime_alert_only")
+  393:result["telegram_enqueued"] = enqueue_critical(result, stamp)
+FILE=z_reports_engine.py HITS=3
+  191:<div class="kpi"><div class="label">Alertas ejecutadas</div>
+  245:#      versión de texto que va por Telegram sola, el 1° de cada mes.
+  311:"""Versión de texto para Telegram (Instrucción 7 + Instrucción 9: que la
+FILE=g_news_feed.py HITS=8
+  42:NEWS_FEED_FAILURE_COOLDOWN_SECONDS = int(
+  43:os.getenv("NEWS_FEED_FAILURE_COOLDOWN_SECONDS", "1800")
+  104:_feed_retry_after[url] = ahora + NEWS_FEED_FAILURE_COOLDOWN_SECONDS
+  105:if ahora - _feed_last_warning.get(url, 0) >= NEWS_FEED_FAILURE_COOLDOWN_SECONDS:
+  107:NEWS_FEED_FAILURE_COOLDOWN_SECONDS, detalle)
+  133:_feed_retry_after[url] = ahora + NEWS_FEED_FAILURE_COOLDOWN_SECONDS
+  134:if ahora - _feed_last_warning.get(url, 0) >= NEWS_FEED_FAILURE_COOLDOWN_SECONDS:
+  136:NEWS_FEED_FAILURE_COOLDOWN_SECONDS, e)
+FILE=porota_mode_manager.py HITS=22
+  53:# alertas sin convertirse en portones ni reducir la operatoria.
+  55:"PAPER_MARKET_REGIME_POLICY": "ALERT_ONLY",
+  94:"PAPER_MARKET_REGIME_POLICY": "ALERT_ONLY",
+  146:def write_mode(mode, engine, execution, apis, telegram="PENDING", detail=""):
+  151:"telegram_notification": telegram, "detail": detail}
+  158:def notify(message):
+  160:token, chat = env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_CHAT_ID")
+  165:req = Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body,
+  188:forbidden = ("PPI_", "TELEGRAM_", "GEMINI_", "IOL_", "ROFEX_")
+  210:"TELEGRAM_BOT_TOKEN": env.get("TELEGRAM_BOT_TOKEN", "").strip(),
+  211:"TELEGRAM_CHAT_ID": env.get("TELEGRAM_CHAT_ID", "").strip(),
+  234:{"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
+  252:"-e", "PPI_LOGIN_COOLDOWN_SECONDS=900",
+  259:status = notify("🟣 POROTA — MODO SIMULACIÓN PRODUCTIVA\nDatos reales de PPI Producción. Decisiones intradiarias determinísticas en Python; IA desactivada. Compras y ventas 100% simuladas. Órdenes reales: NINGUNA.\nHistorial PAPER v17 independiente; sin traslado de saldos, posiciones ni aprendizaje anteriores.")
+  261:{"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
+  262:"PPI_ORDERS": "BLOCKED", "PYTHON_MATH_ENGINE": "ACTIVE"}, telegram=status,
+  269:{"PPI_SANDBOX": "MARKET_DATA_AND_SANDBOX_ORDERS", "TELEGRAM": "ACTIVE"},
+  275:status = notify("🧪 POROTA — MODO SANDBOX\nLas órdenes se envían únicamente al entorno de pruebas de PPI. Dinero real: NINGUNO.")
+  277:{"PPI_SANDBOX": "MARKET_DATA_AND_SANDBOX_ORDERS", "TELEGRAM": "ACTIVE"},
+  278:telegram=status, detail="Sandbox iniciado; sujeto a disponibilidad de PPI Sandbox")
+  293:status = notify("⚪ POROTA — MOTORES DETENIDOS\nDashboard 24x7 activo; no se realizan llamadas PPI ni operaciones.")
+  294:write_mode("DETENIDO", "NONE", "NONE", {}, telegram=status,
+FILE=bi_operational_services.py HITS=4
+  649:from bn_telegram_bus import enqueue
+  652:key = "TELEGRAM_CLOSE_" + today.isoformat()
+  678:(key,at,'Resumen persistido; pendiente de ACK de Telegram'))
+  702:# Critical infrastructure alerts use their own paths and are never suppressed here.
+FILE=de_scheduler_catalog_hf6.py HITS=5
+  128:def internal_rows(db_rows: list[dict], *, source_sync_rows=None, api_health_rows=None, contract_run_rows=None) -> list[dict]:
+  130:for raw in source_sync_rows or []:
+  132:if key and key not in persisted:persisted[key]={"job_key":key,"last_run_at":raw.get("last_attempt_at"),"last_success_at":raw.get("last_success_at"),"state":raw.get("status") or "SIN_REGISTRO","detail":raw.get("detail") or "","evidence_table":"source_sync"}
+  133:for raw in api_health_rows or []:
+  135:if key and key not in persisted:persisted[key]={"job_key":key,"last_run_at":raw.get("checked_at"),"last_success_at":raw.get("last_success_at"),"state":raw.get("state") or "SIN_REGISTRO","detail":raw.get("detail") or "","evidence_table":"api_health"}
+FILE=bv_paper_runtime.py HITS=6
+  56:def __init__(self, commands, *, cooldown_seconds=30, spawn=subprocess.Popen, clock=time.monotonic):
+  57:self.commands, self.cooldown = commands, cooldown_seconds
+  67:self.next_start[name] = now + self.cooldown
+  72:self.next_start[name] = now + self.cooldown
+  162:status("COOLDOWN")
+  218:from bn_telegram_bus import run_worker
+FILE=scripts/v17_rc3_hf2_deploy.py HITS=1
+  163:"SELECT mode,process_state,session_state,ppi_auth,real_orders_sent "
+FILE=scripts/v17_ppi_public_probe.py HITS=1
+  177:# Ninguna importación del motor, dotenv, Telegram o lector de cuentas.
+FILE=scripts/v17_rc3_hf6_deploy.py HITS=10
+  113:state = dict(connection.execute("""SELECT mode,process_state,session_state,ppi_auth,
+  135:("telegram", "paper_notification_worker")):
+  308:required_workers = {"supervisor", "exit_reader", "candles", "scalping", "telegram"}
+  344:"PAPER_MARKET_REGIME_POLICY": "ALERT_ONLY",
+  556:def telegram_notify(repo, message):
+  564:if key.strip() in {"TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"}:
+  566:token, chat = values.get("TELEGRAM_BOT_TOKEN"), values.get("TELEGRAM_CHAT_ID")
+  572:request = Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body, method="POST")
+  654:result["telegram"] = telegram_notify(
+  668:result["telegram"] = telegram_notify(
+FILE=scripts/rc6_apply_shadow_policy_v3.py HITS=1
+  101:text=text.rstrip()+'''\n\n## 17. P0-APRENDIZAJE — SHADOW → BINDING → REAL-MONEY GOVERNANCE\n\nDecisión fundamental del operador, 2026-09-05: durante las primeras ruedas PAPER se prefiere perder dinero ficticio y aprender antes que bloquear prematuramente oportunidades. Los controles de selección/rentabilidad calculan y
+FILE=scripts/rc6_wire_telegram_policy.py HITS=8
+  2:"""Wire centralized RC6 Telegram delivery policy into the PAPER outbox."""
+  5:P=Path('bn_telegram_bus.py')
+  10:imp='from eu_telegram_policy_rc6 import decide_row as telegram_delivery_decision\n'
+  13:if anchor not in text: raise SystemExit('RC6_TELEGRAM_IMPORT_ANCHOR')
+  17:new='''        row = self.claim()\n        if not row:\n            return False\n        at = aware_datetime(self.clock_fn())\n        policy = telegram_delivery_decision(row, at)\n        if not policy.allow:\n            # Terminal suppression: routine weekend/holiday messages must not\n            # remain PENDING 
+  21:raise SystemExit('RC6_TELEGRAM_TICK_ANCHOR')
+  27:if 'telegram_delivery_decision(row, at)' not in text or 'SUPPRESSED_WEEKEND' in text:
+  31:print('RC6_TELEGRAM_POLICY_WIRED=GREEN')
+FILE=scripts/rc6_apply_audit_p0_small_fixes.py HITS=1
+  27:new='''    now = datetime.now(TZ)\n    hour = now.hour\n    # Routine close summaries only belong to an actual BYMA business day.\n    # Critical infrastructure alerts use their own paths and are never suppressed here.\n    try:\n        import ak_byma_calendar as byma_calendar\n        business_day = bool(byma_calenda
+FILE=scripts/rc6_apply_shadow_policy_and_checkpoint.py HITS=1
+  80:- Régimen: `SHADOW/ALERT_ONLY` — NO bloquea PAPER.
+FILE=scripts/porota_contract_evidence_session_runner_rc4.py HITS=5
+  231:settlement="UNKNOWN",source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=nonempty(ev))
+  243:settlement=settlement,source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
+  266:source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
+  279:source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
+  293:source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=nonempty(ev))
+FILE=scripts/rc6_sunday_readiness.py HITS=1
+  43:row=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+
+=== CANDIDATE ALERT MODULES ===
+am_api_health.py
+an_sre_deploy.py
+ar_telegram_commands.py
+bj_sandbox_health_probe.py
+bn_telegram_bus.py
+eu_telegram_policy_rc6.py
+m_introspection_engine.py
+ops_introspection_hf4.py
+ops_publish_introspection_hf6.py
+rc4_functional_health.py
+rc4_health_explain.py
+rc6_functional_health.py
+
+=== LIVE PERSISTED ALERT EVIDENCE ===
+TABLE=api_health COLS=component,state,detail,checked_at,last_success_at,source
+api_health:{"component": "PPI_PRODUCTION_MARKETDATA", "state": "ROJO", "detail": "0/20 instrumentos con cotización útil.", "checked_at": "2026-09-08T13:30:03.553066+00:00", "last_success_at": "2026-09-07T19:59:44.457845+00:00", "source": "PPI Producción"}
+api_health:{"component": "PAPER_FOCUS_COVERAGE", "state": "VERDE", "detail": "Foco efectivo 10/10; mínimo para nuevas aperturas simuladas 4; fuente PPI_FINANCIAL_CATALOG; faltantes: ninguno. Ingesta y cierres permanecen activos.", "checked_at": "2026-09-08T13:30:01.635090+00:00", "last_success_at": "2026-09-08T13:30:01.635090+00:00", "source": "Catálogo PPI normalizado"}
+api_health:{"component": "PPI_BACKGROUND_INGEST", "state": "ROJO", "detail": "Lote histórico incremental completado: 0 filas válidas; próximo intento no antes de 2 h. resultado de origen=ROJO. No se consultaron cotizaciones ni libros fuera de rueda.", "checked_at": "2026-09-08T13:05:43.291895+00:00", "last_success_at": null, "source": "PPI Producción / History"}
+api_health:{"component": "PPI_PRODUCTION_HISTORY", "state": "ROJO", "detail": "Lote histórico: completos=0; parciales_con_evidencia_valida=0; vacíos_o_inválidos=0; errores=40; cobertura acumulada 67/246 instrumentos; 0 filas válidas en este lote. PARTIAL conserva evidencia válida pero permanece AMARILLO; sólo vacío/inválido y ERROR son fallos duros. La descarga completa es incremental para no saturar PPI.", "checked_at": "2026-09-08T13:05:43.286897+00:00", "last_success_at": "2026-09-08T07:04:09.725159+00:00", "source": "PPI Producción"}
+api_health:{"component": "ROFEX_MARKETDATA", "state": "AMARILLO", "detail": "43 contrato(s) visible(s); contexto únicamente. No se simulan futuros sin multiplicador y margen atribuible.", "checked_at": "2026-09-08T03:00:26.986771+00:00", "last_success_at": "2026-09-08T03:00:26.986771+00:00", "source": "PPI Producción / ROFEX"}
+api_health:{"component": "PPI_PRODUCTION_CATALOG", "state": "VERDE", "detail": "85 búsquedas con coincidencias; 834 identidades únicas; 0 búsquedas fallidas. Ticker y Name siempre no vacíos. Configuración actual: verificada.", "checked_at": "2026-09-08T03:00:26.973502+00:00", "last_success_at": "2026-09-08T03:00:26.973502+00:00", "source": "PPI Producción"}
+api_health:{"component": "PPI_PRODUCTION_AUTH", "state": "ROJO", "detail": "Exception: Credenciales invalidas.", "checked_at": "2026-09-08T14:32:45.520281+00:00", "last_success_at": "2026-09-07T23:27:17.607402+00:00", "source": "PPI Producción"}
+api_health:{"component": "BYMA_WEB", "state": "VERDE", "detail": "HTTP 200; consulta pública GET sin credenciales.", "checked_at": "2026-09-08T11:27:23.029467+00:00", "last_success_at": "2026-09-08T11:27:23.029467+00:00", "source": "sonda pública oficial"}
+api_health:{"component": "BYMA_OPEN_DATA", "state": "VERDE", "detail": "HTTP 200; consulta pública GET sin credenciales.", "checked_at": "2026-09-08T11:27:21.074979+00:00", "last_success_at": "2026-09-08T11:27:21.074979+00:00", "source": "sonda pública oficial"}
+TABLE=paper_events COLS=id,event_at,source,event_type,paper_id,detail
+paper_events:{"id": 50648, "event_at": "2026-09-08T13:30:02.941491+00:00", "source": "PRODUCTION_PAPER", "event_type": "PPI_SESSION_INVALID", "paper_id": null, "detail": "Sesión de market data expirada; ciclo interrumpido y relogin controlado"}
+paper_events:{"id": 50647, "event_at": "2026-09-08T13:30:02.934040+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGAL: PPI_SESSION_INVALID"}
+paper_events:{"id": 50645, "event_at": "2026-09-08T13:05:43.277942+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "V: Exception: Unauthorized"}
+paper_events:{"id": 50644, "event_at": "2026-09-08T13:05:42.628956+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "TV: Exception: Unauthorized"}
+paper_events:{"id": 50643, "event_at": "2026-09-08T13:05:41.990622+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "TSLAD: Exception: Unauthorized"}
+paper_events:{"id": 50642, "event_at": "2026-09-08T13:05:41.343964+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "TSLAC: Exception: Unauthorized"}
+paper_events:{"id": 50641, "event_at": "2026-09-08T13:05:40.676250+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "TSLA: Exception: Unauthorized"}
+paper_events:{"id": 50640, "event_at": "2026-09-08T13:05:40.021081+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "TRVV: Exception: Unauthorized"}
+paper_events:{"id": 50639, "event_at": "2026-09-08T13:05:39.344779+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "TQQQD: Exception: Unauthorized"}
+paper_events:{"id": 50638, "event_at": "2026-09-08T13:05:38.683545+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "TQQQC: Exception: Unauthorized"}
+paper_events:{"id": 50637, "event_at": "2026-09-08T13:05:38.022855+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "TQQQ: Exception: Unauthorized"}
+paper_events:{"id": 50636, "event_at": "2026-09-08T13:05:37.362128+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "TEAMD: Exception: Unauthorized"}
+paper_events:{"id": 50635, "event_at": "2026-09-08T13:05:36.692767+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "SPYD: Exception: Unauthorized"}
+paper_events:{"id": 50634, "event_at": "2026-09-08T13:05:36.054315+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "SPYC: Exception: Unauthorized"}
+paper_events:{"id": 50633, "event_at": "2026-09-08T13:05:35.402849+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "SPY: Exception: Unauthorized"}
+paper_events:{"id": 50632, "event_at": "2026-09-08T13:05:34.739414+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "SLVD: Exception: Unauthorized"}
+paper_events:{"id": 50631, "event_at": "2026-09-08T13:05:34.090216+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "SLVC: Exception: Unauthorized"}
+paper_events:{"id": 50630, "event_at": "2026-09-08T13:05:33.420549+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "SLV: Exception: Unauthorized"}
+paper_events:{"id": 50629, "event_at": "2026-09-08T13:05:32.772909+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "QQQD: Exception: Unauthorized"}
+paper_events:{"id": 50628, "event_at": "2026-09-08T13:05:32.130887+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "QQQC: Exception: Unauthorized"}
+paper_events:{"id": 50627, "event_at": "2026-09-08T13:05:31.491360+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "QQQ: Exception: Unauthorized"}
+paper_events:{"id": 50626, "event_at": "2026-09-08T13:05:30.832244+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "PBRD: Exception: Unauthorized"}
+paper_events:{"id": 50625, "event_at": "2026-09-08T13:05:30.181985+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "PBRC: Exception: Unauthorized"}
+paper_events:{"id": 50624, "event_at": "2026-09-08T13:05:29.549132+00:00", "source": "PRODUCTION_PAPER", "event_type": "HISTORY_ERROR", "paper_id": null, "detail": "PBR: Exception: Unauthorized"}
+TABLE=paper_notification_outbox COLS=id,event_key,kind,body,priority,created_at,state,attempts,next_attempt_at,lease_token,lease_until,sent_at,message_id,last_error
+TABLE=paper_notification_worker COLS=id,heartbeat_at,state,cooldown_until,detail
+paper_notification_worker:{"id": 1, "heartbeat_at": "2026-09-08T14:38:41.417257+00:00", "state": "RUNNING", "cooldown_until": "2026-09-08T14:15:53.208587+00:00", "detail": ""}
+OBSERVER_STATE=PRODUCTION_PAPER|DEGRADED|MARKET_OPEN|COOLDOWN|0|2026-09-08T14:38:40.739446+00:00
