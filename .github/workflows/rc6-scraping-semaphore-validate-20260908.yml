@@ -1,0 +1,31 @@
+name: RC6 Scraping Semaphore Validate 2026-09-08
+
+on:
+  push:
+    branches:
+      - feature/rc6-scraping-semaphore-model-20260908
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Compile pure modules
+        run: |
+          python -m py_compile rc6_dom_coverage_reconciler.py rc6_data_sla_policy.py rc6_scraping_semaphore.py
+      - name: Run focused tests
+        run: python -m pytest -q tests/test_rc6_scraping_semaphore.py
+      - name: Safety static scan
+        run: |
+          ! grep -nEi 'ppi_client|requests\.|selenium|playwright|budget_order|confirm_order|cancel_order|send_order|docker|sqlite3\.connect' rc6_scraping_semaphore.py
+          echo 'SAFETY_STATIC_SCAN=GREEN'
