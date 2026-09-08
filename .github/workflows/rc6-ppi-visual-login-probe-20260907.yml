@@ -1,0 +1,75 @@
+name: RC6 PPI faithful visual login probe 2026-09-07
+on:
+  push:
+    branches: [hotfix/rc6-contract-evidence-auth-endpoint-20260907]
+    paths:
+      - 'rc6_ppi_visual_login_probe.py'
+      - '.github/workflows/rc6-ppi-visual-login-probe-20260907.yml'
+permissions:
+  contents: read
+concurrency:
+  group: porota-rc6-ppi-visual-login-probe
+  cancel-in-progress: false
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static safety
+        run: |
+          set -euo pipefail
+          python3 -m py_compile rc6_ppi_visual_login_probe.py
+          grep -q 'api.portfoliopersonal.com' rc6_ppi_visual_login_probe.py
+          grep -q 'real_orders_sent' rc6_ppi_visual_login_probe.py
+          ! grep -Eiq 'send_order|place_order|cancel_order|order_budget' rc6_ppi_visual_login_probe.py
+          echo 'VISUAL_LOGIN_STATIC_SAFETY=GREEN'
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Faithful one-shot login
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" rc6_ppi_visual_login_probe.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_visual_login_probe.py"
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          SECRET=/etc/porota/contract-evidence-web.env
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          VENV=/opt/porota-contract-evidence-venv
+          test -f "$SECRET"
+          sudo -n -u porotaadmin awk -F= '/^PPI_WEB_USERNAME=/{u=length($2)>0} /^PPI_WEB_PASSWORD=/{p=length($2)>0} END{exit (u&&p)?0:1}' "$SECRET"
+          echo 'PPI_WEB_CREDENTIALS=PRESENT_RESTRICTED'
+          echo 'PPI_WEB_SECRET_VALUES_PRINTED=NO'
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          print('|'.join(map(str,c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()))); c.close()
+          PY
+          )"
+          echo "OBSERVER_BEFORE=$PRE"; test "$PRE" = 'PRODUCTION_PAPER|0'
+          set +e
+          OUT="$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin "$VENV/bin/python" /tmp/rc6_ppi_visual_login_probe.py --profile "$PROFILE" --secret "$SECRET" 2>&1)"
+          RC=$?
+          set -e
+          sudo -n rm -f /tmp/rc6_ppi_visual_login_probe.py
+          echo "VISUAL_LOGIN_RC=$RC"
+          printf '%s\n' "$OUT"
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          print('|'.join(map(str,c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()))); c.close()
+          PY
+          )"
+          echo "OBSERVER_AFTER=$POST"; test "$POST" = 'PRODUCTION_PAPER|0'
+          echo 'REAL_ORDERS_SENT=0'
+          echo 'VISUAL_LOGIN_PROBE=COMPLETE'
+          HOST
