@@ -1,0 +1,35 @@
+name: RC6 Wave6 History Web Shadow Validate 2026-09-08
+on:
+  push:
+    branches: [integration/rc6-wave6-history-web-shadow-20260908]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Baseline and compile history stack
+        run: |
+          set -euo pipefail
+          BASE=860b26ca22a73679217e8953207041da2b8afffd
+          git merge-base --is-ancestor "$BASE" HEAD
+          git diff --check "$BASE" HEAD
+          python -m py_compile cp_history_ingest_policy_hf6.py cq_history_attempt_ledger_hf6.py cr_data912_reconcile_hf6.py cs_postclose_history_scheduler_hf6.py ct_ppi_history_salvage_hf6.py cu_history_store_v2_hf6.py cv_history_store_adapter_hf6.py cw_data912_history_v2_sink.py dd_history_metrics_hf6.py ek_history_freshness_metrics_rc5.py
+      - name: Focused tests
+        run: |
+          python -m pip install -q pytest
+          PYTHONPATH=. python -m pytest -q test_cp_history_ingest_policy_hf6.py test_hf6_history_data912_v2.py tests/test_history_freshness_metrics_rc5.py tests/test_history_close_only_hf2.py
+      - name: Safety invariants
+        run: |
+          set -euo pipefail
+          ! git diff 860b26ca22a73679217e8953207041da2b8afffd HEAD -- '*.py' | grep -Ei 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order'
+          echo HISTORY_SHADOW_ONLY=GREEN
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo WAVE6_VALIDATE=GREEN
