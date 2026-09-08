@@ -293,15 +293,19 @@ def _support_schema(store):
 def _health(store, component, state, detail, source, success=False):
     checked = now_iso()
     with store.connect() as c:
-        previous = c.execute(
-            "SELECT last_success_at FROM api_health WHERE component=?", (component,)
-        ).fetchone()
-        last_success = checked if success else (previous[0] if previous else None)
+        previous = c.execute("SELECT state,last_success_at FROM api_health WHERE component=?", (component,)).fetchone()
+        previous_state = previous[0] if previous else None
+        previous_success = previous[1] if previous else None
+        last_success = checked if success else previous_success
         c.execute("""INSERT INTO api_health VALUES(?,?,?,?,?,?)
-          ON CONFLICT(component) DO UPDATE SET state=excluded.state,
-          detail=excluded.detail,checked_at=excluded.checked_at,
-          last_success_at=excluded.last_success_at,source=excluded.source""",
-          (component, state, str(detail)[:1000], checked, last_success, source))
+          ON CONFLICT(component) DO UPDATE SET state=excluded.state,detail=excluded.detail,checked_at=excluded.checked_at,last_success_at=excluded.last_success_at,source=excluded.source""",
+          (component,state,str(detail)[:1000],checked,last_success,source))
+        try:
+            from rc6_operational_alerts import enqueue_transition
+            row=c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()
+            enqueue_transition(c,component=component,previous_state=previous_state,state=state,detail=detail,checked_at=checked,last_success_at=last_success,source=source,real_orders_sent=(row[0] if row else 0))
+        except Exception as exc:
+            c.execute("INSERT INTO paper_events(event_at,source,event_type,paper_id,detail) VALUES(?,?,?,?,?)",(checked,'OPERATIONAL_ALERT_BRIDGE','OPERATIONAL_ALERT_ERROR',None,type(exc).__name__))
 
 
 def _sync_state(store, source, status, items, detail, success=False):
