@@ -1,0 +1,152 @@
+POROTA RC6 — DOM/API/HISTORY RECONCILIATION READ ONLY
+PPI_NETWORK_CALLS=NONE
+DB_WRITES=NONE
+UTC=2026-09-08T14:38:08Z
+=== DOM CHECKPOINT EVIDENCE ===
+- observer preflight: `ok|PRODUCTION_PAPER|0`;
+- 16/16 familias autenticadas;
+- `real_orders_sent=0`;
+- `ORDER_ROUTES_VISITED=NO`;
+- mutaciones permitidas: NO;
+- mutaciones first-party PPI no conocidas: `0`;
+- mutaciones third-party abortadas: `224`;
+- DB writes: NO;
+- Contract Evidence import: NO;
+- observer postflight: `ok|PRODUCTION_PAPER|0`.
+| Familia | Filas iniciales | Filas únicas | Estado de cobertura observado |
+|---|---:|---:|---|
+| FCI | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+| FCI Exterior | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+| Acciones | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+| Acciones USA | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+| Bonos | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+| Cauciones | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+| CEDEARs | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+| ETF | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+| Futuros | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+| Letras | 30 | 30 | LIKELY_COMPLETE |
+| Licitaciones | 3 | 3 | LIKELY_COMPLETE |
+| ON | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+| Opciones | 50 renderizadas | 43 únicas | POSSIBLY_TRUNCATED_50 + DUPLICATE/ROW-IDENTITY AUDIT REQUIRED |
+| Índices | 17 | 17 | LIKELY_COMPLETE |
+| Monedas | 30 | 30 | LIKELY_COMPLETE |
+| Tasas | 50 | 50 | POSSIBLY_TRUNCATED_50 |
+IMPORTANTE: `LIKELY_COMPLETE` no equivale a cobertura demostrada. Significa únicamente que la página presentó menos de 50 filas, sin crecimiento por scroll ni paginación explícita detectada. Debe reconciliarse contra un universo esperado o una fuente independiente antes de marcar `COMPLETE`.
+La captura DOM autenticada es técnicamente viable y estable para Contract Evidence de cotizaciones, pero el límite repetido de 50 filas en muchas familias indica que el DOM visible inicial NO debe tratarse como universo completo.
+- filtros/búsqueda de lista;
+- particionado por prefijo/ticker;
+- datos internos ya cargados en el frontend sin exponerlos todos en la tabla;
+- endpoint de búsqueda read-only;
+- reconciliación contra universo de instrumentos API.
+No se debe importar el snapshot de 50 filas como si fuera cobertura total.
+- Acciones: especie, último, variación, bid/ask, cantidades, volumen, apertura, mínimo, máximo, cierre anterior, última actualización.
+- CEDEARs: lo anterior + ratio.
+- Bonos/ON: lo anterior + TIR y modified duration.
+- Letras: vencimiento + TNA.
+- Cauciones: días, último operado, monto tomador/colocador, TNA tomadora/colocadora, volumen, vencimiento, OHLC y última actualización.
+- Futuros: precios, bid/ask, volumen, OHLC, ajuste anterior.
+- Licitaciones: nombre, inversión mínima, moneda/especie, tasa, plazo, fecha fin, estado.
+- FCI: categoría, moneda, plazo de rescate, horario límite, rendimientos, riesgo, patrimonio.
+- FCI Exterior: categoría, rendimientos y riesgo.
+- Índices/Monedas/Tasas: datos de referencia útiles para contexto/decisión, no necesariamente familias ejecutables.
+La página renderizó 50 filas pero solo 43 filas únicas según el snapshot. Antes de usar esta fuente como evidencia canónica se requiere auditar:
+- duplicados reales vs filas repetidas por render/virtualización;
+- identidad canónica de la opción;
+- subyacente;
+- vencimiento;
+- strike;
+- call/put;
+- moneda/mercado;
+- consistencia con API/Contract Evidence.
+- `WEB_VISIBLE`
+- `DOM_EXTRACTABLE`
+- `API_SEARCHABLE`
+- `API_MARKETDATA`
+- `API_HISTORY`
+- `API_ORDER_SUPPORTED`
+- `API_CANCEL_SUPPORTED`
+- `SETTLEMENT_SUPPORTED`
+- `CONTRACT_FIELDS_SUFFICIENT`
+- `READY_PAPER`
+### Salud de la captura
+- AUTH
+- LAST_SUCCESS
+- AGE
+- SLA/TTL
+- SCHEMA
+- COVERAGE
+- ROW_COUNT
+- EXPECTED_UNIVERSE
+- SOURCE/FALLBACK
+### Readiness para operatoria
+- API_EXECUTABLE
+- MARKET_DATA_FRESH
+- CONTRACT_FRESH
+- HISTORY_FRESH
+- SETTLEMENT_KNOWN
+- TICK_STEP_KNOWN
+- FEES_KNOWN
+- FAMILY_BLOCKED
+- BLOCK_REASON
+- warning por primer fallo no material;
+- YELLOW por atraso, cobertura parcial o schema drift con fallback suficiente;
+- RED si el dato crítico excede `max_staleness`, desaparece sin fallback o genera incertidumbre material para la decisión;
+- fail-closed selectivo por familia/instrumento;
+- market data, históricos, backfill, observer, dashboard e introspección deben continuar;
+- Telegram/SRE deben informar causa, último dato válido, edad, fallback y bloqueo aplicado;
+- recuperación debe ser explícita y deduplicada.
+1. Resolver cobertura >50 de las familias truncadas sin entrar en `/Operar`.
+- RC6 permanece sin órdenes reales.
+- `real_orders_sent=0` absoluto.
+- Browser evidence read-only.
+- No usar browser para ejecutar operaciones.
+- No considerar 50 filas como cobertura total.
+- No confundir fuente visible con instrumento ejecutable por API.
+- Cualquier dato contractual crítico desconocido => fail-closed para la decisión afectada.
+=== LIVE PERSISTED DB EVIDENCE ===
+OBSERVER_DB=/app/data/paper_v17/observer_v17.db
+HISTORY_DB=/app/data/market_history.db
+OBSERVER_QUICK_CHECK=ok
+HISTORY_QUICK_CHECK=ok
+=== API/CANDIDATE UNIVERSE ===
+CANDIDATE_INSTRUMENT_TYPE={"instrument_type": "OPCIONES", "n": 383}
+CANDIDATE_INSTRUMENT_TYPE={"instrument_type": "CEDEARS", "n": 193}
+CANDIDATE_INSTRUMENT_TYPE={"instrument_type": "ON", "n": 91}
+CANDIDATE_INSTRUMENT_TYPE={"instrument_type": "ACCIONES", "n": 55}
+CANDIDATE_INSTRUMENT_TYPE={"instrument_type": "FUTUROS", "n": 53}
+CANDIDATE_INSTRUMENT_TYPE={"instrument_type": "BONOS", "n": 42}
+CANDIDATE_INSTRUMENT_TYPE={"instrument_type": "LETRAS", "n": 23}
+CANDIDATE_INSTRUMENT_TYPE={"instrument_type": "CAUCIONES", "n": 10}
+CANDIDATE_INSTRUMENT_TYPE={"instrument_type": "ETF", "n": 4}
+CANDIDATE_INSTRUMENT_TYPE={"instrument_type": "INDICES", "n": 2}
+CANDIDATE_MARKET={"market": "BYMA", "n": 803}
+CANDIDATE_MARKET={"market": "ROFEX", "n": 53}
+CANDIDATE_SETTLEMENT={"settlement": "A-24HS", "n": 464}
+CANDIDATE_SETTLEMENT={"settlement": "INMEDIATA", "n": 392}
+CANDIDATE_STATUS={"status": "AVAILABLE", "n": 834}
+CANDIDATE_STATUS={"status": "STALE", "n": 22}
+CANDIDATE_IDENTITIES=856
+=== PRODUCTION HISTORY ATTEMPTS/COVERAGE ===
+PROD_HISTORY={"instrument_type": "ACCIONES", "n": 30, "covered": 30}
+PROD_HISTORY={"instrument_type": "CEDEARS", "n": 37, "covered": 37}
+PROD_ATTEMPTS={"instrument_type": "ACCIONES", "state": "PARTIAL", "n": 25}
+PROD_ATTEMPTS={"instrument_type": "ACCIONES", "state": "VALID_PAYLOAD", "n": 30}
+PROD_ATTEMPTS={"instrument_type": "CEDEARS", "state": "EMPTY_OR_INVALID", "n": 4}
+PROD_ATTEMPTS={"instrument_type": "CEDEARS", "state": "ERROR", "n": 120}
+PROD_ATTEMPTS={"instrument_type": "CEDEARS", "state": "PARTIAL", "n": 58}
+PROD_ATTEMPTS={"instrument_type": "CEDEARS", "state": "VALID_PAYLOAD", "n": 9}
+=== HISTORY STORE V2 ===
+HISTORY_V2={"instrument_type": "ACCIONES", "rows": 12193, "identities": 55, "first_day": "2025-09-04", "last_day": "2026-09-07"}
+HISTORY_V2={"instrument_type": "BONOS", "rows": 883, "identities": 25, "first_day": "2025-09-05", "last_day": "2026-09-04"}
+HISTORY_V2={"instrument_type": "CEDEARS", "rows": 35449, "identities": 181, "first_day": "2025-09-04", "last_day": "2026-09-07"}
+HISTORY_CLOSE_ONLY={"instrument_type": "ACCIONES", "rows": 1146}
+HISTORY_CLOSE_ONLY={"instrument_type": "CEDEARS", "rows": 6716}
+=== CONTRACT EVIDENCE ===
+CE_TABLE=contract_evidence ROWS=855
+CE_TABLE=contract_evidence_runs ROWS=3
+CE_TABLE=contract_evidence_v2_changes ROWS=1251
+CE_TABLE=contract_evidence_v2_current ROWS=389
+CE_TABLE=contract_evidence_v2_runs ROWS=84
+CE_TABLE=contract_evidence_v2_snapshots ROWS=765
+=== SAFETY ===
+OBSERVER_STATE=PRODUCTION_PAPER|DEGRADED|MARKET_OPEN|COOLDOWN|0|2026-09-08T14:38:51.585690+00:00
