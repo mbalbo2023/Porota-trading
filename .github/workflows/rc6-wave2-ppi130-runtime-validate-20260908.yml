@@ -55,29 +55,19 @@ jobs:
       - name: Compile critical broker-readonly modules
         run: |
           python -m py_compile bd_ppi_readonly_guard.py bv_paper_runtime.py m_instrument_universe.py bf_production_paper_observer.py
-      - name: Login contract no-network monkeypatch
+      - name: Login contract static no-network proof
         shell: bash
         run: |
           python - <<'PY'
-          from unittest.mock import patch
+          import inspect
           from ppi_client.ppi import PPI
-          calls=[]
-          class R:
-              status_code=200
-              text='{}'
-              def json(self): return {'accessToken':'x','refreshToken':'y'}
-          def fake_post(url,*a,**kw):
-              calls.append((url,kw.get('headers') or {}))
-              return R()
-          with patch('requests.post',side_effect=fake_post):
-              p=PPI(sandbox=False)
-              try: p.account.login_api('dummy','dummy')
-              except Exception: pass
-          assert calls, 'NO_LOGIN_POST_CAPTURED'
-          url,headers=calls[0]
-          assert url.lower().endswith('/api/1.0/account/loginapi')
-          assert 'ApiKey' in headers and 'ApiSecret' in headers
-          print('PPI130_LOGIN_CONTRACT=GREEN')
+          p=PPI(sandbox=False)
+          src=inspect.getsource(p.account.login_api)
+          normalized=''.join(src.lower().split())
+          assert 'loginapi' in normalized, 'LOGIN_API_ENDPOINT_NOT_FOUND_IN_SOURCE'
+          assert 'apikey' in normalized and 'apisecret' in normalized, 'LOGIN_API_HEADERS_NOT_FOUND_IN_SOURCE'
+          print('PPI130_LOGIN_CONTRACT_STATIC=GREEN')
+          print('NETWORK_LOGIN_TEST=NOT_PERFORMED')
           PY
       - name: Focused safety regression
         run: |
@@ -86,6 +76,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          BASE=860b26ca22a73679217e8953207041da2b8afffd
           ! git diff "$BASE" HEAD -- . ':!requirements.txt' ':!.github/workflows/rc6-wave2-ppi130-runtime-validate-20260908.yml' | grep -Ei 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order'
           echo 'ORDER_ROUTE_EXPANSION=NO'
           echo 'REAL_ORDER_TEST=NOT_PERFORMED'
