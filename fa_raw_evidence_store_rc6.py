@@ -175,6 +175,7 @@ def _atomic_object_write(path: Path, raw: bytes) -> int:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, path)
+        # Persist the directory entry as well as the file content.
         dir_fd = os.open(path.parent, os.O_RDONLY)
         try:
             os.fsync(dir_fd)
@@ -200,6 +201,12 @@ class RawEvidenceReceipt:
 def archive_ppi_history_wrapper(*, row_key: str, wrapper: dict,
                                 recorded_at: Any, quality: str,
                                 environ=None) -> RawEvidenceReceipt:
+    """Persist one PPI_HISTORY attempt outside observer_v17.db.
+
+    The large raw payload is content-addressed independently from attempt
+    metadata.  Therefore two attempts with identical broker responses retain two
+    manifests but only one physical raw object.
+    """
     if raw_storage_mode(environ) != EXTERNAL_V1:
         raise RuntimeError("PPI_HISTORY_EXTERNAL_EVIDENCE_NOT_ENABLED")
 
@@ -296,6 +303,12 @@ class IngestLease:
 
 @contextmanager
 def ppi_history_ingest_lease(*, environ=None) -> Iterator[IngestLease]:
+    """Serialize PPI History acquisition across observer/post-close processes.
+
+    In LEGACY mode this is deliberately a no-op.  In EXTERNAL_V1 mode the lock
+    is non-blocking: a competing trigger skips instead of waiting and issuing a
+    second broker request after the first completes.
+    """
     if coordinator_mode(environ) != EXTERNAL_V1:
         yield IngestLease(True, None, "LEGACY_NO_COORDINATOR")
         return
@@ -322,6 +335,7 @@ def ppi_history_ingest_lease(*, environ=None) -> Iterator[IngestLease]:
 
 def append_manifest_event(attempt_id: str, event_type: str, detail: dict | None = None,
                           *, environ=None) -> None:
+    """Append a small provenance event; never modifies raw evidence."""
     with _connect_manifest(environ) as c:
         exists = c.execute(
             "SELECT 1 FROM ingest_manifests_v1 WHERE attempt_id=?", (attempt_id,)
@@ -338,6 +352,7 @@ def append_manifest_event(attempt_id: str, event_type: str, detail: dict | None 
 
 
 def manifest_metrics(*, environ=None) -> dict[str, int | float]:
+    """Small operational metrics for future dashboard/introspection wiring."""
     path = manifest_path(environ)
     if not path.exists():
         return {"attempts": 0, "unique_raw_objects": 0, "raw_bytes_referenced": 0,
