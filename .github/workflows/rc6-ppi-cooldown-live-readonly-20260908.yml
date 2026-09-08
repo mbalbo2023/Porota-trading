@@ -1,0 +1,101 @@
+name: RC6 PPI cooldown live read-only 2026-09-08
+on:
+  push:
+    branches: [checkpoint/rc6-ppi-dom-api-operability-alerting-20260908]
+    paths: ['.github/workflows/rc6-ppi-cooldown-live-readonly-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-ppi-cooldown-live-readonly
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          fetch-depth: 0
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Read persisted cooldown evidence only
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' > /tmp/cooldown.txt
+          set -euo pipefail
+          echo 'POROTA RC6 — PPI COOLDOWN LIVE DIAGNOSIS READ ONLY'
+          echo 'PPI_NETWORK_CALLS=NONE'
+          echo 'LOGIN_ATTEMPTS=NONE'
+          echo 'DB_WRITES=NONE'
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo '=== CONTAINER / STATE ==='
+          sudo -n docker inspect -f 'OBSERVER_RUNNING={{.State.Running}} RESTARTS={{.RestartCount}} IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          if 'observer_state' in tabs:
+              r=c.execute('select * from observer_state where id=1').fetchone(); print('OBSERVER_STATE='+json.dumps(dict(r),ensure_ascii=False,default=str))
+          print('=== API_HEALTH_RECENT ===')
+          if 'api_health' in tabs:
+              cols=[r[1] for r in c.execute('pragma table_info(api_health)')]
+              order='updated_at' if 'updated_at' in cols else ('last_check_at' if 'last_check_at' in cols else 'rowid')
+              for r in c.execute(f'select * from api_health order by {order} desc limit 40'):
+                  d=dict(r); print(json.dumps(d,ensure_ascii=False,default=str))
+          print('=== SOURCE_SYNC ===')
+          if 'source_sync' in tabs:
+              for r in c.execute('select * from source_sync order by rowid desc limit 40'): print(json.dumps(dict(r),ensure_ascii=False,default=str))
+          print('=== RECENT EVENTS FILTERED ===')
+          for table in ('paper_events','events','audit_events'):
+              if table not in tabs: continue
+              cols=[r[1] for r in c.execute(f'pragma table_info({table})')]
+              textcols=[x for x in cols if x.lower() in {'detail','message','event_type','source','type','name','result'}]
+              if not textcols: continue
+              where=' OR '.join([f"upper(coalesce({x},'')) like ?" for x in textcols])
+              pats=[]
+              for _ in textcols: pats.append('%PPI%')
+              # separate keywords for broad evidence without assuming schema
+              q=f'select * from {table} where {where} order by rowid desc limit 80'
+              try:
+                  for r in c.execute(q,pats): print(table+':'+json.dumps(dict(r),ensure_ascii=False,default=str))
+              except Exception: pass
+          c.close()
+          PY
+          echo '=== TIMER / SERVICE STATUS ==='
+          for u in porota-fast-functional-health-rc6.service porota-history-postclose-rc6.service porota-contract-evidence-rc6.service porota-introspeccion-hf5.service porota-candle-integrity-rc6.service; do
+            echo "UNIT=$u"
+            sudo -n systemctl show "$u" -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp --no-pager 2>/dev/null || true
+          done
+          echo '=== SANITIZED OBSERVER LOG SIGNALS ==='
+          sudo -n docker logs --since 90m porota_production_observer 2>&1 \
+            | grep -Ei 'ppi|cooldown|rate.?limit|429|auth|login|timeout|server|circuit|error|degrad' \
+            | tail -n 180 \
+            | sed -E 's/(Bearer|Authorization:)[[:space:]]+[A-Za-z0-9._~+\/-]+/\1 <REDACTED>/Ig; s/(token|secret|password|cookie|api[_-]?key)(["= :]+)[^ ,}"[:space:]]+/\1\2<REDACTED>/Ig' || true
+          echo 'DIAGNOSIS_CAPTURE=COMPLETE_READ_ONLY'
+          REMOTE
+          cp /tmp/cooldown.txt POROTA_RC6_PPI_COOLDOWN_LIVE_DIAGNOSIS_2026-09-08.txt
+      - name: Commit sanitized diagnosis
+        run: |
+          set -euo pipefail
+          git pull --rebase origin checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_PPI_COOLDOWN_LIVE_DIAGNOSIS_2026-09-08.txt
+          git commit -m 'diag(rc6): record live PPI cooldown evidence'
+          git push origin HEAD:checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
