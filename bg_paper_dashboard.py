@@ -11,6 +11,7 @@ import statistics
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
+from rc6_data_sla_policy import ppi_background_ingest_sla
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -1193,8 +1194,8 @@ def motor_page():
 
 def _next_check(component, checked):
     cadence = {
-        "PPI_BACKGROUND_INGEST": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
-        "PPI_PRODUCTION_HISTORY": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+        "PPI_BACKGROUND_INGEST": ppi_background_ingest_sla().cadence_seconds,
+        "PPI_PRODUCTION_HISTORY": ppi_background_ingest_sla().cadence_seconds,
         "PPI_PRODUCTION_CATALOG": int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")),
         "BYMA_OPEN_DATA": int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")),
         "FINANCIAL_REFRESH": 43200,
@@ -1219,8 +1220,8 @@ def health_page():
     import rc4_health_explain
     components = _health_components()
     cadence = {
-        "PPI_BACKGROUND_INGEST": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
-        "PPI_PRODUCTION_HISTORY": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+        "PPI_BACKGROUND_INGEST": ppi_background_ingest_sla().cadence_seconds,
+        "PPI_PRODUCTION_HISTORY": ppi_background_ingest_sla().cadence_seconds,
         "PPI_PRODUCTION_CATALOG": int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")),
         "BYMA_OPEN_DATA": int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")),
         "FINANCIAL_REFRESH": 43200,

@@ -34,9 +34,10 @@ INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
 COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
 PUBLIC_CHECK_SECONDS = max(900, int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")))
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
-BACKGROUND_INGEST_SECONDS = max(
-    3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
-)
+from rc6_data_sla_policy import ppi_background_ingest_sla
+
+_BACKGROUND_INGEST_SLA = ppi_background_ingest_sla()
+BACKGROUND_INGEST_SECONDS = max(3600, _BACKGROUND_INGEST_SLA.cadence_seconds)
 READINESS_CHECK_SECONDS = max(
     60, int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"))
 )
