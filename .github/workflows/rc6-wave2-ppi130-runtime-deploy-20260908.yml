@@ -5,6 +5,7 @@ on:
     branches: [deploy/rc6-wave2-ppi130-runtime-20260908]
     paths:
       - 'requirements.txt'
+      - '.github/workflows/rc6-wave2-ppi130-runtime-validate-20260908.yml'
       - '.github/workflows/rc6-wave2-ppi130-runtime-deploy-20260908.yml'
 
 permissions:
@@ -38,7 +39,11 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           got=set(Path('/tmp/changed.txt').read_text().splitlines())
-          allowed={'requirements.txt','.github/workflows/rc6-wave2-ppi130-runtime-deploy-20260908.yml'}
+          allowed={
+            'requirements.txt',
+            '.github/workflows/rc6-wave2-ppi130-runtime-validate-20260908.yml',
+            '.github/workflows/rc6-wave2-ppi130-runtime-deploy-20260908.yml',
+          }
           assert got <= allowed, sorted(got-allowed)
           assert 'requirements.txt' in got
           print('WAVE2_PPI130_DIFF_SCOPE=GREEN')
@@ -68,7 +73,7 @@ jobs:
         run: |
           set -euo pipefail
           BASE=860b26ca22a73679217e8953207041da2b8afffd
-          git diff --name-only "$BASE" HEAD | grep -Ev '^(requirements.txt|.github/workflows/rc6-wave2-ppi130-runtime-deploy-20260908.yml)$' && exit 1 || true
+          git diff --name-only "$BASE" HEAD | grep -Ev '^(requirements.txt|.github/workflows/rc6-wave2-ppi130-runtime-validate-20260908.yml|.github/workflows/rc6-wave2-ppi130-runtime-deploy-20260908.yml)$' && exit 1 || true
           echo 'ORDER_ROUTE_EXPANSION=NO'
           echo 'REAL_ORDER_TEST=NOT_PERFORMED'
           echo 'ROLLBACK_AUTOMATICO=NO'
