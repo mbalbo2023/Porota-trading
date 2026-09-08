@@ -1,0 +1,94 @@
+name: RC6 PPI auth alert coverage read-only 2026-09-08
+on:
+  push:
+    branches: [audit/rc6-alerting-ppi-auth-coverage-20260908]
+    paths: ['.github/workflows/rc6-alerting-ppi-auth-coverage-readonly-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-alerting-ppi-auth-coverage-readonly
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/rc6-alerting-ppi-auth-coverage-20260908
+          fetch-depth: 0
+      - name: Static alert routing audit
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          needles=['PPI_PRODUCTION_AUTH','PPI_AUTH','COOLDOWN','Credenciales invalidas','api_health','source_sync','Telegram','notify','notifier','alert']
+          roots=list(Path('.').glob('*.py'))+list(Path('scripts').glob('*.py'))
+          out=['POROTA RC6 — PPI AUTH ALERT COVERAGE AUDIT','DATE=2026-09-08','NOTIFICATIONS_SENT=NONE','PPI_NETWORK_CALLS=NONE','']
+          for p in roots:
+              try: lines=p.read_text(encoding='utf-8',errors='ignore').splitlines()
+              except Exception: continue
+              hits=[]
+              for i,line in enumerate(lines,1):
+                  if any(n.lower() in line.lower() for n in needles): hits.append((i,line.strip()))
+              if hits:
+                  out.append(f'FILE={p} HITS={len(hits)}')
+                  for i,line in hits[:160]: out.append(f'  {i}:{line[:320]}')
+          # Explicitly inventory known introspection/Telegram-related modules.
+          out.append('')
+          out.append('=== CANDIDATE ALERT MODULES ===')
+          for p in sorted(Path('.').glob('*.py')):
+              n=p.name.lower()
+              if any(x in n for x in ('intro','telegram','alert','health','sre','notify')):
+                  out.append(str(p))
+          Path('POROTA_RC6_PPI_AUTH_ALERT_COVERAGE_2026-09-08.txt').write_text('\n'.join(out)+'\n',encoding='utf-8')
+          PY
+      - name: Read persisted incident/alert evidence only
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts; chmod 600 ~/.ssh/known_hosts
+          {
+            echo ''
+            echo '=== LIVE PERSISTED ALERT EVIDENCE ==='
+          } >> POROTA_RC6_PPI_AUTH_ALERT_COVERAGE_2026-09-08.txt
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' >> POROTA_RC6_PPI_AUTH_ALERT_COVERAGE_2026-09-08.txt
+          set -euo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          for t in sorted(tabs):
+              if any(x in t.lower() for x in ('alert','telegram','notification','intro','health','event')):
+                  cols=[r[1] for r in c.execute(f'pragma table_info({t})')]
+                  print('TABLE='+t+' COLS='+','.join(cols))
+                  try:
+                      rows=c.execute(f'select * from {t} order by rowid desc limit 30').fetchall()
+                      for r in rows:
+                          d=dict(r); text=json.dumps(d,ensure_ascii=False,default=str)
+                          if any(x in text.upper() for x in ('PPI','COOLDOWN','CREDENCIA','AUTH','DEGRAD')):
+                              print(t+':'+text[:2000])
+                  except Exception as e: print(t+':READ_ERROR='+type(e).__name__)
+          if 'observer_state' in tabs:
+              r=c.execute('select mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at from observer_state where id=1').fetchone()
+              print('OBSERVER_STATE='+'|'.join(map(str,r)))
+          c.close()
+          PY
+          REMOTE
+      - name: Commit report
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_PPI_AUTH_ALERT_COVERAGE_2026-09-08.txt
+          git commit -m 'audit(rc6): record PPI auth alert coverage'
+          git push origin HEAD:audit/rc6-alerting-ppi-auth-coverage-20260908
