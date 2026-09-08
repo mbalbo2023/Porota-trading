@@ -11,27 +11,22 @@
 # diagnostico en una conjetura: no se puede afirmar que produccion corre lo
 # mismo que se probo.
 #
-# Todas las versiones de abajo fueron verificadas contra PyPI el 21/08/2026.
-# Para actualizar: leer el changelog, cambiar el numero aca, correr la suite
-# completa, y recien entonces promover.
+# Para actualizar: leer changelog/diff, cambiar el numero en rama aislada,
+# correr suite completa y promover recien con evidencia GREEN.
 # ============================================================================
 
 # --- Broker de ejecucion ----------------------------------------------------
-# VERIFICADO: el paquete se llama `ppi-client` (el artefacto instalado es
-# ppi_client). La ultima version publicada es 1.2.4 (21/05/2025).
-# Hasta la version anterior este archivo fijaba `ppi-client==0.3.2`, un numero
-# puesto sin poder consultar PyPI. Esa version no es la vigente: el build
-# habria fallado, o traido una API distinta a la que espera c_ppi_client.py.
-#
-# ADVERTENCIA DE MANTENIMIENTO: el paquete no publica releases desde hace mas
-# de doce meses. ae_ppi_api_watch.py vigila PyPI y avisa por Telegram si
-# aparece una version nueva; si quedara definitivamente abandonado, el plan es
-# forkear y fijar el fork, no aflojar el pin.
-ppi-client==1.2.4
+# ppi-client 1.3.0 fue publicado en PyPI el 31/08/2026. RC6 lo evalua primero
+# en rama SHADOW/CI. No implica deploy automatico al observer productivo.
+# La promocion requiere: build resoluble, contrato de login/headers estable,
+# marketdata/configuration read-only compatibles, regression suite GREEN y
+# cero ampliacion accidental de superficie de ordenes.
+ppi-client==1.3.0
 
 # --- WebSocket del broker --------------------------------------------------
-# ppi-client 1.2.4 depende de signalrcorePPI 0.9.2, que exige exactamente
-# websocket-client 1.0.0. Se fija ese valor para que el entorno sea resoluble.
+# Mantener pin hasta demostrar la dependencia efectiva de ppi-client 1.3.0 en
+# CI. Si 1.3.0 cambia este contrato, el workflow de upgrade debe detectarlo y
+# la rama queda HOLD hasta resolverlo explicitamente.
 websocket-client==1.0.0
 
 # --- Futuros: Matba Rofex / reMarkets -------------------------------------
