@@ -18,6 +18,24 @@ Mantener todos los invariantes originales, especialmente:
 - no inferir tick/step de decimales;
 - no mezclar cleanup físico con deploy funcional.
 
+## ÓRDENES OPERATIVAS PERSISTENTES DEL USUARIO
+
+### Paralelización por defecto
+- Todo trabajo independiente, seguro y aislable debe avanzar en paralelo por defecto.
+- No esperar a que el usuario vuelva a pedir paralelizar.
+- Mantener ramas/CI/checkpoints separados y evitar mega-deploys.
+- Avanzar con auditorías read-only, SHADOW, CI, documentación, modelos puros y preparación de deploys mientras existan bloqueadores externos.
+
+### Rollback sólo con autorización explícita
+- NO rollback automático.
+- NO rollback por iniciativa del asistente.
+- Ante una falla: diagnosticar, corregir y redeployar si corresponde.
+- Si se considera rollback, pedir autorización explícita al usuario antes de ejecutarlo desde GitHub o runtime.
+- Los workflows de despliegue nuevos no deben ejecutar rollback automático.
+
+Referencia canónica de estas órdenes:
+`POROTA_TRADING_RC6_OPERATING_ORDERS_PARALLELISM_ROLLBACK_2026-09-08.md`
+
 ## Cambios de estado posteriores al checkpoint original
 
 ### PPI Production API auth
@@ -80,6 +98,56 @@ Reglas:
 - provenance temporal sin look-ahead.
 
 Pendiente: dedupe multi-source, persistence/evidence store, exposure graph, scoring, dashboard y backtests preopen/open/close/postclose.
+
+### Cauciones
+Estado: YELLOW avanzado / modelo contractual puro en desarrollo.
+
+Checkpoint soporte PPI:
+`POROTA_TRADING_CHECKPOINT_CAUCIONES_PPI_SUPPORT_2026-09-08.md`
+
+Confirmado por PPI:
+- ticker `PESOSn`/`DOLARn`;
+- días corridos;
+- inicio mismo día de carga;
+- Actual/365;
+- cantidad entera;
+- step 1 ARS/USD;
+- mínimo ARS 100000 / USD 100;
+- `price` = TNA anual porcentual;
+- Bids para colocadora;
+- `quantity` book = monto tomador;
+- maturity se deriva, no campo API explícito.
+
+Rama modelo puro:
+`feature/rc6-cauciones-contract-model-20260908`
+
+Pendientes:
+- respuesta PPI sobre fees/timezone/book/saldo DOLAR/numeración 13-16;
+- sandbox para Budget/Confirm/Cancel;
+- no READY_PAPER todavía;
+- `CAUCIONES_AUTO_PLACEMENT=false`.
+
+## Wave 1 — Safety/Observability
+
+Estado: EN PREPARACIÓN/INTEGRACIÓN.
+
+Rama:
+`integration/rc6-wave1-safety-observability-20260908`
+
+Sub-ola inicial propuesta:
+- no-order-route permission probe;
+- Browser V3 versionado;
+- operational health alert outbox;
+- validaciones asociadas.
+
+SLA/TTL canónico y scraping semaphore runtime se integrarán de forma controlada evitando pisar cambios concurrentes sobre observer/dashboard.
+
+Regla especial de deploy:
+- preflight read-only;
+- deploy sin rollback automático;
+- postflight;
+- si falla, RCA + corrección + redeploy;
+- rollback únicamente con autorización explícita del usuario.
 
 ## P0 original — estado vivo
 
@@ -205,16 +273,12 @@ Inicialmente `canonical_write=DENY`, `db_write=NO`.
 ### Cauciones
 Estado: YELLOW / no READY_PAPER.
 
-Pendientes:
-- vencimiento exacto;
-- day-count;
-- rounding;
-- quantity step;
-- mínimos;
+Pendientes restantes:
+- fees/comisiones/impuestos;
+- timezone/cutoff;
 - depth/pagination;
-- settlement;
-- fees;
-- ejecución API demostrada;
+- saldo DOLAR;
+- ejecución API demostrada en sandbox;
 - DOM/API/CE reconcile.
 
 Mantener `CAUCIONES_AUTO_PLACEMENT=false`.
