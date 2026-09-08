@@ -1,0 +1,410 @@
+POROTA RC6 — ALERTING CALLGRAPH AUDIT
+DATE=2026-09-08
+NETWORK_CALLS=NONE
+DB_WRITES=NONE
+
+FILE=aa_env_guard.py HITS=7
+400:notifier.send_telegram_generic_confirmation(
+430:notifier.send_telegram("Esa solicitud de reinicio ya no existe.")
+433:notifier.send_telegram(f"Esa solicitud de reinicio ya estaba en estado {req['status']}.")
+438:notifier.send_telegram(
+449:notifier.send_telegram("⏰ Esa solicitud de reinicio venció. Volvé a guardar los cambios en el panel.")
+457:notifier.send_telegram("✅ Confirmado. El bot se va a reiniciar en los próximos segundos.")
+459:notifier.send_telegram(
+FILE=ab_log_watch.py HITS=4
+25:1) VIGILANCIA CONTINUA (scan_and_alert, cada LOG_WATCH_INTERVAL_MINUTES):
+158:def scan_and_alert(notifier) -> dict:
+201:notifier.send_telegram("\n".join(partes))
+320:notifier.send_telegram(build_daily_health_digest())
+FILE=ae_ppi_api_watch.py HITS=3
+180:notifier.send_telegram(
+215:notifier.send_telegram(
+245:notifier.send_telegram(
+FILE=af_model_registry.py HITS=2
+226:notifier.send_telegram(
+252:notifier.send_telegram(
+FILE=ag_kill_switch_supervisor.py HITS=11
+102:COOLDOWN_MINUTES = float(os.getenv("KILL_SWITCH_COOLDOWN_MINUTES", "15"))
+298:notifier.send_telegram_generic_confirmation(
+307:notifier.send_telegram(
+309:f"recuperarlo solo en los próximos {int(COOLDOWN_MINUTES)} minutos "
+444:# Cooldown: darle tiempo a la causa transitoria de resolverse sola.
+446:if inicio and (datetime.now() - inicio) < timedelta(minutes=COOLDOWN_MINUTES):
+447:resultado["accion"] = "EN_COOLDOWN"
+448:resultado["explicacion"] = f"Esperando {COOLDOWN_MINUTES} minutos desde el corte."
+462:notifier.send_telegram(
+490:notifier.send_telegram(
+524:notifier.send_telegram(
+FILE=am_api_health.py HITS=5
+2:am_api_health.py — Chequeo de salud con semáforos de APIs y módulos
+43:logger = logging.getLogger("api_health")
+109:event = runtime_status.latest_event("PPI_AUTH")
+126:elif state in ("RATE_LIMIT", "COOLDOWN"):
+127:c.estado, c.detalle = ROJO, f"Autenticación en cooldown/cuota: {detail}"
+FILE=an_sre_deploy.py HITS=1
+412:notifier.send(mensaje)
+FILE=ao_startup_gate.py HITS=2
+232:enviado = notifier.send(texto, reply_markup=teclado, parse_mode="Markdown")
+320:notifier.send("⏱️ Nadie autorizó el arranque, así que Porota Trading quedó "
+FILE=ap_api_verifier.py HITS=3
+435:modulo_del_bot="b_notifiers.send_telegram_alert()",
+452:return bool(n.send_telegram(
+460:return bool(n.send_telegram_generic_confirmation(
+FILE=ar_telegram_commands.py HITS=4
+649:notifier.send(texto, reply_markup=teclado, parse_mode="Markdown")
+651:notifier.send(texto, parse_mode="Markdown")
+677:# Acá vivía un segundo bucle que llamaba a notifier.get_telegram_button_taps()
+683:#     `for act in notifier.get_telegram_button_taps(offset)` y después
+FILE=az_maintenance_job.py HITS=2
+62:_notifier().send_telegram(AutoTuner().generate_weekly_report())
+82:_notifier().send_telegram(z_reports_engine.build_monthly_summary_text())
+FILE=az_maintenance_scheduler.py HITS=15
+8:from apscheduler.schedulers.background import BackgroundScheduler
+50:scheduler.add_job(_run_job, "cron", id="maintenance_monthly_autotune",
+52:scheduler.add_job(_run_job, "cron", id="maintenance_data_retention",
+54:scheduler.add_job(_run_job, "cron", id="maintenance_macro_refresh",
+56:scheduler.add_job(_run_job, "cron", id="maintenance_daily_backup",
+58:scheduler.add_job(_run_job, "cron", id="maintenance_historical_catchup",
+61:scheduler.add_job(_run_job, "cron", id="maintenance_historical_refresh",
+64:scheduler.add_job(_run_job, "cron", id="maintenance_model_guardian",
+66:scheduler.add_job(_run_job, "cron", id="maintenance_monthly_report",
+68:scheduler.add_job(_run_job, "cron", id="maintenance_learning_diagnostic",
+70:scheduler.add_job(_run_job, "cron", id="maintenance_weekly_report",
+72:scheduler.add_job(_run_job, "interval", id="maintenance_news_scan",
+75:scheduler.add_job(_run_job, "date", id="maintenance_historical_startup_catchup",
+83:scheduler.start()
+85:SERVER_TIMEZONE, len(scheduler.get_jobs()))
+FILE=b_notifiers.py HITS=12
+27:"""NUEVO EN v10.5 (segunda revisión) — ver docstring de send_telegram()."""
+110:def send_telegram(self, message: str):
+152:def send_telegram_confirmation(self, message: str, order_id: str):
+153:"""Igual que send_telegram, pero agrega dos botones (Confirmar/Cancelar)
+187:def send_telegram_generic_confirmation(self, message: str, confirm_data: str, cancel_data: str,
+190:"""NUEVO EN v14.0 — mismo mecanismo que send_telegram_confirmation,
+349:self.send_telegram(
+370:self.send_telegram(
+384:self.send_telegram(
+390:self.send_telegram(
+395:def notify_critical_event(self, event_type: str, details: str):
+419:self.send_telegram(message)
+FILE=bc_dashboard_v163.py HITS=1
+205:"ppi_auth": runtime_status.latest_event("PPI_AUTH"),
+FILE=bd_ppi_readonly_guard.py HITS=3
+135:login_cooldown_seconds: int = 900
+168:now - self._last_login_at < self.login_cooldown_seconds):
+170:"Login adicional bloqueado durante el cooldown."
+FILE=be_paper_engine.py HITS=3
+130:ppi_auth TEXT NOT NULL, heartbeat_at TEXT, last_market_data_at TEXT,
+192:INSERT OR IGNORE INTO observer_state(id,mode,process_state,session_state,ppi_auth)
+231:allowed = {"process_state", "session_state", "ppi_auth", "heartbeat_at",
+FILE=bf_production_paper_observer.py HITS=14
+36:LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
+264:CREATE TABLE IF NOT EXISTS api_health(
+297:"SELECT last_success_at FROM api_health WHERE component=?", (component,)
+300:c.execute("""INSERT INTO api_health VALUES(?,?,?,?,?,?)
+1008:store.state(ppi_auth="ERROR", detail=f"Prueba manual falló: {detail}")
+1014:store.state(ppi_auth="OK", detail="Login correcto; sincronizando configuración, catálogo e históricos.")
+1073:ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
+1082:ppi_auth="NOT_ATTEMPTED", real_orders_sent=0,
+1086:ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
+1117:store.state(process_state="DEGRADED", ppi_auth="COOLDOWN",
+1130:store.state(ppi_auth="OK", session_state=phase,
+1136:store.state(process_state="DEGRADED", ppi_auth="ERROR",
+1140:next_login_at = time.time() + LOGIN_COOLDOWN_SECONDS
+1242:ppi_auth="ERROR" if cycle_session_invalid else "OK",
+FILE=bg_paper_dashboard.py HITS=20
+248:"s-amarillo" if key in {"HOLD","PARTIAL","COOLDOWN","WAITING","AMARILLO","PENDIENTE"} else "s-gris"
+260:"AMARILLO" if key in {"PARTIAL","DEGRADED","COOLDOWN","AMARILLO"} else "GRIS"
+380:state = (_rows("SELECT * FROM observer_state WHERE id=1") or [{"mode":_effective_mode(),"process_state":"STOPPED","session_state":"UNKNOWN","ppi_auth":"NOT_ATTEMPTED","real_orders_sent":0,"detail":"Observador todavía no iniciado."}])[0]
+687:if key in {"PARTIAL", "DEGRADED", "COOLDOWN", "AMARILLO"}:
+693:persisted = {r["component"]: r for r in _rows("SELECT * FROM api_health")} if _table("api_health") else {}
+884:_card("PPI solo lectura", state.get("ppi_auth"), "Órdenes reales bloqueadas por transporte",
+885:"green" if state.get("ppi_auth") == "OK" else "yellow"
+886:if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
+909:_card("PPI Producción", state.get("ppi_auth"), "Sólo lectura", "green" if state.get("ppi_auth")=="OK" else "yellow"),
+1389:body=f"<h1>Históricos y universo</h1><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponibl
+1810:_card('PPI autenticación',state.get('ppi_auth','UNKNOWN'),f"Último mercado {_local_time(state.get('last_market_data_at'))}",'green' if state.get('ppi_auth')=='OK' else 'yellow'),
+2001:def _latest_introspection():
+2002:directory = Path(DB_PATH).parents[1] / "introspection"
+2003:files = sorted(directory.glob("porota_introspection_hf*_*.json")) if directory.exists() else []
+2011:path = Path(DB_PATH).parents[1] / "introspection_publish/publication_status.json"
+2019:def introspection_content():
+2020:report = _latest_introspection()
+2169:api_health=_rows('SELECT * FROM api_health ORDER BY checked_at DESC') if _table('api_health') else []
+2175:internal=internal_rows(db_jobs,source_sync_rows=source_sync,api_health_rows=api_health,contract_run_rows=contract_runs)
+2316:content = introspection_content()
+FILE=bh_universe_dashboard_hf6.py HITS=2
+177:ppi_auth,
+738:f"PPI {bg._e(observer.get('ppi_auth'))} · "
+FILE=bn_telegram_bus.py HITS=5
+30:state TEXT NOT NULL, cooldown_until TEXT, detail TEXT NOT NULL);
+116:if worker and worker['cooldown_until'] and aware_datetime(worker['cooldown_until']) > at:
+184:cooldown = at + timedelta(seconds=delay if error and error.code=='429' else 1)
+185:c.execute("""UPDATE paper_notification_worker SET cooldown_until=?,heartbeat_at=?,
+186:state=?,detail=? WHERE id=1""", (cooldown.isoformat(),at.isoformat(),
+FILE=bv_paper_runtime.py HITS=5
+56:def __init__(self, commands, *, cooldown_seconds=30, spawn=subprocess.Popen, clock=time.monotonic):
+57:self.commands, self.cooldown = commands, cooldown_seconds
+67:self.next_start[name] = now + self.cooldown
+72:self.next_start[name] = now + self.cooldown
+162:status("COOLDOWN")
+FILE=c_ppi_client.py HITS=36
+217:m_introspection_engine.py, aa_env_guard.py y el panel web. Enmascara por
+384:self.AUTH_RETRY_COOLDOWN_SECONDS = int(
+385:os.getenv("PPI_AUTH_RETRY_COOLDOWN_SECONDS", "900")
+387:self.SERVER_RETRY_COOLDOWN_SECONDS = int(
+388:os.getenv("PPI_SERVER_RETRY_COOLDOWN_SECONDS", "600")
+390:self.RATE_LIMIT_COOLDOWN_SECONDS = int(
+391:os.getenv("PPI_RATE_LIMIT_COOLDOWN_SECONDS", "3600")
+393:self.AUTH_UNKNOWN_COOLDOWN_SECONDS = int(
+394:os.getenv("PPI_AUTH_UNKNOWN_COOLDOWN_SECONDS", "3600")
+413:# CIRCUIT_OPEN_COOLDOWN_SECONDS. Pasado ese tiempo, se prueba UNA
+415:# falla, vuelve a OPEN y reinicia el cooldown.
+421:self.CIRCUIT_OPEN_COOLDOWN_SECONDS = int(os.getenv("CIRCUIT_OPEN_COOLDOWN_SECONDS", "60"))
+459:"COOLDOWN" if remaining else "DISCONNECTED"
+461:"cooldown_remaining_seconds": remaining,
+580:return False, self.AUTH_UNKNOWN_COOLDOWN_SECONDS
+590:return "RATE_LIMIT", self.RATE_LIMIT_COOLDOWN_SECONDS
+592:return "AUTH_REJECTED", self.AUTH_RETRY_COOLDOWN_SECONDS
+594:return "UPSTREAM_TEMPORARY", self.SERVER_RETRY_COOLDOWN_SECONDS
+596:return "PROTOCOL_TEMPORARY", self.SERVER_RETRY_COOLDOWN_SECONDS
+597:return "CONFIGURATION_ERROR", self.AUTH_UNKNOWN_COOLDOWN_SECONDS
+617:"PPI_AUTH", "LOCAL_LIMIT",
+634:_persist_system_event("PPI_AUTH", "OK", "Sesión autenticada.")
+636:self.notifier.notify_recovery("API PPI")
+648:state, cooldown = self._login_failure_policy(
+655:self._auth_blocked_until = time.time() + cooldown
+657:"PPI_AUTH", state,
+662:state, cooldown, safe_error,
+665:self.notifier.notify_error(
+667:f"intento será dentro de {cooldown // 60} minutos."
+824:if time.time() - self._circuit_opened_at >= self.CIRCUIT_OPEN_COOLDOWN_SECONDS:
+826:logger.info("Circuit Breaker: OPEN -> HALF_OPEN (cooldown cumplido, probando 1 llamada).")
+854:self._circuit_failures, self.CIRCUIT_OPEN_COOLDOWN_SECONDS,
+906:logger.debug("PPI sin autenticar — '%s' omitido durante cooldown.", label)
+950:self._auth_blocked_until = time.time() + self.RATE_LIMIT_COOLDOWN_SECONDS
+951:_persist_system_event("PPI_AUTH", "RATE_LIMIT", self._auth_last_error)
+967:self.notifier.notify_error(
+FILE=cf_intraday_scalping.py HITS=1
+390:_heartbeat(store,at=at,state="LOGIN_COOLDOWN",cursor=cursor)
+FILE=ck_contract_evidence_runner_hf6.py HITS=2
+42:row = c.execute("""SELECT mode,process_state,session_state,ppi_auth,real_orders_sent
+53:mode, process_state, session_state, ppi_auth, real_orders = before
+FILE=co_contract_ingestion_policy_hf6.py HITS=1
+53:"FULL_BROWSER_AUDIT", timedelta(days=7), "PPI_AUTHENTICATED_WEB", False,
+FILE=cp_contract_evidence_v2_hf6.py HITS=2
+16:"PPI_AUTHENTICATED_XHR": 20,
+18:"PPI_AUTHENTICATED_WEB": 40,
+FILE=cy_market_source_arbitration_hf6.py HITS=1
+109:"PPI_AUTHORITATIVE_WHEN_COMPLETE_AND_FRESH",
+FILE=dd_history_metrics_hf6.py HITS=1
+1:"""Read-only HF6 v2 history metrics for dashboard/introspection.
+FILE=de_scheduler_catalog_hf6.py HITS=4
+91:"porota-introspection-publish.timer": "Publica a GitHub una copia sanitizada de observabilidad; GitHub nunca controla el runtime.",
+128:def internal_rows(db_rows: list[dict], *, source_sync_rows=None, api_health_rows=None, contract_run_rows=None) -> list[dict]:
+133:for raw in api_health_rows or []:
+135:if key and key not in persisted:persisted[key]={"job_key":key,"last_run_at":raw.get("checked_at"),"last_success_at":raw.get("last_success_at"),"state":raw.get("state") or "SIN_REGISTRO","detail":raw.get("detail") or "","evidence_table":"api_health"}
+FILE=entrypoint.py HITS=5
+22:BOT_RESTART_COOLDOWN_SECONDS = 30
+98:enviado = MultiChannelNotifier().send_telegram(message)
+121:maintenance_scheduler = az_maintenance_scheduler.start()
+185:time.monotonic() - last_bot_exit >= BOT_RESTART_COOLDOWN_SECONDS)
+205:maintenance_scheduler.shutdown(wait=False)
+FILE=ep_dashboard_truth_layer_rc6.py HITS=4
+31:"SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,detail "
+42:ppi_auth = str(row.get("ppi_auth") or "UNKNOWN").upper()
+51:"ppi_auth": ppi_auth,
+83:f"PPI auth {bg._e(truth['ppi_auth'])} · posiciones abiertas {truth['open_positions']} · "
+FILE=es_policy_context_rc6.py HITS=1
+4:ledger sources used by operational introspection. It never changes
+FILE=g_news_feed.py HITS=8
+42:NEWS_FEED_FAILURE_COOLDOWN_SECONDS = int(
+43:os.getenv("NEWS_FEED_FAILURE_COOLDOWN_SECONDS", "1800")
+104:_feed_retry_after[url] = ahora + NEWS_FEED_FAILURE_COOLDOWN_SECONDS
+105:if ahora - _feed_last_warning.get(url, 0) >= NEWS_FEED_FAILURE_COOLDOWN_SECONDS:
+107:NEWS_FEED_FAILURE_COOLDOWN_SECONDS, detalle)
+133:_feed_retry_after[url] = ahora + NEWS_FEED_FAILURE_COOLDOWN_SECONDS
+134:if ahora - _feed_last_warning.get(url, 0) >= NEWS_FEED_FAILURE_COOLDOWN_SECONDS:
+136:NEWS_FEED_FAILURE_COOLDOWN_SECONDS, e)
+FILE=h_daily_report.py HITS=2
+123:notifier.send_telegram(f"{subject}\n\n{body}")
+440:notifier.send_telegram(f"{subject}\n\n{body}")
+FILE=j_main.py HITS=27
+31:from apscheduler.schedulers.background import BackgroundScheduler
+90:# scikit-learn en m_introspection_engine.py y u_aiops_watcher.py.
+457:"TRADING_GATE", "BLOCKED_PPI_AUTH",
+502:notifier.send_telegram(report)
+511:notifier.send_telegram(reports_engine.build_monthly_summary_text())
+582:notifier.send_telegram("\n".join(lineas))
+606:"""NUEVO EN v13.0 — ver comentario en main() (scheduler.add_job).
+686:notifier.send_telegram(
+710:def log_watch_job(notifier):
+713:log_watch.scan_and_alert(notifier)
+744:notifier.send_telegram(
+797:log_signal(ticker, "REJECTED_PPI_AUTH", "PPI no autenticado; operación bloqueada.")
+1134:notifier.send_telegram_confirmation(msg, order_id)
+1193:import m_introspection_engine as introspection_engine
+1194:introspection_engine.install(notifier=None)
+1231:introspection_engine.install(notifier=notifier)
+1285:# el módulo sigue funcionando solo (y sus propios tests) sin notifier.
+1286:risk_guardian.set_critical_notifier(notifier.notify_critical_event)
+1389:notifier.send_telegram(
+1424:scheduler.add_job(market_open_job, "cron", day_of_week="mon-fri", hour=MARKET_OPEN_HOUR, minute=0,
+1426:scheduler.add_job(market_close_job, "cron", day_of_week="mon-fri", hour=MARKET_CLOSE_HOUR, minute=5,
+1434:scheduler.add_job(eod_close_job, "cron", day_of_week="mon-fri", hour=eod_hour, minute=eod_minute,
+1438:scheduler.add_job(log_watch_job, "interval", minutes=log_watch.LOG_WATCH_INTERVAL_MINUTES,
+1443:scheduler.add_job(process_restart_requests_job, "interval",
+1446:scheduler.start()
+1608:notifier.notify_error(f"Falla bucle: {e}")
+1616:scheduler.shutdown(wait=False)
+FILE=k_position_manager.py HITS=3
+267:notifier.notify_order_result(
+394:notifier.notify_order_result(
+413:notifier.send_telegram(resumen)
+FILE=l_order_confirmation.py HITS=27
+185:notifier.send_telegram(
+312:taps, new_offset = notifier.get_telegram_button_taps(process_button_taps._offset)
+344:notifier.send_telegram(
+348:notifier.send_telegram(
+362:notifier.answer_telegram_callback(tap["callback_id"], "Procesando...")
+368:notifier.send_telegram(
+372:notifier.send_telegram(
+410:notifier.send_telegram("El kill switch ya no estaba activo — no había nada que liberar.")
+412:notifier.send_telegram(
+420:notifier.send_telegram("Esa propuesta ya venció o ya fue procesada.")
+425:notifier.send_telegram(f"❌ Cancelado: {pending['ticker']} — no se colocó ninguna orden.")
+441:notifier.send_telegram(
+451:notifier.send_telegram(f"⚠️ No pude obtener la cotización actual de {pending['ticker']}, no se ejecutó.")
+457:notifier.send_telegram(
+477:notifier.send_telegram(
+504:notifier.send_telegram(
+515:notifier.send_telegram(f"⚠️ PPI no devolvió presupuesto para {pending['ticker']}, no se ejecutó. "
+542:notifier.send_telegram(f"🔴 Error al confirmar la orden de {pending['ticker']} en PPI — "
+558:notifier.send_telegram(
+565:notifier.send_telegram(
+622:notifier.send_telegram(
+650:notifier.send_telegram(
+657:notifier.send_telegram(
+668:notifier.send_telegram(f"⚠️ PPI no devolvió presupuesto para {ticker} — oportunidad descartada, no se ejecutó.")
+681:notifier.send_telegram(f"🔴 Error al colocar la orden de {ticker} en PPI — revisá el estado en la app.")
+689:notifier.send_telegram(
+703:notifier.notify_order_auto_executed(
+FILE=m_introspection_engine.py HITS=3
+2:m_introspection_engine.py — Motor de Introspección SRE, RAG y
+33:logger = logging.getLogger("introspection_engine")
+247:notifier.notify_error(
+FILE=o_dashboard.py HITS=2
+599:# m_introspection_engine.py, que no usa una tabla de base de datos para
+1305:import am_api_health as health
+FILE=ops_disk_inventory_hf6.py HITS=3
+20:"introspection": "evidencia operativa",
+81:publish = root / "data/introspection_publish"
+113:destination = (args.output_dir or args.root / "data/introspection")
+FILE=ops_introspection_hf4.py HITS=9
+26:OUT = Path(os.getenv("INTROSPECTION_DIR", "/app/data/introspection"))
+78:"mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
+145:"health": rows(c, "SELECT component,state,checked_at,last_success_at,detail FROM api_health WHERE component LIKE 'PAPER_ECONOMIC%' ORDER BY checked_at DESC") if table(c,"api_health") else [],
+273:publication_path = Path(DB).parents[1] / "introspection_publish/publication_status.json"
+298:result["warnings"].append("github_introspection_publication_" +
+311:files = sorted(OUT.glob("porota_introspection_hf*_*.json")) if OUT.exists() else []
+346:VALUES(?,?,?,?,?,?)""", (f"introspection-{FILE_TAG}:{stamp}", "INTROSPECTION",
+394:json_path = OUT / f"porota_introspection_{FILE_TAG}_{stamp}.json"
+395:md_path = OUT / f"porota_introspection_{FILE_TAG}_{stamp}.md"
+FILE=ops_publish_introspection_hf6.py HITS=15
+60:raise ValueError("INTROSPECTION_NOT_AN_OBJECT")
+62:"mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
+93:"schema": "porota-introspection-public-v1",
+166:raise ValueError("INTROSPECTION_WITHOUT_TIMESTAMP")
+198:"schema": "porota-introspection-publication-status-v1",
+212:candidates = sorted(directory.glob("porota_introspection_hf*_*.json"))
+214:raise FileNotFoundError("NO_INTROSPECTION_SNAPSHOT")
+221:raise ValueError("INTROSPECTION_TIMESTAMP_WITHOUT_TIMEZONE")
+240:if payload.get("schema") != "porota-introspection-daily-v1" or payload.get("date") != day:
+270:for source in sorted(input_dir.glob("porota_introspection_hf*_*.json")):
+318:"schema": "porota-introspection-retention-v1",
+323:"scope": "HOURLY_INTROSPECTION_ONLY",
+364:history = {"schema": "porota-introspection-daily-v1", "date": day, "snapshots": []}
+384:parser.add_argument("--input-dir", type=Path, default=Path("/app/data/introspection"))
+385:parser.add_argument("--output-dir", type=Path, default=Path("/app/data/introspection_publish"))
+FILE=p_risk_guardian.py HITS=7
+74:vez al arrancar, con notifier.notify_critical_event.
+159:m_introspection_engine.py) active el kill switch de forma automática
+175:pública (trigger_halt) para que m_introspection_engine.py la llame sin
+270:notifier.send_telegram(
+301:notifier.send_telegram(
+324:notifier.send_telegram(
+365:notifier.send_telegram(
+FILE=porota_mode_manager.py HITS=1
+252:"-e", "PPI_LOGIN_COOLDOWN_SECONDS=900",
+FILE=rc4_contract_import_job.py HITS=2
+44:market=ident.get('market'),settlement=ident.get('settlement'),source_class='PPI_AUTHENTICATED_XHR',source_ref=url,evidence=evidence)
+54:market=ident.get('market'),settlement=ident.get('settlement'),source_class='PPI_AUTHENTICATED_XHR',source_ref=url,evidence=evidence)
+FILE=rc4_functional_health.py HITS=1
+25:return {'generated_at':datetime.now(timezone.utc).isoformat(),'observer':{k:observer.get(k) for k in ('mode','process_state','session_state','ppi_auth','heartbeat_at','last_market_data_at','real_orders_sent')},
+FILE=rc4_module_inventory.py HITS=2
+13:"cn_ppi_authenticated_family_scraper_hf6":"OPS_CLI_MANUAL_LEGACY",
+20:"cn_ppi_authenticated_family_scraper_hf6":"Scraper HF6 legacy con login explícito. Se conserva sólo para trazabilidad/manual; los timers RC4 usan exclusivamente trusted-device GET-only.",
+FILE=rc4_policy_context.py HITS=1
+4:sources used by operational introspection.  It never changes configuration,
+FILE=rc4_postclose_history_job.py HITS=1
+15:result=scheduler.run_if_due(store,phase=str(row[0] or 'UNKNOWN'))
+FILE=rc4_release_preflight.py HITS=1
+33:legacy_scraper='cn_ppi_authenticated_family_scraper_hf6'
+FILE=rc6_contract_capture_importer.py HITS=6
+87:source = str(item.get("source_url") or "PPI_AUTHENTICATED_XHR")
+104:source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
+121:settlement=settlement, source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
+137:source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
+147:source_class="PPI_AUTHENTICATED_XHR", source_ref=source,
+160:source_class="PPI_AUTHENTICATED_XHR", source_ref=source,
+FILE=rc6_functional_health.py HITS=1
+46:row = c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at FROM observer_state WHERE id=1').fetchone()
+FILE=rc6_preopen.py HITS=2
+62:row = c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+65:auth = str(state.get('ppi_auth') or '').upper()
+FILE=s_learning_engine.py HITS=1
+122:self.notifier.send_telegram(
+FILE=scripts/porota_contract_evidence_session_runner_rc4.py HITS=5
+231:settlement="UNKNOWN",source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=nonempty(ev))
+243:settlement=settlement,source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
+266:source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
+279:source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
+293:source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=nonempty(ev))
+FILE=scripts/rc6_sunday_readiness.py HITS=1
+43:row=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+FILE=scripts/v17_rc3_hf2_deploy.py HITS=1
+163:"SELECT mode,process_state,session_state,ppi_auth,real_orders_sent "
+FILE=scripts/v17_rc3_hf6_deploy.py HITS=9
+113:state = dict(connection.execute("""SELECT mode,process_state,session_state,ppi_auth,
+357:introspection = docker("exec", "porota_production_observer", "python",
+358:"/app/ops_introspection_hf4.py", "--enqueue-critical",
+360:if introspection.returncode == 2 or "## CRITICAL" in (introspection.stdout or ""):
+361:raise RuntimeError("HF6_INTROSPECTION_CRITICAL")
+363:runtime["introspection_returncode"] = introspection.returncode
+463:publish_dir = repo / "data/introspection_publish"
+475:"porota-introspection-publish.service", "porota-introspection-publish.timer"):
+488:run(("systemctl", "enable", "--now", "porota-introspection-publish.timer"))
+FILE=t_model_guardian.py HITS=2
+74:notifier.send_telegram(
+85:notifier.send_telegram(
+FILE=u_aiops_watcher.py HITS=2
+34:AIOPS_ALERT_COOLDOWN_SECONDS = int(os.getenv("AIOPS_ALERT_COOLDOWN_SECONDS", "1800"))
+173:time.time() - self._last_alert_epoch >= AIOPS_ALERT_COOLDOWN_SECONDS):
+FILE=v_config_metadata.py HITS=4
+73:("PPI_AUTH_RETRY_COOLDOWN_SECONDS", "Robustez API PPI", "Espera mínima tras un login fallido; compartida por todos los hilos.", "3600", False),
+74:("PPI_RATE_LIMIT_COOLDOWN_SECONDS", "Robustez API PPI", "Espera tras una respuesta 429/cuota excedida.", "3600", False),
+75:("AIOPS_ALERT_COOLDOWN_SECONDS", "AIOps (detección de anomalías)", "Tiempo mínimo entre alertas AIOps equivalentes.", "1800", False),
+114:("CIRCUIT_OPEN_COOLDOWN_SECONDS", "Robustez API PPI", "Segundos que el Circuit Breaker corta llamadas antes de probar de nuevo.", "60", False),
+FILE=w_agent_graph.py HITS=1
+131:# La captura de excepciones/RAG con ChromaDB (m_introspection_engine.py)
+FILE=x_ppi_websocket.py HITS=4
+320:self.notifier.send(
+383:self.notifier.send_telegram(
+457:self.notifier.send_telegram(
+497:self.notifier.send_telegram(
+
+=== DIRECT PPI-AUTH TO NOTIFIER CO-OCCURRENCE ===
+ag_kill_switch_supervisor.py
+c_ppi_client.py
+entrypoint.py
+j_main.py
