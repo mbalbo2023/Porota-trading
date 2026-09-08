@@ -1,0 +1,72 @@
+name: RC6 no Budget permission probe validate v2 2026-09-08
+on:
+  push:
+    branches: [checkpoint/rc6-ppi-dom-api-operability-alerting-20260908]
+    paths: ['.github/workflows/rc6-no-budget-permission-probe-validate-v2-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-no-budget-permission-probe-v2
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch search-only permission evidence
+        run: |
+          set -euo pipefail
+          git checkout -b fix/rc6-no-order-route-permission-probe-20260908
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('m_instrument_universe.py'); s=p.read_text(encoding='utf-8')
+          start=s.index('def detect_account_permissions(ppi_client) -> dict:\n')
+          end=s.index('\n\ndef ',start+10)
+          new='''def detect_account_permissions(ppi_client) -> dict:\n    """Search-only evidence. Never probe Budget/Confirm/Cancel.\n\n    Visibility does not prove broker execution permission; execution remains\n    NOT_PROVEN until separate safe evidence exists.\n    """\n    permisos={}\n    for asset_class,cfg in ALL_TYPES.items():\n        estado={"puede_operar":False,"motivo":"","instrumentos_visibles":0,\n                "estado_verificacion":"EXECUTION_NOT_PROVEN_NO_ORDER_ROUTE_PROBE"}\n        try:\n            resultados=ppi_client.search_instruments(cfg["instrument_type"]) or []\n        except Exception as exc:\n            estado["motivo"]=f"Búsqueda read-only falló: {type(exc).__name__}"\n            estado["estado_verificacion"]="SEARCH_FAILED_EXECUTION_NOT_PROVEN"\n            permisos[asset_class]=estado; continue\n        estado["instrumentos_visibles"]=len(resultados)\n        estado["motivo"]=("Instrumentos visibles por búsqueda read-only; " if resultados else "Sin instrumentos visibles; ")+\n            "ejecución NOT_PROVEN. No se consultó Budget/Confirm/Cancel."\n        permisos[asset_class]=estado\n    return permisos\n'''
+          p.write_text(s[:start]+new+s[end:],encoding='utf-8')
+          PY
+          cat > tests/test_rc6_no_budget_permission_probe.py <<'PY'
+          import m_instrument_universe as universe
+          class Client:
+              def __init__(self): self.calls=[]
+              def search_instruments(self,t): self.calls.append(('search',t)); return [{'ticker':'TEST'}]
+              def budget_order(self,*a,**k): raise AssertionError('NO_BUDGET')
+              def confirm_order(self,*a,**k): raise AssertionError('NO_CONFIRM')
+              def cancel_order(self,*a,**k): raise AssertionError('NO_CANCEL')
+          def test_search_only_fail_closed():
+              c=Client(); r=universe.detect_account_permissions(c)
+              assert r and all(v['puede_operar'] is False for v in r.values())
+              assert all('NOT_PROVEN' in v['estado_verificacion'] for v in r.values())
+              assert c.calls and all(x[0]=='search' for x in c.calls)
+          PY
+      - name: Install project dependencies
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+      - name: Test and static safety gate
+        run: |
+          set -euo pipefail
+          pytest -q tests/test_rc6_no_budget_permission_probe.py tests/test_ppi_documented_contract_v17.py
+          python -m py_compile m_instrument_universe.py j_main.py
+          block=$(sed -n '/def detect_account_permissions/,/^def /p' m_instrument_universe.py)
+          ! grep -q 'budget_order(' <<<"$block"
+          ! grep -q 'confirm_order(' <<<"$block"
+          ! grep -q 'cancel_order(' <<<"$block"
+      - name: Commit tested isolated fix
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add m_instrument_universe.py tests/test_rc6_no_budget_permission_probe.py
+          git commit -m 'fix(rc6): remove order-route permission probing'
+          git push -u origin fix/rc6-no-order-route-permission-probe-20260908
