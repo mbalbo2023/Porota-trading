@@ -1,0 +1,50 @@
+name: RC6 alerting callgraph 2026-09-08
+on:
+  push:
+    branches: [audit/rc6-alerting-callgraph-20260908]
+    paths: ['.github/workflows/rc6-alerting-callgraph-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/rc6-alerting-callgraph-20260908
+          fetch-depth: 0
+      - name: Build static alert callgraph
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          out=['POROTA RC6 — ALERTING CALLGRAPH AUDIT','DATE=2026-09-08','NETWORK_CALLS=NONE','DB_WRITES=NONE','']
+          files=list(Path('.').glob('*.py'))+list(Path('scripts').glob('*.py'))
+          patterns=(r'PPI_AUTH',r'ppi_auth',r'COOLDOWN',r'api_health',r'scan_and_alert',r'log_watch_job',r'introspection',r'notify_critical_event',r'send_telegram',r'notifier\.',r'add_job\(',r'scheduler\.')
+          for p in sorted(files):
+              try: lines=p.read_text(encoding='utf-8',errors='ignore').splitlines()
+              except Exception: continue
+              hits=[]
+              for i,line in enumerate(lines,1):
+                  if any(re.search(q,line,re.I) for q in patterns): hits.append((i,line.strip()))
+              if hits:
+                  out.append(f'FILE={p} HITS={len(hits)}')
+                  for i,line in hits[:240]: out.append(f'{i}:{line[:360]}')
+          out += ['','=== DIRECT PPI-AUTH TO NOTIFIER CO-OCCURRENCE ===']
+          for p in sorted(files):
+              text=p.read_text(encoding='utf-8',errors='ignore')
+              if re.search(r'ppi[_ ]?auth|PPI_PRODUCTION_AUTH|COOLDOWN',text,re.I) and re.search(r'send_telegram|notify_critical_event|notifier\.',text,re.I):
+                  out.append(str(p))
+          Path('POROTA_RC6_ALERTING_CALLGRAPH_2026-09-08.txt').write_text('\n'.join(out)+'\n',encoding='utf-8')
+          PY
+      - name: Commit report
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_ALERTING_CALLGRAPH_2026-09-08.txt
+          git commit -m 'audit(rc6): record alerting callgraph'
+          git push origin HEAD:audit/rc6-alerting-callgraph-20260908
