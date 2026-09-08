@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 import re
 from typing import Iterable, Mapping, Any
+from zoneinfo import ZoneInfo
 
 
 _TICKER_RE = re.compile(r"^(PESOS|DOLAR)([1-9][0-9]*)$")
@@ -12,6 +13,9 @@ _MIN_BY_PREFIX = {
     "PESOS": Decimal("100000"),
     "DOLAR": Decimal("100"),
 }
+_ARGENTINA_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+_MARKET_OPEN = time(10, 30)
+_MARKET_CLOSE = time(17, 0)
 
 
 class CaucionContractError(ValueError):
@@ -31,6 +35,16 @@ class CaucionQuote:
     tna_percent: Decimal
     quantity: Decimal
     side_source: str
+
+
+@dataclass(frozen=True)
+class CaucionCostEstimate:
+    gross_interest: Decimal
+    ppi_commission: Decimal
+    iva_on_ppi_commission: Decimal
+    net_before_market_rights_and_other_taxes: Decimal
+    market_rights_known: bool
+    budget_is_authoritative_for_full_costs: bool
 
 
 def parse_ticker(ticker: str) -> CaucionIdentity:
@@ -89,11 +103,79 @@ def theoretical_liquidity_date(order_load_date: date, ticker: str) -> date:
 
     PPI confirmed the term counts calendar days beginning on the order-load date.
     Therefore Friday + PESOS3 => Monday. This function deliberately performs no
-    holiday/business-day adjustment: PPI did not provide a general rule for a
-    theoretical liquidity date landing outside an operational settlement window.
+    holiday/business-day adjustment: support did not provide a general settlement
+    process rule beyond the confirmed calendar-day convention.
     """
     identity = parse_ticker(ticker)
     return order_load_date + timedelta(days=identity.term_days)
+
+
+def is_same_day_concertation_window(moment: datetime) -> bool:
+    """True only inside the support-confirmed Argentina market window 10:30-17:00.
+
+    PPI support stated that an order loaded inside this window is concerted that
+    day. The boundary is treated as inclusive. This function is only a contract
+    helper and does not imply that an order was accepted or executed.
+    """
+    if moment.tzinfo is None:
+        raise CaucionContractError("moment must be timezone-aware")
+    local = moment.astimezone(_ARGENTINA_TZ).timetz().replace(tzinfo=None)
+    return _MARKET_OPEN <= local <= _MARKET_CLOSE
+
+
+def ppi_annual_commission_percent(ticker: str) -> Decimal | None:
+    """Return exact contractual annual PPI commission when support gave one.
+
+    ARS colocadora: 2% + IVA annual, exact according to support.
+    USD colocadora: 'hasta 1% + IVA anual', so there is no exact single rate to
+    hardcode. Return None for DOLAR to force Budget/account-specific evidence.
+    """
+    identity = parse_ticker(ticker)
+    if identity.currency_prefix == "PESOS":
+        return Decimal("2")
+    return None
+
+
+def estimate_ppi_costs_before_market_rights(
+    ticker: str,
+    capital: Any,
+    tna_percent: Any,
+    *,
+    ppi_commission_annual_percent: Any,
+    iva_percent: Any,
+) -> CaucionCostEstimate:
+    """Estimate PPI commission + IVA using the same Actual/365 term basis.
+
+    Market rights and other market-dependent charges are deliberately excluded:
+    PPI support said they depend on the market and are not exposed as a dedicated
+    field. Order/Budget remains the authoritative pre-order mechanism for the
+    complete budget including commission, rights, taxes and net return.
+    """
+    identity = parse_ticker(ticker)
+    capital_d = validate_amount(ticker, capital)
+    try:
+        commission_pct = Decimal(str(ppi_commission_annual_percent))
+        iva_pct = Decimal(str(iva_percent))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise CaucionContractError("commission and IVA must be numeric") from exc
+    if commission_pct < 0 or iva_pct < 0:
+        raise CaucionContractError("commission and IVA must be non-negative")
+    if identity.currency_prefix == "PESOS" and commission_pct != Decimal("2"):
+        raise CaucionContractError("PESOS colocadora PPI annual commission must be 2 percent")
+    if identity.currency_prefix == "DOLAR" and commission_pct > Decimal("1"):
+        raise CaucionContractError("DOLAR colocadora PPI annual commission cannot exceed 1 percent")
+
+    gross = gross_interest(capital_d, tna_percent, identity.term_days)
+    commission = gross_interest(capital_d, commission_pct, identity.term_days)
+    iva = commission * iva_pct / Decimal("100")
+    return CaucionCostEstimate(
+        gross_interest=gross,
+        ppi_commission=commission,
+        iva_on_ppi_commission=iva,
+        net_before_market_rights_and_other_taxes=gross - commission - iva,
+        market_rights_known=False,
+        budget_is_authoritative_for_full_costs=True,
+    )
 
 
 def placed_side_book_levels(book_payload: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
@@ -138,11 +220,15 @@ __all__ = [
     "CaucionContractError",
     "CaucionIdentity",
     "CaucionQuote",
+    "CaucionCostEstimate",
     "parse_ticker",
     "validate_amount",
     "gross_interest",
     "gross_interest_for_ticker",
     "theoretical_liquidity_date",
+    "is_same_day_concertation_window",
+    "ppi_annual_commission_percent",
+    "estimate_ppi_costs_before_market_rights",
     "placed_side_book_levels",
     "quote_from_book_level",
 ]
