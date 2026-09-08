@@ -1,0 +1,59 @@
+name: RC6 SLA TTL staleness static audit 2026-09-08
+on:
+  push:
+    branches: [checkpoint/rc6-ppi-dom-api-operability-alerting-20260908]
+    paths: ['.github/workflows/rc6-sla-ttl-static-audit-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-sla-ttl-static-audit
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          fetch-depth: 0
+      - name: Inventory timing policies
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          roots=[p for p in list(Path('.').glob('*.py'))+list(Path('scripts').glob('*.py')) if p.is_file()]
+          terms=re.compile(r'(?i)(ttl|stale|staleness|max_staleness|fresh|freshness|interval|seconds|minutes|hours|cadence|retry|background_ingest|contract_evidence)')
+          env=re.compile(r'os\.getenv\(["\']([^"\']*(?:TTL|STALE|FRESH|INTERVAL|SECONDS|MINUTES|HOURS|CADENCE|RETRY)[^"\']*)["\']\s*,\s*["\']?([^"\')]+)')
+          out=['POROTA RC6 — SLA/TTL/STALENESS STATIC AUDIT','DATE=2026-09-08','RUNTIME_MUTATION=NONE','']
+          out.append('=== ENV DEFAULTS ===')
+          vals={}
+          for p in roots:
+            text=p.read_text(encoding='utf-8',errors='ignore')
+            for m in env.finditer(text):
+              vals.setdefault(m.group(1),[]).append((str(p),m.group(2).strip()))
+          for key,rows in sorted(vals.items()):
+            distinct=sorted(set(v for _,v in rows))
+            out.append(f'{key}: DISTINCT_DEFAULTS={distinct}')
+            for p,v in rows: out.append(f'  {p}: {v}')
+          out.append('')
+          out.append('=== TIMING / STALENESS REFERENCES ===')
+          for p in roots:
+            lines=p.read_text(encoding='utf-8',errors='ignore').splitlines()
+            hits=[(i,x.strip()) for i,x in enumerate(lines,1) if terms.search(x)]
+            if hits:
+              out.append(f'FILE={p} HITS={len(hits)}')
+              for i,x in hits[:120]: out.append(f'  {i}:{x[:300]}')
+          Path('POROTA_RC6_SLA_TTL_STALENESS_STATIC_AUDIT_2026-09-08.txt').write_text('\n'.join(out)+'\n',encoding='utf-8')
+          PY
+      - name: Commit report safely
+        run: |
+          set -euo pipefail
+          git pull --rebase origin checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_SLA_TTL_STALENESS_STATIC_AUDIT_2026-09-08.txt
+          git commit -m 'audit(rc6): record SLA TTL staleness inventory'
+          git push origin HEAD:checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
