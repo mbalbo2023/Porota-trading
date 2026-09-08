@@ -1,0 +1,6 @@
+SOURCE_PATH=/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py
+SOURCE_SHA256=ef4ca77d168ee5f41a93b87f1184611433f169e1e2fffa4d3c6c3ebdfad59787
+V3_MARKER=PRESENT
+KNOWN_ABORT_RULES=PRESENT
+SECRET_PATTERN_SCAN=ZERO
+HOST_MUTATION=NONE
