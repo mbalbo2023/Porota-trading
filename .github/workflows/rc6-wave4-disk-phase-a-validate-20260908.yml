@@ -1,0 +1,80 @@
+name: RC6 Wave4 Disk Phase A Validate 2026-09-08
+
+on:
+  push:
+    branches: [integration/rc6-wave4-disk-phase-a-20260908]
+    paths:
+      - 'fa_raw_evidence_store_rc6.py'
+      - '.github/workflows/rc6-wave4-disk-phase-a-validate-20260908.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-wave4-disk-phase-a-validate
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Deployed Wave1B ancestry and diff gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=860b26ca22a73679217e8953207041da2b8afffd
+          git merge-base --is-ancestor "$BASE" HEAD
+          git diff --check "$BASE" HEAD
+          git diff --name-only "$BASE" HEAD | sort > /tmp/changed.txt
+          cat /tmp/changed.txt
+          python - <<'PY'
+          from pathlib import Path
+          got=set(Path('/tmp/changed.txt').read_text().splitlines())
+          allowed={'fa_raw_evidence_store_rc6.py','.github/workflows/rc6-wave4-disk-phase-a-validate-20260908.yml'}
+          assert got <= allowed, sorted(got-allowed)
+          assert 'fa_raw_evidence_store_rc6.py' in got
+          print('WAVE4_PHASEA_DIFF_SCOPE=GREEN')
+          PY
+      - name: Compile
+        run: python -m py_compile fa_raw_evidence_store_rc6.py
+      - name: Pure storage behavior tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,tempfile
+          from pathlib import Path
+          import fa_raw_evidence_store_rc6 as m
+          root=Path(tempfile.mkdtemp())
+          env={'PPI_HISTORY_RAW_STORAGE_MODE':'EXTERNAL_V1','PPI_HISTORY_COORDINATOR_MODE':'EXTERNAL_V1','PPI_HISTORY_EVIDENCE_ROOT':str(root)}
+          wrapper={'symbol':'GGAL','asset_class':'ACCIONES','settlement':'A-48HS','payload_json':json.dumps([{'date':'2026-09-01','close':1.0}]),'valid_rows':1}
+          r1=m.archive_ppi_history_wrapper(row_key='k1',wrapper=wrapper,recorded_at='2026-09-08T21:00:00+00:00',quality='VALID',environ=env)
+          r2=m.archive_ppi_history_wrapper(row_key='k2',wrapper=wrapper,recorded_at='2026-09-08T21:01:00+00:00',quality='VALID',environ=env)
+          assert r1.raw_sha256==r2.raw_sha256
+          assert r1.object_created is True and r2.object_created is False
+          metrics=m.manifest_metrics(environ=env)
+          assert metrics['attempts']==2 and metrics['unique_raw_objects']==1
+          with m.ppi_history_ingest_lease(environ=env) as lease:
+              assert lease.acquired
+          print('PHASEA_CONTENT_ADDRESSING=GREEN')
+          print('PHASEA_DEDUPE=GREEN')
+          print('PHASEA_LEASE=GREEN')
+          PY
+      - name: Safety invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Eri 'ppi_client|requests\.|urllib|budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' fa_raw_evidence_store_rc6.py
+          ! grep -Eri 'unlink\(|rmtree|remove\(|vacuum|docker system prune' fa_raw_evidence_store_rc6.py
+          echo 'LEGACY_DELETE=NO'
+          echo 'RAW_STORE_DEFAULT_MODE=LEGACY_OFF'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ROLLBACK_AUTOMATICO=NO'
+          echo 'WAVE4_PHASEA_VALIDATE=GREEN'
