@@ -1,0 +1,1012 @@
+POROTA RC6 — SLA/TTL/CADENCE INVENTORY
+DATE=2026-09-08
+NETWORK_CALLS=NONE
+DB_WRITES=NONE
+
+FILE=.env.example HITS=25
+124:MACRO_CONFIG_MAX_AGE_DAYS=45
+127:MACRO_CONFIG_STALE_FALLBACK_PCT=8.0
+131:MACRO_REFRESH_HOURS=12
+165:POLL_CONFIRMATIONS_INTERVAL_SECONDS=4
+171:PARTIAL_FILL_POLL_INTERVAL_SECONDS=2
+186:SCALPING_SCAN_INTERVAL_SECONDS=10
+278:CSRF_TOKEN_MAX_AGE_SECONDS=900
+284:NEWS_MAX_AGE_SECONDS=21600
+326:BACKUP_MAX_AGE_HOURS_WARN=26
+356:PPI_STREAM_MAX_TICK_AGE_SECONDS=5
+359:PPI_STREAM_STALE_ALERT_SECONDS=120
+365:PPI_STREAM_WATCHDOG_INTERVAL_SECONDS=60
+389:RESTART_CHECK_INTERVAL_SECONDS=30
+392:ACTIVITY_LOCK_MAX_AGE_SECONDS=300
+401:LOG_WATCH_INTERVAL_MINUTES=30
+419:AIOPS_POLL_INTERVAL_SECONDS=60
+428:AIOPS_RETRAIN_EVERY_N_SAMPLES=200
+498:MACRO_CACHE_MAX_AGE_HOURS=36
+570:SRE_CONFIRM_TTL_SECONDS=900
+588:TELEGRAM_CONFIRM_TTL_SECONDS=300
+753:PAPER_OBSERVER_INTERVAL_SECONDS=60
+779:PAPER_BOOK_MAX_AGE_SECONDS=120
+780:PAPER_TRADE_MAX_AGE_SECONDS=900
+810:PPI_BACKGROUND_INGEST_SECONDS=21600
+811:DASHBOARD_REFRESH_SECONDS=30
+FILE=aa_env_guard.py HITS=3
+85:ACTIVITY_LOCK_MAX_AGE_SECONDS = int(os.getenv("ACTIVITY_LOCK_MAX_AGE_SECONDS", "300"))
+250:cutoff = time.time() - ACTIVITY_LOCK_MAX_AGE_SECONDS
+263:locks = _fresh_locks()
+FILE=ab_log_watch.py HITS=3
+25:1) VIGILANCIA CONTINUA (scan_and_alert, cada LOG_WATCH_INTERVAL_MINUTES):
+72:LOG_WATCH_INTERVAL_MINUTES = int(os.getenv("LOG_WATCH_INTERVAL_MINUTES", "30"))
+303:edad_tick = estado_ws.get("last_tick_age_seconds")
+FILE=ad_macro_history.py HITS=4
+86:MACRO_REFRESH_HOURS = float(os.getenv("MACRO_REFRESH_HOURS", "12"))
+154:return (datetime.now() - ultimo) > timedelta(hours=MACRO_REFRESH_HOURS)
+329:def refresh(force: bool = False) -> dict:
+484:print(json.dumps(refresh(force=True), indent=2, ensure_ascii=False))
+FILE=ae_ppi_api_watch.py HITS=2
+67:CHECK_INTERVAL_HOURS = float(os.getenv("PPI_API_WATCH_INTERVAL_HOURS", "12"))
+297:self._stop.wait(CHECK_INTERVAL_HOURS * 3600)
+FILE=ag_kill_switch_supervisor.py HITS=2
+106:CHECK_INTERVAL_SECONDS = float(os.getenv("KILL_SWITCH_CHECK_INTERVAL", "300"))
+227:settlement=settle or "A-24HS")
+FILE=ah_market_tools.py HITS=9
+65:TICK_MAX_AGE_SECONDS = float(os.getenv("STREAM_TICK_MAX_AGE_SECONDS", "30"))
+94:tick = ws.get_cached_price(ticker, instrument_type, settlement)
+98:if not 0 <= edad <= TICK_MAX_AGE_SECONDS:
+112:settlement: str = "A-24HS") -> Dict[str, Any]:
+117:desde_stream = _desde_stream(ticker, instrument_type, settlement)
+121:datos = _ppi_client.get_market_data(ticker, instrument_type, settlement)
+187:settlement: str = "A-24HS") -> dict:
+196:settlement: plazo de liquidación (A-24HS, INMEDIATA, A-48HS).
+201:datos = obtener_datos_ppi(ticker, instrument_type, settlement)
+FILE=aj_trade_gate.py HITS=1
+82:MACRO_CACHE_MAX_AGE_HOURS = int(os.getenv("MACRO_CACHE_MAX_AGE_HOURS", "36"))
+FILE=ak_iol_client.py HITS=4
+64:TOKEN_REFRESH_MARGIN_SECONDS = 120
+79:self._refresh_token: Optional[str] = None
+98:payload = {"refresh_token": self._refresh_token, "grant_type": "refresh_token"}
+137:self._refresh_token = data.get("refresh_token") or self._refresh_token
+FILE=am_api_health.py HITS=5
+113:rest_age = runtime_status.age_seconds(rest_event.get("timestamp"))
+114:auth_age = runtime_status.age_seconds(event.get("timestamp"))
+143:age = runtime_status.age_seconds(event.get("timestamp"))
+164:age = runtime_status.age_seconds(report.get("mtime"))
+186:latest_age = runtime_status.age_seconds(latest.get("timestamp"))
+FILE=an_sre_deploy.py HITS=2
+78:CONFIRM_TOKEN_TTL_SECONDS = int(os.getenv("SRE_CONFIRM_TTL_SECONDS", "900"))
+449:f"El código vence en {CONFIRM_TOKEN_TTL_SECONDS // 60} minutos.")
+FILE=ao_startup_gate.py HITS=1
+376:settlement: Optional[str] = None) -> Optional[dict]:
+FILE=ap_api_verifier.py HITS=4
+154:espera="access_token, refresh_token y expires_in (1200 s).",
+242:espera="accessToken con su vencimiento y refreshToken.",
+320:operation="COMPRA", settlement="A-24HS", external_id=external_id,
+555:modulo_del_bot="ad_macro_history.refresh()",
+FILE=ar_telegram_commands.py HITS=5
+57:CONFIRM_TTL_SECONDS = int(os.getenv("TELEGRAM_CONFIRM_TTL_SECONDS", "300"))
+141:posicion.get("settlement", "A-24HS"))
+228:f"_El código vence en {CONFIRM_TTL_SECONDS // 60} minutos._")
+366:posicion.get("settlement", "A-24HS"))
+637:if time.time() - dato[1] > CONFIRM_TTL_SECONDS:
+FILE=as_greeks_engine.py HITS=1
+164:dentro del intervalo. Con cien iteraciones sobre un rango de 1% a 600%, la
+FILE=au_fee_schedule.py HITS=2
+326:settlement: str = "A-24HS") -> dict:
+348:settlement=settlement)
+FILE=ay_dashboard_auth.py HITS=1
+69:COOKIE_MAX_AGE_SECONDS = (400 * 24 * 3600 if SESION_SIN_VENCIMIENTO
+FILE=az_maintenance_job.py HITS=5
+44:elif job_name == "macro_refresh":
+47:elif job_name == "historical_refresh":
+49:ba_data912_history.refresh()
+50:elif job_name == "historical_refresh_if_needed":
+57:ba_data912_history.refresh()
+FILE=az_maintenance_scheduler.py HITS=7
+54:scheduler.add_job(_run_job, "cron", id="maintenance_macro_refresh",
+55:hour=2, minute=30, args=["macro_refresh"])
+60:args=["historical_refresh_if_needed"])
+61:scheduler.add_job(_run_job, "cron", id="maintenance_historical_refresh",
+63:args=["historical_refresh"])
+72:scheduler.add_job(_run_job, "interval", id="maintenance_news_scan",
+76:args=["historical_refresh_if_needed"])
+FILE=ba_data912_history.py HITS=8
+33:DATA912_REFRESH_ENABLED = os.getenv("DATA912_REFRESH_ENABLED", "true").lower() == "true"
+38:STATE_PATH = os.getenv("DATA912_STATE_PATH", "./data/data912_refresh_state.json")
+138:canonical store before calling the legacy UPSERT, so Data912 can refresh
+180:def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
+186:if not DATA912_REFRESH_ENABLED:
+187:return {"ok": False, "disabled": True, "reason": "DATA912_REFRESH_ENABLED=false"}
+279:if not DATA912_REFRESH_ENABLED:
+280:return {"ok": False, "disabled": True, "reason": "DATA912_REFRESH_ENABLED=false",
+FILE=bb_runtime_status.py HITS=5
+22:BOT_HEARTBEAT_STALE_SECONDS = int(os.getenv("BOT_HEARTBEAT_STALE_SECONDS", "120"))
+70:age = age_seconds(state.get("updated_at"))
+72:state["age_seconds"] = age
+74:and age <= BOT_HEARTBEAT_STALE_SECONDS)
+76:state["state"] = "STALE"
+FILE=bc_dashboard_v163.py HITS=1
+190:<meta http-equiv='refresh' content='10'><title>Telegram</title><style>
+FILE=bd_ppi_readonly_guard.py HITS=2
+24:"/api/1.0/account/refreshtoken",
+30:"/api/1.0/configuration/settlements",
+FILE=be_paper_engine.py HITS=28
+65:def time_error(self, as_of, *, require_trade=False, max_age_seconds=120,
+66:max_trade_age_seconds=None):
+75:if not 0 <= (at - received).total_seconds() <= max_age_seconds:
+77:fields = [(self.book_at, "BOOK", max_age_seconds)]
+262:AND settlement=? ORDER BY id DESC LIMIT 1""",
+283:WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
+303:def prices(self, symbol: str, limit=30, *, asset_class=None, settlement=None, currency=None, market=None):
+309:filters.append("settlement=?")
+436:quote_max_age_seconds=120, trade_max_age_seconds=900,
+468:self.quote_max_age_seconds = quote_max_age_seconds
+469:self.trade_max_age_seconds = trade_max_age_seconds
+512:max_age_seconds=self.quote_max_age_seconds,
+513:max_trade_age_seconds=self.trade_max_age_seconds)
+626:def settle_cauciones(self, as_of=None):
+734:key = f"{STRATEGY_VERSION}:{q.symbol}:{q.asset_class}:{q.settlement}:{q.currency}:{q.market}:{bucket}:{action}"
+850:if ((spec.symbol, spec.family, spec.settlement) != (q.symbol, family, q.settlement)
+1051:if q.time_error(at, max_age_seconds=self.quote_max_age_seconds):
+1055:if (p['symbol'],p['asset_class'],p['settlement']) != (q.symbol,q.asset_class,q.settlement):
+1063:q.contract.symbol != q.symbol or q.contract.settlement != q.settlement or
+1075:if q.time_error(at,max_age_seconds=self.quote_max_age_seconds):
+1083:if any(root[k]!=p[k] for k in ('symbol','asset_class','settlement','currency','market','features_json')):
+1143:available = modeled_sale_settlement(p['settlement'],at)
+1149:record_sale(c,p['paper_id'],p['settlement'],at,proceeds,currency=p['currency'])
+1202:stale = 0
+1204:q = (quotes.get((p["symbol"], p["asset_class"], p["settlement"], currency, p["market"]))
+1212:(q.symbol, q.asset_class, q.settlement) == (p["symbol"], p["asset_class"], p["settlement"]) and D(q.bid) > 0 and not q.time_error(measured_at, max_age_seconds=self.quote_max_age_seconds))
+1223:stale += 1
+1237:quality[currency] = ("STALE_MARKS" if stale else "CURRENT", stale)
+FILE=bf_production_paper_observer.py HITS=44
+33:INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
+37:BACKGROUND_INGEST_SECONDS = max(
+38:3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
+118:SETTLEMENT_BY_TYPE = {
+169:rows = {(ticker, kind, settlement, "BYMA", True)
+177:settlement = str(block.get("settlement") or SETTLEMENT_BY_TYPE.get(kind, "A-24HS"))
+186:rows.add((ticker, kind, SETTLEMENT_BY_TYPE.get(kind, "A-24HS"),
+238:def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=None):
+426:record = financial_catalog.normalize_record(raw, fallback_settlement, downloaded, run_id)
+434:key = tuple(record[k] for k in ("ticker", "instrument_type", "market", "currency", "settlement"))
+454:c.execute("UPDATE financial_instrument_catalog SET status='STALE'")
+455:c.execute("UPDATE candidate_universe SET status='STALE',can_simulate=0")
+495:rows = c.execute("""SELECT DISTINCT ticker,instrument_type,settlement FROM financial_instrument_catalog
+496:WHERE status='AVAILABLE' ORDER BY instrument_type,ticker,settlement""").fetchall()
+498:rows = c.execute("""SELECT ticker,instrument_type,settlement FROM candidate_universe
+543:rows = c.execute(f"""SELECT ticker,instrument_type,settlement,status,capability
+547:identity = (ticker, kind, settlement)
+555:rows = c.execute(f"""SELECT ticker,instrument_type,settlement,status,can_simulate,detail
+559:identity = (ticker, kind, settlement)
+617:opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
+651:cycle_seconds = INTERVAL + max(0, selected_count) * 2 * PPI_CALL_BUDGET_SECONDS
+824:rows = c.execute("""SELECT u.ticker,u.instrument_type,u.settlement,
+827:AND h.instrument_type=u.instrument_type AND h.settlement=u.settlement
+829:AND a.instrument_type=u.instrument_type AND a.settlement=u.settlement
+849:payload = reader.history(symbol, instrument_type, settlement, start, end)
+853:metadata = financial_catalog.lookup(store,symbol,instrument_type,settlement)
+858:archive_raw(c,origin='PPI_HISTORY',row_key=canonical([symbol,instrument_type,settlement,attempted]),
+859:payload={'symbol':symbol,'asset_class':instrument_type,'settlement':settlement,
+881:market=market, settlement=settlement, payload=payload,
+900:(symbol,instrument_type,settlement,attempted,'ERROR',0,type(exc).__name__))
+940:def _background_ingest_due(store, now=None):
+952:return (now - last.astimezone(TZ)).total_seconds() >= BACKGROUND_INGEST_SECONDS
+957:def _background_ingest(reader, store, *, force=False):
+969:f"próximo intento no antes de {BACKGROUND_INGEST_SECONDS // 3600} h. "
+1179:lambda: reader.current(symbol, asset_class, settlement), retries=1)
+1181:lambda: reader.book(symbol, asset_class, settlement), retries=1)
+1182:metadata = financial_catalog.lookup(store, symbol, asset_class, settlement)
+1183:q = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+1185:quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
+1195:max_age_seconds=broker.quote_max_age_seconds,
+1196:max_trade_age_seconds=broker.trade_max_age_seconds)
+1220:"VERDE" if latency < INTERVAL * 500 else "AMARILLO",
+1224:avg_seconds = (statistics.fmean(latencies) / 1000) if latencies else INTERVAL
+1225:budget = max(1.0, INTERVAL * 0.75)
+FILE=bg_paper_dashboard.py HITS=105
+30:from ek_history_freshness_metrics_rc5 import freshness_qualified_metrics
+61:REFRESH_SECONDS = max(0, int(os.getenv("DASHBOARD_REFRESH_SECONDS", "30")))
+269:def _fresh(value, seconds=180):
+283:refresh_text = (f"Actualización parcial: cada {REFRESH_SECONDS} s; conserva detalles y foco."
+298:content = re.sub(r"<meta[^>]+http-equiv=['\"]refresh['\"][^>]*>", "", content,
+305:def _document(title, body, refresh=REFRESH_SECONDS):
+306:interval = min(REFRESH_SECONDS, int(refresh or REFRESH_SECONDS)) if REFRESH_SECONDS else 0
+310:const seconds={interval};
+342:window.setInterval(refreshPorota,seconds*1000);
+343:window.refreshPorota=refreshPorota;
+346:"href='javascript:window.refreshPorota?window.refreshPorota():location.reload()' id='actualizar-pagina'>"
+360:content = _dedupe_refresh(content)
+384:GROUP BY symbol,asset_class,settlement{identity_extra}) x ON x.id=s.id
+421:state = 'STALE'
+452:state = "STALE"
+460:reader_state = "STALE"
+722:add("PPI Producción — ingesta histórica 24x7", "PPI_BACKGROUND_INGEST", "SIMULACIÓN PRODUCTIVA",
+848:heartbeat_ok = _fresh(state.get("heartbeat_at"), 180)
+907:_card("Motor paper", state.get("process_state"), state.get("detail"), "green" if _fresh(state.get("heartbeat_at"),180) else "red"),
+986:state="STALE"
+990:confirmed=(_rows("SELECT COUNT(*) n FROM ppi_intraday_contract_state WHERE state='CONFIRMED_INTERVAL_VOLUME'") or [{"n":0}])[0]["n"] if _table("ppi_intraday_contract_state") else 0
+991:contract_rows=_rows("""SELECT symbol,asset_class,market,currency,settlement,state,observations,
+1031:return _document("Scalping",body,refresh=30)
+1052:FROM market_snapshots WHERE symbol=? AND asset_class=? AND settlement=?
+1061:def _mark_freshness(mark, now=None):
+1066:return ("FRESH" if 0<=age<=120 else "STALE",age)
+1195:cadence = {
+1196:"PPI_BACKGROUND_INGEST": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+1197:"PPI_PRODUCTION_HISTORY": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+1200:"FINANCIAL_REFRESH": 43200,
+1211:due=dt.astimezone(TZ)+timedelta(seconds=cadence)
+1221:cadence = {
+1222:"PPI_BACKGROUND_INGEST": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+1223:"PPI_PRODUCTION_HISTORY": int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200")),
+1226:"FINANCIAL_REFRESH": 43200,
+1234:expected=cadence.get(str(item.get('key') or item.get('component') or item.get('name') or ''))
+1237:age=info.get('age_seconds')
+1247:if raw_state == 'AMARILLO' and key in {'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST'}:
+1271:neutral_partial_keys={'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST','PAPER_SIGNAL_ROTATION',
+1293:return _document("Salud de APIs", body, refresh=60)
+1319:fresh_v5=freshness_qualified_metrics(c)
+1321:fresh_v5={"available":False,"reason":type(exc).__name__,"target_total":0,
+1322:"fresh_total":0,"fresh_ge30":0,"fresh_ge90":0,"fresh_ge180":0,
+1323:"stale_ge90_count":0,"store_latest_date":None}
+1343:f"{fresh_v5.get('fresh_ge30',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
+1344:f"FULL_OHLC · última fecha store {_e(fresh_v5.get('store_latest_date'))} · no implica READY PAPER",
+1345:"green" if fresh_v5.get('available') else "yellow"),
+1347:f"{fresh_v5.get('fresh_ge90',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
+1348:f"FULL_OHLC + freshness ≤2 ruedas · stale ≥90: {fresh_v5.get('stale_ge90_count',0)}",
+1349:"green" if fresh_v5.get('available') else "yellow"),
+1351:f"{fresh_v5.get('fresh_ge180',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
+1353:"green" if fresh_v5.get('available') else "yellow"),
+1355:f"capa {store_v2.get('layer','V2')} · {store_v2.get('reason','OK')} · ANY no equivale a fresh",
+1364:if raw=='AMARILLO' and source in {'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST'}:
+1382:freshness_notice=(
+1383:"<div class='paper-notice'><b>Profundidad y freshness son métricas distintas.</b> "
+1384:f"Fresh FULL_OHLC: ≥30 {fresh_v5.get('fresh_ge30',0)}, ≥90 {fresh_v5.get('fresh_ge90',0)}, "
+1385:f"≥180 {fresh_v5.get('fresh_ge180',0)} de {fresh_v5.get('target_total') or history_target or '—'} identidades. "
+1386:f"Hay {fresh_v5.get('stale_ge90_count',0)} identidades con al menos 90 barras pero historia stale; no cuentan como fresh ≥90. "
+1389:body=f"<h1>Históricos y universo</h1><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada tr
+1390:return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
+1426:state='STALE'
+1559:return _document("Información financiera",_spot_warning(spot["state"])+body,refresh=300)
+1573:return _document("Reportes",body,refresh=300)
+1605:_card("Duración p95 del ciclo",f"{p95:.2f} s","Presupuesto: 75% del intervalo","green" if p95<REFRESH_SECONDS*.75 else "red"),
+1629:return _document("SRE",f"<h1>SRE e infraestructura</h1>{nav}{content}",refresh=60)
+1641:worker_state='STALE'
+1652:return _document("Telegram",body,refresh=60)
+1675:freshness,age=_mark_freshness(mark,now)
+1751:settlement_diag_html=""
+1753:import cr_pending_settlement_diagnostics_hf6 as settlement_diag
+1756:diag=settlement_diag.snapshot(_SettlementStore(),as_of=now.isoformat())
+1762:int(counts.get('AVAILABLE_AFTER_FULL_SETTLEMENT_DATE',0) or 0))
+1771:settlement_diag_html=(
+1785:settlement_diag_html=("<div class='paper-card'><h2>Liquidaciones pendientes</h2>"
+1814:"<div class='paper-card'><h2>1. Operaciones abiertas ahora</h2><p class='paper-muted'>P&amp;L, marca y freshness visibles; abrir la flecha para gates y variables.</p>"+
+1831:return _document("En vivo",body,refresh=0)
+1835:from cp_contract_evidence_v2_hf6 import normalize_family
+1845:if _table('contract_evidence_v2_current'):
+1846:for r in _rows('SELECT family,COUNT(*) n,MAX(observed_at) observed_at FROM contract_evidence_v2_current GROUP BY family'):
+1851:if _table('contract_evidence_v2_changes'):
+1852:for r in _rows("SELECT family,COUNT(*) n FROM contract_evidence_v2_changes WHERE status='CHANGED_REVIEW_REQUIRED' GROUP BY family"):
+1920:return _document('Trading — Estrategias',body,refresh=30)
+1932:return _document('Trading — '+title,body,refresh=30)
+1953:return _document('Trading',body,refresh=30)
+1973:return _document('Instrumentos y contratos',body,refresh=60)
+2027:snapshot_freshness="FRESH"
+2033:snapshot_freshness="STALE"
+2035:snapshot_freshness="UNKNOWN"
+2038:snapshot_freshness="SUPERSEDED_BY_LIVE_STATE"
+2039:display_observer=live_state if snapshot_freshness in {"STALE","SUPERSEDED_BY_LIVE_STATE","UNKNOWN"} else observer
+2105:freshness_note=("<div class='paper-warning'><b>Snapshot de introspección no vigente:</b> "
+2106:f"{_e(snapshot_freshness)} · edad {_e('s/d' if snapshot_age is None else f'{snapshot_age:.0f} s')}. "
+2108:if snapshot_freshness!='FRESH' else "")
+2171:if _table('contract_evidence_v2_runs'):
+2172:contract_runs=_rows('SELECT job_key,started_at,finished_at,state,detail FROM contract_evidence_v2_runs ORDER BY started_at DESC')
+2174:contract_runs=_rows("SELECT 'CONTRACT_EVIDENCE_DYNAMIC' job_key,started_at,finished_at,'OK' state,detail FROM contract_evidence_runs ORDER BY started_at DESC")
+2236:if _table('contract_evidence_v2_runs'):
+2237:rows=_rows("SELECT * FROM contract_evidence_v2_runs ORDER BY started_at DESC LIMIT 50")
+2240:legacy=_rows("SELECT * FROM contract_evidence_runs ORDER BY started_at DESC LIMIT 20")
+2309:return _document('Validación',body,refresh=60)
+2333:return _document("Sistema", body, refresh=30 if section in {"introspeccion","scheduler"} else 60)
+2362:return _document("Configuración",body,refresh=60)
+2387:return _document("Logs",body,refresh=30)
+2470:return HTMLResponse(_dedupe_refresh(content),status_code=response.status_code,headers=headers)
+FILE=bh_universe_dashboard_hf6.py HITS=1
+746:refresh=60,
+FILE=bi_operational_services.py HITS=10
+291:def refresh_financial(store, timeout=10):
+294:if not _job_due(store, "FINANCIAL_REFRESH", 12 * 3600):
+329:_job(store, "FINANCIAL_REFRESH", state, detail, success=bool(successes))
+347:def refresh_news(store, timeout=8):
+349:if not _job_due(store, "NEWS_REFRESH", 45 * 60):
+411:if aware_datetime(start)<=aware_datetime(p['settled_at'])<aware_datetime(end)]
+608:UNION SELECT date(settled_at,'-3 hours') day FROM paper_cauciones WHERE status='MATURED'
+691:if force or _job_due(store, "FINANCIAL_REFRESH", 12 * 3600):
+694:if news_enabled and (force or _job_due(store, "NEWS_REFRESH", 45 * 60)):
+696:elif not news_enabled and (force or _job_due(store, "NEWS_REFRESH", 12 * 3600)):
+FILE=bl_candle_engine.py HITS=3
+20:SERIES_FIELDS = ('symbol','asset_class','market','currency','settlement','resolution',
+269:if not row['market'] or row['market']=='UNKNOWN' or not row['settlement']:
+272:series=Series(row['symbol'],row['asset_class'],row['market'],currency,row['settlement'],
+FILE=bm_exit_supervisor.py HITS=8
+139:if ((q.symbol,q.asset_class,q.settlement,*identity) !=
+142:error = q.time_error(at, max_age_seconds=self.broker.quote_max_age_seconds)
+186:settlement_error = ''
+192:settlement_error = 'CAUCION_SETTLEMENT_BLOCKED; requiere conciliación. '
+198:settlement_error += f'SPOT_LEDGER_BLOCKED; {len(invalid)} abiertas requieren conciliación. '
+202:key = tuple(p[k] for k in ("symbol","asset_class","settlement","currency","market"))
+209:self.heartbeat(at,state='DEGRADED' if settlement_error else 'RUNNING',
+210:detail=settlement_error+f"{len(verdicts)} posiciones supervisadas; sin red ni IA")
+FILE=bo_signal_core.py HITS=1
+97:if (aware_datetime(at) - aware_datetime(expected[-1][1])).total_seconds() > config.maximum_bar_age_seconds:
+FILE=bq_exit_policy.py HITS=1
+44:and get("settlement") in {"INMEDIATA", "A-24HS", "CI", "24HS", "T+0", "T+1"})
+FILE=br_backtest_gate.py HITS=1
+41:if any(getattr(series,key)=='UNKNOWN' for key in ('asset_class','market','currency','settlement','source','adjustment','adjustment_basis','cash_multiplier')):
+FILE=bs_instrument_contracts.py HITS=2
+152:def daily_variation(self, previous_settlement, settlement_price, quantity, *, side="LONG"):
+155:return self.pnl(previous_settlement, settlement_price, quantity, side=side)
+FILE=bt_caucion_paper.py HITS=16
+95:def record_sale(c, paper_id, settlement, traded_at, net_proceeds, currency="ARS"):
+97:available = modeled_sale_settlement(settlement, traded_at)
+129:available = validated_sale_settlement(row['settlement'],row['closed_at'],
+241:settled = aware_datetime(p['settled_at']) if p['settled_at'] is not None else None
+245:or (p['status']=='MATURED')!=(settled is not None)
+286:settled = aware_datetime(p['settled_at']) if p['settled_at'] else None
+287:if (p['status'] not in {'OPEN','MATURED'} or (p['status']=='MATURED') != bool(settled)
+288:or maturity <= opened or (settled and settled < maturity)):
+290:return 'FUTURE' if opened > at else 'MATURED' if settled and settled <= at else 'OPEN'
+330:participation=Decimal("0.10"), max_quote_age_seconds=60, admission=None, connection=None):
+335:participation=participation,max_quote_age_seconds=max_quote_age_seconds,
+338:participation=participation,max_quote_age_seconds=max_quote_age_seconds,
+347:max_quote_age_seconds = decimal_value(max_quote_age_seconds, 'antigüedad de caución', nonnegative=True)
+363:if age < 0 or age > max_quote_age_seconds:
+398:settled = []
+405:c.execute("UPDATE paper_cauciones SET status='MATURED',settled_at=? WHERE paper_id=? AND status='OPEN'",
+FILE=bu_instrument_catalog.py HITS=10
+64:record = normalize_record(json.loads(row["raw_json"]), row["settlement"], row["downloaded_at"], "LEGACY_CATALOG")
+67:record["status"] = "STALE"
+77:names = {'instrument_types', 'markets', 'settlements', 'quantity_types',
+135:settlement = str(raw.get("settlement") or settlement_hint)
+137:settlement=settlement, settlement_source="PPI_FIELD" if raw.get("settlement") else "REQUEST_CANDIDATE",
+151:if (spec.currency, spec.market, spec.settlement) != (record["currency"], record["market"], record["settlement"]):
+158:record["settlement"], Decimal(1), Decimal(1),
+190:WHERE ticker=? AND instrument_type=? AND settlement=?""", (symbol, kind, settlement)).fetchall()
+199:record = normalize_record(json.loads(row["raw_json"]), settlement, row["downloaded_at"], "LEGACY_CATALOG")
+203:record["status"] = "STALE"
+FILE=bv_paper_runtime.py HITS=6
+38:quote_max_age_seconds=int(os.getenv("PAPER_BOOK_MAX_AGE_SECONDS", "120")),
+39:trade_max_age_seconds=int(os.getenv("PAPER_TRADE_MAX_AGE_SECONDS", "900")),
+86:def run_clock(store, children, stop, *, clock_fn=now_iso, interval=5):
+126:p["symbol"],p["asset_class"],p["settlement"]), retries=1)
+127:metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"])
+128:q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,metadata=metadata)
+FILE=bw_daily_risk.py HITS=6
+45:if p['settled_at'] and aware_datetime(p['settled_at']) <= at:
+112:carry, stale = False, False
+135:(q.symbol,q.asset_class,q.settlement)==(p['symbol'],p['asset_class'],p['settlement']) and
+136:not q.time_error(at,max_age_seconds=self.broker.quote_max_age_seconds) and
+141:stale = True
+177:state, detail = 'STALE_MARKS', 'Faltan libros vigentes; PnL diario actual desconocido'
+FILE=bx_execution_replay.py HITS=7
+84:if self.maximum_book_age_seconds <= 0:
+120:event, received, due = map(aware_datetime, (self.book_at, self.received_at, self.settlement_at))
+176:identity = (series.symbol, series.asset_class, series.market, series.currency, series.settlement)
+245:content['settlement_at'] = stamp(book.settlement_at)
+277:quality, value = 'STALE_MARKS', None
+308:stale = (at - aware_datetime(book.book_at)).total_seconds() > float(self.assumptions.maximum_book_age_seconds)
+397:view = deepcopy({'at': stamp(at), 'book': book, 'book_usable': not stale and not older and book.session_open,
+FILE=by_strategy_backtest.py HITS=2
+77:submitted_at=stamp(at), expires_at=stamp(at + timedelta(seconds=self.config.order_ttl_seconds)),
+107:stamp(at + timedelta(seconds=self.config.order_ttl_seconds)), 'BUY', signal['quantity'],
+FILE=bz_replay_risk.py HITS=1
+74:state = 'LATCHED' if record['latched_at'] else 'READY' if equity is not None else 'STALE_MARKS'
+FILE=c_ppi_client.py HITS=34
+38:settlement: "INMEDIATA", "A-24HS", "A-48HS", "A-72HS"
+85:def _market_snapshot(data, ticker, instrument_type, settlement, *, is_book=False):
+105:result = dict(data, ticker=ticker, instrument_type=instrument_type, settlement=settlement,
+252:_MIN_INTERVAL_SECONDS = 1.0 / PPI_MAX_REQUESTS_PER_SECOND
+254:_throttle_lock = threading.Lock()  # v10.0: ahora hay concurrencia real (hilo de
+280:wait = _MIN_INTERVAL_SECONDS - elapsed
+299:"CEDEARS":  {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+300:"ACCIONES": {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+301:"BONOS":    {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+302:"ETF":      {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+303:"LETRAS":  {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+304:"NOBAC":   {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+305:"LEBAC":   {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+306:"ON":      {"quantity_type": "PAPELES", "settlement_default": "A-24HS"},
+332:operation=str(operation).strip().upper(),settlement=str(settlement).strip().upper())
+343:'operation':{'COMPRA','VENTA'},'settlement':{'INMEDIATA','A-24HS','A-48HS','A-72HS'}}
+438:self.TOKEN_TTL_MINUTES = float(os.getenv("PPI_TOKEN_TTL_MINUTES", "55"))
+439:self.TOKEN_REFRESH_MARGIN_MINUTES = float(os.getenv("PPI_TOKEN_REFRESH_MARGIN_MINUTES", "5"))
+740:settlement: str = "A-24HS", external_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+757:cotizacion = self.get_market_data(ticker, instrument_type, settlement)
+764:term="POR-EL-DIA", operation="VENTA", settlement=settlement,
+774:settlement=settlement, external_id=external_id,
+981:settlement: str = "A-24HS",
+996:cached = ppi_ws.get_cached_price(ticker, instrument_type, settlement)
+1010:data = self.client.marketdata.current(ticker, instrument_type, settlement)
+1020:ticker,instrument_type,settlement,is_book=True),
+1025:fallback_settlement: str = "A-48HS") -> Optional[Dict[str, Any]]:
+1031:book = self.get_book(ticker, instrument_type, primary_settlement)
+1032:return dict(book,settlement_used=primary_settlement) if book is not None else None
+1146:settlement: str = "A-24HS", quantity_type: Optional[str] = None,
+1157:params = _order_terms(instrument_type,quantity_type,order_type,term,operation,settlement,operation_max_date)
+1166:operation: str = "COMPRA", settlement: str = "A-24HS",
+1181:terms = _order_terms(instrument_type,quantity_type,order_type,term,operation,settlement,operation_max_date)
+1221:params = _order_terms(instrument_type,quantity_type,order_type,term,operation,settlement,operation_max_date)
+FILE=ca_caucion_allocator.py HITS=2
+131:if not 0 <= age <= policy.maximum_quote_age_seconds:
+219:max_quote_age_seconds=policy.maximum_quote_age_seconds,
+FILE=cb_caucion_audit.py HITS=3
+108:_require((placement['status'] == 'OPEN' and placement['settled_at'] is None)
+109:or (placement['status'] == 'MATURED' and placement['settled_at'] is not None
+110:and stamp(placement['settled_at']) >= stamp(placement['maturity_at'])), 'LEDGER_STATE_MISMATCH')
+FILE=cc_spot_liquidity.py HITS=2
+24:identity = dict(symbol=q.symbol, family=family_name(q.asset_class), settlement=q.settlement,
+54:AND p.settlement=? AND p.currency=? AND p.market=?''',
+FILE=cd_spot_ledger.py HITS=1
+199:available = validated_sale_settlement(row['settlement'],sale['filled_at'],
+FILE=ce_caucion_treasury.py HITS=2
+116:elif any(p['status']=='OPEN' or p['settled_at'] is None for p in existing):
+145:liquidity_deadline=window.liquidity_deadline,maximum_quote_age_seconds=QUOTE_MAX_SECONDS,
+FILE=cf_intraday_scalping.py HITS=15
+119:# Fuente única RC5: intervalo regular BYMA PAPER [10:30,17:00).
+161:WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?""",
+176:WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=? AND event_at=?""",
+187:WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=? AND event_at=?""",
+198:state = ("CONFIRMED_INTERVAL_VOLUME" if confirmed_now or (
+199:(previous or {}).get("state") == "CONFIRMED_INTERVAL_VOLUME"
+223:WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
+228:WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
+235:elif contract.get("state") != "CONFIRMED_INTERVAL_VOLUME":
+311:WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
+316:WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
+322:settlement=quote_row["settlement"], last=_decimal(quote_row["last"],nonnegative=True),
+378:interval = max(60, int(os.getenv("PAPER_INTRADAY_SCAN_SECONDS", "180")))
+414:record["ticker"],record["instrument_type"],record["settlement"]), retries=1)
+419:confirmed += int(result["state"] == "CONFIRMED_INTERVAL_VOLUME")
+FILE=cf_sale_settlement.py HITS=4
+18:key=settlement.upper().strip()
+36:expected=modeled_sale_settlement_date(settlement,traded_at)
+50:key=settlement.upper().strip()
+73:modeled=modeled_sale_settlement(settlement,traded)
+FILE=cg_paper_workspace.py HITS=3
+16:NAMESPACE = 'POROTA_PAPER_V17_FRESH'
+83:(NAMESPACE, str(uuid.uuid4()), datetime.now(timezone.utc).isoformat(), 'FRESH_EMPTY'))
+92:or row.get('origin') != 'FRESH_EMPTY' or row.get('imported_legacy') != 0
+FILE=ch_contract_evidence_hf6.py HITS=3
+74:rows = c.execute("""SELECT ticker,instrument_type,market,currency,settlement,
+76:WHERE status='AVAILABLE' ORDER BY instrument_type,ticker,market,currency,settlement""").fetchall()
+98:current = reader.current(record["ticker"], record["instrument_type"], record["settlement"])
+FILE=ck_contract_evidence_runner_hf6.py HITS=3
+20:import ch_contract_evidence_hf6 as evidence
+25:DB = os.getenv("POROTA_CONTRACT_EVIDENCE_DB", "/app/data/paper_v17/observer_v17.db")
+86:FROM contract_evidence_runs ORDER BY finished_at DESC LIMIT 1""").fetchone()
+FILE=cl_contract_evidence_dashboard_hf6.py HITS=1
+157:wrapped_page._porota_contract_evidence_wrapped = True
+FILE=cm_special_family_discovery_hf6.py HITS=1
+10:import ch_contract_evidence_hf6 as evidence
+FILE=cn_ppi_authenticated_family_scraper_hf6.py HITS=3
+173:refresh = str(token.get("refreshToken") or "")
+329:token_type, access_token, refresh_token = token_fields
+380:info["status"] = "ROUTE_OBSERVED_NO_CONTRACT_EVIDENCE"
+FILE=co_contract_ingestion_policy_hf6.py HITS=3
+23:CADENCES = {
+58:FAMILY_CADENCE = {
+82:names = FAMILY_CADENCE.get(key)
+FILE=co_market_sessions_hf6.py HITS=2
+45:# Ventana operacional RC5 del simulador spot. Intervalo half-open: 17:00 ya no
+158:"interval": "[10:30,17:00)",
+FILE=cp_contract_evidence_v2_hf6.py HITS=32
+91:required = {"family", "ticker", "market", "settlement", "source_class"}
+92:for table in ("contract_evidence_v2_snapshots", "contract_evidence_v2_current",
+93:"contract_evidence_v2_changes"):
+102:CREATE TABLE IF NOT EXISTS contract_evidence_v2_snapshots(
+116:CREATE TABLE IF NOT EXISTS contract_evidence_v2_current(
+122:snapshot_id INTEGER NOT NULL REFERENCES contract_evidence_v2_snapshots(snapshot_id),
+127:CREATE TABLE IF NOT EXISTS contract_evidence_v2_changes(
+140:CREATE TABLE IF NOT EXISTS contract_evidence_v2_runs(
+152:ON contract_evidence_v2_snapshots(family,ticker,market,settlement,observed_at);
+154:ON contract_evidence_v2_changes(family,ticker,market,settlement,detected_at);
+156:ON contract_evidence_v2_runs(job_key,started_at DESC);
+164:c.execute("""INSERT OR REPLACE INTO contract_evidence_v2_runs
+175:c.execute("""UPDATE contract_evidence_v2_runs SET finished_at=?,state=?,records=?,
+183:source_ref, evidence, settlement="UNKNOWN",
+191:family, ticker, market, settlement = normalize_identity(
+192:family=family, ticker=ticker, market=market, settlement=settlement)
+200:FROM contract_evidence_v2_current WHERE family=? AND ticker=? AND market=?
+201:AND settlement=? AND source_class=?""",
+203:c.execute("""INSERT OR IGNORE INTO contract_evidence_v2_snapshots
+208:snap = c.execute("""SELECT snapshot_id FROM contract_evidence_v2_snapshots
+209:WHERE family=? AND ticker=? AND market=? AND settlement=? AND source_class=?
+216:c.execute("""INSERT INTO contract_evidence_v2_current
+225:c.execute("""INSERT INTO contract_evidence_v2_changes
+248:FROM contract_evidence_v2_current c
+249:JOIN contract_evidence_v2_snapshots s ON s.snapshot_id=c.snapshot_id""" + where,
+281:def readiness_state(records, *, required_fields=(), max_age_seconds=None, now=None):
+310:def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
+321:cost_ready=cost_ready, freshness_ok=False,
+329:freshness_ok = True
+338:freshness_ok = False
+341:freshness_ok = False
+345:cost_ready=bool(cost_ready), freshness_ok=freshness_ok,
+FILE=cq_contract_readiness_hf6.py HITS=3
+100:cost_ready=False, freshness_ok=False, source_conflict=False):
+123:status = "STALE"
+124:reason = "Contrato completo pero fuera de TTL."
+FILE=cq_family_contract_rules_hf6.py HITS=6
+9:2. DYNAMIC: condiciones necesarias para simular/operar ahora. Tienen TTL corto
+20:import cp_contract_evidence_v2_hf6 as evidence_v2
+129:DYNAMIC_TTL_HOURS = {
+192:stale = []
+199:ttl = float(DYNAMIC_TTL_HOURS.get(field, 0.25))
+264:stale_dynamic = _stale_dynamic(dynamic_fields, provenance, now)
+FILE=cq_history_attempt_ledger_hf6.py HITS=6
+42:ON history_attempt_ledger_v2(symbol,instrument_type,settlement,attempted_at DESC,id DESC);
+112:WHERE symbol=? AND instrument_type=? AND settlement=?
+119:WHERE symbol=? AND instrument_type=? AND settlement=?""",
+120:(symbol,instrument_type,settlement)).fetchone()[0])
+137:rows=c.execute("""SELECT symbol,instrument_type,settlement,attempted_at,
+141:WHERE symbol=? AND instrument_type=? AND settlement=?
+FILE=cr_data912_reconcile_hf6.py HITS=6
+16:import cp_history_ingest_policy_hf6 as policy
+69:symbol, family, market, settlement, _status = row
+73:settlement = str(settlement or "").upper()
+76:if not market or market == "UNKNOWN" or not settlement or settlement == "UNKNOWN":
+79:(symbol,family,settlement), ("NO_ATTEMPT",0)
+119:result = data912_v2.refresh_identities(identities,batch_limit=limit)
+FILE=cr_pending_settlement_diagnostics_hf6.py HITS=6
+3:The goal is to distinguish a legitimately pending T+1 receipt from a stale
+25:expected_date = modeled_sale_settlement_date(row.get("settlement"), row.get("closed_at")) if row.get("closed_at") else None
+28:boundary = conservative_unconfirmed_availability(row.get("settlement"), row.get("closed_at")) if row.get("closed_at") else None
+30:state = "AVAILABLE_AFTER_FULL_SETTLEMENT_DATE"
+89:diagnosis="STALE_SNAPSHOT_HIGH_CONFIDENCE"
+97:diagnosis="AVAILABLE_AFTER_FULL_SETTLEMENT_DATE"
+FILE=ct_ppi_history_salvage_hf6.py HITS=7
+11:import cp_history_ingest_policy_hf6 as policy
+58:ON history_row_rejections_v2(symbol,instrument_type,market,settlement,attempt_id)""")
+61:def _v2_candles(*, symbol, instrument_type, market, settlement,
+68:settlement=str(settlement).upper(),
+117:settlement=settlement,
+131:settlement=settlement,
+148:settlement=str(settlement).upper(),
+FILE=cu_history_store_v2_hf6.py HITS=8
+7:settlements. HF6-v2 mantiene el esquema legado intacto y crea un almacén
+12:- identidad = symbol + instrument_type + market + settlement + date;
+61:ON history_versions_v2(symbol,instrument_type,market,settlement,date,id DESC);
+85:ON history_canonical_v2(instrument_type,market,settlement,symbol,date);
+130:if value.market == "UNKNOWN" or value.settlement == "UNKNOWN":
+213:WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
+235:WHERE symbol=? AND instrument_type=? AND market=? AND settlement=? AND date=?""",
+286:WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?""",
+FILE=cw_data912_history_v2_sink.py HITS=9
+20:symbol, family, market, settlement = identity
+26:settlement=settlement,
+49:if not data912.DATA912_REFRESH_ENABLED:
+51:"reason": "DATA912_REFRESH_ENABLED=false"}
+58:symbol, family, market, settlement = (
+64:key = (symbol, family, market, settlement)
+66:market == "UNKNOWN" or not settlement or settlement == "UNKNOWN" or
+83:symbol, family, market, settlement = identity
+107:"settlement":settlement,"state":"HISTORICAL_V2_INGESTED",
+FILE=cy_a3_contract_bridge_hf6.py HITS=1
+12:from cp_contract_evidence_v2_hf6 import record_snapshot
+FILE=cy_market_source_arbitration_hf6.py HITS=1
+86:If PPI is complete and fresh, a background A3 difference is irrelevant to
+FILE=d_economics.py HITS=9
+63:MACRO_CONFIG_MAX_AGE_DAYS = int(os.getenv("MACRO_CONFIG_MAX_AGE_DAYS", "45"))
+64:MACRO_CONFIG_STALE_FALLBACK_PCT = float(os.getenv("MACRO_CONFIG_STALE_FALLBACK_PCT", "8.0"))
+74:- Si el dato tiene más de MACRO_CONFIG_MAX_AGE_DAYS (default 45),
+76:(MACRO_CONFIG_STALE_FALLBACK_PCT, default 8%) en vez del dato
+88:is_stale = True
+91:is_stale = (datetime.now() - updated_at).days > MACRO_CONFIG_MAX_AGE_DAYS
+102:return MacroConfig(monthly_inflation_pct=MACRO_CONFIG_STALE_FALLBACK_PCT,
+117:return MacroConfig(monthly_inflation_pct=MACRO_CONFIG_STALE_FALLBACK_PCT,
+175:AL30D con settlement A-24HS (mercado local) vs. INMEDIATA (CCL) como
+FILE=db_a3_cem_normalizer_hf6.py HITS=3
+94:settlement_identity = str(settlement_identity or "").strip().upper()
+97:if not settlement_identity or settlement_identity == "UNKNOWN":
+134:settlement=settlement_identity,
+FILE=dd_history_metrics_hf6.py HITS=1
+36:symbol,family,market,settlement,status=r
+FILE=de_scheduler_catalog_hf6.py HITS=5
+17:from co_contract_ingestion_policy_hf6 import ttl_seconds as contract_ttl_seconds
+60:int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200"))),
+63:int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200"))),
+125:return (last+timedelta(seconds=int(cadence_seconds))).isoformat()
+138:if key and key not in persisted:persisted[key]={"job_key":key,"last_run_at":raw.get("started_at") or raw.get("created_at"),"last_success_at":raw.get("finished_at"),"state":raw.get("state") or "SIN_REGISTRO","detail":raw.get("detail") or "","evidence_table":"contract_evidence_runs"}
+FILE=df_caucion_end_of_day_sweep_hf6.py HITS=2
+55:max_quote_age_seconds=60, maximum_principal=None) -> SweepPlan:
+61:quote_age = decimal_value(max_quote_age_seconds, "antigüedad máxima", nonnegative=True)
+FILE=df_daily_operation_summary_hf6.py HITS=3
+136:"opened": 0, "settled": 0, "instruments": set(), "currencies": set(),
+141:WHERE julianday(opened_at)>=julianday(?) OR julianday(settled_at)>=julianday(?)""",
+185:actions["CAUCIONES_ACREDITADAS"] += int(caucion["settled"])
+FILE=di_caucion_cash_sweep_runtime_hf6.py HITS=3
+86:participation=Decimal("0.10"), max_quote_age_seconds=30):
+114:max_quote_age_seconds=max_quote_age_seconds)
+134:maximum_quote_age_seconds=decimal_value(max_quote_age_seconds,"antigüedad",nonnegative=True),
+FILE=e_technical_engine.py HITS=5
+170:_bars_cache = {}          # {(underlying, interval, period): (epoch, df)}
+181:clave = (underlying, interval, period)
+189:df = yf.Ticker(underlying).history(interval=interval, period=period)
+192:underlying, interval, period, 0 if df is None else len(df))
+443:hist = ppi_client.get_historical_series(ticker, instrument_type, settlement, days_back)
+FILE=ea_history_close_series_hf2.py HITS=5
+60:ON history_close_canonical_v1(instrument_type,market,settlement,symbol,date);
+169:if item.market == "UNKNOWN" or item.settlement == "UNKNOWN":
+186:WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
+211:WHERE symbol=? AND instrument_type=? AND market=? AND settlement=? AND date=?""",
+248:WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?""",
+FILE=eb_dashboard_live_policy_hf2.py HITS=2
+48:def refresh_policy(*, requested_seconds: int | None, interactive_details: bool=True) -> dict:
+70:if refresh_policy(requested_seconds=30,interactive_details=True)["seconds"]<60:
+FILE=ek_history_freshness_metrics_rc5.py HITS=30
+1:"""RC5: métricas históricas calificadas por profundidad y freshness.
+55:return "STALE_UNVERIFIED_CALENDAR", "UNVERIFIED_PRE2026"
+64:def freshness_qualified_metrics(observer_connection, path: Path | None = None) -> dict:
+70:"fresh_ge30":0,
+71:"fresh_ge90":0,
+72:"fresh_ge180":0,
+73:"fresh_total":0,
+74:"stale_ge90":[],
+75:"stale_ge90_count":0,
+104:depths=Counter(); freshness=Counter(); stale_ge90=[]
+105:fresh_ge30=fresh_ge90=fresh_ge180=fresh_total=0
+107:key=(item["symbol"],item["family"],item["market"],item["settlement"])
+111:fr,gap=_freshness(last_day,latest)
+113:freshness[fr]+=1
+114:if fr == "FRESH":
+115:fresh_total += 1
+117:fresh_ge30 += 1
+119:fresh_ge90 += 1
+121:fresh_ge180 += 1
+122:if rows >= 90 and fr != "FRESH":
+123:stale_ge90.append({
+135:fresh_total=fresh_total,
+136:fresh_ge30=fresh_ge30,
+137:fresh_ge90=fresh_ge90,
+138:fresh_ge180=fresh_ge180,
+139:stale_ge90=stale_ge90,
+140:stale_ge90_count=len(stale_ge90),
+142:freshness_counts=dict(sorted(freshness.items())),
+155:assert _freshness(None,date(2026,9,4))[0]=="NO_HISTORY"
+156:assert _freshness(date(2025,12,9),date(2026,9,4))[0]=="STALE_UNVERIFIED_CALENDAR"
+FILE=em_validation_campaign_rc6.py HITS=1
+49:("freshness", "depth/density", "sampled semantics", "no lookahead", "A3/PPI provenance")),
+FILE=en_validation_project_dashboard_rc6.py HITS=1
+146:return bg._document("Validación — Camino a Producción", body, refresh=0)
+FILE=eo_dashboard_truth_semantics_rc6.py HITS=1
+10:ERROR_STATES = frozenset({"ERROR", "FAILED", "ROJO", "DEGRADED", "STALE", "UNKNOWN"})
+FILE=ep_dashboard_truth_layer_rc6.py HITS=4
+59:def _fresh_internal_state(row: dict, default="NOT_STARTED", max_age_seconds=20) -> str:
+64:if not 0 <= age <= max_age_seconds:
+99:raw_supervisor = _fresh_internal_state(health)
+100:raw_reader = _fresh_internal_state(reader)
+FILE=es_shadow_binding_contract_rc6.py HITS=2
+151:settled_blocks = counts["losses_avoided"] + counts["gains_removed"]
+152:precision = (counts["losses_avoided"] / settled_blocks) if settled_blocks else None
+FILE=ew_a3_history_rc6.py HITS=14
+23:CREATE TABLE IF NOT EXISTS a3_history_ingest_state_rc6(
+46:needed={'ticker','instrument_type','market','settlement','status'}
+48:select='ticker,instrument_type,market,settlement'
+50:WHERE status='AVAILABLE' ORDER BY instrument_type,ticker,market,settlement''').fetchall()
+53:symbol,family,market,settlement=(str(x or '').upper().strip() for x in row)
+69:row=c.execute('''SELECT * FROM a3_history_ingest_state_rc6 WHERE
+70:source='A3_CEM_CLOSING' AND symbol=? AND instrument_type=? AND market=? AND settlement=?''',target).fetchone()
+80:c.execute('''INSERT INTO a3_history_ingest_state_rc6(
+86:attempts=a3_history_ingest_state_rc6.attempts+1,
+88:last_success_at=CASE WHEN excluded.last_success_at IS NOT NULL THEN excluded.last_success_at ELSE a3_history_ingest_state_rc6.last_success_at END,
+110:def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL',batch_limit=40,throttle_seconds=0.0):
+130:symbol,family,market,settlement=target
+145:candle=closing_to_candle(row,instrument_type=family,market=market,settlement_identity=settlement)
+167:if throttle_seconds: time.sleep(max(0,float(throttle_seconds)))
+FILE=ex_a3_history_job_rc6.py HITS=1
+27:throttle_seconds=float(os.getenv('A3_HISTORY_THROTTLE_SECONDS','1.0')),
+FILE=g_news_feed.py HITS=2
+41:NEWS_MAX_AGE_SECONDS = int(os.getenv("NEWS_MAX_AGE_SECONDS", str(6 * 3600)))  # 6 horas por default
+127:age_seconds = time.time() - calendar.timegm(published)
+FILE=j_main.py HITS=17
+148:SCALPING_SCAN_INTERVAL_SECONDS = int(os.getenv("SCALPING_SCAN_INTERVAL_SECONDS", "10"))
+563:# 6) Intervalo de escaneo coherente con el horizonte de la operación.
+564:coherente = SCALPING_SCAN_INTERVAL_SECONDS <= SCALPING_TARGET_HOLD_MINUTES * 60 / 4
+772:revisando cada POLL_CONFIRMATIONS_INTERVAL_SECONDS (default 4s) —
+776:interval = int(os.getenv("POLL_CONFIRMATIONS_INTERVAL_SECONDS", "4"))
+834:ticker, ppi, inst.instrument_type, inst.settlement, deflact_ccl=True,
+841:mkt = ppi.get_market_data(ticker, inst.instrument_type, inst.settlement)
+843:log_signal(ticker, "REJECTED_STALE_DATA", "Cotización PPI ausente o vieja (>30s).",
+852:book = ppi.get_book_with_fallback(ticker, inst.instrument_type, inst.settlement)
+853:if (not book or book.get('settlement_used') != inst.settlement
+1132:instrument_type=inst.instrument_type, settlement=inst.settlement,
+1312:threading.Thread(target=lambda: macro_history.refresh(),
+1313:name="macro_refresh_inicial", daemon=True).start()
+1438:scheduler.add_job(log_watch_job, "interval", minutes=log_watch.LOG_WATCH_INTERVAL_MINUTES,
+1444:seconds=int(os.getenv("RESTART_CHECK_INTERVAL_SECONDS", "30")),
+1595:scan_interval = SCALPING_SCAN_INTERVAL_SECONDS if SCALPING_MODE else 5
+1605:time.sleep(SCALPING_SCAN_INTERVAL_SECONDS if SCALPING_MODE else 30)  # respiro entre vueltas de escaneo
+FILE=k_position_manager.py HITS=10
+60:settlement TEXT DEFAULT 'A-24HS'
+81:"ALTER TABLE open_positions ADD COLUMN settlement TEXT DEFAULT 'A-24HS'",
+108:instrument_type: str = "CEDEARS", settlement: str = "A-24HS",
+118:AMPLIADO v10.5: también se guarda instrument_type/settlement, para que
+226:"CEDEARS", settlement="A-24HS" fijos, sin importar qué tipo de
+233:settlement = pos.get("settlement") or "A-24HS"
+234:mkt = ppi.get_market_data(pos["ticker"], inst_type, settlement)
+374:settlement = pos.get("settlement") or "A-24HS"
+378:ticker, pos["quantity"], instrument_type=inst_type, settlement=settlement,
+390:mkt = ppi.get_market_data(ticker, inst_type, settlement)
+FILE=l_order_confirmation.py HITS=15
+118:PARTIAL_FILL_POLL_INTERVAL_SECONDS = int(os.getenv("PARTIAL_FILL_POLL_INTERVAL_SECONDS", "2"))
+171:elapsed += PARTIAL_FILL_POLL_INTERVAL_SECONDS
+216:settlement TEXT DEFAULT 'A-24HS'
+224:"ALTER TABLE pending_orders ADD COLUMN settlement TEXT DEFAULT 'A-24HS'"):
+234:instrument_type="CEDEARS", settlement="A-24HS") -> str:
+448:pending.get("settlement", "A-24HS"))
+502:settlement = pending.get("settlement", "A-24HS")
+513:instrument_type=instrument_type, settlement=settlement)
+539:instrument_type=instrument_type, settlement=settlement,
+582:settlement=settlement,
+620:settlement=o.get("settlement", "A-24HS"))
+666:instrument_type=instrument_type, settlement=settlement)
+678:instrument_type=instrument_type, settlement=settlement,
+701:instrument_type=instrument_type, settlement=settlement,
+716:def arrancar_bombeo(notifier, ppi, stop_event, intervalo: float = 4.0):
+FILE=m_instrument_universe.py HITS=11
+59:"CEDEARS": {"instrument_type": "CEDEARS", "settlement": "A-24HS"},
+60:"ACCIONES": {"instrument_type": "ACCIONES", "settlement": "A-24HS"},
+61:"BONOS": {"instrument_type": "BONOS", "settlement": "A-24HS"},
+62:"ETFS": {"instrument_type": "ETF", "settlement": "A-24HS"},
+70:"OPCIONES": {"instrument_type": "OPCIONES", "settlement": "A-24HS"},
+71:"FUTUROS": {"instrument_type": "FUTUROS", "settlement": "A-24HS"},
+131:settlement=cfg["settlement"],
+158:settlement=block["settlement"],
+306:mkt = ppi_client.get_market_data(inst.ticker, inst.instrument_type, inst.settlement)
+311:book = ppi_client.get_book(inst.ticker, inst.instrument_type, inst.settlement)
+410:settlement=config["settlement"],
+FILE=o_dashboard.py HITS=6
+90:CSRF_TOKEN_MAX_AGE_SECONDS = int(os.getenv("CSRF_TOKEN_MAX_AGE_SECONDS", "900"))
+119:max_age=auth.COOKIE_MAX_AGE_SECONDS,
+150:max_age=auth.COOKIE_MAX_AGE_SECONDS,
+1282:<meta http-equiv="refresh" content="30">
+1325:<meta http-equiv="refresh" content="60">
+1528:<meta http-equiv="refresh" content="15">
+FILE=ops_introspection_hf4.py HITS=5
+126:try: selected["heartbeat_age_seconds"]=(now-datetime.fromisoformat(row["heartbeat_at"]).astimezone(TZ)).total_seconds()
+127:except (KeyError,ValueError,TypeError): selected["heartbeat_age_seconds"]=None
+185:open_positions = rows(c, """SELECT paper_id,symbol,asset_class,market,currency,settlement
+187:catalog = rows(c, """SELECT ticker,instrument_type,market,currency,settlement,metadata_json
+302:age=item.get("heartbeat_age_seconds")
+FILE=ops_publish_introspection_hf6.py HITS=1
+68:workers[str(name)] = _pick(value, ("state", "heartbeat_at", "heartbeat_age_seconds"))
+FILE=porota_mode_manager.py HITS=5
+49:"PAPER_SCORE_THRESHOLD": "0.62", "PAPER_BOOK_MAX_AGE_SECONDS": "120",
+50:"PAPER_TRADE_MAX_AGE_SECONDS": "900", "PAPER_AI_GATE_MODE": "OFF",
+60:"PPI_BACKGROUND_INGEST_SECONDS": "7200",
+110:"PPI_BACKGROUND_INGEST_SECONDS": "7200",
+197:"DASHBOARD_REFRESH_SECONDS=30",
+FILE=q_backtest.py HITS=1
+100:df = yf.Ticker(ticker).history(interval="1d", period=period)
+FILE=rc4_a3_cem_history_runner.py HITS=4
+4:A3 CEM's public symbol catalogue.  It never infers settlement from CEM's
+37:WHERE status='AVAILABLE' ORDER BY instrument_type,ticker,market,settlement"""):
+38:symbol,family,market,settlement=map(lambda x:str(x or '').upper(),row)
+71:market=market,settlement_identity=settlement))
+FILE=rc4_backup_coverage.py HITS=2
+50:elif age is None or age>cadence*1.5: status='STALE_BACKUP'
+62:vector_status='PROTECTED_BY_HOST_GENERAL' if age is not None and age<=36*3600 else 'STALE_BACKUP'
+FILE=rc4_contract_due_job.py HITS=4
+6:from rc4_contract_schedule import JOB_TO_CADENCE, due
+11:result={key:None for key in JOB_TO_CADENCE}
+15:if 'contract_evidence_v2_runs' in tables:
+17:row=c.execute("SELECT started_at FROM contract_evidence_v2_runs WHERE job_key=? ORDER BY started_at DESC LIMIT 1",(key,)).fetchone()
+FILE=rc4_contract_import_job.py HITS=4
+6:from cp_contract_evidence_v2_hf6 import start_run, finish_run, record_snapshot, normalize_family
+19:for r in c.execute("SELECT ticker,instrument_type,market,settlement,status FROM candidate_universe WHERE status='AVAILABLE'"):
+44:market=ident.get('market'),settlement=ident.get('settlement'),source_class='PPI_AUTHENTICATED_XHR',source_ref=url,evidence=evidence)
+54:market=ident.get('market'),settlement=ident.get('settlement'),source_class='PPI_AUTHENTICATED_XHR',source_ref=url,evidence=evidence)
+FILE=rc4_contract_legacy_bridge.py HITS=5
+9:from cp_contract_evidence_v2_hf6 import record_snapshot
+14:if 'contract_evidence' not in tables: return {'rows':0,'recorded':0,'changed':0}
+15:sql="SELECT instrument_type,ticker,market,status,owner,source,checked_at,missing_fields_json,detail FROM contract_evidence ORDER BY instrument_type,ticker,market"
+24:result=record_snapshot(store,family=row.get('instrument_type'),ticker=row.get('ticker'),market=row.get('market'),settlement='UNKNOWN',
+25:source_class='POROTA_LEGACY_EVIDENCE',source_ref='legacy:contract_evidence',observed_at=row.get('checked_at'),evidence=evidence)
+FILE=rc4_contract_schedule.py HITS=7
+3:Single source of cadence truth is co_contract_ingestion_policy_hf6.
+16:from co_contract_ingestion_policy_hf6 import CADENCES, ttl_seconds
+19:JOB_TO_CADENCE = {
+48:Their own 1-day / 7-day TTL still applies. Weekends never start the
+53:cadence_name = JOB_TO_CADENCE[str(job_key)]
+54:cadence = CADENCES[cadence_name]
+72:seconds = cadence_seconds(job_key)
+FILE=rc4_functional_health.py HITS=2
+19:stale=0
+21:stale=c.execute("""SELECT COUNT(*) FROM paper_positions p LEFT JOIN paper_position_marks m USING(paper_id)
+FILE=rc4_release_preflight.py HITS=1
+32:rc4_contract_script=(ROOT/'scripts/porota_contract_evidence_trusted_rc4.sh').read_text(encoding='utf-8')
+FILE=rc4_replay_analysis.py HITS=1
+69:rows=list(h.execute("SELECT symbol,instrument_type,market,settlement,date,open,high,low,close FROM history_canonical_v2 ORDER BY symbol,instrument_type,market,settlement,date"))
+FILE=rc4_storage_lifecycle_audit.py HITS=1
+32:'raw_uncompressed_days':30,'contract_evidence_days':180,'logs_days':30,
+FILE=rc4_trusted_browser_contract_collector.py HITS=2
+26:'CONTRACT_EVIDENCE_DERIVATIVES':['/Cotizaciones/Opciones','/Cotizaciones/Futuros','/Operar/Opciones','/Operar/260'],
+28:'CONTRACT_EVIDENCE_FULL_BROWSER':['/Cotizaciones/FCIs','/Cotizaciones/FCIsExterior','/Cotizaciones/Acciones','/Cotizaciones/AccionesUSA','/Cotizaciones/Bonos','/Cotizaciones/Cauciones','/Cotizaciones/Cedears','/Cotizaciones/ETFs','/Cotizaciones/Futuros','/Cotizaciones/Letras','/Cotizaciones/Licitaciones','/Cotizaciones/Ons','/Cotizaciones/Opciones','/Cotizaciones/Indices','/Cotizaciones/Monedas','/Cotizaciones/Tasas'
+FILE=rc5_release_preflight.py HITS=2
+50:ce_runtime = (ROOT / "scripts/porota_contract_evidence_rc5_runtime.sh").read_text(encoding="utf-8")
+62:check("byma_half_open", status.get("interval") == "[10:30,17:00)", status.get("interval"))
+FILE=rc6_contract_capture_importer.py HITS=9
+15:import cp_contract_evidence_v2_hf6 as ce
+54:for row in c.execute("SELECT ticker,instrument_type,market,settlement,status FROM candidate_universe WHERE status='AVAILABLE'"):
+103:market=ident.get("market") or "UNKNOWN", settlement=ident.get("settlement") or "UNKNOWN",
+116:settlement = str(pick(row,["settlement","liquidacion","liquidación","plazo"]) or "UNKNOWN")
+121:settlement=settlement, source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
+136:market=ident.get("market") or "UNKNOWN", settlement=ident.get("settlement") or "UNKNOWN",
+146:result = ce.record_snapshot(store, family="OPCIONES", ticker="*", market="UNKNOWN", settlement="UNKNOWN",
+155:family = {"CONTRACT_EVIDENCE_AUCTIONS":"LICITACIONES",
+159:result = ce.record_snapshot(store, family=family, ticker="*", market="UNKNOWN", settlement="UNKNOWN",
+FILE=rc6_contract_due_job.py HITS=4
+10:from rc6_contract_schedule import JOB_TO_CADENCE, due
+16:last = {key: None for key in JOB_TO_CADENCE}
+22:if "contract_evidence_v2_runs" in tables:
+25:"SELECT started_at FROM contract_evidence_v2_runs WHERE job_key=? ORDER BY started_at DESC LIMIT 1",
+FILE=rc6_contract_schedule.py HITS=7
+1:"""RC6 native Contract Evidence cadence/window policy.
+13:from co_contract_ingestion_policy_hf6 import CADENCES, ttl_seconds
+16:JOB_TO_CADENCE = {
+45:cadence_name = JOB_TO_CADENCE[str(job_key)]
+46:cadence = CADENCES[cadence_name]
+54:if cadence_name == "FULL_BROWSER_AUDIT":
+69:return (ref.astimezone(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds() >= cadence_seconds(job_key)
+FILE=rc6_functional_health.py HITS=3
+18:MAX_HEARTBEAT_AGE_SECONDS = 180
+56:'heartbeat_fresh': age is not None and age <= MAX_HEARTBEAT_AGE_SECONDS,
+58:result.update(quick_check=qc, observer_state=state, heartbeat_age_seconds=age, checks=checks)
+FILE=rc6_trusted_browser_contract_collector.py HITS=1
+30:"CONTRACT_EVIDENCE_DERIVATIVES": ["/Cotizaciones/Opciones", "/Cotizaciones/Futuros", "/Operar/Opciones", "/Operar/260"],
+FILE=scripts/porota_apply_daily_results_responsive_hf6.sh HITS=1
+74:new_reports='''def reports_page():\n    reports=_rows("SELECT * FROM report_registry ORDER BY period_key DESC,period_type") if _table("report_registry") else []\n    today=datetime.now(TZ).date().isoformat()\n    # IA intradía/paquetes IA: legado deprecado. No forman parte de la operación HF6-v2.\n    reports=[r for r in reports if r.get('period_type')!='IA_SEMANAL'\n             and (r.get('period_type')!='DIARIO' o
+FILE=scripts/porota_apply_dashboard_ux_logs_hf6.sh HITS=10
+63:if _table('contract_evidence_v2_current'):
+64:for r in _rows('SELECT family,COUNT(*) n,MAX(observed_at) observed_at FROM contract_evidence_v2_current GROUP BY family'):
+66:if _table('contract_evidence_v2_changes'):
+67:for r in _rows("SELECT family,COUNT(*) n FROM contract_evidence_v2_changes WHERE status='CHANGED_REVIEW_REQUIRED' GROUP BY family"):
+112:return _document('Trading — Estrategias',body,refresh=30)
+123:return _document('Trading — '+title,body,refresh=30)
+142:return _document('Trading',body,refresh=30)
+161:return _document('Instrumentos y contratos',body,refresh=60)
+176:return _document("Logs",body,refresh=30)
+200:return _document("Logs",body,refresh=30)
+FILE=scripts/porota_apply_scheduler_dashboard_hf6.sh HITS=4
+158:old_refresh='''    return _document("Sistema", body, refresh=30 if section=="introspeccion" else 60)
+160:new_refresh='''    return _document("Sistema", body, refresh=30 if section in {"introspeccion","scheduler"} else 60)
+162:if text.count(old_refresh)!=1:
+164:text=text.replace(old_refresh,new_refresh,1)
+FILE=scripts/porota_contract_evidence_dashboard_overlay_hf6.sh HITS=5
+27:test -f "$PATCH_ROOT/cl_contract_evidence_dashboard_hf6.py"
+36:addition=anchor+"""\n# HF6 contract-evidence overlay: provider/source ownership on the same universe page.\nimport cl_contract_evidence_dashboard_hf6\n"""
+37:if "import cl_contract_evidence_dashboard_hf6" not in text:
+44:python3 -m py_compile "$TMP/o_dashboard.py" "$PATCH_ROOT/cl_contract_evidence_dashboard_hf6.py"
+45:docker cp "$PATCH_ROOT/cl_contract_evidence_dashboard_hf6.py" "$DASH:/app/cl_contract_evidence_dashboard_hf6.py"
+FILE=scripts/porota_contract_evidence_hf6_runtime.sh HITS=6
+5:HOST_RUNTIME_DIR="/opt/porota-trading/data/runtime_patches/hf6_contract_evidence"
+6:CONTAINER_RUNTIME_DIR="/app/data/runtime_patches/hf6_contract_evidence"
+33:ch_contract_evidence_hf6.py \
+35:ck_contract_evidence_runner_hf6.py
+42:docker exec "$CONTAINER" test -r "$CONTAINER_RUNTIME_DIR/ck_contract_evidence_runner_hf6.py"
+48:python "$CONTAINER_RUNTIME_DIR/ck_contract_evidence_runner_hf6.py"
+FILE=scripts/porota_contract_evidence_rc5_runtime.sh HITS=4
+8:EXPECTED_IMAGE="${POROTA_CONTRACT_EVIDENCE_EXPECTED_IMAGE:-}"
+9:SESSION_RUNNER="${POROTA_CONTRACT_EVIDENCE_SESSION_RUNNER:-$ROOT/scripts/porota_contract_evidence_session_runner_rc4.py}"
+115:if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contract_evidence_v2_runs'").fetchone():
+116:runs=int(c.execute('SELECT COUNT(*) FROM contract_evidence_v2_runs').fetchone()[0] or 0)
+FILE=scripts/porota_contract_evidence_rc6_runtime.sh HITS=2
+13:OUTDIR="$ROOT/data/contract_evidence/rc6_trusted"
+207:runs=c.execute("SELECT COUNT(*) FROM contract_evidence_v2_runs").fetchone()[0] if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contract_evidence_v2_runs'").fetchone() else 0
+FILE=scripts/porota_contract_evidence_session_runner_rc4.py HITS=14
+12:OUTDIR=ROOT/"data/contract_evidence/rc4_trusted"
+171:import cp_contract_evidence_v2_hf6 as ce
+204:for r in c.execute("SELECT ticker,instrument_type,market,settlement,status FROM candidate_universe WHERE status='AVAILABLE'"):
+231:settlement="UNKNOWN",source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=nonempty(ev))
+237:settlement=str(pick(row,["settlement","liquidacion","liquidación","plazo_liquidacion"]) or "UNKNOWN")
+243:settlement=settlement,source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
+254:if job=="CONTRACT_EVIDENCE_AUCTIONS":
+255:targets=[{"instrument_type":"LICITACIONES","market":"UNKNOWN","settlement":"UNKNOWN"}]
+256:elif job=="CONTRACT_EVIDENCE_CAUCIONES":
+257:targets=[{"instrument_type":"CAUCIONES","market":"UNKNOWN","settlement":"UNKNOWN"}]
+265:market=ident.get("market") or "UNKNOWN",settlement=ident.get("settlement") or "UNKNOWN",
+278:market=ident.get("market"),settlement=ident.get("settlement"),
+285:fam={"CONTRACT_EVIDENCE_AUCTIONS":"LICITACIONES",
+292:r=ce.record_snapshot(store,family=fam,ticker="*",market="UNKNOWN",settlement="UNKNOWN",
+FILE=scripts/porota_contract_evidence_trusted_rc4.sh HITS=2
+7:OUTDIR="$ROOT/data/contract_evidence/rc4_trusted"
+17:'from rc4_contract_import_job import Store,DB; from cp_contract_evidence_v2_hf6 import init_schema; init_schema(Store(DB)); print("CONTRACT_V2_SCHEMA=READY")'
+FILE=scripts/porota_contract_patch_finalize_hf6.sh HITS=6
+11:WEB_JSON="$REPO/data/contract_evidence/ppi_web_all_families/latest.json"
+60:for f in scripts/porota_ppi_authenticated_all_families_hf6.sh deploy/systemd/porota-contract-evidence-dashboard-hf6.service scripts/porota_contract_evidence_dashboard_overlay_hf6.sh cn_ppi_authenticated_family_scraper_hf6.py; do
+68:sudo -n install -m 0755 "$STAGE/scripts/porota_contract_evidence_dashboard_overlay_hf6.sh" /usr/local/sbin/porota-contract-evidence-dashboard-overlay-hf6.sh
+123:owner='PPI_SUPPORT_OR_POROTA_DISCOVERY'; missing=['provider_backed_contract_evidence']; detail='No complete authenticated contract evidence obtained; family remains fail-closed.'
+148:if sudo -n docker exec "$DASH" grep -q 'import cl_contract_evidence_dashboard_hf6' /app/o_dashboard.py; then echo "DASHBOARD_CONTRACT_IMPORT=OK"; else echo "DASHBOARD_CONTRACT_IMPORT=MISSING"; fi
+169:for fam,status,owner in c.execute('SELECT instrument_type,status,owner FROM contract_evidence WHERE market="WEB" ORDER BY instrument_type'):
+FILE=scripts/porota_ppi_authenticated_all_families_hf6.sh HITS=1
+6:OUT_DIR="/opt/porota-trading/data/contract_evidence/ppi_web_all_families"
+FILE=scripts/rc6_apply_runtime_safety_fixes.py HITS=1
+30:"""    if basis=='PENDING_CONFIRMATION':\n        if available is not None: raise ValueError('Recibo pendiente con acreditación no confirmada')\n        return conservative_unconfirmed_availability(settlement,traded)\n""",
+FILE=scripts/rc6_apply_shadow_policy_and_checkpoint.py HITS=1
+92:- libro/precio stale o ausente => no inventar fill;
+FILE=scripts/rc6_apply_shadow_policy_v3.py HITS=1
+101:text=text.rstrip()+'''\n\n## 17. P0-APRENDIZAJE — SHADOW → BINDING → REAL-MONEY GOVERNANCE\n\nDecisión fundamental del operador, 2026-09-05: durante las primeras ruedas PAPER se prefiere perder dinero ficticio y aprender antes que bloquear prematuramente oportunidades. Los controles de selección/rentabilidad calculan y persisten su contrafactual pero no tienen autoridad de veto.\n\n### Learning gates actuales\n- Port
+FILE=scripts/rc6_paper_state_inventory.py HITS=2
+86:out['open_position_rows']=rows(c,'''SELECT paper_id,symbol,asset_class,settlement,status,quantity,
+111:out['freshness_candidates']=candidates
+FILE=scripts/rc6_targeted_probe.py HITS=2
+32:contract = InstrumentContract(symbol='AAPLD', family='CEDEARS', settlement='INMEDIATA', currency='USD_MEP', market='BYMA', cash_multiplier=D('1'), quantity_step=D('1'), metadata_source='FIXTURE')
+33:q = replace(base, asset_class='CEDEARS', settlement='INMEDIATA', currency='USD_MEP', market='BYMA', contract=contract)
+FILE=scripts/rc6_transactional_host_deploy_v3.sh HITS=1
+379:echo 'CONTRACT_EVIDENCE=BLOCKED_PENDING_RC6_NATIVE_WIRING'
+FILE=scripts/v17_diagnostico_instrumentos.py HITS=1
+59:rows = c.execute("""SELECT ticker,instrument_type,market,settlement,downloaded_at,raw_json
+FILE=scripts/v17_ppi_public_probe.py HITS=5
+30:CONFIG_NAMES = ('instrument_types','markets','settlements','quantity_types',
+123:settlement='INMEDIATA' if family=='CAUCIONES' else 'A-24HS'
+124:item={'ticker':ticker,'family':family,'query_settlement':settlement,
+128:item['status']='SETTLEMENT_NOT_ENUMERATED'
+132:value=getattr(reader,method)(quote(ticker,safe=''),family,settlement)
+FILE=scripts/v17_rc3_hf2_deploy.py HITS=1
+196:"PPI_BACKGROUND_INGEST_SECONDS": "21600",
+FILE=scripts/v17_rc3_hf6_deploy.py HITS=1
+346:"PAPER_SCALPING_MODE": "ACTIVE_PAPER", "PPI_BACKGROUND_INGEST_SECONDS": "7200",
+FILE=test_cp_history_ingest_policy_hf6.py HITS=1
+4:import cp_history_ingest_policy_hf6 as policy
+FILE=test_hf6_history_data912_v2.py HITS=6
+6:import cp_history_ingest_policy_hf6 as policy
+88:assert [(x.symbol,x.instrument_type,x.market,x.settlement) for x in targets]==[
+103:def _candle(symbol,family,market,settlement,source,close=100,adjusted=False,observed="2026-09-02T20:00:00+00:00"):
+105:symbol,family,market,settlement,"2026-09-01",95,105,90,close,1000,
+152:assert contract_rules.DYNAMIC_TTL_HOURS["tna"]==1/12
+181:assert result["status"]=="STALE_DYNAMIC"
+FILE=u_aiops_watcher.py HITS=3
+31:AIOPS_POLL_INTERVAL_SECONDS = int(os.getenv("AIOPS_POLL_INTERVAL_SECONDS", "30"))
+32:AIOPS_RETRAIN_EVERY_N_SAMPLES = int(os.getenv("AIOPS_RETRAIN_EVERY_N_SAMPLES", "200"))
+184:if samples_since_retrain >= AIOPS_RETRAIN_EVERY_N_SAMPLES:
+FILE=v_config_metadata.py HITS=19
+51:("MACRO_CONFIG_MAX_AGE_DAYS", "Costos y hurdle", "Días antes de tratar el dato de inflación como vencido.", "45", False),
+52:("MACRO_CONFIG_STALE_FALLBACK_PCT", "Costos y hurdle", "Piso conservador si el dato está vencido.", "8.0", False),
+59:("POLL_CONFIRMATIONS_INTERVAL_SECONDS", "Ejecución", "Cada cuántos segundos se revisan los botones de Telegram (modo confirm).", "4", False),
+63:("SCALPING_SCAN_INTERVAL_SECONDS", "Scalping", "Segundos de pausa entre instrumentos en modo scalping.", "10", False),
+91:("CSRF_TOKEN_MAX_AGE_SECONDS", "Dashboard y técnico", "Vigencia del token anti-CSRF del editor de configuración.", "900", False),
+93:("NEWS_MAX_AGE_SECONDS", "Dashboard y técnico", "Antigüedad máxima de una noticia (segundos).", "21600", False),
+103:("BACKUP_MAX_AGE_HOURS_WARN", "Infraestructura", "Horas sin backup antes de marcarlo atrasado en el dashboard.", "26", False),
+108:("PARTIAL_FILL_POLL_INTERVAL_SECONDS", "Ejecución", "Frecuencia de reconsulta mientras una orden está PartiallyFilled.", "2", False),
+122:("PPI_STREAM_MAX_TICK_AGE_SECONDS", "Tiempo real (streams PPI)", "Antigüedad máxima de un precio en vivo antes de descartarlo y salir a pedirlo por HTTP.", "5", False),
+123:("PPI_STREAM_STALE_ALERT_SECONDS", "Tiempo real (streams PPI)", "Segundos sin recibir ningún tick antes de que llegue un aviso por Telegram.", "120", False),
+132:("RESTART_CHECK_INTERVAL_SECONDS", "Seguridad y reinicio", "Cada cuánto revisa el bot si hay un reinicio confirmado esperando que el sistema quede libre.", "30", False),
+133:("ACTIVITY_LOCK_MAX_AGE_SECONDS", "Seguridad y reinicio", "Antigüedad tras la cual un aviso de 'operación en curso' se considera basura de un proceso caído y deja de bloquear el reinicio.", "300", False),
+136:("LOG_WATCH_INTERVAL_MINUTES", "Vigilancia de logs", "Cada cuántos minutos se revisan las líneas nuevas del log.", "30", False),
+145:("AIOPS_POLL_INTERVAL_SECONDS", "AIOps (detección de anomalías)", "Cada cuántos segundos toma una muestra de métricas.", "60", False),
+148:("AIOPS_RETRAIN_EVERY_N_SAMPLES", "AIOps (detección de anomalías)", "Cada cuántas muestras se reentrena el modelo con el historial reciente.", "200", False),
+159:("PPI_STREAM_WATCHDOG_INTERVAL_SECONDS", "Tiempo real (streams PPI)", "Cada cuánto se controla que el stream siga recibiendo datos.", "60", False),
+177:("MACRO_CACHE_MAX_AGE_HOURS", "Portón operativo", "Antigüedad máxima de las series macro para que sirvan como contexto alternativo.", "36", False),
+201:("SRE_CONFIRM_TTL_SECONDS", "Salud y SRE", "Vigencia del código de confirmación de Telegram.", "900", False),
+208:("TELEGRAM_CONFIRM_TTL_SECONDS", "Comandos Telegram", "Vigencia del código de confirmación de una parada de emergencia.", "300", False),
+FILE=x_ppi_websocket.py HITS=15
+95:MAX_TICK_AGE_SECONDS = int(os.getenv("PPI_STREAM_MAX_TICK_AGE_SECONDS", "5"))
+96:STALE_ALERT_SECONDS = int(os.getenv("PPI_STREAM_STALE_ALERT_SECONDS", "120"))
+97:WATCHDOG_INTERVAL_SECONDS = int(os.getenv("PPI_STREAM_WATCHDOG_INTERVAL_SECONDS", "60"))
+164:def get_cached_price(ticker: str, instrument_type: str, settlement: str | None = None) -> Optional[dict]:
+172:entry = dict(_tick_cache.get((ticker.upper(), (instrument_type or "").upper(), settlement.upper()), {}))
+176:if entry.get('conflicting') or any(not 0 <= now-entry[key] <= MAX_TICK_AGE_SECONDS
+227:self.instruments = list(instruments or [])   # [(ticker, instrument_type, settlement), ...]
+230:self._alerted_stale = False
+247:ticker, settlement = str(msg.get('Ticker') or '').upper(), str(msg.get('Settlement') or '').upper()
+255:if str(symbol).upper()==ticker and str(term).upper()==settlement}
+262:if not 0 <= received-source <= MAX_TICK_AGE_SECONDS or not 0 < price < float('inf'):
+264:key = (ticker, instrument_type, settlement)
+279:self._alerted_stale = False
+491:edad = estado["last_tick_age_seconds"]
+493:self._alerted_stale = True
+FILE=y_infra_monitor.py HITS=2
+49:BACKUP_MAX_AGE_HOURS_WARN = float(os.getenv("BACKUP_MAX_AGE_HOURS_WARN", "26"))
+108:"status": "ok" if age_hours <= BACKUP_MAX_AGE_HOURS_WARN else "atrasado",
+
+=== KNOWN SEMANTIC CONFLICT TO VERIFY ===
+HISTORICAL_INGEST_OBSERVER_EXPECTED=21600s
+HISTORICAL_INGEST_DASHBOARD_OR_SCHEDULER_EXPECTED=7200s
+RULE=CADENCE_TTL_MAX_STALENESS_MUST_BE_DISTINCT_AND_CANONICAL
