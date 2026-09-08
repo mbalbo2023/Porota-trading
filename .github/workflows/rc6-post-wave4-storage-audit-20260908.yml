@@ -1,0 +1,140 @@
+name: RC6 Post Wave4 Storage Audit 2026-09-08
+
+on:
+  push:
+    branches: [audit/rc6-post-wave4-storage-20260908]
+    paths:
+      - '.github/workflows/rc6-post-wave4-storage-audit-20260908.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_audit"
+          chmod 600 "$HOME/.ssh/porota_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only post-Wave4 storage inventory
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo '=== POROTA POST-WAVE4 STORAGE AUDIT — READ ONLY ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo "BRANCH=$(git branch --show-current)"
+          echo
+          echo '=== 1. RUNTIME ==='
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('OBSERVER_QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'MODE={mode}')
+          print(f'REAL_ORDERS_SENT={real}')
+          c.close()
+          PY
+          echo
+          echo '=== 2. FILESYSTEM ==='
+          df -hT /opt/porota-trading
+          df -PB1 /opt/porota-trading | awk 'NR==2{print "FS_SIZE_BYTES="$2" FS_USED_BYTES="$3" FS_FREE_BYTES="$4" FS_USE_PCT="$5}'
+          echo
+          echo '=== 3. DATABASE FILES / WAL / SHM ==='
+          sudo -n docker exec -i porota_production_observer sh -lc "find /app/data -type f \\( -name '*.db' -o -name '*.db-wal' -o -name '*.db-shm' \\) -printf '%s|%TY-%Tm-%TdT%TH:%TM:%TS|%p\n' 2>/dev/null | sort -nr"
+          echo
+          echo '=== 4. OBSERVER DB INTERNAL SIZE ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, os
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          page_size=c.execute('pragma page_size').fetchone()[0]
+          page_count=c.execute('pragma page_count').fetchone()[0]
+          freelist=c.execute('pragma freelist_count').fetchone()[0]
+          print(f'OBSERVER_DB_BYTES={os.path.getsize(p)}')
+          print(f'OBSERVER_PAGE_SIZE={page_size}')
+          print(f'OBSERVER_PAGE_COUNT={page_count}')
+          print(f'OBSERVER_FREELIST_PAGES={freelist}')
+          print(f'OBSERVER_FREELIST_BYTES={freelist*page_size}')
+          names={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          if 'historical_raw_archive' in names:
+              n=c.execute('select count(*) from historical_raw_archive').fetchone()[0]
+              print(f'HISTORICAL_RAW_ARCHIVE_ROWS={n}')
+          try:
+              print('TOP_DBSTAT_OBJECTS:')
+              for name,b in c.execute("select name,sum(pgsize) bytes from dbstat group by name order by bytes desc limit 20"):
+                  print(f'{int(b)}|{name}')
+          except Exception as e:
+              print('DBSTAT_AVAILABLE=NO|'+type(e).__name__)
+          c.close()
+          PY
+          echo
+          echo '=== 5. HISTORY DB INTERNAL SIZE ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, os, glob
+          candidates=glob.glob('/app/data/**/market_history.db', recursive=True)
+          if not candidates:
+              print('MARKET_HISTORY_DB=NOT_FOUND')
+          for p in candidates:
+              try:
+                  c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+                  q=c.execute('pragma quick_check').fetchone()[0]
+                  print(f'MARKET_HISTORY_DB_PATH={p}')
+                  print(f'MARKET_HISTORY_DB_BYTES={os.path.getsize(p)}')
+                  print(f'MARKET_HISTORY_QUICK_CHECK={q}')
+                  try:
+                      for name,b in c.execute("select name,sum(pgsize) bytes from dbstat group by name order by bytes desc limit 15"):
+                          print(f'HISTORY_DBSTAT={int(b)}|{name}')
+                  except Exception as e:
+                      print('HISTORY_DBSTAT_AVAILABLE=NO|'+type(e).__name__)
+                  c.close()
+              except Exception as e:
+                  print('MARKET_HISTORY_DB_ERROR='+type(e).__name__)
+          PY
+          echo
+          echo '=== 6. RAW EVIDENCE STORE ==='
+          sudo -n docker exec -i porota_production_observer sh -lc "for p in /app/data/evidence /app/data/paper_v17/evidence; do if [ -e \"$p\" ]; then du -sh \"$p\"; find \"$p\" -type f 2>/dev/null | wc -l | awk -v p=\"$p\" '{print \"EVIDENCE_FILES|\"p\"|\"$1}'; fi; done"
+          echo
+          echo '=== 7. BACKUPS ==='
+          sudo -n docker exec -i porota_production_observer sh -lc "find /app/data -type d -iname '*backup*' -print 2>/dev/null | while read p; do du -sh \"$p\" 2>/dev/null || true; find \"$p\" -type f -printf '%s|%TY-%Tm-%TdT%TH:%TM:%TS|%p\n' 2>/dev/null | sort -nr | head -n 30; done"
+          echo
+          echo '=== 8. TOP DATA DIRECTORIES ==='
+          sudo -n docker exec -i porota_production_observer sh -lc "du -x -B1 -d 2 /app/data 2>/dev/null | sort -nr | head -n 40"
+          echo
+          echo '=== 9. DOCKER DISK ==='
+          sudo -n docker system df
+          echo
+          echo '=== 10. WAVE4 MODE ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import fa_raw_evidence_store_rc6 as s
+          print('RAW_STORAGE_MODE='+s.raw_storage_mode({}))
+          print('COORDINATOR_MODE='+s.coordinator_mode({}))
+          print('EXTERNAL_V1_ACTIVE='+str(s.raw_storage_mode({})=='EXTERNAL_V1'))
+          PY
+          echo
+          echo 'MUTATIONS=NONE'
+          echo 'VACUUM=NOT_RUN'
+          echo 'DELETE=NOT_RUN'
+          echo 'PRUNE=NOT_RUN'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
