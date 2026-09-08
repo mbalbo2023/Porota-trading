@@ -1,0 +1,192 @@
+name: RC6 Wave4 Disk Phase A Runtime Deploy 2026-09-08
+
+on:
+  push:
+    branches: [deploy/rc6-wave4-disk-phase-a-20260908]
+    paths:
+      - 'fa_raw_evidence_store_rc6.py'
+      - '.github/workflows/rc6-wave4-disk-phase-a-deploy-20260908.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-wave4-disk-phase-a-runtime-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Exact Wave3 baseline and scope gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=657a12305b98db628bed5a39f6d987f11ec9f020
+          git merge-base --is-ancestor "$BASE" HEAD
+          git diff --check "$BASE" HEAD
+          git diff --name-only "$BASE" HEAD | sort > /tmp/changed.txt
+          cat /tmp/changed.txt
+          python - <<'PY'
+          from pathlib import Path
+          got=set(Path('/tmp/changed.txt').read_text().splitlines())
+          allowed={'fa_raw_evidence_store_rc6.py','.github/workflows/rc6-wave4-disk-phase-a-deploy-20260908.yml'}
+          assert got <= allowed, sorted(got-allowed)
+          assert 'fa_raw_evidence_store_rc6.py' in got
+          print('WAVE4_SCOPE=GREEN')
+          PY
+      - name: Compile and pure storage safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile fa_raw_evidence_store_rc6.py
+          python - <<'PY'
+          import json,tempfile
+          from pathlib import Path
+          import fa_raw_evidence_store_rc6 as m
+          root=Path(tempfile.mkdtemp())
+          env={'PPI_HISTORY_RAW_STORAGE_MODE':'EXTERNAL_V1','PPI_HISTORY_COORDINATOR_MODE':'EXTERNAL_V1','PPI_HISTORY_EVIDENCE_ROOT':str(root)}
+          wrapper={'symbol':'GGAL','asset_class':'ACCIONES','settlement':'A-48HS','payload_json':json.dumps([{'date':'2026-09-01','close':1.0}]),'valid_rows':1}
+          r1=m.archive_ppi_history_wrapper(row_key='k1',wrapper=wrapper,recorded_at='2026-09-08T21:00:00+00:00',quality='VALID',environ=env)
+          r2=m.archive_ppi_history_wrapper(row_key='k2',wrapper=wrapper,recorded_at='2026-09-08T21:01:00+00:00',quality='VALID',environ=env)
+          assert r1.raw_sha256==r2.raw_sha256 and r1.object_created and not r2.object_created
+          assert m.manifest_metrics(environ=env)['attempts']==2
+          assert m.raw_storage_mode({})=='LEGACY'
+          print('PHASEA_CONTENT_ADDRESSING=GREEN')
+          print('PHASEA_DEFAULT_MODE=LEGACY_OFF')
+          PY
+          ! grep -Eri 'ppi_client|requests\.|urllib|budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' fa_raw_evidence_store_rc6.py
+          ! grep -Eri 'unlink\(|rmtree|vacuum|docker system prune' fa_raw_evidence_store_rc6.py
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+      - name: Build exact candidate image
+        run: |
+          set -euo pipefail
+          docker build --pull=false --label "porota.commit=$GITHUB_SHA" --label 'porota.wave=rc6-wave4-disk-phase-a' -t porota-wave4:${GITHUB_SHA} .
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m --tmpfs /app/data:rw,nosuid,nodev,size=64m --entrypoint python porota-wave4:${GITHUB_SHA} - <<'PY'
+          import importlib.metadata as m
+          import _version, fa_raw_evidence_store_rc6 as s
+          assert _version.VERSION=='17.0.0-rc6'
+          assert _version.REAL_ORDER_CAPABILITY=='BLOCKED'
+          assert m.version('ppi-client')=='1.3.0'
+          assert s.raw_storage_mode({})=='LEGACY'
+          print('IMAGE_INVARIANTS=GREEN')
+          PY
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_wave4"
+          chmod 600 "$HOME/.ssh/porota_wave4"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Preflight and deploy without automatic rollback
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: deploy/rc6-wave4-disk-phase-a-20260908
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_wave4" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          EXPECTED_BASE=657a12305b98db628bed5a39f6d987f11ec9f020
+          TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
+          cd "$REPO"
+          echo '=== WAVE4 PRECHECK ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          CURRENT_SHA=$(git rev-parse HEAD)
+          echo "CURRENT_SHA=$CURRENT_SHA"
+          test "$CURRENT_SHA" = "$EXPECTED_BASE"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'PRE_DB={q}|{mode}|{real}')
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          PY
+          FREE=$(df -PB1 "$REPO" | awk 'NR==2{print $4}')
+          echo "DISK_FREE_PRE=$FREE"
+          test "$FREE" -ge 6442450944
+          git fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          git merge-base --is-ancestor "$EXPECTED_BASE" "$TARGET_SHA"
+          TMP=$(mktemp -d "$HOME/porota-wave4.XXXXXX")
+          trap 'git -C "$REPO" worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label 'porota.wave=rc6-wave4-disk-phase-a' -t "$TARGET_IMAGE" "$TMP/source"
+          test "$(sudo -n docker image inspect "$TARGET_IMAGE" --format '{{index .Config.Labels "porota.commit"}}')" = "$TARGET_SHA"
+          echo '=== ACTIVATE — NO AUTOMATIC ROLLBACK ==='
+          git checkout -f -B "$TARGET_BRANCH" "$TARGET_SHA"
+          git branch --set-upstream-to="origin/$TARGET_BRANCH" "$TARGET_BRANCH" >/dev/null 2>&1 || true
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+          echo '=== POSTFLIGHT ==='
+          sleep 10
+          sudo -n docker inspect -f 'POST_OBSERVER={{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'POST_DASHBOARD={{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import importlib.metadata as m, sqlite3
+          import fa_raw_evidence_store_rc6 as s
+          assert m.version('ppi-client')=='1.3.0'
+          assert s.raw_storage_mode({})=='LEGACY'
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'POST_DB={q}|{mode}|{real}')
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          print('WAVE4_MODULE=GREEN')
+          print('WAVE4_DEFAULT_MODE=LEGACY_OFF')
+          PY
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'ROLLBACK_AUTOMATICO=NO'
+          echo 'WAVE4_DISK_PHASE_A_DEPLOY=GREEN'
+          REMOTE
+      - name: Failure diagnostics only — never rollback
+        if: failure()
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set +e
+          ssh -i "$HOME/.ssh/porota_wave4" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          echo '=== WAVE4 FAILURE DIAGNOSTICS READ ONLY ==='
+          date -u
+          cd /opt/porota-trading 2>/dev/null || exit 0
+          echo "HEAD=$(git rev-parse HEAD 2>/dev/null)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_observer 2>/dev/null || true
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard 2>/dev/null || true
+          echo 'ROLLBACK_PERFORMED=NO'
+          REMOTE
+          exit 1
