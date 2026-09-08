@@ -153,7 +153,8 @@ jobs:
           print(f'PRE_DB={q}|{mode}|{real}')
           assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
           PY
-          test -r /opt/porota-trading/.secrets/ppi_production.json
+          sudo -n test -r /opt/porota-trading/.secrets/ppi_production.json
+          echo 'PPI_CANONICAL_SECRET_READABLE_VIA_SUDO=GREEN'
           FREE=$(df -PB1 "$REPO" | awk 'NR==2{print $4}')
           echo "DISK_FREE_PRE=$FREE"
           test "$FREE" -ge 6442450944
