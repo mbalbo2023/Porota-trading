@@ -1,0 +1,143 @@
+POROTA RC6 — PPI SDK STATIC DRIFT AUDIT
+DATE=2026-09-08
+NETWORK_BROKER_CALLS=NONE
+LIVE_HOST_INSTALL=NONE
+ORDER_ROUTE_TEST=NONE
+VERSIONS=1.2.4_vs_1.3.0
+
+=== SDIST HASHES ===
+1cb243e9f82c6e068d91849440aafc94b957f2a600f3fcbf2760798d79708ff2  /tmp/ppi-sdk/124/ppi_client-1.2.4.tar.gz
+a930f7f4cc2531515c4e101c467126bf78d905880475b558ab1444461025d3eb  /tmp/ppi-sdk/130/ppi_client-1.3.0.tar.gz
+
+=== FILE INVENTORY ===
+ONLY_1_2_4=[]
+ONLY_1_3_0=[]
+CHANGED=["PKG-INFO", "ppi_client.egg-info/PKG-INFO", "ppi_client/ppi_restclient.py", "setup.py"]
+
+=== PUBLIC PYTHON STRUCTURE 1.2.4 ===
+ppi_client/__init__.py
+  
+ppi_client/api/__init__.py
+  
+ppi_client/api/accounts.py
+  class AccountsApi :: __init__self, api_client | set_tokenself, access_token: str, refresh_token: str | login_apiself, api_key: str, api_secret: str | get_accountsself | get_bank_accountsself, account_number: str | get_available_balanceself, account_number: str | get_balance_and_positionsself, account_number: str | get_movementsself, parameters: AccountMovements | get_investing_profile_questionsself | get_investing_profile_instrument_typesself | get_investing_profileself, account_number: str | set_investing_profileself, parameters: InvestingProfile | register_bank_accountself, parameters: BankAccountRequest | register_foreign_bank_accountself, parameters: ForeignBankAccountRequest | cancel_bank_accountself, parameters: CancelBankAccountRequest
+ppi_client/api/configuration.py
+  class ConfigurationApi :: __init__self, api_client | get_instrument_typesself | get_marketsself | get_settlementsself | get_quantity_typesself | get_operation_termsself | get_operation_typesself | get_operationsself | get_holidaysself, start_date: datetime=None, end_date: datetime=None, is_usa: bool=False | is_local_holidayself | is_usa_holidayself
+ppi_client/api/constants.py
+  
+ppi_client/api/marketdata.py
+  class MarketDataApi :: __init__self, api_client | search_instrumentself, ticker: str, instrument_name: str, market: str, instrument_type: str | searchself, ticker: str, instrument_type: str, settlement: str, date_from: datetime, date_to: datetime | currentself, ticker: str, instrument_type: str, settlement: str | bookself, ticker: str, instrument_type: str, settlement: str | intradayself, ticker: str, instrument_type: str, settlement: str | estimate_bondsself, parameters: EstimateBonds | search_skip_filterself, ticker: str, instrument_type: str, settlement: str, date_from: datetime, date_to: datetime
+ppi_client/api/orders.py
+  class OrdersApi :: __init__self, api_client | get_ordersself, account_number: str, date_from: datetime, date_to: datetime | get_active_ordersself, account_number: str | get_order_detailself, account_number: str, order_id: str, external_id: str | budgetself, parameters: OrderBudget | confirmself, parameters: OrderConfirm | cancel_orderself, parameters: Order | mass_cancel_orderself, account_number: str | budget_transferself, parameters: TransferBudget | confirm_transferself, parameters: TransferBudget
+ppi_client/api/realtime.py
+  class RealtimeApi :: __init__self, api_client | connect_to_market_dataself, connect_handler, disconnect_handler, data_handler | connect_to_accountself, connect_handler, disconnect_handler, data_handler | start_connectionsself | subscribe_to_elementself, instrument: Instrument | subscribe_to_account_dataself, account_number: str
+ppi_client/models/__init__.py
+  
+ppi_client/models/account_movements.py
+  class AccountMovements :: 
+ppi_client/models/bank_account_request.py
+  class BankAccountRequest :: 
+ppi_client/models/cancel_bank_account_request.py
+  class CancelBankAccountRequest :: 
+ppi_client/models/disclaimer.py
+  class Disclaimer :: 
+ppi_client/models/estimate_bonds.py
+  class EstimateBonds :: 
+ppi_client/models/foreign_bank_account_request.py
+  class ForeignBankAccountRequest :: 
+ppi_client/models/foreign_bank_account_request_dto.py
+  class ForeignBankAccountRequestDTO :: 
+ppi_client/models/instrument.py
+  class Instrument :: 
+ppi_client/models/investing_profile.py
+  class InvestingProfile :: 
+ppi_client/models/investing_profile_answer.py
+  class InvestingProfileAnswer :: 
+ppi_client/models/order.py
+  class Order :: 
+ppi_client/models/order_budget.py
+  class OrderBudget :: 
+ppi_client/models/order_confirm.py
+  class OrderConfirm :: 
+ppi_client/models/transfer_budget.py
+  class TransferBudget :: 
+ppi_client/ppi.py
+  class PPI :: __init__self, sandbox=False, *args
+ppi_client/ppi_api_client.py
+  class PPIClient :: __init__self, version, sandbox | get_rest_clientself | getself, uri, params=None, data=None, content_type=MIME_JSON | postself, uri, data=None, params=None, content_type=MIME_JSON, api_key=None, api_secret=None | putself, uri, data=None, params=None, content_type=MIME_JSON | deleteself, uri, data=None, params=None, content_type=MIME_JSON | connect_ws_marketdataself, onconnect_handler=None, ondisconnect_handler=None, marketdata_handler=None | connect_ws_accountdataself, onconnect_handler=None, ondisconnect_handler=None, data_handler=None | renew_tokenself
+ppi_client/ppi_exceptions.py
+  class PPIException :: __init__self, value | __repr__self
+  class PPIInvalidCredentials :: 
+  class PPIHTTPException :: __init__self, httpStatus, message | __repr__self
+ppi_client/ppi_restclient.py
+  class RestClient :: __init__self, versionSDK, sandbox | get_sessionself | getself, uri, params=None, headers=None, data=None, content_type=MIME_JSON | postself, uri, data=None, params=None, headers=None, content_type=MIME_JSON | putself, uri, data=None, params=None, headers=None, content_type=MIME_JSON | deleteself, uri, data=None, params=None, headers=None, content_type=MIME_JSON | login_wsself | connect_to_websocketself, hub_name
+  class PPISSLAdapter :: init_poolmanagerself, connections, maxsize, block=False
+  function get_transport_adapter
+setup.py
+  
+
+=== PUBLIC PYTHON STRUCTURE 1.3.0 ===
+ppi_client/__init__.py
+  
+ppi_client/api/__init__.py
+  
+ppi_client/api/accounts.py
+  class AccountsApi :: __init__self, api_client | set_tokenself, access_token: str, refresh_token: str | login_apiself, api_key: str, api_secret: str | get_accountsself | get_bank_accountsself, account_number: str | get_available_balanceself, account_number: str | get_balance_and_positionsself, account_number: str | get_movementsself, parameters: AccountMovements | get_investing_profile_questionsself | get_investing_profile_instrument_typesself | get_investing_profileself, account_number: str | set_investing_profileself, parameters: InvestingProfile | register_bank_accountself, parameters: BankAccountRequest | register_foreign_bank_accountself, parameters: ForeignBankAccountRequest | cancel_bank_accountself, parameters: CancelBankAccountRequest
+ppi_client/api/configuration.py
+  class ConfigurationApi :: __init__self, api_client | get_instrument_typesself | get_marketsself | get_settlementsself | get_quantity_typesself | get_operation_termsself | get_operation_typesself | get_operationsself | get_holidaysself, start_date: datetime=None, end_date: datetime=None, is_usa: bool=False | is_local_holidayself | is_usa_holidayself
+ppi_client/api/constants.py
+  
+ppi_client/api/marketdata.py
+  class MarketDataApi :: __init__self, api_client | search_instrumentself, ticker: str, instrument_name: str, market: str, instrument_type: str | searchself, ticker: str, instrument_type: str, settlement: str, date_from: datetime, date_to: datetime | currentself, ticker: str, instrument_type: str, settlement: str | bookself, ticker: str, instrument_type: str, settlement: str | intradayself, ticker: str, instrument_type: str, settlement: str | estimate_bondsself, parameters: EstimateBonds | search_skip_filterself, ticker: str, instrument_type: str, settlement: str, date_from: datetime, date_to: datetime
+ppi_client/api/orders.py
+  class OrdersApi :: __init__self, api_client | get_ordersself, account_number: str, date_from: datetime, date_to: datetime | get_active_ordersself, account_number: str | get_order_detailself, account_number: str, order_id: str, external_id: str | budgetself, parameters: OrderBudget | confirmself, parameters: OrderConfirm | cancel_orderself, parameters: Order | mass_cancel_orderself, account_number: str | budget_transferself, parameters: TransferBudget | confirm_transferself, parameters: TransferBudget
+ppi_client/api/realtime.py
+  class RealtimeApi :: __init__self, api_client | connect_to_market_dataself, connect_handler, disconnect_handler, data_handler | connect_to_accountself, connect_handler, disconnect_handler, data_handler | start_connectionsself | subscribe_to_elementself, instrument: Instrument | subscribe_to_account_dataself, account_number: str
+ppi_client/models/__init__.py
+  
+ppi_client/models/account_movements.py
+  class AccountMovements :: 
+ppi_client/models/bank_account_request.py
+  class BankAccountRequest :: 
+ppi_client/models/cancel_bank_account_request.py
+  class CancelBankAccountRequest :: 
+ppi_client/models/disclaimer.py
+  class Disclaimer :: 
+ppi_client/models/estimate_bonds.py
+  class EstimateBonds :: 
+ppi_client/models/foreign_bank_account_request.py
+  class ForeignBankAccountRequest :: 
+ppi_client/models/foreign_bank_account_request_dto.py
+  class ForeignBankAccountRequestDTO :: 
+ppi_client/models/instrument.py
+  class Instrument :: 
+ppi_client/models/investing_profile.py
+  class InvestingProfile :: 
+ppi_client/models/investing_profile_answer.py
+  class InvestingProfileAnswer :: 
+ppi_client/models/order.py
+  class Order :: 
+ppi_client/models/order_budget.py
+  class OrderBudget :: 
+ppi_client/models/order_confirm.py
+  class OrderConfirm :: 
+ppi_client/models/transfer_budget.py
+  class TransferBudget :: 
+ppi_client/ppi.py
+  class PPI :: __init__self, sandbox=False, *args
+ppi_client/ppi_api_client.py
+  class PPIClient :: __init__self, version, sandbox | get_rest_clientself | getself, uri, params=None, data=None, content_type=MIME_JSON | postself, uri, data=None, params=None, content_type=MIME_JSON, api_key=None, api_secret=None | putself, uri, data=None, params=None, content_type=MIME_JSON | deleteself, uri, data=None, params=None, content_type=MIME_JSON | connect_ws_marketdataself, onconnect_handler=None, ondisconnect_handler=None, marketdata_handler=None | connect_ws_accountdataself, onconnect_handler=None, ondisconnect_handler=None, data_handler=None | renew_tokenself
+ppi_client/ppi_exceptions.py
+  class PPIException :: __init__self, value | __repr__self
+  class PPIInvalidCredentials :: 
+  class PPIHTTPException :: __init__self, httpStatus, message | __repr__self
+ppi_client/ppi_restclient.py
+  class RestClient :: __init__self, versionSDK, sandbox | get_sessionself | getself, uri, params=None, headers=None, data=None, content_type=MIME_JSON | postself, uri, data=None, params=None, headers=None, content_type=MIME_JSON | putself, uri, data=None, params=None, headers=None, content_type=MIME_JSON | deleteself, uri, data=None, params=None, headers=None, content_type=MIME_JSON | login_wsself | connect_to_websocketself, hub_name
+  class PPISSLAdapter :: init_poolmanagerself, connections, maxsize, block=False
+  function get_transport_adapter
+setup.py
+  
+
+=== SIGNATURE DELTA ===
+
+=== RELEVANT SOURCE DIFFS ===
