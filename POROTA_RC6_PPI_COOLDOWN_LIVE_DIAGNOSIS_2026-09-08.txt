@@ -1,0 +1,150 @@
+POROTA RC6 — PPI COOLDOWN LIVE DIAGNOSIS READ ONLY
+PPI_NETWORK_CALLS=NONE
+LOGIN_ATTEMPTS=NONE
+DB_WRITES=NONE
+UTC=2026-09-08T14:28:49Z
+=== CONTAINER / STATE ===
+OBSERVER_RUNNING=true RESTARTS=0 IMAGE=porota-trading-bot:17.0.0-rc6
+QUICK_CHECK=ok
+OBSERVER_STATE={"id": 1, "mode": "PRODUCTION_PAPER", "process_state": "DEGRADED", "session_state": "MARKET_OPEN", "ppi_auth": "COOLDOWN", "heartbeat_at": "2026-09-08T14:29:27.299505+00:00", "last_market_data_at": "2026-09-07T19:59:43.028171+00:00", "real_orders_sent": 0, "http_allowed": 9193, "http_blocked": 0, "detail": "PPI en espera de reintento; no se abre una tormenta de logins."}
+=== API_HEALTH_RECENT ===
+{"component": "PPI_PRODUCTION_MARKETDATA", "state": "ROJO", "detail": "0/20 instrumentos con cotización útil.", "checked_at": "2026-09-08T13:30:03.553066+00:00", "last_success_at": "2026-09-07T19:59:44.457845+00:00", "source": "PPI Producción"}
+{"component": "PAPER_ECONOMIC_GATE_SHADOW", "state": "AMARILLO", "detail": "Sin señales BUY evaluadas hoy; esperando evidencia de rueda. SHADOW valida el pipeline; no demuestra rentabilidad ni habilita dinero real.", "checked_at": "2026-09-08T13:30:03.584369+00:00", "last_success_at": "2026-09-08T02:55:07.318446+00:00", "source": "Motor matemático Python"}
+{"component": "PAPER_SIGNAL_ROTATION", "state": "AMARILLO", "detail": "Factibilidad rotativa: {\"estimated_cycle_seconds\": 140.0, \"estimated_samples_per_window\": 38, \"feasible\": true, \"focus_count\": 10, \"focus_estimated_samples_per_window\": 38, \"focus_feasible\": true, \"required_samples\": 6, \"rotation_estimated_samples_per_window\": 0, \"rotation_feasible\": false, \"rotation_pool\": 824, \"rotation_slots\": 10, \"rotation_turns\": 83, \"window_minutes\": 90}", "checked_at": "2026-09-08T13:30:01.708158+00:00", "last_success_at": null, "source": "Runtime PAPER"}
+{"component": "PAPER_SIGNAL_SAMPLING", "state": "VERDE", "detail": "Foco con capacidad teórica suficiente: {\"estimated_cycle_seconds\": 140.0, \"estimated_samples_per_window\": 38, \"feasible\": true, \"focus_count\": 10, \"focus_estimated_samples_per_window\": 38, \"focus_feasible\": true, \"required_samples\": 6, \"rotation_estimated_samples_per_window\": 0, \"rotation_feasible\": false, \"rotation_pool\": 824, \"rotation_slots\": 10, \"rotation_turns\": 83, \"window_minutes\": 90}", "checked_at": "2026-09-08T13:30:01.696813+00:00", "last_success_at": "2026-09-08T13:30:01.696813+00:00", "source": "Runtime PAPER"}
+{"component": "PAPER_FOCUS_COVERAGE", "state": "VERDE", "detail": "Foco efectivo 10/10; mínimo para nuevas aperturas simuladas 4; fuente PPI_FINANCIAL_CATALOG; faltantes: ninguno. Ingesta y cierres permanecen activos.", "checked_at": "2026-09-08T13:30:01.635090+00:00", "last_success_at": "2026-09-08T13:30:01.635090+00:00", "source": "Catálogo PPI normalizado"}
+{"component": "PPI_BACKGROUND_INGEST", "state": "ROJO", "detail": "Lote histórico incremental completado: 0 filas válidas; próximo intento no antes de 2 h. resultado de origen=ROJO. No se consultaron cotizaciones ni libros fuera de rueda.", "checked_at": "2026-09-08T13:05:43.291895+00:00", "last_success_at": null, "source": "PPI Producción / History"}
+{"component": "PPI_PRODUCTION_HISTORY", "state": "ROJO", "detail": "Lote histórico: completos=0; parciales_con_evidencia_valida=0; vacíos_o_inválidos=0; errores=40; cobertura acumulada 67/246 instrumentos; 0 filas válidas en este lote. PARTIAL conserva evidencia válida pero permanece AMARILLO; sólo vacío/inválido y ERROR son fallos duros. La descarga completa es incremental para no saturar PPI.", "checked_at": "2026-09-08T13:05:43.286897+00:00", "last_success_at": "2026-09-08T07:04:09.725159+00:00", "source": "PPI Producción"}
+{"component": "ROFEX_MARKETDATA", "state": "AMARILLO", "detail": "43 contrato(s) visible(s); contexto únicamente. No se simulan futuros sin multiplicador y margen atribuible.", "checked_at": "2026-09-08T03:00:26.986771+00:00", "last_success_at": "2026-09-08T03:00:26.986771+00:00", "source": "PPI Producción / ROFEX"}
+{"component": "PPI_PRODUCTION_CATALOG", "state": "VERDE", "detail": "85 búsquedas con coincidencias; 834 identidades únicas; 0 búsquedas fallidas. Ticker y Name siempre no vacíos. Configuración actual: verificada.", "checked_at": "2026-09-08T03:00:26.973502+00:00", "last_success_at": "2026-09-08T03:00:26.973502+00:00", "source": "PPI Producción"}
+{"component": "PPI_PRODUCTION_AUTH", "state": "ROJO", "detail": "Exception: Credenciales invalidas.", "checked_at": "2026-09-08T14:16:55.713509+00:00", "last_success_at": "2026-09-07T23:27:17.607402+00:00", "source": "PPI Producción"}
+{"component": "BYMA_CALENDAR", "state": "VERDE", "detail": "Calendario operativo auditado; fase actual CLOSED.", "checked_at": "2026-09-08T11:27:23.051774+00:00", "last_success_at": "2026-09-08T11:27:23.051774+00:00", "source": "ak_byma_calendar"}
+{"component": "BYMA_INSTRUMENTS_API", "state": "GRIS", "detail": "Los planes oficiales de instrumentos/market data requieren alta o suscripcion, incluso los gratuitos; no se usan endpoints ocultos.", "checked_at": "2026-09-08T11:27:23.041810+00:00", "last_success_at": null, "source": "catálogo oficial BYMA"}
+{"component": "BYMA_WEB", "state": "VERDE", "detail": "HTTP 200; consulta pública GET sin credenciales.", "checked_at": "2026-09-08T11:27:23.029467+00:00", "last_success_at": "2026-09-08T11:27:23.029467+00:00", "source": "sonda pública oficial"}
+{"component": "BYMA_OPEN_DATA", "state": "VERDE", "detail": "HTTP 200; consulta pública GET sin credenciales.", "checked_at": "2026-09-08T11:27:21.074979+00:00", "last_success_at": "2026-09-08T11:27:21.074979+00:00", "source": "sonda pública oficial"}
+{"component": "GEMINI_DECISION", "state": "VERDE", "detail": "Modelo gemini-3.7-flash disponible; contrato JSON correcto; porton critico activo.", "checked_at": "2026-08-29T21:13:19.137581+00:00", "last_success_at": "2026-08-29T21:13:19.137581+00:00", "source": "Google Gemini"}
+=== SOURCE_SYNC ===
+{"source": "PPI_PRODUCTION_HISTORY", "status": "ROJO", "last_attempt_at": "2026-09-08T13:05:43.282868+00:00", "last_success_at": "2026-09-08T07:04:09.715495+00:00", "items": 0, "detail": "Lote histórico: completos=0; parciales_con_evidencia_valida=0; vacíos_o_inválidos=0; errores=40; cobertura acumulada 67/246 instrumentos; 0 filas válidas en este lote. PARTIAL conserva evidencia válida pero permanece AMARILLO; sólo vacío/inválido y ERROR son fallos duros. La descarga completa es incremental para no saturar PPI."}
+{"source": "PPI_PRODUCTION_CATALOG", "status": "VERDE", "last_attempt_at": "2026-09-08T03:00:26.920881+00:00", "last_success_at": "2026-09-08T03:00:26.920881+00:00", "items": 834, "detail": "85 búsquedas con coincidencias; 834 identidades únicas; 0 búsquedas fallidas. Ticker y Name siempre no vacíos. Configuración actual: verificada."}
+{"source": "BYMA_CALENDAR", "status": "VERDE", "last_attempt_at": "2026-09-08T11:27:23.047187+00:00", "last_success_at": "2026-09-08T11:27:23.047187+00:00", "items": 1, "detail": "Calendario local auditado: fase actual CLOSED."}
+{"source": "BYMA_WEB", "status": "VERDE", "last_attempt_at": "2026-09-08T11:27:23.035187+00:00", "last_success_at": "2026-09-08T11:27:23.035187+00:00", "items": 0, "detail": "HTTP 200; disponibilidad web oficial."}
+{"source": "BYMA_OPEN_DATA", "status": "VERDE", "last_attempt_at": "2026-09-08T11:27:21.079681+00:00", "last_success_at": "2026-09-08T11:27:21.079681+00:00", "items": 0, "detail": "HTTP 200; disponibilidad web oficial."}
+=== RECENT EVENTS FILTERED ===
+paper_events:{"id": 50648, "event_at": "2026-09-08T13:30:02.941491+00:00", "source": "PRODUCTION_PAPER", "event_type": "PPI_SESSION_INVALID", "paper_id": null, "detail": "Sesión de market data expirada; ciclo interrumpido y relogin controlado"}
+paper_events:{"id": 50647, "event_at": "2026-09-08T13:30:02.934040+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGAL: PPI_SESSION_INVALID"}
+paper_events:{"id": 47940, "event_at": "2026-09-07T23:27:17.604472+00:00", "source": "PRODUCTION_PAPER", "event_type": "PPI_LOGIN", "paper_id": null, "detail": "owner=scanner"}
+paper_events:{"id": 47939, "event_at": "2026-09-07T23:09:18.811545+00:00", "source": "PRODUCTION_PAPER", "event_type": "PPI_LOGIN", "paper_id": null, "detail": "owner=scanner"}
+paper_events:{"id": 47897, "event_at": "2026-09-07T20:44:25.593944+00:00", "source": "PRODUCTION_PAPER", "event_type": "PPI_LOGIN", "paper_id": null, "detail": "owner=scanner"}
+paper_events:{"id": 47828, "event_at": "2026-09-07T19:59:17.015884+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGAL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47605, "event_at": "2026-09-07T19:46:42.684274+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "BBAR: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47600, "event_at": "2026-09-07T19:45:03.045171+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YMCOY: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47581, "event_at": "2026-09-07T19:44:42.882967+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "CEPU: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47580, "event_at": "2026-09-07T19:44:41.255446+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "SUPV: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47415, "event_at": "2026-09-07T19:35:10.713185+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGAL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47308, "event_at": "2026-09-07T19:28:46.734410+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "CEPU: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47306, "event_at": "2026-09-07T19:28:43.615705+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "BBAR: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47299, "event_at": "2026-09-07T19:27:33.664345+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "DLR/SEP26: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47298, "event_at": "2026-09-07T19:27:32.032764+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GFGC5800SE: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47276, "event_at": "2026-09-07T19:27:09.716746+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "PAMP: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47274, "event_at": "2026-09-07T19:27:06.520521+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGAL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47246, "event_at": "2026-09-07T19:25:09.100766+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "PAMP: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47244, "event_at": "2026-09-07T19:25:05.958800+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGAL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47170, "event_at": "2026-09-07T19:20:34.056271+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "AAPLD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47129, "event_at": "2026-09-07T19:17:16.691121+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GD38: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47127, "event_at": "2026-09-07T19:17:13.588972+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGALC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 47016, "event_at": "2026-09-07T19:10:41.842633+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "DLR/JUN27: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46958, "event_at": "2026-09-07T19:07:33.596767+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GFGC4600DI: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46955, "event_at": "2026-09-07T19:07:30.387430+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "SO6C: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46926, "event_at": "2026-09-07T19:05:23.819593+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GFGC4400OC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46923, "event_at": "2026-09-07T19:05:20.502095+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "AAPLD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46922, "event_at": "2026-09-07T19:05:18.801484+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "AAPL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46917, "event_at": "2026-09-07T19:05:08.283758+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "PAMP: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46916, "event_at": "2026-09-07T19:05:06.635413+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46915, "event_at": "2026-09-07T19:05:04.976341+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGAL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46762, "event_at": "2026-09-07T18:55:29.516751+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "CEPU: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46689, "event_at": "2026-09-07T18:50:41.917644+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "DLR/ABR27: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46618, "event_at": "2026-09-07T18:47:27.642774+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "SUPV: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46616, "event_at": "2026-09-07T18:47:24.457794+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "BMA: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46613, "event_at": "2026-09-07T18:47:18.107707+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGAL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46551, "event_at": "2026-09-07T18:42:30.319600+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFV7000DI: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46546, "event_at": "2026-09-07T18:42:24.891641+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFV6700OC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46543, "event_at": "2026-09-07T18:42:21.732513+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFV67000O: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46540, "event_at": "2026-09-07T18:42:18.744249+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFV6400OC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46537, "event_at": "2026-09-07T18:42:15.612437+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFV64000O: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46534, "event_at": "2026-09-07T18:42:11.516082+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "AAPLD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46507, "event_at": "2026-09-07T18:40:43.508817+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFV5200SE: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46504, "event_at": "2026-09-07T18:40:40.268790+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "AAPLD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46468, "event_at": "2026-09-07T18:38:28.940850+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "BBAR: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46460, "event_at": "2026-09-07T18:37:19.110464+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFV4450SE: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46459, "event_at": "2026-09-07T18:37:17.426489+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFV4450OC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46345, "event_at": "2026-09-07T18:31:59.778673+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "SUPV: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46342, "event_at": "2026-09-07T18:31:55.239230+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "PAMP: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46341, "event_at": "2026-09-07T18:31:53.597328+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46329, "event_at": "2026-09-07T18:30:42.026791+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFC73000O: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46293, "event_at": "2026-09-07T18:29:05.364218+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFC6100SE: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46158, "event_at": "2026-09-07T18:22:17.772354+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "PAMP: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46156, "event_at": "2026-09-07T18:22:14.688741+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGAL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46084, "event_at": "2026-09-07T18:17:37.414827+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "PAMC5000OC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46083, "event_at": "2026-09-07T18:17:35.762456+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "XPEVD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46071, "event_at": "2026-09-07T18:17:23.623407+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "AAPL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46069, "event_at": "2026-09-07T18:17:20.451723+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "SUPV: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46068, "event_at": "2026-09-07T18:17:18.779849+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "BBAR: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46030, "event_at": "2026-09-07T18:14:37.419494+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "XLV: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46029, "event_at": "2026-09-07T18:14:35.720238+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "PAMC4100DI: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46028, "event_at": "2026-09-07T18:14:34.061347+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "WMTD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 46027, "event_at": "2026-09-07T18:14:32.405070+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "PAMC3900OC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45984, "event_at": "2026-09-07T18:12:18.369823+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "SUPV: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45983, "event_at": "2026-09-07T18:12:16.749967+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "BBAR: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45980, "event_at": "2026-09-07T18:12:12.189941+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45979, "event_at": "2026-09-07T18:12:10.550562+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GGAL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45950, "event_at": "2026-09-07T18:09:40.171689+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GFGV9200OC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45945, "event_at": "2026-09-07T18:09:33.678912+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "VRSN: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45861, "event_at": "2026-09-07T18:04:35.488527+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GFGV7800OC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45819, "event_at": "2026-09-07T18:02:51.823034+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "VAL3D: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45816, "event_at": "2026-09-07T18:02:48.705833+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "AAPLD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45813, "event_at": "2026-09-07T18:02:42.711898+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "SUPV: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45811, "event_at": "2026-09-07T18:02:37.449864+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "BMA: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45809, "event_at": "2026-09-07T18:02:34.163065+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "YPFD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45688, "event_at": "2026-09-07T17:54:42.241793+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "PBRC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45664, "event_at": "2026-09-07T17:52:39.734856+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "ORCL: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45661, "event_at": "2026-09-07T17:52:35.672105+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "NVSD: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45656, "event_at": "2026-09-07T17:52:30.070102+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GFGV5200SE: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+paper_events:{"id": 45653, "event_at": "2026-09-07T17:52:26.963727+00:00", "source": "PRODUCTION_PAPER", "event_type": "DATA_ERROR", "paper_id": null, "detail": "GFGV5200OC: PPI_EMPTY_OR_NON_JSON_AFTER_RETRY"}
+=== TIMER / SERVICE STATUS ===
+UNIT=porota-fast-functional-health-rc6.service
+Result=success
+ExecMainStartTimestamp=Tue 2026-09-08 14:26:50 UTC
+ExecMainExitTimestamp=Tue 2026-09-08 14:26:50 UTC
+ExecMainStatus=0
+ActiveState=inactive
+SubState=dead
+UNIT=porota-history-postclose-rc6.service
+Result=success
+ExecMainStartTimestamp=Tue 2026-09-08 14:17:00 UTC
+ExecMainExitTimestamp=Tue 2026-09-08 14:17:02 UTC
+ExecMainStatus=0
+ActiveState=inactive
+SubState=dead
+UNIT=porota-contract-evidence-rc6.service
+Result=exit-code
+ExecMainStartTimestamp=Tue 2026-09-08 14:26:55 UTC
+ExecMainExitTimestamp=Tue 2026-09-08 14:27:46 UTC
+ExecMainStatus=4
+ActiveState=failed
+SubState=failed
+UNIT=porota-introspeccion-hf5.service
+Result=success
+ExecMainStartTimestamp=Tue 2026-09-08 14:15:00 UTC
+ExecMainExitTimestamp=Tue 2026-09-08 14:15:51 UTC
+ExecMainStatus=2
+ActiveState=inactive
+SubState=dead
+UNIT=porota-candle-integrity-rc6.service
+Result=success
+ExecMainStartTimestamp=Tue 2026-09-08 14:29:10 UTC
+ExecMainExitTimestamp=
+ExecMainStatus=0
+ActiveState=activating
+SubState=start
+=== SANITIZED OBSERVER LOG SIGNALS ===
+DIAGNOSIS_CAPTURE=COMPLETE_READ_ONLY
