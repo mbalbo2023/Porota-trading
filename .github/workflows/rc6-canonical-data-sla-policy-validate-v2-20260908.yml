@@ -1,0 +1,97 @@
+name: RC6 canonical data SLA policy validate v2 2026-09-08
+on:
+  push:
+    branches: [feature/rc6-canonical-data-sla-policy-20260908]
+    paths: ['.github/workflows/rc6-canonical-data-sla-policy-validate-v2-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/rc6-canonical-data-sla-policy-20260908
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply canonical policy again
+        run: |
+          set -euo pipefail
+          test ! -e rc6_data_sla_policy.py
+          cat > rc6_data_sla_policy.py <<'PY'
+          from __future__ import annotations
+          from dataclasses import dataclass
+          import os
+          @dataclass(frozen=True)
+          class DataSLA:
+              cadence_seconds:int
+              warning_after_seconds:int
+              max_staleness_seconds:int
+              def __post_init__(self):
+                  if min(self.cadence_seconds,self.warning_after_seconds,self.max_staleness_seconds)<=0: raise ValueError('DATA_SLA_NON_POSITIVE')
+                  if self.warning_after_seconds<self.cadence_seconds: raise ValueError('DATA_SLA_WARNING_BEFORE_CADENCE')
+                  if self.max_staleness_seconds<self.warning_after_seconds: raise ValueError('DATA_SLA_MAX_BEFORE_WARNING')
+          def _positive(name,default):
+              value=int(os.getenv(name,str(default)))
+              if value<=0: raise ValueError(name+'_NON_POSITIVE')
+              return value
+          def ppi_background_ingest_sla():
+              cadence=_positive('PPI_BACKGROUND_INGEST_SECONDS',21600)
+              warning=_positive('PPI_BACKGROUND_INGEST_WARN_AFTER_SECONDS',cadence)
+              maximum=_positive('PPI_BACKGROUND_INGEST_MAX_STALENESS_SECONDS',warning)
+              return DataSLA(cadence,warning,maximum)
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('bf_production_paper_observer.py'); s=p.read_text(encoding='utf-8')
+          old='BACKGROUND_INGEST_SECONDS = max(\n    3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))\n)'
+          new='from rc6_data_sla_policy import ppi_background_ingest_sla\n\n_BACKGROUND_INGEST_SLA = ppi_background_ingest_sla()\nBACKGROUND_INGEST_SECONDS = max(3600, _BACKGROUND_INGEST_SLA.cadence_seconds)'
+          if old not in s: raise SystemExit('OBSERVER_PATTERN_NOT_FOUND')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          p=Path('bg_paper_dashboard.py'); s=p.read_text(encoding='utf-8')
+          marker='from datetime import '
+          if 'from rc6_data_sla_policy import ppi_background_ingest_sla' not in s:
+              idx=s.find('\n',s.find(marker)); s=s[:idx+1]+'from rc6_data_sla_policy import ppi_background_ingest_sla\n'+s[idx+1:]
+          s=s.replace('int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "7200"))','ppi_background_ingest_sla().cadence_seconds')
+          p.write_text(s,encoding='utf-8')
+          PY
+          cat > tests/test_rc6_data_sla_policy.py <<'PY'
+          import rc6_data_sla_policy as sla
+          def test_default(monkeypatch):
+              for k in ('PPI_BACKGROUND_INGEST_SECONDS','PPI_BACKGROUND_INGEST_WARN_AFTER_SECONDS','PPI_BACKGROUND_INGEST_MAX_STALENESS_SECONDS'): monkeypatch.delenv(k,raising=False)
+              x=sla.ppi_background_ingest_sla(); assert (x.cadence_seconds,x.warning_after_seconds,x.max_staleness_seconds)==(21600,21600,21600)
+          def test_independent(monkeypatch):
+              monkeypatch.setenv('PPI_BACKGROUND_INGEST_SECONDS','21600'); monkeypatch.setenv('PPI_BACKGROUND_INGEST_WARN_AFTER_SECONDS','25200'); monkeypatch.setenv('PPI_BACKGROUND_INGEST_MAX_STALENESS_SECONDS','43200')
+              x=sla.ppi_background_ingest_sla(); assert (x.cadence_seconds,x.warning_after_seconds,x.max_staleness_seconds)==(21600,25200,43200)
+          def test_order_fails_closed(monkeypatch):
+              monkeypatch.setenv('PPI_BACKGROUND_INGEST_SECONDS','21600'); monkeypatch.setenv('PPI_BACKGROUND_INGEST_WARN_AFTER_SECONDS','7200')
+              import pytest
+              with pytest.raises(ValueError,match='WARNING_BEFORE_CADENCE'): sla.ppi_background_ingest_sla()
+          def test_dashboard_no_two_hour_default():
+              text=open('bg_paper_dashboard.py',encoding='utf-8').read(); assert 'PPI_BACKGROUND_INGEST_SECONDS", "7200"' not in text; assert text.count('ppi_background_ingest_sla().cadence_seconds')>=4
+          PY
+      - name: Discover and run relevant existing tests
+        run: |
+          set -euo pipefail
+          python -m py_compile rc6_data_sla_policy.py bf_production_paper_observer.py bg_paper_dashboard.py
+          pip install -q pytest python-dotenv
+          mapfile -t existing < <(find tests -maxdepth 1 -type f \( -iname '*observer*.py' -o -iname '*dashboard*.py' -o -iname '*freshness*.py' -o -iname '*history*metric*.py' \) | sort)
+          printf 'RELEVANT_TESTS=%s\n' "${#existing[@]}"
+          printf '%s\n' "${existing[@]}"
+          pytest -q tests/test_rc6_data_sla_policy.py
+          if ((${#existing[@]})); then pytest -q "${existing[@]}"; fi
+          ! grep -R 'PPI_BACKGROUND_INGEST_SECONDS", "7200"' -- bg_paper_dashboard.py bf_production_paper_observer.py
+      - name: Commit tested policy
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rc6_data_sla_policy.py bf_production_paper_observer.py bg_paper_dashboard.py tests/test_rc6_data_sla_policy.py
+          git commit -m 'fix(rc6): canonicalize background ingest SLA semantics'
+          git push origin HEAD:feature/rc6-canonical-data-sla-policy-20260908
