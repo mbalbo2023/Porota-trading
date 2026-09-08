@@ -65,7 +65,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pytest -q \
+          PYTHONPATH=. pytest -q \
             tests/test_phase_a_raw_evidence_store_rc6.py \
             tests/test_phase_a_integration_rc6.py \
             tests/test_candle_archive_v17.py
