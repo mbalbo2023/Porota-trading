@@ -1,0 +1,29 @@
+name: RC6 History Store v3 selector 2026-09-07
+on:
+  push:
+    branches: [fix/rc6-history-store-completeness-price-basis-20260907]
+    paths:
+      - 'fh_history_store_v3_rc6.py'
+      - 'tests/test_rc6_history_store_v3_selector.py'
+      - '.github/workflows/rc6-history-store-v3-selector-20260907.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install -q pytest
+      - name: Compile and focused invariants
+        run: |
+          python -m py_compile fh_history_store_v3_rc6.py
+          python -m pytest -q tests/test_rc6_history_store_v3_selector.py
+      - name: Static safety
+        run: |
+          ! grep -Eiq 'requests\.|httpx\.|ppi.*order|broker|docker|subprocess' fh_history_store_v3_rc6.py
+          grep -q 'PRIMARY KEY(symbol,instrument_type,market,settlement,date,price_basis)' fh_history_store_v3_rc6.py
+          grep -q 'COMPLETENESS_RANK' fh_history_store_v3_rc6.py
+          echo HISTORY_STORE_V3_SHADOW=GREEN
