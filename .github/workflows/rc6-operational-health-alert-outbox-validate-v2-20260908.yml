@@ -1,0 +1,82 @@
+name: RC6 operational PPI health alert outbox validate v2 2026-09-08
+on:
+  push:
+    branches: [feature/rc6-operational-health-alert-outbox-20260908]
+    paths: ['.github/workflows/rc6-operational-health-alert-outbox-validate-v2-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env: {PYTHONPATH: .}
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: feature/rc6-operational-health-alert-outbox-20260908, fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Apply bridge
+        run: |
+          set -euo pipefail
+          cat > rc6_operational_alerts.py <<'PY'
+          from __future__ import annotations
+          import hashlib,re
+          from bn_telegram_bus import enqueue
+          CRITICAL_COMPONENTS={'PPI_PRODUCTION_AUTH','PPI_PRODUCTION_MARKETDATA','PPI_PRODUCTION_HISTORY'}
+          MATERIAL_BAD={'ROJO','ERROR','COOLDOWN','RATE_LIMIT'}; GOOD={'VERDE','OK','READY'}
+          def _clean(text):
+              s=str(text or ''); s=re.sub(r'(?i)(token|secret|password|authorization|cookie)\s*[:=]\s*\S+',r'\1=[OFUSCADO]',s); s=re.sub(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}','[JWT_OFUSCADO]',s); return s[:600]
+          def _class(s):
+              s=str(s or '').upper(); return 'BAD' if s in MATERIAL_BAD else ('GOOD' if s in GOOD else 'OTHER')
+          def enqueue_transition(c,*,component,previous_state,state,detail,checked_at,last_success_at=None,source='',real_orders_sent=0):
+              component=str(component or '').upper()
+              if component not in CRITICAL_COMPONENTS:return False
+              before,after=_class(previous_state),_class(state)
+              if after=='OTHER' or before==after:return False
+              if after=='GOOD' and before!='BAD':return False
+              if after=='BAD' and before=='BAD':return False
+              incident=hashlib.sha256(f'{component}|{after}|{last_success_at or "NEVER"}'.encode()).hexdigest()[:16]
+              key=f'operational-health:{component}:{after}:{incident}'; state=str(state or '').upper()
+              if after=='BAD':
+                  body=f'POROTA · ALERTA OPERATIVA\n{component}: {state}\nCausa: {_clean(detail)}\nÚltimo OK: {last_success_at or "sin registro"}\nFuente: {_clean(source)}\nÓrdenes reales enviadas: {int(real_orders_sent or 0)}\nAcción: mantener fail-closed y revisar la fuente sin forzar reintentos.'; kind='OPERATIONAL_HEALTH_RED'; priority=5
+              else:
+                  body=f'POROTA · RECUPERACIÓN OPERATIVA\n{component}: {state}\nDetalle: {_clean(detail)}\nFuente: {_clean(source)}\nÓrdenes reales enviadas: {int(real_orders_sent or 0)}\nLa recuperación no habilita producción real automáticamente.'; kind='OPERATIONAL_HEALTH_RECOVERY'; priority=8
+              return enqueue(c,key,kind,body,checked_at,priority=priority)
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('bf_production_paper_observer.py'); s=p.read_text()
+          old='''def _health(store, component, state, detail, source, success=False):\n    checked = now_iso()\n    with store.connect() as c:\n        previous = c.execute(\n            "SELECT last_success_at FROM api_health WHERE component=?", (component,)\n        ).fetchone()\n        last_success = checked if success else (previous[0] if previous else None)\n        c.execute("""INSERT INTO api_health VALUES(?,?,?,?,?,?)\n          ON CONFLICT(component) DO UPDATE SET state=excluded.state,\n          detail=excluded.detail,checked_at=excluded.checked_at,\n          last_success_at=excluded.last_success_at,source=excluded.source""",\n          (component, state, str(detail)[:1000], checked, last_success, source))\n'''
+          new='''def _health(store, component, state, detail, source, success=False):\n    checked = now_iso()\n    with store.connect() as c:\n        previous = c.execute("SELECT state,last_success_at FROM api_health WHERE component=?", (component,)).fetchone()\n        previous_state = previous[0] if previous else None\n        previous_success = previous[1] if previous else None\n        last_success = checked if success else previous_success\n        c.execute("""INSERT INTO api_health VALUES(?,?,?,?,?,?)\n          ON CONFLICT(component) DO UPDATE SET state=excluded.state,detail=excluded.detail,checked_at=excluded.checked_at,last_success_at=excluded.last_success_at,source=excluded.source""",\n          (component,state,str(detail)[:1000],checked,last_success,source))\n        try:\n            from rc6_operational_alerts import enqueue_transition\n            row=c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()\n            enqueue_transition(c,component=component,previous_state=previous_state,state=state,detail=detail,checked_at=checked,last_success_at=last_success,source=source,real_orders_sent=(row[0] if row else 0))\n        except Exception as exc:\n            c.execute("INSERT INTO paper_events(event_at,source,event_type,paper_id,detail) VALUES(?,?,?,?,?)",(checked,'OPERATIONAL_ALERT_BRIDGE','OPERATIONAL_ALERT_ERROR',None,type(exc).__name__))\n'''
+          if old not in s: raise SystemExit('HEALTH_PATTERN_NOT_FOUND')
+          p.write_text(s.replace(old,new,1))
+          PY
+          cat > tests/test_rc6_operational_alerts.py <<'PY'
+          import sqlite3,rc6_operational_alerts as a
+          def db():
+              c=sqlite3.connect(':memory:'); c.execute("create table paper_notification_outbox(id integer primary key autoincrement,event_key text not null unique,kind text not null,body text not null,priority integer not null,created_at text not null,state text not null default 'PENDING',attempts integer not null default 0,next_attempt_at text not null,lease_token text,lease_until text,sent_at text,message_id text,last_error text not null default '')"); return c
+          def test_red_once():
+              c=db(); assert a.enqueue_transition(c,component='PPI_PRODUCTION_AUTH',previous_state='VERDE',state='ROJO',detail='Credenciales invalidas.',checked_at='t',last_success_at='ok',real_orders_sent=0); assert not a.enqueue_transition(c,component='PPI_PRODUCTION_AUTH',previous_state='ROJO',state='COOLDOWN',detail='x',checked_at='t2',last_success_at='ok'); assert c.execute('select count(*) from paper_notification_outbox').fetchone()[0]==1
+          def test_recovery_once():
+              c=db(); assert a.enqueue_transition(c,component='PPI_PRODUCTION_AUTH',previous_state='ROJO',state='VERDE',detail='ok',checked_at='t'); assert 'no habilita producción real' in c.execute('select body from paper_notification_outbox').fetchone()[0]
+          def test_noncritical_silent(): assert not a.enqueue_transition(db(),component='PAPER_FOCUS_COVERAGE',previous_state='VERDE',state='ROJO',detail='x',checked_at='t')
+          def test_sanitize():
+              c=db(); a.enqueue_transition(c,component='PPI_PRODUCTION_AUTH',previous_state='VERDE',state='ROJO',detail='token=abcdef012345 secret=xyzxyzxyz',checked_at='t'); body=c.execute('select body from paper_notification_outbox').fetchone()[0]; assert 'abcdef012345' not in body and 'xyzxyzxyz' not in body
+          PY
+      - name: Install project deps
+        run: pip install -q -r requirements.txt
+      - name: Run bridge and existing messaging regressions
+        run: |
+          set -euo pipefail
+          python -m py_compile rc6_operational_alerts.py bf_production_paper_observer.py bn_telegram_bus.py bv_paper_runtime.py
+          mapfile -t t < <(find tests -maxdepth 1 -type f \( -iname '*telegram*.py' -o -iname '*notification*.py' -o -iname '*outbox*.py' \) | sort)
+          printf 'MESSAGING_TESTS=%s\n' "${#t[@]}"
+          pytest -q tests/test_rc6_operational_alerts.py "${t[@]}"
+          ! grep -Eiq 'budget_order\(|confirm_order\(|cancel_order\(' rc6_operational_alerts.py
+      - name: Commit tested bridge
+        run: |
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rc6_operational_alerts.py bf_production_paper_observer.py tests/test_rc6_operational_alerts.py
+          git commit -m 'fix(rc6): enqueue material PPI health transitions to outbox'
+          git push origin HEAD:feature/rc6-operational-health-alert-outbox-20260908
