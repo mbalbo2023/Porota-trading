@@ -162,90 +162,74 @@ def load_watchlist() -> List[Instrument]:
 
 
 def detect_account_permissions(ppi_client) -> dict:
-    """
-    Averigua, contra la cuenta real, qué clases de instrumento puede operar
-    el usuario — en vez de asumirlo.
+    """Search visibility + local adapter truth; never call order routes.
 
-    Este es el reemplazo directo de "no sé si mi cuenta tiene habilitadas las
-    opciones": el sistema lo pregunta solo, una vez por arranque y una vez por
-    día. El método es deliberadamente no invasivo: se hace una búsqueda de
-    instrumentos de cada tipo y, para los que devuelven resultados, se pide un
-    presupuesto de orden (budget_order) sobre el primero. budget_order() NO
-    coloca nada: simula y devuelve el costo. Si el bróker responde el
-    presupuesto, la cuenta puede operar ese tipo; si responde un error de
-    permisos, no puede — y queda anotado con el mensaje textual del bróker,
-    que es la única fuente confiable sobre los permisos de una cuenta.
-
-    Se guarda en la base para que el panel lo muestre con su semáforo y para
-    no repetir el sondeo en cada ciclo.
+    RC6 forbids Budget/Confirm/Cancel as permission probes. Search visibility
+    proves discoverability only. ``order_param_adapter`` is pure local code and
+    is used only to distinguish local adapter support from broker permission.
+    Broker execution permission remains NOT_PROVEN.
     """
     import ac_db
     from datetime import date
+    from c_ppi_client import order_param_adapter
 
     permisos = {}
     for asset_class, cfg in ALL_TYPES.items():
-        estado = {"puede_operar": False, "motivo": "", "instrumentos_visibles": 0}
+        estado = {
+            "puede_operar": False,
+            "motivo": "",
+            "instrumentos_visibles": 0,
+            "estado_verificacion": "EXECUTION_NOT_PROVEN_NO_ORDER_ROUTE_PROBE",
+        }
+        kind = str(cfg.get("instrument_type") or "").upper().strip()
         try:
-            resultados = ppi_client.search_instruments(cfg["instrument_type"])
-        except Exception as e:
-            estado["motivo"] = f"La búsqueda de instrumentos falló: {e}"
-            permisos[asset_class] = estado
-            continue
+            order_param_adapter(kind)
+            local_adapter = True
+        except (NotImplementedError, TypeError, ValueError):
+            local_adapter = False
+            estado["estado_verificacion"] = "LOCAL_ADAPTER_UNAVAILABLE"
 
-        if not resultados:
-            estado["motivo"] = ("La cuenta no ve instrumentos de este tipo. Puede ser que el "
-                                "permiso no esté habilitado o que el mercado no los liste hoy.")
+        try:
+            resultados = ppi_client.search_instruments(kind) or []
+        except Exception as exc:
+            estado["motivo"] = f"La búsqueda read-only de instrumentos falló: {type(exc).__name__}."
+            if local_adapter:
+                estado["estado_verificacion"] = "SEARCH_FAILED_EXECUTION_NOT_PROVEN"
+            else:
+                estado["motivo"] += " Sin adaptador específico de orden; ni se verificó permiso PPI."
             permisos[asset_class] = estado
             continue
 
         estado["instrumentos_visibles"] = len(resultados)
-        ticker = (resultados[0].get("ticker") or resultados[0].get("symbol") or "")
-        if not ticker:
-            estado["motivo"] = "Se listaron instrumentos pero sin ticker legible."
-            permisos[asset_class] = estado
-            continue
-
-        try:
-            # Presupuesto de una unidad a precio simbólico: no coloca ninguna orden.
-            presupuesto = ppi_client.budget_order(
-                account_number=os.getenv("PPI_ACCOUNT_NUMBER", ""),
-                quantity=1, price=1.0, ticker=ticker,
-                instrument_type=cfg["instrument_type"],
+        if not local_adapter:
+            estado["motivo"] = (
+                "Sin adaptador específico de orden; no se consultó presupuesto ni se verificó permiso PPI. "
+                "La búsqueda read-only sólo demuestra visibilidad y no constituye una denegación del broker."
             )
-            if presupuesto:
-                estado["puede_operar"] = True
-                estado["motivo"] = "El bróker devolvió presupuesto para este tipo de instrumento."
-            else:
-                estado["motivo"] = "El bróker no devolvió presupuesto (sin error explícito)."
-        except NotImplementedError:
-            estado["motivo"] = "Sin adaptador específico de orden; no se consultó presupuesto ni se verificó permiso PPI."
-            estado["estado_verificacion"] = "LOCAL_ADAPTER_UNAVAILABLE"
-        except ValueError:
-            estado["motivo"] = "Términos de consulta inválidos; no constituye un rechazo de permisos PPI."
-            estado["estado_verificacion"] = "INVALID_PROBE_TERMS"
-        except Exception as e:
-            estado["motivo"] = f"No se pudo verificar el presupuesto: {type(e).__name__}. No prueba falta de permiso."
-
+        elif resultados:
+            estado["motivo"] = (
+                "Instrumentos visibles y adaptador local genérico disponible; permiso de ejecución "
+                "del broker NOT_PROVEN. No se consultó Budget/Confirm/Cancel."
+            )
+        else:
+            estado["motivo"] = (
+                "Adaptador local genérico disponible, pero la búsqueda read-only no devolvió instrumentos; "
+                "permiso de ejecución del broker NOT_PROVEN. No se consultó Budget/Confirm/Cancel."
+            )
         permisos[asset_class] = estado
-        logger.info("Permiso de cuenta — %s: %s (%s)", asset_class,
-                    "HABILITADO" if estado["puede_operar"] else "NO HABILITADO", estado["motivo"])
+        logger.info("Capacidad de cuenta — %s: %s (%s)", asset_class,
+                    estado["estado_verificacion"], estado["motivo"])
 
     try:
         conn = ac_db.connect_raw()
         c = conn.cursor()
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS account_permissions (
-                date TEXT PRIMARY KEY,
-                data_json TEXT
-            )
-        """)
+        c.execute("""CREATE TABLE IF NOT EXISTS account_permissions (
+            date TEXT PRIMARY KEY, data_json TEXT)""")
         c.execute("INSERT OR REPLACE INTO account_permissions (date, data_json) VALUES (?, ?)",
                   (date.today().isoformat(), json.dumps(permisos, ensure_ascii=False)))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error("No se pudieron guardar los permisos de cuenta: %s", e)
-
+        conn.commit(); conn.close()
+    except Exception as exc:
+        logger.error("No se pudieron guardar los permisos de cuenta: %s", exc)
     return permisos
 
 
