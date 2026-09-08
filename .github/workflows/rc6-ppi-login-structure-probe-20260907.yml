@@ -1,0 +1,42 @@
+name: RC6 PPI login structure GET-only 2026-09-07
+on:
+  push:
+    branches: [diag/rc6-ppi-web-auth-classifier-20260907]
+    paths:
+      - 'rc6_ppi_login_structure_probe.py'
+      - '.github/workflows/rc6-ppi-login-structure-probe-20260907.yml'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m py_compile rc6_ppi_login_structure_probe.py
+      - name: Prepare SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"
+          chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+      - name: GET-only probe
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" rc6_ppi_login_structure_probe.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_login_structure_probe.py"
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          OUT="$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin /opt/porota-contract-evidence-venv/bin/python /tmp/rc6_ppi_login_structure_probe.py --profile /home/porotaadmin/porota-browser-lab/chrome-profile)"
+          rm -f /tmp/rc6_ppi_login_structure_probe.py
+          printf '%s\n' "$OUT"
+          echo 'LOGIN_STRUCTURE_PROBE=GREEN_GET_ONLY'
+          HOST
