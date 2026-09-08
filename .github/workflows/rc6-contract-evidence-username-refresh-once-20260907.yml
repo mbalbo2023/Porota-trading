@@ -33,6 +33,24 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
+      - name: Patch telemetry POST to abort silently
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('rc6_ppi_web_reauth.py')
+          s=p.read_text(encoding='utf-8')
+          old='''                if method == "POST" and key in APPROVED_AUTH_POSTS:\n                    return route.continue_()\n                blocked_post_path = clean_host_path(request.url)\n                return route.abort()\n'''
+          new='''                if method == "POST" and key in APPROVED_AUTH_POSTS:\n                    return route.continue_()\n                # Analytics/telemetry is never needed for authentication. Abort\n                # it silently so it cannot mask the real auth transition.\n                if method == "POST" and u.netloc == "www.google.com" and u.path == "/g/collect":\n                    return route.abort()\n                blocked_post_path = clean_host_path(request.url)\n                return route.abort()\n'''
+          if old not in s:
+              raise SystemExit('PATCH_TARGET_NOT_FOUND')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          PY
+          python3 -m py_compile rc6_ppi_web_reauth.py
+          grep -q 'u.netloc == "www.google.com" and u.path == "/g/collect"' rc6_ppi_web_reauth.py
+          echo 'TELEMETRY_POST_POLICY=ABORT_SILENTLY'
+
       - name: Stage exact helper
         shell: bash
         env:
