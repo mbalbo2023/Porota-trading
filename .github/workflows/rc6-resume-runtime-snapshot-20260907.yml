@@ -1,0 +1,72 @@
+name: RC6 resume runtime snapshot 2026-09-07
+
+on:
+  push:
+    branches: [diag/rc6-resume-runtime-snapshot-20260907]
+    paths:
+      - '.github/workflows/rc6-resume-runtime-snapshot-20260907.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only runtime snapshot
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          echo '=== CONTAINERS ==='
+          for c in porota_production_observer porota_paper_dashboard; do
+            if sudo -n docker inspect "$c" >/dev/null 2>&1; then
+              sudo -n docker inspect -f '{{.Name}}|image={{.Config.Image}}|status={{.State.Status}}|running={{.State.Running}}|restarts={{.RestartCount}}|started={{.State.StartedAt}}' "$c"
+            else
+              echo "$c|MISSING"
+            fi
+          done
+
+          echo '=== OBSERVER DB ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,time,json
+          db='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          t=time.perf_counter(); qc=c.execute('pragma quick_check').fetchone()[0]; print('quick_check='+str(qc)+'|ms='+format((time.perf_counter()-t)*1000,'.3f'))
+          cols=[r[1] for r in c.execute('pragma table_info(observer_state)')]
+          wanted=[x for x in ['mode','real_orders_sent','heartbeat_at','last_market_data_at','session_state'] if x in cols]
+          row=c.execute('select '+','.join(wanted)+' from observer_state where id=1').fetchone() if wanted else None
+          print('observer_state='+json.dumps(dict(zip(wanted,row or [])),sort_keys=True,default=str))
+          tables=[r[0] for r in c.execute("select name from sqlite_master where type='table' and name like 'contract_evidence%'")]
+          for tname in tables:
+              try: print('table_count|'+tname+'='+str(c.execute('select count(*) from '+tname).fetchone()[0]))
+              except Exception as e: print('table_count|'+tname+'=ERROR_'+type(e).__name__)
+          for label,q in [('gates','select count(*) from trade_gate_evaluations'),('snapshots','select count(*),max(observed_at) from market_snapshots')]:
+              try:
+                  t0=time.perf_counter(); r=c.execute(q).fetchone(); print(label+'='+json.dumps(r,default=str)+'|ms='+format((time.perf_counter()-t0)*1000,'.3f'))
+              except Exception as e: print(label+'=ERROR_'+type(e).__name__)
+          c.close()
+          PY
+
+          echo '=== DISK ==='
+          df -h / | tail -n 1
+          sudo -n docker system df
+          for p in /opt/porota-trading /opt/porota-data /var/lib/docker; do
+            if [ -e "$p" ]; then sudo -n du -sh "$p" 2>/dev/null || true; fi
+          done
+          echo 'RUNTIME_SNAPSHOT=GREEN_READ_ONLY'
+          HOST
