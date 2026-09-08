@@ -1,0 +1,116 @@
+name: RC6 Browser V3 versioned safe routes validate 2026-09-08
+on:
+  push:
+    branches: [feature/rc6-browser-v3-versioned-safe-routes-20260908]
+    paths: ['.github/workflows/rc6-browser-v3-versioned-safe-routes-validate-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-browser-v3-versioned-safe-routes
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/rc6-browser-v3-versioned-safe-routes-20260908
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Promote exact installed V3 source then remove unsafe route catalog
+        run: |
+          set -euo pipefail
+          cp recovered_host/rc6_trusted_browser_contract_collector.V3.installed.py rc6_trusted_browser_contract_collector.py
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+          p=Path('rc6_trusted_browser_contract_collector.py')
+          s=p.read_text(encoding='utf-8')
+          tree=ast.parse(s)
+          routes=None
+          for node in tree.body:
+              if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='ROUTES' for t in node.targets):
+                  routes=ast.literal_eval(node.value); break
+          if routes is None: raise SystemExit('ROUTES_NOT_FOUND')
+          safe={k:[r for r in v if not str(r).startswith('/Operar')] for k,v in routes.items()}
+          # Every job must remain non-empty and entirely under /Cotizaciones.
+          if any(not v for v in safe.values()): raise SystemExit('SAFE_JOB_BECAME_EMPTY')
+          if any(not r.startswith('/Cotizaciones/') for v in safe.values() for r in v):
+              raise SystemExit('NON_COTIZACIONES_ROUTE_REMAINS')
+          start=s.index('ROUTES = {')
+          marker='\n\nDROP_KEY_PARTS ='
+          end=s.index(marker,start)
+          lines=['ROUTES = {']
+          for job,vals in safe.items():
+              lines.append(f'    {job!r}: [')
+              for r in vals: lines.append(f'        {r!r},')
+              lines.append('    ],')
+          lines.append('}')
+          s=s[:start]+'\n'.join(lines)+s[end:]
+          # Strengthen the module-level safety contract and an executable invariant.
+          s=s.replace('- after session validation every non-GET/HEAD/OPTIONS request is aborted;',
+                      '- V3: third-party mutations abort silently; known first-party telemetry aborts; every other PPI mutation aborts + fail-closes;')
+          insert='''\n\ndef assert_safe_route_catalog():\n    """Fail closed if an execution/order page is ever reintroduced."""\n    for job, routes in ROUTES.items():\n        if not routes:\n            raise RuntimeError("CONTRACT_EVIDENCE_EMPTY_ROUTE_JOB:" + job)\n        for route in routes:\n            if not str(route).startswith("/Cotizaciones/"):\n                raise RuntimeError("CONTRACT_EVIDENCE_UNSAFE_ROUTE:" + str(route))\n\n'''
+          anchor='\ndef clean_url(url):\n'
+          if anchor not in s: raise SystemExit('CLEAN_URL_ANCHOR_MISSING')
+          s=s.replace(anchor,insert+anchor,1)
+          main_anchor='def main():\n'
+          s=s.replace(main_anchor,main_anchor+'    assert_safe_route_catalog()\n',1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Add V3 policy tests
+        run: |
+          cat > tests/test_rc6_browser_v3_policy.py <<'PY'
+          import ast
+          from pathlib import Path
+          import rc6_trusted_browser_contract_collector as c
+
+          def test_route_catalog_is_cotizaciones_only():
+              c.assert_safe_route_catalog()
+              assert c.ROUTES
+              assert all(route.startswith('/Cotizaciones/') for routes in c.ROUTES.values() for route in routes)
+              assert all('/Operar' not in route for routes in c.ROUTES.values() for route in routes)
+
+          def test_v3_mutation_policy_is_present_statically():
+              s=Path('rc6_trusted_browser_contract_collector.py').read_text(encoding='utf-8')
+              assert 'POROTA_CE_NONREAD_POLICY_V3' in s
+              assert '/api/logger' in s
+              assert 'zendesk-session' in s
+              assert 'blocked_nonread' in s
+              assert 'route.abort()' in s
+
+          def test_no_broker_order_imports():
+              tree=ast.parse(Path('rc6_trusted_browser_contract_collector.py').read_text(encoding='utf-8'))
+              imported=[]
+              for n in ast.walk(tree):
+                  if isinstance(n,ast.Import): imported.extend(a.name for a in n.names)
+                  elif isinstance(n,ast.ImportFrom): imported.append(n.module or '')
+              joined=' '.join(imported).lower()
+              assert 'ppi_client' not in joined
+              assert 'c_ppi_client' not in joined
+          PY
+      - name: Install test dependencies
+        run: pip install pytest
+      - name: Validate syntax safety and policy
+        run: |
+          set -euo pipefail
+          python -m py_compile rc6_trusted_browser_contract_collector.py
+          pytest -q tests/test_rc6_browser_v3_policy.py
+          ! grep -Fq '/Operar/' rc6_trusted_browser_contract_collector.py
+          grep -q 'POROTA_CE_NONREAD_POLICY_V3' rc6_trusted_browser_contract_collector.py
+          grep -q 'assert_safe_route_catalog' rc6_trusted_browser_contract_collector.py
+      - name: Commit tested canonical V3 collector
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rc6_trusted_browser_contract_collector.py tests/test_rc6_browser_v3_policy.py
+          git diff --cached --check
+          git commit -m 'feat(rc6): version Browser V3 with cotizaciones-only routes'
+          git push origin HEAD:feature/rc6-browser-v3-versioned-safe-routes-20260908
