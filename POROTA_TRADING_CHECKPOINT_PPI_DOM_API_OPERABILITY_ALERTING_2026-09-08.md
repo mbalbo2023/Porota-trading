@@ -288,3 +288,35 @@ Este checkpoint no se considera cerrado hasta que exista evidencia de que:
 - dashboard muestre el estado de scraping con semáforo;
 - introspección y Telegram alerten degradaciones materiales;
 - `real_orders_sent=0` permanezca preservado durante toda la implementación y pruebas RC6.
+
+## 10. Corrección transversal — Disk / Empirical Evidence Architecture A→E
+
+Este checkpoint forma parte del backlog general RC6 y debe conservar la corrección canónica del frente de almacenamiento/evidencia.
+
+NO resumir ese frente como `storage containment Phase A` solamente.
+
+El programa completo es:
+
+1. FASE A — Contención + nueva arquitectura de escritura.
+2. FASE B — Migración SHADOW / reconciliación del legado.
+3. FASE C — Retirada de redundancia física demostrada.
+4. FASE D — Learning Evidence completa (`decision -> evidence -> outcome`).
+5. FASE E — Retención / COLD storage.
+
+Archivos obligatorios de continuidad agregados a esta rama:
+
+- `POROTA_TRADING_CHECKPOINT_DISK_EVIDENCE_ARCHITECTURE_PHASES_A_E_2026-09-08.md`
+- `POROTA_TRADING_CHECKPOINT_CANONICO_RC6_2026-09-08_ADDENDUM_DISK_PHASES_A_E.md`
+
+El addendum corrige cualquier representación incompleta del checkpoint canónico actual y debe leerse junto con él en futuras conversaciones.
+
+Las cinco fases permanecen PENDIENTES hasta evidencia explícita de ejecución/validación. Ningún registro de este plan autoriza cleanup destructivo.
+
+Invariantes:
+
+- preservar `historical_raw_archive` hasta equivalencia requerida;
+- no `VACUUM` prematuro;
+- no `docker system prune`;
+- preservar evidencia/versiones/manifests/PARTIAL/conflicts;
+- Gate 0 contra SHA live real y workflows antes de iniciar A;
+- `real_orders_sent=0` absoluto.
