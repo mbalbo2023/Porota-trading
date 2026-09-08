@@ -1,0 +1,104 @@
+name: RC6 Phase A activation preflight read-only 2026-09-08
+
+on:
+  push:
+    branches: [phase-a/rc6-empirical-evidence-write-architecture-20260908]
+    paths: ['.github/workflows/rc6-phase-a-activation-preflight-readonly-20260908.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-phase-a-activation-preflight-readonly
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: phase-a/rc6-empirical-evidence-write-architecture-20260908
+          fetch-depth: 0
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Capture activation preflight only
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' > /tmp/preflight.txt
+          set -euo pipefail
+          echo 'POROTA RC6 PHASE A ACTIVATION PREFLIGHT — READ ONLY'
+          echo 'HOST_MUTATION=NONE'
+          echo 'DEPLOY=NO'
+          echo 'DELETE=NO'
+          echo "UTC=$(date -u +%FT%TZ)"
+          cd /opt/porota-trading
+          echo "HOST_REPO_HEAD=$(git rev-parse HEAD)"
+          echo "HOST_REPO_BRANCH=$(git branch --show-current)"
+          echo "ROOT=$(df -P -B1 / | awk 'NR==2{print $2"|"$3"|"$4"|"$5}')"
+          echo '--- LIVE IMAGE LABELS ---'
+          for c in porota_production_observer porota_production_dashboard; do
+            echo "CONTAINER=$c"
+            sudo -n docker inspect -f 'RUNNING={{.State.Running}} RESTARTS={{.RestartCount}} IMAGE={{.Config.Image}}' "$c"
+            sudo -n docker inspect -f '{{range .Config.Labels}}{{end}}POROTA_COMMIT={{index .Config.Labels "org.opencontainers.image.revision"}}' "$c" 2>/dev/null || true
+            sudo -n docker inspect -f '{{range .Mounts}}{{println .Source "->" .Destination "rw=" .RW}}{{end}}' "$c"
+          done
+          echo '--- CURRENT PHASE A ENV ---'
+          sudo -n docker inspect porota_production_observer --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep -E '^PPI_HISTORY_(RAW_STORAGE_MODE|COORDINATOR_MODE|EVIDENCE_ROOT)=' \
+            | sed -E 's/=.*/=<SET>/' || true
+          echo '--- TARGET ROOT EXISTENCE / PERMISSIONS ---'
+          root=/opt/porota-trading/data/evidence/ppi_history_v1
+          if [ -e "$root" ]; then
+            echo 'EVIDENCE_ROOT_EXISTS=YES'; stat -c 'MODE=%a OWNER=%U GROUP=%G BYTES=%s' "$root"; du -sh "$root" || true
+          else
+            echo 'EVIDENCE_ROOT_EXISTS=NO'
+          fi
+          parent=$(dirname "$root")
+          echo "PARENT=$parent"
+          stat -c 'PARENT_MODE=%a PARENT_OWNER=%U PARENT_GROUP=%G' "$parent" 2>/dev/null || true
+          test -w "$parent" && echo 'PARENT_WRITABLE_BY_SSH_USER=YES' || echo 'PARENT_WRITABLE_BY_SSH_USER=NO_OR_NOT_APPLICABLE'
+          echo '--- DATABASE SAFETY ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          for label,path in [('OBSERVER','/app/data/paper_v17/observer_v17.db'),('HISTORY','/app/data/market_history.db')]:
+              c=sqlite3.connect('file:'+path+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+              print(label+'_QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0])); c.close()
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          row=c.execute('select mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at from observer_state where id=1').fetchone()
+          print('OBSERVER_STATE='+'|'.join(map(str,row)))
+          try:
+              n=c.execute('select count(*) from historical_raw_archive').fetchone()[0]
+              print('LEGACY_RAW_ROWS='+str(n))
+          except Exception as e: print('LEGACY_RAW_ROWS=UNKNOWN:'+type(e).__name__)
+          c.close()
+          PY
+          echo '--- CONCURRENCY ---'
+          sudo -n systemctl list-units --state=activating,running --no-pager --no-legend | grep -Ei 'porota.*deploy|deploy.*porota' || true
+          ps -eo comm= | grep -Ei 'deploy|docker.build|buildx' || true
+          echo 'PREFLIGHT=COMPLETE_READ_ONLY'
+          REMOTE
+          cp /tmp/preflight.txt POROTA_RC6_PHASE_A_ACTIVATION_PREFLIGHT_2026-09-08.txt
+      - name: Commit preflight report
+        run: |
+          set -euo pipefail
+          git pull --rebase origin phase-a/rc6-empirical-evidence-write-architecture-20260908
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_PHASE_A_ACTIVATION_PREFLIGHT_2026-09-08.txt
+          git commit -m 'audit(rc6): record Phase A activation preflight'
+          git push origin HEAD:phase-a/rc6-empirical-evidence-write-architecture-20260908
