@@ -1,0 +1,32 @@
+POROTA RC6 PHASE A ACTIVATION PREFLIGHT — READ ONLY
+HOST_MUTATION=NONE
+DEPLOY=NO
+DELETE=NO
+UTC=2026-09-08T14:24:16Z
+HOST_REPO_HEAD=c17b0d777ba49d88c53c5a7ed14218d8eaa94638
+HOST_REPO_BRANCH=fix/rc6-history-partial-semantics-20260907
+ROOT=24883167232|14875860992|9990529024|60%
+--- LIVE IMAGE LABELS ---
+CONTAINER=porota_production_observer
+RUNNING=true RESTARTS=0 IMAGE=porota-trading-bot:17.0.0-rc6
+POROTA_COMMIT=
+/opt/porota-trading/data -> /app/data rw= true
+/opt/porota-trading/.secrets/ppi_production.json -> /run/secrets/ppi_production.json rw= false
+
+CONTAINER=porota_production_dashboard
+RUNNING=true RESTARTS=0 IMAGE=porota-trading-dashboard:17.0.0-rc6-operator-ux
+POROTA_COMMIT=
+/opt/porota-trading/data -> /app/data rw= true
+
+--- CURRENT PHASE A ENV ---
+--- TARGET ROOT EXISTENCE / PERMISSIONS ---
+EVIDENCE_ROOT_EXISTS=NO
+PARENT=/opt/porota-trading/data/evidence
+PARENT_WRITABLE_BY_SSH_USER=NO_OR_NOT_APPLICABLE
+--- DATABASE SAFETY ---
+OBSERVER_QUICK_CHECK=ok
+HISTORY_QUICK_CHECK=ok
+OBSERVER_STATE=PRODUCTION_PAPER|DEGRADED|MARKET_OPEN|COOLDOWN|0|2026-09-08T14:25:09.887608+00:00
+LEGACY_RAW_ROWS=28456
+--- CONCURRENCY ---
+PREFLIGHT=COMPLETE_READ_ONLY
