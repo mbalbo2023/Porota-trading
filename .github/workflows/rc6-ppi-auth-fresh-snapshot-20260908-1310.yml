@@ -1,0 +1,80 @@
+name: RC6 PPI auth fresh snapshot 2026-09-08 1310
+on:
+  push:
+    branches: [audit/rc6-ppi-auth-fresh-snapshot-20260908-1310]
+    paths: ['.github/workflows/rc6-ppi-auth-fresh-snapshot-20260908-1310.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-ppi-auth-fresh-snapshot-20260908-1310
+  cancel-in-progress: false
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/rc6-ppi-auth-fresh-snapshot-20260908-1310
+          fetch-depth: 0
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts; chmod 600 ~/.ssh/known_hosts
+      - name: Capture persisted state only
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          {
+            echo 'POROTA RC6 — FRESH PPI AUTH SNAPSHOT READ ONLY'
+            echo "UTC=$(date -u +%FT%TZ)"
+            echo 'PPI_NETWORK_CALLS=NONE'
+            echo 'DB_WRITES=NONE'
+            echo 'LOGIN_ATTEMPTS=NONE'
+          } > /tmp/fresh.txt
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' >> /tmp/fresh.txt
+          set -euo pipefail
+          echo "HOST_UTC=$(date -u +%FT%TZ)"
+          sudo -n docker inspect -f 'OBSERVER_CONTAINER={{.State.Status}}|HEALTH={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|RESTARTS={{.RestartCount}}' porota_production_observer || true
+          sudo -n docker inspect -f 'DASHBOARD_CONTAINER={{.State.Status}}|HEALTH={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|RESTARTS={{.RestartCount}}' porota_production_dashboard || true
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          print('QUICK_CHECK='+c.execute('pragma quick_check').fetchone()[0])
+          tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          if 'observer_state' in tabs:
+              r=c.execute('select mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at,detail from observer_state where id=1').fetchone()
+              print('OBSERVER_STATE='+json.dumps(dict(r),ensure_ascii=False,default=str))
+          if 'api_health' in tabs:
+              for r in c.execute("select component,state,detail,checked_at,last_success_at,source from api_health where component like 'PPI_%' or component like '%HISTORY%' order by checked_at desc limit 40"):
+                  print('API_HEALTH='+json.dumps(dict(r),ensure_ascii=False,default=str))
+          if 'system_events' in tabs:
+              for r in c.execute("select * from system_events order by rowid desc limit 80"):
+                  text=json.dumps(dict(r),ensure_ascii=False,default=str)
+                  if any(x in text.upper() for x in ('PPI_AUTH','CREDENTIAL','CREDENCIAL','COOLDOWN','RATE_LIMIT','SESSION_INVALID')):
+                      print('SYSTEM_EVENT='+text[:2500])
+          if 'ppi_login_attempts' in tabs:
+              rows=c.execute('select attempted_at from ppi_login_attempts order by attempted_at desc limit 20').fetchall()
+              print('LOGIN_ATTEMPT_ROWS='+str(len(rows)))
+              for r in rows: print('LOGIN_ATTEMPT_EPOCH='+str(r[0]))
+          c.close()
+          PY
+          REMOTE
+          cp /tmp/fresh.txt POROTA_RC6_PPI_AUTH_FRESH_SNAPSHOT_2026-09-08_1310.txt
+      - name: Commit snapshot
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_PPI_AUTH_FRESH_SNAPSHOT_2026-09-08_1310.txt
+          git commit -m 'audit(rc6): record fresh PPI auth snapshot'
+          git push origin HEAD:audit/rc6-ppi-auth-fresh-snapshot-20260908-1310
