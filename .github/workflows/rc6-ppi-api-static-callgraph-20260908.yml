@@ -1,0 +1,77 @@
+name: RC6 PPI API static callgraph 2026-09-08
+
+on:
+  push:
+    branches:
+      - checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+    paths:
+      - '.github/workflows/rc6-ppi-api-static-callgraph-20260908.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          fetch-depth: 0
+      - name: Build static callgraph and family report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import ast,re
+          targets=['m_instrument_universe.py','c_ppi_client.py','bd_ppi_readonly_guard.py','ap_api_verifier.py','ae_ppi_api_watch.py','bu_instrument_catalog.py','bs_instrument_contracts.py','cq_family_contract_rules_hf6.py']
+          out=['POROTA RC6 — PPI API STATIC CALLGRAPH AUDIT','DATE=2026-09-08','BROKER_NETWORK_CALLS=NONE','ORDER_ROUTE_TESTS=NONE','HOST_MUTATION=NONE','']
+          allpy=list(Path('.').glob('*.py'))+list(Path('scripts').glob('*.py'))+list(Path('tests').glob('*.py'))
+          needle='detect_account_permissions'
+          out.append('=== DETECT_ACCOUNT_PERMISSIONS CALL-SITES ===')
+          hits=[]
+          for p in allpy:
+            try: lines=p.read_text(encoding='utf-8',errors='ignore').splitlines()
+            except Exception: continue
+            for i,line in enumerate(lines,1):
+              if needle in line:
+                kind='DEFINITION' if re.search(r'def\s+detect_account_permissions',line) else 'REFERENCE'
+                hits.append((str(p),i,kind,line.strip()))
+          for row in hits: out.append('%s:%s:%s:%s'%row)
+          out.append(f'NON_DEFINITION_REFERENCES={sum(1 for x in hits if x[2]=="REFERENCE")}')
+          out.append('')
+          out.append('=== ORDER-ROUTE SYMBOL REFERENCES ===')
+          symbols=['budget_order','confirm_order','cancel_order','mass_cancel','place_caucion','orders.budget','orders.confirm','orders.cancel']
+          for sym in symbols:
+            out.append('SYMBOL='+sym)
+            for p in allpy:
+              try: lines=p.read_text(encoding='utf-8',errors='ignore').splitlines()
+              except Exception: continue
+              for i,line in enumerate(lines,1):
+                if sym in line and not str(p).startswith('tests/'):
+                  out.append(f'  {p}:{i}:{line.strip()[:300]}')
+          out.append('')
+          out.append('=== FAMILY / SPECIALIZED ROUTE MARKERS ===')
+          families=['ACCIONES','CEDEARS','BONOS','LETRAS','ON','CAUCIONES','OPCIONES','FUTUROS','ETF','FCI','FCI-EXTERIOR','ACCIONES-USA','LICITACIONES','INDICES','MONEDAS','TASAS']
+          for fam in families:
+            refs=[]
+            for name in targets:
+              p=Path(name)
+              if not p.exists(): continue
+              for i,line in enumerate(p.read_text(encoding='utf-8',errors='ignore').splitlines(),1):
+                if fam in line.upper(): refs.append(f'{name}:{i}:{line.strip()[:240]}')
+            out.append(f'FAMILY={fam} REFS={len(refs)}')
+            out.extend('  '+x for x in refs[:40])
+          Path('POROTA_RC6_PPI_API_STATIC_CALLGRAPH_2026-09-08.txt').write_text('\n'.join(out)+'\n',encoding='utf-8')
+          PY
+      - name: Commit report
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_PPI_API_STATIC_CALLGRAPH_2026-09-08.txt
+          git commit -m 'audit(rc6): record PPI API static callgraph'
+          git push origin HEAD:checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
