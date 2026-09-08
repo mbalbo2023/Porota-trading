@@ -1,0 +1,92 @@
+name: RC6 PPI Web auth classifier 2026-09-07
+
+on:
+  push:
+    branches: [diag/rc6-ppi-web-auth-classifier-20260907]
+    paths:
+      - 'rc6_ppi_web_auth_classifier_once.py'
+      - '.github/workflows/rc6-ppi-web-auth-classifier-20260907.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-ppi-web-auth-classifier
+  cancel-in-progress: false
+
+jobs:
+  probe-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile classifier
+        run: python3 -m py_compile rc6_ppi_web_auth_classifier_once.py
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_auth_probe"
+          chmod 600 "$HOME/.ssh/porota_auth_probe"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage classifier
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/porota_auth_probe" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            rc6_ppi_web_auth_classifier_once.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_web_auth_classifier_once.py"
+      - name: Execute single safe login attempt
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          EXPECTED_LIVE_SHA: c17b0d777ba49d88c53c5a7ed14218d8eaa94638
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_auth_probe" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "EXPECTED_LIVE_SHA='$EXPECTED_LIVE_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          SECRET=/etc/porota/contract-evidence-web.env
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          VENV=/opt/porota-contract-evidence-venv
+          SCRIPT=/tmp/rc6_ppi_web_auth_classifier_once.py
+          test -f "$SECRET" && test "$(stat -c '%a' "$SECRET")" = 600
+          sudo -n -u porotaadmin awk -F= '/^PPI_WEB_USERNAME=/{u=length($2)>0}/^PPI_WEB_PASSWORD=/{p=length($2)>0} END{exit (u&&p)?0:1}' "$SECRET"
+          LIVE_SHA="$(sudo -n docker image inspect "$(sudo -n docker inspect -f '{{.Config.Image}}' porota_production_observer)" --format '{{index .Config.Labels "porota.commit"}}')"
+          test "$LIVE_SHA" = "$EXPECTED_LIVE_SHA"
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          print('|'.join(map(str,(*c.execute('pragma quick_check').fetchone(),*c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))); c.close()
+          PY
+          )"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+          set +e
+          OUT="$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin \
+            "$VENV/bin/python" "$SCRIPT" --profile "$PROFILE" --secret "$SECRET" 2>&1)"
+          RC=$?
+          set -e
+          rm -f "$SCRIPT"
+          printf 'AUTH_CLASSIFIER_RC=%s\n' "$RC"
+          printf '%s\n' "$OUT"
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          print('|'.join(map(str,(*c.execute('pragma quick_check').fetchone(),*c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))); c.close()
+          PY
+          )"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          echo 'OBSERVER_CHANGED=NO'
+          echo 'REAL_ORDERS_SENT=0'
+          test "$RC" -eq 0 -o "$RC" -eq 4
+          HOST
