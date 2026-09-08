@@ -1,0 +1,46 @@
+name: RC6 PPI login error flow GET-only 2026-09-07
+on:
+  push:
+    branches: [diag/rc6-ppi-login-api-base-20260907]
+    paths:
+      - 'rc6_ppi_login_error_flow_context.py'
+      - '.github/workflows/rc6-ppi-login-error-flow-20260907.yml'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static safety
+        run: |
+          set -euo pipefail
+          python3 -m py_compile rc6_ppi_login_error_flow_context.py
+          grep -q 'post_sent' rc6_ppi_login_error_flow_context.py
+          ! grep -Eiq 'PPI_WEB_USERNAME|PPI_WEB_PASSWORD|method=.POST.|send_order|place_order|cancel_order' rc6_ppi_login_error_flow_context.py
+          echo 'ERROR_FLOW_STATIC_SAFETY=GREEN'
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: GET-only login error flow
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" rc6_ppi_login_error_flow_context.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_login_error_flow_context.py"
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          VENV=/opt/porota-contract-evidence-venv
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin "$VENV/bin/python" /tmp/rc6_ppi_login_error_flow_context.py --profile "$PROFILE"
+          sudo -n rm -f /tmp/rc6_ppi_login_error_flow_context.py
+          echo 'PPI_LOGIN_ERROR_FLOW=GREEN_GET_ONLY'
+          HOST
