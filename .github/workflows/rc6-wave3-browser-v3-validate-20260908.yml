@@ -1,0 +1,90 @@
+name: RC6 Wave3 Browser V3 Validate 2026-09-08
+
+on:
+  push:
+    branches: [integration/rc6-wave3-browser-v3-20260908]
+    paths:
+      - 'rc6_trusted_browser_contract_collector.py'
+      - 'rc6_ppi_contract_normalizer.py'
+      - '.github/workflows/rc6-wave3-browser-v3-validate-20260908.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-wave3-browser-v3-validate
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Deployed Wave1B ancestry and diff gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=860b26ca22a73679217e8953207041da2b8afffd
+          git merge-base --is-ancestor "$BASE" HEAD
+          git diff --check "$BASE" HEAD
+          git diff --name-only "$BASE" HEAD | sort > /tmp/changed.txt
+          cat /tmp/changed.txt
+          python - <<'PY'
+          from pathlib import Path
+          got=set(Path('/tmp/changed.txt').read_text().splitlines())
+          allowed={'rc6_trusted_browser_contract_collector.py','rc6_ppi_contract_normalizer.py','.github/workflows/rc6-wave3-browser-v3-validate-20260908.yml'}
+          assert got <= allowed, sorted(got-allowed)
+          assert {'rc6_trusted_browser_contract_collector.py','rc6_ppi_contract_normalizer.py'} <= got
+          print('WAVE3_BROWSER_V3_DIFF_SCOPE=GREEN')
+          PY
+      - name: Compile
+        run: python -m py_compile rc6_ppi_contract_normalizer.py rc6_trusted_browser_contract_collector.py
+      - name: Static safe-route and no-order invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          import rc6_trusted_browser_contract_collector as c
+          c.assert_safe_route_catalog()
+          routes=[r for rs in c.ROUTES.values() for r in rs]
+          assert routes and all(r.startswith('/Cotizaciones/') for r in routes)
+          assert not any('/Operar' in r or '/Orden' in r for r in routes)
+          src=Path('rc6_trusted_browser_contract_collector.py').read_text(encoding='utf-8').lower()
+          for token in ('budget_order','confirm_order','cancel_order','masscancel','send_order','place_order'):
+              assert token not in src, token
+          tree=ast.parse(Path('rc6_trusted_browser_contract_collector.py').read_text(encoding='utf-8'))
+          imports=[]
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Import): imports += [a.name for a in n.names]
+              elif isinstance(n,ast.ImportFrom): imports.append(n.module or '')
+          assert not any('ppi_client' in x for x in imports)
+          print('BROWSER_V3_SAFE_ROUTES=GREEN')
+          print('BROKER_ORDER_IMPORTS=NONE')
+          PY
+      - name: Sanitization semantics tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from rc6_ppi_contract_normalizer import instrumentos_operables
+          p={'payload':[{'ticker':'ABC','cantidadDecimales':2,'cantidadDecimalesPrecio':3,'disponible':999,'account':'x'}]}
+          rows=instrumentos_operables(p)
+          assert rows and rows[0]['ticker']=='ABC'
+          assert rows[0]['quantity_step'] is None and rows[0]['price_tick'] is None
+          assert 'disponible' not in rows[0] and 'account' not in rows[0]
+          print('BROWSER_V3_SANITIZATION=GREEN')
+          PY
+      - name: Safety summary
+        run: |
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'ROLLBACK_AUTOMATICO=NO'
+          echo 'WAVE3_BROWSER_V3_VALIDATE=GREEN'
