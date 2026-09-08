@@ -1,0 +1,15 @@
+POROTA RC6 — FRESH PPI AUTH SNAPSHOT READ ONLY
+UTC=2026-09-08T16:13:12Z
+PPI_NETWORK_CALLS=NONE
+DB_WRITES=NONE
+LOGIN_ATTEMPTS=NONE
+HOST_UTC=2026-09-08T16:13:13Z
+OBSERVER_CONTAINER=running|HEALTH=none|RESTARTS=0
+DASHBOARD_CONTAINER=running|HEALTH=healthy|RESTARTS=0
+QUICK_CHECK=ok
+OBSERVER_STATE={"mode": "PRODUCTION_PAPER", "process_state": "DEGRADED", "session_state": "MARKET_OPEN", "ppi_auth": "COOLDOWN", "real_orders_sent": 0, "heartbeat_at": "2026-09-08T16:14:17.602379+00:00", "last_market_data_at": "2026-09-07T19:59:43.028171+00:00", "detail": "PPI en espera de reintento; no se abre una tormenta de logins."}
+API_HEALTH={"component": "PPI_PRODUCTION_AUTH", "state": "ROJO", "detail": "Exception: Credenciales invalidas.", "checked_at": "2026-09-08T16:03:06.441899+00:00", "last_success_at": "2026-09-07T23:27:17.607402+00:00", "source": "PPI Producción"}
+API_HEALTH={"component": "PPI_PRODUCTION_MARKETDATA", "state": "ROJO", "detail": "0/20 instrumentos con cotización útil.", "checked_at": "2026-09-08T13:30:03.553066+00:00", "last_success_at": "2026-09-07T19:59:44.457845+00:00", "source": "PPI Producción"}
+API_HEALTH={"component": "PPI_BACKGROUND_INGEST", "state": "ROJO", "detail": "Lote histórico incremental completado: 0 filas válidas; próximo intento no antes de 2 h. resultado de origen=ROJO. No se consultaron cotizaciones ni libros fuera de rueda.", "checked_at": "2026-09-08T13:05:43.291895+00:00", "last_success_at": null, "source": "PPI Producción / History"}
+API_HEALTH={"component": "PPI_PRODUCTION_HISTORY", "state": "ROJO", "detail": "Lote histórico: completos=0; parciales_con_evidencia_valida=0; vacíos_o_inválidos=0; errores=40; cobertura acumulada 67/246 instrumentos; 0 filas válidas en este lote. PARTIAL conserva evidencia válida pero permanece AMARILLO; sólo vacío/inválido y ERROR son fallos duros. La descarga completa es incremental para no saturar PPI.", "checked_at": "2026-09-08T13:05:43.286897+00:00", "last_success_at": "2026-09-08T07:04:09.725159+00:00", "source": "PPI Producción"}
+API_HEALTH={"component": "PPI_PRODUCTION_CATALOG", "state": "VERDE", "detail": "85 búsquedas con coincidencias; 834 identidades únicas; 0 búsquedas fallidas. Ticker y Name siempre no vacíos. Configuración actual: verificada.", "checked_at": "2026-09-08T03:00:26.973502+00:00", "last_success_at": "2026-09-08T03:00:26.973502+00:00", "source": "PPI Producción"}
