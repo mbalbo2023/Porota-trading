@@ -1,0 +1,109 @@
+name: RC6 DOM API History reconcile read-only 2026-09-08
+on:
+  push:
+    branches: [audit/rc6-dom-api-history-reconcile-20260908]
+    paths: ['.github/workflows/rc6-dom-api-history-reconcile-readonly-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-dom-api-history-reconcile-readonly
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/rc6-dom-api-history-reconcile-20260908
+          fetch-depth: 0
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Capture persisted runtime evidence without PPI calls
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          {
+            echo 'POROTA RC6 — DOM/API/HISTORY RECONCILIATION READ ONLY'
+            echo 'PPI_NETWORK_CALLS=NONE'
+            echo 'DB_WRITES=NONE'
+            echo "UTC=$(date -u +%FT%TZ)"
+            echo '=== DOM CHECKPOINT EVIDENCE ==='
+            grep -E '^(\||-|### |.*POSSIBLY_TRUNCATED|.*likely complete|.*LIKELY_COMPLETE|.*50.*)' POROTA_TRADING_CHECKPOINT_PPI_DOM_FULL_SWEEP_2026-09-08.md | head -n 240 || true
+            echo '=== LIVE PERSISTED DB EVIDENCE ==='
+          } > /tmp/reconcile.txt
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' >> /tmp/reconcile.txt
+          set -euo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          op='/app/data/paper_v17/observer_v17.db'; hp='/app/data/market_history.db'
+          print('OBSERVER_DB='+op); print('HISTORY_DB='+hp)
+          o=sqlite3.connect('file:'+op+'?mode=ro',uri=True); o.row_factory=sqlite3.Row; o.execute('pragma query_only=on')
+          h=sqlite3.connect('file:'+hp+'?mode=ro',uri=True); h.row_factory=sqlite3.Row; h.execute('pragma query_only=on')
+          print('OBSERVER_QUICK_CHECK='+o.execute('pragma quick_check').fetchone()[0])
+          print('HISTORY_QUICK_CHECK='+h.execute('pragma quick_check').fetchone()[0])
+          ot={r[0] for r in o.execute("select name from sqlite_master where type='table'")}
+          ht={r[0] for r in h.execute("select name from sqlite_master where type='table'")}
+          print('=== API/CANDIDATE UNIVERSE ===')
+          if 'candidate_universe' in ot:
+              cols={r[1] for r in o.execute('pragma table_info(candidate_universe)')}
+              fields=['instrument_type','market','settlement','status']
+              for f in fields:
+                  if f in cols:
+                      for r in o.execute(f'select {f},count(*) n from candidate_universe group by {f} order by n desc,{f}'):
+                          print(f'CANDIDATE_{f.upper()}='+json.dumps(dict(r),ensure_ascii=False))
+              if {'ticker','instrument_type','market','settlement'}.issubset(cols):
+                  n=o.execute("select count(distinct ticker||'|'||instrument_type||'|'||coalesce(market,'')||'|'||settlement) from candidate_universe").fetchone()[0]
+                  print('CANDIDATE_IDENTITIES='+str(n))
+          print('=== PRODUCTION HISTORY ATTEMPTS/COVERAGE ===')
+          if 'production_history' in ot:
+              cols={r[1] for r in o.execute('pragma table_info(production_history)')}
+              if 'instrument_type' in cols:
+                  for r in o.execute('select instrument_type,count(*) n,sum(case when row_count>0 then 1 else 0 end) covered from production_history group by instrument_type order by instrument_type'):
+                      print('PROD_HISTORY='+json.dumps(dict(r),ensure_ascii=False))
+          if 'production_history_attempts' in ot:
+              for r in o.execute('select instrument_type,state,count(*) n from production_history_attempts group by instrument_type,state order by instrument_type,state'):
+                  print('PROD_ATTEMPTS='+json.dumps(dict(r),ensure_ascii=False))
+          print('=== HISTORY STORE V2 ===')
+          if 'history_canonical_v2' in ht:
+              cols={r[1] for r in h.execute('pragma table_info(history_canonical_v2)')}
+              if {'instrument_type','symbol','market','settlement'}.issubset(cols):
+                  for r in h.execute("select instrument_type,count(*) rows,count(distinct symbol||'|'||instrument_type||'|'||market||'|'||settlement) identities,min(date) first_day,max(date) last_day from history_canonical_v2 group by instrument_type order by instrument_type"):
+                      print('HISTORY_V2='+json.dumps(dict(r),ensure_ascii=False))
+          if 'history_close_canonical_v1' in ht:
+              cols={r[1] for r in h.execute('pragma table_info(history_close_canonical_v1)')}
+              if 'instrument_type' in cols:
+                  for r in h.execute('select instrument_type,count(*) rows from history_close_canonical_v1 group by instrument_type order by instrument_type'):
+                      print('HISTORY_CLOSE_ONLY='+json.dumps(dict(r),ensure_ascii=False))
+          print('=== CONTRACT EVIDENCE ===')
+          for table in sorted(t for t in ot if 'contract_evidence' in t):
+              try: print('CE_TABLE='+table+' ROWS='+str(o.execute('select count(*) from '+table).fetchone()[0]))
+              except Exception: pass
+          print('=== SAFETY ===')
+          if 'observer_state' in ot:
+              r=o.execute('select mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at from observer_state where id=1').fetchone()
+              print('OBSERVER_STATE='+'|'.join(map(str,r)))
+          o.close();h.close()
+          PY
+          REMOTE
+          cp /tmp/reconcile.txt POROTA_RC6_DOM_API_HISTORY_RECONCILIATION_2026-09-08.txt
+      - name: Commit evidence
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_DOM_API_HISTORY_RECONCILIATION_2026-09-08.txt
+          git commit -m 'audit(rc6): record DOM API History reconciliation'
+          git push origin HEAD:audit/rc6-dom-api-history-reconcile-20260908
