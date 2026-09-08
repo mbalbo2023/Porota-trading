@@ -1,0 +1,105 @@
+name: RC6 Phase A v1 code validate
+
+on:
+  push:
+    branches:
+      - phase-a/rc6-empirical-evidence-write-architecture-20260908
+    paths:
+      - '.github/workflows/rc6-phase-a-v1-code-validate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-phase-a-v1-code-validate
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: phase-a/rc6-empirical-evidence-write-architecture-20260908
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply minimal Phase A interception patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          candle = Path('bl_candle_engine.py')
+          text = candle.read_text(encoding='utf-8')
+          old = '''def archive_raw(c,*,origin,row_key,payload,recorded_at,quality='UNVERIFIED'):\n    body=canonical(payload)\n    return c.execute('INSERT OR IGNORE INTO historical_raw_archive VALUES(NULL,?,?,?,?,?,?)',\n        (origin,row_key,fingerprint(payload),stamp(recorded_at),quality,body)).rowcount==1\n'''
+          new = '''def archive_raw(c,*,origin,row_key,payload,recorded_at,quality='UNVERIFIED'):\n    # RC6 Phase A: PPI History raw evidence may be externalized without\n    # changing the generic candle/legacy archive contract. The legacy table is\n    # preserved read-only; other origins keep their existing behavior.\n    if str(origin).upper() == 'PPI_HISTORY':\n        from fa_raw_evidence_store_rc6 import (\n            EXTERNAL_V1, archive_ppi_history_wrapper, raw_storage_mode,\n        )\n        if raw_storage_mode() == EXTERNAL_V1:\n            archive_ppi_history_wrapper(\n                row_key=row_key, wrapper=payload, recorded_at=recorded_at,\n                quality=quality,\n            )\n            return True\n    body=canonical(payload)\n    return c.execute('INSERT OR IGNORE INTO historical_raw_archive VALUES(NULL,?,?,?,?,?,?)',\n        (origin,row_key,fingerprint(payload),stamp(recorded_at),quality,body)).rowcount==1\n'''
+          if text.count(old) != 1:
+              raise SystemExit('archive_raw patch anchor mismatch')
+          candle.write_text(text.replace(old, new), encoding='utf-8')
+
+          observer = Path('bf_production_paper_observer.py')
+          text = observer.read_text(encoding='utf-8')
+          anchor = 'def _download_histories(reader, store):\n'
+          replacement = '''def _download_histories(reader, store):\n    # RC6 Phase A: all PPI History triggers share one cross-process lease.\n    # In LEGACY mode the lease is a no-op, preserving rollback compatibility.\n    from fa_raw_evidence_store_rc6 import ppi_history_ingest_lease\n    with ppi_history_ingest_lease() as lease:\n        if not lease.acquired:\n            store.event("HISTORY_INGEST_SKIPPED", lease.reason)\n            return 0\n        return _download_histories_locked(reader, store)\n\n\ndef _download_histories_locked(reader, store):\n'''
+          if text.count(anchor) != 1:
+              raise SystemExit('download_histories patch anchor mismatch')
+          observer.write_text(text.replace(anchor, replacement, 1), encoding='utf-8')
+          PY
+
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Phase A targeted tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_phase_a_raw_evidence_store_rc6.py \
+            tests/test_phase_a_integration_rc6.py \
+            tests/test_candle_archive_v17.py
+
+      - name: Compile touched runtime modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            fa_raw_evidence_store_rc6.py \
+            bl_candle_engine.py \
+            bf_production_paper_observer.py
+
+      - name: Safety assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "raw_storage_mode() == EXTERNAL_V1" bl_candle_engine.py
+          grep -q "ppi_history_ingest_lease" bf_production_paper_observer.py
+          grep -q "PPI_HISTORY_RAW_STORAGE_MODE" fa_raw_evidence_store_rc6.py
+          ! grep -q "docker system prune" fa_raw_evidence_store_rc6.py
+          ! grep -q "VACUUM" fa_raw_evidence_store_rc6.py
+
+      - name: Commit tested Phase A interception patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bl_candle_engine.py bf_production_paper_observer.py
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'PATCH_ALREADY_PRESENT=YES'
+            exit 0
+          fi
+          git commit -m 'feat(rc6): route PPI history raw evidence through Phase A store'
+          git push origin HEAD:phase-a/rc6-empirical-evidence-write-architecture-20260908
