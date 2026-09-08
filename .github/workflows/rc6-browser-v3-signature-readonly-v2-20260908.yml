@@ -1,0 +1,92 @@
+name: RC6 Browser V3 signature read-only v2 2026-09-08
+on:
+  push:
+    branches: [checkpoint/rc6-ppi-dom-api-operability-alerting-20260908]
+    paths: ['.github/workflows/rc6-browser-v3-signature-readonly-v2-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-browser-v3-signature-v2
+  cancel-in-progress: false
+jobs:
+  signature:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          fetch-depth: 0
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Fingerprint behavioral candidates
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' > /tmp/v3sig.txt
+          set -uo pipefail
+          echo 'POROTA RC6 BROWSER V3 SIGNATURE V2 — READ ONLY'
+          echo 'HOST_MUTATION=NONE'
+          echo 'SOURCE_CONTENT_EXPORTED=NO'
+          echo "UTC=$(date -u +%FT%TZ)"
+          count=0
+          while IFS= read -r f; do
+            [ -r "$f" ] || continue
+            logger=$(grep -Fic 'api/logger' "$f" 2>/dev/null || true)
+            zendesk=$(grep -Fic 'zendesk-session' "$f" 2>/dev/null || true)
+            operar=$(grep -Fic '/Operar' "$f" 2>/dev/null || true)
+            abort=$(grep -Eic 'route\.abort|abort\(' "$f" 2>/dev/null || true)
+            third=$(grep -Eic 'third.?party|third_party' "$f" 2>/dev/null || true)
+            first=$(grep -Eic 'first.?party|first_party' "$f" 2>/dev/null || true)
+            fail=$(grep -Eic 'fail.?closed|FAIL_CLOSED|FAIL-CLOSED' "$f" 2>/dev/null || true)
+            score=0
+            if [ "$logger" -gt 0 ]; then score=$((score+1)); fi
+            if [ "$zendesk" -gt 0 ]; then score=$((score+1)); fi
+            if [ "$operar" -gt 0 ]; then score=$((score+1)); fi
+            if [ "$abort" -gt 0 ]; then score=$((score+1)); fi
+            if [ "$fail" -gt 0 ]; then score=$((score+1)); fi
+            if [ "$score" -ge 2 ]; then
+              count=$((count+1))
+              echo "FILE=$f"
+              echo "SHA256=$(sha256sum "$f" | awk '{print $1}')"
+              echo "BYTES=$(stat -c %s "$f")"
+              echo "MTIME=$(stat -c %y "$f")"
+              echo "SIGNATURE_SCORE=$score LOGGER=$logger ZENDESK=$zendesk OPERAR=$operar ABORT=$abort THIRD=$third FIRST=$first FAIL=$fail"
+              python3 - "$f" <<'PY'
+          import re,sys
+          s=open(sys.argv[1],'r',encoding='utf-8',errors='ignore').read()
+          pats={
+            'credential_assignment':r'(?i)(password|passwd|secret|token|api[_-]?key|cookie|authorization)\s*=\s*[\"\'][^\"\']{8,}[\"\']',
+            'bearer_literal':r'(?i)bearer\s+[A-Za-z0-9._~+/-]{20,}',
+            'jwt_literal':r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}',
+          }
+          for k,r in pats.items(): print(f'SECRET_PATTERN[{k}]={len(re.findall(r,s))}')
+          PY
+              echo '---'
+            fi
+          done < <(find /opt/porota-trading /home/porotaadmin /usr/local/sbin -xdev -type f \( -name '*.py' -o -name '*.sh' \) 2>/dev/null | grep -Ev '/venv/|/chrome-profile/|/__pycache__/' | sort -u)
+          echo "MATCHING_CANDIDATES=$count"
+          echo 'SIGNATURE_AUDIT=COMPLETE_READ_ONLY'
+          REMOTE
+          cp /tmp/v3sig.txt POROTA_RC6_BROWSER_V3_SIGNATURE_V2_2026-09-08.txt
+      - name: Commit report safely
+        run: |
+          set -euo pipefail
+          git pull --rebase origin checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_BROWSER_V3_SIGNATURE_V2_2026-09-08.txt
+          git commit -m 'audit(rc6): record Browser V3 behavioral signature v2'
+          git push origin HEAD:checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
