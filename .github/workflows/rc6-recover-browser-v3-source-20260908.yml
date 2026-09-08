@@ -1,0 +1,72 @@
+name: RC6 recover Browser V3 host source 2026-09-08
+on:
+  push:
+    branches: [checkpoint/rc6-ppi-dom-api-operability-alerting-20260908]
+    paths: ['.github/workflows/rc6-recover-browser-v3-source-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-recover-browser-v3-source
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          fetch-depth: 0
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Verify exact source identity and export only if clean
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          src='/home/porotaadmin/POROTA_RC6_CE_NONREAD_POLICY_V3_AND_RETEST.sh'
+          expected='38bab331df8bdcdf77ac33d12bb08b50b3e4f85828ed02081931cf0fdfd1dd6d'
+          got=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" "sha256sum '$src' | awk '{print \\$1}'")
+          test "$got" = "$expected"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" "cat '$src'" > /tmp/v3.sh
+          python - <<'PY'
+          from pathlib import Path
+          import re,hashlib
+          p=Path('/tmp/v3.sh'); b=p.read_bytes(); s=b.decode('utf-8',errors='strict')
+          assert hashlib.sha256(b).hexdigest()=='38bab331df8bdcdf77ac33d12bb08b50b3e4f85828ed02081931cf0fdfd1dd6d'
+          pats={
+            'credential_assignment':r'(?i)(password|passwd|secret|token|api[_-]?key|cookie|authorization)\s*=\s*[\"\'][^\"\']{8,}[\"\']',
+            'bearer_literal':r'(?i)bearer\s+[A-Za-z0-9._~+/-]{20,}',
+            'jwt_literal':r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}',
+            'private_key':r'-----BEGIN [A-Z ]*PRIVATE KEY-----',
+          }
+          counts={k:len(re.findall(r,s)) for k,r in pats.items()}
+          assert not any(counts.values()), counts
+          out=Path('recovered_host/POROTA_RC6_CE_NONREAD_POLICY_V3_AND_RETEST.sh')
+          out.parent.mkdir(exist_ok=True)
+          out.write_text(s,encoding='utf-8')
+          Path('POROTA_RC6_BROWSER_V3_SOURCE_RECOVERY_2026-09-08.txt').write_text(
+              'SOURCE_SHA256=38bab331df8bdcdf77ac33d12bb08b50b3e4f85828ed02081931cf0fdfd1dd6d\n'+
+              'SOURCE_PATH=/home/porotaadmin/POROTA_RC6_CE_NONREAD_POLICY_V3_AND_RETEST.sh\n'+
+              'SECRET_PATTERN_SCAN=ZERO\nHOST_MUTATION=NONE\nRECOVERY=EXACT_HASH_GATED\n',encoding='utf-8')
+          PY
+      - name: Commit exact recovered source
+        run: |
+          set -euo pipefail
+          git pull --rebase origin checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add recovered_host/POROTA_RC6_CE_NONREAD_POLICY_V3_AND_RETEST.sh POROTA_RC6_BROWSER_V3_SOURCE_RECOVERY_2026-09-08.txt
+          git commit -m 'audit(rc6): recover exact Browser V3 host source'
+          git push origin HEAD:checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
