@@ -40,9 +40,11 @@ jobs:
         run: |
           python -m py_compile rc6_data_sla_policy.py rc6_dom_coverage_reconciler.py rc6_scraping_semaphore.py
       - name: Focused tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           python -m pip install -q pytest
-          pytest -q tests/test_rc6_wave1b_sla_scraping.py
+          python -m pytest -q tests/test_rc6_wave1b_sla_scraping.py
       - name: Safety invariants
         shell: bash
         run: |
