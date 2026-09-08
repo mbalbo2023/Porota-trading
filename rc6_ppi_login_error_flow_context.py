@@ -3,8 +3,8 @@
 
 Reads only the public login JavaScript bundle to map how HTTP/login errors are
 classified by the official web client. No credentials are read and no POSTs are
-sent. Output is restricted to bounded public-code context and literal UI/error
-strings useful for classifying the already-observed 400 response.
+sent. Uses a disposable browser context, never the trusted profile, so it cannot
+contend with or modify that profile.
 """
 from __future__ import annotations
 import argparse,json,re
@@ -17,22 +17,18 @@ KEY=re.compile(r'block|bloque|usuario|contrase|credencial|incorrect|inv[aá]lid|
 def clean(u:str)->str:
  p=urlsplit(u); return f'{p.scheme}://{p.netloc}{p.path}'
 def compact(s:str)->str:
- s=re.sub(r'\s+',' ',s)
- s=re.sub(r'[A-Za-z0-9_-]{90,}','<OPAQUE>',s)
- return s[:3600]
+ s=re.sub(r'\s+',' ',s); s=re.sub(r'[A-Za-z0-9_-]{90,}','<OPAQUE>',s); return s[:3600]
 
 def main()->int:
- ap=argparse.ArgumentParser(); ap.add_argument('--profile',required=True); ap.add_argument('--chrome',default='/usr/bin/google-chrome-stable'); a=ap.parse_args()
+ ap=argparse.ArgumentParser(); ap.add_argument('--profile',required=False); ap.add_argument('--chrome',default='/usr/bin/google-chrome-stable'); a=ap.parse_args()
  from playwright.sync_api import sync_playwright
- out={'status':'OK_GET_ONLY','credentials_used':False,'post_sent':False,'real_orders_sent':0,'bundle':'','bundle_source':'','contexts':[],'literals':[]}
+ out={'status':'OK_GET_ONLY','credentials_used':False,'post_sent':False,'trusted_profile_used':False,'real_orders_sent':0,'bundle':'','bundle_source':'','contexts':[],'literals':[]}
  with sync_playwright() as pw:
-  ctx=pw.chromium.launch_persistent_context(user_data_dir=a.profile,executable_path=a.chrome,headless=True,args=['--no-sandbox','--disable-dev-shm-usage'])
-  page=ctx.pages[0] if ctx.pages else ctx.new_page(); page.goto(LOGIN,wait_until='domcontentloaded',timeout=20000); page.wait_for_timeout(900)
-  bundle=''
-  loc=page.locator('script[src]')
+  browser=pw.chromium.launch(executable_path=a.chrome,headless=True,args=['--no-sandbox','--disable-dev-shm-usage'])
+  ctx=browser.new_context(); page=ctx.new_page(); page.goto(LOGIN,wait_until='domcontentloaded',timeout=20000); page.wait_for_timeout(900)
+  bundle=''; loc=page.locator('script[src]')
   for i in range(min(loc.count(),120)):
-   src=loc.nth(i).get_attribute('src') or ''
-   full=urljoin(page.url,src)
+   src=loc.nth(i).get_attribute('src') or ''; full=urljoin(page.url,src)
    if '/_next/static/chunks/pages/login-' in full:
     bundle=full; out['bundle_source']='CURRENT_PAGE'; break
   candidates=[bundle] if bundle else []
@@ -50,17 +46,15 @@ def main()->int:
       break
    except Exception: pass
   if not text:
-   ctx.close(); print(json.dumps({**out,'status':'LOGIN_BUNDLE_FETCH_FAILED'},sort_keys=True)); return 4
-  out['bundle']=clean(chosen)
-  seen=set()
+   browser.close(); print(json.dumps({**out,'status':'LOGIN_BUNDLE_FETCH_FAILED'},sort_keys=True)); return 4
+  out['bundle']=clean(chosen); seen=set()
   for marker in MARKERS:
    start=0
    while True:
     idx=text.lower().find(marker.lower(),start)
     if idx<0: break
     lo=max(0,idx-1800); hi=min(len(text),idx+2600); c=compact(text[lo:hi]); key=(marker,c[:300])
-    if key not in seen:
-     seen.add(key); out['contexts'].append({'marker':marker,'context':c})
+    if key not in seen: seen.add(key); out['contexts'].append({'marker':marker,'context':c})
     start=idx+max(1,len(marker))
     if len(out['contexts'])>=30: break
    if len(out['contexts'])>=30: break
@@ -69,7 +63,6 @@ def main()->int:
    if KEY.search(token):
     t=compact(token)
     if t not in lits: lits.append(t)
-  out['literals']=lits[:100]; out['contexts']=out['contexts'][:30]
-  ctx.close()
+  out['literals']=lits[:100]; out['contexts']=out['contexts'][:30]; browser.close()
  print(json.dumps(out,sort_keys=True)); return 0
 if __name__=='__main__': raise SystemExit(main())
