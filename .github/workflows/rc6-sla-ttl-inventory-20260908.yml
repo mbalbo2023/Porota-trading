@@ -1,0 +1,47 @@
+name: RC6 SLA TTL inventory 2026-09-08
+on:
+  push:
+    branches: [audit/rc6-sla-ttl-inventory-20260908]
+    paths: ['.github/workflows/rc6-sla-ttl-inventory-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/rc6-sla-ttl-inventory-20260908
+          fetch-depth: 0
+      - name: Inventory timing semantics
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          out=['POROTA RC6 — SLA/TTL/CADENCE INVENTORY','DATE=2026-09-08','NETWORK_CALLS=NONE','DB_WRITES=NONE','']
+          terms=('TTL','STALE','STALENESS','FRESH','FRESHNESS','CADENCE','INTERVAL','EVERY_','MAX_AGE','AGE_SECONDS','HISTORY_INGEST','BACKGROUND_INGEST','CONTRACT_EVIDENCE')
+          roots=list(Path('.').glob('*.py'))+[Path('.env.example')]+list(Path('scripts').glob('*'))
+          for p in sorted({x for x in roots if x.exists() and x.is_file()}):
+              try: lines=p.read_text(encoding='utf-8',errors='ignore').splitlines()
+              except Exception: continue
+              hits=[]
+              for i,line in enumerate(lines,1):
+                  u=line.upper()
+                  if any(t in u for t in terms) and (re.search(r'\d',line) or 'os.getenv' in line or '=' in line): hits.append((i,line.strip()))
+              if hits:
+                  out.append(f'FILE={p} HITS={len(hits)}')
+                  for i,line in hits[:300]: out.append(f'{i}:{line[:420]}')
+          out += ['','=== KNOWN SEMANTIC CONFLICT TO VERIFY ===','HISTORICAL_INGEST_OBSERVER_EXPECTED=21600s','HISTORICAL_INGEST_DASHBOARD_OR_SCHEDULER_EXPECTED=7200s','RULE=CADENCE_TTL_MAX_STALENESS_MUST_BE_DISTINCT_AND_CANONICAL']
+          Path('POROTA_RC6_SLA_TTL_CADENCE_INVENTORY_2026-09-08.txt').write_text('\n'.join(out)+'\n',encoding='utf-8')
+          PY
+      - name: Commit inventory
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_RC6_SLA_TTL_CADENCE_INVENTORY_2026-09-08.txt
+          git commit -m 'audit(rc6): record SLA TTL cadence inventory'
+          git push origin HEAD:audit/rc6-sla-ttl-inventory-20260908
