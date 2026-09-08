@@ -309,6 +309,19 @@ class SampleMaterializer:
 
 
 def archive_raw(c,*,origin,row_key,payload,recorded_at,quality='UNVERIFIED'):
+    # RC6 Phase A: PPI History raw evidence may be externalized without
+    # changing the generic candle/legacy archive contract. The legacy table is
+    # preserved read-only; other origins keep their existing behavior.
+    if str(origin).upper() == 'PPI_HISTORY':
+        from fa_raw_evidence_store_rc6 import (
+            EXTERNAL_V1, archive_ppi_history_wrapper, raw_storage_mode,
+        )
+        if raw_storage_mode() == EXTERNAL_V1:
+            archive_ppi_history_wrapper(
+                row_key=row_key, wrapper=payload, recorded_at=recorded_at,
+                quality=quality,
+            )
+            return True
     body=canonical(payload)
     return c.execute('INSERT OR IGNORE INTO historical_raw_archive VALUES(NULL,?,?,?,?,?,?)',
         (origin,row_key,fingerprint(payload),stamp(recorded_at),quality,body)).rowcount==1

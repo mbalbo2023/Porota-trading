@@ -871,6 +871,17 @@ def _history_batch_semantics(statuses):
 
 
 def _download_histories(reader, store):
+    # RC6 Phase A: all PPI History triggers share one cross-process lease.
+    # In LEGACY mode the lease is a no-op, preserving rollback compatibility.
+    from fa_raw_evidence_store_rc6 import ppi_history_ingest_lease
+    with ppi_history_ingest_lease() as lease:
+        if not lease.acquired:
+            store.event("HISTORY_INGEST_SKIPPED", lease.reason)
+            return 0
+        return _download_histories_locked(reader, store)
+
+
+def _download_histories_locked(reader, store):
     end = datetime.now(TZ).date()
     start = end - timedelta(days=365)
     total = 0
