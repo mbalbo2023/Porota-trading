@@ -1,0 +1,78 @@
+name: RC6 recover installed Browser V3 collector 2026-09-08
+on:
+  push:
+    branches: [checkpoint/rc6-ppi-dom-api-operability-alerting-20260908]
+    paths: ['.github/workflows/rc6-recover-installed-v3-collector-20260908.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rc6-recover-installed-v3-collector
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          fetch-depth: 0
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Export installed collector after policy and secret gates
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          src='/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py'
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" "sudo -n cat '$src'" > /tmp/collector.py
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,re
+          b=Path('/tmp/collector.py').read_bytes(); s=b.decode('utf-8',errors='strict')
+          assert 'POROTA_CE_NONREAD_POLICY_V3' in s, 'V3_MARKER_MISSING'
+          assert '/api/logger' in s and 'zendesk-session' in s, 'KNOWN_ABORT_RULES_MISSING'
+          assert 'route.abort' in s or 'route.abort()' in s, 'ABORT_RULE_MISSING'
+          pats={
+            'credential_assignment':r'(?i)(password|passwd|secret|token|api[_-]?key|cookie|authorization)\s*=\s*[\"\'][^\"\']{8,}[\"\']',
+            'bearer_literal':r'(?i)bearer\s+[A-Za-z0-9._~+/-]{20,}',
+            'jwt_literal':r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}',
+            'private_key':r'-----BEGIN [A-Z ]*PRIVATE KEY-----',
+          }
+          counts={k:len(re.findall(r,s)) for k,r in pats.items()}
+          print('COLLECTOR_SHA256='+hashlib.sha256(b).hexdigest())
+          print('SECRET_SCAN='+repr(counts))
+          assert not any(counts.values()), counts
+          out=Path('recovered_host/rc6_trusted_browser_contract_collector.V3.installed.py')
+          out.parent.mkdir(exist_ok=True); out.write_bytes(b)
+          Path('POROTA_RC6_BROWSER_V3_INSTALLED_COLLECTOR_RECOVERY_2026-09-08.txt').write_text(
+            'SOURCE_PATH=/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py\n'+
+            'SOURCE_SHA256='+hashlib.sha256(b).hexdigest()+'\nV3_MARKER=PRESENT\nKNOWN_ABORT_RULES=PRESENT\nSECRET_PATTERN_SCAN=ZERO\nHOST_MUTATION=NONE\n',encoding='utf-8')
+          PY
+      - name: Syntax and static safety validation
+        run: |
+          set -euo pipefail
+          python -m py_compile recovered_host/rc6_trusted_browser_contract_collector.V3.installed.py
+          grep -q 'POROTA_CE_NONREAD_POLICY_V3' recovered_host/rc6_trusted_browser_contract_collector.V3.installed.py
+          grep -q '/api/logger' recovered_host/rc6_trusted_browser_contract_collector.V3.installed.py
+          grep -q 'zendesk-session' recovered_host/rc6_trusted_browser_contract_collector.V3.installed.py
+      - name: Commit exact installed collector
+        run: |
+          set -euo pipefail
+          git pull --rebase origin checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add recovered_host/rc6_trusted_browser_contract_collector.V3.installed.py POROTA_RC6_BROWSER_V3_INSTALLED_COLLECTOR_RECOVERY_2026-09-08.txt
+          git commit -m 'audit(rc6): recover installed Browser V3 collector'
+          git push origin HEAD:checkpoint/rc6-ppi-dom-api-operability-alerting-20260908
