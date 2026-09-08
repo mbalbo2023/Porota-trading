@@ -1,0 +1,191 @@
+POROTA RC6 — PHASE A GATE 0 LIVE READ-ONLY EVIDENCE
+MUTATIONS=NONE
+DELETE=NONE
+PRUNE=NONE
+VACUUM=NONE
+UTC=2026-09-08T13:09:15Z
+AR=2026-09-08T10:09:15-0300
+HOST=ubuntu-s-1vcpu-1gb-nyc1
+
+======================================================================
+01. FILESYSTEM HEADROOM
+======================================================================
+Filesystem     Type  Size  Used Avail Use% Mounted on
+/dev/vda1      ext4   24G   14G  9.4G  60% /
+Filesystem     Inodes IUsed IFree IUse% Mounted on
+/dev/vda1        3.0M  286K  2.8M   10% /
+ROOT_USED_BYTES=14878363648
+ROOT_AVAIL_BYTES=9988026368
+
+======================================================================
+02. LIVE REPOSITORY IDENTITY — NOT AUTHORITATIVE FOR CONTAINER SHA
+======================================================================
+REPO_BRANCH=fix/rc6-history-partial-semantics-20260907
+REPO_HEAD=c17b0d777ba49d88c53c5a7ed14218d8eaa94638
+REPO_UNTRACKED=58
+REPO_MODIFIED_OR_STAGED=0
+
+======================================================================
+03. RUNNING CONTAINERS / IMAGE LABEL TRUTH
+======================================================================
+-- porota_production_observer --
+
+template parsing error: template: :1:167: executing "" at <.State.Health>: map has no entry for key "Health"
+POROTA_COMMIT=c17b0d777ba49d88c53c5a7ed14218d8eaa94638
+POROTA_VERSION=17.0.0-rc6
+-- porota_production_dashboard --
+NAME=/porota_production_dashboard ID=6b0402943d319131ed4f92bfc9b5fdd0dd957d6607322491ae698c2cebae2359 IMAGE=porota-trading-dashboard:17.0.0-rc6-operator-ux IMAGE_ID=sha256:2de65e36d890f2115ed9dc5a5a84dd41fca4977375e860ec35411dbbb42e8456 STATUS=running RUNNING=true RESTARTS=0 HEALTH=healthy STARTED=2026-09-07T16:22:22.754333214Z
+POROTA_COMMIT=d912f64d818c5ee09dcd576271e34fb575c1e525
+POROTA_VERSION=
+-- docker ps --
+NAMES                          IMAGE                                             STATUS
+porota_production_observer     porota-trading-bot:17.0.0-rc6                     Up 14 hours
+porota_critical_approval_rc6   b67c12a8d5ed                                      Up 18 hours (healthy)
+porota_production_dashboard    porota-trading-dashboard:17.0.0-rc6-operator-ux   Up 21 hours (healthy)
+
+======================================================================
+04. SQLITE SAFETY / OBSERVER STATE
+======================================================================
+OBSERVER_PATH=/opt/porota-trading/data/paper_v17/observer_v17.db
+OBSERVER_FILE_BYTES=1652576256
+OBSERVER_QUICK_CHECK=ok
+OBSERVER_JOURNAL_MODE=wal
+HISTORY_PATH=/opt/porota-trading/data/market_history.db
+HISTORY_FILE_BYTES=54181888
+HISTORY_QUICK_CHECK=ok
+HISTORY_JOURNAL_MODE=wal
+OBSERVER_STATE_ID=1
+OBSERVER_STATE_PROCESS_STATE=WAITING_MARKET
+OBSERVER_STATE_SESSION_STATE=MARKET_CLOSED
+OBSERVER_STATE_PPI_AUTH=OK
+OBSERVER_STATE_HEARTBEAT_AT=2026-09-08T13:09:46.200869+00:00
+OBSERVER_STATE_REAL_ORDERS_SENT=0
+OBSERVER_STATE_MODE=PRODUCTION_PAPER
+OBSERVER_STATE_DETAIL=PPI de solo lectura activo; ingesta histórica disponible. Estrategia y market data vivo detenidos por mercado cerrado.
+RAW_ARCHIVE_ROWS=28456
+RAW_ARCHIVE_DBSTAT_BYTES=1392848896
+
+======================================================================
+05. CURRENT DISK HOTSPOTS
+======================================================================
+-- /opt/porota-trading/data --
+16K	/opt/porota-trading/data/contract_evidence/ppi_web_all_families
+16M	/opt/porota-trading/data/contract_evidence/rc4_trusted
+84K	/opt/porota-trading/data/contract_evidence/rc6_trusted
+8.0K	/opt/porota-trading/data/contract_evidence/ppi_web_history_shadow
+8.0K	/opt/porota-trading/data/contract_evidence/ppi_web_cauciones
+16M	/opt/porota-trading/data/contract_evidence
+348K	/opt/porota-trading/data/introspection_publish/daily
+368K	/opt/porota-trading/data/introspection_publish
+32K	/opt/porota-trading/data/deployments
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_193818
+48K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_014402
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_201732
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260826_225316
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_031513
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_203013
+32K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_002722
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_200030
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_201353
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260826_231857
+532K	/opt/porota-trading/data/backups/patch_v163_20260824_160012
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_030847
+56K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_015556
+76K	/opt/porota-trading/data/backups/preopen-retire
+44K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260826_010951
+88K	/opt/porota-trading/data/backups/pre_production_paper_v1634_20260825_192702
+136K	/opt/porota-trading/data/backups/pre_production_paper_v1635_20260827_033133
+32K	/opt/porota-trading/data/backups/pre_dashboard_hotfix_v1634_20260825_213248
+2.0M	/opt/porota-trading/data/backups
+164K	/opt/porota-trading/data/logs
+768M	/opt/porota-trading/data/paper_v17/artifacts
+16K	/opt/porota-trading/data/paper_v17/observability
+2.4G	/opt/porota-trading/data/paper_v17
+4.0K	/opt/porota-trading/data/proposals
+12K	/opt/porota-trading/data/diagnosticos/integrity
+84K	/opt/porota-trading/data/diagnosticos/auto_checks
+68K	/opt/porota-trading/data/diagnosticos/cierre_rueda
+1.2M	/opt/porota-trading/data/diagnosticos
+4.6M	/opt/porota-trading/data/introspection
+4.9M	/opt/porota-trading/data/functional_health
+3.1M	/opt/porota-trading/data/reports
+36K	/opt/porota-trading/data/runtime_patches/hf6_contract_evidence
+40K	/opt/porota-trading/data/runtime_patches
+28K	/opt/porota-trading/data/scheduler
+2.4G	/opt/porota-trading/data
+-- key backup roots --
+701M	/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups
+2.0M	/opt/porota-trading/data/backups
+349M	/opt/porota-backups
+-- /var --
+309M	/var/log
+2.2M	/var/backups
+4.0K	/var/snap
+6.4M	/var/crash
+4.0K	/var/local
+4.0K	/var/opt
+64K	/var/tmp
+16K	/var/spool
+154M	/var/cache
+4.0K	/var/mail
+5.3G	/var/lib
+5.7G	/var
+-- docker system df --
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          4         3         4.2GB     12.49MB (0%)
+Containers      3         3         53.25kB   0B (0%)
+Local Volumes   0         0         0B        0B
+Build Cache     17        0         1.49GB    30.1MB
+-- builder cache --
+ID                           RECLAIMABLE   SIZE       LAST ACCESSED
+jcd2ecfuatbj5meuhuhem67ws    true          249B*      16 hours ago
+hz07o2ex2hdjmgwgttl5m6284*   true          8.192kB    14 hours ago
+z8oejyw375g6yh37e6p9zkbjw*   true          8.192kB    14 hours ago
+se237dxijkooe9ggzantdxzsw    true          8.285kB*   16 hours ago
+3v085rxh40mcxk5lz09w3dft8    true          18.7kB*    16 hours ago
+2uqevp2pgi0o77x6ns79kywnp    true          4.265MB*   17 hours ago
+z84nydluwo1jqf1zue8n2uvw2*   true          5.059MB    14 hours ago
+spb7d7gn61f5ieuwpk0o6cv61    true          6.17MB     16 hours ago
+ktiuyvmzaajhhhi528gtzec2k    true          6.192MB    14 hours ago
+pygs89az7ac84frds8v3ik9df    true          6.216MB*   14 hours ago
+6mwh9gh0pzpqoavssfkxscci7    true          6.319MB    16 hours ago
+n3u0lk14g0c21boqnmg526bc0    true          6.339MB    14 hours ago
+tyzlo1nl4wfvmy8y5o4gwe7o2    true          6.363MB*   14 hours ago
+ufbadeuffzm0mrao91i862gzk    true          14.45MB*   17 hours ago
+0dmtxdlua441ec6ckt7fm8d35    true          29.79MB*   17 hours ago
+i21e2fgclmc0zkgfm27ltk5vi    true          244.2MB*   16 hours ago
+xzrldll23s455g1j2a5mw1fon    true          1.155GB*   14 hours ago
+Shared:		1.46GB
+Private:	30.1MB
+Reclaimable:	1.49GB
+Total:		1.49GB
+-- journal --
+Archived and active journals take up 170.2M in the file system.
+
+======================================================================
+06. DEPLOY / MUTATION CONCURRENCY SNAPSHOT
+======================================================================
+-- active porota deploy-like systemd units --
+-- active timers related to porota --
+Tue 2026-09-08 13:10:15 UTC      16s Tue 2026-09-08 13:05:15 UTC 4min 43s ago porota-fast-functional-health-rc6.timer porota-fast-functional-health-rc6.service
+Tue 2026-09-08 13:10:48 UTC      49s Tue 2026-09-08 13:09:48 UTC      10s ago porota-log-export-hf6.timer             porota-log-export-hf6.service
+Tue 2026-09-08 13:10:48 UTC      49s Tue 2026-09-08 13:09:48 UTC      10s ago porota-scheduler-export-hf6.timer       porota-scheduler-export-hf6.service
+Tue 2026-09-08 13:13:10 UTC 3min 10s Tue 2026-09-08 13:07:55 UTC  2min 4s ago porota-contract-evidence-rc6.timer      porota-contract-evidence-rc6.service
+Tue 2026-09-08 13:15:00 UTC     5min Tue 2026-09-08 12:15:00 UTC    54min ago porota-introspeccion-hf5.timer          porota-introspeccion-hf5.service
+Tue 2026-09-08 13:15:00 UTC     5min Mon 2026-09-07 13:15:00 UTC      23h ago porota-preopen-rc6.timer                porota-preopen-rc6.service
+Tue 2026-09-08 13:16:25 UTC     6min Tue 2026-09-08 13:01:25 UTC     8min ago porota-history-postclose-rc6.timer      porota-history-postclose-rc6.service
+Tue 2026-09-08 13:17:32 UTC     7min Tue 2026-09-08 13:07:32 UTC 2min 26s ago porota-candle-integrity-rc6.timer       porota-candle-integrity-rc6.service
+Tue 2026-09-08 13:20:12 UTC    10min Tue 2026-09-08 12:20:21 UTC    49min ago porota-introspection-publish.timer      porota-introspection-publish.service
+Tue 2026-09-08 20:20:45 UTC       7h -                                      - porota-full-db-integrity-rc6.timer      porota-full-db-integrity-rc6.service
+Tue 2026-09-08 21:30:00 UTC       8h Mon 2026-09-07 21:30:10 UTC      15h ago porota-a3-history-daily-rc6.timer       porota-a3-history-rc6@DAILY_INCREMENTAL.service
+Wed 2026-09-09 02:30:00 UTC      13h Tue 2026-09-08 02:30:00 UTC      10h ago porota-a3-history-reconcile-rc6.timer   porota-a3-history-rc6@RECONCILE.service
+Wed 2026-09-09 07:19:07 UTC      18h Tue 2026-09-08 07:19:40 UTC 5h 50min ago porota-host-general-backup-rc6.timer    porota-host-general-backup-rc6.service
+Sat 2026-09-12 06:00:00 UTC   3 days -                                      - porota-a3-history-weekend-rc6.timer     porota-a3-history-rc6@WEEKEND_DEEP.service
+-- deployment-like processes (sanitized command names only) --
+
+======================================================================
+07. GATE0 SNAPSHOT COMPLETION
+======================================================================
+GATE0_CAPTURE=COMPLETE_READ_ONLY
+PHASE_A_IMPLEMENTATION=NOT_STARTED_BY_THIS_WORKFLOW
+HOST_MUTATION=NONE
