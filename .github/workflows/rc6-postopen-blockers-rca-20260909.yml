@@ -1,0 +1,74 @@
+name: RC6 Postopen Blockers RCA 2026-09-09
+
+on:
+  push:
+    branches: [diag/rc6-live-postopen-20260909]
+    paths:
+      - '.github/workflows/rc6-postopen-blockers-rca-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only blocker RCA
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          redact(){ sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<EMAIL_REDACTED>/g; s/(token|secret|password|api[_-]?key)([=: ]+)[^ ]+/\1\2<REDACTED>/Ig; s/[A-Fa-f0-9]{40,}/<LONG_HEX_REDACTED>/g'; }
+          echo '=== PREOPEN STATUS ==='
+          systemctl status porota-preopen-rc6.service --no-pager -l 2>&1 | tail -80 | redact || true
+          echo '=== PREOPEN JOURNAL ==='
+          journalctl -u porota-preopen-rc6.service --since 'today' --no-pager -o short-iso 2>&1 | tail -160 | redact || true
+          echo '=== CONTRACT EVIDENCE RC6 STATUS ==='
+          systemctl status porota-contract-evidence-rc6.timer porota-contract-evidence-rc6.service --no-pager -l 2>&1 | tail -120 | redact || true
+          echo '=== CONTRACT EVIDENCE RC6 JOURNAL ==='
+          journalctl -u porota-contract-evidence-rc6.service --since 'today' --no-pager -o short-iso 2>&1 | tail -180 | redact || true
+          echo '=== CONTRACT EVIDENCE RC4 STATUS ==='
+          systemctl status porota-contract-evidence-rc4.timer porota-contract-evidence-rc4.service --no-pager -l 2>&1 | tail -120 | redact || true
+          echo '=== CONTRACT EVIDENCE RC4 JOURNAL ==='
+          journalctl -u porota-contract-evidence-rc4.service --since 'today' --no-pager -o short-iso 2>&1 | tail -180 | redact || true
+          echo '=== HISTORY FAILURE GROUPS ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          cols=[r[1] for r in c.execute('pragma table_info(production_history_attempts)')]
+          print('COLS='+json.dumps(cols))
+          if 'instrument_type' in cols and 'state' in cols:
+              rows=c.execute('select instrument_type,state,count(*) from production_history_attempts group by instrument_type,state order by instrument_type,state').fetchall()
+              print('HISTORY_FAMILY_STATE='+json.dumps(rows,default=str))
+          if 'instrument_type' in cols and 'valid_rows' in cols:
+              rows=c.execute('select instrument_type,count(*),sum(valid_rows),min(valid_rows),max(valid_rows) from production_history_attempts group by instrument_type order by instrument_type').fetchall()
+              print('HISTORY_FAMILY_ROWS='+json.dumps(rows,default=str))
+          if 'detail' in cols and 'state' in cols:
+              rows=c.execute("select state,substr(detail,1,160),count(*) from production_history_attempts where state!='VALID_PAYLOAD' group by state,substr(detail,1,160) order by count(*) desc limit 40").fetchall()
+              print('HISTORY_FAILURE_SIGNATURES='+json.dumps(rows,default=str))
+          c.close()
+          PY
+          echo '=== SAFETY ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'MODE={mode}'); print(f'REAL_ORDERS={orders}'); c.close()
+          PY
+          echo ORDER_ROUTES=NOT_CALLED
+          echo RUNTIME_MUTATION=NO
+          REMOTE
