@@ -1,0 +1,92 @@
+name: RC6 Overnight Data Readiness Audit
+
+on:
+  push:
+    branches: [audit/rc6-overnight-data-readiness-20260909]
+    paths: ['.github/workflows/rc6-overnight-data-readiness-audit-20260909.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_audit"
+          chmod 600 "$HOME/.ssh/porota_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only runtime evidence
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          ROOT=/opt/porota-trading
+          cd "$ROOT"
+          echo '=== OVERNIGHT DATA READINESS ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          df -h / | sed -n '1,2p'
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os,json,datetime
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          s=c.execute('select * from observer_state where id=1').fetchone()
+          print('DB_QUICK_CHECK='+str(q)); print('MODE='+str(s['mode'])); print('REAL_ORDERS='+str(s['real_orders_sent']))
+          print('RAW_STORAGE_MODE='+str(os.getenv('PPI_HISTORY_RAW_STORAGE_MODE')))
+          tables=[r[0] for r in c.execute("select name from sqlite_master where type='table' order by name")]
+          print('TABLE_COUNT='+str(len(tables)))
+          for pat in ('histor','source','ingest','backfill','coverage','gap','contract','instrument','family','ppi','scrap','evidence','alert','health','introspect','risk','learn','forward','mfe','mae'):
+              hits=[t for t in tables if pat in t.lower()]
+              print('TABLES_'+pat.upper()+'='+','.join(hits))
+          def cols(t): return [r[1] for r in c.execute(f'pragma table_info("{t}")')]
+          for t in tables:
+              lc=t.lower()
+              if any(x in lc for x in ('histor','source_sync','backfill','coverage','gap','contract','instrument')):
+                  try:
+                      n=c.execute(f'select count(*) from "{t}"').fetchone()[0]
+                      cs=cols(t)
+                      print(f'TABLE|{t}|rows={n}|cols={",".join(cs)}')
+                      timecols=[x for x in cs if x.lower() in ('updated_at','created_at','downloaded_at','last_seen_at','timestamp','ts','datetime','date','asof','as_of','observed_at','attempted_at','finished_at') or 'time' in x.lower() or 'date' in x.lower()]
+                      for tc in timecols[:3]:
+                          try:
+                              v=c.execute(f'select max("{tc}") from "{t}"').fetchone()[0]
+                              if v is not None: print(f'MAX|{t}|{tc}|{v}')
+                          except: pass
+                  except Exception as e: print(f'TABLE_ERR|{t}|{type(e).__name__}')
+          # Known exact-v1 safety invariant
+          if 'historical_raw_archive' in tables: print('LEGACY_RAW_ROWS='+str(c.execute('select count(*) from historical_raw_archive').fetchone()[0]))
+          c.close()
+          PY
+          echo '--- SYSTEMD POROTA TIMERS ---'
+          sudo -n systemctl list-timers --all --no-pager | grep -Ei 'porota|history|contract|introspect|backfill|reconcile|scrap' || true
+          echo '--- FAILED POROTA UNITS ---'
+          sudo -n systemctl --failed --no-pager | grep -Ei 'porota|history|contract|introspect|backfill|reconcile|scrap' || true
+          echo '--- CONTRACT EVIDENCE LATEST ---'
+          sudo -n find "$ROOT/data/contract_evidence" -type f -printf '%T@|%s|%p\n' 2>/dev/null | sort -nr | sed -n '1,20p' || true
+          echo '--- EXACT HISTORY EVIDENCE ---'
+          sudo -n find "$ROOT/data/evidence/ppi_history_exact_v1" -maxdepth 2 -type f -printf '%T@|%s|%p\n' 2>/dev/null | sort -nr | sed -n '1,20p' || true
+          echo '--- DISK / CONTAINERD ---'
+          sudo -n du -sx -h /var/lib/containerd /opt/porota-trading/data 2>/dev/null || true
+          sudo -n docker system df || true
+          echo MUTATIONS=NONE
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          HOST
