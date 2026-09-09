@@ -1,0 +1,70 @@
+name: RC6 Full Family Readiness Live 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-family-readiness-live-20260909]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only family matrix
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          print('DB_QUICK='+c.execute('pragma quick_check').fetchone()[0])
+          s=dict(c.execute('select * from observer_state where id=1').fetchone())
+          print('SAFETY='+json.dumps({k:s.get(k) for k in ('mode','session_state','ppi_auth','real_orders_sent','last_market_data_at')},sort_keys=True,default=str))
+          rows=c.execute("""select upper(instrument_type) family,count(*) total,
+              sum(case when upper(status)='AVAILABLE' then 1 else 0 end) available,
+              sum(case when can_simulate=1 then 1 else 0 end) can_simulate,
+              sum(case when upper(status)='STALE' then 1 else 0 end) stale,
+              max(last_checked_at) last_checked
+            from candidate_universe group by upper(instrument_type) order by family""").fetchall()
+          for r in rows: print('FAMILY_MATRIX='+json.dumps(dict(r),sort_keys=True,ensure_ascii=False,default=str))
+          for famrow in rows:
+              fam=famrow['family']
+              for r in c.execute("select status,can_simulate,detail,count(*) n from candidate_universe where upper(instrument_type)=? group by status,can_simulate,detail order by n desc limit 12",(fam,)):
+                  print('FAMILY_BLOCKER='+json.dumps({'family':fam,**dict(r)},sort_keys=True,ensure_ascii=False,default=str))
+          # Today's observed/decision activity by family.
+          try:
+              for r in c.execute("select upper(asset_class) family,count(*) snapshots,count(distinct symbol) symbols,max(observed_at) last_at from market_snapshots where substr(observed_at,1,10)='2026-09-09' group by upper(asset_class) order by family"):
+                  print('FAMILY_SNAPSHOTS='+json.dumps(dict(r),sort_keys=True,default=str))
+          except Exception: pass
+          try:
+              # Symbol-to-family mapping through universe; duplicates collapsed by symbol/family.
+              for r in c.execute("""select upper(u.instrument_type) family,count(*) decisions,
+                    sum(case when d.action='BUY' then 1 else 0 end) buys,
+                    sum(case when d.action='HOLD' then 1 else 0 end) holds,
+                    max(d.decided_at) last_decision
+                  from paper_decisions d join (select distinct ticker,instrument_type from candidate_universe) u on u.ticker=d.symbol
+                  where substr(d.decided_at,1,10)='2026-09-09' group by upper(u.instrument_type) order by family"""):
+                  print('FAMILY_DECISIONS='+json.dumps(dict(r),sort_keys=True,default=str))
+          except Exception as e: print('FAMILY_DECISIONS_ERROR='+type(e).__name__)
+          c.close()
+          PY
+          echo RUNTIME_MUTATION=NO
+          echo NETWORK_CALLS_FROM_DIAGNOSTIC=NO
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          REMOTE
