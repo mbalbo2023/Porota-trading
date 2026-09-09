@@ -1,0 +1,102 @@
+name: RC6 Wave8 Live StyleBlock Proof 2026-09-09
+
+on:
+  push:
+    branches: [fix/rc6-wave8-tablet-legibility-20260909]
+    paths:
+      - '.github/workflows/rc6-wave8-live-styleblock-proof-20260909.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-runtime-deploy
+  cancel-in-progress: false
+
+jobs:
+  prove-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Static regression and safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile zz_wave8_dashboard_live_rc6.py o_dashboard.py bg_paper_dashboard.py da_dashboard_ux_hf6.py
+          python - <<'PY'
+          from pathlib import Path
+          t=Path('zz_wave8_dashboard_live_rc6.py').read_text(encoding='utf-8')
+          for x in ['porota-rc6-classic-responsive','overflow-x:auto!important','width:max-content!important','min-width:100%!important','overflow-wrap:normal!important','word-break:normal!important','min-width:7rem!important','hyphens:none!important']:
+              assert x in t,x
+          for x in ['budget_order','confirm_order','cancel_order','masscancel','send_order','place_order','/Operar/']:
+              assert x not in t,x
+          print('STATIC_SAFETY=GREEN')
+          PY
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_wave8proof"
+          chmod 600 "$HOME/.ssh/porota_wave8proof"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Prove runtime Wave8 and safety
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_wave8proof" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = a24f983248231941a281c894fa8255038dee5140
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "PRE_DB=$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,re,urllib.request
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          paths=['/','/en-vivo','/trading','/scalping','/validacion','/instrumentos','/riesgo','/historicos','/aprendizaje','/reportes','/sistema']
+          for p in paths:
+              req=urllib.request.Request('http://127.0.0.1:8000'+p)
+              if token:
+                  req.add_header('Authorization','Bearer '+token); req.add_header('X-Dashboard-Token',token)
+              with urllib.request.urlopen(req,timeout=15) as r:
+                  body=r.read().decode('utf-8','replace'); print(f'HTTP|{p}|{r.status}|bytes={len(body)}'); assert r.status==200
+                  if '<table' not in body.lower(): continue
+                  m=re.search(r"<style id=['\"]porota-rc6-classic-responsive['\"]>(.*?)</style>",body,re.S|re.I)
+                  assert m,p
+                  css=re.sub(r'\s+','',m.group(1)).lower()
+                  required=['overflow-x:auto!important','width:max-content!important','min-width:100%!important','table-layout:auto!important','white-space:normal!important','overflow-wrap:normal!important','word-break:normal!important','hyphens:none!important','min-width:7rem!important']
+                  for x in required: assert x in css,(p,x)
+                  for x in ['overflow-wrap:anywhere','word-break:break-all','min-width:0!important']: assert x not in css,(p,x)
+          print('WAVE8_LIVE_STYLEBLOCK=GREEN')
+          PY
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "POST_DB=$POST"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          echo WAVE8_LIVE_PROOF=GREEN
+          REMOTE
