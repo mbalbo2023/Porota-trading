@@ -1,0 +1,148 @@
+name: RC6 Wave12 Final Current GET Import V2 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-final-current-get-import-v2-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  final-current-get-v2:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Static W12 V2 safety gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q tests/test_rc6_wave12_current_get_v2.py tests/test_rc6_contract_routes_cotizaciones_only.py tests/test_ppi_web_reauth_rc6.py tests/test_contract_evidence_reauth_wiring_rc6.py
+          ! grep -REn 'send_order|place_order|cancel_order|api/Orders' rc6_trusted_browser_contract_collector_v2.py rc6_contract_capture_importer_v2.py
+          grep -q 'NO_AUTO_ACTIVATION' rc6_contract_capture_importer_v2.py
+          echo 'W12_V2_STATIC=GREEN'
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12v2"
+          chmod 600 "$HOME/.ssh/w12v2"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Fresh trusted capture and Contract Evidence import V2
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w12v2" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          EXPECTED=9197aedf35fe1739b594c742902e80df069c47c9
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          PY=/opt/porota-contract-evidence-venv/bin/python
+          OUTDIR=$REPO/data/contract_evidence/rc6_trusted
+          cd "$REPO"
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)" != active
+          OBS_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          DASH_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          PRE_RUNS=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          exists=c.execute("select 1 from sqlite_master where type='table' and name='contract_evidence_v2_runs'").fetchone()
+          n=c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0] if exists else 0
+          c.close(); print(n); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          )
+          echo "CE_RUNS_PRE=$PRE_RUNS"
+          git fetch --no-tags origin deploy-prep/rc6-wave12-currentbase-20260909
+          test "$(git rev-parse origin/deploy-prep/rc6-wave12-currentbase-20260909)" = "$TARGET_SHA"
+          TMP=$(mktemp -d "$HOME/w12v2.XXXXXX")
+          cleanup(){ git -C "$REPO" worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"; }
+          trap cleanup EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n install -d -o porotaadmin -g porotaadmin -m 0700 "$OUTDIR"
+          TS=$(date -u +%Y%m%dT%H%M%SZ)
+          CAPTURE="$OUTDIR/contract_current_get_v2_${TS}.json"
+          set +e
+          COLLECT_OUT=$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$TMP/source" "$PY" "$TMP/source/rc6_trusted_browser_contract_collector_v2.py" --profile "$PROFILE" --jobs CONTRACT_EVIDENCE_FULL_BROWSER --output "$CAPTURE" 2>&1)
+          COLLECT_RC=$?
+          set -e
+          echo "COLLECT_RC=$COLLECT_RC"
+          echo "COLLECT_RESULT=$COLLECT_OUT"
+          test "$COLLECT_RC" -eq 0
+          sudo -n python3 - "$CAPTURE" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert d.get('schema')=='POROTA_RC6_PPI_TRUSTED_CONTRACT_V2'
+          assert d.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert int(d.get('real_orders_sent') or 0)==0
+          routes=d.get('routes') or []
+          assert len(routes)==16, len(routes)
+          assert all(str(x.get('requested') or '').startswith('/Cotizaciones/') for x in routes)
+          assert all('/Operar' not in str(x.get('url') or '') and '/Orden' not in str(x.get('url') or '') for x in routes)
+          reached=sum(bool(x.get('reached')) for x in routes)
+          endpoints=d.get('endpoints') or {}
+          generic=sum(1 for x in endpoints.values() if x.get('kind')=='GENERIC_FIRSTPARTY_GET')
+          print('CAPTURE_AUTH=AUTHENTICATED_TRUSTED_DEVICE')
+          print(f'CAPTURE_ROUTES={len(routes)}')
+          print(f'CAPTURE_REACHED={reached}')
+          print(f'CAPTURE_ENDPOINTS={len(endpoints)}')
+          print(f'CAPTURE_GENERIC_ENDPOINTS={generic}')
+          print(f'CAPTURE_BLOCKED_NONREAD={len(d.get("blocked_nonread") or [])}')
+          assert reached==16, reached
+          assert len(endpoints)>=1, len(endpoints)
+          assert generic>=1, generic
+          PY
+          REL=${CAPTURE#"$REPO/data/"}
+          set +e
+          IMPORT_OUT=$(cat "$TMP/source/rc6_contract_capture_importer_v2.py" | sudo -n docker exec -i porota_production_observer python - "/app/data/$REL" 2>&1)
+          IMPORT_RC=$?
+          set -e
+          echo "IMPORT_RC=$IMPORT_RC"
+          echo "IMPORT_RESULT=$IMPORT_OUT"
+          test "$IMPORT_RC" -eq 0
+          OUT="$IMPORT_OUT" python3 - <<'PY'
+          import json,os
+          d=json.loads(os.environ['OUT'].splitlines()[-1])
+          assert d['state']=='AMARILLO'
+          assert int(d['records'])>0
+          assert d['no_auto_activation'] is True
+          assert d['contract_completeness']=='NOT_PROVEN'
+          assert int(d['real_orders_sent'])==0
+          print('IMPORT_RECORDS='+str(d['records']))
+          print('IMPORT_MAPPED='+str(d['mapped']))
+          print('IMPORT_WILDCARD='+str(d['wildcard']))
+          print('NO_AUTO_ACTIVATION=YES')
+          PY
+          POST_RUNS=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          n=c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0]
+          c.close(); print(n); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          )
+          echo "CE_RUNS_POST=$POST_RUNS"
+          test "$POST_RUNS" -gt "$PRE_RUNS"
+          OBS_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          DASH_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          test "$OBS_POST" = "$OBS_PRE"
+          test "$DASH_POST" = "$DASH_PRE"
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'ROLLBACK_AUTOMATICO=NO'
+          echo 'W12_FINAL_CURRENT_GET_IMPORT_V2=GREEN'
+          REMOTE
