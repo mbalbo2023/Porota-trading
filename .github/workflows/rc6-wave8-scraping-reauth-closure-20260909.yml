@@ -1,0 +1,171 @@
+name: RC6 Wave8 + Scraping Reauth Closure 2026-09-09
+
+on:
+  push:
+    branches: [fix/rc6-wave8-scraping-reauth-closure-20260909]
+    paths:
+      - '.github/workflows/rc6-wave8-scraping-reauth-closure-20260909.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-wave8-scraping-closure
+  cancel-in-progress: false
+
+jobs:
+  prove-and-reauth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Recover previously proven trusted-device reauth helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin hotfix/rc6-contract-evidence-auto-reauth-20260907
+          git show origin/hotfix/rc6-contract-evidence-auto-reauth-20260907:rc6_ppi_web_reauth.py > /tmp/rc6_ppi_web_reauth.py
+          python -m py_compile /tmp/rc6_ppi_web_reauth.py
+          ! grep -Ei 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order|/Operar/' /tmp/rc6_ppi_web_reauth.py
+          echo REAUTH_HELPER=RECOVERED_FROM_PROVEN_CHECKPOINT
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_close"
+          chmod 600 "$HOME/.ssh/porota_close"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Stage helper
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/porota_close" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" /tmp/rc6_ppi_web_reauth.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_web_reauth.py"
+
+      - name: Prove Wave8 live, renew PPI trusted session, prove fresh Cotizaciones evidence
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_close" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          SECRET=/etc/porota/contract-evidence-web.env
+          VENV=/opt/porota-contract-evidence-venv
+          HELPER=/tmp/rc6_ppi_web_reauth.py
+          DB="$ROOT/data/paper_v17/observer_v17.db"
+          cd "$ROOT"
+
+          echo "LIVE_HEAD=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = dc814d68b36fe0193be4277f0a7459619ccb98f6
+
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close(); print(f'{q}|{m}|{r}')
+          PY
+          )"
+          echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+
+          # Wave8: prove what is actually served, not an uninstalled module in a fresh interpreter.
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,urllib.request
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          checks={
+            '/': ['Riesgo','/riesgo'],
+            '/riesgo': ['porota-rc6-classic-responsive','Órdenes reales','Event Risk'],
+            '/aprendizaje': ['wave8-shadow-learning-live'],
+            '/validacion': ['wave8-shadow-learning-live'],
+          }
+          for p,needles in checks.items():
+              req=urllib.request.Request('http://127.0.0.1:8000'+p)
+              if token:
+                  req.add_header('Authorization','Bearer '+token); req.add_header('X-Dashboard-Token',token)
+              with urllib.request.urlopen(req,timeout=10) as r:
+                  body=r.read().decode('utf-8','replace')
+                  print(f'HTTP|{p}|{r.status}|bytes={len(body)}')
+                  assert r.status==200
+                  for n in needles: assert n in body, (p,n)
+          print('WAVE8_FULL_LIVE_WIRING=GREEN')
+          PY
+
+          test -d "$PROFILE"
+          test -f "$SECRET"
+          test "$(stat -c '%U:%a' "$SECRET")" = 'porotaadmin:600'
+          test -x "$VENV/bin/python"
+          sudo -n install -o root -g root -m 0755 "$HELPER" /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py
+          sudo -n rm -f "$HELPER"
+
+          set +e
+          REAUTH_OUT="$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH=/usr/local/lib/porota-contract-evidence-rc6:$ROOT "$VENV/bin/python" /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py --profile "$PROFILE" --secret "$SECRET" 2>&1)"
+          REAUTH_RC=$?
+          set -e
+          printf '%s\n' "$REAUTH_OUT"
+          echo "REAUTH_RC=$REAUTH_RC"
+          REAUTH_STATE="$(REAUTH_OUT="$REAUTH_OUT" python3 - <<'PY'
+          import json,os
+          try: print(json.loads(os.environ['REAUTH_OUT']).get('status','UNKNOWN'))
+          except Exception: print('INVALID_REAUTH_OUTPUT')
+          PY
+          )"
+          echo "REAUTH_STATE=$REAUTH_STATE"
+          test "$REAUTH_RC" -eq 0
+          test "$REAUTH_STATE" = AUTHENTICATED_TRUSTED_DEVICE
+          echo CONTRACT_EVIDENCE_REAUTH=GREEN
+
+          BEFORE="$(find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json' | wc -l)"
+          sudo -n systemctl reset-failed porota-contract-evidence-rc4.service || true
+          sudo -n systemctl start porota-contract-evidence-rc4.service
+          sleep 3
+          test "$(sudo -n systemctl is-enabled porota-contract-evidence-rc4.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc4.timer)" = active
+          AFTER="$(find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json' | wc -l)"
+          echo "EVIDENCE_FILES_BEFORE=$BEFORE"
+          echo "EVIDENCE_FILES_AFTER=$AFTER"
+          test "$AFTER" -ge "$BEFORE"
+          LATEST="$(find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
+          test -n "$LATEST"
+          python3 - "$LATEST" <<'PY'
+          import json,sys
+          p=sys.argv[1]
+          d=json.load(open(p,encoding='utf-8'))
+          state=str(d.get('state',''))
+          print('LATEST_EVIDENCE_STATE='+state)
+          print('LATEST_EVIDENCE_ROUTES='+str(d.get('routes')))
+          print('LATEST_EVIDENCE_ENDPOINTS='+str(d.get('endpoints')))
+          print('LATEST_EVIDENCE_REAL_ORDERS='+str(d.get('real_orders_sent')))
+          assert state == 'AUTHENTICATED_TRUSTED_DEVICE', state
+          assert int(d.get('real_orders_sent',0)) == 0
+          PY
+          echo SCRAPING_ROUTE_POLICY=COTIZACIONES_ONLY
+          echo SCRAPING_TIMER=ENABLED_ACTIVE
+          echo SCRAPING_AUTH=AUTHENTICATED_TRUSTED_DEVICE
+
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close(); print(f'{q}|{m}|{r}')
+          PY
+          )"
+          echo "POST_DB=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          echo WAVE8_AND_SCRAPING_REAUTH_CLOSURE=GREEN
+          HOST
