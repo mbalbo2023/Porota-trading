@@ -1,0 +1,111 @@
+name: RC6 Wave12 DOM Structure Diagnostic 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-dom-structure-diagnostic-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  dom-structure:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12dom"
+          chmod 600 "$HOME/.ssh/w12dom"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect sanitized rendered DOM
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w12dom" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          EXPECTED=9197aedf35fe1739b594c742902e80df069c47c9
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          PY=/opt/porota-contract-evidence-venv/bin/python
+          cd "$REPO"
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)" != active
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close(); print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin "$PY" - "$PROFILE" <<'PY'
+          import json,sys,re
+          from urllib.parse import urlsplit
+          from playwright.sync_api import sync_playwright
+          TRADING='https://trading.portfoliopersonal.com'
+          ROUTES=['/Cotizaciones/FCIs','/Cotizaciones/FCIsExterior','/Cotizaciones/Acciones','/Cotizaciones/AccionesUSA','/Cotizaciones/Bonos','/Cotizaciones/Cauciones','/Cotizaciones/Cedears','/Cotizaciones/ETFs','/Cotizaciones/Futuros','/Cotizaciones/Letras','/Cotizaciones/Licitaciones','/Cotizaciones/Ons','/Cotizaciones/Opciones','/Cotizaciones/Indices','/Cotizaciones/Monedas','/Cotizaciones/Tasas']
+          profile=sys.argv[1]
+          def clean(v,limit=100):
+              return re.sub(r'\s+',' ',str(v or '')).strip()[:limit]
+          out=[]; blocked=[]
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(user_data_dir=profile,executable_path='/usr/bin/google-chrome-stable',headless=True,locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',viewport={'width':1440,'height':1000},args=['--no-sandbox','--disable-dev-shm-usage'])
+              def guard(route,request):
+                  method=request.method.upper()
+                  if method not in {'GET','HEAD','OPTIONS'}:
+                      blocked.append((method,urlsplit(request.url).netloc,urlsplit(request.url).path[:120])); return route.abort()
+                  return route.continue_()
+              ctx.route('**/*',guard)
+              page=ctx.pages[0] if ctx.pages else ctx.new_page()
+              page.goto(TRADING+'/',wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(900)
+              u=urlsplit(page.url); auth=(u.netloc=='trading.portfoliopersonal.com' and 'login' not in u.path.lower())
+              print('AUTH_STATUS='+('AUTHENTICATED_TRUSTED_DEVICE' if auth else 'BLOCKED_AUTH_SESSION_EXPIRED'))
+              if not auth: raise SystemExit(4)
+              for r in ROUTES:
+                  item={'route':r}
+                  try:
+                      page.goto(TRADING+r,wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(1400)
+                      pu=urlsplit(page.url); item['reached']=pu.netloc=='trading.portfoliopersonal.com' and 'login' not in pu.path.lower()
+                      meta=page.evaluate("""() => ({
+                        tables:[...document.querySelectorAll('table')].slice(0,20).map(t=>({
+                          headers:[...t.querySelectorAll('th')].slice(0,30).map(x=>x.innerText),
+                          row_count:t.querySelectorAll('tbody tr').length || t.querySelectorAll('tr').length,
+                          first_cells:[...t.querySelectorAll('tbody tr:first-child td')].slice(0,8).map(x=>x.innerText)
+                        })),
+                        grids:[...document.querySelectorAll('[role=grid], [role=table]')].slice(0,20).map(g=>({
+                          role:g.getAttribute('role'), row_count:g.querySelectorAll('[role=row]').length,
+                          headers:[...g.querySelectorAll('[role=columnheader]')].slice(0,30).map(x=>x.innerText),
+                          first_cells:[...g.querySelectorAll('[role=row]')].slice(1,2).flatMap(x=>[...x.querySelectorAll('[role=cell],[role=gridcell]')].slice(0,8).map(y=>y.innerText))
+                        }))
+                      })""")
+                      item['tables']=[{'headers':[clean(x) for x in x.get('headers',[])], 'row_count':int(x.get('row_count') or 0), 'first_cells':[clean(y) for y in x.get('first_cells',[])]} for x in meta.get('tables',[])]
+                      item['grids']=[{'role':clean(x.get('role')), 'headers':[clean(y) for y in x.get('headers',[])], 'row_count':int(x.get('row_count') or 0), 'first_cells':[clean(y) for y in x.get('first_cells',[])]} for x in meta.get('grids',[])]
+                  except Exception as e:
+                      item['error']=type(e).__name__
+                  out.append(item)
+              ctx.close()
+          print('DOM_STRUCTURE='+json.dumps(out,ensure_ascii=False,separators=(',',':')))
+          print('BLOCKED_NONREAD_COUNT='+str(len(blocked)))
+          from collections import Counter
+          print('BLOCKED_NONREAD_HOSTS='+json.dumps(Counter(h for _,h,_ in blocked),sort_keys=True))
+          print('REAL_ORDERS_SENT=0')
+          PY
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close(); print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'W12_DOM_STRUCTURE_DIAGNOSTIC=GREEN'
+          REMOTE
