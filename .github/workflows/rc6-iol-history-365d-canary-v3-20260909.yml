@@ -1,0 +1,101 @@
+name: RC6 IOL History 365d Canary V3 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths:
+      - '.github/workflows/rc6-iol-history-365d-canary-v3-20260909.yml'
+      - 'rc6_iol_client_v2.py'
+permissions:
+  contents: read
+jobs:
+  iol-canary-v3:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/iolcanaryv3"
+          chmod 600 "$HOME/.ssh/iolcanaryv3"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Run current-route read-only IOL canary
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i "$HOME/.ssh/iolcanaryv3" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          cd "$REPO"
+          RUNTIME_PRE=$(git rev-parse HEAD)
+          OBS_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_observer)
+          DASH_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          IMAGE=$(sudo -n docker inspect -f '{{.Config.Image}}' porota_production_observer)
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          git fetch --no-tags origin deploy-prep/rc6-wave12-currentbase-20260909
+          git cat-file -e "$TARGET_SHA^{commit}"
+          TMP=$(mktemp -d "$HOME/iolcanaryv3.XXXXXX")
+          cleanup(){ sudo -n docker rm -f porota_iol_canary_v3 >/dev/null 2>&1 || true; rm -rf "$TMP"; }
+          trap cleanup EXIT
+          git show "$TARGET_SHA:rc6_iol_client_v2.py" > "$TMP/rc6_iol_client_v2.py"
+          git show "$TARGET_SHA:ak_iol_client.py" > "$TMP/ak_iol_client.py"
+          ENVFILE="$TMP/iol.env"
+          python3 - "$ENVFILE" <<'PY'
+          from pathlib import Path
+          import os,sys
+          vals={}
+          for raw in Path('/opt/porota-trading/.env').read_text(encoding='utf-8',errors='replace').splitlines():
+              s=raw.strip()
+              if not s or s.startswith('#') or '=' not in s: continue
+              k,v=s.split('=',1); vals[k.strip()]=v.strip().strip('"').strip("'")
+          user=vals.get('IOL_USERNAME',''); pwd=vals.get('IOL_PASSWORD','')
+          print('IOL_USERNAME_PRESENT='+('YES' if user else 'NO'))
+          print('IOL_PASSWORD_PRESENT='+('YES' if pwd else 'NO'))
+          if not user or not pwd: raise SystemExit('IOL_CREDENTIALS_MISSING')
+          Path(sys.argv[1]).write_text('IOL_USERNAME='+user+'\nIOL_PASSWORD='+pwd+'\nIOL_ENABLED=true\nIOL_BASE_URL=https://api.invertironline.com\nIOL_TIMEOUT_SECONDS=20\nIOL_RATE_LIMIT_SLEEP=0.50\n',encoding='utf-8')
+          os.chmod(sys.argv[1],0o600)
+          PY
+          sudo -n docker run --rm -i --name porota_iol_canary_v3 --pull never \
+            --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
+            --env-file "$ENVFILE" -e PYTHONPATH=/src \
+            -v "$TMP:/src:ro" --entrypoint python "$IMAGE" - <<'PY'
+          import json
+          from rc6_iol_client_v2 import IOLClient
+          c=IOLClient()
+          assert c.enabled, 'IOL_CLIENT_NOT_ENABLED'
+          samples=[('GGAL','ACCIONES','bcba',True),('AL30','BONOS','bcba',False),('AAPL','CEDEARS','bcba',True),('GFGC7200OC','OPCIONES','bcba',False)]
+          out=[]
+          for symbol,family,market,adjusted in samples:
+              rows=c.get_serie_historica(symbol,mercado=market,dias=365,ajustada=adjusted)
+              out.append({'symbol':symbol,'family':family,'rows':len(rows),'keys':sorted(rows[0].keys()) if rows and isinstance(rows[0],dict) else []})
+              if not rows: raise SystemExit('IOL_HISTORY_EMPTY:'+symbol)
+          print('IOL_365D_CANARY_V3='+json.dumps(out,ensure_ascii=False,separators=(',',':')))
+          print('IOL_AUTH_AND_HISTORY=GREEN')
+          PY
+          test "$(git rev-parse HEAD)" = "$RUNTIME_PRE"
+          test "$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_observer)" = "$OBS_PRE"
+          test "$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)" = "$DASH_PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'IOL_EXECUTION_CAPABILITY=NOT_USED'
+          echo 'PPI_ORDER_ROUTES=NOT_CALLED'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'IOL_365D_CANARY_V3=GREEN'
+          REMOTE
