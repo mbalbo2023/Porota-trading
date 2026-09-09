@@ -91,6 +91,24 @@ def account_landing_url(value: str) -> bool:
             and u.path.rstrip("/") == "/cuentas")
 
 
+def verified_trading_landing(value: str) -> bool:
+    """Require a concrete safe Trading path; the bare root is not SSO proof."""
+    u = urlsplit(str(value))
+    path = u.path.rstrip("/")
+    return bool(path and authenticated_url(value))
+
+
+def wait_verified_trading_landing(page, timeout_ms: int = 7000) -> bool:
+    """Allow PPI SSO redirects to settle without accepting an intermediate root."""
+    elapsed = 0
+    while elapsed < timeout_ms:
+        if verified_trading_landing(page.url):
+            return True
+        page.wait_for_timeout(250)
+        elapsed += 250
+    return verified_trading_landing(page.url)
+
+
 def parse_secret(path: Path) -> tuple[str, str]:
     values: dict[str, str] = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -283,7 +301,7 @@ def main() -> int:
                         ctx.close(); print(status_payload("BLOCKED_AUTH_ACCOUNT_VERIFY_POST", attempts=attempts,
                                                           blocked_post_path=blocked_post_path,
                                                           stage=stage, page_url=page.url)); return 4
-                    if authenticated_url(page.url):
+                    if wait_verified_trading_landing(page):
                         ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts,
                                                           stage=stage, page_url=page.url)); return 0
                     # A redirect back to account/login means the trading session
@@ -351,6 +369,9 @@ def main() -> int:
                             "#username", "input[name='username']", "input[autocomplete='username']",
                             "input[placeholder*='usuario' i]", "input[aria-label*='usuario' i]",
                         ], user):
+                            if wait_verified_trading_landing(page, 2500):
+                                ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts,
+                                                                  stage="SSO_SETTLED_DURING_USERNAME_FILL", page_url=page.url)); return 0
                             ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_FILL_FAILED", attempts=attempts,
                                                               stage=stage, page_url=page.url)); return 4
                     acted = True
@@ -359,6 +380,9 @@ def main() -> int:
                         "#password", "input[name='password']", "input[type='password']",
                         "input[autocomplete='current-password']",
                     ], password):
+                        if wait_verified_trading_landing(page, 2500):
+                            ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts,
+                                                              stage="SSO_SETTLED_DURING_PASSWORD_FILL", page_url=page.url)); return 0
                         ctx.close(); print(status_payload("BLOCKED_AUTH_PASSWORD_FILL_FAILED", attempts=attempts,
                                                           stage=stage, page_url=page.url)); return 4
                     acted = True

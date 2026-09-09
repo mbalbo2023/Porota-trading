@@ -76,3 +76,10 @@ def test_exact_trading_sso_route_is_auth_allowlisted_only():
     assert ("trading.portfoliopersonal.com", "/api/logInSSO") in m.APPROVED_AUTH_POSTS
     assert all("operar" not in path.lower() and "order" not in path.lower() and "orden" not in path.lower()
                for _host, path in m.APPROVED_AUTH_POSTS)
+
+
+def test_verified_trading_landing_requires_non_root_safe_path():
+    assert not m.verified_trading_landing('https://trading.portfoliopersonal.com/')
+    assert m.verified_trading_landing('https://trading.portfoliopersonal.com/estadoDeCuenta')
+    assert m.verified_trading_landing('https://trading.portfoliopersonal.com/Cotizaciones/Bonos')
+    assert not m.verified_trading_landing('https://trading.portfoliopersonal.com/Operar/Bonos')
