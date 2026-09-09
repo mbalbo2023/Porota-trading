@@ -1,0 +1,46 @@
+name: RC6 Introspection Legacy Dependency 2026-09-09
+
+on:
+  push:
+    branches: [diag/rc6-live-postopen-20260909]
+    paths: ['.github/workflows/rc6-introspection-legacy-dependency-20260909.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Map legacy introspection dependency read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo '=== HF5 UNIT ==='
+          systemctl cat porota-introspeccion-hf5.service porota-introspeccion-hf5.timer --no-pager || true
+          echo '=== RC6 PUBLISH UNIT ==='
+          systemctl cat porota-introspection-publish.service porota-introspection-publish.timer --no-pager || true
+          echo '=== HF5 SCRIPT STATIC REFERENCES ==='
+          sudo -n grep -nE 'HF5|hf5|OUTPUT|output|publish|introspect|/opt/porota|/app/' /usr/local/sbin/porota-introspeccion-hf5-manual.sh 2>/dev/null | head -160 || true
+          echo '=== PUBLISH SCRIPT STATIC REFERENCES ==='
+          P=$(systemctl show -p ExecStart --value porota-introspection-publish.service | sed -E 's/^\{? path=([^ ;]+).*/\1/'); echo "PUBLISH_EXEC=$P"
+          test -z "$P" || sudo -n grep -nE 'HF5|hf5|introspe|publish|data/' "$P" 2>/dev/null | head -160 || true
+          echo '=== OUTPUT CANDIDATES ==='
+          find /opt/porota-trading/data -maxdepth 3 -type f \( -iname '*introspect*' -o -iname '*hf5*' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TS %s %p\n' 2>/dev/null | sort | tail -50 || true
+          echo RUNTIME_MUTATION=NO
+          echo ORDER_ROUTES=NOT_CALLED
+          REMOTE
