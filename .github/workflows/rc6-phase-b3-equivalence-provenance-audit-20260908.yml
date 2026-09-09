@@ -1,0 +1,149 @@
+name: RC6 Phase B3 Equivalence Provenance Audit 2026-09-08
+
+on:
+  push:
+    branches: [audit/rc6-phase-b3-equivalence-provenance-20260908]
+    paths:
+      - '.github/workflows/rc6-phase-b3-equivalence-provenance-audit-20260908.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_phase_b3"
+          chmod 600 "$HOME/.ssh/porota_phase_b3"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Phase B3 read-only equivalence and provenance proof
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_phase_b3" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo '=== POROTA RC6 PHASE B3 EQUIVALENCE + PROVENANCE AUDIT — READ ONLY ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, json, hashlib, collections
+
+          DB='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+DB+'?mode=ro', uri=True)
+          c.execute('pragma query_only=on')
+          c.execute('pragma temp_store=memory')
+          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'MODE={mode}')
+          print(f'REAL_ORDERS_SENT={real}')
+          assert mode=='PRODUCTION_PAPER' and int(real)==0
+
+          def canon(obj):
+              return json.dumps(obj,sort_keys=True,separators=(',',':'),ensure_ascii=False,default=str).encode('utf-8','surrogatepass')
+          def hbytes(b): return hashlib.sha256(b).hexdigest()
+          def hobj(obj):
+              b=canon(obj); return hbytes(b),len(b),b
+
+          total=0; outer_err=0; inner_err=0; reconstructible=0; opaque=0; recon_mismatch=0
+          manifest_bytes=0; unique_row_bytes=0; opaque_bytes=0; outer_meta_bytes=0
+          unique_rows={}; unique_payload_sequences={}; seq_counts=collections.Counter()
+          quality=collections.Counter(); identities=collections.Counter(); missing_manifest_fields=collections.Counter()
+          required=['asset_class','date_from','date_to','settlement','symbol','valid_rows','metadata']
+          quality_reconstructible=collections.Counter(); quality_opaque=collections.Counter()
+
+          for rid,q,body in c.execute('select id,quality,body_json from historical_raw_archive order by id'):
+              total+=1; quality[str(q)]+=1
+              try: outer=json.loads(body)
+              except Exception:
+                  outer_err+=1; opaque+=1; quality_opaque[str(q)]+=1; opaque_bytes+=len(body.encode('utf-8','surrogatepass')); continue
+              for f in required:
+                  if f not in outer: missing_manifest_fields[f]+=1
+              meta={k:outer.get(k) for k in required}
+              mb=canon(meta); manifest_bytes+=len(mb); outer_meta_bytes+=len(mb)
+              ident=(str(outer.get('asset_class')),str(outer.get('symbol')),str(outer.get('settlement')))
+              identities[ident]+=1
+              inner_s=outer.get('payload_json')
+              try: inner=json.loads(inner_s) if isinstance(inner_s,str) else inner_s
+              except Exception:
+                  inner_err+=1; opaque+=1; quality_opaque[str(q)]+=1; opaque_bytes+=len(str(inner_s).encode('utf-8','surrogatepass')); continue
+              if not (isinstance(inner,list) and all(isinstance(x,dict) for x in inner)):
+                  opaque+=1; quality_opaque[str(q)]+=1; opaque_bytes+=len(str(inner_s).encode('utf-8','surrogatepass')); continue
+
+              seq=[]; reconstructed=[]
+              for item in inner:
+                  rh,rbn,rbb=hobj(item)
+                  seq.append(rh)
+                  if rh not in unique_rows:
+                      unique_rows[rh]=rbb; unique_row_bytes+=rbn
+                  reconstructed.append(json.loads(unique_rows[rh].decode('utf-8')))
+              seq_key=hbytes(('\n'.join(seq)).encode())
+              seq_counts[seq_key]+=1
+              unique_payload_sequences.setdefault(seq_key,tuple(seq))
+              original_hash=hbytes(canon(inner))
+              reconstructed_hash=hbytes(canon(reconstructed))
+              if original_hash!=reconstructed_hash:
+                  recon_mismatch+=1
+              else:
+                  reconstructible+=1; quality_reconstructible[str(q)]+=1
+
+          seq_manifest_bytes=sum(sum(len(h) for h in seq) for seq in unique_payload_sequences.values())
+          physical_model_bytes=unique_row_bytes + manifest_bytes + seq_manifest_bytes + opaque_bytes
+          table_bytes=int(c.execute("select sum(pgsize) from dbstat where name='historical_raw_archive'").fetchone()[0] or 0)
+          potential_reclaim=max(0,table_bytes-physical_model_bytes)
+
+          print(f'RAW_ATTEMPTS_TOTAL={total}')
+          print(f'OUTER_PARSE_ERRORS={outer_err}')
+          print(f'INNER_PARSE_ERRORS={inner_err}')
+          print(f'RECONSTRUCTIBLE_ATTEMPTS={reconstructible}')
+          print(f'OPAQUE_ATTEMPTS_KEEP_RAW={opaque}')
+          print(f'RECONSTRUCTION_HASH_MISMATCHES={recon_mismatch}')
+          print(f'UNIQUE_ROW_OBJECTS={len(unique_rows)}')
+          print(f'UNIQUE_PAYLOAD_ROW_SEQUENCES={len(unique_payload_sequences)}')
+          print(f'UNIQUE_ROW_BYTES={unique_row_bytes}')
+          print(f'ATTEMPT_MANIFEST_BYTES_EST={manifest_bytes}')
+          print(f'UNIQUE_SEQUENCE_MANIFEST_BYTES_EST={seq_manifest_bytes}')
+          print(f'OPAQUE_RAW_BYTES_KEEP={opaque_bytes}')
+          print(f'PROPOSED_CONTENT_ADDRESSED_MODEL_BYTES_EST={physical_model_bytes}')
+          print(f'HISTORICAL_RAW_ARCHIVE_DBSTAT_BYTES={table_bytes}')
+          print(f'POTENTIAL_RECLAIMABLE_BYTES_EST={potential_reclaim}')
+          print(f'POTENTIAL_RECLAIMABLE_PCT_EST={(potential_reclaim/table_bytes*100 if table_bytes else 0):.4f}')
+          print(f'IDENTITIES_TOTAL={len(identities)}')
+          print('QUALITY_RECONSTRUCTIBLE:')
+          for k,n in quality_reconstructible.most_common(): print(f'QUALITY_RECON|{k}|{n}')
+          print('QUALITY_OPAQUE_KEEP_RAW:')
+          for k,n in quality_opaque.most_common(): print(f'QUALITY_OPAQUE|{k}|{n}')
+          print('MISSING_REQUIRED_MANIFEST_FIELDS:')
+          if not missing_manifest_fields: print('MISSING|NONE|0')
+          for k,n in missing_manifest_fields.most_common(): print(f'MISSING|{k}|{n}')
+          print('TOP_SEQUENCE_REUSE:')
+          for h,n in seq_counts.most_common(10): print(f'SEQ|COUNT={n}|SHA256={h}')
+          semantic_ok=(outer_err==0 and inner_err==0 and recon_mismatch==0 and reconstructible+opaque==total)
+          print('SEMANTIC_RECONSTRUCTION_PROOF='+('PASS' if semantic_ok else 'FAIL'))
+          print('EVIDENCE_LOST=NOT_YET_PROVEN_ZERO_FOR_BYTE_EXACT_OUTER_PAYLOADS')
+          print('B3_GATE=READ_ONLY_MODEL_PROOF_ONLY')
+          c.close()
+          PY
+          echo 'MUTATIONS=NONE'
+          echo 'DELETE=NOT_RUN'
+          echo 'VACUUM=NOT_RUN'
+          echo 'PRUNE=NOT_RUN'
+          echo 'EXTERNAL_V1_ACTIVATION=NOT_PERFORMED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
