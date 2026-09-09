@@ -1,0 +1,117 @@
+name: RC6 Wave12 Semantic Contract Link Live 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-semantic-contract-link-live-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  semantic-link-live:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static semantic and safety proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q tests/test_rc6_dom_semantic_contract_linker.py tests/test_rc6_wave12_current_get_v2.py tests/test_rc6_contract_routes_cotizaciones_only.py
+          python -m py_compile rc6_dom_semantic_contract_collector.py rc6_dom_semantic_contract_importer.py
+          ! grep -REn 'send_order|place_order|cancel_order|api/Orders' rc6_dom_semantic_contract_collector.py rc6_dom_semantic_contract_importer.py
+          grep -q 'NO_AUTO_ACTIVATION_MISSING_FIELDS_STAY_MISSING' rc6_dom_semantic_contract_importer.py
+          grep -q 'AMBIGUOUS_MATCH' rc6_dom_semantic_contract_importer.py
+          echo 'W12_SEMANTIC_STATIC=GREEN'
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12semantic"
+          chmod 600 "$HOME/.ssh/w12semantic"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Live DOM capture and strict semantic import
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w12semantic" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          EXPECTED=9197aedf35fe1739b594c742902e80df069c47c9
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          PY=/opt/porota-contract-evidence-venv/bin/python
+          OUTDIR=$REPO/data/contract_evidence/rc6_trusted
+          cd "$REPO"
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)" != active
+          OBS_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          DASH_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          n=c.execute("select count(*) from candidate_universe where status='AVAILABLE'").fetchone()[0]
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}|AVAILABLE_CANDIDATES={n}')
+          c.close(); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0 and n>0
+          PY
+          git fetch --no-tags origin deploy-prep/rc6-wave12-currentbase-20260909
+          test "$(git rev-parse origin/deploy-prep/rc6-wave12-currentbase-20260909)" = "$TARGET_SHA"
+          TMP=$(mktemp -d "$HOME/w12semantic.XXXXXX")
+          cleanup(){ git -C "$REPO" worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"; }
+          trap cleanup EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n install -d -o porotaadmin -g porotaadmin -m 0700 "$OUTDIR"
+          TS=$(date -u +%Y%m%dT%H%M%SZ)
+          CAPTURE="$OUTDIR/dom_semantic_${TS}.json"
+          COLLECT_OUT=$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$TMP/source" "$PY" "$TMP/source/rc6_dom_semantic_contract_collector.py" --profile "$PROFILE" --output "$CAPTURE")
+          echo "COLLECT_RESULT=$COLLECT_OUT"
+          sudo -n python3 - "$CAPTURE" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert d['auth_status']=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert int(d.get('real_orders_sent') or 0)==0
+          assert len(d.get('routes') or [])==16
+          assert sum(bool(r.get('reached')) for r in d['routes'])==16
+          rows=sum(int(t.get('row_count') or 0) for r in d['routes'] for t in r.get('tables',[]))
+          assert rows>0
+          print('SEMANTIC_CAPTURE_ROUTES=16')
+          print('SEMANTIC_CAPTURE_ROWS='+str(rows))
+          PY
+          REL=${CAPTURE#"$REPO/data/"}
+          IMPORT_OUT=$(cat "$TMP/source/rc6_dom_semantic_contract_importer.py" | sudo -n docker exec -i porota_production_observer python - "/app/data/$REL")
+          echo "IMPORT_RESULT=$IMPORT_OUT"
+          OUT="$IMPORT_OUT" python3 - <<'PY'
+          import json,os
+          d=json.loads(os.environ['OUT'].splitlines()[-1])
+          assert d['state']=='VERDE_SEMANTIC_LINK'
+          assert int(d['mapped'])>0
+          assert len(d['mapped_families'])>0
+          assert d['contract_completeness']=='NOT_PROVEN'
+          assert d['no_auto_activation'] is True
+          assert d['quick_check']=='ok' and d['mode']=='PRODUCTION_PAPER' and int(d['real_orders_sent'])==0
+          print('SEMANTIC_MAPPED='+str(d['mapped']))
+          print('SEMANTIC_MAPPED_FAMILIES='+','.join(d['mapped_families']))
+          print('SEMANTIC_AMBIGUOUS='+str(d['ambiguous']))
+          print('SEMANTIC_UNMATCHED='+str(d['unmatched']))
+          print('CONTRACT_COMPLETENESS=NOT_PROVEN')
+          print('NO_AUTO_ACTIVATION=YES')
+          PY
+          OBS_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          DASH_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          test "$OBS_POST" = "$OBS_PRE"
+          test "$DASH_POST" = "$DASH_PRE"
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'ROLLBACK_AUTOMATICO=NO'
+          echo 'W12_SEMANTIC_CONTRACT_LINK=GREEN'
+          REMOTE
