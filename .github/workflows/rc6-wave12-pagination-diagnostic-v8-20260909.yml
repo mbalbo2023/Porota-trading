@@ -1,0 +1,123 @@
+name: RC6 Wave12 Quote Pagination Diagnostic V8 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-pagination-diagnostic-v8-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  pagination-diagnostic:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12pagination"
+          chmod 600 "$HOME/.ssh/w12pagination"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect and safely exercise quote paginator
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i "$HOME/.ssh/w12pagination" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE=$(git rev-parse HEAD)
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          # Clean only stale automated headless browser locks if no Chrome process owns the profile.
+          if ! pgrep -af 'chrome.*porota-browser-lab/chrome-profile|google-chrome.*porota-browser-lab/chrome-profile' >/dev/null 2>&1; then
+            rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonSocket" "$PROFILE/SingletonCookie" 2>/dev/null || true
+          fi
+          TMP=$(mktemp -d "$HOME/w12pagination.XXXXXX")
+          trap 'rm -rf "$TMP"' EXIT
+          git show "$TARGET_SHA:rc6_w12_deep_contract_scraper_v2.py" > "$TMP/base.py"
+          python3 - "$PROFILE" <<'PY'
+          import json,re,sys
+          from urllib.parse import urlsplit
+          profile=sys.argv[1]
+          sys.path.insert(0,'/home/porotaadmin/porota-contract-evidence-venv/lib/python3.11/site-packages')
+          from playwright.sync_api import sync_playwright
+          BASE='https://trading.portfoliopersonal.com'
+          SAFE={'GET','HEAD','OPTIONS'}
+          routes=['/Cotizaciones/Acciones','/Cotizaciones/Cedears','/Cotizaciones/Ons','/Cotizaciones/Opciones']
+          def safe_url(u):
+              p=urlsplit(u)
+              return p.scheme=='https' and p.netloc=='trading.portfoliopersonal.com' and (p.path.startswith('/Cotizaciones') or p.path.startswith('/Fondos') or p.path in {'/','/Home','/home'}) and '/Operar' not in p.path
+          def count_rows(page): return page.locator('table tbody tr').count()
+          def first_identity(page):
+              try: return re.sub(r'\s+',' ',page.locator('table tbody tr').first.locator('td').first.inner_text()).strip()[:90]
+              except Exception: return ''
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(user_data_dir=profile,executable_path='/usr/bin/google-chrome-stable',headless=True,locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',viewport={'width':1440,'height':1000},args=['--no-sandbox','--disable-dev-shm-usage'])
+              blocked=[]
+              def guard(route,req):
+                  if req.method.upper() not in SAFE:
+                      blocked.append({'method':req.method.upper(),'path':urlsplit(req.url).path})
+                      return route.abort()
+                  return route.continue_()
+              ctx.route('**/*',guard)
+              page=ctx.pages[0] if ctx.pages else ctx.new_page()
+              for route in routes:
+                  page.goto(BASE+route,wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(1800)
+                  assert safe_url(page.url), 'UNSAFE_OR_AUTH:'+route
+                  before=count_rows(page); first=first_identity(page)
+                  controls=page.evaluate("""() => {
+                    const els=[...document.querySelectorAll('button,a,select,[role=button],[aria-label]')];
+                    return els.filter(e=>{
+                      const t=(e.innerText||e.textContent||'').trim(); const a=e.getAttribute('aria-label')||''; const c=e.className||'';
+                      return /sig|next|ant|prev|p[aá]g|page|pagination|rows|filas|50|100/i.test(t+' '+a+' '+c);
+                    }).slice(0,80).map(e=>({tag:e.tagName,text:(e.innerText||e.textContent||'').trim().slice(0,120),aria:(e.getAttribute('aria-label')||'').slice(0,120),title:(e.getAttribute('title')||'').slice(0,120),cls:String(e.className||'').slice(0,180),disabled:!!e.disabled,href:(e.getAttribute('href')||'').slice(0,180),value:(e.value||'').slice(0,80)}));
+                  }""")
+                  print('PAGINATION_CONTROLS='+json.dumps({'route':route,'rows_before':before,'first_before':first,'controls':controls},ensure_ascii=False,separators=(',',':')))
+                  # Try only clearly pagination-labelled controls, never arbitrary table links.
+                  candidates=[
+                    'button[aria-label*="Next" i]','button[aria-label*="Siguiente" i]','a[aria-label*="Next" i]','a[aria-label*="Siguiente" i]',
+                    '.pagination .next:not(.disabled) a','.pagination-next:not(.disabled)','li.next:not(.disabled) a'
+                  ]
+                  exercised=False
+                  for sel in candidates:
+                      loc=page.locator(sel)
+                      if loc.count()<1: continue
+                      el=loc.first
+                      try:
+                          if not el.is_visible() or el.is_disabled(): continue
+                      except Exception: pass
+                      try:
+                          el.click(timeout=3000); page.wait_for_timeout(1500)
+                          after=count_rows(page); second=first_identity(page)
+                          print('PAGINATION_EXERCISE='+json.dumps({'route':route,'selector':sel,'rows_after':after,'first_after':second,'changed':second!=first,'safe_path':urlsplit(page.url).path},ensure_ascii=False,separators=(',',':')))
+                          assert safe_url(page.url), 'UNSAFE_AFTER_PAGINATION'
+                          exercised=True; break
+                      except Exception as e:
+                          print('PAGINATION_CLICK_FAIL='+json.dumps({'route':route,'selector':sel,'error':type(e).__name__},separators=(',',':')))
+                  if not exercised: print('PAGINATION_EXERCISE='+json.dumps({'route':route,'result':'NO_SAFE_NEXT_CONTROL_MATCH'},separators=(',',':')))
+              print('BLOCKED_NONREAD='+json.dumps(blocked[:50],separators=(',',':')))
+              print('W12_PAGINATION_DIAGNOSTIC=GREEN')
+              ctx.close()
+          PY
+          test "$(git rev-parse HEAD)" = "$PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'ORDER_ROUTE_CALLED=NO'
+          echo 'RUNTIME_CHANGED=NO'
+          REMOTE
