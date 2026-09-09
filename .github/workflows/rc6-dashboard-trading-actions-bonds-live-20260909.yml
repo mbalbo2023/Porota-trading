@@ -1,0 +1,118 @@
+name: RC6 Dashboard + Trading Acciones Bonos Live 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-dashboard-trading-actions-bonds-live-20260909]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Live read-only proof
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo '=== CONTAINERS ==='
+          sudo -n docker inspect -f '{{.Name}}|running={{.State.Running}}|restarts={{.RestartCount}}|readonly={{.HostConfig.ReadonlyRootfs}}' porota_production_observer porota_paper_dashboard
+          echo '=== OBSERVER / FAMILY / TRADING ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, json, os
+          DB='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+DB+'?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          print('DB_QUICK='+c.execute('pragma quick_check').fetchone()[0])
+          s=dict(c.execute('select * from observer_state where id=1').fetchone())
+          print('OBSERVER='+json.dumps({k:s.get(k) for k in ('mode','process_state','session_state','ppi_auth','heartbeat_at','last_market_data_at','real_orders_sent','detail')},sort_keys=True,default=str))
+          for fam in ('ACCIONES','BONOS','CEDEARS','OPCIONES','CAUCIONES'):
+              r=c.execute("select count(*) n,sum(case when upper(status)='AVAILABLE' then 1 else 0 end) avail,sum(case when can_simulate=1 then 1 else 0 end) sim from candidate_universe where upper(instrument_type)=?",(fam,)).fetchone()
+              print(f'FAMILY={fam}|TOTAL={r[0] or 0}|AVAILABLE={r[1] or 0}|CAN_SIMULATE={r[2] or 0}')
+          print('TABLES_RELEVANT='+','.join(r[0] for r in c.execute("select name from sqlite_master where type='table' and (name like '%decision%' or name like '%gate%' or name like '%position%' or name like '%event%' or name like '%snapshot%' or name like '%candidate%') order by name")))
+          def count(sql,args=()):
+              try:return c.execute(sql,args).fetchone()[0]
+              except Exception:return 'NA'
+          print('DECISIONS_TOTAL='+str(count('select count(*) from paper_decisions')))
+          print('DECISIONS_TODAY='+str(count("select count(*) from paper_decisions where substr(decided_at,1,10)='2026-09-09'")))
+          print('GATES_TOTAL='+str(count('select count(*) from trade_gate_evaluations')))
+          print('GATES_TODAY='+str(count("select count(*) from trade_gate_evaluations where substr(evaluated_at,1,10)='2026-09-09'")))
+          print('POSITIONS_OPEN='+str(count("select count(*) from paper_positions where status='OPEN'")))
+          print('POSITIONS_TODAY='+str(count("select count(*) from paper_positions where substr(opened_at,1,10)='2026-09-09'")))
+          # Join decisions/gates to latest market snapshot family where possible.
+          try:
+              rows=c.execute("""
+                with latest as (
+                  select symbol,asset_class,max(id) mid from market_snapshots group by symbol,asset_class
+                )
+                select upper(l.asset_class) family,count(distinct d.id) decisions,
+                       sum(case when d.action='BUY' then 1 else 0 end) buys,
+                       sum(case when d.action='HOLD' then 1 else 0 end) holds
+                from paper_decisions d join latest l on l.symbol=d.symbol
+                where substr(d.decided_at,1,10)='2026-09-09'
+                group by upper(l.asset_class) order by family
+              """).fetchall()
+              for r in rows: print('DECISION_FAMILY='+json.dumps(dict(r),sort_keys=True))
+          except Exception as e: print('DECISION_FAMILY_ERROR='+type(e).__name__)
+          # Snapshot activity today by family proves scanner observation even without decisions.
+          try:
+              for r in c.execute("select upper(asset_class) family,count(*) n,count(distinct symbol) symbols,max(observed_at) last_at from market_snapshots where substr(observed_at,1,10)='2026-09-09' group by upper(asset_class) order by family"):
+                  print('SNAPSHOT_FAMILY='+json.dumps(dict(r),sort_keys=True,default=str))
+          except Exception as e: print('SNAPSHOT_ERROR='+type(e).__name__)
+          # Reasons from today's gates/decisions, sanitized (no secrets expected in DB reasons).
+          try:
+              for r in c.execute("select symbol,action,score,reason,decided_at from paper_decisions where substr(decided_at,1,10)='2026-09-09' order by id desc limit 25"):
+                  print('RECENT_DECISION='+json.dumps(dict(r),sort_keys=True,default=str))
+          except Exception as e: print('RECENT_DECISION_ERROR='+type(e).__name__)
+          try:
+              for r in c.execute("select symbol,final_result,reason,evaluated_at from trade_gate_evaluations where substr(evaluated_at,1,10)='2026-09-09' order by id desc limit 25"):
+                  print('RECENT_GATE='+json.dumps(dict(r),sort_keys=True,default=str))
+          except Exception as e: print('RECENT_GATE_ERROR='+type(e).__name__)
+          # Candidate blocker distribution for Acciones/Bonos from catalog state.
+          cols={r[1] for r in c.execute('pragma table_info(candidate_universe)')}
+          print('CANDIDATE_COLUMNS='+','.join(sorted(cols)))
+          for fam in ('ACCIONES','BONOS'):
+              if 'capability' in cols:
+                  for r in c.execute("select coalesce(capability,'') blocker,count(*) n from candidate_universe where upper(instrument_type)=? group by blocker order by n desc",(fam,)):
+                      print(f'CAPABILITY={fam}|{r[0]}|N={r[1]}')
+              if 'status' in cols:
+                  for r in c.execute("select coalesce(status,'') state,count(*) n from candidate_universe where upper(instrument_type)=? group by state order by n desc",(fam,)):
+                      print(f'STATUS={fam}|{r[0]}|N={r[1]}')
+          c.close()
+          PY
+          echo '=== LIVE DASHBOARD HTML ==='
+          python3 - <<'PY'
+          import urllib.request,re,json
+          base='http://127.0.0.1:8000'
+          routes=['/','/vivo','/trading','/validacion','/riesgo','/historicos','/sistema']
+          needles=['Caja','Patrimonio','Monedas','Matriz completa por familia','Todos los instrumentos del catálogo actual','Contexto intradiario por unidad','Criterio de salida','Scalping','workers','En esta página']
+          for route in routes:
+              try:
+                  html=urllib.request.urlopen(base+route,timeout=8).read().decode('utf-8','replace')
+                  print(f'PAGE={route}|HTTP=200|LEN={len(html)}|TH={len(re.findall(r"<th(?:\\s|>)",html,re.I))}|TABLES={len(re.findall(r"<table(?:\\s|>)",html,re.I))}|NAVS={len(re.findall(r"<nav(?:\\s|>)",html,re.I))}')
+                  for n in needles:
+                      k=html.lower().count(n.lower())
+                      if k: print(f'TEXT={route}|{n}|COUNT={k}')
+              except Exception as e:
+                  print(f'PAGE={route}|ERROR={type(e).__name__}')
+          PY
+          echo '=== SOURCE GATES ==='
+          grep -nE 'SAFE_PAPER_TYPES|can_simulate|Aprendiendo serie|signal_min_samples|_historical_targets' bf_production_paper_observer.py be_paper_engine.py | head -120 || true
+          echo 'RUNTIME_MUTATION=NO'
+          echo 'NETWORK_BROKER_CALLS_FROM_DIAGNOSTIC=NO'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
