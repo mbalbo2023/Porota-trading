@@ -47,6 +47,7 @@ jobs:
           DB='/app/data/paper_v17/observer_v17.db'
           c=sqlite3.connect('file:'+DB+'?mode=ro', uri=True)
           c.execute('pragma query_only=on')
+          c.execute('pragma temp_store=memory')
           print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
           mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
           print(f'MODE={mode}')
@@ -58,7 +59,7 @@ jobs:
               if isinstance(x,list):
                   if x and all(isinstance(v,dict) for v in x):
                       out.append((path,x))
-                  for i,v in enumerate(x[:3]):
+                  for v in x[:3]:
                       out.extend(walk_lists(v, path+'[]'))
               elif isinstance(x,dict):
                   for k,v in x.items():
@@ -69,7 +70,8 @@ jobs:
               b=json.dumps(obj, sort_keys=True, separators=(',',':'), ensure_ascii=False, default=str).encode('utf-8','surrogatepass')
               return hashlib.sha256(b).hexdigest(), len(b)
 
-          rows=c.execute("select origin,row_key,recorded_at,quality,body_json from historical_raw_archive order by origin,recorded_at,id")
+          # ORDER BY id follows the table primary key and avoids a large SQLite temp sort.
+          rows=c.execute("select origin,row_key,recorded_at,quality,body_json from historical_raw_archive order by id")
           payloads=0; parse_errors=0; no_row_list=0
           path_counts=collections.Counter(); sig_counts=collections.Counter()
           global_row_counts=collections.Counter(); global_row_bytes={}
@@ -77,9 +79,7 @@ jobs:
           by_origin_seen=collections.defaultdict(set)
           by_origin_payloads=collections.Counter()
           novelty_pcts=[]; overlap_pcts=[]; jaccards=[]
-          prev_by_origin={}
-          selected_lengths=[]
-          quality_counts=collections.Counter()
+          prev_by_origin={}; selected_lengths=[]; quality_counts=collections.Counter()
 
           for origin,row_key,recorded_at,quality,body in rows:
               payloads += 1
@@ -93,17 +93,15 @@ jobs:
               if not candidates:
                   no_row_list += 1
                   continue
-              # Conservative selector: largest list-of-dicts in the payload.
               path,lst=max(candidates, key=lambda t: len(t[1]))
               path_counts[path]+=1
               selected_lengths.append(len(lst))
               sig=tuple(sorted({k for d in lst for k in d.keys()}))
               sig_counts[sig]+=1
-              hashes=[]
               local=set()
               for item in lst:
                   h,b=canon_hash(item)
-                  hashes.append(h); local.add(h)
+                  local.add(h)
                   global_row_counts[h]+=1
                   global_row_bytes.setdefault(h,b)
                   selected_payload_bytes += b
@@ -111,13 +109,11 @@ jobs:
               by_origin_payloads[origin]+=1
               seen=by_origin_seen[origin]
               if local:
-                  already=len(local & seen)
-                  new=len(local - seen)
+                  already=len(local & seen); new=len(local-seen)
                   overlap_pcts.append(already/len(local)*100.0)
                   novelty_pcts.append(new/len(local)*100.0)
               if origin in prev_by_origin:
-                  prev=prev_by_origin[origin]
-                  union=len(prev|local)
+                  prev=prev_by_origin[origin]; union=len(prev|local)
                   if union:
                       jaccards.append(len(prev&local)/union*100.0)
               seen.update(local)
@@ -153,20 +149,14 @@ jobs:
           if jaccards:
               print(f'CONSECUTIVE_PAYLOAD_JACCARD_MEDIAN_PCT={statistics.median(jaccards):.4f}')
               print(f'CONSECUTIVE_PAYLOAD_JACCARD_P90_PCT={sorted(jaccards)[int(0.9*(len(jaccards)-1))]:.4f}')
-
           print('TOP_SELECTED_JSON_PATHS:')
-          for p,n in path_counts.most_common(10):
-              print(f'PATH|COUNT={n}|{p}')
+          for p,n in path_counts.most_common(10): print(f'PATH|COUNT={n}|{p}')
           print('TOP_ROW_KEY_SIGNATURES:')
-          for sig,n in sig_counts.most_common(8):
-              print(f'SIGNATURE|COUNT={n}|KEYS={";".join(sig)}')
+          for sig,n in sig_counts.most_common(8): print(f'SIGNATURE|COUNT={n}|KEYS={";".join(sig)}')
           print('QUALITY_COUNTS:')
-          for q,n in quality_counts.most_common():
-              print(f'QUALITY|{q}|{n}')
+          for q,n in quality_counts.most_common(): print(f'QUALITY|{q}|{n}')
           print('TOP_ORIGINS_BY_PAYLOADS:')
-          for o,n in by_origin_payloads.most_common(15):
-              print(f'ORIGIN|COUNT={n}|{o}')
-
+          for o,n in by_origin_payloads.most_common(15): print(f'ORIGIN|COUNT={n}|{o}')
           try:
               tb=int(c.execute("select sum(pgsize) from dbstat where name='historical_raw_archive'").fetchone()[0] or 0)
               print(f'HISTORICAL_RAW_ARCHIVE_DBSTAT_BYTES={tb}')
