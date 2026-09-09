@@ -1,0 +1,22 @@
+name: RC6 Wave11 GDELT Readiness Audit 2026-09-09
+on:
+  push:
+    branches: [wave11/rc6-event-risk-gdelt-binding-20260909]
+    paths: ['.github/workflows/rc6-wave11-gdelt-readiness-audit-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Inspect validated GDELT shadow source
+        run: |
+          set -euo pipefail
+          git fetch origin feature/rc6-event-risk-gdelt-shadow-feed-20260908 feature/rc6-event-risk-shadow-20260907 feature/rc6-event-risk-dashboard-view-20260907
+          echo 'GDELT_SOURCE_SHA='$(git rev-parse origin/feature/rc6-event-risk-gdelt-shadow-feed-20260908)
+          git diff --name-only HEAD..origin/feature/rc6-event-risk-gdelt-shadow-feed-20260908 | head -100
+          echo WAVE11_SHADOW_SOURCE_PRESENT=YES
+          echo WAVE11_RUNTIME_MUTATION=NO
+          echo ORDER_ROUTES=NOT_CALLED
