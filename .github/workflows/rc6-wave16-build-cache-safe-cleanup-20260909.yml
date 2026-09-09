@@ -1,0 +1,82 @@
+name: RC6 Wave16 Safe Build Cache Cleanup 2026-09-09
+
+on:
+  push:
+    branches: [wave16/rc6-build-cache-safe-cleanup-20260909]
+    paths: ['.github/workflows/rc6-wave16-build-cache-safe-cleanup-20260909.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-runtime-deploy
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Prune only inactive build cache and prove runtime safety
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          BEFORE_DF=$(df -PB1 / | awk 'NR==2{print $4}')
+          echo "FREE_BYTES_BEFORE=$BEFORE_DF"
+          sudo -n docker inspect -f 'PRE_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'PRE_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
+          sudo -n docker inspect -f 'PRE_APPROVAL={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_critical_approval_rc6
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('pragma query_only=on');q=c.execute('pragma quick_check').fetchone()[0];m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone();raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0];c.close();print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo 'DOCKER_DF_BEFORE:'
+          sudo -n docker system df
+          ACTIVE_CACHE=$(sudo -n docker system df --format '{{json .}}' 2>/dev/null | grep -c 'Build Cache' || true)
+          echo "CACHE_FORMAT_LINES=$ACTIVE_CACHE"
+          # Scope is deliberately narrow: build cache only. Never images, containers, volumes, or system prune.
+          sudo -n docker builder prune -f
+          echo 'DOCKER_DF_AFTER:'
+          sudo -n docker system df
+          AFTER_DF=$(df -PB1 / | awk 'NR==2{print $4}')
+          echo "FREE_BYTES_AFTER=$AFTER_DF"
+          RECLAIMED=$((AFTER_DF-BEFORE_DF)); echo "RECLAIMED_BYTES=$RECLAIMED"
+          test "$RECLAIMED" -ge 1073741824
+          sudo -n docker inspect -f 'POST_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'POST_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
+          sudo -n docker inspect -f 'POST_APPROVAL={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_critical_approval_rc6
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('pragma query_only=on');q=c.execute('pragma quick_check').fetchone()[0];m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone();raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0];c.close();print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "POST_DB=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo CLEANUP_SCOPE=DOCKER_BUILD_CACHE_ONLY
+          echo IMAGES_DELETED=NO
+          echo CONTAINERS_DELETED=NO
+          echo VOLUMES_DELETED=NO
+          echo SYSTEM_PRUNE=NOT_RUN
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          HOST
