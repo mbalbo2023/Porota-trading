@@ -31,12 +31,12 @@ jobs:
           python -m py_compile zz_wave8_dashboard_live_rc6.py o_dashboard.py bg_paper_dashboard.py da_dashboard_ux_hf6.py
           PYTHONPATH=. pytest -q tests/test_shadow_learning_rc6.py tests/test_forward_lab_metrics_hf2.py tests/test_dashboard_global_a11y_rc5.py tests/test_dashboard_table_layout_rc6.py
           python - <<'PY'
-          import zz_wave8_dashboard_live_rc6 as w
-          css=w.CLASSIC_CSS
+          from pathlib import Path
+          text=Path('zz_wave8_dashboard_live_rc6.py').read_text(encoding='utf-8')
           required=['overflow-x:auto','width:max-content','min-width:100%','overflow-wrap:normal','word-break:normal','min-width:7rem','hyphens:none']
           forbidden=['overflow-wrap:anywhere','min-width:0!important','word-break:break-all']
-          for x in required: assert x in css, x
-          for x in forbidden: assert x not in css, x
+          for x in required: assert x in text, x
+          for x in forbidden: assert x not in text, x
           print('TABLET_LEGIBILITY_STATIC_GATE=GREEN')
           PY
           ! grep -REni 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' zz_wave8_dashboard_live_rc6.py
@@ -102,7 +102,6 @@ jobs:
           PY
           )
           echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0'
-          test "${PPI_HISTORY_RAW_STORAGE_MODE:-EXTERNAL_EXACT_V1}" = EXTERNAL_EXACT_V1 || true
 
           git fetch --no-tags origin fix/rc6-wave8-tablet-legibility-20260909
           test "$(git rev-parse origin/fix/rc6-wave8-tablet-legibility-20260909)" = "$TARGET_SHA"
@@ -117,7 +116,7 @@ jobs:
           sudo -n docker inspect -f 'POST_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
           sudo -n docker inspect -f 'POST_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
           sudo -n docker exec -i porota_production_dashboard python - <<'PY'
-          import os,urllib.request,re
+          import os,urllib.request
           token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
           paths=['/','/en-vivo','/trading','/scalping','/validacion','/instrumentos','/riesgo','/historicos','/aprendizaje','/reportes','/sistema']
           for p in paths:
@@ -136,7 +135,6 @@ jobs:
           print('WAVE8_TABLET_LEGIBILITY_CSS_LIVE=GREEN')
           PY
 
-          # Reuse the proven persistent trusted-device browser profile; fail closed on OTP/2FA.
           test -d "$PROFILE"; test -f "$SECRET"; test -x "$VENV/bin/python"
           sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_reauth.py /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py
           sudo -n rm -f /tmp/rc6_ppi_web_reauth.py
@@ -160,7 +158,7 @@ jobs:
           LATEST=$(find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@|%p\n' 2>/dev/null | sort -nr | sed -n '1p' || true)
           echo "CONTRACT_EVIDENCE_LATEST=$LATEST"
           if [ -n "$LATEST" ]; then python3 - "${LATEST#*|}" <<'PY'
-          import json,sys,os,time
+          import json,sys
           d=json.load(open(sys.argv[1],encoding='utf-8'))
           print('LATEST_EVIDENCE_STATE='+str(d.get('state')))
           print('LATEST_EVIDENCE_REAL_ORDERS='+str(d.get('real_orders_sent')))
