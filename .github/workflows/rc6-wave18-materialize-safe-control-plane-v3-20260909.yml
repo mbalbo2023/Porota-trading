@@ -26,24 +26,7 @@ jobs:
           done
           mkdir -p ops
           git show origin/closure/rc6-critical-control-plane-20260907:ops/rc6_deploy_critical_control_plane.sh > ops/rc6_deploy_critical_control_plane.sh
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          p=Path('ops/rc6_deploy_critical_control_plane.sh')
-          s=p.read_text(encoding='utf-8')
-          pat=r"installed=0\n\ncleanup\(\) \{.*?\n\}\ntrap cleanup EXIT"
-          rep="""installed=0
-
-# RC6 policy: cleanup temporary staging only. Runtime recovery is explicit;
-# a failed deploy must never automatically disable/remove the previous state.
-cleanup_stage() {
-  sudo -n rm -rf \"$REMOTE_STAGE\" >/dev/null 2>&1 || true
-}
-trap cleanup_stage EXIT"""
-          s2,n=re.subn(pat,rep,s,count=1,flags=re.S)
-          assert n==1, 'legacy automatic rollback block not found exactly once'
-          p.write_text(s2,encoding='utf-8')
-          PY
+          python -c 'from pathlib import Path; import re; p=Path("ops/rc6_deploy_critical_control_plane.sh"); s=p.read_text(encoding="utf-8"); pat=r"installed=0\n\ncleanup\(\) \{.*?\n\}\ntrap cleanup EXIT"; rep="installed=0\n\n# RC6 policy: cleanup temporary staging only. Runtime recovery is explicit;\n# a failed deploy must never automatically disable/remove the previous state.\ncleanup_stage() {\n  sudo -n rm -rf \\\"$REMOTE_STAGE\\\" >/dev/null 2>&1 || true\n}\ntrap cleanup_stage EXIT"; s2,n=re.subn(pat,rep,s,count=1,flags=re.S); assert n==1, "legacy automatic rollback block not found exactly once"; p.write_text(s2,encoding="utf-8")'
           chmod +x ops/rc6_deploy_critical_control_plane.sh
       - name: Safety and regression gate
         run: |
