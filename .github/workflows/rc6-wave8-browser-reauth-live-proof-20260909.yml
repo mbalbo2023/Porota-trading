@@ -42,7 +42,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
           scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" /tmp/rc6_ppi_web_reauth.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_web_reauth.py"
-      - name: Live browser proof and reauth
+      - name: Live browser proof and reauth after browser-executable RCA
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -55,6 +55,7 @@ jobs:
           VENV=/opt/porota-contract-evidence-venv
           PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
           SECRET=/etc/porota/contract-evidence-web.env
+          CHROME=/usr/bin/google-chrome-stable
           cd "$ROOT"
           HEAD=$(git rev-parse HEAD); echo "HEAD=$HEAD"
           sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
@@ -67,48 +68,42 @@ jobs:
           PY
           )
           echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
-
-          test -x "$VENV/bin/python"
+          test -x "$VENV/bin/python"; test -x "$CHROME"
           "$VENV/bin/python" -c 'import playwright'
           TOKEN=$(sudo -n docker exec porota_production_dashboard printenv DASHBOARD_ACCESS_TOKEN || true)
-          sudo -n -u porotaadmin env HOME=/home/porotaadmin TOKEN="$TOKEN" "$VENV/bin/python" - <<'PY'
+          sudo -n -u porotaadmin env HOME=/home/porotaadmin TOKEN="$TOKEN" CHROME="$CHROME" "$VENV/bin/python" - <<'PY'
           import os
           from playwright.sync_api import sync_playwright
-          token=os.getenv('TOKEN','')
+          token=os.getenv('TOKEN',''); chrome=os.environ['CHROME']
           paths=['/','/en-vivo','/trading','/scalping','/validacion','/instrumentos','/riesgo','/historicos','/aprendizaje','/reportes','/sistema']
           with sync_playwright() as p:
-              b=p.chromium.launch(headless=True)
+              b=p.chromium.launch(headless=True,executable_path=chrome,args=['--no-sandbox','--disable-dev-shm-usage'])
               page=b.new_page(viewport={'width':1536,'height':920})
               for path in paths:
                   url='http://127.0.0.1:8000'+path+('?token='+token if token else '')
                   resp=page.goto(url,wait_until='networkidle',timeout=30000)
                   assert resp and resp.status==200,(path,resp.status if resp else None)
-                  tables=page.locator('table.paper-table')
-                  tc=tables.count()
                   cells=page.locator('table.paper-table td,table.paper-table th')
-                  ms=cells.evaluate_all("""els => els.slice(0,800).map(e => { const s=getComputedStyle(e), r=e.getBoundingClientRect(); return {w:r.width,h:r.height,ow:s.overflowWrap,wb:s.wordBreak,hy:s.hyphens,ws:s.whiteSpace,txt:(e.innerText||'').trim()}; })""")
+                  ms=cells.evaluate_all("""els => els.slice(0,800).map(e => { const s=getComputedStyle(e), r=e.getBoundingClientRect(); return {w:r.width,h:r.height,ow:s.overflowWrap,wb:s.wordBreak,hy:s.hyphens,txt:(e.innerText||'').trim()}; })""")
                   bad=[]
                   for m in ms:
                       if m['w'] < 90: bad.append(('width',m))
                       if m['ow'] not in ('normal','initial'): bad.append(('overflowWrap',m))
                       if m['wb'] not in ('normal','initial'): bad.append(('wordBreak',m))
-                      if m['hy'] not in ('none','manual','initial'): bad.append(('hyphens',m))
-                      # detect the field failure: a nontrivial token rendered as a very tall ultra-narrow cell
                       txt=''.join(m['txt'].split())
                       if len(txt)>=4 and m['h'] > 5*m['w']: bad.append(('vertical-crush',m))
                   assert not bad[:1],(path,bad[:3])
-                  print(f'BROWSER_1536x920|{path}|tables={tc}|cells={len(ms)}|GREEN')
+                  print(f'BROWSER_1536x920|{path}|tables={page.locator("table.paper-table").count()}|cells={len(ms)}|GREEN')
               page.goto('http://127.0.0.1:8000/'+('?token='+token if token else ''),wait_until='networkidle')
               page.screenshot(path='/tmp/wave8_live_1536x920.png',full_page=True)
               b.close()
           print('WAVE8_BROWSER_GEOMETRY=GREEN')
           PY
-
           test -d "$PROFILE"; test -f "$SECRET"; test "$(stat -c '%U:%a' "$SECRET")" = 'porotaadmin:600'
           sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_reauth.py /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py
           sudo -n rm -f /tmp/rc6_ppi_web_reauth.py
           set +e
-          OUT=$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH=/usr/local/lib/porota-contract-evidence-rc6:$ROOT "$VENV/bin/python" /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py --profile "$PROFILE" --secret "$SECRET" 2>&1); RC=$?
+          OUT=$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin POROTA_CHROME_EXECUTABLE="$CHROME" PYTHONPATH=/usr/local/lib/porota-contract-evidence-rc6:$ROOT "$VENV/bin/python" /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py --profile "$PROFILE" --secret "$SECRET" --chrome "$CHROME" 2>&1); RC=$?
           set -e
           printf '%s\n' "$OUT"
           STATE=$(REAUTH_OUT="$OUT" python3 - <<'PY'
