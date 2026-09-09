@@ -1,0 +1,54 @@
+name: RC6 History Selection Live Diagnostic 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-history-selection-live-20260909]
+    paths: [.github/workflows/rc6-history-selection-live-diagnostic-20260909.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect history selection read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = '2c9f3df2d03974ab6fe464d119bdbb2d90158706'
+          echo '=== HISTORY SOURCE MATCHES ==='
+          grep -RInE --exclude-dir=.git --exclude-dir=.secrets --exclude='*.json' --exclude='*.md' \
+            'production_history|HISTORY_BATCH|history\(|PPI_PRODUCTION_HISTORY|SAFE_PAPER_TYPES|history.*instrument|instrument.*history' \
+            bf_production_paper_observer.py bv_paper_runtime.py bu_instrument_catalog.py *.py 2>/dev/null \
+            | grep -E 'bf_production|history|candidate|SAFE|catalog' | head -240 || true
+          echo '=== HISTORY SYSTEMD ==='
+          systemctl list-timers --all --no-pager | grep -Ei 'porota-.*history.*rc6' || true
+          for u in porota-history-postclose-rc6.service porota-ppi-history-daily.service porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer; do
+            echo "UNIT=$u"
+            systemctl show "$u" -p FragmentPath -p ActiveState -p SubState -p Result -p ExecStart --no-pager 2>/dev/null || true
+          done
+          echo '=== FAMILY CANDIDATE COUNTS ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          for r in c.execute("select upper(instrument_type) family,count(*) n,sum(case when upper(status)='AVAILABLE' then 1 else 0 end) available,sum(case when can_simulate=1 then 1 else 0 end) simulatable from candidate_universe group by upper(instrument_type) order by family"):
+              print('CANDIDATE='+json.dumps(dict(r),sort_keys=True))
+          c.close()
+          PY
+          echo RUNTIME_MUTATION=NO
+          echo NETWORK_CALLS=NO
+          echo ORDER_ROUTES=NOT_CALLED
+          REMOTE
