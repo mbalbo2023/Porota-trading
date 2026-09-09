@@ -1,0 +1,61 @@
+name: RC6 Wave15 Final Ready Deploy 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave15-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave15-final-ready-deploy-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  ready-deploy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: W15 learning certification
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q pytest
+          python -m py_compile fh_forward_lab_v2_rc6.py fc_mfe_mae_provenance_rc6.py
+          PYTHONPATH=. pytest -q tests/test_forward_lab_v2_rc6.py tests/test_mfe_mae_provenance_rc6.py
+          PYTHONPATH=. python - <<'PY'
+          import fh_forward_lab_v2_rc6 as f
+          f.assert_offline_only()
+          m=f.manifest(strategy_version='gate',dataset_identity={'sha':'gate'},folds=[],parameters={})
+          assert m['promotion_allowed'] is False and m['auto_promotion'] is False
+          print('PROMOTION_ALLOWED=NO')
+          print('AUTO_PROMOTION=NO')
+          print('OFFLINE_ONLY=YES')
+          PY
+          ! grep -REn 'send_order|place_order|cancel_order|api/Orders|/Operar/|budget_order' fh_forward_lab_v2_rc6.py fc_mfe_mae_provenance_rc6.py
+          echo "CERTIFIED_SOURCE_SHA=${GITHUB_SHA}"
+          echo 'W15_STATIC=GREEN'
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w15ready"; chmod 600 "$HOME/.ssh/w15ready"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only live safety proof
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w15ready" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading; LIVE=9197aedf35fe1739b594c742902e80df069c47c9; test "$(git rev-parse HEAD)" = "$LIVE"
+          OBS1=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_observer); DASH1=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close(); print(f'DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          git fetch --no-tags origin deploy-prep/rc6-wave15-currentbase-20260909; test "$(git rev-parse origin/deploy-prep/rc6-wave15-currentbase-20260909)" = "$TARGET_SHA"
+          OBS2=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_observer); DASH2=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          test "$OBS1" = "$OBS2"; test "$DASH1" = "$DASH2"; test "$(git rev-parse HEAD)" = "$LIVE"
+          echo "CERTIFIED_SOURCE_SHA=$TARGET_SHA"; echo 'ORDER_ROUTES=NOT_CALLED'; echo 'REAL_ORDER_TEST=NOT_PERFORMED'; echo 'RUNTIME_CHANGED=NO'; echo 'ROLLBACK_AUTOMATICO=NO'; echo 'W15_READY_DEPLOY=YES'
+          REMOTE
