@@ -119,6 +119,11 @@ def _decorate_sections(text):
     # is the semantic table title; duplicating it was confusing on tablet.
     text=_GENERATED_CAPTION_RE.sub('',text)
     text=_dedupe_secondary_navs(text)
+    # Normalization can run more than once (bg._document + ASGI middleware).
+    # If a domain-specific subnav is present, remove any page index injected by
+    # an earlier pass so the operator sees exactly one navigation surface.
+    if _SECONDARY_NAV_RE.search(text):
+        text=_PAGE_INDEX_RE.sub('',text)
     used=set(re.findall(r"\bid=['\"]([^'\"]+)['\"]",text,re.IGNORECASE))
     headings=[]
     def heading_cb(match):
