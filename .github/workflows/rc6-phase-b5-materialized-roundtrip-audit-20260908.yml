@@ -1,0 +1,148 @@
+name: RC6 Phase B5 Materialized Roundtrip Audit 2026-09-08
+
+on:
+  push:
+    branches: [audit/rc6-phase-b5-materialized-roundtrip-20260908]
+    paths:
+      - '.github/workflows/rc6-phase-b5-materialized-roundtrip-audit-20260908.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_phase_b5"
+          chmod 600 "$HOME/.ssh/porota_phase_b5"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Phase B5 materialized read-only roundtrip proof
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_phase_b5" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=90 "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo '=== POROTA RC6 PHASE B5 MATERIALIZED BYTE-EXACT ROUNDTRIP — SHADOW ONLY ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python -u - <<'PY'
+          import sqlite3, json, hashlib, tempfile, pathlib, os
+
+          DB='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+DB+'?mode=ro', uri=True)
+          c.execute('pragma query_only=on')
+          c.execute('pragma temp_store=memory')
+          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]), flush=True)
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'MODE={mode}', flush=True)
+          print(f'REAL_ORDERS_SENT={real}', flush=True)
+          assert mode=='PRODUCTION_PAPER' and int(real)==0
+
+          def sha_bytes(b): return hashlib.sha256(b).hexdigest()
+          def enc(s): return s.encode('utf-8','surrogatepass')
+          def canonical(obj):
+              return json.dumps(obj, sort_keys=True, separators=(',',':'), ensure_ascii=False, default=str)
+
+          total=0; parse_errors=0; mismatches=0
+          unique_written=0; unique_payload_bytes=0; manifest_bytes=0
+          original_body_bytes=0
+
+          with tempfile.TemporaryDirectory(prefix='porota-b5-shadow-') as td:
+              root=pathlib.Path(td)
+              objects=root/'objects'; objects.mkdir()
+              manifest=root/'manifest.jsonl'
+              seen=set()
+              with manifest.open('w', encoding='utf-8', newline='\n') as mf:
+                  for rid,body in c.execute('select id,body_json from historical_raw_archive order by id'):
+                      total += 1
+                      if total % 1000 == 0: print(f'BUILD_PROGRESS={total}', flush=True)
+                      original_body_bytes += len(enc(body))
+                      try:
+                          outer=json.loads(body)
+                          inner=outer['payload_json']
+                          assert isinstance(inner,str)
+                      except Exception:
+                          parse_errors += 1
+                          continue
+                      ib=enc(inner); ih=sha_bytes(ib)
+                      if ih not in seen:
+                          (objects/ih).write_bytes(ib)
+                          seen.add(ih); unique_written += 1; unique_payload_bytes += len(ib)
+                      wrapper=dict(outer); wrapper.pop('payload_json',None)
+                      rec={'id':int(rid),'inner_sha256':ih,'wrapper':wrapper,'body_sha256':sha_bytes(enc(body))}
+                      line=canonical(rec)+'\n'; mf.write(line); manifest_bytes += len(enc(line))
+
+              materialized_bytes=sum(p.stat().st_size for p in objects.iterdir()) + manifest.stat().st_size
+              print(f'MATERIALIZED_OBJECTS={unique_written}')
+              print(f'MATERIALIZED_UNIQUE_PAYLOAD_BYTES={unique_payload_bytes}')
+              print(f'MATERIALIZED_MANIFEST_BYTES={manifest_bytes}')
+              print(f'MATERIALIZED_TOTAL_BYTES={materialized_bytes}')
+              print(f'ORIGINAL_BODY_JSON_BYTES={original_body_bytes}')
+
+              # Reload only from the materialized shadow representation and prove exact body reconstruction.
+              recs={}
+              with manifest.open('r', encoding='utf-8') as mf:
+                  for line in mf:
+                      rec=json.loads(line); recs[int(rec['id'])]=rec
+              checked=0
+              for rid,body in c.execute('select id,body_json from historical_raw_archive order by id'):
+                  rec=recs.get(int(rid))
+                  if rec is None:
+                      mismatches += 1; continue
+                  inner=(objects/rec['inner_sha256']).read_bytes().decode('utf-8','surrogatepass')
+                  outer=dict(rec['wrapper']); outer['payload_json']=inner
+                  rebuilt=canonical(outer)
+                  if sha_bytes(enc(rebuilt)) != rec['body_sha256'] or rebuilt != body:
+                      mismatches += 1
+                  checked += 1
+                  if checked % 1000 == 0: print(f'ROUNDTRIP_PROGRESS={checked}', flush=True)
+
+              raw_dbstat=0
+              try:
+                  raw_dbstat=int(c.execute("select coalesce(sum(pgsize),0) from dbstat where name='historical_raw_archive'").fetchone()[0] or 0)
+              except Exception:
+                  pass
+              reclaim=max(0, raw_dbstat-materialized_bytes) if raw_dbstat else 0
+              print(f'RAW_ATTEMPTS_TOTAL={total}')
+              print(f'PARSE_ERRORS={parse_errors}')
+              print(f'ROUNDTRIP_CHECKED={checked}')
+              print(f'ROUNDTRIP_MISMATCHES={mismatches}')
+              print(f'HISTORICAL_RAW_ARCHIVE_DBSTAT_BYTES={raw_dbstat}')
+              print(f'ESTIMATED_RECLAIMABLE_BYTES_VS_TABLE_PAGES={reclaim}')
+              if raw_dbstat:
+                  print(f'ESTIMATED_RECLAIMABLE_PCT_VS_TABLE_PAGES={reclaim*100.0/raw_dbstat:.4f}')
+
+              if total>0 and parse_errors==0 and checked==total and mismatches==0:
+                  print('MATERIALIZED_BYTE_EXACT_ROUNDTRIP=PASS')
+                  print('EVIDENCE_LOST=0_FOR_HISTORICAL_RAW_ARCHIVE_BODY_JSON_UNDER_MATERIALIZED_CONTENT_ADDRESSED_MODEL')
+                  print('PHYSICAL_DELETE_REDUNDANCY_GATE=GREEN_SUBJECT_TO_TRANSACTIONAL_MIGRATION_BACKUP_AND_POSTMIGRATION_VERIFY')
+              else:
+                  print('MATERIALIZED_BYTE_EXACT_ROUNDTRIP=FAIL')
+                  print('EVIDENCE_LOST=NOT_PROVEN_ZERO')
+                  print('PHYSICAL_DELETE_REDUNDANCY_GATE=RED')
+          c.close()
+          PY
+          echo 'RUNTIME_DB_MUTATIONS=NONE'
+          echo 'LEGACY_DELETE=NOT_RUN'
+          echo 'VACUUM=NOT_RUN'
+          echo 'PRUNE=NOT_RUN'
+          echo 'EXTERNAL_V1_ACTIVATION=NOT_PERFORMED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
