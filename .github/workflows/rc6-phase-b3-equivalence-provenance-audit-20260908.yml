@@ -12,7 +12,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Prepare strict SSH
@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh -i "$HOME/.ssh/porota_phase_b3" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          ssh -i "$HOME/.ssh/porota_phase_b3" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=60 "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/porota-trading
           echo '=== POROTA RC6 PHASE B3 EQUIVALENCE + PROVENANCE AUDIT — READ ONLY ==='
@@ -41,27 +41,25 @@ jobs:
           echo "HEAD=$(git rev-parse HEAD)"
           sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
           sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
-          import sqlite3, json, hashlib, collections
+          sudo -n docker exec -i porota_production_observer python -u - <<'PY'
+          import sqlite3, json, hashlib, collections, sys
 
           DB='/app/data/paper_v17/observer_v17.db'
           c=sqlite3.connect('file:'+DB+'?mode=ro', uri=True)
           c.execute('pragma query_only=on')
           c.execute('pragma temp_store=memory')
-          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]), flush=True)
           mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
-          print(f'MODE={mode}')
-          print(f'REAL_ORDERS_SENT={real}')
+          print(f'MODE={mode}', flush=True)
+          print(f'REAL_ORDERS_SENT={real}', flush=True)
           assert mode=='PRODUCTION_PAPER' and int(real)==0
 
           def canon(obj):
               return json.dumps(obj,sort_keys=True,separators=(',',':'),ensure_ascii=False,default=str).encode('utf-8','surrogatepass')
           def hbytes(b): return hashlib.sha256(b).hexdigest()
-          def hobj(obj):
-              b=canon(obj); return hbytes(b),len(b),b
 
           total=0; outer_err=0; inner_err=0; reconstructible=0; opaque=0; recon_mismatch=0
-          manifest_bytes=0; unique_row_bytes=0; opaque_bytes=0; outer_meta_bytes=0
+          manifest_bytes=0; unique_row_bytes=0; opaque_bytes=0
           unique_rows={}; unique_payload_sequences={}; seq_counts=collections.Counter()
           quality=collections.Counter(); identities=collections.Counter(); missing_manifest_fields=collections.Counter()
           required=['asset_class','date_from','date_to','settlement','symbol','valid_rows','metadata']
@@ -69,35 +67,45 @@ jobs:
 
           for rid,q,body in c.execute('select id,quality,body_json from historical_raw_archive order by id'):
               total+=1; quality[str(q)]+=1
-              try: outer=json.loads(body)
+              if total % 1000 == 0:
+                  print(f'PROGRESS_ATTEMPTS={total}', flush=True)
+              try:
+                  outer=json.loads(body)
               except Exception:
                   outer_err+=1; opaque+=1; quality_opaque[str(q)]+=1; opaque_bytes+=len(body.encode('utf-8','surrogatepass')); continue
               for f in required:
                   if f not in outer: missing_manifest_fields[f]+=1
               meta={k:outer.get(k) for k in required}
-              mb=canon(meta); manifest_bytes+=len(mb); outer_meta_bytes+=len(mb)
+              manifest_bytes+=len(canon(meta))
               ident=(str(outer.get('asset_class')),str(outer.get('symbol')),str(outer.get('settlement')))
               identities[ident]+=1
               inner_s=outer.get('payload_json')
-              try: inner=json.loads(inner_s) if isinstance(inner_s,str) else inner_s
+              try:
+                  inner=json.loads(inner_s) if isinstance(inner_s,str) else inner_s
               except Exception:
                   inner_err+=1; opaque+=1; quality_opaque[str(q)]+=1; opaque_bytes+=len(str(inner_s).encode('utf-8','surrogatepass')); continue
               if not (isinstance(inner,list) and all(isinstance(x,dict) for x in inner)):
                   opaque+=1; quality_opaque[str(q)]+=1; opaque_bytes+=len(str(inner_s).encode('utf-8','surrogatepass')); continue
 
-              seq=[]; reconstructed=[]
+              seq=[]; row_blobs=[]
               for item in inner:
-                  rh,rbn,rbb=hobj(item)
+                  rb=canon(item)
+                  rh=hbytes(rb)
                   seq.append(rh)
+                  row_blobs.append(rb)
                   if rh not in unique_rows:
-                      unique_rows[rh]=rbb; unique_row_bytes+=rbn
-                  reconstructed.append(json.loads(unique_rows[rh].decode('utf-8')))
+                      unique_rows[rh]=rb; unique_row_bytes+=len(rb)
               seq_key=hbytes(('\n'.join(seq)).encode())
               seq_counts[seq_key]+=1
               unique_payload_sequences.setdefault(seq_key,tuple(seq))
-              original_hash=hbytes(canon(inner))
-              reconstructed_hash=hbytes(canon(reconstructed))
-              if original_hash!=reconstructed_hash:
+
+              original_canon=b'['+b','.join(row_blobs)+b']'
+              try:
+                  reconstructed_canon=b'['+b','.join(unique_rows[h] for h in seq)+b']'
+              except KeyError:
+                  recon_mismatch+=1
+                  continue
+              if hbytes(original_canon)!=hbytes(reconstructed_canon):
                   recon_mismatch+=1
               else:
                   reconstructible+=1; quality_reconstructible[str(q)]+=1
