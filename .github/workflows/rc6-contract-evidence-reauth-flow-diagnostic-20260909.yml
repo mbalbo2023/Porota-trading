@@ -1,0 +1,64 @@
+name: RC6 Contract Evidence Reauth Flow Diagnostic 2026-09-09
+
+on:
+  push:
+    branches: [diag/rc6-contract-evidence-reauth-flow-20260909]
+    paths:
+      - '.github/workflows/rc6-contract-evidence-reauth-flow-diagnostic-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect reauth control flow and runtime health
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          REAUTH=/usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py
+          cd "$ROOT"
+          echo '=== LIVE_HEAD ==='
+          git rev-parse HEAD || true
+          echo '=== CONTAINERS ==='
+          sudo -n docker ps --format '{{.Names}}|{{.Status}}' | grep -E 'porota|dashboard|observer' || true
+          echo '=== DB ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'quick_check={q}|mode={m}|real_orders_sent={r}|raw_mode={os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          echo '=== REAUTH_RELEVANT ==='
+          sudo -n python3 - "$REAUTH" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1]); lines=p.read_text(encoding='utf-8').splitlines()
+          needles=('authenticated_url','SUBMIT_LOGIN','VERIFY_TRADING_SESSION','goto_fast','login','page.url')
+          hit=set()
+          for i,l in enumerate(lines):
+              if any(n in l for n in needles):
+                  for j in range(max(0,i-5), min(len(lines),i+8)): hit.add(j)
+          for j in sorted(hit): print(f'{j+1:04d}: {lines[j]}')
+          PY
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'RUNTIME_MUTATION=NO'
+          HOST
