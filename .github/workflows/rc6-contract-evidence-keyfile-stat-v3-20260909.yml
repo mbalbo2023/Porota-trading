@@ -1,0 +1,44 @@
+name: RC6 Contract Evidence Keyfile Stat V3 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-contract-evidence-service-live-20260909]
+    paths: [.github/workflows/rc6-contract-evidence-keyfile-stat-v3-20260909.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stat exact guarded nodes
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -eu
+          S=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          PROFILE=$(sudo -n grep '^PROFILE=' "$S" | sed -E 's#.*:-([^}]*)}.*#\1#' | head -1)
+          BROWSER_USER=$(sudo -n grep '^BROWSER_USER=' "$S" | sed -E 's#^[^=]+="?([^" ]+)"?.*#\1#' | head -1)
+          EXPECTED_UID=$(id -u "$BROWSER_USER")
+          EXPECTED_GID=$(id -g "$BROWSER_USER")
+          echo "EXPECTED_UID=$EXPECTED_UID|EXPECTED_GID=$EXPECTED_GID"
+          for rel in '.' 'Default' 'Default/Preferences' 'Default/Secure Preferences' 'Local State'; do
+            p="$PROFILE/$rel"
+            if [ -e "$p" ]; then
+              stat -c "NODE=$rel|UID=%u|GID=%g|MODE=%a|TYPE=%F" "$p"
+            else
+              echo "NODE=$rel|MISSING=YES"
+            fi
+          done
+          echo RUNTIME_MUTATION=NO
+          echo NETWORK_CALLS=NO
+          REMOTE
