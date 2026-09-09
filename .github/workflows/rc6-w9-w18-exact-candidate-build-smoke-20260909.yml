@@ -1,0 +1,50 @@
+name: RC6 W9-W18 Exact Candidate Build Smoke 2026-09-09
+on:
+  push:
+    branches: [proof/rc6-w9-w18-build-smoke-20260909]
+    paths: ['.github/workflows/rc6-w9-w18-exact-candidate-build-smoke-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  exact-build-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Checkout exact candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git checkout --detach 3344476fce917121df00d720cbefe59cd470484d
+          test "$(git rev-parse HEAD)" = 3344476fce917121df00d720cbefe59cd470484d
+      - name: Build exact Docker image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker build --label porota.commit=3344476fce917121df00d720cbefe59cd470484d -t porota-rc6-w9w18:3344476 .
+          test "$(docker image inspect porota-rc6-w9w18:3344476 --format '{{index .Config.Labels "porota.commit"}}')" = 3344476fce917121df00d720cbefe59cd470484d
+      - name: Container smoke and safety assertions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --rm --entrypoint python porota-rc6-w9w18:3344476 - <<'PY'
+          import ck_policy_gate_hf6 as p
+          import fe_fixed_income_nominal_contract_rc6
+          import rc6_cauciones_contract
+          import fb_history_reconciler_rc6
+          import fj_history_backfill_planner_rc6
+          import fc_mfe_mae_provenance_rc6
+          import fh_forward_lab_v2_rc6
+          import fg_critical_approval_gateway_rc6
+          import fm_critical_approval_unix_runtime_rc6
+          import fn_critical_github_proxy_rc6
+          assert p.active_policies()['sector_concentration']=='BINDING'
+          print('CONTAINER_IMPORTS=GREEN')
+          print('SECTOR_BINDING_DEFAULT=GREEN')
+          PY
+          docker run --rm --entrypoint sh porota-rc6-w9w18:3344476 -lc "! grep -Ein 'rollback|ROLLBACK' /app/ops/rc6_deploy_critical_control_plane.sh"
+          docker run --rm --entrypoint sh porota-rc6-w9w18:3344476 -lc "! grep -REn 'api/Orders|/Operar|send_order|place_order|new_order' /app/fg_critical_approval_gateway_rc6.py /app/fm_critical_approval_unix_runtime_rc6.py /app/fn_critical_github_proxy_rc6.py"
+          echo 'EXACT_CANDIDATE_BUILD_SMOKE=GREEN'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ROLLBACK_AUTOMATICO=NO'
