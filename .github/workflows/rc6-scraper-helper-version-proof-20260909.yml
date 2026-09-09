@@ -1,0 +1,45 @@
+name: RC6 Scraper Helper Version Proof 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-scraper-auth-rca-20260909]
+    paths: ['.github/workflows/rc6-scraper-helper-version-proof-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build expected safe helper
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin hotfix/rc6-contract-evidence-auto-reauth-20260907
+          git show origin/hotfix/rc6-contract-evidence-auto-reauth-20260907:rc6_ppi_web_reauth.py > /tmp/expected.py
+          python -c "from pathlib import Path;p=Path('/tmp/expected.py');s=p.read_text();old='APPROVED_AUTH_POSTS = {(\"cuenta.portfoliopersonal.com\", \"/login\")}\n';assert old in s;new='APPROVED_AUTH_POSTS = {(\"cuenta.portfoliopersonal.com\", \"/login\"), (\"api.portfoliopersonal.com\", \"/api/Seguridad/Auth/Login\")}\nIGNORED_BLOCKED_POST_HOSTS = {\"px.ads.linkedin.com\", \"metrics.hotjar.io\", \"l.clarity.ms\"}\n';s=s.replace(old,new,1);old2='                if method == \"POST\" and key in APPROVED_AUTH_POSTS:\n                    return route.continue_()\n                blocked_post_path = clean_host_path(request.url)\n                return route.abort()\n';new2='                if method == \"POST\" and key in APPROVED_AUTH_POSTS:\n                    return route.continue_()\n                if method == \"POST\" and u.netloc in IGNORED_BLOCKED_POST_HOSTS:\n                    return route.abort()\n                blocked_post_path = clean_host_path(request.url)\n                return route.abort()\n';assert old2 in s;p.write_text(s.replace(old2,new2,1))"
+          python -m py_compile /tmp/expected.py
+          echo "EXPECTED_SHA=$(sha256sum /tmp/expected.py | cut -d' ' -f1)" >> "$GITHUB_ENV"
+      - name: Setup SSH
+        env:
+          KEY: ${{ secrets.DO_SSH_KEY }}
+          KH: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$KEY" > "$HOME/.ssh/key"; printf '%s\n' "$KH" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Compare and read backoff state
+        env:
+          H: ${{ secrets.DO_HOST }}
+          U: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i $HOME/.ssh/key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts $U@$H"
+          INST=$($SSH "sudo -n sha256sum /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py | cut -d' ' -f1")
+          echo "EXPECTED_SHA=$EXPECTED_SHA"
+          echo "INSTALLED_SHA=$INST"
+          if [ "$INST" = "$EXPECTED_SHA" ]; then echo HELPER_VERSION=LATEST_SAFE; else echo HELPER_VERSION=DIFFERS_FROM_LATEST_SAFE; fi
+          $SSH "sudo -n grep -E 'APPROVED_AUTH_POSTS|IGNORED_BLOCKED_POST_HOSTS|api.portfoliopersonal.com|l.clarity.ms|metrics.hotjar.io|px.ads.linkedin.com' /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py | sed 's/^/HELPER_MARKER=/'"
+          $SSH "sudo -n bash -lc 'for f in /opt/porota-trading/data/contract_evidence/rc6_trusted/runtime_state.json /opt/porota-trading/data/contract_evidence/rc4_trusted/runtime_state.json; do if test -s \"\$f\"; then echo STATE_FILE=\"\$f\"; python3 -c \"import json,sys,os,time;d=json.load(open(sys.argv[1]));print(\\\"STATE=\\\"+str(d.get(\\\"state\\\"))+\\\"|BLOCKED_AT=\\\"+str(d.get(\\\"blocked_at\\\"))+\\\"|RETRY=\\\"+str(d.get(\\\"retry_after_seconds\\\"))+\\\"|MTIME=\\\"+time.strftime(\\\"%Y-%m-%dT%H:%M:%SZ\\\",time.gmtime(os.path.getmtime(sys.argv[1]))))\" \"\$f\"; fi; done'"
+          echo RUNTIME_MUTATION=NO
+          echo ORDER_ROUTES=NOT_CALLED
