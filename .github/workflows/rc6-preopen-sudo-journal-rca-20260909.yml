@@ -1,0 +1,44 @@
+name: RC6 Preopen Sudo Journal RCA 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-live-postopen-20260909]
+    paths: ['.github/workflows/rc6-preopen-sudo-journal-rca-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  rca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read preopen unit and privileged journal
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo '=== PREOPEN UNIT ==='
+          systemctl cat porota-preopen-rc6.service porota-preopen-rc6.timer --no-pager || true
+          echo '=== PREOPEN PRIVILEGED JOURNAL ==='
+          sudo -n journalctl -u porota-preopen-rc6.service --since '2026-09-09 13:10:00 UTC' --until '2026-09-09 13:20:00 UTC' --no-pager -o short-iso | tail -200 || true
+          echo '=== SAFETY ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print(c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()); c.close()
+          PY
+          echo RUNTIME_MUTATION=NO
+          echo ORDER_ROUTES=NOT_CALLED
+          REMOTE
