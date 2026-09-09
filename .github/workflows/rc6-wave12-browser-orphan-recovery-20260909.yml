@@ -1,0 +1,88 @@
+name: RC6 Wave12 Browser Orphan Recovery 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-browser-orphan-recovery-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  recover-orphan:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12recover"
+          chmod 600 "$HOME/.ssh/w12recover"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Verify and recover only orphaned automated headless Chrome
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w12recover" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          PRE=$(git rev-parse HEAD)
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0];m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone();c.close()
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          PY
+          echo '--- matching automated headless processes ---'
+          MATCH=$(pgrep -u porotaadmin -f "google-chrome-stable.*--headless.*--user-data-dir=${PROFILE}" || true)
+          if [ -n "$MATCH" ]; then
+            for pid in $MATCH; do
+              cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+              echo "AUTOMATED_HEADLESS_PID=$pid"
+              case "$cmd" in
+                *google-chrome-stable*--headless*"--user-data-dir=$PROFILE"*) ;;
+                *) echo 'UNEXPECTED_PROCESS_MATCH'; exit 2;;
+              esac
+            done
+            kill -TERM $MATCH || true
+            for _ in $(seq 1 20); do
+              sleep 1
+              LEFT=$(pgrep -u porotaadmin -f "google-chrome-stable.*--headless.*--user-data-dir=${PROFILE}" || true)
+              [ -z "$LEFT" ] && break
+            done
+            LEFT=$(pgrep -u porotaadmin -f "google-chrome-stable.*--headless.*--user-data-dir=${PROFILE}" || true)
+            if [ -n "$LEFT" ]; then
+              echo "HEADLESS_STILL_RUNNING=$LEFT"
+              exit 3
+            fi
+            echo 'ORPHAN_HEADLESS_TERMINATED=YES'
+          else
+            echo 'ORPHAN_HEADLESS_TERMINATED=NOT_NEEDED'
+          fi
+          # Remove singleton artifacts only after proving no matching Chrome remains.
+          if ! pgrep -u porotaadmin -f "google-chrome-stable.*--user-data-dir=${PROFILE}" >/dev/null 2>&1; then
+            rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonSocket" "$PROFILE/SingletonCookie"
+            echo 'STALE_SINGLETON_ARTIFACTS_CLEARED=YES'
+          else
+            echo 'NON_HEADLESS_PROFILE_PROCESS_PRESENT=YES'
+            exit 4
+          fi
+          test "$(git rev-parse HEAD)" = "$PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0];m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone();c.close()
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          PY
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'W12_BROWSER_ORPHAN_RECOVERY=GREEN'
+          REMOTE
