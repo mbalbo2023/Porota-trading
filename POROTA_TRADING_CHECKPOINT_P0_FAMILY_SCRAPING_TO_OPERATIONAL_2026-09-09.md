@@ -60,14 +60,35 @@ Instrumento/evento, moneda, ventana, fecha/cutoff, mínimo/step, condiciones, se
 ### Índices
 Identidad, fuente, currency/base, timestamp/freshness y uso sólo como contexto/señal, nunca como instrumento ejecutable salvo que exista contrato negociable separado.
 
-## Estado confirmado al 2026-09-09 ~12:32 ART
-- ACCIONES: 55 total / 55 AVAILABLE / 55 can_simulate.
-- CEDEARS: 193 total / 191 AVAILABLE / 191 can_simulate.
-- BONOS: 42 total / 42 AVAILABLE / 0 can_simulate.
-- OPCIONES: 383 total / 382 AVAILABLE / 0 can_simulate.
-- CAUCIONES: 10 total / 10 AVAILABLE / 0 can_simulate.
-- El runtime ya genera decisiones HOLD para varias familias no simulables; esto NO equivale a READY_PAPER.
-- Scraping/Contract Evidence RC6 continúa bloqueado por sesión web expirada después de corregir ownership del perfil; PPI API read-only sigue OK.
+## Estado confirmado al 2026-09-09 ~12:38 ART — matriz live completa
+Run read-only: `34371493044` — SUCCESS. Sin mutación, sin llamadas de red desde el diagnóstico, sin rutas de órdenes.
+
+- ACCIONES: 55 total / 55 AVAILABLE / 55 can_simulate / blocker dominante `READY_PAPER_SPOT`.
+- CEDEARS: 193 total / 191 AVAILABLE / 191 can_simulate / 2 STALE.
+- BONOS: 42 total / 42 AVAILABLE / 0 can_simulate / blocker `NEEDS_NOMINAL_UNITS` en los 42.
+- LETRAS: 23 total / 20 AVAILABLE / 0 can_simulate / blocker `NEEDS_NOMINAL_UNITS`; 3 STALE.
+- ON: 91 total / 91 AVAILABLE / 0 can_simulate / blocker `NEEDS_NOMINAL_UNITS` en los 91.
+- OPCIONES: 383 total / 382 AVAILABLE / 0 can_simulate / blocker `NEEDS_OPTION_CONTRACT`; 1 STALE.
+- FUTUROS: 53 total / 43 AVAILABLE / 0 can_simulate / blocker `NEEDS_FUTURES_MARGIN_AND_CONTRACT`; 10 STALE.
+- CAUCIONES: 10 total / 10 AVAILABLE / 0 can_simulate / blocker `NEEDS_CAUCION_TERMS`.
+- ETF: 4 total / 0 AVAILABLE / 0 can_simulate / 4 STALE; búsqueda PPI sin coincidencias en el estado persistido.
+- INDICES: 2 total / 0 AVAILABLE / 0 can_simulate / 2 STALE; el tipo consultado actualmente devuelve `Instrument Type not found`.
+
+Familias que el checkpoint exige además relevar/cerrar aunque no estén todavía materializadas como filas propias en `candidate_universe`: ACCIONES USA, FCI, FCI EXTERIOR, LICITACIONES/CANJES y cualquier otra familia expuesta por PPI.
+
+### Actividad live observada hoy
+El scanner sí está recorriendo múltiples familias aunque estén bloqueadas para PAPER:
+- ACCIONES: 651 snapshots / 52 símbolos; 558 decisiones, 2 BUY y 556 HOLD al corte.
+- CEDEARS: 393 snapshots / 166 símbolos; 393 decisiones HOLD.
+- BONOS: 41 snapshots / 41 símbolos; 41 decisiones HOLD.
+- LETRAS: 20 snapshots / 20 símbolos; 20 decisiones HOLD.
+- ON: 83 snapshots / 83 símbolos; 83 decisiones HOLD.
+- OPCIONES: 347 snapshots / 347 símbolos; 420 decisiones HOLD.
+- FUTUROS: 41 snapshots / 41 símbolos; 41 decisiones HOLD.
+- CAUCIONES: 9 snapshots / 9 símbolos; 9 decisiones HOLD.
+- ETF: 4 decisiones HOLD heredadas/observadas, pero catálogo actual está STALE.
+
+Conclusión: el problema transversal NO es ausencia de análisis; es que el contrato/capability de muchas familias queda incompleto y por eso `can_simulate=0`. El pipeline P0 debe transformar esos HOLD genéricos en contratos completos + readiness cuando la evidencia exista, o HOLD con blocker contractual preciso cuando no exista.
 
 ## Gate de cierre P0
 No considerar cerrado este checkpoint hasta obtener:
