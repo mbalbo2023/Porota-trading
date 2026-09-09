@@ -1,0 +1,60 @@
+name: RC6 Wave12 Fix SSO Navigation Race 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-fix-sso-navigation-race-20260909.yml']
+permissions:
+  contents: write
+jobs:
+  patch-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch strict SSO landing detection and race recovery
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('rc6_ppi_web_reauth.py')
+          s=p.read_text(encoding='utf-8')
+          anchor='''def account_landing_url(value: str) -> bool:\n    """Account landing is a verification trigger, never auth proof by itself."""\n    u = urlsplit(str(value))\n    return (u.scheme == "https" and u.netloc == "cuenta.portfoliopersonal.com"\n            and u.path.rstrip("/") == "/cuentas")\n'''
+          addition=anchor+'''\n\ndef verified_trading_landing(value: str) -> bool:\n    """Require a concrete safe Trading path; the bare root is not SSO proof."""\n    u = urlsplit(str(value))\n    path = u.path.rstrip("/")\n    return bool(path and authenticated_url(value))\n\n\ndef wait_verified_trading_landing(page, timeout_ms: int = 7000) -> bool:\n    """Allow PPI SSO redirects to settle without accepting an intermediate root."""\n    elapsed = 0\n    while elapsed < timeout_ms:\n        if verified_trading_landing(page.url):\n            return True\n        page.wait_for_timeout(250)\n        elapsed += 250\n    return verified_trading_landing(page.url)\n'''
+          assert anchor in s and 'def verified_trading_landing' not in s
+          s=s.replace(anchor,addition,1)
+
+          old='''                    if authenticated_url(page.url):\n                        ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts,\n                                                          stage=stage, page_url=page.url)); return 0\n                    # A redirect back to account/login means the trading session\n'''
+          new='''                    if wait_verified_trading_landing(page):\n                        ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts,\n                                                          stage=stage, page_url=page.url)); return 0\n                    # A redirect back to account/login means the trading session\n'''
+          assert old in s
+          s=s.replace(old,new,1)
+
+          old_user='''                        if not fill_resilient(page, [\n                            "#username", "input[name='username']", "input[autocomplete='username']",\n                            "input[placeholder*='usuario' i]", "input[aria-label*='usuario' i]",\n                        ], user):\n                            ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_FILL_FAILED", attempts=attempts,\n                                                              stage=stage, page_url=page.url)); return 4\n'''
+          new_user='''                        if not fill_resilient(page, [\n                            "#username", "input[name='username']", "input[autocomplete='username']",\n                            "input[placeholder*='usuario' i]", "input[aria-label*='usuario' i]",\n                        ], user):\n                            if wait_verified_trading_landing(page, 2500):\n                                ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts,\n                                                                  stage="SSO_SETTLED_DURING_USERNAME_FILL", page_url=page.url)); return 0\n                            ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_FILL_FAILED", attempts=attempts,\n                                                              stage=stage, page_url=page.url)); return 4\n'''
+          assert old_user in s
+          s=s.replace(old_user,new_user,1)
+
+          old_pass='''                    if not fill_resilient(page, [\n                        "#password", "input[name='password']", "input[type='password']",\n                        "input[autocomplete='current-password']",\n                    ], password):\n                        ctx.close(); print(status_payload("BLOCKED_AUTH_PASSWORD_FILL_FAILED", attempts=attempts,\n                                                          stage=stage, page_url=page.url)); return 4\n'''
+          new_pass='''                    if not fill_resilient(page, [\n                        "#password", "input[name='password']", "input[type='password']",\n                        "input[autocomplete='current-password']",\n                    ], password):\n                        if wait_verified_trading_landing(page, 2500):\n                            ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts,\n                                                              stage="SSO_SETTLED_DURING_PASSWORD_FILL", page_url=page.url)); return 0\n                        ctx.close(); print(status_payload("BLOCKED_AUTH_PASSWORD_FILL_FAILED", attempts=attempts,\n                                                          stage=stage, page_url=page.url)); return 4\n'''
+          assert old_pass in s
+          s=s.replace(old_pass,new_pass,1)
+          p.write_text(s,encoding='utf-8')
+
+          t=Path('tests/test_ppi_web_reauth_rc6.py')
+          ts=t.read_text(encoding='utf-8')
+          add='''\n\ndef test_verified_trading_landing_requires_non_root_safe_path():\n    assert not m.verified_trading_landing('https://trading.portfoliopersonal.com/')\n    assert m.verified_trading_landing('https://trading.portfoliopersonal.com/estadoDeCuenta')\n    assert m.verified_trading_landing('https://trading.portfoliopersonal.com/Cotizaciones/Bonos')\n    assert not m.verified_trading_landing('https://trading.portfoliopersonal.com/Operar/Bonos')\n'''
+          if 'test_verified_trading_landing_requires_non_root_safe_path' not in ts:
+              t.write_text(ts+add,encoding='utf-8')
+          PY
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q tests/test_ppi_web_reauth_rc6.py tests/test_contract_evidence_reauth_wiring_rc6.py tests/test_rc6_contract_routes_cotizaciones_only.py
+          ! grep -REn 'send_order|place_order|cancel_order|api/Orders|/Operar|/Orden' rc6_ppi_web_reauth.py rc6_trusted_browser_contract_collector.py
+          git config user.name porota-rc6-ci
+          git config user.email porota-rc6-ci@users.noreply.github.com
+          git add rc6_ppi_web_reauth.py tests/test_ppi_web_reauth_rc6.py
+          git commit -m 'fix(rc6 wave12): wait for concrete trading landing after SSO'
+          git push origin HEAD:deploy-prep/rc6-wave12-currentbase-20260909
+          echo 'W12_SSO_NAVIGATION_RACE_FIX=GREEN'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
