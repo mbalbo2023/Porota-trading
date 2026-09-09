@@ -21,10 +21,8 @@ BROKER_HOST_KEY="$SECRETS/broker_capability.host"
 BROKER_CONTAINER_KEY="$SECRETS/broker_capability.token"
 installed=0
 
-# RC6 policy: cleanup temporary staging only. Runtime recovery is explicit;
-# a failed deploy must never automatically disable/remove the previous state.
 cleanup_stage() {
-  sudo -n rm -rf \"$REMOTE_STAGE\" >/dev/null 2>&1 || true
+  sudo -n rm -rf "$REMOTE_STAGE" >/dev/null 2>&1 || true
 }
 trap cleanup_stage EXIT
 
