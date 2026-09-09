@@ -20,8 +20,9 @@ def test_sector_policy_defaults_to_binding_in_gate_and_mode_manager():
     old = _without(gate.SECTOR_ENV)
     try:
         assert gate.active_policies()["sector_concentration"] == "BINDING"
-        assert modes.PRODUCTION_PAPER["PAPER_SECTOR_CONCENTRATION_POLICY"] == "BINDING"
-        assert modes.SANDBOX["PAPER_SECTOR_CONCENTRATION_POLICY"] == "BINDING"
+        assert modes.PAPER_DEFAULTS["PAPER_SECTOR_CONCENTRATION_POLICY"] == "BINDING"
+        assert modes.HF3_FROZEN_PAPER_SETTINGS["PAPER_SECTOR_CONCENTRATION_POLICY"] == "BINDING"
+        assert modes.paper_settings({})["PAPER_SECTOR_CONCENTRATION_POLICY"] == "BINDING"
     finally:
         _restore(gate.SECTOR_ENV, old)
 
