@@ -1,0 +1,126 @@
+name: RC6 Dashboard Operator UX V2 Deploy 2026-09-09
+
+on:
+  push:
+    branches: [fix/rc6-dashboard-operator-ux-v2-20260909]
+    paths:
+      - 'zz_wave8_dashboard_live_rc6.py'
+      - '.github/workflows/rc6-dashboard-operator-ux-v2-deploy-20260909.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-runtime-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate-deploy-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Static operator UX gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile zz_wave8_dashboard_live_rc6.py
+          grep -q 'porota-table-header' zz_wave8_dashboard_live_rc6.py
+          grep -q 'clip:auto!important' zz_wave8_dashboard_live_rc6.py
+          grep -q '_dedupe_secondary_navs' zz_wave8_dashboard_live_rc6.py
+          grep -q '_strip_live_low_value_sections' zz_wave8_dashboard_live_rc6.py
+          grep -q '_family_activity_section' zz_wave8_dashboard_live_rc6.py
+          grep -q 'Matriz de controles exigidos' zz_wave8_dashboard_live_rc6.py
+          ! grep -q "caption tables from the closest" zz_wave8_dashboard_live_rc6.py
+          echo UX_OPERATOR_STATIC_GATE=GREEN
+          echo ORDER_ROUTES=NOT_CALLED
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Deploy dashboard only and prove live UX
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE_HEAD=$(git rev-parse HEAD); echo "PRE_HEAD=$PRE_HEAD"
+          sudo -n docker inspect -f 'PRE_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'PRE_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Image}}' porota_production_dashboard
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          git fetch --no-tags origin fix/rc6-dashboard-operator-ux-v2-20260909
+          test "$(git rev-parse origin/fix/rc6-dashboard-operator-ux-v2-20260909)" = "$TARGET_SHA"
+          TMP=$(mktemp -d "$HOME/porota-uxv2.XXXXXX")
+          trap 'git -C /opt/porota-trading worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label porota.wave=rc6-dashboard-operator-ux-v2 -t porota-trading-bot:17.0.0-rc6 "$TMP/source"
+          git checkout -f -B fix/rc6-dashboard-operator-ux-v2-20260909 "$TARGET_SHA"
+          sudo -n python3 - <<'PY'
+          import porota_mode_manager as p
+          p.start_dashboard('PRODUCTION_PAPER')
+          PY
+          sleep 12
+          sudo -n docker inspect -f 'POST_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'POST_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,re,urllib.request
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          pages=['/','/vivo','/trading','/trading/renta-fija','/universo-operativo','/instrumentos','/riesgo','/validacion','/historicos','/sistema','/scalping']
+          bodies={}
+          for p in pages:
+              req=urllib.request.Request('http://127.0.0.1:8000'+p)
+              if token:
+                  req.add_header('Authorization','Bearer '+token); req.add_header('X-Dashboard-Token',token)
+              with urllib.request.urlopen(req,timeout=20) as r:
+                  body=r.read().decode('utf-8','replace'); bodies[p]=body
+                  th=len(re.findall(r'<th(?:\s|>)',body,re.I)); tables=len(re.findall(r'<table(?:\s|>)',body,re.I))
+                  print(f'HTTP|{p}|{r.status}|tables={tables}|th={th}|bytes={len(body)}')
+                  assert r.status==200
+                  assert 'porota-rc6-classic-responsive' in body
+                  if tables: assert th>0
+                  assert 'overflow-wrap:anywhere' not in body
+                  assert 'porota-table-title' not in body
+          assert bodies['/trading'].count("class='subnav'")==1
+          assert 'porota-page-index' not in bodies['/trading']
+          assert bodies['/sistema'].count('system-nav')>=1
+          assert 'porota-page-index' not in bodies['/sistema']
+          assert re.search(r'porota-table-header.*position:static!important',bodies['/trading'],re.I|re.S)
+          assert 'rc6-family-live-activity' in bodies['/trading']
+          assert 'Actividad real de análisis por familia' in bodies['/trading']
+          assert not re.search(r'<h2[^>]*>\s*4\.\s*Scalping\s*</h2>',bodies['/vivo'],re.I)
+          assert not re.search(r'<h2[^>]*>\s*5\.\s*Motores\s*/\s*workers\s*</h2>',bodies['/vivo'],re.I)
+          assert 'Matriz de controles exigidos' in bodies['/riesgo']
+          print('DASHBOARD_OPERATOR_UX_V2_LIVE=GREEN')
+          PY
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "POST_DB=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo "POST_HEAD=$(git rev-parse HEAD)"
+          echo OBSERVER_RESTARTED_BY_THIS_DEPLOY=NO
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          REMOTE
