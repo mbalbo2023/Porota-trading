@@ -1,0 +1,47 @@
+name: RC6 Contract Evidence Reauth Flow V4 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-contract-evidence-service-live-20260909]
+    paths: [.github/workflows/rc6-contract-evidence-reauth-flow-v4-20260909.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read sanitized reauth flow only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          S=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          test -f "$S"
+          echo '=== REAUTH FLOW SANITIZED ==='
+          sudo -n sed -n '118,190p' "$S" \
+            | sed -E 's#(/home/)[^/]+/#\1[USER]/#g; s#(PASSWORD|TOKEN|SECRET|COOKIE|OTP|AUTHORIZATION)[A-Za-z0-9_]*#SECRET_NAME_REDACTED#g' \
+            | sed -E 's#(--secret[ =])[^ ]+#\1[REDACTED]#g'
+          echo '=== AUTH HELPER SAFE CONTRACT ==='
+          LIB=$(sudo -n grep '^LIB=' "$S" | sed -E 's#.*:-([^}]*)}.*#\1#' | head -1)
+          [ -n "$LIB" ] || LIB=/usr/local/lib/porota-contract-evidence-rc6
+          H="$LIB/rc6_ppi_web_reauth.py"
+          test -f "$H"
+          sudo -n grep -nE 'authenticated_url|OTP|2FA|login|submit|response|status_code|trading.portfoliopersonal|cuenta.portfoliopersonal|BLOCKED_AUTH|return [0-9]|raise SystemExit|sys.exit' "$H" \
+            | sed -E 's#(/home/)[^/]+/#\1[USER]/#g; s#(PASSWORD|TOKEN|SECRET|COOKIE|OTP|AUTHORIZATION)[A-Za-z0-9_]*#SECRET_NAME_REDACTED#g' \
+            | head -180 || true
+          echo RUNTIME_MUTATION=NO
+          echo NETWORK_CALLS=NO
+          echo ORDER_ROUTES=NOT_CALLED
+          REMOTE
