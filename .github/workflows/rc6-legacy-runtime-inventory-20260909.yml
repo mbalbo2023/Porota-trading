@@ -1,0 +1,58 @@
+name: RC6 Legacy Runtime Inventory 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-live-postopen-20260909]
+    paths: ['.github/workflows/rc6-legacy-runtime-inventory-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inventory host legacy ownership
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo '=== ACTIVE_OR_ENABLED_LEGACY_UNITS ==='
+          systemctl list-unit-files --no-pager | grep -Ei 'porota.*(rc4|rc5|hf5)' || true
+          echo '=== ACTIVE_LEGACY_RUNTIME ==='
+          systemctl list-units --all --no-pager | grep -Ei 'porota.*(rc4|rc5|hf5)' || true
+          echo '=== UNIT_DEFINITIONS ==='
+          for u in $(systemctl list-unit-files --no-legend --no-pager | awk '{print $1}' | grep -Ei '^porota.*(rc4|rc5|hf5).*(service|timer)$' || true); do
+            echo "--- $u ---"
+            systemctl cat "$u" --no-pager 2>/dev/null | grep -E '^(Description|ExecStart|EnvironmentFile|OnBootSec|OnUnitActiveSec|OnCalendar|Unit)=' || true
+            printf 'ENABLED='; systemctl is-enabled "$u" 2>/dev/null || true
+            printf 'ACTIVE='; systemctl is-active "$u" 2>/dev/null || true
+          done
+          echo '=== LEGACY_PROCESSES ==='
+          ps -eo pid,ppid,comm,args --no-headers | grep -Ei 'porota.*(rc4|rc5|hf5)|(rc4|rc5|hf5).*porota' | grep -v grep || true
+          echo '=== CURRENT_RC6_IDENTITY ==='
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print('MODE='+str(mode)); print('REAL_ORDERS='+str(orders)); c.close()
+          PY
+          echo ORDER_ROUTES=NOT_CALLED
+          echo RUNTIME_MUTATION=NO
+          REMOTE
