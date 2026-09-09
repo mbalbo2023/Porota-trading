@@ -1,0 +1,162 @@
+name: RC6 Wave4 Definitive Cleanup Deploy V2 2026-09-09
+
+on:
+  push:
+    branches: [deploy/rc6-wave4-definitive-cleanup-20260909]
+    paths:
+      - '.github/workflows/rc6-wave4-definitive-cleanup-deploy-v2-20260909.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-wave4-definitive-cleanup-runtime
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_wave4_close_v2"
+          chmod 600 "$HOME/.ssh/porota_wave4_close_v2"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Finalize Wave4 after live-delta RCA
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: deploy/rc6-wave4-definitive-cleanup-20260909
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_wave4_close_v2" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=120 "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DATA=$REPO/data
+          DB=$DATA/paper_v17/observer_v17.db
+          EVID=$DATA/evidence/ppi_history_exact_v1
+          BACKUPS=$DATA/backups/wave4_closure
+          IMAGE=porota-trading-bot:17.0.0-rc6
+          EXPECTED=498813ba7357f5095f6dcb50ec89e7bab621a11e
+          cd "$REPO"
+          echo "CURRENT_SHA=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          FREE_BEFORE=$(df -PB1 "$REPO" | awk 'NR==2{print $4}')
+          USED_BEFORE=$(df -PB1 "$REPO" | awk 'NR==2{print $3}')
+          echo "DISK_FREE_BEFORE=$FREE_BEFORE"
+          test "$FREE_BEFORE" -ge 4294967296
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          rows=c.execute('select count(*) from historical_raw_archive').fetchone()[0]
+          print(f'PRE_DB={q}|{mode}|{real}|RAW_ROWS={rows}')
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0 and rows>0
+          PY
+          git fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git rev-parse origin/$TARGET_BRANCH)" = "$TARGET_SHA"
+          git merge-base --is-ancestor "$EXPECTED" "$TARGET_SHA"
+          TMP=$(mktemp -d "$HOME/porota-wave4-close-v2.XXXXXX")
+          trap 'git -C "$REPO" worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label porota.wave=rc6-wave4-definitive-cleanup-v2 -t "$IMAGE" "$TMP/source"
+          sudo -n install -d -o 1000 -g 1000 "$EVID" "$BACKUPS"
+
+          echo '=== LIVE DELTA CATCHUP; MISSING IS EXPECTED WHILE WRITER RUNS ==='
+          sudo -n docker run --rm -i --user botuser -e DATA_DIR=/app/data -e PPI_HISTORY_RAW_STORAGE_MODE=EXTERNAL_EXACT_V1 -e PPI_HISTORY_EVIDENCE_ROOT=/app/data/evidence/ppi_history_exact_v1 -v "$DATA:/app/data" --entrypoint python "$IMAGE" - <<'PY'
+          import json, fb_raw_evidence_exact_v1 as e
+          r=e.migrate_legacy('/app/data/paper_v17/observer_v17.db')
+          print('LIVE_MIGRATION='+json.dumps(r,sort_keys=True))
+          assert r['mismatches']==0
+          print('LIVE_DELTA_PENDING='+str(r['missing']))
+          PY
+
+          echo '=== QUIESCE WRITERS ==='
+          sudo -n docker rm -f porota_production_observer >/dev/null
+          sudo -n docker rm -f porota_production_dashboard >/dev/null
+          sudo -n docker compose stop -t 20 bot sre_vectordb >/dev/null 2>&1 || true
+
+          echo '=== AUTHORITATIVE FINAL DELTA ==='
+          sudo -n docker run --rm -i --user botuser -e DATA_DIR=/app/data -e PPI_HISTORY_RAW_STORAGE_MODE=EXTERNAL_EXACT_V1 -e PPI_HISTORY_EVIDENCE_ROOT=/app/data/evidence/ppi_history_exact_v1 -v "$DATA:/app/data" --entrypoint python "$IMAGE" - <<'PY'
+          import json, fb_raw_evidence_exact_v1 as e
+          r=e.migrate_legacy('/app/data/paper_v17/observer_v17.db'); m=e.metrics()
+          print('FINAL_MIGRATION='+json.dumps(r,sort_keys=True))
+          print('EXTERNAL_METRICS='+json.dumps(m,sort_keys=True))
+          assert r['evidence_lost']==0 and r['missing']==0 and r['mismatches']==0 and r['checked']>0
+          print('AUTHORITATIVE_EVIDENCE_LOST=0')
+          PY
+
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          BACKUP_RAW="$BACKUPS/observer_v17_pre_wave4_cleanup_${STAMP}.db"
+          sudo -n docker run --rm -i --user botuser -v "$DATA:/app/data" --entrypoint python "$IMAGE" - "$STAMP" <<'PY'
+          import sqlite3,sys
+          stamp=sys.argv[1]; src='/app/data/paper_v17/observer_v17.db'; dst=f'/app/data/backups/wave4_closure/observer_v17_pre_wave4_cleanup_{stamp}.db'
+          s=sqlite3.connect(src,timeout=60); d=sqlite3.connect(dst); s.backup(d); d.close(); s.close()
+          v=sqlite3.connect(f'file:{dst}?mode=ro',uri=True)
+          q=v.execute('pragma quick_check').fetchone()[0]; mode,real=v.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); rows=v.execute('select count(*) from historical_raw_archive').fetchone()[0]; v.close()
+          print(f'BACKUP_VERIFY={q}|{mode}|{real}|RAW_ROWS={rows}')
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0 and rows>0
+          PY
+          sudo -n gzip -6 "$BACKUP_RAW"
+          sudo -n gzip -t "$BACKUP_RAW.gz"
+
+          echo '=== COMPACT VERIFIED COPY ==='
+          sudo -n docker run --rm -i --user botuser -v "$DATA:/app/data" --entrypoint python "$IMAGE" - <<'PY'
+          import os,sqlite3
+          src='/app/data/paper_v17/observer_v17.db'; dst='/app/data/paper_v17/observer_v17.wave4_compact.db'
+          try: os.unlink(dst)
+          except FileNotFoundError: pass
+          s=sqlite3.connect(src,timeout=60); d=sqlite3.connect(dst,timeout=60); s.backup(d); s.close()
+          d.execute('DELETE FROM historical_raw_archive'); d.commit(); d.execute('VACUUM'); d.close()
+          v=sqlite3.connect(f'file:{dst}?mode=ro',uri=True); q=v.execute('pragma quick_check').fetchone()[0]; mode,real=v.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); rows=v.execute('select count(*) from historical_raw_archive').fetchone()[0]; v.close()
+          print(f'COMPACT_VERIFY={q}|{mode}|{real}|RAW_ROWS={rows}|BYTES={os.path.getsize(dst)}')
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0 and rows==0
+          PY
+          sudo -n rm -f "$DB-wal" "$DB-shm"
+          sudo -n chown 1000:1000 "$DATA/paper_v17/observer_v17.wave4_compact.db"
+          sudo -n chmod 600 "$DATA/paper_v17/observer_v17.wave4_compact.db"
+          sudo -n mv "$DATA/paper_v17/observer_v17.wave4_compact.db" "$DB"
+
+          git checkout -f -B "$TARGET_BRANCH" "$TARGET_SHA"
+          git branch --set-upstream-to="origin/$TARGET_BRANCH" "$TARGET_BRANCH" >/dev/null 2>&1 || true
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+          sleep 15
+          sudo -n docker inspect -f 'POST_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'POST_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import os,sqlite3,json,fb_raw_evidence_exact_v1 as e
+          assert os.getenv('PPI_HISTORY_RAW_STORAGE_MODE')=='EXTERNAL_EXACT_V1'
+          p='/app/data/paper_v17/observer_v17.db'; c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); m=e.metrics()
+          print(f'POST_DB={q}|{mode}|{real}|LEGACY_RAW_ROWS={raw}')
+          print('POST_EXTERNAL_METRICS='+json.dumps(m,sort_keys=True))
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0 and raw==0 and m['attempts']>0 and m['unique_objects']>0
+          print('NEW_WRITES_MODE=EXTERNAL_EXACT_V1')
+          print('EVIDENCE_LOST=0')
+          PY
+          FREE_AFTER=$(df -PB1 "$REPO" | awk 'NR==2{print $4}')
+          USED_AFTER=$(df -PB1 "$REPO" | awk 'NR==2{print $3}')
+          echo "DISK_FREE_AFTER=$FREE_AFTER"
+          echo "DISK_FREE_DELTA=$((FREE_AFTER-FREE_BEFORE))"
+          echo "DISK_USED_DELTA=$((USED_AFTER-USED_BEFORE))"
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'ROLLBACK_AUTOMATICO=NO'
+          echo 'WAVE4_DEFINITIVE_CLOSURE=GREEN'
+          REMOTE
