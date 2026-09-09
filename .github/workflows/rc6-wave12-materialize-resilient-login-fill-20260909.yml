@@ -1,0 +1,52 @@
+name: RC6 Wave12 Materialize Resilient Login Fill 2026-09-09
+
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: [.github/workflows/rc6-wave12-materialize-resilient-login-fill-20260909.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch exact PPI login fields with safe retry
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('rc6_ppi_web_reauth.py')
+          s=p.read_text(encoding='utf-8')
+          anchor='''def trust_prompt_present(page) -> bool:\n'''
+          helper='''def fill_resilient(page, selectors, value: str) -> bool:\n    """Fill a visible field across client-side DOM re-renders without logging value."""\n    for _ in range(4):\n        node = first_visible(page, selectors)\n        if node is None:\n            try:\n                page.wait_for_timeout(250)\n            except Exception:\n                pass\n            continue\n        try:\n            node.wait_for(state="visible", timeout=3000)\n            node.click(timeout=3000)\n            node.fill(value, timeout=5000)\n            if (node.input_value(timeout=3000) or "") == value:\n                return True\n        except Exception:\n            try:\n                page.wait_for_timeout(300)\n            except Exception:\n                pass\n    return False\n\n\n'''
+          assert anchor in s and 'def fill_resilient(' not in s
+          s=s.replace(anchor,helper+anchor,1)
+          old='''                        try:\n                            username.fill(user)\n                        except Exception:\n                            ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_FILL_FAILED", attempts=attempts,\n                                                              stage=stage, page_url=page.url)); return 4\n'''
+          new='''                        if not fill_resilient(page, [\n                            "#username", "input[name='username']", "input[autocomplete='username']",\n                            "input[placeholder*='usuario' i]", "input[aria-label*='usuario' i]",\n                        ], user):\n                            ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_FILL_FAILED", attempts=attempts,\n                                                              stage=stage, page_url=page.url)); return 4\n'''
+          assert old in s
+          s=s.replace(old,new,1)
+          oldp='''                if passwd is not None:\n                    try:\n                        passwd.fill(password); acted = True\n                    except Exception:\n                        pass\n'''
+          newp='''                if passwd is not None:\n                    if not fill_resilient(page, [\n                        "#password", "input[name='password']", "input[type='password']",\n                        "input[autocomplete='current-password']",\n                    ], password):\n                        ctx.close(); print(status_payload("BLOCKED_AUTH_PASSWORD_FILL_FAILED", attempts=attempts,\n                                                          stage=stage, page_url=page.url)); return 4\n                    acted = True\n'''
+          assert oldp in s
+          s=s.replace(oldp,newp,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+          python -m py_compile rc6_ppi_web_reauth.py
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q tests/test_ppi_web_reauth_rc6.py tests/test_contract_evidence_reauth_wiring_rc6.py
+          grep -q 'BLOCKED_AUTH_PASSWORD_FILL_FAILED' rc6_ppi_web_reauth.py
+          ! grep -En 'print\(.*(user|password)|logger.*(user|password)' rc6_ppi_web_reauth.py
+          echo 'W12_RESILIENT_FILL=GREEN'
+      - name: Commit fix
+        run: |
+          set -Eeuo pipefail
+          git config user.name porota-rc6-ci
+          git config user.email porota-rc6-ci@users.noreply.github.com
+          git add rc6_ppi_web_reauth.py
+          git commit -m 'fix(rc6 wave12): retry exact PPI login fields across DOM rerenders'
+          git push origin HEAD:deploy-prep/rc6-wave12-currentbase-20260909
