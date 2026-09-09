@@ -1,0 +1,66 @@
+name: RC6 Wave12 Login Form Structure Diagnostic 2026-09-09
+
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: [.github/workflows/rc6-wave12-login-form-structure-diagnostic-20260909.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-login-form:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12form"
+          chmod 600 "$HOME/.ssh/w12form"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: GET-only sanitized form metadata
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w12form" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n -u porotaadmin /opt/porota-contract-evidence-venv/bin/python -' <<'PY'
+          from urllib.parse import urlsplit
+          from playwright.sync_api import sync_playwright
+          PROFILE='/home/porotaadmin/porota-browser-lab/chrome-profile'
+          LOGIN='https://cuenta.portfoliopersonal.com/login'
+          allowed={'cuenta.portfoliopersonal.com','trading.portfoliopersonal.com'}
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(user_data_dir=PROFILE,executable_path='/usr/bin/google-chrome-stable',headless=True,locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',viewport={'width':1440,'height':1000},args=['--no-sandbox','--disable-dev-shm-usage'])
+              def guard(route,req):
+                  u=urlsplit(req.url)
+                  if u.scheme=='https' and req.method.upper() in {'GET','HEAD','OPTIONS'}:
+                      return route.continue_()
+                  return route.abort()
+              ctx.route('**/*',guard)
+              p=ctx.pages[0] if ctx.pages else ctx.new_page(); p.set_default_timeout(8000)
+              p.goto(LOGIN,wait_until='domcontentloaded',timeout=15000); p.wait_for_timeout(1200)
+              u=urlsplit(p.url)
+              print('PAGE_HOST='+u.netloc); print('PAGE_PATH='+u.path)
+              assert u.netloc in allowed
+              els=p.locator('input').all()
+              print('INPUT_COUNT='+str(len(els)))
+              for i,e in enumerate(els[:20]):
+                  try:
+                      visible=e.is_visible(); enabled=e.is_enabled(); editable=e.is_editable()
+                      attrs={k:(e.get_attribute(k) or '')[:80] for k in ('type','name','id','autocomplete','placeholder','aria-label','class','readonly','disabled')}
+                      # Never print value/defaultValue.
+                      print('INPUT_%02d visible=%s enabled=%s editable=%s type=%r name=%r id=%r autocomplete=%r placeholder=%r aria=%r class=%r readonly=%r disabled=%r' % (i,visible,enabled,editable,attrs['type'],attrs['name'],attrs['id'],attrs['autocomplete'],attrs['placeholder'],attrs['aria-label'],attrs['class'],attrs['readonly'],attrs['disabled']))
+                  except Exception as ex:
+                      print('INPUT_%02d metadata_error=%s' % (i,type(ex).__name__))
+              print('BUTTON_TEXTS='+repr([x.inner_text().strip()[:80] for x in p.locator('button').all() if x.is_visible()][:12]))
+              ctx.close()
+          print('MUTATING_REQUESTS_ALLOWED=NO')
+          print('CREDENTIAL_VALUES_PRINTED=NO')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
