@@ -1,0 +1,187 @@
+name: RC6 Phase B2 Semantic Overlap Audit 2026-09-08
+
+on:
+  push:
+    branches: [audit/rc6-phase-b2-semantic-overlap-20260908]
+    paths:
+      - '.github/workflows/rc6-phase-b2-semantic-overlap-audit-20260908.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_phase_b2"
+          chmod 600 "$HOME/.ssh/porota_phase_b2"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Phase B2 read-only semantic overlap analysis
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_phase_b2" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo '=== POROTA RC6 PHASE B2 SEMANTIC OVERLAP AUDIT — READ ONLY ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, json, hashlib, collections, statistics
+
+          DB='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+DB+'?mode=ro', uri=True)
+          c.execute('pragma query_only=on')
+          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'MODE={mode}')
+          print(f'REAL_ORDERS_SENT={real}')
+          assert mode=='PRODUCTION_PAPER' and int(real)==0
+
+          def walk_lists(x, path='$'):
+              out=[]
+              if isinstance(x,list):
+                  if x and all(isinstance(v,dict) for v in x):
+                      out.append((path,x))
+                  for i,v in enumerate(x[:3]):
+                      out.extend(walk_lists(v, path+'[]'))
+              elif isinstance(x,dict):
+                  for k,v in x.items():
+                      out.extend(walk_lists(v, path+'.'+str(k)))
+              return out
+
+          def canon_hash(obj):
+              b=json.dumps(obj, sort_keys=True, separators=(',',':'), ensure_ascii=False, default=str).encode('utf-8','surrogatepass')
+              return hashlib.sha256(b).hexdigest(), len(b)
+
+          rows=c.execute("select origin,row_key,recorded_at,quality,body_json from historical_raw_archive order by origin,recorded_at,id")
+          payloads=0; parse_errors=0; no_row_list=0
+          path_counts=collections.Counter(); sig_counts=collections.Counter()
+          global_row_counts=collections.Counter(); global_row_bytes={}
+          total_row_occ=0; selected_payload_bytes=0
+          by_origin_seen=collections.defaultdict(set)
+          by_origin_payloads=collections.Counter()
+          novelty_pcts=[]; overlap_pcts=[]; jaccards=[]
+          prev_by_origin={}
+          selected_lengths=[]
+          quality_counts=collections.Counter()
+
+          for origin,row_key,recorded_at,quality,body in rows:
+              payloads += 1
+              quality_counts[str(quality)] += 1
+              try:
+                  obj=json.loads(body)
+              except Exception:
+                  parse_errors += 1
+                  continue
+              candidates=walk_lists(obj)
+              if not candidates:
+                  no_row_list += 1
+                  continue
+              # Conservative selector: largest list-of-dicts in the payload.
+              path,lst=max(candidates, key=lambda t: len(t[1]))
+              path_counts[path]+=1
+              selected_lengths.append(len(lst))
+              sig=tuple(sorted({k for d in lst for k in d.keys()}))
+              sig_counts[sig]+=1
+              hashes=[]
+              local=set()
+              for item in lst:
+                  h,b=canon_hash(item)
+                  hashes.append(h); local.add(h)
+                  global_row_counts[h]+=1
+                  global_row_bytes.setdefault(h,b)
+                  selected_payload_bytes += b
+                  total_row_occ += 1
+              by_origin_payloads[origin]+=1
+              seen=by_origin_seen[origin]
+              if local:
+                  already=len(local & seen)
+                  new=len(local - seen)
+                  overlap_pcts.append(already/len(local)*100.0)
+                  novelty_pcts.append(new/len(local)*100.0)
+              if origin in prev_by_origin:
+                  prev=prev_by_origin[origin]
+                  union=len(prev|local)
+                  if union:
+                      jaccards.append(len(prev&local)/union*100.0)
+              seen.update(local)
+              prev_by_origin[origin]=local
+
+          unique_rows=len(global_row_counts)
+          duplicate_occ=sum(n-1 for n in global_row_counts.values() if n>1)
+          duplicate_groups=sum(1 for n in global_row_counts.values() if n>1)
+          unique_row_bytes=sum(global_row_bytes.values())
+          reusable_bytes=max(0, selected_payload_bytes-unique_row_bytes)
+
+          print(f'PAYLOADS_TOTAL={payloads}')
+          print(f'JSON_PARSE_ERRORS={parse_errors}')
+          print(f'PAYLOADS_WITHOUT_LIST_OF_DICTS={no_row_list}')
+          print(f'PAYLOADS_ANALYZED={payloads-parse_errors-no_row_list}')
+          print(f'SELECTED_ROW_OCCURRENCES={total_row_occ}')
+          print(f'SELECTED_UNIQUE_ROW_HASHES={unique_rows}')
+          print(f'SELECTED_DUPLICATE_ROW_OCCURRENCES={duplicate_occ}')
+          print(f'SELECTED_DUPLICATE_GROUPS={duplicate_groups}')
+          print(f'SELECTED_DUPLICATE_ROW_PCT={(duplicate_occ/total_row_occ*100 if total_row_occ else 0):.4f}')
+          print(f'SELECTED_CANONICAL_ROW_BYTES_TOTAL={selected_payload_bytes}')
+          print(f'SELECTED_CANONICAL_ROW_BYTES_UNIQUE={unique_row_bytes}')
+          print(f'SELECTED_CANONICAL_ROW_BYTES_REUSED={reusable_bytes}')
+          print(f'SELECTED_CANONICAL_ROW_BYTES_REUSED_PCT={(reusable_bytes/selected_payload_bytes*100 if selected_payload_bytes else 0):.4f}')
+          if selected_lengths:
+              print(f'SELECTED_ROWS_PER_PAYLOAD_MEDIAN={statistics.median(selected_lengths):.2f}')
+              print(f'SELECTED_ROWS_PER_PAYLOAD_MAX={max(selected_lengths)}')
+          if overlap_pcts:
+              print(f'OVERLAP_VS_PRIOR_SEEN_MEDIAN_PCT={statistics.median(overlap_pcts):.4f}')
+              print(f'OVERLAP_VS_PRIOR_SEEN_P90_PCT={sorted(overlap_pcts)[int(0.9*(len(overlap_pcts)-1))]:.4f}')
+          if novelty_pcts:
+              print(f'NOVELTY_VS_PRIOR_SEEN_MEDIAN_PCT={statistics.median(novelty_pcts):.4f}')
+          if jaccards:
+              print(f'CONSECUTIVE_PAYLOAD_JACCARD_MEDIAN_PCT={statistics.median(jaccards):.4f}')
+              print(f'CONSECUTIVE_PAYLOAD_JACCARD_P90_PCT={sorted(jaccards)[int(0.9*(len(jaccards)-1))]:.4f}')
+
+          print('TOP_SELECTED_JSON_PATHS:')
+          for p,n in path_counts.most_common(10):
+              print(f'PATH|COUNT={n}|{p}')
+          print('TOP_ROW_KEY_SIGNATURES:')
+          for sig,n in sig_counts.most_common(8):
+              print(f'SIGNATURE|COUNT={n}|KEYS={";".join(sig)}')
+          print('QUALITY_COUNTS:')
+          for q,n in quality_counts.most_common():
+              print(f'QUALITY|{q}|{n}')
+          print('TOP_ORIGINS_BY_PAYLOADS:')
+          for o,n in by_origin_payloads.most_common(15):
+              print(f'ORIGIN|COUNT={n}|{o}')
+
+          try:
+              tb=int(c.execute("select sum(pgsize) from dbstat where name='historical_raw_archive'").fetchone()[0] or 0)
+              print(f'HISTORICAL_RAW_ARCHIVE_DBSTAT_BYTES={tb}')
+          except Exception as e:
+              print('DBSTAT_AVAILABLE=NO|'+type(e).__name__)
+          c.close()
+          print('B2_INTERPRETATION_SCOPE=STRUCTURAL_AND_EXACT_ROW_OVERLAP_ONLY')
+          print('EVIDENCE_LOST=NOT_TESTED_YET')
+          print('PHASE_B2_CLASSIFICATION=MEASURE_ONLY')
+          PY
+          echo 'MUTATIONS=NONE'
+          echo 'DELETE=NOT_RUN'
+          echo 'VACUUM=NOT_RUN'
+          echo 'PRUNE=NOT_RUN'
+          echo 'EXTERNAL_V1_ACTIVATION=NOT_PERFORMED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
