@@ -91,7 +91,7 @@ def evaluate(*, expectancy_samples=None, breadth=None, sectors=None,
         "regime": _authorized_gate(regime_verdict(breadth),
                                    _mode(REGIME_ENV, "ALERT_ONLY")),
         "sector": _authorized_gate(sector_verdict(sectors, candidate_sector, limit=sector_limit),
-                                   _mode(SECTOR_ENV, "OBSERVATION_ONLY")),
+                                   _mode(SECTOR_ENV, "BINDING")),
     }
     reason = next((g["execute_reason"] for g in gates.values() if g["execute_block"]), "")
     return {
@@ -107,6 +107,6 @@ def active_policies():
     return {
         "expectancy": _mode(EXPECTANCY_ENV, "OBSERVATION_ONLY"),
         "regime": _mode(REGIME_ENV, "ALERT_ONLY"),
-        "sector_concentration": _mode(SECTOR_ENV, "OBSERVATION_ONLY"),
+        "sector_concentration": _mode(SECTOR_ENV, "BINDING"),
         "sector_limit": int(os.getenv(SECTOR_LIMIT_ENV, "2")),
     }
