@@ -1,0 +1,60 @@
+name: RC6 Wave18 Materialize Safe Control Plane V4 2026-09-09
+
+on:
+  push:
+    branches: [deploy-prep/rc6-wave18-currentbase-20260909]
+    paths: [.github/workflows/rc6-wave18-materialize-safe-control-plane-v4-20260909.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch selected sources
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin closure/rc6-critical-control-plane-20260907 control-plane/rc6-critical-approval-canonical-20260907 hotfix/rc6-control-plane-broker-permissions-issue-41
+          for f in fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py tests/test_critical_approval_gateway_rc6.py tests/test_critical_github_proxy_rc6.py; do
+            found=0
+            for ref in origin/hotfix/rc6-control-plane-broker-permissions-issue-41 origin/control-plane/rc6-critical-approval-canonical-20260907 origin/closure/rc6-critical-control-plane-20260907; do
+              if git cat-file -e "$ref:$f" 2>/dev/null; then
+                mkdir -p "$(dirname "$f")"
+                git show "$ref:$f" > "$f"
+                found=1
+                break
+              fi
+            done
+            test "$found" = 1
+          done
+          mkdir -p ops
+          git show origin/closure/rc6-critical-control-plane-20260907:ops/rc6_deploy_critical_control_plane.sh > ops/rc6_deploy_critical_control_plane.sh
+          python tools/rc6_wave18_strip_auto_rollback.py
+          chmod +x ops/rc6_deploy_critical_control_plane.sh
+      - name: Test package
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q pytest
+          python -m py_compile fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py
+          PYTHONPATH=. pytest -q tests/test_critical_approval_gateway_rc6.py tests/test_critical_github_proxy_rc6.py
+          bash -n ops/rc6_deploy_critical_control_plane.sh
+          ! grep -REn '(/Operar|api/Orders|send_order|place_order|new_order)' fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py
+          ! grep -En 'CONTROL_PLANE_ROLLBACK|trap[[:space:]]+cleanup[[:space:]]+EXIT|systemctl disable --now porota-critical' ops/rc6_deploy_critical_control_plane.sh
+          grep -q 'trap cleanup_stage EXIT' ops/rc6_deploy_critical_control_plane.sh
+          echo 'CONTROL_PLANE_TESTS=GREEN'
+          echo 'AUTO_ROLLBACK_PRESENT=NO'
+          echo 'ORDER_CAPABILITY_GUARD=GREEN'
+      - name: Commit materialized package
+        run: |
+          set -Eeuo pipefail
+          git config user.name porota-rc6-ci
+          git config user.email porota-rc6-ci@users.noreply.github.com
+          git add fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py tests/test_critical_approval_gateway_rc6.py tests/test_critical_github_proxy_rc6.py ops/rc6_deploy_critical_control_plane.sh
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(rc6 wave18): package control plane without automatic rollback'
+            git push origin HEAD:deploy-prep/rc6-wave18-currentbase-20260909
+          fi
