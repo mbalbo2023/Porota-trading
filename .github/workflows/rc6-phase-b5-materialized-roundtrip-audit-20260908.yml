@@ -42,7 +42,7 @@ jobs:
           sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
           sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
           sudo -n docker exec -i porota_production_observer python -u - <<'PY'
-          import sqlite3, json, hashlib, tempfile, pathlib, os
+          import sqlite3, json, hashlib
 
           DB='/app/data/paper_v17/observer_v17.db'
           c=sqlite3.connect('file:'+DB+'?mode=ro', uri=True)
@@ -60,82 +60,73 @@ jobs:
               return json.dumps(obj, sort_keys=True, separators=(',',':'), ensure_ascii=False, default=str)
 
           total=0; parse_errors=0; mismatches=0
-          unique_written=0; unique_payload_bytes=0; manifest_bytes=0
-          original_body_bytes=0
+          original_body_bytes=0; unique_payload_bytes=0; manifest_bytes=0
+          objects={}; recs={}
 
-          with tempfile.TemporaryDirectory(prefix='porota-b5-shadow-') as td:
-              root=pathlib.Path(td)
-              objects=root/'objects'; objects.mkdir()
-              manifest=root/'manifest.jsonl'
-              seen=set()
-              with manifest.open('w', encoding='utf-8', newline='\n') as mf:
-                  for rid,body in c.execute('select id,body_json from historical_raw_archive order by id'):
-                      total += 1
-                      if total % 1000 == 0: print(f'BUILD_PROGRESS={total}', flush=True)
-                      original_body_bytes += len(enc(body))
-                      try:
-                          outer=json.loads(body)
-                          inner=outer['payload_json']
-                          assert isinstance(inner,str)
-                      except Exception:
-                          parse_errors += 1
-                          continue
-                      ib=enc(inner); ih=sha_bytes(ib)
-                      if ih not in seen:
-                          (objects/ih).write_bytes(ib)
-                          seen.add(ih); unique_written += 1; unique_payload_bytes += len(ib)
-                      wrapper=dict(outer); wrapper.pop('payload_json',None)
-                      rec={'id':int(rid),'inner_sha256':ih,'wrapper':wrapper,'body_sha256':sha_bytes(enc(body))}
-                      line=canonical(rec)+'\n'; mf.write(line); manifest_bytes += len(enc(line))
-
-              materialized_bytes=sum(p.stat().st_size for p in objects.iterdir()) + manifest.stat().st_size
-              print(f'MATERIALIZED_OBJECTS={unique_written}')
-              print(f'MATERIALIZED_UNIQUE_PAYLOAD_BYTES={unique_payload_bytes}')
-              print(f'MATERIALIZED_MANIFEST_BYTES={manifest_bytes}')
-              print(f'MATERIALIZED_TOTAL_BYTES={materialized_bytes}')
-              print(f'ORIGINAL_BODY_JSON_BYTES={original_body_bytes}')
-
-              # Reload only from the materialized shadow representation and prove exact body reconstruction.
-              recs={}
-              with manifest.open('r', encoding='utf-8') as mf:
-                  for line in mf:
-                      rec=json.loads(line); recs[int(rec['id'])]=rec
-              checked=0
-              for rid,body in c.execute('select id,body_json from historical_raw_archive order by id'):
-                  rec=recs.get(int(rid))
-                  if rec is None:
-                      mismatches += 1; continue
-                  inner=(objects/rec['inner_sha256']).read_bytes().decode('utf-8','surrogatepass')
-                  outer=dict(rec['wrapper']); outer['payload_json']=inner
-                  rebuilt=canonical(outer)
-                  if sha_bytes(enc(rebuilt)) != rec['body_sha256'] or rebuilt != body:
-                      mismatches += 1
-                  checked += 1
-                  if checked % 1000 == 0: print(f'ROUNDTRIP_PROGRESS={checked}', flush=True)
-
-              raw_dbstat=0
+          for rid,body in c.execute('select id,body_json from historical_raw_archive order by id'):
+              total += 1
+              if total % 1000 == 0: print(f'BUILD_PROGRESS={total}', flush=True)
+              original_body_bytes += len(enc(body))
               try:
-                  raw_dbstat=int(c.execute("select coalesce(sum(pgsize),0) from dbstat where name='historical_raw_archive'").fetchone()[0] or 0)
+                  outer=json.loads(body)
+                  inner=outer['payload_json']
+                  assert isinstance(inner,str)
               except Exception:
-                  pass
-              reclaim=max(0, raw_dbstat-materialized_bytes) if raw_dbstat else 0
-              print(f'RAW_ATTEMPTS_TOTAL={total}')
-              print(f'PARSE_ERRORS={parse_errors}')
-              print(f'ROUNDTRIP_CHECKED={checked}')
-              print(f'ROUNDTRIP_MISMATCHES={mismatches}')
-              print(f'HISTORICAL_RAW_ARCHIVE_DBSTAT_BYTES={raw_dbstat}')
-              print(f'ESTIMATED_RECLAIMABLE_BYTES_VS_TABLE_PAGES={reclaim}')
-              if raw_dbstat:
-                  print(f'ESTIMATED_RECLAIMABLE_PCT_VS_TABLE_PAGES={reclaim*100.0/raw_dbstat:.4f}')
+                  parse_errors += 1
+                  continue
+              ib=enc(inner); ih=sha_bytes(ib)
+              if ih not in objects:
+                  objects[ih]=inner
+                  unique_payload_bytes += len(ib)
+              wrapper=dict(outer); wrapper.pop('payload_json',None)
+              rec={'id':int(rid),'inner_sha256':ih,'wrapper':wrapper,'body_sha256':sha_bytes(enc(body))}
+              recs[int(rid)]=rec
+              manifest_bytes += len(enc(canonical(rec)+'\n'))
 
-              if total>0 and parse_errors==0 and checked==total and mismatches==0:
-                  print('MATERIALIZED_BYTE_EXACT_ROUNDTRIP=PASS')
-                  print('EVIDENCE_LOST=0_FOR_HISTORICAL_RAW_ARCHIVE_BODY_JSON_UNDER_MATERIALIZED_CONTENT_ADDRESSED_MODEL')
-                  print('PHYSICAL_DELETE_REDUNDANCY_GATE=GREEN_SUBJECT_TO_TRANSACTIONAL_MIGRATION_BACKUP_AND_POSTMIGRATION_VERIFY')
-              else:
-                  print('MATERIALIZED_BYTE_EXACT_ROUNDTRIP=FAIL')
-                  print('EVIDENCE_LOST=NOT_PROVEN_ZERO')
-                  print('PHYSICAL_DELETE_REDUNDANCY_GATE=RED')
+          materialized_bytes=unique_payload_bytes + manifest_bytes
+          print(f'MATERIALIZED_OBJECTS={len(objects)}')
+          print(f'MATERIALIZED_UNIQUE_PAYLOAD_BYTES={unique_payload_bytes}')
+          print(f'MATERIALIZED_MANIFEST_BYTES={manifest_bytes}')
+          print(f'MATERIALIZED_TOTAL_BYTES={materialized_bytes}')
+          print(f'ORIGINAL_BODY_JSON_BYTES={original_body_bytes}')
+
+          checked=0
+          for rid,body in c.execute('select id,body_json from historical_raw_archive order by id'):
+              rec=recs.get(int(rid))
+              if rec is None:
+                  mismatches += 1
+                  continue
+              inner=objects[rec['inner_sha256']]
+              outer=dict(rec['wrapper']); outer['payload_json']=inner
+              rebuilt=canonical(outer)
+              if sha_bytes(enc(rebuilt)) != rec['body_sha256'] or rebuilt != body:
+                  mismatches += 1
+              checked += 1
+              if checked % 1000 == 0: print(f'ROUNDTRIP_PROGRESS={checked}', flush=True)
+
+          raw_dbstat=0
+          try:
+              raw_dbstat=int(c.execute("select coalesce(sum(pgsize),0) from dbstat where name='historical_raw_archive'").fetchone()[0] or 0)
+          except Exception:
+              pass
+          reclaim=max(0, raw_dbstat-materialized_bytes) if raw_dbstat else 0
+          print(f'RAW_ATTEMPTS_TOTAL={total}')
+          print(f'PARSE_ERRORS={parse_errors}')
+          print(f'ROUNDTRIP_CHECKED={checked}')
+          print(f'ROUNDTRIP_MISMATCHES={mismatches}')
+          print(f'HISTORICAL_RAW_ARCHIVE_DBSTAT_BYTES={raw_dbstat}')
+          print(f'ESTIMATED_RECLAIMABLE_BYTES_VS_TABLE_PAGES={reclaim}')
+          if raw_dbstat:
+              print(f'ESTIMATED_RECLAIMABLE_PCT_VS_TABLE_PAGES={reclaim*100.0/raw_dbstat:.4f}')
+
+          if total>0 and parse_errors==0 and checked==total and mismatches==0:
+              print('MATERIALIZED_BYTE_EXACT_ROUNDTRIP=PASS')
+              print('EVIDENCE_LOST=0_FOR_HISTORICAL_RAW_ARCHIVE_BODY_JSON_UNDER_MATERIALIZED_CONTENT_ADDRESSED_MODEL')
+              print('PHYSICAL_DELETE_REDUNDANCY_GATE=GREEN_SUBJECT_TO_TRANSACTIONAL_MIGRATION_BACKUP_AND_POSTMIGRATION_VERIFY')
+          else:
+              print('MATERIALIZED_BYTE_EXACT_ROUNDTRIP=FAIL')
+              print('EVIDENCE_LOST=NOT_PROVEN_ZERO')
+              print('PHYSICAL_DELETE_REDUNDANCY_GATE=RED')
           c.close()
           PY
           echo 'RUNTIME_DB_MUTATIONS=NONE'
