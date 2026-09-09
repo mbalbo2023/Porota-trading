@@ -1,0 +1,172 @@
+name: RC6 Phase B4 Byte Exact Proof Audit 2026-09-08
+
+on:
+  push:
+    branches: [audit/rc6-phase-b4-byte-exact-proof-20260908]
+    paths:
+      - '.github/workflows/rc6-phase-b4-byte-exact-proof-audit-20260908.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_phase_b4"
+          chmod 600 "$HOME/.ssh/porota_phase_b4"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Phase B4 read-only byte exact proof
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_phase_b4" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=60 "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo '=== POROTA RC6 PHASE B4 BYTE-EXACT RECONSTRUCTION PROOF — READ ONLY ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python -u - <<'PY'
+          import sqlite3, json, hashlib, collections
+
+          DB='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+DB+'?mode=ro', uri=True)
+          c.execute('pragma query_only=on')
+          c.execute('pragma temp_store=memory')
+          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]), flush=True)
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'MODE={mode}', flush=True)
+          print(f'REAL_ORDERS_SENT={real}', flush=True)
+          assert mode=='PRODUCTION_PAPER' and int(real)==0
+
+          def sha(b): return hashlib.sha256(b).hexdigest()
+          def enc(s): return s.encode('utf-8','surrogatepass')
+          def dumps_compact(obj, sort_keys=True):
+              return json.dumps(obj, sort_keys=sort_keys, separators=(',',':'), ensure_ascii=False, default=str)
+          def dumps_default(obj, sort_keys=True):
+              return json.dumps(obj, sort_keys=sort_keys, ensure_ascii=False, default=str)
+
+          total=0; outer_err=0; inner_err=0
+          outer_exact_compact=0; outer_exact_default=0; outer_exact_unsorted_compact=0
+          inner_exact_compact=0; inner_exact_default=0; inner_exact_unsorted_compact=0
+          top_keysets=collections.Counter(); meta_keysets=collections.Counter(); inner_shapes=collections.Counter()
+          outer_len=0; inner_len=0
+          exact_body_unique=set(); exact_inner_unique=set()
+          wrapper_residual_total=0; wrapper_residual_unique=set(); inner_residual_total=0; inner_residual_unique=set()
+          exact_row_blobs={}; sequence_keys=set(); sequence_ref_bytes=0
+          failed_outer_samples=0; failed_inner_samples=0
+
+          for rid,body in c.execute('select id,body_json from historical_raw_archive order by id'):
+              total+=1
+              if total % 1000 == 0: print(f'PROGRESS_ATTEMPTS={total}', flush=True)
+              bb=enc(body); outer_len+=len(bb); exact_body_unique.add(sha(bb))
+              try: outer=json.loads(body)
+              except Exception:
+                  outer_err+=1; continue
+              top_keysets[tuple(outer.keys())]+=1
+              if isinstance(outer.get('metadata'),dict): meta_keysets[tuple(outer['metadata'].keys())]+=1
+              cand_oc=dumps_compact(outer,True)
+              cand_od=dumps_default(outer,True)
+              cand_ou=dumps_compact(outer,False)
+              if body==cand_oc: outer_exact_compact+=1
+              if body==cand_od: outer_exact_default+=1
+              if body==cand_ou: outer_exact_unsorted_compact+=1
+              # residual proof: preserve exact original only as delta against deterministic compact canonical candidate.
+              # Store mismatch positions/bytes conceptually; here measure exact residual byte count by common prefix/suffix.
+              cb=enc(cand_oc)
+              p=0; m=min(len(bb),len(cb))
+              while p<m and bb[p]==cb[p]: p+=1
+              s=0
+              while s<(m-p) and bb[len(bb)-1-s]==cb[len(cb)-1-s]: s+=1
+              residual=bb[p:len(bb)-s if s else len(bb)]
+              wrapper_residual_total+=len(residual); wrapper_residual_unique.add(sha(residual))
+
+              inner_s=outer.get('payload_json')
+              if not isinstance(inner_s,str):
+                  inner_shapes[type(inner_s).__name__]+=1; continue
+              ib=enc(inner_s); inner_len+=len(ib); exact_inner_unique.add(sha(ib))
+              try: inner=json.loads(inner_s)
+              except Exception:
+                  inner_err+=1; continue
+              inner_shapes[type(inner).__name__]+=1
+              cand_ic=dumps_compact(inner,True)
+              cand_id=dumps_default(inner,True)
+              cand_iu=dumps_compact(inner,False)
+              if inner_s==cand_ic: inner_exact_compact+=1
+              if inner_s==cand_id: inner_exact_default+=1
+              if inner_s==cand_iu: inner_exact_unsorted_compact+=1
+              cib=enc(cand_ic)
+              p=0; m=min(len(ib),len(cib))
+              while p<m and ib[p]==cib[p]: p+=1
+              s=0
+              while s<(m-p) and ib[len(ib)-1-s]==cib[len(cib)-1-s]: s+=1
+              residual=ib[p:len(ib)-s if s else len(ib)]
+              inner_residual_total+=len(residual); inner_residual_unique.add(sha(residual))
+
+              if isinstance(inner,list) and all(isinstance(x,dict) for x in inner):
+                  seq=[]
+                  for item in inner:
+                      rb=enc(dumps_compact(item,True)); rh=sha(rb); seq.append(rh); exact_row_blobs.setdefault(rh,len(rb))
+                  sk=sha(('\n'.join(seq)).encode()); sequence_keys.add(sk); sequence_ref_bytes += len(seq)*64
+
+          print(f'RAW_ATTEMPTS_TOTAL={total}')
+          print(f'OUTER_PARSE_ERRORS={outer_err}')
+          print(f'INNER_PARSE_ERRORS={inner_err}')
+          print(f'OUTER_EXACT_COMPACT_SORTED={outer_exact_compact}')
+          print(f'OUTER_EXACT_DEFAULT_SORTED={outer_exact_default}')
+          print(f'OUTER_EXACT_COMPACT_UNSORTED={outer_exact_unsorted_compact}')
+          print(f'INNER_EXACT_COMPACT_SORTED={inner_exact_compact}')
+          print(f'INNER_EXACT_DEFAULT_SORTED={inner_exact_default}')
+          print(f'INNER_EXACT_COMPACT_UNSORTED={inner_exact_unsorted_compact}')
+          print(f'OUTER_RAW_BYTES_TOTAL={outer_len}')
+          print(f'INNER_RAW_BYTES_TOTAL={inner_len}')
+          print(f'OUTER_UNIQUE_EXACT_BODIES={len(exact_body_unique)}')
+          print(f'INNER_UNIQUE_EXACT_PAYLOAD_STRINGS={len(exact_inner_unique)}')
+          print(f'OUTER_CANONICAL_RESIDUAL_BYTES_TOTAL={wrapper_residual_total}')
+          print(f'OUTER_CANONICAL_RESIDUAL_VARIANTS={len(wrapper_residual_unique)}')
+          print(f'INNER_CANONICAL_RESIDUAL_BYTES_TOTAL={inner_residual_total}')
+          print(f'INNER_CANONICAL_RESIDUAL_VARIANTS={len(inner_residual_unique)}')
+          print(f'UNIQUE_CANONICAL_ROW_OBJECTS={len(exact_row_blobs)}')
+          print(f'UNIQUE_CANONICAL_ROW_BYTES={sum(exact_row_blobs.values())}')
+          print(f'UNIQUE_SEQUENCE_KEYS={len(sequence_keys)}')
+          print(f'ALL_SEQUENCE_REF_BYTES_IF_PER_ATTEMPT={sequence_ref_bytes}')
+          print('TOP_LEVEL_KEY_ORDER_VARIANTS='+str(len(top_keysets)))
+          print('METADATA_KEY_ORDER_VARIANTS='+str(len(meta_keysets)))
+          print('INNER_SHAPES:')
+          for k,n in inner_shapes.most_common(): print(f'INNER_SHAPE|{k}|{n}')
+
+          exact_outer_all=(outer_err==0 and outer_exact_compact==total)
+          exact_inner_all=(inner_err==0 and inner_exact_compact==total)
+          if exact_outer_all and exact_inner_all:
+              print('BYTE_EXACT_RECONSTRUCTION_PROOF=PASS_DETERMINISTIC_CANONICAL')
+              print('EVIDENCE_LOST=0_FOR_BODY_JSON_AND_PAYLOAD_JSON_IF_CANONICAL_MODEL_PRESERVES_REQUIRED_MANIFEST_AND_ROW_SEQUENCE')
+              print('B4_DELETE_GATE=CANDIDATE_GREEN_SUBJECT_TO_MATERIALIZED_SHADOW_ROUNDTRIP')
+          else:
+              print('BYTE_EXACT_RECONSTRUCTION_PROOF=NOT_YET_PASS')
+              print('EVIDENCE_LOST=NOT_YET_PROVEN_ZERO')
+              print('B4_DELETE_GATE=RED_PENDING_RESIDUAL_OR_SHADOW_ROUNDTRIP')
+          c.close()
+          PY
+          echo 'MUTATIONS=NONE'
+          echo 'DELETE=NOT_RUN'
+          echo 'VACUUM=NOT_RUN'
+          echo 'PRUNE=NOT_RUN'
+          echo 'EXTERNAL_V1_ACTIVATION=NOT_PERFORMED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
