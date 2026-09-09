@@ -1,0 +1,55 @@
+name: RC6 Contract Evidence Session Persistence Diagnostic 2026-09-09
+
+on:
+  push:
+    branches: [diag/rc6-contract-evidence-session-persistence-20260909]
+    paths:
+      - '.github/workflows/rc6-contract-evidence-session-persistence-diag-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect reauth and collector session handling
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          REAUTH=/usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py
+          COLLECTOR="$ROOT/rc4_trusted_browser_contract_collector.py"
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          echo '=== SAFETY ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('DB='+c.execute('pragma quick_check').fetchone()[0])
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print('MODE='+str(m)); print('REAL_ORDERS='+str(r)); c.close()
+          PY
+          echo '=== REAUTH SOURCE (credentials not printed) ==='
+          sudo -n sed -n '1,260p' "$REAUTH"
+          echo '=== COLLECTOR SESSION/AUTH LINES ==='
+          grep -nE 'profile|user_data|cookie|storage|auth|BLOCKED_AUTH_SESSION_EXPIRED|launch_persistent|chrom' "$COLLECTOR" | head -220
+          echo '=== PROFILE ARTIFACT MTIMES ==='
+          sudo -n find "$PROFILE" -maxdepth 2 -type f \( -name 'Cookies' -o -name 'Preferences' -o -name 'Local State' -o -name 'Web Data' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ %p\n' | sort | tail -50
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'ROLLBACK_AUTOMATICO=NO'
+          HOST
