@@ -1,0 +1,77 @@
+name: RC6 Final Overnight Readiness Audit 2026-09-09
+on:
+  push:
+    branches: [integration/rc6-wave6-8-convergence-20260909]
+permissions:
+  contents: read
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_final_gate"
+          chmod 600 "$HOME/.ssh/porota_final_gate"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Final read-only overnight gate
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_final_gate" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
+          df -h /opt/porota-trading
+          echo '=== TIMERS ==='
+          systemctl list-timers --all --no-pager | grep -Ei 'porota|history|ppi|contract|scrap|introspect|health' || true
+          echo '=== FAILED UNITS ==='
+          systemctl --failed --no-pager || true
+          echo '=== DB / HISTORY / CONTRACT EVIDENCE ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import os, sqlite3, json, pathlib, time
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          print(f'DB={q}|MODE={mode}|REAL_ORDERS={real}')
+          print('RAW_MODE='+str(os.getenv('PPI_HISTORY_RAW_STORAGE_MODE')))
+          print('LEGACY_RAW_ROWS='+str(c.execute('select count(*) from historical_raw_archive').fetchone()[0] if 'historical_raw_archive' in tables else 'NA'))
+          for t in sorted(tables):
+              if any(k in t.lower() for k in ('history','historical','contract_evidence','attempt','alert','risk')):
+                  try:
+                      n=c.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0]
+                      print(f'TABLE={t}|ROWS={n}')
+                  except Exception as e: print(f'TABLE={t}|ERR={type(e).__name__}')
+          c.close()
+          import fb_raw_evidence_exact_v1 as e
+          print('EXTERNAL_EVIDENCE='+json.dumps(e.metrics(),sort_keys=True))
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          assert os.getenv('PPI_HISTORY_RAW_STORAGE_MODE')=='EXTERNAL_EXACT_V1'
+          PY
+          echo '=== WAVE5 DASHBOARD REGRESSION ==='
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import bh_universe_dashboard_hf6 as u
+          html=u._page()
+          assert 'Evidencia contractual' in html
+          print('WAVE5_DASHBOARD=GREEN')
+          PY
+          echo '=== RECENT OPERATIONAL LOG SIGNALS ==='
+          sudo -n docker logs --since 3h porota_production_observer 2>&1 | grep -Ei 'ppi|history|histor|contract|scrap|browser|auth|calendar|session|event.risk|gdelt|alert|error|warning|critical' | tail -n 250 || true
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'FINAL_OVERNIGHT_AUDIT_CAPTURED=YES'
+          REMOTE
