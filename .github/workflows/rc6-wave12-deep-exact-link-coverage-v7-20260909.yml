@@ -1,0 +1,120 @@
+name: RC6 Wave12 Deep Exact Link Coverage V7 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-deep-exact-link-coverage-v7-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  exact-link-coverage:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12linkv7"
+          chmod 600 "$HOME/.ssh/w12linkv7"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Compare deep rows to candidate universe read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=5 -i "$HOME/.ssh/w12linkv7" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE=$(git rev-parse HEAD)
+          CAP=/opt/porota-trading/data/contract_evidence/rc6_trusted/w12_full_contract_deep_v4_92c10781f4575228d393e84c50a5685e62d271ef.json
+          test -s "$CAP"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          sudo -n docker exec -i -e CAP=/hostcap porota_production_observer sh -c 'cat >/tmp/unused' </dev/null || true
+          python3 - "$CAP" <<'PY'
+          import json,re,sqlite3,sys,unicodedata
+          from collections import defaultdict
+          cap=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert cap.get('schema')=='POROTA_RC6_W12_FULL_CONTRACT_DEEP_V4'
+          rf={
+           '/Cotizaciones/Acciones':'ACCIONES','/Cotizaciones/Bonos':'BONOS','/Cotizaciones/Cauciones':'CAUCIONES',
+           '/Cotizaciones/Cedears':'CEDEARS','/Cotizaciones/Futuros':'FUTUROS','/Cotizaciones/Letras':'LETRAS',
+           '/Cotizaciones/Ons':'ON','/Cotizaciones/Opciones':'OPCIONES',
+           '/Cotizaciones/ETFs':'ETF','/Cotizaciones/FCIs':'FCI','/Cotizaciones/FCIsExterior':'FCI_EXTERIOR',
+           '/Cotizaciones/AccionesUSA':'ACCIONES_USA','/Cotizaciones/Licitaciones':'LICITACIONES',
+           '/Cotizaciones/Indices':'INDICES','/Cotizaciones/Monedas':'MONEDAS','/Cotizaciones/Tasas':'TASAS'}
+          prefixes={'BONOS':'BON ','LETRAS':'LET ','ON':'ON ','ETF':'ETF '}
+          def a(v):
+              s=unicodedata.normalize('NFKD',str(v or '')); s=''.join(c for c in s if not unicodedata.combining(c)); return re.sub(r'\s+',' ',s).strip().upper()
+          def key(v): return re.sub(r'\s*/\s*','/',a(v))
+          def variants(f,v):
+              raw=key(v); out=[(raw,'EXACT')]
+              p=key(prefixes.get(f,''))
+              if p and raw.startswith(p):
+                  x=raw[len(p):].strip()
+                  if x: out.append((x,'PREFIX_REMOVED'))
+              compact=re.sub(r'\s*/\s*','/',raw)
+              if compact!=raw: out.append((compact,'SLASH_SPACE_ONLY'))
+              z=[]; seen=set()
+              for x,m in out:
+                  if x and x not in seen: seen.add(x); z.append((x,m))
+              return z
+          # candidate universe is copied from the live DB through sqlite3 CLI in a read-only subprocess below
+          import subprocess,tempfile,os
+          sql="SELECT ticker,instrument_type,settlement,market FROM candidate_universe WHERE status='AVAILABLE' ORDER BY instrument_type,ticker;"
+          cmd=['sudo','-n','docker','exec','porota_production_observer','python','-c',"import sqlite3,json;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('pragma query_only=on');print(json.dumps([dict(zip(['ticker','instrument_type','settlement','market'],r)) for r in c.execute(\""+sql.replace('"','\\"')+"\")]))"]
+          rows=json.loads(subprocess.check_output(cmd,text=True))
+          idx=defaultdict(list)
+          for x in rows: idx[(a(x['instrument_type']),key(x['ticker']))].append(x)
+          totals={}; all_mapped=[]
+          for route,rd in (cap.get('routes') or {}).items():
+              fam=rf.get(route)
+              if not fam: continue
+              s={'rows':0,'mapped':0,'unmatched':0,'ambiguous':0,'mapped_with_detail':0,'methods':defaultdict(int),'unmatched_sample':[]}
+              for t in rd.get('tables') or []:
+                  headers=[a(x) for x in t.get('headers') or []]
+                  idpos=next((i for i,h in enumerate(headers) if h in {'ESPECIE','NOMBRE'}),0)
+                  for row in t.get('rows') or []:
+                      cells=row.get('cells') or []; s['rows']+=1
+                      obs=str(cells[idpos]).strip() if idpos < len(cells) else ''
+                      matches=[]
+                      for v,meth in variants(fam,obs):
+                          for x in idx.get((a(fam),v),[]): matches.append((x,meth,v))
+                      uniq={(x['ticker'],x['instrument_type'],x['settlement'],x['market']):(x,m,v) for x,m,v in matches}
+                      if len(uniq)==1:
+                          x,meth,v=next(iter(uniq.values())); s['mapped']+=1; s['methods'][meth]+=1
+                          links=[z.get('href') for z in (row.get('links') or []) if isinstance(z,dict) and z.get('href')]
+                          linked=[h for h in links if h in (cap.get('details') or {})]
+                          if linked: s['mapped_with_detail']+=1
+                          all_mapped.append({'family':fam,'ticker':x['ticker'],'observed':obs,'method':meth,'detail':linked[0] if linked else None})
+                      elif len(uniq)>1: s['ambiguous']+=1
+                      else:
+                          s['unmatched']+=1
+                          if len(s['unmatched_sample'])<12: s['unmatched_sample'].append(obs)
+              s['methods']=dict(s['methods']); totals[fam]=s
+          print('W12_DEEP_EXACT_LINK_COVERAGE='+json.dumps(totals,ensure_ascii=False,separators=(',',':')))
+          print('W12_DEEP_MAPPED_TOTAL='+str(sum(x['mapped'] for x in totals.values())))
+          print('W12_DEEP_MAPPED_WITH_DETAIL='+str(sum(x['mapped_with_detail'] for x in totals.values())))
+          print('W12_DEEP_AMBIGUOUS_TOTAL='+str(sum(x['ambiguous'] for x in totals.values())))
+          print('W12_DEEP_EXACT_LINK_DIAGNOSTIC=GREEN')
+          PY
+          test "$(git rev-parse HEAD)" = "$PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'ORDER_ROUTE_CALLED=NO'
+          echo 'RUNTIME_CHANGED=NO'
+          REMOTE
