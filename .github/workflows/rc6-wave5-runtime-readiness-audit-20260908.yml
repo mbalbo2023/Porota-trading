@@ -1,0 +1,37 @@
+name: RC6 Wave5 Runtime Readiness Audit 2026-09-08
+on:
+  push:
+    branches: [audit/rc6-wave5-runtime-readiness-20260908]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and focused tests
+        run: |
+          set -euo pipefail
+          python -m pip install -q pytest fastapi requests
+          python -m py_compile ch_contract_evidence_hf6.py ck_contract_evidence_runner_hf6.py cl_contract_evidence_dashboard_hf6.py bg_paper_dashboard.py rc6_data_sla_policy.py rc6_dom_coverage_reconciler.py rc6_scraping_semaphore.py
+          PYTHONPATH=. python -m pytest -q tests/test_contract_evidence_hf6.py tests/test_rc6_wave1b_sla_scraping.py
+      - name: Runtime wiring inventory
+        run: |
+          set -euo pipefail
+          echo '=== WAVE5 WIRING INVENTORY ==='
+          grep -RniE 'contract.?evidence|dom.?coverage|scraping.?semaphore|data.?sla' bg_paper_dashboard.py cl_contract_evidence_dashboard_hf6.py ck_contract_evidence_runner_hf6.py | head -n 250 || true
+          echo '=== ROUTE/STATUS INVENTORY ==='
+          grep -RniE '@app\.(get|post)|FastAPI|status|health|dashboard' bg_paper_dashboard.py cl_contract_evidence_dashboard_hf6.py | head -n 250 || true
+      - name: Safety gate
+        run: |
+          set -euo pipefail
+          ! grep -RniE 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' ch_contract_evidence_hf6.py ck_contract_evidence_runner_hf6.py cl_contract_evidence_dashboard_hf6.py bg_paper_dashboard.py
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo WAVE5_RUNTIME_READINESS_AUDIT=GREEN
