@@ -70,7 +70,7 @@ _CLASS_ATTR=re.compile(r"\bclass=(['\"])(.*?)\1",re.IGNORECASE)
 _HEADING=re.compile(r"<h([23])\b([^>]*)>(.*?)</h\1>",re.IGNORECASE|re.DOTALL)
 _BAD_WRAP="overflow-wrap:"+"anywhere"
 _PAGE_INDEX_RE=re.compile(r"<nav\b[^>]*id=['\"]porota-page-index['\"][^>]*>.*?</nav>",re.IGNORECASE|re.DOTALL)
-_SECONDARY_NAV_RE=re.compile(r"<nav\b[^>]*class=['\"][^'\"]*(?:subnav|system-nav)[^'\"]*['\"][^>]*>.*?</nav>",re.IGNORECASE|re.DOTALL)
+_SECONDARY_NAV_RE=re.compile(r"<(?P<tag>nav|div|aside)\b[^>]*class=['\"][^'\"]*(?:subnav|system-nav)[^'\"]*['\"][^>]*>.*?</(?P=tag)>",re.IGNORECASE|re.DOTALL)
 _GENERATED_CAPTION_RE=re.compile(r"<caption\b[^>]*class=['\"][^'\"]*porota-table-title[^'\"]*['\"][^>]*>.*?</caption>",re.IGNORECASE|re.DOTALL)
 
 
