@@ -18,10 +18,10 @@ Dejar POROTA TRADING apto para jornada en `PRODUCTION_PAPER`, con datos suficien
 - Rollback nunca automático.
 - CI success no equivale a GREEN: se exige proof live, DB, modo, safety y wiring.
 
-## 3. HEAD live canónico al abrir este checkpoint
+## 3. HEAD live canónico
 `2c9f3df2d03974ab6fe464d119bdbb2d90158706`
 
-Estado probado al deploy de ese HEAD:
+Estado probado:
 - observer running, restarts=0.
 - dashboard running, restarts=0.
 - SQLite quick_check=ok.
@@ -53,14 +53,33 @@ GREEN live desde `2c9f3df...`:
 - publicación sanitizada a `runtime-observability` probada.
 - timer `porota-contract-evidence-rc6.timer` queda como owner RC6.
 
-## 5. Preopen — P0
-RCA cerrado: el gate canónico `rc6_preopen.py` espera correctamente `porota-trading-bot:17.0.0-rc6`, pero el wrapper host instalado tenía una premisa vieja y exigía `porota-trading-dashboard:17.0.0-rc6`.
+### 4.4 Preopen RC6
+**GREEN LIVE probado 2026-09-09 11:47 ART.**
 
-Branch de fix: `fix/rc6-preopen-dashboard-contract-20260909`.
-Commit de workflow/fix preparado: `707a6b6881992161c37d7b7c92de72cd3941b3c6`.
-Estado al abrir este checkpoint: **PENDIENTE PROOF LIVE**. No marcar GREEN hasta leer el run y comprobar status GREEN + invariantes.
+RCA:
+- `rc6_preopen.py` canónico esperaba correctamente `porota-trading-bot:17.0.0-rc6`.
+- el wrapper host anterior esperaba erróneamente una familia `porota-trading-dashboard:17.0.0-rc6`.
+- primer intento de despliegue del wrapper corregido falló sólo por `ModuleNotFoundError: rc6_preopen`, porque el wrapper vive en `/usr/local/lib/porota-sre-rc6` y el módulo canónico en `/opt/porota-trading`.
+- segundo fix agregó resolución explícita del módulo desde `/opt/porota-trading`, sin copiar ni bifurcar la política canónica.
 
-## 6. Cauciones — P0
+Branch: `fix/rc6-preopen-dashboard-contract-20260909`.
+Commit final: `62b5029de073e496fbb952d652b810e806c2ac4f`.
+Run GREEN: `34365904742`.
+
+Proof live:
+- schema `POROTA_RC6_PREOPEN_V2`.
+- `status=GREEN`, `red_checks=[]`.
+- release identity `17.0.0-rc6`, mode `PRODUCTION_PAPER`, execution `SIMULATED`, `REAL_ORDER_CAPABILITY=BLOCKED`.
+- observer container GREEN, read-only rootfs=true, restarts=0.
+- dashboard container GREEN, restarts=0.
+- observer DB GREEN, quick_check=ok, session `MARKET_OPEN`, `ppi_auth=OK`, `real_orders_sent=0`.
+- disco GREEN, libre > 8 GiB.
+- timers requeridos RC6 GREEN/active/enabled.
+- postflight `ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1`.
+- runtime Git HEAD no cambió.
+- no network order test, no order routes, no rollback automático.
+
+## 5. Cauciones — P0
 ### Hallazgo
 El universo contiene 10 cauciones AVAILABLE:
 - PESOS1, PESOS2, PESOS7, PESOS30, PESOS120.
@@ -72,7 +91,7 @@ Antes del fix: 0 decisiones, 0 allocations y 0 posiciones PAPER de cauciones. `b
 Existe allocator/cash-sweep PAPER, pero exige offers verificadas, fees exactos y snapshot completo de obligaciones. No puede usarse como atajo si falta evidencia económica.
 
 ### Evaluador nuevo preparado
-Branch: `fix/rc6-cauciones-live-evaluator-20260909` (ATENCIÓN: creada originalmente sobre el HEAD UX anterior `0906d7...`; NO desplegar directamente. Portar/rebasar sólo los cambios necesarios sobre el HEAD live actual).
+Branch: `fix/rc6-cauciones-live-evaluator-20260909` (creada originalmente sobre `0906d7...`; NO desplegar directamente. Portar sólo los cambios necesarios sobre HEAD live actual).
 Archivos preparados:
 - `rc6_caucion_contract.py`
 - `rc6_caucion_live_evaluator.py`
@@ -87,7 +106,7 @@ Política:
 
 Estado: **PENDIENTE PORT A HEAD ACTUAL + WIRING RUNTIME + DASHBOARD + LIVE PROOF**.
 
-## 7. Opciones — P0 nuevo
+## 6. Opciones — P0
 ### Hallazgo confirmado
 No falta universo. PPI ya tiene **382 OPCIONES AVAILABLE** observadas.
 Todas están actualmente con capability `NEEDS_OPTION_CONTRACT` y `ready_paper_count=0`.
@@ -105,11 +124,19 @@ El contrato RC6 de una opción exige, como mínimo:
 - `option_right` = CALL o PUT;
 - `metadata_source` trazable.
 
-No inferir estos campos sólo desde el ticker salvo que una fuente autoritativa documente la codificación y el normalizador preserve provenance.
+El collector RC6 ya navega `/Cotizaciones/Opciones` y captura `SubyacenteOpciones`, pero el normalizador actual sólo materializa la lista de subyacentes; no materializa series individuales con strike/vencimiento/call-put/multiplicador/lote.
 
-Estado: **YELLOW / NO READY_PAPER** hasta cerrar evidencia contractual y wiring.
+Evidencia pública autoritativa BYMA vigente consultada el 2026-09-09:
+- opciones BYMA son americanas;
+- desde 2026-04-24 la prima liquida T+0;
+- lotes: 100 nominales para acciones, 10 para CEDEARs y 1000 para títulos públicos;
+- cada serie posee strike y vencimiento predeterminados;
+- el día de vencimiento la negociación llega hasta 15:30 y ejercicio/no-ejercicio hasta 15:59.
+Estos términos generales NO sustituyen la identidad específica de cada una de las 382 series.
 
-## 8. Históricos — P0 datos suficientes para hoy
+Estado: **YELLOW / NO READY_PAPER** hasta cerrar evidencia contractual individual y wiring.
+
+## 7. Históricos — P0 datos suficientes para hoy
 RCA del 2026-09-09:
 - ACCIONES: 24 AVAILABLE, 24 con history.
 - CEDEARS: 35 AVAILABLE, 35 con history.
@@ -119,29 +146,33 @@ RCA del 2026-09-09:
 - A3 permanece `ALIGNMENT_UNVERIFIED` y fail-closed; no habilitar background A3 hasta cerrar alignment/payload contract.
 - `PPI_HISTORY_UNIVERSE_READINESS=YELLOW`.
 
-Política de trabajo de hoy:
-- no saturar PPI intentando descargar indiscriminadamente todo el universo antes de la jornada;
+Política de hoy:
+- no saturar PPI intentando descargar indiscriminadamente todo el universo;
 - priorizar dataset mínimo operativo por familia y contratos líquidos/candidatos;
-- distinguir contrato/readiness de histórico: una opción no queda operable sólo por tener velas, ni debe exigirse un histórico irrelevante si la estrategia usa subyacente + chain/book actual; cualquier excepción debe quedar documentada y probada;
+- distinguir contrato/readiness de histórico;
 - conservar provenance y freshness por fuente.
 
-## 9. Scraping / Contract Evidence — P0
-Último estado conocido antes de este checkpoint:
+## 8. Scraping / Contract Evidence — P0
+Último estado conocido:
 - sesión trusted PPI web genuinamente expirada;
 - Account y Trading redirigían a `cuenta.portfoliopersonal.com/login`;
 - formulario user/password presente;
-- no OTP visible en el diagnóstico GET-only;
+- no OTP visible en diagnóstico GET-only;
 - Clarity/Hotjar/telemetría de terceros ya no son la causa raíz;
 - no reutilizar el atajo incorrecto `/cuentas == authenticated`;
-- RC4 collector/timer ya fue retirado, por lo que no debe existir competencia legacy por el perfil browser.
+- RC4 collector/timer ya fue retirado, sin competencia legacy por el perfil browser.
 
 Objetivo inmediato:
-- auditar owner RC6 actual, último snapshot/evidence y estado de sesión;
+- auditar owner RC6, último snapshot/evidence y estado de sesión;
 - recuperar sesión sólo mediante login legítimo permitido;
 - ejecutar collector read-only sólo si trading session queda realmente autenticada;
 - mapear evidencia a cauciones/opciones/otras familias y recalcular readiness.
 
-## 10. Históricos + scraping: criterio de suficiencia para operar hoy
+Diagnóstico read-only en curso:
+`diag/rc6-options-scraping-history-live-20260909`, workflow `rc6-options-scraping-history-live-diagnostic-20260909.yml`.
+No abre nuevas sesiones PPI ni hace llamadas de red; lee DB, schedulers y snapshots sanitizados ya persistidos.
+
+## 9. Criterio de suficiencia para operar hoy
 Se considera suficiente sólo si, para la familia que el motor vaya a evaluar:
 1. identidad y contrato verificables;
 2. market data live fresco y con semántica conocida;
@@ -150,32 +181,33 @@ Se considera suficiente sólo si, para la familia que el motor vaya a evaluar:
 5. gate de familia registra APPROVE/HOLD/BLOCKED explícito;
 6. todo permanece PAPER-only y real_orders_sent=0.
 
-No se fuerza READY por deadline. Las familias incompletas deben quedar evaluadas y visibles como HOLD con blocker exacto.
+No se fuerza READY por deadline. Familias incompletas deben quedar evaluadas y visibles como HOLD con blocker exacto.
 
-## 11. Ramas de trabajo actuales
+## 10. Ramas de trabajo actuales
 - `checkpoint/rc6-20260909-1142-parallel-go-live` — este checkpoint.
-- `fix/rc6-preopen-dashboard-contract-20260909` — proof preopen pendiente.
-- `fix/rc6-cauciones-live-evaluator-20260909` — portar cambios, no desplegar la rama stale directamente.
-- cadena de `fix/rc6-trusted-reauth-*` — usar sólo como historial RCA; no rerun ciego.
+- `fix/rc6-preopen-dashboard-contract-20260909` — GREEN live; no requiere más cambio salvo consolidación posterior.
+- `diag/rc6-options-scraping-history-live-20260909` — diagnóstico read-only en curso.
+- `fix/rc6-cauciones-live-evaluator-20260909` — portar cambios, no desplegar rama stale directamente.
+- cadena `fix/rc6-trusted-reauth-*` — historial RCA; no rerun ciego.
 
-## 12. Próxima secuencia obligatoria
-1. Leer resultado del fix preopen y cerrar GREEN/RED con evidencia.
-2. Auditar Contract Evidence RC6 live y sesión browser actual.
-3. Auditar reglas/scraper de OPCIONES y localizar qué campos contractuales ya existen en DOM/API/evidence.
-4. Cerrar/normalizar contrato de opciones con provenance autoritativa por instrumento.
-5. Portar caucion evaluator al HEAD actual, cablearlo al runtime y dashboard y probar live.
-6. Ejecutar ingest/historical targeted y recalcular readiness por familia.
+## 11. Próxima secuencia obligatoria
+1. Leer diagnóstico Opciones/Contract Evidence/históricos live.
+2. Auditar reglas/scraper de OPCIONES y localizar campos contractuales ya existentes en DOM/API/evidence.
+3. Cerrar/normalizar contrato de opciones con provenance autoritativa por instrumento.
+4. Portar caucion evaluator al HEAD actual, cablearlo al runtime/dashboard y probar live.
+5. Ejecutar ingest/historical targeted y recalcular readiness por familia.
+6. Corregir reauth/collector RC6 sólo con flujo legítimo y read-only.
 7. Actualizar ESTE checkpoint después de cada cierre relevante.
 
-## 13. Semáforo al crear el checkpoint
+## 12. Semáforo actual
 - UX/dashboard: GREEN.
 - BYMA fail-closed: GREEN.
 - legacy control plane: GREEN.
 - safety real orders: GREEN.
-- preopen wrapper: YELLOW, fix preparado / proof pendiente.
+- preopen: **GREEN LIVE**.
 - cauciones: YELLOW, universo + modelo presentes / live evaluator pendiente.
-- opciones: YELLOW, 382 instrumentos / contratos faltantes.
+- opciones: YELLOW, 382 instrumentos / contratos individuales faltantes.
 - históricos: YELLOW, cobertura parcial.
-- scraping Contract Evidence: RED/YELLOW operativo por sesión web expirada; no implica caída de PPI API read-only.
+- scraping Contract Evidence: RED/YELLOW operativo por sesión web expirada; PPI API read-only está OK.
 
-Última actualización de este archivo: 2026-09-09 11:42 ART.
+Última actualización: 2026-09-09 11:48 ART.
