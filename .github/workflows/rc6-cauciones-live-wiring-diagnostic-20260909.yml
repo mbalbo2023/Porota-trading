@@ -1,0 +1,89 @@
+name: RC6 Cauciones Live Wiring Diagnostic 2026-09-09
+
+on:
+  push:
+    branches: [fix/rc6-cauciones-paper-evaluation-20260909]
+    paths:
+      - 'rc6_cauciones_contract.py'
+      - '.github/workflows/rc6-cauciones-live-wiring-diagnostic-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Validate pure contract model
+        run: |
+          set -euo pipefail
+          python -m py_compile rc6_cauciones_contract.py
+          python - <<'PY'
+          from decimal import Decimal
+          import rc6_cauciones_contract as c
+          assert c.parse_ticker('PESOS7').term_days==7
+          assert c.validate_amount('PESOS1',100001)==Decimal('100001')
+          assert c.ppi_annual_commission_percent('PESOS1')==Decimal('2')
+          assert c.ppi_annual_commission_percent('DOLAR1') is None
+          assert c.quote_from_book_level('PESOS1',{'price':20.1,'quantity':100000}).side_source=='BIDS'
+          print('CAUCIONES_CONTRACT_MODEL=GREEN')
+          PY
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only live cauciones audit
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo '=== DB CAUCIONES ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          def cols(t): return [r[1] for r in c.execute(f'pragma table_info({t})')]
+          for t in ['paper_cauciones','paper_caucion_allocations','candidate_universe','paper_decisions','api_health']:
+              if t in tables: print(f'COUNT|{t}|{c.execute(f"select count(*) from {t}").fetchone()[0]}|COLS='+','.join(cols(t)))
+          if 'candidate_universe' in tables:
+              cc=cols('candidate_universe'); fam='instrument_type' if 'instrument_type' in cc else None
+              if fam:
+                  fields=[x for x in ['symbol','ticker','instrument_type','settlement','status','source','updated_at'] if x in cc]
+                  rows=c.execute('select '+','.join(fields)+' from candidate_universe where upper(instrument_type)=? order by 1',('CAUCIONES',)).fetchall()
+                  print('CAUCION_UNIVERSE='+json.dumps([dict(zip(fields,r)) for r in rows],default=str,ensure_ascii=False))
+          if 'paper_decisions' in tables:
+              cc=cols('paper_decisions'); textcols=[x for x in cc if x.lower() in {'ticker','symbol','instrument_type','reason','decision','payload','decision_json','details','code'}]
+              clauses=[f"upper(cast({x} as text)) like '%CAUC%'" for x in textcols]
+              if clauses:
+                  rows=c.execute('select * from paper_decisions where '+' or '.join(clauses)+' order by rowid desc limit 20').fetchall()
+                  print('CAUCION_DECISION_ROWS='+str(len(rows)))
+              else: print('CAUCION_DECISION_ROWS=NO_SEARCHABLE_COLUMNS')
+          for t in ['paper_cauciones','paper_caucion_allocations']:
+              if t in tables:
+                  print(f'LATEST|{t}|'+json.dumps(c.execute(f'select * from {t} order by rowid desc limit 5').fetchall(),default=str,ensure_ascii=False))
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'MODE={mode}'); print(f'REAL_ORDERS={orders}'); c.close()
+          PY
+          echo '=== SOURCE WIRING ==='
+          grep -RInE 'ca_caucion_allocator|CaucionOffer|PAPER_CAUCION_PLAN|place_caucion|paper_caucion_allocations' --include='*.py' . | head -120 || true
+          echo '=== CAUCION SYSTEMD ==='
+          systemctl list-unit-files --no-pager | grep -i caucion || true
+          systemctl list-units --all --no-pager | grep -i caucion || true
+          echo ORDER_ROUTES=NOT_CALLED
+          echo NETWORK_ORDER_TEST=NOT_PERFORMED
+          echo RUNTIME_MUTATION=NO
+          REMOTE
