@@ -1,0 +1,43 @@
+name: RC6 Scraper Exit4 Exact RCA 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-scraper-auth-rca-20260909]
+    paths: ['.github/workflows/rc6-scraper-exit4-exact-rca-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  rca:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare expected runtime hash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin feature/rc6-dom-expected-universe-reconciler-20260908
+          git show origin/feature/rc6-dom-expected-universe-reconciler-20260908:scripts/porota_contract_evidence_rc6_runtime.sh > /tmp/runtime.sh
+          echo "EXPECTED_RUNTIME_SHA=$(sha256sum /tmp/runtime.sh | cut -d' ' -f1)" >> "$GITHUB_ENV"
+      - name: Setup SSH
+        env:
+          KEY: ${{ secrets.DO_SSH_KEY }}
+          KH: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$KEY" > "$HOME/.ssh/key"; printf '%s\n' "$KH" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Read exact sanitized failure
+        env:
+          H: ${{ secrets.DO_HOST }}
+          U: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i $HOME/.ssh/key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts $U@$H"
+          INST=$($SSH "sudo -n sha256sum /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh | cut -d' ' -f1")
+          echo "EXPECTED_RUNTIME_SHA=$EXPECTED_RUNTIME_SHA"
+          echo "INSTALLED_RUNTIME_SHA=$INST"
+          if [ "$INST" = "$EXPECTED_RUNTIME_SHA" ]; then echo RUNTIME_VERSION=EXPECTED; else echo RUNTIME_VERSION=DIFFERS; fi
+          $SSH "sudo -n journalctl -u porota-contract-evidence-rc6.service --since '2026-09-09 16:40:00 UTC' --no-pager -o cat | grep -Ei 'status=|fail|missing|blocked|auth|error|invalid|mismatch|capture|preflight|postflight|due|exit|real_orders' | tail -160 | sed -E 's#https?://[^ ]+#<URL_REDACTED>#g'"
+          echo RUNTIME_MUTATION=NO
+          echo SECRETS_PRINTED=NO
+          echo ORDER_ROUTES=NOT_CALLED
