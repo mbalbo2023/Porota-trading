@@ -125,12 +125,17 @@ jobs:
                   req.add_header('Authorization','Bearer '+token); req.add_header('X-Dashboard-Token',token)
               with urllib.request.urlopen(req,timeout=15) as r:
                   body=r.read().decode('utf-8','replace'); print(f'HTTP|{p}|{r.status}|bytes={len(body)}'); assert r.status==200
-                  assert 'overflow-wrap:anywhere' not in body, p
                   if '<table' in body.lower():
                       assert 'porota-rc6-classic-responsive' in body, p
                       assert 'overflow-x:auto' in body, p
                       assert 'width:max-content' in body, p
                       assert 'min-width:7rem' in body, p
+                      # Legacy CSS may remain earlier in the document. The Wave8 override must
+                      # appear later and win with !important; requiring total absence produced
+                      # a false negative after the previous successful runtime activation.
+                      assert body.rfind('overflow-wrap:normal!important') > body.rfind('overflow-wrap:anywhere'), p
+                      assert body.rfind('word-break:normal!important') > body.rfind('word-break:break-all'), p
+                      assert body.rfind('min-width:7rem!important') > body.rfind('min-width:0!important'), p
           print('WAVE8_MAJOR_ROUTES_HTTP=GREEN')
           print('WAVE8_TABLET_LEGIBILITY_CSS_LIVE=GREEN')
           PY
