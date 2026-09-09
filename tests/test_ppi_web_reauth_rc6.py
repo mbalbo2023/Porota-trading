@@ -63,3 +63,10 @@ def test_2fa_status_is_fail_closed_and_noninteractive():
 
 # E2E rerun marker: local PPI web credential set was refreshed after the prior
 # BLOCKED_AUTH_USERNAME_REQUIRED result. No behavioral assertion is relaxed.
+
+
+def test_account_landing_requires_trading_verification_and_is_not_auth():
+    url='https://cuenta.portfoliopersonal.com/cuentas'
+    assert m.account_landing_url(url)
+    assert not m.authenticated_url(url)
+    assert not m.account_landing_url('https://cuenta.portfoliopersonal.com/login')

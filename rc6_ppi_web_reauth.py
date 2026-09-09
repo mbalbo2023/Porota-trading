@@ -77,6 +77,13 @@ def authenticated_url(value: str) -> bool:
     )
 
 
+def account_landing_url(value: str) -> bool:
+    """Account landing is a verification trigger, never auth proof by itself."""
+    u = urlsplit(str(value))
+    return (u.scheme == "https" and u.netloc == "cuenta.portfoliopersonal.com"
+            and u.path.rstrip("/") == "/cuentas")
+
+
 def parse_secret(path: Path) -> tuple[str, str]:
     values: dict[str, str] = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -257,6 +264,29 @@ def main() -> int:
                                                       stage=stage, page_url=page.url)); return 4
                 if authenticated_url(page.url):
                     ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts)); return 0
+
+                # PPI may land on /cuentas after credential submission.  That
+                # page is NOT accepted as authentication proof.  Verify the
+                # trading root in the same persistent browser context; only a
+                # non-login trading URL is authoritative.
+                if account_landing_url(page.url):
+                    blocked_post_path = ""
+                    goto_fast(TRADING_ROOT, "VERIFY_TRADING_AFTER_ACCOUNT_LANDING")
+                    if blocked_post_path:
+                        ctx.close(); print(status_payload("BLOCKED_AUTH_ACCOUNT_VERIFY_POST", attempts=attempts,
+                                                          blocked_post_path=blocked_post_path,
+                                                          stage=stage, page_url=page.url)); return 4
+                    if authenticated_url(page.url):
+                        ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts,
+                                                          stage=stage, page_url=page.url)); return 0
+                    # A redirect back to account/login means the trading session
+                    # was not promoted. Re-open the approved login page and
+                    # continue fail-closed; never infer auth from /cuentas alone.
+                    if not safe_page_url(page.url):
+                        ctx.close(); print(status_payload("BLOCKED_AUTH_ACCOUNT_VERIFY_UNEXPECTED", attempts=attempts,
+                                                          stage=stage, page_url=page.url)); return 4
+                    goto_fast(LOGIN_URL, "REOPEN_LOGIN_AFTER_ACCOUNT_VERIFY")
+                    continue
 
                 if trust_prompt_present(page):
                     stage = "TRUST_DEVICE_PROMPT"
