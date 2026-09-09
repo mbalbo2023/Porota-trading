@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """RC6 IOL read-only client hotfix.
 
-IOL's current API authenticates with POST /token and exposes historical
-series under /api/{mercado}/Titulos/{simbolo}/Cotizacion/seriehistorica/...
-(without the legacy /api/v2 prefix used by ak_iol_client.py).
-
-This subclass changes only those read-only routing details. It deliberately
-adds no order, cancel, estimate, portfolio, or execution capability.
+Authentication uses POST /token. Historical prices use IOL API v2 with the
+route and path enums expected by the current service. This subclass only
+changes read-only routing details and deliberately adds no order capability.
 """
 from __future__ import annotations
 
@@ -19,9 +16,19 @@ import requests
 import ak_iol_client as legacy
 
 
+_MARKET_PATH = {
+    "bcba": "bCBA",
+    "nyse": "nYSE",
+    "nasdaq": "nASDAQ",
+    "amex": "aMEX",
+    "bcs": "bCS",
+    "rofex": "rOFX",
+    "rofx": "rOFX",
+}
+
+
 class IOLClient(legacy.IOLClient):
     def _token_request(self, payload: dict, label: str) -> bool:
-        # Canonical endpoint first, compatibility path second.
         routes = ["/token", "/api/v2/token"]
         response = None
         for idx, route in enumerate(routes):
@@ -32,8 +39,6 @@ class IOLClient(legacy.IOLClient):
                     headers={
                         "Content-Type": "application/x-www-form-urlencoded",
                         "Accept": "application/json,text/plain,*/*",
-                        # The API currently sits behind Cloudflare. These are
-                        # ordinary HTTP client headers, never credential data.
                         "User-Agent": "PorotaTrading-RC6-ReadOnly/1.0",
                     },
                     timeout=legacy.IOL_TIMEOUT,
@@ -46,9 +51,6 @@ class IOLClient(legacy.IOLClient):
                 if idx:
                     legacy.logger.info("IOL token respondió por ruta de compatibilidad %s.", route)
                 break
-            # Only try the compatibility route when the canonical endpoint is
-            # unavailable at the HTTP routing layer. A 400/401/403 from /token
-            # is authoritative and must not be hidden by probing alternatives.
             if idx == 0 and candidate.status_code in {404, 405}:
                 continue
             break
@@ -74,19 +76,22 @@ class IOLClient(legacy.IOLClient):
         dias: int = 365,
         ajustada: bool = True,
     ) -> list[dict]:
-        """Historical daily series through IOL's current read-only route.
+        """Historical daily bars through IOL's read-only v2 route.
 
-        Important: unlike the legacy connector, the historical endpoint is
-        /api/{mercado}/Titulos/... and not /api/v2/{mercado}/Titulos/....
-        No fallback to any operational endpoint exists here.
+        IOL's final path component is an enum (`ajustada` / `sinAjustar`), not
+        a JSON-style boolean. Market names are normalized to the API's path
+        spelling. No operational endpoint is called or used as fallback.
         """
         hasta = datetime.now().strftime("%Y-%m-%d")
         desde = (datetime.now() - timedelta(days=max(1, int(dias)))).strftime("%Y-%m-%d")
+        market_key = str(mercado).strip().lower()
+        market_path = _MARKET_PATH.get(market_key, str(mercado).strip())
         safe_symbol = quote(str(simbolo).strip(), safe="")
-        safe_market = quote(str(mercado).strip().lower(), safe="")
+        safe_market = quote(market_path, safe="")
+        series_kind = "ajustada" if ajustada else "sinAjustar"
         route = (
-            f"/api/{safe_market}/Titulos/{safe_symbol}/Cotizacion/seriehistorica/"
-            f"{desde}/{hasta}/{'true' if ajustada else 'false'}"
+            f"/api/v2/{safe_market}/Titulos/{safe_symbol}/Cotizacion/seriehistorica/"
+            f"{desde}/{hasta}/{series_kind}"
         )
         data = self._get(route, f"histórico {simbolo}")
         if isinstance(data, dict):
