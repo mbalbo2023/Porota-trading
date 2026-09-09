@@ -166,6 +166,17 @@ try: print(json.loads(os.environ.get('REAUTH_OUT','{}')).get('status','UNKNOWN')
 except Exception: print('INVALID_REAUTH_OUTPUT')
 PY
 )"
+  read -r REAUTH_STAGE REAUTH_PAGE REAUTH_BLOCKED < <(REAUTH_OUT="$REAUTH_OUT" python3 - <<'PY'
+import json,os
+try:
+ d=json.loads(os.environ.get('REAUTH_OUT','{}'))
+ vals=[str(d.get('stage') or 'NONE'),str(d.get('page_url') or 'NONE'),str(d.get('blocked_post_path') or 'NONE')]
+ print(*[v.replace('\n',' ')[:240] for v in vals])
+except Exception:
+ print('INVALID_REAUTH_OUTPUT NONE NONE')
+PY
+)
+  printf 'REAUTH_DIAG_STAGE=%s\nREAUTH_DIAG_PAGE=%s\nREAUTH_DIAG_BLOCKED=%s\n' "$REAUTH_STAGE" "$REAUTH_PAGE" "$REAUTH_BLOCKED"
   if [[ "$REAUTH_RC" -ne 0 || "$REAUTH_STATE" != "AUTHENTICATED_TRUSTED_DEVICE" ]]; then
     write_auth_state "$REAUTH_STATE" 3600
     printf 'STATUS=AMARILLO_AUTH_BLOCKED\nAUTH_STATUS=%s\nAUTH_BROWSER_STARTED=YES\nREAUTH_ATTEMPTED=YES\nREAL_ORDERS_SENT=0\n' "$REAUTH_STATE"
