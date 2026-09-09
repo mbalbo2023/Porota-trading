@@ -1,0 +1,196 @@
+name: RC6 Wave8 Tablet Legibility + Trusted Scraping Reauth V2
+
+on:
+  push:
+    branches: [fix/rc6-wave8-tablet-table-legibility-20260909]
+    paths:
+      - '.github/workflows/rc6-wave8-tablet-legibility-reauth-deploy-v2-20260909.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-runtime-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate-deploy-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Candidate validation after RCA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q pytest
+          python -m py_compile zz_wave8_dashboard_live_rc6.py o_dashboard.py da_dashboard_ux_hf6.py
+          PYTHONPATH=. pytest -q tests/test_dashboard_global_a11y_rc5.py tests/test_dashboard_table_layout_rc6.py tests/test_shadow_learning_rc6.py
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('zz_wave8_dashboard_live_rc6.py').read_text()
+          for x in ['overflow-x:auto','white-space:nowrap','overflow-wrap:normal','word-break:normal','width:max-content','min-width:100%']:
+              assert x in s,x
+          for x in ['overflow-wrap:anywhere','min-width:0!important','overflow:hidden!important']:
+              assert x not in s,x
+          print('TABLET_TABLE_SOURCE_CONTRACT=GREEN')
+          PY
+          ! grep -REni '/Operar/|/Orden|budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' rc4_trusted_browser_contract_collector.py scripts/porota_contract_evidence_trusted_rc4.sh
+          docker build --pull=false -t porota-trading-bot:rc6-wave8-tablet-v2 .
+          echo CANDIDATE=GREEN
+
+      - name: Recover trusted-device helper and SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin hotfix/rc6-contract-evidence-auto-reauth-20260907
+          git show origin/hotfix/rc6-contract-evidence-auto-reauth-20260907:rc6_ppi_web_reauth.py > /tmp/rc6_ppi_web_reauth.py
+          python -m py_compile /tmp/rc6_ppi_web_reauth.py
+          ! grep -Ei 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order|/Operar/' /tmp/rc6_ppi_web_reauth.py
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_wave8"
+          chmod 600 "$HOME/.ssh/porota_wave8"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Stage helper
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/porota_wave8" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" /tmp/rc6_ppi_web_reauth.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_web_reauth.py"
+
+      - name: Deploy and live-prove UX plus scraping
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_wave8" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          SECRET=/etc/porota/contract-evidence-web.env
+          VENV=/opt/porota-contract-evidence-venv
+          cd "$ROOT"
+          CURRENT=$(git rev-parse HEAD); echo "PRE_HEAD=$CURRENT"
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close()
+          print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          sudo -n docker inspect -f 'PRE_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'PRE_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+
+          git fetch --no-tags origin fix/rc6-wave8-tablet-table-legibility-20260909
+          test "$(git rev-parse origin/fix/rc6-wave8-tablet-table-legibility-20260909)" = "$TARGET_SHA"
+          git merge-base --is-ancestor "$CURRENT" "$TARGET_SHA" || { echo "BASE_DIVERGED=$CURRENT"; exit 42; }
+          TMP=$(mktemp -d "$HOME/porota-wave8-v2.XXXXXX")
+          trap 'git -C /opt/porota-trading worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" -t porota-trading-bot:17.0.0-rc6 "$TMP/source"
+          git checkout -f -B fix/rc6-wave8-tablet-table-legibility-20260909 "$TARGET_SHA"
+          sudo -n python3 porota_mode_manager.py simulation
+          sleep 15
+          sudo -n docker inspect -f 'POST_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'POST_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,urllib.request
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          paths=['/','/en-vivo','/trading','/scalping','/validacion','/instrumentos','/riesgo','/historicos','/aprendizaje','/reportes','/sistema']
+          for p in paths:
+              req=urllib.request.Request('http://127.0.0.1:8000'+p)
+              if token: req.add_header('Authorization','Bearer '+token); req.add_header('X-Dashboard-Token',token)
+              with urllib.request.urlopen(req,timeout=15) as r:
+                  body=r.read().decode('utf-8','replace')
+                  print(f'HTTP|{p}|{r.status}|bytes={len(body)}')
+                  assert r.status==200
+                  assert 'porota-rc6-classic-responsive' in body
+                  assert 'overflow-wrap:anywhere' not in body
+                  assert 'min-width:0!important' not in body
+          print('ALL_TOPLEVEL_HTTP=GREEN')
+          PY
+
+          TOKEN=$(sudo -n docker exec porota_production_dashboard printenv DASHBOARD_ACCESS_TOKEN || true)
+          test -x "$VENV/bin/python"
+          "$VENV/bin/python" -c 'import playwright'
+          sudo -n -u porotaadmin env HOME=/home/porotaadmin TOKEN="$TOKEN" "$VENV/bin/python" - <<'PY'
+          import os
+          from playwright.sync_api import sync_playwright
+          token=os.getenv('TOKEN','')
+          paths=['/','/en-vivo','/trading','/validacion','/instrumentos','/riesgo','/historicos','/aprendizaje']
+          with sync_playwright() as p:
+              browser=p.chromium.launch(headless=True)
+              page=browser.new_page(viewport={'width':1536,'height':920})
+              for path in paths:
+                  resp=page.goto('http://127.0.0.1:8000'+path+('?token='+token if token else ''),wait_until='networkidle',timeout=30000)
+                  assert resp and resp.status==200,(path,resp.status if resp else None)
+                  ms=page.locator('table.paper-table td,table.paper-table th').evaluate_all("""els => els.map(e => ({w:e.getBoundingClientRect().width,ws:getComputedStyle(e).whiteSpace,ow:getComputedStyle(e).overflowWrap,wb:getComputedStyle(e).wordBreak})).slice(0,500)""")
+                  for m in ms:
+                      assert m['w']>=90,(path,m); assert m['ws']=='nowrap',(path,m); assert m['ow']=='normal',(path,m); assert m['wb']=='normal',(path,m)
+                  print(f'RENDER|{path}|cells={len(ms)}|GREEN')
+              page.goto('http://127.0.0.1:8000/'+('?token='+token if token else ''),wait_until='networkidle'); page.screenshot(path='/tmp/wave8-tablet-1536x920.png',full_page=True)
+              browser.close()
+          print('TABLET_1536x920_RENDER=GREEN')
+          PY
+
+          test -d "$PROFILE"; test -f "$SECRET"; test "$(stat -c '%U:%a' "$SECRET")" = 'porotaadmin:600'
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_reauth.py /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py
+          sudo -n rm -f /tmp/rc6_ppi_web_reauth.py
+          set +e
+          REAUTH_OUT=$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH=/usr/local/lib/porota-contract-evidence-rc6:$ROOT "$VENV/bin/python" /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py --profile "$PROFILE" --secret "$SECRET" 2>&1); REAUTH_RC=$?
+          set -e
+          printf '%s\n' "$REAUTH_OUT"
+          REAUTH_STATE=$(REAUTH_OUT="$REAUTH_OUT" python3 - <<'PY'
+          import json,os
+          try: print(json.loads(os.environ['REAUTH_OUT']).get('status','UNKNOWN'))
+          except: print('INVALID_REAUTH_OUTPUT')
+          PY
+          )
+          echo "REAUTH_RC=$REAUTH_RC|REAUTH_STATE=$REAUTH_STATE"
+          test "$REAUTH_RC" -eq 0; test "$REAUTH_STATE" = AUTHENTICATED_TRUSTED_DEVICE
+
+          BEFORE=$(find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json' | wc -l); START=$(date +%s)
+          sudo -n systemctl reset-failed porota-contract-evidence-rc4.service || true
+          sudo -n systemctl start porota-contract-evidence-rc4.service
+          sleep 5
+          test "$(sudo -n systemctl is-enabled porota-contract-evidence-rc4.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc4.timer)" = active
+          AFTER=$(find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json' | wc -l)
+          echo "EVIDENCE=$BEFORE->$AFTER"; test "$AFTER" -gt "$BEFORE"
+          LATEST=$(find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@|%p\n'|sort -nr|sed -n '1p'); MT=${LATEST%%.*}; FILE=${LATEST#*|}; test "$MT" -ge "$START"
+          python3 - "$FILE" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8')); print('EVIDENCE_STATE='+str(d.get('state'))); assert d.get('state')=='AUTHENTICATED_TRUSTED_DEVICE'; assert int(d.get('real_orders_sent',0))==0
+          PY
+          ! grep -REni '/Operar/|/Orden|budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' rc4_trusted_browser_contract_collector.py scripts/porota_contract_evidence_trusted_rc4.sh
+
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "POST_DB=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo "POST_HEAD=$(git rev-parse HEAD)"
+          echo WAVE8_UX=GREEN_TABLET_BROWSER_PROVEN
+          echo SCRAPING_AUTH=AUTHENTICATED_TRUSTED_DEVICE
+          echo SCRAPING_ROUTE_POLICY=COTIZACIONES_ONLY
+          echo SCRAPING_TIMER=ENABLED_ACTIVE
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          HOST
