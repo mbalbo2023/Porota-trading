@@ -20,12 +20,12 @@ TRADING='https://trading.portfoliopersonal.com'
 SAFE_METHODS={'GET','HEAD','OPTIONS'}
 TARGETS=('InstrumentosOperables','CaucionesOperables','ConfiguracionOperatoriaSimplificada','SubyacenteOpciones','DatosTecnicos')
 ROUTES={
- 'CONTRACT_EVIDENCE_DYNAMIC':['/Cotizaciones/Bonos','/Operar/Bonos','/Operar/Ons'],
- 'CONTRACT_EVIDENCE_CAUCIONES':['/Cotizaciones/Cauciones','/Operar/Cauciones'],
- 'CONTRACT_EVIDENCE_AUCTIONS':['/Cotizaciones/Licitaciones','/Operar/Licitaciones'],
- 'CONTRACT_EVIDENCE_DERIVATIVES':['/Cotizaciones/Opciones','/Cotizaciones/Futuros','/Operar/Opciones','/Operar/260'],
+ 'CONTRACT_EVIDENCE_DYNAMIC':['/Cotizaciones/Bonos'],
+ 'CONTRACT_EVIDENCE_CAUCIONES':['/Cotizaciones/Cauciones'],
+ 'CONTRACT_EVIDENCE_AUCTIONS':['/Cotizaciones/Licitaciones'],
+ 'CONTRACT_EVIDENCE_DERIVATIVES':['/Cotizaciones/Opciones','/Cotizaciones/Futuros'],
  'CONTRACT_EVIDENCE_STATIC':['/Cotizaciones/Acciones','/Cotizaciones/Cedears','/Cotizaciones/Bonos','/Cotizaciones/Letras','/Cotizaciones/Ons','/Cotizaciones/FCIs'],
- 'CONTRACT_EVIDENCE_FULL_BROWSER':['/Cotizaciones/FCIs','/Cotizaciones/FCIsExterior','/Cotizaciones/Acciones','/Cotizaciones/AccionesUSA','/Cotizaciones/Bonos','/Cotizaciones/Cauciones','/Cotizaciones/Cedears','/Cotizaciones/ETFs','/Cotizaciones/Futuros','/Cotizaciones/Letras','/Cotizaciones/Licitaciones','/Cotizaciones/Ons','/Cotizaciones/Opciones','/Cotizaciones/Indices','/Cotizaciones/Monedas','/Cotizaciones/Tasas','/Operar/FCIs','/Operar/FCIsExterior','/Operar/Acciones','/Operar/AccionesExterior','/Operar/Bonos','/Operar/Cauciones','/Operar/Cedears','/Operar/ETFs','/Operar/260','/Operar/Letras','/Operar/Ons','/Operar/Opciones','/Operar/Licitaciones','/Operar/Canjes'],
+ 'CONTRACT_EVIDENCE_FULL_BROWSER':['/Cotizaciones/FCIs','/Cotizaciones/FCIsExterior','/Cotizaciones/Acciones','/Cotizaciones/AccionesUSA','/Cotizaciones/Bonos','/Cotizaciones/Cauciones','/Cotizaciones/Cedears','/Cotizaciones/ETFs','/Cotizaciones/Futuros','/Cotizaciones/Letras','/Cotizaciones/Licitaciones','/Cotizaciones/Ons','/Cotizaciones/Opciones','/Cotizaciones/Indices','/Cotizaciones/Monedas','/Cotizaciones/Tasas'],
 }
 
 def clean_url(url):
