@@ -1,0 +1,103 @@
+name: RC6 Assemble Clean W9-W18 Release Candidate 2026-09-09
+on:
+  push:
+    branches: [release-candidate/rc6-w9-w18-clean-20260909]
+    paths: ['.github/workflows/rc6-release-candidate-assemble-w9-w18-clean-20260909.yml']
+permissions:
+  contents: write
+jobs:
+  assemble-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Assemble pinned runtime files only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          BASE=9197aedf35fe1739b594c742902e80df069c47c9
+          test "$(git rev-parse HEAD^)" = "$BASE" || test "$(git rev-parse HEAD)" = "$BASE"
+          declare -A BRANCH SHA
+          BRANCH[W9]='deploy-prep/rc6-wave9-currentbase-20260909'; SHA[W9]='08112ca2ec44c7a856619ffc1cab9c13752e6822'
+          BRANCH[W10]='deploy-prep/rc6-wave10-currentbase-20260909'; SHA[W10]='617244b23b54e4c227b1d76bc217460be4d78cd5'
+          BRANCH[W13]='deploy-prep/rc6-wave13-currentbase-20260909'; SHA[W13]='7e2cb576a05622b1a8270036465dd6eea728867f'
+          BRANCH[W14]='deploy-prep/rc6-wave14-currentbase-20260909'; SHA[W14]='2297871c21da8eddf03c4e5ea25b60c4f7013a90'
+          BRANCH[W15]='deploy-prep/rc6-wave15-currentbase-20260909'; SHA[W15]='34316c10678774d51ea209687011a62a5a0bd2a1'
+          BRANCH[W16]='deploy-prep/rc6-wave16-currentbase-20260909'; SHA[W16]='ef40b43b7c17f3cfc6d78d6787481bd016cb78cb'
+          BRANCH[W18]='deploy-prep/rc6-wave18-currentbase-20260909'; SHA[W18]='40b68b3893236455ed616bbe3342bae4d3e3a815'
+          for w in W9 W10 W13 W14 W15 W16 W18; do
+            git fetch --no-tags origin "${BRANCH[$w]}"
+            got=$(git rev-parse FETCH_HEAD)
+            test "$got" = "${SHA[$w]}"
+            git update-ref "refs/remotes/origin/pinned-$w" "$got"
+          done
+
+          git checkout "${SHA[W9]}" -- fe_fixed_income_nominal_contract_rc6.py rc6_cauciones_contract.py tests/test_fixed_income_nominal_contract_rc6.py tests/test_rc6_cauciones_contract.py
+          git checkout "${SHA[W10]}" -- ck_policy_gate_hf6.py porota_mode_manager.py
+          git checkout "${SHA[W13]}" -- fb_history_reconciler_rc6.py fj_history_backfill_planner_rc6.py tests/test_history_backfill_planner_rc6.py tests/test_history_reconciler_rc6.py
+          git checkout "${SHA[W14]}" -- rc6_fast_functional_health.py rc6_full_db_integrity.py rc6_preopen_host_hardened.py scripts/rc6_sre_preopen_postclose_deploy.sh systemd/porota-fast-functional-health-rc6.service systemd/porota-fast-functional-health-rc6.timer systemd/porota-full-db-integrity-rc6.service tests/test_sre_health_split_rc6.py
+          git checkout "${SHA[W15]}" -- fc_mfe_mae_provenance_rc6.py fh_forward_lab_v2_rc6.py tests/test_forward_lab_v2_rc6.py tests/test_mfe_mae_provenance_rc6.py
+          git checkout "${SHA[W16]}" -- ops/rc6_build_cache_safe_cleanup.sh
+          git checkout "${SHA[W18]}" -- fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py ops/rc6_deploy_critical_control_plane.sh tests/test_critical_approval_gateway_rc6.py tests/test_critical_github_proxy_rc6.py
+
+          cat > RC6_PREDEPLOY_MANIFEST_W9_W18_20260909.md <<'EOF'
+          # RC6 clean predeploy manifest — W9-W18
+          Baseline live: `9197aedf35fe1739b594c742902e80df069c47c9`
+
+          Included runtime deltas:
+          - W9 `08112ca2ec44c7a856619ffc1cab9c13752e6822`: fixed-income nominal contract + cauciones contract.
+          - W10 `617244b23b54e4c227b1d76bc217460be4d78cd5`: sector concentration BINDING in policy gate and mode manager.
+          - W13 `7e2cb576a05622b1a8270036465dd6eea728867f`: history reconciler + backfill planner.
+          - W14 `2297871c21da8eddf03c4e5ea25b60c4f7013a90`: SRE split health/preopen/postclose host tooling.
+          - W15 `34316c10678774d51ea209687011a62a5a0bd2a1`: Forward Lab v2 + MFE/MAE provenance.
+          - W16 `ef40b43b7c17f3cfc6d78d6787481bd016cb78cb`: safe Docker build-cache housekeeping only.
+          - W18 `40b68b3893236455ed616bbe3342bae4d3e3a815`: critical control plane package with automatic rollback removed.
+
+          Not copied because already covered by live baseline/proof and no runtime delta:
+          - W11 Event Risk/GDELT proof.
+          - W17 tablet/Voice Access UX proof.
+
+          W12 Contract Evidence is intentionally excluded until fresh authenticated live proof is GREEN.
+          Safety invariant: `PRODUCTION_PAPER`; real broker order routes remain blocked; no automatic rollback.
+          EOF
+
+      - name: Cross-wave validation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q pytest python-dotenv
+          python -m py_compile \
+            fe_fixed_income_nominal_contract_rc6.py rc6_cauciones_contract.py ck_policy_gate_hf6.py porota_mode_manager.py \
+            fb_history_reconciler_rc6.py fj_history_backfill_planner_rc6.py rc6_fast_functional_health.py rc6_full_db_integrity.py rc6_preopen_host_hardened.py \
+            fc_mfe_mae_provenance_rc6.py fh_forward_lab_v2_rc6.py fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py
+          bash -n scripts/rc6_sre_preopen_postclose_deploy.sh
+          bash -n ops/rc6_build_cache_safe_cleanup.sh
+          bash -n ops/rc6_deploy_critical_control_plane.sh
+          test "$(grep -c 'PAPER_SECTOR_CONCENTRATION_POLICY.*BINDING' porota_mode_manager.py)" -ge 2
+          grep -q '_mode(SECTOR_ENV, "BINDING")' ck_policy_gate_hf6.py
+          ! grep -Ein 'rollback|ROLLBACK' ops/rc6_deploy_critical_control_plane.sh
+          ! grep -REn 'api/Orders|/Operar|send_order|place_order|new_order' fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py
+          PYTHONPATH=. pytest -q \
+            tests/test_fixed_income_nominal_contract_rc6.py tests/test_rc6_cauciones_contract.py \
+            tests/test_history_backfill_planner_rc6.py tests/test_history_reconciler_rc6.py \
+            tests/test_sre_health_split_rc6.py tests/test_forward_lab_v2_rc6.py tests/test_mfe_mae_provenance_rc6.py \
+            tests/test_critical_approval_gateway_rc6.py tests/test_critical_github_proxy_rc6.py
+          echo 'CROSS_WAVE_STATIC_AND_TEST_GATE=GREEN'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ROLLBACK_AUTOMATICO=NO'
+      - name: Commit clean candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name porota-rc6-ci
+          git config user.email porota-rc6-ci@users.noreply.github.com
+          git add fe_fixed_income_nominal_contract_rc6.py rc6_cauciones_contract.py ck_policy_gate_hf6.py porota_mode_manager.py \
+            fb_history_reconciler_rc6.py fj_history_backfill_planner_rc6.py rc6_fast_functional_health.py rc6_full_db_integrity.py rc6_preopen_host_hardened.py \
+            scripts/rc6_sre_preopen_postclose_deploy.sh systemd/porota-fast-functional-health-rc6.service systemd/porota-fast-functional-health-rc6.timer systemd/porota-full-db-integrity-rc6.service \
+            fc_mfe_mae_provenance_rc6.py fh_forward_lab_v2_rc6.py ops/rc6_build_cache_safe_cleanup.sh \
+            fg_critical_approval_gateway_rc6.py fm_critical_approval_unix_runtime_rc6.py fn_critical_github_proxy_rc6.py ops/rc6_deploy_critical_control_plane.sh \
+            tests/test_fixed_income_nominal_contract_rc6.py tests/test_rc6_cauciones_contract.py tests/test_history_backfill_planner_rc6.py tests/test_history_reconciler_rc6.py tests/test_sre_health_split_rc6.py tests/test_forward_lab_v2_rc6.py tests/test_mfe_mae_provenance_rc6.py tests/test_critical_approval_gateway_rc6.py tests/test_critical_github_proxy_rc6.py RC6_PREDEPLOY_MANIFEST_W9_W18_20260909.md
+          git commit -m 'release(rc6): assemble clean W9-W18 predeploy candidate excluding W12'
+          git push origin HEAD:release-candidate/rc6-w9-w18-clean-20260909
+          echo "CANDIDATE_SHA=$(git rev-parse HEAD)"
