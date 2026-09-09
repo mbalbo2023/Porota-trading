@@ -1,0 +1,73 @@
+name: RC6 Wave12 Blocked Nonread Sanitized Inventory 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-blocked-nonread-sanitized-inventory-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12inv"
+          chmod 600 "$HOME/.ssh/w12inv"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Print sanitized unique blocked request inventory
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w12inv" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          OUTDIR=$REPO/data/contract_evidence/rc6_trusted
+          CAP=$(find "$OUTDIR" -maxdepth 1 -type f -name 'contract_final_*.json' -printf '%T@|%p\n' | sort -nr | sed -n '1p' | cut -d'|' -f2-)
+          test -n "$CAP" -a -f "$CAP"
+          python3 - "$CAP" <<'PY'
+          import json,sys
+          from collections import Counter
+          from urllib.parse import urlsplit
+          p=sys.argv[1]
+          d=json.load(open(p,encoding='utf-8'))
+          assert d.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert int(d.get('real_orders_sent') or 0)==0
+          routes=d.get('routes') or []
+          assert len(routes)==16
+          assert all(str(x.get('requested') or '').startswith('/Cotizaciones/') for x in routes)
+          c=Counter()
+          for x in d.get('blocked_nonread') or []:
+              m=str(x.get('method') or '').upper()
+              u=urlsplit(str(x.get('url') or ''))
+              c[(m,u.netloc,u.path)] += 1
+          print('AUTH=AUTHENTICATED_TRUSTED_DEVICE')
+          print('ROUTES=16')
+          print('BLOCKED_TOTAL='+str(sum(c.values())))
+          print('BLOCKED_UNIQUE='+str(len(c)))
+          for (m,h,path),n in sorted(c.items(), key=lambda kv:(-kv[1],kv[0])):
+              # Host/path/method only. No query/body/headers/cookies/tokens.
+              print(f'BLOCKED count={n} method={m} host={h} path={path}')
+          print('REQUEST_BODIES_PRINTED=NO')
+          print('QUERY_STRINGS_PRINTED=NO')
+          print('HEADERS_PRINTED=NO')
+          print('COOKIE_VALUES_PRINTED=NO')
+          PY
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0];m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone();c.close()
+          print(f'DB={q}|{m}|{r}');assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          REMOTE
