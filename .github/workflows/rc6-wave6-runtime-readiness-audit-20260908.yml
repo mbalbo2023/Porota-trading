@@ -1,0 +1,35 @@
+name: RC6 Wave6 Runtime Readiness Audit 2026-09-08
+on:
+  push:
+    branches: [audit/rc6-wave6-runtime-readiness-20260908]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and focused tests
+        run: |
+          set -euo pipefail
+          python -m pip install -q pytest requests
+          python -m py_compile cp_history_ingest_policy_hf6.py cq_history_attempt_ledger_hf6.py cr_data912_reconcile_hf6.py cs_postclose_history_scheduler_hf6.py ct_ppi_history_salvage_hf6.py cu_history_store_v2_hf6.py cv_history_store_adapter_hf6.py cw_data912_history_v2_sink.py dd_history_metrics_hf6.py ek_history_freshness_metrics_rc5.py
+          PYTHONPATH=. python -m pytest -q test_cp_history_ingest_policy_hf6.py test_hf6_history_data912_v2.py tests/test_history_freshness_metrics_rc5.py tests/test_history_close_only_hf2.py
+      - name: Shadow ownership inventory
+        run: |
+          set -euo pipefail
+          echo '=== HISTORY OWNERSHIP / SCHEDULER INVENTORY ==='
+          grep -RniE 'shadow|scheduler|postclose|history|ppi|owner|trigger|cadence' cp_history_ingest_policy_hf6.py cq_history_attempt_ledger_hf6.py cs_postclose_history_scheduler_hf6.py ct_ppi_history_salvage_hf6.py cw_data912_history_v2_sink.py | head -n 350 || true
+      - name: Safety gate
+        run: |
+          set -euo pipefail
+          ! grep -RniE 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' cp_history_ingest_policy_hf6.py cq_history_attempt_ledger_hf6.py cr_data912_reconcile_hf6.py cs_postclose_history_scheduler_hf6.py ct_ppi_history_salvage_hf6.py cu_history_store_v2_hf6.py cv_history_store_adapter_hf6.py cw_data912_history_v2_sink.py
+          echo HISTORY_SHADOW_ONLY=GREEN
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo WAVE6_RUNTIME_READINESS_AUDIT=GREEN
