@@ -30,10 +30,11 @@ jobs:
           cd /opt/porota-trading
           echo "HEAD=$(git rev-parse HEAD)"
           echo '=== CONTAINERS ==='
-          sudo -n docker inspect -f '{{.Name}}|running={{.State.Running}}|restarts={{.RestartCount}}|readonly={{.HostConfig.ReadonlyRootfs}}' porota_production_observer porota_paper_dashboard
+          sudo -n docker ps --format 'CONTAINER={{.Names}}|IMAGE={{.Image}}|STATUS={{.Status}}'
+          sudo -n docker inspect -f 'OBSERVER={{.Name}}|running={{.State.Running}}|restarts={{.RestartCount}}|readonly={{.HostConfig.ReadonlyRootfs}}' porota_production_observer
           echo '=== OBSERVER / FAMILY / TRADING ==='
           sudo -n docker exec -i porota_production_observer python - <<'PY'
-          import sqlite3, json, os
+          import sqlite3, json
           DB='/app/data/paper_v17/observer_v17.db'
           c=sqlite3.connect('file:'+DB+'?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
           print('DB_QUICK='+c.execute('pragma quick_check').fetchone()[0])
@@ -52,12 +53,9 @@ jobs:
           print('GATES_TODAY='+str(count("select count(*) from trade_gate_evaluations where substr(evaluated_at,1,10)='2026-09-09'")))
           print('POSITIONS_OPEN='+str(count("select count(*) from paper_positions where status='OPEN'")))
           print('POSITIONS_TODAY='+str(count("select count(*) from paper_positions where substr(opened_at,1,10)='2026-09-09'")))
-          # Join decisions/gates to latest market snapshot family where possible.
           try:
               rows=c.execute("""
-                with latest as (
-                  select symbol,asset_class,max(id) mid from market_snapshots group by symbol,asset_class
-                )
+                with latest as (select symbol,asset_class,max(id) mid from market_snapshots group by symbol,asset_class)
                 select upper(l.asset_class) family,count(distinct d.id) decisions,
                        sum(case when d.action='BUY' then 1 else 0 end) buys,
                        sum(case when d.action='HOLD' then 1 else 0 end) holds
@@ -67,21 +65,18 @@ jobs:
               """).fetchall()
               for r in rows: print('DECISION_FAMILY='+json.dumps(dict(r),sort_keys=True))
           except Exception as e: print('DECISION_FAMILY_ERROR='+type(e).__name__)
-          # Snapshot activity today by family proves scanner observation even without decisions.
           try:
               for r in c.execute("select upper(asset_class) family,count(*) n,count(distinct symbol) symbols,max(observed_at) last_at from market_snapshots where substr(observed_at,1,10)='2026-09-09' group by upper(asset_class) order by family"):
                   print('SNAPSHOT_FAMILY='+json.dumps(dict(r),sort_keys=True,default=str))
           except Exception as e: print('SNAPSHOT_ERROR='+type(e).__name__)
-          # Reasons from today's gates/decisions, sanitized (no secrets expected in DB reasons).
           try:
-              for r in c.execute("select symbol,action,score,reason,decided_at from paper_decisions where substr(decided_at,1,10)='2026-09-09' order by id desc limit 25"):
+              for r in c.execute("select symbol,action,score,reason,decided_at from paper_decisions where substr(decided_at,1,10)='2026-09-09' order by id desc limit 30"):
                   print('RECENT_DECISION='+json.dumps(dict(r),sort_keys=True,default=str))
           except Exception as e: print('RECENT_DECISION_ERROR='+type(e).__name__)
           try:
-              for r in c.execute("select symbol,final_result,reason,evaluated_at from trade_gate_evaluations where substr(evaluated_at,1,10)='2026-09-09' order by id desc limit 25"):
+              for r in c.execute("select symbol,final_result,reason,evaluated_at from trade_gate_evaluations where substr(evaluated_at,1,10)='2026-09-09' order by id desc limit 30"):
                   print('RECENT_GATE='+json.dumps(dict(r),sort_keys=True,default=str))
           except Exception as e: print('RECENT_GATE_ERROR='+type(e).__name__)
-          # Candidate blocker distribution for Acciones/Bonos from catalog state.
           cols={r[1] for r in c.execute('pragma table_info(candidate_universe)')}
           print('CANDIDATE_COLUMNS='+','.join(sorted(cols)))
           for fam in ('ACCIONES','BONOS'):
@@ -95,7 +90,7 @@ jobs:
           PY
           echo '=== LIVE DASHBOARD HTML ==='
           python3 - <<'PY'
-          import urllib.request,re,json
+          import urllib.request,re
           base='http://127.0.0.1:8000'
           routes=['/','/vivo','/trading','/validacion','/riesgo','/historicos','/sistema']
           needles=['Caja','Patrimonio','Monedas','Matriz completa por familia','Todos los instrumentos del catálogo actual','Contexto intradiario por unidad','Criterio de salida','Scalping','workers','En esta página']
