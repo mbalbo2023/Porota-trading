@@ -1,0 +1,153 @@
+name: RC6 Contract Evidence Same Context Proof 2026-09-09
+
+on:
+  push:
+    branches: [fix/rc6-contract-evidence-same-context-20260909]
+    paths:
+      - 'rc6_same_context_contract_probe.py'
+      - '.github/workflows/rc6-contract-evidence-same-context-proof-20260909.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-contract-evidence-same-context
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate safe probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile rc6_same_context_contract_probe.py
+          ! grep -REni '/Operar/|/Orden|budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' rc6_same_context_contract_probe.py
+          python - <<'PY'
+          import rc6_same_context_contract_probe as p
+          import rc4_trusted_browser_contract_collector as c
+          assert len(c.ROUTES['CONTRACT_EVIDENCE_FULL_BROWSER']) >= 16
+          assert all(x.startswith('/Cotizaciones/') for x in c.ROUTES['CONTRACT_EVIDENCE_FULL_BROWSER'])
+          print('SAFE_PROBE=GREEN')
+          PY
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage same-context probe
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" rc6_same_context_contract_probe.py "$DO_USER@$DO_HOST:/tmp/rc6_same_context_contract_probe.py"
+      - name: Reauthenticate and collect in same browser context
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          SECRET=/etc/porota/contract-evidence-web.env
+          PY=/opt/porota-contract-evidence-venv/bin/python
+          CHROME=/usr/bin/google-chrome-stable
+          REAUTH=/usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py
+          STAGE=/tmp/porota-contract-evidence-same-context
+          OUTDIR="$ROOT/data/contract_evidence/rc4_trusted"
+          cd "$ROOT"
+
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          test -x "$PY"; test -x "$CHROME"; test -f "$REAUTH"; test -f "$SECRET"; test -d "$PROFILE"
+
+          sudo -n rm -rf "$STAGE"
+          sudo -n install -d -o porotaadmin -g porotaadmin -m 0700 "$STAGE"
+          sudo -n install -o porotaadmin -g porotaadmin -m 0600 /tmp/rc6_same_context_contract_probe.py "$STAGE/rc6_same_context_contract_probe.py"
+          sudo -n rm -f /tmp/rc6_same_context_contract_probe.py
+          sudo -n cp "$REAUTH" "$STAGE/reauth_same_context.py"
+          sudo -n chown porotaadmin:porotaadmin "$STAGE/reauth_same_context.py"
+          sudo -n chmod 0600 "$STAGE/reauth_same_context.py"
+          sudo -n python3 - "$STAGE/reauth_same_context.py" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1]); s=p.read_text(encoding='utf-8')
+          marker='from urllib.parse import urlsplit'
+          assert marker in s
+          s=s.replace(marker, marker+'\nimport rc6_same_context_contract_probe as same_probe',1)
+          a='ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=0)); return 0'
+          b='ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts)); return 0'
+          ra='same_probe.collect(ctx, page, os.environ["POROTA_SAME_CONTEXT_OUTPUT"]); ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=0)); return 0'
+          rb='same_probe.collect(ctx, page, os.environ["POROTA_SAME_CONTEXT_OUTPUT"]); ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts)); return 0'
+          assert a in s and b in s
+          s=s.replace(a,ra,1).replace(b,rb,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+          sudo -n chown porotaadmin:porotaadmin "$STAGE/reauth_same_context.py"
+          sudo -n chmod 0600 "$STAGE/reauth_same_context.py"
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          TMP="$STAGE/contract_${STAMP}_samecontext.json"
+          FINAL="$OUTDIR/contract_${STAMP}_samecontext.json"
+
+          set +e
+          REAUTH_OUT=$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$STAGE:$ROOT:/usr/local/lib/porota-contract-evidence-rc6" POROTA_CHROME_EXECUTABLE="$CHROME" POROTA_SAME_CONTEXT_OUTPUT="$TMP" "$PY" "$STAGE/reauth_same_context.py" --profile "$PROFILE" --secret "$SECRET" 2>&1)
+          RC=$?
+          set -e
+          printf '%s\n' "$REAUTH_OUT"
+          echo "SAME_CONTEXT_RC=$RC"
+          test "$RC" -eq 0
+          test -s "$TMP"
+
+          python3 - "$TMP" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          routes=d.get('routes') or []
+          reached=sum(1 for r in routes if r.get('reached'))
+          print('AUTH='+str(d.get('auth_status')))
+          print('ROUTES='+str(len(routes)))
+          print('REACHED='+str(reached))
+          print('ENDPOINTS='+str(len(d.get('endpoints') or {})))
+          print('REAL_ORDERS='+str(d.get('real_orders_sent')))
+          assert d.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert int(d.get('real_orders_sent',0))==0
+          assert len(routes) >= 16
+          assert reached >= 12
+          assert all(str(r.get('requested','')).startswith('/Cotizaciones/') for r in routes)
+          PY
+
+          GID=$(sudo -n docker exec porota_production_observer id -g 2>/dev/null || echo 1000)
+          sudo -n install -o root -g "$GID" -m 0640 "$TMP" "$FINAL"
+          REL="${FINAL#$ROOT/data/}"
+          IMPORT=$(sudo -n docker exec porota_production_observer python /app/rc4_contract_import_job.py --input "/app/data/$REL")
+          echo "IMPORT=$IMPORT"
+          test "$(sudo -n systemctl is-enabled porota-contract-evidence-rc4.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc4.timer)" = active
+
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "POST_DB=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo CONTRACT_EVIDENCE_SAME_CONTEXT=GREEN
+          echo SCRAPING_TIMER=ENABLED_ACTIVE
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          HOST
