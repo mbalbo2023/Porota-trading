@@ -1,0 +1,134 @@
+name: RC6 Contract Evidence Trading Session Verification 2026-09-09
+
+on:
+  push:
+    branches: [fix/rc6-contract-evidence-trading-session-verification-20260909]
+    paths:
+      - '.github/workflows/rc6-contract-evidence-trading-session-verification-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fix-and-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Patch false-positive reauth and prove fresh Contract Evidence
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          SECRET=/etc/porota/contract-evidence-web.env
+          PY=/opt/porota-contract-evidence-venv/bin/python
+          CHROME=/usr/bin/google-chrome-stable
+          REAUTH=/usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py
+          OUTDIR="$ROOT/data/contract_evidence/rc4_trusted"
+          STAGE=/tmp/porota-contract-evidence-proof
+          cd "$ROOT"
+
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo "OBSERVER=$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}' porota_production_observer)"
+          echo "DASHBOARD=$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}' porota_paper_dashboard)"
+
+          sudo -n python3 - "$REAUTH" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])
+          s=p.read_text(encoding='utf-8')
+          old='''                if authenticated_url(page.url):\n                    ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts)); return 0\n'''
+          new='''                if authenticated_url(page.url):\n                    # Account landing alone is not sufficient evidence that the trading SPA\n                    # inherited the session. Verify the actual trading root before declaring\n                    # the persistent profile authenticated. This stays GET-only and order-free.\n                    if urlsplit(str(page.url)).netloc == "cuenta.portfoliopersonal.com":\n                        goto_fast(TRADING_ROOT, "VERIFY_TRADING_SESSION")\n                        if not authenticated_url(page.url):\n                            continue\n                    ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts)); return 0\n'''
+          if old not in s:
+              raise SystemExit('PATCH_NEEDLE_NOT_FOUND')
+          if s.count(old) != 1:
+              raise SystemExit('PATCH_NEEDLE_NOT_UNIQUE')
+          p.write_text(s.replace(old,new),encoding='utf-8')
+          PY
+          sudo -n chmod 0755 "$REAUTH"
+          sudo -n python3 -m py_compile "$REAUTH"
+          grep -q 'VERIFY_TRADING_SESSION' "$REAUTH"
+
+          set +e
+          REAUTH_OUT=$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH=/usr/local/lib/porota-contract-evidence-rc6:$ROOT POROTA_CHROME_EXECUTABLE="$CHROME" "$PY" "$REAUTH" --profile "$PROFILE" --secret "$SECRET" 2>&1)
+          REAUTH_RC=$?
+          set -e
+          printf '%s\n' "$REAUTH_OUT"
+          echo "REAUTH_RC=$REAUTH_RC"
+          REAUTH_STATE=$(REAUTH_OUT="$REAUTH_OUT" python3 - <<'PY'
+          import json,os
+          try: print(json.loads(os.environ['REAUTH_OUT']).get('status','UNKNOWN'))
+          except Exception: print('INVALID_REAUTH_OUTPUT')
+          PY
+          )
+          echo "REAUTH_STATE=$REAUTH_STATE"
+          test "$REAUTH_RC" -eq 0
+          test "$REAUTH_STATE" = AUTHENTICATED_TRUSTED_DEVICE
+
+          sudo -n rm -rf "$STAGE"
+          sudo -n install -d -o porotaadmin -g porotaadmin -m 0700 "$STAGE"
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          TMP="$STAGE/contract_${STAMP}_fullbrowserproof.json"
+          FINAL="$OUTDIR/contract_${STAMP}_fullbrowserproof.json"
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin POROTA_CHROME_EXECUTABLE="$CHROME" PYTHONPATH="$ROOT" "$PY" "$ROOT/rc4_trusted_browser_contract_collector.py" --profile "$PROFILE" --jobs CONTRACT_EVIDENCE_FULL_BROWSER --output "$TMP"
+          test -s "$TMP"
+          python3 - "$TMP" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print('AUTH='+str(d.get('auth_status')))
+          print('ROUTES='+str(len(d.get('routes') or [])))
+          print('REACHED='+str(sum(1 for r in (d.get('routes') or []) if r.get('reached'))))
+          print('ENDPOINTS='+str(len(d.get('endpoints') or {})))
+          print('BLOCKED_NONREAD='+str(d.get('blocked_nonread') or []))
+          print('REAL_ORDERS='+str(d.get('real_orders_sent')))
+          assert d.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert int(d.get('real_orders_sent',0))==0
+          assert len(d.get('routes') or []) >= 17
+          assert sum(1 for r in (d.get('routes') or []) if r.get('reached')) >= 12
+          assert not any('/Operar/' in str(x.get('url','')) or '/Orden' in str(x.get('url','')) for x in (d.get('blocked_nonread') or []))
+          PY
+          GID=$(sudo -n docker exec porota_production_observer id -g 2>/dev/null || echo 1000)
+          sudo -n install -o root -g "$GID" -m 0640 "$TMP" "$FINAL"
+          sudo -n rm -rf "$STAGE"
+          REL="${FINAL#$ROOT/data/}"
+          IMPORT=$(sudo -n docker exec porota_production_observer python /app/rc4_contract_import_job.py --input "/app/data/$REL")
+          echo "IMPORT=$IMPORT"
+          test "$(sudo -n systemctl is-enabled porota-contract-evidence-rc4.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc4.timer)" = active
+
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "POST_DB=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo "OBSERVER_POST=$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}' porota_production_observer)"
+          echo "DASHBOARD_POST=$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}' porota_paper_dashboard)"
+          echo CONTRACT_EVIDENCE_REAUTH=GREEN
+          echo CONTRACT_EVIDENCE_FULL_BROWSER_FRESH=GREEN
+          echo SCRAPING_TIMER=ENABLED_ACTIVE
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          HOST
