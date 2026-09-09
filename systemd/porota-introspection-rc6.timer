@@ -1,0 +1,8 @@
+[Unit]
+Description=Hourly Porota RC6 functional introspection at minute 15
+[Timer]
+OnCalendar=*-*-* *:15:00
+Persistent=true
+Unit=porota-introspection-rc6.service
+[Install]
+WantedBy=timers.target
