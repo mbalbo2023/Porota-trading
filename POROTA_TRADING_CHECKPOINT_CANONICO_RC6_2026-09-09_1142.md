@@ -126,7 +126,20 @@ El contrato RC6 de una opción exige, como mínimo:
 
 El collector RC6 ya navega `/Cotizaciones/Opciones` y captura `SubyacenteOpciones`, pero el normalizador actual sólo materializa la lista de subyacentes; no materializa series individuales con strike/vencimiento/call-put/multiplicador/lote.
 
-Evidencia pública autoritativa BYMA vigente consultada el 2026-09-09:
+### Proof live read-only 11:49 ART
+Branch diagnóstico: `diag/rc6-options-scraping-history-live-20260909`.
+Run: `34366098453` (SUCCESS). El diagnóstico no hizo llamadas de red ni mutaciones.
+
+Resultados:
+- `OPTIONS_AVAILABLE=382`.
+- muestra de 12 opciones AVAILABLE, ARS/BYMA/INMEDIATA.
+- metadata del catálogo contiene sólo identidad básica (`ticker`, descripción, market, currency, ISIN/Caja Valores, nominalInPrice/type); los campos contractuales específicos son vacíos.
+- por tanto el faltante no es sólo un gate de software: la base live realmente no posee todavía subyacente/strike/vencimiento/Call-Put/multiplicador por serie.
+- evidencia trusted antigua autenticada prueba que `/Cotizaciones/Opciones` mostraba series y filtros de subyacente/vencimiento/tipo, y que se observó `SubyacenteOpciones`, pero el normalizador persistido descartó la identidad contractual completa de las series.
+- NO reintroducir rutas `/Operar/*`; RC6 actual debe permanecer sólo `/Cotizaciones/*` + XHR GET seguros.
+
+### Términos generales autoritativos
+Evidencia pública BYMA vigente consultada el 2026-09-09:
 - opciones BYMA son americanas;
 - desde 2026-04-24 la prima liquida T+0;
 - lotes: 100 nominales para acciones, 10 para CEDEARs y 1000 para títulos públicos;
@@ -137,40 +150,46 @@ Estos términos generales NO sustituyen la identidad específica de cada una de 
 Estado: **YELLOW / NO READY_PAPER** hasta cerrar evidencia contractual individual y wiring.
 
 ## 7. Históricos — P0 datos suficientes para hoy
-RCA del 2026-09-09:
-- ACCIONES: 24 AVAILABLE, 24 con history.
-- CEDEARS: 35 AVAILABLE, 35 con history.
-- BONOS, LETRAS, OPCIONES, FUTUROS, CAUCIONES y FCI: 0 history rows en el inventario observado en ese RCA.
-- OPCIONES: 382 observed, 0 ready_paper.
-- CAUCIONES: 10 observed, 0 history.
-- A3 permanece `ALIGNMENT_UNVERIFIED` y fail-closed; no habilitar background A3 hasta cerrar alignment/payload contract.
-- `PPI_HISTORY_UNIVERSE_READINESS=YELLOW`.
+### Estado live actualizado 11:49 ART
+- ACCIONES: `production_history` 30 instrumentos, 7.111 filas, último download `2026-09-09T07:01:05Z`.
+- CEDEARS: 37 instrumentos, 8.479 filas, último download `2026-09-09T13:04:09Z`.
+- no existen filas de `production_history` para Opciones/Cauciones/Bonos/Letras/Futuros/FCI en el snapshot live.
+- intentos: Acciones tiene payloads VALID + PARTIAL; CEDEARs tiene VALID + PARTIAL y algunos EMPTY_OR_INVALID.
+- `PPI_PRODUCTION_HISTORY`: AMARILLO, última ejecución/success `2026-09-09T13:04:22Z`, items=7972.
+- `PPI_PRODUCTION_CATALOG`: VERDE, items=834.
+- BYMA calendar/open-data/web: VERDE.
+- `PPI_HISTORY_RAW_STORAGE_MODE=EXTERNAL_EXACT_V1`.
+- A3 continúa fail-closed y no debe habilitarse mientras alignment/payload permanezca no verificado.
 
 Política de hoy:
-- no saturar PPI intentando descargar indiscriminadamente todo el universo;
-- priorizar dataset mínimo operativo por familia y contratos líquidos/candidatos;
-- distinguir contrato/readiness de histórico;
+- no saturar PPI intentando descargar indiscriminadamente 382 opciones;
+- priorizar histórico del subyacente + chain/book live + contrato verificable por serie;
+- si la estrategia de opciones necesita histórico propio de primas, hacer ingest dirigido sólo de candidatos contractualmente válidos;
+- cauciones se evalúan principalmente con TNA/book/fees/obligaciones actuales, no forzar histórico de caución como requisito artificial si la estrategia no lo usa;
 - conservar provenance y freshness por fuente.
 
 ## 8. Scraping / Contract Evidence — P0
-Último estado conocido:
+### Estado live 11:49 ART
+- `porota-contract-evidence-rc6.timer`: **enabled + active/waiting**, poll cada 5 minutos.
+- `porota-contract-evidence-rc6.service`: **FAILED**.
+- el scheduler/owner ya se llama RC6, pero las últimas capturas siguen persistiendo bajo `data/contract_evidence/rc4_trusted/` y schema `POROTA_RC4_PPI_TRUSTED_CONTRACT_2`.
+- última evidencia: `BLOCKED_AUTH_SESSION_EXPIRED`; varias corridas previas del día también expiradas/error browser.
+- esto es una migración incompleta real del Contract Evidence: nombre/timer RC6 sobre ejecución/output de linaje RC4.
+- PPI API read-only no está caída: observer `ppi_auth=OK` y MARKET_OPEN.
+
+Antecedente auth:
 - sesión trusted PPI web genuinamente expirada;
-- Account y Trading redirigían a `cuenta.portfoliopersonal.com/login`;
-- formulario user/password presente;
-- no OTP visible en diagnóstico GET-only;
+- Account y Trading redirigían a login;
+- no OTP visible en último diagnóstico GET-only;
 - Clarity/Hotjar/telemetría de terceros ya no son la causa raíz;
-- no reutilizar el atajo incorrecto `/cuentas == authenticated`;
-- RC4 collector/timer ya fue retirado, sin competencia legacy por el perfil browser.
+- no reutilizar el atajo incorrecto `/cuentas == authenticated`.
 
 Objetivo inmediato:
-- auditar owner RC6, último snapshot/evidence y estado de sesión;
-- recuperar sesión sólo mediante login legítimo permitido;
-- ejecutar collector read-only sólo si trading session queda realmente autenticada;
-- mapear evidencia a cauciones/opciones/otras familias y recalcular readiness.
-
-Diagnóstico read-only en curso:
-`diag/rc6-options-scraping-history-live-20260909`, workflow `rc6-options-scraping-history-live-diagnostic-20260909.yml`.
-No abre nuevas sesiones PPI ni hace llamadas de red; lee DB, schedulers y snapshots sanitizados ya persistidos.
+1. RCA del ExecStart/script real de `porota-contract-evidence-rc6.service`.
+2. migrar collector/output/schema a RC6 real sin perder Contract Evidence previo.
+3. recuperar sesión sólo mediante login legítimo permitido y sin bypass 2FA.
+4. capturar XHR GET de series de Opciones y materializar campos contractuales con provenance.
+5. mapear también fees/rights faltantes de Cauciones cuando la misma evidencia los provea.
 
 ## 9. Criterio de suficiencia para operar hoy
 Se considera suficiente sólo si, para la familia que el motor vaya a evaluar:
@@ -185,29 +204,29 @@ No se fuerza READY por deadline. Familias incompletas deben quedar evaluadas y v
 
 ## 10. Ramas de trabajo actuales
 - `checkpoint/rc6-20260909-1142-parallel-go-live` — este checkpoint.
-- `fix/rc6-preopen-dashboard-contract-20260909` — GREEN live; no requiere más cambio salvo consolidación posterior.
-- `diag/rc6-options-scraping-history-live-20260909` — diagnóstico read-only en curso.
+- `fix/rc6-preopen-dashboard-contract-20260909` — GREEN live.
+- `diag/rc6-options-scraping-history-live-20260909` — diagnóstico terminado SUCCESS.
 - `fix/rc6-cauciones-live-evaluator-20260909` — portar cambios, no desplegar rama stale directamente.
 - cadena `fix/rc6-trusted-reauth-*` — historial RCA; no rerun ciego.
 
 ## 11. Próxima secuencia obligatoria
-1. Leer diagnóstico Opciones/Contract Evidence/históricos live.
-2. Auditar reglas/scraper de OPCIONES y localizar campos contractuales ya existentes en DOM/API/evidence.
-3. Cerrar/normalizar contrato de opciones con provenance autoritativa por instrumento.
-4. Portar caucion evaluator al HEAD actual, cablearlo al runtime/dashboard y probar live.
-5. Ejecutar ingest/historical targeted y recalcular readiness por familia.
-6. Corregir reauth/collector RC6 sólo con flujo legítimo y read-only.
-7. Actualizar ESTE checkpoint después de cada cierre relevante.
+1. RCA y corrección `porota-contract-evidence-rc6.service`.
+2. localizar XHR/GET de series de Opciones y extender sanitizador/normalizador RC6.
+3. cerrar/normalizar contrato de opciones por instrumento con provenance autoritativa.
+4. portar caucion evaluator al HEAD actual, cablearlo al runtime/dashboard y probar live.
+5. ejecutar ingest histórico dirigido sólo donde la estrategia lo requiera y recalcular readiness.
+6. reauth/collector RC6 sólo con flujo legítimo y read-only.
+7. actualizar ESTE checkpoint después de cada cierre relevante.
 
 ## 12. Semáforo actual
 - UX/dashboard: GREEN.
 - BYMA fail-closed: GREEN.
-- legacy control plane: GREEN.
+- legacy control plane general: GREEN.
 - safety real orders: GREEN.
-- preopen: **GREEN LIVE**.
+- preopen: GREEN LIVE.
 - cauciones: YELLOW, universo + modelo presentes / live evaluator pendiente.
 - opciones: YELLOW, 382 instrumentos / contratos individuales faltantes.
-- históricos: YELLOW, cobertura parcial.
-- scraping Contract Evidence: RED/YELLOW operativo por sesión web expirada; PPI API read-only está OK.
+- históricos: YELLOW, cobertura spot creciente pero sólo Acciones/CEDEARs.
+- Contract Evidence/scraping: **RED operativo** porque el servicio RC6 está failed y la migración de output/collector sigue en linaje RC4; PPI API read-only permanece GREEN.
 
-Última actualización: 2026-09-09 11:48 ART.
+Última actualización: 2026-09-09 11:51 ART.
