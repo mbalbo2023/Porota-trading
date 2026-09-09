@@ -1,0 +1,128 @@
+name: RC6 Wave12 Full Contract Deep Scrape Chunked V4 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-full-contract-deep-scrape-chunked-v4-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  deep-contract-chunked-v4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static safety proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_w12_deep_contract_scraper_v2.py rc6_w12_deep_contract_scraper_chunk_v3.py
+          grep -q 'SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}' rc6_w12_deep_contract_scraper_v2.py
+          grep -q 'W12_TRUSTED_LANDING=' rc6_w12_deep_contract_scraper_chunk_v3.py
+          grep -q 'no_inference' rc6_w12_deep_contract_scraper_v2.py
+          ! grep -Eiq '/Operar|/Orden|place_order|send_order|confirm_order' rc6_w12_deep_contract_scraper_chunk_v3.py
+          echo 'W12_DEEP_CHUNKED_V4_STATIC=GREEN'
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12deepv4"
+          chmod 600 "$HOME/.ssh/w12deepv4"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Run four read-only chunks and consolidate
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i "$HOME/.ssh/w12deepv4" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE=$(git rev-parse HEAD)
+          echo "W12_RUNTIME_PRE=$PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'W12_PRE_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          git fetch --no-tags origin deploy-prep/rc6-wave12-currentbase-20260909
+          git cat-file -e "$TARGET_SHA^{commit}"
+          SRC="$HOME/.porota-w12deep/$TARGET_SHA"
+          rm -rf "$SRC"
+          mkdir -p "$SRC"
+          git show "$TARGET_SHA:rc6_w12_deep_contract_scraper_v2.py" > "$SRC/rc6_w12_deep_contract_scraper_v2.py"
+          git show "$TARGET_SHA:rc6_w12_deep_contract_scraper_chunk_v3.py" > "$SRC/rc6_w12_deep_contract_scraper_chunk_v3.py"
+          OUTDIR=/opt/porota-trading/data/contract_evidence/rc6_trusted
+          sudo -n install -d -o porotaadmin -g porotaadmin -m 0700 "$OUTDIR"
+
+          run_chunk() {
+            n="$1"; routes="$2"
+            out="$OUTDIR/w12_deep_v4_${TARGET_SHA}_chunk${n}.json"
+            echo "W12_CHUNK_${n}_START"
+            sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$SRC" W12_ROUTES="$routes" \
+              /opt/porota-contract-evidence-venv/bin/python "$SRC/rc6_w12_deep_contract_scraper_chunk_v3.py" \
+              --profile /home/porotaadmin/porota-browser-lab/chrome-profile --output "$out" --detail-limit 20 --max-rows 250
+            echo "W12_CHUNK_${n}=GREEN"
+          }
+
+          run_chunk 1 '/Cotizaciones/FCIs,/Cotizaciones/FCIsExterior,/Cotizaciones/Acciones,/Cotizaciones/AccionesUSA'
+          run_chunk 2 '/Cotizaciones/Bonos,/Cotizaciones/Cauciones,/Cotizaciones/Cedears,/Cotizaciones/ETFs'
+          run_chunk 3 '/Cotizaciones/Futuros,/Cotizaciones/Letras,/Cotizaciones/Licitaciones,/Cotizaciones/Ons'
+          run_chunk 4 '/Cotizaciones/Opciones,/Cotizaciones/Indices,/Cotizaciones/Monedas,/Cotizaciones/Tasas'
+
+          /opt/porota-contract-evidence-venv/bin/python - "$OUTDIR" "$TARGET_SHA" <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); sha=sys.argv[2]
+          parts=[]
+          for n in range(1,5):
+              p=root/f'w12_deep_v4_{sha}_chunk{n}.json'
+              if not p.exists(): raise SystemExit(f'MISSING_CHUNK_{n}')
+              parts.append(json.loads(p.read_text(encoding='utf-8')))
+          out={'schema':'POROTA_RC6_W12_FULL_CONTRACT_DEEP_V4','source_sha':sha,'auth_status':'AUTHENTICATED_TRUSTED_DEVICE','routes':{},'details':{},'xhr':{},'blocked_nonread':[],'real_orders_sent':0,'no_inference':True,'contract_semantics':'OBSERVED_FIELDS_ONLY'}
+          for d in parts:
+              assert d.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+              assert d.get('no_inference') is True
+              out['routes'].update(d.get('routes') or {})
+              out['details'].update(d.get('details') or {})
+              out['xhr'].update(d.get('xhr') or {})
+              out['blocked_nonread'].extend(d.get('blocked_nonread') or [])
+          if len(out['routes']) != 16: raise SystemExit('ROUTE_COUNT_'+str(len(out['routes'])))
+          rows=sum(len(t.get('rows') or []) for x in out['routes'].values() for t in x.get('tables') or [])
+          if rows <= 0 or len(out['xhr']) <= 0: raise SystemExit('INSUFFICIENT_EVIDENCE')
+          dest=root/f'w12_full_contract_deep_v4_{sha}.json'
+          dest.write_text(json.dumps(out,ensure_ascii=False,indent=2),encoding='utf-8'); os.chmod(dest,0o600)
+          print('W12_DEEP_V4_ROUTES='+str(len(out['routes'])))
+          print('W12_DEEP_V4_ROWS='+str(rows))
+          print('W12_DEEP_V4_XHR='+str(len(out['xhr'])))
+          print('W12_DEEP_V4_DETAILS='+str(len(out['details'])))
+          print('W12_DEEP_V4_BLOCKED_NONREAD='+str(len(out['blocked_nonread'])))
+          print('W12_DEEP_V4_CAPTURE='+str(dest))
+          PY
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'W12_FINAL_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          test "$(git rev-parse HEAD)" = "$PRE"
+          rm -rf "$SRC"
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'W12_FULL_CONTRACT_DEEP_SCRAPE_V4=GREEN'
+          REMOTE
