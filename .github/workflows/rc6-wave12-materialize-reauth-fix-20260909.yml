@@ -15,13 +15,30 @@ jobs:
       - name: Materialize selected W12 sources
         run: |
           set -euo pipefail
-          git fetch --no-tags origin feature/rc6-dom-expected-universe-reconciler-20260908 fix/rc6-trusted-reauth-clarity-post-20260909
+          git fetch --no-tags origin feature/rc6-dom-expected-universe-reconciler-20260908 hotfix/rc6-contract-evidence-auto-reauth-20260907
           for f in rc6_contract_capture_importer.py rc6_contract_due_job.py rc6_contract_schedule.py rc6_ppi_contract_normalizer.py rc6_trusted_browser_contract_collector.py requirements-contract-evidence.txt scripts/porota_contract_evidence_rc6_runtime.sh systemd/porota-contract-evidence-rc6.service systemd/porota-contract-evidence-rc6.timer tests/test_contract_evidence_rc6_native.py tests/test_contract_evidence_reauth_wiring_rc6.py; do
             mkdir -p "$(dirname "$f")"
             git show origin/feature/rc6-dom-expected-universe-reconciler-20260908:"$f" > "$f"
           done
-          git show origin/fix/rc6-trusted-reauth-clarity-post-20260909:rc6_ppi_web_reauth.py > rc6_ppi_web_reauth.py
-          git show origin/fix/rc6-trusted-reauth-clarity-post-20260909:tests/test_ppi_web_reauth_rc6.py > tests/test_ppi_web_reauth_rc6.py
+          git show origin/hotfix/rc6-contract-evidence-auto-reauth-20260907:rc6_ppi_web_reauth.py > rc6_ppi_web_reauth.py
+          git show origin/hotfix/rc6-contract-evidence-auto-reauth-20260907:tests/test_ppi_web_reauth_rc6.py > tests/test_ppi_web_reauth_rc6.py
+      - name: Rebuild latest-safe helper policy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('rc6_ppi_web_reauth.py')
+          s=p.read_text()
+          old='APPROVED_AUTH_POSTS = {("cuenta.portfoliopersonal.com", "/login")}\n'
+          assert old in s
+          new='APPROVED_AUTH_POSTS = {("cuenta.portfoliopersonal.com", "/login"), ("api.portfoliopersonal.com", "/api/Seguridad/Auth/Login")}\nIGNORED_BLOCKED_POST_HOSTS = {"px.ads.linkedin.com", "metrics.hotjar.io", "l.clarity.ms"}\n'
+          s=s.replace(old,new,1)
+          old2='''                if method == "POST" and key in APPROVED_AUTH_POSTS:\n                    return route.continue_()\n                blocked_post_path = clean_host_path(request.url)\n                return route.abort()\n'''
+          assert old2 in s
+          new2='''                if method == "POST" and key in APPROVED_AUTH_POSTS:\n                    return route.continue_()\n                if method == "POST" and u.netloc in IGNORED_BLOCKED_POST_HOSTS:\n                    return route.abort()\n                blocked_post_path = clean_host_path(request.url)\n                return route.abort()\n'''
+          p.write_text(s.replace(old2,new2,1))
+          PY
+          python3 -m py_compile rc6_ppi_web_reauth.py
+          sha256sum rc6_ppi_web_reauth.py
       - name: Fix latent errexit bug in collect_once
         run: |
           python3 - <<'PY'
@@ -29,7 +46,7 @@ jobs:
           p=Path('scripts/porota_contract_evidence_rc6_runtime.sh')
           s=p.read_text()
           old='''  local rc=$?\n  set -e\n  [[ -f "$STAGE_CAPTURE" ]] || fail_closed COLLECTOR_CAPTURE_MISSING\n  return "$rc"\n'''
-          new='''  local rc=$?\n  if [[ ! -f "$STAGE_CAPTURE" ]]; then\n    set -e\n    fail_closed COLLECTOR_CAPTURE_MISSING\n  fi\n  # IMPORTANT: keep errexit disabled until the caller captures rc.\n  # Re-enabling set -e here makes `return 4` terminate the whole service\n  # before the BLOCKED_AUTH_SESSION_EXPIRED reauth branch can run.\n  return "$rc"\n'''
+          new='''  local rc=$?\n  if [[ ! -f "$STAGE_CAPTURE" ]]; then\n    set -e\n    fail_closed COLLECTOR_CAPTURE_MISSING\n  fi\n  # Keep errexit disabled until the caller captures rc. Re-enabling it here\n  # makes return 4 terminate the service before safe reauth can run.\n  return "$rc"\n'''
           assert old in s, 'expected collect_once block not found'
           p.write_text(s.replace(old,new,1))
           PY
@@ -48,7 +65,10 @@ jobs:
           assert 'return "$rc"' in block
           assert 'BLOCKED_AUTH_SESSION_EXPIRED' in s
           assert 'rc6_ppi_web_reauth.py' in s
+          h=Path('rc6_ppi_web_reauth.py').read_text()
+          assert 'api.portfoliopersonal.com' in h and 'l.clarity.ms' in h
           print('W12_REAUTH_RC4_HANDOFF=GREEN')
+          print('ORDER_ROUTES=NOT_CALLED')
           PY
       - name: Commit materialized code only after tests
         run: |
