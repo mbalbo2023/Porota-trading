@@ -1,0 +1,82 @@
+name: RC6 Wave12 Firstparty GET Network Map 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-firstparty-get-network-map-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  map-get:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12get"
+          chmod 600 "$HOME/.ssh/w12get"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Map sanitized first-party GET responses on representative quote pages
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w12get" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n -u porotaadmin env HOME=/home/porotaadmin /opt/porota-contract-evidence-venv/bin/python -' <<'PY'
+          from collections import Counter
+          from urllib.parse import urlsplit
+          from playwright.sync_api import sync_playwright
+          PROFILE='/home/porotaadmin/porota-browser-lab/chrome-profile'
+          CHROME='/usr/bin/google-chrome-stable'
+          TRADING='https://trading.portfoliopersonal.com'
+          ROUTES=['/Cotizaciones/Bonos','/Cotizaciones/Cauciones','/Cotizaciones/Opciones']
+          FIRST_PARTY={'trading.portfoliopersonal.com','api.portfoliopersonal.com','clientapi.portfoliopersonal.com','clientapi.portfoliopersonal.com.ar'}
+          seen=Counter()
+          pages=[]
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(user_data_dir=PROFILE,executable_path=CHROME,headless=True,locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',viewport={'width':1440,'height':1000},args=['--no-sandbox','--disable-dev-shm-usage'])
+              def guard(route,req):
+                  if req.method.upper() in {'GET','HEAD','OPTIONS'}:
+                      return route.continue_()
+                  return route.abort()
+              ctx.route('**/*',guard)
+              p=ctx.pages[0] if ctx.pages else ctx.new_page()
+              def resp(r):
+                  try:
+                      u=urlsplit(r.url)
+                      if r.request.method.upper()!='GET': return
+                      if not (u.netloc.endswith('portfoliopersonal.com') or u.netloc.endswith('portfoliopersonal.com.ar')): return
+                      ct=(r.headers.get('content-type') or '').split(';',1)[0].lower()
+                      # Ignore static assets; retain API/document/json-like traffic only.
+                      path=u.path
+                      if ct.startswith(('image/','font/','text/css','application/javascript','text/javascript')): return
+                      if any(path.lower().endswith(x) for x in ('.js','.css','.png','.jpg','.jpeg','.svg','.woff','.woff2','.ico')): return
+                      seen[(u.netloc,path,r.status,ct)] += 1
+                  except Exception:
+                      pass
+              p.on('response',resp)
+              p.goto(TRADING+'/',wait_until='domcontentloaded',timeout=45000);p.wait_for_timeout(1200)
+              assert urlsplit(p.url).netloc=='trading.portfoliopersonal.com' and 'login' not in p.url.lower()
+              for route in ROUTES:
+                  p.goto(TRADING+route,wait_until='domcontentloaded',timeout=45000);p.wait_for_timeout(2500)
+                  u=urlsplit(p.url)
+                  pages.append((route,u.netloc,u.path))
+              ctx.close()
+          print('AUTH=AUTHENTICATED_TRUSTED_DEVICE')
+          for req,h,path in pages:
+              print(f'PAGE requested={req} host={h} reached={path}')
+          print('FIRSTPARTY_GET_UNIQUE='+str(len(seen)))
+          for (h,path,status,ct),n in sorted(seen.items(), key=lambda kv:(kv[0][0],kv[0][1],kv[0][2])):
+              print(f'GET count={n} status={status} host={h} path={path} content_type={ct}')
+          print('QUERY_STRINGS_PRINTED=NO')
+          print('RESPONSE_BODIES_PRINTED=NO')
+          print('REQUEST_BODIES_PRINTED=NO')
+          print('HEADERS_PRINTED=NO')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
