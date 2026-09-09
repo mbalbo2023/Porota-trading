@@ -17,10 +17,10 @@ jobs:
           python -m py_compile fi_event_risk_shadow_rc6.py fk_gdelt_shadow_feed_rc6.py
           python -m pytest -q tests/test_event_risk_shadow_rc6.py tests/test_fk_gdelt_shadow_feed_rc6.py
           python - <<'PY'
-import fi_event_risk_shadow_rc6 as e
-assert getattr(e,'AUTHORITY','SHADOW') != 'BINDING' or hasattr(e,'assert_shadow_only')
-e.assert_shadow_only()
-print('WAVE11_EVENT_RISK=CODE_READY_CANDIDATE')
-print('RUNTIME_MUTATION=NO')
-print('ORDER_ROUTES=NOT_CALLED')
-PY
+          import fi_event_risk_shadow_rc6 as e
+          assert getattr(e,'AUTHORITY','SHADOW') != 'BINDING' or hasattr(e,'assert_shadow_only')
+          e.assert_shadow_only()
+          print('WAVE11_EVENT_RISK=CODE_READY_CANDIDATE')
+          print('RUNTIME_MUTATION=NO')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
