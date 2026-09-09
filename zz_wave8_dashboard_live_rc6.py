@@ -15,15 +15,20 @@ import fi_event_risk_shadow_rc6 as event_contract
 _installed=False
 CLASSIC_CSS="""
 <style id='porota-rc6-classic-responsive'>
-.paper-card{max-width:100%;overflow:hidden!important}
-.paper-table,.classic-responsive-table{display:table!important;width:100%!important;max-width:100%!important;table-layout:auto!important;border-collapse:collapse!important}
+/* Tablet/Voice Access rule: preserve real rows/columns and scroll horizontally
+   when the table is wider than the viewport. Never crush cells character-by-character. */
+.paper-card{max-width:100%;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch}
+.paper-table,.classic-responsive-table{display:table!important;width:max-content!important;min-width:100%!important;max-width:none!important;table-layout:auto!important;border-collapse:collapse!important}
 .paper-table thead,.classic-responsive-table thead{display:table-header-group!important}
 .paper-table tbody,.classic-responsive-table tbody{display:table-row-group!important}
 .paper-table tr,.classic-responsive-table tr{display:table-row!important}
-.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{display:table-cell!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:normal!important;min-width:0!important}
+.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{display:table-cell!important;white-space:normal!important;overflow-wrap:normal!important;word-break:normal!important;hyphens:none!important;min-width:7rem!important;max-width:24rem!important;vertical-align:top!important}
+.paper-table th,.classic-responsive-table th{white-space:nowrap!important;min-width:8rem!important}
+.paper-table td:first-child,.paper-table th:first-child,.classic-responsive-table td:first-child,.classic-responsive-table th:first-child{min-width:10rem!important}
+.paper-table td:empty,.classic-responsive-table td:empty{min-width:7rem!important}
 .porota-cell-label{display:none!important}
-@media(max-width:900px){.paper-table,.classic-responsive-table{font-size:.75rem!important}.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{padding:5px 4px!important}}
-@media(max-width:620px){.paper-table,.classic-responsive-table{font-size:.68rem!important}.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{padding:4px 3px!important}}
+@media(max-width:900px){.paper-table,.classic-responsive-table{font-size:.82rem!important}.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{padding:7px 6px!important;min-width:7rem!important}.paper-table th,.classic-responsive-table th{min-width:8rem!important}}
+@media(max-width:620px){.paper-table,.classic-responsive-table{font-size:.78rem!important}.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{padding:6px 5px!important;min-width:7rem!important}.paper-table th,.classic-responsive-table th{min-width:8rem!important}}
 </style>
 """
 
