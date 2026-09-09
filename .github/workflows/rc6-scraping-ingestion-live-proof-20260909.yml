@@ -1,0 +1,116 @@
+name: RC6 Scraping Ingestion Live Proof 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-scraping-ingestion-live-20260909]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only live scraping proof
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OUT="$ROOT/data/contract_evidence/rc6_trusted"
+          DB="$ROOT/data/paper_v17/observer_v17.db"
+          echo "NOW_UTC=$(date -u +%FT%TZ)"
+          echo "HOST_HEAD=$(git -C "$ROOT" rev-parse HEAD)"
+          echo "=== SYSTEMD ==="
+          for u in porota-contract-evidence-rc6.timer porota-contract-evidence-rc6.service; do
+            echo "UNIT=$u|ACTIVE=$(systemctl is-active "$u" 2>/dev/null || true)|ENABLED=$(systemctl is-enabled "$u" 2>/dev/null || true)"
+            systemctl show "$u" --no-pager -p ActiveState -p SubState -p Result -p ExecMainStatus -p LastTriggerUSec -p NextElapseUSecRealtime 2>/dev/null | tr '\n' '|' || true
+            echo
+          done
+          echo "=== FILE EVIDENCE ==="
+          if [[ -d "$OUT" ]]; then
+            echo "OUTDIR=YES"
+            echo "CAPTURE_COUNT=$(find "$OUT" -maxdepth 1 -type f -name 'contract_*.json' | wc -l)"
+            latest=$(find "$OUT" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2- || true)
+            if [[ -n "$latest" ]]; then
+              echo "LATEST_CAPTURE_BASENAME=$(basename "$latest")"
+              echo "LATEST_CAPTURE_MTIME=$(date -u -d @$(stat -c %Y "$latest") +%FT%TZ)"
+              python3 - "$latest" <<'PY'
+import json,sys,collections
+p=sys.argv[1]
+d=json.load(open(p,encoding='utf-8'))
+routes=d.get('routes') or []
+eps=d.get('endpoints') or {}
+kinds=collections.Counter()
+for v in eps.values():
+    if isinstance(v,dict): kinds[str(v.get('kind') or 'UNKNOWN')]+=1
+print('LATEST_AUTH='+str(d.get('auth_status')))
+print('LATEST_GENERATED_AT='+str(d.get('generated_at')))
+print('LATEST_JOBS='+','.join(map(str,d.get('jobs') or [])))
+print('LATEST_ROUTES=%d|REACHED=%d' % (len(routes),sum(1 for x in routes if isinstance(x,dict) and x.get('reached'))))
+print('LATEST_ENDPOINTS=%d|KINDS=%s' % (len(eps),','.join(f'{k}:{v}' for k,v in sorted(kinds.items())) or 'NONE'))
+print('LATEST_BLOCKED_NONREAD=%d' % len(d.get('blocked_nonread') or []))
+print('LATEST_REAL_ORDERS_SENT='+str(d.get('real_orders_sent')))
+PY
+            else
+              echo "LATEST_CAPTURE=NONE"
+            fi
+            if [[ -s "$OUT/runtime_state.json" ]]; then
+              python3 - "$OUT/runtime_state.json" <<'PY'
+import json,sys
+try:
+ d=json.load(open(sys.argv[1],encoding='utf-8'))
+ print('RUNTIME_STATE='+str(d.get('state'))+'|BLOCKED_AT='+str(d.get('blocked_at'))+'|RETRY='+str(d.get('retry_after_seconds')))
+except Exception as e: print('RUNTIME_STATE=INVALID_'+type(e).__name__)
+PY
+            else
+              echo "RUNTIME_STATE=NONE"
+            fi
+          else
+            echo "OUTDIR=NO"
+          fi
+          echo "=== DB EVIDENCE ==="
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+import sqlite3,os
+p='/app/data/paper_v17/observer_v17.db'
+c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+print('DB_QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+r=c.execute('select mode,process_state,session_state,ppi_auth,real_orders_sent,last_market_data_at from observer_state where id=1').fetchone()
+print('RUNTIME='+'|'.join(map(lambda x:str(x),r)))
+tables=[x[0] for x in c.execute("select name from sqlite_master where type='table' and (lower(name) like '%contract%' or lower(name) like '%evidence%') order by name")]
+print('CONTRACT_TABLES='+(','.join(tables) if tables else 'NONE'))
+for t in tables:
+    try:
+      n=c.execute('select count(*) from "'+t.replace('"','""')+'"').fetchone()[0]
+      cols=[x[1] for x in c.execute('pragma table_info("'+t.replace('"','""')+'")')]
+      ts=next((x for x in ('observed_at','generated_at','created_at','updated_at','captured_at','run_at') if x in cols),None)
+      mx=None
+      if ts:
+        mx=c.execute('select max("'+ts+'") from "'+t.replace('"','""')+'"').fetchone()[0]
+      print(f'TABLE={t}|ROWS={n}|MAX_TS={mx}')
+    except Exception as e: print(f'TABLE={t}|ERROR={type(e).__name__}')
+if c.execute("select 1 from sqlite_master where type='table' and name='candidate_universe'").fetchone():
+    cols=[x[1] for x in c.execute('pragma table_info(candidate_universe)')]
+    fam=next((x for x in ('family','instrument_type','type') if x in cols),None)
+    can=next((x for x in ('can_simulate','paper_ready','ready_paper') if x in cols),None)
+    if fam:
+      q='select '+fam+', count(*)'+((', sum(case when '+can+' then 1 else 0 end)') if can else '')+' from candidate_universe group by '+fam+' order by '+fam
+      for row in c.execute(q): print('FAMILY_READINESS='+'|'.join(map(str,row)))
+c.close()
+print('RAW_STORAGE_MODE='+str(os.getenv('PPI_HISTORY_RAW_STORAGE_MODE')))
+PY
+          echo "RUNTIME_MUTATION=NO"
+          echo "ORDER_ROUTES=NOT_CALLED"
+          echo "REAL_ORDER_TEST=NOT_PERFORMED"
+          REMOTE
