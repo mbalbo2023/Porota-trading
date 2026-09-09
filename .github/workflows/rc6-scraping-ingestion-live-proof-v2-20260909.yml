@@ -1,0 +1,79 @@
+name: RC6 Scraping Ingestion Live Proof V2
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe live host read only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "python3 - <<'PY'
+import json,os,sqlite3,subprocess,glob,time
+root='/opt/porota-trading'
+out=root+'/data/contract_evidence/rc6_trusted'
+print('NOW_UTC='+time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()))
+try: print('HOST_HEAD='+subprocess.check_output(['git','-C',root,'rev-parse','HEAD'],text=True).strip())
+except Exception as e: print('HOST_HEAD_ERROR='+type(e).__name__)
+for unit in ('porota-contract-evidence-rc6.timer','porota-contract-evidence-rc6.service'):
+    def cmd(*a):
+        try: return subprocess.check_output(a,text=True,stderr=subprocess.DEVNULL).strip().replace('\n','|')
+        except subprocess.CalledProcessError as e: return (e.output or '').strip().replace('\n','|') or 'ERROR'
+    print('UNIT='+unit+'|ACTIVE='+cmd('systemctl','is-active',unit)+'|ENABLED='+cmd('systemctl','is-enabled',unit))
+    print('SHOW='+unit+'|'+cmd('systemctl','show',unit,'--no-pager','-p','ActiveState','-p','SubState','-p','Result','-p','ExecMainStatus','-p','LastTriggerUSec','-p','NextElapseUSecRealtime'))
+print('OUTDIR='+('YES' if os.path.isdir(out) else 'NO'))
+files=sorted(glob.glob(out+'/contract_*.json'),key=lambda p: os.path.getmtime(p),reverse=True) if os.path.isdir(out) else []
+print('CAPTURE_COUNT='+str(len(files)))
+if files:
+    p=files[0]; d=json.load(open(p,encoding='utf-8'))
+    print('LATEST_CAPTURE_BASENAME='+os.path.basename(p))
+    print('LATEST_CAPTURE_MTIME='+time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(os.path.getmtime(p))))
+    print('LATEST_AUTH='+str(d.get('auth_status')))
+    print('LATEST_GENERATED_AT='+str(d.get('generated_at')))
+    print('LATEST_JOBS='+','.join(map(str,d.get('jobs') or [])))
+    routes=d.get('routes') or []; eps=d.get('endpoints') or {}
+    print('LATEST_ROUTES='+str(len(routes))+'|REACHED='+str(sum(1 for x in routes if isinstance(x,dict) and x.get('reached'))))
+    kinds={}
+    for v in eps.values():
+        if isinstance(v,dict): kinds[str(v.get('kind') or 'UNKNOWN')]=kinds.get(str(v.get('kind') or 'UNKNOWN'),0)+1
+    print('LATEST_ENDPOINTS='+str(len(eps))+'|KINDS='+(','.join(k+':'+str(v) for k,v in sorted(kinds.items())) if kinds else 'NONE'))
+    print('LATEST_BLOCKED_NONREAD='+str(len(d.get('blocked_nonread') or [])))
+    print('LATEST_REAL_ORDERS_SENT='+str(d.get('real_orders_sent')))
+state=out+'/runtime_state.json'
+if os.path.isfile(state):
+    try:
+      s=json.load(open(state,encoding='utf-8')); print('RUNTIME_STATE='+str(s.get('state'))+'|BLOCKED_AT='+str(s.get('blocked_at'))+'|RETRY='+str(s.get('retry_after_seconds')))
+    except Exception as e: print('RUNTIME_STATE=INVALID_'+type(e).__name__)
+else: print('RUNTIME_STATE=NONE')
+print('RUNTIME_MUTATION=NO')
+print('ORDER_ROUTES=NOT_CALLED')
+print('REAL_ORDER_TEST=NOT_PERFORMED')
+PY
+sudo -n docker exec -i porota_production_observer python - <<'PY'
+import sqlite3,os
+c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+print('DB_QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+r=c.execute('select mode,process_state,session_state,ppi_auth,real_orders_sent,last_market_data_at from observer_state where id=1').fetchone()
+print('RUNTIME='+'|'.join(map(str,r)))
+tables=[x[0] for x in c.execute(\"select name from sqlite_master where type='table' and (lower(name) like '%contract%' or lower(name) like '%evidence%') order by name\")]
+print('CONTRACT_TABLES='+(','.join(tables) if tables else 'NONE'))
+for t in tables:
+    try:
+      n=c.execute('select count(*) from \"'+t.replace('\\\"','\\\"\\\"')+'\"').fetchone()[0]
+      print('TABLE='+t+'|ROWS='+str(n))
+    except Exception as e: print('TABLE='+t+'|ERROR='+type(e).__name__)
+print('RAW_STORAGE_MODE='+str(os.getenv('PPI_HISTORY_RAW_STORAGE_MODE')))
+c.close()
+PY"
