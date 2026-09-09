@@ -1,0 +1,146 @@
+name: RC6 Wave8 + Scraping Cotizaciones-Only Fix Deploy 2026-09-09
+
+on:
+  push:
+    branches: [fix/rc6-wave8-scraping-cotizaciones-only-20260909]
+    paths:
+      - '.github/workflows/rc6-wave8-scraping-cotizaciones-only-fix-deploy-20260909.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-validate-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: fix/rc6-wave8-scraping-cotizaciones-only-20260909
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Materialize Cotizaciones-only collector
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('rc4_trusted_browser_contract_collector.py')
+          s=p.read_text(encoding='utf-8')
+          s2=re.sub(r",\s*'/Operar/[^']+'",'',s)
+          assert s2 != s, 'expected legacy /Operar routes to be present before patch'
+          assert '/Operar/' not in s2
+          p.write_text(s2,encoding='utf-8')
+          PY
+          python -m py_compile rc4_trusted_browser_contract_collector.py zz_wave8_dashboard_live_rc6.py da_dashboard_ux_hf6.py o_dashboard.py
+          ! grep -REni '/Operar/|/Orden|budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' rc4_trusted_browser_contract_collector.py scripts/porota_contract_evidence_trusted_rc4.sh
+          git config user.name 'porota-rc6-bot'
+          git config user.email '151845499+mbalbo2023@users.noreply.github.com'
+          git add rc4_trusted_browser_contract_collector.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix(rc6): restrict Contract Evidence browser to Cotizaciones routes only'
+            git push origin HEAD:fix/rc6-wave8-scraping-cotizaciones-only-20260909
+          fi
+          echo "TARGET_SHA=$(git rev-parse HEAD)"
+      - name: Validate combined candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q pytest requests
+          PYTHONPATH=. pytest -q tests/test_shadow_learning_rc6.py tests/test_forward_lab_metrics_hf2.py tests/test_dashboard_global_a11y_rc5.py tests/test_dashboard_table_layout_rc6.py
+          python - <<'PY'
+          import rc4_trusted_browser_contract_collector as c
+          assert c.SAFE_METHODS == {'GET','HEAD','OPTIONS'}
+          assert c.ROUTES
+          bad=[r for routes in c.ROUTES.values() for r in routes if r.startswith('/Operar/') or r.startswith('/Orden')]
+          print('FORBIDDEN_ROUTES='+repr(bad)); assert not bad
+          print('SCRAPING_ROUTE_POLICY=COTIZACIONES_ONLY')
+          PY
+          docker build --pull=false -t porota-trading-bot:rc6-wave8-scraping-fix .
+          echo COMBINED_CANDIDATE=GREEN
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_combined"
+          chmod 600 "$HOME/.ssh/porota_combined"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Wait for Wave8 deployment, deploy combined fix, enable scraping and prove live
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_SHA=$(git rev-parse HEAD)
+          TARGET_BRANCH=fix/rc6-wave8-scraping-cotizaciones-only-20260909
+          for i in $(seq 1 60); do
+            HEAD_NOW=$(ssh -i "$HOME/.ssh/porota_combined" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'cd /opt/porota-trading && git rev-parse HEAD')
+            echo "WAIT_RUNTIME_HEAD=$HEAD_NOW"
+            if [ "$HEAD_NOW" = "f634781e510b4d0c103fe36535ff6753792329df" ]; then break; fi
+            sleep 15
+          done
+          HEAD_NOW=$(ssh -i "$HOME/.ssh/porota_combined" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'cd /opt/porota-trading && git rev-parse HEAD')
+          test "$HEAD_NOW" = "f634781e510b4d0c103fe36535ff6753792329df"
+          ssh -i "$HOME/.ssh/porota_combined" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'; c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|{mode}|{real}'); assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          PY
+          git fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git rev-parse origin/$TARGET_BRANCH)" = "$TARGET_SHA"
+          TMP=$(mktemp -d "$HOME/porota-combined.XXXXXX")
+          trap 'git -C /opt/porota-trading worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label porota.wave=rc6-wave8-scraping-safe -t porota-trading-bot:17.0.0-rc6 "$TMP/source"
+          git checkout -f -B "$TARGET_BRANCH" "$TARGET_SHA"
+          git branch --set-upstream-to="origin/$TARGET_BRANCH" "$TARGET_BRANCH" >/dev/null 2>&1 || true
+          sudo -n python3 /opt/porota-trading/porota_mode_manager.py simulation
+          sleep 15
+
+          ! grep -REni '/Operar/|/Orden|budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' rc4_trusted_browser_contract_collector.py scripts/porota_contract_evidence_trusted_rc4.sh
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl enable --now porota-contract-evidence-rc4.timer
+          sudo -n systemctl reset-failed porota-contract-evidence-rc4.service || true
+          sudo -n systemctl start porota-contract-evidence-rc4.service
+          sleep 5
+          test "$(sudo -n systemctl is-enabled porota-contract-evidence-rc4.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc4.timer)" = active
+          sudo -n systemctl list-timers porota-contract-evidence-rc4.timer --all --no-pager
+          sudo -n journalctl -u porota-contract-evidence-rc4.service -n 100 --no-pager || true
+
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import da_dashboard_ux_hf6 as nav, bg_paper_dashboard as bg
+          labels=[x.label for x in nav.TOP_NAV]; hrefs=[x.href for x in nav.TOP_NAV]
+          assert '/riesgo' in hrefs and 'Riesgo' in labels
+          assert 'porota-rc6-classic-responsive' in bg.TABLE_A11Y_CSS
+          assert 'wave8-shadow-learning-live' in bg.learning_page()
+          print('WAVE8_LIVE_WIRING=GREEN')
+          PY
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'; c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          print(f'POST_DB={q}|{mode}|{real}'); print('CONTRACT_TABLES='+','.join(sorted(t for t in tables if 'contract' in t.lower())))
+          c.close(); assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          PY
+          echo "POST_HEAD=$(git rev-parse HEAD)"
+          echo SCRAPING_ROUTE_POLICY=COTIZACIONES_ONLY
+          echo SCRAPING_TIMER=ENABLED_ACTIVE
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          echo WAVE8_AND_SCRAPING_FINAL=GREEN
+          REMOTE
