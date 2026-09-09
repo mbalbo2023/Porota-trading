@@ -1,0 +1,116 @@
+name: RC6 Phase B Raw Dedup Audit 2026-09-08
+
+on:
+  push:
+    branches: [audit/rc6-phase-b-raw-dedup-20260908]
+    paths:
+      - '.github/workflows/rc6-phase-b-raw-dedup-audit-20260908.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_phase_b"
+          chmod 600 "$HOME/.ssh/porota_phase_b"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Phase B read-only exact-payload dedup analysis
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_phase_b" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo '=== POROTA RC6 PHASE B RAW DEDUP AUDIT — READ ONLY ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, hashlib, os, collections
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro', uri=True)
+          c.execute('pragma query_only=on')
+          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'MODE={mode}')
+          print(f'REAL_ORDERS_SENT={real}')
+          assert mode=='PRODUCTION_PAPER' and int(real)==0
+          cols=[r[1] for r in c.execute("pragma table_info('historical_raw_archive')")]
+          print('RAW_COLUMNS=' + ','.join(cols))
+          assert 'body_json' in cols, 'body_json column not found'
+          total_rows=0
+          total_payload_bytes=0
+          empty_rows=0
+          hash_counts=collections.Counter()
+          hash_bytes={}
+          for (body,) in c.execute('select body_json from historical_raw_archive'):
+              total_rows += 1
+              if body is None:
+                  b=b''
+                  empty_rows += 1
+              elif isinstance(body, bytes):
+                  b=body
+              else:
+                  b=str(body).encode('utf-8','surrogatepass')
+              total_payload_bytes += len(b)
+              h=hashlib.sha256(b).hexdigest()
+              hash_counts[h]+=1
+              hash_bytes.setdefault(h,len(b))
+          unique_payloads=len(hash_counts)
+          duplicate_rows=sum(n-1 for n in hash_counts.values() if n>1)
+          duplicate_groups=sum(1 for n in hash_counts.values() if n>1)
+          unique_payload_bytes=sum(hash_bytes.values())
+          reclaimable_payload_bytes=total_payload_bytes-unique_payload_bytes
+          ratio=(duplicate_rows/total_rows*100.0) if total_rows else 0.0
+          byte_ratio=(reclaimable_payload_bytes/total_payload_bytes*100.0) if total_payload_bytes else 0.0
+          max_multiplicity=max(hash_counts.values(), default=0)
+          print(f'RAW_ROWS_TOTAL={total_rows}')
+          print(f'RAW_ROWS_EMPTY_BODY={empty_rows}')
+          print(f'RAW_UNIQUE_PAYLOAD_HASHES={unique_payloads}')
+          print(f'RAW_DUPLICATE_ROWS_EXACT={duplicate_rows}')
+          print(f'RAW_DUPLICATE_GROUPS_EXACT={duplicate_groups}')
+          print(f'RAW_DUPLICATE_ROW_PCT={ratio:.4f}')
+          print(f'RAW_TOTAL_PAYLOAD_BYTES={total_payload_bytes}')
+          print(f'RAW_UNIQUE_PAYLOAD_BYTES={unique_payload_bytes}')
+          print(f'RAW_RECLAIMABLE_PAYLOAD_BYTES_EXACT={reclaimable_payload_bytes}')
+          print(f'RAW_RECLAIMABLE_PAYLOAD_PCT_EXACT={byte_ratio:.4f}')
+          print(f'RAW_MAX_IDENTICAL_MULTIPLICITY={max_multiplicity}')
+          print('TOP_DUPLICATE_GROUPS:')
+          top=sorted(((n,hash_bytes[h],h) for h,n in hash_counts.items() if n>1), reverse=True)[:20]
+          for n,b,h in top:
+              print(f'DUP_GROUP|COUNT={n}|PAYLOAD_BYTES={b}|SHA256={h}')
+          table_bytes=None
+          try:
+              table_bytes=int(c.execute("select sum(pgsize) from dbstat where name='historical_raw_archive'").fetchone()[0] or 0)
+              print(f'HISTORICAL_RAW_ARCHIVE_DBSTAT_BYTES={table_bytes}')
+          except Exception as e:
+              print('DBSTAT_AVAILABLE=NO|'+type(e).__name__)
+          print(f'OBSERVER_DB_BYTES={os.path.getsize(p)}')
+          c.close()
+          print('EVIDENCE_LOST=NOT_TESTED_YET')
+          print('PHASE_B_CLASSIFICATION=MEASURE_ONLY')
+          PY
+          echo 'MUTATIONS=NONE'
+          echo 'DELETE=NOT_RUN'
+          echo 'VACUUM=NOT_RUN'
+          echo 'PRUNE=NOT_RUN'
+          echo 'EXTERNAL_V1_ACTIVATION=NOT_PERFORMED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
