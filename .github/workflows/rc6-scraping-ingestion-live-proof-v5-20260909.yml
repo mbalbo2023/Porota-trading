@@ -1,0 +1,32 @@
+name: RC6 Scraping Ingestion Live Proof V5
+on:
+  push:
+    branches: [diag/rc6-scraping-ingestion-live-20260909]
+    paths: ['.github/workflows/rc6-scraping-ingestion-live-proof-v5-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        env:
+          KEY: ${{ secrets.DO_SSH_KEY }}
+          KH: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KH" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Protected output proof
+        env:
+          H: ${{ secrets.DO_HOST }}
+          U: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i $HOME/.ssh/key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts $U@$H"
+          $SSH "echo HOST_HEAD=\$(git -C /opt/porota-trading rev-parse HEAD); echo TIMER=\$(systemctl is-active porota-contract-evidence-rc6.timer)/\$(systemctl is-enabled porota-contract-evidence-rc6.timer); systemctl show porota-contract-evidence-rc6.service -p Result -p ExecMainStatus -p ActiveState -p SubState --no-pager"
+          $SSH "sudo -n bash -lc 'OUT=/opt/porota-trading/data/contract_evidence/rc6_trusted; echo CAPTURE_COUNT=\$(find \"\$OUT\" -maxdepth 1 -type f -name \"contract_*.json\" | wc -l); L=\$(find \"\$OUT\" -maxdepth 1 -type f -name \"contract_*.json\" -printf \"%T@ %p\\n\" | sort -nr | head -n1 | cut -d\" \" -f2-); echo LATEST=\$(basename \"\$L\"); if test -n \"\$L\"; then echo LATEST_MTIME=\$(date -u -d @\$(stat -c %Y \"\$L\") +%FT%TZ); python3 -c \"import json,sys;d=json.load(open(sys.argv[1]));print(\\\"AUTH=\\\"+str(d.get(\\\"auth_status\\\")));print(\\\"GENERATED=\\\"+str(d.get(\\\"generated_at\\\")));print(\\\"JOBS=\\\"+str(d.get(\\\"jobs\\\")));print(\\\"ROUTES=\\\"+str(len(d.get(\\\"routes\\\") or [])));print(\\\"ENDPOINTS=\\\"+str(len(d.get(\\\"endpoints\\\") or {})));print(\\\"BLOCKED_NONREAD=\\\"+str(len(d.get(\\\"blocked_nonread\\\") or [])));print(\\\"REAL_ORDERS=\\\"+str(d.get(\\\"real_orders_sent\\\")))\" \"\$L\"; fi; if test -s \"\$OUT/runtime_state.json\"; then python3 -c \"import json;d=json.load(open(\\\"\$OUT/runtime_state.json\\\"));print(\\\"RUNTIME_STATE=\\\"+str(d.get(\\\"state\\\"))+\\\"|BLOCKED_AT=\\\"+str(d.get(\\\"blocked_at\\\")))\"; else echo RUNTIME_STATE=NONE; fi'"
+          $SSH "sudo -n docker exec porota_production_observer python -c \"import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);print('CE_RUNS='+str(c.execute('select count(*) from contract_evidence_runs').fetchone()[0]));print('CE_V2_RUNS='+str(c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0]));print('CE_V2_CURRENT='+str(c.execute('select count(*) from contract_evidence_v2_current').fetchone()[0]));print('PPI_INTRADAY='+str(c.execute('select count(*) from ppi_intraday_contract_state').fetchone()[0]));r=c.execute('select mode,ppi_auth,real_orders_sent,last_market_data_at from observer_state where id=1').fetchone();print('RUNTIME='+'|'.join(map(str,r)))\""
+          echo RUNTIME_MUTATION=NO
+          echo ORDER_ROUTES=NOT_CALLED
