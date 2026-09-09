@@ -1,0 +1,83 @@
+name: RC6 Preopen Dashboard Contract Deploy 2026-09-09
+on:
+  push:
+    branches: [fix/rc6-preopen-dashboard-contract-20260909]
+    paths:
+      - rc6_preopen_host_hardened.py
+      - .github/workflows/rc6-preopen-dashboard-contract-deploy-20260909.yml
+permissions:
+  contents: read
+jobs:
+  deploy-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile wrapper
+        run: python -m py_compile rc6_preopen_host_hardened.py
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Deploy host gate and prove live
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" rc6_preopen_host_hardened.py "$DO_USER@$DO_HOST:/tmp/rc6_preopen_host_hardened.py"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE_HEAD=$(git rev-parse HEAD)
+          echo "PRE_HEAD=$PRE_HEAD"
+          test "$PRE_HEAD" = '2c9f3df2d03974ab6fe464d119bdbb2d90158706'
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]
+          c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "PRE_DB=$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          sudo -n install -m 0755 /tmp/rc6_preopen_host_hardened.py /usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py
+          rm -f /tmp/rc6_preopen_host_hardened.py
+          sudo -n python3 -m py_compile /usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py
+          set +e
+          OUT=$(cd /usr/local/lib/porota-sre-rc6 && sudo -n python3 rc6_preopen_host_hardened.py 2>&1)
+          RC=$?
+          set -e
+          printf '%s\n' "$OUT"
+          test "$RC" -eq 0
+          printf '%s\n' "$OUT" | grep -q '"status": "GREEN"'
+          printf '%s\n' "$OUT" | grep -q '"dashboard_container"'
+          printf '%s\n' "$OUT" | grep -q '"state": "GREEN"'
+          sudo -n docker inspect -f 'POST_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|READONLY={{.HostConfig.ReadonlyRootfs}}' porota_production_observer
+          sudo -n docker inspect -f 'POST_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]
+          c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "POST_DB=$POST"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          test "$(git rev-parse HEAD)" = "$PRE_HEAD"
+          echo PREOPEN_DASHBOARD_CONTRACT_LIVE=GREEN
+          echo RUNTIME_CODE_HEAD_UNCHANGED=YES
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          REMOTE
