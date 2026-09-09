@@ -6,6 +6,7 @@ evidence into live rendered pages. No broker/order capability.
 """
 from __future__ import annotations
 import html
+import re
 from fastapi import Header, Query, Request
 from fastapi.responses import HTMLResponse
 import bg_paper_dashboard as bg
@@ -17,7 +18,7 @@ CLASSIC_CSS="""
 <style id='porota-rc6-classic-responsive'>
 /* Canonical tablet rule: never crush table columns. Horizontal scrolling is
    preferable to unreadable character-by-character wrapping. */
-.paper-card{max-width:100%;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch}
+.paper-card,.tarjeta{max-width:100%;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch}
 .paper-table,.classic-responsive-table{display:table!important;width:max-content!important;min-width:100%!important;max-width:none!important;table-layout:auto!important;border-collapse:collapse!important}
 .paper-table thead,.classic-responsive-table thead{display:table-header-group!important}
 .paper-table tbody,.classic-responsive-table tbody{display:table-row-group!important}
@@ -29,6 +30,88 @@ CLASSIC_CSS="""
 @media(max-width:620px){.paper-table,.classic-responsive-table{font-size:.78rem!important}.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{padding:5px 7px!important}}
 </style>
 """
+
+_TABLE_TAG=re.compile(r"<table\b[^>]*>",re.IGNORECASE)
+_CLASS_ATTR=re.compile(r"\bclass=(['\"])(.*?)\1",re.IGNORECASE)
+_BAD_WRAP="overflow-wrap:"+"anywhere"
+
+
+def _classicize_table_tag(match):
+    tag=match.group(0)
+    attr=_CLASS_ATTR.search(tag)
+    if attr:
+        classes=attr.group(2).split()
+        if 'classic-responsive-table' not in classes:
+            quote=attr.group(1)
+            replacement=f"class={quote}{attr.group(2)} classic-responsive-table{quote}"
+            tag=tag[:attr.start()]+replacement+tag[attr.end():]
+        return tag
+    return tag[:-1]+" class='classic-responsive-table'>"
+
+
+def _normalize_live_html(text):
+    """Apply Wave8 presentation to the HTML actually served by every route.
+
+    o_dashboard.py still owns legacy routes registered before bg_paper_dashboard;
+    route order therefore means changing bg.TABLE_A11Y_CSS alone cannot affect
+    those responses. This final-response transform is presentation-only and
+    makes the live HTML contract independent from route registration order.
+    """
+    text=text.replace(_BAD_WRAP,'overflow-wrap:normal')
+    text=_TABLE_TAG.sub(_classicize_table_tag,text)
+    if 'porota-rc6-classic-responsive' not in text:
+        lower=text.lower()
+        idx=lower.find('</head>')
+        text=(text[:idx]+CLASSIC_CSS+text[idx:]) if idx>=0 else (CLASSIC_CSS+text)
+    return text
+
+
+class _ClassicHTMLMiddleware:
+    """Buffer finite HTML responses and enforce the Wave8 live presentation.
+
+    JSON/API responses are byte-for-byte untouched.  The dashboard does not
+    expose streaming HTML endpoints, so buffering HTML here is bounded by the
+    already-rendered page size and avoids depending on FastAPI route order.
+    """
+    def __init__(self,app):
+        self.app=app
+
+    async def __call__(self,scope,receive,send):
+        if scope.get('type')!='http' or scope.get('method')=='HEAD':
+            return await self.app(scope,receive,send)
+        start=None
+        parts=[]
+
+        async def capture(message):
+            nonlocal start
+            kind=message.get('type')
+            if kind=='http.response.start':
+                start=message
+                return
+            if kind!='http.response.body':
+                await send(message)
+                return
+            parts.append(message.get('body',b''))
+            if message.get('more_body',False):
+                return
+            if start is None:
+                await send(message)
+                return
+            headers=list(start.get('headers',[]))
+            content_type=next((v for k,v in headers if k.lower()==b'content-type'),b'')
+            body=b''.join(parts)
+            if b'text/html' in content_type.lower():
+                rendered=_normalize_live_html(body.decode('utf-8','replace'))
+                body=rendered.encode('utf-8')
+                headers=[(k,v) for k,v in headers if k.lower()!=b'content-length']
+                headers.append((b'content-length',str(len(body)).encode('ascii')))
+            out_start=dict(start)
+            out_start['headers']=headers
+            await send(out_start)
+            await send({'type':'http.response.body','body':body,'more_body':False})
+
+        await self.app(scope,receive,capture)
+
 
 def _esc(v): return html.escape(str(v if v not in (None,'') else '—'))
 
@@ -76,6 +159,7 @@ def install(app, check_auth):
     _installed=True
     if 'porota-rc6-classic-responsive' not in bg.TABLE_A11Y_CSS:
         bg.TABLE_A11Y_CSS += CLASSIC_CSS
+    app.add_middleware(_ClassicHTMLMiddleware)
     old_learning=bg.learning_page
     old_validation=bg.validation_page
     def learning_page_live(): return _append_before_main_end(old_learning(),_learning_section())
