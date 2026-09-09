@@ -1,0 +1,94 @@
+name: RC6 Wave12 Direct SSO Live Proof V2 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-direct-sso-live-proof-v2-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  direct-sso-proof:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Static exact-route gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q tests/test_ppi_web_reauth_rc6.py
+          grep -Fq '("trading.portfoliopersonal.com", "/api/logInSSO")' rc6_ppi_web_reauth.py
+          ! grep -REn 'send_order|place_order|cancel_order|api/Orders|/Operar|/Orden' rc6_ppi_web_reauth.py
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12sso"
+          chmod 600 "$HOME/.ssh/w12sso"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: One live SSO authentication attempt
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w12sso" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading; EXPECTED=9197aedf35fe1739b594c742902e80df069c47c9
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          PY=/opt/porota-contract-evidence-venv/bin/python
+          SECRET=/etc/porota/contract-evidence-web.env
+          cd "$REPO"; test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)" != active
+          OBS_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_observer)
+          DASH_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_dashboard)
+          git fetch --no-tags origin deploy-prep/rc6-wave12-currentbase-20260909
+          test "$(git rev-parse origin/deploy-prep/rc6-wave12-currentbase-20260909)" = "$TARGET_SHA"
+          TMP=$(mktemp -d "$HOME/w12sso.XXXXXX")
+          cleanup(){ git -C "$REPO" worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"; }
+          trap cleanup EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n install -o root -g root -m 0644 "$TMP/source/rc6_ppi_web_reauth.py" "$LIB/rc6_ppi_web_reauth.py"
+          set +e
+          OUT=$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$LIB:$REPO" "$PY" "$LIB/rc6_ppi_web_reauth.py" --profile "$PROFILE" --secret "$SECRET" 2>&1)
+          RC=$?
+          set -e
+          SAFE=$(OUT="$OUT" python3 - <<'PY'
+          import json,os
+          d=json.loads(os.environ['OUT'])
+          allowed=('status','attempts','stage','page_url','blocked_post_path','credentials_exposed','orders_visited','real_orders_sent')
+          out={k:d.get(k) for k in allowed if k in d}
+          print(json.dumps(out,sort_keys=True))
+          assert out.get('credentials_exposed') is False and out.get('orders_visited') is False
+          assert int(out.get('real_orders_sent') or 0)==0
+          PY
+          )
+          echo "DIRECT_SSO_RC=$RC"
+          echo "DIRECT_SSO_RESULT=$SAFE"
+          OBS_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_observer)
+          DASH_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_dashboard)
+          test "$OBS_POST" = "$OBS_PRE"; test "$DASH_POST" = "$DASH_PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0];m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone();c.close()
+          print(f'DB={q}|{m}|{r}');assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'ORDER_ROUTES=NOT_CALLED'; echo 'REAL_ORDER_TEST=NOT_PERFORMED'; echo 'ROLLBACK_AUTOMATICO=NO'
+          STATE=$(SAFE="$SAFE" python3 - <<'PY'
+          import json,os
+          print(json.loads(os.environ['SAFE']).get('status',''))
+          PY
+          )
+          test "$RC" -eq 0 && test "$STATE" = AUTHENTICATED_TRUSTED_DEVICE
+          echo 'W12_DIRECT_SSO_AUTH=GREEN'
+          REMOTE
