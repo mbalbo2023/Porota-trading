@@ -58,6 +58,8 @@ PAPER_DEFAULTS = {
     "PAPER_STOP_LOSS_PCT": "0.02", "PAPER_TARGET_GAIN_PCT": "0.05",
     "PAPER_INTRADAY_FEE_REBATE": "true",
     "PPI_BACKGROUND_INGEST_SECONDS": "7200",
+    "PPI_HISTORY_RAW_STORAGE_MODE": "EXTERNAL_EXACT_V1",
+    "PPI_HISTORY_EVIDENCE_ROOT": "/app/data/evidence/ppi_history_exact_v1",
     "PAPER_NEWS_INGEST_ENABLED": "false",
     # Foco configurable. AAPLD/AAPLC agregan identidades MEP/CCL sin quitar
     # ninguna de las ocho identidades HF5; catálogo, libro y portones siguen
@@ -108,6 +110,8 @@ HF3_FROZEN_PAPER_SETTINGS = {
     "PAPER_SCALPING_MAX_SPREAD": "0.005",
     "PAPER_SCALPING_SCORE_THRESHOLD": "0.68",
     "PPI_BACKGROUND_INGEST_SECONDS": "7200",
+    "PPI_HISTORY_RAW_STORAGE_MODE": "EXTERNAL_EXACT_V1",
+    "PPI_HISTORY_EVIDENCE_ROOT": "/app/data/evidence/ppi_history_exact_v1",
     "PAPER_NEWS_INGEST_ENABLED": "false",
     "PAPER_SCALPING_RISK_PER_TRADE": "0.001",
     "PAPER_SCALPING_MAX_OPEN_POSITIONS": "1",
