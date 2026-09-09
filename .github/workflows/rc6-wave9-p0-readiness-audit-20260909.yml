@@ -1,0 +1,30 @@
+name: RC6 Wave9 P0 Readiness Audit 2026-09-09
+on:
+  push:
+    branches: [wave9/rc6-p0-api-family-readiness-20260909]
+    paths: ['.github/workflows/rc6-wave9-p0-readiness-audit-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Inventory P0 gates without broker writes
+        run: |
+          set -euo pipefail
+          git fetch origin hotfix/rc6-cedear-us-labor-day-20260906 feature/rc6-cauciones-contract-model-20260908 || true
+          python -m py_compile bf_production_paper_observer.py bu_instrument_catalog.py ak_byma_calendar.py m_instrument_universe.py
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('bf_production_paper_observer.py').read_text()
+          print('BYMA_FAIL_OPEN_PRESENT='+str('return day.weekday() < 5' in s))
+          families=['ACCIONES','CEDEARS','BONOS','LETRAS','ON','OPCIONES','FUTUROS','ETF','CAUCIONES','FCI','INDICES']
+          text='\n'.join(p.read_text(errors='ignore') for p in Path('.').glob('*.py'))
+          for f in families: print(f'FAMILY_SURFACE_{f}='+str(f in text))
+          print('WAVE9_RUNTIME_MUTATION=NO')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
