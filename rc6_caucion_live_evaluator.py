@@ -6,6 +6,8 @@ remains HOLD until the complete fee/rights evidence is certified.
 """
 from __future__ import annotations
 import json
+import signal
+import threading
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -13,6 +15,7 @@ from decimal import Decimal
 from bd_ppi_readonly_guard import ProductionMarketReader, retry_read, session_invalid, classify_read_error
 from bf_production_paper_observer import _secret, _market_phase, _levels, _level, TZ
 from be_paper_engine import now_iso
+from cg_paper_workspace import runtime_store
 from rc6_caucion_contract import parse_ticker, minimum_principal, gross_interest, known_ppi_commission_percent, inside_session, evidence_blocker
 
 ORDER_ROUTING_ALLOWED=False
@@ -91,8 +94,6 @@ def _state(store,state,detail,evaluated=0,readable=0):
     with store.connect() as c:
         c.execute('INSERT OR REPLACE INTO paper_caucion_evaluator_state_rc6 VALUES(1,?,?,?,?,?)',
                   (at,state,str(detail)[:240],int(evaluated),int(readable)))
-        # Evaluation health is not trading readiness. GREEN means the read-only
-        # evaluator itself works; HOLDs remain visible in its dedicated table.
         c.execute('INSERT OR REPLACE INTO api_health(component,state,detail,checked_at,last_success_at,source) VALUES(?,?,?,?,?,?)',
                   ('CAUCION_LIVE_EVALUATOR','VERDE' if state=='READY' else 'AMARILLO',str(detail)[:240],at,at if state=='READY' else None,'PPI Producción / MarketData read-only'))
 
@@ -129,19 +130,12 @@ def evaluate_cycle(store,reader,at=None):
             if session_invalid(exc): raise
             blocker=classify_read_error(exc)
             detail['read_error']=blocker
-        contract_state='GREEN'
         commission=known_ppi_commission_percent(ticker)
-        cost_state='PARTIAL_EVIDENCE'
         gross=None
         if bid_rate is not None:
             try: gross=gross_interest(ticker,minimum,bid_rate)
             except Exception as exc: detail['economics_error']=type(exc).__name__
-        if not inside_session(now):
-            final='HOLD'; blocker='OUTSIDE_CAUCION_SESSION'
-        elif quote_state!='READABLE':
-            final='HOLD'
-        else:
-            final='HOLD'  # full rights/cost evidence is intentionally not inferred
+        if not inside_session(now): blocker='OUTSIDE_CAUCION_SESSION'
         row={
           'ticker':ticker,'evaluated_at':now.isoformat(),'settlement':SETTLEMENT,
           'currency':identity.currency_prefix,'term_days':identity.term_days,
@@ -151,8 +145,8 @@ def evaluate_cycle(store,reader,at=None):
           'minimum_principal':str(minimum),
           'gross_interest_at_minimum':None if gross is None else str(gross),
           'known_ppi_commission_percent':None if commission is None else str(commission),
-          'contract_state':contract_state,'quote_state':quote_state,'cost_state':cost_state,
-          'final_state':final,'blocker':blocker,
+          'contract_state':'GREEN','quote_state':quote_state,'cost_state':'PARTIAL_EVIDENCE',
+          'final_state':'HOLD','blocker':blocker,
           'detail_json':json.dumps(detail,sort_keys=True,separators=(',',':'))}
         _write(store,row)
     _state(store,'READY',f'evaluated={evaluated};readable={readable};promotion=blocked',evaluated,readable)
@@ -164,8 +158,9 @@ def run_worker(store,stop,clock=time.monotonic):
     reader=None; next_login=0.0
     try:
         while not stop.is_set():
-            if _market_phase()!='OPEN':
-                _state(store,'WAITING_MARKET',_market_phase())
+            phase=_market_phase()
+            if phase!='OPEN':
+                _state(store,'WAITING_MARKET',phase)
                 stop.wait(30); continue
             if reader is None:
                 if clock()<next_login:
@@ -195,3 +190,16 @@ def run_worker(store,stop,clock=time.monotonic):
 
 def assert_invariants():
     assert ORDER_ROUTING_ALLOWED is False
+
+
+def main():
+    assert_invariants()
+    stop=threading.Event()
+    for sig in (signal.SIGTERM,signal.SIGINT):
+        signal.signal(sig,lambda *_:stop.set())
+    run_worker(runtime_store(),stop)
+    return 0
+
+
+if __name__=='__main__':
+    raise SystemExit(main())
