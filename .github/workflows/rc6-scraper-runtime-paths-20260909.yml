@@ -1,0 +1,30 @@
+name: RC6 Scraper Runtime Paths 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-scraper-auth-rca-20260909]
+    paths: ['.github/workflows/rc6-scraper-runtime-paths-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        env:
+          KEY: ${{ secrets.DO_SSH_KEY }}
+          KH: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$KEY" > "$HOME/.ssh/key"; printf '%s\n' "$KH" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Read runtime paths only
+        env:
+          H: ${{ secrets.DO_HOST }}
+          U: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i $HOME/.ssh/key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts $U@$H"
+          $SSH "sudo -n grep -nE 'REAUTH|reauth|HELPER|helper|SECRET|secret|PROFILE|profile|AUTH_BROWSER|PY=' /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh | sed -E 's/(PASSWORD|TOKEN|KEY)=.*/\1=<REDACTED>/'"
+          $SSH "sudo -n bash -lc 'for p in /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py /usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py /etc/porota/contract-evidence-web.env /home/porotaadmin/porota-browser-lab/chrome-profile /opt/porota-contract-evidence-venv/bin/python /usr/bin/google-chrome-stable; do if test -e \"\$p\"; then echo EXISTS=\"\$p\"; else echo MISSING=\"\$p\"; fi; done'"
+          echo RUNTIME_MUTATION=NO
+          echo SECRETS_PRINTED=NO
