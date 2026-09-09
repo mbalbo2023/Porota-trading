@@ -1,0 +1,35 @@
+name: RC6 Wave8 Learning UX Validate 2026-09-08
+on:
+  push:
+    branches: [integration/rc6-wave8-learning-ux-20260908]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Baseline and compile learning UX stack
+        run: |
+          set -euo pipefail
+          BASE=860b26ca22a73679217e8953207041da2b8afffd
+          git merge-base --is-ancestor "$BASE" HEAD
+          git diff --check "$BASE" HEAD
+          python -m py_compile ch_empirical_learning.py s_learning_engine.py et_shadow_learning_rc6.py ec_forward_lab_metrics_hf2.py ei_dashboard_table_accessibility_rc5.py eq_dashboard_table_layout_rc6.py er_dashboard_table_semantics_rc6.py da_dashboard_ux_hf6.py
+      - name: Focused tests
+        run: |
+          python -m pip install -q pytest
+          PYTHONPATH=. python -m pytest -q tests/test_shadow_learning_rc6.py tests/test_forward_lab_metrics_hf2.py tests/test_dashboard_global_a11y_rc5.py tests/test_dashboard_table_layout_rc6.py
+      - name: No real-money promotion or order routes
+        run: |
+          set -euo pipefail
+          ! git diff 860b26ca22a73679217e8953207041da2b8afffd HEAD -- '*.py' | grep -Ei 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order'
+          echo AUTO_REAL_MONEY_PROMOTION=NO
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo WAVE8_VALIDATE=GREEN
