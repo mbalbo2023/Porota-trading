@@ -25,7 +25,11 @@ from ak_iol_client import IOLClient
 
 SOURCE = "IOL"
 SUPPORTED = {"ACCIONES", "CEDEARS", "BONOS", "ON", "LETRAS", "OPCIONES", "ETF", "FUTUROS"}
-ADJUSTED_FAMILIES = {"ACCIONES", "CEDEARS", "ETF"}
+# IOL's current API returns CEDEAR history on the unadjusted series. This is
+# evidence from the live read-only AAPL diagnostic: adjusted=0 rows while
+# sinAjustar returned history. Keep CEDEARS out of ADJUSTED_FAMILIES rather
+# than silently treating an empty adjusted response as missing history.
+ADJUSTED_FAMILIES = {"ACCIONES", "ETF"}
 
 
 def norm_family(value: str) -> str:
