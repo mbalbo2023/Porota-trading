@@ -1,0 +1,43 @@
+name: RC6 Wave6 READY materialize 2026-09-08
+on:
+  push:
+    branches: [deploy-prep/rc6-wave6-ready-20260908]
+    paths: ['.github/workflows/rc6-wave6-ready-materialize-20260908.yml']
+permissions:
+  contents: write
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Overlay Wave6 on deployed Wave4 baseline and validate
+        run: |
+          set -euo pipefail
+          git fetch origin integration/rc6-wave6-history-web-shadow-20260908
+          OLD=860b26ca22a73679217e8953207041da2b8afffd
+          SRC=origin/integration/rc6-wave6-history-web-shadow-20260908
+          git diff --name-only --diff-filter=ACMRT "$OLD..$SRC" > /tmp/files
+          while IFS= read -r f; do [ -z "$f" ] || git checkout "$SRC" -- "$f"; done < /tmp/files
+          git diff --name-only --diff-filter=D "$OLD..$SRC" > /tmp/deleted
+          while IFS= read -r f; do [ -z "$f" ] || rm -f -- "$f"; done < /tmp/deleted
+          grep -q 'ppi-client==1.3.0' requirements.txt
+          test -f rc6_trusted_browser_contract_collector.py
+          test -f fa_raw_evidence_store_rc6.py
+          python -m pip install -q pytest requests
+          python -m py_compile cp_history_ingest_policy_hf6.py cq_history_attempt_ledger_hf6.py cr_data912_reconcile_hf6.py cs_postclose_history_scheduler_hf6.py ct_ppi_history_salvage_hf6.py cu_history_store_v2_hf6.py cv_history_store_adapter_hf6.py cw_data912_history_v2_sink.py dd_history_metrics_hf6.py ek_history_freshness_metrics_rc5.py
+          PYTHONPATH=. python -m pytest -q test_cp_history_ingest_policy_hf6.py test_hf6_history_data912_v2.py tests/test_history_freshness_metrics_rc5.py tests/test_history_close_only_hf2.py
+          ! git diff HEAD -- '*.py' | grep -Ei 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order'
+          echo WAVE6_READY_FOR_DEPLOY=GREEN
+      - name: Commit materialized candidate
+        run: |
+          set -euo pipefail
+          git config user.name 'porota-ci'
+          git config user.email 'porota-ci@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'candidate(rc6): materialize Wave6 on deployed Wave4 baseline'
+          git push origin HEAD:deploy-prep/rc6-wave6-ready-20260908
