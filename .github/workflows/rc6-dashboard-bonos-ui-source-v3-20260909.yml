@@ -1,0 +1,62 @@
+name: RC6 Bonos Blocker + Dashboard Duplicate Sources V3 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-dashboard-trading-actions-bonds-live-20260909]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only RCA
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo '=== BONOS / ACCIONES CANDIDATE DETAILS ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          for fam in ('BONOS','ACCIONES'):
+              print('FAMILY_DETAIL='+fam)
+              for r in c.execute("select status,can_simulate,detail,count(*) n from candidate_universe where upper(instrument_type)=? group by status,can_simulate,detail order by n desc",(fam,)):
+                  print(json.dumps(dict(r),sort_keys=True,ensure_ascii=False))
+          # Recent bond decisions and snapshots.
+          for r in c.execute("""select d.symbol,d.action,d.reason,d.decided_at from paper_decisions d
+              where d.symbol in (select ticker from candidate_universe where upper(instrument_type)='BONOS')
+                and substr(d.decided_at,1,10)='2026-09-09' order by d.id desc limit 20"""):
+              print('BONO_DECISION='+json.dumps(dict(r),sort_keys=True,ensure_ascii=False))
+          c.close()
+          PY
+          echo '=== DUPLICATE TEXT SOURCE OCCURRENCES ==='
+          for needle in \
+            'Caja' 'Patrimonio' 'Monedas' \
+            'Matriz completa por familia' 'Todos los instrumentos del catálogo actual' \
+            'Contexto intradiario por unidad' 'Criterio de salida' \
+            'Motores / workers' 'Motores' 'workers' 'Scalping' 'En esta página'; do
+            echo "--- $needle ---"
+            grep -RInF --include='*.py' --exclude-dir=.git --exclude-dir=.secrets "$needle" . | head -80 || true
+          done
+          echo '=== DASHBOARD AUTH / ROUTE REGISTRATION ==='
+          grep -RInE --include='*.py' --exclude-dir=.git --exclude-dir=.secrets 'DASHBOARD_ACCESS_TOKEN|@app\.(get|route)|add_api_route|/trading|/validacion|/riesgo|/historicos|/vivo' bg_paper_dashboard.py o_dashboard.py zz_wave8_dashboard_live_rc6.py en_validation_project_dashboard_rc6.py eq_dashboard_table_layout_rc6.py ei_dashboard_table_accessibility_rc5.py 2>/dev/null | head -260 || true
+          echo RUNTIME_MUTATION=NO
+          echo NETWORK_CALLS=NO
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          REMOTE
