@@ -1,0 +1,108 @@
+name: RC6 Wave8 Live Wiring Postflight Fix Redeploy 2026-09-09
+
+on:
+  push:
+    branches: [fix/rc6-wave8-live-wiring-20260909]
+    paths:
+      - '.github/workflows/rc6-wave8-live-wiring-postflight-fix-redeploy-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-redeploy-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate repaired candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q pytest requests
+          python -m py_compile zz_wave8_dashboard_live_rc6.py da_dashboard_ux_hf6.py o_dashboard.py
+          PYTHONPATH=. pytest -q tests/test_shadow_learning_rc6.py tests/test_forward_lab_metrics_hf2.py tests/test_dashboard_global_a11y_rc5.py tests/test_dashboard_table_layout_rc6.py
+          grep -q 'NavItem("/riesgo", "Riesgo")' da_dashboard_ux_hf6.py
+          grep -q 'zz_wave8_dashboard_live_rc6.install' o_dashboard.py
+          ! git diff f634781e510b4d0c103fe36535ff6753792329df -- '*.py' | grep -Ei 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order'
+          docker build --pull=false -t porota-trading-bot:rc6-wave8-postflight-fix .
+          echo WAVE8_FIX_CANDIDATE=GREEN
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_w8pf"
+          chmod 600 "$HOME/.ssh/porota_w8pf"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Redeploy same Wave8 code and prove actual live render
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_w8pf" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          CURRENT=$(git rev-parse HEAD)
+          echo "PRE_HEAD=$CURRENT"
+          test "$CURRENT" = "f634781e510b4d0c103fe36535ff6753792329df"
+          sudo -n docker inspect -f 'PRE_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'PRE_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'; c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|{mode}|{real}'); assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          PY
+          git fetch --no-tags origin fix/rc6-wave8-live-wiring-20260909
+          test "$(git rev-parse origin/fix/rc6-wave8-live-wiring-20260909)" = "$TARGET_SHA"
+          TMP=$(mktemp -d "$HOME/porota-w8pf.XXXXXX")
+          trap 'git -C /opt/porota-trading worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label porota.wave=rc6-wave8-postflight-fix -t porota-trading-bot:17.0.0-rc6 "$TMP/source"
+          git checkout -f -B fix/rc6-wave8-live-wiring-20260909 "$TARGET_SHA"
+          git branch --set-upstream-to=origin/fix/rc6-wave8-live-wiring-20260909 fix/rc6-wave8-live-wiring-20260909 >/dev/null 2>&1 || true
+          sudo -n python3 /opt/porota-trading/porota_mode_manager.py simulation
+          sleep 15
+          sudo -n docker inspect -f 'POST_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'POST_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os,urllib.request
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          for p in ('/','/riesgo','/aprendizaje','/validacion'):
+              req=urllib.request.Request('http://127.0.0.1:8000'+p)
+              if token:
+                  req.add_header('Authorization','Bearer '+token); req.add_header('X-Dashboard-Token',token)
+              with urllib.request.urlopen(req,timeout=10) as r:
+                  body=r.read().decode('utf-8','replace'); print(f'HTTP|{p}|{r.status}|bytes={len(body)}')
+                  assert r.status==200
+                  if p=='/': assert 'Riesgo' in body
+                  if p=='/riesgo': assert 'porota-rc6-classic-responsive' in body and 'Órdenes reales' in body and '<table' in body.lower()
+                  if p in ('/aprendizaje','/validacion'): assert 'wave8-shadow-learning-live' in body and '<table' in body.lower()
+          print('WAVE8_LIVE_HTTP_RENDER=GREEN')
+          PY
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'; c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|{mode}|{real}'); assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          PY
+          echo "POST_HEAD=$(git rev-parse HEAD)"
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          echo WAVE8_FULL_LIVE_WIRING=GREEN
+          REMOTE
