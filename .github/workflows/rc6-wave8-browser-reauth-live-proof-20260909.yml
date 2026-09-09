@@ -42,7 +42,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
           scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" /tmp/rc6_ppi_web_reauth.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_web_reauth.py"
-      - name: Live browser proof and reauth after browser-executable RCA
+      - name: Live browser proof and reauth after hidden-row RCA
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -84,16 +84,19 @@ jobs:
                   resp=page.goto(url,wait_until='networkidle',timeout=30000)
                   assert resp and resp.status==200,(path,resp.status if resp else None)
                   cells=page.locator('table.paper-table td,table.paper-table th')
-                  ms=cells.evaluate_all("""els => els.slice(0,800).map(e => { const s=getComputedStyle(e), r=e.getBoundingClientRect(); return {w:r.width,h:r.height,ow:s.overflowWrap,wb:s.wordBreak,hy:s.hyphens,txt:(e.innerText||'').trim()}; })""")
-                  bad=[]
+                  ms=cells.evaluate_all("""els => els.slice(0,800).map(e => { const s=getComputedStyle(e), r=e.getBoundingClientRect(); const visible=!!(e.offsetWidth || e.offsetHeight || e.getClientRects().length); return {visible,w:r.width,h:r.height,ow:s.overflowWrap,wb:s.wordBreak,hy:s.hyphens,txt:(e.innerText||'').trim()}; })""")
+                  bad=[]; visible_count=0
                   for m in ms:
+                      if not m['visible']:
+                          continue
+                      visible_count += 1
                       if m['w'] < 90: bad.append(('width',m))
                       if m['ow'] not in ('normal','initial'): bad.append(('overflowWrap',m))
                       if m['wb'] not in ('normal','initial'): bad.append(('wordBreak',m))
                       txt=''.join(m['txt'].split())
                       if len(txt)>=4 and m['h'] > 5*m['w']: bad.append(('vertical-crush',m))
-                  assert not bad[:1],(path,bad[:3])
-                  print(f'BROWSER_1536x920|{path}|tables={page.locator("table.paper-table").count()}|cells={len(ms)}|GREEN')
+                  assert not bad,(path,bad[:3])
+                  print(f'BROWSER_1536x920|{path}|tables={page.locator("table.paper-table").count()}|visible_cells={visible_count}|GREEN')
               page.goto('http://127.0.0.1:8000/'+('?token='+token if token else ''),wait_until='networkidle')
               page.screenshot(path='/tmp/wave8_live_1536x920.png',full_page=True)
               b.close()
