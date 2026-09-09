@@ -1,0 +1,159 @@
+name: RC6 Wave12 Live Controlled Contract Evidence Proof 2026-09-09
+
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths:
+      - '.github/workflows/rc6-wave12-live-controlled-proof-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  controlled-live-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Candidate safety gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q tests/test_contract_evidence_reauth_wiring_rc6.py tests/test_ppi_web_reauth_rc6.py tests/test_rc6_contract_routes_cotizaciones_only.py
+          python - <<'PY'
+          import rc6_trusted_browser_contract_collector as c
+          routes=[r for rs in c.ROUTES.values() for r in rs]
+          assert routes and all(r.startswith('/Cotizaciones/') for r in routes), routes
+          assert c.SAFE_METHODS == {'GET','HEAD','OPTIONS'}
+          print('SCRAPING_ROUTE_POLICY=COTIZACIONES_ONLY')
+          print('NETWORK_METHODS=GET_HEAD_OPTIONS_ONLY')
+          PY
+          ! grep -En '/Operar|/Orden|api/Orders|send_order|place_order|new_order' rc6_trusted_browser_contract_collector.py
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_w12"
+          chmod 600 "$HOME/.ssh/porota_w12"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Install isolated W12 and run one controlled proof
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_w12" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          EXPECTED_LIVE=bf25769749a203463b993d0923b116101f4ae032
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          OUTDIR=$REPO/data/contract_evidence/rc6_trusted
+          cd "$REPO"
+          LIVE_HEAD=$(git rev-parse HEAD)
+          echo "LIVE_HEAD_PRE=$LIVE_HEAD"
+          test "$LIVE_HEAD" = "$EXPECTED_LIVE"
+          OBS_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          DASH_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          echo "OBSERVER_PRE=$OBS_PRE"
+          echo "DASHBOARD_PRE=$DASH_PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'; c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'PRE_DB={q}|{mode}|{real}')
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          PY
+          PRE_RUNS=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          exists=c.execute("select 1 from sqlite_master where type='table' and name='contract_evidence_v2_runs'").fetchone()
+          print(c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0] if exists else 0); c.close()
+          PY
+          )
+          echo "CE_RUNS_PRE=$PRE_RUNS"
+          PRE_CAPTURE=$(sudo -n find "$OUTDIR" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@|%p\n' 2>/dev/null | sort -nr | sed -n '1p' || true)
+          echo "CAPTURE_PRE=${PRE_CAPTURE%%|*}"
+          git fetch --no-tags origin deploy-prep/rc6-wave12-currentbase-20260909
+          test "$(git rev-parse origin/deploy-prep/rc6-wave12-currentbase-20260909)" = "$TARGET_SHA"
+          TMP=$(mktemp -d "$HOME/porota-w12.XXXXXX")
+          cleanup(){ git -C "$REPO" worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"; }
+          trap cleanup EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          ! grep -En '/Operar|/Orden|api/Orders|send_order|place_order|new_order' "$TMP/source/rc6_trusted_browser_contract_collector.py"
+          sudo -n install -d -m 0755 "$LIB"
+          for f in rc6_contract_due_job.py rc6_contract_schedule.py rc6_ppi_contract_normalizer.py rc6_trusted_browser_contract_collector.py rc6_contract_capture_importer.py rc6_ppi_web_reauth.py; do
+            sudo -n install -o root -g root -m 0644 "$TMP/source/$f" "$LIB/$f"
+          done
+          sudo -n install -o root -g root -m 0755 "$TMP/source/scripts/porota_contract_evidence_rc6_runtime.sh" /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          sudo -n install -o root -g root -m 0644 "$TMP/source/systemd/porota-contract-evidence-rc6.service" /etc/systemd/system/porota-contract-evidence-rc6.service
+          sudo -n systemctl daemon-reload
+          echo 'W12_ISOLATED_INSTALL=GREEN'
+          set +e
+          sudo -n systemctl start porota-contract-evidence-rc6.service
+          START_RC=$?
+          set -e
+          echo "SERVICE_START_RC=$START_RC"
+          STATUS=$(sudo -n systemctl show porota-contract-evidence-rc6.service -p Result -p ExecMainStatus -p ActiveState --value | paste -sd'|' -)
+          echo "SERVICE_STATE=$STATUS"
+          sudo -n journalctl -u porota-contract-evidence-rc6.service -n 40 --no-pager -o cat | grep -E '^(STATUS=|AUTH_STATUS=|REAUTH_ATTEMPTED=|DUE_JOBS=|IMPORT_RC=|DB_QUICK_CHECK=|REAL_ORDERS_SENT=|PLAYWRIGHT_|BROWSER_USER_|PPI_CALLS=|AUTH_BROWSER_STARTED=)' || true
+          POST_CAPTURE=$(sudo -n find "$OUTDIR" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@|%p\n' 2>/dev/null | sort -nr | sed -n '1p' || true)
+          POST_PATH=${POST_CAPTURE#*|}
+          if [[ -n "$POST_PATH" && "$POST_CAPTURE" != "$PRE_CAPTURE" ]]; then
+            sudo -n python3 - "$POST_PATH" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print('CAPTURE_AUTH='+str(d.get('auth_status')))
+          print('CAPTURE_JOBS='+str(len(d.get('jobs') or [])))
+          print('CAPTURE_ROUTES='+str(len(d.get('routes') or [])))
+          print('CAPTURE_ENDPOINTS='+str(len(d.get('endpoints') or {})))
+          print('CAPTURE_BLOCKED_NONREAD='+str(len(d.get('blocked_nonread') or [])))
+          print('CAPTURE_REAL_ORDERS='+str(d.get('real_orders_sent')))
+          assert d.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert int(d.get('real_orders_sent') or 0)==0
+          assert all(str(x.get('requested','')).startswith('/Cotizaciones/') for x in (d.get('routes') or []))
+          PY
+          else
+            echo 'FRESH_CAPTURE=NO'
+          fi
+          POST_RUNS=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          exists=c.execute("select 1 from sqlite_master where type='table' and name='contract_evidence_v2_runs'").fetchone()
+          print(c.execute('select count(*) from contract_evidence_v2_runs').fetchone()[0] if exists else 0); c.close()
+          PY
+          )
+          echo "CE_RUNS_POST=$POST_RUNS"
+          OBS_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          DASH_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          echo "OBSERVER_POST=$OBS_POST"
+          echo "DASHBOARD_POST=$DASH_POST"
+          test "$OBS_POST" = "$OBS_PRE"
+          test "$DASH_POST" = "$DASH_PRE"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_LIVE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|{mode}|{real}'); assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          PY
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          if [[ "$START_RC" -ne 0 ]]; then echo 'W12_LIVE_PROOF=RED_SERVICE_FAILURE'; exit 20; fi
+          if [[ -z "$POST_PATH" || "$POST_CAPTURE" = "$PRE_CAPTURE" ]]; then echo 'W12_LIVE_PROOF=YELLOW_NO_FRESH_CAPTURE'; exit 21; fi
+          if (( POST_RUNS <= PRE_RUNS )); then echo 'W12_LIVE_PROOF=YELLOW_NO_NEW_IMPORT_RUN'; exit 22; fi
+          echo 'W12_LIVE_PROOF=GREEN'
+          REMOTE
