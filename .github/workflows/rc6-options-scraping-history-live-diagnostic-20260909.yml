@@ -1,0 +1,112 @@
+name: RC6 Options Scraping History Live Diagnostic 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-options-scraping-history-live-20260909]
+    paths: [.github/workflows/rc6-options-scraping-history-live-diagnostic-20260909.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only live evidence audit
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = '2c9f3df2d03974ab6fe464d119bdbb2d90158706'
+          echo '=== CONTRACT EVIDENCE RC6 UNITS ==='
+          systemctl list-unit-files --no-pager | grep -E '^porota-contract-evidence-rc6' || true
+          systemctl list-units --all --no-pager | grep -E 'porota-contract-evidence-rc6' || true
+          systemctl list-timers --all --no-pager | grep -E 'porota-contract-evidence-rc6' || true
+          echo '=== OPTION + HISTORY DB SNAPSHOT ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3, os
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          state=c.execute('select mode,real_orders_sent,ppi_auth,session_state from observer_state where id=1').fetchone()
+          print('OBSERVER='+json.dumps(dict(state),sort_keys=True))
+          def exists(name): return c.execute("select 1 from sqlite_master where type='table' and name=?",(name,)).fetchone() is not None
+          for table in ('financial_instrument_catalog','candidate_universe','production_history','production_history_attempts','source_sync','financial_contract_v17'):
+              if exists(table):
+                  cols=[r[1] for r in c.execute('pragma table_info("'+table+'")')]
+                  print('TABLE_'+table+'='+','.join(cols))
+          if exists('financial_instrument_catalog'):
+              rows=c.execute("select ticker,market,currency,settlement,status,metadata_json from financial_instrument_catalog where upper(instrument_type)='OPCIONES' order by ticker limit 12").fetchall()
+              print('OPTION_CATALOG_SAMPLE_COUNT='+str(len(rows)))
+              safe={'underlying','subyacente','strike','exercise','ejercicio','expiry','expires_at','expiration','vencimiento','maturity','put_call','option_right','callput','multiplier','contract_multiplier','lot_size','quantity_step','price_tick','tick_value','instrument_id','itemId','provider_id'}
+              for r in rows:
+                  try: m=json.loads(r['metadata_json'] or '{}')
+                  except Exception: m={}
+                  selected={k:v for k,v in m.items() if k in safe and v not in (None,'',[],{})}
+                  print('OPTION_ROW='+json.dumps({'ticker':r['ticker'],'market':r['market'],'currency':r['currency'],'settlement':r['settlement'],'status':r['status'],'metadata_keys':sorted(m.keys()),'contract_fields':selected},sort_keys=True,default=str))
+              n=c.execute("select count(*) from financial_instrument_catalog where upper(instrument_type)='OPCIONES' and upper(status)='AVAILABLE'").fetchone()[0]
+              print('OPTIONS_AVAILABLE='+str(n))
+          if exists('production_history'):
+              for r in c.execute("select upper(instrument_type) family,count(*) instruments,coalesce(sum(row_count),0) rows,max(downloaded_at) last_download from production_history group by upper(instrument_type) order by family"):
+                  print('HISTORY='+json.dumps(dict(r),sort_keys=True))
+          if exists('production_history_attempts'):
+              for r in c.execute("select upper(instrument_type) family,state,count(*) n,max(attempted_at) last_attempt from production_history_attempts group by upper(instrument_type),state order by family,state"):
+                  print('HISTORY_ATTEMPT='+json.dumps(dict(r),sort_keys=True))
+          if exists('source_sync'):
+              for r in c.execute("select source,status,last_attempt_at,last_success_at,items from source_sync order by source"):
+                  print('SOURCE_SYNC='+json.dumps(dict(r),sort_keys=True))
+          if exists('financial_contract_v17'):
+              cols=[r[1] for r in c.execute('pragma table_info(financial_contract_v17)')]
+              family_col=next((x for x in ('instrument_type','asset_class','family') if x in cols),None)
+              if family_col:
+                  n=c.execute('select count(*) from financial_contract_v17 where upper('+family_col+")='OPCIONES'").fetchone()[0]
+                  print('OPTION_CONTRACT_ROWS='+str(n))
+          c.close()
+          print('RAW_STORAGE_MODE='+str(os.getenv('PPI_HISTORY_RAW_STORAGE_MODE')))
+          PY
+          echo '=== SANITIZED CONTRACT EVIDENCE INVENTORY ==='
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, os, time
+          root=Path('/opt/porota-trading/data')
+          files=[]
+          for p in root.rglob('*.json'):
+              low=p.name.lower()+' '+str(p.parent).lower()
+              if 'contract' in low or 'evidence' in low or 'trusted' in low:
+                  try: files.append((p.stat().st_mtime,p))
+                  except OSError: pass
+          for _,p in sorted(files,reverse=True)[:30]:
+              rel=str(p.relative_to(root));
+              try:
+                  obj=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:
+                  print('EVIDENCE_FILE='+rel+'|JSON_UNREADABLE'); continue
+              if not isinstance(obj,dict):
+                  print('EVIDENCE_FILE='+rel+'|TYPE='+type(obj).__name__); continue
+              summary={k:obj.get(k) for k in ('schema','generated_at','observed_at','auth_status','status','state') if k in obj}
+              eps=obj.get('endpoints') if isinstance(obj.get('endpoints'),dict) else {}
+              kinds={}
+              for v in eps.values():
+                  if isinstance(v,dict): kinds[v.get('kind','UNKNOWN')]=kinds.get(v.get('kind','UNKNOWN'),0)+1
+              routes=obj.get('routes') if isinstance(obj.get('routes'),list) else []
+              option_routes=[r for r in routes if isinstance(r,dict) and 'opcion' in str(r.get('requested','')).lower()]
+              summary['endpoint_kinds']=kinds; summary['option_routes']=option_routes[:5]
+              print('EVIDENCE_FILE='+rel+'|'+json.dumps(summary,sort_keys=True,default=str))
+          PY
+          echo 'RUNTIME_MUTATION=NO'
+          echo 'NETWORK_CALLS_FROM_DIAGNOSTIC=NO'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
