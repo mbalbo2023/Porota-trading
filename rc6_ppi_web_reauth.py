@@ -32,7 +32,14 @@ from urllib.parse import urlsplit
 LOGIN_URL = "https://cuenta.portfoliopersonal.com/login"
 TRADING_ROOT = "https://trading.portfoliopersonal.com/"
 ALLOWED_PAGE_HOSTS = {"cuenta.portfoliopersonal.com", "trading.portfoliopersonal.com"}
-APPROVED_AUTH_POSTS = {("cuenta.portfoliopersonal.com", "/login"), ("api.portfoliopersonal.com", "/api/Seguridad/Auth/Login")}
+APPROVED_AUTH_POSTS = {
+    ("cuenta.portfoliopersonal.com", "/login"),
+    ("api.portfoliopersonal.com", "/api/Seguridad/Auth/Login"),
+    # Observed first-party SSO promotion emitted automatically by Trading
+    # immediately after a successful Cuenta landing. This route is approved
+    # ONLY for authentication; order-like paths remain denied independently.
+    ("trading.portfoliopersonal.com", "/api/logInSSO"),
+}
 IGNORED_BLOCKED_POST_HOSTS = {"px.ads.linkedin.com", "metrics.hotjar.io", "l.clarity.ms"}
 ORDER_PATH_HINT = re.compile(r"(^|/)(operar|orden|orders?|trade|confirm|cancel)(/|$)", re.I)
 OTP_TEXT_HINT = re.compile(

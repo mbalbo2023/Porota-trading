@@ -70,3 +70,9 @@ def test_account_landing_requires_trading_verification_and_is_not_auth():
     assert m.account_landing_url(url)
     assert not m.authenticated_url(url)
     assert not m.account_landing_url('https://cuenta.portfoliopersonal.com/login')
+
+
+def test_exact_trading_sso_route_is_auth_allowlisted_only():
+    assert ("trading.portfoliopersonal.com", "/api/logInSSO") in m.APPROVED_AUTH_POSTS
+    assert all("operar" not in path.lower() and "order" not in path.lower() and "orden" not in path.lower()
+               for _host, path in m.APPROVED_AUTH_POSTS)
