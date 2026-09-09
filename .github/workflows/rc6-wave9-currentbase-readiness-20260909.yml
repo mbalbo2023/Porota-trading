@@ -1,0 +1,34 @@
+name: RC6 Wave9 Currentbase Readiness 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave9-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave9-currentbase-readiness-20260909.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and targeted tests
+        run: |
+          set -euo pipefail
+          python -m py_compile fe_fixed_income_nominal_contract_rc6.py rc6_cauciones_contract.py
+          python -m pytest -q tests/test_fixed_income_nominal_contract_rc6.py tests/test_rc6_cauciones_contract.py
+      - name: Safety assertions
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+import ast
+for p in ('fe_fixed_income_nominal_contract_rc6.py','rc6_cauciones_contract.py'):
+    t=ast.parse(open(p,encoding='utf-8').read())
+    imports=[]
+    for n in ast.walk(t):
+        if isinstance(n,ast.Import): imports += [a.name for a in n.names]
+        elif isinstance(n,ast.ImportFrom) and n.module: imports.append(n.module)
+    assert not any(x in {'requests','httpx','sqlite3'} for x in imports), (p,imports)
+print('WAVE9_CONTRACTS=CODE_READY_CANDIDATE')
+print('RUNTIME_MUTATION=NO')
+print('ORDER_ROUTES=NOT_CALLED')
+PY
