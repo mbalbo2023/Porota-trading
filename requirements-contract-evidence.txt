@@ -1,0 +1,4 @@
+# RC6 Contract Evidence browser runtime — isolated host venv only.
+# Do NOT install this into the observer image/environment.
+# Version verified on PyPI 2026-09-07.
+playwright==1.62.0
