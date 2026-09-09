@@ -1,0 +1,64 @@
+name: RC6 Contract Evidence No-New-File Diagnostic 2026-09-09
+
+on:
+  push:
+    branches: [diag/rc6-contract-evidence-no-new-file-20260909]
+    paths:
+      - '.github/workflows/rc6-contract-evidence-no-new-file-diag-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Diagnose live collector read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          ROOT=/opt/porota-trading
+          cd "$ROOT"
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo '--- RUNTIME SAFETY ---'
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close()
+          print(f'DB={q}|{m}|{r}|LEGACY_RAW_ROWS={raw}|RAW_STORAGE_MODE={os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          echo '--- UNIT/TIMER ---'
+          sudo -n systemctl status porota-contract-evidence-rc4.service --no-pager -l || true
+          sudo -n systemctl status porota-contract-evidence-rc4.timer --no-pager -l || true
+          sudo -n systemctl cat porota-contract-evidence-rc4.service || true
+          sudo -n systemctl cat porota-contract-evidence-rc4.timer || true
+          sudo -n systemctl show porota-contract-evidence-rc4.service -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus -p User -p Group -p Environment -p EnvironmentFiles || true
+          echo '--- JOURNAL SERVICE ---'
+          sudo -n journalctl -u porota-contract-evidence-rc4.service --since '2026-09-09 08:20:00 UTC' --no-pager -l | tail -200 || true
+          echo '--- JOURNAL TIMER ---'
+          sudo -n journalctl -u porota-contract-evidence-rc4.timer --since '2026-09-09 08:20:00 UTC' --no-pager -l | tail -100 || true
+          echo '--- FILES ---'
+          find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@|%TY-%Tm-%TdT%TH:%TM:%TS|%s|%p\n' 2>/dev/null | sort -nr | sed -n '1,12p' || true
+          echo '--- SCRIPT POLICY ---'
+          grep -nE 'ROUTES|Cotizaciones|profile|chrome|OUTPUT|contract_' rc4_trusted_browser_contract_collector.py scripts/porota_contract_evidence_trusted_rc4.sh | sed -n '1,160p' || true
+          echo 'MUTATIONS=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
