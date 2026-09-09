@@ -1,4 +1,5 @@
 name: RC6 Wave12 Full Contract Deep Scrape Chunked V4 2026-09-09
+# retriggered after trusted-session V4 GREEN; semantics and safety gates unchanged
 on:
   push:
     branches: [deploy-prep/rc6-wave12-currentbase-20260909]
