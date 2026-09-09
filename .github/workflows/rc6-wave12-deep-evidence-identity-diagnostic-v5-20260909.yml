@@ -1,0 +1,106 @@
+name: RC6 Wave12 Deep Evidence Identity Diagnostic V5 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-deep-evidence-identity-diagnostic-v5-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  deep-evidence-diagnostic:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12diagv5"
+          chmod 600 "$HOME/.ssh/w12diagv5"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect sanitized deep evidence identity surfaces
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=5 -i "$HOME/.ssh/w12diagv5" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE=$(git rev-parse HEAD)
+          CAP=/opt/porota-trading/data/contract_evidence/rc6_trusted/w12_full_contract_deep_v4_92c10781f4575228d393e84c50a5685e62d271ef.json
+          test -s "$CAP"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          python3 - "$CAP" <<'PY'
+          import json, re, sys
+          from collections import Counter
+          from urllib.parse import urlsplit, parse_qsl
+          p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
+          assert d.get('schema')=='POROTA_RC6_W12_FULL_CONTRACT_DEEP_V4'
+          assert d.get('no_inference') is True
+          sensitive=re.compile(r'(token|cookie|password|secret|account|cuenta|usuario|email|dni|cuit)',re.I)
+          print('W12_DEEP_SCHEMA='+d.get('schema',''))
+          print('W12_DEEP_AUTH='+d.get('auth_status',''))
+          print('W12_DEEP_ROUTE_COUNT='+str(len(d.get('routes') or {})))
+          print('W12_DEEP_DETAIL_COUNT='+str(len(d.get('details') or {})))
+          print('W12_DEEP_XHR_COUNT='+str(len(d.get('xhr') or {})))
+          for route,rd in sorted((d.get('routes') or {}).items()):
+              tables=rd.get('tables') or []
+              rows=[r for t in tables for r in (t.get('rows') or [])]
+              headers=sorted({str(h)[:50] for t in tables for h in (t.get('headers') or []) if h})
+              attrkeys=Counter()
+              linkpaths=Counter(); querykeys=Counter()
+              samples=[]
+              for r in rows:
+                  for k in (r.get('attrs') or {}).keys():
+                      if not sensitive.search(str(k)): attrkeys[str(k)]+=1
+                  for link in (r.get('links') or []):
+                      href=link.get('href','') if isinstance(link,dict) else str(link)
+                      try:
+                          u=urlsplit(href); linkpaths[u.path]+=1
+                          for k,_ in parse_qsl(u.query,keep_blank_values=True):
+                              if not sensitive.search(k): querykeys[k]+=1
+                      except Exception: pass
+                  if len(samples)<3:
+                      cells=r.get('cells') or []
+                      samples.append([re.sub(r'\s+',' ',str(x))[:45] for x in cells[:4]])
+              print('ROUTE='+route+'|ROWS='+str(len(rows))+'|TABLES='+str(len(tables))+'|HEADERS='+','.join(headers[:18])+'|ATTR_KEYS='+','.join(k for k,_ in attrkeys.most_common(12))+'|LINK_PATHS='+','.join(k for k,_ in linkpaths.most_common(8))+'|QUERY_KEYS='+','.join(k for k,_ in querykeys.most_common(8))+'|SAMPLES='+json.dumps(samples,ensure_ascii=False,separators=(',',':')))
+          # XHR only: keys and endpoint path, never values.
+          pathkeys=Counter(); jsonkeys=Counter()
+          for _,x in (d.get('xhr') or {}).items():
+              if not isinstance(x,dict): continue
+              url=x.get('url') or x.get('request_url') or ''
+              try: pathkeys[urlsplit(url).path]+=1
+              except Exception: pass
+              obj=x.get('json') or x.get('body') or x.get('data')
+              stack=[obj]
+              while stack:
+                  cur=stack.pop()
+                  if isinstance(cur,dict):
+                      for k,v in cur.items():
+                          if not sensitive.search(str(k)): jsonkeys[str(k)]+=1
+                          if isinstance(v,(dict,list)): stack.append(v)
+                  elif isinstance(cur,list): stack.extend(cur[:100])
+          print('XHR_PATHS='+json.dumps(pathkeys.most_common(30),ensure_ascii=False,separators=(',',':')))
+          print('XHR_JSON_KEYS='+json.dumps(jsonkeys.most_common(60),ensure_ascii=False,separators=(',',':')))
+          print('W12_DEEP_IDENTITY_DIAGNOSTIC=GREEN')
+          PY
+          test "$(git rev-parse HEAD)" = "$PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'ORDER_ROUTE_CALLED=NO'
+          echo 'RUNTIME_CHANGED=NO'
+          REMOTE
