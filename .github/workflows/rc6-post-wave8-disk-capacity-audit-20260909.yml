@@ -33,55 +33,42 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh -i "$HOME/.ssh/porota_disk_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=60 "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          ssh -i "$HOME/.ssh/porota_disk_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/porota-trading
-          echo '=== POROTA RC6 POST-WAVE8 DISK CAPACITY AUDIT ==='
+          topn(){ sed -n "1,${1}p"; }
+          echo '=== POROTA RC6 POST-WAVE8 DISK CAPACITY AUDIT V2 ==='
           echo "UTC=$(date -u +%FT%TZ)"
           echo "HEAD=$(git rev-parse HEAD)"
           echo '--- FILESYSTEM ---'
           df -PB1 /opt/porota-trading
           df -h /opt/porota-trading
           echo '--- TOP LEVEL /opt ---'
-          sudo -n du -x -B1 -d1 /opt 2>/dev/null | sort -nr | head -30
+          sudo -n du -x -B1 -d1 /opt 2>/dev/null | sort -nr | topn 30
           echo '--- TOP LEVEL /opt/porota-trading ---'
-          sudo -n du -x -B1 -d1 /opt/porota-trading 2>/dev/null | sort -nr | head -50
-          echo '--- DATA LEVEL 1 ---'
-          sudo -n du -x -B1 -d1 /opt/porota-trading/data 2>/dev/null | sort -nr | head -80
-          echo '--- DATA LEVEL 2 TOP 100 ---'
-          sudo -n du -x -B1 -d2 /opt/porota-trading/data 2>/dev/null | sort -nr | head -100
+          sudo -n du -x -B1 -d1 /opt/porota-trading 2>/dev/null | sort -nr | topn 50
+          echo '--- DATA LEVEL 2 ---'
+          sudo -n du -x -B1 -d2 /opt/porota-trading/data 2>/dev/null | sort -nr | topn 120
           echo '--- LARGEST FILES POROTA ---'
-          sudo -n find /opt/porota-trading -xdev -type f -printf '%s|%p\n' 2>/dev/null | sort -t'|' -k1,1nr | head -100
-          echo '--- BACKUPS ---'
-          sudo -n du -x -B1 -d3 /opt/porota-trading/data/backups 2>/dev/null | sort -nr | head -80 || true
-          echo '--- EVIDENCE ---'
-          sudo -n du -x -B1 -d3 /opt/porota-trading/data/evidence 2>/dev/null | sort -nr | head -80 || true
-          echo '--- PAPER_V17 ---'
-          sudo -n du -x -B1 -d2 /opt/porota-trading/data/paper_v17 2>/dev/null | sort -nr | head -80 || true
-          echo '--- SQLITE FILES ---'
-          sudo -n find /opt/porota-trading/data -xdev \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' -o -name '*-wal' -o -name '*-shm' \) -type f -printf '%s|%p\n' 2>/dev/null | sort -t'|' -k1,1nr | head -120
+          sudo -n find /opt/porota-trading -xdev -type f -printf '%s|%p\n' 2>/dev/null | sort -t'|' -k1,1nr | topn 120
           echo '--- DOCKER SYSTEM DF ---'
           sudo -n docker system df -v || true
           echo '--- DOCKER IMAGES ---'
-          sudo -n docker images --no-trunc --format '{{.Repository}}|{{.Tag}}|{{.ID}}|{{.Size}}|{{.CreatedSince}}' | head -100 || true
+          sudo -n docker images --no-trunc --format '{{.Repository}}|{{.Tag}}|{{.ID}}|{{.Size}}|{{.CreatedSince}}' | topn 120 || true
           echo '--- DOCKER CONTAINERS ---'
-          sudo -n docker ps -a --size --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Size}}' | head -100 || true
+          sudo -n docker ps -a --size --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Size}}' | topn 120 || true
           echo '--- DOCKER VOLUMES ---'
-          sudo -n docker volume ls -q | while read -r v; do [ -n "$v" ] || continue; mp=$(sudo -n docker volume inspect -f '{{.Mountpoint}}' "$v" 2>/dev/null || true); sz=0; [ -n "$mp" ] && sz=$(sudo -n du -sx -B1 "$mp" 2>/dev/null | awk '{print $1}' || echo 0); echo "$sz|$v|$mp"; done | sort -t'|' -k1,1nr | head -100 || true
+          sudo -n docker volume ls -q | while read -r v; do [ -n "$v" ] || continue; mp=$(sudo -n docker volume inspect -f '{{.Mountpoint}}' "$v" 2>/dev/null || true); sz=0; [ -n "$mp" ] && sz=$(sudo -n du -sx -B1 "$mp" 2>/dev/null | awk '{print $1}' || echo 0); echo "$sz|$v|$mp"; done | sort -t'|' -k1,1nr | topn 120 || true
           echo '--- JOURNAL ---'
           sudo -n journalctl --disk-usage || true
           echo '--- /var TOP ---'
-          sudo -n du -x -B1 -d1 /var 2>/dev/null | sort -nr | head -40
+          sudo -n du -x -B1 -d1 /var 2>/dev/null | sort -nr | topn 50
           echo '--- /var/lib TOP ---'
-          sudo -n du -x -B1 -d1 /var/lib 2>/dev/null | sort -nr | head -60
+          sudo -n du -x -B1 -d1 /var/lib 2>/dev/null | sort -nr | topn 80
           echo '--- /var/log TOP ---'
-          sudo -n du -x -B1 -d2 /var/log 2>/dev/null | sort -nr | head -80
-          echo '--- APT CACHE ---'
-          sudo -n du -sx -B1 /var/cache/apt 2>/dev/null || true
-          echo '--- TMP ---'
-          sudo -n du -sx -B1 /tmp /var/tmp 2>/dev/null || true
-          echo '--- CORE/CRASH ---'
-          sudo -n du -sx -B1 /var/lib/systemd/coredump /var/crash 2>/dev/null || true
+          sudo -n du -x -B1 -d2 /var/log 2>/dev/null | sort -nr | topn 100
+          echo '--- CACHE/TMP/CORE ---'
+          sudo -n du -sx -B1 /var/cache/apt /tmp /var/tmp /var/lib/systemd/coredump /var/crash 2>/dev/null || true
           echo '--- SAFETY RUNTIME ---'
           sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
           sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
