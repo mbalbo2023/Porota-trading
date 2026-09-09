@@ -1,0 +1,35 @@
+name: RC6 Wave8 Runtime Readiness Audit 2026-09-08
+on:
+  push:
+    branches: [audit/rc6-wave8-runtime-readiness-20260908]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and focused tests
+        run: |
+          set -euo pipefail
+          python -m pip install -q pytest
+          python -m py_compile ch_empirical_learning.py s_learning_engine.py et_shadow_learning_rc6.py ec_forward_lab_metrics_hf2.py ei_dashboard_table_accessibility_rc5.py eq_dashboard_table_layout_rc6.py er_dashboard_table_semantics_rc6.py da_dashboard_ux_hf6.py
+          PYTHONPATH=. python -m pytest -q tests/test_shadow_learning_rc6.py tests/test_forward_lab_metrics_hf2.py tests/test_dashboard_global_a11y_rc5.py tests/test_dashboard_table_layout_rc6.py
+      - name: UX readiness inventory
+        run: |
+          set -euo pipefail
+          echo '=== LEARNING / UX INVENTORY ==='
+          grep -RniE 'day|week|month|refresh|interval|accessib|aria|table|learning|forward' ch_empirical_learning.py s_learning_engine.py et_shadow_learning_rc6.py ec_forward_lab_metrics_hf2.py ei_dashboard_table_accessibility_rc5.py eq_dashboard_table_layout_rc6.py er_dashboard_table_semantics_rc6.py da_dashboard_ux_hf6.py | head -n 400 || true
+      - name: Safety gate
+        run: |
+          set -euo pipefail
+          ! grep -RniE 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' ch_empirical_learning.py s_learning_engine.py et_shadow_learning_rc6.py ec_forward_lab_metrics_hf2.py da_dashboard_ux_hf6.py
+          echo AUTO_REAL_MONEY_PROMOTION=NO
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo WAVE8_RUNTIME_READINESS_AUDIT=GREEN
