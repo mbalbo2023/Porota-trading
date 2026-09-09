@@ -1,0 +1,138 @@
+name: RC6 Wave12 Search Filter Diagnostic V10 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-search-filter-diagnostic-v10-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  search-filter-diagnostic:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12searchv10"
+          chmod 600 "$HOME/.ssh/w12searchv10"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Probe exact-ticker filtering read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i "$HOME/.ssh/w12searchv10" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE=$(git rev-parse HEAD)
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          TMP=$(mktemp -d /tmp/w12searchv10.XXXXXX)
+          trap 'rm -rf "$TMP"' EXIT
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+
+          sudo -n docker exec porota_production_observer python - <<'PY' > "$TMP/candidates.json"
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          out={}
+          for fam in ('ACCIONES','CEDEARS','ON','OPCIONES'):
+              out[fam]=[r[0] for r in c.execute("select ticker from candidate_universe where status='AVAILABLE' and instrument_type=? order by ticker",(fam,))]
+          c.close(); print(json.dumps(out,separators=(',',':')))
+          PY
+          chmod 644 "$TMP/candidates.json"
+
+          if ! pgrep -af 'chrome.*porota-browser-lab/chrome-profile|google-chrome.*porota-browser-lab/chrome-profile' >/dev/null 2>&1; then
+            rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonSocket" "$PROFILE/SingletonCookie" 2>/dev/null || true
+          fi
+
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin /opt/porota-contract-evidence-venv/bin/python - "$PROFILE" "$TMP/candidates.json" <<'PY'
+          import json,re,sys
+          from urllib.parse import urlsplit,parse_qsl
+          from playwright.sync_api import sync_playwright
+
+          profile,candidate_file=sys.argv[1:3]
+          candidates=json.load(open(candidate_file,encoding='utf-8'))
+          BASE='https://trading.portfoliopersonal.com'; SAFE={'GET','HEAD','OPTIONS'}
+          specs=[('/Cotizaciones/Acciones','ACCIONES'),('/Cotizaciones/Cedears','CEDEARS'),('/Cotizaciones/Ons','ON'),('/Cotizaciones/Opciones','OPCIONES')]
+
+          def norm(v): return re.sub(r'\s+',' ',str(v or '')).strip().upper()
+          def safe_url(u):
+              p=urlsplit(u)
+              return p.scheme=='https' and p.netloc=='trading.portfoliopersonal.com' and p.path.startswith('/Cotizaciones') and '/Operar' not in p.path
+          def visible_identities(page):
+              vals=[]
+              for row in page.locator('table tbody tr').all():
+                  try:
+                      tds=row.locator('td')
+                      if tds.count(): vals.append(norm(tds.first.inner_text()))
+                  except Exception: pass
+              return vals
+          def input_meta(page):
+              return page.evaluate("""() => [...document.querySelectorAll('input,select,textarea')].map((e,i)=>({i,tag:e.tagName,type:(e.type||'').toLowerCase(),name:e.name||'',id:e.id||'',placeholder:e.placeholder||'',aria:e.getAttribute('aria-label')||'',title:e.title||'',value:(e.type==='password'?'[REDACTED]':String(e.value||'').slice(0,80)),visible:!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length),disabled:!!e.disabled,formAction:e.form?(e.form.getAttribute('action')||''):'',formMethod:e.form?(e.form.getAttribute('method')||''):'',cls:String(e.className||'').slice(0,140)})).filter(x=>x.type!=='password')""")
+
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(user_data_dir=profile,executable_path='/usr/bin/google-chrome-stable',headless=True,locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',viewport={'width':1440,'height':1000},args=['--no-sandbox','--disable-dev-shm-usage'])
+              blocked=[]; gets=[]
+              def guard(route,req):
+                  method=req.method.upper(); u=urlsplit(req.url)
+                  if method not in SAFE:
+                      blocked.append({'method':method,'host':u.netloc,'path':u.path}); return route.abort()
+                  if u.netloc=='trading.portfoliopersonal.com':
+                      gets.append({'method':method,'path':u.path,'query_keys':sorted(k for k,_ in parse_qsl(u.query,keep_blank_values=True))})
+                  return route.continue_()
+              ctx.route('**/*',guard)
+              page=ctx.pages[0] if ctx.pages else ctx.new_page()
+              successes=0
+              for route,fam in specs:
+                  page.goto(BASE+route,wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(1800)
+                  assert safe_url(page.url), 'UNSAFE_OR_AUTH:'+route
+                  before=visible_identities(page)
+                  unseen=next((t for t in candidates.get(fam,[]) if norm(t) not in set(before)),None)
+                  meta=input_meta(page)
+                  print('SEARCH_INPUT_META='+json.dumps({'route':route,'family':fam,'rows_before':len(before),'unseen_target':unseen,'inputs':meta},ensure_ascii=False,separators=(',',':')))
+                  if not unseen:
+                      print('SEARCH_RESULT='+json.dumps({'route':route,'result':'NO_UNSEEN_CANDIDATE'},separators=(',',':'))); continue
+                  controls=[]
+                  for x in meta:
+                      hay=' '.join(str(x.get(k,'')) for k in ('name','id','placeholder','aria','title','cls')).lower()
+                      if x.get('visible') and not x.get('disabled') and x.get('tag')=='INPUT' and x.get('type') not in ('hidden','password','checkbox','radio','submit','button') and re.search(r'buscar|search|filtro|filter|especie|ticker|s[ií]mbolo|symbol',hay,re.I):
+                          controls.append(x)
+                  if not controls:
+                      print('SEARCH_RESULT='+json.dumps({'route':route,'target':unseen,'result':'NO_CLEAR_SAFE_SEARCH_INPUT'},ensure_ascii=False,separators=(',',':'))); continue
+                  chosen=controls[0]; loc=page.locator('input').nth(sum(1 for x in meta[:chosen['i']] if x.get('tag')=='INPUT'))
+                  try:
+                      loc.fill(str(unseen),timeout=3000); page.wait_for_timeout(1800)
+                      after=visible_identities(page); found=norm(unseen) in set(after)
+                      if found: successes+=1
+                      print('SEARCH_RESULT='+json.dumps({'route':route,'target':unseen,'selector_meta':{k:chosen.get(k) for k in ('name','id','placeholder','aria','type')},'rows_after':len(after),'target_found':found,'first_after':after[:5]},ensure_ascii=False,separators=(',',':')))
+                  except Exception as e:
+                      print('SEARCH_RESULT='+json.dumps({'route':route,'target':unseen,'result':'FILL_FAILED','error':type(e).__name__},ensure_ascii=False,separators=(',',':')))
+              print('SAFE_SEARCH_SUCCESSES='+str(successes))
+              print('BLOCKED_NONREAD_COUNT='+str(len(blocked)))
+              print('FIRST_PARTY_GET_SAMPLE='+json.dumps(gets[-40:],separators=(',',':')))
+              print('W12_SEARCH_FILTER_DIAGNOSTIC_V10=GREEN')
+              ctx.close()
+          PY
+
+          test "$(git rev-parse HEAD)" = "$PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'ORDER_ROUTE_CALLED=NO'
+          echo 'RUNTIME_CHANGED=NO'
+          REMOTE
