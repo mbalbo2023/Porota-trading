@@ -1,0 +1,75 @@
+name: RC6 Dashboard Post-Wave8 Live Audit 2026-09-09
+
+on:
+  push:
+    branches: [audit/rc6-post-wave8-disk-capacity-20260909]
+    paths:
+      - '.github/workflows/rc6-dashboard-post-wave8-live-audit-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_dash_audit"
+          chmod 600 "$HOME/.ssh/porota_dash_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Audit live dashboard UX and risk wiring
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_dash_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import inspect
+          import da_dashboard_ux_hf6 as nav
+          import bg_paper_dashboard as bg
+          print('TOP_NAV='+','.join(f'{x.label}:{x.href}' for x in nav.TOP_NAV))
+          print('HAS_RISK_TOP_NAV='+str(any('riesg' in x.label.lower() or 'risk' in x.href.lower() for x in nav.TOP_NAV)))
+          print('HAS_EQ_INSTALL_IN_BG='+str('eq_dashboard_table_layout_rc6' in inspect.getsource(bg)))
+          print('HAS_ER_INSTALL_IN_BG='+str('er_dashboard_table_semantics_rc6' in inspect.getsource(bg)))
+          print('BASE_TABLE_LAYOUT_FIXED='+str('table-layout:fixed' in bg.THEME))
+          print('TABLE_A11Y_HAS_FORCE_COMPACT='+str('porota-rc6-force-compact-tables' in bg.TABLE_A11Y_CSS))
+          print('TABLE_A11Y_HAS_FORCE_SCRIPT='+str('porota-rc6-force-compact-script' in bg.TABLE_A11Y_SCRIPT))
+          for fn in ('_page','_risk_page','risk_page','_event_risk_page'):
+              print(f'BG_HAS_{fn.upper()}='+str(hasattr(bg,fn)))
+          html=''
+          try: html=bg._page()
+          except Exception as e: print('ROOT_RENDER_ERROR='+type(e).__name__+':'+str(e)[:200])
+          if html:
+              print('ROOT_HAS_RISK_TEXT='+str('riesgo' in html.lower() or 'risk' in html.lower()))
+              print('ROOT_HAS_TABLE_TAG='+str('<table' in html.lower()))
+          PY
+          echo '--- ROUTE INVENTORY ---'
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import bg_paper_dashboard as bg
+          app=getattr(bg,'app',None)
+          if app is None:
+              print('APP_OBJECT=NONE')
+          else:
+              paths=sorted({getattr(r,'path','') for r in app.routes})
+              for p in paths: print('ROUTE='+p)
+              print('HAS_RISK_ROUTE='+str(any('riesg' in p.lower() or 'risk' in p.lower() for p in paths)))
+          PY
+          echo 'MUTATIONS=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
