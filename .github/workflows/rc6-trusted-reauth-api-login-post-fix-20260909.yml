@@ -1,0 +1,138 @@
+name: RC6 Trusted Reauth Exact API Login POST Fix 2026-09-09
+
+on:
+  push:
+    branches: [fix/rc6-trusted-reauth-api-login-post-20260909]
+    paths:
+      - '.github/workflows/rc6-trusted-reauth-api-login-post-fix-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  rca-fix-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Build exact auth allowlist fix from proven helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin hotfix/rc6-contract-evidence-auto-reauth-20260907
+          git show origin/hotfix/rc6-contract-evidence-auto-reauth-20260907:rc6_ppi_web_reauth.py > /tmp/rc6_ppi_web_reauth.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/rc6_ppi_web_reauth.py')
+          s=p.read_text(encoding='utf-8')
+          old='APPROVED_AUTH_POSTS = {("cuenta.portfoliopersonal.com", "/login")}\n'
+          new='APPROVED_AUTH_POSTS = {(\"cuenta.portfoliopersonal.com\", \"/login\"), (\"api.portfoliopersonal.com\", \"/api/Seguridad/Auth/Login\")}\nIGNORED_BLOCKED_POST_HOSTS = {\"px.ads.linkedin.com\"}\n'
+          assert old in s
+          s=s.replace(old,new,1)
+          old2='''                if method == "POST" and key in APPROVED_AUTH_POSTS:\n                    return route.continue_()\n                blocked_post_path = clean_host_path(request.url)\n                return route.abort()\n'''
+          new2='''                if method == "POST" and key in APPROVED_AUTH_POSTS:\n                    return route.continue_()\n                if method == "POST" and u.netloc in IGNORED_BLOCKED_POST_HOSTS:\n                    return route.abort()\n                blocked_post_path = clean_host_path(request.url)\n                return route.abort()\n'''
+          assert old2 in s
+          p.write_text(s.replace(old2,new2,1),encoding='utf-8')
+          PY
+          python -m py_compile /tmp/rc6_ppi_web_reauth.py
+          grep -q 'api.portfoliopersonal.com.*Seguridad/Auth/Login' /tmp/rc6_ppi_web_reauth.py
+          grep -q 'px.ads.linkedin.com' /tmp/rc6_ppi_web_reauth.py
+          ! grep -Ei 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order|/Operar/' /tmp/rc6_ppi_web_reauth.py
+          echo RCA=LOGIN_FORM_USES_EXACT_PPI_API_AUTH_POST_NOT_LEGACY_PAGE_POST
+          echo FIX=ALLOWLIST_EXACT_API_SEGURIDAD_AUTH_LOGIN_PLUS_ABORT_LINKEDIN_TELEMETRY
+          echo NON_AUTH_POSTS=BLOCKED
+      - name: Prepare SSH and stage helper
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" /tmp/rc6_ppi_web_reauth.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_web_reauth.py"
+      - name: Install fix, reauthenticate trusted profile, prove fresh evidence and safety
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          VENV=/opt/porota-contract-evidence-venv
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          SECRET=/etc/porota/contract-evidence-web.env
+          CHROME=/usr/bin/google-chrome-stable
+          cd "$ROOT"
+          echo "LIVE_HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close()
+          print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          test -d "$PROFILE"; test -f "$SECRET"; test -x "$VENV/bin/python"; test -x "$CHROME"
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_reauth.py /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py
+          sudo -n rm -f /tmp/rc6_ppi_web_reauth.py
+          set +e
+          OUT=$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin POROTA_CHROME_EXECUTABLE="$CHROME" PYTHONPATH=/usr/local/lib/porota-contract-evidence-rc6:$ROOT "$VENV/bin/python" /usr/local/lib/porota-contract-evidence-rc6/rc6_ppi_web_reauth.py --profile "$PROFILE" --secret "$SECRET" --chrome "$CHROME" 2>&1); RC=$?
+          set -e
+          printf '%s\n' "$OUT"
+          STATE=$(REAUTH_OUT="$OUT" python3 - <<'PY'
+          import json,os
+          try: print(json.loads(os.environ['REAUTH_OUT']).get('status','UNKNOWN'))
+          except Exception: print('INVALID_REAUTH_OUTPUT')
+          PY
+          )
+          echo "REAUTH_RC=$RC|REAUTH_STATE=$STATE"
+          test "$RC" -eq 0
+          test "$STATE" = AUTHENTICATED_TRUSTED_DEVICE
+          BEFORE=$(find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json'|wc -l)
+          START=$(date +%s)
+          sudo -n systemctl reset-failed porota-contract-evidence-rc4.service || true
+          sudo -n systemctl start porota-contract-evidence-rc4.service
+          sleep 5
+          test "$(sudo -n systemctl is-enabled porota-contract-evidence-rc4.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc4.timer)" = active
+          AFTER=$(find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json'|wc -l)
+          echo "EVIDENCE_FILES=$BEFORE->$AFTER"; test "$AFTER" -gt "$BEFORE"
+          LATEST=$(find "$ROOT/data/contract_evidence/rc4_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@|%p\n'|sort -nr|sed -n '1p')
+          MT=${LATEST%%.*}; FILE=${LATEST#*|}; test "$MT" -ge "$START"
+          python3 - "$FILE" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print('LATEST_EVIDENCE_STATE='+str(d.get('state')))
+          print('LATEST_EVIDENCE_REAL_ORDERS='+str(d.get('real_orders_sent')))
+          print('LATEST_EVIDENCE_ROUTES='+str(d.get('routes')))
+          assert d.get('state')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert int(d.get('real_orders_sent',0))==0
+          PY
+          ! grep -REni '/Operar/|/Orden|budget_order|confirm_order|cancel_order|masscancel|send_order|place_order' rc4_trusted_browser_contract_collector.py scripts/porota_contract_evidence_trusted_rc4.sh
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close()
+          print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "POST_DB=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo SCRAPING_REAUTH=GREEN
+          echo SCRAPING_AUTH=AUTHENTICATED_TRUSTED_DEVICE
+          echo SCRAPING_TIMER=ENABLED_ACTIVE
+          echo SCRAPING_ROUTE_POLICY=COTIZACIONES_ONLY
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          HOST
