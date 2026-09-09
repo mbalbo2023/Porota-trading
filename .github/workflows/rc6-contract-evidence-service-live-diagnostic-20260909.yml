@@ -1,0 +1,76 @@
+name: RC6 Contract Evidence Service Live Diagnostic 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-contract-evidence-service-live-20260909]
+    paths: [.github/workflows/rc6-contract-evidence-service-live-diagnostic-20260909.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect service without secrets or network
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "HEAD=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = '2c9f3df2d03974ab6fe464d119bdbb2d90158706'
+          echo '=== SYSTEMD SAFE PROPERTIES ==='
+          systemctl show porota-contract-evidence-rc6.service \
+            -p FragmentPath -p User -p Group -p ExecStart -p ActiveState -p SubState \
+            -p Result -p ExecMainStatus -p ExecMainCode -p NRestarts --no-pager
+          systemctl show porota-contract-evidence-rc6.timer \
+            -p FragmentPath -p Unit -p ActiveState -p SubState -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager
+          echo '=== UNIT SAFE LINES ==='
+          UNIT=$(systemctl show porota-contract-evidence-rc6.service -p FragmentPath --value)
+          test -n "$UNIT"; test -f "$UNIT"
+          sudo -n grep -nE '^(Description|After|Wants|Requires|User|Group|Type|ExecStart|WorkingDirectory|TimeoutStartSec|Restart|NoNewPrivileges|PrivateTmp|ProtectSystem|ProtectHome|ReadWritePaths)=' "$UNIT" || true
+          echo '=== EXECUTABLE OWNERSHIP ==='
+          EXEC=$(systemctl show porota-contract-evidence-rc6.service -p ExecStart --value | sed -n 's/.*path=\([^ ;]*\).*/\1/p' | head -1)
+          [ -n "$EXEC" ] || EXEC=$(sudo -n grep '^ExecStart=' "$UNIT" | cut -d= -f2 | awk '{print $1}')
+          echo "EXEC_BASENAME=$(basename "$EXEC")"
+          echo "EXEC_PATH_CLASS=$(case "$EXEC" in /opt/porota-trading/*) echo REPO;; /usr/local/*) echo HOST_LOCAL;; *) echo OTHER;; esac)"
+          if [ -f "$EXEC" ]; then
+            echo "EXEC_SHA256=$(sha256sum "$EXEC" | awk '{print $1}')"
+            echo 'EXEC_RC_REFS:'
+            sudo -n grep -nE 'rc4|rc5|hf5|hf6|rc6|contract_evidence|trusted|collector|reauth|output|profile' "$EXEC" \
+              | sed -E 's#([A-Za-z0-9_]*(PASSWORD|TOKEN|SECRET|COOKIE|OTP|AUTH)[A-Za-z0-9_]*)=[^ ]+#\1=[REDACTED]#Ig' \
+              | head -120 || true
+          fi
+          echo '=== RECENT FAILURE CLASSIFICATION ==='
+          sudo -n journalctl -u porota-contract-evidence-rc6.service -n 120 --no-pager -o cat \
+            | grep -Ei 'blocked|expired|error|failed|exception|traceback|browser|profile|collector|reauth|exit|status' \
+            | sed -E 's#https?://[^ ]+[?&][^ ]*#URL_WITH_QUERY_REDACTED#g; s#(token|password|secret|cookie|otp|authorization)[=:][^ ]+#\1=[REDACTED]#Ig' \
+            | tail -80 || true
+          echo '=== REPO CANDIDATE FILES ==='
+          find . -maxdepth 3 -type f \( -iname '*contract*evidence*' -o -iname '*trusted*collector*' -o -iname '*reauth*' \) \
+            -printf '%P\n' | sort | head -120
+          echo '=== LIVE EVIDENCE PATH COUNTS ==='
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/opt/porota-trading/data/contract_evidence')
+          for p in sorted(root.glob('*')) if root.is_dir() else []:
+              if p.is_dir():
+                  n=sum(1 for _ in p.rglob('*.json'))
+                  print(f'EVIDENCE_DIR={p.name}|JSON_COUNT={n}')
+          PY
+          echo RUNTIME_MUTATION=NO
+          echo NETWORK_CALLS_FROM_DIAGNOSTIC=NO
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          REMOTE
