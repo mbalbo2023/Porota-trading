@@ -1,0 +1,89 @@
+name: RC6 IOL History Shape Diagnostic V5 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-iol-history-shape-diagnostic-v5-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  shape-diagnostic:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/iolshape"
+          chmod 600 "$HOME/.ssh/iolshape"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect read-only historical shape
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=5 -i "$HOME/.ssh/iolshape" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE=$(git rev-parse HEAD)
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          python3 - <<'PY'
+          import collections, json, ssl, urllib.error, urllib.parse, urllib.request
+          from datetime import date,timedelta
+          from pathlib import Path
+          vals={}
+          for raw in Path('/opt/porota-trading/.env').read_text(encoding='utf-8',errors='replace').splitlines():
+              s=raw.strip()
+              if not s or s.startswith('#') or '=' not in s: continue
+              k,v=s.split('=',1); vals[k.strip()]=v.strip().strip('"').strip("'")
+          u,p=vals.get('IOL_USERNAME',''),vals.get('IOL_PASSWORD','')
+          assert u and p, 'IOL_CREDENTIALS_MISSING'
+          base='https://api.invertironline.com'; ctx=ssl.create_default_context()
+          payload=urllib.parse.urlencode({'username':u,'password':p,'grant_type':'password'}).encode()
+          req=urllib.request.Request(base+'/token',data=payload,headers={'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json','User-Agent':'PorotaTrading-RC6-ReadOnly/1.0'},method='POST')
+          with urllib.request.urlopen(req,timeout=20,context=ctx) as r: token=json.loads(r.read().decode())['access_token']
+          print('IOL_AUTH=GREEN')
+          end=date.today(); start=end-timedelta(days=365)
+          samples=[('GGAL','ACCIONES','ajustada'),('AL30','BONOS','sinAjustar'),('AAPL','CEDEARS','sinAjustar'),('GFGC7200OC','OPCIONES','sinAjustar')]
+          for sym,fam,kind in samples:
+              path=f'/api/v2/bCBA/Titulos/{urllib.parse.quote(sym,safe="")}/Cotizacion/seriehistorica/{start:%Y-%m-%d}/{end:%Y-%m-%d}/{kind}'
+              q=urllib.request.Request(base+path,headers={'Authorization':'Bearer '+token,'Accept':'application/json','User-Agent':'PorotaTrading-RC6-ReadOnly/1.0'},method='GET')
+              with urllib.request.urlopen(q,timeout=30,context=ctx) as r: obj=json.loads(r.read().decode('utf-8','replace'))
+              rows=obj.get('precios',[]) if isinstance(obj,dict) else (obj if isinstance(obj,list) else [])
+              dates=[]; keys=[]; settlements=collections.Counter(); currencies=collections.Counter(); times=collections.Counter(); date_settle=collections.Counter()
+              for x in rows:
+                  if not isinstance(x,dict): continue
+                  if not keys: keys=sorted(x.keys())
+                  fh=str(x.get('fechaHora') or x.get('fecha') or '')
+                  d=fh[:10] if len(fh)>=10 else fh
+                  dates.append(d)
+                  pl=str(x.get('plazo') or '')
+                  mo=str(x.get('moneda') or '')
+                  settlements[pl]+=1; currencies[mo]+=1; date_settle[(d,pl,mo)]+=1
+                  if 'T' in fh: times[fh.split('T',1)[1][:8]]+=1
+              dup=sum(v-1 for v in date_settle.values() if v>1)
+              result={'symbol':sym,'family':fam,'rows':len(rows),'distinct_dates':len(set(dates)),'first_date':min(dates) if dates else None,'last_date':max(dates) if dates else None,'settlements':settlements.most_common(12),'currencies':currencies.most_common(8),'distinct_times':len(times),'duplicate_date_settlement_currency_rows':dup,'keys':keys}
+              print('IOL_SHAPE='+json.dumps(result,ensure_ascii=False,separators=(',',':')))
+          print('IOL_HISTORY_SHAPE_DIAGNOSTIC=GREEN')
+          PY
+          test "$(git rev-parse HEAD)" = "$PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'ORDER_ROUTE_CALLED=NO'
+          echo 'RUNTIME_CHANGED=NO'
+          REMOTE
