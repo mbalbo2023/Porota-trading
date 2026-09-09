@@ -1,0 +1,96 @@
+name: RC6 Contract Evidence Full Browser Permission Fix 2026-09-09
+
+on:
+  push:
+    branches: [proof/rc6-contract-evidence-full-browser-permission-fix-20260909]
+    paths:
+      - '.github/workflows/rc6-contract-evidence-full-browser-permission-fix-20260909.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Fresh authenticated read-only full-browser evidence with safe staging
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          PY=/opt/porota-contract-evidence-venv/bin/python
+          CHROME=/usr/bin/google-chrome-stable
+          OUTDIR="$ROOT/data/contract_evidence/rc4_trusted"
+          cd "$ROOT"
+          echo "HEAD=$(git rev-parse HEAD)"
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          test -d "$PROFILE"; test -x "$PY"; test -x "$CHROME"; test -d "$OUTDIR"
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          TMP="/home/porotaadmin/contract_${STAMP}_fullbrowserproof.json"
+          OUT="$OUTDIR/contract_${STAMP}_fullbrowserproof.json"
+          trap 'sudo -n rm -f "$TMP" 2>/dev/null || true' EXIT
+          sudo -n rm -f "$TMP"
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin POROTA_CHROME_EXECUTABLE="$CHROME" PYTHONPATH="$ROOT" "$PY" "$ROOT/rc4_trusted_browser_contract_collector.py" --profile "$PROFILE" --jobs CONTRACT_EVIDENCE_FULL_BROWSER --output "$TMP"
+          test -s "$TMP"
+          python3 - "$TMP" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print('AUTH='+str(d.get('auth_status')))
+          print('ROUTES='+str(len(d.get('routes') or [])))
+          print('REACHED='+str(sum(1 for r in (d.get('routes') or []) if r.get('reached'))))
+          print('ENDPOINTS='+str(len(d.get('endpoints') or {})))
+          print('BLOCKED_NONREAD='+str(d.get('blocked_nonread') or []))
+          print('REAL_ORDERS='+str(d.get('real_orders_sent')))
+          assert d.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert int(d.get('real_orders_sent',0))==0
+          assert len(d.get('routes') or []) >= 17
+          assert sum(1 for r in (d.get('routes') or []) if r.get('reached')) >= 12
+          assert not any('/Operar/' in str(x.get('url','')) or '/Orden' in str(x.get('url','')) for x in (d.get('blocked_nonread') or []))
+          PY
+          GID=$(sudo -n docker exec porota_production_observer id -g 2>/dev/null || echo 1000)
+          sudo -n install -o 0 -g "$GID" -m 0640 "$TMP" "$OUT"
+          test -s "$OUT"
+          REL="${OUT#$ROOT/data/}"
+          IMPORT=$(sudo -n docker exec porota_production_observer python /app/rc4_contract_import_job.py --input "/app/data/$REL")
+          echo "IMPORT=$IMPORT"
+          test "$(sudo -n systemctl is-enabled porota-contract-evidence-rc4.timer)" = enabled
+          test "$(sudo -n systemctl is-active porota-contract-evidence-rc4.timer)" = active
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          )
+          echo "POST_DB=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo RCA=CONTRACT_EVIDENCE_OUTPUT_DIRECTORY_NOT_WRITABLE_BY_BROWSER_USER
+          echo FIX=STAGE_AS_BROWSER_USER_THEN_PRIVILEGED_INSTALL_INTO_EVIDENCE_DIRECTORY
+          echo CONTRACT_EVIDENCE_FULL_BROWSER_FRESH=GREEN
+          echo SCRAPING_TIMER=ENABLED_ACTIVE
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          HOST
