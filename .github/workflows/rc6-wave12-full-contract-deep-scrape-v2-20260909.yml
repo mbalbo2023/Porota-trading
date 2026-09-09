@@ -1,0 +1,107 @@
+name: RC6 Wave12 Full Contract Deep Scrape V2 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-full-contract-deep-scrape-v2-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  deep-contract-v2:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static safety proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_w12_deep_contract_scraper_v2.py
+          grep -q 'SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}' rc6_w12_deep_contract_scraper_v2.py
+          ! grep -En 'place_order|send_order|cancel_order|/Operar|/Orden' rc6_w12_deep_contract_scraper_v2.py
+          grep -q 'no_inference' rc6_w12_deep_contract_scraper_v2.py
+          echo 'W12_DEEP_V2_STATIC=GREEN'
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12deepv2"
+          chmod 600 "$HOME/.ssh/w12deepv2"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Deep authenticated contract scrape read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w12deepv2" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          PY=/opt/porota-contract-evidence-venv/bin/python
+          OUTDIR=$REPO/data/contract_evidence/rc6_trusted
+          cd "$REPO"
+          RUNTIME_HEAD_PRE=$(git rev-parse HEAD)
+          echo "RUNTIME_HEAD_PRE=$RUNTIME_HEAD_PRE"
+          OBS_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          DASH_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close(); print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          git fetch --no-tags origin deploy-prep/rc6-wave12-currentbase-20260909
+          git cat-file -e "$TARGET_SHA^{commit}"
+          TMP=$(mktemp -d "$HOME/w12deepv2.XXXXXX")
+          cleanup(){ git -C "$REPO" worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"; }
+          trap cleanup EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n install -d -o porotaadmin -g porotaadmin -m 0700 "$OUTDIR"
+          OUT="$OUTDIR/w12_full_contract_deep_v2_$(date -u +%Y%m%dT%H%M%SZ).json"
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin "$PY" "$TMP/source/rc6_w12_deep_contract_scraper_v2.py" --profile "$PROFILE" --output "$OUT" --detail-limit 20 --max-rows 250
+          "$PY" - "$OUT" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert d.get('schema')=='POROTA_RC6_W12_FULL_CONTRACT_DEEP_V2'
+          assert d.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert d.get('no_inference') is True
+          assert int(d.get('real_orders_sent') or 0)==0
+          assert len(d.get('routes') or {})==16
+          rows=sum(len(t.get('rows') or []) for x in d['routes'].values() for t in x.get('tables') or [])
+          xhr=len(d.get('xhr') or {})
+          details=len(d.get('details') or {})
+          print('W12_DEEP_ROWS='+str(rows))
+          print('W12_DEEP_XHR='+str(xhr))
+          print('W12_DEEP_DETAILS='+str(details))
+          print('W12_DEEP_BLOCKED_NONREAD='+str(len(d.get('blocked_nonread') or [])))
+          assert rows>0
+          assert xhr>0
+          PY
+          OBS_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          DASH_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          test "$OBS_POST" = "$OBS_PRE"
+          test "$DASH_POST" = "$DASH_PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close(); print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          RUNTIME_HEAD_POST=$(git rev-parse HEAD)
+          echo "RUNTIME_HEAD_POST=$RUNTIME_HEAD_POST"
+          test "$RUNTIME_HEAD_POST" = "$RUNTIME_HEAD_PRE"
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'W12_FULL_CONTRACT_DEEP_SCRAPE_V2=GREEN'
+          REMOTE
