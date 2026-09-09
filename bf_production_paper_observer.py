@@ -143,7 +143,8 @@ def _business_day(day):
         import ak_byma_calendar as calendar
         return bool(calendar.es_dia_habil_operativo(day))
     except Exception:
-        return day.weekday() < 5
+        # Safety gate: without a verifiable BYMA calendar, never admit a PAPER session.
+        return False
 
 
 def _market_phase(now=None):
