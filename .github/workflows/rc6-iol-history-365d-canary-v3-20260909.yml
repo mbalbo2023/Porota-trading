@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/rc6-iol-history-365d-canary-v3-20260909.yml'
       - 'rc6_iol_client_v2.py'
+      - 'rc6_iol_historical_backfill_v2.py'
 permissions:
   contents: read
 jobs:
@@ -76,11 +77,13 @@ jobs:
           from rc6_iol_client_v2 import IOLClient
           c=IOLClient()
           assert c.enabled, 'IOL_CLIENT_NOT_ENABLED'
-          samples=[('GGAL','ACCIONES','bcba',True),('AL30','BONOS','bcba',False),('AAPL','CEDEARS','bcba',True),('GFGC7200OC','OPCIONES','bcba',False)]
+          # AAPL/CEDEAR is intentionally sinAjustar: live diagnostic proved
+          # adjusted returns 0 rows while sinAjustar returns the actual series.
+          samples=[('GGAL','ACCIONES','bcba',True),('AL30','BONOS','bcba',False),('AAPL','CEDEARS','bcba',False),('GFGC7200OC','OPCIONES','bcba',False)]
           out=[]
           for symbol,family,market,adjusted in samples:
               rows=c.get_serie_historica(symbol,mercado=market,dias=365,ajustada=adjusted)
-              out.append({'symbol':symbol,'family':family,'rows':len(rows),'keys':sorted(rows[0].keys()) if rows and isinstance(rows[0],dict) else []})
+              out.append({'symbol':symbol,'family':family,'rows':len(rows),'adjusted':adjusted,'keys':sorted(rows[0].keys()) if rows and isinstance(rows[0],dict) else []})
               if not rows: raise SystemExit('IOL_HISTORY_EMPTY:'+symbol)
           print('IOL_365D_CANARY_V3='+json.dumps(out,ensure_ascii=False,separators=(',',':')))
           print('IOL_AUTH_AND_HISTORY=GREEN')
