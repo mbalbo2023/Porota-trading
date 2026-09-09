@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """RC6 host preopen compatibility layer.
 
-Keeps rc6_preopen.py as the fail-closed policy source while applying only
-host-contract facts proven on the current RC6 runtime:
+Keeps /opt/porota-trading/rc6_preopen.py as the fail-closed policy source while
+applying only host-contract facts proven on the current RC6 runtime:
 - observer and dashboard both use porota-trading-bot:17.0.0-rc6;
 - dashboard is not required to have a read-only rootfs by the current mode
   manager; observer remains read-only through base policy;
@@ -11,6 +11,13 @@ host-contract facts proven on the current RC6 runtime:
 No thresholds are relaxed and no order capability is introduced.
 """
 from __future__ import annotations
+import sys
+from pathlib import Path
+
+LIVE_REPO = Path("/opt/porota-trading")
+if not (LIVE_REPO / "rc6_preopen.py").is_file():
+    raise RuntimeError("RC6_CANONICAL_PREOPEN_SOURCE_MISSING")
+sys.path.insert(0, str(LIVE_REPO))
 import rc6_preopen as base
 
 DASHBOARD_IMAGE = "porota-trading-bot:17.0.0-rc6"
