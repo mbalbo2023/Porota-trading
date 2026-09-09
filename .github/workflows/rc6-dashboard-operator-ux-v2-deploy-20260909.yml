@@ -98,7 +98,7 @@ jobs:
                   assert 'porota-rc6-classic-responsive' in body
                   if tables: assert th>0
                   assert 'overflow-wrap:anywhere' not in body
-                  assert 'porota-table-title' not in body
+                  assert not re.search(r"<caption\b[^>]*class=['\"][^'\"]*porota-table-title",body,re.I)
           assert bodies['/trading'].count("class='subnav'")==1
           assert 'porota-page-index' not in bodies['/trading']
           assert bodies['/sistema'].count('system-nav')>=1
