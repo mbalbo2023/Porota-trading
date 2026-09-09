@@ -1,0 +1,102 @@
+name: RC6 Live Baseline 9197 Certification 2026-09-09
+
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: [.github/workflows/rc6-live-baseline-9197-certification-20260909.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  certify-live-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6"
+          chmod 600 "$HOME/.ssh/porota_rc6"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only live certification
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          EXPECTED=9197aedf35fe1739b594c742902e80df069c47c9
+          cd "$REPO"
+          head=$(git rev-parse HEAD)
+          echo "LIVE_HEAD=$head"
+          test "$head" = "$EXPECTED"
+
+          obs=$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          dash=$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          echo "OBSERVER=$obs"
+          echo "DASHBOARD=$dash"
+          case "$obs" in true\|0\|true\|porota-trading-bot:17.0.0-rc6) ;; *) exit 11;; esac
+          case "$dash" in true\|0\|porota-trading-bot:17.0.0-rc6) ;; *) exit 12;; esac
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          raw=0
+          prov='UNKNOWN'
+          if c.execute("select 1 from sqlite_master where type='table' and name='raw_market_data'").fetchone():
+              raw=c.execute('select count(*) from raw_market_data').fetchone()[0]
+          try:
+              prov=c.execute("select value from system_state where key='raw_storage_provenance'").fetchone()[0]
+          except Exception:
+              try:
+                  prov=c.execute("select raw_storage_provenance from observer_state where id=1").fetchone()[0]
+              except Exception:
+                  pass
+          print(f'DB={q}|{mode}|{real}|RAW={raw}|PROV={prov}')
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          assert int(raw)==0
+          assert prov in ('EXTERNAL_EXACT_V1','UNKNOWN')
+          c.close()
+          PY
+
+          for path in / /vivo /trading /riesgo /validacion /historicos; do
+            code=$(curl -sS -o /tmp/porota_dash_check.html -w '%{http_code}' "http://127.0.0.1:8000$path")
+            echo "HTTP $path=$code"
+            test "$code" = 200
+          done
+
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0,'/opt/porota-trading')
+          import bf_production_paper_observer as m
+          class Broken:
+              def is_business_day(self,*a,**k):
+                  raise RuntimeError('injected calendar failure')
+          old=sys.modules.get('ak_byma_calendar')
+          class X: pass
+          x=X(); x.is_business_day=lambda *a,**k: (_ for _ in ()).throw(RuntimeError('injected'))
+          sys.modules['ak_byma_calendar']=x
+          try:
+              from datetime import date
+              assert m._business_day(date(2026,9,9)) is False
+              print('BYMA_EXCEPTION_FAILCLOSED=GREEN')
+          finally:
+              if old is None: sys.modules.pop('ak_byma_calendar',None)
+              else: sys.modules['ak_byma_calendar']=old
+          PY
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'BASELINE_9197=GREEN'
+          REMOTE
