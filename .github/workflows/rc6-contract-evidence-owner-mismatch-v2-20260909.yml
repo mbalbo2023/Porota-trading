@@ -1,0 +1,54 @@
+name: RC6 Contract Evidence Owner Mismatch V2 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-contract-evidence-service-live-20260909]
+    paths: [.github/workflows/rc6-contract-evidence-owner-mismatch-v2-20260909.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect ownership gate only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          S=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          echo '=== OWNERSHIP GATE SOURCE ==='
+          sudo -n grep -nE 'KEYFILE|OWNER|PROFILE|stat |stat\(|chown|uid|gid|BROWSER_PROFILE_KEYFILE_OWNER_MISMATCH' "$S" \
+            | sed -E 's#(/home/)[^/]+/#\1[USER]/#g' | head -120 || true
+          echo '=== PROFILE METADATA NUMERIC ONLY ==='
+          PROFILE=$(sudo -n awk -F'"' '/^PROFILE=/{print $2; exit}' "$S" | sed 's#\${POROTA_CHROME_PROFILE:-##; s#}$##')
+          [ -n "$PROFILE" ] || PROFILE=/home/unknown/porota-browser-lab/chrome-profile
+          # Resolve actual default without exposing username.
+          PROFILE=$(sudo -n grep '^PROFILE=' "$S" | sed -E 's#.*:-([^}]*)}.*#\1#' | head -1)
+          if [ -d "$PROFILE" ]; then
+            stat -c 'PROFILE_UID=%u|GID=%g|MODE=%a' "$PROFILE"
+          else
+            echo PROFILE_DIR_PRESENT=NO
+          fi
+          echo '=== REFERENCED OWNER FILES ==='
+          sudo -n grep -oE '[/A-Za-z0-9_.${}:-]*(owner|OWNER|keyfile|KEYFILE)[/A-Za-z0-9_.${}:-]*' "$S" \
+            | sed -E 's#(/home/)[^/]+/#\1[USER]/#g' | sort -u | head -80 || true
+          echo '=== RC6 TRUSTED DIRECTORY ==='
+          ROOT=/opt/porota-trading/data/contract_evidence
+          [ -d "$ROOT/rc6_trusted" ] && echo RC6_TRUSTED_PRESENT=YES || echo RC6_TRUSTED_PRESENT=NO
+          [ -d "$ROOT/rc4_trusted" ] && echo RC4_ARCHIVE_PRESENT=YES || echo RC4_ARCHIVE_PRESENT=NO
+          [ -d "$ROOT/rc6_trusted" ] && find "$ROOT/rc6_trusted" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | tail -5 || true
+          echo RUNTIME_MUTATION=NO
+          echo NETWORK_CALLS=NO
+          REMOTE
