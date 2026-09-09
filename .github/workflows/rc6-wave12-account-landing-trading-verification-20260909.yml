@@ -1,0 +1,48 @@
+name: RC6 Wave12 Account Landing Trading Verification 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-account-landing-trading-verification-20260909.yml']
+permissions:
+  contents: write
+jobs:
+  patch-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch helper and tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('rc6_ppi_web_reauth.py')
+          s=p.read_text(encoding='utf-8')
+          old='''def authenticated_url(value: str) -> bool:\n    u = urlsplit(str(value))\n    return (\n        u.scheme == "https"\n        and u.netloc == "trading.portfoliopersonal.com"\n        and "login" not in u.path.lower()\n        and "logout" not in u.path.lower()\n        and ORDER_PATH_HINT.search(u.path.lower()) is None\n    )\n'''
+          new=old+'''\n\ndef account_landing_url(value: str) -> bool:\n    """Account landing is a verification trigger, never auth proof by itself."""\n    u = urlsplit(str(value))\n    return (u.scheme == "https" and u.netloc == "cuenta.portfoliopersonal.com"\n            and u.path.rstrip("/") == "/cuentas")\n'''
+          assert old in s and 'def account_landing_url' not in s
+          s=s.replace(old,new,1)
+          needle='''                if authenticated_url(page.url):\n                    ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts)); return 0\n\n                if trust_prompt_present(page):\n'''
+          repl='''                if authenticated_url(page.url):\n                    ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts)); return 0\n\n                # PPI may land on /cuentas after credential submission.  That\n                # page is NOT accepted as authentication proof.  Verify the\n                # trading root in the same persistent browser context; only a\n                # non-login trading URL is authoritative.\n                if account_landing_url(page.url):\n                    blocked_post_path = ""\n                    goto_fast(TRADING_ROOT, "VERIFY_TRADING_AFTER_ACCOUNT_LANDING")\n                    if blocked_post_path:\n                        ctx.close(); print(status_payload("BLOCKED_AUTH_ACCOUNT_VERIFY_POST", attempts=attempts,\n                                                          blocked_post_path=blocked_post_path,\n                                                          stage=stage, page_url=page.url)); return 4\n                    if authenticated_url(page.url):\n                        ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=attempts,\n                                                          stage=stage, page_url=page.url)); return 0\n                    # A redirect back to account/login means the trading session\n                    # was not promoted. Re-open the approved login page and\n                    # continue fail-closed; never infer auth from /cuentas alone.\n                    if not safe_page_url(page.url):\n                        ctx.close(); print(status_payload("BLOCKED_AUTH_ACCOUNT_VERIFY_UNEXPECTED", attempts=attempts,\n                                                          stage=stage, page_url=page.url)); return 4\n                    goto_fast(LOGIN_URL, "REOPEN_LOGIN_AFTER_ACCOUNT_VERIFY")\n                    continue\n\n                if trust_prompt_present(page):\n'''
+          assert needle in s
+          s=s.replace(needle,repl,1)
+          p.write_text(s,encoding='utf-8')
+
+          t=Path('tests/test_ppi_web_reauth_rc6.py')
+          ts=t.read_text(encoding='utf-8')
+          addition='''\n\ndef test_account_landing_requires_trading_verification_and_is_not_auth():\n    url='https://cuenta.portfoliopersonal.com/cuentas'\n    assert m.account_landing_url(url)\n    assert not m.authenticated_url(url)\n    assert not m.account_landing_url('https://cuenta.portfoliopersonal.com/login')\n'''
+          if 'test_account_landing_requires_trading_verification_and_is_not_auth' not in ts:
+              t.write_text(ts+addition,encoding='utf-8')
+          PY
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q tests/test_ppi_web_reauth_rc6.py tests/test_contract_evidence_reauth_wiring_rc6.py tests/test_rc6_contract_routes_cotizaciones_only.py
+          ! grep -REn '/Operar|/Orden|api/Orders|send_order|place_order|new_order' rc6_trusted_browser_contract_collector.py
+          git config user.name porota-rc6-ci
+          git config user.email porota-rc6-ci@users.noreply.github.com
+          git add rc6_ppi_web_reauth.py tests/test_ppi_web_reauth_rc6.py
+          git commit -m 'fix(rc6 wave12): verify trading root after account landing'
+          git push origin HEAD:deploy-prep/rc6-wave12-currentbase-20260909
+          echo 'W12_ACCOUNT_LANDING_VERIFY_PATCH=GREEN'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
