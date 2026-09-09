@@ -1,0 +1,46 @@
+name: RC6 Wave12 Materialize Trading SSO Auth Route 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-materialize-trading-sso-auth-route-20260909.yml']
+permissions:
+  contents: write
+jobs:
+  patch-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Add exact SSO authentication route only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('rc6_ppi_web_reauth.py')
+          s=p.read_text(encoding='utf-8')
+          old='''APPROVED_AUTH_POSTS = {("cuenta.portfoliopersonal.com", "/login"), ("api.portfoliopersonal.com", "/api/Seguridad/Auth/Login")}'''
+          new='''APPROVED_AUTH_POSTS = {\n    ("cuenta.portfoliopersonal.com", "/login"),\n    ("api.portfoliopersonal.com", "/api/Seguridad/Auth/Login"),\n    # Observed first-party SSO promotion emitted automatically by Trading\n    # immediately after a successful Cuenta landing. This route is approved\n    # ONLY for authentication; order-like paths remain denied independently.\n    ("trading.portfoliopersonal.com", "/api/logInSSO"),\n}'''
+          assert old in s
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+
+          t=Path('tests/test_ppi_web_reauth_rc6.py')
+          ts=t.read_text(encoding='utf-8')
+          add='''\n\ndef test_exact_trading_sso_route_is_auth_allowlisted_only():\n    assert ("trading.portfoliopersonal.com", "/api/logInSSO") in m.APPROVED_AUTH_POSTS\n    assert all("operar" not in path.lower() and "order" not in path.lower() and "orden" not in path.lower()\n               for _host, path in m.APPROVED_AUTH_POSTS)\n'''
+          if 'test_exact_trading_sso_route_is_auth_allowlisted_only' not in ts:
+              t.write_text(ts+add,encoding='utf-8')
+          PY
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q tests/test_ppi_web_reauth_rc6.py tests/test_contract_evidence_reauth_wiring_rc6.py tests/test_rc6_contract_routes_cotizaciones_only.py
+          grep -Fq '("trading.portfoliopersonal.com", "/api/logInSSO")' rc6_ppi_web_reauth.py
+          ! grep -REn 'send_order|place_order|cancel_order|api/Orders|/Operar|/Orden' rc6_ppi_web_reauth.py rc6_trusted_browser_contract_collector.py
+          git config user.name porota-rc6-ci
+          git config user.email porota-rc6-ci@users.noreply.github.com
+          git add rc6_ppi_web_reauth.py tests/test_ppi_web_reauth_rc6.py
+          git commit -m 'fix(rc6 wave12): allow exact trading SSO authentication handshake'
+          git push origin HEAD:deploy-prep/rc6-wave12-currentbase-20260909
+          echo 'W12_EXACT_SSO_AUTH_ALLOWLIST=GREEN'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
