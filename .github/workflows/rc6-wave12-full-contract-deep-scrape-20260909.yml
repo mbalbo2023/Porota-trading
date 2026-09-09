@@ -1,0 +1,167 @@
+name: RC6 Wave12 Full Contract Deep Scrape 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-full-contract-deep-scrape-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  full-contract-deep-scrape:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12deep"
+          chmod 600 "$HOME/.ssh/w12deep"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Deep scrape authenticated contract evidence read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w12deep" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          EXPECTED=9197aedf35fe1739b594c742902e80df069c47c9
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          PY=/opt/porota-contract-evidence-venv/bin/python
+          OUTDIR=$REPO/data/contract_evidence/rc6_trusted
+          cd "$REPO"
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          OBS_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          DASH_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          sudo -n install -d -o porotaadmin -g porotaadmin -m 0700 "$OUTDIR"
+          TS=$(date -u +%Y%m%dT%H%M%SZ)
+          OUT="$OUTDIR/w12_full_contract_deep_${TS}.json"
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin OUT="$OUT" "$PY" - "$PROFILE" <<'PY'
+          import json,re,sys,os
+          from collections import defaultdict
+          from urllib.parse import urlsplit,urljoin
+          from playwright.sync_api import sync_playwright
+          BASE='https://trading.portfoliopersonal.com'
+          ROUTES=['/Cotizaciones/FCIs','/Cotizaciones/FCIsExterior','/Cotizaciones/Acciones','/Cotizaciones/AccionesUSA','/Cotizaciones/Bonos','/Cotizaciones/Cauciones','/Cotizaciones/Cedears','/Cotizaciones/ETFs','/Cotizaciones/Futuros','/Cotizaciones/Letras','/Cotizaciones/Licitaciones','/Cotizaciones/Ons','/Cotizaciones/Opciones','/Cotizaciones/Indices','/Cotizaciones/Monedas','/Cotizaciones/Tasas']
+          DETAIL_PRIORITY={'/Cotizaciones/FCIs','/Cotizaciones/FCIsExterior','/Cotizaciones/AccionesUSA','/Cotizaciones/Bonos','/Cotizaciones/Cauciones','/Cotizaciones/ETFs','/Cotizaciones/Futuros','/Cotizaciones/Letras','/Cotizaciones/Licitaciones','/Cotizaciones/Ons','/Cotizaciones/Opciones'}
+          ALLOW_KEY=('ticker','simbolo','símbolo','especie','instrument','nombre','descripcion','descripción','id','codigo','código','isin','mercado','market','moneda','currency','plazo','settlement','liquidacion','liquidación','venc','expiry','fecha','strike','ejercicio','subyacente','underlying','ratio','nominal','lamina','lámina','minimo','mínimo','minimum','multiplo','múltiplo','step','tick','multiplier','multiplicador','margen','margin','tasa','tna','comision','comisión','fee','cutoff','rescate','horario','categoria','categoría','clase','tipo')
+          DROP=('token','cookie','password','secret','authorization','account','cuenta','comitente','saldo','tenencia','usuario','email','phone','telefono','dni','cuit','session','refresh','bearer')
+          def clean(x,n=220): return re.sub(r'\s+',' ',str(x or '')).strip()[:n]
+          def safe_url(url):
+              u=urlsplit(url); p=u.path.lower()
+              return u.scheme=='https' and u.netloc=='trading.portfoliopersonal.com' and 'login' not in p and not any('/'+x in p for x in ('operar','orden','trade','confirm','cancel'))
+          def clean_url(url):
+              u=urlsplit(url); return f'{u.scheme}://{u.netloc}{u.path}'
+          def key_allowed(k):
+              s=str(k).lower()
+              return not any(x in s for x in DROP) and any(x in s for x in ALLOW_KEY)
+          def sanitize(v,depth=0):
+              if depth>5:return None
+              if isinstance(v,dict):
+                  out={}
+                  for k,x in v.items():
+                      if any(z in str(k).lower() for z in DROP): continue
+                      if key_allowed(k):
+                          sv=sanitize(x,depth+1)
+                          if sv not in (None,'',[],{}): out[str(k)]=sv
+                      elif isinstance(x,(dict,list)):
+                          sv=sanitize(x,depth+1)
+                          if sv not in (None,'',[],{}): out[str(k)]=sv
+                  return out
+              if isinstance(v,list): return [x for x in (sanitize(y,depth+1) for y in v[:500]) if x not in (None,'',[],{})][:500]
+              if isinstance(v,str): return clean(v,500)
+              if isinstance(v,(int,float,bool)) or v is None:return v
+              return clean(v,300)
+          result={'schema':'POROTA_RC6_W12_FULL_CONTRACT_DEEP_V1','routes':{},'details':{},'xhr':{},'blocked_nonread':[],'real_orders_sent':0,'no_inference':True}
+          active={'route':'','detail':''}; hrefs=defaultdict(set)
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(user_data_dir=sys.argv[1],executable_path='/usr/bin/google-chrome-stable',headless=True,locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',viewport={'width':1440,'height':1000},args=['--no-sandbox','--disable-dev-shm-usage'])
+              def guard(route,request):
+                  if request.method.upper() not in {'GET','HEAD','OPTIONS'}:
+                      result['blocked_nonread'].append({'method':request.method.upper(),'url':clean_url(request.url)}); return route.abort()
+                  return route.continue_()
+              ctx.route('**/*',guard)
+              page=ctx.pages[0] if ctx.pages else ctx.new_page()
+              def response(resp):
+                  try:
+                      if resp.request.method.upper()!='GET' or resp.status>=400:return
+                      u=urlsplit(resp.url); ct=(resp.headers.get('content-type') or '').lower()
+                      if not (u.netloc.endswith('portfoliopersonal.com') and ('json' in ct or u.path.lower().startswith('/api/'))):return
+                      payload=resp.json(); safe=sanitize(payload)
+                      key=clean_url(resp.url)+'|'+active['route']+'|'+active['detail']
+                      if safe not in (None,'',[],{}): result['xhr'][key]={'url':clean_url(resp.url),'route':active['route'],'detail':active['detail'],'payload':safe}
+                  except Exception: pass
+              page.on('response',response)
+              page.goto(BASE+'/Cotizaciones/Acciones',wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(1200)
+              if not safe_url(page.url): raise SystemExit('AUTH_OR_SAFE_LANDING_FAILED')
+              for rt in ROUTES:
+                  active['route']=rt; active['detail']=''
+                  page.goto(BASE+rt,wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(1400)
+                  if not safe_url(page.url): raise SystemExit('UNSAFE_OR_AUTH_ROUTE:'+rt)
+                  meta=page.evaluate("""() => [...document.querySelectorAll('table')].slice(0,10).map(t=>({headers:[...t.querySelectorAll('th')].map(x=>x.innerText),rows:[...t.querySelectorAll('tbody tr')].slice(0,100).map(r=>({cells:[...r.querySelectorAll('td')].map(x=>x.innerText),links:[...r.querySelectorAll('a[href]')].map(a=>({text:a.innerText,href:a.href})),attrs:Object.fromEntries([...r.attributes].filter(a=>a.name.startsWith('data-')).map(a=>[a.name,a.value]))}))}))""")
+                  tables=[]
+                  for t in meta:
+                      rows=[]
+                      for r in t.get('rows',[]):
+                          links=[]
+                          for a in r.get('links',[]):
+                              href=urljoin(BASE,a.get('href') or '')
+                              if safe_url(href):
+                                  hrefs[rt].add(clean_url(href)); links.append({'text':clean(a.get('text')),'href':clean_url(href)})
+                          attrs={k:clean(v) for k,v in (r.get('attrs') or {}).items() if not any(z in k.lower() for z in DROP)}
+                          rows.append({'cells':[clean(x) for x in r.get('cells',[])],'links':links,'data_attrs':attrs})
+                      tables.append({'headers':[clean(x) for x in t.get('headers',[])],'rows':rows})
+                  result['routes'][rt]={'url':clean_url(page.url),'title':clean(page.title()),'tables':tables,'detail_hrefs':sorted(hrefs[rt])[:100]}
+              for rt in sorted(DETAIL_PRIORITY):
+                  for href in sorted(hrefs[rt])[:12]:
+                      if href.rstrip('/')==clean_url(BASE+rt).rstrip('/'):continue
+                      active['route']=rt; active['detail']=href
+                      try:
+                          page.goto(href,wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(1200)
+                          if not safe_url(page.url):continue
+                          detail=page.evaluate("""() => ({title:document.title,headings:[...document.querySelectorAll('h1,h2,h3,h4')].slice(0,30).map(x=>x.innerText),pairs:[...document.querySelectorAll('dt')].slice(0,80).map(dt=>({k:dt.innerText,v:dt.nextElementSibling?dt.nextElementSibling.innerText:''})),labels:[...document.querySelectorAll('label')].slice(0,80).map(x=>x.innerText),tables:[...document.querySelectorAll('table')].slice(0,10).map(t=>({headers:[...t.querySelectorAll('th')].map(x=>x.innerText),rows:[...t.querySelectorAll('tbody tr')].slice(0,30).map(r=>[...r.querySelectorAll('td')].map(x=>x.innerText))}))})""")
+                          result['details'][href]={'source_route':rt,'title':clean(detail.get('title')),'headings':[clean(x) for x in detail.get('headings',[])],'pairs':[{'k':clean(x.get('k')),'v':clean(x.get('v'),500)} for x in detail.get('pairs',[])],'labels':[clean(x) for x in detail.get('labels',[])],'tables':[{'headers':[clean(x) for x in t.get('headers',[])],'rows':[[clean(v,500) for v in row] for row in t.get('rows',[])]} for t in detail.get('tables',[])]}
+                      except Exception as exc:
+                          result['details'][href]={'source_route':rt,'error':type(exc).__name__}
+              ctx.close()
+          Path=os.path
+          with open(os.environ['OUT'],'w',encoding='utf-8') as f: json.dump(result,f,ensure_ascii=False,indent=2)
+          os.chmod(os.environ['OUT'],0o600)
+          summary={rt:{'rows':sum(len(t['rows']) for t in d['tables']),'hrefs':len(d['detail_hrefs'])} for rt,d in result['routes'].items()}
+          print('AUTH_STATUS=AUTHENTICATED_TRUSTED_DEVICE')
+          print('ROUTE_SUMMARY='+json.dumps(summary,ensure_ascii=False,separators=(',',':')))
+          print('DETAIL_PAGES_CAPTURED='+str(len(result['details'])))
+          print('FIRSTPARTY_XHR_EVIDENCE='+str(len(result['xhr'])))
+          print('BLOCKED_NONREAD='+str(len(result['blocked_nonread'])))
+          print('CAPTURE='+os.environ['OUT'])
+          print('REAL_ORDERS_SENT=0')
+          PY
+          chmod 0600 "$OUT"
+          OBS_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Config.Image}}' porota_production_observer)
+          DASH_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}' porota_production_dashboard)
+          test "$OBS_POST" = "$OBS_PRE"
+          test "$DASH_POST" = "$DASH_PRE"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'W12_FULL_CONTRACT_DEEP_SCRAPE=GREEN'
+          REMOTE
