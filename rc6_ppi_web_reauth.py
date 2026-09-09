@@ -108,6 +108,30 @@ def first_visible(page, selectors):
     return None
 
 
+def fill_resilient(page, selectors, value: str) -> bool:
+    """Fill a visible field across client-side DOM re-renders without logging value."""
+    for _ in range(4):
+        node = first_visible(page, selectors)
+        if node is None:
+            try:
+                page.wait_for_timeout(250)
+            except Exception:
+                pass
+            continue
+        try:
+            node.wait_for(state="visible", timeout=3000)
+            node.click(timeout=3000)
+            node.fill(value, timeout=5000)
+            if (node.input_value(timeout=3000) or "") == value:
+                return True
+        except Exception:
+            try:
+                page.wait_for_timeout(300)
+            except Exception:
+                pass
+    return False
+
+
 def trust_prompt_present(page) -> bool:
     text = body_text(page)
     return bool(TRUST_PROMPT_HINT.search(text) and NOW_NOT_HINT.search(text))
@@ -286,17 +310,21 @@ def main() -> int:
                         if not user:
                             ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_REQUIRED", attempts=attempts,
                                                               stage=stage, page_url=page.url)); return 4
-                        try:
-                            username.fill(user)
-                        except Exception:
+                        if not fill_resilient(page, [
+                            "#username", "input[name='username']", "input[autocomplete='username']",
+                            "input[placeholder*='usuario' i]", "input[aria-label*='usuario' i]",
+                        ], user):
                             ctx.close(); print(status_payload("BLOCKED_AUTH_USERNAME_FILL_FAILED", attempts=attempts,
                                                               stage=stage, page_url=page.url)); return 4
                     acted = True
                 if passwd is not None:
-                    try:
-                        passwd.fill(password); acted = True
-                    except Exception:
-                        pass
+                    if not fill_resilient(page, [
+                        "#password", "input[name='password']", "input[type='password']",
+                        "input[autocomplete='current-password']",
+                    ], password):
+                        ctx.close(); print(status_payload("BLOCKED_AUTH_PASSWORD_FILL_FAILED", attempts=attempts,
+                                                          stage=stage, page_url=page.url)); return 4
+                    acted = True
                 if acted:
                     stage = "SUBMIT_LOGIN"
                     submit = first_visible(page, [
