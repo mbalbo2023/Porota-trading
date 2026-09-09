@@ -46,7 +46,7 @@ jobs:
           print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}'); assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
           PY
           git fetch --no-tags origin deploy-prep/rc6-wave12-currentbase-20260909
-          test "$(git rev-parse origin/deploy-prep/rc6-wave12-currentbase-20260909)" = "$TARGET_SHA"
+          git cat-file -e "$TARGET_SHA^{commit}"
           TMP=$(mktemp -d "$HOME/iolcanary.XXXXXX")
           cleanup(){ git -C "$REPO" worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"; }
           trap cleanup EXIT
