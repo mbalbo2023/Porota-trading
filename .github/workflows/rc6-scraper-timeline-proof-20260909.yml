@@ -9,6 +9,53 @@ jobs:
   timeline:
     runs-on: ubuntu-latest
     steps:
+      - name: Build read-only timeline reader
+        run: |
+          cat > /tmp/rc6_scraper_timeline.py <<'PY'
+          import json, pathlib, datetime, sqlite3
+          roots=[pathlib.Path('/opt/porota-trading/data/contract_evidence')]
+          home=pathlib.Path('/home')
+          if home.exists():
+              roots += list(home.glob('*/porota-browser-lab'))
+          wanted=('20260904','20260905','20260906','20260907','20260908','20260909')
+          seen=set()
+          print('=== CAPTURE_TIMELINE ===')
+          for root in roots:
+              if not root.exists():
+                  continue
+              for p in sorted(root.rglob('contract_202609*.json')):
+                  sp=str(p)
+                  if sp in seen or not any(x in p.name for x in wanted):
+                      continue
+                  seen.add(sp)
+                  try:
+                      d=json.load(open(p,encoding='utf-8'))
+                  except Exception:
+                      continue
+                  auth=d.get('auth_status') or d.get('state') or 'UNKNOWN'
+                  routes=d.get('routes',[]); endpoints=d.get('endpoints',[]); jobs=d.get('jobs',[])
+                  rc=len(routes) if isinstance(routes,(list,dict)) else routes
+                  ec=len(endpoints) if isinstance(endpoints,(list,dict)) else endpoints
+                  mt=datetime.datetime.fromtimestamp(p.stat().st_mtime,datetime.timezone.utc).isoformat()
+                  print('CAPTURE=%s|MTIME_UTC=%s|AUTH=%s|ROUTES=%s|ENDPOINTS=%s|JOBS=%s' % (p.name,mt,auth,rc,ec,jobs))
+          print('=== DB_RUNS ===')
+          db='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+db+'?mode=ro',uri=True); c.execute('PRAGMA query_only=ON')
+          for t in ('contract_evidence_v2_runs','contract_evidence_runs'):
+              if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(t,)).fetchone():
+                  continue
+              cols=[r[1] for r in c.execute('PRAGMA table_info('+t+')')]
+              print('TABLE='+t+'|COLUMNS='+','.join(cols))
+              ts=next((x for x in ('captured_at','created_at','run_at','started_at','ts') if x in cols),None)
+              if ts:
+                  for r in c.execute('SELECT '+ts+' FROM '+t+' ORDER BY '+ts+' DESC LIMIT 50'):
+                      print('RUN_TS='+str(r[0]))
+          c.close()
+          print('RUNTIME_MUTATION=NO')
+          print('SECRETS_PRINTED=NO')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
+          python3 -m py_compile /tmp/rc6_scraper_timeline.py
       - name: Setup SSH
         env:
           KEY: ${{ secrets.DO_SSH_KEY }}
@@ -18,52 +65,13 @@ jobs:
           printf '%s\n' "$KEY" > "$HOME/.ssh/key"
           printf '%s\n' "$KH" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
-      - name: Capture timeline read-only
+      - name: Read Sep4-Sep9 metadata only
         env:
           H: ${{ secrets.DO_HOST }}
           U: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
+          SCP="scp -i $HOME/.ssh/key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
           SSH="ssh -i $HOME/.ssh/key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts $U@$H"
-          $SSH "sudo -n python3 - <<'PY'
-import json, pathlib, os, datetime
-roots=[pathlib.Path('/opt/porota-trading/data/contract_evidence'), pathlib.Path('/home/porotaadmin/porota-browser-lab')]
-seen=set()
-print('=== CAPTURE_TIMELINE ===')
-for root in roots:
-    if not root.exists():
-        continue
-    for p in sorted(root.rglob('contract_202609*.json')):
-        s=str(p)
-        if s in seen: continue
-        seen.add(s)
-        try:
-            d=json.load(open(p,encoding='utf-8'))
-        except Exception:
-            continue
-        stamp=p.name
-        if not any(x in stamp for x in ('20260904','20260905','20260906','20260907','20260908','20260909')):
-            continue
-        auth=d.get('auth_status') or d.get('state') or 'UNKNOWN'
-        routes=d.get('routes',[]); endpoints=d.get('endpoints',[]); jobs=d.get('jobs',[])
-        rc=len(routes) if isinstance(routes,(list,dict)) else routes
-        ec=len(endpoints) if isinstance(endpoints,(list,dict)) else endpoints
-        mt=datetime.datetime.fromtimestamp(p.stat().st_mtime,datetime.timezone.utc).isoformat()
-        print(f'CAPTURE={p.name}|MTIME_UTC={mt}|AUTH={auth}|ROUTES={rc}|ENDPOINTS={ec}|JOBS={jobs}')
-print('=== DB_RUNS ===')
-import sqlite3
-p='/opt/porota-trading/data/paper_v17/observer_v17.db'
-c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.execute('PRAGMA query_only=ON')
-for t in ('contract_evidence_v2_runs','contract_evidence_runs'):
-    if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(t,)).fetchone(): continue
-    cols=[r[1] for r in c.execute(f'PRAGMA table_info({t})')]
-    print('TABLE='+t+'|COLUMNS='+','.join(cols))
-    ts=next((x for x in ('captured_at','created_at','run_at','started_at','ts') if x in cols),None)
-    if ts:
-        for r in c.execute(f'SELECT {ts} FROM {t} ORDER BY {ts} DESC LIMIT 30'):
-            print('RUN_TS='+str(r[0]))
-c.close()
-print('RUNTIME_MUTATION=NO')
-print('SECRETS_PRINTED=NO')
-print('ORDER_ROUTES=NOT_CALLED')
-PY"
+          $SCP /tmp/rc6_scraper_timeline.py "$U@$H:/tmp/rc6_scraper_timeline.py"
+          $SSH 'sudo -n python3 /tmp/rc6_scraper_timeline.py; rm -f /tmp/rc6_scraper_timeline.py'
