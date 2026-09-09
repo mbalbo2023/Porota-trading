@@ -50,13 +50,7 @@ def _classicize_table_tag(match):
 
 
 def _normalize_live_html(text):
-    """Apply Wave8 presentation to the HTML actually served by every route.
-
-    o_dashboard.py still owns legacy routes registered before bg_paper_dashboard;
-    route order therefore means changing bg.TABLE_A11Y_CSS alone cannot affect
-    those responses. This final-response transform is presentation-only and
-    makes the live HTML contract independent from route registration order.
-    """
+    """Apply Wave8 presentation to the HTML actually served by every route."""
     text=text.replace(_BAD_WRAP,'overflow-wrap:normal')
     text=_TABLE_TAG.sub(_classicize_table_tag,text)
     if 'porota-rc6-classic-responsive' not in text:
@@ -67,12 +61,7 @@ def _normalize_live_html(text):
 
 
 class _ClassicHTMLMiddleware:
-    """Buffer finite HTML responses and enforce the Wave8 live presentation.
-
-    JSON/API responses are byte-for-byte untouched.  The dashboard does not
-    expose streaming HTML endpoints, so buffering HTML here is bounded by the
-    already-rendered page size and avoids depending on FastAPI route order.
-    """
+    """Final safety net for legacy HTML routes that do not use bg._document."""
     def __init__(self,app):
         self.app=app
 
@@ -159,6 +148,16 @@ def install(app, check_auth):
     _installed=True
     if 'porota-rc6-classic-responsive' not in bg.TABLE_A11Y_CSS:
         bg.TABLE_A11Y_CSS += CLASSIC_CSS
+
+    # Some RC6 views (notably /validacion) are served by a middleware installed
+    # later and can return without traversing this module's ASGI middleware.
+    # Normalize the canonical document factory itself so those views cannot
+    # reintroduce the old compact/card CSS after Wave8 has been installed.
+    old_document=bg._document
+    def document_live(*args,**kwargs):
+        return _normalize_live_html(old_document(*args,**kwargs))
+    bg._document=document_live
+
     app.add_middleware(_ClassicHTMLMiddleware)
     old_learning=bg.learning_page
     old_validation=bg.validation_page
