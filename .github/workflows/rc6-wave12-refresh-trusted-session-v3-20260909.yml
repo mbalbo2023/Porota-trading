@@ -1,0 +1,146 @@
+name: RC6 Wave12 Refresh Trusted Session V3 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-refresh-trusted-session-v3-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  refresh-trusted-session-v3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static safety gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_ppi_web_reauth.py
+          grep -q 'AUTHENTICATED_TRUSTED_DEVICE' rc6_ppi_web_reauth.py
+          grep -q 'APPROVED_AUTH_POSTS' rc6_ppi_web_reauth.py
+          ! grep -REn 'send_order|place_order|cancel_order|/Operar|/Orden|api/Orders' rc6_ppi_web_reauth.py
+          echo 'W12_REFRESH_V3_STATIC=GREEN'
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12refreshv3"
+          chmod 600 "$HOME/.ssh/w12refreshv3"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Diagnose preconditions and refresh trusted profile
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i "$HOME/.ssh/w12refreshv3" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -u
+          cd /opt/porota-trading || exit 90
+          EXPECTED=9197aedf35fe1739b594c742902e80df069c47c9
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          SECRET=/etc/porota/contract-evidence-web.env
+          PY=/opt/porota-contract-evidence-venv/bin/python
+          CHROME=/usr/bin/google-chrome-stable
+          PRE=$(git rev-parse HEAD 2>/dev/null || true)
+          echo "W12_V3_LIVE_SHA=$PRE"
+          [ "$PRE" = "$EXPECTED" ] && echo 'W12_V3_BASELINE=GREEN' || { echo 'W12_V3_BASELINE=BLOCKED'; exit 4; }
+          ACTIVE=$(sudo -n systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)
+          echo "W12_V3_CE_SERVICE=$ACTIVE"
+          [ "$ACTIVE" != active ] || exit 5
+          [ -x "$PY" ] && echo 'W12_V3_VENV=GREEN' || { echo 'W12_V3_VENV=BLOCKED'; exit 6; }
+          [ -x "$CHROME" ] && echo 'W12_V3_CHROME=GREEN' || { echo 'W12_V3_CHROME=BLOCKED'; exit 7; }
+          [ -d "$PROFILE" ] && echo 'W12_V3_PROFILE=GREEN' || { echo 'W12_V3_PROFILE=BLOCKED'; exit 8; }
+          [ -f "$SECRET" ] && echo 'W12_V3_SECRET_FILE=GREEN' || { echo 'W12_V3_SECRET_FILE=BLOCKED'; exit 9; }
+          SMODE=$(sudo -n stat -c '%a' "$SECRET" 2>/dev/null || true)
+          SOWNER=$(sudo -n stat -c '%U' "$SECRET" 2>/dev/null || true)
+          POWNER=$(sudo -n stat -c '%U' "$PROFILE" 2>/dev/null || true)
+          echo "W12_V3_SECRET_MODE=$SMODE"
+          echo "W12_V3_SECRET_OWNER_OK=$([ "$SOWNER" = porotaadmin ] && echo YES || echo NO)"
+          echo "W12_V3_PROFILE_OWNER_OK=$([ "$POWNER" = porotaadmin ] && echo YES || echo NO)"
+          [ "$SMODE" = 600 ] || exit 10
+          [ "$SOWNER" = porotaadmin ] || exit 11
+          [ "$POWNER" = porotaadmin ] || exit 12
+          sudo -n python3 - "$SECRET" <<'PY'
+          from pathlib import Path
+          import sys
+          vals={}
+          for raw in Path(sys.argv[1]).read_text(encoding='utf-8',errors='replace').splitlines():
+              s=raw.strip()
+              if s and not s.startswith('#') and '=' in s:
+                  k,v=s.split('=',1); vals[k.strip()]=v.strip().strip('"').strip("'")
+          print('W12_V3_LOCAL_USERNAME_PRESENT='+('YES' if bool(vals.get('PPI_WEB_USERNAME','').strip()) else 'NO'))
+          print('W12_V3_LOCAL_PASSWORD_PRESENT='+('YES' if bool(vals.get('PPI_WEB_PASSWORD','').strip()) else 'NO'))
+          if not vals.get('PPI_WEB_PASSWORD','').strip(): raise SystemExit(13)
+          PY
+          OBS_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_observer) || exit 14
+          DASH_PRE=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_dashboard) || exit 15
+          sudo -n docker exec -i porota_production_observer python - <<'PY' || exit 16
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'W12_V3_PRE_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          git fetch --no-tags origin deploy-prep/rc6-wave12-currentbase-20260909 || exit 17
+          git cat-file -e "$TARGET_SHA^{commit}" || exit 18
+          TMP=$(mktemp -d "$HOME/w12refreshv3.XXXXXX") || exit 19
+          trap 'rm -rf "$TMP"' EXIT
+          git show "$TARGET_SHA:rc6_ppi_web_reauth.py" > "$TMP/rc6_ppi_web_reauth.py" || exit 20
+          sudo -n chown porotaadmin:porotaadmin "$TMP" "$TMP/rc6_ppi_web_reauth.py" || exit 21
+          sudo -n chmod 700 "$TMP" || exit 22
+          sudo -n chmod 600 "$TMP/rc6_ppi_web_reauth.py" || exit 23
+          set +e
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$TMP" "$PY" "$TMP/rc6_ppi_web_reauth.py" --profile "$PROFILE" --secret "$SECRET" >"$TMP/result.txt" 2>&1
+          RC=$?
+          set -e
+          SAFE=$(sudo -n python3 - "$TMP/result.txt" <<'PY'
+          import json,sys
+          lines=open(sys.argv[1],encoding='utf-8',errors='replace').read().splitlines()
+          d=None
+          for line in reversed(lines):
+              try:
+                  x=json.loads(line)
+                  if isinstance(x,dict) and 'status' in x:
+                      d=x; break
+              except Exception: pass
+          if d is None: d={'status':'INVALID_SANITIZED_OUTPUT'}
+          keys=('status','attempts','stage','page_url','blocked_post_path','credentials_exposed','orders_visited','real_orders_sent')
+          o={k:d.get(k) for k in keys if k in d}
+          print(json.dumps(o,sort_keys=True))
+          PY
+          )
+          echo "W12_V3_REAUTH_RC=$RC"
+          echo "W12_V3_REAUTH_RESULT=$SAFE"
+          SAFE_STATUS=$(printf '%s' "$SAFE" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))')
+          SAFE_CREDS=$(printf '%s' "$SAFE" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("credentials_exposed"))')
+          SAFE_ORDERS=$(printf '%s' "$SAFE" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("orders_visited"))')
+          SAFE_REAL=$(printf '%s' "$SAFE" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("real_orders_sent",-1))')
+          [ "$SAFE_CREDS" = False ] || exit 24
+          [ "$SAFE_ORDERS" = False ] || exit 25
+          [ "$SAFE_REAL" = 0 ] || exit 26
+          [ "$RC" -eq 0 ] || exit 27
+          [ "$SAFE_STATUS" = AUTHENTICATED_TRUSTED_DEVICE ] || exit 28
+          OBS_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_observer) || exit 29
+          DASH_POST=$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_dashboard) || exit 30
+          [ "$OBS_POST" = "$OBS_PRE" ] || exit 31
+          [ "$DASH_POST" = "$DASH_PRE" ] || exit 32
+          [ "$(git rev-parse HEAD)" = "$PRE" ] || exit 33
+          sudo -n docker exec -i porota_production_observer python - <<'PY' || exit 34
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'W12_V3_POST_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'W12_TRUSTED_SESSION_REFRESH_V3=GREEN'
+          REMOTE
