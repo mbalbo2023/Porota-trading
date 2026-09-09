@@ -1,0 +1,98 @@
+name: RC6 Wave4 Definitive Patch 2026-09-09
+
+on:
+  push:
+    branches: [deploy/rc6-wave4-definitive-cleanup-20260909]
+    paths:
+      - 'fb_raw_evidence_exact_v1.py'
+      - 'tests/test_fb_raw_evidence_exact_v1.py'
+      - '.github/workflows/rc6-wave4-definitive-patch-20260909.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch observer and runtime env fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('bf_production_paper_observer.py')
+          s=p.read_text()
+          old="""            from bl_candle_engine import archive_raw, canonical
+            metadata = financial_catalog.lookup(store,symbol,instrument_type,settlement)
+            expected = len(payload) if isinstance(payload,list) else 0
+            status = 'VALID_PAYLOAD' if count and count==expected else 'PARTIAL' if count else 'EMPTY_OR_INVALID'
+            with store.connect() as c:
+                c.execute('BEGIN IMMEDIATE')
+                archive_raw(c,origin='PPI_HISTORY',row_key=canonical([symbol,instrument_type,settlement,attempted]),
+                    payload={'symbol':symbol,'asset_class':instrument_type,'settlement':settlement,
+                        'date_from':start.isoformat(),'date_to':end.isoformat(),'metadata':metadata,
+                        'valid_rows':count,'payload_json':json.dumps(payload,ensure_ascii=False,default=str)},
+                    recorded_at=attempted,quality=status)
+                c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
+"""
+          new="""            from bl_candle_engine import canonical
+            from fb_raw_evidence_exact_v1 import enabled as exact_evidence_enabled, archive_wrapper as archive_exact_wrapper
+            metadata = financial_catalog.lookup(store,symbol,instrument_type,settlement)
+            expected = len(payload) if isinstance(payload,list) else 0
+            status = 'VALID_PAYLOAD' if count and count==expected else 'PARTIAL' if count else 'EMPTY_OR_INVALID'
+            row_key = canonical([symbol,instrument_type,settlement,attempted])
+            history_wrapper = {'symbol':symbol,'asset_class':instrument_type,'settlement':settlement,
+                        'date_from':start.isoformat(),'date_to':end.isoformat(),'metadata':metadata,
+                        'valid_rows':count,'payload_json':json.dumps(payload,ensure_ascii=False,default=str)}
+            external_exact = exact_evidence_enabled()
+            if external_exact:
+                archive_exact_wrapper(row_key=row_key, wrapper=history_wrapper,
+                                      recorded_at=attempted, quality=status)
+            with store.connect() as c:
+                c.execute('BEGIN IMMEDIATE')
+                if not external_exact:
+                    from bl_candle_engine import archive_raw
+                    archive_raw(c,origin='PPI_HISTORY',row_key=row_key,payload=history_wrapper,
+                                recorded_at=attempted,quality=status)
+                c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
+"""
+          if s.count(old)!=1:
+              raise SystemExit('OBSERVER_PATCH_ANCHOR_COUNT='+str(s.count(old)))
+          p.write_text(s.replace(old,new,1))
+
+          p=Path('porota_mode_manager.py'); s=p.read_text()
+          anchor='''    "PPI_BACKGROUND_INGEST_SECONDS": "7200",\n    "PAPER_NEWS_INGEST_ENABLED": "false",\n'''
+          repl='''    "PPI_BACKGROUND_INGEST_SECONDS": "7200",\n    "PPI_HISTORY_RAW_STORAGE_MODE": "EXTERNAL_EXACT_V1",\n    "PPI_HISTORY_EVIDENCE_ROOT": "/app/data/evidence/ppi_history_exact_v1",\n    "PAPER_NEWS_INGEST_ENABLED": "false",\n'''
+          if s.count(anchor)<2:
+              raise SystemExit('MODE_PATCH_ANCHOR_COUNT='+str(s.count(anchor)))
+          s=s.replace(anchor,repl)
+          p.write_text(s)
+          PY
+          git diff --check
+          python -m py_compile bf_production_paper_observer.py porota_mode_manager.py fb_raw_evidence_exact_v1.py
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q tests/test_fb_raw_evidence_exact_v1.py
+          ! git diff -- '*.py' | grep -Ei 'budget_order|confirm_order|cancel_order|masscancel|send_order|place_order'
+          grep -q 'EXTERNAL_EXACT_V1' porota_mode_manager.py
+          grep -q 'archive_exact_wrapper' bf_production_paper_observer.py
+          echo WAVE4_DEFINITIVE_WIRING=GREEN
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+      - name: Commit materialized wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name porota-ci
+          git config user.email porota-ci@users.noreply.github.com
+          git add bf_production_paper_observer.py porota_mode_manager.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(rc6): route future PPI history raw evidence to exact external store'
+          git push origin HEAD:deploy/rc6-wave4-definitive-cleanup-20260909
