@@ -1,0 +1,32 @@
+name: RC6 Scraper Auth RCA 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-scraper-auth-rca-20260909]
+    paths: ['.github/workflows/rc6-scraper-auth-rca-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  rca:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        env:
+          KEY: ${{ secrets.DO_SSH_KEY }}
+          KH: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$KEY" > "$HOME/.ssh/key"; printf '%s\n' "$KH" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Sanitized RCA read only
+        env:
+          H: ${{ secrets.DO_HOST }}
+          U: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i $HOME/.ssh/key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts $U@$H"
+          $SSH "systemctl show porota-contract-evidence-rc6.service -p FragmentPath -p ExecStart -p User -p Group -p Result -p ExecMainStatus -p ActiveState -p SubState --no-pager"
+          $SSH "sudo -n bash -lc 'for p in /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh /opt/porota-trading/rc6_ppi_web_reauth.py /opt/porota-trading/rc6_trusted_browser_contract_collector.py; do if test -e \"\$p\"; then echo FILE=\"\$p\" SHA256=\$(sha256sum \"\$p\" | cut -d\" \" -f1); else echo FILE=\"\$p\" MISSING; fi; done; echo CONFIG_EXISTS=\$(test -f /etc/porota/contract-evidence-rc6.conf && echo YES || echo NO); if test -f /etc/porota/contract-evidence-rc6.conf; then grep -E \"^[A-Z0-9_]+=\" /etc/porota/contract-evidence-rc6.conf | sed -E \"s/=.*$/=<REDACTED>/\"; fi'"
+          $SSH "sudo -n journalctl -u porota-contract-evidence-rc6.service --since '2026-09-09 12:30:00' --no-pager -o cat | grep -E '^(CONTRACT_EVIDENCE|REAUTH|AUTH|BLOCKED|RESULT|EXIT|OTP|PROFILE|COLLECTOR|RUNTIME|SCRAP|PPI_WEB)' | tail -120 || true"
+          echo RUNTIME_MUTATION=NO
+          echo SECRETS_PRINTED=NO
+          echo ORDER_ROUTES=NOT_CALLED
