@@ -1,0 +1,69 @@
+name: RC6 History + Family RCA 2026-09-09
+
+on:
+  push:
+    branches: [audit/rc6-history-family-rca-20260909]
+    paths: ['.github/workflows/rc6-history-family-rca-20260909.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only SQL RCA
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          print('DB='+c.execute('pragma quick_check').fetchone()[0])
+          print('=== A3 STATE STATUS ===')
+          for r in c.execute("select status,count(*) n,sum(attempts) attempts,sum(rows_last) rows_last from a3_history_ingest_state_rc6 group by status order by n desc"): print(dict(r))
+          print('=== A3 BY TYPE/STATUS ===')
+          for r in c.execute("select instrument_type,status,count(*) n,sum(attempts) attempts,sum(rows_last) rows_last,max(last_success_at) last_success,max(last_attempt_at) last_attempt from a3_history_ingest_state_rc6 group by instrument_type,status order by instrument_type,status"): print(dict(r))
+          print('=== A3 PROBLEMS ===')
+          for r in c.execute("select source,symbol,instrument_type,market,settlement,status,attempts,empty_observations,last_attempt_at,last_success_at,last_error,rows_last from a3_history_ingest_state_rc6 where status not in ('COMPLETE','OK','SUCCESS','FRESH') or last_error is not null order by attempts desc,symbol limit 200"): print(dict(r))
+          print('=== ATTEMPT STATES ===')
+          for r in c.execute("select state,error_class,source,count(*) n,sum(provider_rows) provider,sum(valid_rows) valid,sum(rejected_rows) rejected,max(attempted_at) last_attempt from history_attempt_ledger_v2 group by state,error_class,source order by n desc limit 100"): print(dict(r))
+          print('=== ATTEMPTS LAST 24H ===')
+          for r in c.execute("select state,error_class,source,instrument_type,count(*) n,sum(provider_rows) provider,sum(valid_rows) valid,sum(rejected_rows) rejected from history_attempt_ledger_v2 where attempted_at>=datetime('now','-1 day') group by state,error_class,source,instrument_type order by n desc"): print(dict(r))
+          print('=== REJECTION REASONS ===')
+          for r in c.execute("select reason,count(*) n,count(distinct symbol) symbols,min(recorded_at) first_seen,max(recorded_at) last_seen from history_row_rejections_v2 group by reason order by n desc limit 50"): print(dict(r))
+          print('=== REJECTIONS BY TYPE ===')
+          for r in c.execute("select instrument_type,reason,count(*) n,count(distinct symbol) symbols from history_row_rejections_v2 group by instrument_type,reason order by n desc limit 100"): print(dict(r))
+          print('=== FAMILY COVERAGE 16 ===')
+          for r in c.execute("select instrument_type,declared,queries,observed_count,ready_paper_count,discovery_status,checked_at from catalog_family_coverage order by instrument_type"): print(dict(r))
+          print('=== CATALOG COUNTS ===')
+          for r in c.execute("select instrument_type,status,capability,count(*) n,count(distinct ticker) tickers,count(distinct settlement) settlements,max(last_seen_at) last_seen from financial_instrument_catalog group by instrument_type,status,capability order by instrument_type,n desc"): print(dict(r))
+          print('=== HISTORY COVERAGE TYPES ===')
+          for r in c.execute("select instrument_type,settlement,count(*) symbols,sum(row_count) rows,min(date_from) min_from,max(date_to) max_to,max(downloaded_at) last_download from production_history group by instrument_type,settlement order by instrument_type,settlement"): print(dict(r))
+          print('=== SOURCE SYNC ===')
+          for r in c.execute('select source,status,last_attempt_at,last_success_at,items,detail from source_sync order by source'): print(dict(r))
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'SAFETY={mode}|{real}')
+          c.close()
+          PY
+          echo MUTATIONS=NONE
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          HOST
