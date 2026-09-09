@@ -24,6 +24,7 @@ TOP_NAV = (
     NavItem("/scalping", "Scalping"),
     NavItem("/validacion", "Validación"),
     NavItem("/instrumentos", "Instrumentos y contratos"),
+    NavItem("/riesgo", "Riesgo"),
     NavItem("/historicos", "Históricos"),
     NavItem("/aprendizaje", "Aprendizaje"),
     NavItem("/reportes", "Reportes"),

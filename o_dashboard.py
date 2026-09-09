@@ -1565,6 +1565,10 @@ bc_dashboard_v163.install(app, _check_auth)
 import bg_paper_dashboard
 bg_paper_dashboard.install(app, _check_auth)
 
+# RC6 Wave8: live wiring closure (Risk + classic tables + SHADOW learning).
+import zz_wave8_dashboard_live_rc6
+zz_wave8_dashboard_live_rc6.install(app, _check_auth)
+
 # HF6 dashboard-only: vista unificada de universo, capacidades y operaciones.
 import bh_universe_dashboard_hf6
 bh_universe_dashboard_hf6.install(app, _check_auth)
