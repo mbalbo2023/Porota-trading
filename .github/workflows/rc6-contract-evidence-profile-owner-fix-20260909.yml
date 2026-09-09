@@ -1,0 +1,108 @@
+name: RC6 Contract Evidence Profile Owner Fix 2026-09-09
+on:
+  push:
+    branches: [fix/rc6-contract-evidence-profile-owner-20260909]
+    paths: [.github/workflows/rc6-contract-evidence-profile-owner-fix-20260909.yml]
+permissions:
+  contents: read
+jobs:
+  fix-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Repair only guarded profile nodes and run RC6 owner
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE_HEAD=$(git rev-parse HEAD); echo "PRE_HEAD=$PRE_HEAD"
+          test "$PRE_HEAD" = '2c9f3df2d03974ab6fe464d119bdbb2d90158706'
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close()
+          print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          ); echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+
+          S=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          test -x "$S"
+          PROFILE=$(sudo -n grep '^PROFILE=' "$S" | sed -E 's#.*:-([^}]*)}.*#\1#' | head -1)
+          test -d "$PROFILE"
+          ROOT_UID=$(stat -c '%u' "$PROFILE"); ROOT_GID=$(stat -c '%g' "$PROFILE")
+          test "$ROOT_UID" -eq 1000
+          test "$(stat -c '%a' "$PROFILE")" = 700
+          MISMATCH=0
+          for rel in 'Default' 'Default/Preferences' 'Default/Secure Preferences' 'Local State'; do
+            p="$PROFILE/$rel"
+            [ -e "$p" ] || continue
+            uid=$(stat -c '%u' "$p"); gid=$(stat -c '%g' "$p")
+            if [ "$uid" != "$ROOT_UID" ] || [ "$gid" != "$ROOT_GID" ]; then
+              echo "REPAIR_NODE=$rel|OLD_UID=$uid|OLD_GID=$gid"
+              MISMATCH=$((MISMATCH+1))
+              sudo -n chown "$ROOT_UID:$ROOT_GID" "$p"
+            fi
+          done
+          echo "REPAIRED_NODES=$MISMATCH"
+          test "$MISMATCH" -ge 1
+          test "$MISMATCH" -le 4
+          for rel in 'Default' 'Default/Preferences' 'Default/Secure Preferences' 'Local State'; do
+            p="$PROFILE/$rel"; [ -e "$p" ] || continue
+            test "$(stat -c '%u' "$p")" = "$ROOT_UID"
+            test "$(stat -c '%g' "$p")" = "$ROOT_GID"
+          done
+          echo PROFILE_GUARDED_OWNERSHIP=GREEN
+
+          sudo -n systemctl reset-failed porota-contract-evidence-rc6.service || true
+          set +e
+          sudo -n systemctl start porota-contract-evidence-rc6.service
+          SERVICE_RC=$?
+          set -e
+          echo "SERVICE_START_RC=$SERVICE_RC"
+          systemctl show porota-contract-evidence-rc6.service -p Result -p ExecMainStatus -p ActiveState -p SubState --no-pager
+          sudo -n journalctl -u porota-contract-evidence-rc6.service -n 80 --no-pager -o cat \
+            | grep -Ei 'STATUS=|REASON=|AUTH_|COLLECT|IMPORT|GREEN|RED|BLOCKED|EXPIRED|OTP|2FA|PROFILE|EVIDENCE|NOT_DUE' \
+            | sed -E 's#(token|password|secret|cookie|otp|authorization)[=:][^ ]+#\1=[REDACTED]#Ig' \
+            | tail -60 || true
+
+          # The ownership defect itself must be gone even if legitimate web auth remains blocked.
+          ! sudo -n journalctl -u porota-contract-evidence-rc6.service --since '-2 minutes' --no-pager -o cat | grep -q 'BROWSER_PROFILE_KEYFILE_OWNER_MISMATCH'
+          test -d /opt/porota-trading/data/contract_evidence/rc6_trusted
+          echo '=== RC6 EVIDENCE SAFE INVENTORY ==='
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('/opt/porota-trading/data/contract_evidence/rc6_trusted')
+          files=sorted(root.glob('*.json'),key=lambda p:p.stat().st_mtime,reverse=True)[:3]
+          print('RC6_JSON_COUNT='+str(sum(1 for _ in root.glob('*.json'))))
+          for p in files:
+              try: o=json.loads(p.read_text(encoding='utf-8'))
+              except Exception: continue
+              print('RC6_EVIDENCE='+p.name+'|schema='+str(o.get('schema'))+'|auth='+str(o.get('auth_status'))+'|status='+str(o.get('status') or o.get('state')))
+          PY
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close()
+          print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          ); echo "POST_DB=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          test "$(git rev-parse HEAD)" = "$PRE_HEAD"
+          echo CONTRACT_EVIDENCE_PROFILE_OWNER_FIX=GREEN
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          REMOTE
