@@ -1,0 +1,41 @@
+name: RC6 Preopen Dashboard Contract Diagnostic 2026-09-09
+on:
+  push:
+    branches: [diag/rc6-live-postopen-20260909]
+    paths: ['.github/workflows/rc6-preopen-dashboard-contract-diagnostic-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail; install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only contract audit
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo '=== PREOPEN SCRIPT RELEVANT ==='
+          sudo -n grep -nE 'dashboard|ReadonlyRootfs|read.?only|observer|container|red_checks|READY_PREOPEN' /usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py | head -220 || true
+          echo '=== DASHBOARD INSPECT ==='
+          sudo -n docker inspect porota_production_dashboard --format 'Running={{.State.Running}} Restarts={{.RestartCount}} Image={{.Config.Image}} ReadonlyRootfs={{.HostConfig.ReadonlyRootfs}} Tmpfs={{json .HostConfig.Tmpfs}} Mounts={{json .Mounts}} SecurityOpt={{json .HostConfig.SecurityOpt}}'
+          echo '=== OBSERVER INSPECT ==='
+          sudo -n docker inspect porota_production_observer --format 'Running={{.State.Running}} Restarts={{.RestartCount}} Image={{.Config.Image}} ReadonlyRootfs={{.HostConfig.ReadonlyRootfs}} Tmpfs={{json .HostConfig.Tmpfs}} Mounts={{json .Mounts}} SecurityOpt={{json .HostConfig.SecurityOpt}}'
+          echo '=== MODE MANAGER DASHBOARD REFERENCES ==='
+          cd /opt/porota-trading
+          grep -nE 'production_dashboard|dashboard|read_only|tmpfs' porota_mode_manager.py | head -220 || true
+          echo RUNTIME_MUTATION=NO
+          echo ORDER_ROUTES=NOT_CALLED
+          REMOTE
