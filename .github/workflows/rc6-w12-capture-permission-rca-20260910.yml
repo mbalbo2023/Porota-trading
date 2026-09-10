@@ -47,7 +47,7 @@ jobs:
           set -Eeuo pipefail
           ROOT=/opt/porota-trading
           CONTAINER=porota_production_observer
-          LATEST="$(find "$ROOT/data/contract_evidence/rc6_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
+          LATEST="$(find "$ROOT/data/contract_evidence/rc6_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' | sort -nr | sed -n '1{s/^[^ ]* //;p;}')"
           test -n "$LATEST"
           REL="${LATEST#"$ROOT/data/"}"
           IN="/app/data/$REL"
