@@ -1,0 +1,135 @@
+name: RC6 W12 Current Service Failure Readonly RCA 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-w12-current-service-failure-readonly-rca-20260910.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert immutable RC6 PAPER safety identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Classify W12 current failure without secrets or mutations
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          CE="$ROOT/data/contract_evidence/rc6_trusted"
+          PROFILE=/home/porotaadmin/.local/share/porota-contract-browser-profile
+          echo '=== W12_SERVICE ==='
+          sudo -n systemctl show porota-contract-evidence-rc6.service \
+            -p User -p Group -p ExecStart -p Result -p ExecMainStatus \
+            -p ActiveState -p SubState -p ExecMainStartTimestamp -p ExecMainExitTimestamp \
+            --no-pager
+          sudo -n systemctl show porota-contract-evidence-rc6.timer \
+            -p ActiveState -p UnitFileState -p LastTriggerUSec --no-pager
+
+          echo '=== PROFILE_LOCATION_METADATA ==='
+          if sudo -n test -d "$PROFILE"; then
+            echo PROFILE_EXISTS=YES
+            sudo -n stat -c 'PROFILE_UID=%u|GID=%g|MODE=%a|MTIME=%y' "$PROFILE"
+            for p in "$PROFILE/Default/Cookies" "$PROFILE/Default/Web Data"; do
+              if sudo -n test -e "$p"; then
+                sudo -n stat -c 'PROFILE_DB=%n|UID=%u|GID=%g|MODE=%a|SIZE=%s|MTIME=%y' "$p"
+              fi
+            done
+          else
+            echo PROFILE_EXISTS=NO
+          fi
+          sudo -n find /home -maxdepth 6 -type d -name 'porota-contract-browser-profile' \
+            -printf 'DISCOVERED_PROFILE=%p|UID=%U|GID=%G|MODE=%m|MTIME=%TY-%Tm-%TdT%TH:%TM:%TSZ\n' 2>/dev/null || true
+
+          echo '=== LATEST_CAPTURE_WHITELIST ==='
+          LATEST="$(sudo -n find "$CE" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)"
+          STATE="$CE/runtime_state.json"
+          sudo -n python3 - "$STATE" "$LATEST" <<'PY'
+          import json, pathlib, sys
+          allowed=('schema','state','status','auth_status','generated_at','updated_at','real_orders_sent','reason','detail')
+          for label,raw in (('RUNTIME_STATE',sys.argv[1]),('LATEST_CAPTURE',sys.argv[2] if len(sys.argv)>2 else '')):
+              p=pathlib.Path(raw) if raw else None
+              if not p or not p.is_file():
+                  print(label+'=MISSING'); continue
+              st=p.stat()
+              print(f'{label}_FILE={p.name}|SIZE={st.st_size}|UID={st.st_uid}|GID={st.st_gid}|MODE={oct(st.st_mode & 0o777)}|MTIME_NS={st.st_mtime_ns}')
+              try:
+                  data=json.loads(p.read_text(encoding='utf-8'))
+              except Exception as exc:
+                  print(label+'_JSON_ERROR='+type(exc).__name__); continue
+              if not isinstance(data,dict):
+                  print(label+'_SHAPE='+type(data).__name__); continue
+              for key in allowed:
+                  value=data.get(key)
+                  if key == 'detail' and isinstance(value,str):
+                      # Never print arbitrary detail; classify only.
+                      tokens=[]
+                      upper=value.upper()
+                      for token in ('SESSION_EXPIRED','PROFILE_MISSING','PERMISSION','AUTH','IMPORT','VALIDATION','PLAYWRIGHT','BROWSER'):
+                          if token in upper:
+                              tokens.append(token)
+                      print(label+'_DETAIL_CLASSES='+','.join(tokens))
+                  elif isinstance(value,(str,int,float,bool)) or value is None:
+                      text=str(value)
+                      if key == 'reason' and len(text)>180:
+                          text=text[:180]
+                      print(f'{label}_{key.upper()}={text}')
+              for key in ('routes','endpoints','jobs','blocked_nonread'):
+                  value=data.get(key)
+                  if isinstance(value,(list,dict)):
+                      print(f'{label}_{key.upper()}_COUNT={len(value)}')
+          PY
+
+          echo '=== JOURNAL_CLASSIFICATION_ONLY ==='
+          sudo -n journalctl -u porota-contract-evidence-rc6.service -n 240 --no-pager -o cat 2>/dev/null \
+            | sudo -n python3 -c "import sys; text=sys.stdin.read().upper(); tokens=['BLOCKED_AUTH_SESSION_EXPIRED','BLOCKED_AUTH_PROFILE_MISSING','PERMISSIONERROR','PERMISSION DENIED','PROFILE_MISSING','PLAYWRIGHT','BROWSER','IMPORT','VALIDATION','ENDPOINTS=0','ROUTES=0','AUTHENTICATED_TRUSTED_DEVICE']; [print('JOURNAL_TOKEN_'+t.replace(' ','_')+'='+str(text.count(t))) for t in tokens if text.count(t)]" || true
+
+          echo '=== DB_FRESHNESS ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True)
+          c.execute('pragma query_only=on')
+          for table,col in (
+              ('contract_evidence_v2_current','observed_at'),
+              ('contract_evidence_v2_snapshots','observed_at'),
+              ('contract_evidence_v2_runs','finished_at')):
+              print(f'{table}_COUNT='+str(c.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]))
+              print(f'{table}_MAX='+str(c.execute(f'SELECT MAX({col}) FROM {table}').fetchone()[0]))
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print('MODE='+str(mode)); print('REAL_ORDERS='+str(orders))
+          c.close()
+          PY
+          echo MUTATIONS=NONE
+          echo SECRETS_READ=NO
+          echo COLLECTOR_EXECUTED=NO
+          echo ORDER_ROUTES=NOT_CALLED
+          HOST
