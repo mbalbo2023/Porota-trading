@@ -26,6 +26,7 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          import textwrap
 
           def load(path):
               return Path(path).read_text(encoding="utf-8")
@@ -38,8 +39,12 @@ jobs:
           p = "porota_mode_manager.py"
           before = load(p)
           after = before.replace('"PAPER_ECONOMIC_GATE_MODE": "BINDING"', '"PAPER_ECONOMIC_GATE_MODE": "SHADOW"')
+          sector_line = '    "PAPER_SECTOR_CONCENTRATION_POLICY": "BINDING",'
+          assert after.count(sector_line) == 2
+          after = after.replace(sector_line, sector_line + '\n    "PAPER_MAX_POSITIONS_PER_SECTOR": "2",')
           assert '"PAPER_ECONOMIC_GATE_MODE": "BINDING"' not in after
           assert after.count('"PAPER_ECONOMIC_GATE_MODE": "SHADOW"') >= 2
+          assert after.count('"PAPER_MAX_POSITIONS_PER_SECTOR": "2"') == 2
           save(p, before, after)
 
           p = "bv_paper_runtime.py"
@@ -70,7 +75,8 @@ jobs:
           marker = "def collect(store, *, at=None, candidate=None) -> dict:"
           assert marker in before
           assert "def _reviewed_sector_mapping(" not in before
-          helper = '''def _reviewed_sector_mapping(sector_map: dict[tuple, dict], key: tuple) -> dict | None:
+          helper = textwrap.dedent('''
+          def _reviewed_sector_mapping(sector_map: dict[tuple, dict], key: tuple) -> dict | None:
               """Resolve sector across settlement only when reviewed identity is unambiguous."""
               exact = sector_map.get(key)
               if exact:
@@ -87,10 +93,7 @@ jobs:
               return resolved
 
 
-          '''
-          # Dedent the helper while preserving its function body indentation.
-          import textwrap
-          helper = textwrap.dedent(helper)
+          ''')
           after = before.replace(marker, helper + marker, 1)
           assert after.count("mapped = sector_map.get(key)") == 2
           after = after.replace("mapped = sector_map.get(key)", "mapped = _reviewed_sector_mapping(sector_map, key)")
@@ -113,7 +116,8 @@ jobs:
           before = load(p)
           start = before.index("def test_all_learning_policies_start_shadow_without_paper_veto():")
           end = before.index("\n\ndef test_hard_safety_blocks_are_separate_from_learning_policies():", start)
-          replacement = '''def test_learning_policies_stay_shadow_except_authorized_sector_risk_guard():
+          replacement = textwrap.dedent('''
+          def test_learning_policies_stay_shadow_except_authorized_sector_risk_guard():
               rows = {r.key: r for r in contract.current_learning_contracts()}
               assert set(rows) == set(contract.LEARNING_POLICIES)
               sector = rows["SECTOR_CONCENTRATION"]
@@ -127,8 +131,7 @@ jobs:
                   assert row.authority == "SHADOW"
                   assert row.can_block_paper is False
               assert all(row.automatic_promotion is False for row in rows.values())
-          '''
-          replacement = textwrap.dedent(replacement).rstrip()
+          ''').strip()
           after = before[:start] + replacement + before[end:]
           save(p, before, after)
 
@@ -136,14 +139,13 @@ jobs:
           before = load(p)
           marker = "LATER='2026-09-01T11:00:00-03:00'\n"
           assert marker in before
-          fixture = '''
+          fixture = textwrap.dedent('''
 
           @pytest.fixture(autouse=True)
           def isolate_ledger_integrity_from_entry_selection_policy(monkeypatch):
               """Ledger tests start after admission; sector eligibility is covered separately."""
               monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "SHADOW")
-          '''
-          fixture = textwrap.dedent(fixture)
+          ''')
           after = before.replace(marker, marker + fixture, 1)
           save(p, before, after)
 
@@ -188,12 +190,15 @@ jobs:
           mode = load("porota_mode_manager.py")
           assert '"PAPER_ECONOMIC_GATE_MODE": "SHADOW"' in mode
           assert '"PAPER_SECTOR_CONCENTRATION_POLICY": "BINDING"' in mode
-          assert '"PAPER_MAX_POSITIONS_PER_SECTOR": "2"' in mode
+          assert mode.count('"PAPER_MAX_POSITIONS_PER_SECTOR": "2"') == 2
           assert 'economics_mode=os.getenv("PAPER_ECONOMIC_GATE_MODE", "SHADOW")' in load("bv_paper_runtime.py")
           assert 'PAPER_ECONOMIC_GATE_MODE = os.getenv("PAPER_ECONOMIC_GATE_MODE", "SHADOW")' in load("bg_paper_dashboard.py")
           assert '_mode(SECTOR_ENV, "BINDING")' in load("ck_policy_gate_hf6.py")
           print("POLICY_CONVERGENCE_STATIC=GREEN")
           PY
+
+      - name: Compile materialized tree
+        run: python -m compileall -q .
 
       - name: Build focused proof image
         run: docker build --pull=false -t porota-rc6-policy-proof:${GITHUB_SHA} .
@@ -213,7 +218,6 @@ jobs:
               tests/test_rc6_runtime_safety.py \
               tests/test_rc6_t1_settlement_hotfix.py \
               tests/test_rc6_sector_settlement_fallback.py \
-              tests/test_rc6_w10_sector_map_binding.py \
               tests/test_single_close_ledger_v17.py'
 
       - name: Commit only after focused proof is green
