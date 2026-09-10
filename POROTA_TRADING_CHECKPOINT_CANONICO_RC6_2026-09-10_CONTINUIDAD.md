@@ -1,6 +1,6 @@
 # POROTA TRADING RC6 — CHECKPOINT CANÓNICO DE CONTINUIDAD
 
-Actualizado: 2026-09-10 18:18 ART (America/Argentina/Buenos_Aires)
+Actualizado: 2026-09-10 18:22 ART (America/Argentina/Buenos_Aires)
 
 ## 1. Recuperación inmediata
 
@@ -104,25 +104,27 @@ La suite alcanzó aproximadamente 1530 pruebas verdes antes del único fallo con
 
 Fallo observado:
 
-- esperado en el test: `2026-09-03 00:00 ART`;
-- resultado de `validated_sale_settlement(...)`: `None`.
-
-La prueba actual es semánticamente inconsistente con la política vigente: invoca `validated_sale_settlement(..., full_date_release=False)` y simultáneamente espera que la liberación full-date ocurra a medianoche.
+- la prueba calcula una frontera conservadora T+1 y espera `2026-09-03 00:00 ART`;
+- luego llama `validated_sale_settlement("A-24HS", traded, None, "PENDING_CONFIRMATION")` **sin habilitar** `PAPER_T1_FULL_DATE_RELEASE`;
+- el resultado real es `None`.
 
 El código actual de `cf_sale_settlement.py` está diseñado fail-closed:
 
-- sin cutoff, full-date release queda apagado por defecto;
-- con `full_date_release=False`, devuelve `None`;
-- `settlement_guard_state` habilita explícitamente full-date release para `PRODUCTION_PAPER`.
+- `PAPER_T1_FULL_DATE_RELEASE` vale `false` por defecto;
+- para `PENDING_CONFIRMATION`, sólo devuelve la frontera conservadora si esa política está explícitamente habilitada;
+- con la política apagada devuelve `None`;
+- el propio módulo documenta que `PRODUCTION_PAPER` debe habilitarla explícitamente.
 
-Por tanto, la hipótesis de fix de menor riesgo es corregir el contrato del test (habilitar explícitamente `full_date_release=True` en el caso que prueba la liberación a medianoche) y conservar/agregar una aserción separada de que `False` sigue devolviendo `None`.
+Conclusión actual: existe una contradicción entre el test legacy y el contrato RC6 vigente. El test espera la liberación full-date pero no activa la política requerida. No hay evidencia para convertir el default global a `true`.
+
+Hipótesis de fix de menor riesgo: hacer explícito en el test el opt-in `PAPER_T1_FULL_DATE_RELEASE=true` (o usar el mecanismo de configuración que ya cubre la suite RC6) para el caso que prueba la liberación a medianoche, manteniendo una prueba separada de que el estado por defecto permanece fail-closed y devuelve `None`.
 
 **NO cambiar el default de producción de False a True sin nueva evidencia**, porque eso debilitaría una política conservadora/fail-closed.
 
 ### Próximo paso settlement
 
-1. Revisar pruebas adyacentes/contrato vigente para confirmar que no haya otra expectativa incompatible.
-2. Aplicar fix mínimo al test, no a la política financiera, si la evidencia se mantiene.
+1. Revisar `tests/test_rc6_t1_settlement_hotfix.py` y pruebas adyacentes para confirmar el contrato exacto de opt-in.
+2. Aplicar fix mínimo al test legacy, no a la política financiera, si la evidencia se mantiene.
 3. Ejecutar únicamente el test focalizado/settlement regression.
 4. No lanzar otra suite completa hasta que el test focalizado quede GREEN.
 5. Después de W12 GREEN + settlement focalizado GREEN, ejecutar una suite completa para descubrir, si existe, el siguiente blocker real.
