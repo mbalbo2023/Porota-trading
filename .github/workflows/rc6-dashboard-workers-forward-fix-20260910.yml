@@ -1,0 +1,46 @@
+name: RC6 Dashboard Workers Forward Fix 2026-09-10
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths: ['.github/workflows/rc6-dashboard-workers-forward-fix-20260910.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch-dashboard-live:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore complete read-only /vivo sections
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('zz_wave8_dashboard_live_rc6.py')
+          s=p.read_text(encoding='utf-8')
+          start=s.index('def _strip_live_low_value_sections(text):')
+          end=s.index('\ndef _normalize_live_html', start)
+          old=s[start:end]
+          replacement='''def _strip_live_low_value_sections(text):\n    """Preserve the complete read-only /vivo operational surface.\n\n    RC6 operator contract keeps Scalping and Motores / workers visible in the\n    consolidated live view. Presentation normalization may still de-duplicate\n    navigation, but it must not delete operational/introspection sections.\n    """\n    return text\n\n'''
+          if 'Motores\\s*/\\s*workers' not in old:
+              raise SystemExit('EXPECTED_WAVE8_FILTER_NOT_FOUND')
+          p.write_text(s[:start]+replacement+s[end+1:],encoding='utf-8')
+          PY
+          python -m py_compile zz_wave8_dashboard_live_rc6.py
+          grep -q 'Preserve the complete read-only /vivo operational surface' zz_wave8_dashboard_live_rc6.py
+          ! grep -q 'Motores\\s*/\\s*workers' zz_wave8_dashboard_live_rc6.py
+          git diff --check
+      - name: Commit forward fix to the diagnostic branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add zz_wave8_dashboard_live_rc6.py
+          git commit -m 'fix(rc6 ux): preserve workers and scalping on live dashboard'
+          git push origin HEAD:fix/rc6-w10-sector-map-binding-20260910
