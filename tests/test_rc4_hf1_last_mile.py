@@ -6,7 +6,8 @@ from cf_sale_settlement import conservative_unconfirmed_availability, validated_
 import cr_pending_settlement_diagnostics_hf6 as diag
 
 
-def test_t1_without_cutoff_waits_until_full_expected_date_elapsed():
+def test_t1_without_cutoff_waits_until_full_expected_date_elapsed(monkeypatch):
+    monkeypatch.setenv("PAPER_T1_FULL_DATE_RELEASE", "true")
     traded = "2026-09-01T15:00:00-03:00"
     boundary = conservative_unconfirmed_availability("A-24HS", traded)
     assert boundary is not None
