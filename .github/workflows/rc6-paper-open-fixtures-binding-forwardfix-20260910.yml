@@ -14,7 +14,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
+        with:
+          fetch-depth: 0
       - name: Assert immutable RC6 safety and binding identity
         shell: bash
         run: |
@@ -32,29 +33,33 @@ jobs:
           from pathlib import Path
           p=Path('tests/test_production_paper_v1634.py')
           s=p.read_text(encoding='utf-8')
-          old='''def test_no_duplica_decision_ni_posicion_en_mismo_ciclo(tmp_path):
-    store = PaperStore(str(tmp_path / "observer.db"))
-    broker = PaperBroker(store)
-'''
-          new='''def test_no_duplica_decision_ni_posicion_en_mismo_ciclo(tmp_path):
-    store = PaperStore(str(tmp_path / "observer.db"))
-    # Esta prueba necesita una apertura; usa la composición RC6 BINDING real.
-    broker = PaperBroker(store, session_policy=PaperSessionPolicy(), target_gain_pct="0.05")
-    assert broker.economics_mode == "BINDING"
-    assert broker.intraday_fee_rebate is True
-'''
+          old = (
+              "def test_no_duplica_decision_ni_posicion_en_mismo_ciclo(tmp_path):\n"
+              "    store = PaperStore(str(tmp_path / \"observer.db\"))\n"
+              "    broker = PaperBroker(store)\n"
+          )
+          new = (
+              "def test_no_duplica_decision_ni_posicion_en_mismo_ciclo(tmp_path):\n"
+              "    store = PaperStore(str(tmp_path / \"observer.db\"))\n"
+              "    # Esta prueba necesita una apertura; usa la composición RC6 BINDING real.\n"
+              "    broker = PaperBroker(store, session_policy=PaperSessionPolicy(), target_gain_pct=\"0.05\")\n"
+              "    assert broker.economics_mode == \"BINDING\"\n"
+              "    assert broker.intraday_fee_rebate is True\n"
+          )
           if s.count(old) != 1:
               raise SystemExit('DUPLICATE_FIXTURE_ANCHOR_DRIFT')
           s=s.replace(old,new,1)
-          old='''    broker = PaperBroker(store, initial_cash="1000000", risk_pct="0.50",
-                         max_position_pct="0.25", max_total_exposure_pct="0.60")
-'''
-          new='''    broker = PaperBroker(store, initial_cash="1000000", risk_pct="0.50",
-                         max_position_pct="0.25", max_total_exposure_pct="0.60",
-                         session_policy=PaperSessionPolicy(), target_gain_pct="0.05")
-    assert broker.economics_mode == "BINDING"
-    assert broker.intraday_fee_rebate is True
-'''
+          old = (
+              "    broker = PaperBroker(store, initial_cash=\"1000000\", risk_pct=\"0.50\",\n"
+              "                         max_position_pct=\"0.25\", max_total_exposure_pct=\"0.60\")\n"
+          )
+          new = (
+              "    broker = PaperBroker(store, initial_cash=\"1000000\", risk_pct=\"0.50\",\n"
+              "                         max_position_pct=\"0.25\", max_total_exposure_pct=\"0.60\",\n"
+              "                         session_policy=PaperSessionPolicy(), target_gain_pct=\"0.05\")\n"
+              "    assert broker.economics_mode == \"BINDING\"\n"
+              "    assert broker.intraday_fee_rebate is True\n"
+          )
           if s.count(old) != 1:
               raise SystemExit('PATRIMONIAL_FIXTURE_ANCHOR_DRIFT')
           s=s.replace(old,new,1)
