@@ -1,0 +1,46 @@
+name: RC6 Post-W10 Next Failure RCA 2026-09-10
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+
+permissions:
+  contents: read
+
+jobs:
+  next-failure-rca:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert immutable RC6 PAPER safety identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          echo 'RC6_PAPER_SAFETY=GREEN'
+      - name: Install integrated dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Verify W10 remains fixed before RCA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. python scripts/rc6_w10_sector_map_preflight.py
+          PYTHONPATH=. pytest -q tests/test_caucion_ledger_v17.py::test_caucion_rota_no_detiene_supervision_ni_salidas_spot
+      - name: Emit next deterministic first failure
+        shell: bash
+        run: |
+          set +e
+          PYTHONPATH=. pytest -x -vv --tb=short > /tmp/pytest-next.txt 2>&1
+          rc=$?
+          echo "PYTEST_RC=$rc"
+          echo '===== FIRST FAILURE EXTRACT ====='
+          grep -nE '(^_{3,}|FAILED|ERROR|E   |AssertionError|NameError|TypeError|AttributeError|ImportError|ModuleNotFoundError|KeyError|ValueError)' /tmp/pytest-next.txt | tail -n 100 || true
+          echo '===== LAST 140 LINES ====='
+          tail -n 140 /tmp/pytest-next.txt || true
+          exit "$rc"
