@@ -1,183 +1,167 @@
 # POROTA TRADING RC6 — CHECKPOINT CANÓNICO DE CONTINUIDAD
 
-Actualizado: 2026-09-10 18:33 ART (America/Argentina/Buenos_Aires)
+Actualizado: 2026-09-10 18:36 ART (America/Argentina/Buenos_Aires)
 
 ## 1. Recuperación inmediata
 
 Repositorio: `mbalbo2023/Porota-trading`
 
-Rama activa de trabajo: `fix/rc6-w10-sector-map-binding-20260910`
+Rama activa: `fix/rc6-w10-sector-map-binding-20260910`
 
-HEAD funcional previo a este checkpoint: `ab9c31c6ab36d8011f2c44285006fd00130a6776`.
+HEAD funcional verificado antes de este checkpoint: `75c5bcd43d2eaeb4ef2d93808841748d973228b9`.
 
 Commits recientes relevantes:
 
-- `d88104a25865eb358627c72530857c6159f66926` — `ci(rc6): make W12 permission probe stdin-safe`.
-- `33066d128d4d25ba8583c89a169c89825e323fe6` — corrección mínima del test legacy RC4-HF2 para identidad RC6.
-- `b373e1ae9c9cf43f8af6b40ff81f797579f671fc` — amplía RCA read-only para exponer el boundary del productor W12.
-- `ab9c31c6ab36d8011f2c44285006fd00130a6776` — expone además wiring `DOCKER_BIN`/`CONTAINER` para diseñar el fix de origen sin adivinar.
+- `d88104a25865eb358627c72530857c6159f66926` — corrige probe W12 stdin-safe.
+- `33066d128d4d25ba8583c89a169c89825e323fe6` — alinea test legacy RC4-HF2 con identidad RC6.
+- `ab9c31c6ab36d8011f2c44285006fd00130a6776` — cierra wiring del productor W12.
+- `181e078efd3f5431d9b854542bb4dd55f08810a1` — `fix(rc6-w12): repair capture boundary and prove fresh import`.
+- `75c5bcd43d2eaeb4ef2d93808841748d973228b9` — alinea aserciones legacy de página En Vivo con semántica actual.
 
-Regla de continuidad: antes de repetir RCA o pruebas, leer este archivo y continuar únicamente desde los pendientes abiertos. Cada avance relevante debe actualizar este mismo checkpoint.
+Regla de continuidad: leer este archivo completo, verificar HEAD actual y sólo continuar desde pendientes abiertos. No repetir RCA/pruebas cerradas. Actualizar este mismo checkpoint después de cada hito.
 
-## 2. Invariantes de seguridad obligatorios
+## 2. Invariantes de seguridad
 
-- Runtime: `PRODUCTION_PAPER`.
-- Ejecución real: bloqueada.
-- `real_orders_sent=0` según los controles W12.
-- No habilitar rutas de órdenes reales.
-- Browser/scraping/Contract Evidence: GET-only/read-only.
-- No mutar fondos, órdenes, cuenta, seguridad ni 2FA.
-- El paso final a producción real exige evidencia limpia y aprobación explícita del usuario.
+- Runtime `PRODUCTION_PAPER`.
+- `REAL_ORDER_CAPABILITY=BLOCKED`.
+- `real_orders_sent=0`.
+- No órdenes reales, fondos, cuenta, seguridad ni 2FA.
+- Browser/Contract Evidence GET-only/read-only.
+- No permisos globales `0644`/`0777` ni cambios recursivos amplios sobre `/data`.
+- Paso final a producción real requiere evidencia limpia y aprobación explícita del usuario.
 
 ## 3. Cerrado — NO REPETIR
 
-- W10 sector-map binding: GREEN/cerrado.
-- RCA trusted browser/auth/device: cerrado.
-- RCA EOD ya realizado: no repetir aquí.
-- W12 probe viejo que terminaba prematuramente por `find | sort | head -1` bajo pipefail: superado.
-- Falso verde del probe W12 causado por `docker exec -i` consumiendo stdin del here-doc SSH: diagnosticado y corregido en `d88104a...`.
-- Settlement RCA original: la contradicción entre test legacy y opt-in explícito de `PAPER_T1_FULL_DATE_RELEASE` ya está corregida en el test; no cambiar el default financiero fail-closed.
+- W10 sector-map binding: GREEN.
+- Trusted browser/auth/device RCA: cerrado.
+- EOD RCA: cerrado para este frente.
+- W12 `find|sort|head` bajo pipefail: cerrado.
+- W12 falso verde por `docker exec -i` consumiendo stdin SSH heredoc: cerrado.
+- Settlement RCA original: cerrado; no cambiar default fail-closed.
+- Test legacy RC4-HF2 de VERSION/IMAGE: corregido y ya pasó en suite posterior.
 
-## 4. W12 — causa raíz exacta confirmada
+## 4. W12 — GREEN CERRADO
 
-Estado: **ROJO funcional / RCA CERRADO / FIX DE PRODUCTOR EN PREPARACIÓN**.
+### Causa raíz
 
-Workflow concluyente inicial: `RC6 W12 Capture Permission RCA 2026-09-10`.
-Run: `34525822567`.
-Job: `103034338686`.
-
-Evidencia inicial:
-
-- capture host: `/opt/porota-trading/data/contract_evidence/rc6_trusted/contract_20260910T201457Z.json`;
-- archivo `0600 root:root`;
-- importer/observer `uid=1000(botuser) gid=1000(botuser)`;
-- `CAPTURE_READABLE_BY_IMPORTER_USER=NO`;
-- Python read-only: `PermissionError: [Errno 13] Permission denied`;
-- DB accesible, `MODE=PRODUCTION_PAPER`, `REAL_ORDERS_SENT=0`;
-- `MUTATIONS=NONE`, `IMPORTER_EXECUTED=NO`, `ORDER_ROUTES=NOT_CALLED`.
-
-Conclusión: W12 no falla por DB ni por lógica de importación; falla en la frontera de permisos productor -> importer.
-
-### 4.1 Productor exacto identificado
-
-Runtime systemd instalado en host:
-
-- unidad `porota-contract-evidence-rc6.service`;
-- `WorkingDirectory=/opt/porota-trading`;
-- `ExecStart=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh`;
-- no hay `User=` ni `Group=` declarados en la unidad, por lo que el servicio usa el usuario por defecto de systemd (root);
-- script host: `/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh`, modo `0755 root:root`, SHA256 observado `bea432952157efa240958e89f1254091d89bfbfde95014c39fedd01c72e599ee`.
-
-RCA read-only run `34532164378`, job `103055240194`, encontró la línea causal exacta del productor:
+El productor `/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh` generaba el capture con:
 
 ```bash
 install -o root -g root -m 0600 "$STAGE_CAPTURE" "$CAPTURE"
 ```
 
-El mismo script hace además:
+mientras el importer/observer corre como `botuser`, uid/gid 1000. El directorio `rc6_trusted` también quedaba sin grupo explícitamente alineado.
 
-```bash
-mkdir -p "$OUTDIR"
-chmod 0750 "$OUTDIR"
-```
+### Fix de origen aplicado
 
-sin alinear explícitamente el grupo del directorio con el importer. Por ello el fix final debe cubrir **directorio y archivo**, no solamente el archivo.
+Commit: `181e078efd3f5431d9b854542bb4dd55f08810a1`.
 
-El importer se ejecuta luego en `porota_production_observer` y el runtime identificado es `botuser`, uid/gid 1000. El script ya dispone de `DOCKER_BIN` y `CONTAINER` para el import; el RCA adicional `ab9c31c...` está verificando en qué punto se definen para reutilizarlos de forma segura, sin hardcodear si no es necesario.
+Workflow durable/reconciliador:
+`.github/workflows/rc6-w12-permission-boundary-hotfix-proof-20260910.yml`.
 
-Última captura observada por el RCA a las 21:26 UTC:
+Run: `34532755599`.
+Job: `103057174938`.
+Conclusión: `success`.
 
-- `contract_20260910T212326Z.json`;
-- schema `POROTA_RC6_PPI_TRUSTED_CONTRACT_V1`;
-- `AUTHENTICATED_TRUSTED_DEVICE`;
-- `real_orders_sent=0`;
-- 6 routes, 1 job, 14 non-read routes bloqueadas.
+El runtime ahora resuelve dinámicamente el GID del observer/importer y aplica:
 
-Esto demuestra que el collector sigue generando evidencia útil y que el blocker restante es el handoff de permisos/importación.
+- directorio `root:<observer_gid>` `0750`;
+- capture `root:<observer_gid>` `0640`;
+- sin world-read;
+- sin chmod/chown recursivo del árbol de datos.
 
-### 4.2 Fix W12 obligatorio
+### Evidencia final W12
 
-Aplicar el fix **en el origen** del productor, siguiendo el patrón seguro ya usado en RC4:
+- `OBSERVER_GID=1000`.
+- baseline `contract_evidence_v2_runs=105`.
+- `PATCH_STATE=APPLIED`.
+- `RUNTIME_PATCH=GREEN`.
+- `OUTDIR_MODE=750`, `OUTDIR_GID=1000`.
+- exactamente una ejecución de servicio para la prueba, `SERVICE_START_RC=0`, `Result=success`, `ExecMainStatus=0`.
+- capture fresco: `contract_20260910T213256Z.json`.
+- capture `0640`, GID `1000`.
+- `IMPORTER_USER_READ=YES`.
+- capture bytes `3914`.
+- schema `POROTA_RC6_PPI_TRUSTED_CONTRACT_V1`.
+- auth `AUTHENTICATED_TRUSTED_DEVICE`.
+- routes `6`, jobs `1`.
+- `real_orders_sent=0`.
+- DB `quick_check=ok`.
+- post runs `106`, delta `+1` (> baseline 105).
+- `RUNNING_ROWS=0`.
+- `MODE=PRODUCTION_PAPER`.
+- markers finales: `W12_PERMISSION_BOUNDARY=GREEN`, `W12_FRESH_CAPTURE=GREEN`, `W12_IMPORT=GREEN`, `ORDER_ROUTES=NOT_CALLED`.
 
-- resolver `runtime_gid` del observer/importer;
-- directorio `root:<runtime_gid>` con `0750`;
-- capture `root:<runtime_gid>` con `0640`;
-- nunca `0644`, `0777` ni chmod/chown masivo de `/data`;
-- no usar un post-hoc chmod como solución productiva definitiva.
+**Veredicto W12: GREEN / cerrado. No repetir captura de aceptación salvo regresión nueva demostrada.**
 
-Después del fix:
+## 5. Settlement RC6 — GREEN para fallo original
 
-1. exactamente una captura fresca GET-only/read-only;
-2. importer rc=0;
-3. capture parseable/no vacío;
-4. Contract Evidence v2 run count debe superar baseline 105;
-5. ningún run RUNNING atascado;
-6. DB `quick_check=ok`;
-7. `PRODUCTION_PAPER`, capability real bloqueada, `real_orders_sent=0`.
+Test original:
+`tests/test_rc4_hf1_last_mile.py::test_t1_without_cutoff_waits_until_full_expected_date_elapsed`.
 
-Sólo entonces W12 pasa a GREEN.
+La suite posterior lo mostró `PASSED`.
 
-## 5. Settlement RC6 — fallo original resuelto
-
-Estado: **VERDE para el fallo original**.
-
-El test que antes fallaba:
-
-`tests/test_rc4_hf1_last_mile.py::test_t1_without_cutoff_waits_until_full_expected_date_elapsed`
-
-ya figura `PASSED` en la suite real posterior al fix. La suite avanzó hasta aproximadamente **1535 tests pasados** antes de encontrar un fallo legacy diferente.
-
-Se mantiene la política correcta:
+Política preservada:
 
 - `PAPER_T1_FULL_DATE_RELEASE=false` por defecto;
-- opt-in explícito para la liberación conservadora T+1 en PAPER;
-- no se cambió la lógica financiera ni se habilitó ninguna capacidad de orden real.
+- liberación conservadora T+1 sólo por opt-in en PAPER;
+- no se modificó lógica financiera para hacer pasar el test;
+- ninguna capacidad de orden real fue habilitada.
 
-No repetir el RCA de settlement ni cambiar el default a `true`.
+## 6. Compatibilidad legacy — GREEN para los dos fallos anteriores
 
-## 6. Nuevo fallo legacy de compatibilidad RC6
+La corrida posterior a los fixes mostró `PASSED` para:
 
-Estado: **PARCHEADO / PRUEBA FOCAL PENDIENTE**.
+- `tests/test_rc4_hf1_last_mile.py::test_t1_without_cutoff_waits_until_full_expected_date_elapsed`;
+- `tests/test_rc4_hf2_consolidation.py::test_hf2_version_and_orders_remain_blocked`;
+- `tests/test_rc4_hf2_consolidation.py::test_live_page_keeps_current_round_and_history_semantics_clean`.
 
-Nuevo fallo después de ~1535 tests:
+No tocar `_version.py` ni lógica financiera por estos tests ya cerrados.
 
-`tests/test_rc4_hf2_consolidation.py::test_hf2_version_and_orders_remain_blocked`
+## 7. Nuevo primer blocker determinístico de suite
 
-La prueba heredada esperaba literalmente:
+Workflow: `RC6 Post-W10 Next Failure RCA 2026-09-10`.
+Run: `34532788953`.
+Job: `103057279492`.
 
-- `VERSION == "17.0.0-rc4-hf2"`;
-- `IMAGE == "porota-trading-bot:17.0.0-rc4-hf2"`.
+La suite llegó a:
 
-El runtime canónico ya es RC6. El test fue corregido en commit `33066d128d4d25ba8583c89a169c89825e323fe6` para esperar:
+- `1564 passed`;
+- fallo al `88%`;
+- W10 permaneció GREEN antes de la suite.
 
-- `17.0.0-rc6`;
-- `porota-trading-bot:17.0.0-rc6`;
-- manteniendo `REAL_ORDER_CAPABILITY == "BLOCKED"`.
+Primer fallo actual:
 
-No se modificó `_version.py` ni lógica productiva.
+`tests/test_rc6_history_partial_semantics.py::test_all_full_is_green`
 
-Pendiente: evidencia de targeted test / siguiente fallo real. Los workflows generales disparados automáticamente por push pueden continuar, pero no se debe relanzar manualmente la suite completa por cada cambio.
+Error exacto:
 
-## 7. Divide y vencerás — carriles activos
+```text
+AttributeError: module 'bf_production_paper_observer' has no attribute '_history_batch_semantics'
+```
 
-Carril A — **W12 prioridad máxima**: cerrar wiring de `DOCKER_BIN/CONTAINER` -> parche mínimo de productor -> una captura fresca -> importer -> persistencia CE -> GREEN.
+Esto pasa a ser el único blocker de suite que se debe investigar ahora. No volver a corregir los fallos anteriores.
 
-Carril B — **settlement**: fallo original GREEN; conservar política fail-closed y no repetir RCA.
+## 8. Divide y vencerás — carriles actuales
 
-Carril C — **compatibilidad suite**: test RC4-HF2 ya parcheado; validar de manera focalizada y sólo corregir el siguiente blocker si aparece.
+Carril A — **W12: GREEN/cerrado**. Sólo preservar fix y monitorear que el runtime no sea reinstalado con permisos antiguos.
 
-Carril D — **build/deploy readiness en paralelo**: preparar validaciones de candidate sin activar producción real. Suite completa única cuando W12 y el test focal estén GREEN.
+Carril B — **settlement: GREEN/cerrado para el fallo original**. Mantener fail-closed.
 
-## 8. Pendientes posteriores preservados
+Carril C — **suite/ingesta histórica: ACTIVO**. Investigar `_history_batch_semantics`, determinar si la función debe estar en el observer actual o si el test apunta a una API legacy, aplicar cambio mínimo y prueba focalizada.
+
+Carril D — **build/deploy readiness: ACTIVO EN PARALELO**. Preparar candidate RC6 sin activar órdenes reales. Una suite completa adicional sólo después de cerrar el blocker histórico focalizado.
+
+## 9. Pendientes preservados
 
 - historical/background ingestion: freshness, gaps y cobertura;
 - Contract Evidence scheduler/backoff/idempotencia;
-- matriz de familias/API/contratos;
-- doble calendario Argentina/EE.UU. para CEDEAR y subyacentes;
+- matriz familias/API/contratos;
+- doble calendario Argentina/EE.UU., especialmente CEDEAR;
 - UX/accesibilidad tablet;
 - introspección/early-warning horario;
-- follow-ups de lógica de salidas/EOD de la auditoría.
+- follow-ups de lógica de salidas/EOD.
 
-## 9. Regla para un nuevo chat
+## 10. Regla para nuevo chat
 
-Si la conversación se corta, leer COMPLETO este archivo en la rama indicada, verificar HEAD actual y los workflows posteriores a este checkpoint. No reconstruir pruebas cerradas ni asumir que un workflow fue exitoso sin leer su evidencia/log final. Continuar desde los carriles A/C/D.
+Si el chat se corta: leer COMPLETO este checkpoint, verificar HEAD y workflows posteriores, y continuar desde Carril C/D. No repetir W10, W12 ni settlement ya cerrados. No asumir éxito por nombre de commit: validar logs/evidencia.
