@@ -153,18 +153,13 @@ def _decorate_sections(text):
 
 
 def _strip_live_low_value_sections(text):
-    """Keep /vivo focused on positions, decisions and settlement."""
-    # If an earlier normalization already built the page index, rebuild it after
-    # removing these sections so stale links do not remain.
-    text=_PAGE_INDEX_RE.sub('',text)
-    patterns=(
-        r"<div\b[^>]*class=['\"][^'\"]*paper-card[^'\"]*['\"][^>]*>\s*<h2\b[^>]*>\s*4\.\s*Scalping\s*</h2>.*?</div>",
-        r"<div\b[^>]*class=['\"][^'\"]*paper-card[^'\"]*['\"][^>]*>\s*<h2\b[^>]*>\s*5\.\s*Motores\s*/\s*workers\s*</h2>.*?</div>",
-    )
-    for pattern in patterns:
-        text=re.sub(pattern,'',text,flags=re.IGNORECASE|re.DOTALL)
-    return text
+    """Preserve the complete read-only /vivo operational surface.
 
+    RC6 operator contract keeps Scalping and Motores / workers visible in the
+    consolidated live view. Presentation normalization may still de-duplicate
+    navigation, but it must not delete operational/introspection sections.
+    """
+    return text
 
 def _normalize_live_html(text,path=None):
     """Apply RC6 presentation to the HTML actually served by every route."""
