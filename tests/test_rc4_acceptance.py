@@ -270,10 +270,17 @@ def test_rc4_sector_map_requires_reviewed_source(tmp_path, monkeypatch):
     assert rows[('BBAR','ACCIONES','BYMA','ARS','A-24HS')]['sector']=='BANKING'
 
 
-def test_rc4_default_sector_map_is_empty_until_reviewed():
+def test_rc6_default_sector_map_contains_only_reviewed_sourced_rows():
     import rc4_policy_context as ctx
-    rows=ctx._explicit_sector_map()
-    assert rows == {}
+    rows = ctx._explicit_sector_map()
+    assert rows
+    assert len(rows) == 11
+    for key, evidence in rows.items():
+        assert len(key) == 5 and all(key)
+        assert evidence['sector']
+        assert evidence['source']
+        assert evidence['author'] == 'RC6_W10_REVIEW'
+        assert evidence['effective_at']
 
 def test_rc4_replay_slippage_is_paper_labeled_and_converts_to_bps(tmp_path):
     import sqlite3
