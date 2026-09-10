@@ -1,4 +1,4 @@
-"""Bloqueos de despliegue para la composicion efectiva HF4."""
+"""Regresiones históricas reutilizadas para validar la composición efectiva RC6."""
 import os
 import sys
 from dataclasses import replace
@@ -19,7 +19,7 @@ def quote(family="ACCIONES", at=AT, price="100", symbol="GGAL"):
     price = D(price)
     return Quote(symbol, family, "A-24HS", price, price-D("0.1"),
                  price+D("0.1"), D("1000"), D("1000"), at,
-                 currency="ARS", market="BYMA", metadata_source="HF4_TEST",
+                 currency="ARS", market="BYMA", metadata_source="RC6_REGRESSION_TEST",
                  book_at=at, trade_at=at, last_kind="TRADE")
 
 
@@ -46,8 +46,17 @@ def test_configuracion_desplegada_no_es_un_noop(tmp_path):
         assert result["passed"], (family, result)
         assert D(result["net_reward_risk"]) >= D("1.20")
     assert broker.economics_mode == "BINDING"
-    assert broker._open(quote("ACCIONES", symbol="GGAL"), D(".9"), {})[0]
-    assert broker._open(quote("CEDEARS", symbol="AAPL"), D(".9"), {})[0]
+
+    # El observer productivo persiste cada snapshot antes de evaluar la entrada.
+    # La regresión debe respetar ese contrato para que DailyRisk pueda marcar
+    # posiciones ya abiertas sin relajar DAILY_RISK_STALE_MARKS.
+    ggal = quote("ACCIONES", symbol="GGAL")
+    broker.store.add_quote(ggal)
+    assert broker._open(ggal, D(".9"), {})[0]
+
+    aapl = quote("CEDEARS", symbol="AAPL")
+    broker.store.add_quote(aapl)
+    assert broker._open(aapl, D(".9"), {})[0]
 
 
 def test_sin_cierre_intradiario_conserva_costo_completo(tmp_path):
@@ -86,7 +95,7 @@ def test_derivado_es_hold_explicado_no_data_error(tmp_path):
     assert features["family"] == "OPCIONES"
 
 
-def test_parametros_de_riesgo_hf3_siguen_congelados():
+def test_parametros_de_riesgo_rc6_siguen_congelados():
     cfg = paper_settings({"PAPER_RISK_PER_TRADE":"0.9",
                           "PAPER_MAX_OPEN_POSITIONS":"99",
                           "PAPER_ECONOMIC_GATE_MODE":"SHADOW"})
