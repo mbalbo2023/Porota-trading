@@ -1,0 +1,112 @@
+name: RC6 Wave16 Critical Approval Container Diagnostic 2026-09-09
+
+on:
+  push:
+    branches:
+      - deploy-prep/rc6-wave16-currentbase-20260909
+    paths:
+      - .github/workflows/rc6-wave16-critical-approval-container-diagnostic-20260909.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-wave16-critical-approval-container-diagnostic-20260909
+  cancel-in-progress: false
+
+jobs:
+  readonly-diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota-diag"
+          chmod 600 "$HOME/.ssh/porota-diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Inspect critical approval container read only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+            -i "$HOME/.ssh/porota-diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE_SHA=$(git rev-parse HEAD)
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+
+          TARGET=porota_critical_approval_rc6
+          echo "RUNTIME_HEAD=$PRE_SHA"
+          if ! sudo -n docker inspect "$TARGET" >/dev/null 2>&1; then
+            echo 'TARGET_PRESENT=NO'
+          else
+            echo 'TARGET_PRESENT=YES'
+            sudo -n docker inspect "$TARGET" | python3 -c '
+          import json,sys
+          x=json.load(sys.stdin)[0]
+          state=x.get("State",{})
+          health=(state.get("Health") or {}).get("Status")
+          cfg=x.get("Config",{})
+          host=x.get("HostConfig",{})
+          print("NAME="+x.get("Name","").lstrip("/"))
+          print("ID="+x.get("Id","")[:12])
+          print("IMAGE_ID="+x.get("Image","")[:19])
+          print("CONFIG_IMAGE="+str(cfg.get("Image")))
+          print("STATUS="+str(state.get("Status")))
+          print("HEALTH="+str(health))
+          print("CREATED="+str(x.get("Created")))
+          print("RESTART_POLICY="+str((host.get("RestartPolicy") or {}).get("Name")))
+          print("ENTRYPOINT="+json.dumps(cfg.get("Entrypoint"),ensure_ascii=True))
+          print("CMD="+json.dumps(cfg.get("Cmd"),ensure_ascii=True))
+          labels=cfg.get("Labels") or {}
+          for k in sorted(labels):
+              if k.startswith("com.docker.compose."):
+                  print("LABEL_"+k.replace(".","_")+"="+str(labels[k]))
+          for m in x.get("Mounts") or []:
+              print("MOUNT="+str(m.get("Type"))+"|"+str(m.get("Source"))+"->"+str(m.get("Destination"))+"|RW="+str(m.get("RW")))
+          nets=(x.get("NetworkSettings") or {}).get("Networks") or {}
+          for n,v in nets.items(): print("NETWORK="+n+"|IP="+str(v.get("IPAddress")))
+          ports=(x.get("NetworkSettings") or {}).get("Ports") or {}
+          for p,v in ports.items(): print("PORT="+p+"|"+json.dumps(v))
+          '
+          fi
+
+          echo '=== CURRENT COMPOSE SERVICES ==='
+          sudo -n docker compose ps --services --all 2>/dev/null || true
+          echo '=== ALL CONTAINERS ==='
+          sudo -n docker ps -a --format '{{.Names}}|{{.Image}}|{{.Status}}'
+
+          test "$(git rev-parse HEAD)" = "$PRE_SHA"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'HOST_MUTATION=NO'
+          echo 'ORDER_ROUTE_CALLED=NO'
+          echo 'RC6_W16_CRITICAL_APPROVAL_DIAGNOSTIC=GREEN'
+          REMOTE
