@@ -1,0 +1,58 @@
+name: RC6 Integrated Pytest RCA Diagnostic 2026-09-10
+on:
+  push:
+    branches: [diagnostic/rc6-integrated-pytest-rca-20260910]
+permissions:
+  contents: read
+jobs:
+  pytest-rca:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile exact integrated candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "DIAGNOSTIC_HEAD=$(git rev-parse HEAD)"
+          echo "DIAGNOSTIC_PARENT=$(git rev-parse HEAD^)"
+          python -m compileall -q -x '(^|/)(\.git|data|sre_vector_db)(/|$)' .
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+      - name: Install identical gate dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Collect suite
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest --collect-only -q > /tmp/collect.txt 2>&1
+          tail -n 25 /tmp/collect.txt
+      - name: Run first-failure RCA
+        id: rca
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          PYTHONPATH=. pytest -x -vv --tb=short > /tmp/pytest-rca.txt 2>&1
+          rc=$?
+          echo "PYTEST_RC=$rc"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          echo '===== PYTEST RCA TAIL ====='
+          tail -n 160 /tmp/pytest-rca.txt
+          exit "$rc"
+      - name: Emit deterministic RCA summary
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo '===== FIRST FAILURE / ERROR EXTRACT ====='
+          grep -nE '(^_{3,}|FAILED|ERROR|E   |AssertionError|NameError|TypeError|AttributeError|ImportError|ModuleNotFoundError)' /tmp/pytest-rca.txt | tail -n 100 || true
+          echo '===== LAST 80 LINES ====='
+          tail -n 80 /tmp/pytest-rca.txt || true
+          rc='${{ steps.rca.outputs.rc }}'
+          echo "PYTEST_FINAL_RC=${rc:-UNKNOWN}"
+          test "${rc:-1}" = "0"
