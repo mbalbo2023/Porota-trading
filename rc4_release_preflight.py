@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Static TEST-READY preflight. Never touches Docker, broker, DB or network."""
+"""Static release-compatibility preflight. Never touches Docker, broker, DB or network.
+
+The filename is retained for compatibility with historical RC4-era callers, but
+active release identity is RC6 and must fail closed on any other version.
+"""
 from pathlib import Path
 import re
 import sys
@@ -10,7 +14,7 @@ checks=[]
 def check(name, ok, detail):
     checks.append((name,bool(ok),str(detail)))
 
-check('version_rc4', _version.VERSION.startswith('17.0.0-rc4-'), _version.VERSION)
+check('version_rc6', _version.VERSION == '17.0.0-rc6', _version.VERSION)
 check('image_matches_version', _version.IMAGE == f'porota-trading-bot:{_version.VERSION}', _version.IMAGE)
 check('mode_paper', _version.MODE == 'PRODUCTION_PAPER', _version.MODE)
 check('execution_simulated', _version.EXECUTION == 'SIMULATED', _version.EXECUTION)
@@ -36,6 +40,8 @@ check('rc4_contract_uses_trusted_collector_only', legacy_scraper not in rc4_cont
 for name,ok,detail in checks:
     print(f"{'GREEN' if ok else 'RED'}|{name}|{detail}")
 failed=[x for x in checks if not x[1]]
+# Compatibility output retained because historical acceptance callers still parse it.
 print(f'RC4_PREFLIGHT={"GREEN" if not failed else "RED"}')
+print(f'RC6_RELEASE_IDENTITY={"GREEN" if not failed else "RED"}')
 print(f'CHECKS={len(checks)} FAILED={len(failed)}')
 raise SystemExit(0 if not failed else 2)
