@@ -13,8 +13,9 @@ def _utc(y,m,d,h,minute):
 
 
 def test_hf2_version_and_orders_remain_blocked():
-    assert VERSION == "17.0.0-rc4-hf2"
-    assert IMAGE == "porota-trading-bot:17.0.0-rc4-hf2"
+    # Legacy RC4-HF2 behavioral coverage is retained under the current RC6 release identity.
+    assert VERSION == "17.0.0-rc6"
+    assert IMAGE == "porota-trading-bot:17.0.0-rc6"
     assert REAL_ORDER_CAPABILITY == "BLOCKED"
 
 
