@@ -1,0 +1,56 @@
+name: RC6 W10 Forward Fix Validation 2026-09-10
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+
+permissions:
+  contents: read
+
+jobs:
+  w10-forward-fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert RC6 PAPER safety identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m compileall -q -x '(^|/)(\.git|data|sre_vector_db)(/|$)' .
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          echo 'RC6_PAPER_SAFETY=GREEN'
+      - name: Install identical integrated dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Prove W10 map and binding readiness
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. python scripts/rc6_w10_sector_map_preflight.py
+      - name: Re-run exact integrated first failure
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q \
+            tests/test_rc6_wave10_sector_binding_default.py \
+            tests/test_caucion_ledger_v17.py::test_caucion_rota_no_detiene_supervision_ni_salidas_spot
+          echo 'W10_CAUSAL_REGRESSION=GREEN'
+      - name: Run complete integrated pytest suite
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q
+          echo 'INTEGRATED_TESTS=GREEN'
+      - name: Prove no real order route was introduced
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ! grep -REn 'api/Orders|/Operar|send_order|place_order|new_order' \
+            scripts/rc6_w10_sector_map_preflight.py POROTA_SECTOR_MAP_V1.csv
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'W10_FORWARD_FIX=GREEN'
