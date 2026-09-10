@@ -1,0 +1,101 @@
+name: RC6 Final Host Readonly Preflight 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-final-host-readonly-preflight-20260910.yml
+
+permissions:
+  contents: read
+
+jobs:
+  host-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_preflight"
+          chmod 600 "$HOME/.ssh/porota_preflight"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only host and runtime snapshot
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_preflight" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          echo '=== RC6 FINAL READONLY HOST PREFLIGHT ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
+          echo "HOST_DIRTY_COUNT=$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
+          echo "DISK_FREE_BYTES=$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"
+
+          for c in porota_production_observer porota_production_dashboard; do
+            echo "CONTAINER_${c}=$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' "$c" 2>/dev/null || echo MISSING)"
+          done
+
+          echo -n 'HEALTH='
+          curl -fsS http://127.0.0.1:8000/health || true
+          echo
+
+          sudo -n docker exec porota_production_observer python - <<'PY'
+          import sqlite3
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10)
+              c.execute('PRAGMA query_only=ON')
+              print('DB_QUICK_CHECK',p,c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'):
+                  tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                  if 'observer_state' in tables:
+                      row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+                      print('OBSERVER_STATE', '|'.join(map(str,row)) if row else 'NONE')
+              c.close()
+          PY
+
+          for unit in \
+            porota-contract-evidence-rc6-runtime.timer \
+            porota-contract-evidence-rc6-runtime.service \
+            porota-functional-health-rc6.timer \
+            porota-history-postclose-rc6.timer \
+            porota-host-general-backup-rc6.timer \
+            porota-preopen-rc6.timer \
+            porota-candle-integrity-rc6.timer \
+            porota-a3-history-daily-rc6.timer \
+            porota-a3-history-reconcile-rc6.timer \
+            porota-a3-history-weekend-rc6.timer; do
+              printf 'UNIT=%s|ACTIVE=%s|ENABLED=%s\n' "$unit" \
+                "$(sudo -n systemctl is-active "$unit" 2>/dev/null || true)" \
+                "$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || true)"
+          done
+
+          CAPTURE="$(find "$REPO/data/contract_evidence/rc6_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
+          if [ -n "$CAPTURE" ]; then
+            echo "LATEST_CAPTURE=$CAPTURE"
+            stat -c 'LATEST_CAPTURE_STAT=%a|%u|%g|%s|%y' "$CAPTURE"
+            if sudo -n docker exec porota_production_observer test -r "$CAPTURE"; then
+              echo 'LATEST_CAPTURE_IMPORTER_READABLE=YES'
+            else
+              echo 'LATEST_CAPTURE_IMPORTER_READABLE=NO'
+            fi
+          else
+            echo 'LATEST_CAPTURE=NONE'
+          fi
+          echo 'MUTATIONS=NONE'
+          HOST
