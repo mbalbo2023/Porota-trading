@@ -25,6 +25,11 @@ jobs:
           set -Eeuo pipefail
           python -m pip install -q -r requirements.txt
           python -m pip install -q pytest
+      - name: Verify W10 BINDING evidence readiness
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. python scripts/rc6_w10_sector_map_preflight.py
       - name: Run integrated suite
         shell: bash
         run: |
@@ -72,4 +77,4 @@ jobs:
           echo 'RUNTIME_CHANGED=NO'
           echo 'INTEGRATED_LIVE_PREFLIGHT=GREEN'
           REMOTE
-# current-head rerun marker: 2026-09-10 take-profit-audit-closure
+# W10 forward-fix gate: reviewed sector evidence is mandatory before integrated pytest
