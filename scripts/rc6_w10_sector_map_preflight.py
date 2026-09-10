@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """RC6 W10 fail-closed preflight for the reviewed sector map.
 
-This validator is intentionally read-only and network-free.  W10 is BINDING for
+This validator is intentionally read-only and network-free. W10 is BINDING for
 new PAPER entries, so a release must not be considered deployable when the
 versioned sector evidence needed by the configured RC6 focus is absent.
 """
@@ -21,7 +21,7 @@ REQUIRED_COLUMNS = (
     "source", "author", "effective_at", "reviewed",
 )
 
-# Exact RC6 PAPER focus identities.  AAPLD/AAPLC are the MEP/CCL Apple
+# Exact RC6 PAPER focus identities. AAPLD/AAPLC are the MEP/CCL Apple
 # identities explicitly configured by porota_mode_manager; no identity is
 # inferred from the ticker at runtime.
 EXPECTED_FOCUS = {
@@ -82,13 +82,13 @@ def main() -> int:
 
     if modes.PAPER_DEFAULTS["PAPER_SECTOR_CONCENTRATION_POLICY"] != "BINDING":
         raise SystemExit("W10_POLICY_NOT_BINDING: PAPER_DEFAULTS")
-    if modes.HF3_FROZEN_PAPER_SETTINGS["PAPER_SECTOR_CONCENTRATION_POLICY"] != "BINDING":
-        raise SystemExit("W10_POLICY_NOT_BINDING: frozen settings")
+    if modes.RC6_FROZEN_PAPER_SETTINGS["PAPER_SECTOR_CONCENTRATION_POLICY"] != "BINDING":
+        raise SystemExit("W10_POLICY_NOT_BINDING: RC6 frozen settings")
     if gate.active_policies()["sector_concentration"] != "BINDING":
         raise SystemExit("W10_POLICY_NOT_BINDING: active default")
 
     # Semantic proof: every mapped focus sector is evaluable below capacity;
-    # an unmapped candidate still fails closed.  This never routes an order.
+    # an unmapped candidate still fails closed. This never routes an order.
     for key in sorted(EXPECTED_FOCUS):
         sector = loaded[key]["sector"]
         result = gate.evaluate(sectors={"groups": []}, candidate_sector=sector, sector_limit=2)
