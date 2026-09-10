@@ -1426,42 +1426,12 @@ def test_universo_ampliado_mantiene_derivados_solo_contexto(monkeypatch, tmp_pat
     assert any(row[1] == "FUTUROS" and not row[4] for row in candidates)
 
 
-def test_gemini_es_porton_critico_y_persiste_veredicto(tmp_path):
-    class Gate:
-        def __init__(self, approve):
-            self.approve = approve
-        def evaluate(self, *_args):
-            return {"decision": "APPROVE" if self.approve else "VETO",
-                    "score": 0.91, "veto": not self.approve,
-                    "reason": "contrato de prueba", "model": "gemini-test", "raw": {}}
-
-    for approve in (False, True):
-        store = PaperStore(str(tmp_path / f"observer-{approve}.db"))
-        broker = PaperBroker(store, ai_gate=Gate(approve), require_ai=True)
-        for i in range(8):
-            q = quote(price=str(100+i), minute=i)
-            store.add_quote(q)
-            broker.on_quote(q)
-        assert bool(store.open_positions()) is approve
-        with store.connect() as connection:
-            ai = dict(connection.execute(
-                "SELECT * FROM ai_shadow_evaluations ORDER BY id DESC LIMIT 1").fetchone())
-        assert ai["decision"] == ("APPROVE" if approve else "VETO")
-        with store.connect() as connection:
-            gate = dict(connection.execute(
-                "SELECT * FROM trade_gate_evaluations ORDER BY id DESC LIMIT 1").fetchone())
-        assert gate["ai_gate"] == ("APPROVE" if approve else "VETO")
-        assert gate["final_result"] == ("OPENED_SIMULATED" if approve else "BLOCKED")
-
-
-def test_gemini_ausente_cierra_el_porton_paper(tmp_path):
-    store = PaperStore(str(tmp_path / "observer.db"))
-    broker = PaperBroker(store, require_ai=True)
-    for i in range(8):
-        q = quote(price=str(100+i), minute=i)
-        store.add_quote(q)
-        broker.on_quote(q)
-    assert store.open_positions() == []
+def test_rc6_ia_intradia_esta_retirada_del_porton_operativo():
+    source = Path(observer.__file__).read_text(encoding="utf-8")
+    assert 'ai_gate=None, require_ai=False' in source
+    assert 'ai_mode="OFF"' in source
+    assert 'broker.on_quote(' in source
+    assert 'gemini_gate' not in source[source.index('def run():'):]
 
 
 def test_gemini_descarta_modelo_retirado_y_prioriza_inventario_real():
