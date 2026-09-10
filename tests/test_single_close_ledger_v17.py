@@ -15,6 +15,12 @@ CLOSE='2026-08-28T11:01:00-03:00'
 LATER='2026-09-01T11:00:00-03:00'
 
 
+@pytest.fixture(autouse=True)
+def isolate_ledger_integrity_from_entry_selection_policy(monkeypatch):
+    """Ledger tests start after admission; sector eligibility is covered separately."""
+    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "SHADOW")
+
+
 @pytest.fixture
 def closed(tmp_path):
     def make(settlement='INMEDIATA',currency='ARS'):

@@ -74,8 +74,11 @@ def policy_contract(key: str, stage: str = "SHADOW") -> LearningPolicy:
 
 
 def current_learning_contracts() -> tuple[LearningPolicy, ...]:
-    """RC6 campaign starts all profitability/selection policies without veto."""
-    return tuple(policy_contract(key, "SHADOW") for key in LEARNING_POLICIES)
+    """RC6 stays SHADOW except the explicitly authorized sector risk guard."""
+    return tuple(
+    policy_contract(key, "BINDING_PAPER" if key == "SECTOR_CONCENTRATION" else "SHADOW")
+    for key in LEARNING_POLICIES
+)
 
 
 def promotion_is_authorized(*, current_stage: str, requested_stage: str,

@@ -3,14 +3,20 @@ from pathlib import Path
 import es_shadow_binding_contract_rc6 as contract
 
 
-def test_all_learning_policies_start_shadow_without_paper_veto():
-    rows = contract.current_learning_contracts()
-    assert {r.key for r in rows} == set(contract.LEARNING_POLICIES)
-    assert all(r.stage == "SHADOW" for r in rows)
-    assert all(r.authority == "SHADOW" for r in rows)
-    assert all(r.can_block_paper is False for r in rows)
-    assert all(r.automatic_promotion is False for r in rows)
-
+def test_learning_policies_stay_shadow_except_authorized_sector_risk_guard():
+    rows = {r.key: r for r in contract.current_learning_contracts()}
+    assert set(rows) == set(contract.LEARNING_POLICIES)
+    sector = rows["SECTOR_CONCENTRATION"]
+    assert sector.stage == "BINDING_PAPER"
+    assert sector.authority == "BINDING_PAPER"
+    assert sector.can_block_paper is True
+    for key, row in rows.items():
+        if key == "SECTOR_CONCENTRATION":
+            continue
+        assert row.stage == "SHADOW"
+        assert row.authority == "SHADOW"
+        assert row.can_block_paper is False
+    assert all(row.automatic_promotion is False for row in rows.values())
 
 def test_hard_safety_blocks_are_separate_from_learning_policies():
     assert "REAL_ORDER_CAPABILITY_BLOCKED" in contract.HARD_SAFETY_BLOCKS

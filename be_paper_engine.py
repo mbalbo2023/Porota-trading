@@ -436,7 +436,7 @@ class PaperBroker:
                  quote_max_age_seconds=120, trade_max_age_seconds=900,
                  signal_min_samples=8, signal_window_minutes=90,
                  score_threshold="0.62", ai_mode="BINDING",
-                 economics_mode="BINDING", min_net_reward_risk="1.20",
+                 economics_mode="SHADOW", min_net_reward_risk="1.20",
                  stop_loss_pct="0.02", target_gain_pct="0.035",
                  daily_loss_pct="2.5", daily_soft_stop_pct=None,
                  intraday_fee_rebate=None):
@@ -473,7 +473,7 @@ class PaperBroker:
         if self.score_threshold > 1:
             raise ValueError("El umbral de score debe estar entre 0 y 1")
         self.ai_mode = str(ai_mode or "BINDING").upper()
-        self.economics_mode = str(economics_mode or "BINDING").upper()
+        self.economics_mode = str(economics_mode or "SHADOW").upper()
         if self.ai_mode not in {"BINDING", "SHADOW", "OFF"}:
             raise ValueError("PAPER_AI_GATE_MODE debe ser BINDING, SHADOW u OFF")
         if self.economics_mode not in {"BINDING", "SHADOW"}:

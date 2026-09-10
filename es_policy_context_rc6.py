@@ -103,6 +103,24 @@ def _explicit_sector_map(connection=None) -> dict[tuple, dict]:
     return result
 
 
+
+def _reviewed_sector_mapping(sector_map: dict[tuple, dict], key: tuple) -> dict | None:
+    """Resolve sector across settlement only when reviewed identity is unambiguous."""
+    exact = sector_map.get(key)
+    if exact:
+        return exact
+    identity = tuple(key[:4])
+    matches = [row for candidate_key, row in sector_map.items()
+               if tuple(candidate_key[:4]) == identity]
+    sectors = {str(row.get("sector") or "").strip() for row in matches
+               if str(row.get("sector") or "").strip()}
+    if len(sectors) != 1:
+        return None
+    resolved = dict(matches[0])
+    resolved["resolution"] = "REVIEWED_UNAMBIGUOUS_SETTLEMENT_FALLBACK"
+    return resolved
+
+
 def collect(store, *, at=None, candidate=None) -> dict:
     """Return read-only observations; missing evidence stays explicit."""
     day_start = _local_day_start(at)
@@ -126,7 +144,7 @@ def collect(store, *, at=None, candidate=None) -> dict:
                     str(item.get("currency") or "").upper(),
                     str(item.get("settlement") or "").upper(),
                 )
-                mapped = sector_map.get(key)
+                mapped = _reviewed_sector_mapping(sector_map, key)
                 item["sector"] = mapped.get("sector") if mapped else None
                 item["sector_source"] = mapped.get("source") if mapped else None
                 positions.append(item)
@@ -141,7 +159,7 @@ def collect(store, *, at=None, candidate=None) -> dict:
             str(candidate.get("currency") or "").upper(),
             str(candidate.get("settlement") or "").upper(),
         )
-        mapped = sector_map.get(key)
+        mapped = _reviewed_sector_mapping(sector_map, key)
         candidate_sector = mapped.get("sector") if mapped else None
     return {
         "expectancy_samples": expectancy,
