@@ -221,12 +221,30 @@ def test_rc4_emergency_cap_auto_is_quantitatively_derived():
         soft_stop_pct='1.5', risk_per_trade_fraction='0.002', configured='11')
     assert (cap2, source2) == (11, 'OVERRIDE')
 
-def test_rc4_max_hold_reports_when_eod_dominates_without_retuning():
+def test_rc4_max_hold_uses_current_session_clock_without_stale_magic_number():
     from rc4_validation import max_hold_effectiveness
-    row=max_hold_effectiveness(360)
-    assert row['earliest_open_to_forced_eod_minutes']==345
-    assert row['effective_ceiling_minutes']==345
-    assert row['state']=='DOMINATED_BY_EOD'
+    from bq_exit_policy import PaperSessionPolicy
+    policy = PaperSessionPolicy()
+    open_minutes = policy.open_time.hour * 60 + policy.open_time.minute
+    close_minutes = policy.close_time.hour * 60 + policy.close_time.minute
+    eod_minutes = close_minutes - open_minutes - policy.exit_minutes
+    row = max_hold_effectiveness(360, policy=policy)
+    assert row['earliest_open_to_forced_eod_minutes'] == eod_minutes
+    assert row['effective_ceiling_minutes'] == min(360, eod_minutes)
+    assert row['state'] == ('DOMINATED_BY_EOD' if 360 > eod_minutes else 'REACHABLE')
+    assert row['parameter_change_allowed'] is False
+
+def test_rc4_max_hold_reports_when_eod_really_dominates_without_retuning():
+    from rc4_validation import max_hold_effectiveness
+    from bq_exit_policy import PaperSessionPolicy
+    policy = PaperSessionPolicy()
+    open_minutes = policy.open_time.hour * 60 + policy.open_time.minute
+    close_minutes = policy.close_time.hour * 60 + policy.close_time.minute
+    eod_minutes = close_minutes - open_minutes - policy.exit_minutes
+    row = max_hold_effectiveness(eod_minutes + 1, policy=policy)
+    assert row['earliest_open_to_forced_eod_minutes'] == eod_minutes
+    assert row['effective_ceiling_minutes'] == eod_minutes
+    assert row['state'] == 'DOMINATED_BY_EOD'
     assert row['parameter_change_allowed'] is False
 
 def test_rc4_paper_fee_reconciliation_never_calls_broker(monkeypatch):
