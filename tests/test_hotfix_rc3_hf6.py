@@ -69,11 +69,11 @@ def test_regimen_y_sector_son_alerta_observacional_sin_porton():
     assert sectors["limit"] is None and sectors["binding"] is False
 
 
-def test_politicas_autorizadas_no_reemplazan_economia_binding():
+def test_politicas_autorizadas_respetan_economia_shadow_y_sector_binding():
     from porota_mode_manager import paper_settings
 
     settings = paper_settings({})
-    assert settings["PAPER_ECONOMIC_GATE_MODE"] == "BINDING"
+    assert settings["PAPER_ECONOMIC_GATE_MODE"] == "SHADOW"
     assert settings["PAPER_EXPECTANCY_POLICY"] == "OBSERVATION_ONLY"
     assert settings["PAPER_MARKET_REGIME_POLICY"] == "ALERT_ONLY"
     assert settings["PAPER_SECTOR_CONCENTRATION_POLICY"] == "BINDING"
