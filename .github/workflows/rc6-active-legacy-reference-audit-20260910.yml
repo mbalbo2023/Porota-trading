@@ -1,0 +1,70 @@
+name: RC6 Active Runtime Legacy Reference Audit 2026-09-10
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths:
+      - '.github/workflows/rc6-active-legacy-reference-audit-20260910.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  active-runtime-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert RC6 safety identity
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+      - name: Build local import closure and report legacy references
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import ast, pathlib, re, json
+          root = pathlib.Path('.')
+          entrypoints = [
+              '_version.py','porota_mode_manager.py','bv_paper_runtime.py',
+              'bf_production_paper_observer.py','o_dashboard.py','rc6_preopen.py',
+              'rc6_trusted_browser_contract_collector.py'
+          ]
+          local = {p.stem:p for p in root.glob('*.py')}
+          seen, queue = set(), [pathlib.Path(x) for x in entrypoints if pathlib.Path(x).exists()]
+          while queue:
+              p = queue.pop(0)
+              if p in seen: continue
+              seen.add(p)
+              try: tree = ast.parse(p.read_text(encoding='utf-8'))
+              except Exception: continue
+              names=[]
+              for n in ast.walk(tree):
+                  if isinstance(n, ast.Import): names += [a.name.split('.')[0] for a in n.names]
+                  elif isinstance(n, ast.ImportFrom) and n.module: names.append(n.module.split('.')[0])
+              for name in names:
+                  q=local.get(name)
+                  if q and q not in seen: queue.append(q)
+          pat=re.compile(r'(?i)(?:\brc[345]\b|\bhf\d+\b|rc[345][_-]hf\d+|v17\.0(?:\.0)?-rc[345])')
+          hits=[]
+          for p in sorted(seen):
+              for no,line in enumerate(p.read_text(encoding='utf-8',errors='replace').splitlines(),1):
+                  if pat.search(line): hits.append({'file':str(p),'line':no,'text':line.strip()[:240]})
+          print('ACTIVE_IMPORT_CLOSURE_FILES='+str(len(seen)))
+          print('ACTIVE_LEGACY_REFERENCE_COUNT='+str(len(hits)))
+          print(json.dumps(hits,ensure_ascii=False,indent=2))
+          pathlib.Path('/tmp/rc6-active-files.txt').write_text('\n'.join(map(str,sorted(seen)))+'\n')
+          pathlib.Path('/tmp/rc6-legacy-hits.json').write_text(json.dumps(hits,ensure_ascii=False,indent=2)+'\n')
+          if hits: raise SystemExit(3)
+          PY
+      - name: Audit RC6 operational units and scripts
+        if: always()
+        run: |
+          set +e
+          echo '===== RC6 SYSTEMD / OPERATIONAL SCRIPT REFERENCES ====='
+          find systemd scripts -type f \( -name 'rc6*' -o -name '*rc6*' \) -print0 2>/dev/null \
+            | xargs -0 -r grep -nEi '\brc[345]\b|\bhf[0-9]+\b|rc[345][_-]hf[0-9]+' || true
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+          echo REAL_ORDER_TEST=NOT_PERFORMED
