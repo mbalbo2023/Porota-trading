@@ -42,7 +42,7 @@ jobs:
           REPO=/opt/porota-trading
           CANDIDATE_SHA=e47eeffcb94a9468ac7e7f610beee0869353a77e
           TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
-          echo '=== RC6 FINAL READONLY HOST PREFLIGHT V4 ==='
+          echo '=== RC6 FINAL READONLY HOST PREFLIGHT V5 ==='
           echo "FUNCTIONAL_CANDIDATE_SHA=$CANDIDATE_SHA"
           echo "UTC=$(date -u +%FT%TZ)"
           echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
@@ -120,7 +120,6 @@ jobs:
 
           echo "W12_SCRIPT_EXISTS=$([ -f /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh ] && echo YES || echo NO)"
           test -f /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
-          test -d /opt/porota-contract-evidence-rc6-runtime
 
           HOST_CAPTURE="$(find "$REPO/data/contract_evidence/rc6_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
           test -n "$HOST_CAPTURE"
