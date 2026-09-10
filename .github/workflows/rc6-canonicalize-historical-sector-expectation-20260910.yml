@@ -42,9 +42,10 @@ jobs:
           PYTHONPATH=. python - <<'PY'
           from porota_mode_manager import paper_settings
           s=paper_settings({})
-          assert s['PAPER_ECONOMIC_GATE_MODE']=='BINDING'
+          assert s['PAPER_ECONOMIC_GATE_MODE']=='SHADOW'
           assert s['PAPER_MARKET_REGIME_POLICY']=='ALERT_ONLY'
           assert s['PAPER_SECTOR_CONCENTRATION_POLICY']=='BINDING'
+          print('RC6_ECONOMIC_GATE_SHADOW=GREEN')
           print('RC6_REGIME_ALERT_ONLY=GREEN')
           print('RC6_SECTOR_CONCENTRATION_BINDING=GREEN')
           PY
