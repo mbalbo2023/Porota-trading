@@ -72,4 +72,4 @@ jobs:
           echo 'RUNTIME_CHANGED=NO'
           echo 'INTEGRATED_LIVE_PREFLIGHT=GREEN'
           REMOTE
-# current-head rerun marker: 2026-09-09 data-lifecycle closure
+# current-head rerun marker: 2026-09-10 take-profit-audit-closure
