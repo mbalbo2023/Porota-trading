@@ -42,7 +42,7 @@ jobs:
           REPO=/opt/porota-trading
           CANDIDATE_SHA=e47eeffcb94a9468ac7e7f610beee0869353a77e
           TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
-          echo '=== RC6 FINAL READONLY HOST PREFLIGHT V3 ==='
+          echo '=== RC6 FINAL READONLY HOST PREFLIGHT V4 ==='
           echo "FUNCTIONAL_CANDIDATE_SHA=$CANDIDATE_SHA"
           echo "UTC=$(date -u +%FT%TZ)"
           echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
@@ -97,7 +97,7 @@ jobs:
           test "$SAFETY" = 'ok|ok|PRODUCTION_PAPER|0'
 
           required_timers=(
-            porota-contract-evidence-rc6-runtime.timer
+            porota-contract-evidence-rc6.timer
             porota-functional-health-rc6.timer
             porota-history-postclose-rc6.timer
             porota-host-general-backup-rc6.timer
