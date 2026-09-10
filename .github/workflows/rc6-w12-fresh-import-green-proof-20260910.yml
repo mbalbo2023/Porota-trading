@@ -45,7 +45,7 @@ jobs:
           set -Eeuo pipefail
           ROOT=/opt/porota-trading
           OUT="$ROOT/data/contract_evidence/rc6_trusted"
-          DB="$ROOT/data/observer.db"
+          DB="$ROOT/data/paper_v17/observer_v17.db"
           echo '=== SERVICE ==='
           sudo -n systemctl show porota-contract-evidence-rc6.service -p ExecMainStatus -p Result -p ActiveState -p InactiveExitTimestamp --no-pager
           echo '=== TIMER ==='
@@ -68,6 +68,7 @@ jobs:
           import sqlite3,sys
           db=sys.argv[1]
           c=sqlite3.connect(f'file:{db}?mode=ro',uri=True)
+          c.execute('PRAGMA query_only=ON')
           tables=['contract_evidence_v2','contract_snapshots','contract_evidence_v2_runs','intraday_contract_state']
           for t in tables:
               try:
