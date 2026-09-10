@@ -1,0 +1,195 @@
+name: RC6 Final Postdeploy Certify 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-final-postdeploy-certify-20260910.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-final-postdeploy-certify
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_postflight"
+          chmod 600 "$HOME/.ssh/porota_rc6_postflight"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Certify exact deployed RC6 candidate and soak
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_postflight" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          TARGET_SHA=e47eeffcb94a9468ac7e7f610beee0869353a77e
+          TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
+
+          echo '=== RC6 FINAL POSTDEPLOY CERTIFICATION ==='
+          echo "UTC_START=$(date -u +%FT%TZ)"
+          echo "TARGET_SHA=$TARGET_SHA"
+          echo 'MUTATIONS=NONE'
+          echo 'AUTO_ROLLBACK=DISABLED'
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+
+          HOST_SHA="$(git -C "$REPO" rev-parse HEAD)"
+          echo "HOST_SHA=$HOST_SHA"
+          test "$HOST_SHA" = "$TARGET_SHA"
+          echo "HOST_TRACKED_DIRTY=$(git -C "$REPO" diff --name-only | wc -l | tr -d ' ')"
+          echo "HOST_STAGED_DIRTY=$(git -C "$REPO" diff --cached --name-only | wc -l | tr -d ' ')"
+          echo "HOST_UNTRACKED_COUNT=$(git -C "$REPO" ls-files --others --exclude-standard | wc -l | tr -d ' ')"
+          test "$(git -C "$REPO" diff --name-only | wc -l | tr -d ' ')" = 0
+          test "$(git -C "$REPO" diff --cached --name-only | wc -l | tr -d ' ')" = 0
+
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo "OBSERVER=$OBS"
+          echo "DASHBOARD=$DASH"
+          test "$OBS" = "true|$TARGET_IMAGE|0|true"
+          test "$DASH" = "true|$TARGET_IMAGE|0"
+
+          CANONICAL_ID="$(sudo -n docker image inspect "$TARGET_IMAGE" -f '{{.Id}}')"
+          OBS_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          DASH_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          echo "CANONICAL_IMAGE_ID=$CANONICAL_ID"
+          echo "OBSERVER_IMAGE_ID=$OBS_ID"
+          echo "DASHBOARD_IMAGE_ID=$DASH_ID"
+          test "$OBS_ID" = "$CANONICAL_ID"
+          test "$DASH_ID" = "$CANONICAL_ID"
+          DEPLOYED_COMMIT="$(sudo -n docker image inspect "$OBS_ID" -f '{{ index .Config.Labels "porota.commit" }}')"
+          echo "DEPLOYED_IMAGE_COMMIT=$DEPLOYED_COMMIT"
+          test "$DEPLOYED_COMMIT" = "$TARGET_SHA"
+
+          HEALTH="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)"
+          echo "HEALTH=$HEALTH"
+          python3 - "$HEALTH" <<'PY'
+          import json,sys
+          x=json.loads(sys.argv[1])
+          assert x.get('status')=='ok',x
+          assert x.get('version')=='17.0.0-rc6',x
+          PY
+
+          sudo -n docker inspect porota_production_observer --format '{{range .Mounts}}{{if eq .Destination "/run/secrets/ppi_production.json"}}{{println .RW}}{{end}}{{end}}' | grep -qx 'false'
+          echo 'PPI_SECRET_READONLY=YES'
+
+          SAFETY="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          vals=[]
+          row=None
+          for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
+              c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10)
+              c.execute('PRAGMA query_only=ON')
+              vals.append(c.execute('PRAGMA quick_check').fetchone()[0])
+              if p.endswith('observer_v17.db'):
+                  row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              c.close()
+          print('|'.join(map(str,(*vals,*row))))
+          PY
+          )"
+          echo "DB_AND_SAFETY=$SAFETY"
+          test "$SAFETY" = 'ok|ok|PRODUCTION_PAPER|0'
+
+          required_timers=(
+            porota-contract-evidence-rc6.timer
+            porota-functional-health-rc6.timer
+            porota-history-postclose-rc6.timer
+            porota-host-general-backup-rc6.timer
+            porota-preopen-rc6.timer
+            porota-candle-integrity-rc6.timer
+            porota-a3-history-daily-rc6.timer
+            porota-a3-history-reconcile-rc6.timer
+            porota-a3-history-weekend-rc6.timer
+          )
+          for unit in "${required_timers[@]}"; do
+            active="$(sudo -n systemctl is-active "$unit" 2>/dev/null || true)"
+            enabled="$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || true)"
+            echo "UNIT=$unit|ACTIVE=$active|ENABLED=$enabled"
+            test "$active" = active
+            test "$enabled" = enabled
+          done
+          FH_RESULT="$(sudo -n systemctl show porota-functional-health-rc6.service -p Result --value)"
+          echo "FUNCTIONAL_HEALTH_SERVICE_RESULT=$FH_RESULT"
+          test "$FH_RESULT" = success
+
+          HOST_CAPTURE="$(python3 - "$REPO" <<'PY'
+          from pathlib import Path
+          import sys
+          root=Path(sys.argv[1])/'data/contract_evidence/rc6_trusted'
+          files=list(root.glob('contract_*.json'))
+          if not files:
+              raise SystemExit(2)
+          print(max(files,key=lambda p:p.stat().st_mtime))
+          PY
+          )"
+          echo "LATEST_HOST_CAPTURE=$HOST_CAPTURE"
+          stat -c 'LATEST_HOST_CAPTURE_STAT=%a|%u|%g|%s|%y' "$HOST_CAPTURE"
+          test "$(stat -c '%a' "$HOST_CAPTURE")" = 640
+          OBS_GID="$(sudo -n docker exec porota_production_observer id -g)"
+          test "$(stat -c '%g' "$HOST_CAPTURE")" = "$OBS_GID"
+          REL="$(python3 - "$REPO/data" "$HOST_CAPTURE" <<'PY'
+          from pathlib import Path
+          import sys
+          print(Path(sys.argv[2]).resolve().relative_to(Path(sys.argv[1]).resolve()))
+          PY
+          )"
+          echo "W12_RELATIVE_CAPTURE=$REL"
+          sudo -n docker exec porota_production_observer test -r "/app/data/$REL"
+          echo 'W12_CAPTURE_READABLE=YES'
+          echo "W12_SERVICE_RESULT=$(sudo -n systemctl show porota-contract-evidence-rc6.service -p Result --value)"
+
+          echo '=== SOAK 60S ==='
+          sleep 60
+
+          FINAL_HEALTH="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)"
+          echo "FINAL_HEALTH=$FINAL_HEALTH"
+          python3 - "$FINAL_HEALTH" <<'PY'
+          import json,sys
+          x=json.loads(sys.argv[1])
+          assert x.get('status')=='ok',x
+          assert x.get('version')=='17.0.0-rc6',x
+          PY
+
+          FINAL_SAFETY="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print('|'.join(map(str,(q,*row))))
+          PY
+          )"
+          echo "FINAL_SAFETY=$FINAL_SAFETY"
+          test "$FINAL_SAFETY" = 'ok|PRODUCTION_PAPER|0'
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)" = 0
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)" = 0
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(sudo -n docker image inspect "$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)" -f '{{ index .Config.Labels "porota.commit" }}')" = "$TARGET_SHA"
+
+          echo "UTC_END=$(date -u +%FT%TZ)"
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDERS_SENT=0'
+          echo 'RC6_FINAL_POSTDEPLOY=GREEN'
+          HOST
