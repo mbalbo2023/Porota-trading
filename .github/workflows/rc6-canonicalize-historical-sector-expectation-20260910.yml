@@ -1,0 +1,58 @@
+name: RC6 Canonicalize Historical Sector Expectation 2026-09-10
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths:
+      - tests/test_hotfix_rc3_hf6.py
+      - .github/workflows/rc6-canonicalize-historical-sector-expectation-20260910.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  canonicalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Preserve RC6 binding contract and update obsolete expectation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tests/test_hotfix_rc3_hf6.py')
+          s=p.read_text(encoding='utf-8')
+          old='assert settings["PAPER_SECTOR_CONCENTRATION_POLICY"] == "OBSERVATION_ONLY"'
+          new='assert settings["PAPER_SECTOR_CONCENTRATION_POLICY"] == "BINDING"'
+          if old in s:
+              s=s.replace(old,new,1)
+          elif new not in s:
+              raise SystemExit('SECTOR_POLICY_ASSERTION_NOT_FOUND')
+          s=s.replace('"""Regresiones del candidato HF6; no necesitan red ni órdenes."""',
+                      '"""Regresiones históricas reutilizadas para validar contratos RC6; sin red ni órdenes."""')
+          p.write_text(s,encoding='utf-8')
+          PY
+          PYTHONPATH=. python - <<'PY'
+          from porota_mode_manager import paper_settings
+          s=paper_settings({})
+          assert s['PAPER_ECONOMIC_GATE_MODE']=='BINDING'
+          assert s['PAPER_MARKET_REGIME_POLICY']=='ALERT_ONLY'
+          assert s['PAPER_SECTOR_CONCENTRATION_POLICY']=='BINDING'
+          print('RC6_REGIME_ALERT_ONLY=GREEN')
+          print('RC6_SECTOR_CONCENTRATION_BINDING=GREEN')
+          PY
+          if ! git diff --quiet -- tests/test_hotfix_rc3_hf6.py; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add tests/test_hotfix_rc3_hf6.py
+            git commit -m 'test(rc6): align sector expectation with binding policy'
+            git push origin HEAD:fix/rc6-w10-sector-map-binding-20260910
+          fi
+          echo REAL_ORDER_ROUTES=NOT_CALLED
