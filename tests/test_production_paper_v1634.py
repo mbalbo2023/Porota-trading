@@ -34,8 +34,18 @@ def quote(symbol="GGAL", price="100", minute=0, bid_size="1000", ask_size="1000"
                  book_at=at, trade_at=at, last_kind="TRADE")
 
 
+@pytest.fixture(autouse=True)
+def rc6_isolate_legacy_accounting_scenarios_from_policy_admission(monkeypatch):
+    # These are synthetic ledger/currency/settlement unit scenarios, not W10
+    # admission tests. Production RC6 and dedicated W10 tests remain BINDING.
+    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "OBSERVATION_ONLY")
+
+
 @pytest.fixture
-def partial_spot(tmp_path):
+def partial_spot(tmp_path, monkeypatch):
+    # This fixture is imported by other ledger test modules; keep its isolation
+    # explicit because module-level autouse fixtures do not follow that import.
+    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "OBSERVATION_ONLY")
     def make(settlement='INMEDIATA',currency='ARS',**options):
         broker=PaperBroker(PaperStore(str(tmp_path/(currency+settlement.replace('+','')+'.db'))),
             initial_cash='10000',initial_cash_by_currency={currency:'10000'},**options)
