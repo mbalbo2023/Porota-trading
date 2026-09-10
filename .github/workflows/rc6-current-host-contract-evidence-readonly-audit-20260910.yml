@@ -1,0 +1,82 @@
+name: RC6 Current Host Contract Evidence Readonly Audit 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-current-host-contract-evidence-readonly-audit-20260910.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert repository PAPER safety identity
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only host audit
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          ROOT=/opt/porota-trading
+          echo '=== HOST_IDENTITY ==='
+          cd "$ROOT" && printf 'HOST_HEAD=%s\n' "$(git rev-parse HEAD 2>/dev/null || echo UNKNOWN)"
+          echo '=== CONTAINERS ==='
+          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer 2>/dev/null || true
+          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard 2>/dev/null || true
+          echo '=== PAPER_DB ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('DB='+str(c.execute('pragma quick_check').fetchone()[0]))
+          try:
+              mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print('MODE='+str(mode)); print('REAL_ORDERS='+str(orders))
+          except Exception as exc:
+              print('OBSERVER_STATE_ERROR='+type(exc).__name__)
+          tables=[r[0] for r in c.execute("select name from sqlite_master where type='table' and lower(name) like '%contract%' order by name")]
+          print('CONTRACT_TABLES='+','.join(tables))
+          for table in tables:
+              try: print('COUNT_'+table+'='+str(c.execute('select count(*) from "'+table+'"').fetchone()[0]))
+              except Exception as exc: print('COUNT_'+table+'=ERROR_'+type(exc).__name__)
+          c.close()
+          PY
+          echo '=== CONTRACT_UNITS ==='
+          sudo -n systemctl list-unit-files 'porota-contract-evidence*' --no-pager 2>/dev/null || true
+          sudo -n systemctl list-units 'porota-contract-evidence*' --all --no-pager 2>/dev/null || true
+          for u in $(sudo -n systemctl list-unit-files 'porota-contract-evidence*.service' 'porota-contract-evidence*.timer' --no-legend 2>/dev/null | awk '{print $1}'); do
+            echo "--- $u ---"
+            sudo -n systemctl show "$u" -p ActiveState -p SubState -p UnitFileState -p FragmentPath -p ExecMainStatus --no-pager 2>/dev/null || true
+            sudo -n systemctl cat "$u" --no-pager 2>/dev/null | grep -E '^(Description|ExecStart|OnBootSec|OnUnitActiveSec|OnCalendar|Persistent|WantedBy)=' || true
+          done
+          echo '=== CONTRACT_CAPTURE_METADATA ==='
+          for d in "$ROOT/data/contract_evidence"/*; do
+            [ -d "$d" ] || continue
+            printf 'DIR=%s|FILES=' "$(basename "$d")"
+            find "$d" -maxdepth 1 -type f -name '*.json' 2>/dev/null | wc -l
+            find "$d" -maxdepth 1 -type f -name '*.json' -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ|%s|%f\n' 2>/dev/null | sort -r | head -3 || true
+          done
+          echo 'MUTATIONS=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
