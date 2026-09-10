@@ -29,8 +29,7 @@ PROBE_NAME = 'porota_v17_ppi_probe'
 IMAGE_TAG = IMAGE
 CONFIG_NAMES = ('instrument_types','markets','settlements','quantity_types',
                 'operation_terms','operation_types','operations')
-QUERIES = (('CAUCION','CAUCIONES'),('PESOS','CAUCIONES'),
-           ('DOLAR','CAUCIONES'),('ALUA','ACCIONES'))
+QUERIES = (('CAUCION','CAUCIONES'),('ALUA','ACCIONES'))
 PUBLIC_FIELDS = set(('ticker symbol description name type instrumenttype market currency '
     'currencycode settlement date price quantity position offers bids volume openingprice '
     'max min last bid ask rate annualrate tna rateunit rate_unit term termdays term_days days '
@@ -109,6 +108,10 @@ def collect(reader, report):
         item.update(status='FILTER_RESULTS' if rows else 'EMPTY_FILTER_RESULT',
                     count=len(rows),sample=public_sample(rows))
         # Sólo identidades devueltas; nunca pedir un book para el texto del filtro.
+        # CAUCION ya expande al contrato oficial PESOS{días}/DOLAR{días};
+        # muestrear hasta tres identidades distintas evita consultas legacy redundantes.
+        per_filter_limit = 3 if family == 'CAUCIONES' and query == 'CAUCION' else 1
+        added = 0
         for r in rows:
             ticker=r.get('ticker')
             if (not isinstance(ticker,str) or not ticker.strip() or len(ticker)>80
@@ -118,7 +121,9 @@ def collect(reader, report):
             if identity not in seen:
                 seen.add(identity)
                 candidates.append(identity)
-                break  # un candidato nuevo por filtro; máximo cuatro en total
+                added += 1
+                if added >= per_filter_limit:
+                    break
     for ticker,family in candidates:
         settlement='INMEDIATA' if family=='CAUCIONES' else 'A-24HS'
         item={'ticker':ticker,'family':family,'query_settlement':settlement,
@@ -146,7 +151,7 @@ def bounded_transport(report):
         path=urlsplit(url).path.rstrip('/').lower()
         if method.upper()=='POST' and path!='/api/1.0/account/loginapi':
             raise ProbeStop('NO_REFRESH_OR_SECOND_AUTH_FLOW')
-        if len(report['http'])>=24:
+        if len(report['http'])>=32:
             raise ProbeStop('HTTP_LIMIT')
         item={'method':method.upper(),'path':path,'status':None}
         report['http'].append(item)

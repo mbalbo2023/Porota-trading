@@ -60,9 +60,13 @@ def transport(tmp_path,monkeypatch):
         elif name in CONFIG_PATHS:
             value=CONFIG[CONFIG_PATHS[name]]
         elif name=='searchinstrument':
-            filters={'CAUCION':'CAU-FIXTURE-1','PESOS':'CAU-FIXTURE-2',
-                     'DOLAR':'CAU-FIXTURE-3','ALUA':'ALUA'}
-            value=[{'ticker':filters[query['ticker'][0]],'type':query['type'][0],
+            ticker=query['ticker'][0]
+            instrument_type=query['type'][0]
+            if instrument_type=='CAUCIONES' and (ticker.startswith('PESOS') or ticker.startswith('DOLAR')):
+                returned=ticker
+            else:
+                returned={'ALUA':'ALUA'}[ticker]
+            value=[{'ticker':returned,'type':instrument_type,
                     'market':'BYMA','currency':'Pesos','apiSecret':FIXTURE_SECRET}]
         elif name in {'book','current'}:
             assert query['ticker'][0] not in {'CAUCION','PESOS','DOLAR'}
@@ -90,7 +94,7 @@ def test_un_login_config_todas_familias_y_solo_tickers_devueltos(transport,capsy
     report=probe.live_report(secret)
     assert report['status']=='COMPLETED_OBSERVATION'
     assert report['configuration']==CONFIG
-    assert len(calls)==20 and sum(p.endswith('LoginApi') for _,p,_ in calls)==1
+    assert len(calls)==27 and sum(p.endswith('LoginApi') for _,p,_ in calls)==1
     assert len(report['quotes'])==4
     assert report['reader_metrics']['login_calls']==1
     assert report['promotion_allowed'] is False and report['data_certified'] is False
@@ -138,7 +142,7 @@ def test_busqueda_vacia_no_equivale_a_familia_inhabilitada(transport):
     report=probe.live_report(secret)
     assert report['status']=='COMPLETED_OBSERVATION'
     assert all(r['status']=='EMPTY_FILTER_RESULT' for r in report['searches'])
-    assert report['quotes']==[] and len(calls)==12
+    assert report['quotes']==[] and len(calls)==19
 
 
 def test_identidad_incompleta_o_de_otra_familia_no_pide_book(transport):
@@ -146,14 +150,14 @@ def test_identidad_incompleta_o_de_otra_familia_no_pide_book(transport):
     responses['searchinstrument']=(200,[{'ticker':'WRONG','type':'BONOS','market':'BYMA'},
                                       {'ticker':'MISSING_TYPE'}])
     report=probe.live_report(secret)
-    assert report['quotes']==[] and len(calls)==12
+    assert report['quotes']==[] and len(calls)==19
 
 
 def test_familia_no_enumerada_no_se_sondea(transport):
     secret,calls,responses=transport
     responses['instrumenttypes']=(200,['ACCIONES'])
     report=probe.live_report(secret)
-    assert all(r['status']=='NOT_ENUMERATED' for r in report['searches'][:3])
+    assert report['searches'][0]['status']=='NOT_ENUMERATED'
     assert not any(q.get('type')==['CAUCIONES'] for _,_,q in calls)
 
 
@@ -184,7 +188,7 @@ def test_transporte_no_permite_refresh_y_limita_cantidad(monkeypatch):
     with probe.bounded_transport(report):
         with pytest.raises(probe.ProbeStop,match='NO_REFRESH'):
             requests.post('https://clientapi.portfoliopersonal.com/api/1.0/Account/RefreshToken')
-        for _ in range(24):
+        for _ in range(32):
             requests.get('https://clientapi.portfoliopersonal.com/api/1.0/Configuration/Markets')
         with pytest.raises(probe.ProbeStop,match='HTTP_LIMIT'):
             requests.get('https://clientapi.portfoliopersonal.com/api/1.0/Configuration/Markets')
