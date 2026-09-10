@@ -1,0 +1,86 @@
+name: RC6 W12 Capture Permission RCA 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-w12-capture-permission-rca-20260910.yml
+
+permissions:
+  contents: read
+
+jobs:
+  prove-boundary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert RC6 PAPER safety
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Prove capture file cannot be read by importer user
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          CONTAINER=porota_production_observer
+          LATEST="$(find "$ROOT/data/contract_evidence/rc6_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
+          REL="${LATEST#"$ROOT/data/"}"
+          IN="/app/data/$REL"
+
+          echo '=== HOST_CAPTURE ==='
+          sudo -n stat -c 'PATH=%n MODE=%a OWNER_UID=%u OWNER_GID=%g OWNER=%U:%G' "$LATEST"
+          echo '=== CONTAINER_IDENTITY ==='
+          sudo -n docker exec -i "$CONTAINER" sh -c 'id; umask'
+          echo '=== CONTAINER_CAPTURE ==='
+          sudo -n docker exec -i "$CONTAINER" sh -c 'stat -c "PATH=%n MODE=%a OWNER_UID=%u OWNER_GID=%g OWNER=%U:%G" "$1"; if test -r "$1"; then echo CAPTURE_READABLE_BY_IMPORTER_USER=YES; else echo CAPTURE_READABLE_BY_IMPORTER_USER=NO; fi' sh "$IN"
+          echo '=== READ_ONLY_OPEN_PROOF ==='
+          set +e
+          OUT="$(sudo -n docker exec -i "$CONTAINER" python - "$IN" <<'PY' 2>&1
+import sys
+from pathlib import Path
+p=Path(sys.argv[1])
+try:
+    with p.open('rb') as f:
+        b=f.read(1)
+    print('OPEN=OK BYTES='+str(len(b)))
+    raise SystemExit(0)
+except Exception as e:
+    print('OPEN=FAIL TYPE='+type(e).__name__+' MESSAGE='+str(e))
+    raise SystemExit(7)
+PY
+)"
+          RC=$?
+          set -e
+          printf '%s\n' "$OUT"
+          echo "READ_ONLY_OPEN_RC=$RC"
+
+          echo '=== DB_CONTROL ==='
+          sudo -n docker exec -i "$CONTAINER" sh -c 'test -r /app/data/paper_v17/observer_v17.db && echo DB_READABLE=YES || echo DB_READABLE=NO; test -w /app/data/paper_v17/observer_v17.db && echo DB_WRITABLE=YES || echo DB_WRITABLE=NO'
+          sudo -n python3 - "$ROOT/data/paper_v17/observer_v17.db" <<'PY'
+import sqlite3,sys
+c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True); c.execute('pragma query_only=on')
+r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+print('MODE='+str(r[0] if r else None)); print('REAL_ORDERS_SENT='+str(r[1] if r else None))
+PY
+          echo 'MUTATIONS=NONE'
+          echo 'IMPORTER_EXECUTED=NO'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
