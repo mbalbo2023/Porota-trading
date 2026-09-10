@@ -148,4 +148,5 @@ def test_dashboard_expone_binding_y_guardas_hf3(tmp_path, monkeypatch):
     assert "PPI_BACKGROUND_INGEST" in keys
     page = dashboard.motor_page()
     assert "PORTÓN ECONÓMICO OBLIGATORIO" in page
+    # RC6 policy: economic gate remains SHADOW; sector concentration is the BINDING gate.
     assert "Economía matemática SHADOW" in page
