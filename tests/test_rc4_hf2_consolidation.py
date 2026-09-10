@@ -32,16 +32,18 @@ def test_contract_windows_keep_preopen_market_and_weekday_static():
     assert schedule.window_allows("CONTRACT_EVIDENCE_STATIC",_utc(2026,9,4,20,5)) is True
 
 
-def test_live_page_is_today_only_for_closed_trades_and_keeps_pending_semantics_clean():
+def test_live_page_keeps_current_round_and_history_semantics_clean():
     src=(ROOT/"bg_paper_dashboard.py").read_text(encoding="utf-8")
-    assert "closed_today=[]" in src
-    assert "closed_at.date()==now.date()" in src
-    assert "2. Operaciones cerradas hoy" in src
-    assert "Sin operaciones cerradas hoy." in src
-    assert "active_pending=[r for r in rows_diag" in src
-    assert "AVAILABLE_AFTER_FULL_SETTLEMENT_DATE" in src
-    assert "ya liberadas/no listadas" in src
-    assert "Fuente primaria: paper_decisions" in src
+    # RC6 /vivo is the current motor view: every OPEN position remains visible,
+    # while closed/historical positions are included only when opened/closed today.
+    assert 'all_positions=spot["open"]+spot["closed"]' in src
+    assert 'p.get("status")=="OPEN" or _is_today(p.get("opened_at")) or _is_today(p.get("closed_at"))' in src
+    assert 'previous=max(0,len(all_positions)-len(positions))' in src
+    assert "operaciones anteriores no se mezclan con la rueda actual" in src
+    assert "Sin operaciones simuladas del día." in src
+    assert "Todas las operaciones de esta página son simuladas." in src
+    assert "Nunca representan una orden enviada a PPI." in src
+    assert "Fuente que habilita una nueva etiqueta" in src
     assert "Aprendizaje EVENT-DRIVEN" in src
 
 
