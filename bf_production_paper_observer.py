@@ -821,6 +821,42 @@ def _history_count(value, *, as_of=None, date_from=None, date_to=None):
             continue
     return valid
 
+def _history_batch_semantics(statuses):
+    """Clasifica el lote sin descartar evidencia parcial válida.
+
+    VALID_PAYLOAD es completo; PARTIAL conserva evidencia usable pero obliga
+    a AMARILLO; EMPTY_OR_INVALID y ERROR son fallas duras. Cualquier estado
+    desconocido falla cerrado para no maquillar degradación de históricos.
+    """
+    allowed = {"VALID_PAYLOAD", "PARTIAL", "EMPTY_OR_INVALID", "ERROR"}
+    normalized = []
+    for raw in statuses:
+        status = str(raw).strip().upper()
+        if status not in allowed:
+            raise ValueError(f"PPI_HISTORY_BATCH_UNKNOWN_STATUS:{raw}")
+        normalized.append(status)
+    full_valid = normalized.count("VALID_PAYLOAD")
+    partial = normalized.count("PARTIAL")
+    empty_invalid = normalized.count("EMPTY_OR_INVALID")
+    errors = normalized.count("ERROR")
+    usable = full_valid + partial
+    hard_failures = empty_invalid + errors
+    if normalized and full_valid == len(normalized):
+        state = "VERDE"
+    elif usable:
+        state = "AMARILLO"
+    else:
+        state = "ROJO"
+    return {
+        "full_valid": full_valid,
+        "partial_with_valid_evidence": partial,
+        "empty_invalid": empty_invalid,
+        "errors": errors,
+        "usable": usable,
+        "hard_failures": hard_failures,
+        "state": state,
+    }
+
 
 def _historical_targets(store):
     """Todo el universo validado; índices se conservan como benchmark."""
@@ -845,7 +881,8 @@ def _historical_targets(store):
 def _download_histories(reader, store):
     end = datetime.now(TZ).date()
     start = end - timedelta(days=365)
-    total = successes = failures = 0
+    total = 0
+    batch_statuses = []
     all_symbols = _historical_targets(store)
     symbols = all_symbols[:HISTORY_BATCH_LIMIT]
     for symbol, instrument_type, settlement in symbols:
@@ -902,26 +939,28 @@ def _download_histories(reader, store):
                 store.event("HISTORY_V2_ERROR",
                             f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
             total += count
-            if status=='VALID_PAYLOAD':
-                successes += 1
-            else:
-                failures += 1
+            batch_statuses.append(status)
         except Exception as exc:
-            failures += 1
+            batch_statuses.append('ERROR')
             with store.connect() as c:
                 c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
                           (symbol,instrument_type,settlement,attempted,'ERROR',0,type(exc).__name__))
             store.event("HISTORY_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
-    state = "VERDE" if successes and not failures else "AMARILLO" if successes else "ROJO"
+    semantics = _history_batch_semantics(batch_statuses)
+    state = semantics["state"]
     with store.connect() as c:
         covered = c.execute("SELECT COUNT(*) FROM production_history WHERE row_count>0").fetchone()[0]
-    detail = (f"Lote histórico {successes}/{len(symbols)}; cobertura acumulada "
-              f"{covered}/{len(all_symbols)} instrumentos; {total} filas en este lote; "
-              f"{failures} fallidos. La descarga completa es incremental para no saturar PPI.")
+    detail = (f"Lote histórico completos={semantics['full_valid']}/{len(symbols)}; "
+              f"parciales usables={semantics['partial_with_valid_evidence']}; "
+              f"fallas duras={semantics['hard_failures']} "
+              f"(vacío/inválido={semantics['empty_invalid']}, errores={semantics['errors']}); "
+              f"cobertura completa acumulada {covered}/{len(all_symbols)} instrumentos; "
+              f"{total} filas válidas en este lote. La descarga completa es incremental para no saturar PPI.")
+    usable = bool(semantics["usable"])
     _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail,
-                success=bool(successes))
+                success=usable)
     _health(store, "PPI_PRODUCTION_HISTORY", state, detail, "PPI Producción",
-            success=bool(successes))
+            success=usable)
     return total
 
 
