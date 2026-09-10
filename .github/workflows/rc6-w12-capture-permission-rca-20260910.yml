@@ -56,21 +56,21 @@ jobs:
           sudo -n stat -c 'PATH=%n MODE=%a OWNER_UID=%u OWNER_GID=%g OWNER=%U:%G' "$LATEST"
 
           echo '=== CONTAINER_IDENTITY ==='
-          sudo -n docker exec -i "$CONTAINER" sh -c 'id; umask'
+          sudo -n docker exec "$CONTAINER" sh -c 'id; umask'
 
           echo '=== CONTAINER_CAPTURE ==='
-          sudo -n docker exec -i "$CONTAINER" sh -c 'stat -c "PATH=%n MODE=%a OWNER_UID=%u OWNER_GID=%g OWNER=%U:%G" "$1"; if test -r "$1"; then echo CAPTURE_READABLE_BY_IMPORTER_USER=YES; else echo CAPTURE_READABLE_BY_IMPORTER_USER=NO; fi' sh "$IN"
+          sudo -n docker exec "$CONTAINER" sh -c 'stat -c "PATH=%n MODE=%a OWNER_UID=%u OWNER_GID=%g OWNER=%U:%G" "$1"; if test -r "$1"; then echo CAPTURE_READABLE_BY_IMPORTER_USER=YES; else echo CAPTURE_READABLE_BY_IMPORTER_USER=NO; fi' sh "$IN"
 
           echo '=== READ_ONLY_OPEN_PROOF ==='
           set +e
-          OPEN_OUT="$(sudo -n docker exec -i "$CONTAINER" python -c 'import sys; from pathlib import Path; p=Path(sys.argv[1]); b=p.read_bytes()[:1]; print("OPEN=OK BYTES="+str(len(b)))' "$IN" 2>&1)"
+          OPEN_OUT="$(sudo -n docker exec "$CONTAINER" python -c 'import sys; from pathlib import Path; p=Path(sys.argv[1]); b=p.read_bytes()[:1]; print("OPEN=OK BYTES="+str(len(b)))' "$IN" 2>&1)"
           OPEN_RC=$?
           set -e
           printf '%s\n' "$OPEN_OUT"
           echo "READ_ONLY_OPEN_RC=$OPEN_RC"
 
           echo '=== DB_CONTROL ==='
-          sudo -n docker exec -i "$CONTAINER" sh -c 'test -r /app/data/paper_v17/observer_v17.db && echo DB_READABLE=YES || echo DB_READABLE=NO; test -w /app/data/paper_v17/observer_v17.db && echo DB_WRITABLE=YES || echo DB_WRITABLE=NO'
+          sudo -n docker exec "$CONTAINER" sh -c 'test -r /app/data/paper_v17/observer_v17.db && echo DB_READABLE=YES || echo DB_READABLE=NO; test -w /app/data/paper_v17/observer_v17.db && echo DB_WRITABLE=YES || echo DB_WRITABLE=NO'
           sudo -n python3 -c 'import sqlite3,sys; c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True); c.execute("pragma query_only=on"); r=c.execute("select mode,real_orders_sent from observer_state where id=1").fetchone(); c.close(); print("MODE="+str(r[0] if r else None)); print("REAL_ORDERS_SENT="+str(r[1] if r else None))' "$ROOT/data/paper_v17/observer_v17.db"
 
           echo '=== VERDICT ==='
@@ -78,6 +78,10 @@ jobs:
             echo 'CAPTURE_PERMISSION_BLOCKER=NO'
           else
             echo 'CAPTURE_PERMISSION_BLOCKER=YES'
+            echo 'MUTATIONS=NONE'
+            echo 'IMPORTER_EXECUTED=NO'
+            echo 'ORDER_ROUTES=NOT_CALLED'
+            exit 20
           fi
           echo 'MUTATIONS=NONE'
           echo 'IMPORTER_EXECUTED=NO'
