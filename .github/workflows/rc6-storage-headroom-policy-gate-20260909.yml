@@ -26,13 +26,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-      - name: Compile and policy tests
+      - name: Compile and dependency-free policy tests
         shell: bash
         run: |
           set -Eeuo pipefail
           python -m py_compile rc6_storage_policy.py
           bash -n scripts/rc6_storage_headroom_gate.sh
-          python -m pytest -q tests/test_rc6_storage_policy.py
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          path=Path('tests/test_rc6_storage_policy.py')
+          spec=importlib.util.spec_from_file_location('storage_policy_tests', path)
+          mod=importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(mod)
+          tests=[getattr(mod,n) for n in sorted(dir(mod)) if n.startswith('test_') and callable(getattr(mod,n))]
+          assert tests, 'no storage policy tests discovered'
+          for fn in tests:
+              fn()
+              print(f'PASS={fn.__name__}')
+          print(f'STORAGE_POLICY_TESTS={len(tests)}')
+          PY
           grep -q 'operational = max(4 \* GIB, ceil(total_bytes \* 0.20))' rc6_storage_policy.py
           grep -q 'build = max(3 \* GIB, 2 \* image_bytes)' rc6_storage_policy.py
           ! grep -q '8589934592' scripts/rc6_storage_headroom_gate.sh
