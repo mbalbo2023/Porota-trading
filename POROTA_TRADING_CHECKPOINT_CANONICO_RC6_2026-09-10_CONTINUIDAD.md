@@ -1,6 +1,6 @@
 # POROTA TRADING RC6 — CHECKPOINT CANÓNICO DE CONTINUIDAD
 
-Actualizado: 2026-09-10 18:02 ART (America/Argentina/Buenos_Aires)
+Actualizado: 2026-09-10 18:18 ART (America/Argentina/Buenos_Aires)
 
 ## 1. Recuperación inmediata
 
@@ -8,9 +8,11 @@ Repositorio: `mbalbo2023/Porota-trading`
 
 Rama activa de trabajo: `fix/rc6-w10-sector-map-binding-20260910`
 
-HEAD verificado antes de crear este checkpoint: `d88104a25865eb358627c72530857c6159f66926`
+HEAD funcional previo al checkpoint documental: `d88104a25865eb358627c72530857c6159f66926`
 
-Último cambio funcional previo al checkpoint: `ci(rc6): make W12 permission probe stdin-safe`.
+Checkpoint documental inicial: `cdfc706a38bc07c523bdaf53f406cd3fae29890d`.
+
+Último cambio funcional: `ci(rc6): make W12 permission probe stdin-safe`.
 
 Regla de continuidad: antes de repetir RCA o pruebas, leer este archivo y continuar únicamente desde los pendientes abiertos. Cada avance relevante debe actualizar este mismo checkpoint.
 
@@ -58,9 +60,24 @@ Evidencia concluyente:
 
 Conclusión: el blocker W12 no es DB ni lógica del importer. Es la frontera de permisos entre el productor del capture y el usuario runtime `botuser`.
 
+### 4.1 Productor W12 — avance posterior al RCA
+
+La cadena de producción quedó acotada al runtime systemd instalado en el host:
+
+- unidad: `porota-contract-evidence-rc6-runtime.service`;
+- timer: `porota-contract-evidence-rc6-runtime.timer`;
+- script de servicio: `/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh`;
+- código/runtime auxiliar: `/opt/porota-contract-evidence-rc6-runtime`.
+
+El workflow `.github/workflows/rc6-w12-runtime-wiring-readonly-rca-20260910.yml` está diseñado para inspeccionar exactamente ese script, su unidad y los archivos modificados bajo `/opt/porota-trading/data/contract_evidence`, sin mutaciones ni red.
+
+También existe `.github/workflows/rc6-w12-fresh-import-green-proof-20260910.yml`, pero su enfoque actual corrige el capture **después de creado** mediante `chown` al uid/gid runtime y `chmod 0600`. Ese mecanismo puede servir como prueba de importación, pero no se considera solución productiva final: el permiso debe corregirse en el productor/origen para que cada nueva captura nazca legible de forma segura.
+
+Pendiente inmediato: obtener/validar el contenido efectivo del script systemd productor y corregir allí el ownership/mode. No aplicar chmod global ni world-readable.
+
 ### Próximo paso W12
 
-1. Localizar el productor exacto de `data/contract_evidence/rc6_trusted/contract_*.json`.
+1. Obtener el contenido efectivo del productor `/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh` y su wiring systemd.
 2. Corregir permisos **en el origen**, sin chmod global ni world-readable.
 3. Patrón seguro preferido: directorio `root:<runtime_gid>` `0750` y archivo `root:<runtime_gid>` `0640`, o equivalente seguro `botuser` `0600`.
 4. NO usar `0644`, `0777` ni relajar todo `/data`.
@@ -69,7 +86,7 @@ Conclusión: el blocker W12 no es DB ni lógica del importer. Es la frontera de 
 7. Confirmar nuevo Contract Evidence run (> baseline 105), sin RUNNING atascado, capture útil/no vacío y DB `quick_check=ok`.
 8. Reconfirmar `PRODUCTION_PAPER`, órdenes reales bloqueadas y `real_orders_sent=0`.
 
-Nota: `scripts/porota_contract_evidence_trusted_rc4.sh` ya implementa un esquema seguro de runtime gid (`0750` directorio, `0640` archivo). No modificarlo indiscriminadamente; el productor de `rc6_trusted` debe localizarse primero.
+Nota: `scripts/porota_contract_evidence_trusted_rc4.sh` ya implementa un esquema seguro de runtime gid (`0750` directorio, `0640` archivo). No modificarlo indiscriminadamente; el productor de `rc6_trusted` debe corregirse en su propia cadena.
 
 ## 5. RC6 settlement — único fallo pytest conocido del carril de compilación
 
