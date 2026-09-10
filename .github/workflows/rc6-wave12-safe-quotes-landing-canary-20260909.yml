@@ -1,0 +1,137 @@
+name: RC6 Wave12 Safe Quotes Landing Canary 2026-09-09
+
+on:
+  push:
+    branches: [deploy-prep/rc6-wave12-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave12-safe-quotes-landing-canary-20260909.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-wave12-trusted-browser-profile
+  cancel-in-progress: false
+
+jobs:
+  quotes-landing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w12canary"
+          chmod 600 "$HOME/.ssh/w12canary"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only trusted quotes landing
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+            -i "$HOME/.ssh/w12canary" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          PRE_SHA=$(git rev-parse HEAD)
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'PRE_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+
+          test -d "$PROFILE"
+          ACTIVE=$(pgrep -u porotaadmin -f "google-chrome-stable.*--user-data-dir=${PROFILE}" || true)
+          echo "PROFILE_IN_USE=$([ -n "$ACTIVE" ] && echo YES || echo NO)"
+          test -z "$ACTIVE"
+
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PROFILE="$PROFILE" \
+            /opt/porota-contract-evidence-venv/bin/python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+          from playwright.sync_api import sync_playwright
+
+          BASE='https://trading.portfoliopersonal.com'
+          TARGET=BASE+'/Cotizaciones/Acciones'
+          safe_methods={'GET','HEAD','OPTIONS'}
+          blocked_methods=[]
+          blocked_paths=[]
+
+          def path_of(url):
+              return urlsplit(str(url)).path or '/'
+
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(
+                  user_data_dir=os.environ['PROFILE'],
+                  executable_path='/usr/bin/google-chrome-stable',
+                  headless=True,
+                  locale='es-AR',
+                  timezone_id='America/Argentina/Buenos_Aires',
+                  viewport={'width':1440,'height':1000},
+                  args=['--no-sandbox','--disable-dev-shm-usage'],
+              )
+              try:
+                  def guard(route, request):
+                      method=request.method.upper()
+                      p=path_of(request.url).lower()
+                      if method not in safe_methods:
+                          blocked_methods.append(method)
+                          return route.abort()
+                      if any(x in p for x in ('/operar','/orden','/trade','/confirm','/cancel','/suscribir','/rescatar')):
+                          blocked_paths.append(p)
+                          return route.abort()
+                      return route.continue_()
+                  ctx.route('**/*',guard)
+                  page=ctx.pages[0] if ctx.pages else ctx.new_page()
+                  response=page.goto(TARGET,wait_until='domcontentloaded',timeout=45000)
+                  page.wait_for_timeout(2500)
+                  u=urlsplit(page.url)
+                  path=u.path or '/'
+                  title=(page.title() or '').strip().replace('\n',' ')[:160]
+                  tables=page.locator('table').count()
+                  rows=page.locator('table tbody tr').count()
+                  print('LANDING_HTTP_STATUS='+str(response.status if response else 'NONE'))
+                  print('LANDING_HOST='+u.netloc)
+                  print('LANDING_PATH='+path)
+                  print('LANDING_TITLE='+title)
+                  print('TABLE_COUNT='+str(tables))
+                  print('TABLE_BODY_ROWS='+str(rows))
+                  print('BLOCKED_NONREAD='+str(len(blocked_methods)))
+                  print('BLOCKED_FORBIDDEN_PATH='+str(len(blocked_paths)))
+                  ok=(u.scheme=='https' and u.netloc=='trading.portfoliopersonal.com' and path.lower().startswith('/cotizaciones/') and tables>0 and rows>0)
+                  print('AUTHENTICATED_QUOTES_LANDING='+('YES' if ok else 'NO'))
+                  if not ok:
+                      raise SystemExit(4)
+              finally:
+                  ctx.close()
+          PY
+
+          test "$(git rev-parse HEAD)" = "$PRE_SHA"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'POST_DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'NONREAD_REQUESTS_SENT=NO'
+          echo 'CLICKS_PERFORMED=NO'
+          echo 'ORDER_ROUTES_CALLED=NO'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'W12_SAFE_QUOTES_LANDING_CANARY=GREEN'
+          REMOTE
