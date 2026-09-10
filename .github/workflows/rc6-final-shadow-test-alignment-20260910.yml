@@ -20,14 +20,15 @@ jobs:
           ref: fix/rc6-w10-sector-map-binding-20260910
           fetch-depth: 0
 
-      - name: Align only the three obsolete economics authority assertions
+      - name: Align only obsolete economics authority assertions
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          p=Path('tests/test_production_paper_v1634.py')
-          s=p.read_text(encoding='utf-8')
+
+          lifecycle=Path('tests/test_production_paper_v1634.py')
+          s=lifecycle.read_text(encoding='utf-8')
           old_assert='assert broker.economics_mode == "BINDING"'
           if s.count(old_assert) != 3:
               raise SystemExit(f'EXPECTED_3_BINDING_ASSERTIONS_GOT_{s.count(old_assert)}')
@@ -40,17 +41,27 @@ jobs:
               '# Esta prueba necesita una apertura; economics permanece SHADOW durante la campaña RC6.'
           )
           s=s.replace(old_assert, 'assert broker.economics_mode == "SHADOW"')
-          p.write_text(s, encoding='utf-8')
+          lifecycle.write_text(s, encoding='utf-8')
           assert s.count('assert broker.economics_mode == "SHADOW"') >= 3
+
+          dashboard_test=Path('tests/test_hotfix_rc3_hf2.py')
+          d=dashboard_test.read_text(encoding='utf-8')
+          old_dashboard='assert "Economía matemática BINDING" in page'
+          if d.count(old_dashboard) != 1:
+              raise SystemExit(f'EXPECTED_1_DASHBOARD_BINDING_ASSERTION_GOT_{d.count(old_dashboard)}')
+          d=d.replace(old_dashboard, 'assert "Economía matemática SHADOW" in page')
+          dashboard_test.write_text(d, encoding='utf-8')
+          assert 'assert "Economía matemática SHADOW" in page' in d
+
           print('SHADOW_TEST_ALIGNMENT=GREEN')
           PY
           git diff --check
-          git diff -- tests/test_production_paper_v1634.py
+          git diff -- tests/test_production_paper_v1634.py tests/test_hotfix_rc3_hf2.py
 
       - name: Build exact focused proof image
         run: docker build --pull=false -t porota-rc6-shadow-proof:${GITHUB_SHA} .
 
-      - name: Run the three previously failing tests offline
+      - name: Run previously failing tests offline
         shell: bash
         run: |
           set -euo pipefail
@@ -63,7 +74,8 @@ jobs:
             'python -m pytest -q -p no:cacheprovider --tb=short \
               tests/test_production_paper_v1634.py::test_ciclo_compra_y_venta_es_solo_paper \
               tests/test_production_paper_v1634.py::test_no_duplica_decision_ni_posicion_en_mismo_ciclo \
-              tests/test_production_paper_v1634.py::test_patrimonio_paper_limita_posicion_y_exposicion'
+              tests/test_production_paper_v1634.py::test_patrimonio_paper_limita_posicion_y_exposicion \
+              tests/test_hotfix_rc3_hf2.py::test_dashboard_expone_binding_y_guardas_hf3'
 
       - name: Preserve safety authority explicitly
         shell: bash
@@ -88,7 +100,7 @@ jobs:
           set -euo pipefail
           git config user.name porota-rc6-ci
           git config user.email porota-rc6-ci@users.noreply.github.com
-          git add tests/test_production_paper_v1634.py
+          git add tests/test_production_paper_v1634.py tests/test_hotfix_rc3_hf2.py
           git diff --cached --check
-          git commit -m 'test(rc6): align PAPER lifecycle economics assertions with shadow policy'
+          git commit -m 'test(rc6): align PAPER economics assertions with shadow policy'
           git push origin HEAD:fix/rc6-w10-sector-map-binding-20260910
