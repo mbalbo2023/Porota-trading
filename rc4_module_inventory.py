@@ -12,6 +12,10 @@ EXPLICIT_ROLE_MAP={
     "cy_a3_contract_bridge_hf6":"DEFERRED_INTEGRATION",
     "cn_ppi_authenticated_family_scraper_hf6":"OPS_CLI_MANUAL_LEGACY",
     "r_clear_kill_switch":"OPS_CLI_MANUAL",
+    "fa_raw_evidence_store_rc6":"DEPLOYED_EVIDENCE_HELPER",
+    "fm_critical_approval_unix_runtime_rc6":"HOST_RUNTIME_ACTIVE",
+    "rc5_release_preflight":"RETIRED_LEGACY",
+    "rc6_trusted_browser_contract_collector":"HOST_RUNTIME_ACTIVE",
 }
 EXPLICIT_ROLE_REASON={
     "aq_macro_backtest":"Backtest macro offline; se invoca a demanda.",
@@ -19,6 +23,10 @@ EXPLICIT_ROLE_REASON={
     "cy_a3_contract_bridge_hf6":"A3 Primary privado no autenticado; bridge conservado sin inventar wiring.",
     "cn_ppi_authenticated_family_scraper_hf6":"Scraper HF6 legacy con login explícito. Se conserva sólo para trazabilidad/manual; los timers RC4 usan exclusivamente trusted-device GET-only.",
     "r_clear_kill_switch":"Emergency CLI humano; no debe ser llamado automáticamente.",
+    "fa_raw_evidence_store_rc6":"Helper RC6 de archivo inmutable de evidencia; materializado y validado por el despliegue Wave 4, sin rutas de órdenes.",
+    "fm_critical_approval_unix_runtime_rc6":"Entrypoint runtime RC6 invocado explícitamente por porota-critical-approval-rc6.service en el host.",
+    "rc5_release_preflight":"Preflight exclusivo de RC5; sólo referenciado por workflows RC5 históricos y no pertenece al camino operativo RC6.",
+    "rc6_trusted_browser_contract_collector":"Collector W12 RC6 invocado dinámicamente por porota-contract-evidence-rc6-runtime.sh; superficie GET/HEAD/OPTIONS y sin rutas operativas.",
 }
 
 def build(root=ROOT):
