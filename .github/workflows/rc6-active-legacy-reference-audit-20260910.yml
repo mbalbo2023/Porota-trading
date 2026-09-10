@@ -5,6 +5,7 @@ on:
     branches: [fix/rc6-w10-sector-map-binding-20260910]
     paths:
       - '.github/workflows/rc6-active-legacy-reference-audit-20260910.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -54,9 +55,11 @@ jobs:
                   if pat.search(line): hits.append({'file':str(p),'line':no,'text':line.strip()[:240]})
           print('ACTIVE_IMPORT_CLOSURE_FILES='+str(len(seen)))
           print('ACTIVE_LEGACY_REFERENCE_COUNT='+str(len(hits)))
+          by_file={}
+          for row in hits: by_file[row['file']]=by_file.get(row['file'],0)+1
+          for name,count in sorted(by_file.items(),key=lambda x:(-x[1],x[0])):
+              print(f'LEGACY_FILE={name}|COUNT={count}')
           print(json.dumps(hits,ensure_ascii=False,indent=2))
-          pathlib.Path('/tmp/rc6-active-files.txt').write_text('\n'.join(map(str,sorted(seen)))+'\n')
-          pathlib.Path('/tmp/rc6-legacy-hits.json').write_text(json.dumps(hits,ensure_ascii=False,indent=2)+'\n')
           if hits: raise SystemExit(3)
           PY
       - name: Audit RC6 operational units and scripts
