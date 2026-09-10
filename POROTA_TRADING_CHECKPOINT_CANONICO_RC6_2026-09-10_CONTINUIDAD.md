@@ -1,6 +1,6 @@
 # POROTA TRADING RC6 — CHECKPOINT CANÓNICO DE CONTINUIDAD
 
-Actualizado: 2026-09-10 18:36 ART (America/Argentina/Buenos_Aires)
+Actualizado: 2026-09-10 19:21 ART (America/Argentina/Buenos_Aires)
 
 ## 1. Recuperación inmediata
 
@@ -8,151 +8,184 @@ Repositorio: `mbalbo2023/Porota-trading`
 
 Rama activa: `fix/rc6-w10-sector-map-binding-20260910`
 
-HEAD funcional verificado antes de este checkpoint: `75c5bcd43d2eaeb4ef2d93808841748d973228b9`.
+HEAD funcional validado en prueba focal: `f8ae3e310b914a2c55e7c430eeea34dcaa4edd8a`.
 
-Commits recientes relevantes:
+Commit funcional más reciente:
 
-- `d88104a25865eb358627c72530857c6159f66926` — corrige probe W12 stdin-safe.
-- `33066d128d4d25ba8583c89a169c89825e323fe6` — alinea test legacy RC4-HF2 con identidad RC6.
-- `ab9c31c6ab36d8011f2c44285006fd00130a6776` — cierra wiring del productor W12.
-- `181e078efd3f5431d9b854542bb4dd55f08810a1` — `fix(rc6-w12): repair capture boundary and prove fresh import`.
-- `75c5bcd43d2eaeb4ef2d93808841748d973228b9` — alinea aserciones legacy de página En Vivo con semántica actual.
+- `f8ae3e310b914a2c55e7c430eeea34dcaa4edd8a` — `fix(rc6): keep economics shadow and sector concentration binding`.
 
-Regla de continuidad: leer este archivo completo, verificar HEAD actual y sólo continuar desde pendientes abiertos. No repetir RCA/pruebas cerradas. Actualizar este mismo checkpoint después de cada hito.
+Otros commits cerrados relevantes:
+
+- `5d1a53fc51ca234224c70322967c1de51d32eb1` — preserva semántica de evidencia histórica parcial.
+- `181e078efd3f5431d9b854542bb4dd55f08810a1` — W12 permission boundary + fresh import GREEN.
+- `9811765130f1886aa6da20d7b3dadfc0cf02ef14` — alinea settlement legacy con opt-in T+1.
+- `33066d128d4d25ba8583c89a169c89825e323fe6` — compatibilidad legacy RC4-HF2 con identidad RC6.
+- `75c5bcd43d2eaeb4ef2d93808841748d973228b9` — semántica actual página En Vivo.
+
+Regla de continuidad: leer este archivo completo, verificar HEAD actual y continuar sólo desde pendientes abiertos. No repetir RCA/pruebas cerradas. Actualizar este mismo checkpoint después de cada hito.
 
 ## 2. Invariantes de seguridad
 
-- Runtime `PRODUCTION_PAPER`.
-- `REAL_ORDER_CAPABILITY=BLOCKED`.
-- `real_orders_sent=0`.
+- Runtime objetivo: `PRODUCTION_PAPER`.
+- `_version.EXECUTION=SIMULATED`.
+- `_version.REAL_ORDER_CAPABILITY=BLOCKED`.
+- Última evidencia operacional W12: `real_orders_sent=0`.
 - No órdenes reales, fondos, cuenta, seguridad ni 2FA.
 - Browser/Contract Evidence GET-only/read-only.
 - No permisos globales `0644`/`0777` ni cambios recursivos amplios sobre `/data`.
-- Paso final a producción real requiere evidencia limpia y aprobación explícita del usuario.
+- Cualquier habilitación futura de ejecución real exige evidencia limpia y aprobación explícita del usuario.
 
 ## 3. Cerrado — NO REPETIR
 
-- W10 sector-map binding: GREEN.
+- W10 sector concentration binding base: GREEN.
+- W12 permission boundary/importer: GREEN.
 - Trusted browser/auth/device RCA: cerrado.
 - EOD RCA: cerrado para este frente.
 - W12 `find|sort|head` bajo pipefail: cerrado.
-- W12 falso verde por `docker exec -i` consumiendo stdin SSH heredoc: cerrado.
-- Settlement RCA original: cerrado; no cambiar default fail-closed.
-- Test legacy RC4-HF2 de VERSION/IMAGE: corregido y ya pasó en suite posterior.
+- W12 falso verde por `docker exec -i` heredando stdin SSH: cerrado.
+- Settlement RCA original: cerrado; default T+1 permanece fail-closed.
+- Históricos `_history_batch_semantics`: implementado y focal GREEN.
+- Tests legacy RC4-HF2 VERSION/IMAGE y En Vivo: cerrados.
 
 ## 4. W12 — GREEN CERRADO
 
-### Causa raíz
+Causa raíz: productor `/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh` generaba capture `root:root 0600`; importer/observer corre como `botuser` uid/gid 1000.
 
-El productor `/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh` generaba el capture con:
+Fix: commit `181e078efd3f5431d9b854542bb4dd55f08810a1`.
+Workflow: `.github/workflows/rc6-w12-permission-boundary-hotfix-proof-20260910.yml`.
+Run `34532755599`, job `103057174938`, `success`.
 
-```bash
-install -o root -g root -m 0600 "$STAGE_CAPTURE" "$CAPTURE"
-```
-
-mientras el importer/observer corre como `botuser`, uid/gid 1000. El directorio `rc6_trusted` también quedaba sin grupo explícitamente alineado.
-
-### Fix de origen aplicado
-
-Commit: `181e078efd3f5431d9b854542bb4dd55f08810a1`.
-
-Workflow durable/reconciliador:
-`.github/workflows/rc6-w12-permission-boundary-hotfix-proof-20260910.yml`.
-
-Run: `34532755599`.
-Job: `103057174938`.
-Conclusión: `success`.
-
-El runtime ahora resuelve dinámicamente el GID del observer/importer y aplica:
+Estado probado:
 
 - directorio `root:<observer_gid>` `0750`;
 - capture `root:<observer_gid>` `0640`;
-- sin world-read;
-- sin chmod/chown recursivo del árbol de datos.
+- `OBSERVER_GID=1000`;
+- capture fresco `contract_20260910T213256Z.json`;
+- `IMPORTER_USER_READ=YES`;
+- schema `POROTA_RC6_PPI_TRUSTED_CONTRACT_V1`;
+- auth `AUTHENTICATED_TRUSTED_DEVICE`;
+- Contract Evidence v2 runs `105 -> 106`;
+- `RUNNING_ROWS=0`;
+- DB `quick_check=ok`;
+- `MODE=PRODUCTION_PAPER`;
+- `real_orders_sent=0`;
+- `ORDER_ROUTES=NOT_CALLED`.
 
-### Evidencia final W12
+No repetir captura de aceptación salvo regresión nueva demostrada.
 
-- `OBSERVER_GID=1000`.
-- baseline `contract_evidence_v2_runs=105`.
-- `PATCH_STATE=APPLIED`.
-- `RUNTIME_PATCH=GREEN`.
-- `OUTDIR_MODE=750`, `OUTDIR_GID=1000`.
-- exactamente una ejecución de servicio para la prueba, `SERVICE_START_RC=0`, `Result=success`, `ExecMainStatus=0`.
-- capture fresco: `contract_20260910T213256Z.json`.
-- capture `0640`, GID `1000`.
-- `IMPORTER_USER_READ=YES`.
-- capture bytes `3914`.
-- schema `POROTA_RC6_PPI_TRUSTED_CONTRACT_V1`.
-- auth `AUTHENTICATED_TRUSTED_DEVICE`.
-- routes `6`, jobs `1`.
-- `real_orders_sent=0`.
-- DB `quick_check=ok`.
-- post runs `106`, delta `+1` (> baseline 105).
-- `RUNNING_ROWS=0`.
-- `MODE=PRODUCTION_PAPER`.
-- markers finales: `W12_PERMISSION_BOUNDARY=GREEN`, `W12_FRESH_CAPTURE=GREEN`, `W12_IMPORT=GREEN`, `ORDER_ROUTES=NOT_CALLED`.
+## 5. Settlement RC6 — GREEN
 
-**Veredicto W12: GREEN / cerrado. No repetir captura de aceptación salvo regresión nueva demostrada.**
-
-## 5. Settlement RC6 — GREEN para fallo original
-
-Test original:
-`tests/test_rc4_hf1_last_mile.py::test_t1_without_cutoff_waits_until_full_expected_date_elapsed`.
-
-La suite posterior lo mostró `PASSED`.
+El fallo original quedó corregido sin modificar la política financiera productiva.
 
 Política preservada:
 
 - `PAPER_T1_FULL_DATE_RELEASE=false` por defecto;
-- liberación conservadora T+1 sólo por opt-in en PAPER;
-- no se modificó lógica financiera para hacer pasar el test;
-- ninguna capacidad de orden real fue habilitada.
+- liberación conservadora T+1 sólo por opt-in PAPER explícito;
+- no se habilitó capacidad de orden real.
 
-## 6. Compatibilidad legacy — GREEN para los dos fallos anteriores
+Pruebas focales settlement/legacy posteriores: GREEN.
 
-La corrida posterior a los fixes mostró `PASSED` para:
+## 6. Históricos parciales — GREEN
 
-- `tests/test_rc4_hf1_last_mile.py::test_t1_without_cutoff_waits_until_full_expected_date_elapsed`;
-- `tests/test_rc4_hf2_consolidation.py::test_hf2_version_and_orders_remain_blocked`;
-- `tests/test_rc4_hf2_consolidation.py::test_live_page_keeps_current_round_and_history_semantics_clean`.
+Commit: `5d1a53fc51ca234224c70322967c1de51d32eb1`.
 
-No tocar `_version.py` ni lógica financiera por estos tests ya cerrados.
+Semántica canónica implementada en runtime:
 
-## 7. Nuevo primer blocker determinístico de suite
+- `GREEN`: lote completamente usable;
+- `YELLOW`: existe evidencia usable pero parcial/incompleta;
+- `RED`: cero evidencia usable/falla dura.
 
-Workflow: `RC6 Post-W10 Next Failure RCA 2026-09-10`.
-Run: `34532788953`.
-Job: `103057279492`.
+Regresión focal de históricos: 9 tests GREEN.
 
-La suite llegó a:
+## 7. Gate completo anterior y hallazgos
 
-- `1564 passed`;
-- fallo al `88%`;
-- W10 permaneció GREEN antes de la suite.
+Se ejecutó el gate completo sobre `5d1a53fc51ca234224c70322967c1de51d32eb1`.
 
-Primer fallo actual:
+Pasaron antes de pytest activo:
 
-`tests/test_rc6_history_partial_semantics.py::test_all_full_is_green`
+- linaje/HEAD exacto;
+- identidad `_version.VERSION=17.0.0-rc6`;
+- `MODE=PRODUCTION_PAPER`;
+- `EXECUTION=SIMULATED`;
+- `REAL_ORDER_CAPABILITY=BLOCKED`;
+- compilación;
+- Docker build;
+- probes focales offline/read-only.
 
-Error exacto:
+La suite activa encontró 40 fallos agrupados en sólo dos causas:
 
-```text
-AttributeError: module 'bf_production_paper_observer' has no attribute '_history_batch_semantics'
-```
+1. deriva de autoridad: `PAPER_ECONOMIC_GATE_MODE` había quedado `BINDING` aunque el camino acordado para economics era SHADOW primero;
+2. cascada del ledger porque fixtures contables pasaban por el gate sectorial BINDING, más un falso `SECTOR_UNMAPPED` cuando una clasificación revisada existía para el mismo instrumento/mercado/moneda pero otro settlement.
 
-Esto pasa a ser el único blocker de suite que se debe investigar ahora. No volver a corregir los fallos anteriores.
+No se interpretaron como 40 defectos independientes.
 
-## 8. Divide y vencerás — carriles actuales
+## 8. Política de autoridad RC6 — DECISIÓN CANÓNICA DEL OPERADOR
 
-Carril A — **W12: GREEN/cerrado**. Sólo preservar fix y monitorear que el runtime no sea reinstalado con permisos antiguos.
+Camino general: `SHADOW -> evidencia -> evaluación -> autorización explícita -> BINDING`.
 
-Carril B — **settlement: GREEN/cerrado para el fallo original**. Mantener fail-closed.
+Excepción ya autorizada:
 
-Carril C — **suite/ingesta histórica: ACTIVO**. Investigar `_history_batch_semantics`, determinar si la función debe estar en el observer actual o si el test apunta a una API legacy, aplicar cambio mínimo y prueba focalizada.
+- `SECTOR_CONCENTRATION = BINDING`.
+- máximo explícito: `PAPER_MAX_POSITIONS_PER_SECTOR=2`.
+- si falta evidencia sectorial real, fail-closed.
+- no fuerza ventas existentes; sólo puede vetar nuevas aperturas PAPER.
 
-Carril D — **build/deploy readiness: ACTIVO EN PARALELO**. Preparar candidate RC6 sin activar órdenes reales. Una suite completa adicional sólo después de cerrar el blocker histórico focalizado.
+Resto:
 
-## 9. Pendientes preservados
+- `PAPER_ECONOMIC_GATE_MODE=SHADOW`.
+- `PAPER_EXPECTANCY_POLICY=OBSERVATION_ONLY`.
+- `PAPER_MARKET_REGIME_POLICY=ALERT_ONLY`.
+- IA intradiaria permanece OFF.
+
+Ninguna de estas políticas habilita órdenes reales.
+
+## 9. Convergencia policy/sector — GREEN FOCAL
+
+Commit funcional: `f8ae3e310b914a2c55e7c430eeea34dcaa4edd8a`.
+
+Workflow materializador/proof:
+`.github/workflows/rc6-policy-sector-convergence-20260910.yml`.
+
+Run: `34536775030`.
+Job: `103070120748`.
+Conclusión: `success`.
+
+Etapas todas GREEN:
+
+1. materialización de política acordada;
+2. `compileall`;
+3. Docker build focal;
+4. regresiones offline;
+5. commit sólo después de prueba verde.
+
+Cambios funcionales/resultantes:
+
+- economics vuelve a `SHADOW` en mode manager, runtime, broker y dashboard;
+- sector concentration permanece `BINDING`;
+- límite sectorial `2` queda congelado explícitamente en defaults y frozen settings;
+- sector lookup usa coincidencia exacta primero;
+- si sólo cambia settlement, puede reutilizar clasificación únicamente cuando `ticker+family+market+currency` tienen un único sector revisado;
+- jamás cruza moneda, familia o mercado;
+- si la evidencia es ambigua, queda unmapped y BINDING falla cerrado;
+- tests de integridad de ledger aíslan su fixture del gate de selección de entrada; producción NO se debilita;
+- `SECTOR_CONCENTRATION` queda documentado como única excepción `BINDING_PAPER` en el contrato SHADOW/BINDING.
+
+## 10. Próximo carril — ÚNICO BLOCKER/GATE
+
+Estado actual: **FOCUSED GREEN / FULL CANDIDATE PENDING**.
+
+Siguiente acción exacta:
+
+1. promover/usar el SHA funcional exacto `f8ae3e310b914a2c55e7c430eeea34dcaa4edd8a` como candidato RC6;
+2. ejecutar UNA sola vez el full candidate gate sobre ese SHA;
+3. exigir suite activa RC6 GREEN completa;
+4. exigir build por SHA/digest e invariantes `PRODUCTION_PAPER/SIMULATED/BLOCKED`;
+5. si aparece un nuevo blocker, aislar sólo el primero y corregir focalmente;
+6. si queda GREEN, preparar deploy transaccional actual con preflight/postflight/rollback, pero NO dispararlo hasta orden explícita del usuario.
+
+## 11. Pendientes funcionales preservados para post-gate/postflight
+
+No perder del alcance RC6:
 
 - historical/background ingestion: freshness, gaps y cobertura;
 - Contract Evidence scheduler/backoff/idempotencia;
@@ -162,6 +195,8 @@ Carril D — **build/deploy readiness: ACTIVO EN PARALELO**. Preparar candidate 
 - introspección/early-warning horario;
 - follow-ups de lógica de salidas/EOD.
 
-## 10. Regla para nuevo chat
+Estos deben verificarse en candidate/postflight según sus gates ya existentes; no reabrir RCA cerrados sin evidencia nueva.
 
-Si el chat se corta: leer COMPLETO este checkpoint, verificar HEAD y workflows posteriores, y continuar desde Carril C/D. No repetir W10, W12 ni settlement ya cerrados. No asumir éxito por nombre de commit: validar logs/evidencia.
+## 12. Regla para nuevo chat
+
+Si el chat se corta: leer COMPLETO este checkpoint, verificar HEAD y workflows posteriores y continuar desde sección 10. No repetir W10, W12, settlement ni históricos ya cerrados. No asumir éxito por nombre de commit: validar logs/evidencia.
