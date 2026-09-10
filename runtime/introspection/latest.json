@@ -52,24 +52,24 @@
   "currency_funnel": [
     {
       "currency": "ARS",
-      "last_observed_at": "2026-09-10T17:14:16.126057+00:00",
-      "observed_symbols": 565
+      "last_observed_at": "2026-09-10T18:15:22.377709+00:00",
+      "observed_symbols": 578
     },
     {
       "currency": "USD_CCL",
-      "last_observed_at": "2026-09-10T17:13:42.636537+00:00",
-      "observed_symbols": 112
+      "last_observed_at": "2026-09-10T18:14:06.422437+00:00",
+      "observed_symbols": 114
     },
     {
       "currency": "USD_MEP",
-      "last_observed_at": "2026-09-10T17:14:04.772778+00:00",
-      "observed_symbols": 124
+      "last_observed_at": "2026-09-10T18:15:20.657088+00:00",
+      "observed_symbols": 129
     }
   ],
   "economics": {
     "blocked_1h": 1,
-    "evaluated_1h": 2,
-    "opened_1h": 1
+    "evaluated_1h": 1,
+    "opened_1h": 0
   },
   "family_readiness": [
     {
@@ -293,16 +293,16 @@
     "branch": "runtime-observability",
     "day": "2026-09-10",
     "detail": null,
-    "recorded_at": "2026-09-10T16:20:18.988654+00:00",
+    "recorded_at": "2026-09-10T17:20:24.715614+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
   "ingestion": {
-    "candle_versions": 35282,
+    "candle_versions": 36035,
     "instruments": 67,
     "last_download": "2026-09-10T13:06:01.646261+00:00",
     "last_market_date": "2026-09-10",
-    "latest_candle_known_at": "2026-09-10T17:15:00.976345+00:00",
+    "latest_candle_known_at": "2026-09-10T18:15:00.885133+00:00",
     "raw": 0,
     "rows": 15588
   },
@@ -342,20 +342,20 @@
   ],
   "market_regime_observation": {
     "binding": false,
-    "falling": 41,
+    "falling": 110,
     "method": "FIRST_LAST_TRADE_SAMPLE_BREADTH_NOT_AN_INDEX",
     "minimum_symbols": 4,
     "policy": "ALERT_ONLY",
-    "rising": 65,
+    "rising": 108,
     "state": "MIXED_OR_POSITIVE",
-    "symbols": 347,
-    "unchanged": 241
+    "symbols": 374,
+    "unchanged": 156
   },
   "observer": {
-    "heartbeat_at": "2026-09-10T17:13:52.996880+00:00",
-    "http_allowed": 5089,
+    "heartbeat_at": "2026-09-10T18:14:13.797576+00:00",
+    "http_allowed": 988,
     "http_blocked": 0,
-    "last_market_data_at": "2026-09-10T17:13:52.707660+00:00",
+    "last_market_data_at": "2026-09-10T18:15:22.113910+00:00",
     "mode": "PRODUCTION_PAPER",
     "ppi_auth": "OK",
     "process_state": "RUNNING",
@@ -364,71 +364,71 @@
   },
   "ppi_errors_1h": [
     {
-      "count": 18,
-      "event_type": "EXIT_BOOK_ERROR"
-    },
-    {
-      "count": 17,
-      "event_type": "EXIT_BOOK_ERROR"
-    },
-    {
-      "count": 13,
-      "event_type": "EXIT_BOOK_ERROR"
-    },
-    {
-      "count": 12,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 11,
-      "event_type": "EXIT_BOOK_ERROR"
-    },
-    {
-      "count": 11,
-      "event_type": "EXIT_BOOK_ERROR"
-    },
-    {
-      "count": 10,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 10,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 10,
-      "event_type": "EXIT_BOOK_ERROR"
-    },
-    {
-      "count": 9,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 9,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 9,
-      "event_type": "EXIT_BOOK_ERROR"
-    },
-    {
-      "count": 7,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 7,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 7,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 5,
+      "count": 6,
       "event_type": "DATA_ERROR"
     },
     {
       "count": 4,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 4,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 4,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 4,
+      "event_type": "EXIT_READER_SESSION_INVALID"
+    },
+    {
+      "count": 3,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 3,
+      "event_type": "PPI_SESSION_INVALID"
+    },
+    {
+      "count": 2,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 2,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 2,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 2,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 2,
+      "event_type": "EXIT_BOOK_ERROR"
+    },
+    {
+      "count": 2,
+      "event_type": "EXIT_BOOK_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
       "event_type": "DATA_ERROR"
     },
     {
@@ -447,9 +447,9 @@
   "quick_check": "ok",
   "scalping": {
     "approved_1h": 0,
-    "evaluated_1h": 387,
+    "evaluated_1h": 364,
     "paper_positions_today": 0,
-    "rejected_1h": 387
+    "rejected_1h": 364
   },
   "schema": "porota-introspection-public-v1",
   "sector_concentration": {
@@ -463,24 +463,24 @@
     "unmapped_positions": 7
   },
   "storage": {
-    "database_bytes": 324222976,
-    "filesystem_free": 12878602240,
+    "database_bytes": 331177984,
+    "filesystem_free": 12871053312,
     "filesystem_total": 24883167232,
-    "filesystem_used": 11987787776,
-    "filesystem_used_pct": 48.18,
+    "filesystem_used": 11995336704,
+    "filesystem_used_pct": 48.21,
     "wal_bytes": 8384232
   },
   "telegram": {
-    "SENT": 130
+    "SENT": 132
   },
-  "timestamp": "2026-09-10T14:15:09-03:00",
+  "timestamp": "2026-09-10T15:15:20-03:00",
   "trading": {
-    "buys_1h": 1,
+    "buys_1h": 0,
     "closed_today": 1,
-    "decisions_1h": 352,
+    "decisions_1h": 412,
     "net_pnl_today": -1119.772,
     "open": 7,
-    "sells_1h": 1
+    "sells_1h": 0
   },
   "verdict": "WARN",
   "version": "17.0.0-rc6",
@@ -489,28 +489,28 @@
   ],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": -9.943783,
-      "heartbeat_at": "2026-09-10T17:15:19.811059+00:00",
+      "heartbeat_age_seconds": -2.238753,
+      "heartbeat_at": "2026-09-10T18:15:22.982070+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": -5.879392,
-      "heartbeat_at": "2026-09-10T17:15:15.746668+00:00",
-      "state": "COOLDOWN"
+      "heartbeat_age_seconds": -0.922226,
+      "heartbeat_at": "2026-09-10T18:15:21.665543+00:00",
+      "state": "READY"
     },
     "scalping": {
-      "heartbeat_age_seconds": 178.860407,
-      "heartbeat_at": "2026-09-10T17:12:11.006869+00:00",
+      "heartbeat_age_seconds": 104.304074,
+      "heartbeat_at": "2026-09-10T18:13:36.439243+00:00",
       "state": "RUNNING"
     },
     "supervisor": {
-      "heartbeat_age_seconds": -8.754821,
-      "heartbeat_at": "2026-09-10T17:15:18.622097+00:00",
+      "heartbeat_age_seconds": 2.122161,
+      "heartbeat_at": "2026-09-10T18:15:18.621156+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": -9.960795,
-      "heartbeat_at": "2026-09-10T17:15:19.828071+00:00",
+      "heartbeat_age_seconds": -1.813651,
+      "heartbeat_at": "2026-09-10T18:15:22.556968+00:00",
       "state": "RUNNING"
     }
   }
