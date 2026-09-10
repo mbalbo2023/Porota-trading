@@ -28,7 +28,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
-      - name: Read-only host and runtime snapshot
+      - name: Read-only host runtime and W12 drift snapshot
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -40,34 +40,50 @@ jobs:
             "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
           set -euo pipefail
           REPO=/opt/porota-trading
-          echo '=== RC6 FINAL READONLY HOST PREFLIGHT ==='
+          echo '=== RC6 FINAL READONLY HOST PREFLIGHT V2 ==='
           echo "UTC=$(date -u +%FT%TZ)"
           echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
           echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
           echo "HOST_DIRTY_COUNT=$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
+          echo 'HOST_DIRTY_TOP_BEGIN'
+          git -C "$REPO" status --porcelain | head -30 || true
+          echo 'HOST_DIRTY_TOP_END'
           echo "DISK_FREE_BYTES=$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"
 
           for c in porota_production_observer porota_production_dashboard; do
             echo "CONTAINER_${c}=$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' "$c" 2>/dev/null || echo MISSING)"
           done
-
           echo -n 'HEALTH='
           curl -fsS http://127.0.0.1:8000/health || true
           echo
 
-          sudo -n docker exec porota_production_observer python - <<'PY'
+          echo 'OBSERVER_MOUNTS_BEGIN'
+          sudo -n docker inspect porota_production_observer --format '{{range .Mounts}}{{println .Source "=>" .Destination "RW=" .RW}}{{end}}'
+          echo 'OBSERVER_MOUNTS_END'
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
               c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10)
               c.execute('PRAGMA query_only=ON')
-              print('DB_QUICK_CHECK',p,c.execute('PRAGMA quick_check').fetchone()[0])
+              print('DB_QUICK_CHECK='+p+'|'+str(c.execute('PRAGMA quick_check').fetchone()[0]))
               if p.endswith('observer_v17.db'):
                   tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                   if 'observer_state' in tables:
                       row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
-                      print('OBSERVER_STATE', '|'.join(map(str,row)) if row else 'NONE')
+                      print('OBSERVER_STATE=' + ('|'.join(map(str,row)) if row else 'NONE'))
               c.close()
           PY
+
+          echo 'CONTRACT_UNITS_DISCOVERED_BEGIN'
+          sudo -n systemctl list-unit-files --no-legend --no-pager 2>/dev/null | grep -E 'porota.*contract.*evidence' || true
+          echo 'CONTRACT_UNITS_DISCOVERED_END'
+          echo "W12_SCRIPT_EXISTS=$([ -f /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh ] && echo YES || echo NO)"
+          echo "W12_RUNTIME_DIR_EXISTS=$([ -d /opt/porota-contract-evidence-rc6-runtime ] && echo YES || echo NO)"
+          if [ -f /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh ]; then
+            stat -c 'W12_SCRIPT_STAT=%a|%u|%g|%s|%y' /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+            grep -nE 'OUTDIR|install .*STAGE_CAPTURE|OBSERVER_GID|CONTAINER=' /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh || true
+          fi
 
           for unit in \
             porota-contract-evidence-rc6-runtime.timer \
@@ -85,17 +101,16 @@ jobs:
                 "$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || true)"
           done
 
-          CAPTURE="$(find "$REPO/data/contract_evidence/rc6_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
-          if [ -n "$CAPTURE" ]; then
-            echo "LATEST_CAPTURE=$CAPTURE"
-            stat -c 'LATEST_CAPTURE_STAT=%a|%u|%g|%s|%y' "$CAPTURE"
-            if sudo -n docker exec porota_production_observer test -r "$CAPTURE"; then
-              echo 'LATEST_CAPTURE_IMPORTER_READABLE=YES'
-            else
-              echo 'LATEST_CAPTURE_IMPORTER_READABLE=NO'
-            fi
+          HOST_CAPTURE="$(find "$REPO/data/contract_evidence/rc6_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
+          if [ -n "$HOST_CAPTURE" ]; then
+            echo "LATEST_HOST_CAPTURE=$HOST_CAPTURE"
+            stat -c 'LATEST_HOST_CAPTURE_STAT=%a|%u|%g|%s|%y' "$HOST_CAPTURE"
           else
-            echo 'LATEST_CAPTURE=NONE'
+            echo 'LATEST_HOST_CAPTURE=NONE'
           fi
+
+          echo 'CONTAINER_CE_PATHS_BEGIN'
+          sudo -n docker exec porota_production_observer sh -lc 'find /app/data /opt/porota-trading/data -maxdepth 4 -type f -name "contract_*.json" -print 2>/dev/null | tail -10 || true'
+          echo 'CONTAINER_CE_PATHS_END'
           echo 'MUTATIONS=NONE'
           HOST
