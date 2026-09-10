@@ -41,14 +41,14 @@ PAPER_DEFAULTS = {
     "PAPER_MAX_HOLD_MINUTES": "360", "PAPER_ACTIVE_SYMBOL_LIMIT": "20",
     "PAPER_FOCUS_MINIMUM_FOR_OPENINGS": "4",
     "PAPER_READINESS_CHECK_SECONDS": "300",
-    # HF6: el freno blando deja de abrir; el límite duro recién entonces
+    # RC6: el freno blando deja de abrir; el límite duro recién entonces
     # ordena liquidar. El operador autorizó ampliar el duro a 2,5%.
     "PAPER_DAILY_SOFT_STOP_PCT": "1.5",
     "MAX_DAILY_LOSS_PCT": "2.5",
     "PAPER_SIGNAL_MIN_SAMPLES": "6", "PAPER_SIGNAL_WINDOW_MINUTES": "90",
     "PAPER_SCORE_THRESHOLD": "0.62", "PAPER_BOOK_MAX_AGE_SECONDS": "120",
     "PAPER_TRADE_MAX_AGE_SECONDS": "900", "PAPER_AI_GATE_MODE": "OFF",
-    "PAPER_ECONOMIC_GATE_MODE": "SHADOW",
+    "PAPER_ECONOMIC_GATE_MODE": "BINDING",
     # Decisiones explícitas del operador para RC6. Expectancy y régimen conservan
     # su autoridad observacional; concentración sectorial es BINDING para nuevas entradas.
     "PAPER_EXPECTANCY_POLICY": "OBSERVATION_ONLY",
@@ -62,7 +62,7 @@ PAPER_DEFAULTS = {
     "PPI_HISTORY_EVIDENCE_ROOT": "/app/data/evidence/ppi_history_exact_v1",
     "PAPER_NEWS_INGEST_ENABLED": "false",
     # Foco configurable. AAPLD/AAPLC agregan identidades MEP/CCL sin quitar
-    # ninguna de las ocho identidades HF5; catálogo, libro y portones siguen
+    # conserva las identidades de foco validadas; catálogo, libro y portones siguen
     # siendo obligatorios antes de cualquier fill PAPER.
     "PAPER_FOCUS_SYMBOLS": (
         "GGAL:ACCIONES:A-24HS,YPFD:ACCIONES:A-24HS,"
@@ -82,16 +82,16 @@ PAPER_DEFAULTS = {
     "PAPER_SCALPING_STOP_LOSS_PCT": "0.008",
     "PAPER_SCALPING_TARGET_GAIN_PCT": "0.02",
 }
-HF3_FROZEN_PAPER_SETTINGS = {
+RC6_FROZEN_PAPER_SETTINGS = {
     # Resultado de la rueda 31/08: estas barreras no pueden heredarse de un
-    # .env viejo porque volvería a abrir con economía negativa o riesgo HF2.
+    # .env viejo porque volvería a abrir con economía negativa o riesgo obsoleto.
     "PAPER_RISK_PER_TRADE": "0.002",
     "PAPER_MAX_OPEN_POSITIONS": "5",
     "PAPER_EMERGENCY_MAX_OPEN_POSITIONS": "AUTO",
     "PAPER_MAX_HOLD_MINUTES": "360",
     "PAPER_DAILY_SOFT_STOP_PCT": "1.5",
     "MAX_DAILY_LOSS_PCT": "2.5",
-    "PAPER_ECONOMIC_GATE_MODE": "SHADOW",
+    "PAPER_ECONOMIC_GATE_MODE": "BINDING",
     "PAPER_EXPECTANCY_POLICY": "OBSERVATION_ONLY",
     "PAPER_MARKET_REGIME_POLICY": "ALERT_ONLY",
     "PAPER_SECTOR_CONCENTRATION_POLICY": "BINDING",
@@ -123,7 +123,7 @@ HF3_FROZEN_PAPER_SETTINGS = {
 
 def paper_settings(env):
     values = {key: env.get(key, "").strip() or default for key, default in PAPER_DEFAULTS.items()}
-    values.update(HF3_FROZEN_PAPER_SETTINGS)
+    values.update(RC6_FROZEN_PAPER_SETTINGS)
     return values
 
 
