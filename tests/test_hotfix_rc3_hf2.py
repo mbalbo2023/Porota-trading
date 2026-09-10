@@ -148,4 +148,4 @@ def test_dashboard_expone_binding_y_guardas_hf3(tmp_path, monkeypatch):
     assert "PPI_BACKGROUND_INGEST" in keys
     page = dashboard.motor_page()
     assert "PORTÓN ECONÓMICO OBLIGATORIO" in page
-    assert "Economía matemática BINDING" in page
+    assert "Economía matemática SHADOW" in page

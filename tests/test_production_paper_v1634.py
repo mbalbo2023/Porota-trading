@@ -1281,10 +1281,10 @@ def test_observador_no_contiene_capacidad_operativa(word):
 def test_ciclo_compra_y_venta_es_solo_paper(tmp_path):
     store = PaperStore(str(tmp_path / "observer.db"))
     # Esta regresión prueba el ciclo PAPER completo con la composición RC6 real:
-    # economía BINDING + cierre intradiario + target congelado 5%. No usa SHADOW.
+    # economía SHADOW + cierre intradiario + target congelado 5%; el ciclo sigue siendo PAPER.
     broker = PaperBroker(store, initial_cash="1000000", fee_rate="0.001",
                          session_policy=PaperSessionPolicy(), target_gain_pct="0.05")
-    assert broker.economics_mode == "BINDING"
+    assert broker.economics_mode == "SHADOW"
     assert broker.intraday_fee_rebate is True
     for i, price in enumerate(("100", "100.2", "100.4", "100.6", "100.8", "101", "101.4", "102")):
         q = quote(price=price, minute=i)
@@ -1313,9 +1313,9 @@ def test_ciclo_compra_y_venta_es_solo_paper(tmp_path):
 
 def test_no_duplica_decision_ni_posicion_en_mismo_ciclo(tmp_path):
     store = PaperStore(str(tmp_path / "observer.db"))
-    # Esta prueba necesita una apertura; usa la composición RC6 BINDING real.
+    # Esta prueba necesita una apertura; economics permanece SHADOW durante la campaña RC6.
     broker = PaperBroker(store, session_policy=PaperSessionPolicy(), target_gain_pct="0.05")
-    assert broker.economics_mode == "BINDING"
+    assert broker.economics_mode == "SHADOW"
     assert broker.intraday_fee_rebate is True
     for i in range(8):
         q = quote(price=str(100+i), minute=i)
@@ -1342,7 +1342,7 @@ def test_patrimonio_paper_limita_posicion_y_exposicion(tmp_path):
     broker = PaperBroker(store, initial_cash="1000000", risk_pct="0.50",
                          max_position_pct="0.25", max_total_exposure_pct="0.60",
                          session_policy=PaperSessionPolicy(), target_gain_pct="0.05")
-    assert broker.economics_mode == "BINDING"
+    assert broker.economics_mode == "SHADOW"
     assert broker.intraday_fee_rebate is True
     for i in range(8):
         q = quote(price=str(100+i), minute=i, ask_size="100000")
