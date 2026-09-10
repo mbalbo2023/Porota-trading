@@ -1,12 +1,9 @@
 """P0 regression gate for audited RC6 PAPER take-profit behavior.
 
-These tests are isolated, deterministic and network-free.  They prove that a
-persisted target is an executable PAPER exit trigger on bid-side liquidity,
-that the exit intent survives a temporary lack of depth, that a gap is filled
-from the observed bid rather than at a synthetic target, and that EOD/target
-precedence is explicit.
+These tests are isolated, deterministic and network-free. They preserve the
+sector-concentration BINDING fail-closed policy by providing explicit reviewed
+sector evidence for the known GGAL fixture; the gate is never relaxed.
 """
-from decimal import Decimal
 from pathlib import Path
 import sys
 
@@ -29,11 +26,23 @@ def key(position):
 
 
 @pytest.fixture
-def opened_position(tmp_path):
+def opened_position(tmp_path, monkeypatch):
+    # W10 is intentionally BINDING. Give this unrelated exit test a reviewed,
+    # sourced sector identity rather than weakening/faking the policy mode.
+    sector_map = tmp_path / "sector-map.csv"
+    sector_map.write_text(
+        "ticker,family,market,currency,settlement,sector,source,author,effective_at,reviewed\n"
+        "GGAL,ACCIONES,BYMA,ARS,A-24HS,FINANCIERO,TEST_REVIEWED_FIXTURE,RC6_AUDIT,2026-09-10,true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("POROTA_SECTOR_MAP_PATH", str(sector_map))
+    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "BINDING")
+
     store = PaperStore(str(tmp_path / "take-profit.db"))
     broker = PaperBroker(store)
     opening = quote(at="2026-08-28T11:00:00-03:00")
-    assert broker._open(opening, D("0.8"), {})[0]
+    opened, reason, _ = broker._open(opening, D("0.8"), {})
+    assert opened, reason
     position = store.open_positions()[0]
     assert D(position["target_price"]) > D(position["entry_price"])
     return broker, position
@@ -113,7 +122,7 @@ def test_target_during_eod_window_has_explicit_eod_precedence(opened_position):
     ).tick({key(position): q})[0]
 
     # Current RC6 policy is flat-overnight: once EOD is due, that persisted
-    # cause wins even if the same book is also above target.  Keep this
+    # cause wins even if the same book is also above target. Keep this
     # deterministic until trigger attribution is deliberately redesigned.
     assert (verdict.state, verdict.cause) == ("CLOSED", "EOD_PAPER")
     assert broker.store.recent_closed()[0]["close_reason"] == "EOD_PAPER"
