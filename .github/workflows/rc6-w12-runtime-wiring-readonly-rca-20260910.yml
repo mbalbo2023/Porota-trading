@@ -66,7 +66,8 @@ jobs:
               'BLOCKED_AUTH_ACCOUNT_VERIFY_POST','ACCOUNT_VERIFY','SESSION_EXPIRED','PROFILE','USER_DATA_DIR',
               'PERSISTENT','REAUTH','AUTHENTICATED_TRUSTED_DEVICE','COLLECTOR','IMPORT','RUNUSER','SUDO -U',
               'SU -','RUNTIME_STATE','EXIT 3','RC6_TRUSTED','CONTRACT_','CHMOD','CHOWN','CHGRP','UMASK',
-              'INSTALL ',' MKDIR','MKDIR ',' MV ','COPY','WRITE_TEXT','OPEN(','OUTPUT','OUTDIR','FINAL'
+              'INSTALL ',' MKDIR','MKDIR ',' MV ','COPY','WRITE_TEXT','OPEN(','OUTPUT','OUTDIR','FINAL',
+              'DOCKER_BIN','CONTAINER='
           )
           secretish=re.compile(r'(?i)(password|passwd|secret|token|authorization|cookie|otp)')
           assignment=re.compile(r'([=:]\s*)([^\s,;]+)')
