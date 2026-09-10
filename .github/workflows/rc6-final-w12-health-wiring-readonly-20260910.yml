@@ -1,0 +1,76 @@
+name: RC6 Final W12 Health Wiring Readonly 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-final-w12-health-wiring-readonly-20260910.yml
+
+permissions:
+  contents: read
+
+jobs:
+  wiring-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_wiring"
+          chmod 600 "$HOME/.ssh/porota_wiring"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Verify current W12 and functional health wiring without mutation
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_wiring" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          echo '=== W12 CURRENT UNIT ==='
+          sudo -n systemctl cat porota-contract-evidence-rc6.service || true
+          sudo -n systemctl cat porota-contract-evidence-rc6.timer || true
+          echo "CE_SERVICE_ACTIVE=$(sudo -n systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)"
+          echo "CE_TIMER_ACTIVE=$(sudo -n systemctl is-active porota-contract-evidence-rc6.timer 2>/dev/null || true)"
+          echo "CE_TIMER_ENABLED=$(sudo -n systemctl is-enabled porota-contract-evidence-rc6.timer 2>/dev/null || true)"
+          echo "CE_SERVICE_EXECSTART=$(sudo -n systemctl show porota-contract-evidence-rc6.service -p ExecStart --value 2>/dev/null || true)"
+
+          HOST_CAPTURE="$(find "$REPO/data/contract_evidence/rc6_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %f\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
+          if [ -z "$HOST_CAPTURE" ]; then
+            echo 'W12_CAPTURE_READABLE=NO_CAPTURE'
+          else
+            CONTAINER_CAPTURE="/app/data/contract_evidence/rc6_trusted/$HOST_CAPTURE"
+            echo "HOST_CAPTURE_BASENAME=$HOST_CAPTURE"
+            echo "CONTAINER_CAPTURE=$CONTAINER_CAPTURE"
+            sudo -n docker exec porota_production_observer stat -c 'CONTAINER_CAPTURE_STAT=%a|%u|%g|%s|%y' "$CONTAINER_CAPTURE"
+            if sudo -n docker exec porota_production_observer test -r "$CONTAINER_CAPTURE"; then
+              echo 'W12_CAPTURE_READABLE=YES'
+            else
+              echo 'W12_CAPTURE_READABLE=NO'
+              exit 31
+            fi
+          fi
+
+          echo '=== FUNCTIONAL HEALTH CURRENT UNIT ==='
+          sudo -n systemctl cat porota-functional-health-rc6.timer || true
+          sudo -n systemctl cat porota-functional-health-rc6.service || true
+          echo "FH_TIMER_ACTIVE=$(sudo -n systemctl is-active porota-functional-health-rc6.timer 2>/dev/null || true)"
+          echo "FH_TIMER_ENABLED=$(sudo -n systemctl is-enabled porota-functional-health-rc6.timer 2>/dev/null || true)"
+          echo "FH_SERVICE_ACTIVE=$(sudo -n systemctl is-active porota-functional-health-rc6.service 2>/dev/null || true)"
+          echo "FH_SERVICE_RESULT=$(sudo -n systemctl show porota-functional-health-rc6.service -p Result --value 2>/dev/null || true)"
+          echo "FH_SERVICE_EXECSTART=$(sudo -n systemctl show porota-functional-health-rc6.service -p ExecStart --value 2>/dev/null || true)"
+          echo 'MUTATIONS=NONE'
+          HOST
