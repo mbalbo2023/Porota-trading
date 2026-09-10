@@ -1,0 +1,106 @@
+name: RC6 W12 Runtime Wiring Readonly RCA 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-w12-runtime-wiring-readonly-rca-20260910.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert RC6 PAPER safety identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect W12 runtime wiring without secrets or execution
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          echo '=== UNIT_WIRING ==='
+          sudo -n systemctl cat porota-contract-evidence-rc6.service --no-pager 2>/dev/null \
+            | grep -E '^(\[|User=|Group=|ExecStart=|EnvironmentFile=|WorkingDirectory=|ProtectHome=|ReadWritePaths=|ReadOnlyPaths=|SupplementaryGroups=)' || true
+          echo '=== RUNTIME_SCRIPT_METADATA ==='
+          for f in /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh /usr/local/lib/porota-contract-evidence-rc6/*.py; do
+            [ -f "$f" ] || continue
+            sudo -n stat -c 'FILE=%n|UID=%u|GID=%g|MODE=%a|SIZE=%s|MTIME=%y' "$f"
+            sudo -n sha256sum "$f" | awk '{print "SHA256=" $1 "|FILE=" $2}'
+          done
+          echo '=== WIRING_TOKENS_SANITIZED ==='
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import re
+          roots=[Path('/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh'),Path('/usr/local/lib/porota-contract-evidence-rc6')]
+          files=[]
+          for root in roots:
+              if root.is_file(): files.append(root)
+              elif root.is_dir(): files.extend(sorted(root.glob('*.py')))
+          wanted=('BLOCKED_AUTH_ACCOUNT_VERIFY_POST','ACCOUNT_VERIFY','SESSION_EXPIRED','PROFILE','USER_DATA_DIR','PERSISTENT','REAUTH','AUTHENTICATED_TRUSTED_DEVICE','COLLECTOR','IMPORT','RUNUSER','SUDO -U','SU -','RUNTIME_STATE','EXIT 3')
+          secretish=re.compile(r'(?i)(password|passwd|secret|token|authorization|cookie|otp)')
+          assignment=re.compile(r'([=:]\s*)([^\s,;]+)')
+          for p in files:
+              try: lines=p.read_text(encoding='utf-8',errors='replace').splitlines()
+              except Exception: continue
+              matches=[]
+              for no,line in enumerate(lines,1):
+                  up=line.upper()
+                  if any(tok in up for tok in wanted):
+                      safe=line.strip()
+                      if secretish.search(safe):
+                          safe=assignment.sub(r'\1<REDACTED>',safe)
+                      safe=safe[:360]
+                      matches.append((no,safe))
+              if matches:
+                  print('FILE_TOKENS='+str(p))
+                  for no,safe in matches[:120]: print(f'L{no}={safe}')
+          PY
+          echo '=== PROFILE_DISCOVERY_METADATA ==='
+          sudo -n find /root /home /opt/porota-trading -maxdepth 8 -type d \
+            \( -iname '*contract*browser*profile*' -o -iname '*user*data*dir*' -o -iname '*playwright*profile*' \) \
+            -printf 'PROFILE=%p|UID=%U|GID=%G|MODE=%m|MTIME=%TY-%Tm-%TdT%TH:%TM:%TSZ\n' 2>/dev/null | head -n 80 || true
+          echo '=== LAST_CAPTURE_METADATA ==='
+          CE=/opt/porota-trading/data/contract_evidence/rc6_trusted
+          LATEST="$(sudo -n find "$CE" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)"
+          sudo -n python3 - "$LATEST" <<'PY'
+          import json,sys,pathlib
+          p=pathlib.Path(sys.argv[1]) if len(sys.argv)>1 and sys.argv[1] else None
+          if not p or not p.is_file(): print('CAPTURE=MISSING'); raise SystemExit
+          d=json.loads(p.read_text(encoding='utf-8'))
+          print('CAPTURE_FILE='+p.name)
+          for k in ('schema','auth_status','generated_at','real_orders_sent'):
+              print('CAPTURE_'+k.upper()+'='+str(d.get(k)))
+          for k in ('routes','endpoints','jobs','blocked_nonread'):
+              v=d.get(k); print('CAPTURE_'+k.upper()+'_COUNT='+str(len(v) if isinstance(v,(list,dict)) else -1))
+          PY
+          echo MUTATIONS=NONE
+          echo SECRETS_VALUES_PRINTED=NO
+          echo COLLECTOR_EXECUTED=NO
+          echo ORDER_ROUTES=NOT_CALLED
+          HOST
