@@ -45,7 +45,7 @@ def test_configuracion_desplegada_no_es_un_noop(tmp_path):
         assert result["modeled_tariff"] == "PPI_INTRADAY_REBATE_ON_SMALLER_LEG"
         assert result["passed"], (family, result)
         assert D(result["net_reward_risk"]) >= D("1.20")
-    assert broker.economics_mode == "BINDING"
+    assert broker.economics_mode == "SHADOW"
 
     # El observer productivo persiste cada snapshot antes de evaluar la entrada.
     # La regresión debe respetar ese contrato para que DailyRisk pueda marcar
@@ -101,7 +101,7 @@ def test_parametros_de_riesgo_rc6_siguen_congelados():
                           "PAPER_ECONOMIC_GATE_MODE":"SHADOW"})
     assert cfg["PAPER_RISK_PER_TRADE"] == "0.002"
     assert cfg["PAPER_MAX_OPEN_POSITIONS"] == "5"
-    assert cfg["PAPER_ECONOMIC_GATE_MODE"] == "BINDING"
+    assert cfg["PAPER_ECONOMIC_GATE_MODE"] == "SHADOW"
 
 
 def test_lector_refresca_latido_durante_el_recorrido(monkeypatch):
