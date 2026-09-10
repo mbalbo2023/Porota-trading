@@ -76,23 +76,28 @@ def test_senal_excluye_duplicados_y_datos_no_disponibles_al_decidir(tmp_path):
     assert store.signal_prices(q,quote(minute=2).observed_at) == [D(100)]
 
 
-def test_aprobacion_ia_lenta_no_ejecuta_con_libro_viejo(tmp_path):
+def test_demora_previa_no_ejecuta_con_cotizacion_vieja_y_ia_off(tmp_path):
+    """RC6: la frescura se revalida al admitir, sin depender de IA intradiaria."""
     store = PaperStore(str(tmp_path / "p.db"))
-    clock = [quote(minute=7).observed_at]
-    class SlowGate:
-        def evaluate(self,*_):
-            clock[0] = quote(minute=10).observed_at
-            return {"decision":"APPROVE","score":.9,"veto":False,"reason":"fixture"}
-    broker = PaperBroker(store,ai_gate=SlowGate(),require_ai=True,clock_fn=lambda:clock[0])
-    for i in range(8):
-        q = quote(price=str(100+i),minute=i)
-        store.add_quote(q)
-    broker.on_quote(q)
+    q = quote(minute=7)
+    clock = [q.observed_at]
+    broker = PaperBroker(
+        store,
+        ai_gate=None,
+        require_ai=False,
+        ai_mode="OFF",
+        economics_mode="BINDING",
+        clock_fn=lambda: clock[0],
+    )
+    store.add_quote(q)
+    clock[0] = quote(minute=10).observed_at
+
+    opened, reason, paper_id = broker._open(q, D("0.9"), {})
+
+    assert opened is False
+    assert paper_id is None
+    assert "STALE" in reason
     assert not store.open_positions()
-    with store.connect() as c:
-        gate = c.execute("SELECT * FROM trade_gate_evaluations").fetchone()
-    assert gate["ai_gate"] == "APPROVE" and gate["final_result"] == "BLOCKED"
-    assert "STALE" in gate["reason"]
 
 
 def test_max_hold_sin_datos_persiste_y_se_ejecuta_despues_de_reiniciar(position):
