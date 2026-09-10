@@ -1,0 +1,82 @@
+name: RC6 W12 Import Stage RCA 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-w12-import-stage-rca-20260910.yml
+
+permissions:
+  contents: read
+
+jobs:
+  pinpoint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert RC6 PAPER safety
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only pinpoint importer failure stage
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          DB="$ROOT/data/paper_v17/observer_v17.db"
+          CONTAINER=porota_production_observer
+
+          echo '=== LAST_V2_RUNS ==='
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True); c.execute('pragma query_only=on')
+          for r in c.execute("select run_id,job_key,started_at,finished_at,state,records,changed,conflicts,detail from contract_evidence_v2_runs order by started_at desc limit 40"):
+              print('|'.join('NULL' if v is None else str(v)[:500] for v in r))
+          c.close()
+          PY
+
+          echo '=== CE_INIT_SCHEMA_SOURCE ==='
+          sudo -n docker exec -i "$CONTAINER" python - <<'PY'
+          import inspect,cp_contract_evidence_v2_hf6 as ce
+          for name in ('init_schema','now_iso','normalize_identity'):
+              fn=getattr(ce,name,None); print('---'+name+'---'); print(inspect.getsource(fn) if fn else 'MISSING')
+          PY
+
+          echo '=== CONTAINER_USER_AND_DATA_MOUNT ==='
+          sudo -n docker inspect --format='ConfigUser={{.Config.User}} ReadonlyRootfs={{.HostConfig.ReadonlyRootfs}}' "$CONTAINER"
+          sudo -n docker inspect --format='{{range .Mounts}}{{println .Destination "RW=" .RW "Type=" .Type "Source=" .Source}}{{end}}' "$CONTAINER" | grep -E '/app/data|paper_v17|observer_v17' || true
+          sudo -n docker exec -i "$CONTAINER" sh -c 'id; ls -ln /app/data/paper_v17/observer_v17.db; test -w /app/data/paper_v17/observer_v17.db && echo DB_WRITABLE_BY_CONTAINER_USER=YES || echo DB_WRITABLE_BY_CONTAINER_USER=NO'
+
+          echo '=== SQLITE_STATUS ==='
+          sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys,os
+          c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('quick_check='+str(c.execute('pragma quick_check').fetchone()[0]))
+          print('journal_mode='+str(c.execute('pragma journal_mode').fetchone()[0]))
+          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print('MODE='+str(r[0] if r else None)); print('REAL_ORDERS_SENT='+str(r[1] if r else None))
+          for suffix in ('-wal','-shm'):
+              p=sys.argv[1]+suffix
+              print(os.path.basename(p)+'='+('EXISTS size='+str(os.path.getsize(p)) if os.path.exists(p) else 'MISSING'))
+          PY
+          echo 'MUTATIONS=NONE'
+          echo 'IMPORTER_EXECUTED=NO'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
