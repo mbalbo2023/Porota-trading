@@ -1,0 +1,100 @@
+name: RC6 Paper Cycle Binding Composition Forward Fix 2026-09-10
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths: ['.github/workflows/rc6-paper-cycle-binding-composition-forwardfix-20260910.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  forward-fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Assert RC6 PAPER and BINDING source identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          grep -q '"PAPER_ECONOMIC_GATE_MODE": "BINDING"' porota_mode_manager.py
+          echo RC6_BINDING_IDENTITY=GREEN
+      - name: Align historical paper-cycle regression with RC6 BINDING composition
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tests/test_production_paper_v1634.py')
+          s=p.read_text(encoding='utf-8')
+          anchor='from bt_caucion_paper import CaucionOffer, modeled_sale_settlement, pending_proceeds\n'
+          if anchor not in s:
+              raise SystemExit('IMPORT_ANCHOR_DRIFT')
+          s=s.replace(anchor, anchor+'from bq_exit_policy import PaperSessionPolicy\n', 1)
+          old='''    broker = PaperBroker(store, initial_cash="1000000", fee_rate="0.001")\n'''
+          new='''    # Esta regresión prueba el ciclo PAPER completo con la composición RC6 real:\n    # economía BINDING + cierre intradiario + target congelado 5%. No usa SHADOW.\n    broker = PaperBroker(store, initial_cash="1000000", fee_rate="0.001",\n                         session_policy=PaperSessionPolicy(), target_gain_pct="0.05")\n    assert broker.economics_mode == "BINDING"\n    assert broker.intraday_fee_rebate is True\n'''
+          if old not in s:
+              raise SystemExit('CYCLE_BROKER_ANCHOR_DRIFT')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+          python -m compileall -q tests/test_production_paper_v1634.py
+          git diff --check
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Prove cycle plus canonical economic and W10 guards
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q \
+            tests/test_production_paper_v1634.py::test_ciclo_compra_y_venta_es_solo_paper \
+            tests/test_hotfix_rc3_hf4.py::test_configuracion_desplegada_no_es_un_noop \
+            tests/test_hotfix_rc3_hf4.py::test_sin_cierre_intradiario_conserva_costo_completo \
+            tests/test_hotfix_rc3_hf4.py::test_parametros_de_riesgo_rc6_siguen_congelados \
+            tests/test_rc6_w10_sector_policy.py
+          echo PAPER_CYCLE_BINDING_COMPOSITION=GREEN
+          echo SHADOW_NOT_USED=GREEN
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+      - name: Persist only after focused proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/test_production_paper_v1634.py
+          if git diff --cached --quiet; then echo NO_SOURCE_DELTA; else
+            git commit -m 'test(rc6): exercise paper cycle with binding economics'
+            git push origin HEAD:fix/rc6-w10-sector-map-binding-20260910
+          fi
+      - name: Continue integrated pytest to next first failure
+        shell: bash
+        run: |
+          set +e
+          PYTHONPATH=. pytest -x -vv --tb=short > /tmp/pytest-next.txt 2>&1
+          rc=$?
+          echo "PYTEST_RC=$rc"
+          if [ "$rc" -ne 0 ]; then
+            grep -nE 'FAILED|ERROR|E   |AssertionError|NameError|TypeError|AttributeError|KeyError|ValueError' /tmp/pytest-next.txt | tail -n 120 || true
+            tail -n 180 /tmp/pytest-next.txt || true
+            exit "$rc"
+          fi
+          tail -n 120 /tmp/pytest-next.txt
+          echo INTEGRATED_TESTS=GREEN
+      - name: Reassert immutable safety
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          echo RC6_PAPER_SAFETY_FINAL=GREEN
+          echo REAL_ORDER_TEST=NOT_PERFORMED
