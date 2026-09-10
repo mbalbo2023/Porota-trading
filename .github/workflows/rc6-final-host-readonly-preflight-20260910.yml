@@ -28,7 +28,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
-      - name: Read-only host runtime and W12 drift snapshot
+      - name: Read-only host runtime and W12 final gate
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -38,79 +38,103 @@ jobs:
           ssh -i "$HOME/.ssh/porota_preflight" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
-          set -euo pipefail
+          set -Eeuo pipefail
           REPO=/opt/porota-trading
-          echo '=== RC6 FINAL READONLY HOST PREFLIGHT V2 ==='
+          CANDIDATE_SHA=e47eeffcb94a9468ac7e7f610beee0869353a77e
+          TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
+          echo '=== RC6 FINAL READONLY HOST PREFLIGHT V3 ==='
+          echo "FUNCTIONAL_CANDIDATE_SHA=$CANDIDATE_SHA"
           echo "UTC=$(date -u +%FT%TZ)"
           echo "HOST_BRANCH=$(git -C "$REPO" branch --show-current)"
           echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
+          echo "HOST_TRACKED_DIRTY=$(git -C "$REPO" diff --name-only | wc -l | tr -d ' ')"
+          echo "HOST_STAGED_DIRTY=$(git -C "$REPO" diff --cached --name-only | wc -l | tr -d ' ')"
           echo "HOST_DIRTY_COUNT=$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
           echo 'HOST_DIRTY_TOP_BEGIN'
           git -C "$REPO" status --porcelain | head -30 || true
           echo 'HOST_DIRTY_TOP_END'
-          echo "DISK_FREE_BYTES=$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"
 
-          for c in porota_production_observer porota_production_dashboard; do
-            echo "CONTAINER_${c}=$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' "$c" 2>/dev/null || echo MISSING)"
-          done
-          echo -n 'HEALTH='
-          curl -fsS http://127.0.0.1:8000/health || true
-          echo
+          DISK_FREE="$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"
+          echo "DISK_FREE_BYTES=$DISK_FREE"
+          test "$DISK_FREE" -ge 8589934592
+
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo "CONTAINER_porota_production_observer=$OBS"
+          echo "CONTAINER_porota_production_dashboard=$DASH"
+          test "$OBS" = "true|$TARGET_IMAGE|0|true"
+          test "$DASH" = "true|$TARGET_IMAGE|0"
+
+          HEALTH="$(curl -fsS http://127.0.0.1:8000/health)"
+          echo "HEALTH=$HEALTH"
+          python3 - "$HEALTH" <<'PY'
+          import json,sys
+          x=json.loads(sys.argv[1])
+          assert x.get('status')=='ok',x
+          assert x.get('version')=='17.0.0-rc6',x
+          PY
 
           echo 'OBSERVER_MOUNTS_BEGIN'
           sudo -n docker inspect porota_production_observer --format '{{range .Mounts}}{{println .Source "=>" .Destination "RW=" .RW}}{{end}}'
           echo 'OBSERVER_MOUNTS_END'
+          sudo -n docker inspect porota_production_observer --format '{{range .Mounts}}{{if eq .Destination "/run/secrets/ppi_production.json"}}{{println .RW}}{{end}}{{end}}' | grep -qx 'false'
 
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          SAFETY="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
+          vals=[]
+          row=None
           for p in ('/app/data/paper_v17/observer_v17.db','/app/data/market_history.db'):
               c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10)
               c.execute('PRAGMA query_only=ON')
-              print('DB_QUICK_CHECK='+p+'|'+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+              vals.append(c.execute('PRAGMA quick_check').fetchone()[0])
               if p.endswith('observer_v17.db'):
-                  tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                  if 'observer_state' in tables:
-                      row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
-                      print('OBSERVER_STATE=' + ('|'.join(map(str,row)) if row else 'NONE'))
+                  row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
               c.close()
+          print('|'.join(map(str,(*vals,*row))))
           PY
+          )"
+          echo "DB_AND_SAFETY=$SAFETY"
+          test "$SAFETY" = 'ok|ok|PRODUCTION_PAPER|0'
 
-          echo 'CONTRACT_UNITS_DISCOVERED_BEGIN'
-          sudo -n systemctl list-unit-files --no-legend --no-pager 2>/dev/null | grep -E 'porota.*contract.*evidence' || true
-          echo 'CONTRACT_UNITS_DISCOVERED_END'
-          echo "W12_SCRIPT_EXISTS=$([ -f /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh ] && echo YES || echo NO)"
-          echo "W12_RUNTIME_DIR_EXISTS=$([ -d /opt/porota-contract-evidence-rc6-runtime ] && echo YES || echo NO)"
-          if [ -f /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh ]; then
-            stat -c 'W12_SCRIPT_STAT=%a|%u|%g|%s|%y' /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
-            grep -nE 'OUTDIR|install .*STAGE_CAPTURE|OBSERVER_GID|CONTAINER=' /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh || true
-          fi
-
-          for unit in \
-            porota-contract-evidence-rc6-runtime.timer \
-            porota-contract-evidence-rc6-runtime.service \
-            porota-functional-health-rc6.timer \
-            porota-history-postclose-rc6.timer \
-            porota-host-general-backup-rc6.timer \
-            porota-preopen-rc6.timer \
-            porota-candle-integrity-rc6.timer \
-            porota-a3-history-daily-rc6.timer \
-            porota-a3-history-reconcile-rc6.timer \
-            porota-a3-history-weekend-rc6.timer; do
-              printf 'UNIT=%s|ACTIVE=%s|ENABLED=%s\n' "$unit" \
-                "$(sudo -n systemctl is-active "$unit" 2>/dev/null || true)" \
-                "$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || true)"
+          required_timers=(
+            porota-contract-evidence-rc6-runtime.timer
+            porota-functional-health-rc6.timer
+            porota-history-postclose-rc6.timer
+            porota-host-general-backup-rc6.timer
+            porota-preopen-rc6.timer
+            porota-candle-integrity-rc6.timer
+            porota-a3-history-daily-rc6.timer
+            porota-a3-history-reconcile-rc6.timer
+            porota-a3-history-weekend-rc6.timer
+          )
+          for unit in "${required_timers[@]}"; do
+            active="$(sudo -n systemctl is-active "$unit" 2>/dev/null || true)"
+            enabled="$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || true)"
+            printf 'UNIT=%s|ACTIVE=%s|ENABLED=%s\n' "$unit" "$active" "$enabled"
+            test "$active" = active
+            test "$enabled" = enabled
           done
 
-          HOST_CAPTURE="$(find "$REPO/data/contract_evidence/rc6_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
-          if [ -n "$HOST_CAPTURE" ]; then
-            echo "LATEST_HOST_CAPTURE=$HOST_CAPTURE"
-            stat -c 'LATEST_HOST_CAPTURE_STAT=%a|%u|%g|%s|%y' "$HOST_CAPTURE"
-          else
-            echo 'LATEST_HOST_CAPTURE=NONE'
-          fi
+          echo "FH_SERVICE_RESULT=$(sudo -n systemctl show porota-functional-health-rc6.service -p Result --value)"
+          test "$(sudo -n systemctl show porota-functional-health-rc6.service -p Result --value)" = success
 
-          echo 'CONTAINER_CE_PATHS_BEGIN'
-          sudo -n docker exec porota_production_observer sh -lc 'find /app/data /opt/porota-trading/data -maxdepth 4 -type f -name "contract_*.json" -print 2>/dev/null | tail -10 || true'
-          echo 'CONTAINER_CE_PATHS_END'
+          echo "W12_SCRIPT_EXISTS=$([ -f /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh ] && echo YES || echo NO)"
+          test -f /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          test -d /opt/porota-contract-evidence-rc6-runtime
+
+          HOST_CAPTURE="$(find "$REPO/data/contract_evidence/rc6_trusted" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
+          test -n "$HOST_CAPTURE"
+          echo "LATEST_HOST_CAPTURE=$HOST_CAPTURE"
+          stat -c 'LATEST_HOST_CAPTURE_STAT=%a|%u|%g|%s|%y' "$HOST_CAPTURE"
+          MODE="$(stat -c '%a' "$HOST_CAPTURE")"
+          GID="$(stat -c '%g' "$HOST_CAPTURE")"
+          test "$MODE" = 640
+          OBS_GID="$(sudo -n docker exec porota_production_observer id -g)"
+          test "$GID" = "$OBS_GID"
+          REL="${HOST_CAPTURE#"$REPO/data/"}"
+          sudo -n docker exec porota_production_observer test -r "/app/data/$REL"
+          echo 'W12_CAPTURE_READABLE=YES'
+
           echo 'MUTATIONS=NONE'
+          echo 'RC6_FINAL_HOST_PREFLIGHT=GREEN'
           HOST
