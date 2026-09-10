@@ -17,6 +17,7 @@ from be_paper_engine import D, PaperBroker, PaperStore, Quote
 import bf_production_paper_observer as observer
 from bh_paper_gemini import CURRENT_TEXT_MODELS, rank_models
 from bt_caucion_paper import CaucionOffer, modeled_sale_settlement, pending_proceeds
+from bq_exit_policy import PaperSessionPolicy
 from cf_sale_settlement import modeled_sale_settlement_date
 from bs_instrument_contracts import InstrumentContract
 from bs_instrument_contracts import cash_currency
@@ -1279,7 +1280,12 @@ def test_observador_no_contiene_capacidad_operativa(word):
 
 def test_ciclo_compra_y_venta_es_solo_paper(tmp_path):
     store = PaperStore(str(tmp_path / "observer.db"))
-    broker = PaperBroker(store, initial_cash="1000000", fee_rate="0.001")
+    # Esta regresión prueba el ciclo PAPER completo con la composición RC6 real:
+    # economía BINDING + cierre intradiario + target congelado 5%. No usa SHADOW.
+    broker = PaperBroker(store, initial_cash="1000000", fee_rate="0.001",
+                         session_policy=PaperSessionPolicy(), target_gain_pct="0.05")
+    assert broker.economics_mode == "BINDING"
+    assert broker.intraday_fee_rebate is True
     for i, price in enumerate(("100", "100.2", "100.4", "100.6", "100.8", "101", "101.4", "102")):
         q = quote(price=price, minute=i)
         store.add_quote(q)
