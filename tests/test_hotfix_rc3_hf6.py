@@ -1,4 +1,4 @@
-"""Regresiones del candidato HF6; no necesitan red ni órdenes."""
+"""Regresiones históricas reutilizadas para validar contratos RC6; sin red ni órdenes."""
 
 import json
 import sqlite3
@@ -76,7 +76,7 @@ def test_politicas_autorizadas_no_reemplazan_economia_binding():
     assert settings["PAPER_ECONOMIC_GATE_MODE"] == "BINDING"
     assert settings["PAPER_EXPECTANCY_POLICY"] == "OBSERVATION_ONLY"
     assert settings["PAPER_MARKET_REGIME_POLICY"] == "ALERT_ONLY"
-    assert settings["PAPER_SECTOR_CONCENTRATION_POLICY"] == "OBSERVATION_ONLY"
+    assert settings["PAPER_SECTOR_CONCENTRATION_POLICY"] == "BINDING"
 
 
 def test_publicacion_github_es_allowlist_y_elimina_detalle_sensible():
