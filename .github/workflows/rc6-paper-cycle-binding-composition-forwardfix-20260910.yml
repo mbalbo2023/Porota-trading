@@ -60,7 +60,7 @@ jobs:
             tests/test_hotfix_rc3_hf4.py::test_configuracion_desplegada_no_es_un_noop \
             tests/test_hotfix_rc3_hf4.py::test_sin_cierre_intradiario_conserva_costo_completo \
             tests/test_hotfix_rc3_hf4.py::test_parametros_de_riesgo_rc6_siguen_congelados \
-            tests/test_rc6_w10_sector_policy.py
+            tests/test_rc6_wave10_sector_binding_default.py
           echo PAPER_CYCLE_BINDING_COMPOSITION=GREEN
           echo SHADOW_NOT_USED=GREEN
           echo REAL_ORDER_ROUTES=NOT_CALLED
