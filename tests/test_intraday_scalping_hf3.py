@@ -97,22 +97,22 @@ def test_dashboard_tiene_solapa_y_declara_scanner_sin_fills(monkeypatch, store):
     assert "ACTIVE_OBSERVE" in body
     assert "no genera fills" in body
     assert "Órdenes reales" in body
-    assert "Economía matemática SHADOW" not in dashboard.health_page()
+    assert "Economía matemática SHADOW" in dashboard.health_page()
 
 
-def test_configuracion_hf3_es_binding_y_reduce_riesgo(monkeypatch, store):
+def test_configuracion_rc6_es_shadow_y_reduce_riesgo(monkeypatch, store):
     from bv_paper_runtime import broker_from_environment
     monkeypatch.delenv("PAPER_ECONOMIC_GATE_MODE",raising=False)
     monkeypatch.delenv("PAPER_RISK_PER_TRADE",raising=False)
     monkeypatch.delenv("PAPER_MAX_OPEN_POSITIONS",raising=False)
     broker = broker_from_environment(store)
-    assert broker.economics_mode == "BINDING"
+    assert broker.economics_mode == "SHADOW"
     assert broker.risk_pct == scalping.Decimal("0.002")
     assert broker.max_positions == 5
     import porota_mode_manager as mode
     settings = mode.paper_settings({"PAPER_ECONOMIC_GATE_MODE":"SHADOW",
                                     "PAPER_RISK_PER_TRADE":"0.5"})
-    assert settings["PAPER_ECONOMIC_GATE_MODE"] == "BINDING"
+    assert settings["PAPER_ECONOMIC_GATE_MODE"] == "SHADOW"
     assert settings["PAPER_RISK_PER_TRADE"] == "0.002"
 
 
