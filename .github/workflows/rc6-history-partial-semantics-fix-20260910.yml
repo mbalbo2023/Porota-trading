@@ -1,0 +1,202 @@
+name: RC6 History Partial Semantics Fix + Focused Proof 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-history-partial-semantics-fix-20260910.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  history-semantics-fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: fix/rc6-w10-sector-map-binding-20260910
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assert immutable RC6 PAPER identity
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+      - name: Materialize canonical history batch semantics
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('bf_production_paper_observer.py')
+          text = p.read_text(encoding='utf-8')
+
+          helper = '''
+
+def _history_batch_semantics(statuses):
+    """Clasifica el lote sin descartar evidencia parcial válida.
+
+    VALID_PAYLOAD es completo; PARTIAL conserva evidencia usable pero obliga
+    a AMARILLO; EMPTY_OR_INVALID y ERROR son fallas duras. Cualquier estado
+    desconocido falla cerrado para no maquillar degradación de históricos.
+    """
+    allowed = {"VALID_PAYLOAD", "PARTIAL", "EMPTY_OR_INVALID", "ERROR"}
+    normalized = []
+    for raw in statuses:
+        status = str(raw).strip().upper()
+        if status not in allowed:
+            raise ValueError(f"PPI_HISTORY_BATCH_UNKNOWN_STATUS:{raw}")
+        normalized.append(status)
+    full_valid = normalized.count("VALID_PAYLOAD")
+    partial = normalized.count("PARTIAL")
+    empty_invalid = normalized.count("EMPTY_OR_INVALID")
+    errors = normalized.count("ERROR")
+    usable = full_valid + partial
+    hard_failures = empty_invalid + errors
+    if normalized and full_valid == len(normalized):
+        state = "VERDE"
+    elif usable:
+        state = "AMARILLO"
+    else:
+        state = "ROJO"
+    return {
+        "full_valid": full_valid,
+        "partial_with_valid_evidence": partial,
+        "empty_invalid": empty_invalid,
+        "errors": errors,
+        "usable": usable,
+        "hard_failures": hard_failures,
+        "state": state,
+    }
+'''
+          anchor = '\n\ndef _historical_targets(store):'
+          if 'def _history_batch_semantics(statuses):' not in text:
+              if text.count(anchor) != 1:
+                  raise SystemExit('HISTORY_FIX_ABORT=HELPER_ANCHOR_MISMATCH')
+              text = text.replace(anchor, helper + anchor, 1)
+
+          old_init = '''def _download_histories(reader, store):
+    end = datetime.now(TZ).date()
+    start = end - timedelta(days=365)
+    total = successes = failures = 0
+'''
+          new_init = '''def _download_histories(reader, store):
+    end = datetime.now(TZ).date()
+    start = end - timedelta(days=365)
+    total = 0
+    batch_statuses = []
+'''
+          if old_init in text:
+              text = text.replace(old_init, new_init, 1)
+          elif new_init not in text:
+              raise SystemExit('HISTORY_FIX_ABORT=INIT_MISMATCH')
+
+          old_count = '''            total += count
+            if status=='VALID_PAYLOAD':
+                successes += 1
+            else:
+                failures += 1
+        except Exception as exc:
+            failures += 1
+'''
+          new_count = '''            total += count
+            batch_statuses.append(status)
+        except Exception as exc:
+            batch_statuses.append('ERROR')
+'''
+          if old_count in text:
+              text = text.replace(old_count, new_count, 1)
+          elif new_count not in text:
+              raise SystemExit('HISTORY_FIX_ABORT=COUNT_MISMATCH')
+
+          old_summary = '''    state = "VERDE" if successes and not failures else "AMARILLO" if successes else "ROJO"
+    with store.connect() as c:
+        covered = c.execute("SELECT COUNT(*) FROM production_history WHERE row_count>0").fetchone()[0]
+    detail = (f"Lote histórico {successes}/{len(symbols)}; cobertura acumulada "
+              f"{covered}/{len(all_symbols)} instrumentos; {total} filas en este lote; "
+              f"{failures} fallidos. La descarga completa es incremental para no saturar PPI.")
+    _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail,
+                success=bool(successes))
+    _health(store, "PPI_PRODUCTION_HISTORY", state, detail, "PPI Producción",
+            success=bool(successes))
+'''
+          new_summary = '''    semantics = _history_batch_semantics(batch_statuses)
+    state = semantics["state"]
+    with store.connect() as c:
+        covered = c.execute("SELECT COUNT(*) FROM production_history WHERE row_count>0").fetchone()[0]
+    detail = (f"Lote histórico completos={semantics['full_valid']}/{len(symbols)}; "
+              f"parciales usables={semantics['partial_with_valid_evidence']}; "
+              f"fallas duras={semantics['hard_failures']} "
+              f"(vacío/inválido={semantics['empty_invalid']}, errores={semantics['errors']}); "
+              f"cobertura completa acumulada {covered}/{len(all_symbols)} instrumentos; "
+              f"{total} filas válidas en este lote. La descarga completa es incremental para no saturar PPI.")
+    usable = bool(semantics["usable"])
+    _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail,
+                success=usable)
+    _health(store, "PPI_PRODUCTION_HISTORY", state, detail, "PPI Producción",
+            success=usable)
+'''
+          if old_summary in text:
+              text = text.replace(old_summary, new_summary, 1)
+          elif new_summary not in text:
+              raise SystemExit('HISTORY_FIX_ABORT=SUMMARY_MISMATCH')
+
+          p.write_text(text, encoding='utf-8')
+          print('HISTORY_SEMANTICS_MATERIALIZED=GREEN')
+          PY
+          python -m py_compile bf_production_paper_observer.py
+      - name: Focused semantic and history regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q \
+            tests/test_rc6_history_partial_semantics.py \
+            tests/test_production_paper_v1634.py::test_historicos_usan_universo_completo_no_lote_activo \
+            tests/test_rc4_acceptance.py::test_history_identical_version_is_deduped \
+            tests/test_rc4_acceptance.py::test_history_file_without_v2_schema_falls_back_legacy
+          echo HISTORY_FOCUSED_REGRESSION=GREEN
+      - name: Commit tested history fix
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name porota-rc6-ci
+          git config user.email porota-rc6-ci@users.noreply.github.com
+          git add bf_production_paper_observer.py
+          if git diff --cached --quiet; then
+            echo HISTORY_FIX_COMMIT=ALREADY_PRESENT
+            exit 0
+          fi
+          git commit -m 'fix(rc6): preserve partial historical evidence semantics'
+          git fetch --no-tags origin fix/rc6-w10-sector-map-binding-20260910
+          git rebase origin/fix/rc6-w10-sector-map-binding-20260910
+          PYTHONPATH=. pytest -q tests/test_rc6_history_partial_semantics.py
+          git push origin HEAD:fix/rc6-w10-sector-map-binding-20260910
+          echo HISTORY_FIX_COMMIT=GREEN
+
+  closed-blocker-regressions:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove settlement and legacy blockers stay closed
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q \
+            tests/test_rc4_hf1_last_mile.py::test_t1_without_cutoff_waits_until_full_expected_date_elapsed \
+            tests/test_rc4_hf2_consolidation.py::test_hf2_version_and_orders_remain_blocked \
+            tests/test_rc4_hf2_consolidation.py::test_live_page_keeps_current_round_and_history_semantics_clean
+          echo SETTLEMENT_LEGACY_FOCUSED=GREEN
