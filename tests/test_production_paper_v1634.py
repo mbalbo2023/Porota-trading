@@ -1313,7 +1313,10 @@ def test_ciclo_compra_y_venta_es_solo_paper(tmp_path):
 
 def test_no_duplica_decision_ni_posicion_en_mismo_ciclo(tmp_path):
     store = PaperStore(str(tmp_path / "observer.db"))
-    broker = PaperBroker(store)
+    # Esta prueba necesita una apertura; usa la composición RC6 BINDING real.
+    broker = PaperBroker(store, session_policy=PaperSessionPolicy(), target_gain_pct="0.05")
+    assert broker.economics_mode == "BINDING"
+    assert broker.intraday_fee_rebate is True
     for i in range(8):
         q = quote(price=str(100+i), minute=i)
         store.add_quote(q)
@@ -1337,7 +1340,10 @@ def test_sin_ask_size_no_hay_fill(tmp_path):
 def test_patrimonio_paper_limita_posicion_y_exposicion(tmp_path):
     store = PaperStore(str(tmp_path / "observer.db"))
     broker = PaperBroker(store, initial_cash="1000000", risk_pct="0.50",
-                         max_position_pct="0.25", max_total_exposure_pct="0.60")
+                         max_position_pct="0.25", max_total_exposure_pct="0.60",
+                         session_policy=PaperSessionPolicy(), target_gain_pct="0.05")
+    assert broker.economics_mode == "BINDING"
+    assert broker.intraday_fee_rebate is True
     for i in range(8):
         q = quote(price=str(100+i), minute=i, ask_size="100000")
         store.add_quote(q)
