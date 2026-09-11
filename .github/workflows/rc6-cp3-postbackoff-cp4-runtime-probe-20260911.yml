@@ -1,4 +1,4 @@
-name: RC6 CP3 Endpoint + CP4 Futures RCA 2026-09-11
+name: RC6 CP3 Blocked Paths + CP4 Deployed Wiring 2026-09-11
 
 on:
   push:
@@ -13,7 +13,7 @@ env:
   TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
 
 jobs:
-  cp3_endpoint_shape_readonly:
+  cp3_blocked_paths_readonly:
     runs-on: ubuntu-latest
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
@@ -27,49 +27,39 @@ jobs:
           set -Eeuo pipefail; install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Sanitize latest trusted capture structure and collector wiring
+      - name: Find sanitized successful capture metadata only
         shell: bash
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
           set -Eeuo pipefail
-          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
-          echo HOST_HEAD="$TARGET"; echo MUTATIONS=NONE
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"; echo HOST_HEAD="$TARGET"; echo MUTATIONS=NONE
           sudo -n python3 - <<'PY'
           from pathlib import Path
-          import json, urllib.parse
-          root=Path('/home')
-          files=sorted(root.glob('*/porota-browser-lab/rc6-runtime/contract_*.json'), key=lambda p:p.stat().st_mtime, reverse=True)
-          if not files:
-              print('CAPTURE=ABSENT'); raise SystemExit
-          p=files[0]; print('CAPTURE_BASENAME='+p.name); print('CAPTURE_MTIME='+str(p.stat().st_mtime))
-          try: d=json.loads(p.read_text())
-          except Exception as e: print('CAPTURE_PARSE='+type(e).__name__); raise SystemExit
-          print('TOP_KEYS='+json.dumps(sorted(d.keys())))
-          deny={'headers','body','payload','content','html','cookies','cookie','token','authorization','password','username','user'}
-          for key in ('state','routes','endpoints','blocked_nonread','jobs','real_orders_sent'):
-              v=d.get(key)
-              if isinstance(v,list):
-                  print(f'{key.upper()}_COUNT={len(v)}')
-                  for i,x in enumerate(v[:30]):
-                      if isinstance(x,dict):
-                          safe={}
-                          for k,val in x.items():
-                              if k.lower() in deny: continue
-                              if k.lower() in {'url','uri','href'} and isinstance(val,str):
-                                  u=urllib.parse.urlsplit(val); safe[k]=u.scheme+'://'+u.netloc+u.path
-                              elif isinstance(val,(str,int,float,bool)) or val is None: safe[k]=val
-                          print(key.upper()+f'_{i}='+json.dumps(safe,sort_keys=True,ensure_ascii=False))
-                      else: print(key.upper()+f'_{i}_TYPE='+type(x).__name__)
-              elif isinstance(v,dict): print(f'{key.upper()}_DICT_KEYS='+json.dumps(sorted(v.keys())))
-              else: print(f'{key.upper()}={v}')
+          import json,urllib.parse
+          roots=[Path('/home'),Path('/opt/porota-trading/data'),Path('/tmp')]
+          files=[]
+          for root in roots:
+              try: files += list(root.rglob('contract_*.json'))
+              except Exception: pass
+          files=sorted({str(p):p for p in files}.values(),key=lambda p:p.stat().st_mtime,reverse=True)[:20]
+          print('CAPTURE_FILES_FOUND='+str(len(files)))
+          for p in files:
+              try:d=json.loads(p.read_text())
+              except Exception:continue
+              print('CAPTURE='+p.name+'|MTIME='+str(int(p.stat().st_mtime))+'|AUTH='+str(d.get('auth_status'))+'|ROUTES='+str(len(d.get('routes') or []))+'|ENDPOINTS='+str(len(d.get('endpoints') or {}))+'|BLOCKED='+str(len(d.get('blocked_nonread') or []))+'|ORDERS='+str(d.get('real_orders_sent')))
+              for i,x in enumerate((d.get('blocked_nonread') or [])[:80]):
+                  if not isinstance(x,dict):continue
+                  method=str(x.get('method') or '')
+                  u=urllib.parse.urlsplit(str(x.get('url') or ''))
+                  print(f'BLOCKED_PATH={method}|{u.netloc}|{u.path}')
           PY
-          echo '--- COLLECTOR/IMPORTER REFERENCES ---'
-          sudo -n grep -RIl --exclude='*.db*' --exclude='*.json' -E 'blocked_nonread|AUTHENTICATED_TRUSTED_DEVICE|CONTRACT_EVIDENCE_DYNAMIC' /opt/porota-trading 2>/dev/null | head -n 40 || true
-          echo CP3_ENDPOINT_SHAPE_RCA_COMPLETE=YES
+          echo '--- RECENT COLLECTION SUMMARY ---'
+          sudo -n journalctl -u porota-contract-evidence-rc6.service --since '2026-09-11 14:30:00 UTC' --no-pager -n 260 | grep -E 'STATUS=GREEN_COLLECTION|AUTH_STATUS=|blocked_nonread|records|REAL_ORDERS_SENT=' | tail -n 140 || true
+          echo CP3_BLOCKED_PATHS_RCA_COMPLETE=YES
           HOST
 
-  cp4_futures_state_readonly:
+  cp4_deployed_wiring_readonly:
     runs-on: ubuntu-latest
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
@@ -83,30 +73,27 @@ jobs:
           set -Eeuo pipefail; install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Aggregate A3 and history state by family/source/status
+      - name: Compare host/container A3 wiring with deterministic mapper
         shell: bash
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
           set -Eeuo pipefail
-          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
-          echo HOST_HEAD="$TARGET"; echo MUTATIONS=NONE
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"; echo HOST_HEAD="$TARGET"; echo MUTATIONS=NONE
+          echo '--- SYSTEMD UNIT ---'; sudo -n systemctl cat porota-a3-history-rc6@.service --no-pager
+          echo '--- HOST SOURCE HASH/IMPORT ---'
+          sha256sum /opt/porota-trading/ew_a3_history_rc6.py /opt/porota-trading/fd_a3_identity_mapper_rc6.py 2>/dev/null || true
+          grep -nE 'fd_a3_identity_mapper|porota_to_a3_dlr|_resolve_source_identity|CEM_SYMBOL_FAMILY_NOT_EXACT' /opt/porota-trading/ew_a3_history_rc6.py 2>/dev/null || true
+          echo '--- CONTAINER SOURCE HASH/IMPORT ---'
+          sudo -n docker exec -i porota_production_observer sh -lc "sha256sum /app/ew_a3_history_rc6.py /app/fd_a3_identity_mapper_rc6.py 2>/dev/null || true; grep -nE 'fd_a3_identity_mapper|porota_to_a3_dlr|_resolve_source_identity|CEM_SYMBOL_FAMILY_NOT_EXACT' /app/ew_a3_history_rc6.py 2>/dev/null || true"
+          echo '--- SAFE OFFLINE MAPPER SMOKE INSIDE CONTAINER ---'
           sudo -n docker exec -i porota_production_observer python - <<'PY'
-          import sqlite3,json
-          p='/app/data/paper_v17/observer_v17.db'; c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
-          def emit(label,sql,args=()):
-              print('--- '+label+' ---')
-              try:
-                  for r in c.execute(sql,args): print(json.dumps(dict(r),sort_keys=True,ensure_ascii=False))
-              except Exception as e: print(label+'_ERROR='+type(e).__name__+':'+str(e)[:240])
-          emit('A3_BY_TYPE_STATUS', 'select instrument_type,status,count(*) n,sum(coalesce(rows_last,0)) rows_last,max(last_attempt_at) max_attempt,max(last_success_at) max_success from a3_history_ingest_state_rc6 group by instrument_type,status order by instrument_type,status')
-          emit('A3_FUTURES_ROWS', "select source,symbol,instrument_type,market,settlement,status,attempts,empty_observations,last_attempt_at,last_success_at,last_error,rows_last from a3_history_ingest_state_rc6 where upper(instrument_type) like '%FUT%' or upper(source) like '%ROFEX%' order by symbol limit 100")
-          emit('LEDGER_FUTURES', "select instrument_type,source,state,count(*) n,sum(provider_rows) provider_rows,sum(valid_rows) valid_rows,sum(rejected_rows) rejected_rows,max(attempted_at) max_attempt from history_attempt_ledger_v2 where upper(instrument_type) like '%FUT%' or upper(source) like '%ROFEX%' group by instrument_type,source,state order by instrument_type,source,state")
-          emit('COVERAGE_FUTURES', "select * from catalog_family_coverage where upper(instrument_type) like '%FUT%' order by checked_at desc")
-          emit('PROD_HISTORY_FUTURES', "select instrument_type,count(*) n,sum(row_count) rows,max(downloaded_at) max_download from production_history where upper(instrument_type) like '%FUT%' group by instrument_type")
-          c.close()
+          try:
+              import fd_a3_identity_mapper_rc6 as m
+              for s in ['DLR/SEP26','DLR/DIC26','DLR/SEP26/OCT26','DLR/SEP26M']:
+                  try: print(s+'=>'+m.porota_to_a3_dlr(s))
+                  except Exception as e: print(s+'=>FAIL_CLOSED:'+type(e).__name__+':'+str(e))
+          except Exception as e: print('MAPPER_IMPORT_ERROR='+type(e).__name__+':'+str(e))
           PY
-          echo '--- A3 SERVICE JOURNALS ---'
-          sudo -n journalctl -u 'porota-a3-history-rc6@*.service' --since '2026-09-10 00:00:00 UTC' --no-pager -n 220 | tail -n 220 || true
-          echo CP4_FUTURES_RCA_COMPLETE=YES
+          echo CP4_DEPLOYED_WIRING_RCA_COMPLETE=YES
           HOST
