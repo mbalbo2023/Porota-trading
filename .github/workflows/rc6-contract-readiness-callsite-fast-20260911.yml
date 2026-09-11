@@ -1,0 +1,49 @@
+name: RC6 Contract Readiness Callsite Fast 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-contract-readiness-callsite-fast-20260911.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Bounded read-only call-site audit
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          test "$(git -C "$ROOT" rev-parse HEAD)" = f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          find "$ROOT" -maxdepth 1 -type f -name '*.py' -print0 | xargs -0 grep -nHE 'family_readiness_state|readiness_state\(|cq_contract_readiness_hf6|cp_contract_evidence_v2_hf6' || true
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10);c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0];r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone();c.close()
+          print('SAFETY='+'|'.join(map(str,(q,*r))))
+          assert q=='ok' and r and r[0]=='PRODUCTION_PAPER' and int(r[2] or 0)==0
+          PY
+          echo MUTATIONS=NONE
+          HOST
