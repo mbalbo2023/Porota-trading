@@ -1,0 +1,257 @@
+name: RC6 Postfinal Ingestion Scheduler and Readiness Audit 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-postfinal-ingestion-readiness-audit-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-postfinal-ingestion-readiness-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Repository safety identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'EXECUTION = "SIMULATED"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          echo REPO_SAFETY=GREEN
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Current host ingestion scheduler and data-readiness audit
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          export TZ=America/Argentina/Buenos_Aires
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          TARGET=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+
+          echo '=== IDENTITY / SAFETY ==='
+          echo "ART_NOW=$(date --iso-8601=seconds)"
+          echo "HOST_SHA=$(git -C "$ROOT" rev-parse HEAD)"
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo "HEALTH=$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)"
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print('SAFETY='+json.dumps({'quick_check':q,'mode':r[0] if r else None,'session':r[1] if r else None,'real_orders_sent':r[2] if r else None},sort_keys=True))
+          assert q=='ok' and r and r[0]=='PRODUCTION_PAPER' and int(r[2] or 0)==0
+          PY
+
+          echo '=== ALL RC6 TIMERS ==='
+          timers=(
+            porota-contract-evidence-rc6.timer
+            porota-history-postclose-rc6.timer
+            porota-candle-integrity-rc6.timer
+            porota-a3-history-daily-rc6.timer
+            porota-a3-history-reconcile-rc6.timer
+            porota-a3-history-weekend-rc6.timer
+            porota-preopen-rc6.timer
+            porota-source-truth-rc6.timer
+            porota-functional-health-rc6.timer
+          )
+          for t in "${timers[@]}"; do
+            echo "TIMER=$t|active=$(sudo -n systemctl is-active "$t" 2>/dev/null || true)|enabled=$(sudo -n systemctl is-enabled "$t" 2>/dev/null || true)|last=$(sudo -n systemctl show "$t" -p LastTriggerUSec --value 2>/dev/null || true)|next=$(sudo -n systemctl show "$t" -p NextElapseUSecRealtime --value 2>/dev/null || true)"
+          done
+
+          echo '=== INGESTION SERVICE RESULTS ==='
+          services=(
+            porota-contract-evidence-rc6.service
+            porota-history-postclose-rc6.service
+            porota-candle-integrity-rc6.service
+            porota-a3-history-rc6@DAILY_INCREMENTAL.service
+            porota-a3-history-rc6@RECONCILE.service
+            porota-a3-history-rc6@WEEKEND_DEEP.service
+          )
+          for s in "${services[@]}"; do
+            echo "SERVICE=$s|active=$(sudo -n systemctl is-active "$s" 2>/dev/null || true)|result=$(sudo -n systemctl show "$s" -p Result --value 2>/dev/null || true)|exec_rc=$(sudo -n systemctl show "$s" -p ExecMainStatus --value 2>/dev/null || true)|start=$(sudo -n systemctl show "$s" -p ExecMainStartTimestamp --value 2>/dev/null || true)|exit=$(sudo -n systemctl show "$s" -p ExecMainExitTimestamp --value 2>/dev/null || true)"
+          done
+
+          echo '=== LATEST INGESTION JOURNAL MARKERS ==='
+          for s in porota-contract-evidence-rc6.service porota-history-postclose-rc6.service porota-candle-integrity-rc6.service porota-a3-history-rc6@DAILY_INCREMENTAL.service porota-a3-history-rc6@RECONCILE.service porota-a3-history-rc6@WEEKEND_DEEP.service; do
+            echo "--- $s ---"
+            sudo -n journalctl -u "$s" -n 80 --no-pager -l 2>/dev/null \
+              | grep -E 'STATUS=|state|result|records|canonical|versions|selected|mapped|complete|failed|NOT_DUE|SKIP|GREEN|YELLOW|RED|real_orders|materializable|famil|ALIGNMENT|dirty|quick_check|source' \
+              | tail -n 35 || true
+          done
+
+          echo '=== OBSERVER CONTRACT / READINESS ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          from collections import defaultdict,Counter
+          from cp_contract_evidence_v2_hf6 import SOURCE_RANK
+          from cq_contract_readiness_hf6 import REQUIREMENTS, canonical_family
+
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20)
+          c.row_factory=sqlite3.Row
+          c.execute('pragma query_only=on')
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+
+          def count(t):
+              return c.execute(f'select count(*) from "{t}"').fetchone()[0] if t in tables else None
+
+          print('CONTRACT_COUNTS='+json.dumps({
+              'current':count('contract_evidence_v2_current'),
+              'snapshots':count('contract_evidence_v2_snapshots'),
+              'changes':count('contract_evidence_v2_changes'),
+              'runs':count('contract_evidence_v2_runs'),
+              'legacy':count('contract_evidence'),
+              'intraday_state':count('ppi_intraday_contract_state'),
+          },sort_keys=True))
+
+          if 'contract_evidence_v2_current' in tables and 'contract_evidence_v2_snapshots' in tables:
+              rows=c.execute("""
+                select cur.family,cur.ticker,cur.market,cur.settlement,cur.source_class,cur.observed_at,s.evidence_json
+                from contract_evidence_v2_current cur
+                join contract_evidence_v2_snapshots s on s.snapshot_id=cur.snapshot_id
+              """).fetchall()
+              grouped=defaultdict(list)
+              family_source=Counter()
+              family_wild=Counter()
+              family_explicit=Counter()
+              max_obs={}
+              for r in rows:
+                  fam=canonical_family(r['family'])
+                  ident=(str(r['ticker'] or '*').upper(),str(r['market'] or 'UNKNOWN').upper(),str(r['settlement'] or 'UNKNOWN').upper())
+                  try: ev=json.loads(r['evidence_json'] or '{}')
+                  except Exception: ev={}
+                  grouped[(fam,ident)].append({'source_class':r['source_class'],'observed_at':r['observed_at'],'evidence':ev})
+                  family_source[(fam,r['source_class'])]+=1
+                  if ident[0]=='*': family_wild[fam]+=1
+                  else: family_explicit[fam]+=1
+                  if r['observed_at'] and (fam not in max_obs or str(r['observed_at'])>str(max_obs[fam])): max_obs[fam]=r['observed_at']
+
+              for fam in sorted(set(list(REQUIREMENTS)+[k[0] for k in grouped])):
+                  req=REQUIREMENTS.get(fam)
+                  identities=[(ident,recs) for (ff,ident),recs in grouped.items() if ff==fam]
+                  exec_complete=0; full_complete=0; explicit_total=0; wild_total=0
+                  miss_exec=Counter(); miss_enrich=Counter(); source_counts=Counter()
+                  for ident,recs in identities:
+                      if ident[0]=='*': wild_total+=1
+                      else: explicit_total+=1
+                      merged={}
+                      for rec in sorted(recs,key=lambda x:SOURCE_RANK.get(x['source_class'],999),reverse=True):
+                          source_counts[rec['source_class']]+=1
+                          for k,v in (rec['evidence'] or {}).items():
+                              if v not in (None,'',[],{}): merged[k]=v
+                      if req is None:
+                          continue
+                      me=[x for x in req.execution_required if merged.get(x) in (None,'',[],{})]
+                      mn=[x for x in req.enrichment_required if merged.get(x) in (None,'',[],{})]
+                      miss_exec.update(me); miss_enrich.update(mn)
+                      if not me: exec_complete+=1
+                      if not me and not mn: full_complete+=1
+                  out={
+                    'family':fam,
+                    'identities':len(identities),
+                    'explicit_identities':explicit_total,
+                    'aggregate_wildcards':wild_total,
+                    'execution_complete_identities':exec_complete,
+                    'full_with_enrichment_identities':full_complete,
+                    'latest_observed_at':max_obs.get(fam),
+                    'top_missing_execution':[x for x,_ in miss_exec.most_common(12)],
+                    'top_missing_enrichment':[x for x,_ in miss_enrich.most_common(10)],
+                    'sources':dict(source_counts),
+                  }
+                  print('FAMILY_READINESS='+json.dumps(out,sort_keys=True,ensure_ascii=False))
+
+              famsrc=defaultdict(dict)
+              for (fam,src),n in family_source.items(): famsrc[fam][src]=n
+              print('FAMILY_SOURCE_COUNTS='+json.dumps(famsrc,sort_keys=True,ensure_ascii=False))
+
+          if 'contract_evidence_v2_runs' in tables:
+              cols=[r[1] for r in c.execute('pragma table_info(contract_evidence_v2_runs)')]
+              order='started_at' if 'started_at' in cols else 'rowid'
+              for r in c.execute(f'select * from contract_evidence_v2_runs order by {order} desc limit 15'):
+                  d={k:r[k] for k in r.keys() if k not in ('detail',)}
+                  if 'detail' in r.keys(): d['detail']=str(r['detail'] or '')[:180]
+                  print('CONTRACT_RUN='+json.dumps(d,sort_keys=True,default=str,ensure_ascii=False))
+          c.close()
+          PY
+
+          echo '=== MARKET HISTORY COVERAGE ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          p='/app/data/market_history.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20)
+          c.row_factory=sqlite3.Row;c.execute('pragma query_only=on')
+          tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          out={'tables':sorted([t for t in tabs if 'history' in t.lower() or 'a3' in t.lower() or 'attempt' in t.lower()])}
+          if 'history_canonical_v2' in tabs:
+              out['canonical_rows']=c.execute('select count(*) from history_canonical_v2').fetchone()[0]
+              out['symbols']=c.execute('select count(distinct symbol) from history_canonical_v2').fetchone()[0]
+              out['families']=c.execute('select count(distinct instrument_type) from history_canonical_v2').fetchone()[0]
+              out['first']=c.execute('select min(date) from history_canonical_v2').fetchone()[0]
+              out['last']=c.execute('select max(date) from history_canonical_v2').fetchone()[0]
+              for r in c.execute("""
+                select instrument_type family,count(*) rows,count(distinct symbol) symbols,min(date) first,max(date) last
+                from history_canonical_v2 group by instrument_type order by instrument_type
+              """):
+                  print('HISTORY_FAMILY='+json.dumps(dict(r),sort_keys=True,default=str))
+          if 'history_versions_v2' in tabs:
+              out['version_rows']=c.execute('select count(*) from history_versions_v2').fetchone()[0]
+          for t in ('production_history_attempts','a3_history_ingest_state_rc6'):
+              if t in tabs:
+                  cols=[r[1] for r in c.execute(f'pragma table_info("{t}")')]
+                  print('TABLE_META='+json.dumps({'table':t,'count':c.execute(f"select count(*) from \"{t}\"").fetchone()[0],'cols':cols},sort_keys=True))
+                  order=next((x for x in ('attempted_at','started_at','updated_at','last_attempt_at','last_success_at','id') if x in cols),None)
+                  sql=f'select * from "{t}"'+(f' order by "{order}" desc' if order else '')+' limit 12'
+                  for r in c.execute(sql):
+                      d={k:(str(r[k])[:220] if r[k] is not None else None) for k in r.keys()}
+                      print('STATE_ROW='+json.dumps({'table':t,'row':d},sort_keys=True,ensure_ascii=False))
+          print('HISTORY_SUMMARY='+json.dumps(out,sort_keys=True,default=str))
+          c.close()
+          PY
+
+          echo '=== FINAL SAFETY ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print('FINAL_SAFETY='+('|'.join(map(str,(q,*r)))))
+          assert q=='ok' and r and r[0]=='PRODUCTION_PAPER' and int(r[2] or 0)==0
+          print('MUTATIONS=NONE')
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
