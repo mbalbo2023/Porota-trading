@@ -1,0 +1,123 @@
+name: RC6 Contract Readiness Identity Bridge Proof 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-contract-readiness-bridge-proof-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static safety and unit proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m py_compile cp_contract_evidence_v2_hf6.py cq_contract_readiness_hf6.py
+          python - <<'PY'
+          import cp_contract_evidence_v2_hf6 as m
+          explicit={'source_class':'PPI_AUTHENTICATED_XHR','ticker':'GGAL','market':'BYMA','settlement':'A-24HS','evidence':{'instrument_id':'42','currency':'ARS'}}
+          e=m._readiness_evidence(explicit)
+          assert e['ticker']=='GGAL' and e['market']=='BYMA' and e['settlement']=='A-24HS'
+          assert e['instrument_id']=='42' and e['currency']=='ARS'
+          wildcard={'source_class':'PPI_AUTHENTICATED_WEB','ticker':'*','market':'UNKNOWN','settlement':'UNKNOWN','evidence':{}}
+          w=m._readiness_evidence(wildcard)
+          assert 'ticker' not in w and 'market' not in w and 'settlement' not in w
+          provider={'source_class':'PPI_AUTHENTICATED_XHR','ticker':'GGAL','market':'BYMA','settlement':'A-24HS','evidence':{'ticker':'PROVIDER','market':'MERV','settlement':'CI'}}
+          p=m._readiness_evidence(provider)
+          assert p['ticker']=='PROVIDER' and p['market']=='MERV' and p['settlement']=='CI'
+          r=m.family_readiness_state([explicit],family='ACCIONES',simulator_ready=False,cost_ready=False)
+          assert r['auto_activation_allowed'] is False
+          assert all(x not in r['missing'] for x in ('ticker','market','settlement'))
+          assert 'quantity_min' in r['missing'] and 'cost_model' in r['missing']
+          print('IDENTITY_BRIDGE_UNIT=GREEN')
+          print('AUTO_ACTIVATION=FALSE')
+          print('GENUINE_MISSING_PRESERVED=YES')
+          PY
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only runtime proof and call-site audit
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          TARGET=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo "HOST_SHA=$TARGET"
+          echo '=== CALL SITES ==='
+          grep -RniE --include='*.py' 'family_readiness_state|readiness_state\(|cq_contract_readiness_hf6|cp_contract_evidence_v2_hf6' "$ROOT" 2>/dev/null \
+            | grep -vE '/(\.git|data|__pycache__)/' | head -n 160 || true
+          echo '=== REAL DATA FALSE-MISSING DELTA ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          from collections import defaultdict,Counter
+          from cq_contract_readiness_hf6 import REQUIREMENTS,canonical_family
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20);c.row_factory=sqlite3.Row;c.execute('pragma query_only=on')
+          rows=c.execute('''select cur.family,cur.ticker,cur.market,cur.settlement,cur.source_class,s.evidence_json from contract_evidence_v2_current cur join contract_evidence_v2_snapshots s on s.snapshot_id=cur.snapshot_id''').fetchall();c.close()
+          grouped=defaultdict(list)
+          for r in rows:
+              try: ev=json.loads(r['evidence_json'] or '{}')
+              except Exception: ev={}
+              fam=canonical_family(r['family']); ident=(str(r['ticker'] or '*').upper(),str(r['market'] or 'UNKNOWN').upper(),str(r['settlement'] or 'UNKNOWN').upper())
+              grouped[(fam,ident)].append((r,ev))
+          placeholders={'','*','UNKNOWN','NONE','N/A','NULL'}
+          for fam in sorted(REQUIREMENTS):
+              req=REQUIREMENTS[fam]
+              before=after=explicit=0; removed=Counter(); genuine=Counter()
+              for (ff,ident),recs in grouped.items():
+                  if ff!=fam: continue
+                  merged={}
+                  # This audit only measures the identity bridge; provider precedence does not change whether an explicit identity exists.
+                  for r,ev in recs:
+                      for k,v in ev.items():
+                          if v not in (None,'',[],{}): merged[k]=v
+                  mb=[x for x in req.execution_required if merged.get(x) in (None,'',[],{})]
+                  before += int(not mb)
+                  bridged=dict(merged)
+                  for key,val in zip(('ticker','market','settlement'),ident):
+                      if str(val).strip().upper() not in placeholders and bridged.get(key) in (None,'',[],{}): bridged[key]=val
+                  ma=[x for x in req.execution_required if bridged.get(x) in (None,'',[],{})]
+                  after += int(not ma)
+                  if ident[0] not in placeholders: explicit+=1
+                  removed.update(set(mb)-set(ma)); genuine.update(ma)
+              print('BRIDGE_DELTA='+json.dumps({'family':fam,'explicit_identities':explicit,'execution_complete_before':before,'execution_complete_after':after,'false_missing_removed':dict(removed),'top_genuine_missing':[x for x,_ in genuine.most_common(12)]},sort_keys=True))
+          PY
+          echo '=== SAFETY ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10);c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0];r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone();c.close()
+          print('FINAL_SAFETY='+'|'.join(map(str,(q,*r))))
+          assert q=='ok' and r and r[0]=='PRODUCTION_PAPER' and int(r[2] or 0)==0
+          PY
+          echo MUTATIONS=NONE
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+          HOST
