@@ -16,6 +16,8 @@ EXPLICIT_ROLE_MAP={
     "fm_critical_approval_unix_runtime_rc6":"HOST_RUNTIME_ACTIVE",
     "rc5_release_preflight":"RETIRED_LEGACY",
     "rc6_trusted_browser_contract_collector":"HOST_RUNTIME_ACTIVE",
+    "rc6_contract_dom_collector":"HOST_RUNTIME_ACTIVE",
+    "rc6_contract_dom_importer":"HOST_RUNTIME_ACTIVE",
 }
 EXPLICIT_ROLE_REASON={
     "aq_macro_backtest":"Backtest macro offline; se invoca a demanda.",
@@ -27,6 +29,8 @@ EXPLICIT_ROLE_REASON={
     "fm_critical_approval_unix_runtime_rc6":"Entrypoint runtime RC6 invocado explícitamente por porota-critical-approval-rc6.service en el host.",
     "rc5_release_preflight":"Preflight exclusivo de RC5; sólo referenciado por workflows RC5 históricos y no pertenece al camino operativo RC6.",
     "rc6_trusted_browser_contract_collector":"Collector W12 RC6 invocado dinámicamente por porota-contract-evidence-rc6-runtime.sh; superficie GET/HEAD/OPTIONS y sin rutas operativas.",
+    "rc6_contract_dom_collector":"Collector DOM RC6 desplegado como extensión read-only del runtime Contract Evidence; sólo cotizaciones autenticadas, GET/HEAD/OPTIONS, sin rutas /Operar ni capacidad de órdenes.",
+    "rc6_contract_dom_importer":"Importer DOM RC6 invocado por el wrapper host Contract Evidence para materializar evidencia PPI_AUTHENTICATED_WEB sanitizada; no posee capacidad de órdenes.",
 }
 
 def build(root=ROOT):
