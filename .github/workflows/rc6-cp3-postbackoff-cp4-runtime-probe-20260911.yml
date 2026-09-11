@@ -1,0 +1,138 @@
+name: RC6 CP3 Post-Backoff + CP4 Runtime Probe 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-cp3-postbackoff-cp4-runtime-probe-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  cp3_postbackoff_readonly:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: CP3 post-backoff state and freshness read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ACTUAL="$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo "HOST_HEAD=$ACTUAL"; test "$ACTUAL" = "$TARGET"
+          echo MUTATIONS=NONE
+          echo MODE_EXPECTED=PRODUCTION_PAPER
+          echo REAL_ORDER_CAPABILITY_EXPECTED=BLOCKED
+          echo '--- CP3 TIMER/SERVICE ---'
+          sudo -n systemctl show porota-contract-evidence-rc6.timer -p ActiveState -p UnitFileState -p LastTriggerUSec -p NextElapseUSecRealtime -p Triggers --no-pager
+          sudo -n systemctl show porota-contract-evidence-rc6.service -p ActiveState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp --no-pager
+          echo '--- CP3 RUNTIME STATE SANITIZED ---'
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('/opt/porota-trading/data/contract_evidence/rc6_trusted/runtime_state.json')
+          if not p.exists(): print('RUNTIME_STATE=ABSENT')
+          else:
+              try:
+                  d=json.loads(p.read_text())
+                  deny={'token','password','username','user','cookie','cookies','authorization','headers','body','payload','content','html'}
+                  safe={k:v for k,v in d.items() if k.lower() not in deny}
+                  print('RUNTIME_STATE='+json.dumps(safe,sort_keys=True))
+              except Exception as e: print('RUNTIME_STATE_ERROR='+type(e).__name__)
+          PY
+          echo '--- CP3 JOURNAL AFTER BACKOFF WINDOW ---'
+          sudo -n journalctl -u porota-contract-evidence-rc6.service --since '2026-09-11 14:25:00 UTC' --no-pager -n 220 \
+            | sed -E 's/(token|password|authorization|cookie|username|user)=([^ ]+)/\1=[REDACTED]/Ig' \
+            | grep -E 'STATUS=|AUTH_STATUS=|AUTH_BROWSER_STARTED=|REAUTH_|PPI_CALLS=|REAL_ORDERS_SENT=|blocked_nonread|endpoints|routes|state|Starting|Finished|Deactivated' \
+            | tail -n 220 || true
+          echo '--- CP3 DB FRESHNESS ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,datetime as dt
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          table='contract_evidence_v2_current'
+          if c.execute("select 1 from sqlite_master where type='table' and name=?",(table,)).fetchone():
+              total=c.execute(f'select count(*) from {table}').fetchone()[0]
+              row=c.execute(f'select max(observed_at) from {table}').fetchone()
+              mx=row[0] if row else None
+              print('CP3_CURRENT_ROWS='+str(total)); print('CP3_MAX_OBSERVED='+str(mx))
+              if mx:
+                  try:
+                      x=dt.datetime.fromisoformat(mx.replace('Z','+00:00'))
+                      age=(dt.datetime.now(dt.timezone.utc)-x.astimezone(dt.timezone.utc)).total_seconds()/3600
+                      print(f'CP3_FRESHNESS_AGE_HOURS={age:.3f}')
+                  except Exception as e: print('CP3_FRESHNESS_PARSE_ERROR='+type(e).__name__)
+          else: print('CP3_CURRENT_TABLE=ABSENT')
+          c.close()
+          PY
+          echo CP3_POSTBACKOFF_PROBE_COMPLETE=YES
+          HOST
+
+  cp4_runtime_persistence_readonly:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: CP4 history/backfill/DLR persistence read-only discovery
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ACTUAL="$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo "HOST_HEAD=$ACTUAL"; test "$ACTUAL" = "$TARGET"
+          echo MUTATIONS=NONE
+          echo '--- CP4 TIMERS/SERVICES DISCOVERY ---'
+          sudo -n systemctl list-timers --all --no-pager | grep -Ei 'porota|histor|backfill|ingest|a3|future|rofex' || true
+          sudo -n systemctl list-units --type=service --all --no-pager | grep -Ei 'porota|histor|backfill|ingest|a3|future|rofex' || true
+          echo '--- CP4 SQLITE TABLE/COUNT DISCOVERY ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,re
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          names=[r[0] for r in c.execute("select name from sqlite_master where type='table' order by name")]
+          pat=re.compile(r'(histor|backfill|ingest|future|rofex|a3|reject|coverage|sync)',re.I)
+          hit=[n for n in names if pat.search(n)]
+          print('CP4_MATCHING_TABLES='+json.dumps(hit,ensure_ascii=False))
+          for n in hit:
+              try:
+                  q='select count(*) from "'+n.replace('"','""')+'"'
+                  cnt=c.execute(q).fetchone()[0]
+                  cols=[r[1] for r in c.execute('pragma table_info("'+n.replace('"','""')+'")')]
+                  print(json.dumps({'table':n,'rows':cnt,'columns':cols[:80]},ensure_ascii=False,sort_keys=True))
+              except Exception as e:
+                  print(json.dumps({'table':n,'error':type(e).__name__},sort_keys=True))
+          c.close()
+          PY
+          echo '--- CP4 FILE FRESHNESS DISCOVERY ---'
+          sudo -n find /opt/porota-trading/data -maxdepth 4 -type f \( -iname '*histor*' -o -iname '*backfill*' -o -iname '*future*' -o -iname '*rofex*' -o -iname '*a3*' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ %s %p\n' 2>/dev/null | sort -r | head -n 120 || true
+          echo CP4_RUNTIME_PERSISTENCE_PROBE_COMPLETE=YES
+          HOST
