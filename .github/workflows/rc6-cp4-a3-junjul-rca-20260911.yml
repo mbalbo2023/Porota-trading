@@ -53,7 +53,7 @@ jobs:
           PY
           echo '--- DIRECT READ-ONLY SOURCE RCA ---'
           sudo -n docker exec -i -w /tmp -e PYTHONPATH=/app/data/rc6_a3_overlay:/app "$CONTAINER" python - <<'PY'
-          import traceback
+          import json,traceback
           from cz_a3_cem_public_history_hf6 import A3CEMPublicReadOnlyClient
           from fd_a3_identity_mapper_rc6 import porota_to_a3_dlr
           c=A3CEMPublicReadOnlyClient()
@@ -63,7 +63,10 @@ jobs:
               try:
                   p=c.closing_prices(symbol=source,date_from='2026-09-04',date_to='2026-09-11',page=1,page_size=500)
                   rows=p.get('data',[]) if isinstance(p,dict) else (p if isinstance(p,list) else [])
-                  print('SOURCE_OK',target,'ROWS',len(rows))
+                  slim=[]
+                  for r in rows:
+                      slim.append({k:r.get(k) for k in ('symbol','date','openingPrice','maxPrice','minPrice','closingPrice','volume','open','high','low','close') if k in r})
+                  print('SOURCE_ROWS',target,json.dumps(slim,ensure_ascii=False,default=str))
               except Exception as e:
                   print('SOURCE_ERROR',target,type(e).__name__,str(e)[:600])
                   traceback.print_exc(limit=4)
