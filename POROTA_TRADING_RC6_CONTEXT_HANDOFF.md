@@ -1,80 +1,91 @@
 # POROTA TRADING RC6 — CONTEXT HANDOFF
 
-Updated evidence cut: 2026-09-11T14:22:05Z
+Updated evidence cut: 2026-09-11T15:26:00Z
 Canonical branch: `fix/rc6-w10-sector-map-binding-20260910`
-Latest evidence candidate before checkpoint/handoff docs: `9323b944cdd7b02bfa9a213e3c83670042565b2d`
-Checkpoint commit: `498bd55ea51af662dbc0aaf7cca2da0805085b1c`
+Latest evidence candidate before checkpoint/handoff docs: `89f2768cd07982f2e347ded95fb787246086de55`
+Checkpoint commit: `134da03fcf5a1b816abeccab57a0901148cddfeb`
 Audited deployed Droplet HEAD: `e47eeffcb94a9468ac7e7f610beee0869353a77e`
-Latest fully validated code/test candidate before diagnostic-only commits: `73024733c22b12fa302bf98baf5fe4991b048b9b`
+Latest fully validated code/test baseline before diagnostic-only commits: `73024733c22b12fa302bf98baf5fe4991b048b9b`
 Latest milestone checkpoint: `POROTA_TRADING_CHECKPOINT_RC6_2026-09-11_CP3_CP4_RUNTIME_RCA.md`
 
-## Compact CP matrix
-- CP1: GREEN code/integrated; YELLOW final runtime. Required regression active on current diagnostic lineage.
-- CP2: GREEN source/regression; YELLOW final PAPER ledger/dashboard live wiring.
-- CP3: YELLOW BLOCKING — timer/safety/materialization GREEN; non-read enforcement GREEN; current endpoints empty and DB freshness stale because session expired and isolated reauth reached `BLOCKED_BROWSER_ERROR`, then safe auth backoff.
-- CP4: GREEN code/tests deterministic simple DLR wiring; YELLOW runtime/data — deployed Droplet has FUTURES state rows=0 / COMPLETE=0.
-- CP5: GREEN source/regression; YELLOW final runtime/UX; `GDELT=SHADOW_ONLY`.
-- CP6: OPEN evidence-based residuals only: CP3 auth/freshness path + CP4 runtime/persistence coupling; no blind rework.
-- CP7: PENDING clean-tree W1-W18 18/18 canonical barrier.
-- CP8: PENDING final deploy/postflight + scheduler/data readiness.
+## Compact CP1–CP8 matrix
+- CP1: 🟢/🟡 — baseline integrated GREEN (`1801 passed`); current diagnostic-lineage regressions must complete; final runtime certification pending.
+- CP2: 🟢/🟡 — source/regression baseline GREEN; final PRODUCTION_PAPER ledger/dashboard live-wiring proof pending.
+- CP3: 🟡 BLOCKING — authentication RECOVERED. Timer and trusted-device login work repeatedly, routes are reached, orders=0. New blocker: target endpoint capture remains empty -> importer records=0 -> CE DB freshness stale.
+- CP4: 🟡 BLOCKING — repository deterministic simple-DLR mapper/source is correct/tested, but deployed host/container still run legacy `ew_a3_history_rc6.py` and mapper is not deployed/wired. All 40 FUTUROS remain ALIGNMENT_UNVERIFIED, rows=0, COMPLETE=0.
+- CP5: 🟢/🟡 — source/regression baseline GREEN; final runtime/UX pending; `GDELT=SHADOW_ONLY`.
+- CP6: 🟡 OPEN — residuals only: CP3 endpoint/materialization/freshness + CP4 targeted deploy/wiring/persistence.
+- CP7: ⚪ PENDING clean-tree Waves1–18 18/18 canonical barrier.
+- CP8: ⚪ PENDING final audited deploy/postflight + overnight/preopen + timers/schedulers/data jobs/freshness.
 
-## Safety/mode flags
+## Safety flags
 `VERSION=17.0.0-rc6`
 `MODE=PRODUCTION_PAPER`
 `REAL_ORDER_CAPABILITY=BLOCKED`
 `real_orders_sent=0`
-no real order routes
+no real order routes; no `/Operar`
+PPI Contract Evidence read-only/fail-closed; non-read methods remain blocked
+no invented contract/economic values
 `GDELT=SHADOW_ONLY`
-PPI Contract Evidence: read-only/fail-closed; no `/Operar`; blocked non-read attempts remain blocked; no invented facts.
-Recovery: STRICT NO-ROLLBACK; RCA -> smallest forward fix -> targeted + required regression.
+STRICT NO-ROLLBACK; RCA -> smallest forward fix -> targeted validation + required regression.
 
-## Latest runtime evidence
-### CP3/CP4 readonly proof
-- Workflow `RC6 CP3 CP4 Final Readonly Proof 2026-09-11`: run `34609390014` SUCCESS.
-- CE job `103295770068`; A3 job `103295770269`.
-- Exact audited host HEAD `e47eeff...`; mutations NONE.
-- CE timer active+enabled, service result success.
-- Stored trusted capture existed, `real_orders_sent=0`.
-- 7 CE tables nonempty / 4651 total rows; `contract_evidence_v2_current`=519.
-- DB max observed `2026-09-09T20:06:20.770262+00:00` (stale at proof time).
-- A3 FUTURES state rows=0; COMPLETE=0.
+## Latest CP3 evidence
+### Post-backoff auth recovery
+Run `34615602115`, CP3 job `103316626835`: SUCCESS, read-only.
+- host `e47eeff...`, mutations NONE.
+- safe backoff expired; isolated reauth succeeded and trusted-device session recovered.
+- repeated scheduled collections thereafter return `AUTHENTICATED_TRUSTED_DEVICE`.
+- routes=2–5, endpoints=0, orders=0.
+- importer repeatedly `records=0`, `state=AMARILLO`.
+- CE current table=519 rows; max observed `2026-09-09T20:06:20.770262+00:00`, ~43.25h stale at probe.
 
-### Corrected semantic gates
-- Commit `f801dc8a2fceefee90a2176b0b9e55a16d6698c6`.
-- Run `34609495272`, job `103296117506`: SUCCESS.
-- non-read enforcement GREEN: 18 POST attempts blocked, malformed/read-like=0.
-- PAPER safety GREEN, real orders=0.
-- CP3 DB materialization GREEN, rows=519.
-- CP3 endpoint input YELLOW count=0.
-- CP3 DB freshness YELLOW age=42.23h.
-- CP4 FUTURES persistence YELLOW rows=0 / COMPLETE=0.
+Current CP3 causal chain:
+`AUTH GREEN -> quote routes reached -> target responses not captured -> endpoints=0 -> records=0 -> DB stale`.
 
-### CP3 focused RCA
-- Diagnostic commit `9323b944cdd7b02bfa9a213e3c83670042565b2d`.
-- Workflow `RC6 CP3 Freshness Root Cause 2026-09-11`: run `34609676742`, job `103296720592`, SUCCESS, read-only.
-- Runtime state: `BLOCKED_BROWSER_ERROR`, blocked at `2026-09-11T13:31:30Z`, retry 3600s.
-- Collector first reported `BLOCKED_AUTH_SESSION_EXPIRED`, endpoints=0/routes=0/orders=0.
-- isolated reauth attempted at login page; diagnostic blocked path `z.clarity.ms/collect`; resulting `AMARILLO_AUTH_BLOCKED` / `BLOCKED_BROWSER_ERROR`.
-- subsequent timer runs safely report `AMARILLO_AUTH_BACKOFF`, browser not started, orders=0.
-- causal chain: `session expired -> isolated reauth -> browser/login-stage error -> one-hour safe backoff -> no fresh endpoint capture -> no fresh importer materialization`.
+### Blocked-path proof
+Run `34616066396`, CP3 job `103318185467`: SUCCESS.
+Latest successful persisted capture `contract_20260911T151656Z.json`:
+- auth trusted
+- routes=5
+- endpoints=0
+- blocked_nonread=21
+- orders=0
 
-## Source/code validation baseline
-- CP4 source fix lineage: `b4093c71b19eefe5d437dc168ad959511961bd66` -> `73024733c22b12fa302bf98baf5fe4991b048b9b`.
-- Integrated validation `34601120408`, job `103268380923`, SUCCESS: `1801 passed`, PAPER safety GREEN, W10 BINDING/fail-closed GREEN, `REAL_ORDER_ROUTES=NOT_CALLED`.
-- Companion Post-W10 run `34601120465` SUCCESS.
-- Current diagnostic lineage automatically triggers required W10/Post-W10 regression; do not inherit final GREEN until the latest executions complete.
+Current blocked requests are telemetry/support (PPI logger, Zendesk, Refiner, Clarity/Amplitude/Hotjar) and remain blocked. There is no current evidence that a required Contract Evidence business endpoint is being blocked. The branch collector only recognizes five legacy GET target-name patterns (`InstrumentosOperables`, `CaucionesOperables`, `ConfiguracionOperatoriaSimplificada`, `SubyacenteOpciones`, `DatosTecnicos`) and waits 900 ms after route DOM load. Next safe RCA is sanitized first-party GET path/status/content-type inventory with no query/body/header/account data to prove endpoint-name drift vs response timing.
 
-## Active work / exact dependency path
-Parallel:
-1. CP3: repair/prove isolated reauth browser path at exact `OPEN_LOGIN/BLOCKED_BROWSER_ERROR` signature without weakening order/read-only safety; then fresh capture -> importer -> DB freshness proof.
-2. CP4: obtain graph-safe runtime proof of deterministic DLR history/backfill/persistence on candidate code without falsely treating source tests as deployed evidence.
-3. CP1/CP2/CP5: revalidate assumptions on every materially changed candidate.
-4. CP6: only evidence-based residual gaps above.
+## Latest CP4 evidence
+### Runtime state
+Run `34615763269`, CP4 job `103317164709`: SUCCESS, read-only.
+- A3 state has 40 FUTUROS, all `ALIGNMENT_UNVERIFIED`, all rows_last=0, last_success=NULL.
+- simple DLR contracts are failing together with intentionally unsupported variants/spreads under `CEM_SYMBOL_FAMILY_NOT_EXACT`.
+- daily/reconcile runs select 40, matched=0, unmatched=40, complete=0, canonical_updates=0, execution_allowed=false.
+- FUTUROS observed_count=43 but ready_paper_count=0.
+- daily/reconcile/weekend A3 timers are installed and scheduled; scheduler absence is NOT the blocker.
+
+### Exact deployed wiring proof
+Run `34616066396`, CP4 job `103318185186`: SUCCESS, read-only.
+Systemd invokes `/app/ex_a3_history_job_rc6.py` inside `porota_production_observer`.
+Host and container legacy `ew_a3_history_rc6.py` hash:
+`825baa65e8beaae61dda2176e0665236d3f40b822f1917f40376b2f3cf9247f8`.
+The deployed source does not import/use `fd_a3_identity_mapper_rc6`; mapper file was absent in the deployed probe.
+
+Current repository source DOES import the deterministic mapper and uses `_resolve_source_identity` / `porota_to_a3_dlr`, mapping only proven simple DLR identities while keeping variants/spreads/options fail-closed. Therefore CP4 blocker is a proven candidate-vs-runtime deployment/wiring mismatch, not missing scheduler and not an unresolved mapper algorithm.
+
+## Canonical supporting baseline
+- fully validated baseline candidate `73024733c22b12fa302bf98baf5fe4991b048b9b`
+- integrated run `34601120408`, job `103268380923`: SUCCESS, `1801 passed`, PAPER safety GREEN, no real-order routes.
+- companion Post-W10 run `34601120465`: SUCCESS.
+- current diagnostic HEAD `89f2768...` generated run `34616066396` SUCCESS; its push-triggered W10/Post-W10 regressions were queued/running at this evidence cut and must be observed before inheriting GREEN.
+
+## Exact next dependency path
+Parallel safe tracks:
+1. CP3: sanitized authenticated first-party GET response-path inventory -> endpoint/timing RCA -> smallest collector fix -> fresh capture -> importer -> CE freshness proof.
+2. CP4: targeted forward deployment/wiring of already-tested mapper + current A3 source into PRODUCTION_PAPER runtime -> controlled historical read-only run -> prove simple DLR persistence while variants/spreads remain fail-closed -> affected + W10/Post-W10 regression.
+3. CP1/CP2/CP5: finish/observe current required regressions; revalidate on material code/runtime change.
+4. CP6: only surviving evidence-based gaps.
 
 Then:
-`CP3 + CP4 + CP1/CP2/CP5 -> CP6 closure -> CP7 clean-tree W1-W18 18/18 -> final deploy -> CP8 audited postflight + approved data jobs/timers/schedulers/freshness`.
-
-Final scheduler/timer/next-trigger certification remains CP8; current CP3 timer evidence is diagnostic/closure evidence, not a claim of final postdeploy readiness.
+`CP3 + CP4 + CP1/CP2/CP5 -> CP6 closure -> CP7 clean-tree W1-W18 18/18 -> final deploy -> CP8 audited postflight/readiness`.
 
 GLOBAL_RC6=YELLOW
 GO_18_OF_18=NO
