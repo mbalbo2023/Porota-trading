@@ -1,0 +1,87 @@
+name: RC6 EOD Exit Outcome Readonly Audit 2026-09-11
+on:
+  push:
+    branches: [test/rc6-scalping-active-paper-eod-20260911]
+    paths:
+      - '.github/workflows/rc6-eod-exit-outcome-readonly-audit-20260911.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ro"
+          chmod 600 "$HOME/.ssh/porota_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect exit outcomes and EOD population read-only
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ro" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$USER@$HOST" 'sudo -n docker exec -i porota_production_observer python -' <<'PY'
+          import json,sqlite3
+          from collections import Counter,defaultdict
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          TZ=ZoneInfo('America/Argentina/Buenos_Aires')
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON')
+          assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+          print('--- CLOSED_BY_REASON_ALL ---')
+          for r in c.execute("""SELECT coalesce(close_reason,'NONE') reason,COUNT(*) n,
+             round(sum(cast(net_pnl as real)),2) pnl FROM paper_positions WHERE status='CLOSED'
+             GROUP BY coalesce(close_reason,'NONE') ORDER BY n DESC"""):
+              print(json.dumps(dict(r),ensure_ascii=False))
+          rows=[dict(r) for r in c.execute("SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY closed_at")]
+          today=[]
+          for r in rows:
+              try: dt=datetime.fromisoformat(r['closed_at'].replace('Z','+00:00')).astimezone(TZ)
+              except Exception: continue
+              if dt.date().isoformat()=='2026-09-11': today.append(r)
+          print('CLOSED_TODAY='+str(len(today)))
+          by=defaultdict(lambda:{'n':0,'pnl':0.0})
+          for r in today:
+              x=by[r.get('close_reason') or 'NONE'];x['n']+=1;x['pnl']+=float(r.get('net_pnl') or 0)
+          print('--- CLOSED_BY_REASON_TODAY ---')
+          for reason,x in sorted(by.items(),key=lambda kv:-kv[1]['n']):
+              print(json.dumps({'reason':reason,'count':x['n'],'net_pnl':round(x['pnl'],2)},ensure_ascii=False))
+          print('--- EOD_DETAILS_TODAY ---')
+          for r in today:
+              if r.get('close_reason')!='EOD_PAPER': continue
+              try: f=json.loads(r.get('features_json') or '{}')
+              except Exception: f={}
+              opened=datetime.fromisoformat(r['opened_at'].replace('Z','+00:00'))
+              closed=datetime.fromisoformat(r['closed_at'].replace('Z','+00:00'))
+              print(json.dumps({
+                'paper_id':r['paper_id'],'symbol':r['symbol'],'asset_class':r['asset_class'],
+                'opened_at':r['opened_at'],'closed_at':r['closed_at'],
+                'minutes':int((closed-opened).total_seconds()/60),
+                'entry_price':r['entry_price'],'exit_price':r['exit_price'],
+                'stop_price':r['stop_price'],'target_price':r['target_price'],
+                'net_pnl':r['net_pnl'],'mfe':r.get('max_favorable'),'mae':r.get('max_adverse'),
+                'execution_style':f.get('execution_style','LEGACY_NORMAL'),
+                'score':f.get('score') or f.get('paper_score') or f.get('intraday_score'),
+              },ensure_ascii=False))
+          open_rows=[dict(r) for r in c.execute("SELECT * FROM paper_positions WHERE status='OPEN' ORDER BY opened_at")]
+          print('OPEN_POSITIONS_NOW='+str(len(open_rows)))
+          for r in open_rows:
+              try:f=json.loads(r.get('features_json') or '{}')
+              except Exception:f={}
+              print('OPEN='+json.dumps({'symbol':r['symbol'],'opened_at':r['opened_at'],'style':f.get('execution_style','LEGACY_NORMAL'),'stop':r['stop_price'],'target':r['target_price']},ensure_ascii=False))
+          s=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('MODE='+s['mode']);print('REAL_ORDERS_SENT='+str(s['real_orders_sent']))
+          print('READONLY_MUTATION=NONE')
+          c.close()
+          PY
