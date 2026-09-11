@@ -1,0 +1,72 @@
+name: RC6 CP3 DOM Failure RCA 2026-09-11
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths: [.github/workflows/rc6-cp3-dom-failure-rca-20260911.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  rca:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only failure RCA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo HOST_HEAD="$TARGET"
+          echo MUTATIONS=NONE
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+          echo '--- SAFETY ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(json.dumps({'mode':r[0] if r else None,'session':r[1] if r else None,'orders':r[2] if r else None}))
+          assert r and r[0]=='PRODUCTION_PAPER' and int(r[2] or 0)==0
+          PY
+          echo '--- UNIT STATUS ---'
+          sudo -n systemctl status porota-contract-evidence-rc6.service --no-pager -l || true
+          echo '--- JOURNAL FILTERED ---'
+          sudo -n journalctl -u porota-contract-evidence-rc6.service --since '-25 min' --no-pager -l \
+            | tail -n 320 \
+            | sed -E 's/((PASSWORD|PASSWD|TOKEN|SECRET|COOKIE|AUTHORIZATION)[^= ]*)=[^ ]+/\1=<redacted>/Ig' || true
+          echo '--- WRAPPER STATIC ---'
+          sudo -n grep -nE 'BASE=|runuser|dom_collector|dom_importer|STAGE|OUTDIR|CAPTURE|IMPORT_OUT|PROFILE|BROWSER_USER' /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh || true
+          echo '--- CAPTURE FILES ---'
+          sudo -n find "$ROOT/data/contract_evidence_rc6_dom" -maxdepth 1 -type f -printf '%f %s\n' 2>/dev/null | tail -n 20 || true
+          echo '--- LATEST CAPTURE SHAPE ONLY ---'
+          latest="$(sudo -n find "$ROOT/data/contract_evidence_rc6_dom" -maxdepth 1 -type f -name 'dom_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-)"
+          if test -n "$latest"; then
+            sudo -n python3 - "$latest" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(json.dumps({'schema':d.get('schema'),'auth_status':d.get('auth_status'),'routes':len(d.get('routes') or []),'blocked_nonread':len(d.get('blocked_nonread') or []),'tables':[(x.get('family'),len(x.get('headers') or []),x.get('row_count')) for x in (d.get('tables') or [])],'real_orders_sent':d.get('real_orders_sent')}))
+          PY
+          else
+            echo NO_DOM_CAPTURE
+          fi
+          echo CP3_DOM_FAILURE_RCA_COMPLETE=YES
+          HOST
