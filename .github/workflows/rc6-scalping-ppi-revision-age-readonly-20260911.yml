@@ -1,0 +1,91 @@
+name: RC6 Scalping PPI Revision Age Readonly 2026-09-11
+on:
+  push:
+    branches: [test/rc6-scalping-active-paper-eod-20260911]
+    paths:
+      - '.github/workflows/rc6-scalping-ppi-revision-age-readonly-20260911.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ro"
+          chmod 600 "$HOME/.ssh/porota_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Compare final PPI intraday payload to stored pre-revision evidence
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ro" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$USER@$HOST" 'sudo -n docker exec -i porota_production_observer python -' <<'PY'
+          import sqlite3,time,json
+          from decimal import Decimal
+          from bs_instrument_contracts import aware_datetime
+          from bd_ppi_readonly_guard import ProductionMarketReader
+          from bf_production_paper_observer import _secret
+          from cf_intraday_scalping import normalize_payload
+          DB='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(DB,uri=True,timeout=30);c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON')
+          rows=c.execute("""SELECT s.symbol,s.asset_class,s.market,s.currency,s.settlement,s.checked_at,s.detail
+            FROM ppi_intraday_contract_state s
+            JOIN financial_instrument_catalog f ON f.ticker=s.symbol AND f.instrument_type=s.asset_class
+              AND f.market=s.market AND f.currency=s.currency AND f.settlement=s.settlement
+            WHERE s.state='REJECTED_MUTABLE_CLOSED_POINTS' AND f.capability='READY_PAPER_SPOT'
+            ORDER BY s.checked_at DESC LIMIT 12""").fetchall()
+          print('SAMPLE_IDENTITIES='+str(len(rows)))
+          reader=ProductionMarketReader(*_secret(),audit=lambda *a,**k: None)
+          reader.login_once()
+          mismatch_ages=[]
+          try:
+            for r in rows:
+              ident=tuple(r[k] for k in ('symbol','asset_class','market','currency','settlement'))
+              try:
+                payload=reader.intraday(r['symbol'],r['asset_class'],r['settlement'])
+                received=aware_datetime(r['checked_at'])
+                fresh=normalize_payload(payload,received_at=received.isoformat())
+                fresh_map={str(p[0]):(str(p[1]),str(p[2])) for p in fresh}
+                stored=c.execute("""SELECT event_at,price,volume,first_seen_at,last_verified_at FROM ppi_intraday_points
+                  WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?""",ident).fetchall()
+                mism=[]
+                for p in stored:
+                  cur=fresh_map.get(str(p['event_at']))
+                  if cur and cur!=(str(p['price']),str(p['volume'])):
+                    age=(received-aware_datetime(p['event_at'])).total_seconds()
+                    mism.append({'event_at':p['event_at'],'detected_age_sec':round(age,1),
+                      'last_verified_at':p['last_verified_at'],'price_changed':cur[0]!=str(p['price']),
+                      'volume_changed':cur[1]!=str(p['volume'])})
+                    mismatch_ages.append(age)
+                print(json.dumps({'identity':ident,'checked_at':r['checked_at'],'stored_points':len(stored),
+                  'fresh_points':len(fresh),'mismatches':mism[:15]},ensure_ascii=False))
+              except Exception as exc:
+                print(json.dumps({'identity':ident,'error':type(exc).__name__},ensure_ascii=False))
+              time.sleep(1.0)
+          finally:
+            reader.close();c.close()
+          if mismatch_ages:
+            x=sorted(mismatch_ages)
+            def pct(p): return x[min(len(x)-1,round((len(x)-1)*p))]
+            print('MISMATCH_COUNT='+str(len(x)))
+            print('REVISION_AGE_MIN_SEC='+str(round(x[0],1)))
+            print('REVISION_AGE_P50_SEC='+str(round(pct(.5),1)))
+            print('REVISION_AGE_P90_SEC='+str(round(pct(.9),1)))
+            print('REVISION_AGE_MAX_SEC='+str(round(x[-1],1)))
+          else:
+            print('MISMATCH_COUNT=0')
+          print('PPI_METHOD=READ_ONLY_INTRADAY')
+          print('REAL_ORDER_ROUTE_CALLED=NO')
+          print('RUNTIME_MUTATION=NONE')
+          PY
