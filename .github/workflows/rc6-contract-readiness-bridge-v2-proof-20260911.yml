@@ -1,0 +1,61 @@
+name: RC6 Contract Readiness Identity Bridge V2 Proof 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-contract-readiness-bridge-v2-proof-20260911.yml
+      - cp_contract_evidence_v2_hf6.py
+      - cq_family_contract_rules_hf6.py
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static and semantic proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m py_compile cp_contract_evidence_v2_hf6.py cq_contract_readiness_hf6.py cq_family_contract_rules_hf6.py
+          python - <<'PY'
+          import cp_contract_evidence_v2_hf6 as ce
+          import cq_family_contract_rules_hf6 as fr
+          rec={
+            'source_class':'PPI_AUTHENTICATED_XHR',
+            'observed_at':'2026-09-11T23:40:00+00:00',
+            'ticker':'GGAL','market':'BYMA','settlement':'A-24HS',
+            'evidence':{
+              'currency':'ARS','quantity_min':'1','quantity_step':'1',
+              'price_tick':'0.05','fee_schedule':'PPI_STD','trading_session':'BYMA_REGULAR',
+              'operable':True,'market_session_state':'CLOSED'
+            }
+          }
+          bridged=ce._readiness_evidence(rec)
+          assert bridged['ticker']=='GGAL' and bridged['market']=='BYMA' and bridged['settlement']=='A-24HS'
+          merged,prov,conf=fr.merge_evidence([rec])
+          assert not conf and merged['market']=='BYMA' and merged['settlement']=='A-24HS'
+          assert prov['market']['source_class']=='PPI_AUTHENTICATED_XHR'
+          wild=dict(rec,ticker='*',market='UNKNOWN',settlement='UNKNOWN',evidence={'currency':'ARS'})
+          w=ce._readiness_evidence(wild)
+          assert 'ticker' not in w and 'market' not in w and 'settlement' not in w
+          fam=fr.evaluate_family('ACCIONES',[rec])
+          assert fam['status'] in ('READY_PAPER_CANDIDATE','STALE_DYNAMIC')
+          # Family rules never produce READY_PAPER and never auto-enable trading.
+          assert fam['status']!='READY_PAPER'
+          generic=ce.family_readiness_state([rec],family='ACCIONES',simulator_ready=False,cost_ready=False)
+          assert generic['auto_activation_allowed'] is False
+          assert 'instrument_id' in generic['missing'] and 'cost_model' in generic['missing']
+          print('CONTRACT_IDENTITY_BRIDGE_V2=GREEN')
+          print('WILDCARD_FAIL_CLOSED=GREEN')
+          print('GENUINE_ECONOMIC_MISSING_PRESERVED=GREEN')
+          print('AUTO_ACTIVATION=FALSE')
+          PY
