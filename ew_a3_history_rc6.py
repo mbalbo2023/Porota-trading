@@ -6,6 +6,7 @@ PPI decision path.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 import json
 import time
@@ -16,6 +17,7 @@ from cu_history_store_v2_hf6 import append_many, init_schema as init_history_sch
 from cz_a3_cem_public_history_hf6 import A3CEMPublicReadOnlyClient, assert_cem_invariants
 from db_a3_cem_normalizer_hf6 import normalize_symbols, closing_to_candle, assert_cem_normalizer_invariants
 from cy_market_source_arbitration_hf6 import assert_source_invariants
+from fd_a3_identity_mapper_rc6 import A3IdentityError, align_dlr, porota_to_a3_dlr
 
 TZ=ZoneInfo('America/Argentina/Buenos_Aires')
 FAMILIES={'FUTUROS','OPCIONES'}
@@ -61,6 +63,34 @@ def _payload_rows(payload):
     if isinstance(payload,dict) and isinstance(payload.get('data'),list): return payload['data']
     if isinstance(payload,list): return payload
     return []
+
+
+def _resolve_source_identity(symbol,family,by_identity):
+    """Resolve only direct identities or the proven simple DLR grammar.
+
+    The mapper is used only to address the read-only A3 source.  The verified
+    Porota target identity remains the history-store key.  Options, spreads,
+    variants and any unsupported/fuzzy form remain fail-closed.
+    """
+    direct=by_identity.get((symbol,family))
+    if direct is not None:
+        return direct,symbol,'EXACT_SOURCE_SYMBOL'
+    if family!='FUTUROS':
+        return None,None,'ALIGNMENT_UNVERIFIED'
+    try:
+        source_symbol=porota_to_a3_dlr(symbol)
+    except A3IdentityError:
+        return None,None,'ALIGNMENT_UNVERIFIED'
+    meta=by_identity.get((source_symbol,family))
+    if meta is None:
+        return None,None,'ALIGNMENT_UNVERIFIED'
+    try:
+        aligned=align_dlr(porota_symbol=symbol,a3_symbol=source_symbol)
+    except A3IdentityError:
+        return None,None,'ALIGNMENT_UNVERIFIED'
+    if aligned.porota_symbol!=symbol or aligned.a3_symbol!=source_symbol:
+        return None,None,'ALIGNMENT_UNVERIFIED'
+    return meta,source_symbol,aligned.alignment_status
 
 
 def _state(store,target):
@@ -124,25 +154,33 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
     by_identity={(x.symbol,x.family):x for x in catalog if x.family in FAMILIES}
     hstore=history_store or default_history_store();init_history_schema(hstore);init_state(store)
     stats={'selected':len(targets),'matched':0,'unmatched':0,'failed':0,'empty':0,'complete':0,
-           'versions_appended':0,'canonical_updates':0,'protected_by_precedence':0}
+           'versions_appended':0,'canonical_updates':0,'protected_by_precedence':0,
+           'deterministic_mapped':0}
     per_target=[]
     for target in targets:
         symbol,family,market,settlement=target
-        meta=by_identity.get((symbol,family))
-        if meta is None:
+        meta,source_symbol,alignment_status=_resolve_source_identity(symbol,family,by_identity)
+        if meta is None or source_symbol is None:
             stats['unmatched']+=1
             _record(store,target,status='ALIGNMENT_UNVERIFIED',day=None,rows=0,error='CEM_SYMBOL_FAMILY_NOT_EXACT')
             per_target.append({'target':target,'status':'ALIGNMENT_UNVERIFIED'});continue
+        if alignment_status=='EXACT_DETERMINISTIC':
+            stats['deterministic_mapped']+=1
         state=_state(store,target);start,end=_range_for(mode,current,state)
         if start>end:
             per_target.append({'target':target,'status':'NOT_DUE'});continue
         try:
-            payload=cem.closing_prices(symbol=symbol,date_from=start.isoformat(),date_to=end.isoformat(),page=1,page_size=500)
+            payload=cem.closing_prices(symbol=source_symbol,date_from=start.isoformat(),date_to=end.isoformat(),page=1,page_size=500)
             raw=_payload_rows(payload);candles=[]
             for row in raw:
-                if str(row.get('symbol') or '').upper().strip()!=symbol: continue
+                if str(row.get('symbol') or '').upper().strip()!=source_symbol: continue
                 try:
                     candle=closing_to_candle(row,instrument_type=family,market=market,settlement_identity=settlement)
+                    metadata=dict(candle.metadata or {})
+                    metadata.update({'a3_source_symbol':source_symbol,
+                                     'porota_canonical_symbol':symbol,
+                                     'identity_alignment':alignment_status})
+                    candle=replace(candle,symbol=symbol,metadata=metadata)
                     if candle.symbol!=symbol or candle.instrument_type!=family: continue
                     candles.append(candle)
                 except (TypeError,ValueError): continue
@@ -151,7 +189,8 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
                 status='EMPTY_CONFIRMED' if empties>=2 else 'EMPTY_OBSERVED'
                 if status=='EMPTY_CONFIRMED':
                     _record(store,target,status=status,day=(state or {}).get('last_complete_day'),rows=0,empty=True)
-                stats['empty']+=1;per_target.append({'target':target,'status':status,'range':[start.isoformat(),end.isoformat()]})
+                stats['empty']+=1;per_target.append({'target':target,'status':status,'range':[start.isoformat(),end.isoformat()],
+                                                     'source_symbol':source_symbol,'alignment':alignment_status})
             else:
                 result=append_many(hstore,candles)
                 last=max(c.date for c in candles)
@@ -159,7 +198,9 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
                 stats['matched']+=1;stats['complete']+=1
                 for key in ('versions_appended','canonical_updates','protected_by_precedence'):
                     stats[key]+=int(result.get(key) or 0)
-                per_target.append({'target':target,'status':'COMPLETE','rows':len(candles),'last':last,'range':[start.isoformat(),end.isoformat()]})
+                per_target.append({'target':target,'status':'COMPLETE','rows':len(candles),'last':last,
+                                   'range':[start.isoformat(),end.isoformat()],
+                                   'source_symbol':source_symbol,'alignment':alignment_status})
         except Exception as exc:
             stats['failed']+=1
             _record(store,target,status='FAILED',day=(state or {}).get('last_complete_day'),rows=0,error=f'{type(exc).__name__}:{exc}')
