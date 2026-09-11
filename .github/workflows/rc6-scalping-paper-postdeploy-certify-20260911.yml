@@ -1,0 +1,120 @@
+name: RC6 Scalping PAPER Postdeploy Certify 2026-09-11
+on:
+  push:
+    branches: [test/rc6-scalping-active-paper-eod-20260911]
+    paths:
+      - '.github/workflows/rc6-scalping-paper-postdeploy-certify-20260911.yml'
+permissions:
+  contents: read
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ro"
+          chmod 600 "$HOME/.ssh/porota_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Certify live runtime read-only
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ro" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$USER@$HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          TARGET_SHA=eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a
+          echo '=== RC6 SCALPING PAPER POSTDEPLOY CERTIFICATION ==='
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git -C "$REPO" diff --name-only)"
+          test -z "$(git -C "$REPO" diff --cached --name-only)"
+
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Image}}' porota_production_observer)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          echo "OBSERVER=$OBS"
+          echo "DASHBOARD=$DASH"
+          test "$(printf '%s' "$OBS" | cut -d'|' -f1-3)" = 'true|0|true'
+          test "$(printf '%s' "$DASH" | cut -d'|' -f1-2)" = 'true|0'
+          OBS_ID="$(printf '%s' "$OBS" | cut -d'|' -f4)"
+          DASH_ID="$(printf '%s' "$DASH" | cut -d'|' -f3)"
+          test "$OBS_ID" = "$DASH_ID"
+          IMAGE_SHA="$(sudo -n docker image inspect "$OBS_ID" -f '{{ index .Config.Labels "porota.commit" }}')"
+          echo "IMAGE_SHA=$IMAGE_SHA"; test "$IMAGE_SHA" = "$TARGET_SHA"
+
+          H="$(curl -fsS http://127.0.0.1:8000/health)"
+          echo "HEALTH=$H"
+          python3 - "$H" <<'PY'
+          import json,sys
+          x=json.loads(sys.argv[1]); assert x.get('status')=='ok'; assert x.get('version')=='17.0.0-rc6'
+          PY
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import os,sqlite3
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          import _version as v
+          import fh_scalping_economics_rc6 as e
+          from co_market_sessions_hf6 import byma_paper_spot_open
+          assert v.MODE=='PRODUCTION_PAPER'
+          assert v.EXECUTION=='SIMULATED'
+          assert v.REAL_ORDER_CAPABILITY=='BLOCKED'
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          state,worker_orders,heartbeat=c.execute('SELECT state,real_orders_sent,heartbeat_at FROM intraday_scalping_worker_state WHERE id=1').fetchone()
+          assert mode=='PRODUCTION_PAPER' and int(orders)==0 and int(worker_orders)==0
+          assert os.getenv('PAPER_SCALPING_MODE')=='ACTIVE_PAPER'
+          now=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+          market_open=byma_paper_spot_open(now)
+          if market_open:
+              assert state=='RUNNING', (now.isoformat(),state)
+          else:
+              assert state in {'WAITING_MARKET','MARKET_CLOSED'}, (now.isoformat(),state)
+          cost=e.modeled_roundtrip_cost('ACCIONES','0.003')
+          assert cost['fee_model']=='PPI_INTRADAY_BONUS'
+          print('DB_QUICK_CHECK=ok')
+          print('MODE='+mode)
+          print('REAL_ORDERS_SENT='+str(orders))
+          print('PAPER_SCALPING_MODE='+os.getenv('PAPER_SCALPING_MODE',''))
+          print('SCALPING_WORKER_STATE='+state)
+          print('SCALPING_HEARTBEAT='+str(heartbeat))
+          print('MARKET_OPEN='+str(market_open).upper())
+          print('SCALPING_FEE_MODEL='+cost['fee_model'])
+          c.close()
+          PY
+
+          enabled=0; active=0
+          for unit in \
+            porota-contract-evidence-rc6.timer \
+            porota-functional-health-rc6.timer \
+            porota-history-postclose-rc6.timer \
+            porota-host-general-backup-rc6.timer \
+            porota-preopen-rc6.timer \
+            porota-candle-integrity-rc6.timer \
+            porota-a3-history-daily-rc6.timer \
+            porota-a3-history-reconcile-rc6.timer \
+            porota-a3-history-weekend-rc6.timer; do
+            a="$(sudo -n systemctl is-active "$unit" 2>/dev/null || true)"
+            e="$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || true)"
+            echo "UNIT=$unit|ACTIVE=$a|ENABLED=$e"
+            [ "$a" = active ] && active=$((active+1))
+            [ "$e" = enabled ] && enabled=$((enabled+1))
+          done
+          echo "TIMERS_ACTIVE=$active/9"; echo "TIMERS_ENABLED=$enabled/9"
+          test "$active" = 9; test "$enabled" = 9
+          echo 'READONLY_MUTATION=NONE'
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'RC6_SCALPING_PAPER_POSTDEPLOY=GREEN'
+          HOST
