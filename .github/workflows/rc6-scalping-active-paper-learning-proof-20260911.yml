@@ -1,0 +1,46 @@
+name: RC6 Active PAPER Scalping Learning Proof 2026-09-11
+on:
+  push:
+    branches: [test/rc6-scalping-active-paper-eod-20260911]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-scalping-active-paper-learning-proof
+  cancel-in-progress: false
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ENVIRONMENT: SANDBOX
+      PAPER_SCALPING_MODE: ACTIVE_PAPER
+      ORDER_EXECUTION_MODE: confirm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install focused test dependencies
+        run: python -m pip install -q pytest fastapi requests
+      - name: Compile scalping and exit path
+        run: python -m py_compile cf_intraday_scalping.py be_paper_engine.py bm_exit_supervisor.py bq_exit_policy.py bv_paper_runtime.py
+      - name: Prove ACTIVE_PAPER is simulated only and writes learning labels
+        run: python -m pytest -q tests/test_rc6_scalping_active_paper_learning.py
+      - name: Preserve intraday contract regressions
+        run: python -m pytest -q tests/test_intraday_scalping_rc6_integration.py tests/test_intraday_contract_policy_rc6.py
+      - name: Safety regression
+        run: python -m pytest -q tests/test_rc6_runtime_safety.py
+      - name: Static safety assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'mode != "ACTIVE_PAPER"' cf_intraday_scalping.py
+          grep -q 'OPENED_SIMULATED' cf_intraday_scalping.py
+          grep -q 'real_orders_sent' cf_intraday_scalping.py
+          python - <<'PY'
+          import _version
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          print('SCALPING_ACTIVE_PAPER_SAFETY=GREEN')
+          PY
