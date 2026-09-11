@@ -1,4 +1,4 @@
-name: RC6 CP3 Blocked Paths + CP4 Deployed Wiring 2026-09-11
+name: RC6 CP3 Sanitized Routes + CP4 Runtime Topology 2026-09-11
 
 on:
   push:
@@ -13,7 +13,7 @@ env:
   TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
 
 jobs:
-  cp3_blocked_paths_readonly:
+  cp3_sanitized_firstparty_routes:
     runs-on: ubuntu-latest
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
@@ -24,42 +24,66 @@ jobs:
       - name: SSH setup
         shell: bash
         run: |
-          set -Eeuo pipefail; install -m 700 -d "$HOME/.ssh"
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Find sanitized successful capture metadata only
+      - name: Enumerate latest authenticated GET routes without queries or bodies
         shell: bash
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
           set -Eeuo pipefail
-          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"; echo HOST_HEAD="$TARGET"; echo MUTATIONS=NONE
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
+          echo HOST_HEAD="$TARGET"
+          echo MUTATIONS=NONE
           sudo -n python3 - <<'PY'
           from pathlib import Path
-          import json,urllib.parse
+          import json, urllib.parse
           roots=[Path('/home'),Path('/opt/porota-trading/data'),Path('/tmp')]
           files=[]
           for root in roots:
               try: files += list(root.rglob('contract_*.json'))
               except Exception: pass
-          files=sorted({str(p):p for p in files}.values(),key=lambda p:p.stat().st_mtime,reverse=True)[:20]
-          print('CAPTURE_FILES_FOUND='+str(len(files)))
+          files=sorted({str(p):p for p in files}.values(), key=lambda p:p.stat().st_mtime, reverse=True)
+          chosen=[]
           for p in files:
               try:d=json.loads(p.read_text())
               except Exception:continue
-              print('CAPTURE='+p.name+'|MTIME='+str(int(p.stat().st_mtime))+'|AUTH='+str(d.get('auth_status'))+'|ROUTES='+str(len(d.get('routes') or []))+'|ENDPOINTS='+str(len(d.get('endpoints') or {}))+'|BLOCKED='+str(len(d.get('blocked_nonread') or []))+'|ORDERS='+str(d.get('real_orders_sent')))
-              for i,x in enumerate((d.get('blocked_nonread') or [])[:80]):
-                  if not isinstance(x,dict):continue
-                  method=str(x.get('method') or '')
-                  u=urllib.parse.urlsplit(str(x.get('url') or ''))
-                  print(f'BLOCKED_PATH={method}|{u.netloc}|{u.path}')
+              if d.get('auth_status') == 'AUTHENTICATED_TRUSTED_DEVICE':
+                  chosen.append((p,d))
+              if len(chosen)>=6: break
+          print('AUTH_CAPTURE_COUNT='+str(len(chosen)))
+          seen=set(); candidates=[]
+          for p,d in chosen:
+              print('CAPTURE='+p.name+'|ROUTES='+str(len(d.get('routes') or []))+'|ENDPOINTS='+str(len(d.get('endpoints') or {}))+'|ORDERS='+str(d.get('real_orders_sent')))
+              for r in (d.get('routes') or []):
+                  if not isinstance(r,dict): continue
+                  method=str(r.get('method') or r.get('request_method') or 'GET').upper()
+                  raw=str(r.get('url') or r.get('request_url') or r.get('route') or '')
+                  u=urllib.parse.urlsplit(raw)
+                  host=(u.netloc or str(r.get('host') or '')).lower()
+                  path=u.path or str(r.get('path') or '')
+                  status=r.get('status') if r.get('status') is not None else r.get('response_status')
+                  ctype=str(r.get('content_type') or r.get('response_content_type') or '')[:80]
+                  rtype=str(r.get('resource_type') or r.get('type') or '')[:40]
+                  first_party=host.endswith('portfoliopersonal.com') or host.endswith('invertironline.com')
+                  if method not in {'GET','HEAD','OPTIONS'} or not first_party or not path: continue
+                  key=(method,host,path,str(status),ctype,rtype)
+                  if key in seen: continue
+                  seen.add(key); candidates.append(key)
+          print('SANITIZED_FIRSTPARTY_READ_ROUTES='+str(len(candidates)))
+          for method,host,path,status,ctype,rtype in candidates[:120]:
+              print('READ_ROUTE='+method+'|'+host+'|'+path+'|STATUS='+status+'|CTYPE='+ctype+'|RTYPE='+rtype)
+          api_candidates=[x for x in candidates if '/api/' in x[2].lower()]
+          print('FIRSTPARTY_API_READ_CANDIDATES='+str(len(api_candidates)))
+          for method,host,path,status,ctype,rtype in api_candidates[:80]:
+              print('API_CANDIDATE='+method+'|'+host+'|'+path+'|STATUS='+status+'|CTYPE='+ctype+'|RTYPE='+rtype)
           PY
-          echo '--- RECENT COLLECTION SUMMARY ---'
-          sudo -n journalctl -u porota-contract-evidence-rc6.service --since '2026-09-11 14:30:00 UTC' --no-pager -n 260 | grep -E 'STATUS=GREEN_COLLECTION|AUTH_STATUS=|blocked_nonread|records|REAL_ORDERS_SENT=' | tail -n 140 || true
-          echo CP3_BLOCKED_PATHS_RCA_COMPLETE=YES
+          echo CP3_SANITIZED_ROUTE_INVENTORY_COMPLETE=YES
           HOST
 
-  cp4_deployed_wiring_readonly:
+  cp4_runtime_topology_readonly:
     runs-on: ubuntu-latest
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
@@ -70,32 +94,35 @@ jobs:
       - name: SSH setup
         shell: bash
         run: |
-          set -Eeuo pipefail; install -m 700 -d "$HOME/.ssh"
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Compare host/container A3 wiring with deterministic mapper
+      - name: Prove exact A3 execution topology and source ownership
         shell: bash
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
           set -Eeuo pipefail
-          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"; echo HOST_HEAD="$TARGET"; echo MUTATIONS=NONE
-          echo '--- SYSTEMD UNIT ---'; sudo -n systemctl cat porota-a3-history-rc6@.service --no-pager
-          echo '--- HOST SOURCE HASH/IMPORT ---'
-          sha256sum /opt/porota-trading/ew_a3_history_rc6.py /opt/porota-trading/fd_a3_identity_mapper_rc6.py 2>/dev/null || true
-          grep -nE 'fd_a3_identity_mapper|porota_to_a3_dlr|_resolve_source_identity|CEM_SYMBOL_FAMILY_NOT_EXACT' /opt/porota-trading/ew_a3_history_rc6.py 2>/dev/null || true
-          echo '--- CONTAINER SOURCE HASH/IMPORT ---'
-          sudo -n docker exec -i porota_production_observer sh -lc "sha256sum /app/ew_a3_history_rc6.py /app/fd_a3_identity_mapper_rc6.py 2>/dev/null || true; grep -nE 'fd_a3_identity_mapper|porota_to_a3_dlr|_resolve_source_identity|CEM_SYMBOL_FAMILY_NOT_EXACT' /app/ew_a3_history_rc6.py 2>/dev/null || true"
-          echo '--- SAFE OFFLINE MAPPER SMOKE INSIDE CONTAINER ---'
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
-          try:
-              import fd_a3_identity_mapper_rc6 as m
-              for s in ['DLR/SEP26','DLR/DIC26','DLR/SEP26/OCT26','DLR/SEP26M']:
-                  try: print(s+'=>'+m.porota_to_a3_dlr(s))
-                  except Exception as e: print(s+'=>FAIL_CLOSED:'+type(e).__name__+':'+str(e))
-          except Exception as e: print('MAPPER_IMPORT_ERROR='+type(e).__name__+':'+str(e))
-          PY
-          echo CP4_DEPLOYED_WIRING_RCA_COMPLETE=YES
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
+          echo HOST_HEAD="$TARGET"
+          echo MUTATIONS=NONE
+          echo '--- SYSTEMD EXECUTION TARGET ---'
+          sudo -n systemctl cat porota-a3-history-rc6@.service --no-pager
+          echo '--- CONTAINER ID / IMAGE / COMMAND / MOUNTS ---'
+          sudo -n docker inspect porota_production_observer --format 'CONTAINER_ID={{.Id}} IMAGE_REF={{.Config.Image}} IMAGE_ID={{.Image}} CMD={{json .Config.Cmd}} ENTRYPOINT={{json .Config.Entrypoint}}'
+          sudo -n docker inspect porota_production_observer --format '{{range .Mounts}}MOUNT={{.Type}}|{{.Source}}|{{.Destination}}|RW={{.RW}}{{println}}{{end}}'
+          echo '--- HOST A3 FILES ---'
+          for f in /opt/porota-trading/ex_a3_history_job_rc6.py /opt/porota-trading/ew_a3_history_rc6.py /opt/porota-trading/fd_a3_identity_mapper_rc6.py; do
+            if test -f "$f"; then sha256sum "$f"; else echo MISSING_HOST_FILE="$f"; fi
+          done
+          echo '--- CONTAINER A3 FILES ---'
+          sudo -n docker exec porota_production_observer sh -lc 'for f in /app/ex_a3_history_job_rc6.py /app/ew_a3_history_rc6.py /app/fd_a3_identity_mapper_rc6.py; do if test -f "$f"; then sha256sum "$f"; else echo MISSING_CONTAINER_FILE="$f"; fi; done'
+          echo '--- EXEC/IMPORT WIRING ---'
+          sudo -n docker exec porota_production_observer sh -lc "grep -nE 'ew_a3_history|fd_a3_identity|runpy|subprocess|import' /app/ex_a3_history_job_rc6.py 2>/dev/null | head -n 120 || true"
+          sudo -n docker exec porota_production_observer sh -lc "grep -nE 'fd_a3_identity_mapper|porota_to_a3_dlr|_resolve_source_identity|CEM_SYMBOL_FAMILY_NOT_EXACT' /app/ew_a3_history_rc6.py 2>/dev/null | head -n 120 || true"
+          echo '--- IMAGE LABELS ---'
+          IMG_ID="$(sudo -n docker inspect porota_production_observer --format '{{.Image}}')"
+          sudo -n docker image inspect "$IMG_ID" --format 'IMAGE_CREATED={{.Created}} LABELS={{json .Config.Labels}}'
+          echo CP4_RUNTIME_TOPOLOGY_COMPLETE=YES
           HOST
-
-# RC6 parallel rerun marker 2026-09-11
