@@ -100,3 +100,8 @@ def install() -> None:
         bg.TABLE_A11Y_CSS += FORCE_COMPACT_CSS
     if "porota-rc6-force-compact-script" not in bg.TABLE_A11Y_SCRIPT:
         bg.TABLE_A11Y_SCRIPT += FORCE_COMPACT_SCRIPT
+
+    # o_dashboard installs this module after zz_wave8_dashboard_live_rc6, so a
+    # small dedicated overlay can safely decorate /riesgo without network I/O.
+    import rc6_risk_gdelt_dashboard as risk_gdelt_dashboard
+    risk_gdelt_dashboard.install()
