@@ -1,8 +1,8 @@
 """RC4 versioned, append-only Contract Evidence v2 storage.
 
-Financial identity includes settlement.  Evidence is provider-backed, secrets
+Financial identity includes settlement. Evidence is provider-backed, secrets
 are rejected recursively, and a changed/stale/conflicting contract can never
-silently promote a family.  This module has no broker-order capability.
+silently promote a family. This module has no broker-order capability.
 """
 from __future__ import annotations
 
@@ -39,6 +39,13 @@ FORBIDDEN_KEY_PARTS = (
     "password", "passwd", "otp", "one_time", "access_token", "refresh_token",
     "session_token", "bearer", "private_key", "account_number", "numero_cuenta",
 )
+
+# These values are already part of the Contract Evidence v2 financial identity.
+# Readiness must not report them as missing merely because the provider payload
+# stores them in normalized identity columns instead of duplicating them inside
+# evidence_json. Only explicit values are bridged; placeholders remain missing.
+READINESS_IDENTITY_FIELDS = ("ticker", "market", "settlement")
+IDENTITY_PLACEHOLDERS = {"", "*", "UNKNOWN", "NONE", "N/A", "NULL"}
 
 
 def now_iso():
@@ -256,8 +263,44 @@ def current_records(store, *, family=None, ticker=None):
     return result
 
 
+def _readiness_evidence(record):
+    """Return provider evidence plus already-proven explicit identity fields.
+
+    Contract v2 stores ticker/market/settlement as first-class normalized identity
+    columns. Bridging those values for readiness is not inference and does not
+    mutate the stored provider payload. Wildcards/UNKNOWN remain fail-closed.
+    An explicit non-placeholder provider value always wins.
+    """
+    if not isinstance(record, dict):
+        return {}
+    raw = record.get("evidence") or {}
+    merged = dict(raw) if isinstance(raw, dict) else {}
+    for field in READINESS_IDENTITY_FIELDS:
+        existing = merged.get(field)
+        if existing not in (None, "", [], {}):
+            if not (isinstance(existing, str) and existing.strip().upper() in IDENTITY_PLACEHOLDERS):
+                continue
+        candidate = record.get(field)
+        if candidate is None:
+            continue
+        rendered = str(candidate).strip()
+        if rendered.upper() in IDENTITY_PLACEHOLDERS:
+            continue
+        merged[field] = rendered
+    return merged
+
+
+def _merge_readiness_evidence(rows):
+    """Merge by source precedence, including only proven identity bridges."""
+    merged = {}
+    for row in sorted(rows, key=lambda r: SOURCE_RANK.get(r.get("source_class"), 999), reverse=True):
+        merged.update({k:v for k,v in _readiness_evidence(row).items()
+                       if v not in (None,"",[],{})})
+    return merged
+
+
 def source_conflict(records):
-    """Detect contradictory non-empty values, respecting source provenance."""
+    """Detect contradictory non-empty provider values, respecting provenance."""
     values={}
     for record in records or []:
         if not isinstance(record,dict):
@@ -286,10 +329,7 @@ def readiness_state(records, *, required_fields=(), max_age_seconds=None, now=No
     conflicts=source_conflict(rows)
     if conflicts:
         return {"state":"CONFLICT","missing":[],"conflicts":conflicts}
-    merged={}
-    for row in sorted(rows,key=lambda r:SOURCE_RANK.get(r.get("source_class"),999),reverse=True):
-        merged.update({k:v for k,v in (row.get("evidence") or {}).items()
-                       if v not in (None,"",[],{})})
+    merged=_merge_readiness_evidence(rows)
     missing=[field for field in required_fields if merged.get(field) in (None,"",[],{})]
     if missing:
         return {"state":"MISSING","missing":missing,"conflicts":{},"evidence":merged}
@@ -322,10 +362,7 @@ def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
                                source_conflict=False)
         return {**base, "auto_activation_allowed": False, "conflicts": {}}
     conflicts = source_conflict(rows)
-    merged = {}
-    for row in sorted(rows, key=lambda r: SOURCE_RANK.get(r.get("source_class"), 999), reverse=True):
-        merged.update({k:v for k,v in (row.get("evidence") or {}).items()
-                       if v not in (None,"",[],{})})
+    merged = _merge_readiness_evidence(rows)
     freshness_ok = True
     if max_age_seconds is not None:
         ref = now or datetime.now(timezone.utc)
