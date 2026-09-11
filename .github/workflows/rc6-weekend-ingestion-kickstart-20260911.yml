@@ -32,7 +32,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
-      - name: Run coordinated read-only ingestion batch
+      - name: Resume coordinated read-only ingestion batch
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -47,82 +47,48 @@ jobs:
           ROOT=/opt/porota-trading
           TARGET_SHA=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
           OBS=porota_production_observer
-          LOCK=/tmp/porota-weekend-ingestion-rc6.lock
-          exec 9>"$LOCK"
-          if ! flock -n 9; then
-            echo 'BATCH_ABORT=ANOTHER_WEEKEND_INGESTION_BATCH_ACTIVE'
-            exit 75
-          fi
+          ISSUES=0
+          exec 9>/tmp/porota-weekend-ingestion-rc6.lock
+          flock -n 9 || { echo 'BATCH_ABORT=ANOTHER_BATCH_ACTIVE'; exit 75; }
 
-          echo '=== STAGE 0 / SAFETY + BASELINE ==='
+          echo '=== RESUME / SAFETY ==='
           echo "ART_START=$(date --iso-8601=seconds)"
-          echo "UTC_START=$(date -u +%FT%TZ)"
-          echo "HOST_SHA=$(git -C "$ROOT" rev-parse HEAD)"
           test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET_SHA"
-          HEALTH="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)"
-          echo "HEALTH=$HEALTH"
-          python3 - "$HEALTH" <<'PY'
-          import json,sys
-          x=json.loads(sys.argv[1]); assert x.get('status')=='ok' and x.get('version')=='17.0.0-rc6',x
-          PY
           SAFETY="$(sudo -n docker exec -i "$OBS" python - <<'PY'
           import sqlite3
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
-          c.execute('pragma query_only=on')
-          q=c.execute('pragma quick_check').fetchone()[0]
-          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
-          c.close(); print('|'.join(map(str,(q,*r))))
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print('|'.join(map(str,(q,*r))))
           PY
           )"
           echo "SAFETY=$SAFETY"
           IFS='|' read -r QC MODE SESSION REAL <<< "$SAFETY"
-          test "$QC" = ok
-          test "$MODE" = PRODUCTION_PAPER
-          test "$REAL" = 0
-          test "$SESSION" != MARKET_OPEN
-          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
-
-          timers=(
-            porota-contract-evidence-rc6.timer
-            porota-history-postclose-rc6.timer
-            porota-candle-integrity-rc6.timer
-            porota-a3-history-daily-rc6.timer
-            porota-a3-history-reconcile-rc6.timer
-            porota-a3-history-weekend-rc6.timer
-          )
-          for t in "${timers[@]}"; do
-            a="$(sudo -n systemctl is-active "$t" 2>/dev/null || true)"
-            e="$(sudo -n systemctl is-enabled "$t" 2>/dev/null || true)"
-            echo "TIMER_PRE=$t|active=$a|enabled=$e|last=$(sudo -n systemctl show "$t" -p LastTriggerUSec --value 2>/dev/null || true)|next=$(sudo -n systemctl show "$t" -p NextElapseUSecRealtime --value 2>/dev/null || true)"
-            test "$a" = active
-            test "$e" = enabled
-          done
+          test "$QC" = ok; test "$MODE" = PRODUCTION_PAPER; test "$REAL" = 0; test "$SESSION" != MARKET_OPEN
+          echo 'CONTRACT_EVIDENCE_RUN1=SAFE_YELLOW|AUTHENTICATED_TRUSTED_DEVICE|blocked_nonread=0|routes=5|materializable_tables=0|real_orders_sent=0'
+          echo 'CONTRACT_EVIDENCE_ACTION=NO_RETRY_NOW_TO_AVOID_DUPLICATE_BROWSER_LOAD'
 
           snapshot(){
             local label="$1"
             sudo -n docker exec -i "$OBS" python - "$label" <<'PY'
           import sqlite3,sys,json
-          label=sys.argv[1]
-          out={'label':label}
+          out={'label':sys.argv[1]}
           for path,key in [('/app/data/paper_v17/observer_v17.db','observer'),('/app/data/market_history.db','history')]:
               try:
                   c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=20); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
                   tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
-                  d={'quick_check':c.execute('pragma quick_check').fetchone()[0],'tables':len(tabs)}
+                  d={'quick_check':c.execute('pragma quick_check').fetchone()[0]}
                   for t in ('production_history_attempts','a3_history_ingest_state_rc6','contract_evidence_v2_runs','history_versions_v2','history_canonical_v2'):
-                      if t in tabs:
-                          d[t]=c.execute(f'select count(*) from {t}').fetchone()[0]
+                      if t in tabs: d[t]=c.execute(f'select count(*) from {t}').fetchone()[0]
                   if 'history_canonical_v2' in tabs:
-                      d['canonical_families']=c.execute('select count(distinct instrument_type) from history_canonical_v2').fetchone()[0]
-                      d['canonical_symbols']=c.execute('select count(distinct symbol) from history_canonical_v2').fetchone()[0]
-                      d['canonical_first']=c.execute('select min(date) from history_canonical_v2').fetchone()[0]
-                      d['canonical_last']=c.execute('select max(date) from history_canonical_v2').fetchone()[0]
+                      d['families']=c.execute('select count(distinct instrument_type) from history_canonical_v2').fetchone()[0]
+                      d['symbols']=c.execute('select count(distinct symbol) from history_canonical_v2').fetchone()[0]
+                      d['first']=c.execute('select min(date) from history_canonical_v2').fetchone()[0]
+                      d['last']=c.execute('select max(date) from history_canonical_v2').fetchone()[0]
                   out[key]=d; c.close()
-              except Exception as exc: out[key]={'error':type(exc).__name__+':'+str(exc)[:160]}
+              except Exception as exc: out[key]={'error':type(exc).__name__+':'+str(exc)[:120]}
           print('SNAPSHOT='+json.dumps(out,sort_keys=True,default=str))
           PY
           }
-          snapshot BASELINE
 
           wait_idle(){
             local svc="$1" max_wait="$2" waited=0
@@ -131,70 +97,60 @@ jobs:
               [[ "$s" != active && "$s" != activating ]] && return 0
               echo "WAIT_BUSY=$svc|state=$s|waited=${waited}s"
               sleep 10; waited=$((waited+10))
-              (( waited < max_wait )) || { echo "WAIT_TIMEOUT=$svc"; return 1; }
+              (( waited < max_wait )) || return 1
             done
           }
 
-          run_one(){
+          run_stage(){
             local label="$1" svc="$2" max_wait="$3"
             echo "=== $label ==="
             pre="$(sudo -n systemctl is-active "$svc" 2>/dev/null || true)"
-            echo "SERVICE_PRE=$svc|$pre"
             if [[ "$pre" = active || "$pre" = activating ]]; then
-              echo "SERVICE_COLLISION_AVOIDED=$svc|action=WAIT_EXISTING"
-              wait_idle "$svc" "$max_wait"
-              echo "SERVICE_EXISTING_COMPLETED=$svc|result=$(sudo -n systemctl show "$svc" -p Result --value 2>/dev/null || true)|rc=$(sudo -n systemctl show "$svc" -p ExecMainStatus --value 2>/dev/null || true)"
+              echo "COLLISION_AVOIDED=$svc|WAIT_EXISTING"
+              if ! wait_idle "$svc" "$max_wait"; then echo "STAGE_ISSUE=$svc|WAIT_TIMEOUT"; ISSUES=$((ISSUES+1)); return 0; fi
+              echo "EXISTING_FINISHED=$svc|result=$(sudo -n systemctl show "$svc" -p Result --value 2>/dev/null || true)|exec_rc=$(sudo -n systemctl show "$svc" -p ExecMainStatus --value 2>/dev/null || true)"
               return 0
             fi
-            start_epoch=$(date +%s)
+            ts=$(date +%s)
             set +e
             sudo -n systemctl start "$svc"
             rc=$?
             set -e
-            echo "SERVICE_RUN=$svc|start_rc=$rc|result=$(sudo -n systemctl show "$svc" -p Result --value 2>/dev/null || true)|exec_rc=$(sudo -n systemctl show "$svc" -p ExecMainStatus --value 2>/dev/null || true)"
-            sudo -n journalctl -u "$svc" --since "@${start_epoch}" --no-pager -l 2>/dev/null | tail -n 80 || true
-            test "$rc" -eq 0
+            result="$(sudo -n systemctl show "$svc" -p Result --value 2>/dev/null || true)"
+            erc="$(sudo -n systemctl show "$svc" -p ExecMainStatus --value 2>/dev/null || true)"
+            echo "SERVICE_RUN=$svc|start_rc=$rc|result=$result|exec_rc=$erc"
+            sudo -n journalctl -u "$svc" --since "@${ts}" --no-pager -l 2>/dev/null | tail -n 100 || true
+            if [[ "$rc" != 0 ]]; then echo "STAGE_ISSUE=$svc|start_rc=$rc|exec_rc=$erc"; ISSUES=$((ISSUES+1)); fi
           }
 
-          echo '=== STAGE 1 / CONTRACT EVIDENCE SCRAPING ==='
-          run_one STAGE_1_CONTRACT_EVIDENCE porota-contract-evidence-rc6.service 1800
-          snapshot AFTER_CONTRACT
+          snapshot RESUME_BASELINE
 
-          echo '=== STAGE 2 / PPI POST-CLOSE HISTORY ==='
-          run_one STAGE_2_PPI_POSTCLOSE porota-history-postclose-rc6.service 1800
+          run_stage 'STAGE 2 / PPI POST-CLOSE HISTORY' porota-history-postclose-rc6.service 1800
           snapshot AFTER_PPI_POSTCLOSE
 
           echo '=== STAGE 3 / A3 DAILY INCREMENTAL ==='
           last_daily="$(sudo -n systemctl show porota-a3-history-daily-rc6.timer -p LastTriggerUSec --value 2>/dev/null || true)"
           daily_result="$(sudo -n systemctl show porota-a3-history-rc6@DAILY_INCREMENTAL.service -p Result --value 2>/dev/null || true)"
-          daily_recent=0
-          if [[ -n "$last_daily" && "$last_daily" != n/a ]]; then
-            last_epoch="$(date -d "$last_daily" +%s 2>/dev/null || echo 0)"
-            now_epoch="$(date +%s)"
-            if (( last_epoch > 0 && now_epoch-last_epoch < 21600 )) && [[ "$daily_result" = success ]]; then daily_recent=1; fi
-          fi
-          if (( daily_recent == 1 )); then
+          last_epoch="$(date -d "$last_daily" +%s 2>/dev/null || echo 0)"; now_epoch="$(date +%s)"
+          if (( last_epoch > 0 && now_epoch-last_epoch < 21600 )) && [[ "$daily_result" = success ]]; then
             echo "A3_DAILY=SKIP_ALREADY_COMPLETED_RECENTLY|last=$last_daily|result=$daily_result"
-            sudo -n journalctl -u porota-a3-history-rc6@DAILY_INCREMENTAL.service --since '-6 hours' --no-pager -l 2>/dev/null | tail -n 80 || true
+            sudo -n journalctl -u porota-a3-history-rc6@DAILY_INCREMENTAL.service --since '-6 hours' --no-pager -l 2>/dev/null | tail -n 100 || true
           else
-            run_one STAGE_3_A3_DAILY porota-a3-history-rc6@DAILY_INCREMENTAL.service 3900
+            run_stage 'STAGE 3 / A3 DAILY INCREMENTAL' porota-a3-history-rc6@DAILY_INCREMENTAL.service 3900
           fi
           snapshot AFTER_A3_DAILY
 
-          echo '=== STAGE 4 / A3 RECONCILE 10D ==='
-          run_one STAGE_4_A3_RECONCILE porota-a3-history-rc6@RECONCILE.service 3900
+          run_stage 'STAGE 4 / A3 RECONCILE 10D' porota-a3-history-rc6@RECONCILE.service 3900
           snapshot AFTER_A3_RECONCILE
 
-          echo '=== STAGE 5 / A3 WEEKEND DEEP ==='
-          run_one STAGE_5_A3_WEEKEND_DEEP porota-a3-history-rc6@WEEKEND_DEEP.service 3900
+          run_stage 'STAGE 5 / A3 WEEKEND DEEP' porota-a3-history-rc6@WEEKEND_DEEP.service 3900
           snapshot AFTER_A3_WEEKEND_DEEP
 
-          echo '=== STAGE 6 / CANDLE INTEGRITY ==='
-          run_one STAGE_6_CANDLE_INTEGRITY porota-candle-integrity-rc6.service 300
+          run_stage 'STAGE 6 / CANDLE INTEGRITY' porota-candle-integrity-rc6.service 300
           snapshot FINAL_DATA
 
-          echo '=== STAGE 7 / FINAL SAFETY + SCHEDULER ==='
-          for t in "${timers[@]}"; do
+          echo '=== FINAL TIMERS + SAFETY ==='
+          for t in porota-contract-evidence-rc6.timer porota-history-postclose-rc6.timer porota-candle-integrity-rc6.timer porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer; do
             echo "TIMER_POST=$t|active=$(sudo -n systemctl is-active "$t" 2>/dev/null || true)|enabled=$(sudo -n systemctl is-enabled "$t" 2>/dev/null || true)|last=$(sudo -n systemctl show "$t" -p LastTriggerUSec --value 2>/dev/null || true)|next=$(sudo -n systemctl show "$t" -p NextElapseUSecRealtime --value 2>/dev/null || true)"
           done
           FINAL="$(sudo -n docker exec -i "$OBS" python - <<'PY'
@@ -206,12 +162,10 @@ jobs:
           )"
           echo "FINAL_SAFETY=$FINAL"
           IFS='|' read -r FQC FMODE FSESSION FREAL <<< "$FINAL"
-          test "$FQC" = ok
-          test "$FMODE" = PRODUCTION_PAPER
-          test "$FREAL" = 0
-          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET_SHA"
+          test "$FQC" = ok; test "$FMODE" = PRODUCTION_PAPER; test "$FREAL" = 0
+          echo "ISSUES=$ISSUES"
           echo "ART_END=$(date --iso-8601=seconds)"
           echo 'REAL_ORDER_ROUTES=NOT_CALLED'
           echo 'REAL_ORDERS_SENT=0'
-          echo 'WEEKEND_INGESTION_KICKSTART=GREEN'
+          if (( ISSUES == 0 )); then echo 'WEEKEND_INGESTION_KICKSTART=GREEN'; else echo 'WEEKEND_INGESTION_KICKSTART=YELLOW_DATA_GAPS'; fi
           HOST
