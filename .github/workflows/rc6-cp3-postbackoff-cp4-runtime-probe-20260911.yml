@@ -97,3 +97,5 @@ jobs:
           PY
           echo CP4_DEPLOYED_WIRING_RCA_COMPLETE=YES
           HOST
+
+# RC6 parallel rerun marker 2026-09-11
