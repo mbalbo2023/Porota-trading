@@ -1,0 +1,149 @@
+name: RC6 Contract Evidence Render-Wait Forward Fix 2026-09-11
+
+on:
+  push:
+    branches:
+      - diag/rc6-contract-evidence-rca-20260911
+    paths:
+      - .github/workflows/rc6-contract-evidence-renderwait-forwardfix-20260911.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-contract-evidence-renderwait-forwardfix
+  cancel-in-progress: false
+
+jobs:
+  fix-and-prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static safety gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_contract_dom_collector.py
+          python - <<'PY'
+          import rc6_contract_dom_collector as c
+          assert c.SAFE_METHODS == {'GET','HEAD','OPTIONS'}
+          assert all(x.startswith('/Cotizaciones/') for x in c.ROUTE_FAMILY)
+          assert not any('/Operar' in x or '/Orden' in x for x in c.ROUTE_FAMILY)
+          assert c.RENDER_TIMEOUT_MS >= 10000
+          print('STATIC_SAFETY=GREEN')
+          print('RENDER_TIMEOUT_MS='+str(c.RENDER_TIMEOUT_MS))
+          PY
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Stage fixed collector
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" rc6_contract_dom_collector.py \
+            "$DO_USER@$DO_HOST:/tmp/rc6_contract_dom_collector.renderwait.py"
+
+      - name: Install isolated forward fix and prove live collection
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          export TZ=America/Argentina/Buenos_Aires
+          ROOT=/opt/porota-trading
+          TARGET=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          OBS=porota_production_observer
+          TIMER=porota-contract-evidence-rc6.timer
+          SERVICE=porota-contract-evidence-rc6.service
+          DEST=/usr/local/lib/porota-contract-evidence-rc6/rc6_contract_dom_collector.py
+          STAGED=/tmp/rc6_contract_dom_collector.renderwait.py
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+
+          safety(){
+            sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(json.dumps({'mode':r[0] if r else None,'session':r[1] if r else None,'orders':r[2] if r else None},sort_keys=True))
+          assert r and r[0]=='PRODUCTION_PAPER' and int(r[2] or 0)==0 and r[1] != 'MARKET_OPEN'
+          PY
+          }
+
+          echo '=== PRE SAFETY ==='; safety
+          echo "TIMER_PRE_ACTIVE=$(sudo -n systemctl is-active "$TIMER" || true)"
+          echo "TIMER_PRE_ENABLED=$(sudo -n systemctl is-enabled "$TIMER" || true)"
+          test "$(sudo -n systemctl is-enabled "$TIMER")" = enabled
+          sudo -n systemctl stop "$TIMER"
+          restore(){ sudo -n systemctl start "$TIMER" >/dev/null 2>&1 || true; rm -f "$STAGED"; }
+          trap restore EXIT
+
+          for i in $(seq 1 180); do
+            s="$(sudo -n systemctl is-active "$SERVICE" 2>/dev/null || true)"
+            [[ "$s" != active && "$s" != activating ]] && break
+            echo "WAIT_EXISTING_SERVICE=$s|iteration=$i"
+            sleep 5
+          done
+          s="$(sudo -n systemctl is-active "$SERVICE" 2>/dev/null || true)"
+          [[ "$s" != active && "$s" != activating ]]
+
+          echo '=== INSTALL FORWARD FIX ==='
+          sudo -n python3 -m py_compile "$STAGED"
+          echo "OLD_HASH=$(sudo -n sha256sum "$DEST" | awk '{print $1}')"
+          echo "NEW_HASH=$(sha256sum "$STAGED" | awk '{print $1}')"
+          sudo -n install -o root -g root -m 0644 "$STAGED" "$DEST"
+          echo "LIVE_HASH=$(sudo -n sha256sum "$DEST" | awk '{print $1}')"
+          grep -q 'wait_for_explicit_table' "$STAGED"
+
+          BEFORE="$(sudo -n find "$ROOT/data/contract_evidence_rc6_dom" -maxdepth 1 -type f -name 'dom_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | sed -n '1p' | cut -d' ' -f2-)"
+          echo "BEFORE_CAPTURE=${BEFORE##*/}"
+          ts=$(date +%s)
+          set +e
+          sudo -n systemctl start "$SERVICE"
+          rc=$?
+          set -e
+          echo "SERVICE_START_RC=$rc"
+          sudo -n journalctl -u "$SERVICE" --since "@${ts}" --no-pager -l | tail -n 160 || true
+          AFTER="$(sudo -n find "$ROOT/data/contract_evidence_rc6_dom" -maxdepth 1 -type f -name 'dom_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | sed -n '1p' | cut -d' ' -f2-)"
+          echo "AFTER_CAPTURE=${AFTER##*/}"
+          test -n "$AFTER"; test "$AFTER" != "$BEFORE"
+
+          sudo -n python3 - "$AFTER" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1],encoding='utf-8'))
+          routes=[]; mats=0
+          for r in x.get('routes') or []:
+              tm=[]
+              for t in r.get('tables') or []:
+                  m=bool(t.get('materializable')); mats += int(m)
+                  tm.append({'headers':len(t.get('headers') or []),'row_count':t.get('row_count'),'rows':len(t.get('rows') or []),'materializable':m})
+              routes.append({'route':r.get('requested'),'reached':r.get('reached'),'render_ready':r.get('render_ready'),'tables':tm})
+          print('PROOF='+json.dumps({'auth':x.get('auth_status'),'blocked_nonread':len(x.get('blocked_nonread') or []),'materializable_tables':mats,'routes':routes,'real_orders_sent':x.get('real_orders_sent')},sort_keys=True))
+          assert x.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert not x.get('blocked_nonread')
+          assert int(x.get('real_orders_sent') or 0)==0
+          assert mats >= 4, mats
+          PY
+          test "$rc" -eq 0
+          echo '=== POST SAFETY ==='; safety
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDERS_SENT=0'
+          echo 'CE_RENDERWAIT_FORWARD_FIX=GREEN'
+          HOST
