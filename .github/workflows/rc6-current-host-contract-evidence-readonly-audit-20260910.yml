@@ -14,15 +14,18 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Assert repository PAPER safety identity
+        shell: bash
         run: |
           set -Eeuo pipefail
           grep -q 'VERSION = "17.0.0-rc6"' _version.py
           grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
           grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
       - name: Prepare strict SSH
+        shell: bash
         env:
           SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
@@ -31,89 +34,118 @@ jobs:
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Read-only host audit
+      - name: Read-only Contract Evidence RCA
+        shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
-          set -u
+          set -Eeuo pipefail
           ROOT=/opt/porota-trading
           CE="$ROOT/data/contract_evidence/rc6_trusted"
-          PROFILE=/home/porotaadmin/.local/share/porota-contract-browser-profile
-          echo '=== HOST_IDENTITY ==='
-          cd "$ROOT" && printf 'HOST_HEAD=%s\n' "$(git rev-parse HEAD 2>/dev/null || echo UNKNOWN)"
-          echo '=== CONTAINERS ==='
-          sudo -n docker inspect -f 'OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_observer 2>/dev/null || true
-          sudo -n docker inspect -f 'DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}|IMAGE={{.Config.Image}}' porota_production_dashboard 2>/dev/null || true
-          echo '=== PAPER_DB_CONTRACT_FRESHNESS ==='
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          OBS=porota_production_observer
+          TARGET=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          RUNTIME=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+
+          echo '=== SAFETY ==='
+          echo "HOST_HEAD=$(git -C "$ROOT" rev-parse HEAD)"
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          H="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)"; echo "HEALTH=$H"
+          SAFETY="$(sudo -n docker exec -i "$OBS" python - <<'PY'
           import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print('|'.join(map(str,(q,*r))))
+          PY
+          )"
+          echo "SAFETY=$SAFETY"
+          test "$SAFETY" = 'ok|PRODUCTION_PAPER|MARKET_CLOSED|0'
+
+          echo '=== UNIT / TIMER / JOURNAL ==='
+          sudo -n systemctl show porota-contract-evidence-rc6.timer -p ActiveState -p UnitFileState -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager || true
+          sudo -n systemctl show porota-contract-evidence-rc6.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp --no-pager || true
+          sudo -n systemctl cat porota-contract-evidence-rc6.service --no-pager | sed -E 's/(TOKEN|COOKIE|PASSWORD|SECRET|AUTH)[^ =]*=[^ ]+/<redacted>/Ig' || true
+          sudo -n journalctl -u porota-contract-evidence-rc6.service --since '2026-09-11 18:45:00' --no-pager -l | tail -n 180 || true
+
+          echo '=== RUNTIME_LOGIC_MARKERS ==='
+          if sudo -n test -r "$RUNTIME"; then
+            sudo -n grep -nE 'materializ|GREEN_NOT_DUE|NOT_DUE|exit[[:space:]]+[0-9]+|DOM|XHR|routes|jobs|table|capture|cadence|due' "$RUNTIME" | head -n 180 || true
+          else
+            echo RUNTIME=UNREADABLE
+          fi
+
+          echo '=== PERSISTED CAPTURE INVENTORY + STRUCTURE ==='
+          sudo -n python3 - "$CE" <<'PY'
+          from pathlib import Path
+          import json,sys,collections
+          root=Path(sys.argv[1])
+          files=sorted(root.glob('*.json'),key=lambda p:p.stat().st_mtime,reverse=True)
+          print('CAPTURE_COUNT='+str(len(files)))
+          for i,p in enumerate(files[:12]):
+              st=p.stat(); print(f'FILE[{i}]={p.name}|bytes={st.st_size}|mtime={st.st_mtime_ns}')
+              try: d=json.loads(p.read_text(encoding='utf-8'))
+              except Exception as e: print(f'JSON[{i}]=ERROR_{type(e).__name__}'); continue
+              if not isinstance(d,dict): print(f'JSON[{i}]=TYPE_{type(d).__name__}'); continue
+              safe={}
+              for k in ('schema','state','status','auth_status','generated_at','captured_at','updated_at','real_orders_sent','materializable_tables','blocked_nonread'):
+                  v=d.get(k)
+                  if isinstance(v,(str,int,float,bool)) or v is None: safe[k]=v
+              print(f'META[{i}]='+json.dumps(safe,sort_keys=True,default=str))
+              print(f'KEYS[{i}]='+','.join(sorted(str(k) for k in d.keys())[:80]))
+              for key in ('routes','jobs','tables','endpoints','xhr','responses'):
+                  v=d.get(key)
+                  if isinstance(v,(list,dict)):
+                      print(f'COUNT[{i}].{key}={len(v)}')
+                      if isinstance(v,list):
+                          kinds=collections.Counter()
+                          for x in v:
+                              if isinstance(x,dict):
+                                  status=x.get('status') or x.get('http_status') or x.get('state') or 'NONE'
+                                  ctype=x.get('content_type') or x.get('type') or x.get('kind') or 'NONE'
+                                  method=x.get('method') or 'NONE'
+                                  kinds[(str(method),str(status),str(ctype)[:60])]+=1
+                          if kinds: print(f'SHAPE[{i}].{key}='+json.dumps([[list(k),n] for k,n in kinds.most_common(20)],ensure_ascii=False))
+              # Do not print bodies, headers, cookies, tokens, URLs with query strings or credentials.
+          PY
+
+          echo '=== CONTRACT DB LATEST RUNS / TABLES ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
           p='/app/data/paper_v17/observer_v17.db'
-          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
-          print('DB='+str(c.execute('pragma quick_check').fetchone()[0]))
-          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
-          print('MODE='+str(mode)); print('REAL_ORDERS='+str(orders))
-          tables=[r[0] for r in c.execute("select name from sqlite_master where type='table' and lower(name) like '%contract%' order by name")]
-          wanted={'run_at','observed_at','generated_at','imported_at','started_at','finished_at','timestamp','created_at','updated_at','captured_at','collected_at'}
-          for table in tables:
-              count=c.execute('select count(*) from "'+table+'"').fetchone()[0]
-              cols=[r[1] for r in c.execute('pragma table_info("'+table+'")')]
-              print('COUNT_'+table+'='+str(count))
-              for col in cols:
-                  if col.lower() in wanted:
-                      try:
-                          value=c.execute('select max("'+col+'") from "'+table+'"').fetchone()[0]
-                          print('MAX_'+table+'.'+col+'='+str(value))
-                      except Exception:
-                          pass
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=10); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          tabs=[r[0] for r in c.execute("select name from sqlite_master where type='table' and lower(name) like '%contract%' order by name")]
+          print('CONTRACT_TABLES='+json.dumps(tabs))
+          for t in tabs:
+              cols=[r[1] for r in c.execute('pragma table_info("'+t+'")')]
+              n=c.execute('select count(*) from "'+t+'"').fetchone()[0]
+              print(f'TABLE={t}|COUNT={n}|COLS='+','.join(cols))
+              if n and ('run' in t.lower() or t=='contract_evidence_v2_runs'):
+                  order=next((x for x in ('id','run_at','started_at','observed_at','created_at','generated_at') if x in cols),None)
+                  sql='select * from "'+t+'"'+((' order by "'+order+'" desc') if order else '')+' limit 12'
+                  for r in c.execute(sql):
+                      out={}
+                      for k in r.keys():
+                          lk=k.lower(); v=r[k]
+                          if any(s in lk for s in ('cookie','token','secret','password','header','body','payload','html')): continue
+                          if isinstance(v,(str,int,float,type(None))): out[k]=str(v)[:240]
+                      print('RUN='+json.dumps(out,sort_keys=True,ensure_ascii=False))
           c.close()
           PY
-          echo '=== CONTRACT_UNITS ==='
-          sudo -n systemctl is-enabled porota-contract-evidence-rc6.timer 2>/dev/null || true
-          sudo -n systemctl is-active porota-contract-evidence-rc6.timer 2>/dev/null || true
-          sudo -n systemctl show porota-contract-evidence-rc6.timer -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager 2>/dev/null || true
-          sudo -n systemctl show porota-contract-evidence-rc6.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp --no-pager 2>/dev/null || true
-          echo '=== PROFILE_METADATA_ONLY ==='
-          if [ -d "$PROFILE" ]; then
-            stat -c 'PROFILE_OWNER_UID=%u|GID=%g|MTIME=%y' "$PROFILE" || true
-            for p in "$PROFILE/Default/Cookies" "$PROFILE/Default/Web Data"; do
-              [ -e "$p" ] && stat -c 'PROFILE_DB=%n|SIZE=%s|MTIME=%y|UID=%u|GID=%g' "$p" || true
-            done
-          else
-            echo PROFILE=MISSING
+
+          echo '=== LATEST CAPTURE IMPORTABILITY CHECK ==='
+          LATEST="$(sudo -n find "$CE" -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
+          echo "LATEST=${LATEST##*/}"
+          if [ -n "$LATEST" ]; then
+            GID="$(sudo -n docker exec "$OBS" id -g)"
+            echo "LATEST_STAT=$(sudo -n stat -c '%a|%u|%g|%s|%y' "$LATEST")|OBSERVER_GID=$GID"
+            REL="${LATEST#$ROOT/data/}"
+            sudo -n docker exec "$OBS" test -r "/app/data/$REL" && echo LATEST_CONTAINER_READABLE=YES || echo LATEST_CONTAINER_READABLE=NO
           fi
-          echo '=== SANITIZED_RC6_CAPTURE_METADATA ==='
-          python3 - "$CE" <<'PY'
-          import json, pathlib, sys
-          root=pathlib.Path(sys.argv[1])
-          def emit(path,label):
-              if not path or not path.is_file():
-                  print(label+'=MISSING'); return
-              st=path.stat()
-              print(f'{label}_FILE={path.name}|SIZE={st.st_size}|MTIME_NS={st.st_mtime_ns}')
-              try: data=json.loads(path.read_text(encoding='utf-8'))
-              except Exception as exc:
-                  print(label+'_JSON=ERROR_'+type(exc).__name__); return
-              for key in ('schema','state','status','auth_status','generated_at','updated_at','real_orders_sent'):
-                  value=data.get(key) if isinstance(data,dict) else None
-                  if isinstance(value,(str,int,float,bool)) or value is None:
-                      print(f'{label}_{key.upper()}={str(value)[:160]}')
-              if isinstance(data,dict):
-                  for key in ('routes','endpoints','jobs','blocked_nonread'):
-                      value=data.get(key)
-                      if isinstance(value,(list,dict)):
-                          print(f'{label}_{key.upper()}_COUNT={len(value)}')
-          state=root/'runtime_state.json'
-          captures=sorted((p for p in root.glob('*.json') if p.name!='runtime_state.json'), key=lambda p:p.stat().st_mtime_ns, reverse=True)
-          deep=sorted(root.glob('w12_full_contract_deep_v3_*.json'), key=lambda p:p.stat().st_mtime_ns, reverse=True)
-          emit(state,'RUNTIME_STATE')
-          emit(captures[0] if captures else None,'LATEST_CAPTURE')
-          emit(deep[0] if deep else None,'LATEST_W12_DEEP')
-          PY
+
           echo 'MUTATIONS=NONE'
-          echo 'SECRETS_READ=NO'
           echo 'COLLECTOR_EXECUTED=NO'
+          echo 'SECRETS_READ=NO'
           echo 'ORDER_ROUTES=NOT_CALLED'
           HOST
