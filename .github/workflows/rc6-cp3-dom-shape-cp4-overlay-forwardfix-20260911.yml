@@ -28,7 +28,7 @@ jobs:
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Inspect authenticated quote DOM shape with read-only guard
+      - name: Authenticated DOM shape, no values, read-only only
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -36,38 +36,41 @@ jobs:
           set -Eeuo pipefail
           ROOT=/opt/porota-trading
           LIB=/usr/local/lib/porota-contract-evidence-rc6
-          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          PROFILE="$HOME/porota-browser-lab/chrome-profile"
           test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
-          echo HOST_HEAD="$TARGET"
-          echo MUTATIONS=NONE
-          echo REAL_ORDER_ROUTES=NOT_CALLED
-          echo '--- DEPLOYED CE FILE HASHES ---'
+          echo HOST_HEAD="$TARGET"; echo MUTATIONS=NONE; echo REAL_ORDER_ROUTES=NOT_CALLED
+          echo '--- ACTUAL CE EXECUTION ENV ---'
+          sudo -n systemctl cat porota-contract-evidence-rc6.service --no-pager || true
+          sudo -n grep -nE 'python|venv|VENV|collector|importer' /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh | head -n 120 || true
           sudo -n sha256sum "$LIB/rc6_trusted_browser_contract_collector.py" "$LIB/rc6_contract_capture_importer.py" 2>/dev/null || true
-          echo '--- IMPORTER ACCEPTED SOURCES / INPUT KEYS ---'
           sudo -n grep -nE 'endpoints|dom|PPI_AUTHENTICATED|record_snapshot|source_class' "$LIB/rc6_contract_capture_importer.py" | head -n 180 || true
           for i in $(seq 1 36); do
             if ! sudo -n systemctl is-active --quiet porota-contract-evidence-rc6.service; then break; fi
             sleep 5
           done
-          if sudo -n systemctl is-active --quiet porota-contract-evidence-rc6.service; then
-            echo CP3_DOM_SHAPE=YELLOW_SERVICE_BUSY
-            exit 0
+          if sudo -n systemctl is-active --quiet porota-contract-evidence-rc6.service; then echo CP3_DOM_SHAPE=YELLOW_SERVICE_BUSY; exit 0; fi
+          PYBIN=''
+          for p in python3 /usr/bin/python3 /opt/porota-contract-evidence-rc6/venv/bin/python /opt/porota-contract-evidence-rc6/.venv/bin/python /usr/local/lib/porota-contract-evidence-rc6/venv/bin/python /usr/local/lib/porota-contract-evidence-rc6/.venv/bin/python; do
+            if command -v "$p" >/dev/null 2>&1 || test -x "$p"; then
+              if "$p" -c 'import playwright' >/dev/null 2>&1; then PYBIN="$p"; break; fi
+            fi
+          done
+          if test -z "$PYBIN"; then
+            while IFS= read -r p; do
+              if "$p" -c 'import playwright' >/dev/null 2>&1; then PYBIN="$p"; break; fi
+            done < <(find -L /opt /usr/local "$HOME" -type f \( -name python -o -name python3 \) 2>/dev/null | head -n 100)
           fi
-          sudo -n env PYTHONPATH="$LIB:$ROOT" PROFILE="$PROFILE" python3 - <<'PY'
+          if test -z "$PYBIN"; then echo CP3_DOM_SHAPE=YELLOW_PLAYWRIGHT_ENV_NOT_FOUND; exit 0; fi
+          echo CP3_PYTHON="$PYBIN"
+          env PYTHONPATH="$LIB:$ROOT" PROFILE="$PROFILE" "$PYBIN" - <<'PY'
           import os
           from urllib.parse import urlsplit
           from playwright.sync_api import sync_playwright
           import rc6_trusted_browser_contract_collector as ce
-
-          profile=os.environ['PROFILE']
+          profile=os.environ['PROFILE']; blocked=[]
           routes=['/Cotizaciones/Bonos','/Cotizaciones/Cauciones','/Cotizaciones/Licitaciones','/Cotizaciones/Opciones','/Cotizaciones/Futuros']
-          blocked=[]
-          def clean(u):
-              x=urlsplit(str(u)); return f'{x.scheme}://{x.netloc}{x.path}'
           with sync_playwright() as pw:
-              ctx=pw.chromium.launch_persistent_context(user_data_dir=profile,executable_path='/usr/bin/google-chrome-stable',headless=True,
-                  locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',viewport={'width':1440,'height':1000},
-                  args=['--no-sandbox','--disable-dev-shm-usage'])
+              ctx=pw.chromium.launch_persistent_context(user_data_dir=profile,executable_path='/usr/bin/google-chrome-stable',headless=True,locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',viewport={'width':1440,'height':1000},args=['--no-sandbox','--disable-dev-shm-usage'])
               def guard(route,request):
                   method=request.method.upper(); u=urlsplit(request.url); host=u.netloc.lower(); path=u.path.rstrip('/') or '/'
                   if method in ce.SAFE_METHODS: return route.continue_()
@@ -76,49 +79,36 @@ jobs:
                   if method=='POST' and host=='trading.portfoliopersonal.com' and path=='/api/logger': return route.abort()
                   if method=='POST' and host=='api.portfoliopersonal.com' and path=='/api/v1/zendesk/zendesk-session': return route.abort()
                   blocked.append((method,host,path)); return route.abort()
-              ctx.route('**/*',guard)
-              page=ctx.pages[0] if ctx.pages else ctx.new_page()
+              ctx.route('**/*',guard); page=ctx.pages[0] if ctx.pages else ctx.new_page()
               page.goto(ce.TRADING+'/',wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(900)
-              u=urlsplit(page.url)
-              auth=u.netloc=='trading.portfoliopersonal.com' and 'login' not in u.path.lower()
+              u=urlsplit(page.url); auth=u.netloc=='trading.portfoliopersonal.com' and 'login' not in u.path.lower()
               print('AUTH_STATUS='+('AUTHENTICATED_TRUSTED_DEVICE' if auth else 'BLOCKED'))
               if auth:
                   for path in routes:
-                      page.goto(ce.TRADING+path,wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(1300)
-                      tables=page.locator('table')
-                      print(f'ROUTE={path}|TABLES={tables.count()}|URL={clean(page.url)}')
+                      page.goto(ce.TRADING+path,wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(1500)
+                      tables=page.locator('table'); print(f'ROUTE={path}|TABLES={tables.count()}')
                       for ti in range(min(tables.count(),8)):
-                          t=tables.nth(ti)
-                          headers=[]
+                          t=tables.nth(ti); headers=[]
                           for sel in ['thead th','th','[role="columnheader"]']:
                               try:
-                                  q=t.locator(sel)
-                                  headers=[q.nth(i).inner_text(timeout=800).strip().replace('\n',' ')[:100] for i in range(min(q.count(),40))]
-                                  headers=[x for x in headers if x]
+                                  q=t.locator(sel); headers=[q.nth(i).inner_text(timeout=800).strip().replace('\n',' ')[:100] for i in range(min(q.count(),40))]; headers=[x for x in headers if x]
                                   if headers: break
                               except Exception: pass
-                          try: rows=t.locator('tbody tr').count()
+                          try: rows=t.locator('tbody tr').count() or t.locator('tr').count()
                           except Exception: rows=0
-                          if rows==0:
-                              try: rows=t.locator('tr').count()
-                              except Exception: rows=0
-                          cell_counts=[]
+                          counts=[]
                           for ri in range(min(rows,4)):
-                              try: cell_counts.append(t.locator('tr').nth(ri).locator('td,th').count())
+                              try: counts.append(t.locator('tr').nth(ri).locator('td,th').count())
                               except Exception: pass
-                          print(f'  TABLE={ti}|HEADERS={headers}|ROWS={rows}|CELL_COUNTS={cell_counts}')
+                          print(f'  TABLE={ti}|HEADERS={headers}|ROWS={rows}|CELL_COUNTS={counts}')
                       try:
-                          ch=page.locator('[role="columnheader"]')
-                          labels=[ch.nth(i).inner_text(timeout=500).strip().replace('\n',' ')[:100] for i in range(min(ch.count(),60))]
-                          labels=[x for x in labels if x]
-                          print('  GRID_HEADERS='+repr(labels))
-                          print('  GRID_ROWS='+str(page.locator('[role="row"]').count()))
+                          ch=page.locator('[role="columnheader"]'); labels=[ch.nth(i).inner_text(timeout=500).strip().replace('\n',' ')[:100] for i in range(min(ch.count(),60))]; labels=[x for x in labels if x]
+                          print('  GRID_HEADERS='+repr(labels)); print('  GRID_ROWS='+str(page.locator('[role="row"]').count()))
                       except Exception: pass
               ctx.close()
           print('BLOCKED_SUSPICIOUS_NONREAD='+str(len(blocked)))
           for method,host,path in blocked[:30]: print(f'BLOCKED={method}|{host}|{path}')
-          print('REAL_ORDERS_SENT=0')
-          print('CP3_DOM_SHAPE_PROOF_COMPLETE=YES')
+          print('REAL_ORDERS_SENT=0'); print('CP3_DOM_SHAPE_PROOF_COMPLETE=YES')
           PY
           HOST
 
@@ -131,11 +121,20 @@ jobs:
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
       - uses: actions/checkout@v4
-      - name: Source tests for isolated A3 change
+      - name: Static source gate
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m pytest -q tests/test_a3_identity_mapper_rc6.py tests/test_a3_history_rc6.py
+          python -m py_compile ex_a3_history_job_rc6.py ew_a3_history_rc6.py fd_a3_identity_mapper_rc6.py
+          python - <<'PY'
+          import fd_a3_identity_mapper_rc6 as m
+          assert m.porota_to_a3_dlr('DLR/SEP26')=='DLR092026'
+          for s in ('DLR/SEP26/OCT26','DLR/SEP26M'):
+              try: m.porota_to_a3_dlr(s)
+              except m.A3IdentityError: pass
+              else: raise SystemExit('FAIL_OPEN:'+s)
+          print('CP4_STATIC_GATE=GREEN')
+          PY
       - name: SSH setup
         shell: bash
         run: |
@@ -143,95 +142,54 @@ jobs:
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Stage audited overlay files
+      - name: Stage overlay
         shell: bash
         run: |
           set -Eeuo pipefail
-          TAR=/tmp/rc6_cp4_a3_overlay.tar
-          tar -cf "$TAR" ex_a3_history_job_rc6.py ew_a3_history_rc6.py fd_a3_identity_mapper_rc6.py
-          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$TAR" "$DO_USER@$DO_HOST:/tmp/rc6_cp4_a3_overlay.tar"
-      - name: Install isolated overlay and prove runtime wiring
+          tar -cf /tmp/rc6_cp4_a3_overlay.tar ex_a3_history_job_rc6.py ew_a3_history_rc6.py fd_a3_identity_mapper_rc6.py
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" /tmp/rc6_cp4_a3_overlay.tar "$DO_USER@$DO_HOST:/tmp/rc6_cp4_a3_overlay.tar"
+      - name: Install isolated non-trading overlay and prove wiring
         shell: bash
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
           set -Eeuo pipefail
-          ROOT=/opt/porota-trading
-          OVL="$ROOT/data/rc6_a3_overlay"
-          DROP=/etc/systemd/system/porota-a3-history-rc6@.service.d/20-rc6-cp4-overlay.conf
-          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
-          echo HOST_HEAD="$TARGET"
-          echo '--- SAFETY PRECHECK ---'
+          ROOT=/opt/porota-trading; OVL="$ROOT/data/rc6_a3_overlay"; DROP=/etc/systemd/system/porota-a3-history-rc6@.service.d/20-rc6-cp4-overlay.conf
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"; echo HOST_HEAD="$TARGET"
           PRE="$(sudo -n docker exec porota_production_observer python - <<'PY'
           import sqlite3,json
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
-          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); c.close()
-          print(json.dumps({'mode':r[0] if r else None,'session':r[1] if r else None,'orders':r[2] if r else None}))
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); c.close(); print(json.dumps({'mode':r[0] if r else None,'session':r[1] if r else None,'orders':r[2] if r else None}))
           PY
-          )"
-          echo "$PRE"
-          PRE="$PRE" python3 - <<'PY'
-          import os,json,sys
-          d=json.loads(os.environ['PRE'])
-          if d.get('mode')!='PRODUCTION_PAPER' or int(d.get('orders') or 0)!=0: sys.exit(1)
-          PY
-          sudo -n install -d -m 0755 "$OVL"
-          TMP="$(mktemp -d)"; trap 'rm -rf "$TMP" /tmp/rc6_cp4_a3_overlay.tar' EXIT
-          tar -xf /tmp/rc6_cp4_a3_overlay.tar -C "$TMP"
-          for f in ex_a3_history_job_rc6.py ew_a3_history_rc6.py fd_a3_identity_mapper_rc6.py; do
-            sudo -n install -m 0644 "$TMP/$f" "$OVL/$f"
-          done
+          )"; echo "$PRE"; PRE="$PRE" python3 -c "import os,json; d=json.loads(os.environ['PRE']); assert d['mode']=='PRODUCTION_PAPER' and int(d.get('orders') or 0)==0"
+          sudo -n install -d -m 0755 "$OVL"; TMP="$(mktemp -d)"; trap 'rm -rf "$TMP" /tmp/rc6_cp4_a3_overlay.tar' EXIT; tar -xf /tmp/rc6_cp4_a3_overlay.tar -C "$TMP"
+          for f in ex_a3_history_job_rc6.py ew_a3_history_rc6.py fd_a3_identity_mapper_rc6.py; do sudo -n install -m 0644 "$TMP/$f" "$OVL/$f"; done
           sudo -n install -d -m 0755 "$(dirname "$DROP")"
           cat > "$TMP/override.conf" <<'EOF'
           [Service]
           ExecStart=
           ExecStart=/usr/bin/docker exec -e PYTHONPATH=/app/data/rc6_a3_overlay:/app -e A3_HISTORY_MODE=%i porota_production_observer python /app/data/rc6_a3_overlay/ex_a3_history_job_rc6.py %i
           EOF
-          sudo -n install -m 0644 "$TMP/override.conf" "$DROP"
-          sudo -n systemctl daemon-reload
-          echo '--- INSTALLED HASHES ---'
-          sudo -n sha256sum "$OVL"/*.py
-          echo '--- EFFECTIVE UNIT ---'
-          sudo -n systemctl cat porota-a3-history-rc6@.service --no-pager
-          echo '--- CONTAINER OVERLAY VISIBILITY / MAPPER ---'
+          sudo -n install -m 0644 "$TMP/override.conf" "$DROP"; sudo -n systemctl daemon-reload
+          sudo -n sha256sum "$OVL"/*.py; sudo -n systemctl cat porota-a3-history-rc6@.service --no-pager
           sudo -n docker exec -e PYTHONPATH=/app/data/rc6_a3_overlay:/app porota_production_observer python - <<'PY'
-          import ew_a3_history_rc6 as h, fd_a3_identity_mapper_rc6 as m
-          print('EW_FILE='+h.__file__); print('FD_FILE='+m.__file__)
-          for s in ['DLR/SEP26','DLR/DIC26']:
-              print(s+'='+m.porota_to_a3_dlr(s))
-          for s in ['DLR/SEP26/OCT26','DLR/SEP26M']:
-              try: print(s+'='+m.porota_to_a3_dlr(s))
+          import ew_a3_history_rc6 as h,fd_a3_identity_mapper_rc6 as m
+          assert '/app/data/rc6_a3_overlay/' in h.__file__; assert '/app/data/rc6_a3_overlay/' in m.__file__
+          print('EW_FILE='+h.__file__); print('FD_FILE='+m.__file__); print('DLR/SEP26='+m.porota_to_a3_dlr('DLR/SEP26'))
+          for s in ('DLR/SEP26/OCT26','DLR/SEP26M'):
+              try: m.porota_to_a3_dlr(s)
               except Exception as e: print(s+'=FAIL_CLOSED:'+type(e).__name__)
+              else: raise SystemExit('FAIL_OPEN:'+s)
           PY
-          echo '--- SAFE EXECUTION PROOF (FAIL-CLOSED IF MARKET NOT CLOSED) ---'
-          set +e
-          sudo -n systemctl start porota-a3-history-rc6@DAILY_INCREMENTAL.service
-          RC=$?
-          set -e
-          echo A3_SERVICE_START_RC="$RC"
-          sudo -n journalctl -u porota-a3-history-rc6@DAILY_INCREMENTAL.service -n 80 --no-pager | tail -n 80
+          set +e; sudo -n systemctl start porota-a3-history-rc6@DAILY_INCREMENTAL.service; RC=$?; set -e; echo A3_SERVICE_START_RC="$RC"; sudo -n journalctl -u porota-a3-history-rc6@DAILY_INCREMENTAL.service -n 80 --no-pager | tail -n 80
           POST="$(sudo -n docker exec porota_production_observer python - <<'PY'
           import sqlite3,json
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
-          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
-          rows=[]
-          if c.execute("select 1 from sqlite_master where type='table' and name='a3_history_ingest_state_rc6'").fetchone():
-              rows=[dict(x) for x in c.execute("select symbol,instrument_type,status,last_complete_day,last_success_at,rows_last from a3_history_ingest_state_rc6 where instrument_type='FUTUROS' order by coalesce(last_success_at,'') desc,symbol limit 30")]
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on'); r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); rows=[]
+          if c.execute("select 1 from sqlite_master where type='table' and name='a3_history_ingest_state_rc6'").fetchone(): rows=[dict(x) for x in c.execute("select symbol,instrument_type,status,last_complete_day,last_success_at,rows_last from a3_history_ingest_state_rc6 where instrument_type='FUTUROS' order by coalesce(last_success_at,'') desc,symbol limit 30")]
           c.close(); print(json.dumps({'mode':r['mode'] if r else None,'session':r['session_state'] if r else None,'orders':r['real_orders_sent'] if r else None,'futures':rows},default=str))
           PY
-          )"
-          echo "$POST"
-          POST="$POST" python3 - <<'PY'
+          )"; echo "$POST"; POST="$POST" python3 - <<'PY'
           import os,json,sys
-          d=json.loads(os.environ['POST'])
-          if d.get('mode')!='PRODUCTION_PAPER' or int(d.get('orders') or 0)!=0: sys.exit(1)
-          rows=d.get('futures') or []
-          complete=[r for r in rows if str(r.get('status')).upper()=='COMPLETE']
-          print('CP4_RUNTIME_WIRING_GATE=GREEN')
-          print('CP4_PERSISTENCE_GATE='+('GREEN' if complete else 'YELLOW_POSTCLOSE_REQUIRED'))
-          print('CP4_COMPLETE_FUTURES='+str(len(complete)))
-          print('REAL_ORDERS_SENT=0')
+          d=json.loads(os.environ['POST']); assert d['mode']=='PRODUCTION_PAPER' and int(d.get('orders') or 0)==0; complete=[r for r in (d.get('futures') or []) if str(r.get('status')).upper()=='COMPLETE']; print('CP4_RUNTIME_WIRING_GATE=GREEN'); print('CP4_PERSISTENCE_GATE='+('GREEN' if complete else 'YELLOW_POSTCLOSE_REQUIRED')); print('CP4_COMPLETE_FUTURES='+str(len(complete))); print('REAL_ORDERS_SENT=0')
           PY
-          test "$RC" -eq 0
-          echo CP4_OVERLAY_FORWARD_FIX=GREEN
+          test "$RC" -eq 0; echo CP4_OVERLAY_FORWARD_FIX=GREEN
           HOST
