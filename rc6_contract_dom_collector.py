@@ -7,6 +7,8 @@ Read-only/fail-closed contract:
 - permits GET/HEAD/OPTIONS only;
 - aborts all mutations; unexpected first-party PPI mutations are recorded and fail closed;
 - extracts only visible quote-table headers/cells when headers are explicit;
+- supports HTML tables and ARIA grid/table roles without inferring semantics;
+- gives dynamic PPI rendering a bounded wait and one bounded retry;
 - never visits /Operar, fills order fields, clicks confirmations, or imports broker-order code;
 - never stores cookies, headers, query strings, request bodies, credentials, account data or HTML.
 """
@@ -49,6 +51,8 @@ DEFAULT_ROUTES = (
     "/Cotizaciones/Bonos",
     "/Cotizaciones/Opciones",
 )
+RENDER_WAIT_STEPS_MS = (900, 1300, 1800, 2500)
+RETRY_WAIT_STEPS_MS = (1000, 1800, 2500)
 
 
 def clean_text(value: str, limit: int = 180) -> str:
@@ -72,14 +76,27 @@ def safe_routes(raw: str | None) -> list[str]:
     return out
 
 
-def table_snapshot(table) -> dict:
+def _texts(locator, limit: int, timeout_ms: int = 700) -> list[str]:
+    out: list[str] = []
+    try:
+        count = min(locator.count(), limit)
+    except Exception:
+        return out
+    for i in range(count):
+        try:
+            text = clean_text(locator.nth(i).inner_text(timeout=timeout_ms), 100)
+            if text:
+                out.append(text)
+        except Exception:
+            continue
+    return out
+
+
+def html_table_snapshot(table) -> dict:
     headers: list[str] = []
     for selector in ("thead th", "th"):
         try:
-            q = table.locator(selector)
-            headers = [clean_text(q.nth(i).inner_text(timeout=700), 100)
-                       for i in range(min(q.count(), 40))]
-            headers = [x for x in headers if x]
+            headers = _texts(table.locator(selector), 40)
             if headers:
                 break
         except Exception:
@@ -93,26 +110,119 @@ def table_snapshot(table) -> dict:
         row_count = 0
         rows_loc = None
 
-    # Never infer a column order. Without explicit provider headers only shape is retained.
     if not headers or rows_loc is None:
-        return {"headers": [], "row_count": int(row_count), "rows": [], "materializable": False}
+        return {
+            "kind": "html_table",
+            "headers": [],
+            "row_count": int(row_count),
+            "rows": [],
+            "materializable": False,
+        }
 
     rows: list[list[str]] = []
     for ri in range(min(row_count, 100)):
         try:
             cells = rows_loc.nth(ri).locator("td,th")
-            vals = [clean_text(cells.nth(ci).inner_text(timeout=500))
-                    for ci in range(min(cells.count(), 40))]
+            vals = [
+                clean_text(cells.nth(ci).inner_text(timeout=500))
+                for ci in range(min(cells.count(), 40))
+            ]
             if vals and any(vals):
                 rows.append(vals)
         except Exception:
             continue
     return {
+        "kind": "html_table",
         "headers": headers[:40],
         "row_count": int(row_count),
         "rows": rows,
         "materializable": bool(headers and rows),
     }
+
+
+def aria_grid_snapshot(grid) -> dict:
+    headers: list[str] = []
+    try:
+        headers = _texts(grid.locator('[role="columnheader"]'), 40)
+    except Exception:
+        headers = []
+
+    try:
+        rows_loc = grid.locator('[role="row"]')
+        row_count = rows_loc.count()
+    except Exception:
+        row_count = 0
+        rows_loc = None
+
+    if not headers or rows_loc is None:
+        return {
+            "kind": "aria_grid",
+            "headers": [],
+            "row_count": int(row_count),
+            "rows": [],
+            "materializable": False,
+        }
+
+    rows: list[list[str]] = []
+    for ri in range(min(row_count, 100)):
+        try:
+            row = rows_loc.nth(ri)
+            data_cells = row.locator('[role="gridcell"],[role="cell"],[role="rowheader"]')
+            if data_cells.count() == 0:
+                continue
+            vals = [
+                clean_text(data_cells.nth(ci).inner_text(timeout=500))
+                for ci in range(min(data_cells.count(), 40))
+            ]
+            if vals and any(vals):
+                rows.append(vals)
+        except Exception:
+            continue
+    return {
+        "kind": "aria_grid",
+        "headers": headers[:40],
+        "row_count": int(row_count),
+        "rows": rows,
+        "materializable": bool(headers and rows),
+    }
+
+
+def collect_structures(page) -> list[dict]:
+    snaps: list[dict] = []
+    try:
+        tables = page.locator("table")
+        for ti in range(min(tables.count(), 8)):
+            snap = html_table_snapshot(tables.nth(ti))
+            snap["table_index"] = ti
+            snaps.append(snap)
+    except Exception:
+        pass
+
+    try:
+        grids = page.locator('[role="grid"],[role="table"],[role="treegrid"]')
+        for gi in range(min(grids.count(), 6)):
+            snap = aria_grid_snapshot(grids.nth(gi))
+            snap["table_index"] = 1000 + gi
+            snaps.append(snap)
+    except Exception:
+        pass
+    return snaps
+
+
+def materializable_count(snaps: list[dict]) -> int:
+    return sum(1 for snap in snaps if snap.get("materializable"))
+
+
+def wait_for_materializable(page, waits_ms: tuple[int, ...]) -> tuple[list[dict], int]:
+    latest: list[dict] = []
+    attempts = 0
+    for wait_ms in waits_ms:
+        page.wait_for_timeout(wait_ms)
+        attempts += 1
+        latest = collect_structures(page)
+        if materializable_count(latest):
+            break
+    return latest, attempts
 
 
 def main() -> int:
@@ -124,7 +234,7 @@ def main() -> int:
     args = ap.parse_args()
     routes = safe_routes(args.routes)
     out = {
-        "schema": "POROTA_RC6_PPI_AUTH_DOM_V1",
+        "schema": "POROTA_RC6_PPI_AUTH_DOM_V2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "auth_status": "UNKNOWN",
         "routes": [],
@@ -180,9 +290,11 @@ def main() -> int:
             page.goto(TRADING + "/", wait_until="domcontentloaded", timeout=45000)
             page.wait_for_timeout(900)
             u = urlsplit(page.url)
-            authenticated = (u.netloc == "trading.portfoliopersonal.com"
-                             and "login" not in u.path.lower()
-                             and "logout" not in u.path.lower())
+            authenticated = (
+                u.netloc == "trading.portfoliopersonal.com"
+                and "login" not in u.path.lower()
+                and "logout" not in u.path.lower()
+            )
             if not authenticated:
                 out["auth_status"] = "BLOCKED_AUTH_SESSION_EXPIRED"
             else:
@@ -194,20 +306,26 @@ def main() -> int:
                         "reached": False,
                         "url": "",
                         "tables": [],
+                        "render_attempts": 0,
+                        "reload_retry": False,
                     }
                     try:
                         page.goto(TRADING + requested, wait_until="domcontentloaded", timeout=45000)
-                        page.wait_for_timeout(1500)
                         pu = urlsplit(page.url)
                         item["url"] = clean_url(page.url)
-                        item["reached"] = (pu.netloc == "trading.portfoliopersonal.com"
-                                           and "login" not in pu.path.lower())
+                        item["reached"] = (
+                            pu.netloc == "trading.portfoliopersonal.com"
+                            and "login" not in pu.path.lower()
+                        )
                         if item["reached"]:
-                            tables = page.locator("table")
-                            for ti in range(min(tables.count(), 8)):
-                                snap = table_snapshot(tables.nth(ti))
-                                snap["table_index"] = ti
-                                item["tables"].append(snap)
+                            snaps, attempts = wait_for_materializable(page, RENDER_WAIT_STEPS_MS)
+                            item["render_attempts"] += attempts
+                            if materializable_count(snaps) == 0:
+                                item["reload_retry"] = True
+                                page.reload(wait_until="domcontentloaded", timeout=45000)
+                                snaps, attempts = wait_for_materializable(page, RETRY_WAIT_STEPS_MS)
+                                item["render_attempts"] += attempts
+                            item["tables"] = snaps
                     except Exception as exc:
                         item["error"] = type(exc).__name__
                     out["routes"].append(item)
