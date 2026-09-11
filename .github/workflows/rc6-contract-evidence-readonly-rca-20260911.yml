@@ -1,0 +1,141 @@
+name: RC6 Contract Evidence Deep Readonly RCA 2026-09-11
+
+on:
+  push:
+    branches:
+      - diag/rc6-contract-evidence-rca-20260911
+    paths:
+      - .github/workflows/rc6-contract-evidence-readonly-rca-20260911.yml
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Inspect latest Contract Evidence captures and DB safely
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          export TZ=America/Argentina/Buenos_Aires
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          TARGET=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+
+          echo '=== CE RCA / SAFETY ==='
+          echo "HOST_SHA=$(git -C "$ROOT" rev-parse HEAD)"
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+          c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          print('SAFETY='+json.dumps(dict(r) if r else None,sort_keys=True))
+          assert r and r['mode']=='PRODUCTION_PAPER' and int(r['real_orders_sent'] or 0)==0
+          c.close()
+          PY
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+
+          echo '=== EFFECTIVE UNIT / WRAPPER HASHES ==='
+          sudo -n systemctl cat porota-contract-evidence-rc6.service --no-pager | sed -n '1,180p'
+          for p in /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh /usr/local/lib/porota-contract-evidence-rc6/rc6_contract_dom_collector.py /usr/local/lib/porota-contract-evidence-rc6/rc6_contract_dom_importer.py; do
+            if sudo -n test -f "$p"; then sudo -n sha256sum "$p"; fi
+          done
+
+          echo '=== LAST SERVICE EVENTS ==='
+          sudo -n systemctl show porota-contract-evidence-rc6.service -p Result -p ExecMainStatus -p ActiveState -p SubState --no-pager
+          sudo -n journalctl -u porota-contract-evidence-rc6.service --since '-12 hours' --no-pager -l | tail -n 260
+
+          echo '=== SAVED DOM CAPTURES / STRUCTURAL FORENSICS ONLY ==='
+          sudo -n python3 - "$ROOT/data/contract_evidence_rc6_dom" <<'PY'
+          import json,sys
+          from pathlib import Path
+          d=Path(sys.argv[1])
+          files=sorted(d.glob('dom_*.json'),key=lambda p:p.stat().st_mtime,reverse=True)[:12] if d.exists() else []
+          print('CAPTURE_COUNT_INSPECTED='+str(len(files)))
+          for p in files:
+              try:
+                  x=json.loads(p.read_text(encoding='utf-8'))
+              except Exception as e:
+                  print('CAPTURE_READ_ERROR='+p.name+'|'+type(e).__name__); continue
+              mats=sum(1 for r in x.get('routes',[]) for t in (r.get('tables') or []) if isinstance(t,dict) and t.get('materializable'))
+              print('CAPTURE='+json.dumps({
+                  'file':p.name,'generated_at':x.get('generated_at'),'auth_status':x.get('auth_status'),
+                  'blocked_nonread':len(x.get('blocked_nonread') or []),'routes':len(x.get('routes') or []),
+                  'materializable_tables':mats,'real_orders_sent':x.get('real_orders_sent')},sort_keys=True))
+              for r in x.get('routes') or []:
+                  if not isinstance(r,dict): continue
+                  tables=[]
+                  for t in r.get('tables') or []:
+                      if not isinstance(t,dict): continue
+                      tables.append({'i':t.get('table_index'),'headers':len(t.get('headers') or []),'row_count':t.get('row_count'),'rows':len(t.get('rows') or []),'materializable':bool(t.get('materializable'))})
+                  print('ROUTE='+json.dumps({'requested':r.get('requested'),'family':r.get('family'),'reached':r.get('reached'),'url':r.get('url'),'error':r.get('error'),'table_count':len(r.get('tables') or []),'tables':tables},sort_keys=True))
+          PY
+
+          echo '=== CONTRACT EVIDENCE DB HISTORY ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          print('TABLES_PRESENT='+json.dumps(sorted([x for x in tabs if 'contract_evidence' in x])))
+          if 'contract_evidence_v2_current' in tabs:
+              cols={r['name'] for r in c.execute('pragma table_info(contract_evidence_v2_current)')}
+              if 'source_class' in cols:
+                  rows=c.execute("select family,count(*) n,max(observed_at) mx from contract_evidence_v2_current where source_class='PPI_AUTHENTICATED_WEB' group by family order by family").fetchall()
+                  print('WEB_CURRENT_BY_FAMILY='+json.dumps([dict(r) for r in rows],sort_keys=True,default=str))
+                  total=c.execute("select count(*) n,max(observed_at) mx from contract_evidence_v2_current where source_class='PPI_AUTHENTICATED_WEB'").fetchone()
+                  print('WEB_CURRENT_TOTAL='+json.dumps(dict(total),sort_keys=True,default=str))
+          if 'contract_evidence_v2_runs' in tabs:
+              cols=[r['name'] for r in c.execute('pragma table_info(contract_evidence_v2_runs)')]
+              print('RUN_COLUMNS='+json.dumps(cols))
+              usable=[x for x in ('id','started_at','finished_at','observed_at','status','state','source_class','family','records','error','detail') if x in cols]
+              if usable:
+                  order='id desc' if 'id' in cols else ('observed_at desc' if 'observed_at' in cols else 'rowid desc')
+                  try:
+                      rows=c.execute('select '+','.join(usable)+' from contract_evidence_v2_runs order by '+order+' limit 25').fetchall()
+                      print('RECENT_RUNS='+json.dumps([dict(r) for r in rows],sort_keys=True,default=str))
+                  except Exception as e: print('RECENT_RUNS_ERROR='+type(e).__name__+':'+str(e))
+          c.close()
+          PY
+
+          echo '=== RCA STATIC SHAPE FROM DEPLOYED COLLECTOR ==='
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/usr/local/lib/porota-contract-evidence-rc6/rc6_contract_dom_collector.py')
+          s=p.read_text(encoding='utf-8',errors='replace')
+          checks={
+            'uses_html_table_selector':'page.locator("table")' in s,
+            'wait_after_route_1500ms':'page.wait_for_timeout(1500)' in s,
+            'has_role_grid_selector':'role=grid' in s or '[role="grid"]' in s,
+            'has_ag_grid_selector':'ag-grid' in s or 'ag-row' in s,
+            'has_materializable_header_requirement':'bool(headers and rows)' in s,
+            'default_route_count':s.count('"/Cotizaciones/')
+          }
+          import json; print('STATIC_CHECKS='+json.dumps(checks,sort_keys=True))
+          PY
+
+          echo 'CE_RCA_READONLY=COMPLETE'
+          HOST
