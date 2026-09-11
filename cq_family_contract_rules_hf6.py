@@ -156,7 +156,13 @@ def _parse_at(value):
 
 
 def merge_evidence(records):
-    """Merge only when sources agree; highest-ranked source wins provenance."""
+    """Merge only when sources agree; highest-ranked source wins provenance.
+
+    Contract Evidence v2 stores ticker/market/settlement as normalized identity
+    columns. Explicit non-placeholder identity values are therefore admissible
+    readiness evidence; wildcards/UNKNOWN remain fail-closed. This is a wiring
+    bridge only, never an inference of economic terms.
+    """
     records = [r for r in (records or []) if isinstance(r, dict)]
     conflicts = evidence_v2.source_conflict(records)
     if conflicts:
@@ -169,7 +175,7 @@ def merge_evidence(records):
             continue
         rank = evidence_v2.SOURCE_RANK[source]
         observed_at = record.get("observed_at")
-        payload = record.get("evidence") or {}
+        payload = evidence_v2._readiness_evidence(record)
         if not isinstance(payload, dict):
             continue
         for field, value in payload.items():
