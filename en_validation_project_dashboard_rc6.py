@@ -1,18 +1,18 @@
 """RC6 `/validacion` project-management view.
 
-Read-only HTTP surface over the append-only validation campaign ledger.  It is
-installed after bg_paper_dashboard so it can safely replace only the visual
-representation of `/validacion`; it does not alter the trading engine.
+Read-only HTTP surface over the append-only validation campaign ledger plus a
+separate read-only operational PAPER daily view.  Operational activity never
+promotes milestones and never writes to the trading database.
 """
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
 
 from fastapi.responses import HTMLResponse
 
 import bg_paper_dashboard as bg
 import ev_shadow_validation_view_rc6 as shadow_view
+import rc6_validation_operational_daily as operational_daily
 from em_validation_campaign_rc6 import (
     MILESTONES,
     load_records,
@@ -65,7 +65,7 @@ def _milestone_card(milestone, current):
     )
 
 
-def _daily_history(records, limit_days=10):
+def _campaign_daily_history(records, limit_days=10):
     grouped = defaultdict(list)
     for row in records:
         grouped[str(row.get("date_ar") or "SIN_FECHA")].append(row)
@@ -97,7 +97,47 @@ def _daily_history(records, limit_days=10):
             f"<details class='paper-trade'><summary>{bg._e(day)} · {len(rows)} registro(s)</summary>"
             f"<div class='trade-body'>{''.join(entries)}</div></details>"
         )
-    return "".join(chunks) or "<div class='paper-notice'>Todavía no hay jornadas registradas en el ledger RC6.</div>"
+    return "".join(chunks) or (
+        "<div class='paper-notice'>El ledger de campaña RC6 todavía no tiene observaciones append-only. "
+        "Esto no significa que no haya habido actividad PAPER: la actividad operacional se muestra por separado arriba.</div>"
+    )
+
+
+def _operational_daily_section(limit_days=10):
+    try:
+        data = operational_daily.collect(limit_days=limit_days)
+    except Exception as exc:
+        return (
+            "<section class='paper-card'><h2>Actividad PAPER por jornada</h2>"
+            "<div class='paper-warning'><b>Evidencia operacional no disponible.</b> "
+            f"{bg._e(type(exc).__name__)}. No se inventan jornadas ni se modifica el ledger de campaña.</div></section>"
+        )
+    rows = []
+    for row in data.get("days") or []:
+        event_types = ", ".join(f"{k}:{v}" for k, v in (row.get("event_types") or {}).items()) or "—"
+        rows.append(
+            "<tr>"
+            f"<td><b>{bg._e(row.get('date_ar'))}</b></td>"
+            f"<td>{bg._e(row.get('event_count'))}</td>"
+            f"<td>{bg._e(row.get('paper_positions'))}</td>"
+            f"<td>{bg._e(row.get('opened'))}</td>"
+            f"<td>{bg._e(row.get('closed'))}</td>"
+            f"<td>{bg._e(row.get('decisions'))}</td>"
+            f"<td>{bg._e(row.get('fills'))}</td>"
+            f"<td>{bg._e(row.get('realized_net_pnl'))}</td>"
+            f"<td data-wrap='true'>{bg._e(event_types)}</td>"
+            "</tr>"
+        )
+    body = "".join(rows) or "<tr><td colspan='9'>Todavía no hay actividad PAPER fechable en las fuentes operacionales.</td></tr>"
+    return (
+        "<section class='paper-card'><h2>Actividad PAPER por jornada</h2>"
+        "<p class='paper-muted'>Fuente read-only: observer_v17.db. Agrupación America/Argentina/Buenos_Aires. "
+        "No modifica ni promociona M0–M11.</p>"
+        "<table class='paper-table classic-responsive-table'><thead><tr>"
+        "<th>Fecha AR</th><th>Eventos</th><th>Posiciones</th><th>Aperturas</th><th>Cierres</th>"
+        "<th>Decisiones</th><th>Fills</th><th>P&amp;L realizado</th><th>Tipos de evento</th>"
+        f"</tr></thead><tbody>{body}</tbody></table></section>"
+    )
 
 
 def page(limit_days=10):
@@ -115,19 +155,19 @@ def page(limit_days=10):
                  ", ".join(summary['critical_red']) or "Sin hitos críticos RED registrados", "red" if summary['critical_red'] else "green"),
         bg._card("Real-money", "BLOCKED",
                  "M11 no se habilita por porcentaje, días verdes ni backtest", "green"),
-        bg._card("Ledger auditable", "OK" if ledger_error is None else "ERROR",
+        bg._card("Ledger de campaña", "OK" if ledger_error is None else "ERROR",
                  f"{summary['records']} registros · SHA-256 chain" if ledger_error is None else f"{ledger_error}; revisar antes de confiar en historial",
                  "green" if ledger_error is None else "red"),
     ))
     roadmap = "".join(_milestone_card(m, latest.get(m.code, {})) for m in MILESTONES)
-    history = _daily_history(records, limit_days=limit_days)
-    controls = (
-        "<div class='paper-card'><h2>Historial por día</h2>"
-        "<p class='paper-muted'>Append-only. Una nueva observación agrega un registro; no reescribe el pasado.</p>"
+    campaign_history = _campaign_daily_history(records, limit_days=limit_days)
+    campaign_controls = (
+        "<section class='paper-card'><h2>Ledger de campaña / auditoría por día</h2>"
+        "<p class='paper-muted'>Append-only de hitos M0–M11. No representa por sí solo la actividad diaria del motor PAPER.</p>"
         "<a class='paper-action' href='/validacion?days=10'>Últimos 10 días</a>"
         "<a class='paper-action' href='/validacion?days=30'>Últimos 30 días</a>"
         "<a class='paper-action' href='/validacion?days=0'>Todo</a>"
-        f"{history}</div>"
+        f"{campaign_history}</section>"
     )
     body = (
         "<h1>Validación — Camino a Producción</h1>"
@@ -137,11 +177,12 @@ def page(limit_days=10):
         "Realismo de ejecución → Evidencia estadística → Operabilidad/A11Y → Campaña sostenida → Auditoría/consenso → "
         "Governance futura → Real-money.</p>"
         f"<div class='paper-grid'>{cards}</div>"
+        + _operational_daily_section(limit_days=limit_days)
         + shadow_view.render()
-        + "<div class='paper-card'><h2>Hitos del camino crítico M0–M11</h2>"
+        + "<section class='paper-card'><h2>Hitos del camino crítico M0–M11</h2>"
         "<p>Cada hito muestra objetivo, evidencia esperada/observada, desviación, blocker y próximo paso.</p>"
-        f"{roadmap}</div>"
-        + controls
+        f"{roadmap}</section>"
+        + campaign_controls
     )
     return bg._document("Validación — Camino a Producción", body, refresh=0)
 
