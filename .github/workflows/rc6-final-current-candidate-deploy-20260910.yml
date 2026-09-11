@@ -47,10 +47,10 @@ jobs:
 
           REPO=/opt/porota-trading
           TARGET_BRANCH=fix/rc6-w10-sector-map-binding-20260910
-          TARGET_SHA=e47eeffcb94a9468ac7e7f610beee0869353a77e
+          TARGET_SHA=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
           TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
-          CANDIDATE_IMAGE=porota-trading-bot:17.0.0-rc6-candidate-e47eeffc
-          WORKTREE="/tmp/porota-rc6-final-e47eeffc-$$"
+          CANDIDATE_IMAGE=porota-trading-bot:17.0.0-rc6-candidate-f8adec8a
+          WORKTREE="/tmp/porota-rc6-final-f8adec8a-$$"
           ACTIVATION_STARTED=NO
 
           cleanup() {
