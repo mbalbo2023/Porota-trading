@@ -1,0 +1,110 @@
+name: RC6 PPI API Universe Readonly Audit 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-ppi-api-universe-readonly-audit-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Live production API universe audit - read only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          TARGET=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo "HOST_SHA=$TARGET"
+          curl -fsS --max-time 5 http://127.0.0.1:8000/health
+          echo
+
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import json, sqlite3
+          from bf_production_paper_observer import _secret, _candidate_universe
+          from bd_ppi_readonly_guard import ProductionMarketReader
+
+          db='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=20)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          state=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          assert q=='ok' and state and state[0]=='PRODUCTION_PAPER' and int(state[2] or 0)==0
+          evidence_families=sorted(r[0] for r in c.execute("select distinct upper(family) from contract_evidence_v2_current where family is not null and trim(family)<>''"))
+          c.close()
+          print('PRE_SAFETY='+'|'.join(map(str,(q,*state))))
+
+          calls=[]
+          def audit(method,path,result):
+              calls.append((method,path,result))
+          reader=ProductionMarketReader(*_secret(), audit=audit)
+          try:
+              reader.login_once()
+              cfg=reader.market_configuration()
+              api_types=sorted({str(x).strip().upper() for x in cfg['instrument_types']})
+              api_markets=sorted({str(x).strip().upper() for x in cfg['markets']})
+              api_settlements=sorted({str(x).strip().upper() for x in cfg['settlements']})
+              api_operations=sorted({str(x).strip().upper() for x in cfg['operations']})
+              runtime_types=sorted({str(row[1]).strip().upper() for row in _candidate_universe()})
+              alias={
+                  'ACCIONES_USA':'ACCIONES-USA',
+                  'FCI_EXTERIOR':'FCI-EXTERIOR',
+                  'FCI_LOCAL':'FCI',
+                  'OBLIGACIONES':'ON',
+                  'ETFS':'ETF',
+              }
+              norm=lambda x: alias.get(x,x)
+              runtime_api=sorted({norm(x) for x in runtime_types})
+              evidence_api=sorted({norm(x) for x in evidence_families})
+              print('PPI_API_INSTRUMENT_TYPES='+json.dumps(api_types,ensure_ascii=False))
+              print('PPI_API_MARKETS='+json.dumps(api_markets,ensure_ascii=False))
+              print('PPI_API_SETTLEMENTS='+json.dumps(api_settlements,ensure_ascii=False))
+              print('PPI_API_OPERATIONS='+json.dumps(api_operations,ensure_ascii=False))
+              print('POROTA_RUNTIME_TYPES_RAW='+json.dumps(runtime_types,ensure_ascii=False))
+              print('CONTRACT_EVIDENCE_FAMILIES_RAW='+json.dumps(evidence_families,ensure_ascii=False))
+              print('API_TYPES_NOT_IN_POROTA_RUNTIME='+json.dumps(sorted(set(api_types)-set(runtime_api)),ensure_ascii=False))
+              print('POROTA_RUNTIME_TYPES_NOT_DECLARED_BY_API='+json.dumps(sorted(set(runtime_api)-set(api_types)),ensure_ascii=False))
+              print('EVIDENCE_FAMILIES_NOT_DECLARED_BY_API='+json.dumps(sorted(set(evidence_api)-set(api_types)),ensure_ascii=False))
+              print('HTTP_AUDIT='+json.dumps(calls,ensure_ascii=False))
+              print('READER_METRICS='+json.dumps(reader.metrics,sort_keys=True))
+              assert reader.metrics['http_blocked']==0
+              assert all((m=='POST' and p=='/api/1.0/account/loginapi') or (m=='GET' and p.startswith('/api/1.0/configuration/')) for m,p,r in calls if r=='ALLOWED')
+          finally:
+              reader.close()
+
+          c=sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          state=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print('FINAL_SAFETY='+'|'.join(map(str,(q,*state))))
+          assert q=='ok' and state and state[0]=='PRODUCTION_PAPER' and int(state[2] or 0)==0
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          print('MUTATIONS=NONE')
+          PY
+          HOST
