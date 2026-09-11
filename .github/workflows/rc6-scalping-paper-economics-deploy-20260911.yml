@@ -1,0 +1,221 @@
+name: RC6 Scalping PAPER Economics Deploy 2026-09-11
+on:
+  push:
+    branches: [test/rc6-scalping-active-paper-eod-20260911]
+    paths:
+      - '.github/workflows/rc6-scalping-paper-economics-deploy-20260911.yml'
+permissions:
+  contents: read
+concurrency:
+  group: rc6-scalping-paper-economics-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6"
+          chmod 600 "$HOME/.ssh/porota_rc6"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Deploy pinned PAPER-only scalping economics forward fix
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          umask 077
+          REPO=/opt/porota-trading
+          BASE_SHA=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          TARGET_BRANCH=fix/rc6-scalping-paper-economics-20260911
+          TARGET_SHA=eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a
+          TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
+          CANDIDATE_IMAGE=porota-trading-bot:17.0.0-rc6-scalping-eddcc29
+          WORKTREE="/tmp/porota-rc6-scalping-eddcc29-$$"
+          cleanup() {
+            set +e
+            if [ -d "$WORKTREE" ]; then
+              git -C "$REPO" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || rm -rf "$WORKTREE"
+            fi
+            git -C "$REPO" worktree prune >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          echo '=== RC6 SCALPING PAPER ECONOMICS FORWARD FIX ==='
+          echo "BASE_SHA=$BASE_SHA"
+          echo "TARGET_SHA=$TARGET_SHA"
+          echo 'AUTO_ROLLBACK=DISABLED'
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$BASE_SHA"
+          test -z "$(git -C "$REPO" diff --name-only)"
+          test -z "$(git -C "$REPO" diff --cached --name-only)"
+          test "$(df -PB1 "$REPO" | awk 'NR==2{print $4}')" -ge 8589934592
+
+          PRE_SAFETY="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,*row))))
+          PY
+          )"
+          echo "PRE_SAFETY=$PRE_SAFETY"
+          test "$PRE_SAFETY" = 'ok|PRODUCTION_PAPER|0'
+          PRE_OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          PRE_DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo "PRE_OBSERVER=$PRE_OBS"
+          echo "PRE_DASHBOARD=$PRE_DASH"
+          test "$PRE_OBS" = 'true|0|true'
+          test "$PRE_DASH" = 'true|0'
+
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          git -C "$REPO" cat-file -e "$TARGET_SHA^{commit}"
+          test "$(git -C "$REPO" rev-parse "$TARGET_SHA^")" = "$BASE_SHA"
+          changed="$(git -C "$REPO" diff --name-only "$BASE_SHA" "$TARGET_SHA" | sort)"
+          echo "$changed"
+          test "$changed" = $'cf_intraday_scalping.py\nfh_scalping_economics_rc6.py\ntests/test_rc6_scalping_active_paper_learning.py\ntests/test_rc6_scalping_intraday_fee_bonus.py'
+
+          git -C "$REPO" worktree add --detach "$WORKTREE" "$TARGET_SHA"
+          test "$(git -C "$WORKTREE" rev-parse HEAD)" = "$TARGET_SHA"
+
+          PYTHONPATH="$WORKTREE" python3 - <<'PY'
+          import _version as v
+          assert v.VERSION=='17.0.0-rc6'
+          assert v.MODE=='PRODUCTION_PAPER'
+          assert v.EXECUTION=='SIMULATED'
+          assert v.REAL_ORDER_CAPABILITY=='BLOCKED'
+          print('SOURCE_IDENTITY=GREEN')
+          PY
+
+          sudo -n docker build --pull=false \
+            --label "porota.commit=$TARGET_SHA" \
+            --label 'porota.version=17.0.0-rc6' \
+            -t "$CANDIDATE_IMAGE" "$WORKTREE"
+          test "$(sudo -n docker image inspect "$CANDIDATE_IMAGE" -f '{{ index .Config.Labels "porota.commit" }}')" = "$TARGET_SHA"
+
+          echo '=== OFFLINE CANDIDATE PROOF ==='
+          sudo -n docker run --rm --pull never --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=536870912 \
+            --entrypoint python "$CANDIDATE_IMAGE" -m pytest -q -p no:cacheprovider \
+            tests/test_rc6_scalping_intraday_fee_bonus.py \
+            tests/test_rc6_scalping_active_paper_learning.py \
+            tests/test_intraday_scalping_rc6_integration.py \
+            tests/test_intraday_contract_policy_rc6.py \
+            tests/test_rc6_runtime_safety.py
+          sudo -n docker run --rm --pull never --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=268435456 \
+            --entrypoint python "$CANDIDATE_IMAGE" - <<'PY'
+          import _version as v, porota_mode_manager as m
+          import fh_scalping_economics_rc6 as e
+          s=m.paper_settings({})
+          assert v.MODE=='PRODUCTION_PAPER' and v.EXECUTION=='SIMULATED'
+          assert v.REAL_ORDER_CAPABILITY=='BLOCKED'
+          assert s['PAPER_SCALPING_MODE']=='ACTIVE_PAPER'
+          assert str(s['PAPER_SCALPING_RISK_PER_TRADE'])=='.001'
+          assert str(s['PAPER_SCALPING_MAX_OPEN_POSITIONS'])=='1'
+          assert str(s['PAPER_SCALPING_MAX_HOLD_MINUTES'])=='30'
+          x=e.modeled_roundtrip_cost('ACCIONES','0.003')
+          assert x['fee_model']=='PPI_INTRADAY_BONUS'
+          print('OFFLINE_SCALPING_POLICY=GREEN')
+          PY
+
+          echo '=== ACTIVATE FORWARD FIX ==='
+          git -C "$REPO" checkout -f --detach "$TARGET_SHA"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
+          test "$(sudo -n docker image inspect "$TARGET_IMAGE" -f '{{ index .Config.Labels "porota.commit" }}')" = "$TARGET_SHA"
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+
+          echo '=== WAIT HEALTH ==='
+          HEALTH_OK=NO
+          for _ in $(seq 1 45); do
+            if H="$(curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null)"; then
+              if python3 - "$H" <<'PY' >/dev/null 2>&1
+          import json,sys
+          x=json.loads(sys.argv[1]); assert x.get('status')=='ok' and x.get('version')=='17.0.0-rc6'
+          PY
+              then HEALTH_OK=YES; break; fi
+            fi
+            sleep 2
+          done
+          echo "HEALTH_OK=$HEALTH_OK"; test "$HEALTH_OK" = YES
+
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo "OBSERVER=$OBS"; echo "DASHBOARD=$DASH"
+          test "$OBS" = "true|$TARGET_IMAGE|0|true"
+          test "$DASH" = "true|$TARGET_IMAGE|0"
+          CANONICAL_ID="$(sudo -n docker image inspect "$TARGET_IMAGE" -f '{{.Id}}')"
+          test "$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)" = "$CANONICAL_ID"
+          test "$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)" = "$CANONICAL_ID"
+          test "$(sudo -n docker image inspect "$CANONICAL_ID" -f '{{ index .Config.Labels "porota.commit" }}')" = "$TARGET_SHA"
+
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import os,sqlite3
+          import fh_scalping_economics_rc6 as e
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          x=e.modeled_roundtrip_cost('ACCIONES','0.003')
+          print('|'.join(map(str,(q,mode,orders,os.getenv('PAPER_SCALPING_MODE'),x['fee_model']))))
+          PY
+          )"
+          echo "POST_SCALPING_SAFETY=$POST"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0|ACTIVE_PAPER|PPI_INTRADAY_BONUS'
+
+          required_timers=(
+            porota-contract-evidence-rc6.timer
+            porota-functional-health-rc6.timer
+            porota-history-postclose-rc6.timer
+            porota-host-general-backup-rc6.timer
+            porota-preopen-rc6.timer
+            porota-candle-integrity-rc6.timer
+            porota-a3-history-daily-rc6.timer
+            porota-a3-history-reconcile-rc6.timer
+            porota-a3-history-weekend-rc6.timer
+          )
+          for unit in "${required_timers[@]}"; do
+            test "$(sudo -n systemctl is-active "$unit")" = active
+            test "$(sudo -n systemctl is-enabled "$unit")" = enabled
+          done
+
+          echo '=== SHORT SOAK ==='
+          sleep 60
+          FINAL="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          worker=c.execute('SELECT state,real_orders_sent FROM intraday_scalping_worker_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,mode,orders,*worker))))
+          PY
+          )"
+          echo "FINAL=$FINAL"
+          test "$FINAL" = 'ok|PRODUCTION_PAPER|0|RUNNING|0'
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)" = 0
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)" = 0
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git -C "$REPO" diff --name-only)"
+          test -z "$(git -C "$REPO" diff --cached --name-only)"
+          echo "HOST_SHA_FINAL=$TARGET_SHA"
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDERS_SENT=0'
+          echo 'RC6_SCALPING_PAPER_ECONOMICS_DEPLOY=GREEN'
+          HOST
