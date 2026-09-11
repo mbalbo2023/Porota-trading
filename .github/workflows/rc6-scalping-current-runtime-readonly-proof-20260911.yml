@@ -1,0 +1,85 @@
+name: RC6 Scalping Current Runtime Readonly Proof 2026-09-11
+on:
+  push:
+    branches: [test/rc6-scalping-active-paper-eod-20260911]
+    paths:
+      - '.github/workflows/rc6-scalping-current-runtime-readonly-proof-20260911.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ro"
+          chmod 600 "$HOME/.ssh/porota_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect live observer scalping and EOD state read-only
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ro" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$USER@$HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          echo '=== RC6 SCALPING CURRENT RUNTIME READONLY ==='
+          echo "HOST_SHA=$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo "OBSERVER=$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Config.Image}}|{{.HostConfig.ReadonlyRootfs}}' porota_production_observer)"
+          echo "IMAGE_COMMIT=$(sudo -n docker inspect -f '{{index .Config.Labels "porota.commit"}}' porota_production_observer)"
+          for key in PAPER_SCALPING_MODE PAPER_INTRADAY_SCAN_SECONDS PAPER_INTRADAY_BATCH_LIMIT PAPER_SCALPING_MIN_NET_MARGIN PAPER_SCALPING_MAX_SPREAD PAPER_SCALPING_SCORE_THRESHOLD PAPER_SCALPING_RISK_PER_TRADE PAPER_SCALPING_MAX_OPEN_POSITIONS PAPER_SCALPING_MAX_HOLD_MINUTES PAPER_MAX_HOLD_MINUTES PAPER_INTRADAY_FEE_REBATE; do
+            value="$(sudo -n docker exec porota_production_observer sh -lc "printenv $key 2>/dev/null || true")"
+            printf '%s=%s\n' "$key" "${value:-UNSET}"
+          done
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20)
+          c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON')
+          print('DB_QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+          state=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('MODE='+str(state['mode']));print('REAL_ORDERS_SENT='+str(state['real_orders_sent']))
+          def table(name): return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(name,)).fetchone())
+          if table('intraday_scalping_worker_state'):
+              row=c.execute('SELECT * FROM intraday_scalping_worker_state WHERE id=1').fetchone()
+              if row:
+                  print('SCALPING_WORKER_STATE='+str(row['state']))
+                  print('SCALPING_HEARTBEAT='+str(row['heartbeat_at']))
+                  print('SCALPING_WORKER_CANDIDATES='+str(row['candidates']))
+                  print('SCALPING_WORKER_DETAIL='+str(row['detail']).replace('\n',' ')[:500])
+          if table('scalping_candidates'):
+              print('SCALPING_CANDIDATES_TOTAL='+str(c.execute('SELECT COUNT(*) FROM scalping_candidates').fetchone()[0]))
+              print('SCALPING_BUY_CANDIDATES_TOTAL='+str(c.execute("SELECT COUNT(*) FROM scalping_candidates WHERE action='BUY_CANDIDATE'").fetchone()[0]))
+              latest=c.execute('SELECT evaluated_at,symbol,action,score,reason FROM scalping_candidates ORDER BY id DESC LIMIT 1').fetchone()
+              print('SCALPING_LATEST_CANDIDATE='+json.dumps(dict(latest) if latest else {},ensure_ascii=False))
+          if table('paper_positions'):
+              rows=c.execute("SELECT paper_id,status,opened_at,closed_at,close_reason,features_json FROM paper_positions ORDER BY opened_at").fetchall()
+              scalps=[]
+              for r in rows:
+                  try: f=json.loads(r['features_json'] or '{}')
+                  except Exception: f={}
+                  if f.get('execution_style')=='SCALPING_PAPER': scalps.append(r)
+              print('SCALPING_POSITIONS_TOTAL='+str(len(scalps)))
+              print('SCALPING_POSITIONS_OPEN='+str(sum(r['status']=='OPEN' for r in scalps)))
+              print('SCALPING_POSITIONS_CLOSED='+str(sum(r['status']=='CLOSED' for r in scalps)))
+              if scalps:
+                  r=scalps[-1];print('SCALPING_LATEST_POSITION='+json.dumps({k:r[k] for k in ('paper_id','status','opened_at','closed_at','close_reason')},ensure_ascii=False))
+          if table('paper_learning_samples') and table('paper_positions'):
+              n=c.execute("""SELECT COUNT(*) FROM paper_learning_samples l JOIN paper_positions p USING(paper_id)
+                WHERE p.features_json LIKE '%SCALPING_PAPER%'""").fetchone()[0]
+              labeled=c.execute("""SELECT COUNT(*) FROM paper_learning_samples l JOIN paper_positions p USING(paper_id)
+                WHERE p.features_json LIKE '%SCALPING_PAPER%' AND l.label_timestamp IS NOT NULL""").fetchone()[0]
+              print('SCALPING_LEARNING_SAMPLES='+str(n));print('SCALPING_LEARNING_LABELED='+str(labeled))
+          c.close()
+          PY
+          echo 'READONLY_MUTATION=NONE'
+          HOST
