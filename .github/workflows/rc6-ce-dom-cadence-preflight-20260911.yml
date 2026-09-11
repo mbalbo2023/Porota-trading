@@ -1,0 +1,79 @@
+name: RC6 CE DOM Cadence Preflight 2026-09-11
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths: [.github/workflows/rc6-ce-dom-cadence-preflight-20260911.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only CE DOM cadence preflight
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          EXPECT=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          WRAP=/usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh
+          OBS=porota_production_observer
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          echo HOST_HEAD=$HEAD; test "$HEAD" = "$EXPECT"
+          echo '=== SAFETY ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('DB='+c.execute('pragma quick_check').fetchone()[0])
+          m,s,o=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'MODE={m}|SESSION={s}|REAL_ORDERS_SENT={o}')
+          assert m=='PRODUCTION_PAPER' and o==0
+          c.close()
+          PY
+          echo '=== WRAPPER META ==='
+          sudo -n stat -c 'MODE=%a|UID=%u|GID=%g|SIZE=%s|MTIME=%y' "$WRAP"
+          echo '=== WRAPPER SANITIZED ==='
+          sudo -n sed -n '1,260p' "$WRAP" | sed -E 's/(TOKEN|COOKIE|PASSWORD|SECRET|AUTHORIZATION)[A-Za-z0-9_]*=.*/\1=[REDACTED]/Ig'
+          echo '=== SERVICE ==='
+          sudo -n systemctl cat porota-contract-evidence-rc6.service --no-pager | sed -E 's/(TOKEN|COOKIE|PASSWORD|SECRET|AUTHORIZATION)[^ =]*=[^ ]+/<redacted>/Ig'
+          sudo -n systemctl show porota-contract-evidence-rc6.timer -p ActiveState -p UnitFileState -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager
+          sudo -n systemctl show porota-contract-evidence-rc6.service -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp --no-pager
+          echo '=== FRESHNESS ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,datetime
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          for t in ('contract_evidence_v2_current','contract_evidence_v2_snapshots','contract_evidence_v2_runs'):
+              if c.execute("select 1 from sqlite_master where type='table' and name=?",(t,)).fetchone():
+                  print(t+'='+str(c.execute(f'select count(*) from {t}').fetchone()[0]))
+          if c.execute("select 1 from sqlite_master where type='table' and name='contract_evidence_v2_current'").fetchone():
+              cols=[r[1] for r in c.execute('pragma table_info(contract_evidence_v2_current)')]
+              for col in ('observed_at','updated_at','created_at','generated_at'):
+                  if col in cols:
+                      print('MAX_'+col+'='+str(c.execute(f'select max({col}) from contract_evidence_v2_current').fetchone()[0]))
+          c.close()
+          PY
+          echo '=== RECENT CE STATUS ==='
+          sudo -n journalctl -u porota-contract-evidence-rc6.service --since '-45 min' --no-pager -l \
+            | grep -E 'STATUS=|AUTH|materializable|REAL_ORDERS_SENT|DOM|TABLE|exit|CHANGED_REVIEW_REQUIRED' \
+            | tail -n 220 || true
+          echo MUTATIONS=NONE
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+          HOST
