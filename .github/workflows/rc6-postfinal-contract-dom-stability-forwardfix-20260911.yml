@@ -1,0 +1,212 @@
+name: RC6 Postfinal Contract DOM Stability Forward Fix 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-postfinal-contract-dom-stability-forwardfix-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+
+jobs:
+  deploy_and_prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static safety and syntax gates
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_contract_dom_collector.py rc6_contract_dom_importer.py
+          bash -n scripts/rc6_contract_dom_wrapper_postfinal.sh
+          python - <<'PY'
+          import rc6_contract_dom_collector as c
+          assert c.SAFE_METHODS == {'GET','HEAD','OPTIONS'}
+          assert all(x.startswith('/Cotizaciones/') for x in c.ROUTE_FAMILY)
+          assert '/Operar' not in repr(c.ROUTE_FAMILY)
+          assert c.safe_routes('/Cotizaciones/Cauciones,/Cotizaciones/Futuros') == [
+              '/Cotizaciones/Cauciones','/Cotizaciones/Futuros'
+          ]
+          assert 'POROTA_RC6_PPI_AUTH_DOM_V2' in open('rc6_contract_dom_importer.py',encoding='utf-8').read()
+          print('STATIC_GATE=GREEN')
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          PY
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Stage postfinal extension
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tar -cf /tmp/rc6_contract_dom_postfinal.tar \
+            rc6_contract_dom_collector.py \
+            rc6_contract_dom_importer.py \
+            scripts/rc6_contract_dom_wrapper_postfinal.sh
+          scp -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            /tmp/rc6_contract_dom_postfinal.tar \
+            "$DO_USER@$DO_HOST:/tmp/rc6_contract_dom_postfinal.tar"
+
+      - name: Install forward fix and run read-only proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          WRAP=/usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh
+          SERVICE=porota-contract-evidence-rc6.service
+          TIMER=porota-contract-evidence-rc6.timer
+
+          echo '=== IDENTITY / SAFETY PRECHECK ==='
+          HOST_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+          echo "HOST_SHA=$HOST_SHA"
+          test "$HOST_SHA" = "$TARGET"
+          HEALTH="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)"
+          echo "HEALTH=$HEALTH"
+          SAFETY="$(sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print('|'.join(map(str,(q,*r))))
+          PY
+          )"
+          echo "SAFETY=$SAFETY"
+          IFS='|' read -r QC MODE SESSION REAL <<< "$SAFETY"
+          test "$QC" = ok
+          test "$MODE" = PRODUCTION_PAPER
+          test "$REAL" = 0
+
+          echo '=== WAIT EXISTING CONTRACT RUN ==='
+          for i in $(seq 1 144); do
+            state="$(sudo -n systemctl is-active "$SERVICE" 2>/dev/null || true)"
+            [[ "$state" != active && "$state" != activating ]] && break
+            if [[ "$i" = 144 ]]; then
+              echo 'WAIT_EXISTING=TIMEOUT'
+              exit 75
+            fi
+            sleep 5
+          done
+
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP" /tmp/rc6_contract_dom_postfinal.tar' EXIT
+          tar -xf /tmp/rc6_contract_dom_postfinal.tar -C "$TMP"
+          python3 -m py_compile "$TMP/rc6_contract_dom_collector.py" "$TMP/rc6_contract_dom_importer.py"
+          bash -n "$TMP/scripts/rc6_contract_dom_wrapper_postfinal.sh"
+
+          echo '=== INSTALL ISOLATED FORWARD FIX ==='
+          sudo -n install -m 0644 "$TMP/rc6_contract_dom_collector.py" "$LIB/rc6_contract_dom_collector.py"
+          sudo -n install -m 0644 "$TMP/rc6_contract_dom_importer.py" "$LIB/rc6_contract_dom_importer.py"
+          sudo -n install -m 0755 "$TMP/scripts/rc6_contract_dom_wrapper_postfinal.sh" "$WRAP"
+          sudo -n sha256sum \
+            "$LIB/rc6_contract_dom_collector.py" \
+            "$LIB/rc6_contract_dom_importer.py" \
+            "$WRAP"
+
+          echo '=== EFFECTIVE WIRING ==='
+          sudo -n systemctl cat "$SERVICE" --no-pager
+          sudo -n systemctl is-active "$TIMER"
+          sudo -n systemctl is-enabled "$TIMER"
+          sudo -n systemctl cat "$SERVICE" --no-pager | grep -F "$WRAP"
+
+          echo '=== ONE COORDINATED CONTRACT RUN ==='
+          START_EPOCH="$(date +%s)"
+          set +e
+          sudo -n systemctl start "$SERVICE"
+          START_RC=$?
+          set -e
+          RESULT="$(sudo -n systemctl show "$SERVICE" -p Result --value)"
+          EXEC_RC="$(sudo -n systemctl show "$SERVICE" -p ExecMainStatus --value)"
+          echo "SERVICE_RUN=start_rc=$START_RC|result=$RESULT|exec_rc=$EXEC_RC"
+          sudo -n journalctl -u "$SERVICE" --since "@$START_EPOCH" --no-pager -l | tail -n 220
+
+          echo '=== FINAL CONTRACT / SAFETY PROOF ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          from datetime import datetime,timezone
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.row_factory=sqlite3.Row
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          ce=c.execute("""
+          select count(*) n,max(observed_at) mx
+          from contract_evidence_v2_current
+          where source_class='PPI_AUTHENTICATED_WEB'
+          """).fetchone()
+          fam=[x[0] for x in c.execute("""
+          select distinct family
+          from contract_evidence_v2_current
+          where source_class='PPI_AUTHENTICATED_WEB'
+          order by family
+          """)]
+          snaps=c.execute('select count(*) from contract_evidence_v2_snapshots').fetchone()[0]
+          changes=c.execute('select count(*) from contract_evidence_v2_changes').fetchone()[0]
+          c.close()
+          age=None
+          if ce and ce['mx']:
+              dt=datetime.fromisoformat(str(ce['mx']).replace('Z','+00:00'))
+              if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
+              age=(datetime.now(timezone.utc)-dt.astimezone(timezone.utc)).total_seconds()
+          out={
+              'quick_check':q,
+              'mode':r['mode'] if r else None,
+              'session':r['session_state'] if r else None,
+              'orders':r['real_orders_sent'] if r else None,
+              'web_rows':ce['n'] if ce else 0,
+              'web_max_observed':ce['mx'] if ce else None,
+              'web_age_seconds':age,
+              'families':fam,
+              'snapshots':snaps,
+              'changes':changes,
+          }
+          print(json.dumps(out,default=str))
+          assert q=='ok'
+          assert r and r['mode']=='PRODUCTION_PAPER'
+          assert int(r['real_orders_sent'] or 0)==0
+          assert ce and int(ce['n'] or 0)>=1 and ce['mx']
+          assert age is not None and age <= 1800
+          print('CONTRACT_POSTFINAL_SAFETY=GREEN')
+          print('REAL_ORDERS_SENT=0')
+          PY
+
+          test "$START_RC" -eq 0
+          test "$RESULT" = success
+          test "$EXEC_RC" -eq 0
+          echo 'FORWARD_FIX=GREEN'
+          echo 'RUNTIME_GIT_SHA_UNCHANGED=YES'
+          echo 'ROLLBACK=NOT_USED'
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          HOST
