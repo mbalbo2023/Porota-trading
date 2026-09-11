@@ -56,7 +56,9 @@ jobs:
           root=Path('/opt/porota-trading/data/contract_evidence/rc6_trusted')
           files=list(root.glob('contract_*.json'))
           print('CAPTURE_COUNT='+str(len(files)))
-          if files:
+          if not files:
+              print('CP3_CAPTURE_PRESENT_GATE=RED|REASON=NO_CAPTURE_FILES')
+          else:
               p=max(files,key=lambda x:x.stat().st_mtime)
               x=json.loads(p.read_text())
               print('FILE='+p.name)
@@ -71,6 +73,18 @@ jobs:
                           if isinstance(item,dict):
                               safe={a:b for a,b in item.items() if a.lower() not in {'cookie','cookies','authorization','token','password','username','user','headers','body','payload','content','html'}}
                               print('  '+json.dumps(safe,ensure_ascii=False,sort_keys=True)[:1200])
+              blocked=x.get('blocked_nonread')
+              if isinstance(blocked,list):
+                  print('CP3_BLOCKED_NONREAD_GATE='+('GREEN' if len(blocked)==0 else 'RED')+'|TYPE=list|COUNT='+str(len(blocked)))
+              else:
+                  print('CP3_BLOCKED_NONREAD_GATE=RED|REASON=UNKNOWN_SHAPE|TYPE='+type(blocked).__name__)
+              orders=x.get('real_orders_sent')
+              print('CP3_REAL_ORDERS_GATE='+('GREEN' if orders == 0 else 'RED')+'|VALUE='+repr(orders))
+              endpoints=x.get('endpoints')
+              if isinstance(endpoints,dict):
+                  print('CP3_ENDPOINTS_MATERIALIZATION_INPUT='+('GREEN' if len(endpoints)>0 else 'YELLOW')+'|TYPE=dict|COUNT='+str(len(endpoints)))
+              else:
+                  print('CP3_ENDPOINTS_MATERIALIZATION_INPUT=RED|REASON=UNKNOWN_SHAPE|TYPE='+type(endpoints).__name__)
           PY
           echo '--- CE TABLE COUNTS/FRESHNESS IN OBSERVER DB ---'
           sudo -n docker exec -i porota_production_observer python - <<'PY'
@@ -79,18 +93,27 @@ jobs:
           c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
           names=[r[0] for r in c.execute("select name from sqlite_master where type='table' and (lower(name) like '%contract%' or lower(name) like '%evidence%') order by name")]
           print('CE_TABLES='+';'.join(names))
+          total_rows=0
+          nonempty=0
+          freshness=[]
           for t in names:
               q='"'+t.replace('"','""')+'"'
               cols=[r[1] for r in c.execute(f'pragma table_info({q})')]
               n=c.execute(f'select count(*) from {q}').fetchone()[0]
+              total_rows+=n
+              nonempty+=int(n>0)
               print(f'TABLE={t}|ROWS={n}|COLS={";".join(cols[:60])}')
               for col in ('observed_at','captured_at','fetched_at','updated_at','created_at','run_at','ts'):
                   if col in cols:
                       try:
                           v=c.execute(f'select max("{col}") from {q}').fetchone()[0]
                           print(f'  MAX_{col}={v}')
+                          if v is not None: freshness.append((t,col,str(v)))
                       except Exception as e:
                           print(f'  MAX_{col}_ERROR={type(e).__name__}')
+          print(f'CE_TOTAL_ROWS={total_rows}|CE_NONEMPTY_TABLES={nonempty}|CE_TABLE_COUNT={len(names)}')
+          print('CP3_DB_MATERIALIZATION_GATE='+('GREEN' if total_rows>0 and nonempty>0 else 'YELLOW'))
+          print('CP3_DB_FRESHNESS_SIGNALS='+str(len(freshness)))
           c.close()
           PY
           echo CE_RUNTIME_PROOF_COMPLETE=YES
@@ -126,7 +149,11 @@ jobs:
           print('--- FUTURES STATE ---')
           cols=[r[1] for r in c.execute('pragma table_info(a3_history_ingest_state_rc6)')]
           print('STATE_COLS='+';'.join(cols))
-          for r in c.execute("select * from a3_history_ingest_state_rc6 where instrument_type='FUTURES' order by symbol limit 80"): print(json.dumps(dict(r),ensure_ascii=False,sort_keys=True))
+          states=[]
+          for r in c.execute("select * from a3_history_ingest_state_rc6 where instrument_type='FUTURES' order by symbol limit 80"):
+              d=dict(r); states.append(d); print(json.dumps(d,ensure_ascii=False,sort_keys=True))
+          print('A3_FUTURES_STATE_ROWS='+str(len(states)))
+          print('A3_FUTURES_COMPLETE_ROWS='+str(sum(1 for r in states if str(r.get('status') or '').upper()=='COMPLETE')))
           print('--- CATALOG-LIKE TABLES ---')
           names=[r[0] for r in c.execute("select name from sqlite_master where type='table' order by name")]
           for t in names:
