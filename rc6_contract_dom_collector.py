@@ -49,6 +49,7 @@ DEFAULT_ROUTES = (
     "/Cotizaciones/Bonos",
     "/Cotizaciones/Opciones",
 )
+RENDER_TIMEOUT_MS = max(1500, int(os.getenv("POROTA_DOM_RENDER_TIMEOUT_MS", "12000")))
 
 
 def clean_text(value: str, limit: int = 180) -> str:
@@ -70,6 +71,30 @@ def safe_routes(raw: str | None) -> list[str]:
         if route not in out:
             out.append(route)
     return out
+
+
+def wait_for_explicit_table(page) -> bool:
+    """Wait for provider-rendered headers + rows without inferring any semantics.
+
+    PPI renders the row skeleton before its explicit header text is stable.  A fixed
+    1.5s sleep therefore produced intermittent false NO_EXPLICIT_HEADER_TABLE results.
+    This waits only for already-permitted DOM evidence; it performs no extra mutation.
+    """
+    try:
+        page.wait_for_function(
+            """() => Array.from(document.querySelectorAll('table')).some(t => {
+                const headers = Array.from(t.querySelectorAll('thead th, th'))
+                    .some(h => (h.textContent || '').trim().length > 0);
+                const rows = Array.from(t.querySelectorAll('tbody tr, tr'))
+                    .some(r => r.querySelectorAll('td,th').length > 0);
+                return headers && rows;
+            })""",
+            timeout=RENDER_TIMEOUT_MS,
+        )
+        page.wait_for_timeout(350)
+        return True
+    except Exception:
+        return False
 
 
 def table_snapshot(table) -> dict:
@@ -194,15 +219,16 @@ def main() -> int:
                         "reached": False,
                         "url": "",
                         "tables": [],
+                        "render_ready": False,
                     }
                     try:
                         page.goto(TRADING + requested, wait_until="domcontentloaded", timeout=45000)
-                        page.wait_for_timeout(1500)
                         pu = urlsplit(page.url)
                         item["url"] = clean_url(page.url)
                         item["reached"] = (pu.netloc == "trading.portfoliopersonal.com"
                                            and "login" not in pu.path.lower())
                         if item["reached"]:
+                            item["render_ready"] = wait_for_explicit_table(page)
                             tables = page.locator("table")
                             for ti in range(min(tables.count(), 8)):
                                 snap = table_snapshot(tables.nth(ti))
