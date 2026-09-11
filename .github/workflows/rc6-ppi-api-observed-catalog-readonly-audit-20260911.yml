@@ -1,0 +1,64 @@
+name: RC6 PPI API Observed Catalog Readonly Audit 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-ppi-api-observed-catalog-readonly-audit-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only observed API catalog inventory
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          test "$(git -C "$ROOT" rev-parse HEAD)" = f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3, json
+          db='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=20); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          state=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          assert q=='ok' and state[0]=='PRODUCTION_PAPER' and int(state[2] or 0)==0
+          print('SAFETY='+q+'|'+str(state[0])+'|'+str(state[1])+'|'+str(state[2]))
+          print('INSTRUMENT_CATALOG_COUNTS')
+          for r in c.execute('select upper(instrument_type) type,count(*) n,count(distinct ticker) tickers,count(distinct market) markets,count(distinct settlement) settlements,max(downloaded_at) latest from instrument_catalog group by upper(instrument_type) order by upper(instrument_type)'):
+              samples=[x[0] for x in c.execute('select ticker from instrument_catalog where upper(instrument_type)=? order by ticker limit 12',(r['type'],)).fetchall()]
+              print(json.dumps({'type':r['type'],'rows':r['n'],'tickers':r['tickers'],'markets':r['markets'],'settlements':r['settlements'],'latest':r['latest'],'samples':samples},ensure_ascii=False,sort_keys=True))
+          print('CANDIDATE_UNIVERSE_COUNTS')
+          for r in c.execute('select upper(instrument_type) type,count(*) n,sum(case when can_simulate=1 then 1 else 0 end) sim,max(discovered_at) latest from candidate_universe group by upper(instrument_type) order by upper(instrument_type)'):
+              print(json.dumps(dict(r),ensure_ascii=False,sort_keys=True))
+          print('PRODUCTION_HISTORY_COUNTS')
+          for r in c.execute('select upper(instrument_type) type,count(*) n,sum(row_count) rows,max(downloaded_at) latest from production_history group by upper(instrument_type) order by upper(instrument_type)'):
+              print(json.dumps(dict(r),ensure_ascii=False,sort_keys=True))
+          print('PRODUCTION_HISTORY_ATTEMPTS')
+          for r in c.execute("select upper(instrument_type) type,count(*) attempts,sum(case when state='SUCCESS' then 1 else 0 end) success,sum(case when state<>'SUCCESS' then 1 else 0 end) other,max(attempted_at) latest from production_history_attempts group by upper(instrument_type) order by upper(instrument_type)"):
+              print(json.dumps(dict(r),ensure_ascii=False,sort_keys=True))
+          c.close()
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          print('MUTATIONS=NONE')
+          PY
+          HOST
