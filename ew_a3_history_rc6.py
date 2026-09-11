@@ -182,6 +182,7 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
                                      'identity_alignment':alignment_status})
                     candle=replace(candle,symbol=symbol,metadata=metadata)
                     if candle.symbol!=symbol or candle.instrument_type!=family: continue
+                    candle.validate()
                     candles.append(candle)
                 except (TypeError,ValueError): continue
             if not candles:
