@@ -1,0 +1,92 @@
+name: RC6 CP3 Blocked Nonread RCA 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-cp3-blocked-nonread-rca-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  cp3_blocked_nonread_rca:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only blocked request fingerprint
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo MUTATIONS=NONE
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+          echo CP3_RCA_MODE=READ_ONLY
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          from collections import Counter
+          from urllib.parse import urlsplit
+          import json
+
+          roots=[Path('/opt/porota-trading/data/contract_evidence/rc6_trusted'),Path('/var/lib/porota-contract-evidence-rc6')]
+          files=[]
+          for root in roots:
+              if root.exists():
+                  for p in root.glob('*.json'):
+                      try:
+                          files.append((p.stat().st_mtime,p))
+                      except OSError:
+                          pass
+          if not files:
+              raise SystemExit('CP3_RCA_NO_CAPTURE_FILES')
+          _,p=max(files,key=lambda x:x[0])
+          raw=json.loads(p.read_text(encoding='utf-8',errors='replace'))
+          blocked=raw.get('blocked_nonread')
+          if not isinstance(blocked,list):
+              raise SystemExit('CP3_RCA_BLOCKED_NONREAD_UNEXPECTED_TYPE:'+type(blocked).__name__)
+          ctr=Counter()
+          for row in blocked:
+              if not isinstance(row,dict):
+                  ctr[('INVALID_ROW','<non-dict>')]+=1
+                  continue
+              method=str(row.get('method') or 'UNKNOWN').upper()
+              u=urlsplit(str(row.get('url') or ''))
+              path=(u.path or '/').rstrip('/') or '/'
+              ctr[(method,path)]+=1
+          endpoints=raw.get('endpoints')
+          routes=raw.get('routes')
+          print('CAPTURE_BASENAME='+p.name)
+          print('AUTH_STATUS='+str(raw.get('auth_status') or 'UNKNOWN'))
+          print('REAL_ORDERS_SENT='+str(int(raw.get('real_orders_sent') or 0)))
+          print('BLOCKED_NONREAD_TYPE=list')
+          print('BLOCKED_NONREAD_COUNT='+str(len(blocked)))
+          print('ENDPOINT_COUNT='+str(len(endpoints) if isinstance(endpoints,dict) else -1))
+          print('ROUTE_COUNT='+str(len(routes) if isinstance(routes,list) else -1))
+          print('BLOCKED_FINGERPRINT_BEGIN')
+          for (method,path),count in sorted(ctr.items()):
+              print(f'{method}\t{path}\t{count}')
+          print('BLOCKED_FINGERPRINT_END')
+          if int(raw.get('real_orders_sent') or 0) != 0:
+              raise SystemExit('CP3_RCA_ORDER_INVARIANT_FAILED')
+          print('CP3_BLOCKED_NONREAD_RCA_CAPTURED=YES')
+          PY
+          HOST
