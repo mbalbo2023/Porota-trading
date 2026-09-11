@@ -1,0 +1,158 @@
+name: RC6 Weekend Coverage Audit 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-weekend-coverage-audit-20260911.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-weekend-coverage-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_coverage_audit"
+          chmod 600 "$HOME/.ssh/porota_coverage_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Audit live coverage and existing read-only executors
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_coverage_audit" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          export TZ=America/Argentina/Buenos_Aires
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          TARGET_SHA=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+
+          echo '=== IDENTITY / SAFETY ==='
+          echo "ART_NOW=$(date --iso-8601=seconds)"
+          echo "HOST_SHA=$(git -C "$ROOT" rev-parse HEAD)"
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET_SHA"
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          print('OBSERVER_QUICK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          r=c.execute('select mode,session_state,ppi_auth,real_orders_sent from observer_state where id=1').fetchone()
+          print('OBSERVER_STATE='+'|'.join(map(str,r))); assert r[0]=='PRODUCTION_PAPER' and int(r[3])==0
+          c.close()
+          PY
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+
+          echo '=== HISTORY COVERAGE BY FAMILY / SOURCE ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          p='/app/data/market_history.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          print('HISTORY_QUICK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          print('TABLES='+','.join(sorted(tabs)))
+          def cols(t): return [r[1] for r in c.execute(f"pragma table_info('{t}')")]
+          for t in ('history_canonical_v2','history_versions_v2','a3_history_ingest_state_rc6','production_history_attempts'):
+              if t not in tabs: continue
+              cc=cols(t); print('SCHEMA|'+t+'|'+'|'.join(cc))
+              if t=='history_canonical_v2':
+                  fam='instrument_type' if 'instrument_type' in cc else ('family' if 'family' in cc else None)
+                  sym='symbol' if 'symbol' in cc else None
+                  src='source' if 'source' in cc else None
+                  date='date' if 'date' in cc else None
+                  if fam and sym:
+                      q=f'SELECT {fam} family, COUNT(*) rows, COUNT(DISTINCT {sym}) symbols'
+                      if date: q+=f', MIN({date}) first_date, MAX({date}) last_date'
+                      q+=f' FROM {t} GROUP BY {fam} ORDER BY symbols DESC, family'
+                      for r in c.execute(q): print('CANONICAL_FAMILY|'+json.dumps(dict(r),sort_keys=True,default=str))
+                  if src:
+                      for r in c.execute(f'SELECT {src} source,COUNT(*) rows,COUNT(DISTINCT {sym}) symbols FROM {t} GROUP BY {src} ORDER BY rows DESC'):
+                          print('CANONICAL_SOURCE|'+json.dumps(dict(r),sort_keys=True,default=str))
+              elif t=='history_versions_v2':
+                  fam='instrument_type' if 'instrument_type' in cc else ('family' if 'family' in cc else None)
+                  src='source' if 'source' in cc else None
+                  sym='symbol' if 'symbol' in cc else None
+                  if fam and src and sym:
+                      for r in c.execute(f'SELECT {fam} family,{src} source,COUNT(*) rows,COUNT(DISTINCT {sym}) symbols FROM {t} GROUP BY {fam},{src} ORDER BY family,rows DESC'):
+                          print('VERSION_FAMILY_SOURCE|'+json.dumps(dict(r),sort_keys=True,default=str))
+              else:
+                  # Output bounded latest-state rows without assuming column names.
+                  order=[]
+                  for x in ('updated_at','finished_at','started_at','attempted_at','last_attempt_at','id'):
+                      if x in cc: order=[x]; break
+                  sql=f'SELECT * FROM {t}' + (f' ORDER BY {order[0]} DESC' if order else '') + ' LIMIT 80'
+                  for r in c.execute(sql): print('STATE_ROW|'+t+'|'+json.dumps(dict(r),sort_keys=True,default=str))
+          c.close()
+          PY
+
+          echo '=== OBSERVER UNIVERSE / CATALOG TABLES ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,re,json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          tabs=[r[0] for r in c.execute("select name from sqlite_master where type='table' order by name")]
+          rx=re.compile(r'(universe|instrument|symbol|catalog|candidate|ppi|contract|source_sync|api_health)',re.I)
+          for t in tabs:
+              if not rx.search(t): continue
+              cc=[r[1] for r in c.execute(f"pragma table_info('{t}')")]
+              try: n=c.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0]
+              except Exception: n='ERR'
+              print(f'OBS_TABLE|{t}|rows={n}|cols={"|".join(cc)}')
+              fam=next((x for x in ('instrument_type','family','type','instrumentType') if x in cc),None)
+              sym=next((x for x in ('symbol','ticker','code') if x in cc),None)
+              if fam:
+                  try:
+                      for r in c.execute(f'SELECT "{fam}" family,COUNT(*) rows'+(f',COUNT(DISTINCT "{sym}") symbols' if sym else '')+f' FROM "{t}" GROUP BY "{fam}" ORDER BY rows DESC LIMIT 30'):
+                          print('OBS_FAMILY|'+t+'|'+json.dumps(dict(r),sort_keys=True,default=str))
+                  except Exception as exc: print('OBS_FAMILY_ERR|'+t+'|'+type(exc).__name__)
+          c.close()
+          PY
+
+          echo '=== EXISTING RUNTIME INGEST/BACKFILL EXECUTORS ==='
+          cd "$ROOT"
+          find . -maxdepth 3 -type f \( -name '*.py' -o -name '*.sh' -o -name '*.service' -o -name '*.timer' \) \
+            | grep -Ei '(history|histor|backfill|ingest|ppi|a3|data912|iol|contract|candle|catalog|universe)' \
+            | sort | head -n 300 | sed 's/^/EXECUTOR_FILE=/'
+
+          echo '=== SAFE SOURCE REFERENCES (NO EXECUTION) ==='
+          grep -RIlE 'rc6_iol|IOL|Invertir.?Online|ProductionMarketReader|Data912|A3|WEEKEND_DEEP|DAILY_INCREMENTAL|RECONCILE' \
+            --include='*.py' --include='*.sh' --include='*.service' --include='*.timer' . 2>/dev/null \
+            | sort | head -n 200 | sed 's/^/SOURCE_REF=/'
+
+          echo '=== TIMER STATUS ==='
+          for t in porota-contract-evidence-rc6.timer porota-history-postclose-rc6.timer porota-candle-integrity-rc6.timer porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer; do
+            echo "TIMER=$t|active=$(sudo -n systemctl is-active "$t" 2>/dev/null || true)|enabled=$(sudo -n systemctl is-enabled "$t" 2>/dev/null || true)|last=$(sudo -n systemctl show "$t" -p LastTriggerUSec --value 2>/dev/null || true)|next=$(sudo -n systemctl show "$t" -p NextElapseUSecRealtime --value 2>/dev/null || true)"
+          done
+
+          echo '=== FINAL SAFETY ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); print('FINAL='+'|'.join(map(str,r)))
+          assert r[0]=='PRODUCTION_PAPER' and int(r[2])==0; c.close()
+          PY
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET_SHA"
+          echo 'MUTATIONS=NONE'
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'COVERAGE_AUDIT=GREEN'
+          HOST
