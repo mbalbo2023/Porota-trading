@@ -1,0 +1,99 @@
+name: RC6 CP1 CP2 CP5 Runtime RCA V2 2026-09-11
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths: [.github/workflows/rc6-cp1-cp2-cp5-runtime-rca-v2-20260911.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  rca:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only runtime RCA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo HOST_HEAD="$TARGET"
+          echo MUTATIONS=NONE
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+
+          echo '--- SAFETY + DB SCHEMA ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,re
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          print('SAFETY='+json.dumps({'mode':r['mode'] if r else None,'session':r['session_state'] if r else None,'orders':r['real_orders_sent'] if r else None,'quick_check':c.execute('pragma quick_check').fetchone()[0]}))
+          assert r and r['mode']=='PRODUCTION_PAPER' and int(r['real_orders_sent'] or 0)==0
+          names=[x[0] for x in c.execute("select name from sqlite_master where type='table' order by name")]
+          print('TABLE_NAMES='+json.dumps(names))
+          interest=[]
+          for t in names:
+              low=t.lower()
+              if any(k in low for k in ('observer','valid','ledger','readiness','daily','session','summary','job','event','signal','macro','news','telemetry')):
+                  cols=[x['name'] for x in c.execute('pragma table_info("'+t.replace('"','""')+'")')]
+                  try: n=c.execute('select count(*) from "'+t.replace('"','""')+'"').fetchone()[0]
+                  except Exception: n=None
+                  interest.append({'table':t,'rows':n,'columns':cols})
+          print('INTEREST='+json.dumps(interest))
+          c.close()
+          print('DB_SCHEMA_RCA=GREEN')
+          PY
+
+          echo '--- CONTAINERS / TIMERS ---'
+          for c in porota_production_observer porota_production_dashboard; do
+            echo "$c|status=$(sudo -n docker inspect -f '{{.State.Status}}' "$c")|health=$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c")|restarts=$(sudo -n docker inspect -f '{{.RestartCount}}' "$c")"
+          done
+          sudo -n systemctl list-timers --all --no-pager | grep -Ei 'porota.*(observer|dashboard|contract|signal|macro|event|news|a3)' || true
+
+          echo '--- DASHBOARD PAGE SHAPE ---'
+          TOKEN="$(sudo -n docker exec porota_production_dashboard sh -lc 'printf %s "$DASHBOARD_ACCESS_TOKEN"')"
+          test -n "$TOKEN"
+          for p in / /en-vivo /validacion /instrumentos /historicos /riesgo; do
+            tmp="$(mktemp)"
+            code="$(curl -sS --max-time 15 -o "$tmp" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000$p" || true)"
+            bytes="$(wc -c < "$tmp")"
+            tables="$(grep -Eoi '<table([ >])' "$tmp" | wc -l || true)"
+            title="$(grep -Eoi '<title>[^<]{0,160}</title>' "$tmp" | head -n1 | sed -E 's/<\/?title>//Ig' || true)"
+            echo "PAGE=$p|http=$code|bytes=$bytes|tables=$tables|title=$title"
+            rm -f "$tmp"
+          done
+
+          echo '--- GDELT / SIGNAL SOURCE REFERENCES ---'
+          find "$ROOT" -maxdepth 3 -type f \( -name '*.py' -o -name '*.yml' -o -name '*.yaml' -o -name '*.toml' -o -name '*.md' \) -print0 \
+            | xargs -0 grep -InE 'GDELT|gdelt|SHADOW_ONLY|shadow_only' 2>/dev/null \
+            | grep -vE '/\.git/|PASSWORD|PASSWD|TOKEN|SECRET|COOKIE|AUTHORIZATION' \
+            | head -n 240 || true
+          echo '--- SIGNAL/MACRO FILE NAMES ---'
+          find "$ROOT" -maxdepth 2 -type f | grep -Ei '(gdelt|signal|provider|macro|event|news)' | head -n 160 || true
+
+          echo '--- EFFECTIVE CONFIG NAMES ONLY ---'
+          sudo -n docker inspect porota_production_observer --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | sed -E 's/=.*$/=<redacted>/' \
+            | grep -Ei 'GDELT|SIGNAL|MACRO|EVENT|NEWS|SHADOW' || true
+
+          echo CP1_CP2_CP5_RUNTIME_RCA_V2=GREEN
+          echo REAL_ORDERS_SENT=0
+          HOST
