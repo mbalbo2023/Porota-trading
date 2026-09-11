@@ -44,7 +44,7 @@ jobs:
             "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
-          TARGET_SHA=e47eeffcb94a9468ac7e7f610beee0869353a77e
+          TARGET_SHA=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
           TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
 
           echo '=== RC6 FINAL POSTDEPLOY CERTIFICATION ==='
