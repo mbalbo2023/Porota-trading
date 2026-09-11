@@ -15,7 +15,7 @@ env:
   TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
 
 jobs:
-  ce_importer:
+  ce_runtime:
     runs-on: ubuntu-latest
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
@@ -30,7 +30,7 @@ jobs:
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Inspect importer and sanitized latest capture
+      - name: Inspect actual CE service runtime and data path read-only
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -38,32 +38,62 @@ jobs:
           set -Eeuo pipefail
           test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
           echo MUTATIONS=NONE
-          echo '--- IMPORTER ---'
-          sudo -n sed -n '1,420p' /usr/local/lib/porota/rc6_contract_capture_importer.py
-          echo '--- NORMALIZER IF PRESENT ---'
-          sudo -n find /usr/local/lib/porota -maxdepth 1 -type f -printf '%f\n' | sort | grep -Ei '(contract|normal|semantic|capture)' || true
+          echo '--- CE SERVICE/TIMER ---'
+          sudo -n systemctl cat porota-contract-evidence-rc6.service
+          sudo -n systemctl cat porota-contract-evidence-rc6.timer
+          echo "CE_TIMER_ACTIVE=$(sudo -n systemctl is-active porota-contract-evidence-rc6.timer)"
+          echo "CE_TIMER_ENABLED=$(sudo -n systemctl is-enabled porota-contract-evidence-rc6.timer)"
+          echo "CE_SERVICE_RESULT=$(sudo -n systemctl show porota-contract-evidence-rc6.service -p Result --value)"
+          echo '--- ACTUAL RUNTIME WRAPPER ---'
+          test -r /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          sudo -n sed -n '1,520p' /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+          echo '--- REFERENCED CE/NORMALIZER FILE NAMES ---'
+          sudo -n find /usr/local/sbin /usr/local/lib/porota -maxdepth 2 -type f -printf '%p\n' 2>/dev/null | sort | grep -Ei '(contract|evidence|normal|semantic|capture)' || true
           echo '--- LATEST CAPTURE SANITIZED STRUCTURE ---'
           sudo -n python3 - <<'PY'
           from pathlib import Path
           import json
           root=Path('/opt/porota-trading/data/contract_evidence/rc6_trusted')
-          p=max(root.glob('contract_*.json'),key=lambda x:x.stat().st_mtime)
-          x=json.loads(p.read_text())
-          print('FILE='+p.name)
-          print('TOP_KEYS='+';'.join(sorted(x)))
-          print('AUTH='+str(x.get('auth_status'))+'|ORDERS='+str(x.get('real_orders_sent'))+'|AMOUNT='+str(x.get('amount_filled'))+'|PRICE='+str(x.get('price_filled')))
-          for k in ('jobs','routes','endpoints','blocked_nonread'):
-              v=x.get(k)
-              print(f'{k.upper()}_TYPE={type(v).__name__}|SIZE={len(v) if hasattr(v,"__len__") else "NA"}')
-              if isinstance(v,list):
-                  for item in v[:12]:
-                      if isinstance(item,dict):
-                          safe={a:b for a,b in item.items() if a.lower() not in {'cookie','cookies','authorization','token','password','username','user','headers','body','payload','content','html'}}
-                          print('  '+json.dumps(safe,ensure_ascii=False,sort_keys=True)[:1200])
-                      else: print('  '+str(item)[:600])
-              elif isinstance(v,dict): print('  KEYS='+';'.join(map(str,list(v.keys())[:80])))
+          files=list(root.glob('contract_*.json'))
+          print('CAPTURE_COUNT='+str(len(files)))
+          if files:
+              p=max(files,key=lambda x:x.stat().st_mtime)
+              x=json.loads(p.read_text())
+              print('FILE='+p.name)
+              print('STAT='+oct(p.stat().st_mode & 0o777)+'|SIZE='+str(p.stat().st_size))
+              print('TOP_KEYS='+';'.join(sorted(x)))
+              print('AUTH='+str(x.get('auth_status'))+'|ORDERS='+str(x.get('real_orders_sent'))+'|AMOUNT='+str(x.get('amount_filled'))+'|PRICE='+str(x.get('price_filled')))
+              for k in ('jobs','routes','endpoints','blocked_nonread'):
+                  v=x.get(k)
+                  print(f'{k.upper()}_TYPE={type(v).__name__}|SIZE={len(v) if hasattr(v,"__len__") else "NA"}')
+                  if isinstance(v,list):
+                      for item in v[:12]:
+                          if isinstance(item,dict):
+                              safe={a:b for a,b in item.items() if a.lower() not in {'cookie','cookies','authorization','token','password','username','user','headers','body','payload','content','html'}}
+                              print('  '+json.dumps(safe,ensure_ascii=False,sort_keys=True)[:1200])
           PY
-          echo CE_IMPORTER_PROOF_COMPLETE=YES
+          echo '--- CE TABLE COUNTS/FRESHNESS IN OBSERVER DB ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          names=[r[0] for r in c.execute("select name from sqlite_master where type='table' and (lower(name) like '%contract%' or lower(name) like '%evidence%') order by name")]
+          print('CE_TABLES='+';'.join(names))
+          for t in names:
+              q='"'+t.replace('"','""')+'"'
+              cols=[r[1] for r in c.execute(f'pragma table_info({q})')]
+              n=c.execute(f'select count(*) from {q}').fetchone()[0]
+              print(f'TABLE={t}|ROWS={n}|COLS={";".join(cols[:60])}')
+              for col in ('observed_at','captured_at','fetched_at','updated_at','created_at','run_at','ts'):
+                  if col in cols:
+                      try:
+                          v=c.execute(f'select max("{col}") from {q}').fetchone()[0]
+                          print(f'  MAX_{col}={v}')
+                      except Exception as e:
+                          print(f'  MAX_{col}_ERROR={type(e).__name__}')
+          c.close()
+          PY
+          echo CE_RUNTIME_PROOF_COMPLETE=YES
           HOST
 
   a3_identity:
@@ -112,7 +142,7 @@ jobs:
                           except Exception as e: print('  QUERY_ERROR='+repr(e))
           c.close()
           PY
-          echo '--- A3 CACHE FILES / CATALOG SHAPE ---'
-          sudo -n docker exec porota_production_observer sh -lc "find /app/data -maxdepth 4 -type f 2>/dev/null | grep -Ei '(a3|cem).*(json|csv|db)$' | head -n 100" || true
+          echo '--- A3 ALIGNMENT OBSERVABILITY ---'
+          sudo -n docker exec porota_production_observer sh -lc "test -r /app/data/paper_v17/observability/a3_catalog_alignment_latest.json && cat /app/data/paper_v17/observability/a3_catalog_alignment_latest.json || true"
           echo A3_IDENTITY_PROOF_COMPLETE=YES
           HOST
