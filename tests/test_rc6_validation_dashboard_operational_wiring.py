@@ -25,7 +25,10 @@ def test_operational_daily_section_has_real_headers_and_keeps_campaign_separate(
     assert 'Actividad PAPER por jornada' in html
     assert '<thead>' in html and '<th>Fecha AR</th>' in html
     assert '2026-09-10' in html and '123.45' in html
-    assert 'M0' not in html
+    # The operational section may explain that it does not promote governance
+    # milestones; what it must never do is render a campaign milestone as data.
+    assert '<td>M0</td>' not in html
+    assert 'No modifica ni promociona M0–M11.' in html
 
 
 def test_empty_campaign_ledger_is_not_described_as_no_paper_activity():
