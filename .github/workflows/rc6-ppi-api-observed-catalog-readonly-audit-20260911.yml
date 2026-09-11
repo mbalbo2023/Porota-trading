@@ -49,7 +49,7 @@ jobs:
               samples=[x[0] for x in c.execute('select ticker from instrument_catalog where upper(instrument_type)=? order by ticker limit 12',(r['type'],)).fetchall()]
               print(json.dumps({'type':r['type'],'rows':r['n'],'tickers':r['tickers'],'markets':r['markets'],'settlements':r['settlements'],'latest':r['latest'],'samples':samples},ensure_ascii=False,sort_keys=True))
           print('CANDIDATE_UNIVERSE_COUNTS')
-          for r in c.execute('select upper(instrument_type) type,count(*) n,sum(case when can_simulate=1 then 1 else 0 end) sim,max(discovered_at) latest from candidate_universe group by upper(instrument_type) order by upper(instrument_type)'):
+          for r in c.execute('select upper(instrument_type) type,count(*) n,sum(case when can_simulate=1 then 1 else 0 end) sim,max(last_checked_at) latest from candidate_universe group by upper(instrument_type) order by upper(instrument_type)'):
               print(json.dumps(dict(r),ensure_ascii=False,sort_keys=True))
           print('PRODUCTION_HISTORY_COUNTS')
           for r in c.execute('select upper(instrument_type) type,count(*) n,sum(row_count) rows,max(downloaded_at) latest from production_history group by upper(instrument_type) order by upper(instrument_type)'):
