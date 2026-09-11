@@ -1,12 +1,8 @@
 """RC6 table layout fix for Samsung/Voice Access.
 
-RC5 switched tables to cards only from viewport width <=980px.  That is not
-sufficient when a wide Android/desktop-mode viewport contains a narrower content
-column (for example Sistema has a side navigation).  This extension also
-compacts any table whose own usable width per column is too small or whose
-content overflows its card.
-
-Presentation only.  No database/network/trading behavior.
+Presentation only.  Wide tables remain real tables with horizontal scrolling;
+column headers stay visible instead of being hidden by the former compact-card
+fallback.  No database/network/trading behavior.
 """
 from __future__ import annotations
 
@@ -17,18 +13,49 @@ _installed = False
 
 FORCE_COMPACT_CSS = r"""
 <style id='porota-rc6-force-compact-tables'>
-/* Content-width driven fallback, independent from viewport media queries. */
-table.paper-table[data-porota-force-compact='1']{display:block;width:100%;max-width:100%;border-collapse:separate;table-layout:auto;font-size:.9rem;overflow:visible!important}
-table.paper-table[data-porota-force-compact='1'] tbody{display:block;width:100%}
-table.paper-table[data-porota-force-compact='1'] tr.porota-table-header{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
-table.paper-table[data-porota-force-compact='1'] tr.porota-record-row{display:block;width:100%;max-width:100%;margin:0 0 10px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:6px 10px;overflow:hidden}
+/* RC6 operator rule: a table must never lose its semantic column headers.
+   Overflow is handled horizontally; it is not converted into anonymous cards. */
+.paper-card,.tarjeta{max-width:100%;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch}
+.paper-table thead,.classic-responsive-table thead{display:table-header-group!important}
+.paper-table thead th,.classic-responsive-table thead th{
+  position:sticky!important;top:50px!important;z-index:35!important;
+  background:#e7edf4!important;white-space:nowrap!important;
+  box-shadow:0 1px 0 #c9d4e3!important
+}
+table.paper-table[data-porota-force-compact='1']{
+  display:table!important;width:max-content!important;min-width:100%!important;max-width:none!important;
+  border-collapse:collapse!important;table-layout:auto!important;font-size:.86rem!important;overflow:visible!important
+}
+table.paper-table[data-porota-force-compact='1'] thead{display:table-header-group!important}
+table.paper-table[data-porota-force-compact='1'] tbody{display:table-row-group!important}
+table.paper-table[data-porota-force-compact='1'] tr.porota-table-header{
+  position:static!important;width:auto!important;height:auto!important;padding:0!important;margin:0!important;
+  overflow:visible!important;clip:auto!important;clip-path:none!important;white-space:normal!important;
+  border:0!important;display:table-row!important
+}
+table.paper-table[data-porota-force-compact='1'] tr.porota-table-header th{
+  display:table-cell!important;visibility:visible!important;white-space:nowrap!important
+}
+table.paper-table[data-porota-force-compact='1'] tr.porota-record-row{
+  display:table-row!important;width:auto!important;max-width:none!important;margin:0!important;border:0!important;
+  border-radius:0!important;background:transparent!important;padding:0!important;overflow:visible!important
+}
 table.paper-table[data-porota-force-compact='1'] tr.porota-record-row[hidden]{display:none!important}
-table.paper-table[data-porota-force-compact='1'] td{display:grid;grid-template-columns:minmax(145px,34%) minmax(0,66%);gap:10px;width:100%;max-width:100%;padding:8px 2px;border-bottom:1px solid var(--line);overflow-wrap:anywhere;word-break:break-word;white-space:normal}
-table.paper-table[data-porota-force-compact='1'] td:last-child{border-bottom:0}
-table.paper-table[data-porota-force-compact='1'] td[colspan]{display:block}
-table.paper-table[data-porota-force-compact='1'] .porota-cell-label{display:block;color:var(--muted);font-weight:700;min-width:0}
-table.paper-table[data-porota-force-compact='1'] td[colspan]>.porota-cell-label{display:none}
-@media(max-width:560px){table.paper-table[data-porota-force-compact='1'] td{display:block}.porota-cell-label{margin-bottom:3px}}
+table.paper-table[data-porota-force-compact='1'] td{
+  display:table-cell!important;width:auto!important;max-width:none!important;padding:8px!important;
+  border-bottom:1px solid var(--line)!important;white-space:nowrap!important;overflow-wrap:normal!important;
+  word-break:keep-all!important;vertical-align:top!important
+}
+table.paper-table[data-porota-force-compact='1'] td[data-wrap='true']{
+  white-space:normal!important;min-width:16rem!important;max-width:32rem!important;
+  overflow-wrap:break-word!important;word-break:normal!important
+}
+table.paper-table[data-porota-force-compact='1'] .porota-cell-label{display:none!important}
+@media(max-width:700px){
+  .paper-table thead th,.classic-responsive-table thead th{top:0!important}
+  table.paper-table[data-porota-force-compact='1']{font-size:.78rem!important}
+  table.paper-table[data-porota-force-compact='1'] td{padding:6px!important}
+}
 </style>
 """
 
@@ -44,7 +71,7 @@ FORCE_COMPACT_SCRIPT = r"""
       const card=table.closest('.paper-card,.system-content,main.paper-page') || table.parentElement;
       const available=Math.max(1, card?.clientWidth || table.clientWidth || 1);
       const perColumn=available/columns;
-      /* Keep this JS predicate synchronized with er_dashboard_table_semantics_rc6.py. */
+      /* Attribute now marks a wide/overflow table; CSS preserves table semantics. */
       const force=(columns>=7 || perColumn<128 || table.scrollWidth>available+4);
       table.dataset.porotaForceCompact=force?'1':'0';
     });
