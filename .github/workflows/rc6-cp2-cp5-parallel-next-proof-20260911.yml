@@ -1,0 +1,131 @@
+name: RC6 CP2-CP5 Parallel Next Proof 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-cp2-cp5-parallel-next-proof-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  cp2_cp5_focused_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert RC6 PAPER safety and run focused CP2/CP5 tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q \
+            tests/test_rc6_validation_dashboard_operational_wiring.py \
+            tests/test_rc6_table_headers_visible_sticky.py \
+            tests/test_rc6_risk_gdelt_dashboard.py \
+            tests/test_rc6_gdelt_event_risk_job.py
+          echo CP2_CP5_FOCUSED_TESTS=GREEN
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+
+  cp3_exact_importer_runtime:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect exact CE importer and normalizer read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
+          echo MUTATIONS=NONE
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          echo '--- CE LIB FILES ---'
+          sudo -n find "$LIB" -maxdepth 1 -type f -printf '%f|%m|%u|%g|%s\n' | sort
+          for f in rc6_contract_capture_importer.py rc6_ppi_contract_normalizer.py rc6_contract_due_job.py rc6_contract_schedule.py; do
+            echo "--- $f ---"
+            sudo -n sed -n '1,620p' "$LIB/$f"
+          done
+          echo '--- CE DB CURRENT/RUN FRESHNESS ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          for t in ('contract_evidence_v2_runs','contract_evidence_v2_current','contract_evidence_v2_snapshots'):
+              n=c.execute(f'select count(*) from {t}').fetchone()[0]
+              print(f'{t}_ROWS={n}')
+          print('RUNS_LAST10')
+          for r in c.execute('select run_id,job_key,started_at,finished_at,state,records,changed,conflicts,detail from contract_evidence_v2_runs order by rowid desc limit 10'):
+              d=dict(r); d['detail']=str(d.get('detail') or '')[:900]; print(json.dumps(d,ensure_ascii=False,sort_keys=True))
+          print('CURRENT_BY_FAMILY')
+          for r in c.execute('select family,count(*) n,max(observed_at) latest from contract_evidence_v2_current group by family order by family'):
+              print(json.dumps(dict(r),ensure_ascii=False,sort_keys=True))
+          c.close()
+          PY
+          echo CP3_EXACT_IMPORTER_PROOF_COMPLETE=YES
+          HOST
+
+  cp4_exact_a3_identity:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Prove exact FUTURES/FUTUROS identity shapes read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
+          echo MUTATIONS=NONE
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          print('A3_STATE_TYPE_COUNTS')
+          for r in c.execute('select instrument_type,count(*) n from a3_history_ingest_state_rc6 group by instrument_type order by instrument_type'):
+              print(json.dumps(dict(r),ensure_ascii=False,sort_keys=True))
+          print('A3_FUTURE_LIKE_SYMBOLS')
+          for r in c.execute("select source,symbol,instrument_type,market,settlement,status,last_error,rows_last,last_attempt_at,last_success_at from a3_history_ingest_state_rc6 where upper(instrument_type) like 'FUTUR%' or upper(symbol) like 'DLR%' order by symbol limit 240"):
+              print(json.dumps(dict(r),ensure_ascii=False,sort_keys=True))
+          print('CE_FUTUROS_SYMBOLS')
+          for r in c.execute("select family,ticker,market,settlement,source_class,observed_at from contract_evidence_v2_current where upper(family) in ('FUTUROS','FUTURES') order by ticker limit 240"):
+              print(json.dumps(dict(r),ensure_ascii=False,sort_keys=True))
+          print('PPI_INTRADAY_FUTURE_LIKE')
+          for r in c.execute("select symbol,asset_class,market,currency,settlement,state,last_source_at,checked_at from ppi_intraday_contract_state where upper(asset_class) like 'FUTUR%' or upper(symbol) like 'DLR%' order by symbol limit 240"):
+              print(json.dumps(dict(r),ensure_ascii=False,sort_keys=True))
+          c.close()
+          PY
+          echo '--- A3 ALIGNMENT JSON ---'
+          sudo -n docker exec porota_production_observer sh -lc "cat /app/data/paper_v17/observability/a3_catalog_alignment_latest.json 2>/dev/null || true"
+          echo CP4_EXACT_IDENTITY_PROOF_COMPLETE=YES
+          HOST
