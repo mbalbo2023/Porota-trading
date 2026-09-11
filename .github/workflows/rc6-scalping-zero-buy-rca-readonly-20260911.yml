@@ -1,0 +1,97 @@
+name: RC6 Scalping Zero Buy RCA Readonly 2026-09-11
+on:
+  push:
+    branches: [test/rc6-scalping-active-paper-eod-20260911]
+    paths:
+      - '.github/workflows/rc6-scalping-zero-buy-rca-readonly-20260911.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ro"
+          chmod 600 "$HOME/.ssh/porota_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Aggregate live scalping rejection causes read-only
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ro" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$USER@$HOST" 'sudo -n docker exec -i porota_production_observer python -' <<'PY'
+          import json,sqlite3
+          from collections import Counter,defaultdict
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          DB='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          TZ=ZoneInfo('America/Argentina/Buenos_Aires')
+          c=sqlite3.connect(DB,uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+          state=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('MODE='+state['mode']); print('REAL_ORDERS_SENT='+str(state['real_orders_sent']))
+          print('--- CONTRACT_STATE_COUNTS ---')
+          for r in c.execute('SELECT state,COUNT(*) n FROM ppi_intraday_contract_state GROUP BY state ORDER BY n DESC'):
+              print(f"{r['state']}={r['n']}")
+          print('--- CONTRACT_STATE_TOP_DETAILS ---')
+          for r in c.execute('''SELECT state,detail,COUNT(*) n FROM ppi_intraday_contract_state
+                                GROUP BY state,detail ORDER BY n DESC LIMIT 20'''):
+              print(json.dumps(dict(r),ensure_ascii=False))
+          print('--- CATALOG_CAPABILITIES ---')
+          for r in c.execute('SELECT capability,COUNT(*) n FROM financial_instrument_catalog WHERE status=\'AVAILABLE\' GROUP BY capability ORDER BY n DESC'):
+              print(json.dumps(dict(r),ensure_ascii=False))
+          rows=c.execute('''SELECT evaluated_at,symbol,asset_class,market,currency,settlement,action,score,points,reason,economics_json
+                            FROM scalping_candidates ORDER BY id''').fetchall()
+          today=[]
+          for r in rows:
+              try:
+                  dt=datetime.fromisoformat(r['evaluated_at'].replace('Z','+00:00')).astimezone(TZ)
+              except Exception:
+                  continue
+              if dt.date().isoformat()=='2026-09-11': today.append(dict(r))
+          print('SCALPING_EVALUATIONS_TODAY='+str(len(today)))
+          print('SCALPING_BUY_CANDIDATES_TODAY='+str(sum(r['action']=='BUY_CANDIDATE' for r in today)))
+          print('--- TODAY_REASON_COUNTS ---')
+          reasons=Counter(r['reason'] for r in today)
+          for reason,n in reasons.most_common(30): print(json.dumps({'reason':reason,'count':n},ensure_ascii=False))
+          print('--- TODAY_FAMILY_COUNTS ---')
+          fam=Counter((r['asset_class'],r['action']) for r in today)
+          for (family,action),n in fam.most_common(): print(json.dumps({'family':family,'action':action,'count':n},ensure_ascii=False))
+          print('--- READY_SPOT_REASON_COUNTS ---')
+          ready=set()
+          for r in c.execute("""SELECT ticker,instrument_type,market,currency,settlement FROM financial_instrument_catalog
+                                WHERE status='AVAILABLE' AND capability='READY_PAPER_SPOT'"""):
+              ready.add(tuple(r))
+          rr=Counter()
+          ready_rows=[]
+          for r in today:
+              key=(r['symbol'],r['asset_class'],r['market'],r['currency'],r['settlement'])
+              if key in ready:
+                  rr[r['reason']]+=1; ready_rows.append(r)
+          print('READY_SPOT_EVALUATIONS_TODAY='+str(len(ready_rows)))
+          print('READY_SPOT_IDENTITIES='+str(len(ready)))
+          for reason,n in rr.most_common(30): print(json.dumps({'reason':reason,'count':n},ensure_ascii=False))
+          print('--- READY_SPOT_ECONOMICS_NEAR_PASS ---')
+          samples=[]
+          for r in ready_rows:
+              try: e=json.loads(r['economics_json'] or '{}')
+              except Exception: e={}
+              samples.append((float(r['score'] or 0),r,e))
+          for score,r,e in sorted(samples,key=lambda x:x[0],reverse=True)[:20]:
+              print(json.dumps({'symbol':r['symbol'],'at':r['evaluated_at'],'score':r['score'],'reason':r['reason'],
+                'spread':e.get('spread_fraction'),'momentum':e.get('momentum'),
+                'observed_range':e.get('observed_15m_range_fraction'),'required_move':e.get('required_move_fraction')},ensure_ascii=False))
+          print('READONLY_MUTATION=NONE')
+          c.close()
+          PY
