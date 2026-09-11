@@ -305,7 +305,7 @@ jobs:
           stat -c 'LATEST_HOST_CAPTURE_STAT=%a|%u|%g|%s|%y' "$HOST_CAPTURE"
           test "$(stat -c '%a' "$HOST_CAPTURE")" = 640
           test "$(stat -c '%g' "$HOST_CAPTURE")" = "$(sudo -n docker exec porota_production_observer id -g)"
-          REL="${HOST_CAPTURE#"$REPO/data/}"
+          REL="${HOST_CAPTURE#${REPO}/data/}"
           sudo -n docker exec porota_production_observer test -r "/app/data/$REL"
           echo 'W12_CAPTURE_READABLE=YES'
 
