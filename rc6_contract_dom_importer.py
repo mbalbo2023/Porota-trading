@@ -4,6 +4,10 @@
 Only aggregate route/family snapshots are written. No column semantics, instrument IDs,
 market/settlement values, or economic contract fields are inferred. Readiness therefore
 remains fail-closed for any fields not explicitly proven elsewhere.
+
+A fully authenticated pass with zero explicit materializable tables is treated as a
+transient YELLOW observation, not as a service crash. Freshness/staleness escalation is
+owned by the wrapper, which checks the last persisted PPI_AUTHENTICATED_WEB evidence.
 """
 from __future__ import annotations
 
@@ -15,6 +19,7 @@ from pathlib import Path
 import cp_contract_evidence_v2_hf6 as ce
 
 DB = "/app/data/paper_v17/observer_v17.db"
+SUPPORTED_SCHEMAS = {"POROTA_RC6_PPI_AUTH_DOM_V1", "POROTA_RC6_PPI_AUTH_DOM_V2"}
 ROUTE_FAMILY = {
     "/Cotizaciones/Acciones": "ACCIONES",
     "/Cotizaciones/AccionesUSA": "ACCIONES_USA",
@@ -55,7 +60,7 @@ def main() -> int:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         return fail("CAPTURE_READ_ERROR:" + type(exc).__name__)
-    if raw.get("schema") != "POROTA_RC6_PPI_AUTH_DOM_V1":
+    if raw.get("schema") not in SUPPORTED_SCHEMAS:
         return fail("UNSUPPORTED_CAPTURE_SCHEMA")
     if raw.get("auth_status") != "AUTHENTICATED_TRUSTED_DEVICE":
         return fail("AUTH_NOT_TRUSTED")
@@ -70,11 +75,14 @@ def main() -> int:
     store = Store(DB)
     records = []
     skipped = []
+    requested_families = []
     for route_item in raw.get("routes") or []:
         if not isinstance(route_item, dict):
             continue
         route = str(route_item.get("requested") or "")
         family = ROUTE_FAMILY.get(route)
+        if family and family not in requested_families:
+            requested_families.append(family)
         if not family or not route_item.get("reached"):
             skipped.append({"route": route, "reason": "UNSUPPORTED_OR_NOT_REACHED"})
             continue
@@ -90,6 +98,7 @@ def main() -> int:
             if headers and rows:
                 material.append({
                     "table_index": int(table.get("table_index") or 0),
+                    "kind": str(table.get("kind") or "html_table")[:40],
                     "headers": headers,
                     "row_count": int(table.get("row_count") or len(rows)),
                     "rows": rows,
@@ -124,17 +133,19 @@ def main() -> int:
         except Exception as exc:
             return fail("RECORD_ERROR:" + family + ":" + type(exc).__name__)
 
-    state = "GREEN" if records else "AMARILLO"
+    state = "GREEN" if records else "YELLOW_NO_TABLE_THIS_PASS"
     print(json.dumps({
         "state": state,
         "source_class": "PPI_AUTHENTICATED_WEB",
         "records": len(records),
         "families": sorted({x["family"] for x in records}),
+        "requested_families": sorted(requested_families),
         "recorded": records,
         "skipped": skipped,
+        "observed_at": observed_at,
         "real_orders_sent": 0,
     }, ensure_ascii=False, sort_keys=True))
-    return 0 if records else 6
+    return 0
 
 
 if __name__ == "__main__":
