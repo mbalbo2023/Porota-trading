@@ -1,0 +1,51 @@
+name: RC6 Audit Export 2026-09-11
+
+on:
+  push:
+    branches:
+      - audit/rc6-export-20260911
+    paths:
+      - .github/workflows/rc6-audit-export-20260911.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export_exact_deployed_snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact deployed commit
+        uses: actions/checkout@v4
+        with:
+          ref: f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify and export tracked source tree
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          EXPECTED=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          ACTUAL="$(git rev-parse HEAD)"
+          test "$ACTUAL" = "$EXPECTED"
+          mkdir -p export
+          git archive --format=zip --prefix=Porota-trading-RC6-20260911-f8adec8/ HEAD -o export/Porota-trading-RC6-20260911-f8adec8-source.zip
+          git ls-tree -r -l --full-tree HEAD > export/SOURCE_TREE.txt
+          cat > export/SOURCE_PROVENANCE.json <<'JSON'
+          {
+            "repository": "mbalbo2023/Porota-trading",
+            "deployed_commit": "f8adec8a02b2f9f0ef2dffbee75458c958bf711e",
+            "tree": "656a5a77f7e65baefe0ee0b0f1ed9e8c84ab61b1",
+            "export_method": "git archive",
+            "scope": "all files tracked by Git at the deployed commit; .git metadata and runtime/untracked host files excluded"
+          }
+          JSON
+          (cd export && sha256sum Porota-trading-RC6-20260911-f8adec8-source.zip SOURCE_TREE.txt SOURCE_PROVENANCE.json > MANIFEST.sha256)
+
+      - name: Upload audit snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: porota-trading-rc6-deployed-source-f8adec8
+          path: export/
+          if-no-files-found: error
+          retention-days: 7
