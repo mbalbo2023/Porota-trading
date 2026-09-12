@@ -1,0 +1,77 @@
+name: RC6 Certified Timer Set Readonly 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-certified-timer-set-readonly-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Verify exact final-certified timer set
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          BASE=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          git -C "$ROOT" merge-base --is-ancestor "$BASE" "$HEAD"
+          echo "HOST_SHA=$HEAD"
+          curl -fsS --max-time 5 http://127.0.0.1:8000/health; echo
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          p='/app/data/paper_v17/observer_v17.db';c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20);c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0];r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone();c.close()
+          print('SAFETY='+json.dumps({'quick_check':q,'mode':r[0],'session':r[1],'real_orders_sent':r[2]},sort_keys=True))
+          assert q=='ok' and r[0]=='PRODUCTION_PAPER' and int(r[2] or 0)==0
+          PY
+          required=(
+            porota-contract-evidence-rc6.timer
+            porota-functional-health-rc6.timer
+            porota-history-postclose-rc6.timer
+            porota-host-general-backup-rc6.timer
+            porota-preopen-rc6.timer
+            porota-candle-integrity-rc6.timer
+            porota-a3-history-daily-rc6.timer
+            porota-a3-history-reconcile-rc6.timer
+            porota-a3-history-weekend-rc6.timer
+          )
+          bad=0
+          for u in "${required[@]}"; do
+            a=$(sudo -n systemctl is-active "$u" 2>/dev/null || true)
+            e=$(sudo -n systemctl is-enabled "$u" 2>/dev/null || true)
+            load=$(sudo -n systemctl show "$u" -p LoadState --value 2>/dev/null || true)
+            next=$(sudo -n systemctl show "$u" -p NextElapseUSecRealtime --value 2>/dev/null || true)
+            echo "CERTIFIED_UNIT=$u|LOAD=$load|ACTIVE=$a|ENABLED=$e|NEXT=$next"
+            [[ "$load" == loaded && "$a" == active && "$e" == enabled ]] || bad=$((bad+1))
+          done
+          echo "CERTIFIED_TIMER_BAD=$bad"
+          echo '=== BACKUP UNIT DETAIL ==='
+          sudo -n systemctl status porota-host-general-backup-rc6.timer porota-host-general-backup-rc6.service --no-pager -l 2>&1 | head -n 180 || true
+          sudo -n systemctl cat porota-host-general-backup-rc6.timer porota-host-general-backup-rc6.service --no-pager 2>&1 | head -n 260 || true
+          echo 'MUTATIONS=NONE'
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          HOST
