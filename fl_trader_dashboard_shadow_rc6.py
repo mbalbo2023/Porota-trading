@@ -143,10 +143,22 @@ def swing_shadow_section():
 
 def _caucion_snapshot():
     caucion_shadow.assert_shadow_only()
-    rows = bg._rows("SELECT * FROM paper_cauciones ORDER BY opened_at DESC LIMIT 25") if bg._table("paper_cauciones") else []
+    rows = []
+    evidence_state = "NO_TABLE"
+    if bg._table("paper_cauciones"):
+        try:
+            rows = bg._rows("SELECT * FROM paper_cauciones ORDER BY opened_at DESC LIMIT 25")
+            evidence_state = "AVAILABLE"
+        except Exception:
+            evidence_state = "UNAVAILABLE"
     auto_raw = str(os.getenv("CAUCIONES_AUTO_PLACEMENT", "false")).strip().lower()
     auto_enabled = auto_raw in {"1", "true", "yes", "on"}
     latest = rows[0] if rows else {}
+    runtime_state = (
+        "EVIDENCE_READ_UNAVAILABLE"
+        if evidence_state == "UNAVAILABLE"
+        else "POLICY_ONLY_WAITING_VERIFIED_SCHEDULE_AND_QUOTE"
+    )
     return {
         "mode": caucion_shadow.SHADOW_MODE,
         "policy_lead_minutes": caucion_shadow.DEFAULT_POLICY_LEAD_MINUTES,
@@ -154,8 +166,9 @@ def _caucion_snapshot():
         "lead_max": caucion_shadow.MAX_POLICY_LEAD_MINUTES,
         "paper_positions": len(rows),
         "latest_opened_at": latest.get("opened_at"),
+        "evidence_state": evidence_state,
         "auto_enabled": auto_enabled,
-        "runtime_state": "POLICY_ONLY_WAITING_VERIFIED_SCHEDULE_AND_QUOTE",
+        "runtime_state": runtime_state,
         "real_execution_allowed": False,
     }
 
@@ -164,6 +177,7 @@ def caucion_shadow_section():
     data = _caucion_snapshot()
     auto_label = "ON — REVISAR" if data["auto_enabled"] else "OFF"
     auto_css = "s-rojo" if data["auto_enabled"] else "s-verde"
+    evidence_css = "s-verde" if data["evidence_state"] == "AVAILABLE" else "s-amarillo"
     return f"""
     <section class='paper-card' id='rc6-caucion-cash-sweep-shadow'>
       <h2>Caución — cash sweep de fin de rueda</h2>
@@ -171,6 +185,7 @@ def caucion_shadow_section():
       <p class='paper-muted'>Planificador de tesorería en sombra. Nunca vende posiciones para generar caja y no cursa una caución.</p>
       <table class='paper-table classic-responsive-table'><thead><tr><th>Indicador</th><th>Estado</th></tr></thead><tbody>
         <tr><td>CAUCIONES_AUTO_PLACEMENT</td><td>{_badge(auto_label,auto_css)}</td></tr>
+        <tr><td>Lectura evidencia PAPER</td><td>{_badge(data['evidence_state'],evidence_css)}</td></tr>
         <tr><td>Lead policy por defecto</td><td>{_esc(data['policy_lead_minutes'])} min antes del cutoff verificado</td></tr>
         <tr><td>Rango admitido de lead policy</td><td>{_esc(data['lead_min'])}–{_esc(data['lead_max'])} min</td></tr>
         <tr><td>Cauciones PAPER visibles en muestra</td><td>{_esc(data['paper_positions'])}</td></tr>
