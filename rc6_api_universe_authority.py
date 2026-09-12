@@ -77,6 +77,42 @@ def classify_identity(*, family: str, ticker: str, market: str, api_types) -> di
     }
 
 
+def validate_search_results(query: DiscoveryQuery, rows, *, api_types, api_markets) -> list[dict]:
+    """Valida la identidad DEVUELTA por PPI, nunca la semilla consultada.
+
+    SearchInstrument puede devolver coincidencias parciales. Por ejemplo una
+    búsqueda de ``QQQ`` puede devolver CQQQ/SQQQ/TQQQ. Esas especies pueden ser
+    identidades API válidas, pero la respuesta NO prueba que ``QQQ`` exista.
+    """
+    declared_types = {canonical_family(x) for x in (api_types or [])}
+    declared_markets = {str(x or "").strip().upper() for x in (api_markets or [])}
+    out = []
+    for raw in rows or []:
+        if not isinstance(raw, dict):
+            continue
+        family = canonical_family(raw.get("type") or raw.get("instrumentType"))
+        ticker = str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
+        market = str(raw.get("market") or "").strip().upper()
+        if family != query.family or family not in declared_types:
+            continue
+        if market != query.market or market not in declared_markets:
+            continue
+        if not concrete(ticker) or not concrete(market):
+            continue
+        out.append({
+            "family": family,
+            "ticker": ticker,
+            "market": market,
+            "description": str(raw.get("description") or "").strip(),
+            "currency": raw.get("currency"),
+            "api_discovered": True,
+            "exact_ticker_match": ticker == query.ticker,
+            "search_seed": query.ticker,
+            "paper_candidate": False,
+        })
+    return out
+
+
 def eligible_for_contract_binding(identity: dict) -> bool:
     """Binding contractual aplica sólo a identidad concreta reconocida por API."""
     return bool(identity.get("api_declared") and identity.get("api_discovered") and not identity.get("context_only"))
