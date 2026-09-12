@@ -168,3 +168,20 @@ Alcance read-only; comparación contra el último deploy confirmado `a47f3339ec6
 - Al revisar estaba `in_progress`, con un único job `audit` ejecutando “Serialized read-only capacity and coverage audit”. No es un deploy ni fue iniciado desde la rama de housekeeping.
 - El workflow verifica el SHA esperado del host, estado de servicios, disco y cobertura de bases por SSH. Toma el lock compartido `/run/lock/porota-ppi-fullfamily-history.lock` (espera hasta 30 minutos; job timeout 40 minutos), por lo que puede serializar temporalmente otros procesos de historial/ingesta.
 - Este registro no modifica, cancela ni interrumpe la ejecución. La rama y los datos PPI siguen excluidos de la limpieza.
+
+
+---
+
+## Inventario de workflows del árbol RC6 — 2026-09-12
+
+Referencia: SHA desplegado `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d`. Sólo lectura.
+
+- `.github/workflows` contiene 167 entradas: 166 YAML y el helper ejecutable `rc6_apply_patch.py`.
+- Conteo estático de YAML: 163 declaran `push` (todos con filtro de rama; 151 también filtran paths), 56 declaran `workflow_dispatch` y 2 `pull_request`. Los eventos se solapan. No se encontraron triggers `push` sin filtro de rama.
+- La rama default `main` sólo contiene `ci.yml`, `deploy.yml` y `promote-to-production.yml`. CI filtra `main/develop/testing`, no las ramas operativas RC6/PPI. `promote-to-production.yml` tiene `contents: write` y puede crear tags y hacer push/merge de `testing` a `main`; requiere dispatch, texto de confirmación y environment `production`.
+- El mismo path `deploy.yml` difiere entre `main` y el árbol RC6: el de `main` despliega una referencia manual a `/home/tradingbot/app`; el del árbol RC6 usa `/opt/porota-trading`. Hay que auditar ambos entrypoints antes de unificarlos.
+- Hallazgo RC5: `deploy-rc5-paper-once.yml` escucha push sólo en `release/v17.0.0-rc5` y despliega si el mensaje contiene `[DEPLOY_RC5_PAPER]`. Run `33992858125` terminó SUCCESS el 05-Sep. La rama tiene 0 commits por delante y 591 detrás del deploy RC6; no se halló PR asociado.
+- Hallazgo de escritura automática: 46 YAML declaran `permissions.contents: write`; 45 contienen `git push`. Ejemplo concreto: `rc6-apply-active-tests.yml` llama al helper `rc6_apply_patch.py`, modifica sólo tests, crea commit y hace push a `candidate/v17.0.0-rc6-weekend-20260905`. Ese workflow no tiene ejecuciones observadas; la rama sí tuvo otros runs hasta el 10-Sep, pero está 131 commits detrás y 0 por delante del deploy RC6, sin PR asociado.
+- Los workflows `rc6-final-transactional-deploy`, `...deploy2` y `...deploy3` contienen comprobaciones/rehearsals con RC5. No retirar esas referencias a ciegas: falta determinar si son evidencia histórica, rollback local o ruta operativa.
+- Conclusión: triggers acotados reducen activaciones accidentales entre ramas distintas, pero el número de flujos con permiso de escritura/deploy permite que varias acciones sobre una misma rama se encadenen y cambien el checkout sin PR central. Son candidatos prioritarios para consolidar tras revisar cada rama, run y efecto.
+- Sin cambios a workflows, ramas de aplicación, host ni datos; sin poda. La configuración de rulesets sigue sin ser visible desde esta conexión.
