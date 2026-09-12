@@ -1,0 +1,51 @@
+name: RC6 weekend contract state audit 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-weekend-contract-state-audit-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read contract evidence coverage and route policy
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'd719deeb379de285b07fa61a40f5d48d19d5bffd' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+          echo '=== DOM_ROUTE_POLICY ==='
+          sed -n '31,74p' /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh 2>/dev/null | grep -Ev 'SECRET|TOKEN|PASSWORD|COOKIE' || true
+          echo '=== CONTRACT_DB_STATE ==='
+          sudo -n docker exec porota_production_observer python -c "import sqlite3,json; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on'); s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print('SAFETY=%s|%s'%(s[0],s[1])); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0; tabs=[r[0] for r in c.execute(\"select name from sqlite_master where type in ('table','view') and (name like '%contract%' or name like '%readiness%') order by name\")]; print('CONTRACT_OBJECTS='+','.join(tabs)); [(print('COUNT_'+t+'='+str(c.execute('select count(*) from '+t).fetchone()[0]))) for t in tabs if t.replace('_','').isalnum()]; exists=c.execute(\"select count(*) from sqlite_master where type in ('table','view') and name='contract_evidence_v2_current'\").fetchone()[0]; print('=== CURRENT_BY_FAMILY ==='); [print('FAMILY='+str(r[0])+'|ROWS='+str(r[1])+'|LATEST='+str(r[2])) for r in c.execute('select family,count(*),max(observed_at) from contract_evidence_v2_current group by family order by family')] if exists else None; print('=== API_UNIVERSE_BY_FAMILY ==='); [print('API_FAMILY='+str(r[0])+'|ROWS='+str(r[1])) for r in c.execute('select instrument_type,count(*) from ppi_argentina_api_shadow group by instrument_type order by instrument_type')]; c.close()"
+          echo '=== SERVICE_LATEST ==='
+          journalctl -u porota-contract-evidence-rc6.service -n 8 --no-pager 2>/dev/null || true
+          echo 'HOST_MUTATION=NONE'
+          echo 'HTTP_CALLS=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
