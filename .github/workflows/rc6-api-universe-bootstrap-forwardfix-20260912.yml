@@ -1,0 +1,133 @@
+name: RC6 API Universe Bootstrap Forward Fix 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-api-universe-bootstrap-forwardfix-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap_and_prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static safety gate
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile scripts/rc6_api_universe_bootstrap.py
+          python - <<'PY'
+          import ast,pathlib
+          text=pathlib.Path('scripts/rc6_api_universe_bootstrap.py').read_text(encoding='utf-8')
+          tree=ast.parse(text)
+          forbidden=('.orders','.budget(','.confirm(','.cancel(','send_order','place_order','cancel_order','PPI(sandbox=True)')
+          assert not [x for x in forbidden if x in text]
+          attrs={n.attr for n in ast.walk(tree) if isinstance(n,ast.Attribute)}
+          assert not ({'orders','budget','confirm','send_order','place_order','cancel_order'} & attrs)
+          assert 'CHECK(paper_candidate=0)' in text
+          assert 'ProductionMarketReader' in text
+          print('STATIC_GATE=GREEN')
+          print('AUTO_PAPER_PROMOTION=FALSE')
+          print('ORDER_CAPABILITY=NONE')
+          PY
+
+      - name: Prepare strict SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Stage bootstrap script
+        run: |
+          set -Eeuo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            scripts/rc6_api_universe_bootstrap.py \
+            "$DO_USER@$DO_HOST:/tmp/rc6_api_universe_bootstrap.py"
+
+      - name: Run additive bootstrap and prove safety
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          BASE=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          SCRIPT=/tmp/rc6_api_universe_bootstrap.py
+          trap 'rm -f "$SCRIPT"' EXIT
+
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          git -C "$ROOT" merge-base --is-ancestor "$BASE" "$HEAD"
+          echo "HOST_SHA=$HEAD"
+          HEALTH=$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)
+          echo "HEALTH=$HEALTH"
+
+          echo '=== PRE SAFETY ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20);c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          exists=c.execute("select count(*) from sqlite_master where type='table' and name='api_universe_v1'").fetchone()[0]
+          prior=c.execute('select count(*) from api_universe_v1').fetchone()[0] if exists else 0
+          c.close()
+          print(json.dumps({'quick_check':q,'mode':r[0],'session':r[1],'real_orders_sent':r[2],'table_exists':bool(exists),'prior_rows':prior},sort_keys=True))
+          assert q=='ok' and r[0]=='PRODUCTION_PAPER' and int(r[2] or 0)==0
+          PY
+
+          echo '=== ADDITIVE API UNIVERSE BOOTSTRAP ==='
+          test -s "$SCRIPT"
+          sudo -n docker exec -w /app -i "$OBS" python - < "$SCRIPT"
+
+          echo '=== POST PROOF ==='
+          sudo -n docker exec -i "$OBS" python - <<'PY'
+          import sqlite3,json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20);c.row_factory=sqlite3.Row;c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          total=c.execute('select count(*) from api_universe_v1').fetchone()[0]
+          counts=[dict(x) for x in c.execute('select family,count(*) n from api_universe_v1 group by family order by family')]
+          invalid=c.execute('''select count(*) from api_universe_v1
+                               where api_declared<>1 or api_discovered<>1 or context_only<>0 or paper_candidate<>0''').fetchone()[0]
+          flags=c.execute('''select sum(contract_ready),sum(history_ready),sum(simulator_ready),sum(paper_candidate)
+                             from api_universe_v1''').fetchone()
+          samples=[dict(x) for x in c.execute("""select family,ticker,market,description,currency,source
+                                                  from api_universe_v1
+                                                  where family in ('ACCIONES-USA','ETF','FCI')
+                                                  order by family,ticker limit 40""")]
+          c.close()
+          out={'quick_check':q,'mode':r[0],'session':r[1],'real_orders_sent':r[2],
+               'total':total,'counts':counts,'invalid_rows':invalid,
+               'ready_sums':list(flags),'samples':samples}
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True))
+          assert q=='ok' and r[0]=='PRODUCTION_PAPER' and int(r[2] or 0)==0
+          assert total>0 and invalid==0
+          assert all(int(v or 0)==0 for v in flags)
+          print('API_UNIVERSE_POST=GREEN')
+          print('MUTATION=ADDITIVE_API_UNIVERSE_METADATA_ONLY')
+          print('AUTO_PAPER_PROMOTION=FALSE')
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          PY
+
+          echo '=== RUNTIME UNCHANGED ==='
+          echo "HOST_SHA_AFTER=$(git -C "$ROOT" rev-parse HEAD)"
+          sudo -n docker inspect -f 'observer_running={{.State.Running}}|restart={{.RestartCount}}|image={{.Config.Image}}' "$OBS"
+          echo 'RESTART_PERFORMED=NO'
+          echo 'ROLLBACK=NOT_USED'
+          HOST
