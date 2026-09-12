@@ -36,8 +36,12 @@ jobs:
           set -Eeuo pipefail
           ROOT=/opt/porota-trading
           OBS=porota_production_observer
-          TARGET=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
-          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          BASE=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          git -C "$ROOT" merge-base --is-ancestor "$BASE" "$HEAD"
+          echo HOST_SHA="$HEAD"
+          curl -fsS --max-time 5 http://127.0.0.1:8000/health
+          echo
           sudo -n docker exec -i "$OBS" python -u - <<'PY'
           import sqlite3, json
           db='/app/data/paper_v17/observer_v17.db'
