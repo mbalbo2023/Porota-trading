@@ -1,0 +1,95 @@
+name: RC6 market calendar runtime audit 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-market-calendar-runtime-audit-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Inspect calendar and market-session sources read only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          EXPECT='c8773c8346a880ac5ecfe99ece5555c5bb771524'
+          ACTUAL="$(git rev-parse HEAD)"
+          echo "HOST_SHA=$ACTUAL"
+          test "$ACTUAL" = "$EXPECT" || { echo 'ABORT=HOST_SHA_MOVED'; exit 31; }
+          test ! -e .git/index.lock || { echo 'ABORT=GIT_INDEX_LOCK_PRESENT'; exit 32; }
+
+          echo '=== SAFETY ==='
+          sudo -n docker exec porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print('SAFETY=%s|%s'%s)
+          assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          objs=[]
+          for typ,name in c.execute("select type,name from sqlite_master where type in ('table','view') order by name"):
+              low=name.lower()
+              if any(k in low for k in ('calendar','holiday','session','market','phase','trading_day','schedule')):
+                  objs.append((typ,name))
+          print('CALENDAR_OBJECTS='+','.join(t+':'+n for t,n in objs))
+          for typ,name in objs:
+              try:
+                  cols=[r[1] for r in c.execute('pragma table_info("'+name.replace('"','')+'")')]
+                  print('OBJECT='+name+'|COLS='+','.join(cols[:80]))
+                  n=c.execute('select count(*) from "'+name.replace('"','')+'"').fetchone()[0]
+                  print('OBJECT='+name+'|ROWS='+str(n))
+              except Exception as e:
+                  print('OBJECT='+name+'|READ=ERR:'+type(e).__name__)
+          cols=[r[1] for r in c.execute('pragma table_info(observer_state)')]
+          print('OBSERVER_STATE_COLS='+','.join(cols))
+          row=c.execute('select * from observer_state where id=1').fetchone()
+          for i,col in enumerate(cols):
+              low=col.lower()
+              if any(k in low for k in ('market','phase','session','calendar','trading','holiday')):
+                  print('OBSERVER_'+col.upper()+'='+str(row[i]))
+          c.close()
+          PY
+
+          echo '=== SAFE_FILE_CANDIDATES ==='
+          for root in /opt/porota-trading /usr/local/lib/porota-contract-evidence-rc6 /usr/local/sbin /etc/porota; do
+            [ -d "$root" ] || continue
+            find "$root" -maxdepth 3 -type f \( -iname '*calendar*' -o -iname '*holiday*' -o -iname '*market*' -o -iname '*session*' -o -iname '*trading*day*' \) 2>/dev/null | sed -n '1,120p'
+          done
+
+          echo '=== SAFE_SYMBOL_SCAN ==='
+          grep -RIlE 'trading_day|is_trading_day|market_calendar|market_session|holiday|feriado|BYMA.*calendar|calendar.*BYMA' \
+            /opt/porota-trading /usr/local/lib/porota-contract-evidence-rc6 2>/dev/null | sed -n '1,120p' || true
+
+          echo '=== TIMER_CURRENT ==='
+          systemctl cat porota-contract-evidence-rc6.timer 2>/dev/null || true
+          echo 'HOST_MUTATION=NONE'
+          echo 'HTTP_CALLS=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
