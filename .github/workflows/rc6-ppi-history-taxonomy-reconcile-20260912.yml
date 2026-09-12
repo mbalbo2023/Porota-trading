@@ -71,7 +71,6 @@ jobs:
           extra=hist-current
           print('MISSING='+str(len(missing))+' EXTRA='+str(len(extra)))
 
-          # Settlement mismatch: same symbol/family/market exists on opposite side under another settlement.
           hist_by3=defaultdict(set)
           cur_by3=defaultdict(set)
           for t,f,m,s in hist: hist_by3[(t,f,m)].add(s)
@@ -91,7 +90,6 @@ jobs:
           print('MISSING_SETTLEMENT_SAMPLES='+json.dumps(miss_settle[:80],default=str))
           print('EXTRA_SETTLEMENT_SAMPLES='+json.dumps(extra_settle[:80],default=str))
 
-          # Historical-only extras: where did they come from / are they known to earlier discovery/catalog?
           q_exact=sum(1 for x in extra if x in qshadow)
           q_same3=sum(1 for t,f,m,s in extra if any(qt==t and qf==f and qm==m for qt,qf,qm,qs in qshadow))
           if catalog:
@@ -104,13 +102,13 @@ jobs:
           print('EXTRA_IN_CATALOG_EXACT='+str(cat_exact))
           print('EXTRA_IN_CATALOG_SAME_SYMBOL_FAMILY_MARKET='+str(cat_same3))
 
-          # Source/date profile: classify old historical contracts vs very recent historical rows.
           prof=[]
           for t,f,m,s in sorted(extra,key=lambda x:(x[1],x[0],x[2],x[3])):
               r=h.execute("""select count(*) n,min(date) first_date,max(date) last_date,group_concat(distinct source) src
                 from history_canonical_v2 where symbol=? and instrument_type=? and market=? and settlement=?""",(t,f,m,s)).fetchone()
               prof.append((t,f,m,s,int(r['n'] or 0),r['first_date'],r['last_date'],r['src']))
-          print('EXTRA_SOURCE_COUNTS='+json.dumps(dict(Counter((p[1],p[7]) for p in prof)),default=str,sort_keys=True))
+          source_counts=Counter(f'{p[1]}|{p[7]}' for p in prof)
+          print('EXTRA_SOURCE_COUNTS='+json.dumps(dict(source_counts),sort_keys=True))
           recent_cut='2026-09-01'
           recent=[p for p in prof if (p[6] or '')>=recent_cut]
           old=[p for p in prof if (p[6] or '')<recent_cut]
@@ -119,14 +117,12 @@ jobs:
           print('EXTRA_RECENT_BY_FAMILY='+json.dumps(dict(Counter(p[1] for p in recent)),sort_keys=True))
           print('EXTRA_OLDER_BY_FAMILY='+json.dumps(dict(Counter(p[1] for p in old)),sort_keys=True))
 
-          # Settlement distributions on current vs history, especially ON/OPCIONES.
           for fam in ('ON','OPCIONES'):
               print(f'CURRENT_SETTLEMENTS_{fam}='+json.dumps(dict(Counter(s for t,f,m,s in current if f==fam)),sort_keys=True))
               print(f'HISTORY_SETTLEMENTS_{fam}='+json.dumps(dict(Counter(s for t,f,m,s in hist if f==fam)),sort_keys=True))
               print(f'MISSING_SETTLEMENTS_{fam}='+json.dumps(dict(Counter(s for t,f,m,s in missing if f==fam)),sort_keys=True))
               print(f'EXTRA_SETTLEMENTS_{fam}='+json.dumps(dict(Counter(s for t,f,m,s in extra if f==fam)),sort_keys=True))
 
-          # Core conclusion evidence: never delete extras based solely on current-universe absence.
           dup=h.execute("""select count(*) from (select symbol,instrument_type,market,settlement,date,count(*) n
             from history_canonical_v2 group by symbol,instrument_type,market,settlement,date having count(*)>1)""").fetchone()[0]
           print('CANONICAL_DUPLICATE_GROUPS='+str(dup)); assert dup==0
