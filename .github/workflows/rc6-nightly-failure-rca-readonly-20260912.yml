@@ -1,0 +1,64 @@
+name: RC6 nightly failure RCA readonly 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-nightly-failure-rca-readonly-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read failure evidence only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo "HOST_SHA=$(git rev-parse HEAD)"
+          echo '=== HISTORY_STATUS ==='
+          sudo -n systemctl status porota-ppi-argentina-nightly-rc6.service --no-pager -l || true
+          echo '=== HISTORY_JOURNAL_ROOT ==='
+          sudo -n journalctl -u porota-ppi-argentina-nightly-rc6.service --since '2026-09-12 05:25:00 UTC' --until '2026-09-12 05:50:00 UTC' --no-pager -o short-iso -n 200 || true
+          echo '=== HISTORY_PREFLIGHT_READONLY ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          import bf_production_paper_observer as m
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          print('SAFETY='+str(c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()))
+          print('SHADOW_EXISTS='+str(c.execute("select count(*) from sqlite_master where type='table' and name='ppi_argentina_api_shadow'").fetchone()[0]))
+          print('NIGHTLY_TABLE_EXISTS='+str(c.execute("select count(*) from sqlite_master where type='table' and name='ppi_argentina_nightly_history_attempts'").fetchone()[0]))
+          print('MARKET_PHASE_NOW='+str(m._market_phase()))
+          c.close()
+          PY
+          echo '=== WEB_STATUS ==='
+          sudo -n systemctl status porota-contract-evidence-weekend-backfill-rc6.service --no-pager -l || true
+          echo '=== WEB_JOURNAL_ROOT_LAST ==='
+          sudo -n journalctl -u porota-contract-evidence-weekend-backfill-rc6.service --since '2026-09-12 11:05:00 UTC' --until '2026-09-12 11:25:00 UTC' --no-pager -o short-iso -n 120 || true
+          echo 'HOST_MUTATION=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
