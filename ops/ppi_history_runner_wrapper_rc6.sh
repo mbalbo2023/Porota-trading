@@ -7,7 +7,12 @@ RUNNER=/opt/porota-ingest/ppi_history_runner_rc6.py
 PIDFILE=/tmp/porota-ppi-fullfamily-history.pid
 CHILD=""
 
-exec 9>"$LOCK"
+# The lock file is provisioned by the bounded deploy control plane. Open the
+# existing inode without O_CREAT: hardened Linux protected_regular may reject
+# O_CREAT on a regular file in /run/lock even for a privileged service when the
+# inode originated under another user. Never unlink/recreate a live lock inode.
+test -e "$LOCK" || { echo "BLOCKED=CANONICAL_LOCK_FILE_MISSING"; exit 76; }
+exec 9<>"$LOCK"
 if ! flock -n 9; then
   echo "BLOCKED=CANONICAL_HISTORY_LOCK_BUSY"
   exit 75
