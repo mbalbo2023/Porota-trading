@@ -114,3 +114,8 @@ def install() -> None:
     # that is actually served, without changing CURRENT_EOD or trading logic.
     import fp_dashboard_eod_route_fix_rc6 as eod_route_fix
     eod_route_fix.install()
+
+    # Add the next certified observability layer only after EOD is restored,
+    # so SWING_PAPER can coexist with CURRENT_EOD instead of replacing it.
+    import fq_dashboard_swing_options_telemetry_rc6 as strategy_telemetry
+    strategy_telemetry.install()
