@@ -82,3 +82,35 @@ Pendientes obligatorios:
 - Housekeeping: `PENDIENTE`.
 - Limpieza destructiva: `NO AUTORIZADA` sin clasificación previa.
 - Los 58 untracked permanecen preservados para auditoría posterior.
+
+
+---
+
+## Addendum — último deploy RC6 confirmado y continuidad de ingesta — 2026-09-12
+
+Este addendum actualiza el campo histórico “runtime canónico” de este checkpoint, que correspondía al cierre de F01. El contenido original de F01 y housekeeping queda preservado arriba y en el historial Git.
+
+### Último deploy de aplicación confirmado por GitHub Actions
+
+- Run final: `34675061113` — RC6 SWING Options Telemetry after EOD-only deploy.
+- Estado: validación y job de deploy/postflight `SUCCESS`.
+- Rama del deploy: `deploy/rc6-swing-options-telemetry-after-eodonly-20260912`.
+- SHA exacto desplegado y verificado por el workflow: `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d`.
+- Finalizado: `2026-09-12 05:18:01 UTC` (`02:18` Argentina).
+- Identidad validada: `17.0.0-rc6`, `PRODUCTION_PAPER`, `SIMULATED`, `REAL_ORDER_CAPABILITY=BLOCKED`, `REAL_ORDERS_SENT=0`.
+- Este commit está 13 commits adelante y 0 detrás del F01 `c8773c8346a880ac5ecfe99ece5555c5bb771524`; representa avance lineal RC6.
+- Deploy RC6 posterior a F01, previo al SWING: run `34674764193`, ruta EOD-only de Estrategias, éxito.
+
+### Ingesta PPI activa — aislada de limpieza y deploy
+
+- Estado informado por el usuario: el trabajo PPI sigue activo exclusivamente para ingesta de datos; no está realizando despliegues.
+- Rama de trabajo conocida: `ops/rc6-ppi-fullfamily-history-20260912`.
+- Esta rama y sus ejecuciones de ingesta quedan fuera de cualquier poda, cambio de base, reset o despliegue dentro de este paso.
+- No se canceló ni modificó ninguna ejecución PPI. No se desplegó código al host durante este paso.
+
+### Alcance de este paso
+
+- Se registra `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d` como último baseline de aplicación confirmado por Actions.
+- F01 permanece como antecedente RC6; no se lo trata como el último deploy.
+- No se eliminaron ramas, tags, archivos ni artefactos del servidor.
+- Housekeeping destructivo sigue pendiente de clasificación y aprobación específica.
