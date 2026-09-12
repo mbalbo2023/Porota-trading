@@ -1,0 +1,272 @@
+name: RC6 Guarded Disk Cleanup and Retention 2026-09-11
+
+on:
+  push:
+    branches: [infra/rc6-disk-cleanup-20260911]
+    paths:
+      - '.github/workflows/rc6-disk-cleanup-retention-20260911.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_disk_cleanup"
+          chmod 600 "$HOME/.ssh/porota_disk_cleanup"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Guarded cleanup on POROTA host
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_disk_cleanup" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          shopt -s nullglob
+          cd /opt/porota-trading
+
+          echo '=== POROTA RC6 GUARDED DISK CLEANUP ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HOST_HEAD=$(git rev-parse HEAD)"
+          before_avail=$(df -PB1 / | awk 'NR==2 {print $4}')
+          echo "BEFORE_AVAILABLE_BYTES=$before_avail"
+          df -h /
+
+          echo '--- PRE-RUNTIME SAFETY ---'
+          for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            if sudo -n docker inspect "$c" >/dev/null 2>&1; then
+              sudo -n docker inspect -f "CONTAINER=$c|RUNNING={{.State.Running}}|STATUS={{.State.Status}}|RESTARTS={{.RestartCount}}|IMAGE={{.Image}}" "$c"
+            fi
+          done
+          runtime_guard=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro', uri=True, timeout=30)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode, real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'{q}|{mode}|{real}')
+          PY
+          )
+          echo "RUNTIME_GUARD=$runtime_guard"
+          if [ "$runtime_guard" != 'ok|PRODUCTION_PAPER|0' ]; then
+            echo 'ABORT: runtime safety guard failed'
+            exit 40
+          fi
+          for c in porota_production_observer porota_production_dashboard; do
+            running=$(sudo -n docker inspect -f '{{.State.Running}}' "$c")
+            [ "$running" = true ] || { echo "ABORT: $c is not running"; exit 41; }
+          done
+
+          echo '--- CURRENT CONTAINER IMAGE REFERENCES ---'
+          mapfile -t used_images < <(sudo -n docker ps -aq | xargs -r sudo -n docker inspect -f '{{.Image}}' | sort -u)
+          printf 'USED_IMAGE=%s\n' "${used_images[@]}"
+          sudo -n docker ps -a --no-trunc --format 'CONTAINER={{.Names}}|IMAGE={{.Image}}|STATUS={{.Status}}'
+
+          image_is_used() {
+            local full="$1" x
+            for x in "${used_images[@]}"; do
+              [ "$x" = "$full" ] && return 0
+            done
+            return 1
+          }
+
+          active_config_references() {
+            local ref="$1"
+            grep -RqsF -- "$ref" /etc/systemd/system 2>/dev/null && return 0
+            [ -f /opt/porota-trading/docker-compose.yml ] && grep -qsF -- "$ref" /opt/porota-trading/docker-compose.yml && return 0
+            return 1
+          }
+
+          echo '--- GUARDED IMAGE CLEANUP ---'
+          deleted_images=0
+          skipped_images=0
+          declare -a candidate_refs=(
+            'porota-trading-bot:17.0.0-rc6-candidate-f8adec8a'
+            'porota-iol-history-shadow:17.0.0-rc6'
+            'porota-trading-dashboard:17.0.0-rc6-operator-ux'
+          )
+          declare -A seen_image_ids=()
+          for ref in "${candidate_refs[@]}"; do
+            full=$(sudo -n docker image inspect -f '{{.Id}}' "$ref" 2>/dev/null || true)
+            if [ -z "$full" ]; then
+              echo "IMAGE_ABSENT=$ref"
+              continue
+            fi
+            if image_is_used "$full"; then
+              echo "IMAGE_KEEP_CONTAINER_REFERENCE=$ref|$full"
+              skipped_images=$((skipped_images+1))
+              continue
+            fi
+            if active_config_references "$ref"; then
+              echo "IMAGE_KEEP_ACTIVE_CONFIG_REFERENCE=$ref|$full"
+              skipped_images=$((skipped_images+1))
+              continue
+            fi
+            if [ -z "${seen_image_ids[$full]+x}" ]; then
+              echo "IMAGE_DELETE_CONFIRMED_UNUSED=$ref|$full"
+              sudo -n docker image rm "$full"
+              seen_image_ids[$full]=1
+              deleted_images=$((deleted_images+1))
+            fi
+          done
+
+          mapfile -t dangling_ids < <(sudo -n docker images -q -f dangling=true | sort -u)
+          for short in "${dangling_ids[@]}"; do
+            [ -n "$short" ] || continue
+            full=$(sudo -n docker image inspect -f '{{.Id}}' "$short" 2>/dev/null || true)
+            [ -n "$full" ] || continue
+            if image_is_used "$full"; then
+              echo "DANGLING_KEEP_CONTAINER_REFERENCE=$full"
+              continue
+            fi
+            if [ -z "${seen_image_ids[$full]+x}" ]; then
+              echo "DANGLING_DELETE_CONFIRMED_UNUSED=$full"
+              sudo -n docker image rm "$full"
+              seen_image_ids[$full]=1
+              deleted_images=$((deleted_images+1))
+            fi
+          done
+          echo "IMAGES_DELETED=$deleted_images"
+          echo "IMAGES_SKIPPED=$skipped_images"
+
+          echo '--- BUILD CACHE CLEANUP ---'
+          sudo -n docker builder prune -af --keep-storage 512MB
+
+          deleted_backup_bytes=0
+          deleted_backup_count=0
+
+          validate_db_gz() {
+            local src="$1" tmp
+            tmp=$(mktemp /tmp/porota-backup-validate-XXXXXX.db)
+            trap 'rm -f "$tmp"' RETURN
+            gzip -t "$src"
+            gzip -dc "$src" > "$tmp"
+            python3 - "$tmp" <<'PY'
+          import sqlite3, sys
+          p=sys.argv[1]
+          c=sqlite3.connect(f'file:{p}?mode=ro', uri=True, timeout=30)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          c.close()
+          if q != 'ok':
+              raise SystemExit(f'quick_check={q}')
+          print('BACKUP_DB_QUICK_CHECK=ok')
+          PY
+            rm -f "$tmp"
+            trap - RETURN
+          }
+
+          retain_one_db_backup() {
+            local dir="$1" pattern="$2" label="$3"
+            local -a files sorted
+            files=("$dir"/$pattern)
+            if [ ${#files[@]} -eq 0 ]; then
+              echo "${label}_BACKUPS=0"
+              return 0
+            fi
+            mapfile -t sorted < <(printf '%s\n' "${files[@]}" | sort -r)
+            local keep="${sorted[0]}"
+            echo "${label}_KEEP_CANDIDATE=$keep"
+            validate_db_gz "$keep"
+            echo "${label}_KEEP_VALIDATED=$keep"
+            local old sz
+            if [ ${#sorted[@]} -gt 1 ]; then
+              for old in "${sorted[@]:1}"; do
+                sz=$(stat -c %s "$old")
+                echo "${label}_DELETE_OLD=$old|BYTES=$sz"
+                rm -f -- "$old"
+                deleted_backup_bytes=$((deleted_backup_bytes+sz))
+                deleted_backup_count=$((deleted_backup_count+1))
+              done
+            fi
+          }
+
+          retain_one_general_backup() {
+            local dir='/opt/porota-backups'
+            local -a files sorted
+            files=("$dir"/porota-general-*.tar.gz)
+            if [ ${#files[@]} -eq 0 ]; then
+              echo 'GENERAL_BACKUPS=0'
+              return 0
+            fi
+            mapfile -t sorted < <(printf '%s\n' "${files[@]}" | sort -r)
+            local keep="${sorted[0]}"
+            echo "GENERAL_KEEP_CANDIDATE=$keep"
+            gzip -t "$keep"
+            tar -tzf "$keep" | awk '$0=="porota-trading/BACKUP_MANIFEST.json" {found=1} END {exit found?0:1}'
+            tar -xOzf "$keep" porota-trading/BACKUP_MANIFEST.json | python3 -m json.tool >/dev/null
+            echo "GENERAL_KEEP_VALIDATED=$keep"
+            local old sz
+            if [ ${#sorted[@]} -gt 1 ]; then
+              for old in "${sorted[@]:1}"; do
+                sz=$(stat -c %s "$old")
+                echo "GENERAL_DELETE_OLD=$old|BYTES=$sz"
+                rm -f -- "$old"
+                deleted_backup_bytes=$((deleted_backup_bytes+sz))
+                deleted_backup_count=$((deleted_backup_count+1))
+              done
+            fi
+          }
+
+          echo '--- BACKUP RETENTION: KEEP ONE VALID ROUTINE COPY ---'
+          retain_one_general_backup
+          retain_one_db_backup '/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper' 'observer_????-??-??.db.gz' 'OBSERVER'
+          retain_one_db_backup '/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history' 'market_history_????-??-??.db.gz' 'HISTORY'
+          echo "BACKUPS_DELETED_COUNT=$deleted_backup_count"
+          echo "BACKUPS_DELETED_BYTES=$deleted_backup_bytes"
+          echo 'SPECIAL_EVIDENCE_PRESERVED=/opt/porota-trading/data/backups/wave4_closure'
+          echo 'LIVE_DB_PRESERVED=/opt/porota-trading/data/paper_v17/observer_v17.db'
+          echo 'LIVE_HISTORY_DB_PRESERVED=/opt/porota-trading/data/market_history.db'
+
+          echo '--- POST-RUNTIME SAFETY ---'
+          for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            if sudo -n docker inspect "$c" >/dev/null 2>&1; then
+              sudo -n docker inspect -f "CONTAINER=$c|RUNNING={{.State.Running}}|STATUS={{.State.Status}}|RESTARTS={{.RestartCount}}|IMAGE={{.Image}}" "$c"
+            fi
+          done
+          post_guard=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro', uri=True, timeout=30)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode, real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'{q}|{mode}|{real}')
+          PY
+          )
+          echo "POST_RUNTIME_GUARD=$post_guard"
+          [ "$post_guard" = 'ok|PRODUCTION_PAPER|0' ] || { echo 'POSTCHECK FAILED'; exit 50; }
+
+          echo '--- POST INVENTORY ---'
+          sudo -n docker system df
+          sudo -n docker images --no-trunc --format 'IMAGE={{.Repository}}|{{.Tag}}|{{.ID}}|{{.Size}}'
+          echo 'GENERAL_BACKUPS_REMAINING:'
+          ls -lh /opt/porota-backups/porota-general-*.tar.gz 2>/dev/null || true
+          echo 'OBSERVER_BACKUPS_REMAINING:'
+          ls -lh /opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper/observer_*.db.gz 2>/dev/null || true
+          echo 'HISTORY_BACKUPS_REMAINING:'
+          ls -lh /opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history/market_history_*.db.gz 2>/dev/null || true
+          after_avail=$(df -PB1 / | awk 'NR==2 {print $4}')
+          echo "AFTER_AVAILABLE_BYTES=$after_avail"
+          echo "NET_AVAILABLE_GAIN_BYTES=$((after_avail-before_avail))"
+          df -h /
+          echo 'CLEANUP_COMPLETE=YES'
+          REMOTE
