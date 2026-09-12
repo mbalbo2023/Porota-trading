@@ -167,3 +167,8 @@ Se revisaron únicamente las referencias con nombre Codespaces/housekeeping, sin
 - `codespace-config` compara 11 commits exclusivos y 18 detrás. Sus siete rutas únicas forman un conjunto histórico de entorno/configuración de desarrollo y smoke test; no se fusiona a `main` ni se trata como código operativo RC6. Se conserva temporalmente como referencia hasta cerrar dependencias y decisión de retiro.
 
 Resultado de clasificación para las referencias revisadas: siete refs redundantes listas técnicamente para borrar, una ref CI redundante candidata a borrar, una rama de configuración divergente en cuarentena. **No se borró ninguna** por falta de operación de borrado en la conexión y por no poder verificar rulesets/propietarios desde esta integración. No se examinó ninguna ref del workstream de ingesta.
+
+
+## Límite de inventario histórico — 2026-09-12
+
+En la auditoría de solo lectura, una comparación de referencias históricas/audit previamente documentadas devolvió una divergencia amplia y listas de rutas fuera del alcance de housekeeping. Se detuvo la inspección de esos diffs inmediatamente; no se abrieron archivos, no se ejecutaron workflows y no se modificó ninguna rama o recurso operativo. Esas referencias quedan en conservación preventiva y no son candidatas de borrado en este lote. El inventario del paso 2 sigue limitado a referencias independientes de ese análisis. Para ampliarlo hace falta un método que excluya de manera verificable el workstream de ingesta; hasta entonces, no se presume que los datos obtenidos cubran todo el grafo.
