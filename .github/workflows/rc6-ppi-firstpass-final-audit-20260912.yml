@@ -1,0 +1,112 @@
+name: RC6 PPI first-pass final audit 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-firstpass-final-audit-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Wait for first pass then certify read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+
+          ready=0
+          for _ in $(seq 1 180); do
+            counts="$(sudo -n docker exec porota_production_observer python -c "import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);print(str(c.execute('select count(*) from financial_instrument_catalog').fetchone()[0])+':'+str(c.execute('select count(*) from production_history_attempts').fetchone()[0]));c.close()")"
+            echo "FIRSTPASS_COUNTS=$counts"
+            catalog="${counts%%:*}"
+            attempts="${counts##*:}"
+            if [ "$catalog" -eq 901 ] && [ "$attempts" -ge 901 ]; then ready=1; break; fi
+            sleep 20
+          done
+          test "$ready" = 1 || { echo 'ABORT=FIRSTPASS_NOT_READY'; exit 32; }
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,sqlite3
+          from pathlib import Path
+
+          odb=Path('/app/data/paper_v17/observer_v17.db')
+          c=sqlite3.connect(f'file:{odb}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+          s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'SAFETY={s[0]}|{s[1]}')
+          assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          catalog=c.execute('select count(*) from financial_instrument_catalog').fetchone()[0]
+          attempts=c.execute('select count(*) from production_history_attempts').fetchone()[0]
+          print(f'CATALOG_IDENTITIES={catalog}')
+          print(f'ATTEMPT_IDENTITIES={attempts}')
+          print('=== FIRSTPASS_BY_FAMILY_STATE ===')
+          for r in c.execute('''select instrument_type,state,count(*) identities,sum(valid_rows) valid_rows
+             from production_history_attempts group by instrument_type,state order by instrument_type,state'''):
+              print(json.dumps(dict(r),sort_keys=True))
+          print('=== FIRSTPASS_BY_FAMILY_ROLLUP ===')
+          for r in c.execute('''select f.instrument_type,count(*) catalog,
+             sum(case when a.symbol is not null then 1 else 0 end) attempted,
+             sum(case when a.valid_rows>0 then 1 else 0 end) usable,
+             sum(case when a.state='VALID_PAYLOAD' then 1 else 0 end) complete,
+             sum(case when a.state='PARTIAL' then 1 else 0 end) partial,
+             sum(case when a.state='EMPTY_OR_INVALID' then 1 else 0 end) empty_invalid,
+             sum(case when a.state='ERROR' then 1 else 0 end) errors,
+             sum(coalesce(a.valid_rows,0)) valid_rows
+             from financial_instrument_catalog f
+             left join production_history_attempts a on a.symbol=f.ticker
+               and a.instrument_type=f.instrument_type and a.settlement=f.settlement
+             group by f.instrument_type order by f.instrument_type'''):
+              print(json.dumps(dict(r),sort_keys=True))
+          missing=c.execute('''select count(*) from financial_instrument_catalog f
+             left join production_history_attempts a on a.symbol=f.ticker
+               and a.instrument_type=f.instrument_type and a.settlement=f.settlement
+             where a.symbol is null''').fetchone()[0]
+          print('UNATTEMPTED='+str(missing))
+          c.close()
+
+          hdb=Path('/app/data/market_history.db')
+          h=sqlite3.connect(f'file:{hdb}?mode=ro',uri=True); h.row_factory=sqlite3.Row; h.execute('pragma query_only=on')
+          assert h.execute('pragma quick_check').fetchone()[0]=='ok'
+          tabs={r[0] for r in h.execute("select name from sqlite_master where type='table'")}
+          print('=== CANONICAL_V2_PPI_BY_FAMILY ===')
+          if 'history_canonical_v2' in tabs:
+              for r in h.execute("""select instrument_type,count(distinct symbol) symbols,count(*) rows,
+                   min(date) first_date,max(date) last_date
+                   from history_canonical_v2 where source like 'PPI%'
+                   group by instrument_type order by instrument_type"""):
+                  print(json.dumps(dict(r),sort_keys=True))
+          else:
+              print('CANONICAL_V2_MISSING=YES')
+          h.close()
+          assert catalog==901 and attempts>=901 and missing==0
+          print('FIRSTPASS_CERTIFIED=YES')
+          print('HOST_MUTATION=NONE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
