@@ -1,0 +1,199 @@
+name: RC6 PPI Argentina nightly install 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-argentina-nightly-install-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Install fail-closed nightly API history timer
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+
+          ready=0
+          for _ in $(seq 1 120); do
+            n="$(sudo -n docker exec porota_production_observer python -c "import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);e=c.execute(\"select count(*) from sqlite_master where type='table' and name='ppi_argentina_api_shadow'\").fetchone()[0];print(c.execute('select count(*) from ppi_argentina_api_shadow').fetchone()[0] if e else 0);c.close()" 2>/dev/null || echo 0)"
+            if [ "$n" -gt 0 ] 2>/dev/null; then echo "ARGENTINA_API_SHADOW_READY=$n"; ready=1; break; fi
+            sleep 15
+          done
+          test "$ready" = 1 || { echo 'ABORT=ARGENTINA_API_SHADOW_NOT_READY'; exit 32; }
+
+          cat >/tmp/porota-ppi-argentina-nightly-rc6.sh <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -n 9 || { echo 'SKIP=PPI_HISTORY_LOCK_BUSY'; exit 0; }
+          for u in porota-history-postclose-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do
+            state="$(systemctl is-active "$u" 2>/dev/null || true)"
+            if [ "$state" = active ] || [ "$state" = activating ]; then echo "SKIP=CONCURRENT_HISTORY_SERVICE:$u"; exit 0; fi
+          done
+          timeout 2400 docker exec -i porota_production_observer python - <<'PY'
+          import json,time
+          from datetime import timedelta
+          import bf_production_paper_observer as m
+          import ct_ppi_history_salvage_hf6 as salvage
+          from bl_candle_engine import canonical,archive_raw
+          try:
+              from fb_raw_evidence_exact_v1 import enabled as exact_enabled, archive_wrapper as archive_exact
+          except Exception:
+              exact_enabled=lambda: False
+              archive_exact=None
+
+          LIMIT=100
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              assert m._market_phase()=='CLOSED'
+              exists=c.execute("select count(*) from sqlite_master where type='table' and name='ppi_argentina_api_shadow'").fetchone()[0]
+              assert exists==1
+              c.execute('''CREATE TABLE IF NOT EXISTS ppi_argentina_nightly_history_attempts(
+                ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,currency TEXT NOT NULL,
+                settlement TEXT NOT NULL,attempted_at TEXT NOT NULL,state TEXT NOT NULL,provider_rows INTEGER NOT NULL,
+                valid_rows INTEGER NOT NULL,detail TEXT NOT NULL,
+                PRIMARY KEY(ticker,instrument_type,market,currency,settlement))''')
+              rows=c.execute('''SELECT s.ticker,s.instrument_type,s.market,s.currency,s.settlement,s.metadata_json,
+                  p.state,p.attempted_at,n.state,n.attempted_at
+                FROM ppi_argentina_api_shadow s
+                LEFT JOIN production_history_attempts p ON p.symbol=s.ticker AND p.instrument_type=s.instrument_type AND p.settlement=s.settlement
+                LEFT JOIN ppi_argentina_nightly_history_attempts n ON n.ticker=s.ticker AND n.instrument_type=s.instrument_type
+                  AND n.market=s.market AND n.currency=s.currency AND n.settlement=s.settlement
+                WHERE s.market IN ('BYMA','ROFEX','A3','OTC')
+                  AND s.instrument_type NOT IN ('ACCIONES-USA','FCI-EXTERIOR')
+                ORDER BY CASE WHEN p.symbol IS NULL AND n.ticker IS NULL THEN 0
+                              WHEN COALESCE(n.state,p.state) IN ('ERROR','EMPTY_OR_INVALID') THEN 1 ELSE 2 END,
+                         COALESCE(n.attempted_at,p.attempted_at,'') ASC,s.instrument_type,s.ticker
+                LIMIT ?''',(LIMIT,)).fetchall()
+          if not rows:
+              print('NIGHTLY_NO_TARGETS=YES'); raise SystemExit(0)
+          end=m.datetime.now(m.TZ).date(); start=end-timedelta(days=365)
+          key,secret=m._secret(); reader=m.ProductionMarketReader(key,secret,audit=store.audit_http); reader.login_once()
+          summary={}; total_valid=0
+          try:
+              for ticker,kind,market,currency,settlement,metadata_json,prev_state,prev_at,n_state,n_at in rows:
+                  attempted=m.now_iso(); state='ERROR'; provider=valid=0; detail=''
+                  try:
+                      payload=reader.history(ticker,kind,settlement,start,end)
+                      provider=len(payload) if isinstance(payload,list) else 0
+                      valid=m._history_count(payload,as_of=attempted,date_from=start,date_to=end)
+                      state='VALID_PAYLOAD' if valid and valid==provider else 'PARTIAL' if valid else 'EMPTY_OR_INVALID'
+                      wrapper={'symbol':ticker,'asset_class':kind,'market':market,'settlement':settlement,
+                               'date_from':start.isoformat(),'date_to':end.isoformat(),'metadata_json':metadata_json,
+                               'valid_rows':valid,'payload_json':json.dumps(payload,ensure_ascii=False,default=str)}
+                      row_key=canonical([ticker,kind,market,settlement,attempted])
+                      if exact_enabled() and archive_exact:
+                          archive_exact(row_key=row_key,wrapper=wrapper,recorded_at=attempted,quality=state)
+                      else:
+                          with store.connect() as c:
+                              archive_raw(c,origin='PPI_HISTORY_ARGENTINA_API',row_key=row_key,payload=wrapper,recorded_at=attempted,quality=state)
+                      try:
+                          salvage.ingest_ppi_payload(store,symbol=ticker,instrument_type=kind,market=market,
+                            settlement=settlement,payload=payload,requested_from=start,requested_to=end,attempted_at=attempted)
+                      except Exception as exc:
+                          detail='V2:'+type(exc).__name__+':'+str(exc)[:120]
+                      with store.connect() as c:
+                          c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
+                            (ticker,kind,settlement,attempted,state,valid,'PPI Argentina API nightly; '+detail))
+                          if state=='VALID_PAYLOAD':
+                              c.execute('INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)',
+                                (ticker,kind,settlement,start.isoformat(),end.isoformat(),attempted,valid,json.dumps(payload,ensure_ascii=False,default=str)))
+                  except Exception as exc:
+                      detail=type(exc).__name__+':'+str(exc)[:180]
+                      state='ERROR'
+                  with store.connect() as c:
+                      c.execute('''INSERT OR REPLACE INTO ppi_argentina_nightly_history_attempts VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                        (ticker,kind,market,currency,settlement,attempted,state,provider,valid,detail))
+                  z=summary.setdefault(kind,{'tested':0,'usable':0,'empty':0,'errors':0,'valid_rows':0})
+                  z['tested']+=1; z['valid_rows']+=valid; total_valid+=valid
+                  if state in ('VALID_PAYLOAD','PARTIAL'): z['usable']+=1
+                  elif state=='EMPTY_OR_INVALID': z['empty']+=1
+                  else: z['errors']+=1
+                  time.sleep(0.08)
+              metrics=reader.metrics
+          finally:
+              reader.close()
+          print('ARG_NIGHTLY_SUMMARY='+json.dumps(summary,sort_keys=True))
+          print('ARG_NIGHTLY_VALID_ROWS='+str(total_valid))
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          print('SCOPE=ARGENTINA_LOCAL_API_ONLY')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          SCRIPT
+          sudo -n install -m 0755 -o root -g root /tmp/porota-ppi-argentina-nightly-rc6.sh /usr/local/sbin/porota-ppi-argentina-nightly-rc6.sh
+          rm -f /tmp/porota-ppi-argentina-nightly-rc6.sh
+
+          cat >/tmp/porota-ppi-argentina-nightly-rc6.service <<'UNIT'
+          [Unit]
+          Description=Porota RC6 PPI Argentina API historical ingestion
+          After=docker.service network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/porota-ppi-argentina-nightly-rc6.sh
+          TimeoutStartSec=45min
+          Nice=10
+          IOSchedulingClass=idle
+          UNIT
+          cat >/tmp/porota-ppi-argentina-nightly-rc6.timer <<'TIMER'
+          [Unit]
+          Description=Nightly Porota PPI Argentina API historical ingestion
+
+          [Timer]
+          OnCalendar=*-*-* 02:30:00 America/Argentina/Buenos_Aires
+          RandomizedDelaySec=10m
+          Persistent=true
+          Unit=porota-ppi-argentina-nightly-rc6.service
+
+          [Install]
+          WantedBy=timers.target
+          TIMER
+          sudo -n install -m 0644 -o root -g root /tmp/porota-ppi-argentina-nightly-rc6.service /etc/systemd/system/porota-ppi-argentina-nightly-rc6.service
+          sudo -n install -m 0644 -o root -g root /tmp/porota-ppi-argentina-nightly-rc6.timer /etc/systemd/system/porota-ppi-argentina-nightly-rc6.timer
+          rm -f /tmp/porota-ppi-argentina-nightly-rc6.service /tmp/porota-ppi-argentina-nightly-rc6.timer
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl enable --now porota-ppi-argentina-nightly-rc6.timer
+          echo "TIMER_ENABLED=$(systemctl is-enabled porota-ppi-argentina-nightly-rc6.timer)"
+          echo "TIMER_ACTIVE=$(systemctl is-active porota-ppi-argentina-nightly-rc6.timer)"
+          systemctl list-timers porota-ppi-argentina-nightly-rc6.timer --no-pager
+          echo 'NIGHTLY_SCHEDULE=02:30 America/Argentina/Buenos_Aires (+0..10m randomized)'
+          echo 'NIGHTLY_BATCH_LIMIT=100'
+          echo 'SCOPE=ARGENTINA_LOCAL_API_ONLY'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
