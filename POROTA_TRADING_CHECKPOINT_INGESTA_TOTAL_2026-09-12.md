@@ -13,13 +13,13 @@ No se adelanta una fase sobre la anterior. Universo DATA y universo operacional/
 
 ## DIRECTIVA MAESTRA — BINDING
 
-El objetivo no es una muestra ni un subconjunto arbitrario. La fuente maestra primaria es **PPI API** y se debe capturar todo lo que la API de PPI realmente exponga y sea utilizable para operar: familias, identidades, metadatos/contratos y el histórico disponible. El histórico se completa hacia atrás por chunks idempotentes hasta agotar la cobertura que PPI API pueda entregar o alcanzar una frontera técnica explícitamente demostrada; las ventanas por familia son tamaños de chunk/bootstrap, no un límite definitivo de cobertura.
+La fuente maestra primaria es **PPI API**. Debe capturarse todo lo que PPI API realmente exponga y sea utilizable para operar: familias, identidades, metadatos/contratos y el histórico disponible. El histórico se completa hacia atrás por chunks idempotentes hasta agotar la cobertura que PPI API pueda entregar o alcanzar una frontera técnica explícitamente demostrada; las ventanas por familia son tamaños de chunk/bootstrap, no un límite definitivo.
 
 Una vez agotada PPI API se genera un manifiesto de gaps por identidad/campo/fecha. Recién entonces se usa **PPI Web scraping autenticado y read-only** para cubrir diferencias o información no expuesta por API. Sólo después del cierre PPI API + PPI Web se permite **IOL** como complemento residual y nunca como reemplazo de PPI.
 
-El resultado debe converger a **un único maestro canónico** para consumo del motor, con identidad completa `(ticker,instrument_type,market,currency,settlement)`, precedencia de fuente `PPI_API > PPI_AUTHENTICATED_WEB > IOL_RESIDUAL`, provenance obligatoria y versiones/evidencia preservadas fuera de la superficie canónica activa. No se aceptan duplicados silenciosos, sobreescrituras silenciosas ni dos productores canónicos simultáneos.
+El resultado debe converger a **un único maestro canónico** para consumo del motor, con identidad completa `(ticker,instrument_type,market,currency,settlement)`, precedencia `PPI_API > PPI_AUTHENTICATED_WEB > IOL_RESIDUAL`, provenance obligatoria y versiones/evidencia preservadas fuera de la superficie canónica activa. No se aceptan duplicados silenciosos, sobreescrituras silenciosas ni dos productores canónicos simultáneos.
 
-Toda exclusión actual de una familia/mercado/endpoint es provisional hasta demostrar que PPI no lo expone o que no aplica al universo operativo; no se convierte en exclusión definitiva sin justificación explícita. En particular, universos no incluidos en el certificado local actual deben quedar registrados como gap a verificar y no olvidados.
+Toda exclusión actual de familia/mercado/endpoint es provisional hasta demostrar que PPI no lo expone o que no aplica al universo operativo. Nada queda olvidado por el solo hecho de no estar en el certificado actual.
 
 ## HITO 1 — PPI API DISCOVERY CERTIFICADO — GREEN
 
@@ -28,7 +28,7 @@ Run definitivo: `34701618310` — `SUCCESS`.
 
 Evidencia: `CERT_BASE_CATALOG=901`, `CERT_DIRECT_UNIQUE=1059`, `CERT_TRUSTED_TOTAL=1960`, `CERT_SHADOW_TOTAL=1960`, `CERT_EXTRA=0`, `CERT_MISSING=0`, `CERT_SHADOW_DUP_GROUPS=0`, errores discovery=0, seguridad antes/después `PRODUCTION_PAPER|0`, `ORDER_ROUTES=NOT_CALLED`, `REAL_ORDERS_SENT=0`.
 
-Universo local certificado PPI API actual:
+Universo local certificado actual:
 
 | Familia | Identidades |
 |---|---:|
@@ -45,7 +45,7 @@ Universo local certificado PPI API actual:
 | OPCIONES | 437 |
 | **TOTAL** | **1.960** |
 
-Mercados certificados en este universo local: `BYMA`, `ROFEX`, `A3`, `OTC`. `ACCIONES-USA`, `FCI-EXTERIOR`, `NYSE`, `NASDAQ` y ETF local no forman parte de las 1.960 identidades certificadas actuales; esto **no equivale a una exclusión maestra definitiva**. Deben quedar como gaps de cobertura/taxonomía a verificar contra lo que PPI exponga, sin inventar identidades.
+Mercados certificados en este universo local: `BYMA`, `ROFEX`, `A3`, `OTC`. `ACCIONES-USA`, `FCI-EXTERIOR`, `NYSE`, `NASDAQ` y ETF local no forman parte de las 1.960 actuales; esto **no equivale a exclusión maestra definitiva** y queda como gap de cobertura/taxonomía a verificar contra PPI.
 
 ## RCA — sobre-descubrimiento 8.422 → 1.960 — CERRADO
 
@@ -53,37 +53,36 @@ Run reparación `34700865427` — `SUCCESS`. Un closeout anterior generó 6.462 
 
 ## AISLAMIENTO TEMPORAL DE INGESTA — ACTIVO
 
-Por instrucción del usuario, todos los schedulers/agentes que puedan interferir permanecen pausados hasta terminar este closeout y luego se replanifican. Los 18 timers POROTA relevados quedaron `disabled + inactive`; el manifest reversible está en `/opt/porota-trading/data/audit/ingestion_isolation_pause_20260912.txt`. Observer/dashboard/runtime y servicios core no productores permanecen activos.
+Los schedulers/agentes que puedan interferir permanecen pausados hasta terminar este closeout y luego se replanifican. Los 18 timers POROTA relevados quedaron `disabled + inactive`; manifest reversible: `/opt/porota-trading/data/audit/ingestion_isolation_pause_20260912.txt`. Observer/dashboard/runtime y servicios core no productores permanecen activos.
 
-No se reactivan productores recurrentes del histórico y no se usa IOL durante PPI API/PPI Web. Sólo se permite un productor canónico por vez. Los probes/monitores read-only no cuentan como productores y no pueden mutar datos.
+No se reactivan productores recurrentes del histórico y no se usa IOL durante PPI API/PPI Web. Sólo se permite un productor canónico por vez. Probes/monitores read-only no cuentan como productores.
 
 ## FASE 2 — PPI API HISTORY CLOSEOUT — STORAGE-GATED
 
-### Regla crítica de almacenamiento — BINDING TEMPORAL
+### Regla de almacenamiento — BINDING TEMPORAL
 
-La reserva anterior de 8/6 GiB queda reemplazada por instrucción del usuario. Durante esta ingesta se prioriza completar PPI y después se decidirá la política final de almacenamiento con mediciones reales.
+La política anterior 8/6 GiB fue reemplazada por instrucción del usuario. Durante esta ingesta se prioriza completar PPI y la política final de almacenamiento/retención se decide con volumen real al terminar.
 
-Política temporal vigente:
-
-- mínimo libre para iniciar/continuar un batch masivo: **3 GiB**;
+- mínimo libre para iniciar/continuar batch: **3 GiB**;
 - **hard stop: 2 GiB libres**;
-- guard porcentual alineado: aproximadamente **88% usado** como máximo para iniciar un batch;
-- la política final de retención/almacenamiento se define **después** de terminar PPI API + gaps PPI Web y medir volumen real;
-- batches pequeños, con control de disco entre batches;
-- se omite lo ya cubierto: no se vuelve a descargar por rutina;
-- `ERROR`/faltante se reintenta de forma acotada e idempotente;
-- `EMPTY_OR_INVALID` confirmado se clasifica como residual para PPI Web, no entra en loop infinito;
-- provenance obligatoria y deduplicación canónica v2;
-- la evidencia raw exacta usa almacenamiento content-addressed/gzip cuando `EXTERNAL_EXACT_V1` está activo;
-- después del backfill completo se migra a **delta incremental**, nunca a repetir innecesariamente toda la historia.
+- guard porcentual: aproximadamente **88% usado** como máximo para iniciar batch;
+- batches pequeños con control de disco entre batches;
+- omitir lo ya cubierto;
+- reintentos de `ERROR` acotados e idempotentes;
+- `EMPTY_OR_INVALID` confirmado pasa a residual PPI Web, no loop infinito;
+- provenance + deduplicación canónica obligatorias;
+- evidencia raw exacta content-addressed/gzip cuando `EXTERNAL_EXACT_V1` está activo;
+- post-backfill: delta incremental, no repetición masiva innecesaria.
 
-### Chunks iniciales de histórico PPI API
+Workflow de auditoría actualizado con esta política: `.github/workflows/rc6-ppi-history-storage-audit-20260912.yml`, commit `023730072194d97c52aa84ff0137f20219e66611`.
 
-Los siguientes valores son **tamaños de chunk/bootstrap**, no límites máximos del histórico final. Si PPI API entrega datos anteriores, el proceso debe seguir retrocediendo de forma serializada e idempotente hasta agotar la historia disponible o documentar una frontera del proveedor.
+### Chunks iniciales PPI API
+
+Son tamaños de chunk/bootstrap, no límites de cobertura final:
 
 | Familia | Chunk inicial |
 |---|---:|
-| ACCIONES | 365 días calendario |
+| ACCIONES | 365 días |
 | BONOS | 365 días |
 | CAUCIONES | 365 días |
 | CEDEARS | 365 días |
@@ -95,52 +94,107 @@ Los siguientes valores son **tamaños de chunk/bootstrap**, no límites máximos
 | LICITACIONES | 90 días |
 | LEBACS/CEDI | 90 días |
 
-Futuros/opciones y familias de vida corta usan chunks menores para evitar volumen/API inútil, pero esto no autoriza a cortar cobertura si el proveedor expone histórico adicional relevante.
+Si PPI API entrega historia anterior, se sigue retrocediendo serializada e idempotentemente hasta agotarla o demostrar la frontera del proveedor.
 
-### Integridad, idempotencia y anti-duplicación — BINDING
+### Integridad / idempotencia / anti-duplicación — BINDING
 
-Entre batches y al cierre de cada familia se verifican como mínimo: `PRAGMA quick_check=ok`; universo/identidades esperadas; cero grupos duplicados en la clave canónica completa; una sola fila canónica activa por identidad+fecha; hashes/versiones para impedir repetir payload idéntico; provenance/origen; conteos antes/después; fechas mínima/máxima; gaps; errores/empty; y preservación de raw/quarantine sin reinsertarlos en el maestro.
+Entre batches y al cierre de cada familia: `PRAGMA quick_check=ok`; universo/identidades esperadas; cero duplicados por clave canónica completa; una fila canónica activa por identidad+fecha; hashes/versiones para no repetir payload idéntico; provenance; conteos antes/después; min/max date; gaps; errores/empty; raw/quarantine preservados fuera del maestro activo.
 
-`cu_history_store_v2_hf6.py` evita agregar una versión idéntica cuando ya existe el mismo payload hash para identidad/fecha/fuente y mantiene la superficie canónica deduplicada. Las diferencias legítimas entre fuentes/versiones se conservan como evidencia/versionado y se resuelven por precedencia, no creando múltiples maestros.
+`cu_history_store_v2_hf6.py` mantiene PK canónica `(symbol,instrument_type,market,settlement,date)` y versiones append-only; diferencias legítimas de fuente/versiones se resuelven por precedencia, no creando múltiples maestros.
 
 ### Política incremental posterior
 
-Una vez cerrado el backfill completo: `date_from = last_stored_date - 5 días calendario`, `date_to = hoy`, con merge idempotente. El solapamiento permite capturar correcciones tardías del proveedor sin repetir meses/años completos.
+Tras cerrar backfill completo: `date_from = last_stored_date - 5 días calendario`, `date_to = hoy`, merge idempotente.
 
-### Auditoría de capacidad y cobertura — EN EJECUCIÓN / SERIALIZADA
+## CLEANUP 54 OPCIONES NO CANÓNICAS — RCA DE LENTITUD — 2026-09-12 16:37Z
+
+Workflow original: `RC6 noncanonical history 54 quarantine 2026-09-12`, run `34702471513`. El runner GitHub terminó `cancelled`, pero el proceso remoto SSH/Docker quedó vivo bajo PID 1 y continuó reteniendo `/run/porota-trading-history/ppi-fullfamily-history.lock`.
+
+### Lo ya terminado correctamente
+
+El log original demuestra que la parte del observer no era masiva ni lenta:
+
+- `PREFLIGHT.extra=54`, todas `OPCIONES`;
+- `production_history`: 54 puestas en cuarentena y 54 eliminadas;
+- `production_history_attempts`: 54 puestas en cuarentena y 54 eliminadas;
+- `NONCANONICAL_ACTIVE_AFTER=0`;
+- esa etapa tardó aproximadamente 25 segundos entre `SAFETY_BEFORE` y `OBSERVER_REPAIR`.
+
+Por lo tanto **54 claves no significan 54 filas físicas en todo el History Store**, pero tampoco justifican por volumen una hora de CPU en la fase actual.
+
+### Probe vivo más reciente
+
+Probe read-only run `34704131027`, attempt/job más reciente `103585353023`, observado `2026-09-12T16:36:26Z`:
+
+- proceso Python cleanup PID host/container `1015832` seguía vivo;
+- elapsed: **3910 s (~65 min)**;
+- CPU: **80,7%**;
+- lock histórico exclusivo seguía retenido por PID `1015813`;
+- filesystem root: `24.883.167.232` bytes total, `9.673.183.232` bytes libres, **62% usado** (~9,1 GiB disponibles);
+- data tree: `1.937.620.132` bytes;
+- todos los servicios históricos systemd controlados seguían `inactive/dead`;
+- no hay evidencia de doble productor.
+
+La evidencia exacta/manifest no cambió entre los probes de 16:26 y 16:36, mientras el Python continuó consumiendo ~80% CPU. Esto cambió el diagnóstico: no se considera ya suficiente decir simplemente “está trabajando”; se investigó el plan SQL.
+
+### Diagnóstico read-only — CONFIRMADO
+
+Workflow diagnóstico: `RC6 noncanonical cleanup diagnostic 2026-09-12`, run `34705796508`, commit `68835673e0cdf1f70b4760831b64bf9d28e30800`, `SUCCESS`, `HOST_MUTATION=NONE`.
+
+Estado visible desde una segunda conexión read-only:
+
+- target lógico: **54 claves**;
+- `history_canonical_v2`: **322.565 filas**;
+- filas activas que realmente corresponden a esas 54 claves: **1.363**;
+- `history_canonical_v2_quarantine_rc6`: **234.521 filas**;
+- **sin índices** en la tabla de cuarentena;
+- `history_close_canonical_v1`: 17.796 filas;
+- matches de las 54 claves en close-canónica: **0**;
+- `history_close_canonical_v1_quarantine_rc6`: 86.620 filas y **sin índices**;
+- `history_versions_v2`: 561.578 filas;
+- `history_close_versions_v1`: 104.433 filas;
+- `ppi_ingest_quarantine_version_ids_rc6`: 323.759 filas y sin índices.
+
+`EXPLAIN QUERY PLAN` de la sentencia lenta confirmó:
+
+- `SCAN x` sobre `history_canonical_v2`;
+- subquery correlacionada `NOT EXISTS`;
+- `SCAN q` sobre `history_canonical_v2_quarantine_rc6` para resolver esa subquery;
+- recién después búsqueda de la temp `extra54`.
+
+La tabla de cuarentena fue creada por `CREATE TABLE ... AS SELECT ... WHERE 0`, por lo que no heredó los índices/PK del origen. El SQL de la reparación usa `NOT EXISTS` contra esa tabla sin índice. Con 322.565 filas activas y 234.521 en cuarentena, el plan puede realizar una cantidad enorme de comparaciones repetidas aunque el target útil sea sólo 1.363 filas. **La demora está causada principalmente por un plan SQL patológico/falta de índice, no por que 54 opciones representen un volumen razonablemente enorme.**
+
+### Decisión operativa pendiente sobre el proceso lento
+
+No se lanza backfill, scraping ni otro escritor mientras este proceso retenga el lock. A partir de este RCA ya no conviene dejarlo correr indefinidamente sólo porque use CPU. El camino seguro es una intervención controlada: terminar el proceso viejo, dejar que SQLite haga rollback de la transacción del History Store aún no cerrada, verificar `quick_check`, crear/usar índices adecuados en las superficies de cuarentena o reescribir el filtro para seleccionar primero las 54 claves, y relanzar el cleanup idempotente. No ejecutar una segunda reparación concurrente.
+
+La parte observer ya quedó saneada y es idempotente; la reparación optimizada debe tolerar ese estado previo y conservar toda evidencia existente.
+
+## AUDITORÍA DE CAPACIDAD Y COBERTURA — ESPERANDO LOCK
 
 Workflow: `RC6 PPI history storage audit 2026-09-12`.
-Run base: `34702766005`.
-
-La auditoría es read-only y mide total/usado/libre del filesystem, tamaño de `/opt/porota-trading/data`, observer DB, History Store DB, filas/versiones canónicas, cobertura por familia, tamaños raw/legacy y estado por familia. Exige además `shadow=1960`, `quick_check=ok` y `PRODUCTION_PAPER|0` para el universo certificado actual.
-
-La definición del workflow fue actualizada el 2026-09-12 a la política temporal **3 GiB start / 2 GiB hard stop / 88% guard**, commit `023730072194d97c52aa84ff0137f20219e66611`. El workflow también deja explícito `HISTORY_SCOPE=EXHAUST_PPI_API_AVAILABLE_BY_BACKWARD_CHUNKS`.
-
-### Cleanup no canónico previo — serializado
-
-Antes de la auditoría sigue el cleanup `RC6 noncanonical history 54 quarantine 2026-09-12`, run `34702471513`. No es una nueva ingesta: aparta 54 claves históricas `OPCIONES` no canónicas preservando evidencia en cuarentena. Mientras mantenga el lock no se lanza otro productor.
-
-Los probes confirmaron que los servicios históricos systemd relevantes permanecen `inactive/dead`; el proceso de cleanup mantiene CPU activa y el manifest siguió creciendo, por lo que no había evidencia de cuelgue en el último control.
+Run con política 3/2 GiB: `34705180201`; sigue serializado esperando el lock del cleanup. El disk headroom medido (~9,1 GiB libres) supera holgadamente el gate temporal, pero el audit completo no se declara GREEN hasta poder correr post-cleanup y medir cobertura/integridad.
 
 ## Próximo paso exacto
 
-1. Dejar terminar y validar el cleanup de 54 claves no canónicas sin matarlo mientras siga mostrando progreso.
-2. Ejecutar la auditoría read-only con la política temporal 3/2 GiB y obtener cobertura real post-reparación.
-3. Construir el plan de faltantes de PPI API para las 1.960 identidades certificadas **y** el registro explícito de familias/mercados/endpoints PPI todavía no incorporados al certificado local.
-4. Iniciar backfill PPI API por batches/chunks, saltando cobertura existente y retrocediendo hasta agotar el histórico disponible del proveedor.
-5. Entre batches: disco, quick_check, duplicados, hashes/versiones, provenance, rango de fechas, gaps y seguridad `PRODUCTION_PAPER|0`.
-6. Cerrar API PPI con un manifiesto residual exacto por identidad/campo/fecha.
-7. Abrir PPI Web scraping autenticado read-only **sólo** sobre el gap residual y reconciliarlo contra el mismo maestro canónico.
-8. Verificar nuevamente el gap total. Sólo lo que siga faltando pasa a `IOL_RESIDUAL`.
-9. Con la ingesta completa, medir tamaño/crecimiento real y recién entonces fijar la política definitiva de almacenamiento/retención.
+1. Resolver el cleanup 54 con intervención controlada y SQL/indexado, sin doble escritor.
+2. Verificar inmediatamente `PRAGMA quick_check=ok`, `NONCANONICAL_ACTIVE_AFTER=0`, conteos de cuarentena, ausencia de duplicados y seguridad `PRODUCTION_PAPER|0`.
+3. Liberado el lock, dejar ejecutar la auditoría read-only de capacidad/cobertura con política 3 GiB start / 2 GiB hard stop.
+4. Construir faltantes PPI API para las 1.960 identidades certificadas y registro explícito de familias/mercados/endpoints PPI todavía no incorporados.
+5. Backfill PPI API por chunks, saltando cobertura existente y retrocediendo hasta agotar histórico disponible.
+6. Entre batches: disco, quick_check, duplicados, hashes/versiones, provenance, rangos, gaps y seguridad.
+7. Cerrar PPI API con manifiesto residual exacto por identidad/campo/fecha.
+8. Abrir PPI Web scraping autenticado read-only sólo sobre gaps y reconciliar contra el mismo maestro.
+9. Sólo el residual posterior a PPI API + PPI Web pasa a IOL.
+10. Con ingesta completa medir volumen/crecimiento real y definir almacenamiento/retención definitiva.
 
 ## FASE 3 — PPI WEB SCRAPING — BLOQUEADA HASTA CIERRE API
 
-No comienza hasta cerrar históricos/API. PPI Web trabaja sobre residuales explícitos o campos contractuales/reference faltantes, con provenance `PPI_AUTHENTICATED_WEB`, lock de navegador, read-only y sin auto-habilitar `READY_PAPER`. Su resultado se reconcilia contra el maestro, no crea un segundo datastore maestro.
+Trabaja sólo sobre residuales explícitos o campos contractuales/reference faltantes, con provenance `PPI_AUTHENTICATED_WEB`, lock de navegador, read-only y sin auto-habilitar `READY_PAPER`. No crea segundo datastore maestro.
 
 ## FASE 4 — IOL RESIDUAL — ÚLTIMO RECURSO
 
-IOL entra sólo después de medir el gap posterior a PPI API + PPI Web. Cada dato incorporado debe conservar provenance `IOL_RESIDUAL`, pasar los mismos gates de integridad y deduplicación y respetar la precedencia de fuente. No se toma una ingesta IOL como sustituto de una cobertura disponible en PPI.
+Sólo después del gap PPI API + PPI Web. Cada dato IOL debe conservar provenance `IOL_RESIDUAL`, pasar los mismos gates y respetar precedencia. Nunca sustituye cobertura disponible de PPI.
 
 ## Invariantes finales
 
@@ -149,13 +203,13 @@ IOL entra sólo después de medir el gap posterior a PPI API + PPI Web. Cada dat
 - no order routes
 - PPI API > PPI Web > IOL
 - objetivo: todo lo que PPI exponga y sea necesario para operar, sin exclusiones silenciosas
-- identidad canónica completa `(ticker,instrument_type,market,currency,settlement)`
+- identidad completa `(ticker,instrument_type,market,currency,settlement)`
 - un único maestro canónico
 - no doble productor
 - no silent overwrite
 - deduplicación/hash/versionado/provenance obligatorios
-- raw y cuarentena preservados fuera del maestro activo
+- raw/cuarentena fuera del maestro activo
 - no reingesta masiva innecesaria
-- no rollback automático
-- disco protegido temporalmente por gate 3 GiB / hard stop 2 GiB durante la ingesta
+- no rollback automático de datos canónicos; cualquier rollback técnico de transacción incompleta debe ser controlado y seguido de integridad
+- disk gate temporal 3 GiB / hard stop 2 GiB
 - política final de almacenamiento pendiente de medición post-ingesta
