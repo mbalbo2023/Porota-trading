@@ -13,10 +13,10 @@ Historical ingestion is independent from READY_PAPER. No real-order route is ena
 ## Runtime safety baseline
 
 - Host runtime SHA: `eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a`.
-- Runtime mode during proofs and stage-1 ingestion: `PRODUCTION_PAPER`.
-- `real_orders_sent=0` before and after.
+- Runtime mode during proofs and ingestion: `PRODUCTION_PAPER`.
+- `real_orders_sent=0` before and after completed stages.
 - `ORDER_ROUTES=NOT_CALLED`.
-- Market phase during work: `CLOSED`.
+- Market phase during this work: `CLOSED`.
 
 ## Productive PPI configuration proved live
 
@@ -26,9 +26,31 @@ PPI currently declares these 15 instrument types through its productive configur
 
 Markets declared: `ROFEX`, `OTC`, `NYSE`, `NASDAQ`, `BYMA`.
 
-The normalized live catalog currently contains 901 identities: 889 AVAILABLE + 12 STALE. The 12 STALE are 9 FUTUROS and 3 LETRAS. Current catalog families/counts: ACCIONES 55; BONOS 42; CAUCIONES 10; CEDEARS 191; FUTUROS 52 total (43 AVAILABLE + 9 STALE); LETRAS 23 total (20 AVAILABLE + 3 STALE); ON 91; OPCIONES 437.
+The normalized live operational catalog contains 901 identities: 889 AVAILABLE + 12 STALE. The 12 STALE are 9 FUTUROS and 3 LETRAS. Current catalog families/counts: ACCIONES 55; BONOS 42; CAUCIONES 10; CEDEARS 191; FUTUROS 52 total (43 AVAILABLE + 9 STALE); LETRAS 23 total (20 AVAILABLE + 3 STALE); ON 91; OPCIONES 437.
 
-Therefore seven PPI-declared types are not yet represented in the normalized live catalog and require explicit discovery/reconciliation: `NOBAC`, `LEBAC`, `FCI`, `ETF`, `LICITACIONES`, `ACCIONES-USA`, `FCI-EXTERIOR`.
+Seven PPI-declared types were absent from that normalized operational catalog: `NOBAC`, `LEBAC`, `FCI`, `ETF`, `LICITACIONES`, `ACCIONES-USA`, `FCI-EXTERIOR`.
+
+## Read-only discovery of previously absent PPI families — GREEN
+
+Workflow: `.github/workflows/rc6-ppi-declared-missing-family-probe-20260912.yml`
+Run: `34670448946`
+Job: `103490697568`
+Conclusion: SUCCESS.
+
+The probe executed 192 authenticated read-only PPI requests, with zero blocked calls, one login, no host mutation and no order routes. It found **4,239 unique normalized identities** in the successful responses, proving that the 901-identity operational catalog is not the full information universe exposed by PPI.
+
+Normalized unique discoveries by returned PPI family:
+
+- `ACCIONES-USA`: **3,075** unique identities across NASDAQ/NYSE. The requested-family probe had 32 queries: 24 HTTP OK and 8 read timeouts/exceptions, so this count is a lower bound, not certified exhaustive yet.
+- `ETF`: **105** unique identities across NASDAQ/NYSE.
+- `FCI`: **1,040** unique identities on BYMA.
+- `LICITACIONES`: **18** unique identities on BYMA.
+- `LEBACS`: **1** unique returned identity (`CEDI`) discovered while probing the PPI-declared legacy families. This returned family label differs from the configuration enum `LEBAC`/`NOBAC` and must be reconciled explicitly rather than silently renamed.
+- `FCI-EXTERIOR`: 39 HTTP-OK searches, all empty in this probe.
+- `LEBAC`: 10 HTTP-OK searches, all empty in this probe.
+- `NOBAC`: the requested NOBAC searches returned records, but normalization exposed the returned family as `LEBACS`; this is a provider taxonomy mismatch requiring evidence-preserving reconciliation.
+
+This discovery does **not** promote these thousands of identities to the operational/PAPER catalog. They are data-universe evidence only until the execution universe is separated safely from the information universe.
 
 ## Five-family historical API proof — GREEN
 
@@ -74,20 +96,26 @@ The production `_historical_targets()` currently selects from `candidate_univers
 
 A permanent forward code fix is still required and must pass CI before deploy; the current runtime engine has not been modified by these ingestion workflows.
 
-## Work already launched after stage-1
+A second architectural issue is now explicit: the **information universe** exposed by PPI is much larger than the **operational/PAPER universe**. Persisting 3,075 ACCIONES-USA + 1,040 FCI + 105 ETF directly into the current operational catalog would alter runtime universe rotation. Therefore the new discoveries are being persisted into a separate shadow evidence catalog first, with no PAPER promotion.
 
-1. `RC6 PPI declared missing family probe 2026-09-12`, run `34670448946`: read-only discovery of the seven PPI-declared family types absent from the normalized catalog. It serializes on the PPI history lock and does not persist probe results or call order routes.
-2. `RC6 PPI catalog history ingest stage2 2026-09-12`, run `34670495541`: next bounded 100-identity PPI history batch, serialized on the same lock.
-3. `RC6 PPI catalog history first-pass complete 2026-09-12`: waits for stage-2 coverage, then ingests every still-unattempted identity in the current 901-identity catalog in bounded batches of at most 100, with pauses between batches. It asserts `PRODUCTION_PAPER`, market CLOSED and `real_orders_sent=0`, and fails if any current catalog identity remains unattempted.
+## Work launched after stage-1
+
+1. `RC6 PPI catalog history ingest stage2 2026-09-12`, run `34670495541`: next bounded 100-identity PPI history batch, serialized on the common PPI lock.
+2. `RC6 PPI catalog history first-pass complete 2026-09-12`, repaired commit `b9953d85f2dcc67666b94f47833c189a58d6eb61`, run `34670952207`: valid workflow now running/waiting on the same serialization lock. It completes all still-unattempted identities in the current 901-row normalized catalog in bounded batches.
+3. `RC6 PPI full discovery shadow persist 2026-09-12`: replays the absent-family discovery and persists results only into `ppi_full_discovery_shadow` + query-evidence tables. It does not mutate `financial_instrument_catalog` or the operational universe.
+4. `RC6 PPI shadow-family history proof 2026-09-12`: waits for the shadow catalog and then tests the historical endpoint on representative newly discovered PPI families before any mass history run on thousands of identities.
+5. `RC6 PPI history depth proof 2026-09-12`: serialized read-only probe of older PPI windows (1-2y, 2-3y, 3-5y, 5-10y) to determine whether the existing 365-day downloader is a Porota limit rather than a PPI limit.
 
 ## Remaining definition of DONE
 
 The first 365-day pass is only the first layer. Full PPI closure additionally requires:
 
-- reconcile and persist identities discovered for the seven PPI-declared but absent family types;
-- first-pass history for every reconciled PPI identity;
-- determine the maximum historical depth available from PPI by walking older date windows rather than assuming the current 365-day downloader window is the provider limit;
+- finish the 901-identity current normalized-catalog first pass;
+- persist the full discovered information universe in shadow without changing PAPER behavior;
+- reconcile provider taxonomy (`LEBAC`/`NOBAC` configuration vs returned `LEBACS`) and retry the 8 ACCIONES-USA timeouts so the discovery denominator is certified rather than a lower bound;
+- prove historical support semantics for the newly discovered ACCIONES-USA, ETF, FCI, LICITACIONES/LEBACS families;
+- determine maximum historical depth available from PPI by walking older date windows, rather than assuming the current 365-day downloader window is the provider limit;
 - classify empty/invalid and partial histories; preserve raw evidence and distinguish no trades/no history from validation-model mismatches;
 - fill API residual gaps from authenticated PPI web/scraping read-only;
 - only after both PPI layers are exhausted, send the final residual gap list to IOL;
-- implement and CI-test the permanent `_historical_targets()` decoupling from `can_simulate` before deployment.
+- implement and CI-test permanent separation of historical/data universe from `can_simulate`/PAPER execution universe before deployment.
