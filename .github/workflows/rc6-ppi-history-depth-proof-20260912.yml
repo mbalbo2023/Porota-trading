@@ -1,0 +1,111 @@
+name: RC6 PPI history depth proof 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-history-depth-proof-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  depth-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Probe older PPI historical windows read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 3000 9 || { echo 'ABORT=PPI_LOCK_TIMEOUT'; exit 32; }
+
+          sudo -n timeout 1200 docker exec -i porota_production_observer python - <<'PY'
+          import json
+          from datetime import timedelta
+          import bf_production_paper_observer as m
+
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY_BEFORE={s[0]}|{s[1]}')
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              families=[r[0] for r in c.execute("select distinct instrument_type from financial_instrument_catalog order by instrument_type")]
+              targets=[]
+              for fam in families:
+                  row=c.execute('''select f.ticker,f.instrument_type,f.settlement
+                    from financial_instrument_catalog f
+                    left join production_history_attempts a
+                      on a.symbol=f.ticker and a.instrument_type=f.instrument_type and a.settlement=f.settlement
+                    where f.instrument_type=?
+                    order by case when coalesce(a.valid_rows,0)>0 then 0 else 1 end,
+                             case f.status when 'AVAILABLE' then 0 else 1 end,
+                             f.ticker limit 1''',(fam,)).fetchone()
+                  if row: targets.append(tuple(row))
+          print('DEPTH_TARGETS='+json.dumps(targets,ensure_ascii=False))
+
+          today=m.datetime.now(m.TZ).date()
+          windows=[
+            ('Y1_Y2',today-timedelta(days=730),today-timedelta(days=366)),
+            ('Y2_Y3',today-timedelta(days=1095),today-timedelta(days=731)),
+            ('Y3_Y5',today-timedelta(days=1825),today-timedelta(days=1096)),
+            ('Y5_Y10',today-timedelta(days=3650),today-timedelta(days=1826)),
+          ]
+          key,secret=m._secret()
+          reader=m.ProductionMarketReader(key,secret,audit=store.audit_http)
+          reader.login_once()
+          results=[]
+          try:
+              for symbol,kind,settlement in targets:
+                  for label,start,end in windows:
+                      result={'family':kind,'symbol':symbol,'window':label,'from':start.isoformat(),'to':end.isoformat()}
+                      try:
+                          payload=reader.history(symbol,kind,settlement,start,end)
+                          provider=len(payload) if isinstance(payload,list) else 0
+                          valid=m._history_count(payload,as_of=m.now_iso(),date_from=start,date_to=end)
+                          result.update({'state':'HTTP_OK','provider_rows':provider,'valid_rows':valid})
+                      except Exception as exc:
+                          result.update({'state':'ERROR','error':m.classify_read_error(exc),'error_type':type(exc).__name__})
+                      results.append(result)
+                      print('DEPTH_RESULT='+json.dumps(result,sort_keys=True))
+              metrics=reader.metrics
+          finally:
+              reader.close()
+          print('=== DEPTH_SUMMARY ===')
+          for kind in sorted({r['family'] for r in results}):
+              subset=[r for r in results if r['family']==kind]
+              nonempty=[r['window'] for r in subset if int(r.get('provider_rows') or 0)>0]
+              valid=[r['window'] for r in subset if int(r.get('valid_rows') or 0)>0]
+              print(json.dumps({'family':kind,'nonempty_windows':nonempty,'valid_windows':valid},sort_keys=True))
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+          with store.connect() as c:
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'SAFETY_AFTER={s[0]}|{s[1]}')
+          assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          print('HOST_MUTATION=NONE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
