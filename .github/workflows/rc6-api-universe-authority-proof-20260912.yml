@@ -8,9 +8,11 @@ on:
       - rc6_api_universe_authority.py
       - rc6_web_api_candidate_bridge.py
       - rc6_api_universe_store.py
+      - rc6_api_contract_crosswalk.py
       - tests/test_rc6_api_universe_authority.py
       - tests/test_rc6_web_api_candidate_bridge.py
       - tests/test_rc6_api_universe_store.py
+      - tests/test_rc6_api_contract_crosswalk.py
       - .github/workflows/rc6-api-universe-authority-proof-20260912.yml
   workflow_dispatch:
 
@@ -28,20 +30,25 @@ jobs:
           PYTHONPATH: .
         run: |
           set -Eeuo pipefail
-          python -m py_compile rc6_api_universe_authority.py rc6_web_api_candidate_bridge.py rc6_api_universe_store.py tests/test_rc6_api_universe_authority.py tests/test_rc6_web_api_candidate_bridge.py tests/test_rc6_api_universe_store.py
+          python -m py_compile rc6_api_universe_authority.py rc6_web_api_candidate_bridge.py rc6_api_universe_store.py rc6_api_contract_crosswalk.py tests/test_rc6_api_universe_authority.py tests/test_rc6_web_api_candidate_bridge.py tests/test_rc6_api_universe_store.py tests/test_rc6_api_contract_crosswalk.py
           python tests/test_rc6_api_universe_authority.py
           python tests/test_rc6_web_api_candidate_bridge.py
           python tests/test_rc6_api_universe_store.py
+          python tests/test_rc6_api_contract_crosswalk.py
           python - <<'PY'
           import rc6_api_universe_authority as u
           import rc6_web_api_candidate_bridge as w
           import rc6_api_universe_store as s
+          import rc6_api_contract_crosswalk as x
           u.assert_no_execution_capability()
           w.assert_no_execution_capability()
           s.assert_no_execution_capability()
+          x.assert_no_execution_capability()
           print('API_UNIVERSE_AUTHORITY=GREEN')
           print('WEB_CANDIDATE_BRIDGE=GREEN')
           print('API_UNIVERSE_STORE=GREEN')
+          print('API_CONTRACT_CROSSWALK=GREEN')
+          print('WILDCARD_BINDING=FORBIDDEN')
           print('AUTO_PAPER_PROMOTION=FALSE')
           print('ORDER_CAPABILITY=NONE')
           PY
