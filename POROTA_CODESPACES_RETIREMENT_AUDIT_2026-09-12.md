@@ -42,3 +42,13 @@ El PR permanece abierto como borrador, sin fusión ni despliegue. No se tocaron 
 ### CI del PR #56
 
 Run `34709256011` (`CI — Porota Trading`, run #251): finalizó `success`. `Infrastructure preflight` pasó `Validate repository safety` y `Validate Docker Compose syntax`. En `Application CI`, la detección confirmó que el paquete de aplicación no está instalado y los pasos de dependencias, pruebas y stack quedaron `skipped`. No hubo paso de despliegue ni de ingesta.
+
+## Checkpoint de gobierno de trabajo paralelo — 2026-09-12
+
+Se preparó el PR borrador [#57](https://github.com/mbalbo2023/Porota-trading/pull/57), desde `docs/parallel-chat-policy-20260912`, con exactamente dos archivos nuevos: `AGENTS.md` (política raíz v`2026-09-12/1`) y `.github/pull_request_template.md` (lectura/acuse, checkpoint, responsable, rama/base SHA, rutas, validaciones e impacto). HEAD: `b0ca7b4bb45c37c3ebae41aaa4265f15bd1261fc`. El CI run #252 estaba `in_progress` al revisar; no se modificaron workflows.
+
+La política requiere leer el checkpoint canónico y confirmar desde allí el SHA/tag RC6; prohíbe que otros chats consulten o modifiquen recursos del workstream `pipeline ppi watch`; exige ramas separadas y reserva integración/merge/deploy a un coordinador. El PR-template deja un acuse visible. Esto es una instrucción automática para agentes compatibles con `AGENTS.md` y una barrera procedimental en PRs, no una prueba criptográfica de que cada chat leyó el archivo.
+
+Inspección de permisos: `GET branches/main/protection` respondió 403 (`Resource not accessible by integration`); `GET rulesets` respondió 403 indicando que rulesets no están disponibles para este repositorio/plan. Por tanto no se puede confirmar desde esta conexión una protección obligatoria de `main` ni un required-review gate.
+
+Se listaron tres workflows en `main`: `ci.yml`, `deploy.yml` y `promote-to-production.yml`. Los dos últimos declaran solo `workflow_dispatch`; el CI de PR #56 pasó (run #251). PR #56 continúa abierto como borrador, mergeable/clean en GitHub, sin fusión ni despliegue. Antes de integrar, falta resolver el gate de protección/una revisión del responsable; no se accedió a ejecuciones ni recursos del workstream PPI.
