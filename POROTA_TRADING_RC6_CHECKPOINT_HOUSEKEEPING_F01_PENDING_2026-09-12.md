@@ -206,3 +206,14 @@ Referencia: SHA desplegado `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d`. Sólo lec
 - Después ocurrió el deploy de aplicación más nuevo: run `34675061113`, SHA `a47f3339…`, SUCCESS a `05:14 UTC`. No se encontró deploy posterior en los 100 runs más recientes consultados.
 - Al chequeo de `16:37 UTC`, dos runs de PPI storage audit seguían en el job remoto que toma el lock compartido: `34702766005` (job empezó `16:19`) y `34705180201` (job empezó `16:25`). Sus logs en vivo no están disponibles; no se puede afirmar cuál posee el lock. Ninguno se canceló ni tocó desde esta auditoría.
 - El branch PPI tiene por tanto una ruta histórica de deploy de timers, aunque el usuario informa que el chat activo actualmente hace ingesta y no despliegues. Mantenerlo excluido de la poda hasta mapear esa configuración host.
+
+
+---
+
+## Resultado del repair de 54 identidades y estado posterior — 2026-09-12
+
+- Run `34706158060` del workflow `rc6-noncanonical-history-54-optimized-repair-20260912.yml` terminó `SUCCESS` a `16:48:13 UTC`, en el SHA `2b461ce7949ecc66c9239bf09aa15b25fa3577ef`.
+- El código valida exactamente 54 keys de opciones, cero identidad no canónica en producción PAPER, integridad SQLite antes/después y cero órdenes reales; copia los registros canónicos seleccionados a tablas de cuarentena y los elimina de las tablas canónicas en una transacción. El resultado implica que pasaron los postchecks declarados por el workflow, pero los logs no estuvieron disponibles para obtener los conteos de filas trasladadas.
+- Los audits `34702766005` y primer intento de `34705180201` terminaron `failure` a `16:44:46 UTC`. El repair iniciado 8 segundos antes incluye una rutina para terminar procesos que esperan el mismo flock y un Python `-` dentro del contenedor. La coincidencia y el código hacen probable que interrumpiera esos audits; los logs ausentes impiden probar la causa exacta.
+- El run `34705180201` tuvo un segundo intento que comenzó `16:48:32 UTC` y quedó en el paso de audit read-only para verificar capacidad/cobertura posterior al repair.
+- La rama PPI realiza en este punto operaciones de ingesta, auditoría y repair de datos, aunque no un deploy de la aplicación. Permanece fuera del housekeeping de refs/workflows mientras siga activa.
