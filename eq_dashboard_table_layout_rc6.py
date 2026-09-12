@@ -3,6 +3,9 @@
 Presentation only.  Wide tables remain real tables with horizontal scrolling;
 column headers stay visible instead of being hidden by the former compact-card
 fallback.  No database/network/trading behavior.
+
+This module is also the post-Wave8 presentation hook used to install small,
+read-only dashboard overlays that must decorate the final served functions.
 """
 from __future__ import annotations
 
@@ -101,7 +104,13 @@ def install() -> None:
     if "porota-rc6-force-compact-script" not in bg.TABLE_A11Y_SCRIPT:
         bg.TABLE_A11Y_SCRIPT += FORCE_COMPACT_SCRIPT
 
-    # o_dashboard installs this module after zz_wave8_dashboard_live_rc6, so a
-    # small dedicated overlay can safely decorate /riesgo without network I/O.
+    # o_dashboard installs this module after zz_wave8_dashboard_live_rc6, so
+    # dedicated overlays installed here see the final Wave8 route wrappers.
     import rc6_risk_gdelt_dashboard as risk_gdelt_dashboard
     risk_gdelt_dashboard.install()
+
+    # P0 route repair: Wave8 replaces Trading -> Estrategias after the base
+    # EOD renderer is wired. Restore that read-only evaluator on the function
+    # that is actually served, without changing CURRENT_EOD or trading logic.
+    import fp_dashboard_eod_route_fix_rc6 as eod_route_fix
+    eod_route_fix.install()
