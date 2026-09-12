@@ -1,0 +1,85 @@
+name: RC6 ingestion API closeout probe 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ingestion-api-closeout-probe-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Probe host and canonical ingestion state read only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          echo "PROBE_AT_UTC=$(date -u +%FT%TZ)"
+          echo "HOST_SHA=$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo "HOST_BRANCH=$(git -C /opt/porota-trading rev-parse --abbrev-ref HEAD)"
+          echo '=== SERVICES ==='
+          systemctl show porota-ppi-argentina-nightly-rc6.service -p ActiveState -p SubState -p Result -p ExecMainStatus --no-pager || true
+          systemctl show porota-contract-evidence-weekend-backfill-rc6.service -p ActiveState -p SubState -p Result -p ExecMainStatus --no-pager || true
+          systemctl list-timers --all --no-pager | grep -E 'porota-(ppi-argentina-nightly|contract-evidence-weekend-backfill|contract-evidence-rc6|weekend-ingestion-audit)' || true
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(db,uri=True,timeout=15); c.execute('pragma query_only=on')
+          print('DB_QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print('SAFETY=%s|%s'%s)
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          print('TABLES='+','.join(sorted(tables)))
+          if 'ppi_argentina_api_shadow' in tables:
+              print('API_SHADOW_TOTAL='+str(c.execute('select count(*) from ppi_argentina_api_shadow').fetchone()[0]))
+              for r in c.execute('select instrument_type,count(*),min(observed_at),max(observed_at) from ppi_argentina_api_shadow group by instrument_type order by instrument_type'):
+                  print('API_SHADOW_FAMILY='+json.dumps({'family':r[0],'count':r[1],'first_observed':r[2],'last_observed':r[3]},sort_keys=True))
+              for r in c.execute('select source,count(*) from ppi_argentina_api_shadow group by source order by source'):
+                  print('API_SHADOW_SOURCE='+json.dumps({'source':r[0],'count':r[1]},sort_keys=True))
+          if 'ppi_argentina_nightly_history_attempts' in tables:
+              print('NIGHTLY_TOTAL='+str(c.execute('select count(*) from ppi_argentina_nightly_history_attempts').fetchone()[0]))
+              for r in c.execute('select instrument_type,state,count(*),sum(valid_rows) from ppi_argentina_nightly_history_attempts group by instrument_type,state order by instrument_type,state'):
+                  print('NIGHTLY_STATE='+json.dumps({'family':r[0],'state':r[1],'identities':r[2],'valid_rows':r[3] or 0},sort_keys=True))
+              print('NIGHTLY_ERRORS='+str(c.execute("select count(*) from ppi_argentina_nightly_history_attempts where state='ERROR'").fetchone()[0]))
+          if 'production_history_attempts' in tables:
+              print('PROD_ATTEMPTS_TOTAL='+str(c.execute('select count(*) from production_history_attempts').fetchone()[0]))
+              for r in c.execute('select instrument_type,state,count(*),sum(valid_rows) from production_history_attempts group by instrument_type,state order by instrument_type,state'):
+                  print('PROD_STATE='+json.dumps({'family':r[0],'state':r[1],'identities':r[2],'valid_rows':r[3] or 0},sort_keys=True))
+          for t in ('production_history','market_history_v2','production_market_history_v2','history_evidence_v2'):
+              if t in tables:
+                  try: print('TABLE_COUNT_%s=%s'%(t,c.execute('select count(*) from '+t).fetchone()[0]))
+                  except Exception as e: print('TABLE_COUNT_ERROR_%s=%s'%(t,type(e).__name__))
+          if 'contract_evidence_v2_current' in tables:
+              print('WEB_CURRENT_TOTAL='+str(c.execute('select count(*) from contract_evidence_v2_current').fetchone()[0]))
+              cols={r[1] for r in c.execute('pragma table_info(contract_evidence_v2_current)')}
+              famcol='family' if 'family' in cols else ('instrument_family' if 'instrument_family' in cols else None)
+              if famcol:
+                  for r in c.execute('select '+famcol+',count(*) from contract_evidence_v2_current group by '+famcol+' order by '+famcol):
+                      print('WEB_CURRENT_FAMILY='+json.dumps({'family':r[0],'count':r[1]},sort_keys=True))
+          c.close()
+          PY
+          echo 'HOST_MUTATION=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
