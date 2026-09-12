@@ -1,0 +1,187 @@
+name: RC6 PPI full discovery shadow persist 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-shadow-full-discovery-persist-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  discover-and-persist-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Discover and persist non-operational shadow catalog
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 3000 9 || { echo 'ABORT=PPI_LOCK_TIMEOUT'; exit 32; }
+
+          sudo -n timeout 2400 docker exec -i porota_production_observer python - <<'PY'
+          import json
+          import time
+          import uuid
+          import bf_production_paper_observer as m
+          import bu_instrument_catalog as catalog
+
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY_BEFORE={s[0]}|{s[1]}')
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              declared=set(json.loads(c.execute("select payload_json from broker_market_configuration where name='instrument_types'").fetchone()[0]))
+              present={r[0] for r in c.execute('select distinct instrument_type from financial_instrument_catalog')}
+              missing=sorted(declared-present)
+
+          expected_markets={
+            'ACCIONES-USA':('NASDAQ','NYSE'),
+            'ETF':('NYSE','NASDAQ','BYMA'),
+            'FCI':('BYMA','OTC'),
+            'FCI-EXTERIOR':('NYSE','NASDAQ','OTC'),
+            'LEBAC':('BYMA',),
+            'LICITACIONES':('BYMA','OTC'),
+            'NOBAC':('BYMA',),
+          }
+          specific={
+            'ACCIONES-USA':('AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA','JPM'),
+            'ETF':('SPY','QQQ','DIA','IWM','IVV','VOO'),
+            'FCI':('FONDO','RENTA','AHORRO','PPI','BALANZ','GALILEO','MONEY','PESOS','DOLAR'),
+            'FCI-EXTERIOR':('FONDO','RENTA','DOLAR','USD','PPI'),
+            'LEBAC':('LEBAC','L'),
+            'LICITACIONES':('LICITACION','LETRA','BONO','ON'),
+            'NOBAC':('NOBAC','N'),
+          }
+          broad=('A','E','I','O','U','S','M','P')
+          run_id='FULLDISC_'+uuid.uuid4().hex
+          observed=m.now_iso()
+          key,secret=m._secret()
+          reader=m.ProductionMarketReader(key,secret,audit=store.audit_http)
+          found={}
+          query_rows=[]
+          reader.login_once()
+          try:
+              for family in missing:
+                  queries=[]
+                  for q in specific.get(family,()):
+                      for market in expected_markets.get(family,('BYMA',)):
+                          queries.append((q,q,market))
+                  for q in broad:
+                      for market in expected_markets.get(family,('BYMA',)):
+                          queries.append((q,q,market))
+                  seen=set()
+                  for ticker_q,name_q,market in queries:
+                      if (ticker_q,name_q,market) in seen:
+                          continue
+                      seen.add((ticker_q,name_q,market))
+                      status='OK'; detail=''; count=0
+                      try:
+                          payload=reader.search_instruments(ticker_q,family,name=name_q,market=market)
+                          if not isinstance(payload,list):
+                              raise ValueError('PPI_SEARCH_INVALID_SHAPE')
+                          for raw in payload:
+                              try:
+                                  rec=catalog.normalize_record(raw,'INMEDIATA' if family in {'FCI','FCI-EXTERIOR'} else 'A-24HS',observed,run_id)
+                              except Exception:
+                                  continue
+                              identity=(rec['ticker'],rec['instrument_type'],rec['market'],rec['currency'],rec['settlement'])
+                              found[identity]=rec
+                              count+=1
+                          if count==0:
+                              status='EMPTY'
+                      except Exception as exc:
+                          status='ERROR'
+                          detail=m.classify_read_error(exc)
+                      query_rows.append((run_id,family,ticker_q,name_q,market,status,count,detail,observed))
+                      time.sleep(0.08)
+              metrics=reader.metrics
+          finally:
+              reader.close()
+
+          with store.connect() as c:
+              c.execute('BEGIN IMMEDIATE')
+              c.execute('''CREATE TABLE IF NOT EXISTS ppi_full_discovery_shadow(
+                ticker TEXT NOT NULL,
+                instrument_type TEXT NOT NULL,
+                market TEXT NOT NULL,
+                currency TEXT NOT NULL,
+                settlement TEXT NOT NULL,
+                settlement_source TEXT NOT NULL,
+                description TEXT NOT NULL,
+                capability TEXT NOT NULL,
+                source TEXT NOT NULL,
+                run_id TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                raw_json TEXT NOT NULL,
+                PRIMARY KEY(ticker,instrument_type,market,currency,settlement)
+              )''')
+              c.execute('''CREATE TABLE IF NOT EXISTS ppi_full_discovery_queries(
+                run_id TEXT NOT NULL,
+                requested_type TEXT NOT NULL,
+                ticker_query TEXT NOT NULL,
+                name_query TEXT NOT NULL,
+                market_query TEXT NOT NULL,
+                status TEXT NOT NULL,
+                normalized_records INTEGER NOT NULL,
+                detail TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                PRIMARY KEY(run_id,requested_type,ticker_query,name_query,market_query)
+              )''')
+              for rec in found.values():
+                  c.execute('''INSERT OR REPLACE INTO ppi_full_discovery_shadow
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',(
+                      rec['ticker'],rec['instrument_type'],rec['market'],rec['currency'],rec['settlement'],
+                      rec['settlement_source'],rec['description'],rec['capability'],'PPI_PRODUCTION_SEARCH',
+                      run_id,observed,json.dumps(rec['raw'],ensure_ascii=False,default=str)))
+              c.executemany('INSERT OR REPLACE INTO ppi_full_discovery_queries VALUES(?,?,?,?,?,?,?,?,?)',query_rows)
+
+          print('DISCOVERY_RUN_ID='+run_id)
+          print('REQUESTED_ABSENT_TYPES='+json.dumps(missing))
+          print('SHADOW_DISCOVERED_UNIQUE='+str(len(found)))
+          byfam={}
+          for rec in found.values():
+              byfam.setdefault(rec['instrument_type'],set()).add((rec['ticker'],rec['market'],rec['currency'],rec['settlement']))
+          for family in sorted(byfam):
+              print('SHADOW_FAMILY='+json.dumps({'family':family,'identities':len(byfam[family])},sort_keys=True))
+          with store.connect() as c:
+              total=c.execute('select count(*) from ppi_full_discovery_shadow').fetchone()[0]
+              qstats=list(c.execute("select status,count(*) from ppi_full_discovery_queries where run_id=? group by status order by status",(run_id,)))
+              existing=c.execute('select count(*) from financial_instrument_catalog').fetchone()[0]
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print('SHADOW_CATALOG_TOTAL='+str(total))
+          print('OPERATIONAL_CATALOG_UNCHANGED='+str(existing))
+          print('QUERY_STATUS='+json.dumps({r[0]:r[1] for r in qstats},sort_keys=True))
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+          print(f'SAFETY_AFTER={s[0]}|{s[1]}')
+          assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          print('OPERATIONAL_CATALOG_MUTATION=NONE')
+          print('HOST_MUTATION=SHADOW_DISCOVERY_EVIDENCE_ONLY')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
