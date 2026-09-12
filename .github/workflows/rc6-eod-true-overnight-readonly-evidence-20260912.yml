@@ -1,0 +1,174 @@
+name: RC6 EOD True Overnight Readonly Evidence 2026-09-12
+
+on:
+  push:
+    branches: [analysis/rc6-eod-overnight-replay-20260912]
+    paths:
+      - '.github/workflows/rc6-eod-true-overnight-readonly-evidence-20260912.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ro"
+          chmod 600 "$HOME/.ssh/porota_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Collect true overnight evidence read-only
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_ro" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$USER@$HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          REPO=/opt/porota-trading
+          TARGET_SHA=eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          echo "HOST_SHA=$TARGET_SHA"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from datetime import datetime, timedelta
+          from decimal import Decimal
+          from zoneinfo import ZoneInfo
+
+          DB='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          TZ=ZoneInfo('America/Argentina/Buenos_Aires')
+
+          def dt(v):
+              return datetime.fromisoformat(str(v).replace('Z','+00:00'))
+
+          c=sqlite3.connect(DB, uri=True, timeout=20)
+          c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+          before=c.total_changes
+
+          positions=c.execute('''
+            SELECT paper_id,symbol,asset_class,settlement,currency,market,quantity,
+                   entry_price,entry_cost,stop_price,target_price,opened_at,closed_at,
+                   exit_price,exit_cost,gross_pnl,net_pnl,close_reason
+              FROM paper_positions
+             WHERE status='CLOSED' AND close_reason='EOD_PAPER' AND closed_at IS NOT NULL
+             ORDER BY julianday(closed_at), paper_id
+          ''').fetchall()
+
+          total=len(positions)
+          covered=0
+          missing=0
+          stop_first=0
+          target_first=0
+          neither=0
+          summaries=[]
+
+          for p in positions:
+              closed=dt(p['closed_at'])
+              close_local=closed.astimezone(TZ)
+              close_date=close_local.date()
+              end=closed + timedelta(days=12)
+              rows=c.execute('''
+                SELECT observed_at,bid
+                  FROM market_snapshots
+                 WHERE symbol=? AND asset_class=? AND settlement=?
+                   AND currency=? AND market=?
+                   AND julianday(observed_at)>julianday(?)
+                   AND julianday(observed_at)<=julianday(?)
+                 ORDER BY julianday(observed_at),id
+              ''',(p['symbol'],p['asset_class'],p['settlement'],p['currency'],p['market'],closed.isoformat(),end.isoformat())).fetchall()
+
+              valid=[]
+              for r in rows:
+                  try:
+                      at=dt(r['observed_at'])
+                      if at.astimezone(TZ).date() <= close_date:
+                          continue
+                      bid=Decimal(str(r['bid']))
+                      if bid <= 0:
+                          continue
+                      valid.append((at,bid))
+                  except Exception:
+                      continue
+
+              if valid:
+                  covered += 1
+              else:
+                  missing += 1
+
+              sessions={}
+              stop=Decimal(str(p['stop_price']))
+              target=Decimal(str(p['target_price']))
+              first_hit=None
+              for at,bid in valid:
+                  day=at.astimezone(TZ).date().isoformat()
+                  s=sessions.setdefault(day,{
+                      'first_at':at.isoformat(),'first_bid':str(bid),
+                      'min_bid':str(bid),'max_bid':str(bid),
+                      'last_at':at.isoformat(),'last_bid':str(bid),'points':0,
+                  })
+                  s['points'] += 1
+                  s['last_at']=at.isoformat(); s['last_bid']=str(bid)
+                  s['min_bid']=str(min(Decimal(s['min_bid']),bid))
+                  s['max_bid']=str(max(Decimal(s['max_bid']),bid))
+                  if first_hit is None:
+                      if bid <= stop:
+                          first_hit={'reason':'STOP','at':at.isoformat(),'bid':str(bid),'local_date':day}
+                      elif bid >= target:
+                          first_hit={'reason':'TARGET','at':at.isoformat(),'bid':str(bid),'local_date':day}
+
+              if first_hit:
+                  if first_hit['reason']=='STOP': stop_first += 1
+                  else: target_first += 1
+              elif valid:
+                  neither += 1
+
+              ordered=[{'date':d,**sessions[d]} for d in sorted(sessions)[:3]]
+              summaries.append({
+                  'paper_id':p['paper_id'],
+                  'symbol':p['symbol'],
+                  'asset_class':p['asset_class'],
+                  'close_local_date':close_date.isoformat(),
+                  'closed_at':p['closed_at'],
+                  'actual_exit_price':p['exit_price'],
+                  'actual_net_pnl':p['net_pnl'],
+                  'entry_price':p['entry_price'],
+                  'entry_cost':p['entry_cost'],
+                  'stop_price':p['stop_price'],
+                  'target_price':p['target_price'],
+                  'true_overnight_bid_points':len(valid),
+                  'first_barrier_hit':first_hit,
+                  'next_sessions':ordered,
+              })
+
+          print('EOD_POSITION_COUNT='+str(total))
+          print('TRUE_OVERNIGHT_COVERED='+str(covered))
+          print('TRUE_OVERNIGHT_MISSING='+str(missing))
+          print('TRUE_OVERNIGHT_COVERAGE_RATIO='+((str(covered)+'/'+str(total)) if total else '0/0'))
+          print('TRUE_OVERNIGHT_FIRST_TARGET='+str(target_first))
+          print('TRUE_OVERNIGHT_FIRST_STOP='+str(stop_first))
+          print('TRUE_OVERNIGHT_NO_BARRIER_WITH_COVERAGE='+str(neither))
+          for item in summaries:
+              print('TRUE_OVERNIGHT_EVIDENCE='+json.dumps(item,sort_keys=True,separators=(',',':')))
+
+          assert c.total_changes == before
+          c.close()
+          print('DB_MUTATIONS=0')
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          print('SAME_DAY_POST_EOD_QUOTES=EXCLUDED')
+          print('RC6_EOD_TRUE_OVERNIGHT_READONLY_EVIDENCE=GREEN')
+          PY
+          HOST
