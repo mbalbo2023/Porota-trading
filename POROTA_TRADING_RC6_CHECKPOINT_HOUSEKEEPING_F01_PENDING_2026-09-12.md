@@ -195,3 +195,14 @@ Referencia: SHA desplegado `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d`. Sólo lec
 - Nuevo run PPI `34705796508`, creado por `push` a SHA `68835673e0cdf1f70b4760831b64bf9d28e30800`, terminó `SUCCESS`. Workflow `rc6-noncanonical-cleanup-diagnostic-20260912.yml`, job `diagnostic`.
 - El diagnóstico consulta por SSH; valida el SHA de host `a47f3339…`, lee el observer DB y abre el history DB en `mode=ro`. Crea/inserta sólo una tabla temporal `extra54` en SQLite para medir cruces; no elimina ni repara filas persistentes y reporta `HOST_MUTATION=NONE`.
 - Ambos runs son auditorías de historial/storage, no deploys. Son actividad del branch PPI independiente y no fueron disparados, cambiados ni cancelados por este trabajo de housekeeping.
+
+
+---
+
+## Despliegue de scheduler PPI y concurrencia de auditorías — 2026-09-12
+
+- Se confirmó un deploy previo distinto del despliegue de aplicación: run `34673767341`, `04:43 UTC`, branch PPI, SHA `8791ce7ce9596bc2faf53e8b13eca1d8955ddfab`, job `deploy` SUCCESS.
+- El workflow `.github/workflows/rc6-weekend-ingestion-scheduler-deploy-20260912.yml` valida el host RC6 y el safety state, luego instala scripts y units de systemd y habilita tres timers de contract-evidence/weekend audit/backfill; verifica que el timer `porota-ppi-argentina-nightly-rc6.timer` siga enabled/active. Es despliegue de infraestructura de ingesta, no actualización de código de aplicación ni autorización de órdenes reales.
+- Después ocurrió el deploy de aplicación más nuevo: run `34675061113`, SHA `a47f3339…`, SUCCESS a `05:14 UTC`. No se encontró deploy posterior en los 100 runs más recientes consultados.
+- Al chequeo de `16:37 UTC`, dos runs de PPI storage audit seguían en el job remoto que toma el lock compartido: `34702766005` (job empezó `16:19`) y `34705180201` (job empezó `16:25`). Sus logs en vivo no están disponibles; no se puede afirmar cuál posee el lock. Ninguno se canceló ni tocó desde esta auditoría.
+- El branch PPI tiene por tanto una ruta histórica de deploy de timers, aunque el usuario informa que el chat activo actualmente hace ingesta y no despliegues. Mantenerlo excluido de la poda hasta mapear esa configuración host.
