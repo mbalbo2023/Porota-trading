@@ -1,0 +1,70 @@
+name: RC6 T673O quarantine marker audit 2026-09-12
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-t673o-quarantine-marker-audit-20260912.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Verify T673O quarantine coverage read only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=30 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          EXPECT='a47f3339ec6dfe9d5afde444b1aaddabceb0e94d'
+          ACTUAL="$(git rev-parse HEAD)"; echo HOST_SHA=$ACTUAL; test "$ACTUAL" = "$EXPECT" || { echo ABORT=HOST_SHA_CHANGED; exit 31; }
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 600 9 || { echo ABORT=HISTORY_LOCK_BUSY; exit 33; }
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json
+          import bf_production_paper_observer as m
+          from cv_history_store_adapter_hf6 import default_history_store
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'SAFETY={s[0]}|{s[1]}'); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+              shadow=c.execute("select count(*) from ppi_argentina_api_shadow where ticker='T673O'").fetchone()[0]
+              qshadow=c.execute("select count(*) from ppi_argentina_api_shadow_quarantine_rc6 where ticker='T673O'").fetchone()[0] if 'ppi_argentina_api_shadow_quarantine_rc6' in tabs else -1
+              attempts=c.execute("select count(*) from history_attempt_ledger_v2 where symbol='T673O'").fetchone()[0] if 'history_attempt_ledger_v2' in tabs else 0
+              marked_attempts=c.execute("select count(*) from history_attempt_ledger_v2 l join ppi_ingest_quarantine_ledger_ids_rc6 q on q.id=l.id where l.symbol='T673O'").fetchone()[0] if {'history_attempt_ledger_v2','ppi_ingest_quarantine_ledger_ids_rc6'} <= tabs else -1
+              rejects=c.execute("select count(*) from history_row_rejections_v2 where symbol='T673O'").fetchone()[0] if 'history_row_rejections_v2' in tabs else 0
+              marked_rejects=c.execute("select count(*) from history_row_rejections_v2 r join ppi_ingest_quarantine_rejection_ids_rc6 q on q.id=r.id where r.symbol='T673O'").fetchone()[0] if {'history_row_rejections_v2','ppi_ingest_quarantine_rejection_ids_rc6'} <= tabs else -1
+              print('OBSERVER_MARKERS='+json.dumps({'active_shadow':shadow,'quarantine_shadow':qshadow,'ledger_total':attempts,'ledger_marked':marked_attempts,'rejections_total':rejects,'rejections_marked':marked_rejects},sort_keys=True))
+              assert shadow==0 and qshadow>0 and marked_attempts==attempts and marked_rejects==rejects
+          h=default_history_store()
+          with h.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+              identities=c.execute("select count(*) from ppi_ingest_quarantine_identity_rc6 where symbol='T673O'").fetchone()[0] if 'ppi_ingest_quarantine_identity_rc6' in tabs else -1
+              vtotal=c.execute("select count(*) from history_versions_v2 where symbol='T673O'").fetchone()[0] if 'history_versions_v2' in tabs else 0
+              vmarked=c.execute("select count(*) from history_versions_v2 v join ppi_ingest_quarantine_version_ids_rc6 q on q.id=v.id and q.table_name='history_versions_v2' where v.symbol='T673O'").fetchone()[0] if {'history_versions_v2','ppi_ingest_quarantine_version_ids_rc6'} <= tabs else -1
+              ctotal=c.execute("select count(*) from history_close_versions_v1 where symbol='T673O'").fetchone()[0] if 'history_close_versions_v1' in tabs else 0
+              cmarked=c.execute("select count(*) from history_close_versions_v1 v join ppi_ingest_quarantine_version_ids_rc6 q on q.id=-v.id and q.table_name='history_close_versions_v1' where v.symbol='T673O'").fetchone()[0] if {'history_close_versions_v1','ppi_ingest_quarantine_version_ids_rc6'} <= tabs else -1
+              active_full=c.execute("select count(*) from history_canonical_v2 where symbol='T673O'").fetchone()[0] if 'history_canonical_v2' in tabs else 0
+              active_close=c.execute("select count(*) from history_close_canonical_v1 where symbol='T673O'").fetchone()[0] if 'history_close_canonical_v1' in tabs else 0
+              print('HISTORY_MARKERS='+json.dumps({'quarantine_identities':identities,'full_versions_total':vtotal,'full_versions_marked':vmarked,'close_versions_total':ctotal,'close_versions_marked':cmarked,'active_full':active_full,'active_close':active_close},sort_keys=True))
+              assert identities>0 and vmarked==vtotal and cmarked==ctotal and active_full==0 and active_close==0
+          print('T673O_RECONCILIATION=NONCANONICAL_OVERDISCOVERY_FULLY_QUARANTINED')
+          print('HOST_MUTATION=NONE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
