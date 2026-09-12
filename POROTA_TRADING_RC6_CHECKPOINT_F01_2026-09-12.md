@@ -132,3 +132,15 @@ v17_trusted_history_catalog_import_2_result.json
 
 - No se hizo limpieza, reset ni modificación en el servidor. Hay que revisar la propiedad/estado de esas rutas en el host y resolver el árbol dirty por el procedimiento operativo aprobado antes de considerar un nuevo deploy. **No reintentar ni relajar el preflight hasta entonces.**
 - F-02 a F-10 continúan pendientes; su estado no cambia.
+
+
+## Triage de fechas y actividad de las rutas dirty — 2026-09-12 02:05 UTC
+
+- Auditoría estrictamente read-only: [34666689033](https://github.com/mbalbo2023/Porota-trading/actions/runs/34666689033). El host permaneció en `eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a`; `PRODUCTION_PAPER`, cero órdenes reales y sin mutación.
+- Git reporta `??` para todas las rutas del listado precedente: son archivos **no rastreados**, no modificaciones de archivos versionados RC6.
+- `scripts/ppi_web_authenticated_probe_hf6.py`: creado/modificado 2026-09-02 03:36 UTC (9 días antes del chequeo).
+- Los restantes `v17_*`: fechados principalmente 2026-08-29 y 2026-08-30 (12–13 días antes). Los nombres y extensiones identifican scripts/resultados de tareas antiguas RC2/RC3, commissioning, canarios, inventarios, despliegues y auditorías.
+- No hubo coincidencias de ejecución para las rutas exactas ni referencias de servicios/timers activos. `v17_hf1_resume_deploy.pid` está **STALE**; el proceso indicado no existe o no corresponde a una ejecución vigente.
+- Distinción operativa: en el snapshot 02:05:55 UTC sí aparecieron dos cadenas de procesos `timeout → sudo → docker compose` con firma de consulta autenticada/histórica de IOL. No coinciden con las rutas exactas inspeccionadas; no se pudo establecer propietario ni mecanismo de inicio. El patrón observado corresponde a consulta de credenciales/token e histórico, no a una ruta de órdenes. Debe identificarse su origen/frecuencia antes de atribuirlo a estos artefactos o declararlo resuelto.
+- La primera versión del sondeo de procesos tuvo un defecto que hizo que el log de Actions imprimiera argumentos de procesos; no se usó para concluir actividad. Se sustituyó por sondeo sanitizado que solo emite metadatos, estado Git y PID/nombre de proceso, nunca argv. En la salida observada no aparecieron valores de credenciales.
+- Conclusión: las rutas parecen **artefactos viejos y no activos en sí**, candidatos a archivo/revisión; no se califican como basura eliminable sin inspeccionar contenido y confirmar propiedad. No se borró ni alteró ninguna ruta del host.
