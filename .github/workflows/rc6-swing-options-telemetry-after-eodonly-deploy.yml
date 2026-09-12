@@ -1,0 +1,321 @@
+name: RC6 SWING Options Telemetry after EOD-only deploy
+
+on:
+  push:
+    branches:
+      - "deploy/rc6-swing-options-telemetry-after-eodonly-20260912"
+    paths:
+      - ".github/workflows/rc6-swing-options-telemetry-after-eodonly-deploy.yml"
+      - ".github/swing-options-telemetry-after-eodonly-deploy-request.txt"
+      - "cf_intraday_scalping.py"
+      - "eq_dashboard_table_layout_rc6.py"
+      - "fi_swing_paper_shadow_rc6.py"
+      - "fk_scalping_revision_metrics_rc6.py"
+      - "fq_dashboard_swing_options_telemetry_rc6.py"
+      - "tests/test_rc6_scalping_revision_metrics.py"
+      - "tests/test_rc6_scalping_revision_telemetry.py"
+      - "tests/test_rc6_swing_options_telemetry_dashboard.py"
+      - "tests/test_rc6_swing_paper_shadow.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-swing-options-telemetry-after-eodonly
+  cancel-in-progress: false
+
+env:
+  BASE_SHA: b82bbb159137a216825dc5973ba61fa79c853d52
+
+jobs:
+  validate:
+    name: Validate SWING options telemetry on clean Estrategias
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Exact-base delta guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "deploy/rc6-swing-options-telemetry-after-eodonly-20260912"
+          test "$(git merge-base "$BASE_SHA" "$GITHUB_SHA")" = "$BASE_SHA"
+          git diff --check "$BASE_SHA" "$GITHUB_SHA"
+          EXPECTED="$(printf '%s\n' \
+            .github/workflows/rc6-swing-options-telemetry-after-eodonly-deploy.yml \
+            cf_intraday_scalping.py \
+            eq_dashboard_table_layout_rc6.py \
+            fi_swing_paper_shadow_rc6.py \
+            fk_scalping_revision_metrics_rc6.py \
+            fq_dashboard_swing_options_telemetry_rc6.py \
+            tests/test_rc6_scalping_revision_metrics.py \
+            tests/test_rc6_scalping_revision_telemetry.py \
+            tests/test_rc6_swing_options_telemetry_dashboard.py \
+            tests/test_rc6_swing_paper_shadow.py | sort)"
+          if [ -f .github/swing-options-telemetry-after-eodonly-deploy-request.txt ]; then
+            EXPECTED="$(printf '%s\n' \
+              .github/workflows/rc6-swing-options-telemetry-after-eodonly-deploy.yml \
+              .github/swing-options-telemetry-after-eodonly-deploy-request.txt \
+              cf_intraday_scalping.py \
+              eq_dashboard_table_layout_rc6.py \
+              fi_swing_paper_shadow_rc6.py \
+              fk_scalping_revision_metrics_rc6.py \
+              fq_dashboard_swing_options_telemetry_rc6.py \
+              tests/test_rc6_scalping_revision_metrics.py \
+              tests/test_rc6_scalping_revision_telemetry.py \
+              tests/test_rc6_swing_options_telemetry_dashboard.py \
+              tests/test_rc6_swing_paper_shadow.py | sort)"
+          fi
+          ACTUAL="$(git diff --name-only "$BASE_SHA" "$GITHUB_SHA" | sort)"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Identity compile and policy invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import _version as v
+          import fg_intraday_contract_policy_rc6 as contract
+          import fi_swing_paper_shadow_rc6 as swing
+          assert v.VERSION == '17.0.0-rc6'
+          assert v.MODE == 'PRODUCTION_PAPER'
+          assert v.EXECUTION == 'SIMULATED'
+          assert v.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          assert contract.DEFAULT_MUTABLE_SECONDS == 120
+          swing.assert_shadow_only()
+          print('MODE=PRODUCTION_PAPER')
+          print('SCALPING_MUTABLE_WINDOW_SECONDS=120')
+          print('SWING_MODE=SHADOW_ONLY')
+          PY
+          python -m py_compile cf_intraday_scalping.py fi_swing_paper_shadow_rc6.py fk_scalping_revision_metrics_rc6.py fq_dashboard_swing_options_telemetry_rc6.py eq_dashboard_table_layout_rc6.py
+
+      - name: Install narrow validation dependencies
+        run: python -m pip install -q pytest requests fastapi python-multipart python-dotenv
+
+      - name: Targeted regression suite
+        shell: bash
+        run: |
+          python -m pytest -q \
+            tests/test_rc6_scalping_revision_telemetry.py \
+            tests/test_rc6_scalping_revision_metrics.py \
+            tests/test_rc6_swing_paper_shadow.py \
+            tests/test_rc6_swing_options_telemetry_dashboard.py \
+            tests/test_rc6_dashboard_eod_route_p0.py \
+            tests/test_eod_overnight_dashboard_rc6.py \
+            tests/test_rc6_scalping_intraday_fee_bonus.py \
+            tests/test_rc6_scalping_active_paper_learning.py
+
+      - name: Static non-binding and clean-route guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import fg_intraday_contract_policy_rc6 as contract
+          overlay=Path('fq_dashboard_swing_options_telemetry_rc6.py').read_text(encoding='utf-8').lower()
+          swing=Path('fi_swing_paper_shadow_rc6.py').read_text(encoding='utf-8').lower()
+          metrics=Path('fk_scalping_revision_metrics_rc6.py').read_text(encoding='utf-8').lower()
+          for name,src in [('overlay',overlay),('swing',swing),('metrics',metrics)]:
+              for token in ('/operar','requests.post(','requests.put(','requests.delete(','send_order(','place_order('):
+                  assert token not in src, (name,token)
+          assert contract.DEFAULT_MUTABLE_SECONDS == 120
+          layout=Path('eq_dashboard_table_layout_rc6.py').read_text(encoding='utf-8')
+          assert layout.index('eod_route_fix.install()') < layout.index('strategy_telemetry.install()')
+          p0=Path('fp_dashboard_eod_route_fix_rc6.py').read_text(encoding='utf-8')
+          assert 'return _strategies_eod_page()' in p0
+          changed=set(__import__('subprocess').check_output(['git','diff','--name-only',__import__('os').environ['BASE_SHA'],'HEAD'],text=True).splitlines())
+          for core in ('c_ppi_client.py','bd_ppi_readonly_guard.py','be_paper_engine.py','bm_exit_supervisor.py','p_risk_guardian.py','bw_daily_risk.py','dh_paper_dynamic_risk_gate_hf6.py'):
+              assert core not in changed, core
+          print('NON_BINDING_EXECUTION_SURFACE=GREEN')
+          print('CLEAN_ESTRATEGIAS_COMPOSITION=GREEN')
+          PY
+
+      - name: Build exact candidate image
+        run: docker build --pull=false --label "porota.commit=$GITHUB_SHA" --label "porota.version=17.0.0-rc6" -t "porota-rc6-strategy-telemetry:$GITHUB_SHA" .
+
+      - name: Python 3.11 container regression
+        shell: bash
+        run: |
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX -e DB_PATH=/tmp/strategy-telemetry.db \
+            -e TELEGRAM_CHAT_ID=0 -e STARTUP_REQUIRE_AUTH=false --entrypoint bash \
+            "porota-rc6-strategy-telemetry:$GITHUB_SHA" -lc \
+            'python -m pytest -q -p no:cacheprovider --tb=short tests/test_rc6_scalping_revision_telemetry.py tests/test_rc6_scalping_revision_metrics.py tests/test_rc6_swing_paper_shadow.py tests/test_rc6_swing_options_telemetry_dashboard.py tests/test_rc6_dashboard_eod_route_p0.py tests/test_eod_overnight_dashboard_rc6.py tests/test_rc6_scalping_intraday_fee_bonus.py tests/test_rc6_scalping_active_paper_learning.py'
+
+  deploy:
+    name: Deploy SWING options telemetry PAPER-safe bundle
+    needs: validate
+    if: contains(github.event.head_commit.message, '[DEPLOY_SWING_OPTIONS_TELEMETRY_RC6]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    environment: production
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_strategy"
+          chmod 600 "$HOME/.ssh/porota_strategy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Exact-base forward-only deployment and postflight
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_strategy" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "BASE_SHA='$BASE_SHA' TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
+          SHORT_SHA="$(printf '%s' "$TARGET_SHA" | cut -c1-12)"
+          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-strategy-$SHORT_SHA"
+          WORKTREE="/tmp/porota-rc6-strategy-$SHORT_SHA-$$"
+          cleanup(){ set +e; [ ! -d "$WORKTREE" ] || git -C "$REPO" worktree remove --force "$WORKTREE" >/dev/null 2>&1; git -C "$REPO" worktree prune >/dev/null 2>&1; }
+          trap cleanup EXIT
+
+          echo 'AUTO_ROLLBACK=DISABLED'
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$BASE_SHA"
+          test "$(git -C "$REPO" status --porcelain=v1 --untracked-files=no | sed '/^$/d' | wc -l | tr -d ' ')" = 0
+          git -C "$REPO" status --porcelain=v1 --untracked-files=normal | grep '^?? ' | sort > /tmp/strategy-untracked-before.txt || true
+
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,mode,orders))))
+          PY
+          )"
+          echo "PRE_SAFETY=$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          EXPECTED="$(printf '%s\n' \
+            .github/workflows/rc6-swing-options-telemetry-after-eodonly-deploy.yml \
+            .github/swing-options-telemetry-after-eodonly-deploy-request.txt \
+            cf_intraday_scalping.py \
+            eq_dashboard_table_layout_rc6.py \
+            fi_swing_paper_shadow_rc6.py \
+            fk_scalping_revision_metrics_rc6.py \
+            fq_dashboard_swing_options_telemetry_rc6.py \
+            tests/test_rc6_scalping_revision_metrics.py \
+            tests/test_rc6_scalping_revision_telemetry.py \
+            tests/test_rc6_swing_options_telemetry_dashboard.py \
+            tests/test_rc6_swing_paper_shadow.py | sort)"
+          ACTUAL="$(git -C "$REPO" diff --name-only "$BASE_SHA" "$TARGET_SHA" | sort)"
+          test "$ACTUAL" = "$EXPECTED"
+          while IFS= read -r entry; do
+            [ -n "$entry" ] || continue
+            p="${entry#?? }"
+            if git -C "$REPO" cat-file -e "$TARGET_SHA:$p" 2>/dev/null; then echo "UNTRACKED_COLLISION=$p"; exit 1; fi
+          done < /tmp/strategy-untracked-before.txt
+
+          git -C "$REPO" worktree add --detach "$WORKTREE" "$TARGET_SHA" >/dev/null
+          grep -qx 'AUTHORIZED_BY_USER' "$WORKTREE/.github/swing-options-telemetry-after-eodonly-deploy-request.txt"
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label "porota.version=17.0.0-rc6" -t "$CANDIDATE_IMAGE" "$WORKTREE"
+          sudo -n docker run --rm --pull never --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX -e DB_PATH=/tmp/strategy-telemetry-deploy.db \
+            -e TELEGRAM_CHAT_ID=0 -e STARTUP_REQUIRE_AUTH=false --entrypoint bash "$CANDIDATE_IMAGE" -lc \
+            'python -m pytest -q -p no:cacheprovider --tb=short tests/test_rc6_scalping_revision_telemetry.py tests/test_rc6_scalping_revision_metrics.py tests/test_rc6_swing_paper_shadow.py tests/test_rc6_swing_options_telemetry_dashboard.py tests/test_rc6_dashboard_eod_route_p0.py tests/test_eod_overnight_dashboard_rc6.py tests/test_rc6_scalping_intraday_fee_bonus.py tests/test_rc6_scalping_active_paper_learning.py'
+
+          git -C "$REPO" checkout --detach "$TARGET_SHA"
+          sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+
+          HEALTH_OK=NO
+          for _ in $(seq 1 45); do
+            if H="$(curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null)"; then
+              if python3 - "$H" <<'PY' >/dev/null 2>&1
+          import json,sys
+          x=json.loads(sys.argv[1]); assert x.get('status')=='ok' and x.get('version')=='17.0.0-rc6'
+          PY
+              then HEALTH_OK=YES; break; fi
+            fi
+            sleep 2
+          done
+          test "$HEALTH_OK" = YES
+
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,mode,orders))))
+          PY
+          )"
+          echo "POST_SAFETY=$POST"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import o_dashboard
+          import bg_paper_dashboard as bg
+          import fi_swing_paper_shadow_rc6 as swing
+          import fg_intraday_contract_policy_rc6 as contract
+          swing.assert_shadow_only()
+          assert contract.DEFAULT_MUTABLE_SECONDS == 120
+          strategies=bg.trading_page('estrategias')
+          assert strategies.count('EOD / Overnight') == 1
+          assert 'CURRENT_EOD' in strategies
+          assert 'SWING_PAPER — evaluación overnight' in strategies
+          assert 'SHADOW_ONLY' in strategies
+          for text in ('Acciones y CEDEAR','Renta fija','Actividad real de análisis por familia','Contratos y readiness de opciones','Fondos locales y exterior','Licitaciones y canjes'):
+              assert text not in strategies, text
+          options=bg.trading_page('opciones')
+          assert 'Opciones — telemetría de datos y contrato' in options
+          assert 'READ_ONLY / OBSERVABILITY_ONLY' in options
+          scalping=bg.scalping_page()
+          assert 'Calidad temporal de velas — telemetría RC6' in scalping
+          assert '120 s' in scalping
+          print('TRADING_ESTRATEGIAS_EOD_SWING=GREEN')
+          print('TRADING_ESTRATEGIAS_FAMILY_SUBMENU=ABSENT')
+          print('TRADING_OPCIONES_TELEMETRY=GREEN')
+          print('SCALPING_REVISION_TELEMETRY_UI=GREEN')
+          print('SWING_MODE=SHADOW_ONLY')
+          print('EOD_POLICY_ACTIVE=CURRENT_EOD')
+          print('SCALPING_MUTABLE_WINDOW_SECONDS=120')
+          PY
+
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Image}}' porota_production_observer)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          test "$(printf '%s' "$OBS" | cut -d'|' -f1-2)" = 'true|0'
+          test "$(printf '%s' "$DASH" | cut -d'|' -f1-2)" = 'true|0'
+          OBS_IMG="$(printf '%s' "$OBS" | cut -d'|' -f3)"; DASH_IMG="$(printf '%s' "$DASH" | cut -d'|' -f3)"
+          test "$OBS_IMG" = "$DASH_IMG"
+          test "$(sudo -n docker image inspect "$OBS_IMG" -f '{{ index .Config.Labels "porota.commit" }}')" = "$TARGET_SHA"
+          sleep 10
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)" = 0
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)" = 0
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C "$REPO" status --porcelain=v1 --untracked-files=no | sed '/^$/d' | wc -l | tr -d ' ')" = 0
+          git -C "$REPO" status --porcelain=v1 --untracked-files=normal | grep '^?? ' | sort > /tmp/strategy-untracked-after.txt || true
+          diff -u /tmp/strategy-untracked-before.txt /tmp/strategy-untracked-after.txt
+          echo "HOST_SHA_FINAL=$TARGET_SHA"
+          echo 'REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'RC6_SWING_OPTIONS_TELEMETRY_POSTFLIGHT=GREEN'
+          REMOTE
