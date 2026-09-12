@@ -34,6 +34,10 @@ jobs:
           set -u
           echo "AT=$(date -u +%FT%TZ)"
           echo "HOST_SHA=$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo '=== DISK ==='
+          df -B1 / | tail -1 | awk '{print "ROOT_TOTAL_BYTES="$2" ROOT_USED_BYTES="$3" ROOT_FREE_BYTES="$4" ROOT_USED_PCT="$5}'
+          df -h /
+          sudo -n du -sb /opt/porota-trading/data 2>/dev/null | awk '{print "DATA_TREE_BYTES="$1}' || true
           echo '=== LOCKS ==='
           sudo -n lslocks 2>/dev/null | grep -E 'porota-ppi-fullfamily-history|porota-trading-history|COMMAND|flock' || true
           echo '=== HOST PROCESS TREE ==='
