@@ -1,0 +1,100 @@
+name: RC6 PPI catalog history ingest stage2 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-catalog-history-ingest-stage2-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Continue bounded PPI history ingest
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 2400 9 || { echo 'ABORT=PPI_LOCK_TIMEOUT'; exit 32; }
+          for u in porota-history-postclose-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do
+            state="$(systemctl is-active "$u" 2>/dev/null || true)"
+            test "$state" != active && test "$state" != activating || { echo "ABORT=CONCURRENT_HISTORY_SERVICE:$u"; exit 33; }
+          done
+          sudo -n timeout 1800 docker exec -i porota_production_observer python - <<'PY'
+          import json
+          import bf_production_paper_observer as m
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY_BEFORE={s[0]}|{s[1]}')
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              assert m._market_phase()=='CLOSED'
+
+          def all_catalog_least_attempted(store):
+              with store.connect() as c:
+                  rows=c.execute("""select f.ticker,f.instrument_type,f.settlement,
+                      coalesce(a.attempted_at,h.downloaded_at) last_try,
+                      case f.status when 'AVAILABLE' then 0 else 1 end status_rank
+                    from financial_instrument_catalog f
+                    left join production_history_attempts a on a.symbol=f.ticker
+                      and a.instrument_type=f.instrument_type and a.settlement=f.settlement
+                    left join production_history h on h.symbol=f.ticker
+                      and h.instrument_type=f.instrument_type and h.settlement=f.settlement
+                    order by (coalesce(a.attempted_at,h.downloaded_at) is not null),
+                      coalesce(a.attempted_at,h.downloaded_at),status_rank,f.instrument_type,f.ticker""").fetchall()
+              return [(r[0],r[1],r[2]) for r in rows]
+
+          m._historical_targets=all_catalog_least_attempted
+          m.HISTORY_BATCH_LIMIT=100
+          targets=all_catalog_least_attempted(store)
+          batch=targets[:100]
+          byfam={}
+          for _,kind,_ in batch: byfam[kind]=byfam.get(kind,0)+1
+          print('CATALOG_HISTORY_DENOMINATOR='+str(len(targets)))
+          print('STAGE2_BATCH_BY_FAMILY='+json.dumps(byfam,sort_keys=True))
+          print('STAGE2_IDENTITIES='+json.dumps(batch,ensure_ascii=False))
+          key,secret=m._secret(); reader=m.ProductionMarketReader(key,secret,audit=store.audit_http)
+          try:
+              reader.login_once(); rows=m._download_histories(reader,store); metrics=reader.metrics
+          finally:
+              reader.close()
+          print('STAGE2_VALID_ROWS='+str(rows))
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY_AFTER={s[0]}|{s[1]}')
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              print('=== ATTEMPT_COVERAGE_AFTER ===')
+              for r in c.execute("select instrument_type,state,count(*) n,sum(valid_rows) rows from production_history_attempts group by instrument_type,state order by instrument_type,state"):
+                  print(json.dumps({'family':r[0],'state':r[1],'identities':r[2],'valid_rows':r[3]},sort_keys=True))
+          print('HOST_MUTATION=HISTORY_DATA_ONLY')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
