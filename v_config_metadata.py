@@ -202,7 +202,6 @@ CONFIG_METADATA = [
     ("SRE_CONFIRM_TTL_SECONDS", "Salud y SRE", "Vigencia del código de confirmación de Telegram.", "900", False),
     ("SRE_AUTOTEST_TIMEOUT", "Salud y SRE", "Tiempo máximo de cada paso del autotest antes de darlo por fallido.", "300", False),
     ("SRE_BACKUP_DIR", "Salud y SRE", "Dónde se guardan los respaldos previos a cada cambio.", "./data/sre_backups", False),
-    ("PROPOSALS_DIR", "Salud y SRE", "Dónde viven las propuestas de mejora del motor SRE.", "./data/proposals", False),
 
     # --- v16.1 · Comandos de Telegram ---
     ("TELEGRAM_COMMAND_POLL_SECONDS", "Comandos Telegram", "Cada cuántos segundos se consultan comandos nuevos.", "5", False),
