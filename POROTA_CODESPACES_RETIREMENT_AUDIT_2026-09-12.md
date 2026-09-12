@@ -137,3 +137,22 @@ Se abrió como borrador el PR [#59](https://github.com/mbalbo2023/Porota-trading
 La revisión estática encontró que `deploy.yml` acepta un ref arbitrario, apunta a `/home/tradingbot/app` y exige `requirements.txt`/`entrypoint.py`, que CI no detecta en `main`. `promote-to-production.yml` permite `testing/develop`, tiene permiso `contents: write` y hace push directo a `main`. Ambos usan solo `workflow_dispatch`. No constituyen el procedimiento certificado de RC6. La propuesta retira los botones heredados; no añade reemplazo de despliegue RC6.
 
 CI run `34714819048` (#256) terminó `success`: `Infrastructure preflight` pasó. `Application CI` detectó el paquete ausente; compilación, pruebas y stack quedaron `skipped`. El conector GitHub rechazó las consultas de historial de ejecuciones de esos dos workflows con `400 INVALID_ARGUMENT`; no se pudo verificar si tuvieron usos anteriores. Por ello, el PR sigue en borrador hasta revisión humana de dependencias/uso histórico. No se ejecutó ningún workflow manual, despliegue ni acción sobre el runtime.
+
+
+## Avance de limpieza del repositorio — 2026-09-12 (continuación)
+
+### Paso 1 — baseline y flujo documental: COMPLETADO
+
+El PR [#58](https://github.com/mbalbo2023/Porota-trading/pull/58) se marcó listo y se integró por squash, con SHA de merge `8115a795161499670443ad5fa5b6faab93d1bf1d`. Su diff es solo `README.md`: declara RC6 `17.0.0-rc6` y el source certificado `f8adec8a02b2f9f0ef2dffbee75458c958bf711e`, reemplaza la ruta textual obsoleta de promoción por PR y documenta que el README no autoriza despliegues. CI #255 fue reportado como exitoso para preflight; las pruebas de aplicación quedaron omitidas porque el paquete no está instalado en `main`. No cambió el runtime ni se ejecutó un workflow de producción.
+
+### Paso 2 — inventario de referencias y ramas: EN CURSO
+
+La enumeración global y el análisis de cualquier referencia asociada al workstream paralelo de ingesta PPI quedan expresamente fuera del alcance de este checkpoint. Por tanto, este documento no declara un conteo total actual de ramas ni certifica la eliminación de ramas históricas. Continúan como hallazgos previos los seis alias idénticos de Codespaces candidatos a retiro, sujetos a revisión de reglas/propietario. No se eliminó ninguna rama.
+
+### Paso 3 — decisión sobre workflows manuales heredados: BLOQUEADO PARA FUSIÓN
+
+El PR [#59](https://github.com/mbalbo2023/Porota-trading/pull/59) continúa abierto como borrador, sin cambios en su estado. Su propuesta elimina `.github/workflows/deploy.yml` y `.github/workflows/promote-to-production.yml`, pero no agrega un reemplazo de despliegue RC6 y el historial de ejecuciones previas no se pudo leer mediante la integración GitHub (error `400 INVALID_ARGUMENT`). No se fusiona hasta resolver ese riesgo de dependencia operacional; CI #256 validó preflight y omitió pruebas/stack de aplicación.
+
+### Decisiones de limpieza
+
+No se fusionará ninguna rama histórica de manera automática ni se reescribirá el historial. Solo se integran cambios únicos requeridos por RC6 mediante PR; referencias completamente redundantes se podrán borrar cuando reglas, propietario, PRs y dependencias estén comprobados. Se conservan los commits históricos como trazabilidad. Ningún cambio descrito aquí consulta, modifica o ejecuta la ingesta paralela.
