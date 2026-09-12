@@ -260,8 +260,8 @@ class PaperStore:
         # permite rescatar silenciosamente una punta anterior que ya desapareció.
         with self.connect() as c:
             row = c.execute("""SELECT * FROM market_snapshots WHERE symbol=? AND asset_class=?
-              AND settlement=? ORDER BY id DESC LIMIT 1""",
-              tuple(position[k] for k in ("symbol", "asset_class", "settlement"))).fetchone()
+              AND settlement=? AND currency=? AND market=? ORDER BY id DESC LIMIT 1""",
+              tuple(position[k] for k in ("symbol", "asset_class", "settlement", "currency", "market"))).fetchone()
         if not row:
             return None
         values = dict(row)
