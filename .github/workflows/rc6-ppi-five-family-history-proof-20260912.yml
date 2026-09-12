@@ -1,0 +1,133 @@
+name: RC6 PPI five-family history proof 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-five-family-history-proof-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Prove remaining PPI history families read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          EXPECTED_SHA='eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a'
+          HOST_SHA="$(git rev-parse HEAD)"
+          echo "HOST_SHA=$HOST_SHA"
+          test "$HOST_SHA" = "$EXPECTED_SHA" || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+          exec 9>/run/lock/porota-ppi-history-proof.lock
+          flock -n 9 || { echo 'ABORT=PROOF_LOCK_BUSY'; exit 32; }
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from datetime import timedelta
+          import bf_production_paper_observer as m
+
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              state=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY={state[0]}|{state[1]}')
+              assert state[0]=='PRODUCTION_PAPER' and int(state[1] or 0)==0
+              print('MARKET_PHASE='+m._market_phase())
+              assert m._market_phase()=='CLOSED'
+              print('=== CATALOG_TOTALS ===')
+              print('ALL_IDENTITIES='+str(c.execute("select count(*) from financial_instrument_catalog").fetchone()[0]))
+              print('AVAILABLE='+str(c.execute("select count(*) from financial_instrument_catalog where status='AVAILABLE'").fetchone()[0]))
+              print('STALE='+str(c.execute("select count(*) from financial_instrument_catalog where status='STALE'").fetchone()[0]))
+              print('=== CATALOG_BY_FAMILY_STATUS ===')
+              for r in c.execute("select instrument_type,status,count(*) n from financial_instrument_catalog group by instrument_type,status order by instrument_type,status"):
+                  print(json.dumps({'family':r[0],'status':r[1],'n':r[2]},sort_keys=True))
+              print('=== PPI_CONFIGURATION ===')
+              for name,payload in c.execute("select name,payload_json from broker_market_configuration order by name"):
+                  try: value=json.loads(payload)
+                  except Exception: value=payload
+                  print(json.dumps({'name':name,'value':value},ensure_ascii=False,sort_keys=True))
+              print('=== HISTORY_ATTEMPT_SCHEMA ===')
+              for r in c.execute('pragma table_info(production_history_attempts)'):
+                  print(json.dumps({'name':r[1],'type':r[2]},sort_keys=True))
+
+          key,secret=m._secret()
+          reader=m.ProductionMarketReader(key,secret,audit=store.audit_http)
+          reader.login_once()
+          end=m.datetime.now(m.TZ).date()
+          start=end-timedelta(days=365)
+          families=('ON','LETRAS','OPCIONES','FUTUROS','CAUCIONES')
+          results=[]
+          with store.connect() as c:
+              targets={}
+              for family in families:
+                  rows=c.execute("""select ticker,instrument_type,settlement,status,market
+                    from financial_instrument_catalog where instrument_type=?
+                    order by case status when 'AVAILABLE' then 0 else 1 end,ticker limit 3""",(family,)).fetchall()
+                  targets[family]=[tuple(r) for r in rows]
+          print('=== FAMILY_HISTORY_PROOF ===')
+          try:
+              for family in families:
+                  if not targets[family]:
+                      result={'family':family,'proof':'NO_CATALOG_IDENTITIES'}
+                      results.append(result); print(json.dumps(result,sort_keys=True)); continue
+                  for ticker,kind,settlement,status,market in targets[family]:
+                      row={'family':family,'ticker':ticker,'status':status,'market':market,'settlement':settlement}
+                      try:
+                          payload=reader.history(ticker,kind,settlement,start,end)
+                          valid=m._history_count(payload,as_of=m.now_iso(),date_from=start,date_to=end)
+                          provider=len(payload) if isinstance(payload,list) else 0
+                          dates=[]
+                          if isinstance(payload,list):
+                              for item in payload:
+                                  if isinstance(item,dict) and item.get('date'): dates.append(str(item['date']))
+                          row.update({'proof':'HTTP_OK','provider_rows':provider,'valid_rows':valid,
+                                      'first_raw_date':min(dates) if dates else None,
+                                      'last_raw_date':max(dates) if dates else None})
+                      except Exception as exc:
+                          row.update({'proof':'ERROR','error_class':m.classify_read_error(exc),'error_type':type(exc).__name__})
+                      results.append(row); print(json.dumps(row,ensure_ascii=False,sort_keys=True))
+          finally:
+              metrics=reader.metrics
+              reader.close()
+          print('=== FAMILY_PROOF_SUMMARY ===')
+          for family in families:
+              subset=[r for r in results if r.get('family')==family]
+              print(json.dumps({'family':family,
+                  'tested':len(subset),
+                  'http_ok':sum(r.get('proof')=='HTTP_OK' for r in subset),
+                  'with_provider_rows':sum(int(r.get('provider_rows') or 0)>0 for r in subset),
+                  'with_valid_rows':sum(int(r.get('valid_rows') or 0)>0 for r in subset),
+                  'provider_rows':sum(int(r.get('provider_rows') or 0) for r in subset),
+                  'valid_rows':sum(int(r.get('valid_rows') or 0) for r in subset)},sort_keys=True))
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+          with store.connect() as c:
+              state=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'SAFETY_AFTER={state[0]}|{state[1]}')
+          assert state[0]=='PRODUCTION_PAPER' and int(state[1] or 0)==0
+          print('HOST_MUTATION=NONE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
