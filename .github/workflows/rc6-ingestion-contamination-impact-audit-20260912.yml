@@ -1,0 +1,113 @@
+name: RC6 ingestion contamination impact audit 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ingestion-contamination-impact-audit-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Rebuild trusted 1960 candidate read-only and quantify contamination
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "HOST_SHA=$(git rev-parse HEAD)"
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 600 9 || { echo 'ABORT=HISTORY_LOCK_BUSY'; exit 32; }
+          sudo -n timeout 1200 docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,time
+          import bf_production_paper_observer as m
+          import bu_instrument_catalog as catalog
+          LOCAL_MARKETS={'BYMA','ROFEX','A3','OTC'}; FOREIGN={'ACCIONES-USA','FCI-EXTERIOR'}
+          DISCOVERY={
+            'FCI':(('FONDO','RENTA','AHORRO','PPI','BALANZ','GALILEO','MONEY','PESOS','DOLAR','A','E','I','O','U','S','M','P'),('BYMA','OTC')),
+            'LICITACIONES':(('LICITACION','LETRA','BONO','ON','A','E','I','O','U','S','M','P'),('BYMA','OTC')),
+            'LEBAC':(('LEBAC','L','A','E','I','O','U','S','M','P'),('BYMA',)),
+            'NOBAC':(('NOBAC','N','A','E','I','O','U','S','M','P'),('BYMA',)),
+            'ETF':(('SPY','QQQ','DIA','IWM','ARGT','A','E','I','O','U','S','M','P'),('BYMA',)),
+          }
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print('SAFETY=%s|%s'%s); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              base=[dict(r) for r in c.execute("select ticker,instrument_type,market,currency,settlement,status,description,metadata_json from financial_instrument_catalog where market in ('BYMA','ROFEX','A3','OTC') and instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')")]
+              current=[tuple(r) for r in c.execute("select ticker,instrument_type,market,currency,settlement from ppi_argentina_api_shadow where market in ('BYMA','ROFEX','A3','OTC') and instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')")]
+              print('CURRENT_SHADOW='+str(len(current)))
+              print('PROD_ATTEMPTS='+str(c.execute('select count(*) from production_history_attempts').fetchone()[0]))
+              print('PROD_HISTORY='+str(c.execute('select count(*) from production_history').fetchone()[0]))
+              tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+              if 'ppi_api_closeout_runs_rc6' in tables:
+                  for r in c.execute('select * from ppi_api_closeout_runs_rc6 order by run_at'):
+                      print('CLOSEOUT_RUN='+json.dumps(list(r),default=str))
+              if 'ppi_api_closeout_classification_rc6' in tables:
+                  print('CLOSEOUT_CLASSIFICATIONS='+str(c.execute('select count(*) from ppi_api_closeout_classification_rc6').fetchone()[0]))
+                  for r in c.execute('select instrument_type,state,count(*) from ppi_api_closeout_classification_rc6 group by instrument_type,state order by instrument_type,state'):
+                      print('CLOSEOUT_CLASS_STATE='+json.dumps({'family':r[0],'state':r[1],'count':r[2]},sort_keys=True))
+          trusted={}
+          for r in base:
+              k=(r['ticker'],r['instrument_type'],r['market'],r['currency'],r['settlement']); trusted[k]=r
+          key,secret=m._secret(); reader=m.ProductionMarketReader(key,secret,audit=store.audit_http); reader.login_once()
+          stats={}
+          try:
+              for fam,(queries,markets) in DISCOVERY.items():
+                  st={'queries':0,'ok':0,'errors':0,'normalized':0}; stats[fam]=st
+                  for q in queries:
+                      for market in markets:
+                          st['queries']+=1
+                          try:
+                              p=reader.search_instruments(q,fam,name=q,market=market); st['ok']+=1
+                              for raw in p if isinstance(p,list) else []:
+                                  try: rec=catalog.normalize_record(raw,'INMEDIATA' if fam=='FCI' else 'A-24HS',m.now_iso(),'ARG_LOCAL_API_AUDIT')
+                                  except Exception: continue
+                                  if rec['market'] not in LOCAL_MARKETS or rec['instrument_type'] in FOREIGN: continue
+                                  k=(rec['ticker'],rec['instrument_type'],rec['market'],rec['currency'],rec['settlement'])
+                                  trusted[k]=rec; st['normalized']+=1
+                          except Exception: st['errors']+=1
+                          time.sleep(.04)
+          finally: reader.close()
+          cur=set(current); good=set(trusted); extra=cur-good; missing=good-cur
+          print('TRUSTED_REBUILD='+str(len(good)))
+          print('CURRENT_EXTRA='+str(len(extra)))
+          print('TRUSTED_MISSING='+str(len(missing)))
+          print('DISCOVERY_STATS='+json.dumps(stats,sort_keys=True))
+          good_coarse={(a,b,e) for a,b,c,d,e in good}; extra_coarse={(a,b,e) for a,b,c,d,e in extra}
+          print('EXTRA_COARSE_UNIQUE='+str(len(extra_coarse)))
+          print('EXTRA_COARSE_COLLIDE_TRUSTED='+str(len(extra_coarse & good_coarse)))
+          with store.connect() as c:
+              acols=[r[1] for r in c.execute('pragma table_info(production_history_attempts)')]; print('ATTEMPT_COLS='+json.dumps(acols))
+              hcols=[r[1] for r in c.execute('pragma table_info(production_history)')]; print('HISTORY_COLS='+json.dumps(hcols))
+              attempts=[tuple(r) for r in c.execute('select symbol,instrument_type,settlement,state,valid_rows from production_history_attempts')]
+              bad_attempt=[r for r in attempts if (r[0],r[1],r[2]) in extra_coarse and (r[0],r[1],r[2]) not in good_coarse]
+              print('ATTEMPTS_EXTRA_ONLY='+str(len(bad_attempt)))
+              from collections import Counter
+              print('ATTEMPTS_EXTRA_ONLY_STATES='+json.dumps(Counter(r[3] for r in bad_attempt),sort_keys=True))
+              hist=[tuple(r) for r in c.execute('select symbol,instrument_type,settlement from production_history')]
+              bad_hist=[r for r in hist if (r[0],r[1],r[2]) in extra_coarse and (r[0],r[1],r[2]) not in good_coarse]
+              print('HISTORY_EXTRA_ONLY='+str(len(bad_hist)))
+              print('SAFETY_AFTER=%s|%s'%c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())
+          print('HOST_MUTATION=NONE'); print('ORDER_ROUTES=NOT_CALLED'); print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
