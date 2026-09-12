@@ -1,0 +1,80 @@
+name: RC6 F01 host read-only status
+
+on:
+  push:
+    branches: [audit/rc6-f01-host-readonly-20260912]
+    paths:
+      - .github/workflows/rc6-f01-host-readonly-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_f01_readonly"
+          chmod 600 "$HOME/.ssh/porota_f01_readonly"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Inspect host state without mutation
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_f01_readonly" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -uo pipefail
+          REPO=/opt/porota-trading
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo UNAVAILABLE)"
+          if [ -z "$(git -C "$REPO" status --porcelain 2>/dev/null)" ]; then echo "HOST_GIT_DIRTY=NO"; else echo "HOST_GIT_DIRTY=YES"; fi
+          echo "DISK_AVAIL_BYTES=$(df -PB1 "$REPO" 2>/dev/null | awk 'NR==2{print $4}' || echo UNKNOWN)"
+          echo "HEALTH=$(curl -fsS --max-time 5 http://127.0.0.1:8000/health 2>/dev/null || echo UNAVAILABLE)"
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Image}}' porota_production_observer 2>/dev/null || echo UNAVAILABLE)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard 2>/dev/null || echo UNAVAILABLE)"
+          echo "OBSERVER=$OBS"
+          echo "DASHBOARD=$DASH"
+          OBS_ID="$(printf '%s' "$OBS" | awk -F'|' '{print $5}')"
+          if [ -n "$OBS_ID" ] && [ "$OBS_ID" != "UNAVAILABLE" ]; then
+            echo "IMAGE_COMMIT=$(sudo -n docker image inspect "$OBS_ID" -f '{{ index .Config.Labels "porota.commit" }}' 2>/dev/null || echo UNKNOWN)"
+          else
+            echo "IMAGE_COMMIT=UNKNOWN"
+          fi
+          SAFETY="$(sudo -n docker exec -i porota_production_observer python - <<'PY' 2>/dev/null || echo READ_FAILED
+          import sqlite3
+          c=sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=10)
+          c.execute("PRAGMA query_only=ON")
+          q=c.execute("PRAGMA quick_check").fetchone()[0]
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close(); print("|".join(map(str,(q,mode,orders))))
+          PY
+          )"
+          echo "PAPER_SAFETY=$SAFETY"
+          for unit in porota-contract-evidence-rc6.timer porota-functional-health-rc6.timer \
+            porota-history-postclose-rc6.timer porota-host-general-backup-rc6.timer \
+            porota-preopen-rc6.timer porota-candle-integrity-rc6.timer \
+            porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer \
+            porota-a3-history-weekend-rc6.timer; do
+            active="$(sudo -n systemctl is-active "$unit" 2>/dev/null || echo UNKNOWN)"
+            enabled="$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || echo UNKNOWN)"
+            echo "TIMER=$unit|ACTIVE=$active|ENABLED=$enabled"
+          done
+          echo "HOST_MUTATION=NONE"
+          echo "REAL_ORDER_ROUTES=NOT_CALLED"
+          REMOTE
