@@ -1,0 +1,51 @@
+name: RC6 PPI Argentina nightly tune 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-argentina-nightly-tune-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Raise nightly batch to 600 after successful bounded proofs
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || exit 31
+          test -f /usr/local/sbin/porota-ppi-argentina-nightly-rc6.sh
+          grep -q '^LIMIT=100$' /usr/local/sbin/porota-ppi-argentina-nightly-rc6.sh || { echo 'ABORT=UNEXPECTED_LIMIT'; exit 32; }
+          sudo -n sed -i 's/^LIMIT=100$/LIMIT=600/' /usr/local/sbin/porota-ppi-argentina-nightly-rc6.sh
+          grep -q '^LIMIT=600$' /usr/local/sbin/porota-ppi-argentina-nightly-rc6.sh
+          test "$(systemctl is-enabled porota-ppi-argentina-nightly-rc6.timer)" = enabled
+          test "$(systemctl is-active porota-ppi-argentina-nightly-rc6.timer)" = active
+          echo 'NIGHTLY_BATCH_LIMIT=600'
+          echo 'SCRIPT_TIMEOUT_SECONDS=2400'
+          echo 'SCOPE=ARGENTINA_LOCAL_API_ONLY'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
