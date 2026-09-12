@@ -1,0 +1,62 @@
+name: RC6 contract weekend implementation audit 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-contract-weekend-implementation-audit-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect safe runtime interfaces
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          EXPECT='c8773c8346a880ac5ecfe99ece5555c5bb771524'
+          test "$(git rev-parse HEAD)" = "$EXPECT" || { echo 'ABORT=HOST_SHA_MOVED'; exit 31; }
+          echo '=== DOM_COLLECTOR ==='
+          sed -n '1,260p' /usr/local/lib/porota-contract-evidence-rc6/rc6_contract_dom_collector.py 2>/dev/null || true
+          echo '=== DOM_IMPORTER ==='
+          sed -n '1,260p' /usr/local/lib/porota-contract-evidence-rc6/rc6_contract_dom_importer.py 2>/dev/null || true
+          echo '=== DOM_WRAPPER ==='
+          sed -n '1,220p' /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh 2>/dev/null || true
+          echo '=== CURRENT_UNITS ==='
+          systemctl cat porota-contract-evidence-rc6.service 2>/dev/null || true
+          systemctl cat porota-contract-evidence-rc6.timer 2>/dev/null || true
+          echo '=== CALENDAR_PROOF ==='
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0,'/opt/porota-trading')
+          import ak_byma_calendar as c
+          from datetime import date
+          for d in (date(2026,9,12),date(2026,9,13),date(2026,9,14),date(2026,10,12)):
+              print(d.isoformat(), c.es_dia_habil_operativo(d), c.motivo_no_operativo(d))
+          PY
+          echo 'HOST_MUTATION=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
