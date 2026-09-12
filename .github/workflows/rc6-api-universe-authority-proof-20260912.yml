@@ -23,7 +23,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           python -m py_compile rc6_api_universe_authority.py tests/test_rc6_api_universe_authority.py
-          python -m pytest -q tests/test_rc6_api_universe_authority.py
+          python tests/test_rc6_api_universe_authority.py
           python - <<'PY'
           import rc6_api_universe_authority as u
           u.assert_no_execution_capability()
