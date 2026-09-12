@@ -6,6 +6,7 @@ La caución se devenga por contrato; su principal no es ganancia ni caja libre.
 """
 from datetime import datetime, time
 from decimal import Decimal
+import sqlite3
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
@@ -95,6 +96,7 @@ class DailyRisk:
             baseline, equity, daily, budget = None, None, None, None
             state, detail = 'READY', 'Base del ledger; valuación neta de costos y deslizamiento de salida'
             latched = previous['latched_at'] if previous else None
+            system_error = False
             try:
                 rows = [dict(r) for r in c.execute('SELECT * FROM paper_positions WHERE currency=?',(currency,))]
                 for p in rows:
@@ -175,9 +177,16 @@ class DailyRisk:
                             supervised_at=excluded.supervised_at''', (latched,latched,currency))
                     if stale:
                         state, detail = 'STALE_MARKS', 'Faltan libros vigentes; PnL diario actual desconocido'
+            except sqlite3.Error as exc:
+                # Una falla de la base no puede parecer una evaluación sana ni
+                # dejar que una entrada use un riesgo diario potencialmente
+                # obsoleto. Se persiste evidencia explícita y admission_error()
+                # bloquea por estado.
+                system_error = True
+                state, detail = 'SYSTEM_ERROR', f'SQLite error: {type(exc).__name__}'
             except (ValueError,TypeError,ArithmeticError) as exc:
                 state, detail = 'INVALID_LEDGER', type(exc).__name__
-            if latched:
+            if latched and not system_error:
                 state, detail = 'LATCHED', 'Corte persistente hasta otra fecha local; las salidas siguen activas'
             if previous and previous['loss_budget'] is not None:
                 budget = Decimal(previous['loss_budget'])
