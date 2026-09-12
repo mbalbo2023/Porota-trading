@@ -301,6 +301,25 @@ def test_reinicio_no_toma_riqueza_perdida_como_base_y_ignora_ganancia_otras_mone
     assert row['state']=='LATCHED' and D(row['daily_pnl'])==-120
 
 
+
+def test_error_sqlite_en_evaluacion_persiste_system_error_y_bloquea_admision(store, monkeypatch):
+    """Una falla de lectura del ledger nunca habilita una entrada por accidente."""
+    broker = PaperBroker(store, initial_cash='10000', daily_loss_pct='1')
+
+    def unavailable(*_args, **_kwargs):
+        raise sqlite3.OperationalError('fixture database unavailable')
+
+    monkeypatch.setattr(broker, '_positions_at', unavailable)
+    row = broker.daily_risk.evaluate(AT)['ARS']
+    assert row['state'] == 'SYSTEM_ERROR'
+    assert row['detail'] == 'SQLite error: OperationalError'
+    assert broker.daily_risk.admission_error('ARS', AT) == 'DAILY_RISK_SYSTEM_ERROR'
+    with store.connect() as c:
+        persisted = dict(c.execute(
+            'SELECT state, detail FROM paper_daily_risk WHERE day=? AND currency=?',
+            ('2026-08-28', 'ARS')).fetchone())
+    assert persisted == {'state': 'SYSTEM_ERROR', 'detail': 'SQLite error: OperationalError'}
+
 def test_perdida_abierta_decide_salida_no_inventa_fill_sin_profundidad(store):
     broker=PaperBroker(store,initial_cash='10000',daily_loss_pct='1')
     q=quote(at=AT)
