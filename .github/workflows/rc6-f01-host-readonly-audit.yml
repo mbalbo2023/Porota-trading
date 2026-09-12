@@ -78,6 +78,115 @@ jobs:
             enabled="$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || echo UNKNOWN)"
             echo "TIMER=$unit|ACTIVE=$active|ENABLED=$enabled"
           done
+          # Metadata/Git/process only; never display or execute target contents.
+          TARGETS="$(cat <<'TARGET_PATHS'
+          scripts/ppi_web_authenticated_probe_hf6.py
+          v17_build_cache_cleanup_1.py
+          v17_build_cache_cleanup_1_result.json
+          v17_git_object_dirs_group_fix_r1.py
+          v17_git_permissions_audit_r1.py
+          v17_git_remote_diagnostic_r1.py
+          v17_hf1_resume_deploy.pid
+          v17_hf1_resume_deploy.sh
+          v17_legacy_history_source_audit_1.py
+          v17_legacy_history_source_audit_1_result.json
+          v17_mode_manager_readonly_audit_1.py
+          v17_mode_manager_readonly_audit_1_result.json
+          v17_postcommission_inventory_1.py
+          v17_postcommission_inventory_1_result.json
+          v17_rc2_build_preflight_r1.py
+          v17_rc2_canonical_prestart_backup_1.py
+          v17_rc2_canonical_prestart_backup_1_result.json
+          v17_rc2_consolidated_commissioning_1.py
+          v17_rc2_consolidated_commissioning_1_result.json
+          v17_rc2_consolidated_commissioning_2.py
+          v17_rc2_consolidated_commissioning_2_result.json
+          v17_rc2_consolidated_commissioning_3.py
+          v17_rc2_consolidated_commissioning_3_result.json
+          v17_rc2_disposable_paper_gate_1.py
+          v17_rc2_disposable_paper_gate_1_result.json
+          v17_rc2_isolated_smoke_r1.py
+          v17_rc2_live_quote_canary_1.py
+          v17_rc2_live_quote_canary_1_result.json
+          v17_rc2_network_build_r2.py
+          v17_rc2_offline_build_r1.py
+          v17_rc2_ppi_readonly_canary_1.py
+          v17_rc2_ppi_readonly_canary_2_result.json
+          v17_rc2_source_update_r1.py
+          v17_rc2_source_update_r2.py
+          v17_rc2_source_update_r3.py
+          v17_rc3_automated_deploy_1.py
+          v17_rc3_automated_deploy_1_result.json
+          v17_rc3_automated_deploy_2.py
+          v17_rc3_automated_deploy_2_result.json
+          v17_rc3_automated_deploy_3.py
+          v17_rc3_automated_deploy_3_result.json
+          v17_rc3_automated_deploy_4.py
+          v17_rc3_automated_deploy_4_result.json
+          v17_rc3_final_readonly_verification_2.py
+          v17_rc3_final_readonly_verification_2_result.json
+          v17_rc3_final_readonly_verification_3.py
+          v17_rc3_final_readonly_verification_3_result.json
+          v17_rc3_hf2_deploy_result.json
+          v17_rc3_postacceptance_finalize_1.py
+          v17_rc3_postacceptance_finalize_1_result_20260829T212931Z.json
+          v17_rc3_resume_deploy_5.py
+          v17_rc3_resume_deploy_5_result.json
+          v17_rc3_root_mode_resume_6.py
+          v17_rc3_root_mode_resume_6_result.json
+          v17_trusted_history_catalog_import_1.py
+          v17_trusted_history_catalog_import_1_result.json
+          v17_trusted_history_catalog_import_2.py
+          v17_trusted_history_catalog_import_2_result.json
+          TARGET_PATHS
+          )"
+          NOW="$(date +%s)"
+          while IFS= read -r rel; do
+            [ -n "$rel" ] || continue
+            full="$REPO/$rel"
+            if [ ! -e "$full" ] && [ ! -L "$full" ]; then
+              echo "PATH_META=$rel|MISSING"
+              continue
+            fi
+            meta="$(stat -c '%F|birth=%w|mtime=%y|ctime=%z|bytes=%s|mtime_epoch=%Y' -- "$full" 2>/dev/null || echo STAT_FAILED)"
+            mtime_epoch="$(stat -c '%Y' -- "$full" 2>/dev/null || echo 0)"
+            age_days=$(( (NOW - mtime_epoch) / 86400 ))
+            echo "PATH_META=$rel|$meta|age_days=$age_days"
+            git_state="$(git -C "$REPO" status --porcelain=v1 --untracked-files=all -- "$rel" 2>/dev/null || true)"
+            if [ -n "$git_state" ]; then echo "PATH_GIT=$rel|\${git_state:0:2}"; else echo "PATH_GIT=$rel|CLEAN_OR_IGNORED"; fi
+          done <<< "$TARGETS"
+
+          # Match exact argv entries only; emit PID/comm, never command-line contents.
+          declare -A TARGET_MAP=()
+          while IFS= read -r rel; do [ -n "$rel" ] && TARGET_MAP["$rel"]=1; done <<< "$TARGETS"
+          for proc in /proc/[0-9]*; do
+            [ -r "$proc/cmdline" ] || continue
+            pid="\${proc##*/}"
+            while IFS= read -r -d '' arg; do
+              case "$arg" in "$REPO/"*) rel="\${arg#"$REPO/"}";; *) rel="$arg";; esac
+              if [ -n "\${TARGET_MAP[$rel]+x}" ]; then
+                comm="$(ps -p "$pid" -o comm= 2>/dev/null | tr -d '[:space:]')"
+                echo "PATH_PROCESS=$rel|PID=$pid|COMM=\${comm:-UNKNOWN}"
+              fi
+            done < "$proc/cmdline" 2>/dev/null
+          done
+
+          # Check PID file only; do not signal or launch it.
+          pidfile="$REPO/v17_hf1_resume_deploy.pid"
+          if [ -r "$pidfile" ]; then
+            IFS= read -r deploy_pid < "$pidfile" || true
+            if [[ "\${deploy_pid:-}" =~ ^[0-9]+$ ]] && [ -r "/proc/$deploy_pid/cmdline" ]; then
+              if tr '\\0' '\\n' < "/proc/$deploy_pid/cmdline" | grep -Fq 'v17_hf1_resume_deploy.sh'; then
+                echo "HF1_PIDFILE=ACTIVE_MATCH|PID=$deploy_pid"
+              else
+                echo "HF1_PIDFILE=PID_EXISTS_BUT_NOT_MATCHED|PID=$deploy_pid"
+              fi
+            else
+              echo "HF1_PIDFILE=STALE_OR_INVALID"
+            fi
+          else
+            echo "HF1_PIDFILE=ABSENT_OR_UNREADABLE"
+          fi
           echo "HOST_MUTATION=NONE"
           echo "REAL_ORDER_ROUTES=NOT_CALLED"
           REMOTE
