@@ -1,5 +1,5 @@
 name: RC6 PPI history live progress 2026-09-12
-# refresh probe 2
+# refresh probe 3 after SSH disconnect
 on:
   push:
     branches: [ops/rc6-ppi-fullfamily-history-20260912]
