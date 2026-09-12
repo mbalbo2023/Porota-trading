@@ -61,9 +61,11 @@ jobs:
           import bf_production_paper_observer as m
           from cv_history_store_adapter_hf6 import default_history_store
 
-          MIN_START_FREE=8*1024**3
-          HARD_STOP_FREE=6*1024**3
-          MAX_USED_PCT=75.0
+          # Temporary ingestion reserve requested 2026-09-12.
+          # Re-evaluate final storage policy only after PPI API + residual Web closeout.
+          MIN_START_FREE=3*1024**3
+          HARD_STOP_FREE=2*1024**3
+          MAX_USED_PCT=88.0
           store=m.runtime_store()
           with store.connect() as c:
               assert c.execute('pragma quick_check').fetchone()[0]=='ok'
@@ -127,6 +129,7 @@ jobs:
             'ACCIONES':365,'BONOS':365,'CAUCIONES':365,'CEDEARS':365,'FCI':365,'LETRAS':365,'ON':365,
             'FUTUROS':180,'OPCIONES':180,'LICITACIONES':90,'LEBACS':90
           },sort_keys=True))
+          print('HISTORY_SCOPE=EXHAUST_PPI_API_AVAILABLE_BY_BACKWARD_CHUNKS')
           print('POLICY=ONE_TIME_BACKFILL_THEN_INCREMENTAL_DELTA_ONLY')
           print('DELTA_POLICY=LAST_STORED_DATE_MINUS_5_CALENDAR_DAYS_TO_TODAY')
           print('RAW_POLICY=NO_REPEAT_FULL_WINDOW_AFTER_INITIAL_BACKFILL')
