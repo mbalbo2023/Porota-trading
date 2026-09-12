@@ -113,3 +113,13 @@ El usuario prioriza en paralelo un paso a producción prolijo y la remoción de 
 4. Revisar en un alcance operacional separado el workflow one-off incluido en el source RC6, dado que conserva el target `e47eeff...`. No ejecutarlo ni borrarlo desde el baseline certificado.
 
 El paso 1 es una prioridad de diseño/auditoría, no una autorización para ejecutar un despliegue o cambiar una rama ajena. La primera implementación debe presentarse como PR aislado desde una rama propia, sin modificar `main` directamente ni fusionar/desplegar sin la autorización aplicable.
+
+## Barrido documental de main — 2026-09-12
+
+Lectura estática de `README.md`, `AGENTS.md`, `.github/pull_request_template.md`, `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `.github/workflows/promote-to-production.yml` y `.gitignore` en `main` (`82750cc0b97df69f9936bdd5d65360cd8f9020f0`). No se modificó `main`.
+
+Hallazgo documental concreto: el README conserva `develop → testing → main → DigitalOcean` y describe `testing` como validación del paquete para SANDBOX. Esto no concuerda con `AGENTS.md` (integración por PR y coordinador único) ni con la semántica real del workflow de promoción. Es el primer candidato de depuración documental; su sustitución debe reflejar el proceso aprobado y el SHA certificado RC6, no presentar `testing` como baseline operativo.
+
+Los workflows mantienen referencias a `develop` y `testing`; la promoción permite push directo a `main`, y el despliegue admite cualquier ref como entrada. Son controles operativos que primero deben reemplazarse con una ruta trazable, no borrarse como si fueran basura inerte. El barrido no encontró referencias restantes de Codespaces o v16.x en los archivos leídos. `AGENTS.md`, la plantilla de PR y `.gitignore` no mostraron candidatos adicionales en este alcance.
+
+Próximo lote: preparar una propuesta acotada para corregir el README y abrir un PR en rama propia tras confirmar que las rutas documentales no compiten con trabajo activo. La auditoría continúa sin consultar el workstream `pipeline ppi watch`.
