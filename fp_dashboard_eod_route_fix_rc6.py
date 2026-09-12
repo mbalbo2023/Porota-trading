@@ -3,8 +3,8 @@
 Wave8 replaces ``bg.trading_page`` with a family/instrument strategy overview.
 That content belongs to the instrument/family views, not to Trading ->
 Estrategias.  The operator-facing Estrategias route must show the EOD/Overnight
-strategy evaluator directly, without the redundant cards for Acciones, Renta
-fija, Cauciones, Opciones, Futuros, FCI or Licitaciones.
+strategy evaluator directly, without the redundant cards for Acciones y CEDEAR,
+Renta fija, Cauciones, Opciones, Futuros, FCI or Licitaciones.
 
 Presentation only: no database writes, network calls, policy changes or order
 execution are introduced here. CURRENT_EOD remains authoritative and the
