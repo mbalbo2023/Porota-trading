@@ -99,6 +99,7 @@ CRITICAL_VARS = {
     "MAX_DAILY_LOSS_PCT",
     "MAX_DRAWDOWN_PCT",
     "RISK_PCT_PER_TRADE",
+    "IOL_COST_ESTIMATE_EXPLICIT_OPT_IN",
 }
 
 # NUEVO EN v16.0 — hallazgo aceptado de la auditoría. La validación anterior
