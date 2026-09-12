@@ -46,19 +46,24 @@ jobs:
             printf '%s|enabled=%s|active=%s\n' "$u" "$(systemctl is-enabled "$u" 2>/dev/null || true)" "$(systemctl is-active "$u" 2>/dev/null || true)"
           done
           systemctl list-timers porota-ppi-argentina-nightly-rc6.timer porota-contract-evidence-rc6.timer --no-pager 2>/dev/null || true
+          echo '=== CONTRACT_UNIT ==='
+          systemctl cat porota-contract-evidence-rc6.service 2>/dev/null || true
+          echo '=== CONTRACT_JOURNAL_RECENT ==='
+          journalctl -u porota-contract-evidence-rc6.service -n 80 --no-pager 2>/dev/null || true
 
           echo '=== BROWSER_PREREQS ==='
-          test -x /usr/local/sbin/porota-chromium-root && echo 'CHROMIUM_WRAPPER=YES' || echo 'CHROMIUM_WRAPPER=NO'
-          test -d /root/.config/chromium-ppi && echo 'PPI_BROWSER_PROFILE=YES' || echo 'PPI_BROWSER_PROFILE=NO'
+          test -x /usr/local/sbin/porota-chromium-root && echo 'HOST_CHROMIUM_WRAPPER=YES' || echo 'HOST_CHROMIUM_WRAPPER=NO'
+          test -d /root/.config/chromium-ppi && echo 'HOST_PPI_BROWSER_PROFILE=YES' || echo 'HOST_PPI_BROWSER_PROFILE=NO'
+          sudo -n docker exec porota_production_observer sh -lc "command -v chromium || command -v chromium-browser || command -v google-chrome || true; ls -ld /data/contract_evidence 2>/dev/null || true"
 
           echo '=== LIVE_MODULES ==='
-          sudo -n docker exec porota_production_observer python -c "import ch_contract_evidence_hf6,ck_contract_evidence_runner_hf6,cn_ppi_authenticated_family_scraper_hf6,cq_contract_readiness_hf6; print('CORE_CONTRACT_STACK_IMPORT=OK'); print('SCRAPER_MUTATION_CAPABLE='+str(cn_ppi_authenticated_family_scraper_hf6.MUTATION_CAPABLE)); print('SCRAPER_REAL_ORDER_GUARD='+str(cn_ppi_authenticated_family_scraper_hf6.REAL_ORDER_GUARD))"
+          sudo -n docker exec porota_production_observer python -c "import ch_contract_evidence_hf6 as ch,ck_contract_evidence_runner_hf6 as ck,cn_ppi_authenticated_family_scraper_hf6 as cn,cq_contract_readiness_hf6 as cq; print('CORE_CONTRACT_STACK_IMPORT=OK'); print('CH_FILE='+str(ch.__file__)); print('CK_FILE='+str(ck.__file__)); print('CN_FILE='+str(cn.__file__)); print('CQ_FILE='+str(cq.__file__)); print('CN_PUBLIC='+','.join(sorted(x for x in dir(cn) if not x.startswith('_'))[:80]))"
 
           echo '=== RUNTIME_AND_DATA ==='
           sudo -n docker exec porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print('SAFETY=%s|%s'%s); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0; e=c.execute(\"select count(*) from sqlite_master where type='table' and name='ppi_argentina_api_shadow'\").fetchone()[0]; print('ARG_API_SHADOW='+str(c.execute('select count(*) from ppi_argentina_api_shadow').fetchone()[0] if e else 0)); print('HISTORY_ATTEMPTS='+str(c.execute('select count(*) from production_history_attempts').fetchone()[0])); print('HISTORY_USABLE='+str(c.execute(\"select count(*) from production_history_attempts where state in ('VALID_PAYLOAD','PARTIAL')\").fetchone()[0])); print('HISTORY_HARD='+str(c.execute(\"select count(*) from production_history_attempts where state in ('EMPTY_OR_INVALID','ERROR')\").fetchone()[0])); c.close()"
 
           echo '=== CONTRACT_EVIDENCE_STORE ==='
-          sudo -n docker exec porota_production_observer python -c "import os,sqlite3; p='/data/contract_evidence/contract_evidence.db'; print('CONTRACT_DB_EXISTS='+str(os.path.exists(p))); c=sqlite3.connect('file:'+p+'?mode=ro',uri=True) if os.path.exists(p) else None; print('CONTRACT_TABLES='+(','.join(r[0] for r in c.execute(\"select name from sqlite_master where type='table' order by name\")) if c else '')); c.close() if c else None"
+          sudo -n docker exec porota_production_observer python -c "import os,sqlite3; p='/data/contract_evidence/contract_evidence.db'; print('CONTRACT_DB_EXISTS='+str(os.path.exists(p))); c=sqlite3.connect('file:'+p+'?mode=ro',uri=True) if os.path.exists(p) else None; tabs=[r[0] for r in c.execute(\"select name from sqlite_master where type='table' order by name\")] if c else []; print('CONTRACT_TABLES='+','.join(tabs)); [print('CONTRACT_COUNT_%s=%s'%(t,c.execute('select count(*) from '+t).fetchone()[0])) for t in tabs if t.replace('_','').isalnum()]; c.close() if c else None"
 
           echo 'HOST_MUTATION=NONE'
           echo 'HTTP_CALLS=NONE'
