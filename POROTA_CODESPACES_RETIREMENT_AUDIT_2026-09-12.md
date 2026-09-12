@@ -52,3 +52,13 @@ La política requiere leer el checkpoint canónico y confirmar desde allí el SH
 Inspección de permisos: `GET branches/main/protection` respondió 403 (`Resource not accessible by integration`); `GET rulesets` respondió 403 indicando que rulesets no están disponibles para este repositorio/plan. Por tanto no se puede confirmar desde esta conexión una protección obligatoria de `main` ni un required-review gate.
 
 Se listaron tres workflows en `main`: `ci.yml`, `deploy.yml` y `promote-to-production.yml`. Los dos últimos declaran solo `workflow_dispatch`; el CI de PR #56 pasó (run #251). PR #56 continúa abierto como borrador, mergeable/clean en GitHub, sin fusión ni despliegue. Antes de integrar, falta resolver el gate de protección/una revisión del responsable; no se accedió a ejecuciones ni recursos del workstream PPI.
+
+## Integración en main — 2026-09-12
+
+La política de trabajo paralelo entró primero mediante squash del PR [#57](https://github.com/mbalbo2023/Porota-trading/pull/57), commit `049deebc99fdb4c8c90566a59a31df2b44da97d8`. Después de revalidar su alcance y acuse conforme a esa política, se integró por squash la limpieza de Codespaces del PR [#56](https://github.com/mbalbo2023/Porota-trading/pull/56), commit `82750cc0b97df69f9936bdd5d65360cd8f9020f0`. Este es el HEAD actual de `main` al registrar el checkpoint.
+
+Verificación en `main`: `AGENTS.md` y `.github/pull_request_template.md` existen; las cuatro rutas dedicadas a Codespaces ya no existen; el README conserva RC6 como baseline y no tiene menciones de Codespaces ni v16.1.
+
+El CI de push a `main`, run #254, terminó `success`: preflight de seguridad y Compose correctos; CI de aplicación omitido porque el paquete no está instalado. No se disparó ningún despliegue: `deploy.yml` y `promote-to-production.yml` son manuales (`workflow_dispatch`). No se tocó el runtime RC6 ni recursos del workstream PPI.
+
+Sigue pendiente verificar protecciones de rama desde una conexión con permisos adecuados y continuar la clasificación de ramas históricas. No borrar ramas hasta comprobar propietario, PRs y dependencias de workflows.
