@@ -4,7 +4,17 @@
 
 Checkpoint operativo vivo. Objetivo: completar y clasificar toda la ingesta necesaria del universo argentino expuesto por PPI, agotando primero la API productiva de PPI y recién después usar PPI Web autenticada/scraping para los residuales. IOL queda exclusivamente como tercera fuente para huecos que sigan sin resolución después de PPI API + PPI Web.
 
-### Actualización operativa 2026-09-12 13:12 UTC
+### Actualización operativa 2026-09-12 13:26 UTC
+
+- `API_CLOSEOUT` continúa activo en GitHub Actions run `34695609656`. Sigue dentro de la sección única `Refresh local API discovery, retry unresolved, classify all and build Web manifest`; no se inició otra ingesta API paralela.
+- Se canceló/deshabilitó la continuación automática puntual que estaba programada para no permitir un segundo actor iniciando la misma fase mientras este chat la conduce en vivo.
+- Se agregó un gate anti-duplicación serializado: workflow `RC6 ingestion anti-dup audit 2026-09-12`, run `34696429027`. Usa el mismo lock `/run/lock/porota-ppi-fullfamily-history.lock`, por lo que espera a que finalice `API_CLOSEOUT` antes de leer el estado; no compite ni escribe datos.
+- El gate verifica duplicados exactos del shadow, duplicados en `production_history_attempts`, duplicados en `production_history`, colisiones del identificador histórico reducido `(ticker,instrument_type,settlement)` respecto de la identidad completa `(ticker,instrument_type,market,currency,settlement)`, estado del manifiesto Web y `API_UNCLASSIFIED`.
+- Si aparecen colisiones porque el ledger histórico omite `market/currency`, queda bloqueada la ingesta histórica Web hasta reconciliar la clave. No se acepta resolver una colisión mediante `INSERT OR REPLACE` silencioso.
+- PPI Web seguirá separado por provenance y sólo podrá consumir el manifiesto residual; no volverá a ingerir API-cubiertos como si fueran datos nuevos.
+- Seguridad vigente: `PRODUCTION_PAPER`, `real_orders_sent=0`, rutas de órdenes fuera de alcance.
+
+### Actualización operativa previa 2026-09-12 13:12 UTC
 
 - El primer intento de `API_CLOSEOUT` (run GitHub Actions `34695307006`) no llegó a mutar el shadow: la sesión SSH se cortó con `Broken pipe` durante la fase de discovery, antes de la transacción de refresh/clasificación. No se interpretó como fallo de PPI ni se avanzó a Web.
 - Se aplicó forward fix en el workflow: SSH keepalive (`ServerAliveInterval=20`, `ServerAliveCountMax=15`) y discovery acotada a la lógica productiva ya probada para familias que complementan el catálogo normalizado, preservando fail-safe el universo conocido para no achicarlo por respuestas parciales del buscador.
@@ -30,6 +40,18 @@ Checkpoint operativo vivo. Objetivo: completar y clasificar toda la ingesta nece
 3. IOL únicamente para residuales no resueltos por PPI.
 
 Nunca reemplazar silenciosamente evidencia PPI con IOL. Toda fila o evidencia debe conservar procedencia.
+
+## Política anti-doble-ingesta e inconsistencia — BINDING
+
+1. Una identidad informacional se define por `(ticker, instrument_type, market, currency, settlement)` y debe ser única en `ppi_argentina_api_shadow`.
+2. API histórico, PPI Web histórico y cualquier futura fuente terciaria conservan provenance explícita; ninguna fuente secundaria puede sobrescribir silenciosamente evidencia primaria.
+3. `PPI API` tiene prioridad de datos. PPI Web sólo trabaja sobre `ppi_web_residual_manifest_rc6` o sobre campos contractuales/reference ausentes; no repite masivamente identidades que ya están resueltas por API.
+4. Antes de Web histórico se exige gate anti-dup. Si dos identidades completas diferentes colisionan en la clave histórica reducida usada por tablas legacy `(ticker,instrument_type,settlement)`, el pipeline se detiene para reconciliar la clave; no se permite perder `market` o `currency` por overwrite.
+5. Los jobs de histórico API comparten `/run/lock/porota-ppi-fullfamily-history.lock`; los jobs Web comparten `/run/lock/porota-ppi-web-browser.lock`. No iniciar dos productores simultáneos para la misma superficie.
+6. Los reintentos son idempotentes sobre su identidad y deben actualizar clasificación/evidencia de esa misma identidad, no crear una segunda identidad lógica.
+7. `VALID_PAYLOAD`/`PARTIAL` API no se vuelve a ingerir desde Web salvo un caso de reconciliación explícitamente documentado y separado del dataset canónico.
+8. Ningún `INSERT OR REPLACE` puede utilizarse para resolver de forma implícita un conflicto entre fuentes o entre identidades completas distintas.
+9. Antes de declarar una fase completada: `pragma quick_check=ok`, duplicados exactos=0, `API_UNCLASSIFIED=0` para cierre API, provenance preservada y `PRODUCTION_PAPER|0`.
 
 ## Alcance
 
@@ -102,7 +124,8 @@ No alcanza con tener filas. La fase API se cierra solamente cuando:
 4. cualquier identidad nueva descubierta recibe intento histórico;
 5. los errores transitorios son reintentados antes de derivar a Web;
 6. se conserva evidencia/provenance y `PRODUCTION_PAPER|0` antes/después;
-7. `API_UNCLASSIFIED=0` es condición obligatoria de salida.
+7. `API_UNCLASSIFIED=0` es condición obligatoria de salida;
+8. el gate anti-dup no detecta duplicados canónicos ni colisiones de clave sin reconciliar.
 
 `EMPTY_OR_INVALID` confirmado no significa fallo de la ingesta: significa que PPI API fue agotada para esa identidad y el caso pasa al manifiesto residual Web.
 
@@ -116,8 +139,10 @@ PPI Web debe usarse primero para reconciliar identidad/contrato y luego para pro
 
 `bf_production_paper_observer.py::_historical_targets(store)` todavía acopla targets históricos a `can_simulate`/estado operacional. Debe corregirse en código con tests para separar universo DATA del universo PAPER. Los jobs actuales de backfill son una vía desacoplada, no reemplazan esa corrección permanente.
 
+La clave legacy de `production_history_attempts`/`production_history` debe auditarse frente a la identidad completa API; si omite `market/currency` y existen colisiones reales, se debe introducir una clave canónica v2 antes de incorporar histórico Web residual.
+
 ## Próximo hito
 
 `API_CLOSEOUT`: run `34695609656` en ejecución. Salida requerida: `API_UNCLASSIFIED=0`, manifiesto Web generado y seguridad `PRODUCTION_PAPER|0`.
 
-Al completar `API_CLOSEOUT`, abrir inmediatamente `WEB_RESIDUAL_INGEST`: RCA del servicio weekend fallido, manifiesto residual exacto, reconciliación API↔Web y scraping read-only dirigido. Solo después de agotar PPI Web se habilita análisis de IOL para los huecos restantes.
+En paralelo sólo está permitido el gate read-only serializado `34696429027`, que espera el mismo lock y no genera ingesta. Al completar `API_CLOSEOUT`, primero se evalúa este gate. Sólo con anti-dup en verde se abre `WEB_RESIDUAL_INGEST`: RCA del servicio weekend fallido, manifiesto residual exacto, reconciliación API↔Web y scraping read-only dirigido. Solo después de agotar PPI Web se habilita análisis de IOL para los huecos restantes.
