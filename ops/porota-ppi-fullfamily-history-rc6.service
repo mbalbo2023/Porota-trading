@@ -1,0 +1,21 @@
+[Unit]
+Description=Porota Trading RC6 durable PPI 365d historical ingestion
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/porota-ppi-history-runner-rc6
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=90
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=porota-ppi-history-rc6
+
+[Install]
+WantedBy=multi-user.target
