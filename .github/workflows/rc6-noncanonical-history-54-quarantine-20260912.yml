@@ -1,0 +1,114 @@
+name: RC6 noncanonical history 54 quarantine 2026-09-12
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-noncanonical-history-54-quarantine-20260912.yml']
+permissions:
+  contents: read
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Preserve and remove noncanonical history from active surfaces
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=30 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          EXPECT='a47f3339ec6dfe9d5afde444b1aaddabceb0e94d'; ACTUAL="$(git rev-parse HEAD)"; echo HOST_SHA=$ACTUAL; test "$ACTUAL" = "$EXPECT" || { echo ABORT=HOST_SHA_CHANGED; exit 31; }
+          for u in porota-ppi-argentina-nightly-rc6.service porota-history-postclose-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do st="$(systemctl is-active "$u" 2>/dev/null || true)"; case "$st" in active|activating) echo ABORT=HISTORY_SERVICE_ACTIVE:$u; exit 32;; esac; done
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock; flock -w 600 9 || { echo ABORT=HISTORY_LOCK_BUSY; exit 33; }
+          sudo -n install -d -m 0755 /run/porota-trading-history
+          sudo -n flock -w 600 /run/porota-trading-history/ppi-fullfamily-history.lock /usr/bin/docker exec -i porota_production_observer python - <<'PY'
+          import json
+          from datetime import datetime,timezone
+          from collections import Counter
+          import bf_production_paper_observer as m
+          from cv_history_store_adapter_hf6 import default_history_store
+          REASON='POST_REPAIR_NONCANONICAL_OPTION_HISTORY_54'
+          RUN='RC6_NONCANONICAL_54_QUARANTINE_20260912'
+          AT=datetime.now(timezone.utc).isoformat()
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'SAFETY_BEFORE={s[0]}|{s[1]}'); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              canonical={(r[0],r[1],r[2]) for r in c.execute("select ticker,instrument_type,settlement from ppi_argentina_api_shadow where market in ('BYMA','ROFEX','A3','OTC') and instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')")}
+              active={(r[0],r[1],r[2]) for r in c.execute('select symbol,instrument_type,settlement from production_history')}
+              extra=sorted(active-canonical)
+              qshadow={(r[0],r[1],r[2]) for r in c.execute('select ticker,instrument_type,settlement from ppi_argentina_api_shadow_quarantine_rc6')}
+              catalog={(r[0],r[1],r[2]) for r in c.execute('select ticker,instrument_type,settlement from financial_instrument_catalog')}
+              attempts={(r[0],r[1],r[2]) for r in c.execute('select symbol,instrument_type,settlement from production_history_attempts')}
+              print('PREFLIGHT='+json.dumps({'extra':len(extra),'qshadow_cover':len(set(extra)&qshadow),'catalog_overlap':len(set(extra)&catalog),'attempt_cover':len(set(extra)&attempts),'families':dict(Counter(x[1] for x in extra))},sort_keys=True))
+              assert len(extra)==54 and set(extra)<=qshadow and not(set(extra)&catalog) and set(extra)<=attempts and {x[1] for x in extra}=={'OPCIONES'}
+              c.execute('BEGIN IMMEDIATE')
+              c.execute('CREATE TEMP TABLE extra54(symbol TEXT,instrument_type TEXT,settlement TEXT,PRIMARY KEY(symbol,instrument_type,settlement))')
+              c.executemany('INSERT INTO extra54 VALUES(?,?,?)',extra)
+              c.execute("CREATE TABLE IF NOT EXISTS production_history_quarantine_rc6 AS SELECT *,'' quarantine_reason,'' quarantine_run,'' quarantined_at FROM production_history WHERE 0")
+              c.execute("INSERT INTO production_history_quarantine_rc6 SELECT p.*,?,?,? FROM production_history p JOIN extra54 e ON e.symbol=p.symbol AND e.instrument_type=p.instrument_type AND e.settlement=p.settlement WHERE NOT EXISTS (SELECT 1 FROM production_history_quarantine_rc6 q WHERE q.symbol=p.symbol AND q.instrument_type=p.instrument_type AND q.settlement=p.settlement AND q.quarantine_run=?)",(REASON,RUN,AT,RUN))
+              hist_q=c.execute('select changes()').fetchone()[0]
+              c.execute("CREATE TABLE IF NOT EXISTS production_history_attempts_quarantine_rc6 AS SELECT *,'' quarantine_reason,'' quarantine_run,'' quarantined_at FROM production_history_attempts WHERE 0")
+              c.execute("INSERT INTO production_history_attempts_quarantine_rc6 SELECT p.*,?,?,? FROM production_history_attempts p JOIN extra54 e ON e.symbol=p.symbol AND e.instrument_type=p.instrument_type AND e.settlement=p.settlement WHERE NOT EXISTS (SELECT 1 FROM production_history_attempts_quarantine_rc6 q WHERE q.symbol=p.symbol AND q.instrument_type=p.instrument_type AND q.settlement=p.settlement AND q.quarantine_run=?)",(REASON,RUN,AT,RUN))
+              attempts_q=c.execute('select changes()').fetchone()[0]
+              tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+              if 'history_attempt_ledger_v2' in tabs:
+                  c.execute('CREATE TABLE IF NOT EXISTS ppi_ingest_quarantine_ledger_ids_rc6(id INTEGER PRIMARY KEY,quarantine_reason TEXT NOT NULL,quarantine_run TEXT NOT NULL,quarantined_at TEXT NOT NULL)')
+                  c.execute("INSERT OR IGNORE INTO ppi_ingest_quarantine_ledger_ids_rc6 SELECT l.id,?,?,? FROM history_attempt_ledger_v2 l JOIN extra54 e ON e.symbol=l.symbol AND e.instrument_type=l.instrument_type AND e.settlement=l.settlement",(REASON,RUN,AT))
+              c.execute("DELETE FROM production_history WHERE EXISTS (SELECT 1 FROM extra54 e WHERE e.symbol=production_history.symbol AND e.instrument_type=production_history.instrument_type AND e.settlement=production_history.settlement)")
+              hist_deleted=c.execute('select changes()').fetchone()[0]
+              c.execute("DELETE FROM production_history_attempts WHERE EXISTS (SELECT 1 FROM extra54 e WHERE e.symbol=production_history_attempts.symbol AND e.instrument_type=production_history_attempts.instrument_type AND e.settlement=production_history_attempts.settlement)")
+              attempts_deleted=c.execute('select changes()').fetchone()[0]
+              assert hist_deleted==54 and attempts_deleted==54
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              print('OBSERVER_REPAIR='+json.dumps({'history_quarantined_new':hist_q,'attempts_quarantined_new':attempts_q,'history_deleted':hist_deleted,'attempts_deleted':attempts_deleted},sort_keys=True))
+              full_after=c.execute("select count(*) from (select p.symbol,p.instrument_type,p.settlement from production_history p left join ppi_argentina_api_shadow s on s.ticker=p.symbol and s.instrument_type=p.instrument_type and s.settlement=p.settlement where s.ticker is null)").fetchone()[0]
+              print('NONCANONICAL_ACTIVE_AFTER='+str(full_after)); assert full_after==0
+          qfull=qclose=0
+          hstore=default_history_store()
+          with hstore.connect() as h:
+              assert h.execute('pragma quick_check').fetchone()[0]=='ok'
+              ht={r[0] for r in h.execute("select name from sqlite_master where type='table'")}
+              full_ids=[]
+              for sym,fam,settle in extra:
+                  for r in h.execute('select ticker,instrument_type,market,currency,settlement from ppi_argentina_api_shadow_quarantine_rc6 where ticker=? and instrument_type=? and settlement=?',(sym,fam,settle)) if False else []: pass
+              # Use active history keys themselves; none overlap canonical coarse keys, so every active dedicated row on these coarse identities is noncanonical.
+              h.execute('BEGIN IMMEDIATE')
+              h.execute('CREATE TEMP TABLE extra54(symbol TEXT,instrument_type TEXT,settlement TEXT,PRIMARY KEY(symbol,instrument_type,settlement))')
+              h.executemany('INSERT INTO extra54 VALUES(?,?,?)',extra)
+              h.execute('CREATE TABLE IF NOT EXISTS ppi_ingest_quarantine_identity_rc6(symbol TEXT,instrument_type TEXT,market TEXT,settlement TEXT,quarantine_reason TEXT,quarantine_run TEXT,quarantined_at TEXT,PRIMARY KEY(symbol,instrument_type,market,settlement,quarantine_run))')
+              if 'history_canonical_v2' in ht:
+                  h.execute("CREATE TABLE IF NOT EXISTS history_canonical_v2_quarantine_rc6 AS SELECT *,'' quarantine_reason,'' quarantine_run,'' quarantined_at FROM history_canonical_v2 WHERE 0")
+                  h.execute("INSERT INTO history_canonical_v2_quarantine_rc6 SELECT x.*,?,?,? FROM history_canonical_v2 x JOIN extra54 e ON e.symbol=x.symbol AND e.instrument_type=x.instrument_type AND e.settlement=x.settlement WHERE NOT EXISTS (SELECT 1 FROM history_canonical_v2_quarantine_rc6 q WHERE q.symbol=x.symbol AND q.instrument_type=x.instrument_type AND q.market=x.market AND q.settlement=x.settlement AND q.quarantine_run=?)",(REASON,RUN,AT,RUN)); qfull=h.execute('select changes()').fetchone()[0]
+                  h.execute("INSERT OR IGNORE INTO ppi_ingest_quarantine_identity_rc6 SELECT DISTINCT x.symbol,x.instrument_type,x.market,x.settlement,?,?,? FROM history_canonical_v2 x JOIN extra54 e ON e.symbol=x.symbol AND e.instrument_type=x.instrument_type AND e.settlement=x.settlement",(REASON,RUN,AT))
+                  h.execute("DELETE FROM history_canonical_v2 WHERE EXISTS (SELECT 1 FROM extra54 e WHERE e.symbol=history_canonical_v2.symbol AND e.instrument_type=history_canonical_v2.instrument_type AND e.settlement=history_canonical_v2.settlement)")
+              if 'history_close_canonical_v1' in ht:
+                  h.execute("CREATE TABLE IF NOT EXISTS history_close_canonical_v1_quarantine_rc6 AS SELECT *,'' quarantine_reason,'' quarantine_run,'' quarantined_at FROM history_close_canonical_v1 WHERE 0")
+                  h.execute("INSERT INTO history_close_canonical_v1_quarantine_rc6 SELECT x.*,?,?,? FROM history_close_canonical_v1 x JOIN extra54 e ON e.symbol=x.symbol AND e.instrument_type=x.instrument_type AND e.settlement=x.settlement WHERE NOT EXISTS (SELECT 1 FROM history_close_canonical_v1_quarantine_rc6 q WHERE q.symbol=x.symbol AND q.instrument_type=x.instrument_type AND q.market=x.market AND q.settlement=x.settlement AND q.quarantine_run=?)",(REASON,RUN,AT,RUN)); qclose=h.execute('select changes()').fetchone()[0]
+                  h.execute("INSERT OR IGNORE INTO ppi_ingest_quarantine_identity_rc6 SELECT DISTINCT x.symbol,x.instrument_type,x.market,x.settlement,?,?,? FROM history_close_canonical_v1 x JOIN extra54 e ON e.symbol=x.symbol AND e.instrument_type=x.instrument_type AND e.settlement=x.settlement",(REASON,RUN,AT))
+                  h.execute("DELETE FROM history_close_canonical_v1 WHERE EXISTS (SELECT 1 FROM extra54 e WHERE e.symbol=history_close_canonical_v1.symbol AND e.instrument_type=history_close_canonical_v1.instrument_type AND e.settlement=history_close_canonical_v1.settlement)")
+              h.execute('CREATE TABLE IF NOT EXISTS ppi_ingest_quarantine_version_ids_rc6(id INTEGER PRIMARY KEY,table_name TEXT,quarantine_reason TEXT,quarantine_run TEXT,quarantined_at TEXT)')
+              if 'history_versions_v2' in ht:
+                  h.execute("INSERT OR IGNORE INTO ppi_ingest_quarantine_version_ids_rc6 SELECT v.id,'history_versions_v2',?,?,? FROM history_versions_v2 v JOIN extra54 e ON e.symbol=v.symbol AND e.instrument_type=v.instrument_type AND e.settlement=v.settlement",(REASON,RUN,AT))
+              if 'history_close_versions_v1' in ht:
+                  ids=[int(r[0]) for r in h.execute("select v.id from history_close_versions_v1 v join extra54 e on e.symbol=v.symbol and e.instrument_type=v.instrument_type and e.settlement=v.settlement")]
+                  for vid in ids: h.execute("INSERT OR IGNORE INTO ppi_ingest_quarantine_version_ids_rc6 VALUES(?,?,?,?,?)",(-vid,'history_close_versions_v1',REASON,RUN,AT))
+              assert h.execute('pragma quick_check').fetchone()[0]=='ok'
+              print('HISTORY_STORE_REPAIR='+json.dumps({'active_full_quarantined':qfull,'active_close_quarantined':qclose,'append_only_versions_preserved_and_marked':True},sort_keys=True))
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'SAFETY_AFTER={s[0]}|{s[1]}'); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          print('REPAIR_STATUS=SUCCESS_NONCANONICAL_54_QUARANTINED'); print('ORDER_ROUTES=NOT_CALLED'); print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
