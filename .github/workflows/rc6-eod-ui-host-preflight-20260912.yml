@@ -38,6 +38,9 @@ jobs:
           REPO=/opt/porota-trading
           echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
           echo "HOST_DIRTY_COUNT=$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
+          echo 'HOST_DIRTY_BEGIN'
+          git -C "$REPO" status --porcelain=v1 --untracked-files=all | sed -n '1,120p'
+          echo 'HOST_DIRTY_END'
           echo "DISK_FREE_BYTES=$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"
           echo "DISK_FREE_HUMAN=$(df -Ph "$REPO" | awk 'NR==2{print $4}')"
           echo "OBSERVER=$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Image}}' porota_production_observer)"
