@@ -1,0 +1,44 @@
+name: RC6 history lock holder probe 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-history-lock-holder-probe-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only lock holder probe
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          echo "AT=$(date -u +%FT%TZ)"
+          echo "HOST_SHA=$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo '=== LOCKS ==='
+          sudo -n lslocks 2>/dev/null | grep -E 'porota-ppi-fullfamily-history|porota-trading-history|COMMAND|flock' || true
+          echo '=== PS ==='
+          ps -eo pid,ppid,lstart,etimes,user,args | grep -E 'flock|porota_production_observer.*python|porota-ppi|history-postclose|a3-history' | grep -v grep || true
+          echo '=== HISTORY SERVICES ==='
+          for u in porota-ppi-argentina-nightly-rc6.service porota-history-postclose-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do systemctl show "$u" -p Id -p ActiveState -p SubState -p Result -p MainPID --no-pager 2>/dev/null || true; done
+          echo 'HOST_MUTATION=NONE'
+          HOST
