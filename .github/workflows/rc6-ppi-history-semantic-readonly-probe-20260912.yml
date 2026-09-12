@@ -1,0 +1,133 @@
+name: RC6 PPI history semantic readonly probe 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-history-semantic-readonly-probe-20260912.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semantic-readonly-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Probe PPI historical semantics read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          SVC=porota-ppi-fullfamily-history-rc6.service
+          cd /opt/porota-trading || exit 2
+          echo "PROBE_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "SYSTEMD_ACTIVE_BEFORE=$(systemctl is-active "$SVC" 2>/dev/null || true)"
+          sudo -n docker exec -i porota_production_observer python -u - status < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
+
+          sudo -n docker exec -i porota_production_observer python -u - <<'PY'
+          import json, math, sqlite3, statistics
+          from collections import Counter
+          from datetime import datetime, timedelta
+          import bf_production_paper_observer as observer
+          from bd_ppi_readonly_guard import ProductionMarketReader
+
+          RUN_ID='PPI-HIST-20260912-001'
+          PROBLEM_FAMILIES=('CEDEARS','ON','FUTUROS','OPCIONES')
+          store=observer.runtime_store()
+          c=sqlite3.connect('file:' + store.path + '?mode=ro', uri=True, timeout=10)
+          candidates=[]
+          for fam in PROBLEM_FAMILIES:
+              row=c.execute('''SELECT symbol,instrument_type,market,settlement,provider_rows
+                               FROM ppi_history_ingest_tasks
+                               WHERE run_id=? AND instrument_type=? AND state='DONE_EMPTY' AND provider_rows>0
+                               ORDER BY provider_rows DESC,symbol LIMIT 1''',(RUN_ID,fam)).fetchone()
+              if row: candidates.append(tuple(row[:4]))
+          c.close()
+          # Positive control documented by PPI examples.
+          candidates.append(('GGAL','ACCIONES','BYMA','A-48HS'))
+          print('SEMANTIC_CANDIDATES=' + json.dumps(candidates))
+
+          key,secret=observer._secret()
+          reader=ProductionMarketReader(key,secret,audit=None)
+          reader.login_once()
+          start=datetime.now(observer.TZ).date()-timedelta(days=365)
+          end=datetime.now(observer.TZ).date()
+
+          def num(v):
+              try:
+                  x=float(v)
+                  return x if math.isfinite(x) else None
+              except Exception:
+                  return None
+
+          for symbol,family,market,settlement in candidates:
+              try:
+                  payload=reader.history(symbol,family,settlement,start,end)
+              except Exception as exc:
+                  print('SEMANTIC_QUERY_ERROR=' + json.dumps({'symbol':symbol,'family':family,'market':market,'settlement':settlement,'type':type(exc).__name__,'error':str(exc)[:240]},sort_keys=True))
+                  continue
+              if not isinstance(payload,list):
+                  print('SEMANTIC_BAD_SHAPE=' + json.dumps({'symbol':symbol,'family':family,'type':type(payload).__name__},sort_keys=True))
+                  continue
+              counts=Counter(); samples=[]; opens=[]; highs=[]; lows=[]; closes=[]; vols=[]
+              for r in payload:
+                  if not isinstance(r,dict):
+                      counts['ROW_NOT_OBJECT']+=1; continue
+                  o,h,l,p,v=(num(r.get('openingPrice')),num(r.get('max')),num(r.get('min')),num(r.get('price')),num(r.get('volume')))
+                  vals={'open':o,'high':h,'low':l,'close':p,'volume':v}
+                  for k,x in vals.items():
+                      if x is None: counts[k+'_missing_or_invalid']+=1
+                      elif x == 0: counts[k+'_zero']+=1
+                      elif x < 0: counts[k+'_negative']+=1
+                  if o is not None: opens.append(o)
+                  if h is not None: highs.append(h)
+                  if l is not None: lows.append(l)
+                  if p is not None: closes.append(p)
+                  if v is not None: vols.append(v)
+                  if None not in (o,h,l,p):
+                      if h < l: counts['high_lt_low']+=1
+                      if p > h: counts['close_gt_high']+=1
+                      if p < l: counts['close_lt_low']+=1
+                      if o > h: counts['open_gt_high']+=1
+                      if o < l: counts['open_lt_low']+=1
+                      if o>0 and h>0 and l>0 and p>0 and l <= min(o,p) <= max(o,p) <= h:
+                          counts['full_ohlc_consistent']+=1
+                      else:
+                          counts['full_ohlc_rejected']+=1
+                          if len(samples)<5:
+                              samples.append({'date':r.get('date'),'openingPrice':r.get('openingPrice'),'max':r.get('max'),'min':r.get('min'),'price':r.get('price'),'volume':r.get('volume')})
+              def med(xs):
+                  return round(float(statistics.median(xs)),6) if xs else None
+              result={
+                  'symbol':symbol,'family':family,'market':market,'settlement':settlement,
+                  'rows':len(payload),'counts':dict(counts),
+                  'median':{'openingPrice':med(opens),'max':med(highs),'min':med(lows),'price':med(closes),'volume':med(vols)},
+                  'rejected_samples':samples,
+                  'keys_first_row':sorted(payload[0].keys()) if payload and isinstance(payload[0],dict) else []
+              }
+              print('SEMANTIC_RESULT=' + json.dumps(result,sort_keys=True,default=str))
+          reader.close()
+          print('SEMANTIC_PROBE=PASS')
+          PY
+
+          echo "SYSTEMD_ACTIVE_AFTER=$(systemctl is-active "$SVC" 2>/dev/null || true)"
+          sudo -n docker exec -i porota_production_observer python -u - status < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
+          HOST
