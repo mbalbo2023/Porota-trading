@@ -2,41 +2,38 @@
 
 ## Estado canónico
 
-Checkpoint operativo vivo. Secuencia BINDING solicitada por el usuario y vigente desde esta actualización:
+Secuencia BINDING vigente:
 
-1. `PPI_API_DISCOVERY_CERT` — descubrir/certificar primero todo el universo argentino expuesto por la API productiva PPI.
-2. `PPI_API_HISTORY_CLOSEOUT` — recién con discovery certificado, auditar/recuperar históricos para ese universo exacto, sin dobles ingestas.
-3. `PPI_WEB_SCRAPING` — sólo después de agotar API + históricos, usar PPI Web autenticada/read-only para contratos, referencia y residuales históricos necesarios.
-4. `IOL_RESIDUAL` — únicamente como tercera fuente para huecos que sigan sin resolver después de PPI API + PPI Web.
+1. `PPI_API_DISCOVERY_CERT`
+2. `PPI_API_HISTORY_CLOSEOUT`
+3. `PPI_WEB_SCRAPING`
+4. `IOL_RESIDUAL`
 
-No se permite adelantar una fase sobre la anterior.
+No se permite adelantar una fase sobre la anterior. Universo DATA separado del universo operacional/PAPER. Runtime debe permanecer `PRODUCTION_PAPER` y `real_orders_sent=0`.
 
-## Actualización crítica — reparación de sobre-descubrimiento
+## HITO 1 — PPI API DISCOVERY CERTIFICADO
 
-El `API_CLOSEOUT` anterior produjo una sobre-expansión incorrecta del shadow a 8.422 identidades. El origen fue un discovery demasiado amplio que incorporó 6.462 identidades fuera del conjunto local PPI previamente validado. El gate anti-duplicación detectó la anomalía y bloqueó PPI Web antes de que se usara ese universo como base de scraping.
+Workflow: `RC6 PPI API universe certification 2026-09-12`.
 
-La reparación se ejecutó en GitHub Actions run `34700865427` (`RC6 ingestion shadow repair quarantine 2026-09-12`) y terminó `SUCCESS`.
+Run definitivo: `34701618310` — `SUCCESS`.
 
-Resultado verificado de la reparación:
+Evidencia de cierre:
 
-- preflight: `current=8422`, `trusted=1960`, `extra=6462`, `missing=0`, `errors=0`, `coarse_overlap=0`;
-- 6.462 identidades extra fueron puestas en cuarentena y retiradas del shadow activo;
-- 4.912 attempts asociados exclusivamente al universo extra fueron puestos en cuarentena y retirados del ledger activo;
-- 162 históricos legacy extra fueron puestos en cuarentena y retirados;
-- 4.913 clasificaciones del closeout contaminado fueron puestas en cuarentena;
-- History Store: 234.521 filas canónicas y 86.620 close-canónicas asociadas al universo extra quedaron apartadas de las vistas activas; las versiones append-only se preservaron y se marcaron, no se destruyeron silenciosamente;
-- estado final: `shadow=1960`, `classified_join=1960`, `unclassified=0`, `trusted_coarse_collision_groups=0`;
-- `pragma quick_check=ok`;
-- seguridad: `PRODUCTION_PAPER|0`;
-- `ORDER_ROUTES=NOT_CALLED`, `REAL_ORDERS_SENT=0`.
+- `CERT_BASE_CATALOG=901`
+- `CERT_DIRECT_UNIQUE=1059`
+- `CERT_TRUSTED_TOTAL=1960`
+- `CERT_SHADOW_TOTAL=1960`
+- `CERT_EXTRA=0`
+- `CERT_MISSING=0`
+- `CERT_SHADOW_DUP_GROUPS=0`
+- errores de discovery = `0`
+- `SAFETY_BEFORE=PRODUCTION_PAPER|0`
+- `SAFETY_AFTER=PRODUCTION_PAPER|0`
+- `ORDER_ROUTES=NOT_CALLED`
+- `REAL_ORDERS_SENT=0`
+- `PPI_API_DISCOVERY_MILESTONE=CERTIFIED`
 
-La evidencia contaminada queda conservada en tablas/ledgers de cuarentena para trazabilidad. No se considera parte del dataset canónico.
-
-Corrección de registro: la afirmación previa de que el primer `Broken pipe` no había dejado mutación no es válida como descripción final del incidente. La evidencia posterior demostró que el proceso remoto continuó y contribuyó al universo sobre-expandido. La reparación anterior es el estado canónico posterior al RCA.
-
-## Hito actual — PPI API DISCOVERY
-
-Universo local esperado y restaurado: **1.960 identidades provider-returned** del mercado argentino expuestas por PPI.
+Conteo certificado por familia:
 
 | Familia | Identidades |
 |---|---:|
@@ -57,87 +54,170 @@ Mercados locales admitidos: `BYMA`, `ROFEX`, `A3`, `OTC`.
 
 Fuera del alcance actual: `ACCIONES-USA`, `FCI-EXTERIOR`, `NYSE`, `NASDAQ`.
 
-ETF local API: los probes BYMA previos respondieron correctamente pero no devolvieron una identidad ETF local normalizada. ETF Web permanece discovery/reference-only hasta reconciliar una identidad local válida; no se inventan identidades sintéticas.
+ETF local API: 13 probes BYMA correctos, 13 vacíos, 0 identidad ETF local normalizada. No se inventan identidades sintéticas. ETF Web queda sólo para discovery/reference posterior hasta reconciliar una identidad local válida.
 
-### Certificación fresca en curso
+### Discovery complementario certificado
 
-Workflow: `RC6 PPI API universe certification 2026-09-12`.
+- FCI: 34 búsquedas, 34 OK, 23 vacías, 0 errores, 3.170 resultados normalizados antes de dedupe.
+- LICITACIONES: 24 búsquedas, 24 OK, 16 vacías, 0 errores, 45 normalizados antes de dedupe.
+- LEBAC: 10 búsquedas, 10 OK, 10 vacías, 0 normalizados.
+- NOBAC: 10 búsquedas, 10 OK, 8 vacías, 2 normalizados antes de reconciliación.
+- ETF: 13 búsquedas, 13 OK, 13 vacías, 0 normalizados.
 
-- primer intento run `34701547019`: `FAIL-CLOSED` porque detectó `porota-history-postclose-rc6.service` activo. No hizo mutación de host ni discovery concurrente;
-- forward fix: el workflow ahora espera serialmente a que terminen todos los writers históricos y adquiere ambos locks de histórico antes de certificar;
-- run vigente: `34701618310`;
-- la certificación es read-only y reconstruye el universo trusted desde el catálogo normalizado local más las búsquedas PPI productivas complementarias usadas y validadas para FCI/licitaciones/taxonomías faltantes;
-- condición de éxito: `trusted=1960`, `shadow=1960`, `extra=0`, `missing=0`, duplicados exactos=0, conteos por familia iguales a la tabla precedente, errores de discovery=0, `PRODUCTION_PAPER|0`.
+Resultado final después de dedupe/reconciliación: exactamente las 1.960 identidades certificadas.
 
-El run vigente está serializado detrás de un writer histórico ya existente (`porota-history-postclose-rc6.service`). No se lo mata ni se lanza una segunda ingesta; se espera su finalización para tomar un snapshot consistente.
+## RCA previo — sobre-descubrimiento y reparación
 
-**Estado del hito:** `PPI_API_DISCOVERY_CERT = IN_PROGRESS / SERIALIZED`. No se declara cumplido hasta que el run `34701618310` cierre `SUCCESS` con todos los asserts anteriores.
+Un closeout anterior expandió erróneamente el shadow a 8.422 identidades. El gate anti-duplicación detectó 6.462 extras y bloqueó el avance a Web.
 
-## Fase 2 — PPI API HISTORY CLOSEOUT
+Reparación: run `34700865427` — `SUCCESS`.
 
-No iniciar nuevos backfills de esta fase hasta certificar discovery.
+Resultado:
 
-Al abrir esta fase se debe usar exclusivamente el universo certificado de 1.960 identidades. Se prohíbe derivar targets desde `can_simulate` o desde universos operacionales PAPER.
+- `current=8422`, `trusted=1960`, `extra=6462`, `missing=0`, `errors=0`, `coarse_overlap=0`;
+- 6.462 identidades extra a cuarentena y fuera del shadow activo;
+- 4.912 attempts extra a cuarentena y fuera del ledger activo;
+- 162 históricos legacy extra a cuarentena;
+- 4.913 clasificaciones contaminadas a cuarentena;
+- History Store: 234.521 filas canónicas y 86.620 close-canónicas asociadas al universo extra apartadas de vistas activas; versiones append-only preservadas;
+- final: `shadow=1960`, `classified_join=1960`, `unclassified=0`, `trusted_coarse_collision_groups=0`;
+- `pragma quick_check=ok`;
+- `PRODUCTION_PAPER|0`.
 
-El primer trabajo será una auditoría post-reparación del estado real de históricos, porque los números previos al incidente ya no deben reutilizarse como verdad canónica sin revalidación. Deben medirse nuevamente, por identidad completa y por familia:
+No hubo borrado silencioso de evidencia; la contaminación quedó trazable en cuarentena.
 
-- `VALID_PAYLOAD`;
-- `PARTIAL`;
-- `EMPTY_OR_INVALID`;
-- `ERROR` persistente después de retry acotado;
-- filas válidas almacenadas;
-- cobertura temporal efectiva (no confundir `usable` con 365 días completos).
+## AISLAMIENTO TEMPORAL DE INGESTA — ACTIVO
 
-Luego se reintentan únicamente `ERROR`/faltantes del universo certificado. Un `EMPTY_OR_INVALID` confirmado después de agotamiento API se considera clasificación válida de API y pasa al manifiesto Web; no se vuelve a ejecutar masivamente el resto.
+Por pedido explícito del usuario, desde 2026-09-12 se suspende temporalmente todo scheduler, job o agente paralelo que pueda interferir con la secuencia de ingesta. Se replanificará al terminar el trabajo de hoy.
 
-### Regla de clave histórica
+### ChatGPT automations
 
-La identidad informacional canónica es `(ticker, instrument_type, market, currency, settlement)`.
+Las dos continuaciones que estaban activas fueron deshabilitadas:
 
-Las tablas legacy `production_history_attempts`/`production_history` usan una clave más reducida `(symbol, instrument_type, settlement)`. Antes de incorporar históricos Web se debe verificar que esa reducción no colisione entre identidades completas. Si aparece una colisión real, se bloquea la fase y se usa/introduce una superficie canónica v2 con la identidad completa; nunca se resuelve con overwrite silencioso.
+- `Continuar pipeline PPI`
+- `Continuar saneamiento PPI`
 
-## Fase 3 — PPI WEB SCRAPING
+No queda ninguna automation activa de POROTA que pueda arrancar trabajo en paralelo.
 
-Bloqueada hasta completar discovery + históricos API.
+### Inventario host previo al aislamiento
 
-PPI Web sólo puede:
+Workflow read-only: `RC6 ingestion interference inventory 2026-09-12`, run `34701961019`.
 
-- reconciliar contratos/referencia faltante;
-- completar residuales históricos explícitos del manifiesto posterior a API;
-- preservar `source/provenance` como `PPI_AUTHENTICATED_WEB`;
-- funcionar read-only con POST/PUT/PATCH/DELETE prohibidos;
-- usar el lock `/run/lock/porota-ppi-web-browser.lock` para impedir dos navegadores concurrentes sobre el mismo perfil.
+Detectó 18 timers POROTA habilitados y activos, incluyendo históricos, contract evidence/scraping, integrity, health, introspection, backup y exports. También detectó procesos stale de pruebas IOL y procesos antiguos `python -` de ejecuciones ad-hoc, además de los procesos normales del runtime.
 
-El servicio weekend `porota-contract-evidence-weekend-backfill-rc6.service` había quedado `failed`, `ExecMainStatus=4`, asociado a sesión autenticada expirada. Debe hacerse RCA/repair de autenticación antes del scraping residual. No se toma la evidencia Web existente como cobertura completa.
+### Timers pausados
 
-PPI Web no habilita `READY_PAPER`, no cambia tradability y no reemplaza automáticamente evidencia PPI API válida.
+Workflow: `RC6 ingestion isolation pause 2026-09-12`, run `34702034967`.
 
-## Política anti-doble-ingesta e inconsistencia — BINDING
+Quedaron `disabled` + `inactive` los 18 timers siguientes:
 
-1. Identidad única: `(ticker, instrument_type, market, currency, settlement)`.
-2. Discovery no escribe histórico.
-3. Histórico API sólo consume el universo discovery certificado.
-4. Reintentos son idempotentes sobre la misma identidad; no crean una segunda identidad lógica.
-5. PPI Web sólo consume residuales o campos contractuales faltantes; `VALID_PAYLOAD`/`PARTIAL` API no se reingiere como dato Web nuevo.
-6. IOL nunca sobrescribe PPI silenciosamente.
-7. Toda fuente conserva provenance.
-8. Writers API de histórico deben compartir locks; browser collectors deben compartir su lock Web.
-9. No hay dos productores simultáneos sobre la misma superficie.
-10. Antes de cerrar cada fase: `pragma quick_check=ok`, duplicados exactos=0, integridad de claves verificada, seguridad `PRODUCTION_PAPER|0` y no-order evidence.
+- `porota-a3-history-daily-rc6.timer`
+- `porota-a3-history-reconcile-rc6.timer`
+- `porota-a3-history-weekend-rc6.timer`
+- `porota-candle-integrity-rc6.timer`
+- `porota-contract-evidence-rc6.timer`
+- `porota-contract-evidence-weekend-backfill-rc6.timer`
+- `porota-fast-functional-health-rc6.timer`
+- `porota-full-db-integrity-rc6.timer`
+- `porota-functional-health-rc6.timer`
+- `porota-history-postclose-rc6.timer`
+- `porota-host-general-backup-rc6.timer`
+- `porota-introspection-publish-rc6.timer`
+- `porota-introspection-rc6.timer`
+- `porota-log-export-hf6.timer`
+- `porota-ppi-argentina-nightly-rc6.timer`
+- `porota-preopen-rc6.timer`
+- `porota-scheduler-export-hf6.timer`
+- `porota-weekend-ingestion-audit-rc6.timer`
+
+El workflow también detuvo servicios timer-triggered que estuvieran `active/activating` y ejecutó limpieza de procesos stale de IOL y `python -` antiguos. El post-check mostró `POST_PAUSE_OLD_STDIN` vacío.
+
+El run figura `failure` únicamente por un bug de formato en el print final de seguridad (`TypeError: not enough arguments for format string`) después de haber completado la pausa. Antes del bug imprimió `DB_QUICK_CHECK=ok`. La última seguridad explícita inmediatamente anterior, en el run de certificación, fue `PRODUCTION_PAPER|0`, `REAL_ORDERS_SENT=0`. La pausa no invocó rutas de órdenes ni modificó datos de trading.
+
+Manifest reversible guardado en host:
+
+`/opt/porota-trading/data/audit/ingestion_isolation_pause_20260912.txt`
+
+Ese manifest conserva el estado previo de los timers para replanificación/restauración posterior.
+
+### Servicios deliberadamente NO detenidos
+
+Se mantienen sólo los servicios core no scheduler que no son productores de ingesta:
+
+- `porota-critical-approval-rc6.service`
+- `porota-critical-github-proxy-rc6.service`
+
+También siguen vivos el observer/dashboard/runtime principal; no se detuvo el sistema productivo PAPER.
+
+### GitHub Actions paralelos
+
+Se detectó un audit T673O paralelo que estaba ya en vuelo; terminó `SUCCESS` en el run `34702030484` y no quedó activo.
+
+Luego se ejecutó `RC6 ingestion GitHub Actions quiesce 2026-09-12`, run `34702148595` — `SUCCESS`.
+
+Resultado final después del quiesce:
+
+- GitHub Actions `in_progress=0`
+- GitHub Actions `queued=0`
+
+No queda ningún workflow GitHub concurrente al momento de este checkpoint.
+
+## Política de aislamiento hasta fin del trabajo de hoy
+
+1. No reactivar timers automáticamente.
+2. No crear automations recurrentes.
+3. Sólo este chat puede iniciar un workflow puntual necesario para la secuencia canónica.
+4. Cada workflow puntual debe terminar antes de iniciar el siguiente productor.
+5. Discovery, históricos y scraping permanecen estrictamente serializados.
+6. No se usa IOL durante PPI API / PPI Web.
+7. No se permite doble ingesta ni overwrite silencioso.
+8. Al finalizar hoy, revisar el manifest de pausa y replanificar explícitamente qué timers vuelven, con qué frecuencia y dependencia.
+
+## FASE 2 — PPI API HISTORY CLOSEOUT
+
+**Estado:** lista para iniciar, pero todavía no iniciada después del aislamiento.
+
+Debe consumir exclusivamente las 1.960 identidades certificadas. Antes de reintentar nada, ejecutar una auditoría post-reparación que mida nuevamente, por identidad completa y familia:
+
+- `VALID_PAYLOAD`
+- `PARTIAL`
+- `EMPTY_OR_INVALID`
+- `ERROR`
+- filas válidas almacenadas
+- cobertura temporal efectiva
+- provenance/origen
+- duplicados exactos y colisiones de clave
+
+No reutilizar como verdad canónica los totales históricos previos al incidente sin revalidación.
+
+Reintentar solamente faltantes/`ERROR` con retry acotado e idempotente. `EMPTY_OR_INVALID` confirmado después de agotar PPI API pasa al manifiesto Web; no justifica reingesta masiva.
+
+### Clave histórica
+
+Identidad canónica: `(ticker, instrument_type, market, currency, settlement)`.
+
+Las tablas legacy reducen identidad a `(symbol, instrument_type, settlement)`. Antes de PPI Web histórico debe demostrarse que no hay colisiones; si existen, se usa una superficie canónica v2 con identidad completa. Nunca `INSERT OR REPLACE` para ocultar conflictos.
+
+## FASE 3 — PPI WEB SCRAPING
+
+Bloqueada hasta cerrar históricos API.
+
+PPI Web sólo podrá trabajar sobre residuales explícitos o campos contractuales/reference faltantes, read-only, con provenance `PPI_AUTHENTICATED_WEB`, lock de navegador compartido y sin auto-habilitar `READY_PAPER`.
+
+El servicio weekend previo estaba `failed`, `ExecMainStatus=4`, por sesión autenticada expirada. Su RCA/repair se hará recién cuando corresponda abrir esta fase.
 
 ## Invariantes de seguridad
 
-- Runtime: `PRODUCTION_PAPER`.
-- `real_orders_sent=0`.
-- Ninguna tarea de discovery, histórico o scraping puede llamar rutas de órdenes.
-- Universo DATA separado del universo operacional/PAPER.
-- Scraping o disponibilidad de datos nunca auto-habilita operatoria.
-- Host productivo observado: `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d`; toda mutación futura debe volver a gatear contra el SHA real del host y contra deploys/writers concurrentes.
+- `PRODUCTION_PAPER`
+- `real_orders_sent=0`
+- ninguna tarea DATA llama rutas de órdenes
+- no real-order capability
+- universo DATA != universo PAPER
+- provenance obligatoria
+- PPI API > PPI Web > IOL
+- no doble productor sobre una misma superficie
+- no rollback automático
 
-## Deuda técnica permanente
+## Próximo paso autorizado
 
-`bf_production_paper_observer.py::_historical_targets(store)` todavía acopla el histórico a `can_simulate`/estado operacional. Debe corregirse con tests para separar permanentemente universo DATA de universo PAPER. Los backfills actuales desacoplados permiten completar la data, pero no reemplazan esa corrección de código.
-
-## Próxima transición permitida
-
-`DISCOVERY_CERT SUCCESS` → checkpoint con evidencia exacta → auditoría histórica post-repair del universo 1.960 → retries acotados y clasificación 100% → manifiesto Web residual limpio → RCA de autenticación PPI Web → scraping residual/read-only → sólo después evaluar IOL residual.
+Con `PPI_API_DISCOVERY_CERT=CERTIFIED` y el entorno aislado, el siguiente trabajo permitido es **auditoría histórica post-reparación read-only del universo exacto de 1.960 identidades**. Sólo después de esa auditoría se decidirán retries históricos selectivos.
