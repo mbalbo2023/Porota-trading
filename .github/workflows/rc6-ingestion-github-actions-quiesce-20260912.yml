@@ -1,0 +1,43 @@
+name: RC6 ingestion GitHub Actions quiesce 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ingestion-github-actions-quiesce-20260912.yml']
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  quiesce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Cancel all other queued/in-progress repo Actions for ingestion isolation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "SELF_RUN_ID=$RUN_ID"
+          for status in queued in_progress; do
+            gh api "repos/$REPO/actions/runs?status=$status&per_page=100" --jq '.workflow_runs[] | [.id,.name,.status] | @tsv' > "/tmp/$status.tsv" || true
+            while IFS=$'\t' read -r id name st; do
+              [[ -z "${id:-}" ]] && continue
+              if [[ "$id" == "$RUN_ID" ]]; then
+                echo "KEEP_SELF=$id|$name|$st"
+                continue
+              fi
+              echo "CANCEL=$id|$name|$st"
+              gh api --method POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null || true
+            done < "/tmp/$status.tsv"
+          done
+          sleep 3
+          echo '=== REMAINING ==='
+          for status in queued in_progress; do
+            gh api "repos/$REPO/actions/runs?status=$status&per_page=100" --jq '.workflow_runs[] | [.id,.name,.status] | @tsv' || true
+          done
+          echo 'GITHUB_ACTIONS_ISOLATION=ACTIVE'
