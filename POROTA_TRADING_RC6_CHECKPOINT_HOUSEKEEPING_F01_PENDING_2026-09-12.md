@@ -158,3 +158,13 @@ Alcance read-only; comparación contra el último deploy confirmado `a47f3339ec6
 - Los refs repetidos parecen redundantes por contenido y actividad observada, pero la conexión no pudo leer las reglas/rulesets del repositorio. No se considera probada la ausencia de protección.
 - No se borró ni actualizó ninguna rama. No se tocó el pipeline PPI, sus datos, ejecuciones ni el host. La limpieza de refs sigue pendiente de la auditoría restante y autorización destructiva específica.
 - Siguiente control de auditoría: inventariar workflows existentes en el árbol RC6, clasificar triggers y capacidad de despliegue/escritura, y cruzarlos con ejecuciones recientes; separar archivos realmente operativos de flujos manuales obsoletos antes de proponer cambios.
+
+
+---
+
+## Estado observado del run PPI paralelo — 2026-09-12
+
+- Run `34705180201`, rama `ops/rc6-ppi-fullfamily-history-20260912`, SHA `023730072194d97c52aa84ff0137f20219e66611`; evento `push`, workflow `.github/workflows/rc6-ppi-history-storage-audit-20260912.yml`.
+- Al revisar estaba `in_progress`, con un único job `audit` ejecutando “Serialized read-only capacity and coverage audit”. No es un deploy ni fue iniciado desde la rama de housekeeping.
+- El workflow verifica el SHA esperado del host, estado de servicios, disco y cobertura de bases por SSH. Toma el lock compartido `/run/lock/porota-ppi-fullfamily-history.lock` (espera hasta 30 minutos; job timeout 40 minutos), por lo que puede serializar temporalmente otros procesos de historial/ingesta.
+- Este registro no modifica, cancela ni interrumpe la ejecución. La rama y los datos PPI siguen excluidos de la limpieza.
