@@ -20,6 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Compile and test authority model
+        env:
+          PYTHONPATH: .
         run: |
           set -Eeuo pipefail
           python -m py_compile rc6_api_universe_authority.py tests/test_rc6_api_universe_authority.py
