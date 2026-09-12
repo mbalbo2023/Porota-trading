@@ -44,28 +44,20 @@ jobs:
           echo '--- REJECTION_CLASSIFICATION_READONLY ---'
           sudo -n docker exec -i porota_production_observer python -u - <<'PY'
           import json, sqlite3
-          from collections import Counter, defaultdict
+          from collections import Counter
           import bf_production_paper_observer as observer
           from cv_history_store_adapter_hf6 import default_history_store
-
           RUN_ID='PPI-HIST-20260912-001'
           store=observer.runtime_store(); hstore=default_history_store()
           def ro(path): return sqlite3.connect('file:' + path + '?mode=ro', uri=True, timeout=10)
           c=ro(store.path)
-          tasks=c.execute('''SELECT symbol,instrument_type,market,settlement,started_at,finished_at,provider_rows,valid_rows
-                             FROM ppi_history_ingest_tasks
-                             WHERE run_id=? AND state='DONE_EMPTY' AND started_at IS NOT NULL AND finished_at IS NOT NULL''',(RUN_ID,)).fetchall()
-          taskmap={(r[0],r[1],r[3]):r for r in tasks}
-          starts=[r[4] for r in tasks if r[4]]
-          min_start=min(starts) if starts else '9999'
-          ledger=c.execute('''SELECT id,symbol,instrument_type,settlement,attempted_at,provider_rows,valid_rows,rejected_rows,detail,metadata_json
-                              FROM history_attempt_ledger_v2
-                              WHERE source='PPI_PRODUCTION_HISTORY' AND attempted_at>=? ORDER BY id''',(min_start,)).fetchall()
+          tasks=c.execute('''SELECT symbol,instrument_type,market,settlement,started_at,finished_at,provider_rows,valid_rows FROM ppi_history_ingest_tasks WHERE run_id=? AND state='DONE_EMPTY' AND started_at IS NOT NULL AND finished_at IS NOT NULL''',(RUN_ID,)).fetchall()
+          taskmap={(r[0],r[1],r[3]):r for r in tasks}; starts=[r[4] for r in tasks if r[4]]; min_start=min(starts) if starts else '9999'
+          ledger=c.execute('''SELECT id,symbol,instrument_type,settlement,attempted_at,provider_rows,valid_rows,rejected_rows,detail,metadata_json FROM history_attempt_ledger_v2 WHERE source='PPI_PRODUCTION_HISTORY' AND attempted_at>=? ORDER BY id''',(min_start,)).fetchall()
           matched=[]; attempt_ids=[]; close_rows=0
           for a in ledger:
               t=taskmap.get((a[1],a[2],a[3]))
-              if not t: continue
-              if not (t[4] <= a[4] <= t[5]): continue
+              if not t or not (t[4] <= a[4] <= t[5]): continue
               try: meta=json.loads(a[9] or '{}')
               except Exception: meta={}
               if str(meta.get('market','')).upper() != str(t[2]).upper(): continue
@@ -73,37 +65,17 @@ jobs:
           reason=Counter(); family_reason=Counter()
           if attempt_ids:
               marks=','.join('?' for _ in attempt_ids)
-              rr=c.execute(f'''SELECT instrument_type,reason,count(*) FROM history_row_rejections_v2
-                               WHERE attempt_id IN ({marks}) GROUP BY instrument_type,reason''',attempt_ids).fetchall()
-              for fam,why,n in rr:
-                  reason[why]+=int(n); family_reason[(fam,why)]+=int(n)
-          print('DONE_EMPTY_TASKS=' + str(len(tasks)))
-          print('MATCHED_ATTEMPTS=' + str(len(matched)))
-          print('MATCHED_PROVIDER_ROWS=' + str(sum(int(a[5] or 0) for a in matched)))
-          print('MATCHED_VALID_ROWS=' + str(sum(int(a[6] or 0) for a in matched)))
-          print('MATCHED_REJECTED_ROWS=' + str(sum(int(a[7] or 0) for a in matched)))
-          print('CLOSE_ONLY_EXTRACTED_ROWS=' + str(close_rows))
-          print('REJECTION_REASON_COUNTS=' + json.dumps(reason, sort_keys=True))
-          print('FAMILY_REJECTION_COUNTS=' + json.dumps([{'family':k[0],'reason':k[1],'count':v} for k,v in sorted(family_reason.items(), key=lambda x:(-x[1],x[0]))], sort_keys=True))
-          c.close()
-
-          h=ro(hstore.path)
-          tables={r[0] for r in h.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              rr=c.execute(f'''SELECT instrument_type,reason,count(*) FROM history_row_rejections_v2 WHERE attempt_id IN ({marks}) GROUP BY instrument_type,reason''',attempt_ids).fetchall()
+              for fam,why,n in rr: reason[why]+=int(n); family_reason[(fam,why)]+=int(n)
+          print('DONE_EMPTY_TASKS=' + str(len(tasks))); print('MATCHED_PROVIDER_ROWS=' + str(sum(int(a[5] or 0) for a in matched))); print('MATCHED_VALID_ROWS=' + str(sum(int(a[6] or 0) for a in matched))); print('MATCHED_REJECTED_ROWS=' + str(sum(int(a[7] or 0) for a in matched))); print('CLOSE_ONLY_EXTRACTED_ROWS=' + str(close_rows)); print('REJECTION_REASON_COUNTS=' + json.dumps(reason, sort_keys=True)); c.close()
+          h=ro(hstore.path); tables={r[0] for r in h.execute("SELECT name FROM sqlite_master WHERE type='table'")}
           if 'history_close_canonical_v1' in tables:
-              close_total=int(h.execute('SELECT count(*) FROM history_close_canonical_v1').fetchone()[0] or 0)
-              close_versions=int(h.execute('SELECT count(*) FROM history_close_versions_v1').fetchone()[0] or 0)
-              print(f'CLOSE_CANONICAL_ROWS_LIVE={close_total}')
-              print(f'CLOSE_VERSION_ROWS_LIVE={close_versions}')
-          else:
-              print('CLOSE_CANONICAL_ROWS_LIVE=0')
-              print('CLOSE_VERSION_ROWS_LIVE=0')
-          full=int(h.execute('SELECT count(*) FROM history_canonical_v2').fetchone()[0] or 0)
-          print(f'FULL_OHLC_CANONICAL_ROWS_LIVE={full}')
-          h.close()
-          print('REJECTION_CLASSIFICATION=PASS')
+              print('CLOSE_CANONICAL_ROWS_LIVE=' + str(int(h.execute('SELECT count(*) FROM history_close_canonical_v1').fetchone()[0] or 0)))
+              print('CLOSE_VERSION_ROWS_LIVE=' + str(int(h.execute('SELECT count(*) FROM history_close_versions_v1').fetchone()[0] or 0)))
+          print('FULL_OHLC_CANONICAL_ROWS_LIVE=' + str(int(h.execute('SELECT count(*) FROM history_canonical_v2').fetchone()[0] or 0))); h.close(); print('REJECTION_CLASSIFICATION=PASS')
           PY
           echo '--- JOURNAL_TAIL_READONLY ---'
           sudo -n journalctl -u "$SVC" -n 12 --no-pager 2>&1 || true
           HOST
 
-# status refresh 2026-09-12T21:21Z
+# status refresh 2026-09-12T21:33Z
