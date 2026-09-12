@@ -1,0 +1,147 @@
+name: RC6 PPI history runner lockfix and resume 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-history-runner-lockfix-20260912.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lockfix-start-resume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout ingestion branch
+        uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Copy corrected unit
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            ops/porota-ppi-fullfamily-history-rc6.service "$DO_USER@$DO_HOST:/tmp/porota-ppi-fullfamily-history-rc6.service"
+
+      - name: Install lockfix, start, prove batch, stop, resume
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          SVC=porota-ppi-fullfamily-history-rc6.service
+          cd /opt/porota-trading
+          EXPECT='a47f3339ec6dfe9d5afde444b1aaddabceb0e94d'
+          ACTUAL="$(git rev-parse HEAD)"
+          echo "HOST_SHA=$ACTUAL"
+          test "$ACTUAL" = "$EXPECT" || { echo "ABORT=HOST_SHA_CHANGED"; exit 31; }
+
+          test -r /opt/porota-ingest/ppi_history_runner_rc6.py || { echo 'ABORT=RUNNER_NOT_INSTALLED'; exit 32; }
+          test -r /opt/porota-ingest/ppi_history_control_rc6.py || { echo 'ABORT=CONTROL_NOT_INSTALLED'; exit 33; }
+          test -x /usr/local/sbin/porota-ppi-history-runner-rc6 || { echo 'ABORT=WRAPPER_NOT_INSTALLED'; exit 34; }
+
+          sudo -n systemctl stop "$SVC" 2>/dev/null || true
+          sudo -n systemctl reset-failed "$SVC" 2>/dev/null || true
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 0 9 || { echo 'ABORT=CANONICAL_HISTORY_LOCK_BUSY'; exit 35; }
+          flock -u 9
+
+          sudo -n install -m 0644 /tmp/porota-ppi-fullfamily-history-rc6.service /etc/systemd/system/porota-ppi-fullfamily-history-rc6.service
+          rm -f /tmp/porota-ppi-fullfamily-history-rc6.service
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl reset-failed "$SVC"
+          sudo -n systemctl enable "$SVC" >/dev/null
+
+          snapshot() {
+            sudo -n docker exec -i porota_production_observer python -u - status < /opt/porota-ingest/ppi_history_control_rc6.py 2>/dev/null || true
+          }
+          integrity() {
+            sudo -n docker exec -i porota_production_observer python -u - integrity < /opt/porota-ingest/ppi_history_control_rc6.py
+          }
+
+          integrity
+          sudo -n systemctl start "$SVC"
+          echo 'SYSTEMD_START_REQUESTED=YES'
+
+          FIRST=''
+          for _ in $(seq 1 240); do
+            ACTIVE="$(systemctl is-active "$SVC" 2>/dev/null || true)"
+            SNAP="$(snapshot)"
+            STATUS="$(printf '%s\n' "$SNAP" | sed -n 's/^STATUS=//p' | tail -1)"
+            BATCH="$(printf '%s\n' "$SNAP" | sed -n 's/^BATCH=//p' | tail -1)"
+            PID="$(printf '%s\n' "$SNAP" | sed -n 's/^PID=//p' | tail -1)"
+            echo "CANARY_ACTIVE=$ACTIVE STATUS=${STATUS:-NONE} BATCH=${BATCH:-0} PID=${PID:-0}"
+            case "$STATUS" in BLOCKED_*) echo "$SNAP"; sudo -n journalctl -u "$SVC" -n 160 --no-pager; exit 41;; esac
+            if [[ "${BATCH:-0}" =~ ^[0-9]+$ ]] && [ "${BATCH:-0}" -ge 1 ] && [[ "${PID:-0}" =~ ^[1-9][0-9]*$ ]]; then FIRST="$SNAP"; break; fi
+            if [ "$ACTIVE" = failed ]; then sudo -n journalctl -u "$SVC" -n 160 --no-pager; exit 42; fi
+            sleep 2
+          done
+          test -n "$FIRST" || { echo 'ABORT=NO_FIRST_BATCH'; sudo -n journalctl -u "$SVC" -n 200 --no-pager; exit 43; }
+          echo "$FIRST"
+          BEFORE_BATCH="$(printf '%s\n' "$FIRST" | sed -n 's/^BATCH=//p' | tail -1)"
+          BEFORE_HEARTBEAT="$(printf '%s\n' "$FIRST" | sed -n 's/^HEARTBEAT=//p' | tail -1)"
+          echo 'FIRST_COMMITTED_BATCH=YES'
+          integrity
+
+          sudo -n systemctl stop "$SVC"
+          STOPPED="$(snapshot)"
+          echo "$STOPPED"
+          STOP_PID="$(printf '%s\n' "$STOPPED" | sed -n 's/^PID=//p' | tail -1)"
+          test "${STOP_PID:-0}" = 0 || { echo 'ABORT=PID_SURVIVED_STOP'; exit 51; }
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 0 9 || { echo 'ABORT=LOCK_NOT_RELEASED'; exit 52; }
+          flock -u 9
+          integrity
+          echo 'CONTROLLED_STOP_INTEGRITY=PASS'
+
+          sudo -n systemctl reset-failed "$SVC" || true
+          sudo -n systemctl start "$SVC"
+          FINAL=''
+          for _ in $(seq 1 240); do
+            ACTIVE="$(systemctl is-active "$SVC" 2>/dev/null || true)"
+            SNAP="$(snapshot)"
+            STATUS="$(printf '%s\n' "$SNAP" | sed -n 's/^STATUS=//p' | tail -1)"
+            BATCH="$(printf '%s\n' "$SNAP" | sed -n 's/^BATCH=//p' | tail -1)"
+            HEARTBEAT="$(printf '%s\n' "$SNAP" | sed -n 's/^HEARTBEAT=//p' | tail -1)"
+            PID="$(printf '%s\n' "$SNAP" | sed -n 's/^PID=//p' | tail -1)"
+            echo "RESUME_ACTIVE=$ACTIVE STATUS=${STATUS:-NONE} BATCH=${BATCH:-0} PID=${PID:-0}"
+            case "$STATUS" in BLOCKED_*) echo "$SNAP"; sudo -n journalctl -u "$SVC" -n 160 --no-pager; exit 61;; esac
+            if [[ "${BATCH:-0}" =~ ^[0-9]+$ ]] && [ "${BATCH:-0}" -gt "$BEFORE_BATCH" ] && [ "$HEARTBEAT" != "$BEFORE_HEARTBEAT" ] && [[ "${PID:-0}" =~ ^[1-9][0-9]*$ ]]; then FINAL="$SNAP"; break; fi
+            case "$STATUS" in API_PASS_COMPLETE|API_PASS_COMPLETE_WITH_ERRORS) FINAL="$SNAP"; break;; esac
+            if [ "$ACTIVE" = failed ]; then sudo -n journalctl -u "$SVC" -n 160 --no-pager; exit 62; fi
+            sleep 2
+          done
+          test -n "$FINAL" || { echo 'ABORT=NO_PROGRESS_AFTER_RESTART'; sudo -n journalctl -u "$SVC" -n 200 --no-pager; exit 63; }
+          echo "$FINAL"
+          integrity
+          ACTIVE="$(systemctl is-active "$SVC" 2>/dev/null || true)"
+          STATUS="$(printf '%s\n' "$FINAL" | sed -n 's/^STATUS=//p' | tail -1)"
+          echo "SYSTEMD_FINAL_ACTIVE=$ACTIVE"
+          if [ "$ACTIVE" = active ]; then
+            echo 'RUNNER_LEFT_RUNNING=YES'
+          else
+            case "$STATUS" in API_PASS_COMPLETE|API_PASS_COMPLETE_WITH_ERRORS) echo 'RUNNER_FINISHED_DURING_CANARY=YES';; *) echo 'ABORT=SERVICE_NOT_ACTIVE_AND_NOT_COMPLETE'; exit 64;; esac
+          fi
+          echo 'LOCKFIX_CANARY_RESUME=PASS'
+          HOST
