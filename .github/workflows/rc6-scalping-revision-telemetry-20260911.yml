@@ -1,0 +1,74 @@
+name: RC6 Scalping Revision Telemetry 2026-09-11
+
+on:
+  push:
+    branches:
+      - feature/rc6-scalping-revision-telemetry-20260911
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test runner only
+        run: python -m pip install --disable-pip-version-check pytest
+
+      - name: Exact delta from deployed baseline
+        env:
+          BASE_SHA: eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BASE_SHA^{commit}"
+          git diff --name-only "$BASE_SHA"...HEAD | sort | tee /tmp/delta.txt
+          cat > /tmp/allowed.txt <<'EOF'
+          .github/workflows/rc6-scalping-revision-telemetry-20260911.yml
+          cf_intraday_scalping.py
+          tests/test_rc6_scalping_revision_telemetry.py
+          EOF
+          diff -u /tmp/allowed.txt /tmp/delta.txt
+
+      - name: Compile touched Python
+        run: python -m py_compile cf_intraday_scalping.py tests/test_rc6_scalping_revision_telemetry.py
+
+      - name: Contract policy and telemetry
+        run: |
+          python -m pytest -q \
+            tests/test_intraday_contract_policy_rc6.py \
+            tests/test_intraday_scalping_rc6_integration.py \
+            tests/test_rc6_scalping_revision_telemetry.py
+
+      - name: Scalping PAPER regression
+        run: |
+          python -m pytest -q \
+            tests/test_rc6_scalping_active_paper_learning.py \
+            tests/test_rc6_scalping_intraday_fee_bonus.py
+
+      - name: Static safety assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import cf_intraday_scalping as s
+          import fg_intraday_contract_policy_rc6 as p
+          assert p.DEFAULT_MUTABLE_SECONDS == 120
+          src = Path('cf_intraday_scalping.py').read_text()
+          assert 'SCALPING_INTRADAY_REVISION_TELEMETRY' in src
+          assert '/Operar' not in src
+          assert 'send_order' not in src
+          assert 'place_order' not in src
+          # Telemetry is evidence only: classification still comes solely from
+          # the fail-closed policy module.
+          assert 'classify_revision(' in src
+          print('RC6_SCALPING_REVISION_TELEMETRY_STATIC=GREEN')
+          PY
