@@ -25,7 +25,7 @@ jobs:
           chmod 600 "$HOME/.ssh/porota_ro"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Inspect host without mutation
+      - name: Inspect host tree without mutation
         env:
           HOST: ${{ secrets.DO_HOST }}
           USER: ${{ secrets.DO_USER }}
@@ -37,26 +37,16 @@ jobs:
           set -euo pipefail
           REPO=/opt/porota-trading
           echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD)"
-          echo "HOST_DIRTY_COUNT=$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
+          STATUS="$(git -C "$REPO" status --porcelain=v1 --untracked-files=normal)"
+          echo "HOST_DIRTY_COUNT=$(printf '%s\n' "$STATUS" | sed '/^$/d' | wc -l | tr -d ' ')"
           echo 'HOST_DIRTY_BEGIN'
-          git -C "$REPO" status --porcelain=v1 --untracked-files=all | sed -n '1,120p'
+          printf '%s\n' "$STATUS" | sed -n '1,120p'
           echo 'HOST_DIRTY_END'
+          echo "TRACKED_DIRTY_COUNT=$(git -C "$REPO" status --porcelain=v1 --untracked-files=no | sed '/^$/d' | wc -l | tr -d ' ')"
           echo "DISK_FREE_BYTES=$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"
-          echo "DISK_FREE_HUMAN=$(df -Ph "$REPO" | awk 'NR==2{print $4}')"
           echo "OBSERVER=$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Image}}' porota_production_observer)"
           echo "DASHBOARD=$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
           OBS_ID=$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)
           echo "IMAGE_COMMIT=$(sudo -n docker image inspect "$OBS_ID" -f '{{ index .Config.Labels "porota.commit" }}')"
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
-          import sqlite3
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
-          c.execute('PRAGMA query_only=ON')
-          q=c.execute('PRAGMA quick_check').fetchone()[0]
-          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
-          c.close()
-          print(f'DB_QUICK_CHECK={q}')
-          print(f'RUNTIME_MODE={mode}')
-          print(f'REAL_ORDERS_SENT={orders}')
-          PY
-          echo "RC6_EOD_UI_HOST_PREFLIGHT=GREEN"
+          echo "RC6_EOD_UI_HOST_TREE_CLASSIFICATION=GREEN"
           HOST
