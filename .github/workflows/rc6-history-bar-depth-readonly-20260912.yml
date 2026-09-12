@@ -1,0 +1,78 @@
+name: RC6 History Bar Depth Readonly 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-history-bar-depth-readonly-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Measure exact-identity bar depth without changing readiness
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBSDB="$ROOT/data/paper_v17/observer_v17.db"
+          HISTDB="$ROOT/data/market_history.db"
+          python3 - "$OBSDB" "$HISTDB" <<'PY'
+          import sqlite3,json,sys
+          from collections import defaultdict
+          obs,hist=sys.argv[1:3]
+          aliases={'ACCIONES_USA':'ACCIONES-USA','FCI_EXTERIOR':'FCI-EXTERIOR','FCI_LOCAL':'FCI','OBLIGACIONES':'ON','ETFS':'ETF'}
+          canon=lambda v:aliases.get(str(v or '').strip().upper(),str(v or '').strip().upper())
+          co=sqlite3.connect('file:'+obs+'?mode=ro',uri=True,timeout=30);co.row_factory=sqlite3.Row;co.execute('pragma query_only=on')
+          ch=sqlite3.connect('file:'+hist+'?mode=ro',uri=True,timeout=30);ch.row_factory=sqlite3.Row;ch.execute('pragma query_only=on')
+          qo=co.execute('pragma quick_check').fetchone()[0];qh=ch.execute('pragma quick_check').fetchone()[0]
+          st=co.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          assert qo=='ok' and qh=='ok' and st and st['mode']=='PRODUCTION_PAPER' and int(st['real_orders_sent'] or 0)==0
+          print('SAFETY='+json.dumps({'observer_quick_check':qo,'history_quick_check':qh,'mode':st['mode'],'session':st['session_state'],'real_orders_sent':st['real_orders_sent']},sort_keys=True))
+          bars={}
+          for r in ch.execute('''select instrument_type,symbol,count(distinct date) bars,min(date) oldest,max(date) latest
+                                 from history_canonical_v2 group by instrument_type,symbol'''):
+              bars[(canon(r['instrument_type']),str(r['symbol'] or '').strip().upper())]=dict(r)
+          thresholds=(1,5,10,20,30,60,120,200)
+          agg=defaultdict(lambda:{'api':0,'with_history':0,**{f'ge_{n}':0 for n in thresholds}})
+          below30=defaultdict(list)
+          for a in co.execute('select family,ticker from api_universe_v1 order by family,ticker'):
+              fam=canon(a['family']);ticker=str(a['ticker'] or '').strip().upper();s=agg[fam];s['api']+=1
+              h=bars.get((fam,ticker))
+              if not h:continue
+              s['with_history']+=1
+              n=int(h['bars'] or 0)
+              for t in thresholds:
+                  if n>=t:s[f'ge_{t}']+=1
+              if n<30 and len(below30[fam])<30:
+                  below30[fam].append({'ticker':ticker,'bars':n,'oldest':h['oldest'],'latest':h['latest']})
+          for fam in sorted(agg):
+              out={'family':fam,**agg[fam],'below30_sample':below30[fam]}
+              print('BAR_DEPTH='+json.dumps(out,ensure_ascii=False,sort_keys=True))
+          co.close();ch.close()
+          print('NOTE=BAR_DEPTH_ONLY_FRESHNESS_NOT_PROVEN')
+          print('HISTORY_READY_FLAGS_CHANGED=NO')
+          print('MUTATIONS=NONE')
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
