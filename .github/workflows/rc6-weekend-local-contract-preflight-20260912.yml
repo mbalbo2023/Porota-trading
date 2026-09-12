@@ -1,0 +1,67 @@
+name: RC6 weekend local contract preflight 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-weekend-local-contract-preflight-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Inspect current-base contract and weekend ingestion readiness
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          printf 'HOST_SHA=%s\n' "$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+
+          echo '=== SYSTEMD ==='
+          for u in porota-ppi-argentina-nightly-rc6.timer porota-ppi-argentina-nightly-rc6.service porota-contract-evidence-rc6.timer porota-contract-evidence-rc6.service; do
+            printf '%s|enabled=%s|active=%s\n' "$u" "$(systemctl is-enabled "$u" 2>/dev/null || true)" "$(systemctl is-active "$u" 2>/dev/null || true)"
+          done
+          systemctl list-timers porota-ppi-argentina-nightly-rc6.timer porota-contract-evidence-rc6.timer --no-pager 2>/dev/null || true
+
+          echo '=== BROWSER_PREREQS ==='
+          test -x /usr/local/sbin/porota-chromium-root && echo 'CHROMIUM_WRAPPER=YES' || echo 'CHROMIUM_WRAPPER=NO'
+          test -d /root/.config/chromium-ppi && echo 'PPI_BROWSER_PROFILE=YES' || echo 'PPI_BROWSER_PROFILE=NO'
+
+          echo '=== LIVE_MODULES ==='
+          sudo -n docker exec porota_production_observer python -c "import ch_contract_evidence_hf6,ck_contract_evidence_runner_hf6,cn_ppi_authenticated_family_scraper_hf6,cq_contract_readiness_hf6; print('CORE_CONTRACT_STACK_IMPORT=OK'); print('SCRAPER_MUTATION_CAPABLE='+str(cn_ppi_authenticated_family_scraper_hf6.MUTATION_CAPABLE)); print('SCRAPER_REAL_ORDER_GUARD='+str(cn_ppi_authenticated_family_scraper_hf6.REAL_ORDER_GUARD))"
+
+          echo '=== RUNTIME_AND_DATA ==='
+          sudo -n docker exec porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print('SAFETY=%s|%s'%s); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0; e=c.execute(\"select count(*) from sqlite_master where type='table' and name='ppi_argentina_api_shadow'\").fetchone()[0]; print('ARG_API_SHADOW='+str(c.execute('select count(*) from ppi_argentina_api_shadow').fetchone()[0] if e else 0)); print('HISTORY_ATTEMPTS='+str(c.execute('select count(*) from production_history_attempts').fetchone()[0])); print('HISTORY_USABLE='+str(c.execute(\"select count(*) from production_history_attempts where state in ('VALID_PAYLOAD','PARTIAL')\").fetchone()[0])); print('HISTORY_HARD='+str(c.execute(\"select count(*) from production_history_attempts where state in ('EMPTY_OR_INVALID','ERROR')\").fetchone()[0])); c.close()"
+
+          echo '=== CONTRACT_EVIDENCE_STORE ==='
+          sudo -n docker exec porota_production_observer python -c "import os,sqlite3; p='/data/contract_evidence/contract_evidence.db'; print('CONTRACT_DB_EXISTS='+str(os.path.exists(p))); c=sqlite3.connect('file:'+p+'?mode=ro',uri=True) if os.path.exists(p) else None; print('CONTRACT_TABLES='+(','.join(r[0] for r in c.execute(\"select name from sqlite_master where type='table' order by name\")) if c else '')); c.close() if c else None"
+
+          echo 'HOST_MUTATION=NONE'
+          echo 'HTTP_CALLS=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'SCOPE=ARGENTINA_LOCAL_ONLY'
+          HOST
