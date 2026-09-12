@@ -14,6 +14,9 @@ from bx_execution_replay import ReplayOrder, serializable
 from bz_replay_risk import ReplayRiskConfig
 
 
+CANDIDATE_ATR_EXIT_MODEL = 'CANDIDATE_ATR_EXIT_MODEL_DIFFERS_FROM_PAPER_FIXED_PERCENT_V1'
+
+
 class CandleStrategy:
     def __init__(self, engine, config, grid, risk_config):
         self.engine, self.config, self.grid = engine, config, grid
@@ -123,6 +126,12 @@ def run_strategy(engine, books, config, grid, *, start, end, initial_cash, risk_
                         strategy=strategy, risk_config=risk_config)
     result['execution_run_id'] = result['run_id']
     result['mode'] = 'CANDIDATE_STRATEGY_BACKTEST'
+    # La estrategia de velas candidata puede usar su propia geometría ATR.
+    # No debe presentarse como una reproducción de PAPER_FIXED_PERCENT_V1 ni
+    # habilitar promoción automática por compartir únicamente el replay IOC.
+    result['promotion_allowed'] = False
+    result['comparison_to_paper_allowed'] = False
+    result['paper_comparison_reason'] = CANDIDATE_ATR_EXIT_MODEL
     result['strategy_version'] = strategy.version
     result['decisions'] = strategy.decisions
     result['manifest'].update(serializable({'mode': result['mode'], 'signal_config': asdict(config),

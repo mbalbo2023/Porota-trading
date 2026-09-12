@@ -55,24 +55,15 @@ import pandas as pd
 import e_technical_engine as tech
 import os
 import d_economics as economics
+from bk_exit_model import PAPER_EXIT_MODEL, fixed_percent_barriers
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("backtest")
 
-# CORRECCIÓN (encontrada en la revisión de "¿qué archivos tienen variables
-# que deberían estar en el .env?"): estos 6 valores estaban fijos acá
-# adentro, DUPLICADOS de los que ya existen en el .env y usa el bot real
-# (j_main.py). Si cambiabas el riesgo por operación en el .env, el
-# backtest seguía probando con el valor viejo sin que nadie se diera
-# cuenta — un backtest que en silencio prueba una configuración distinta
-# de la que corre en vivo no sirve para nada. Ahora los primeros tres
-# (RISK_PCT_PER_TRADE, STOP_LOSS_ATR_MULT, TAKE_PROFIT_ATR_MULT) leen la
-# MISMA variable de entorno que usa j_main.py — cambiar una la cambia
-# para las dos partes del sistema. DEFAULT_MIN_SCORE_TECH también pasa a
-# ser compartido con el valor de arranque de j_main.py. Los últimos dos
-# (capital inicial y días máximos de tenencia en la simulación) son
-# propios del backtest —no existe un equivalente en el bot en vivo— así
-# que quedan con nombre propio, pero igual configurables desde el .env.
+# Este archivo está retirado como validador/promotor. La implementación
+# histórica queda sólo para forensia, pero sus barreras se atan al mismo
+# modelo porcentual PAPER para impedir que una futura reactivación mida una
+# estrategia con salidas distintas sin declararlo.
 INITIAL_CAPITAL_ARS = float(os.getenv("BACKTEST_INITIAL_CAPITAL_ARS", "1000000"))
 RISK_PCT_PER_TRADE = float(os.getenv("RISK_PCT_PER_TRADE", "1.0"))
 # NUEVO EN v10.5 (segunda revisión) — antes este 0.1% de spread estaba
@@ -90,8 +81,8 @@ RISK_PCT_PER_TRADE = float(os.getenv("RISK_PCT_PER_TRADE", "1.0"))
 # dentro del código.
 BACKTEST_ASSUMED_SPREAD_PCT = float(os.getenv("BACKTEST_ASSUMED_SPREAD_PCT", "0.1"))
 MIN_SCORE_TECH = float(os.getenv("DEFAULT_MIN_SCORE_TECH", "0.70"))
-STOP_LOSS_ATR_MULT = float(os.getenv("STOP_LOSS_ATR_MULT", "1.0"))
-TAKE_PROFIT_ATR_MULT = float(os.getenv("TAKE_PROFIT_ATR_MULT", "2.0"))
+PAPER_STOP_LOSS_PCT = float(os.getenv("PAPER_STOP_LOSS_PCT", "0.02"))
+PAPER_TARGET_GAIN_PCT = float(os.getenv("PAPER_TARGET_GAIN_PCT", "0.05"))
 MAX_HOLD_DAYS = int(os.getenv("BACKTEST_MAX_HOLD_DAYS", "10"))  # si no tocó stop ni target, se cierra "a mercado"
 
 
@@ -143,16 +134,18 @@ def _legacy_run_backtest_unverified(ticker: str, period: str = "2y") -> dict:
             continue
 
         entry_price = row["Close"]
-        atr_pct = (row["atr"] / row["ema_fast"]) * 100 if row["ema_fast"] else 0
-        stop_price = entry_price - entry_price * (atr_pct / 100) * STOP_LOSS_ATR_MULT
-        target_price = entry_price + entry_price * (atr_pct / 100) * TAKE_PROFIT_ATR_MULT
+        barriers = fixed_percent_barriers(
+            entry_price, stop_loss_pct=PAPER_STOP_LOSS_PCT,
+            target_gain_pct=PAPER_TARGET_GAIN_PCT)
+        stop_price = float(barriers.stop_price)
+        target_price = float(barriers.target_price)
 
         # Filtro económico: mismas fórmulas que en vivo (costos reales +
         # hurdle). Acá se usa el hurdle DEFAULT de arranque, ya que no hay
         # forma honesta de reconstruir la inflación/devaluación real de
         # cada día pasado sin una base de datos histórica de esos
         # indicadores — otra limitación documentada, no oculta.
-        expected_gross = atr_pct * TAKE_PROFIT_ATR_MULT
+        expected_gross = PAPER_TARGET_GAIN_PCT * 100
         net_return = economics.calculate_net_return_pct(expected_gross, spread_pct=0.1)
         hurdle_check = economics.passes_hurdle(net_return, MAX_HOLD_DAYS,
                                                 economics.DEFAULT_RISK_PREMIUM_PCT + 3.0)
@@ -204,6 +197,9 @@ def _legacy_run_backtest_unverified(ticker: str, period: str = "2y") -> dict:
     return {
         "promotion_allowed": False,
         "validation_status": "LEGACY_UNVERIFIED",
+        "exit_model": PAPER_EXIT_MODEL,
+        "stop_loss_pct": PAPER_STOP_LOSS_PCT,
+        "target_gain_pct": PAPER_TARGET_GAIN_PCT,
         "ticker": ticker,
         "period": period,
         "total_trades": len(trades),

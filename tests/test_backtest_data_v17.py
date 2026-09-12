@@ -197,12 +197,12 @@ def test_autotuner_conserva_propuesta_sin_modificar_configuracion(monthly_tuner,
     tuner, execute = monthly_tuner
     def forbidden(*args, **kwargs): pytest.fail('No invocar validación heredada')
     monkeypatch.setattr(q_backtest, 'run_backtest', forbidden)
-    before = (q_backtest.MIN_SCORE_TECH, q_backtest.TAKE_PROFIT_ATR_MULT)
+    before = (q_backtest.MIN_SCORE_TECH, q_backtest.PAPER_TARGET_GAIN_PCT)
     proposal = {'min_score_tech':.9,'min_score_macro':.8,'take_profit_atr_mult':3}
     row = execute(proposal)
     assert json.loads(row[1]) == proposal and row[3].startswith('PROPUESTA PENDIENTE:')
     assert '0.77' in row[3]  # Se conserva la candidata limitada, no se aplica.
-    assert before == (q_backtest.MIN_SCORE_TECH, q_backtest.TAKE_PROFIT_ATR_MULT)
+    assert before == (q_backtest.MIN_SCORE_TECH, q_backtest.PAPER_TARGET_GAIN_PCT)
     assert tuner._validate_against_backtest({}, {})['promotion_allowed'] is False
 
 

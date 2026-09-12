@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import (CASH_CURRENCIES, InstrumentContract, SPOT_FAMILIES,
                                      aware_datetime, cash_currency, decimal_value, family_name)
+from bk_exit_model import PAPER_EXIT_MODEL, fixed_percent_barriers
 from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
 import cc_spot_liquidity as spot_liquidity
@@ -437,7 +438,7 @@ class PaperBroker:
                  signal_min_samples=8, signal_window_minutes=90,
                  score_threshold="0.62", ai_mode="BINDING",
                  economics_mode="SHADOW", min_net_reward_risk="1.20",
-                 stop_loss_pct="0.02", target_gain_pct="0.035",
+                 stop_loss_pct="0.02", target_gain_pct="0.05",
                  daily_loss_pct="2.5", daily_soft_stop_pct=None,
                  intraday_fee_rebate=None):
         self.store = store
@@ -481,6 +482,7 @@ class PaperBroker:
         self.min_net_reward_risk = decimal_value(min_net_reward_risk, "reward/risk neto", nonnegative=True)
         self.stop_loss_pct = decimal_value(stop_loss_pct, "stop", positive=True)
         self.target_gain_pct = decimal_value(target_gain_pct, "objetivo", positive=True)
+        self.exit_model = PAPER_EXIT_MODEL
         if intraday_fee_rebate is None:
             intraday_fee_rebate = os.getenv("PAPER_INTRADAY_FEE_REBATE", "true")
         requested_rebate = (intraday_fee_rebate if isinstance(intraday_fee_rebate, bool)
@@ -693,8 +695,9 @@ class PaperBroker:
     def _economic_diagnostics(self, q):
         """Economía ex ante coherente con el cierre intradiario obligatorio."""
         entry = q.ask * (1 + self.slippage)
-        stop = entry * (1 - self.stop_loss_pct)
-        target = entry * (1 + self.target_gain_pct)
+        barriers = fixed_percent_barriers(
+            entry, stop_loss_pct=self.stop_loss_pct, target_gain_pct=self.target_gain_pct)
+        stop, target = barriers.stop_price, barriers.target_price
         stop_fill = stop * (1 - self.slippage)
         target_fill = target * (1 - self.slippage)
         full = self._leg_rate(q.asset_class, rebated=False)
@@ -879,8 +882,9 @@ class PaperBroker:
         entry = (q.ask * (1 + self.slippage)).quantize(Decimal("0.0001"))
         if entry <= 0:
             return False, "Precio de entrada no representable", None
-        stop = entry * (1 - self.stop_loss_pct)
-        target = entry * (1 + self.target_gain_pct)
+        barriers = fixed_percent_barriers(
+            entry, stop_loss_pct=self.stop_loss_pct, target_gain_pct=self.target_gain_pct)
+        stop, target = barriers.stop_price, barriers.target_price
         modeled_stop_fill = (stop * (1 - self.slippage)).quantize(Decimal("0.0001"))
         # Incluye ambos tramos y deslizamiento de salida, sin afirmar que un
         # stop garantice este precio ante gaps o falta de liquidez. La cantidad
@@ -937,6 +941,9 @@ class PaperBroker:
             "qty_by_liquidity": str(by_book),
             "qty_by_position_cap": str(by_position_cap),
             "qty_by_total_cap": str(by_total_cap),
+            "exit_model": barriers.model,
+            "stop_loss_pct": str(barriers.stop_loss_pct),
+            "target_gain_pct": str(barriers.target_gain_pct),
         })
         if currency == "ARS":
             features.update(initial_capital_ars=str(capital), risk_budget_ars=str(concurrent_risk_budget))
