@@ -1,0 +1,138 @@
+name: RC6 PPI catalog history first-pass complete 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-catalog-history-firstpass-complete-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  complete-first-pass:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Complete normalized-catalog PPI history first pass
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+
+          # Stage 1 leaves 376 distinct attempts; stage 2 must finish first (>=476).
+          # Do not hold the lock while waiting, so earlier PPI jobs can progress.
+          ready=0
+          for _ in $(seq 1 180); do
+            exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+            if flock -n 9; then
+              attempts="$(sudo -n docker exec porota_production_observer python - <<'PY'
+import sqlite3
+c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True)
+print(c.execute('select count(*) from production_history_attempts').fetchone()[0])
+c.close()
+PY
+)"
+              echo "DISTINCT_ATTEMPTS_GATE=$attempts"
+              if [ "$attempts" -ge 476 ]; then ready=1; break; fi
+              flock -u 9
+            fi
+            sleep 15
+          done
+          test "$ready" = 1 || { echo 'ABORT=PREVIOUS_STAGES_NOT_COMPLETE'; exit 32; }
+
+          for u in porota-history-postclose-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do
+            state="$(systemctl is-active "$u" 2>/dev/null || true)"
+            test "$state" != active && test "$state" != activating || { echo "ABORT=CONCURRENT_HISTORY_SERVICE:$u"; exit 33; }
+          done
+
+          sudo -n timeout 3000 docker exec -i porota_production_observer python - <<'PY'
+          import json,time
+          import bf_production_paper_observer as m
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY_BEFORE={s[0]}|{s[1]}')
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              assert m._market_phase()=='CLOSED'
+
+          def ordered_catalog(store):
+              with store.connect() as c:
+                  rows=c.execute("""select f.ticker,f.instrument_type,f.settlement,
+                      a.attempted_at,
+                      case f.status when 'AVAILABLE' then 0 else 1 end status_rank
+                    from financial_instrument_catalog f
+                    left join production_history_attempts a on a.symbol=f.ticker
+                      and a.instrument_type=f.instrument_type and a.settlement=f.settlement
+                    order by (a.attempted_at is not null),a.attempted_at,status_rank,
+                      f.instrument_type,f.ticker""").fetchall()
+              return [(r[0],r[1],r[2]) for r in rows]
+
+          def unattempted_count(store):
+              with store.connect() as c:
+                  return c.execute("""select count(*) from financial_instrument_catalog f
+                    left join production_history_attempts a on a.symbol=f.ticker
+                      and a.instrument_type=f.instrument_type and a.settlement=f.settlement
+                    where a.symbol is null""").fetchone()[0]
+
+          m._historical_targets=ordered_catalog
+          key,secret=m._secret(); reader=m.ProductionMarketReader(key,secret,audit=store.audit_http)
+          total_rows=0; batches=0
+          try:
+              reader.login_once()
+              while True:
+                  remaining=unattempted_count(store)
+                  print(f'FIRSTPASS_REMAINING_BEFORE_BATCH={remaining}')
+                  if remaining<=0: break
+                  m.HISTORY_BATCH_LIMIT=min(100,remaining)
+                  rows=m._download_histories(reader,store)
+                  total_rows+=int(rows or 0); batches+=1
+                  print(f'FIRSTPASS_BATCH={batches}|size={m.HISTORY_BATCH_LIMIT}|valid_rows={rows}|remaining_after={unattempted_count(store)}')
+                  if batches>=7:
+                      break
+                  time.sleep(10)
+              metrics=reader.metrics
+          finally:
+              reader.close()
+          remaining=unattempted_count(store)
+          print(f'FIRSTPASS_BATCHES={batches}')
+          print(f'FIRSTPASS_VALID_ROWS_TOTAL={total_rows}')
+          print(f'FIRSTPASS_REMAINING={remaining}')
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY_AFTER={s[0]}|{s[1]}')
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              print('=== FIRSTPASS_FINAL_BY_FAMILY_STATE ===')
+              for r in c.execute("select instrument_type,state,count(*) identities,sum(valid_rows) valid_rows from production_history_attempts group by instrument_type,state order by instrument_type,state"):
+                  print(json.dumps({'family':r[0],'state':r[1],'identities':r[2],'valid_rows':r[3]},sort_keys=True))
+              print('ATTEMPT_IDENTITIES_TOTAL='+str(c.execute('select count(*) from production_history_attempts').fetchone()[0]))
+              print('CATALOG_IDENTITIES_TOTAL='+str(c.execute('select count(*) from financial_instrument_catalog').fetchone()[0]))
+          assert remaining==0, f'FIRSTPASS_NOT_COMPLETE:{remaining}'
+          print('FIRSTPASS_COMPLETE=YES')
+          print('HOST_MUTATION=HISTORY_DATA_ONLY')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
