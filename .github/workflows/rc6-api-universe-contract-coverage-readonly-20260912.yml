@@ -1,0 +1,108 @@
+name: RC6 API Universe Contract Coverage Readonly 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-api-universe-contract-coverage-readonly-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Cross API universe with Contract and production history
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          BASE=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          git -C "$ROOT" merge-base --is-ancestor "$BASE" "$HEAD"
+          echo HOST_SHA="$HEAD"
+          curl -fsS --max-time 5 http://127.0.0.1:8000/health; echo
+          echo 'HOST_DB_FILES_BEGIN'
+          sudo -n find "$ROOT/data" -maxdepth 4 -type f \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' \) -printf '%p|%s\n' 2>/dev/null | sort | head -n 120 || true
+          echo 'HOST_DB_FILES_END'
+          sudo -n docker exec -i "$OBS" python -u - <<'PY'
+          import sqlite3,json
+          from collections import defaultdict,Counter
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=30);c.row_factory=sqlite3.Row;c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          st=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          assert q=='ok' and st and st[0]=='PRODUCTION_PAPER' and int(st[2] or 0)==0
+          print('SAFETY='+'|'.join(map(str,(q,*st))))
+          aliases={'ACCIONES_USA':'ACCIONES-USA','FCI_EXTERIOR':'FCI-EXTERIOR','FCI_LOCAL':'FCI','OBLIGACIONES':'ON','ETFS':'ETF'}
+          canon=lambda v: aliases.get(str(v or '').strip().upper(),str(v or '').strip().upper())
+          placeholders={'','*','UNKNOWN','NONE','N/A','NULL'}
+
+          api=[dict(r) for r in c.execute('select family,ticker,market,source from api_universe_v1 order by family,ticker,market')]
+          contract=defaultdict(list)
+          wild=Counter()
+          for r in c.execute('''select cur.family,cur.ticker,cur.market,cur.settlement,cur.source_class,s.observed_at
+                                from contract_evidence_v2_current cur
+                                join contract_evidence_v2_snapshots s on s.snapshot_id=cur.snapshot_id'''):
+              fam=canon(r['family']); t=str(r['ticker'] or '*').strip().upper()
+              if t in placeholders:
+                  wild[fam]+=1
+              else:
+                  contract[(fam,t)].append(dict(r))
+
+          hist=set()
+          for r in c.execute('select instrument_type,symbol from production_history'):
+              hist.add((canon(r['instrument_type']),str(r['symbol'] or '').strip().upper()))
+
+          famstats=defaultdict(lambda:{'api':0,'contract_exact':0,'contract_market_compatible':0,'history_observer':0,'no_contract':0,'sources':Counter()})
+          missing_samples=defaultdict(list)
+          conflicts=defaultdict(list)
+          for a in api:
+              fam=canon(a['family']); t=str(a['ticker']).upper(); m=str(a['market']).upper()
+              s=famstats[fam];s['api']+=1
+              recs=contract.get((fam,t),[])
+              if recs:
+                  s['contract_exact']+=1
+                  for r in recs: s['sources'][r['source_class']]+=1
+                  compatible=[r for r in recs if str(r.get('market') or 'UNKNOWN').upper() in placeholders|{m}]
+                  if compatible:
+                      s['contract_market_compatible']+=1
+                  elif len(conflicts[fam])<10:
+                      conflicts[fam].append({'ticker':t,'api_market':m,'evidence_markets':sorted({str(r.get('market') or 'UNKNOWN').upper() for r in recs})})
+              else:
+                  s['no_contract']+=1
+                  if len(missing_samples[fam])<15: missing_samples[fam].append(t)
+              if (fam,t) in hist: s['history_observer']+=1
+
+          for fam in sorted(famstats):
+              s=famstats[fam]
+              out={k:v for k,v in s.items() if k!='sources'}
+              out.update({'family':fam,'contract_wildcards':wild[fam],'source_hits':dict(s['sources']),
+                          'missing_contract_samples':missing_samples[fam],'market_conflict_samples':conflicts[fam]})
+              print('COVERAGE='+json.dumps(out,ensure_ascii=False,sort_keys=True))
+          print('TOTAL='+json.dumps({'api':len(api),'exact_contract':sum(s['contract_exact'] for s in famstats.values()),
+                                    'market_compatible_contract':sum(s['contract_market_compatible'] for s in famstats.values()),
+                                    'observer_history':sum(s['history_observer'] for s in famstats.values())},sort_keys=True))
+          c.close()
+          print('MUTATIONS=NONE')
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
