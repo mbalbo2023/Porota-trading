@@ -199,17 +199,30 @@ def verificar_iol(vf: Verificador) -> None:
         modulo_del_bot="ak_iol_client.IOLClient.get_serie_historica()",
     ), lambda: {"velas": len(cliente.get_serie_historica("GGAL", dias=30))})
 
-    vf.ejecutar(Verificacion(
+    # La estimación usa POST bajo /operar. Se omite en la verificación
+    # estándar y sólo se ejecuta con opt-in manual explícito.
+    estimacion = Verificacion(
         familia="IOL", nombre="estimacion_de_costos",
         proposito="Simular una orden para conocer aranceles reales sin ejecutarla.",
         metodo="POST", endpoint="/api/v2/operar/estimar",
         envia="Mercado, símbolo, cantidad, precio y tipo de operación.",
         espera="Desglose de comisión, derechos de mercado e IVA.",
         modulo_del_bot="ak_iol_client.estimar_operacion() + reconciliar_costos()",
-        oportunidad="Permite auditar el modelo de costos propio contra un bróker real sin "
-                    "gastar un peso. Es la única forma de detectar que falta un componente "
-                    "de costo antes de que aparezca en el resumen de cuenta.",
-    ), lambda: cliente.estimar_operacion("GGAL", cantidad=1, precio=1.0))
+    )
+    opt_in = os.getenv("IOL_COST_ESTIMATE_EXPLICIT_OPT_IN", "false").strip().lower()         in {"1", "true", "yes", "on"}
+    if opt_in:
+        vf.ejecutar(
+            estimacion,
+            lambda: cliente.estimar_operacion("GGAL", cantidad=1, precio=1.0),
+        )
+    else:
+        estimacion.estado = "OMITIDA"
+        estimacion.respuesta_resumida = (
+            "No se ejecutó: el endpoint POST bajo /operar requiere "
+            "IOL_COST_ESTIMATE_EXPLICIT_OPT_IN=true."
+        )
+        vf.resultados.append(estimacion)
+        print("  ⚪ IOL/estimacion_de_costos — OMITIDA (POST requiere opt-in explícito)")
 
 
 # ===========================================================================
