@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
 
+# Triggered after first bounded PPI full-family batch to reconcile every catalog status.
 jobs:
   audit:
     runs-on: ubuntu-latest
