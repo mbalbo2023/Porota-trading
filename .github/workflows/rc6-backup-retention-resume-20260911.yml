@@ -1,0 +1,186 @@
+name: RC6 Guarded Backup Retention Resume 2026-09-11
+
+on:
+  push:
+    branches: [infra/rc6-disk-cleanup-20260911]
+    paths:
+      - '.github/workflows/rc6-backup-retention-resume-20260911.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  retention:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_backup_retention"
+          chmod 600 "$HOME/.ssh/porota_backup_retention"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Validate newest routine backups and delete older copies
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_backup_retention" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          shopt -s nullglob
+          cd /opt/porota-trading
+
+          echo '=== POROTA RC6 GUARDED BACKUP RETENTION RESUME ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HOST_HEAD=$(git rev-parse HEAD)"
+          before_avail=$(df -PB1 / | awk 'NR==2 {print $4}')
+          echo "BEFORE_AVAILABLE_BYTES=$before_avail"
+
+          runtime_guard=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro', uri=True, timeout=30)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'{q}|{mode}|{real}')
+          PY
+          )
+          echo "PRE_RUNTIME_GUARD=$runtime_guard"
+          [ "$runtime_guard" = 'ok|PRODUCTION_PAPER|0' ] || { echo 'ABORT_RUNTIME_GUARD'; exit 40; }
+          for c in porota_production_observer porota_production_dashboard; do
+            running=$(sudo -n docker inspect -f '{{.State.Running}}' "$c")
+            restarts=$(sudo -n docker inspect -f '{{.RestartCount}}' "$c")
+            echo "PRE_CONTAINER=$c|RUNNING=$running|RESTARTS=$restarts"
+            [ "$running" = true ] || exit 41
+          done
+
+          deleted_count=0
+          deleted_bytes=0
+
+          validate_db_gz() {
+            local src="$1" tmp
+            tmp=$(mktemp /tmp/porota-retention-XXXXXX.db)
+            sudo -n gzip -t "$src"
+            sudo -n gzip -dc "$src" > "$tmp"
+            python3 - "$tmp" <<'PY'
+          import sqlite3,sys
+          p=sys.argv[1]
+          c=sqlite3.connect(f'file:{p}?mode=ro', uri=True, timeout=30)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          c.close()
+          if q != 'ok':
+              raise SystemExit(f'quick_check={q}')
+          print('BACKUP_DB_QUICK_CHECK=ok')
+          PY
+            rm -f -- "$tmp"
+          }
+
+          retain_one_db_chain() {
+            local dir="$1" pattern="$2" label="$3"
+            local -a files sorted
+            files=("$dir"/$pattern)
+            echo "${label}_COUNT_BEFORE=${#files[@]}"
+            [ ${#files[@]} -gt 0 ] || { echo "ABORT_${label}_NO_BACKUP"; exit 42; }
+            mapfile -t sorted < <(printf '%s\n' "${files[@]}" | sort -r)
+            local keep="${sorted[0]}"
+            echo "${label}_KEEP_CANDIDATE=$keep"
+            validate_db_gz "$keep"
+            echo "${label}_KEEP_VALIDATED=$keep"
+            local old sz
+            if [ ${#sorted[@]} -gt 1 ]; then
+              for old in "${sorted[@]:1}"; do
+                sz=$(sudo -n stat -c %s "$old")
+                echo "${label}_DELETE_OLD=$old|BYTES=$sz"
+                sudo -n rm -f -- "$old"
+                deleted_count=$((deleted_count+1))
+                deleted_bytes=$((deleted_bytes+sz))
+              done
+            fi
+          }
+
+          retain_one_general_chain() {
+            local dir='/opt/porota-backups'
+            local -a files sorted
+            files=("$dir"/porota-general-*.tar.gz)
+            echo "GENERAL_COUNT_BEFORE=${#files[@]}"
+            [ ${#files[@]} -gt 0 ] || { echo 'ABORT_GENERAL_NO_BACKUP'; exit 43; }
+            mapfile -t sorted < <(printf '%s\n' "${files[@]}" | sort -r)
+            local keep="${sorted[0]}"
+            echo "GENERAL_KEEP_CANDIDATE=$keep"
+            sudo -n gzip -t "$keep"
+            sudo -n tar -tzf "$keep" | awk '$0=="porota-trading/BACKUP_MANIFEST.json" {found=1} END {exit found?0:1}'
+            sudo -n tar -xOzf "$keep" porota-trading/BACKUP_MANIFEST.json | python3 -m json.tool >/dev/null
+            echo "GENERAL_KEEP_VALIDATED=$keep"
+            local old sz
+            if [ ${#sorted[@]} -gt 1 ]; then
+              for old in "${sorted[@]:1}"; do
+                sz=$(sudo -n stat -c %s "$old")
+                echo "GENERAL_DELETE_OLD=$old|BYTES=$sz"
+                sudo -n rm -f -- "$old"
+                deleted_count=$((deleted_count+1))
+                deleted_bytes=$((deleted_bytes+sz))
+              done
+            fi
+          }
+
+          retain_one_general_chain
+          retain_one_db_chain '/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper' 'observer_????-??-??.db.gz' 'OBSERVER'
+          retain_one_db_chain '/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history' 'market_history_????-??-??.db.gz' 'HISTORY'
+
+          echo "BACKUPS_DELETED_COUNT=$deleted_count"
+          echo "BACKUPS_DELETED_BYTES=$deleted_bytes"
+          echo 'SPECIAL_EVIDENCE_PRESERVED=/opt/porota-trading/data/backups/wave4_closure'
+          echo 'LIVE_DB_PRESERVED=/opt/porota-trading/data/paper_v17/observer_v17.db'
+          echo 'LIVE_HISTORY_DB_PRESERVED=/opt/porota-trading/data/market_history.db'
+
+          general_count=$(sudo -n find /opt/porota-backups -maxdepth 1 -type f -name 'porota-general-*.tar.gz' | wc -l)
+          observer_count=$(sudo -n find /opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper -maxdepth 1 -type f -name 'observer_????-??-??.db.gz' | wc -l)
+          history_count=$(sudo -n find /opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history -maxdepth 1 -type f -name 'market_history_????-??-??.db.gz' | wc -l)
+          echo "GENERAL_COUNT_AFTER=$general_count"
+          echo "OBSERVER_COUNT_AFTER=$observer_count"
+          echo "HISTORY_COUNT_AFTER=$history_count"
+          [ "$general_count" -eq 1 ] && [ "$observer_count" -eq 1 ] && [ "$history_count" -eq 1 ] || { echo 'ABORT_RETENTION_COUNTS'; exit 44; }
+
+          echo '--- RETAINED BACKUPS ---'
+          sudo -n find /opt/porota-backups -maxdepth 1 -type f -name 'porota-general-*.tar.gz' -printf 'GENERAL_RETAINED=%p|BYTES=%s\n'
+          sudo -n find /opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper -maxdepth 1 -type f -name 'observer_????-??-??.db.gz' -printf 'OBSERVER_RETAINED=%p|BYTES=%s\n'
+          sudo -n find /opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history -maxdepth 1 -type f -name 'market_history_????-??-??.db.gz' -printf 'HISTORY_RETAINED=%p|BYTES=%s\n'
+
+          post_guard=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro', uri=True, timeout=30)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'{q}|{mode}|{real}')
+          PY
+          )
+          echo "POST_RUNTIME_GUARD=$post_guard"
+          [ "$post_guard" = 'ok|PRODUCTION_PAPER|0' ] || { echo 'ABORT_POST_RUNTIME'; exit 45; }
+          for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            if sudo -n docker inspect "$c" >/dev/null 2>&1; then
+              sudo -n docker inspect -f "POST_CONTAINER=$c|RUNNING={{.State.Running}}|STATUS={{.State.Status}}|RESTARTS={{.RestartCount}}|IMAGE={{.Image}}" "$c"
+            fi
+          done
+
+          after_avail=$(df -PB1 / | awk 'NR==2 {print $4}')
+          echo "AFTER_AVAILABLE_BYTES=$after_avail"
+          echo "RETENTION_GAIN_BYTES=$((after_avail-before_avail))"
+          df -h /
+          echo 'BACKUP_RETENTION_COMPLETE=YES'
+          REMOTE
