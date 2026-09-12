@@ -1,0 +1,189 @@
+name: RC6 PPI Argentina API quick delta 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-argentina-api-quick-delta-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  quick-delta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Build local-only API universe, probe 7d history, compute scrape delta
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 2400 9 || { echo 'ABORT=PPI_LOCK_TIMEOUT'; exit 32; }
+
+          sudo -n timeout 1800 docker exec -i porota_production_observer python - <<'PY'
+          import json,time,uuid
+          from datetime import timedelta
+          import bf_production_paper_observer as m
+          import bu_instrument_catalog as catalog
+
+          LOCAL_MARKETS={'BYMA','ROFEX','A3','OTC'}
+          LOCAL_TYPES={'ACCIONES','BONOS','CAUCIONES','CEDEARS','FUTUROS','LETRAS','ON','OPCIONES','FCI','LICITACIONES','LEBAC','LEBACS','NOBAC','ETF'}
+          FOREIGN_TYPES={'ACCIONES-USA','FCI-EXTERIOR'}
+          DISCOVERY={
+            'FCI':(('FONDO','RENTA','AHORRO','PPI','BALANZ','GALILEO','MONEY','PESOS','DOLAR'),('BYMA','OTC')),
+            'LICITACIONES':(('LICITACION','LETRA','BONO','ON'),('BYMA','OTC')),
+            'LEBAC':(('LEBAC','L'),('BYMA',)),
+            'NOBAC':(('NOBAC','N'),('BYMA',)),
+            'ETF':(('SPY','QQQ','DIA','IWM','ARGT'),('BYMA',)),
+          }
+          BROAD=('A','E','I','O','U','S','M','P')
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY_BEFORE={s[0]}|{s[1]}')
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              base=[dict(r) for r in c.execute("""select ticker,instrument_type,market,currency,settlement,status,description,metadata_json
+                from financial_instrument_catalog where market in ('BYMA','ROFEX','A3','OTC')
+                and instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')""")]
+          universe={}
+          for r in base:
+              k=(r['ticker'],r['instrument_type'],r['market'],r['currency'],r['settlement'])
+              universe[k]={**r,'source':'NORMALIZED_CATALOG'}
+
+          key,secret=m._secret(); reader=m.ProductionMarketReader(key,secret,audit=store.audit_http); reader.login_once()
+          discovery_stats={}
+          try:
+              for family,(specific,markets) in DISCOVERY.items():
+                  st={'queries':0,'ok':0,'empty':0,'errors':0,'normalized':0}
+                  discovery_stats[family]=st
+                  queries=[]
+                  for q in specific+BROAD:
+                      for market in markets: queries.append((q,market))
+                  seen=set()
+                  for q,market in queries:
+                      if (q,market) in seen: continue
+                      seen.add((q,market)); st['queries']+=1
+                      try:
+                          payload=reader.search_instruments(q,family,name=q,market=market)
+                          st['ok']+=1
+                          if not payload: st['empty']+=1
+                          for raw in payload if isinstance(payload,list) else []:
+                              try: rec=catalog.normalize_record(raw,'INMEDIATA' if family=='FCI' else 'A-24HS',m.now_iso(),'ARG_LOCAL_API')
+                              except Exception: continue
+                              if rec['market'] not in LOCAL_MARKETS or rec['instrument_type'] in FOREIGN_TYPES: continue
+                              if rec['instrument_type'] not in LOCAL_TYPES: continue
+                              k=(rec['ticker'],rec['instrument_type'],rec['market'],rec['currency'],rec['settlement'])
+                              universe[k]={
+                                'ticker':rec['ticker'],'instrument_type':rec['instrument_type'],'market':rec['market'],
+                                'currency':rec['currency'],'settlement':rec['settlement'],'status':'API_DISCOVERED',
+                                'description':rec['description'],'metadata_json':json.dumps(rec['raw'],ensure_ascii=False,default=str),
+                                'source':'PPI_PRODUCTION_SEARCH'}
+                              st['normalized']+=1
+                      except Exception as exc:
+                          st['errors']+=1
+                          print('DISCOVERY_ERROR='+json.dumps({'family':family,'query':q,'market':market,'error':m.classify_read_error(exc)},sort_keys=True))
+                      time.sleep(0.05)
+
+              with store.connect() as c:
+                  c.execute('BEGIN IMMEDIATE')
+                  c.execute('''CREATE TABLE IF NOT EXISTS ppi_argentina_api_shadow(
+                    ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,currency TEXT NOT NULL,
+                    settlement TEXT NOT NULL,status TEXT NOT NULL,description TEXT NOT NULL,source TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,metadata_json TEXT NOT NULL,
+                    PRIMARY KEY(ticker,instrument_type,market,currency,settlement))''')
+                  observed=m.now_iso()
+                  for r in universe.values():
+                      c.execute('''INSERT OR REPLACE INTO ppi_argentina_api_shadow VALUES(?,?,?,?,?,?,?,?,?,?)''',(
+                        r['ticker'],r['instrument_type'],r['market'],r['currency'],r['settlement'],r['status'],
+                        str(r.get('description') or ''),r['source'],observed,str(r.get('metadata_json') or '{}')))
+
+              print('=== ARGENTINA_API_UNIVERSE ===')
+              byfam={}
+              for r in universe.values(): byfam[r['instrument_type']]=byfam.get(r['instrument_type'],0)+1
+              for fam in sorted(byfam): print(json.dumps({'family':fam,'api_identities':byfam[fam]},sort_keys=True))
+              print('ARGENTINA_API_UNIVERSE_TOTAL='+str(len(universe)))
+              print('DISCOVERY_STATS='+json.dumps(discovery_stats,sort_keys=True))
+
+              end=m.datetime.now(m.TZ).date(); start=end-timedelta(days=7)
+              samples={}
+              for r in sorted(universe.values(),key=lambda x:(x['instrument_type'],x['ticker'])):
+                  samples.setdefault(r['instrument_type'],[])
+                  if len(samples[r['instrument_type']])<3: samples[r['instrument_type']].append(r)
+              proof=[]
+              print('=== QUICK_7D_HISTORY_PROOF ===')
+              for fam in sorted(samples):
+                  for r in samples[fam]:
+                      out={'family':fam,'ticker':r['ticker'],'market':r['market'],'settlement':r['settlement']}
+                      try:
+                          payload=reader.history(r['ticker'],fam,r['settlement'],start,end)
+                          provider=len(payload) if isinstance(payload,list) else 0
+                          valid=m._history_count(payload,as_of=m.now_iso(),date_from=start,date_to=end)
+                          out.update(state='HTTP_OK',provider_rows=provider,valid_rows=valid)
+                      except Exception as exc:
+                          out.update(state='ERROR',provider_rows=0,valid_rows=0,error=m.classify_read_error(exc))
+                      proof.append(out); print('HISTORY7D='+json.dumps(out,ensure_ascii=False,sort_keys=True))
+
+              with store.connect() as c:
+                  attempts={}
+                  for fam,state,n,rows in c.execute("""select instrument_type,state,count(*),sum(valid_rows)
+                    from production_history_attempts group by instrument_type,state"""):
+                      attempts.setdefault(fam,{})[state]={'identities':n,'valid_rows':rows or 0}
+              print('=== API_VS_SCRAPE_DELTA ===')
+              proof_by={}
+              for p in proof:
+                  z=proof_by.setdefault(p['family'],{'sampled':0,'api_with_rows':0,'api_empty':0,'api_errors':0})
+                  z['sampled']+=1
+                  if p['state']=='ERROR': z['api_errors']+=1
+                  elif p['provider_rows']>0: z['api_with_rows']+=1
+                  else: z['api_empty']+=1
+              for fam in sorted(byfam):
+                  st=attempts.get(fam,{})
+                  attempted=sum(v['identities'] for v in st.values())
+                  usable=sum(v['identities'] for k,v in st.items() if k in ('VALID_PAYLOAD','PARTIAL'))
+                  hard=sum(v['identities'] for k,v in st.items() if k in ('EMPTY_OR_INVALID','ERROR'))
+                  delta={
+                    'family':fam,'api_catalog_identities':byfam[fam],
+                    'history_attempted_365d':attempted,'history_usable_365d':usable,
+                    'history_hard_gap_365d':hard,'history_not_attempted_365d':max(0,byfam[fam]-attempted),
+                    'quick7d':proof_by.get(fam,{}),
+                    'scrape_candidate_now': hard + max(0,byfam[fam]-attempted)
+                  }
+                  print('DELTA='+json.dumps(delta,sort_keys=True))
+              metrics=reader.metrics
+          finally:
+              reader.close()
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+          with store.connect() as c:
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+          print(f'SAFETY_AFTER={s[0]}|{s[1]}')
+          assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          print('SCOPE=ARGENTINA_LOCAL_API_ONLY')
+          print('FOREIGN_EXCLUDED=ACCIONES-USA,FCI-EXTERIOR,NYSE,NASDAQ')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
