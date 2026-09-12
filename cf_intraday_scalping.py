@@ -269,17 +269,13 @@ def evaluate_candidate(store, record, *, at):
             momentum = short / long - 1
             spread = ask / bid - 1
             observed_range = max(prices[-15:]) / min(prices[-15:]) - 1
-            from fh_scalping_economics_rc6 import modeled_roundtrip_cost
-            fee_model = modeled_roundtrip_cost(family_name(record["instrument_type"]), spread)
-            modeled_roundtrip = fee_model["modeled_roundtrip_fraction"]
+            import au_fee_schedule
+            one_leg = Decimal(str(au_fee_schedule.costo_por_tramo(family_name(record["instrument_type"]))))
+            modeled_roundtrip = one_leg * 2 + spread + Decimal("0.0004")
             required_move = modeled_roundtrip + Decimal(os.getenv("PAPER_SCALPING_MIN_NET_MARGIN", "0.005"))
             score = max(Decimal(0), min(Decimal(1), Decimal("0.5") + momentum*40 - spread*10))
             economics.update({
                 "modeled_roundtrip_fraction": str(modeled_roundtrip),
-                "fee_model": fee_model["fee_model"],
-                "full_leg_fee_fraction": str(fee_model["full_leg_fee_fraction"]),
-                "discounted_leg_fee_fraction": str(fee_model["discounted_leg_fee_fraction"]),
-                "slippage_buffer_fraction": str(fee_model["slippage_buffer_fraction"]),
                 "required_move_fraction": str(required_move),
                 "observed_15m_range_fraction": str(observed_range),
                 "spread_fraction": str(spread), "momentum": str(momentum),

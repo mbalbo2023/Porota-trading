@@ -1,0 +1,287 @@
+name: RC6 F01 PAPER exact-base deployment
+
+on:
+  push:
+    branches: [deploy/rc6-f01-paper-20260912]
+    paths:
+      - .github/workflows/rc6-f01-paper-deploy.yml
+      - .github/f01-deploy-request.txt
+      - be_paper_engine.py
+      - bk_exit_model.py
+      - by_strategy_backtest.py
+      - q_backtest.py
+      - tests/test_backtest_data_v17.py
+      - tests/test_exit_model_parity_rc6.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-f01-production
+  cancel-in-progress: false
+
+env:
+  BASE_SHA: eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a
+
+jobs:
+  validate:
+    name: Validate exact F01 tree offline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify exact base, scope, and identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "deploy/rc6-f01-paper-20260912"
+          git merge-base --is-ancestor "$BASE_SHA" "$GITHUB_SHA"
+          git diff --check "$BASE_SHA" "$GITHUB_SHA"
+          EXPECTED="$(printf '%s\n' \
+            .github/workflows/rc6-f01-paper-deploy.yml \
+            .github/f01-deploy-request.txt \
+            POROTA_TRADING_RC6_CHECKPOINT_F01_2026-09-12.md \
+            be_paper_engine.py bk_exit_model.py by_strategy_backtest.py q_backtest.py \
+            tests/test_backtest_data_v17.py tests/test_exit_model_parity_rc6.py | sort)"
+          ACTUAL="$(git diff --name-only "$BASE_SHA" "$GITHUB_SHA" | sort)"
+          test "$ACTUAL" = "$EXPECTED"
+          python - <<'PY'
+          import _version
+          assert _version.VERSION == "17.0.0-rc6"
+          assert _version.MODE == "PRODUCTION_PAPER"
+          assert _version.EXECUTION == "SIMULATED"
+          assert _version.REAL_ORDER_CAPABILITY == "BLOCKED"
+          print("F01_SOURCE_IDENTITY=GREEN")
+          PY
+      - name: Compile exact source
+        run: python -m compileall -q .
+      - name: Build exact candidate image
+        run: docker build --pull=false --label "porota.commit=$GITHUB_SHA" --label "porota.version=17.0.0-rc6" -t "porota-rc6-f01:$GITHUB_SHA" .
+      - name: Active RC6 tests offline and read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX \
+            -e DB_PATH=/tmp/porota-f01-ci.db -e TELEGRAM_CHAT_ID=0 \
+            -e STARTUP_REQUIRE_AUTH=false --entrypoint bash "porota-rc6-f01:$GITHUB_SHA" -lc \
+            'python -m pytest -q -p no:cacheprovider --tb=short \
+              --ignore=tests/test_hotfix_rc3_hf2.py \
+              --ignore=tests/test_hotfix_rc3_hf4.py \
+              --ignore=tests/test_hotfix_rc3_hf6.py \
+              --ignore=tests/test_intraday_scalping_hf3.py \
+              --ignore=tests/test_rc4_acceptance.py \
+              --ignore=tests/test_rc4_hf1_last_mile.py \
+              --ignore=tests/test_rc4_hf2_consolidation.py'
+      - name: Enforce F01 parity and no-real-order invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=128m \
+            --entrypoint python "porota-rc6-f01:$GITHUB_SHA" - <<'PY'
+          from decimal import Decimal
+          from inspect import signature
+          import _version, bv_paper_runtime
+          from be_paper_engine import PaperBroker
+          from bk_exit_model import PAPER_EXIT_MODEL, fixed_percent_barriers
+          assert _version.MODE == "PRODUCTION_PAPER"
+          assert _version.EXECUTION == "SIMULATED"
+          assert _version.REAL_ORDER_CAPABILITY == "BLOCKED"
+          assert bv_paper_runtime.PaperBroker is PaperBroker
+          p = signature(PaperBroker).parameters
+          assert p["stop_loss_pct"].default == "0.02"
+          assert p["target_gain_pct"].default == "0.05"
+          b = fixed_percent_barriers(Decimal("100"), stop_loss_pct="0.02", target_gain_pct="0.05")
+          assert b.model == PAPER_EXIT_MODEL
+          assert b.stop_price == Decimal("98.00") and b.target_price == Decimal("105.00")
+          print("F01_PAPER_PARITY=GREEN")
+          print("REAL_ORDER_CAPABILITY=BLOCKED")
+          PY
+
+  deploy:
+    name: Activate and postflight PAPER F01
+    needs: validate
+    if: contains(github.event.head_commit.message, '[DEPLOY_F01_RC6]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment: production
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_f01"
+          chmod 600 "$HOME/.ssh/porota_f01"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Exact-base deployment, safety gates, and postflight
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_f01" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "BASE_SHA='$BASE_SHA' TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          test -n "$BASE_SHA" && test -n "$TARGET_SHA" && test -n "$TARGET_BRANCH"
+          TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
+          SHORT_SHA="$(printf '%s' "$TARGET_SHA" | cut -c1-12)"
+          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-f01-$SHORT_SHA"
+          WORKTREE="/tmp/porota-rc6-f01-$SHORT_SHA-$$"
+          cleanup() {
+            set +e
+            if [ -d "$WORKTREE" ]; then git -C "$REPO" worktree remove --force "$WORKTREE" >/dev/null 2>&1; fi
+            git -C "$REPO" worktree prune >/dev/null 2>&1
+          }
+          trap cleanup EXIT
+          echo "BASE_SHA=$BASE_SHA TARGET_SHA=$TARGET_SHA AUTO_ROLLBACK=DISABLED"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$BASE_SHA"
+          test -z "$(git -C "$REPO" status --porcelain)"
+          git -C "$REPO" merge-base --is-ancestor "$BASE_SHA" "$TARGET_SHA"
+          test "$(df -PB1 "$REPO" | awk 'NR==2{print $4}')" -ge 8589934592
+
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=10)
+          c.execute("PRAGMA query_only=ON")
+          q=c.execute("PRAGMA quick_check").fetchone()[0]
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close(); print("|".join(map(str,(q,mode,orders))))
+          PY
+          )"
+          echo "PRE_SAFETY=$PRE"
+          test "$PRE" = "ok|PRODUCTION_PAPER|0"
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Image}}' porota_production_observer)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          test "$(printf '%s' "$OBS" | cut -d'|' -f1-3)" = "true|0|true"
+          test "$(printf '%s' "$DASH" | cut -d'|' -f1-2)" = "true|0"
+          OBS_ID="$(printf '%s' "$OBS" | cut -d'|' -f4)"
+          DASH_ID="$(printf '%s' "$DASH" | cut -d'|' -f3)"
+          test "$OBS_ID" = "$DASH_ID"
+          test "$(sudo -n docker image inspect "$OBS_ID" -f '{{ index .Config.Labels "porota.commit" }}')" = "$BASE_SHA"
+
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          EXPECTED="$(printf '%s\n' \
+            .github/workflows/rc6-f01-paper-deploy.yml \
+            .github/f01-deploy-request.txt \
+            POROTA_TRADING_RC6_CHECKPOINT_F01_2026-09-12.md \
+            be_paper_engine.py bk_exit_model.py by_strategy_backtest.py q_backtest.py \
+            tests/test_backtest_data_v17.py tests/test_exit_model_parity_rc6.py | sort)"
+          ACTUAL="$(git -C "$REPO" diff --name-only "$BASE_SHA" "$TARGET_SHA" | sort)"
+          test "$ACTUAL" = "$EXPECTED"
+          git -C "$REPO" worktree add --detach "$WORKTREE" "$TARGET_SHA" >/dev/null
+          test "$(git -C "$WORKTREE" rev-parse HEAD)" = "$TARGET_SHA"
+          grep -qx "AUTHORIZED_BY_USER" "$WORKTREE/.github/f01-deploy-request.txt"
+          python3 - "$WORKTREE" <<'PY'
+          import sys
+          sys.path.insert(0,sys.argv[1])
+          import _version as v
+          assert v.VERSION=="17.0.0-rc6" and v.MODE=="PRODUCTION_PAPER"
+          assert v.EXECUTION=="SIMULATED" and v.REAL_ORDER_CAPABILITY=="BLOCKED"
+          print("F01_SOURCE_IDENTITY=GREEN")
+          PY
+
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" \
+            --label "porota.version=17.0.0-rc6" -t "$CANDIDATE_IMAGE" "$WORKTREE"
+          test "$(sudo -n docker image inspect "$CANDIDATE_IMAGE" -f '{{ index .Config.Labels "porota.commit" }}')" = "$TARGET_SHA"
+          sudo -n docker run --rm --pull never --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=768m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX \
+            -e DB_PATH=/tmp/porota-f01-deploy.db -e TELEGRAM_CHAT_ID=0 \
+            -e STARTUP_REQUIRE_AUTH=false --entrypoint bash "$CANDIDATE_IMAGE" -lc \
+            'python -m pytest -q -p no:cacheprovider --tb=short \
+              --ignore=tests/test_hotfix_rc3_hf2.py \
+              --ignore=tests/test_hotfix_rc3_hf4.py \
+              --ignore=tests/test_hotfix_rc3_hf6.py \
+              --ignore=tests/test_intraday_scalping_hf3.py \
+              --ignore=tests/test_rc4_acceptance.py \
+              --ignore=tests/test_rc4_hf1_last_mile.py \
+              --ignore=tests/test_rc4_hf2_consolidation.py'
+
+          git -C "$REPO" checkout --detach "$TARGET_SHA"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
+          test "$(sudo -n docker image inspect "$TARGET_IMAGE" -f '{{ index .Config.Labels "porota.commit" }}')" = "$TARGET_SHA"
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+          HEALTH_OK=NO
+          for _ in $(seq 1 45); do
+            if H="$(curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null)"; then
+              if python3 - "$H" <<'PY' >/dev/null 2>&1
+          import json,sys
+          x=json.loads(sys.argv[1]); assert x.get("status")=="ok" and x.get("version")=="17.0.0-rc6"
+          PY
+              then HEALTH_OK=YES; break; fi
+            fi
+            sleep 2
+          done
+          test "$HEALTH_OK" = YES
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Image}}' porota_production_observer)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          test "$(printf '%s' "$OBS" | cut -d'|' -f1-4)" = "true|$TARGET_IMAGE|0|true"
+          test "$(printf '%s' "$DASH" | cut -d'|' -f1-3)" = "true|$TARGET_IMAGE|0"
+          OBS_ID="$(printf '%s' "$OBS" | cut -d'|' -f5)"
+          DASH_ID="$(printf '%s' "$DASH" | cut -d'|' -f4)"
+          test "$OBS_ID" = "$DASH_ID"
+          test "$(sudo -n docker image inspect "$OBS_ID" -f '{{ index .Config.Labels "porota.commit" }}')" = "$TARGET_SHA"
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=10)
+          c.execute("PRAGMA query_only=ON")
+          q=c.execute("PRAGMA quick_check").fetchone()[0]
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close(); print("|".join(map(str,(q,mode,orders))))
+          PY
+          )"
+          echo "POST_SAFETY=$POST"
+          test "$POST" = "ok|PRODUCTION_PAPER|0"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import _version, bv_paper_runtime
+          from inspect import signature
+          from be_paper_engine import PaperBroker
+          from bk_exit_model import PAPER_EXIT_MODEL
+          assert _version.MODE=="PRODUCTION_PAPER"
+          assert _version.EXECUTION=="SIMULATED"
+          assert _version.REAL_ORDER_CAPABILITY=="BLOCKED"
+          assert bv_paper_runtime.PaperBroker is PaperBroker
+          p=signature(PaperBroker).parameters
+          assert p["stop_loss_pct"].default=="0.02"
+          assert p["target_gain_pct"].default=="0.05"
+          print("F01_RUNTIME_IDENTITY=GREEN")
+          PY
+          for unit in porota-contract-evidence-rc6.timer porota-functional-health-rc6.timer \
+            porota-history-postclose-rc6.timer porota-host-general-backup-rc6.timer \
+            porota-preopen-rc6.timer porota-candle-integrity-rc6.timer \
+            porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer \
+            porota-a3-history-weekend-rc6.timer; do
+            test "$(sudo -n systemctl is-active "$unit")" = active
+            test "$(sudo -n systemctl is-enabled "$unit")" = enabled
+          done
+          sleep 30
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)" = 0
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)" = 0
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git -C "$REPO" status --porcelain)"
+          echo "HOST_SHA_FINAL=$TARGET_SHA HEALTH_OK=$HEALTH_OK"
+          echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
+          echo "RC6_F01_DEPLOY_POSTFLIGHT=GREEN"
+          REMOTE
