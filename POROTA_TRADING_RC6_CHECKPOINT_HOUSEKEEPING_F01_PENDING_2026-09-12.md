@@ -217,3 +217,14 @@ Referencia: SHA desplegado `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d`. Sólo lec
 - Los audits `34702766005` y primer intento de `34705180201` terminaron `failure` a `16:44:46 UTC`. El repair iniciado 8 segundos antes incluye una rutina para terminar procesos que esperan el mismo flock y un Python `-` dentro del contenedor. La coincidencia y el código hacen probable que interrumpiera esos audits; los logs ausentes impiden probar la causa exacta.
 - El run `34705180201` tuvo un segundo intento que comenzó `16:48:32 UTC` y quedó en el paso de audit read-only para verificar capacidad/cobertura posterior al repair.
 - La rama PPI realiza en este punto operaciones de ingesta, auditoría y repair de datos, aunque no un deploy de la aplicación. Permanece fuera del housekeeping de refs/workflows mientras siga activa.
+
+
+---
+
+## Cierre de la ventana PPI observada y hallazgo prioritario de concurrencia — 2026-09-12
+
+- Repair `34706158060`: `SUCCESS` a las `16:48:13 UTC`.
+- Storage audit `34705180201`, intento 2: `SUCCESS` a las `16:50:04 UTC`; verificación read-only posterior al repair.
+- Al último chequeo, no quedaban runs PPI en curso. No se modificó la rama PPI desde housekeeping.
+- Riesgo de concurrencia confirmado en el código del repair: el loop de waiters mata procesos `flock -w 1800 9`; el selector de “stale cleanup” en realidad sólo filtra por `python -` y, si encuentra exactamente uno, le manda `TERM` y luego `KILL` sin verificar antigüedad ni contenido del proceso. También puede terminar un lock-holder si su cmdline coincide con `docker exec ... python -`. Esto puede detener un audit/ingest legítimo. Los dos audits fallidos a las `16:44:46` coinciden temporalmente con el loop de terminación; la causalidad exacta no pudo verificarse porque Actions no expuso sus logs.
+- Prioridad antes de cualquier otra reparación PPI: reemplazar la terminación por adquisición de lock sin matar procesos o salida fail-fast; exigir aprobación/manual gate y verificar tipo/PID/comando completo antes de cualquier señal. No se aplicó ningún cambio en esta auditoría.
