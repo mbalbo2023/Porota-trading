@@ -1,0 +1,273 @@
+name: RC6 EOD UI PAPER exact-base deployment
+
+on:
+  push:
+    branches: [deploy/rc6-eod-ui-paper-20260912]
+    paths:
+      - .github/workflows/rc6-eod-ui-paper-deploy.yml
+      - .github/eod-ui-deploy-request.txt
+      - bg_paper_dashboard.py
+      - fo_eod_overnight_dashboard_rc6.py
+      - tests/test_eod_overnight_dashboard_rc6.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-eod-ui-production
+  cancel-in-progress: false
+
+env:
+  BASE_SHA: eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a
+
+jobs:
+  validate:
+    name: Validate exact EOD UI tree offline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify exact base, scope, and PAPER identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "deploy/rc6-eod-ui-paper-20260912"
+          git merge-base --is-ancestor "$BASE_SHA" "$GITHUB_SHA"
+          git diff --check "$BASE_SHA" "$GITHUB_SHA"
+          EXPECTED="$(printf '%s\n' \
+            .github/workflows/rc6-eod-ui-paper-deploy.yml \
+            .github/eod-ui-deploy-request.txt \
+            bg_paper_dashboard.py fo_eod_overnight_dashboard_rc6.py \
+            tests/test_eod_overnight_dashboard_rc6.py | sort)"
+          ACTUAL="$(git diff --name-only "$BASE_SHA" "$GITHUB_SHA" | sort)"
+          # The request marker is created only by the final authorized deploy commit.
+          if [ ! -f .github/eod-ui-deploy-request.txt ]; then
+            EXPECTED="$(printf '%s\n' \
+              .github/workflows/rc6-eod-ui-paper-deploy.yml \
+              bg_paper_dashboard.py fo_eod_overnight_dashboard_rc6.py \
+              tests/test_eod_overnight_dashboard_rc6.py | sort)"
+          fi
+          test "$ACTUAL" = "$EXPECTED"
+          python - <<'PY'
+          import _version as v
+          assert v.VERSION == "17.0.0-rc6"
+          assert v.MODE == "PRODUCTION_PAPER"
+          assert v.EXECUTION == "SIMULATED"
+          assert v.REAL_ORDER_CAPABILITY == "BLOCKED"
+          print("EOD_UI_SOURCE_IDENTITY=GREEN")
+          PY
+      - name: Compile exact source
+        run: python -m compileall -q .
+      - name: Build exact candidate image
+        run: docker build --pull=false --label "porota.commit=$GITHUB_SHA" --label "porota.version=17.0.0-rc6" -t "porota-rc6-eod-ui:$GITHUB_SHA" .
+      - name: Focused EOD UI tests offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX \
+            -e DB_PATH=/tmp/porota-eod-ui-ci.db -e TELEGRAM_CHAT_ID=0 \
+            -e STARTUP_REQUIRE_AUTH=false --entrypoint bash "porota-rc6-eod-ui:$GITHUB_SHA" -lc \
+            'python -m pytest -q -p no:cacheprovider --tb=short tests/test_eod_overnight_dashboard_rc6.py'
+      - name: Static no-mutation and navigation guards
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('bg_paper_dashboard.py').read_text(encoding='utf-8')
+          start=text.index("if section=='estrategias':")
+          end=text.index('families=families_for_group(section)', start)
+          block=text[start:end]
+          assert '_main_fragment(scalping_page())' not in block
+          assert 'render_eod_overnight()' in block
+          assert 'Scalping permanece exclusivamente en su menú principal.' in block
+          nav=Path('da_dashboard_ux_hf6.py').read_text(encoding='utf-8')
+          assert 'NavItem("/scalping", "Scalping")' in nav
+          eod=Path('fo_eod_overnight_dashboard_rc6.py').read_text(encoding='utf-8')
+          assert 'CURRENT_EOD' in eod and 'ACTIVE_PAPER' in eod
+          assert 'mode=ro' in eod and 'PRAGMA query_only=ON' in eod
+          for verb in ('INSERT ', 'UPDATE ', 'DELETE ', 'REPLACE '): assert verb not in eod
+          print('EOD_UI_STATIC_GUARDS=GREEN')
+          PY
+
+  deploy:
+    name: Activate and postflight PAPER EOD UI
+    needs: validate
+    if: contains(github.event.head_commit.message, '[DEPLOY_EOD_UI_RC6]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment: production
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_eod_ui"
+          chmod 600 "$HOME/.ssh/porota_eod_ui"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Exact-base forward-only deployment and postflight
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_eod_ui" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "BASE_SHA='$BASE_SHA' TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
+          SHORT_SHA="$(printf '%s' "$TARGET_SHA" | cut -c1-12)"
+          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-eod-ui-$SHORT_SHA"
+          WORKTREE="/tmp/porota-rc6-eod-ui-$SHORT_SHA-$$"
+          cleanup() {
+            set +e
+            if [ -d "$WORKTREE" ]; then git -C "$REPO" worktree remove --force "$WORKTREE" >/dev/null 2>&1; fi
+            git -C "$REPO" worktree prune >/dev/null 2>&1
+          }
+          trap cleanup EXIT
+
+          echo "AUTO_ROLLBACK=DISABLED"
+          ACTUAL_HOST_SHA="$(git -C "$REPO" rev-parse HEAD)"
+          DIRTY_COUNT="$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
+          FREE_BYTES="$(df -PB1 "$REPO" | awk 'NR==2{print $4}')"
+          OBS_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          IMAGE_SIZE="$(sudo -n docker image inspect "$OBS_ID" -f '{{.Size}}')"
+          NEEDED_BYTES="$((IMAGE_SIZE * 2 + 1073741824))"
+          echo "HOST_SHA=$ACTUAL_HOST_SHA DIRTY_COUNT=$DIRTY_COUNT FREE_BYTES=$FREE_BYTES IMAGE_SIZE=$IMAGE_SIZE NEEDED_BYTES=$NEEDED_BYTES"
+          test "$ACTUAL_HOST_SHA" = "$BASE_SHA"
+          test "$DIRTY_COUNT" = 0
+          test "$FREE_BYTES" -ge "$NEEDED_BYTES"
+
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,mode,orders))))
+          PY
+          )"
+          echo "PRE_SAFETY=$PRE"
+          test "$PRE" = "ok|PRODUCTION_PAPER|0"
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Image}}' porota_production_observer)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          test "$(printf '%s' "$OBS" | cut -d'|' -f1-3)" = "true|0|true"
+          test "$(printf '%s' "$DASH" | cut -d'|' -f1-2)" = "true|0"
+          test "$(printf '%s' "$OBS" | cut -d'|' -f4)" = "$(printf '%s' "$DASH" | cut -d'|' -f3)"
+          test "$(sudo -n docker image inspect "$OBS_ID" -f '{{ index .Config.Labels "porota.commit" }}')" = "$BASE_SHA"
+
+          git -C "$REPO" fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          EXPECTED="$(printf '%s\n' \
+            .github/workflows/rc6-eod-ui-paper-deploy.yml \
+            .github/eod-ui-deploy-request.txt \
+            bg_paper_dashboard.py fo_eod_overnight_dashboard_rc6.py \
+            tests/test_eod_overnight_dashboard_rc6.py | sort)"
+          ACTUAL="$(git -C "$REPO" diff --name-only "$BASE_SHA" "$TARGET_SHA" | sort)"
+          test "$ACTUAL" = "$EXPECTED"
+
+          git -C "$REPO" worktree add --detach "$WORKTREE" "$TARGET_SHA" >/dev/null
+          grep -qx "AUTHORIZED_BY_USER" "$WORKTREE/.github/eod-ui-deploy-request.txt"
+          python3 - "$WORKTREE" <<'PY'
+          import sys
+          sys.path.insert(0,sys.argv[1])
+          import _version as v
+          assert v.VERSION=='17.0.0-rc6' and v.MODE=='PRODUCTION_PAPER'
+          assert v.EXECUTION=='SIMULATED' and v.REAL_ORDER_CAPABILITY=='BLOCKED'
+          print('EOD_UI_SOURCE_IDENTITY=GREEN')
+          PY
+
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" \
+            --label "porota.version=17.0.0-rc6" -t "$CANDIDATE_IMAGE" "$WORKTREE"
+          test "$(sudo -n docker image inspect "$CANDIDATE_IMAGE" -f '{{ index .Config.Labels "porota.commit" }}')" = "$TARGET_SHA"
+          sudo -n docker run --rm --pull never --network none --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
+            --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
+            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX \
+            -e DB_PATH=/tmp/porota-eod-ui-deploy.db -e TELEGRAM_CHAT_ID=0 \
+            -e STARTUP_REQUIRE_AUTH=false --entrypoint bash "$CANDIDATE_IMAGE" -lc \
+            'python -m pytest -q -p no:cacheprovider --tb=short tests/test_eod_overnight_dashboard_rc6.py'
+
+          git -C "$REPO" checkout --detach "$TARGET_SHA"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+
+          HEALTH_OK=NO
+          for _ in $(seq 1 45); do
+            if H="$(curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null)"; then
+              if python3 - "$H" <<'PY' >/dev/null 2>&1
+          import json,sys
+          x=json.loads(sys.argv[1]); assert x.get('status')=='ok' and x.get('version')=='17.0.0-rc6'
+          PY
+              then HEALTH_OK=YES; break; fi
+            fi
+            sleep 2
+          done
+          test "$HEALTH_OK" = YES
+
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,mode,orders))))
+          PY
+          )"
+          echo "POST_SAFETY=$POST"
+          test "$POST" = "ok|PRODUCTION_PAPER|0"
+
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          from pathlib import Path
+          import fo_eod_overnight_dashboard_rc6 as eod
+          text=Path('/app/bg_paper_dashboard.py').read_text(encoding='utf-8')
+          start=text.index("if section=='estrategias':")
+          end=text.index('families=families_for_group(section)', start)
+          block=text[start:end]
+          assert '_main_fragment(scalping_page())' not in block
+          assert 'render_eod_overnight()' in block
+          page=eod.render()
+          assert 'EOD / Overnight' in page
+          assert 'CURRENT_EOD' in page
+          assert 'Auto-promoción' in page and '>OFF<' in page
+          assert 'ACTIVE_PAPER' in page
+          print('TRADING_ESTRATEGIAS_EOD_UI=GREEN')
+          print('EOD_POLICY_ACTIVE=CURRENT_EOD')
+          print('EOD_AUTO_PROMOTION=false')
+          PY
+
+          OBS="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}|{{.Image}}' porota_production_observer)"
+          DASH="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          test "$(printf '%s' "$OBS" | cut -d'|' -f1-4)" = "true|$TARGET_IMAGE|0|true"
+          test "$(printf '%s' "$DASH" | cut -d'|' -f1-3)" = "true|$TARGET_IMAGE|0"
+          NEW_OBS_ID="$(printf '%s' "$OBS" | cut -d'|' -f5)"
+          NEW_DASH_ID="$(printf '%s' "$DASH" | cut -d'|' -f4)"
+          test "$NEW_OBS_ID" = "$NEW_DASH_ID"
+          test "$(sudo -n docker image inspect "$NEW_OBS_ID" -f '{{ index .Config.Labels "porota.commit" }}')" = "$TARGET_SHA"
+          sleep 20
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)" = 0
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)" = 0
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git -C "$REPO" status --porcelain)"
+          echo "HOST_SHA_FINAL=$TARGET_SHA HEALTH_OK=$HEALTH_OK"
+          echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
+          echo "RC6_EOD_UI_DEPLOY_POSTFLIGHT=GREEN"
+          REMOTE
