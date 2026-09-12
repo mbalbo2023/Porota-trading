@@ -123,3 +123,9 @@ Hallazgo documental concreto: el README conserva `develop → testing → main �
 Los workflows mantienen referencias a `develop` y `testing`; la promoción permite push directo a `main`, y el despliegue admite cualquier ref como entrada. Son controles operativos que primero deben reemplazarse con una ruta trazable, no borrarse como si fueran basura inerte. El barrido no encontró referencias restantes de Codespaces o v16.x en los archivos leídos. `AGENTS.md`, la plantilla de PR y `.gitignore` no mostraron candidatos adicionales en este alcance.
 
 Próximo lote: preparar una propuesta acotada para corregir el README y abrir un PR en rama propia tras confirmar que las rutas documentales no compiten con trabajo activo. La auditoría continúa sin consultar el workstream `pipeline ppi watch`.
+
+## PR #58 — corrección documental de flujo — 2026-09-12
+
+Se abrió como borrador el PR [#58](https://github.com/mbalbo2023/Porota-trading/pull/58), rama `docs/align-release-flow-rc6-20260912`, base `main` @ `82750cc0b97df69f9936bdd5d65360cd8f9020f0`, HEAD `8e2ecd9b82687b7fc905d6dfd0dfb0cfdb3094c3`. El diff contiene solo `README.md`: elimina el flujo textual obsoleto `develop → testing → main`, fija el SHA RC6 certificado e instruye integración por PR. Está abierto como draft, mergeable, sin fusión.
+
+CI run `34712067098` (#255) terminó `success`: `Infrastructure preflight` pasó. `Application CI` detectó que el paquete de aplicación no está instalado; dependencias, compilación, pruebas y stack quedaron `skipped`. Este resultado valida documentación/infraestructura del repositorio, no la operatoria ni runtime RC6. No se ejecutó ningún workflow manual ni despliegue.
