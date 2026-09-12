@@ -1,0 +1,56 @@
+name: RC6 Runtime Readonly Recheck 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-runtime-readonly-recheck-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Runtime proof
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          ROOT=/opt/porota-trading
+          echo HOST_SHA=$(git -C "$ROOT" rev-parse HEAD 2>&1)
+          echo HEALTH_BEGIN
+          curl -sS --max-time 5 http://127.0.0.1:8000/health || true
+          echo
+          echo HEALTH_END
+          echo CONTAINERS_BEGIN
+          sudo -n docker ps -a --format '{{.Names}}|{{.Status}}|{{.Image}}' | grep -E '^porota_' || true
+          echo CONTAINERS_END
+          echo OBSERVER_INSPECT_BEGIN
+          sudo -n docker inspect -f 'running={{.State.Running}} status={{.State.Status}} exit={{.State.ExitCode}} restart={{.RestartCount}} image={{.Config.Image}}' porota_production_observer 2>&1 || true
+          echo OBSERVER_INSPECT_END
+          echo DB_HOST_BEGIN
+          sudo -n find "$ROOT/data" -maxdepth 4 -type f -name 'observer_v17.db' -printf '%p|%s|%TY-%Tm-%TdT%TH:%TM:%TS\n' 2>/dev/null || true
+          echo DB_HOST_END
+          echo EXEC_SMOKE_BEGIN
+          sudo -n docker exec porota_production_observer /bin/sh -c 'printf "EXEC_OK\n"; python -V' 2>&1 || true
+          echo EXEC_SMOKE_END
+          echo MUTATIONS=NONE
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+          HOST
