@@ -1,0 +1,45 @@
+name: RC6 Postfinal Readiness Model Proof 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - rc6_contract_identity_normalizer.py
+      - rc6_history_readiness_policy.py
+      - tests/test_rc6_contract_identity_normalizer.py
+      - tests/test_rc6_history_readiness_policy.py
+      - .github/workflows/rc6-postfinal-readiness-model-proof-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and prove fail-closed models
+        env:
+          PYTHONPATH: .
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_contract_identity_normalizer.py rc6_history_readiness_policy.py tests/test_rc6_contract_identity_normalizer.py tests/test_rc6_history_readiness_policy.py
+          python tests/test_rc6_contract_identity_normalizer.py
+          python tests/test_rc6_history_readiness_policy.py
+          python - <<'PY'
+          import rc6_contract_identity_normalizer as c
+          import rc6_history_readiness_policy as h
+          c.assert_no_execution_capability()
+          h.assert_no_execution_capability()
+          assert c.unique_api_match(family='OPCIONES',web_identity='ALU C1400.O',api_tickers=['ALUC1400O']) is None
+          assert h.required_bars_for_warmup(5)==30
+          assert h.evaluate_identity_history(bar_count=30,required_bars=30,exact_identity=True,market_compatible=True,freshness_ok=False)['history_ready'] is False
+          print('CONTRACT_IDENTITY_NORMALIZER=GREEN')
+          print('HISTORY_READINESS_POLICY=GREEN')
+          print('AUTO_PAPER_PROMOTION=FALSE')
+          print('ORDER_CAPABILITY=NONE')
+          PY
