@@ -1,0 +1,54 @@
+name: RC6 Market History Schema Readonly 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-market-history-schema-readonly-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect market_history.db schema
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          DB="$ROOT/data/market_history.db"
+          test -s "$DB"
+          python3 - "$DB" <<'PY'
+          import sqlite3,json,sys
+          p=sys.argv[1]
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20);c.row_factory=sqlite3.Row;c.execute('pragma query_only=on')
+          print('QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          tables=[r[0] for r in c.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%' order by name")]
+          print('TABLES='+json.dumps(tables))
+          for t in tables[:80]:
+              cols=[dict(r) for r in c.execute('pragma table_info("'+t.replace('"','""')+'")')]
+              try: n=c.execute('select count(*) from "'+t.replace('"','""')+'"').fetchone()[0]
+              except Exception: n=None
+              print('SCHEMA='+json.dumps({'table':t,'rows':n,'columns':[x['name'] for x in cols]},sort_keys=True))
+          c.close()
+          print('MUTATIONS=NONE')
+          PY
+          HOST
