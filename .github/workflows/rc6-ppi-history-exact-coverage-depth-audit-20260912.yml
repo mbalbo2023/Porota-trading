@@ -1,0 +1,181 @@
+name: RC6 PPI exact history coverage depth audit 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-history-exact-coverage-depth-audit-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Exact identity diff and historical depth read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          EXPECT='a47f3339ec6dfe9d5afde444b1aaddabceb0e94d'
+          ACTUAL="$(git rev-parse HEAD)"; echo "HOST_SHA=$ACTUAL"; test "$ACTUAL" = "$EXPECT" || { echo ABORT=HOST_SHA_CHANGED; exit 31; }
+
+          for u in porota-ppi-argentina-nightly-rc6.service porota-history-postclose-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do
+            st="$(systemctl is-active "$u" 2>/dev/null || true)"
+            case "$st" in active|activating) echo "ABORT=HISTORY_SERVICE_ACTIVE:$u"; exit 32;; esac
+          done
+
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 120 9 || { echo ABORT=HISTORY_LOCK_BUSY; exit 33; }
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3, statistics
+          from collections import Counter, defaultdict
+          from datetime import date
+          import bf_production_paper_observer as m
+          from cv_history_store_adapter_hf6 import default_history_store
+
+          MARKETS={'BYMA','ROFEX','A3','OTC'}
+          EXCLUDED={'ACCIONES-USA','FCI-EXTERIOR'}
+          TARGET_FAMILIES={'ACCIONES','BONOS','CAUCIONES','CEDEARS','FCI','FUTUROS','LEBACS','LETRAS','LICITACIONES','ON','OPCIONES'}
+
+          def norm(v):
+              return '' if v is None else str(v).strip().upper()
+          def key5(ticker,fam,market,currency,settlement):
+              return (norm(ticker),norm(fam),norm(market),norm(currency),norm(settlement))
+          def pct(a,b):
+              return round(100.0*a/b,2) if b else 0.0
+          def bucket(span):
+              if span < 30: return '<30d'
+              if span < 90: return '30-89d'
+              if span < 180: return '90-179d'
+              if span < 365: return '180-364d'
+              return '>=365d'
+
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY={s[0]}|{s[1]}'); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              scols=[r[1] for r in c.execute('pragma table_info(ppi_argentina_api_shadow)')]
+              print('SHADOW_COLUMNS='+json.dumps(scols))
+              assert all(x in scols for x in ['ticker','instrument_type','market','settlement'])
+              scurrency='currency' if 'currency' in scols else None
+              ssql='select ticker,instrument_type,market,'+('currency' if scurrency else "''")+',settlement from ppi_argentina_api_shadow where market in (\'BYMA\',\'ROFEX\',\'A3\',\'OTC\') and instrument_type not in (\'ACCIONES-USA\',\'FCI-EXTERIOR\')'
+              cert={key5(*r) for r in c.execute(ssql)}
+              print('CERTIFIED_EXACT_IDENTITIES='+str(len(cert)))
+              assert len(cert)==1960
+
+              attempts={}
+              if c.execute("select 1 from sqlite_master where type='table' and name='production_history_attempts'").fetchone():
+                  acols=[r[1] for r in c.execute('pragma table_info(production_history_attempts)')]
+                  sel=['symbol','instrument_type','settlement','state']
+                  if all(x in acols for x in sel):
+                      for r in c.execute('select symbol,instrument_type,settlement,state from production_history_attempts'):
+                          attempts[(norm(r[0]),norm(r[1]),norm(r[2]))]=norm(r[3]) or 'UNKNOWN'
+
+          hpath=default_history_store().path
+          h=sqlite3.connect(f'file:{hpath}?mode=ro',uri=True)
+          h.row_factory=sqlite3.Row
+          assert h.execute('pragma quick_check').fetchone()[0]=='ok'
+          hcols=[r[1] for r in h.execute('pragma table_info(history_canonical_v2)')]
+          print('HISTORY_COLUMNS='+json.dumps(hcols))
+          assert all(x in hcols for x in ['symbol','instrument_type','market','settlement','date'])
+          hcurrency='currency' if 'currency' in hcols else None
+          hsql='select symbol,instrument_type,market,'+('currency' if hcurrency else "''")+',settlement,min(date),max(date),count(*) from history_canonical_v2 group by symbol,instrument_type,market,'+('currency' if hcurrency else "''")+',settlement'
+          stats={}
+          for r in h.execute(hsql):
+              k=key5(r[0],r[1],r[2],r[3],r[4])
+              stats[k]={'min':str(r[5]),'max':str(r[6]),'rows':int(r[7])}
+          hist=set(stats)
+          hist_scope={k for k in hist if k[1] in TARGET_FAMILIES and k[2] in MARKETS}
+          covered=cert & hist_scope
+          missing=cert - hist_scope
+          extra=hist_scope - cert
+          out_scope=hist-hist_scope
+
+          dup=h.execute('''select count(*) from (
+            select symbol,instrument_type,market,'''+('currency,' if hcurrency else "'',")+'''settlement,date,count(*) n
+            from history_canonical_v2
+            group by symbol,instrument_type,market,'''+('currency,' if hcurrency else "'',")+'''settlement,date having count(*)>1)''').fetchone()[0]
+
+          global_max=max((v['max'] for k,v in stats.items() if k in covered),default='')
+          print('EXACT_DIFF='+json.dumps({
+            'certified':len(cert),'covered_exact':len(covered),'missing_exact':len(missing),
+            'extra_exact_in_scope':len(extra),'history_scope_total':len(hist_scope),
+            'history_out_of_scope':len(out_scope),'duplicate_fullkey_date_groups':int(dup),
+            'global_max_date':global_max,'coverage_pct':pct(len(covered),len(cert))},sort_keys=True))
+
+          fam_summary={}
+          missing_state=defaultdict(Counter)
+          shallow={}
+          for fam in sorted(TARGET_FAMILIES):
+              cf={k for k in cert if k[1]==fam}
+              cv=cf & hist_scope
+              ms=cf-hist_scope
+              ex={k for k in extra if k[1]==fam}
+              spans=[]; rows=[]; mins=[]; maxs=[]; items=[]
+              for k in cv:
+                  st=stats[k]
+                  try: span=(date.fromisoformat(st['max'])-date.fromisoformat(st['min'])).days
+                  except Exception: span=-1
+                  if span>=0: spans.append(span)
+                  rows.append(st['rows']); mins.append(st['min']); maxs.append(st['max'])
+                  items.append((span,st['rows'],k,st['min'],st['max']))
+              histo=Counter(bucket(x) for x in spans if x>=0)
+              for k in ms:
+                  state=attempts.get((k[0],k[1],k[4]),'MISSING_ATTEMPT')
+                  missing_state[fam][state]+=1
+              fam_summary[fam]={
+                  'certified':len(cf),'covered':len(cv),'missing':len(ms),'extra':len(ex),'coverage_pct':pct(len(cv),len(cf)),
+                  'min_history_date':min(mins) if mins else None,'max_history_date':max(maxs) if maxs else None,
+                  'span_days_min':min(spans) if spans else None,'span_days_median':int(statistics.median(spans)) if spans else None,'span_days_max':max(spans) if spans else None,
+                  'rows_median':int(statistics.median(rows)) if rows else None,'depth_buckets':dict(sorted(histo.items()))
+              }
+              items.sort(key=lambda x:(x[0],x[1],x[2]))
+              shallow[fam]=[
+                  {'key':'|'.join(x[2]),'span_days':x[0],'rows':x[1],'min':x[3],'max':x[4]}
+                  for x in items[:5]
+              ]
+          print('FAMILY_EXACT_COVERAGE_DEPTH='+json.dumps(fam_summary,sort_keys=True))
+          print('MISSING_ATTEMPT_STATE_BY_FAMILY='+json.dumps({k:dict(v) for k,v in sorted(missing_state.items())},sort_keys=True))
+          print('SHALLOWEST_5_BY_FAMILY='+json.dumps(shallow,sort_keys=True))
+
+          for k in sorted(missing):
+              state=attempts.get((k[0],k[1],k[4]),'MISSING_ATTEMPT')
+              print('MISSING_KEY='+'|'.join(k)+'|ATTEMPT='+state)
+          for k in sorted(extra):
+              st=stats[k]
+              print('EXTRA_KEY='+'|'.join(k)+f"|ROWS={st['rows']}|MIN={st['min']}|MAX={st['max']}")
+
+          # Families with certified identities but no canonical history at all are explicit blockers for full PPI coverage.
+          zero_families=[f for f,v in fam_summary.items() if v['certified'] and v['covered']==0]
+          print('ZERO_COVERAGE_FAMILIES='+json.dumps(zero_families))
+          print('IDENTITY_DIFF_STATUS='+('GREEN' if not missing and not extra and dup==0 else 'YELLOW_NEEDS_BACKFILL_OR_RECONCILIATION'))
+          print('DEPTH_STATUS=YELLOW_NOT_API_EXHAUSTED')
+          print('HOST_MUTATION=NONE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          h.close()
+          PY
+          HOST
