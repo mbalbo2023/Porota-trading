@@ -16,7 +16,11 @@ from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, family_name
 from co_market_sessions_hf6 import byma_paper_spot_open
-from fg_intraday_contract_policy_rc6 import classify_revision, previous_for_session
+from fg_intraday_contract_policy_rc6 import (
+    DEFAULT_MUTABLE_SECONDS,
+    classify_revision,
+    previous_for_session,
+)
 
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -164,12 +168,35 @@ def _state(store, identity):
     return dict(row) if row else None
 
 
+def _revision_telemetry(identity, *, event_at, received_at, decision,
+                        old_price, old_volume, new_price, new_volume):
+    """Build revision evidence without changing the contract verdict.
+
+    Only changed points are emitted. The event is intentionally compact and
+    contains no credentials, account data or order capability.
+    """
+    if decision.get("action") == "SAME":
+        return None
+    return {
+        "symbol": identity[0], "asset_class": identity[1], "market": identity[2],
+        "currency": identity[3], "settlement": identity[4],
+        "event_at": event_at, "received_at": received_at,
+        "age_seconds": float(decision["age_seconds"]),
+        "action": decision["action"],
+        "price_changed": _decimal(old_price) != _decimal(new_price),
+        "volume_changed": _decimal(old_volume) != _decimal(new_volume),
+        "mutable_seconds": DEFAULT_MUTABLE_SECONDS,
+        "source": "PPI_MARKETDATA_INTRADAY",
+    }
+
+
 def persist_payload(store, record, points, *, received_at):
     identity = _identity(record)
     # Contract state is trading-session scoped. A rejection from a prior local
     # trading day must never poison the next session.
     previous = previous_for_session(_state(store, identity), received_at=received_at)
     stable = changed = inserted = refreshed = 0
+    revision_events = []
     down_steps = sum(1 for left, right in zip(points, points[1:]) if right[2] < left[2])
     with store.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
@@ -183,8 +210,14 @@ def persist_payload(store, record, points, *, received_at):
                     event_at=event_at, received_at=received_at,
                     old_price=existing[0], old_volume=existing[1],
                     new_price=values[0], new_volume=values[1])
+                evidence = _revision_telemetry(
+                    identity, event_at=event_at, received_at=received_at,
+                    decision=decision, old_price=existing[0], old_volume=existing[1],
+                    new_price=values[0], new_volume=values[1])
+                if evidence is not None:
+                    revision_events.append(evidence)
                 if decision["action"] == "SAME":
-                    if decision["age_seconds"] > 120:
+                    if decision["age_seconds"] > DEFAULT_MUTABLE_SECONDS:
                         stable += 1
                     connection.execute("""UPDATE ppi_intraday_points SET last_verified_at=?
                       WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=? AND event_at=?""",
@@ -223,8 +256,19 @@ def persist_payload(store, record, points, *, received_at):
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
           (*identity, state, observations, max(prior_stable, stable), prior_changed + changed,
            inserted, last_source, received_at, detail))
+    # Telemetry is best-effort and deliberately outside the contract-state
+    # transaction: an observability failure must never change a trading verdict.
+    telemetry_emitted = 0
+    for event in revision_events:
+        try:
+            store.event("SCALPING_INTRADAY_REVISION_TELEMETRY",
+                        json.dumps(event, sort_keys=True, separators=(",", ":")))
+            telemetry_emitted += 1
+        except Exception:
+            continue
     return {"state": state, "inserted": inserted, "stable": stable,
-            "changed": changed, "refreshed": refreshed, "down_steps": down_steps}
+            "changed": changed, "refreshed": refreshed, "down_steps": down_steps,
+            "revision_telemetry_events": telemetry_emitted}
 
 
 def evaluate_candidate(store, record, *, at):
