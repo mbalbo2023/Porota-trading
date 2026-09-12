@@ -102,3 +102,14 @@ Mantener el trabajo en lectura estática: clasificar referencias históricas y e
 ### Rama histórica de CI revisada — 2026-09-12
 
 `chore/disable-codespaces-ci` apunta a `c564c45d9da41837f0b26aa4f9766c75505eb940` (2026-08-21, `ci: remove Codespaces dependency from CI`), sin PR asociado. Su `.github/workflows/ci.yml` tiene el mismo blob SHA que el archivo actual de `main` (`dc8864cc254fa7a6910d66aae92950a52d6e3b36`): funcionalmente, el cambio de CI ya está integrado y la rama no aporta una versión distinta del workflow. La comparación de historial muestra divergencia porque la rama conserva su línea de commits aparte. Está reportada como no protegida; no se eliminó. El conector actual no expone borrado de ramas, por lo que queda como candidata a retiro cuando el canal de administración de refs esté disponible y se cierre el checkpoint.
+
+## Prioridad actual: promoción y limpieza — 2026-09-12
+
+El usuario prioriza en paralelo un paso a producción prolijo y la remoción de basura/inconsistencias. Secuencia acordada para minimizar riesgo:
+
+1. Definir un flujo de promoción trazable: validar el SHA exacto aprobado, exigir CI del mismo SHA, pasar por PR revisado y bloquear el `git push origin main` directo del workflow. El despliegue debe consumir una referencia RC6 inmutable aprobada, con confirmación humana y registro de evidencia.
+2. Auditar y retirar referencias obsoletas en configuración y documentación de `main`, de forma aislada por PR y con verificaciones antes/después.
+3. Solo después de cerrar dependencias de flujos, clasificar ramas históricas para retiro. No tocar `testing` mientras siga ofrecida como origen de promoción; no usar ni consultar el workstream `pipeline ppi watch`.
+4. Revisar en un alcance operacional separado el workflow one-off incluido en el source RC6, dado que conserva el target `e47eeff...`. No ejecutarlo ni borrarlo desde el baseline certificado.
+
+El paso 1 es una prioridad de diseño/auditoría, no una autorización para ejecutar un despliegue o cambiar una rama ajena. La primera implementación debe presentarse como PR aislado desde una rama propia, sin modificar `main` directamente ni fusionar/desplegar sin la autorización aplicable.
