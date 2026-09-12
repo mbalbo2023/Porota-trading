@@ -1,0 +1,92 @@
+name: RC6 PPI catalog all-status audit 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-catalog-allstatus-audit-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Audit complete catalog and canonical history coverage
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          EXPECTED_SHA='eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a'
+          HOST_SHA="$(git rev-parse HEAD)"
+          echo "HOST_SHA=$HOST_SHA"
+          test "$HOST_SHA" = "$EXPECTED_SHA" || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          db=Path('/app/data/paper_v17/observer_v17.db')
+          c=sqlite3.connect(f'file:{db}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+          s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f"SAFETY={s['mode']}|{s['real_orders_sent']}")
+          assert s['mode']=='PRODUCTION_PAPER' and int(s['real_orders_sent'] or 0)==0
+          print('=== CATALOG_SCHEMA ===')
+          for r in c.execute('pragma table_info(financial_instrument_catalog)'): print(json.dumps(dict(r),sort_keys=True))
+          print('=== CATALOG_TOTALS ===')
+          q={
+            'rows':'select count(*) n from financial_instrument_catalog',
+            'identities':'select count(*) n from (select distinct ticker,instrument_type,settlement from financial_instrument_catalog)',
+            'tickers':'select count(distinct ticker) n from financial_instrument_catalog',
+            'available_identities':"select count(*) n from (select distinct ticker,instrument_type,settlement from financial_instrument_catalog where status='AVAILABLE')",
+            'nonavailable_identities':"select count(*) n from (select distinct ticker,instrument_type,settlement from financial_instrument_catalog where status<>'AVAILABLE')",
+          }
+          for k,sql in q.items(): print(k.upper()+'='+str(c.execute(sql).fetchone()['n']))
+          print('=== BY_STATUS ===')
+          for r in c.execute("select status,count(*) rows,count(distinct ticker) tickers from financial_instrument_catalog group by status order by status"): print(json.dumps(dict(r),sort_keys=True))
+          print('=== BY_FAMILY_STATUS ===')
+          for r in c.execute("select instrument_type,status,count(*) rows,count(distinct ticker) tickers,count(distinct settlement) settlements,max(last_seen_at) last_seen from financial_instrument_catalog group by instrument_type,status order by instrument_type,status"): print(json.dumps(dict(r),sort_keys=True))
+          print('=== BY_FAMILY_ALL ===')
+          for r in c.execute("select instrument_type,count(*) rows,count(distinct ticker) tickers,count(distinct settlement) settlements from financial_instrument_catalog group by instrument_type order by instrument_type"): print(json.dumps(dict(r),sort_keys=True))
+          print('=== NONAVAILABLE_SAMPLE ===')
+          for r in c.execute("select ticker,instrument_type,market,settlement,status,capability,last_seen_at from financial_instrument_catalog where status<>'AVAILABLE' order by instrument_type,ticker limit 250"): print(json.dumps(dict(r),sort_keys=True))
+          print('=== LEGACY_COMPLETE_BY_FAMILY ===')
+          for r in c.execute("select instrument_type,count(*) identities,sum(row_count) rows,min(date_from) first_date,max(date_to) last_date,max(downloaded_at) last_download from production_history where row_count>0 group by instrument_type order by instrument_type"): print(json.dumps(dict(r),sort_keys=True))
+          print('=== ATTEMPT_CURRENT_BY_FAMILY_STATE ===')
+          for r in c.execute("select instrument_type,state,count(*) identities,sum(provider_rows) provider_rows,sum(valid_rows) valid_rows,sum(rejected_rows) rejected_rows,max(attempted_at) last_attempt from production_history_attempts group by instrument_type,state order by instrument_type,state"): print(json.dumps(dict(r),sort_keys=True))
+          c.close()
+
+          hdb=Path('/app/data/market_history.db')
+          h=sqlite3.connect(f'file:{hdb}?mode=ro',uri=True); h.row_factory=sqlite3.Row; h.execute('pragma query_only=on')
+          assert h.execute('pragma quick_check').fetchone()[0]=='ok'
+          tabs={r[0] for r in h.execute("select name from sqlite_master where type='table'")}
+          if 'history_canonical_v2' in tabs:
+              print('=== CANONICAL_USABLE_BY_SOURCE_FAMILY ===')
+              for r in h.execute("select source,instrument_type,count(distinct symbol) symbols,count(*) rows,min(date) first_date,max(date) last_date from history_canonical_v2 group by source,instrument_type order by source,instrument_type"): print(json.dumps(dict(r),sort_keys=True))
+              print('=== PPI_CANONICAL_USABLE_BY_FAMILY ===')
+              for r in h.execute("select instrument_type,count(distinct symbol) symbols,count(*) rows,min(date) first_date,max(date) last_date from history_canonical_v2 where source like 'PPI%' group by instrument_type order by instrument_type"): print(json.dumps(dict(r),sort_keys=True))
+          h.close()
+          print('HOST_MUTATION=NONE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
