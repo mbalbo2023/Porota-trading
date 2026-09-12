@@ -6,13 +6,13 @@ This checkpoint supersedes the broader foreign-instrument discovery scope for th
 
 Current scope is **Argentine-market financial instruments exposed by the productive PPI API**. Foreign-market families and markets are excluded from ingestion work: `ACCIONES-USA`, `FCI-EXTERIOR`, `NYSE`, `NASDAQ`.
 
-Source order remains:
+Historical source policy for this work:
 
-1. PPI productive API — exhaust first.
-2. PPI authenticated web/scraping — only for residual gaps that remain after API-side RCA/retry and only if needed.
-3. IOL — tertiary residual fallback only if both PPI layers are insufficient.
+1. Exhaust the productive PPI API first.
+2. Do not start PPI Web ingestion now. Web/scraping is only a residual complement if, after API-side RCA/retry, required history or reference fields are demonstrably unavailable from the API.
+3. IOL remains tertiary and outside the current ingestion.
 
-Historical ingestion is independent from `READY_PAPER`. This work does not call order routes.
+Historical ingestion is independent from `READY_PAPER`. No order route is called by this work.
 
 ## Safety baseline
 
@@ -20,11 +20,11 @@ Historical ingestion is independent from `READY_PAPER`. This work does not call 
 - Runtime mode during all work: `PRODUCTION_PAPER`.
 - `real_orders_sent=0`.
 - Market phase during ingestion jobs: `CLOSED`.
-- History lock: `/run/lock/porota-ppi-fullfamily-history.lock`.
+- Shared history lock: `/run/lock/porota-ppi-fullfamily-history.lock`.
 
 ## Argentine PPI API universe currently evidenced
 
-A local-only productive API discovery restricted to `BYMA`, `ROFEX`, `A3`, `OTC` produced **1,960 unique identities**:
+A productive API discovery restricted to local PPI markets (`BYMA`, `ROFEX`, `A3`, `OTC`) produced **1,960 unique identities**:
 
 | Family | API identities |
 |---|---:|
@@ -41,15 +41,13 @@ A local-only productive API discovery restricted to `BYMA`, `ROFEX`, `A3`, `OTC`
 | OPCIONES | 437 |
 | **TOTAL** | **1,960** |
 
-No local `ETF` identity was returned by the tested BYMA API searches (13/13 HTTP OK but empty). This is evidence of current API discovery, not a claim about every possible regulatory/security classification outside PPI.
+No local `ETF` identity was returned by the tested BYMA API searches: 13/13 requests completed successfully and returned no normalized ETF identity. This is a statement about current PPI API discovery only, not a regulatory universe claim outside PPI.
 
-## Original normalized catalog first pass — COMPLETE
+## Original 901-identity catalog — first API history pass COMPLETE
 
-The original live normalized catalog contained 901 local identities. PPI API historical first-pass is now **901/901 attempted**.
+PPI historical API first-pass is **901/901 attempted**.
 
-Final usable/hard results:
-
-| Family | Total | Usable (FULL+PARTIAL) | Hard outcome |
+| Family | Total | Usable (FULL+PARTIAL) | Hard API outcome |
 |---|---:|---:|---:|
 | ACCIONES | 55 | 55 | 0 |
 | BONOS | 42 | 42 | 0 |
@@ -60,58 +58,82 @@ Final usable/hard results:
 | ON | 91 | 33 | 58 |
 | OPCIONES | 437 | 180 | 257 |
 
-The 901 pass completed with `FIRSTPASS_REMAINING=0`. Hard outcomes are **not automatically scraping requirements**: they must first be classified as no history/no trades, stale/expired, wrong identity/settlement, validation mismatch, or transient/provider error.
+The pass completed with `FIRSTPASS_REMAINING=0`. A hard outcome is not automatically a scraping requirement: it must first be classified as no trades/no history, stale/expired, wrong identity/settlement, validation mismatch, or transient/provider error.
 
-## Quick 7-day productive API proof
+## Quick 7-day API proof and actual seed ingestion
 
-A 7-day read-only test sampled local families and proved historical rows from the PPI API for ACCIONES, BONOS, CAUCIONES, CEDEARS, FCI, FUTUROS, LETRAS and OPCIONES. ON and LICITACIONES samples returned valid empty payloads in that narrow 7-day window; prior 365-day ON proof returned historical data, so a 7-day empty response does not imply lack of API history.
+The 7-day productive API proof returned historical rows for sampled ACCIONES, BONOS, CAUCIONES, CEDEARS, FCI, FUTUROS, LETRAS and OPCIONES. ON samples were empty in that narrow week, while previous 365-day ON probes returned data, proving that a short-window empty response does not mean the historical API is unsupported.
 
-FCI was additionally persisted end-to-end for five identities. All 5/5 returned 4 provider rows and 4 valid rows; **20 valid FCI rows** were stored through raw evidence + History Store v2. This proves that local FCI history is available through the productive PPI API and the 1,040 FCI identities are API-ingestion work, not scraping work.
+Five FCI identities were then actually persisted end-to-end through raw evidence + History Store v2:
 
-`CEDI` was discovered with provider-returned type `LEBACS`, but a history request with `instrument_type=LEBACS` returned `Instrument Type not found: LEBACS`. A targeted RCA is testing the PPI-declared `LEBAC`/`NOBAC` type variants before any fallback is considered.
+- `A.AHPLUS.B`: 4/4 valid rows.
+- `AD.AH.DI.A`: 4/4.
+- `AD.AH.DI.B`: 4/4.
+- `AD.AUSD.D`: 4/4.
+- `AD.AUSD.E`: 4/4.
 
-## Current API versus scraping delta
+Result: **5/5 FCI usable, 20 valid rows stored**. Therefore the 1,040 local FCI identities are API-ingestion work, not web-scraping work.
 
-Latest audit before the FCI seed and LICITACIONES follow-up:
+## LICITACIONES and LEBAC/NOBAC API RCA
 
-- Local API identities: **1,960**.
-- Already usable from 365-day API attempts: **555**.
-- API ingestion pending at that audit: **1,059** (mainly 1,040 FCI + 18 LICITACIONES + 1 LEBACS). This is **API work, not scraping**.
-- Hard API outcomes requiring RCA: **346**.
-- Scraping objectively proven necessary: **0 identities at this stage**.
+All **18/18 LICITACIONES** discovered through the PPI API were queried over a trailing **365-day** history window. Every request completed without an HTTP/read error, but every payload contained **0 historical rows**. Result: `tested=18`, `usable=0`, `empty=18`, `errors=0`, `valid_rows=0`.
 
-Hard API outcomes by family requiring RCA before PPI web fallback:
+This is now a confirmed **PPI historical-API data gap for LICITACIONES for the tested 365-day endpoint/window**. It does not block API ingestion of the rest of the local universe. If historical auction/result information is later required, LICITACIONES is a valid residual candidate for a PPI Web/reference-data complement rather than another blind API retry.
 
-- CEDEARS: 8 (all AVAILABLE).
+For the single provider-discovered `CEDI` identity:
+
+- history as `LEBAC` -> `Instrument not found`;
+- history as `NOBAC` -> HTTP OK, 0 rows;
+- history as `LEBACS` -> `Instrument Type not found: LEBACS`.
+
+Therefore `CEDI` is not currently a usable historical series through the tested PPI API contract. Keep it as an explicit API gap; do not reinterpret the provider label silently.
+
+## Current API-versus-complement delta
+
+Immediately before the seed, the local universe had 1,960 API identities, 555 usable 365-day identities, 1,059 API-pending identities and 346 hard API outcomes. After the actual seed and full LICITACIONES pass, the deterministic current accounting is:
+
+- API identities: **1,960**.
+- API attempts/evidence: **925** identities.
+- Usable API historical identities: **560** = previous 555 + 5 FCI.
+- Hard/empty API outcomes: **365** = previous 346 + 18 LICITACIONES + 1 provider `LEBACS` identity.
+- API ingestion still pending: **1,035**, overwhelmingly the remaining FCI identities.
+
+Residual families that require API-side RCA before any scraping classification remain:
+
+- CEDEARS: 8 hard API outcomes.
 - FUTUROS: 16 = 7 AVAILABLE + 9 STALE.
 - LETRAS: 7 = 4 AVAILABLE + 3 STALE.
-- ON: 58 (all AVAILABLE).
-- OPCIONES: 257 (all AVAILABLE).
+- ON: 58 AVAILABLE hard outcomes.
+- OPCIONES: 257 AVAILABLE hard outcomes.
+- LICITACIONES: 18 confirmed 365-day API-empty histories.
+- provider `LEBACS` identity: 1 unresolved/empty across tested PPI type variants.
 
-The complement delta will therefore be computed as:
+**Scraping is not being executed now.** The complement rule is:
 
-`PPI API universe -> API historical attempt -> API RCA/retry -> residual gap -> PPI Web only for residual`.
+`PPI API universe -> API history ingestion -> API RCA/classification -> only then residual PPI Web complement`.
 
-An unattempted identity is never classified as a scraping gap.
+The 1,035 unattempted identities are API ingestion pending, never scraping gaps.
 
-## Nightly ingestion installed
+## Nightly PPI API ingestion installed and widened
 
-Host timer installed and verified:
+Host timer is installed and verified:
 
 - `porota-ppi-argentina-nightly-rc6.timer`: **enabled + active**.
 - Schedule: **02:30 America/Argentina/Buenos_Aires**, randomized delay 0–10 minutes.
-- Current batch limit: 100 identities per run.
-- Scope: local PPI API only (`BYMA/ROFEX/A3/OTC`), foreign families excluded.
+- Host batch limit was initially 100 and was safely widened after successful bounded proofs to **600 identities per nightly run**.
+- Script timeout remains 2,400 seconds; the job is intended to consume the overnight window without continuously hammering PPI.
+- Scope is local PPI API only: `BYMA/ROFEX/A3/OTC`; foreign families are excluded.
 - Uses the shared history lock and skips if conflicting history services are active.
 - Asserts `PRODUCTION_PAPER`, market CLOSED and `real_orders_sent=0` before processing.
-- Persists raw evidence, History Store v2, attempt state and complete legacy payload only when fully valid.
+- Persists raw evidence, History Store v2, attempt state, and the legacy complete payload only when fully valid.
+
+At 600 identities per run, the current ~1,035 pending API identities can be covered in roughly two nightly passes, subject to provider latency/errors and the fail-closed runtime window.
 
 ## Remaining work
 
-1. Complete all newly discovered local API identities, especially FCI and LICITACIONES, through the nightly API job.
-2. Finish `LEBAC`/`NOBAC`/provider `LEBACS` contract reconciliation.
-3. Run API-side RCA/retry on the 346 hard outcomes.
-4. Recompute the per-family and per-identity residual after API exhaustion.
-5. Only then invoke PPI Web for the residual identities/fields that the API demonstrably cannot supply.
-6. Keep IOL outside the workflow unless a residual remains after both PPI layers.
-7. Permanent code fix remains: decouple production `_historical_targets()` from `can_simulate`, with tests, before deploy.
+1. Let the nightly API job complete the remaining ~1,035 local API identities, primarily FCI.
+2. Recompute the exact per-family/per-identity residual after API exhaustion.
+3. Run targeted API RCA/retry on the existing hard outcomes, prioritizing AVAILABLE identities over STALE/expired identities.
+4. Classify true residuals by cause before deciding whether any PPI Web complement is needed.
+5. Keep IOL outside the current workflow.
+6. Permanent code fix remains: decouple production `_historical_targets()` from `can_simulate`, with CI tests, before deploy.
