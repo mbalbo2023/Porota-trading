@@ -1,0 +1,146 @@
+name: RC6 PPI five-family ingest stage1 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-five-family-ingest-stage1-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Staged PPI API ingest
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          EXPECTED_SHA='eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a'
+          HOST_SHA="$(git rev-parse HEAD)"
+          echo "HOST_SHA=$HOST_SHA"
+          test "$HOST_SHA" = "$EXPECTED_SHA" || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+          git diff --quiet && git diff --cached --quiet || { echo 'ABORT=TRACKED_WORKTREE_DIRTY'; exit 32; }
+
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -n 9 || { echo 'ABORT=INGEST_LOCK_BUSY'; exit 33; }
+
+          for u in porota-history-postclose-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do
+            state="$(systemctl is-active "$u" 2>/dev/null || true)"
+            echo "SERVICE=$u|state=$state"
+            test "$state" != active && test "$state" != activating || { echo "ABORT=CONCURRENT_HISTORY_SERVICE:$u"; exit 34; }
+          done
+
+          sudo -n timeout 1800 docker exec -i porota_production_observer python - <<'PY'
+          import json
+          import bf_production_paper_observer as m
+
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY_BEFORE={s[0]}|{s[1]}')
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              phase=m._market_phase(); print('MARKET_PHASE='+phase); assert phase=='CLOSED'
+
+              before_attempts={r[0]:r[1] for r in c.execute("select instrument_type,count(*) from production_history_attempts group by instrument_type")}
+              print('ATTEMPTS_BEFORE='+json.dumps(before_attempts,sort_keys=True))
+
+          family_limits={'CAUCIONES':10,'ON':20,'LETRAS':20,'OPCIONES':20,'FUTUROS':20}
+
+          def ordered_all_catalog(store):
+              with store.connect() as c:
+                  rows=c.execute("""select f.ticker,f.instrument_type,f.settlement,f.status,
+                    coalesce(a.attempted_at,h.downloaded_at) last_try
+                    from financial_instrument_catalog f
+                    left join production_history_attempts a on a.symbol=f.ticker
+                      and a.instrument_type=f.instrument_type and a.settlement=f.settlement
+                    left join production_history h on h.symbol=f.ticker
+                      and h.instrument_type=f.instrument_type and h.settlement=f.settlement
+                    order by f.instrument_type,
+                      case f.status when 'AVAILABLE' then 0 else 1 end,
+                      (coalesce(a.attempted_at,h.downloaded_at) is not null),
+                      coalesce(a.attempted_at,h.downloaded_at),f.ticker""").fetchall()
+              byfam={}
+              all_ids=[]
+              for ticker,kind,settlement,status,last_try in rows:
+                  ident=(ticker,kind,settlement)
+                  all_ids.append(ident)
+                  byfam.setdefault(kind,[]).append((ident,status,last_try))
+              selected=[]
+              for fam in ('CAUCIONES','ON','LETRAS','OPCIONES','FUTUROS'):
+                  limit=family_limits[fam]
+                  selected.extend(item[0] for item in byfam.get(fam,[])[:limit])
+              seen=set(selected)
+              return selected+[x for x in all_ids if x not in seen]
+
+          m._historical_targets=ordered_all_catalog
+          m.HISTORY_BATCH_LIMIT=sum(family_limits.values())
+          targets=ordered_all_catalog(store)
+          first=targets[:m.HISTORY_BATCH_LIMIT]
+          fam={}
+          for _,kind,_ in first: fam[kind]=fam.get(kind,0)+1
+          print('CATALOG_HISTORY_DENOMINATOR='+str(len(targets)))
+          print('STAGE1_BATCH_SIZE='+str(len(first)))
+          print('STAGE1_BATCH_BY_FAMILY='+json.dumps(fam,sort_keys=True))
+          print('STAGE1_IDENTITIES='+json.dumps(first,ensure_ascii=False))
+
+          key,secret=m._secret()
+          reader=m.ProductionMarketReader(key,secret,audit=store.audit_http)
+          try:
+              reader.login_once()
+              rows=m._download_histories(reader,store)
+              metrics=reader.metrics
+          finally:
+              reader.close()
+          print('STAGE1_VALID_ROWS='+str(rows))
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY_AFTER={s[0]}|{s[1]}')
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              print('=== STAGE1_ATTEMPT_RESULTS ===')
+              placeholders=','.join('?' for _ in first)
+              # Use explicit identity iteration to avoid tuple SQL portability issues.
+              summary={}
+              for ticker,kind,settlement in first:
+                  r=c.execute("select state,valid_rows,attempted_at from production_history_attempts where symbol=? and instrument_type=? and settlement=?",
+                              (ticker,kind,settlement)).fetchone()
+                  state=str(r[0] if r else 'MISSING')
+                  valid=int(r[1] if r else 0)
+                  x=summary.setdefault(kind,{'tested':0,'VALID_PAYLOAD':0,'PARTIAL':0,'EMPTY_OR_INVALID':0,'ERROR':0,'MISSING':0,'valid_rows':0})
+                  x['tested']+=1; x[state]=x.get(state,0)+1; x['valid_rows']+=valid
+              for fam in sorted(summary): print(json.dumps({'family':fam,**summary[fam]},sort_keys=True))
+              print('=== COMPLETE_LEGACY_AFTER ===')
+              for r in c.execute("select instrument_type,count(*) identities,sum(row_count) rows from production_history where row_count>0 group by instrument_type order by instrument_type"):
+                  print(json.dumps({'family':r[0],'identities':r[1],'rows':r[2]},sort_keys=True))
+              src=c.execute("select status,items,detail,last_attempt_at,last_success_at from source_sync where source='PPI_PRODUCTION_HISTORY'").fetchone()
+              print('PPI_HISTORY_SOURCE='+json.dumps(dict(zip(('status','items','detail','last_attempt_at','last_success_at'),src)) if src else {},sort_keys=True))
+          print('HOST_MUTATION=HISTORY_DATA_ONLY')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
