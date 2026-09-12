@@ -1,0 +1,69 @@
+name: RC6 weekend contract runtime map 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-weekend-contract-runtime-map-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  map-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Map contract evidence service without exposing secrets
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'd719deeb379de285b07fa61a40f5d48d19d5bffd' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+          echo '=== TIMER_CONTENT ==='
+          systemctl cat porota-contract-evidence-rc6.timer 2>/dev/null || true
+          echo '=== SERVICE_PROCESS ==='
+          systemctl show porota-contract-evidence-rc6.service -p ActiveState -p SubState -p MainPID -p ExecMainStartTimestamp -p ExecMainStatus --no-pager || true
+          echo '=== WRAPPER_MAP ==='
+          if [ -r /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh ]; then
+            grep -En 'python|docker|capture|import|material|sqlite|contract|browser-lab|dom|route|family|FAMIL|history|ppi' /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh | sed -E 's/(PASSWORD|PASS|SECRET|TOKEN|COOKIE|AUTH)[^ ]*/REDACTED/Ig' | head -n 160 || true
+          else
+            echo 'WRAPPER_READABLE=NO'
+          fi
+          echo '=== BASE_RUNTIME_MAP ==='
+          if [ -r /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh ]; then
+            grep -En 'python|docker|capture|import|material|sqlite|contract|browser-lab|dom|route|family|FAMIL|history|ppi' /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh | sed -E 's/(PASSWORD|PASS|SECRET|TOKEN|COOKIE|AUTH)[^ ]*/REDACTED/Ig' | head -n 160 || true
+          else
+            echo 'BASE_RUNTIME_READABLE=NO'
+          fi
+          echo '=== SAFE_OUTPUT_COUNTS ==='
+          for d in /var/lib/porota /opt/porota-trading /home/*/porota-browser-lab /data/contract_evidence; do
+            [ -e "$d" ] || continue
+            printf 'DIR=%s\n' "$d"
+            find "$d" -maxdepth 4 -type f \( -iname '*contract*' -o -iname '*dom*' -o -iname '*evidence*' \) 2>/dev/null | wc -l | awk '{print "MATCHING_FILES=" $1}'
+          done
+          echo '=== CURRENT_SAFETY ==='
+          sudo -n docker exec porota_production_observer python -c "import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone();print('SAFETY=%s|%s'%s);assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0;c.close()"
+          echo 'HOST_MUTATION=NONE'
+          echo 'HTTP_CALLS=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
