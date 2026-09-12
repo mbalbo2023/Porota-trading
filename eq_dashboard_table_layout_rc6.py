@@ -105,3 +105,8 @@ def install() -> None:
     # small dedicated overlay can safely decorate /riesgo without network I/O.
     import rc6_risk_gdelt_dashboard as risk_gdelt_dashboard
     risk_gdelt_dashboard.install()
+
+    # Trader-facing RC6 observability/shadow overlay. Presentation and SELECT
+    # only; no broker/PPI/order routing and no automatic SHADOW promotion.
+    import fl_trader_dashboard_shadow_rc6 as trader_shadow_dashboard
+    trader_shadow_dashboard.install()
