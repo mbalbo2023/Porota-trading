@@ -54,3 +54,5 @@ Revisión independiente del diff F-01 en esta rama y CI completa sobre el entorn
 - No se usa `deploy.yml`: corresponde al Compose monolítico v16.2 y no a la ruta certificada del runtime RC6 dividido (observer/dashboard).
 - La candidata se basa directamente en el SHA certificado, limita paths, compila y ejecuta la suite RC6 offline antes de SSH. Un segundo commit con marcador explícito `[DEPLOY_F01_RC6]` habilita el job; éste conserva el guard de Environment `production`, safety pre/postflight y no llama rutas de órdenes reales.
 - F-02 a F-10 siguen pendientes. No se considera desplegado F-01 hasta confirmar el SHA del host en postflight.
+
+- Hallazgo del primer guard de scope (commit `327c0054246affc4d9fb6e7f1ceeb11818563a8a`): la ejecución [34664820872](https://github.com/mbalbo2023/Porota-trading/actions/runs/34664820872) se detuvo antes del build y SSH porque el árbol heredado alteraba cuatro paths de scalping del runtime actual. No hubo cambios en el host. Se reconstruye el árbol desde el runtime base certificado y se superponen únicamente los seis paths F-01 autorizados.
