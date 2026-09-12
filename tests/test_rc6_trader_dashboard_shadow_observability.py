@@ -51,6 +51,20 @@ def test_caucion_dashboard_stays_shadow_and_auto_off(monkeypatch):
     assert "<button" not in html.lower()
 
 
+def test_caucion_dashboard_db_read_failure_degrades_without_breaking_page(monkeypatch):
+    monkeypatch.setattr(overlay.bg, "_table", lambda name: name == "paper_cauciones")
+    monkeypatch.setattr(overlay.bg, "_rows", lambda query: (_ for _ in ()).throw(RuntimeError("read failed")))
+    monkeypatch.setenv("CAUCIONES_AUTO_PLACEMENT", "false")
+    data = overlay._caucion_snapshot()
+    assert data["evidence_state"] == "UNAVAILABLE"
+    assert data["runtime_state"] == "EVIDENCE_READ_UNAVAILABLE"
+    assert data["paper_positions"] == 0
+    html = overlay.caucion_shadow_section()
+    assert "EVIDENCE_READ_UNAVAILABLE" in html
+    assert "UNAVAILABLE" in html
+    assert "<form" not in html.lower()
+
+
 def test_scalping_section_labels_metrics_observability_only(monkeypatch):
     monkeypatch.setattr(
         overlay,
