@@ -1,0 +1,116 @@
+name: RC6 PPI history exact gap diagnostic 2026-09-12
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-history-exact-gap-diagnostic-20260912.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Exact certified-vs-history gap analysis
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          EXPECT='a47f3339ec6dfe9d5afde444b1aaddabceb0e94d'
+          ACTUAL="$(git rev-parse HEAD)"; echo "HOST_SHA=$ACTUAL"; test "$ACTUAL" = "$EXPECT" || { echo ABORT=HOST_SHA_CHANGED; exit 31; }
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 60 9 || { echo ABORT=HISTORY_LOCK_BUSY; exit 32; }
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from collections import Counter, defaultdict
+          import bf_production_paper_observer as m
+          from cv_history_store_adapter_hf6 import default_history_store
+
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY={s[0]}|{s[1]}'); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              shadow=[tuple(r) for r in c.execute("""select ticker,instrument_type,market,currency,settlement
+                from ppi_argentina_api_shadow
+                where market in ('BYMA','ROFEX','A3','OTC') and instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')
+                order by instrument_type,ticker,market,currency,settlement""")]
+              assert len(shadow)==1960
+              attempts={(r[0],r[1],r[2]):r[3] for r in c.execute('select symbol,instrument_type,settlement,state from production_history_attempts')}
+
+          full=set(shadow)
+          projected={(t,f,m,s) for t,f,m,cur,s in shadow}
+          currencies=defaultdict(set)
+          for t,f,m,cur,s in shadow:
+              currencies[(t,f,m,s)].add(cur)
+          currency_collisions={k:sorted(v) for k,v in currencies.items() if len(v)>1}
+          print('CERT_FULL_IDENTITIES='+str(len(full)))
+          print('CERT_PROJECTED_HISTORY_IDENTITIES='+str(len(projected)))
+          print('CURRENCY_COLLISION_GROUPS='+str(len(currency_collisions)))
+          if currency_collisions:
+              print('CURRENCY_COLLISIONS='+json.dumps([{'identity':k,'currencies':v} for k,v in sorted(currency_collisions.items())],default=str))
+
+          hpath=default_history_store().path
+          h=sqlite3.connect(f'file:{hpath}?mode=ro',uri=True); h.row_factory=sqlite3.Row
+          assert h.execute('pragma quick_check').fetchone()[0]=='ok'
+          hist={(r['symbol'],r['instrument_type'],r['market'],r['settlement']) for r in h.execute('select distinct symbol,instrument_type,market,settlement from history_canonical_v2')}
+          missing=sorted(projected-hist,key=lambda x:(x[1],x[0],x[2],x[3]))
+          extra=sorted(hist-projected,key=lambda x:(x[1],x[0],x[2],x[3]))
+          matched=projected & hist
+          print('HISTORY_IDENTITIES='+str(len(hist)))
+          print('MATCHED_IDENTITIES='+str(len(matched)))
+          print('MISSING_IDENTITIES='+str(len(missing)))
+          print('EXTRA_IDENTITIES='+str(len(extra)))
+          print('MISSING_BY_FAMILY='+json.dumps(dict(Counter(x[1] for x in missing)),sort_keys=True))
+          print('EXTRA_BY_FAMILY='+json.dumps(dict(Counter(x[1] for x in extra)),sort_keys=True))
+
+          def detail(keys, include_state=False):
+              out=[]
+              for sym,fam,market,settle in keys:
+                  row=h.execute("""select count(*) n,min(date) first_date,max(date) last_date,group_concat(distinct source) sources
+                    from history_canonical_v2 where symbol=? and instrument_type=? and market=? and settlement=?""",(sym,fam,market,settle)).fetchone()
+                  item={'symbol':sym,'family':fam,'market':market,'settlement':settle,
+                        'rows':int(row['n'] or 0),'first_date':row['first_date'],'last_date':row['last_date'],'sources':row['sources']}
+                  if include_state:
+                      item['attempt_state']=attempts.get((sym,fam,settle),'MISSING')
+                  out.append(item)
+              return out
+
+          print('MISSING_DETAIL='+json.dumps(detail(missing,True),sort_keys=True,default=str))
+          print('EXTRA_DETAIL='+json.dumps(detail(extra,False),sort_keys=True,default=str))
+
+          famcov=[]
+          for fam in sorted({x[1] for x in projected}|{x[1] for x in hist}):
+              expected={x for x in projected if x[1]==fam}
+              present={x for x in hist if x[1]==fam}
+              rows=h.execute('select count(*),min(date),max(date) from history_canonical_v2 where instrument_type=?',(fam,)).fetchone()
+              famcov.append({'family':fam,'expected':len(expected),'present_matching':len(expected&present),
+                             'missing':len(expected-present),'extra':len(present-expected),'rows':int(rows[0] or 0),
+                             'first_date':rows[1],'last_date':rows[2]})
+          print('FAMILY_COVERAGE='+json.dumps(famcov,sort_keys=True,default=str))
+
+          dup=h.execute("""select count(*) from (select symbol,instrument_type,market,settlement,date,count(*) n
+            from history_canonical_v2 group by symbol,instrument_type,market,settlement,date having count(*)>1)""").fetchone()[0]
+          print('CANONICAL_DUPLICATE_GROUPS='+str(dup)); assert dup==0
+          h.close()
+          print('HOST_MUTATION=NONE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
