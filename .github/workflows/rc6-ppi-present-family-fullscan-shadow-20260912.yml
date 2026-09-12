@@ -1,0 +1,144 @@
+name: RC6 PPI present-family full scan shadow 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-present-family-fullscan-shadow-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Scan all currently represented PPI families into shadow evidence
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+
+          ready=0
+          for _ in $(seq 1 150); do
+            count="$(sudo -n docker exec porota_production_observer python -c "import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);x=c.execute(\"select count(*) from sqlite_master where type='table' and name='ppi_full_discovery_shadow'\").fetchone()[0];print(c.execute('select count(*) from ppi_full_discovery_shadow').fetchone()[0] if x else 0);c.close()" 2>/dev/null || echo 0)"
+            if [ "$count" -gt 0 ] 2>/dev/null; then ready=1; break; fi
+            sleep 20
+          done
+          test "$ready" = 1 || { echo 'ABORT=SHADOW_NOT_READY'; exit 32; }
+
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 2400 9 || { echo 'ABORT=PPI_LOCK_TIMEOUT'; exit 33; }
+
+          sudo -n timeout 1800 docker exec -i porota_production_observer python - <<'PY'
+          import json,time,uuid
+          import bf_production_paper_observer as m
+          import bu_instrument_catalog as catalog
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              present=sorted({r[0] for r in c.execute('select distinct instrument_type from financial_instrument_catalog')})
+          print('PRESENT_FAMILIES_TO_SCAN='+json.dumps(present))
+
+          markets={
+            'ACCIONES':('BYMA',),'BONOS':('BYMA',),'CAUCIONES':('BYMA',),
+            'CEDEARS':('BYMA',),'FUTUROS':('ROFEX',),'LETRAS':('BYMA',),
+            'ON':('BYMA',),'OPCIONES':('BYMA',),
+          }
+          seeds={
+            'ACCIONES':('A','E','I','O','U','S','M','P','G','B','C','T','Y'),
+            'BONOS':('A','E','I','O','U','S','M','P','GD','AL','AE','TX','TZX','B'),
+            'CAUCIONES':('CAUCION',),
+            'CEDEARS':('A','E','I','O','U','S','M','P','G','B','C','T','N','J'),
+            'FUTUROS':('DLR','A','E','I','O','U','S','M','P'),
+            'LETRAS':('A','E','I','O','U','S','M','P','D','L','X'),
+            'ON':('A','E','I','O','U','S','M','P','MRC','YMC','YPF'),
+            'OPCIONES':('A','E','I','O','U','S','M','P','GFG','GGAL','YPF','PAMP'),
+          }
+          run_id='FULLSCAN_'+uuid.uuid4().hex
+          observed=m.now_iso()
+          key,secret=m._secret(); reader=m.ProductionMarketReader(key,secret,audit=store.audit_http); reader.login_once()
+          found={}; query_rows=[]
+          try:
+              for family in present:
+                  for q in seeds.get(family,('A','E','I','O','U','S','M','P')):
+                      for market in markets.get(family,('BYMA',)):
+                          status='OK'; detail=''; count=0
+                          try:
+                              payload=reader.search_instruments(q,family,name=q,market=market)
+                              if not isinstance(payload,list): raise ValueError('PPI_SEARCH_INVALID_SHAPE')
+                              for raw in payload:
+                                  try:
+                                      rec=catalog.normalize_record(raw,'INMEDIATA' if family in {'CAUCIONES','OPCIONES'} else 'A-24HS',observed,run_id)
+                                  except Exception:
+                                      continue
+                                  ident=(rec['ticker'],rec['instrument_type'],rec['market'],rec['currency'],rec['settlement'])
+                                  found[ident]=rec; count+=1
+                              if count==0: status='EMPTY'
+                          except Exception as exc:
+                              status='ERROR'; detail=m.classify_read_error(exc)
+                          query_rows.append((run_id,family,q,q,market,status,count,detail,observed))
+                          time.sleep(0.08)
+              metrics=reader.metrics
+          finally:
+              reader.close()
+
+          with store.connect() as c:
+              c.execute('BEGIN IMMEDIATE')
+              for rec in found.values():
+                  c.execute('''INSERT OR REPLACE INTO ppi_full_discovery_shadow(
+                    ticker,instrument_type,market,currency,settlement,settlement_source,description,
+                    capability,source,run_id,observed_at,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',(
+                      rec['ticker'],rec['instrument_type'],rec['market'],rec['currency'],rec['settlement'],
+                      rec['settlement_source'],rec['description'],rec['capability'],'PPI_PRODUCTION_SEARCH_FULLSCAN',
+                      run_id,observed,json.dumps(rec['raw'],ensure_ascii=False,default=str)))
+              c.executemany('INSERT OR REPLACE INTO ppi_full_discovery_queries VALUES(?,?,?,?,?,?,?,?,?)',query_rows)
+
+          print('FULLSCAN_RUN_ID='+run_id)
+          print('FULLSCAN_UNIQUE_FOUND='+str(len(found)))
+          byfam={}
+          for rec in found.values(): byfam.setdefault(rec['instrument_type'],set()).add((rec['ticker'],rec['market'],rec['currency'],rec['settlement']))
+          for fam in sorted(byfam): print('FULLSCAN_FAMILY='+json.dumps({'family':fam,'identities':len(byfam[fam])},sort_keys=True))
+          with store.connect() as c:
+              shadow_total=c.execute('select count(*) from ppi_full_discovery_shadow').fetchone()[0]
+              op_total=c.execute('select count(*) from financial_instrument_catalog').fetchone()[0]
+              union_total=c.execute('''select count(*) from (
+                select ticker,instrument_type,market,currency,settlement from financial_instrument_catalog
+                union
+                select ticker,instrument_type,market,currency,settlement from ppi_full_discovery_shadow
+              )''').fetchone()[0]
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print('SHADOW_TOTAL_AFTER_FULLSCAN='+str(shadow_total))
+          print('OPERATIONAL_CATALOG_UNCHANGED='+str(op_total))
+          print('PPI_INFORMATION_UNIVERSE_UNION='+str(union_total))
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+          print(f'SAFETY_AFTER={s[0]}|{s[1]}')
+          assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          print('OPERATIONAL_CATALOG_MUTATION=NONE')
+          print('HOST_MUTATION=SHADOW_DISCOVERY_EVIDENCE_ONLY')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
