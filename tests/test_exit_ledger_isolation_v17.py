@@ -2,6 +2,7 @@
 from pathlib import Path
 import sqlite3
 import sys
+from dataclasses import replace
 
 import pytest
 
@@ -51,6 +52,19 @@ def corrupt(b,p,kind='date'):
 
 
 @pytest.mark.parametrize('kind',['date','state','pnl','quantity','features'])
+
+def test_latest_quote_respects_full_monetary_identity(positions):
+    """No debe devolver el último snapshot de otra moneda o plaza."""
+    broker, good, _ = positions
+    broker.store.add_quote(replace(quote(symbol=good['symbol'], at=LATER), currency='USD_MEP'))
+    broker.store.add_quote(replace(quote(symbol=good['symbol'], at=LATER), market='OTRO'))
+    saved = broker.store.latest_quote(good)
+    assert saved is not None
+    assert (saved.symbol, saved.asset_class, saved.settlement,
+            saved.currency, saved.market) == (
+                good['symbol'], good['asset_class'], good['settlement'],
+                good['currency'], good['market'])
+
 def test_posicion_rota_no_detiene_stop_valido_ni_libera_caja(positions,kind):
     b,good,bad=positions
     corrupt(b,bad,kind)
