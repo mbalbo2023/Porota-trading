@@ -1,5 +1,5 @@
 name: RC6 PPI history live progress 2026-09-12
-# refresh probe 3 after SSH disconnect
+# refresh probe 4 with completion-chain status
 on:
   push:
     branches: [ops/rc6-ppi-fullfamily-history-20260912]
@@ -33,7 +33,11 @@ jobs:
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
           set -euo pipefail
           echo "PROBE_AT_UTC=$(date -u +%FT%TZ)"
+          echo '=== HISTORY_SERVICE ==='
           systemctl show porota-ppi-argentina-nightly-rc6.service -p ActiveState -p SubState -p Result -p ExecMainStatus --no-pager || true
+          echo '=== COMPLETION_CHAIN ==='
+          systemctl show porota-ppi-argentina-complete-now-rc6.service -p ActiveState -p SubState -p Result -p ExecMainStatus --no-pager || true
+          if [ -r /opt/porota-trading/data/audit/ppi_history_complete_now_latest.txt ]; then tail -n 30 /opt/porota-trading/data/audit/ppi_history_complete_now_latest.txt; fi
           ps -eo pid,etime,args | grep '[p]orota-ppi-argentina-nightly-rc6.sh' || true
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
