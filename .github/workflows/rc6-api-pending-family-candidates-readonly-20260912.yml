@@ -56,10 +56,13 @@ jobs:
           aliases={'ACCIONES-USA':['ACCIONES-USA','ACCIONES_USA'],'FCI-EXTERIOR':['FCI-EXTERIOR','FCI_EXTERIOR'],'ETF':['ETF','ETFS'],'FCI':['FCI','FCI_LOCAL'],'LICITACIONES':['LICITACIONES'],'LEBAC':['LEBAC'],'NOBAC':['NOBAC']}
           for api_family, names in aliases.items():
               ph=','.join('?' for _ in names)
-              rows=c.execute(f'''select family,ticker,market,settlement,source_class,observed_at,evidence_json
-                                 from contract_evidence_v2_current
-                                 where upper(family) in ({ph})
-                                 order by case when ticker in ('*','UNKNOWN','') then 1 else 0 end, ticker, source_class''',
+              rows=c.execute(f'''select cur.family,cur.ticker,cur.market,cur.settlement,cur.source_class,
+                                        s.observed_at,s.evidence_json
+                                 from contract_evidence_v2_current cur
+                                 join contract_evidence_v2_snapshots s on s.snapshot_id=cur.snapshot_id
+                                 where upper(cur.family) in ({ph})
+                                 order by case when cur.ticker in ('*','UNKNOWN','') then 1 else 0 end,
+                                          cur.ticker,cur.source_class''',
                              tuple(x.upper() for x in names)).fetchall()
               out=[]
               for r in rows[:40]:
