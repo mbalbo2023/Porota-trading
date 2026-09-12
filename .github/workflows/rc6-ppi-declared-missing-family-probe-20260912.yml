@@ -1,0 +1,130 @@
+name: RC6 PPI declared missing family probe 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-declared-missing-family-probe-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Probe configured but absent PPI families
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          EXPECTED_SHA='eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a'
+          HOST_SHA="$(git rev-parse HEAD)"
+          echo "HOST_SHA=$HOST_SHA"
+          test "$HOST_SHA" = "$EXPECTED_SHA" || { echo 'ABORT=HOST_SHA_MISMATCH'; exit 31; }
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 1500 9 || { echo 'ABORT=PPI_LOCK_TIMEOUT'; exit 32; }
+
+          sudo -n timeout 1200 docker exec -i porota_production_observer python - <<'PY'
+          import json,time
+          import bf_production_paper_observer as m
+          import bu_instrument_catalog as catalog
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY={s[0]}|{s[1]}')
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              declared=set(json.loads(c.execute("select payload_json from broker_market_configuration where name='instrument_types'").fetchone()[0]))
+              present={r[0] for r in c.execute('select distinct instrument_type from financial_instrument_catalog')}
+              missing=sorted(declared-present)
+          print('DECLARED_TYPES='+json.dumps(sorted(declared)))
+          print('PRESENT_TYPES='+json.dumps(sorted(present)))
+          print('DECLARED_ABSENT_TYPES='+json.dumps(missing))
+
+          markets={
+            'ETF':('NYSE','NASDAQ','BYMA'),
+            'ACCIONES-USA':('NASDAQ','NYSE'),
+            'FCI':('BYMA','OTC'),
+            'FCI-EXTERIOR':('NYSE','NASDAQ','OTC'),
+            'LICITACIONES':('BYMA','OTC'),
+            'LEBAC':('BYMA',),
+            'NOBAC':('BYMA',),
+          }
+          specific={
+            'ETF':('SPY','QQQ','DIA','IWM','IVV','VOO'),
+            'ACCIONES-USA':('AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA','JPM'),
+            'FCI':('FONDO','RENTA','AHORRO','PPI','BALANZ','GALILEO','MONEY','PESOS','DOLAR'),
+            'FCI-EXTERIOR':('FONDO','RENTA','DOLAR','USD','PPI'),
+            'LICITACIONES':('LICITACION','LETRA','BONO','ON'),
+            'LEBAC':('LEBAC','L'),
+            'NOBAC':('NOBAC','N'),
+          }
+          broad=('A','E','I','O','U','S','M','P')
+          key,secret=m._secret(); reader=m.ProductionMarketReader(key,secret,audit=store.audit_http); reader.login_once()
+          found={}; stats={}
+          try:
+              for family in missing:
+                  famstats={'queries':0,'http_ok':0,'nonempty':0,'errors':0,'records':0}
+                  stats[family]=famstats
+                  queries=[]
+                  for q in specific.get(family,()):
+                      for market in markets.get(family,('BYMA',)): queries.append((q,q,market))
+                  for q in broad:
+                      for market in markets.get(family,('BYMA',)): queries.append((q,q,market))
+                  seenq=set()
+                  for ticker_q,name_q,market in queries:
+                      if (ticker_q,name_q,market) in seenq: continue
+                      seenq.add((ticker_q,name_q,market)); famstats['queries']+=1
+                      try:
+                          payload=reader.search_instruments(ticker_q,family,name=name_q,market=market)
+                          famstats['http_ok']+=1
+                          if payload: famstats['nonempty']+=1
+                          for raw in payload if isinstance(payload,list) else []:
+                              try: rec=catalog.normalize_record(raw,'INMEDIATA' if family in {'FCI','FCI-EXTERIOR'} else 'A-24HS',m.now_iso(),'PROBE_ONLY')
+                              except Exception: continue
+                              key=(rec['ticker'],rec['instrument_type'],rec['market'],rec['currency'],rec['settlement'])
+                              found[key]=rec; famstats['records']+=1
+                      except Exception as exc:
+                          famstats['errors']+=1
+                          print('QUERY_ERROR='+json.dumps({'family':family,'ticker_q':ticker_q,'market':market,'error':m.classify_read_error(exc)},sort_keys=True))
+                      time.sleep(0.08)
+          finally:
+              metrics=reader.metrics; reader.close()
+          print('=== MISSING_FAMILY_PROBE_SUMMARY ===')
+          for family in missing: print(json.dumps({'family':family,**stats[family]},sort_keys=True))
+          byfam={}
+          for rec in found.values(): byfam.setdefault(rec['instrument_type'],[]).append(rec)
+          print('=== DISCOVERED_IDENTITIES ===')
+          for family in sorted(byfam):
+              vals=byfam[family]
+              print(json.dumps({'family':family,'unique':len(vals),'tickers':sorted({r['ticker'] for r in vals})[:100],'markets':sorted({r['market'] for r in vals})},ensure_ascii=False,sort_keys=True))
+          print('PROBE_UNIQUE_TOTAL='+str(len(found)))
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+          with store.connect() as c:
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'SAFETY_AFTER={s[0]}|{s[1]}')
+          assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          print('HOST_MUTATION=NONE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
