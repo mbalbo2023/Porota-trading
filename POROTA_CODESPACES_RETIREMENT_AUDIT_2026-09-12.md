@@ -38,3 +38,7 @@ Se abrió el PR borrador [#56](https://github.com/mbalbo2023/Porota-trading/pull
 El diff contiene únicamente cinco rutas: eliminación de `.devcontainer/devcontainer.json`, `.devcontainer/post-create.sh`, `.devcontainer/welcome.sh` y `codespace-test.sh`; además, actualización de `README.md` para quitar las instrucciones de Codespaces y la referencia v16.1, dejando RC6 como baseline operativa.
 
 El PR permanece abierto como borrador, sin fusión ni despliegue. No se tocaron código runtime, workflows, RC6 ni el trabajo paralelo de ingesta. La comparación contra `main` confirmó cinco rutas y cero commits de diferencia detrás de la base al momento de crear el PR.
+
+### CI del PR #56
+
+Run `34709256011` (`CI — Porota Trading`, run #251): finalizó `success`. `Infrastructure preflight` pasó `Validate repository safety` y `Validate Docker Compose syntax`. En `Application CI`, la detección confirmó que el paquete de aplicación no está instalado y los pasos de dependencias, pruebas y stack quedaron `skipped`. No hubo paso de despliegue ni de ingesta.
