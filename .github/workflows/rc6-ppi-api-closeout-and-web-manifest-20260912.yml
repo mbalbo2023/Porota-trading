@@ -26,7 +26,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
-      - name: Fresh local API discovery, bounded retries, canonical classification and Web manifest
+      - name: Refresh local API discovery, retry unresolved, classify all and build Web manifest
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -34,6 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=15 \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
           set -Eeuo pipefail
@@ -43,7 +44,7 @@ jobs:
           echo "HOST_SHA=$ACTUAL_HOST_SHA"
           test "$ACTUAL_HOST_SHA" = "$EXPECTED_HOST_SHA" || { echo 'ABORT=HOST_SHA_CHANGED'; exit 31; }
           exec 9>/run/lock/porota-ppi-fullfamily-history.lock
-          flock -w 120 9 || { echo 'ABORT=PPI_HISTORY_LOCK_TIMEOUT'; exit 32; }
+          flock -w 180 9 || { echo 'ABORT=PPI_HISTORY_LOCK_TIMEOUT'; exit 32; }
 
           sudo -n timeout 3000 docker exec -i porota_production_observer python - <<'PY'
           import json,time
@@ -55,217 +56,150 @@ jobs:
           try:
               from fb_raw_evidence_exact_v1 import enabled as exact_enabled, archive_wrapper as archive_exact
           except Exception:
-              exact_enabled=lambda: False
-              archive_exact=None
+              exact_enabled=lambda: False; archive_exact=None
 
           LOCAL_MARKETS={'BYMA','ROFEX','A3','OTC'}
           FOREIGN_TYPES={'ACCIONES-USA','FCI-EXTERIOR'}
           LOCAL_TYPES={'ACCIONES','BONOS','CAUCIONES','CEDEARS','FUTUROS','LETRAS','ON','OPCIONES','FCI','LICITACIONES','LEBAC','LEBACS','NOBAC','ETF'}
-          FAMILY_MARKETS={
-            'ACCIONES':('BYMA',),'BONOS':('BYMA',),'CAUCIONES':('BYMA',),'CEDEARS':('BYMA',),
-            'FUTUROS':('ROFEX','A3'),'LETRAS':('BYMA',),'ON':('BYMA',),'OPCIONES':('BYMA',),
-            'FCI':('BYMA','OTC'),'LICITACIONES':('BYMA','OTC'),'LEBAC':('BYMA',),'NOBAC':('BYMA',),'ETF':('BYMA',)
+          DISCOVERY={
+            'FCI':(('FONDO','RENTA','AHORRO','PPI','BALANZ','GALILEO','MONEY','PESOS','DOLAR','A','E','I','O','U','S','M','P'),('BYMA','OTC')),
+            'LICITACIONES':(('LICITACION','LETRA','BONO','ON','A','E','I','O','U','S','M','P'),('BYMA','OTC')),
+            'LEBAC':(('LEBAC','L','A','E','I','O','U','S','M','P'),('BYMA',)),
+            'NOBAC':(('NOBAC','N','A','E','I','O','U','S','M','P'),('BYMA',)),
+            'ETF':(('SPY','QQQ','DIA','IWM','ARGT','A','E','I','O','U','S','M','P'),('BYMA',)),
           }
-          SPECIFIC={
-            'FCI':('FONDO','RENTA','AHORRO','PPI','BALANZ','GALILEO','MONEY','PESOS','DOLAR'),
-            'LICITACIONES':('LICITACION','LETRA','BONO','ON'),
-            'LEBAC':('LEBAC','L'),'NOBAC':('NOBAC','N'),'ETF':('SPY','QQQ','DIA','IWM','ARGT'),
-            'ACCIONES':('GGAL','YPF','PAMP'),'BONOS':('AL30','GD30','BONO'),'CAUCIONES':('CAUCION',),
-            'CEDEARS':('AAPL','MSFT','SPY'),'FUTUROS':('DLR','ORO','SOJ'),'LETRAS':('LETRA',),
-            'ON':('ON','YPF'),'OPCIONES':('GGAL','YPF')
-          }
-          BROAD=('A','E','I','O','U','S','M','P')
           store=m.runtime_store()
           with store.connect() as c:
               assert c.execute('pragma quick_check').fetchone()[0]=='ok'
               s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
-              print(f'SAFETY_BEFORE={s[0]}|{s[1]}')
-              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
-              old=[tuple(r) for r in c.execute('select ticker,instrument_type,market,currency,settlement from ppi_argentina_api_shadow')]
+              print(f'SAFETY_BEFORE={s[0]}|{s[1]}'); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              oldrows=[dict(r) for r in c.execute('select ticker,instrument_type,market,currency,settlement,status,description,metadata_json,source from ppi_argentina_api_shadow')]
               base=[dict(r) for r in c.execute("""select ticker,instrument_type,market,currency,settlement,status,description,metadata_json
                   from financial_instrument_catalog where market in ('BYMA','ROFEX','A3','OTC')
-                    and instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')""")]
-          oldset=set(old)
-          universe={}
+                  and instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')""")]
+          old={(r['ticker'],r['instrument_type'],r['market'],r['currency'],r['settlement']):r for r in oldrows}
+          fresh={}
           for r in base:
-              k=(r['ticker'],r['instrument_type'],r['market'],r['currency'],r['settlement'])
-              universe[k]={**r,'source':'NORMALIZED_CATALOG'}
+              k=(r['ticker'],r['instrument_type'],r['market'],r['currency'],r['settlement']); fresh[k]={**r,'source':'NORMALIZED_CATALOG_REFRESH'}
 
           key,secret=m._secret(); reader=m.ProductionMarketReader(key,secret,audit=store.audit_http); reader.login_once()
-          discovery_stats={}; api_seen=set()
+          stats={}; direct=set()
           try:
-              for family,markets in FAMILY_MARKETS.items():
-                  st={'queries':0,'ok':0,'empty':0,'errors':0,'normalized':0,'unique_api_seen':0}
-                  discovery_stats[family]=st
-                  seenq=set()
-                  for q in SPECIFIC.get(family,())+BROAD:
+              for family,(queries,markets) in DISCOVERY.items():
+                  st={'queries':0,'ok':0,'empty':0,'errors':0,'normalized':0}; stats[family]=st
+                  for q in queries:
                       for market in markets:
-                          if (q,market) in seenq: continue
-                          seenq.add((q,market)); st['queries']+=1
+                          st['queries']+=1
                           try:
-                              payload=reader.search_instruments(q,family,name=q,market=market)
-                              st['ok']+=1
+                              payload=reader.search_instruments(q,family,name=q,market=market); st['ok']+=1
                               if not payload: st['empty']+=1
                               for raw in payload if isinstance(payload,list) else []:
-                                  try:
-                                      rec=catalog.normalize_record(raw,'INMEDIATA' if family=='FCI' else 'A-24HS',m.now_iso(),'ARG_LOCAL_API_CLOSEOUT')
-                                  except Exception:
-                                      continue
-                                  if rec['market'] not in LOCAL_MARKETS or rec['instrument_type'] in FOREIGN_TYPES or rec['instrument_type'] not in LOCAL_TYPES:
-                                      continue
-                                  k=(rec['ticker'],rec['instrument_type'],rec['market'],rec['currency'],rec['settlement'])
-                                  api_seen.add(k)
-                                  universe[k]={
-                                    'ticker':rec['ticker'],'instrument_type':rec['instrument_type'],'market':rec['market'],
-                                    'currency':rec['currency'],'settlement':rec['settlement'],'status':'API_DISCOVERED',
-                                    'description':rec['description'],'metadata_json':json.dumps(rec['raw'],ensure_ascii=False,default=str),
-                                    'source':'PPI_PRODUCTION_SEARCH_CLOSEOUT'}
+                                  try: rec=catalog.normalize_record(raw,'INMEDIATA' if family=='FCI' else 'A-24HS',m.now_iso(),'ARG_LOCAL_API_CLOSEOUT')
+                                  except Exception: continue
+                                  if rec['market'] not in LOCAL_MARKETS or rec['instrument_type'] in FOREIGN_TYPES or rec['instrument_type'] not in LOCAL_TYPES: continue
+                                  k=(rec['ticker'],rec['instrument_type'],rec['market'],rec['currency'],rec['settlement']); direct.add(k)
+                                  fresh[k]={'ticker':rec['ticker'],'instrument_type':rec['instrument_type'],'market':rec['market'],'currency':rec['currency'],'settlement':rec['settlement'],'status':'API_DISCOVERED','description':rec['description'],'metadata_json':json.dumps(rec['raw'],ensure_ascii=False,default=str),'source':'PPI_PRODUCTION_SEARCH_CLOSEOUT'}
                                   st['normalized']+=1
                           except Exception as exc:
-                              st['errors']+=1
-                              print('DISCOVERY_ERROR='+json.dumps({'family':family,'query':q,'market':market,'error':m.classify_read_error(exc)},sort_keys=True))
+                              st['errors']+=1; print('DISCOVERY_ERROR='+json.dumps({'family':family,'query':q,'market':market,'error':m.classify_read_error(exc)},sort_keys=True))
                           time.sleep(0.05)
-                  st['unique_api_seen']=sum(1 for k in api_seen if k[1] in (family, 'LEBACS' if family in ('LEBAC','NOBAC') else family))
 
-              newset=set(universe)
-              print('DISCOVERY_STATS='+json.dumps(discovery_stats,sort_keys=True))
-              print('API_OLD_TOTAL='+str(len(oldset)))
-              print('API_FRESH_BUILD_TOTAL='+str(len(newset)))
-              print('API_DIRECT_SEEN_TOTAL='+str(len(api_seen)))
-              print('API_NEW_IDENTITIES='+str(len(newset-oldset)))
-              print('API_OLD_NOT_IN_FRESH_BUILD='+str(len(oldset-newset)))
-              if len(newset) < 1800:
-                  raise RuntimeError('fresh universe unexpectedly small; refusing shadow mutation')
-
+              # Fail-safe: never shrink a known local universe because a search endpoint returned less today.
+              combined=dict(old); combined.update(fresh)
+              new_keys=set(combined)-set(old)
+              fresh_missing=set(old)-set(fresh)
+              print('DISCOVERY_STATS='+json.dumps(stats,sort_keys=True))
+              print('API_BASELINE_TOTAL='+str(len(old)))
+              print('API_FRESH_BUILD_TOTAL='+str(len(fresh)))
+              print('API_DIRECT_SEEN_TOTAL='+str(len(direct)))
+              print('API_NEW_IDENTITIES='+str(len(new_keys)))
+              print('API_BASELINE_NOT_IN_FRESH_BUILD='+str(len(fresh_missing)))
+              print('API_COMBINED_TOTAL='+str(len(combined)))
               observed=m.now_iso()
               with store.connect() as c:
                   c.execute('BEGIN IMMEDIATE')
                   c.execute('''CREATE TABLE IF NOT EXISTS ppi_api_closeout_runs_rc6(
                     run_at TEXT PRIMARY KEY,old_total INTEGER NOT NULL,fresh_total INTEGER NOT NULL,direct_seen INTEGER NOT NULL,
                     new_identities INTEGER NOT NULL,old_not_fresh INTEGER NOT NULL,discovery_stats_json TEXT NOT NULL)''')
-                  for r in universe.values():
+                  for r in combined.values():
                       c.execute('''INSERT OR REPLACE INTO ppi_argentina_api_shadow
                         (ticker,instrument_type,market,currency,settlement,status,description,source,observed_at,metadata_json)
-                        VALUES(?,?,?,?,?,?,?,?,?,?)''',(
-                        r['ticker'],r['instrument_type'],r['market'],r['currency'],r['settlement'],r['status'],
-                        str(r.get('description') or ''),r['source'],observed,str(r.get('metadata_json') or '{}')))
-                  c.execute('INSERT INTO ppi_api_closeout_runs_rc6 VALUES(?,?,?,?,?,?,?)',(
-                    observed,len(oldset),len(newset),len(api_seen),len(newset-oldset),len(oldset-newset),json.dumps(discovery_stats,sort_keys=True)))
+                        VALUES(?,?,?,?,?,?,?,?,?,?)''',(r['ticker'],r['instrument_type'],r['market'],r['currency'],r['settlement'],r.get('status') or 'AVAILABLE',str(r.get('description') or ''),r.get('source') or 'PPI_API_BASELINE_PRESERVED',observed,str(r.get('metadata_json') or '{}')))
+                  c.execute('INSERT INTO ppi_api_closeout_runs_rc6 VALUES(?,?,?,?,?,?,?)',(observed,len(old),len(fresh),len(direct),len(new_keys),len(fresh_missing),json.dumps(stats,sort_keys=True)))
 
               with store.connect() as c:
-                  targets=c.execute('''SELECT s.ticker,s.instrument_type,s.market,s.currency,s.settlement,s.metadata_json,
-                        p.state
-                    FROM ppi_argentina_api_shadow s
-                    LEFT JOIN production_history_attempts p
+                  targets=c.execute('''SELECT s.ticker,s.instrument_type,s.market,s.currency,s.settlement,s.metadata_json,p.state
+                    FROM ppi_argentina_api_shadow s LEFT JOIN production_history_attempts p
                       ON p.symbol=s.ticker AND p.instrument_type=s.instrument_type AND p.settlement=s.settlement
-                    WHERE s.market IN ('BYMA','ROFEX','A3','OTC')
-                      AND s.instrument_type NOT IN ('ACCIONES-USA','FCI-EXTERIOR')
+                    WHERE s.market IN ('BYMA','ROFEX','A3','OTC') AND s.instrument_type NOT IN ('ACCIONES-USA','FCI-EXTERIOR')
                       AND (p.symbol IS NULL OR p.state='ERROR')
-                    ORDER BY s.instrument_type,s.ticker,s.market,s.currency,s.settlement''').fetchall()
+                    ORDER BY s.instrument_type,s.ticker''').fetchall()
               print('API_RETRY_OR_NEW_TARGETS='+str(len(targets)))
-              end=m.datetime.now(m.TZ).date(); start=end-timedelta(days=365)
-              retry_summary={}; total_valid=0
+              end=m.datetime.now(m.TZ).date(); start=end-timedelta(days=365); summary={}; total_valid=0
               for ticker,kind,market,currency,settlement,metadata_json,prev_state in targets:
-                  attempted=m.now_iso(); state='ERROR'; provider=valid=0; detail=''; payload=None
+                  attempted=m.now_iso(); payload=None; provider=valid=0; state='ERROR'; detail=''
                   for attempt in range(1,4):
                       try:
                           payload=reader.history(ticker,kind,settlement,start,end)
                           provider=len(payload) if isinstance(payload,list) else 0
                           valid=m._history_count(payload,as_of=attempted,date_from=start,date_to=end)
                           state='VALID_PAYLOAD' if valid and valid==provider else 'PARTIAL' if valid else 'EMPTY_OR_INVALID'
-                          detail='API_CLOSEOUT_ATTEMPT='+str(attempt)
-                          break
+                          detail='API_CLOSEOUT_ATTEMPT='+str(attempt); break
                       except Exception as exc:
-                          detail='API_CLOSEOUT_ATTEMPT=%s;%s:%s'%(attempt,type(exc).__name__,str(exc)[:160])
-                          if attempt < 3: time.sleep(0.5*attempt)
+                          detail='API_CLOSEOUT_ATTEMPT=%s;%s:%s'%(attempt,type(exc).__name__,str(exc)[:140])
+                          if attempt<3: time.sleep(attempt)
                   if payload is not None:
-                      wrapper={'symbol':ticker,'asset_class':kind,'market':market,'settlement':settlement,
-                               'date_from':start.isoformat(),'date_to':end.isoformat(),'metadata_json':metadata_json,
-                               'valid_rows':valid,'payload_json':json.dumps(payload,ensure_ascii=False,default=str)}
+                      wrapper={'symbol':ticker,'asset_class':kind,'market':market,'settlement':settlement,'date_from':start.isoformat(),'date_to':end.isoformat(),'metadata_json':metadata_json,'valid_rows':valid,'payload_json':json.dumps(payload,ensure_ascii=False,default=str)}
                       row_key=canonical([ticker,kind,market,settlement,attempted,'API_CLOSEOUT'])
-                      if exact_enabled() and archive_exact:
-                          archive_exact(row_key=row_key,wrapper=wrapper,recorded_at=attempted,quality=state)
+                      if exact_enabled() and archive_exact: archive_exact(row_key=row_key,wrapper=wrapper,recorded_at=attempted,quality=state)
                       else:
-                          with store.connect() as c:
-                              archive_raw(c,origin='PPI_HISTORY_ARGENTINA_API_CLOSEOUT',row_key=row_key,payload=wrapper,recorded_at=attempted,quality=state)
-                      try:
-                          salvage.ingest_ppi_payload(store,symbol=ticker,instrument_type=kind,market=market,
-                            settlement=settlement,payload=payload,requested_from=start,requested_to=end,attempted_at=attempted)
-                      except Exception as exc:
-                          detail += ';V2='+type(exc).__name__+':'+str(exc)[:120]
+                          with store.connect() as c: archive_raw(c,origin='PPI_HISTORY_ARGENTINA_API_CLOSEOUT',row_key=row_key,payload=wrapper,recorded_at=attempted,quality=state)
+                      try: salvage.ingest_ppi_payload(store,symbol=ticker,instrument_type=kind,market=market,settlement=settlement,payload=payload,requested_from=start,requested_to=end,attempted_at=attempted)
+                      except Exception as exc: detail+=';V2='+type(exc).__name__+':'+str(exc)[:100]
                   with store.connect() as c:
-                      c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
-                        (ticker,kind,settlement,attempted,state,valid,'PPI Argentina API closeout; '+detail))
+                      c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',(ticker,kind,settlement,attempted,state,valid,'PPI Argentina API closeout; '+detail))
                       if state=='VALID_PAYLOAD' and payload is not None:
-                          c.execute('INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)',
-                            (ticker,kind,settlement,start.isoformat(),end.isoformat(),attempted,valid,json.dumps(payload,ensure_ascii=False,default=str)))
+                          c.execute('INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)',(ticker,kind,settlement,start.isoformat(),end.isoformat(),attempted,valid,json.dumps(payload,ensure_ascii=False,default=str)))
                       c.execute('''CREATE TABLE IF NOT EXISTS ppi_api_closeout_classification_rc6(
-                        ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,currency TEXT NOT NULL,
-                        settlement TEXT NOT NULL,classified_at TEXT NOT NULL,state TEXT NOT NULL,provider_rows INTEGER NOT NULL,
-                        valid_rows INTEGER NOT NULL,detail TEXT NOT NULL,
+                        ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,currency TEXT NOT NULL,settlement TEXT NOT NULL,
+                        classified_at TEXT NOT NULL,state TEXT NOT NULL,provider_rows INTEGER NOT NULL,valid_rows INTEGER NOT NULL,detail TEXT NOT NULL,
                         PRIMARY KEY(ticker,instrument_type,market,currency,settlement))''')
-                      c.execute('INSERT OR REPLACE INTO ppi_api_closeout_classification_rc6 VALUES(?,?,?,?,?,?,?,?,?,?)',
-                        (ticker,kind,market,currency,settlement,attempted,state,provider,valid,detail))
-                  z=retry_summary.setdefault(kind,{'tested':0,'usable':0,'empty':0,'persistent_error':0,'valid_rows':0})
-                  z['tested']+=1; z['valid_rows']+=valid; total_valid+=valid
+                      c.execute('INSERT OR REPLACE INTO ppi_api_closeout_classification_rc6 VALUES(?,?,?,?,?,?,?,?,?,?)',(ticker,kind,market,currency,settlement,attempted,state,provider,valid,detail))
+                  z=summary.setdefault(kind,{'tested':0,'usable':0,'empty':0,'persistent_error':0,'valid_rows':0}); z['tested']+=1; z['valid_rows']+=valid; total_valid+=valid
                   if state in ('VALID_PAYLOAD','PARTIAL'): z['usable']+=1
                   elif state=='EMPTY_OR_INVALID': z['empty']+=1
                   else: z['persistent_error']+=1
                   time.sleep(0.08)
-              print('API_CLOSEOUT_RETRY_SUMMARY='+json.dumps(retry_summary,sort_keys=True))
-              print('API_CLOSEOUT_RETRY_VALID_ROWS='+str(total_valid))
-              metrics=reader.metrics
-          finally:
-              reader.close()
+              print('API_CLOSEOUT_RETRY_SUMMARY='+json.dumps(summary,sort_keys=True)); print('API_CLOSEOUT_RETRY_VALID_ROWS='+str(total_valid)); metrics=reader.metrics
+          finally: reader.close()
 
           with store.connect() as c:
               assert c.execute('pragma quick_check').fetchone()[0]=='ok'
               c.execute('''CREATE TABLE IF NOT EXISTS ppi_web_residual_manifest_rc6(
-                ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,currency TEXT NOT NULL,
-                settlement TEXT NOT NULL,api_state TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL,
-                manifested_at TEXT NOT NULL,PRIMARY KEY(ticker,instrument_type,market,currency,settlement))''')
-              unclassified=c.execute('''SELECT count(*) FROM ppi_argentina_api_shadow s
-                LEFT JOIN production_history_attempts p
-                  ON p.symbol=s.ticker AND p.instrument_type=s.instrument_type AND p.settlement=s.settlement
-                WHERE s.market IN ('BYMA','ROFEX','A3','OTC') AND s.instrument_type NOT IN ('ACCIONES-USA','FCI-EXTERIOR')
-                  AND p.symbol IS NULL''').fetchone()[0]
-              print('API_UNCLASSIFIED='+str(unclassified))
-              now=m.now_iso()
-              c.execute('DELETE FROM ppi_web_residual_manifest_rc6')
+                ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,currency TEXT NOT NULL,settlement TEXT NOT NULL,
+                api_state TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL,manifested_at TEXT NOT NULL,
+                PRIMARY KEY(ticker,instrument_type,market,currency,settlement))''')
+              unclassified=c.execute('''SELECT count(*) FROM ppi_argentina_api_shadow s LEFT JOIN production_history_attempts p
+                ON p.symbol=s.ticker AND p.instrument_type=s.instrument_type AND p.settlement=s.settlement
+                WHERE s.market IN ('BYMA','ROFEX','A3','OTC') AND s.instrument_type NOT IN ('ACCIONES-USA','FCI-EXTERIOR') AND p.symbol IS NULL''').fetchone()[0]
+              c.execute('DELETE FROM ppi_web_residual_manifest_rc6'); now=m.now_iso()
               c.execute('''INSERT INTO ppi_web_residual_manifest_rc6
                 SELECT s.ticker,s.instrument_type,s.market,s.currency,s.settlement,p.state,
-                  CASE WHEN p.state='EMPTY_OR_INVALID' THEN 'PPI_API_NO_USABLE_HISTORY'
-                       WHEN p.state='ERROR' THEN 'PPI_API_ERROR_AFTER_BOUNDED_RETRY'
-                       ELSE 'UNEXPECTED' END,
-                  'PENDING_WEB',?
-                FROM ppi_argentina_api_shadow s JOIN production_history_attempts p
+                  CASE WHEN p.state='EMPTY_OR_INVALID' THEN 'PPI_API_NO_USABLE_HISTORY' ELSE 'PPI_API_ERROR_AFTER_BOUNDED_RETRY' END,
+                  'PENDING_WEB',? FROM ppi_argentina_api_shadow s JOIN production_history_attempts p
                   ON p.symbol=s.ticker AND p.instrument_type=s.instrument_type AND p.settlement=s.settlement
                 WHERE s.market IN ('BYMA','ROFEX','A3','OTC') AND s.instrument_type NOT IN ('ACCIONES-USA','FCI-EXTERIOR')
                   AND p.state IN ('EMPTY_OR_INVALID','ERROR')''',(now,))
-              total=c.execute('select count(*) from ppi_argentina_api_shadow').fetchone()[0]
-              classified=c.execute('''select count(*) from ppi_argentina_api_shadow s join production_history_attempts p
+              print('API_UNCLASSIFIED='+str(unclassified)); print('API_SHADOW_FINAL='+str(c.execute('select count(*) from ppi_argentina_api_shadow').fetchone()[0]))
+              for r in c.execute('''select s.instrument_type,p.state,count(*) from ppi_argentina_api_shadow s join production_history_attempts p
                 on p.symbol=s.ticker and p.instrument_type=s.instrument_type and p.settlement=s.settlement
-                where s.market in ('BYMA','ROFEX','A3','OTC') and s.instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')''').fetchone()[0]
-              print('API_SHADOW_FINAL='+str(total)); print('API_CLASSIFIED_JOIN='+str(classified))
-              for r in c.execute('''select s.instrument_type,p.state,count(*) from ppi_argentina_api_shadow s
-                join production_history_attempts p on p.symbol=s.ticker and p.instrument_type=s.instrument_type and p.settlement=s.settlement
                 where s.market in ('BYMA','ROFEX','A3','OTC') and s.instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')
                 group by s.instrument_type,p.state order by s.instrument_type,p.state'''):
                   print('API_FINAL_STATE='+json.dumps({'family':r[0],'state':r[1],'count':r[2]},sort_keys=True))
-              residual=c.execute('select count(*) from ppi_web_residual_manifest_rc6').fetchone()[0]
-              print('WEB_RESIDUAL_TOTAL='+str(residual))
+              print('WEB_RESIDUAL_TOTAL='+str(c.execute('select count(*) from ppi_web_residual_manifest_rc6').fetchone()[0]))
               for r in c.execute('select instrument_type,api_state,count(*) from ppi_web_residual_manifest_rc6 group by instrument_type,api_state order by instrument_type,api_state'):
                   print('WEB_RESIDUAL_FAMILY='+json.dumps({'family':r[0],'api_state':r[1],'count':r[2]},sort_keys=True))
-              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
-              print(f'SAFETY_AFTER={s[0]}|{s[1]}')
-              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
-              assert unclassified==0
-          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
-          print('API_PHASE=EXHAUSTED_AND_CLASSIFIED')
-          print('WEB_MANIFEST=READY')
-          print('SCOPE=ARGENTINA_LOCAL_API_ONLY')
-          print('FOREIGN_EXCLUDED=ACCIONES-USA,FCI-EXTERIOR,NYSE,NASDAQ')
-          print('ORDER_ROUTES=NOT_CALLED')
-          print('REAL_ORDERS_SENT=0')
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'SAFETY_AFTER={s[0]}|{s[1]}'); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0; assert unclassified==0
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True)); print('API_PHASE=EXHAUSTED_AND_CLASSIFIED'); print('WEB_MANIFEST=READY'); print('ORDER_ROUTES=NOT_CALLED'); print('REAL_ORDERS_SENT=0')
           PY
           HOST
