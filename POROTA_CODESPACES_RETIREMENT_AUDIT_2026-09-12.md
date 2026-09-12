@@ -98,3 +98,7 @@ La integración de GitHub sí tiene escritura/fusión en `main`, demostrado por 
 ### Próximo paso de auditoría
 
 Mantener el trabajo en lectura estática: clasificar referencias históricas y entradas de despliegue/promoción sin entrar en el workstream `pipeline ppi watch`. La siguiente modificación debe ser un PR aislado que primero cierre el bypass de promoción directa y permita promover únicamente una referencia RC6 aprobada, después de revisar con el responsable el workflow RC6 de promoción de overlay. No borrar ramas históricas ni ejecutar workflows hasta cerrar esas dependencias.
+
+### Rama histórica de CI revisada — 2026-09-12
+
+`chore/disable-codespaces-ci` apunta a `c564c45d9da41837f0b26aa4f9766c75505eb940` (2026-08-21, `ci: remove Codespaces dependency from CI`), sin PR asociado. Su `.github/workflows/ci.yml` tiene el mismo blob SHA que el archivo actual de `main` (`dc8864cc254fa7a6910d66aae92950a52d6e3b36`): funcionalmente, el cambio de CI ya está integrado y la rama no aporta una versión distinta del workflow. La comparación de historial muestra divergencia porque la rama conserva su línea de commits aparte. Está reportada como no protegida; no se eliminó. El conector actual no expone borrado de ramas, por lo que queda como candidata a retiro cuando el canal de administración de refs esté disponible y se cierre el checkpoint.
