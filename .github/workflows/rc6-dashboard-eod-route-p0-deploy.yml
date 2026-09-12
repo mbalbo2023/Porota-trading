@@ -1,13 +1,12 @@
-name: RC6 Dashboard EOD Route P0 exact-base deploy
+name: RC6 Dashboard Estrategias EOD-only exact-base deploy
 
 on:
   push:
     branches:
-      - "hotfix/rc6-dashboard-eod-route-p0-20260912"
+      - "hotfix/rc6-dashboard-estrategias-eod-only-20260912"
     paths:
       - ".github/workflows/rc6-dashboard-eod-route-p0-deploy.yml"
-      - ".github/dashboard-eod-route-p0-deploy-request.txt"
-      - "eq_dashboard_table_layout_rc6.py"
+      - ".github/dashboard-estrategias-eod-only-deploy-request.txt"
       - "fp_dashboard_eod_route_fix_rc6.py"
       - "tests/test_rc6_dashboard_eod_route_p0.py"
 
@@ -15,15 +14,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: porota-rc6-dashboard-eod-route-p0
+  group: porota-rc6-dashboard-estrategias-eod-only
   cancel-in-progress: false
 
 env:
-  BASE_SHA: c8773c8346a880ac5ecfe99ece5555c5bb771524
+  BASE_SHA: d0fef09c1b511e9e9e609ca771a6fb4c0292229c
 
 jobs:
   validate:
-    name: Validate final served EOD route
+    name: Validate EOD-only Estrategias route
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -36,28 +35,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "hotfix/rc6-dashboard-eod-route-p0-20260912"
+          test "$GITHUB_REF_NAME" = "hotfix/rc6-dashboard-estrategias-eod-only-20260912"
           test "$(git merge-base "$BASE_SHA" "$GITHUB_SHA")" = "$BASE_SHA"
           git diff --check "$BASE_SHA" "$GITHUB_SHA"
           EXPECTED="$(printf '%s\n' \
             .github/workflows/rc6-dashboard-eod-route-p0-deploy.yml \
-            eq_dashboard_table_layout_rc6.py \
             fp_dashboard_eod_route_fix_rc6.py \
             tests/test_rc6_dashboard_eod_route_p0.py | sort)"
-          if [ -f .github/dashboard-eod-route-p0-deploy-request.txt ]; then
+          if [ -f .github/dashboard-estrategias-eod-only-deploy-request.txt ]; then
             EXPECTED="$(printf '%s\n' \
               .github/workflows/rc6-dashboard-eod-route-p0-deploy.yml \
-              .github/dashboard-eod-route-p0-deploy-request.txt \
-              eq_dashboard_table_layout_rc6.py \
+              .github/dashboard-estrategias-eod-only-deploy-request.txt \
               fp_dashboard_eod_route_fix_rc6.py \
-              tests/test_rc6-dashboard-eod-route-p0.py | sort)"
+              tests/test_rc6_dashboard_eod_route_p0.py | sort)"
           fi
           ACTUAL="$(git diff --name-only "$BASE_SHA" "$GITHUB_SHA" | sort)"
-          # tolerate the canonical underscore spelling in the test path only
-          EXPECTED="${EXPECTED/tests\/test_rc6-dashboard-eod-route-p0.py/tests\/test_rc6_dashboard_eod_route_p0.py}"
           test "$ACTUAL" = "$EXPECTED"
 
-      - name: Python identity and compile
+      - name: Identity compile and route safety
         shell: bash
         run: |
           set -euo pipefail
@@ -67,9 +62,9 @@ jobs:
           assert v.MODE == 'PRODUCTION_PAPER'
           assert v.EXECUTION == 'SIMULATED'
           assert v.REAL_ORDER_CAPABILITY == 'BLOCKED'
-          print('P0_SOURCE_IDENTITY=GREEN')
+          print('P0_EOD_ONLY_SOURCE_IDENTITY=GREEN')
           PY
-          python -m py_compile eq_dashboard_table_layout_rc6.py fp_dashboard_eod_route_fix_rc6.py
+          python -m py_compile fp_dashboard_eod_route_fix_rc6.py
 
       - name: Install narrow test dependencies
         run: python -m pip install -q pytest fastapi python-multipart python-dotenv requests
@@ -77,29 +72,28 @@ jobs:
       - name: Focused route regression
         run: python -m pytest -q tests/test_rc6_dashboard_eod_route_p0.py tests/test_eod_overnight_dashboard_rc6.py
 
-      - name: Static safety and final-route guard
+      - name: Static EOD-only route guard
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          o=Path('o_dashboard.py').read_text(encoding='utf-8')
-          assert o.index('zz_wave8_dashboard_live_rc6.install') < o.index('eq_dashboard_table_layout_rc6.install')
-          eq=Path('eq_dashboard_table_layout_rc6.py').read_text(encoding='utf-8')
-          assert 'fp_dashboard_eod_route_fix_rc6' in eq and 'eod_route_fix.install()' in eq
-          p=Path('fp_dashboard_eod_route_fix_rc6.py').read_text(encoding='utf-8').lower()
+          p=Path('fp_dashboard_eod_route_fix_rc6.py').read_text(encoding='utf-8')
+          assert 'return _strategies_eod_page()' in p
+          assert 'old_trading(section)' in p
+          assert 'Acciones y CEDEAR' in p  # explanatory docstring only
           for token in ('requests.post(', 'requests.put(', 'requests.delete(', 'send_order(', 'place_order('):
-              assert token not in p
+              assert token not in p.lower()
           e=Path('fo_eod_overnight_dashboard_rc6.py').read_text(encoding='utf-8')
           assert 'CURRENT_EOD' in e and 'ACTIVE_PAPER' in e
           assert 'mode=ro' in e and 'PRAGMA query_only=ON' in e
-          print('FINAL_ROUTE_STATIC_GUARD=GREEN')
+          print('EOD_ONLY_STATIC_GUARD=GREEN')
           PY
 
   deploy:
-    name: Deploy P0 route repair and postflight
+    name: Deploy EOD-only Estrategias route and postflight
     needs: validate
-    if: contains(github.event.head_commit.message, '[DEPLOY_DASH_EOD_P0]')
+    if: contains(github.event.head_commit.message, '[DEPLOY_ESTRATEGIAS_EOD_ONLY_RC6]')
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     environment: production
@@ -115,12 +109,12 @@ jobs:
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_p0"
-          chmod 600 "$HOME/.ssh/porota_p0"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_eod_only"
+          chmod 600 "$HOME/.ssh/porota_eod_only"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
-      - name: Exact-base forward-only deployment and postflight
+      - name: Exact-base forward-only deployment and user-route postflight
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -129,7 +123,7 @@ jobs:
           TARGET_BRANCH: ${{ github.ref_name }}
         run: |
           set -Eeuo pipefail
-          ssh -i "$HOME/.ssh/porota_p0" -o BatchMode=yes -o IdentitiesOnly=yes \
+          ssh -i "$HOME/.ssh/porota_eod_only" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
             "BASE_SHA='$BASE_SHA' TARGET_SHA='$TARGET_SHA' TARGET_BRANCH='$TARGET_BRANCH' bash -s" <<'REMOTE'
@@ -137,15 +131,15 @@ jobs:
           REPO=/opt/porota-trading
           TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
           SHORT_SHA="$(printf '%s' "$TARGET_SHA" | cut -c1-12)"
-          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-p0-eod-$SHORT_SHA"
-          WORKTREE="/tmp/porota-rc6-p0-eod-$SHORT_SHA-$$"
+          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-eod-only-$SHORT_SHA"
+          WORKTREE="/tmp/porota-rc6-eod-only-$SHORT_SHA-$$"
           cleanup(){ set +e; [ ! -d "$WORKTREE" ] || git -C "$REPO" worktree remove --force "$WORKTREE" >/dev/null 2>&1; git -C "$REPO" worktree prune >/dev/null 2>&1; }
           trap cleanup EXIT
 
           echo 'AUTO_ROLLBACK=DISABLED'
           test "$(git -C "$REPO" rev-parse HEAD)" = "$BASE_SHA"
           test "$(git -C "$REPO" status --porcelain=v1 --untracked-files=no | sed '/^$/d' | wc -l | tr -d ' ')" = 0
-          git -C "$REPO" status --porcelain=v1 --untracked-files=normal | grep '^?? ' | sort > /tmp/p0-untracked-before.txt || true
+          git -C "$REPO" status --porcelain=v1 --untracked-files=normal | grep '^?? ' | sort > /tmp/eod-only-untracked-before.txt || true
 
           PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
@@ -163,8 +157,7 @@ jobs:
           test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
           EXPECTED="$(printf '%s\n' \
             .github/workflows/rc6-dashboard-eod-route-p0-deploy.yml \
-            .github/dashboard-eod-route-p0-deploy-request.txt \
-            eq_dashboard_table_layout_rc6.py \
+            .github/dashboard-estrategias-eod-only-deploy-request.txt \
             fp_dashboard_eod_route_fix_rc6.py \
             tests/test_rc6_dashboard_eod_route_p0.py | sort)"
           ACTUAL="$(git -C "$REPO" diff --name-only "$BASE_SHA" "$TARGET_SHA" | sort)"
@@ -173,15 +166,15 @@ jobs:
             [ -n "$entry" ] || continue
             p="${entry#?? }"
             if git -C "$REPO" cat-file -e "$TARGET_SHA:$p" 2>/dev/null; then echo "UNTRACKED_COLLISION=$p"; exit 1; fi
-          done < /tmp/p0-untracked-before.txt
+          done < /tmp/eod-only-untracked-before.txt
 
           git -C "$REPO" worktree add --detach "$WORKTREE" "$TARGET_SHA" >/dev/null
-          grep -qx 'AUTHORIZED_BY_USER' "$WORKTREE/.github/dashboard-eod-route-p0-deploy-request.txt"
+          grep -qx 'AUTHORIZED_BY_USER' "$WORKTREE/.github/dashboard-estrategias-eod-only-deploy-request.txt"
           sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label "porota.version=17.0.0-rc6" -t "$CANDIDATE_IMAGE" "$WORKTREE"
           sudo -n docker run --rm --pull never --network none --read-only \
             --tmpfs /tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=1777 \
             --tmpfs /app/data:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0770 \
-            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX -e DB_PATH=/tmp/p0-eod.db \
+            -e PYTHONDONTWRITEBYTECODE=1 -e ENVIRONMENT=SANDBOX -e DB_PATH=/tmp/eod-only.db \
             -e TELEGRAM_CHAT_ID=0 -e STARTUP_REQUIRE_AUTH=false --entrypoint bash "$CANDIDATE_IMAGE" -lc \
             'python -m pytest -q -p no:cacheprovider --tb=short tests/test_rc6_dashboard_eod_route_p0.py tests/test_eod_overnight_dashboard_rc6.py'
 
@@ -214,17 +207,25 @@ jobs:
           echo "POST_SAFETY=$POST"
           test "$POST" = 'ok|PRODUCTION_PAPER|0'
 
+          # Validate the exact final function used by /trading/{section}, after all
+          # import-time wrappers are installed. This explicitly rejects the family
+          # cards visible in the operator screenshot.
           sudo -n docker exec -i porota_production_dashboard python - <<'PY'
-          import o_dashboard  # installs Wave8 then the post-Wave8 route overlay
+          import o_dashboard
           import bg_paper_dashboard as bg
           page=bg.trading_page('estrategias')
-          assert "id='rc6-eod-overnight-final-route'" in page
           assert page.count('EOD / Overnight') == 1
           assert 'CURRENT_EOD' in page
           assert 'Auto-promoción' in page and '>OFF<' in page
           assert 'ACTIVE_PAPER' in page
-          assert 'Scalping no se duplica en esta pantalla.' in page
-          print('TRADING_ESTRATEGIAS_FINAL_ROUTE=GREEN')
+          assert 'Scalping permanece exclusivamente en su menú principal' in page
+          forbidden=(
+              'Acciones y CEDEAR','Renta fija','Actividad real de análisis por familia',
+              'Contratos y readiness de opciones','Fondos locales y exterior','Licitaciones y canjes',
+          )
+          for text in forbidden:
+              assert text not in page, text
+          print('TRADING_ESTRATEGIAS_EOD_ONLY=GREEN')
           print('EOD_POLICY_ACTIVE=CURRENT_EOD')
           print('EOD_AUTO_PROMOTION=false')
           PY
@@ -241,9 +242,9 @@ jobs:
           test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)" = 0
           test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET_SHA"
           test "$(git -C "$REPO" status --porcelain=v1 --untracked-files=no | sed '/^$/d' | wc -l | tr -d ' ')" = 0
-          git -C "$REPO" status --porcelain=v1 --untracked-files=normal | grep '^?? ' | sort > /tmp/p0-untracked-after.txt || true
-          diff -u /tmp/p0-untracked-before.txt /tmp/p0-untracked-after.txt
+          git -C "$REPO" status --porcelain=v1 --untracked-files=normal | grep '^?? ' | sort > /tmp/eod-only-untracked-after.txt || true
+          diff -u /tmp/eod-only-untracked-before.txt /tmp/eod-only-untracked-after.txt
           echo "HOST_SHA_FINAL=$TARGET_SHA"
           echo 'REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED'
-          echo 'RC6_DASHBOARD_EOD_ROUTE_P0_POSTFLIGHT=GREEN'
+          echo 'RC6_DASHBOARD_ESTRATEGIAS_EOD_ONLY_POSTFLIGHT=GREEN'
           REMOTE
