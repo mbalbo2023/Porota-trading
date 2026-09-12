@@ -1,0 +1,118 @@
+name: RC6 Trader Dashboard Shadow Observability 2026-09-11
+
+on:
+  push:
+    branches:
+      - "feature/rc6-trader-dashboard-shadow-observability-20260911"
+    paths:
+      - "eq_dashboard_table_layout_rc6.py"
+      - "fi_swing_paper_shadow_rc6.py"
+      - "fj_caucion_cash_sweep_shadow_rc6.py"
+      - "fl_trader_dashboard_shadow_rc6.py"
+      - "tests/test_rc6_trader_dashboard_shadow_observability.py"
+      - "tests/test_rc6_swing_paper_shadow.py"
+      - "tests/test_rc6_caucion_cash_sweep_shadow.py"
+      - ".github/workflows/rc6-trader-dashboard-shadow-observability-20260911.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      BASE_SHA: d1d4c6c8c990ac5d47d4068eaed3d908ccd2e721
+      DASHBOARD_OPERATION_MODE: PRODUCTION_PAPER
+      CAUCIONES_AUTO_PLACEMENT: "false"
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install narrow test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest requests fastapi python-multipart python-dotenv
+
+      - name: Exact delta guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE_SHA"...HEAD | sort > /tmp/actual.txt
+          cat > /tmp/expected.txt <<'EOF'
+          .github/workflows/rc6-trader-dashboard-shadow-observability-20260911.yml
+          eq_dashboard_table_layout_rc6.py
+          fi_swing_paper_shadow_rc6.py
+          fj_caucion_cash_sweep_shadow_rc6.py
+          fl_trader_dashboard_shadow_rc6.py
+          tests/test_rc6_caucion_cash_sweep_shadow.py
+          tests/test_rc6_swing_paper_shadow.py
+          tests/test_rc6_trader_dashboard_shadow_observability.py
+          EOF
+          sort -o /tmp/expected.txt /tmp/expected.txt
+          echo '--- expected delta ---'
+          cat /tmp/expected.txt
+          echo '--- actual delta ---'
+          cat /tmp/actual.txt
+          diff -u /tmp/expected.txt /tmp/actual.txt
+
+      - name: Compile integration modules
+        run: |
+          python -m py_compile \
+            eq_dashboard_table_layout_rc6.py \
+            fi_swing_paper_shadow_rc6.py \
+            fj_caucion_cash_sweep_shadow_rc6.py \
+            fl_trader_dashboard_shadow_rc6.py \
+            fk_scalping_revision_metrics_rc6.py
+
+      - name: Trader dashboard placement and safety tests
+        run: |
+          pytest -q \
+            tests/test_rc6_trader_dashboard_shadow_observability.py \
+            tests/test_rc6_swing_paper_shadow.py \
+            tests/test_rc6_caucion_cash_sweep_shadow.py \
+            tests/test_rc6_scalping_revision_metrics.py
+
+      - name: Static non-binding safety guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          overlay = Path('fl_trader_dashboard_shadow_rc6.py').read_text(encoding='utf-8')
+          lower = overlay.lower()
+          forbidden = [
+              '/operar', 'send_order(', 'place_order(',
+              'requests.post(', 'requests.put(', 'requests.delete(',
+              'insert into ', 'update paper_', 'delete from ',
+          ]
+          found = [token for token in forbidden if token in lower]
+          if found:
+              raise SystemExit('forbidden dashboard execution/mutation surface: ' + ', '.join(found))
+          required = [
+              'SHADOW_ONLY', 'threshold_seconds=120',
+              'rc6-scalping-revision-observability',
+              'rc6-swing-paper-shadow',
+              'rc6-caucion-cash-sweep-shadow',
+              'rc6-trader-new-capabilities-live',
+          ]
+          missing = [token for token in required if token not in overlay]
+          if missing:
+              raise SystemExit('missing trader-facing safety/placement marker: ' + ', '.join(missing))
+          print('DASHBOARD_SHADOW_SAFETY=GREEN')
+          PY
+
+      - name: Verify caucion auto-placement remains disabled in certification
+        run: |
+          test "${CAUCIONES_AUTO_PLACEMENT}" = "false"
+          echo "CAUCIONES_AUTO_PLACEMENT=false"
+          echo "REAL_ORDER_SURFACE_ADDED=0"
+          echo "RC6_TRADER_DASHBOARD_SHADOW_OBSERVABILITY=GREEN"
