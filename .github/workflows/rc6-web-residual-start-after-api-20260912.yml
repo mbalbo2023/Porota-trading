@@ -1,0 +1,125 @@
+name: RC6 PPI Web residual start after API 2026-09-12
+
+on:
+  workflow_run:
+    workflows: ["RC6 PPI API closeout and Web residual manifest 2026-09-12"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  web-residual-start:
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'ops/rc6-ppi-fullfamily-history-20260912' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Validate API closure and start only required local Web families
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          echo "WEB_CHAIN_AT_UTC=$(date -u +%FT%TZ)"
+          echo "HOST_SHA=$(git -C /opt/porota-trading rev-parse HEAD)"
+          test -x /usr/local/sbin/porota-contract-evidence-weekend-backfill-rc6.sh || { echo 'ABORT=WEB_WRAPPER_MISSING'; exit 31; }
+          test -x /usr/local/lib/porota-contract-evidence-rc6/rc6_contract_dom_collector.py || { echo 'ABORT=DOM_COLLECTOR_MISSING'; exit 32; }
+
+          eval "$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,shlex
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=15); c.execute('pragma query_only=on')
+          s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print('SAFETY_MODE='+shlex.quote(str(s[0]))); print('REAL_SENT='+str(int(s[1] or 0)))
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          if 'ppi_web_residual_manifest_rc6' not in tables:
+              print('MANIFEST_READY=0'); print("ROUTES=''"); print("UNSUPPORTED=''"); print('RESIDUAL_TOTAL=0'); raise SystemExit
+          unclassified=c.execute('''select count(*) from ppi_argentina_api_shadow s left join production_history_attempts p
+            on p.symbol=s.ticker and p.instrument_type=s.instrument_type and p.settlement=s.settlement
+            where s.market in ('BYMA','ROFEX','A3','OTC') and s.instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR') and p.symbol is null''').fetchone()[0]
+          print('API_UNCLASSIFIED='+str(unclassified))
+          families=[r[0] for r in c.execute('select distinct instrument_type from ppi_web_residual_manifest_rc6 order by instrument_type')]
+          mapping={
+            'ACCIONES':'/Cotizaciones/Acciones','BONOS':'/Cotizaciones/Bonos','CAUCIONES':'/Cotizaciones/Cauciones',
+            'CEDEARS':'/Cotizaciones/Cedears','FCI':'/Cotizaciones/FCIs','FUTUROS':'/Cotizaciones/Futuros',
+            'LETRAS':'/Cotizaciones/Letras','LICITACIONES':'/Cotizaciones/Licitaciones','ON':'/Cotizaciones/Ons',
+            'OPCIONES':'/Cotizaciones/Opciones','ETF':'/Cotizaciones/ETFs'}
+          routes=[]; unsupported=[]
+          for f in families:
+              if f in mapping and mapping[f] not in routes: routes.append(mapping[f])
+              elif f not in mapping: unsupported.append(f)
+          print('MANIFEST_READY=1'); print('RESIDUAL_TOTAL='+str(c.execute('select count(*) from ppi_web_residual_manifest_rc6').fetchone()[0]))
+          print('ROUTES='+shlex.quote(','.join(routes))); print('UNSUPPORTED='+shlex.quote(','.join(unsupported)))
+          c.close()
+          PY
+          )"
+          echo "SAFETY=$SAFETY_MODE|$REAL_SENT"
+          test "$SAFETY_MODE" = PRODUCTION_PAPER -a "$REAL_SENT" = 0 || { echo 'ABORT=SAFETY'; exit 33; }
+          test "${MANIFEST_READY:-0}" = 1 || { echo 'ABORT=WEB_MANIFEST_NOT_READY'; exit 34; }
+          test "${API_UNCLASSIFIED:-1}" = 0 || { echo 'ABORT=API_NOT_CLOSED'; exit 35; }
+          test -n "${ROUTES:-}" || { echo 'WEB_STAGE=NO_SUPPORTED_ROUTES'; echo "UNSUPPORTED_FAMILIES=${UNSUPPORTED:-}"; exit 0; }
+          echo "WEB_RESIDUAL_TOTAL=$RESIDUAL_TOTAL"
+          echo "WEB_TARGET_ROUTES=$ROUTES"
+          echo "WEB_UNSUPPORTED_FAMILIES=${UNSUPPORTED:-NONE}"
+
+          PROFILE="$(find /home -maxdepth 4 -type d -path '*/porota-browser-lab/chrome-profile' -print -quit 2>/dev/null || true)"
+          if [ -z "$PROFILE" ]; then
+            echo 'WEB_RCA=PROFILE_MISSING'
+            echo 'WEB_STAGE=BLOCKED_AUTH_PROFILE'
+            exit 41
+          fi
+          echo 'WEB_RCA=PROFILE_PRESENT'
+          echo '=== PREVIOUS_WEEKEND_FAILURE_SANITIZED ==='
+          sudo -n journalctl -u porota-contract-evidence-weekend-backfill-rc6.service -n 50 --no-pager 2>&1 \
+            | sed -E 's/(Authorization|Cookie|Token|Password|Secret|Api[-_]?Key)[^ ]*/\1=[REDACTED]/Ig' || true
+
+          sudo -n systemctl reset-failed porota-contract-evidence-weekend-backfill-rc6.service || true
+          TMPLOG="$(mktemp /tmp/porota-web-residual.XXXXXX.log)"
+          trap 'rm -f "$TMPLOG"' EXIT
+          set +e
+          sudo -n env POROTA_WEEKEND_ROUTES="$ROUTES" POROTA_REQUIRE_RECORDS=0 \
+            timeout 1200 /usr/local/sbin/porota-contract-evidence-weekend-backfill-rc6.sh >"$TMPLOG" 2>&1
+          rc=$?
+          set -e
+          sed -E 's/(Authorization|Cookie|Token|Password|Secret|Api[-_]?Key)[^ ]*/\1=[REDACTED]/Ig' "$TMPLOG" | tail -n 100
+          echo "WEB_TARGETED_RC=$rc"
+          test "$rc" = 0 || { echo 'WEB_STAGE=TARGETED_CAPTURE_FAILED'; exit "$rc"; }
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=15); c.execute('pragma query_only=on')
+          s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print('WEB_POST_SAFETY=%s|%s'%s)
+          assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          if c.execute("select count(*) from sqlite_master where type='table' and name='contract_evidence_v2_current'").fetchone()[0]:
+              cols=[r[1] for r in c.execute('pragma table_info(contract_evidence_v2_current)')]
+              print('WEB_CURRENT_COLUMNS='+','.join(cols))
+              print('WEB_CURRENT_TOTAL='+str(c.execute('select count(*) from contract_evidence_v2_current').fetchone()[0]))
+              if 'family' in cols:
+                  for r in c.execute('select family,count(*) from contract_evidence_v2_current group by family order by family'):
+                      print('WEB_CURRENT_FAMILY='+json.dumps({'family':r[0],'count':r[1]},sort_keys=True))
+          c.close()
+          print('WEB_STAGE=TARGETED_CAPTURE_STARTED_GREEN')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
