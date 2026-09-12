@@ -1,0 +1,105 @@
+name: RC6 ingestion status now 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ingestion-status-now-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read current ingestion status
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo "AUDIT_AT_UTC=$(date -u +%FT%TZ)"
+          echo "HOST_SHA=$(git rev-parse HEAD)"
+          echo "HOST_BRANCH=$(git branch --show-current || true)"
+          echo '=== MORNING_SNAPSHOT ==='
+          if [ -r data/audit/weekend_ingestion_latest.txt ]; then
+            cat data/audit/weekend_ingestion_latest.txt
+          else
+            echo 'MORNING_SNAPSHOT=MISSING'
+          fi
+          echo '=== CURRENT_TIMERS ==='
+          for u in porota-ppi-argentina-nightly-rc6.timer porota-contract-evidence-weekend-backfill-rc6.timer porota-weekend-ingestion-audit-rc6.timer porota-contract-evidence-rc6.timer; do
+            echo "UNIT=$u|ENABLED=$(systemctl is-enabled "$u" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$u" 2>/dev/null || true)"
+          done
+          echo '=== SERVICE_RESULTS ==='
+          for u in porota-ppi-argentina-nightly-rc6.service porota-contract-evidence-weekend-backfill-rc6.service porota-weekend-ingestion-audit-rc6.service; do
+            echo "SERVICE=$u"
+            systemctl show "$u" -p Result -p ExecMainStatus -p ActiveEnterTimestamp -p InactiveEnterTimestamp --no-pager 2>/dev/null || true
+          done
+          echo '=== API_DELTA_CURRENT ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, json
+          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(db,uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          safety=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print('SAFETY=%s|%s'%safety)
+          assert safety[0]=='PRODUCTION_PAPER' and int(safety[1] or 0)==0
+          q='''
+          SELECT s.instrument_type,
+                 COUNT(*) total,
+                 SUM(CASE WHEN COALESCE(n.state,p.state) IS NOT NULL THEN 1 ELSE 0 END) attempted,
+                 SUM(CASE WHEN COALESCE(n.state,p.state) IN ('VALID_PAYLOAD','PARTIAL') THEN 1 ELSE 0 END) usable,
+                 SUM(CASE WHEN COALESCE(n.state,p.state) IN ('EMPTY_OR_INVALID','ERROR') THEN 1 ELSE 0 END) hard,
+                 SUM(CASE WHEN COALESCE(n.state,p.state) IS NULL THEN 1 ELSE 0 END) pending
+            FROM ppi_argentina_api_shadow s
+            LEFT JOIN production_history_attempts p
+              ON p.symbol=s.ticker AND p.instrument_type=s.instrument_type AND p.settlement=s.settlement
+            LEFT JOIN ppi_argentina_nightly_history_attempts n
+              ON n.ticker=s.ticker AND n.instrument_type=s.instrument_type
+             AND n.market=s.market AND n.currency=s.currency AND n.settlement=s.settlement
+           WHERE s.market IN ('BYMA','ROFEX','A3','OTC')
+             AND s.instrument_type NOT IN ('ACCIONES-USA','FCI-EXTERIOR')
+           GROUP BY s.instrument_type ORDER BY s.instrument_type
+          '''
+          rows=list(c.execute(q))
+          totals=[sum(int(r[i] or 0) for r in rows) for i in range(1,6)]
+          for r in rows:
+              print('FAMILY_DELTA=%s|TOTAL=%s|ATTEMPTED=%s|USABLE=%s|HARD=%s|PENDING=%s'%r)
+          print('TOTAL_DELTA=API:%d|ATTEMPTED:%d|USABLE:%d|HARD:%d|PENDING:%d'%tuple(totals))
+          try:
+              n=c.execute('select count(*) from ppi_argentina_nightly_history_attempts').fetchone()[0]
+              print('NIGHTLY_IDENTITIES='+str(n))
+              for r in c.execute("select instrument_type,count(*),sum(case when state in ('VALID_PAYLOAD','PARTIAL') then 1 else 0 end),sum(case when state='EMPTY_OR_INVALID' then 1 else 0 end),sum(case when state='ERROR' then 1 else 0 end),sum(valid_rows) from ppi_argentina_nightly_history_attempts group by instrument_type order by instrument_type"):
+                  print('NIGHTLY_FAMILY=%s|TESTED=%s|USABLE=%s|EMPTY=%s|ERROR=%s|VALID_ROWS=%s'%r)
+          except Exception as e:
+              print('NIGHTLY_TABLE_ERROR='+type(e).__name__+':'+str(e)[:120])
+          c.close()
+          PY
+          echo '=== HISTORY_JOURNAL ==='
+          journalctl -u porota-ppi-argentina-nightly-rc6.service --since '2026-09-12 02:20:00' --no-pager 2>/dev/null | grep -E 'Started|Finished|NIGHTLY|ARG_NIGHTLY|READER_METRICS|SCOPE=|REAL_ORDERS_SENT|ORDER_ROUTES|SKIP=|failed|Failed|status=' | tail -n 120 || true
+          echo '=== WEEKEND_WEB_JOURNAL ==='
+          journalctl -u porota-contract-evidence-weekend-backfill-rc6.service --since '2026-09-12 03:55:00' --no-pager 2>/dev/null | grep -E 'Started|Finished|WEEKEND_|REAL_ORDERS_SENT|ORDER_ROUTES|STATUS=|failed|Failed|records|famil' | tail -n 120 || true
+          echo 'HOST_MUTATION=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED_BY_AUDIT'
+          HOST
