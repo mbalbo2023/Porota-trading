@@ -2,7 +2,7 @@
 
 ## Hallazgo
 
-RC6 operativo auditado (`a47f3339ec6dfe9d5afde444b1aaddabceb0e94d`) no contiene `.devcontainer/` ni `codespace-test.sh`; su README y `ci.yml` tampoco tienen referencias a Codespaces. El bot desplegado no depende de Codespaces.
+El baseline operativo RC6 se identifica en el checkpoint canónico del 11/09 como `17.0.0-rc6`, SHA desplegado/certificado `f8adec8a02b2f9f0ef2dffbee75458c958bf711e` y árbol `656a5a77f7e65baefe0ee0b0f1ed9e8c84ab61b1`. En ese source no existen `.devcontainer/` ni `codespace-test.sh`; su README y `ci.yml` tampoco contienen referencias a Codespaces. El bot desplegado no depende de Codespaces.
 
 La configuración sí sigue viva en `main`:
 - `.devcontainer/devcontainer.json` se titula “Porota Trading v16.1 — Codespaces”, configura una imagen de desarrollo, Docker-in-Docker, Python, hooks post-create/post-attach y usuario `codespace`.
@@ -71,18 +71,30 @@ La búsqueda de refs todavía encuentra siete alias históricos: `codespace-setu
 
 El conector GitHub disponible no expone una operación de borrado de ramas. No se borró ninguna rama histórica. Las ramas de trabajo de los PRs ya integrados también permanecen como refs; se podrán retirar cuando exista una operación compatible y se cierre su checkpoint. Próximo paso: revisión de workflow/PR de la rama CI histórica y clasificación de ramas RC antiguas, siempre sin entrar en el workstream PPI.
 
-## Aclaración de ramas testing / testigo y permisos — 2026-09-12
+## Aclaración de la rama testing y permisos — 2026-09-12
 
-- La rama exacta `testing` existe en SHA `612b0431a33909af3eeaaaa909db648c165a4ac9`; último commit del 2026-08-27: `feat: dashboard 24x7 y observabilidad v16.3.5`. Respecto al `main` actual (`82750cc0b97df69f9936bdd5d65360cd8f9020f0`), está divergente: 102 commits ahead / 2 behind.
-- La rama exacta `testigo` no existe (GitHub 404). En esta conversación “testigo” debe ser una referencia inmutable (tag + SHA) extraída del checkpoint RC6 vigente, no una rama móvil.
-- El CI de `main` incluye `main`, `develop` y `testing` para push y pull request. El workflow manual `promote-to-production.yml` tiene `testing` como origen por defecto, acepta `testing` y `develop`, valida CI y puede hacer push a `main`. `deploy.yml` es manual y selecciona `main` por defecto.
-- Conclusión: `testing` sigue conectado al flujo GitHub de promoción, pero eso no prueba que su HEAD sea el runtime desplegado ni que sea el baseline RC6. No borrar/modificar `testing` ni el flujo de promoción hasta diseñar y revisar una migración que preserve el proceso manual vigente; no se ejecutó ningún workflow.
-- Corrección sobre permisos: la integración de GitHub sí tiene escritura/fusión en `main`, demostrado por los PRs #57 y #56 fusionados. El 403 corresponde a la consulta administrativa de branch protection; la lectura de rulesets tampoco está disponible por el plan/permisos. La Deploy Key del servidor es otra credencial y su carácter read-only no implica falta de permisos de escritura de la integración GitHub.
+### Baseline RC6 reconciliado
 
-### Resultado de la consulta actual de GitHub
+El checkpoint canónico `POROTA_TRADING_RC6_CHECKPOINT_AUDITORIA_2026-09-11.md` identifica `17.0.0-rc6`, runtime `PRODUCTION_PAPER`, ejecución `SIMULATED`, órdenes reales `BLOCKED`, source desplegado/certificado `f8adec8a02b2f9f0ef2dffbee75458c958bf711e` y árbol `656a5a77f7e65baefe0ee0b0f1ed9e8c84ab61b1`.
 
-La rama `testing` existe en `612b0431a33909af3eeaaaa909db648c165a4ac9`; su último commit data del 2026-08-27 y se titula `feat: dashboard 24x7 y observabilidad v16.3.5`. Compara como 102 commits ahead y 2 behind de `main`. No existe branch `testigo` (404).
+La certificación final fue `RC6 Final Postdeploy Certify 2026-09-10`, ejecutada el 2026-09-11 entre 21:55:48Z y 21:57:23Z en `fix/rc6-w10-sector-map-binding-20260910`. El HEAD de ese workflow era `0eb114c950ef6c5f04ac99beb34ad175498756e0`, pero el checkpoint aclara que no es el source desplegado: `DEPLOY_EXPECTED_SHA` y `HOST_SHA` coinciden en `f8adec8a...`; el resultado fue `RC6_FINAL_POSTDEPLOY=GREEN`.
 
-El CI de `main` incluye `testing` y `develop` para push/PR. La promoción manual elige `testing` por defecto, permite `testing/develop`, verifica CI y actualiza `main`; el despliegue manual toma `main` por defecto. Esto confirma que `testing` está cableada como entrada de desarrollo/promoción, pero no prueba que su HEAD sea RC6 o el código vivo.
+La consulta de GitHub confirmó que `f8adec8...` es un commit existente y que su `_version.py` declara `17.0.0-rc6`, `PRODUCTION_PAPER`, `SIMULATED` y `BLOCKED`. El commit `a47f3339...` es otro commit y su cambio propio es únicamente el archivo `.github/swing-options-telemetry-after-eodonly-deploy-request.txt`; no sustituye el SHA de despliegue certificado. La rama `release-candidate/v17.0.0-rc6-deploy3-20260906` apunta a `5bdad270...`, una referencia anterior a la certificación del 11/09. La consulta previa de tags encontró `v17.0.0-rc3-hf6`, sin un tag RC6. El SHA inmutable que debe usarse para identificar el baseline es `f8adec8...`; queda pendiente dar a RC6 una referencia Git inmutable clara, sin crearla en esta auditoría.
 
-GitHub enumera la rama `release-candidate/v17.0.0-rc6-deploy3-20260906` en SHA `5bdad270c2a23bb2456a320d41e18940ce70ec6f`; la enumeración de tags devuelve solo `v17.0.0-rc3-hf6`, no un tag RC6. La auditoría previa de este mismo checkpoint había anotado otro SHA para RC6. Antes de nombrar un “testigo” canónico o cambiar el selector de promoción, reconciliar el SHA/tag operativo con el checkpoint de runtime autorizado. No promover ni ejecutar workflows durante esa conciliación.
+El commit `f8adec8...` contiene `.github/workflows/rc6-cp4-a3-zero-candle-forwardfix-20260911.yml`. La inspección estática encontró `workflow_dispatch`, acceso SSH, una ruta de promoción de overlay y el inicio de un servicio; fija `TARGET_HOST_SHA=e47eeff...`, ya superado por el checkpoint canónico. Es un flujo operacionalmente sensible y con una referencia obsoleta. No se ejecutó ni se modificó; requiere revisión específica antes de retirarlo o conservarlo como herramienta activa.
+
+### Ramas de desarrollo y promoción
+
+- La rama exacta `testing` existe en SHA `612b0431a33909af3eeaaaa909db648c165a4ac9`; su último commit identificado es del 2026-08-27 y se titula `feat: dashboard 24x7 y observabilidad v16.3.5`. Compara como 102 commits ahead y 2 behind de `main` (`82750cc0b97df69f9936bdd5d65360cd8f9020f0`). No representa el baseline operativo RC6.
+- La búsqueda de refs no encontró una rama `develop`, aunque CI y el workflow de promoción todavía la nombran.
+- `promote-to-production.yml` solo se activa manualmente, elige `testing` por defecto y permite `testing/develop`. Su job de integración tiene permiso `contents: write` y ejecuta `git push origin main` directamente, además de crear un tag temporal. Esto contradice la política ahora presente en `AGENTS.md`, que reserva integración al coordinador mediante PR. Ningún workflow se ejecutó.
+- `deploy.yml` también es manual, toma `main` como default y acepta un tag o rama arbitrarios como versión de despliegue; no fija el SHA RC6 certificado.
+- Conclusión: `testing` está configurada como entrada manual de promoción, pero no hay evidencia de que sea el código vivo o RC6. `develop` es una opción de configuración sin rama encontrada. No borrar ni modificar `testing` ni reemplazar los workflows hasta definir una ruta compatible con el proceso operativo y revisar el efecto del gate actual.
+
+### Permisos e integración
+
+La integración de GitHub sí tiene escritura/fusión en `main`, demostrado por los PRs #57 y #56 fusionados. El 403 corresponde a la consulta administrativa de branch protection; la lectura de rulesets tampoco está disponible por el plan/permisos. La Deploy Key del servidor es otra credencial y su carácter read-only no implica falta de permisos de escritura de la integración GitHub.
+
+### Próximo paso de auditoría
+
+Mantener el trabajo en lectura estática: clasificar referencias históricas y entradas de despliegue/promoción sin entrar en el workstream `pipeline ppi watch`. La siguiente modificación debe ser un PR aislado que primero cierre el bypass de promoción directa y permita promover únicamente una referencia RC6 aprobada, después de revisar con el responsable el workflow RC6 de promoción de overlay. No borrar ramas históricas ni ejecutar workflows hasta cerrar esas dependencias.
