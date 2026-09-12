@@ -1,0 +1,65 @@
+name: RC6 Scalping Telemetry Observability 2026-09-11
+
+on:
+  push:
+    branches:
+      - feature/rc6-scalping-telemetry-observability-20260911
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+
+      - name: Exact delta from certified telemetry baseline
+        env:
+          BASE_SHA: 3793dbb9cab1eb2b25bcd8e96a4e3a5df336970b
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BASE_SHA^{commit}"
+          git diff --name-only "$BASE_SHA"...HEAD | sort | tee /tmp/delta.txt
+          cat > /tmp/allowed.txt <<'EOF'
+          .github/workflows/rc6-scalping-telemetry-observability-20260911.yml
+          fk_scalping_revision_metrics_rc6.py
+          tests/test_rc6_scalping_revision_metrics.py
+          EOF
+          diff -u /tmp/allowed.txt /tmp/delta.txt
+
+      - name: Compile
+        run: python -m py_compile fk_scalping_revision_metrics_rc6.py tests/test_rc6_scalping_revision_metrics.py
+
+      - name: Metrics tests
+        run: python -m pytest -q tests/test_rc6_scalping_revision_metrics.py
+
+      - name: Telemetry producer regression
+        run: |
+          python -m pytest -q \
+            tests/test_intraday_contract_policy_rc6.py \
+            tests/test_rc6_scalping_revision_telemetry.py
+
+      - name: Prove metrics layer is read-only and non-binding
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          src=Path('fk_scalping_revision_metrics_rc6.py').read_text()
+          upper=src.upper()
+          assert 'SELECT DETAIL FROM PAPER_EVENTS' in upper
+          for token in ('INSERT INTO','UPDATE ','DELETE FROM','/OPERAR','SEND_ORDER','PLACE_ORDER'):
+              assert token not in upper
+          assert 'OBSERVABILITY_ONLY' in src
+          print('RC6_SCALPING_TELEMETRY_METRICS=GREEN')
+          PY
