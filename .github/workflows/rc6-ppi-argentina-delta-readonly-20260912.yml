@@ -1,0 +1,78 @@
+name: RC6 PPI Argentina API vs scrape delta readonly 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-argentina-delta-readonly-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  delta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Compute current local API completion and true scrape candidates
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || exit 31
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+          s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'SAFETY={s[0]}|{s[1]}'); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          families=[r[0] for r in c.execute('select distinct instrument_type from ppi_argentina_api_shadow order by instrument_type')]
+          total=0; pending=0; hard=0; usable=0
+          print('=== ARGENTINA_DELTA_BY_FAMILY ===')
+          for fam in families:
+              api=c.execute('select count(*) from ppi_argentina_api_shadow where instrument_type=?',(fam,)).fetchone()[0]
+              attempted=c.execute('select count(*) from production_history_attempts where instrument_type=?',(fam,)).fetchone()[0]
+              use=c.execute("select count(*) from production_history_attempts where instrument_type=? and state in ('VALID_PAYLOAD','PARTIAL')",(fam,)).fetchone()[0]
+              h=c.execute("select count(*) from production_history_attempts where instrument_type=? and state in ('EMPTY_OR_INVALID','ERROR')",(fam,)).fetchone()[0]
+              full=c.execute("select count(*) from production_history_attempts where instrument_type=? and state='VALID_PAYLOAD'",(fam,)).fetchone()[0]
+              partial=c.execute("select count(*) from production_history_attempts where instrument_type=? and state='PARTIAL'",(fam,)).fetchone()[0]
+              empty=c.execute("select count(*) from production_history_attempts where instrument_type=? and state='EMPTY_OR_INVALID'",(fam,)).fetchone()[0]
+              err=c.execute("select count(*) from production_history_attempts where instrument_type=? and state='ERROR'",(fam,)).fetchone()[0]
+              not_attempted=max(0,api-attempted)
+              avail_hard=c.execute("""select count(*) from production_history_attempts a join financial_instrument_catalog f
+                on f.ticker=a.symbol and f.instrument_type=a.instrument_type and f.settlement=a.settlement
+                where a.instrument_type=? and a.state in ('EMPTY_OR_INVALID','ERROR') and f.status='AVAILABLE'""",(fam,)).fetchone()[0]
+              stale_hard=c.execute("""select count(*) from production_history_attempts a join financial_instrument_catalog f
+                on f.ticker=a.symbol and f.instrument_type=a.instrument_type and f.settlement=a.settlement
+                where a.instrument_type=? and a.state in ('EMPTY_OR_INVALID','ERROR') and f.status='STALE'""",(fam,)).fetchone()[0]
+              out={'family':fam,'api_identities':api,'api_ingest_attempted':attempted,'api_ingest_pending':not_attempted,
+                   'usable':use,'complete':full,'partial':partial,'hard_gap':h,'empty_invalid':empty,'error':err,
+                   'hard_gap_available':avail_hard,'hard_gap_stale':stale_hard,
+                   'scrape_required_proven':0,'scrape_candidate_after_api_exhaustion':h}
+              print('DELTA_FINAL='+json.dumps(out,sort_keys=True))
+              total+=api; pending+=not_attempted; hard+=h; usable+=use
+          print('DELTA_TOTAL='+json.dumps({'api_identities':total,'usable':usable,'api_ingest_pending':pending,
+            'hard_gap_for_api_rca':hard,'scrape_required_proven':0},sort_keys=True))
+          print('SEMANTICS=UNATTEMPTED_IS_API_INGEST_PENDING_NOT_SCRAPE;HARD_GAP_REQUIRES_API_RCA_BEFORE_SCRAPE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          c.close()
+          PY
+          HOST
