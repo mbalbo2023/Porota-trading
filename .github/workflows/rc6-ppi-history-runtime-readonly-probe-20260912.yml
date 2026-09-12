@@ -25,7 +25,7 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
 
-      - name: Read-only runtime and yield proof
+      - name: Classify rejected PPI rows read-only
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -33,25 +33,15 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o ServerAliveInterval=20 -o ServerAliveCountMax=10 \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
           set -u
           SVC=porota-ppi-fullfamily-history-rc6.service
           cd /opt/porota-trading || exit 2
           echo "PROBE_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          echo "HOST_SHA=$(git rev-parse HEAD)"
           echo "SYSTEMD_ACTIVE=$(systemctl is-active "$SVC" 2>/dev/null || true)"
-          echo "SYSTEMD_ENABLED=$(systemctl is-enabled "$SVC" 2>/dev/null || true)"
-          echo "SYSTEMD_MAINPID=$(systemctl show -p MainPID --value "$SVC" 2>/dev/null || true)"
-          echo "DISK_ROOT=$(df -Pk / | awk 'NR==2{print $4"KB_free|"$5"_used"}')"
-
-          echo '--- STATUS ---'
           sudo -n docker exec -i porota_production_observer python -u - status < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
-          echo '--- INTEGRITY ---'
-          sudo -n docker exec -i porota_production_observer python -u - integrity < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
-
-          echo '--- YIELD_DIAGNOSTIC_READONLY ---'
+          echo '--- REJECTION_CLASSIFICATION_READONLY ---'
           sudo -n docker exec -i porota_production_observer python -u - <<'PY'
           import json, sqlite3
           from collections import Counter, defaultdict
@@ -59,60 +49,59 @@ jobs:
           from cv_history_store_adapter_hf6 import default_history_store
 
           RUN_ID='PPI-HIST-20260912-001'
-          store=observer.runtime_store()
-          hstore=default_history_store()
-          def ro(path):
-              return sqlite3.connect('file:' + path + '?mode=ro', uri=True, timeout=10)
-
+          store=observer.runtime_store(); hstore=default_history_store()
+          def ro(path): return sqlite3.connect('file:' + path + '?mode=ro', uri=True, timeout=10)
           c=ro(store.path)
-          rows=c.execute('''SELECT state,count(*),coalesce(sum(provider_rows),0),coalesce(sum(valid_rows),0)
-                            FROM ppi_history_ingest_tasks WHERE run_id=?
-                            GROUP BY state ORDER BY state''',(RUN_ID,)).fetchall()
-          print('STATE_COUNTS=' + json.dumps([{'state':r[0],'count':r[1],'provider_rows':r[2],'valid_rows':r[3]} for r in rows], sort_keys=True))
-
-          fam=c.execute('''SELECT instrument_type,state,count(*),coalesce(sum(provider_rows),0),coalesce(sum(valid_rows),0)
-                           FROM ppi_history_ingest_tasks WHERE run_id=?
-                           GROUP BY instrument_type,state ORDER BY instrument_type,state''',(RUN_ID,)).fetchall()
-          print('FAMILY_STATE_COUNTS=' + json.dumps([{'family':r[0],'state':r[1],'count':r[2],'provider_rows':r[3],'valid_rows':r[4]} for r in fam], sort_keys=True))
-
-          done_rows=c.execute('''SELECT state,result FROM ppi_history_ingest_tasks
-                                 WHERE run_id=? AND state IN ('DONE_VALID','DONE_PARTIAL','DONE_EMPTY')''',(RUN_ID,)).fetchall()
-          agg=Counter(); result_parse_errors=0; positive_updates=0
-          for state,payload in done_rows:
-              try: d=json.loads(payload or '{}')
-              except Exception:
-                  result_parse_errors += 1; continue
-              for k in ('canonical_updates','versions_appended','rejected_rows','provider_rows','valid_rows'):
-                  try: agg[k] += int(d.get(k,0) or 0)
-                  except Exception: pass
-              try:
-                  if int(d.get('canonical_updates',0) or 0) > 0: positive_updates += 1
-              except Exception: pass
-          print('RESULT_TOTALS=' + json.dumps(dict(agg), sort_keys=True))
-          print(f'RESULT_TASKS_WITH_CANONICAL_UPDATES={positive_updates}')
-          print(f'RESULT_PARSE_ERRORS={result_parse_errors}')
-
-          err=c.execute('''SELECT symbol,instrument_type,market,settlement,attempts,last_error
-                           FROM ppi_history_ingest_tasks WHERE run_id=? AND state='ERROR'
-                           ORDER BY instrument_type,symbol,market,settlement''',(RUN_ID,)).fetchall()
-          reasons=Counter((r[5] or 'EMPTY_ERROR').split(':',1)[0] for r in err)
-          print('ERROR_REASON_COUNTS=' + json.dumps(reasons, sort_keys=True))
-          print('ERROR_SAMPLES=' + json.dumps([{'symbol':r[0],'family':r[1],'market':r[2],'settlement':r[3],'attempts':r[4],'error':r[5][:300]} for r in err[:22]], sort_keys=True))
+          tasks=c.execute('''SELECT symbol,instrument_type,market,settlement,started_at,finished_at,provider_rows,valid_rows
+                             FROM ppi_history_ingest_tasks
+                             WHERE run_id=? AND state='DONE_EMPTY' AND started_at IS NOT NULL AND finished_at IS NOT NULL''',(RUN_ID,)).fetchall()
+          taskmap={(r[0],r[1],r[3]):r for r in tasks}
+          starts=[r[4] for r in tasks if r[4]]
+          min_start=min(starts) if starts else '9999'
+          ledger=c.execute('''SELECT id,symbol,instrument_type,settlement,attempted_at,provider_rows,valid_rows,rejected_rows,detail,metadata_json
+                              FROM history_attempt_ledger_v2
+                              WHERE source='PPI_PRODUCTION_HISTORY' AND attempted_at>=? ORDER BY id''',(min_start,)).fetchall()
+          matched=[]; attempt_ids=[]; close_rows=0
+          for a in ledger:
+              t=taskmap.get((a[1],a[2],a[3]))
+              if not t: continue
+              if not (t[4] <= a[4] <= t[5]): continue
+              try: meta=json.loads(a[9] or '{}')
+              except Exception: meta={}
+              if str(meta.get('market','')).upper() != str(t[2]).upper(): continue
+              matched.append(a); attempt_ids.append(a[0]); close_rows += int(meta.get('close_only_rows',0) or 0)
+          reason=Counter(); family_reason=Counter()
+          if attempt_ids:
+              marks=','.join('?' for _ in attempt_ids)
+              rr=c.execute(f'''SELECT instrument_type,reason,count(*) FROM history_row_rejections_v2
+                               WHERE attempt_id IN ({marks}) GROUP BY instrument_type,reason''',attempt_ids).fetchall()
+              for fam,why,n in rr:
+                  reason[why]+=int(n); family_reason[(fam,why)]+=int(n)
+          print('DONE_EMPTY_TASKS=' + str(len(tasks)))
+          print('MATCHED_ATTEMPTS=' + str(len(matched)))
+          print('MATCHED_PROVIDER_ROWS=' + str(sum(int(a[5] or 0) for a in matched)))
+          print('MATCHED_VALID_ROWS=' + str(sum(int(a[6] or 0) for a in matched)))
+          print('MATCHED_REJECTED_ROWS=' + str(sum(int(a[7] or 0) for a in matched)))
+          print('CLOSE_ONLY_EXTRACTED_ROWS=' + str(close_rows))
+          print('REJECTION_REASON_COUNTS=' + json.dumps(reason, sort_keys=True))
+          print('FAMILY_REJECTION_COUNTS=' + json.dumps([{'family':k[0],'reason':k[1],'count':v} for k,v in sorted(family_reason.items(), key=lambda x:(-x[1],x[0]))], sort_keys=True))
           c.close()
 
           h=ro(hstore.path)
-          total=int(h.execute('SELECT count(*) FROM history_canonical_v2').fetchone()[0] or 0)
-          qc=h.execute('PRAGMA quick_check').fetchone()[0]
-          dups=int(h.execute('''SELECT count(*) FROM (
-              SELECT symbol,instrument_type,market,settlement,date,count(*) n
-              FROM history_canonical_v2 GROUP BY symbol,instrument_type,market,settlement,date HAVING n>1)''').fetchone()[0] or 0)
+          tables={r[0] for r in h.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          if 'history_close_canonical_v1' in tables:
+              close_total=int(h.execute('SELECT count(*) FROM history_close_canonical_v1').fetchone()[0] or 0)
+              close_versions=int(h.execute('SELECT count(*) FROM history_close_versions_v1').fetchone()[0] or 0)
+              print(f'CLOSE_CANONICAL_ROWS_LIVE={close_total}')
+              print(f'CLOSE_VERSION_ROWS_LIVE={close_versions}')
+          else:
+              print('CLOSE_CANONICAL_ROWS_LIVE=0')
+              print('CLOSE_VERSION_ROWS_LIVE=0')
+          full=int(h.execute('SELECT count(*) FROM history_canonical_v2').fetchone()[0] or 0)
+          print(f'FULL_OHLC_CANONICAL_ROWS_LIVE={full}')
           h.close()
-          print(f'CANONICAL_ROWS_LIVE={total}')
-          print(f'HISTORY_QUICK_CHECK_LIVE={qc}')
-          print(f'CANONICAL_DUPLICATES_LIVE={dups}')
-          print('YIELD_DIAGNOSTIC=PASS')
+          print('REJECTION_CLASSIFICATION=PASS')
           PY
-
           echo '--- JOURNAL_TAIL_READONLY ---'
-          sudo -n journalctl -u "$SVC" -n 25 --no-pager 2>&1 || true
+          sudo -n journalctl -u "$SVC" -n 12 --no-pager 2>&1 || true
           HOST
