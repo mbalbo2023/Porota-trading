@@ -1,0 +1,50 @@
+name: RC6 PPI history live progress 2026-09-12
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-history-live-progress-20260912.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Probe progress read only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          echo "PROBE_AT_UTC=$(date -u +%FT%TZ)"
+          systemctl show porota-ppi-argentina-nightly-rc6.service -p ActiveState -p SubState -p Result -p ExecMainStatus --no-pager || true
+          ps -eo pid,etime,args | grep '[p]orota-ppi-argentina-nightly-rc6.sh' || true
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print('SAFETY=%s|%s'%s)
+          nightly=bool(c.execute("select count(*) from sqlite_master where type='table' and name='ppi_argentina_nightly_history_attempts'").fetchone()[0]); print('NIGHTLY_TABLE_EXISTS='+str(int(nightly)))
+          if nightly:
+              print('NIGHTLY_IDENTITIES='+str(c.execute('select count(*) from ppi_argentina_nightly_history_attempts').fetchone()[0]))
+              for r in c.execute("select instrument_type,count(*),sum(case when state in ('VALID_PAYLOAD','PARTIAL') then 1 else 0 end),sum(case when state='EMPTY_OR_INVALID' then 1 else 0 end),sum(case when state='ERROR' then 1 else 0 end),sum(valid_rows) from ppi_argentina_nightly_history_attempts group by instrument_type order by instrument_type"):
+                  print('NIGHTLY_FAMILY=%s|TESTED=%s|USABLE=%s|EMPTY=%s|ERROR=%s|VALID_ROWS=%s'%r)
+          c.close()
+          PY
+          echo 'HOST_MUTATION=NONE'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST
