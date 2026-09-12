@@ -4,6 +4,7 @@ on:
   push:
     branches: [analysis/rc6-eod-overnight-replay-20260912]
     paths:
+      - '.github/workflows/rc6-fix-trading-strategias-eod-20260912.yml'
       - '.github/workflows/rc6-fix-trading-strategies-eod-20260912.yml'
 
 permissions:
@@ -27,26 +28,24 @@ jobs:
 
           path = Path('bg_paper_dashboard.py')
           text = path.read_text(encoding='utf-8')
-          old = '''    if section=='estrategias':
-              body=("<h1>Trading — Estrategias</h1>"+subnav+
-                    "<div class='paper-notice'><b>Scalping tiene menú principal y detalle propio.</b> "
-                    "Esta vista lo conserva también dentro del agrupador de estrategias.</div>"+
-                    _main_fragment(scalping_page()))
-              return _document('Trading — Estrategias',body,refresh=30)
-          '''
-          new = '''    if section=='estrategias':
-              from fo_eod_overnight_dashboard_rc6 import render as render_eod_overnight
-              body=("<h1>Trading — Estrategias</h1>"+subnav+
-                    "<div class='paper-notice'>Las estrategias se muestran aquí sin duplicar módulos que ya tienen navegación propia. "
-                    "Scalping permanece exclusivamente en su menú principal.</div>"+
-                    render_eod_overnight())
-              return _document('Trading — Estrategias',body,refresh=30)
-          '''
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'expected exactly one Trading Estrategias block, found {count}')
-          text = text.replace(old, new, 1)
-          path.write_text(text, encoding='utf-8')
+          anchor = "    if section=='estrategias':"
+          next_anchor = "    families=families_for_group(section)"
+          start = text.index(anchor)
+          end = text.index(next_anchor, start)
+          old = text[start:end]
+          if '_main_fragment(scalping_page())' not in old:
+              raise SystemExit('Trading Estrategias no longer contains the expected Scalping duplicate; refusing ambiguous patch')
+          new = "\n".join([
+              "    if section=='estrategias':",
+              "        from fo_eod_overnight_dashboard_rc6 import render as render_eod_overnight",
+              "        body=(\"<h1>Trading — Estrategias</h1>\"+subnav+",
+              "              \"<div class='paper-notice'>Las estrategias se muestran aquí sin duplicar módulos que ya tienen navegación propia. \"",
+              "              \"Scalping permanece exclusivamente en su menú principal.</div>\"+",
+              "              render_eod_overnight())",
+              "        return _document('Trading — Estrategias',body,refresh=30)",
+              "",
+          ])
+          path.write_text(text[:start] + new + text[end:], encoding='utf-8')
           PY
 
       - name: Static safety assertions
