@@ -1,0 +1,107 @@
+name: RC6 API Universe History Canonical Coverage Readonly 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-api-universe-history-canonical-coverage-readonly-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Cross 914 API identities with canonical history
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBSDB="$ROOT/data/paper_v17/observer_v17.db"
+          HISTDB="$ROOT/data/market_history.db"
+          BASE=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          git -C "$ROOT" merge-base --is-ancestor "$BASE" "$HEAD"
+          echo "HOST_SHA=$HEAD"
+          curl -fsS --max-time 5 http://127.0.0.1:8000/health; echo
+          test -s "$OBSDB" && test -s "$HISTDB"
+          python3 - "$OBSDB" "$HISTDB" <<'PY'
+          import sqlite3,json,sys
+          from collections import defaultdict,Counter
+          from datetime import datetime,timezone
+
+          obs,hist=sys.argv[1:3]
+          aliases={'ACCIONES_USA':'ACCIONES-USA','FCI_EXTERIOR':'FCI-EXTERIOR','FCI_LOCAL':'FCI','OBLIGACIONES':'ON','ETFS':'ETF'}
+          canon=lambda v: aliases.get(str(v or '').strip().upper(),str(v or '').strip().upper())
+          placeholders={'','*','UNKNOWN','NONE','N/A','NULL'}
+
+          co=sqlite3.connect('file:'+obs+'?mode=ro',uri=True,timeout=30); co.row_factory=sqlite3.Row; co.execute('pragma query_only=on')
+          ch=sqlite3.connect('file:'+hist+'?mode=ro',uri=True,timeout=30); ch.row_factory=sqlite3.Row; ch.execute('pragma query_only=on')
+          qo=co.execute('pragma quick_check').fetchone()[0]; qh=ch.execute('pragma quick_check').fetchone()[0]
+          st=co.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          assert qo=='ok' and qh=='ok' and st and st['mode']=='PRODUCTION_PAPER' and int(st['real_orders_sent'] or 0)==0
+          print('SAFETY='+json.dumps({'observer_quick_check':qo,'history_quick_check':qh,'mode':st['mode'],'session':st['session_state'],'real_orders_sent':st['real_orders_sent']},sort_keys=True))
+
+          api=[dict(r) for r in co.execute('select family,ticker,market,currency,source from api_universe_v1 order by family,ticker,market')]
+          index=defaultdict(list)
+          family_totals=Counter()
+          for r in ch.execute('select symbol,instrument_type,market,settlement,date,source,observed_at from history_canonical_v2'):
+              fam=canon(r['instrument_type']); t=str(r['symbol'] or '').strip().upper()
+              index[(fam,t)].append(dict(r)); family_totals[fam]+=1
+
+          stats=defaultdict(lambda:{'api':0,'history_exact':0,'history_market_compatible':0,'rows':0,'distinct_dates':0,'latest_date':None,'oldest_date':None,'sources':Counter()})
+          missing=defaultdict(list); market_conflicts=defaultdict(list); identity_samples=defaultdict(list)
+          total_exact=0; total_compatible=0
+          for a in api:
+              fam=canon(a['family']); t=str(a['ticker'] or '').strip().upper(); m=str(a['market'] or '').strip().upper()
+              s=stats[fam]; s['api']+=1
+              rows=index.get((fam,t),[])
+              if not rows:
+                  if len(missing[fam])<20: missing[fam].append(t)
+                  continue
+              s['history_exact']+=1; total_exact+=1
+              compatible=[r for r in rows if str(r.get('market') or '').strip().upper() in placeholders|{m}]
+              if compatible:
+                  s['history_market_compatible']+=1; total_compatible+=1
+              elif len(market_conflicts[fam])<10:
+                  market_conflicts[fam].append({'ticker':t,'api_market':m,'history_markets':sorted({str(r.get('market') or '').strip().upper() for r in rows})})
+              dates=sorted({str(r.get('date') or '') for r in rows if r.get('date')})
+              s['rows']+=len(rows); s['distinct_dates']+=len(dates)
+              if dates:
+                  s['oldest_date']=dates[0] if s['oldest_date'] is None or dates[0]<s['oldest_date'] else s['oldest_date']
+                  s['latest_date']=dates[-1] if s['latest_date'] is None or dates[-1]>s['latest_date'] else s['latest_date']
+              for r in rows: s['sources'][str(r.get('source') or 'UNKNOWN')]+=1
+              if len(identity_samples[fam])<12:
+                  identity_samples[fam].append({'ticker':t,'rows':len(rows),'dates':len(dates),'oldest':dates[0] if dates else None,'latest':dates[-1] if dates else None,'markets':sorted({str(r.get('market') or '') for r in rows}),'settlements':sorted({str(r.get('settlement') or '') for r in rows})})
+
+          for fam in sorted(stats):
+              s=stats[fam]
+              out={k:v for k,v in s.items() if k!='sources'}
+              out.update({'family':fam,'source_rows':dict(s['sources']),'missing_samples':missing[fam],'market_conflict_samples':market_conflicts[fam],'identity_samples':identity_samples[fam]})
+              print('HISTORY_COVERAGE='+json.dumps(out,ensure_ascii=False,sort_keys=True))
+          print('TOTAL='+json.dumps({'api':len(api),'history_exact_identities':total_exact,'history_market_compatible_identities':total_compatible,'history_rows_total':sum(family_totals.values()),'history_rows_by_family':dict(sorted(family_totals.items()))},ensure_ascii=False,sort_keys=True))
+          co.close(); ch.close()
+          print('MUTATIONS=NONE')
+          print('HISTORY_READY_FLAGS_CHANGED=NO')
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
