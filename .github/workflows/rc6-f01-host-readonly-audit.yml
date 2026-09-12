@@ -225,6 +225,25 @@ jobs:
                   pass
           print(f"IOL_HISTORY_QUERY_SIGNATURE_COUNT={count}")
           PY
+          # Report process IDs and elapsed time only for IOL read-history signatures; never argv.
+          python3 - <<'PY'
+          import os, subprocess
+          from pathlib import Path
+          markers = (b"api.invertironline.com", b"seriehistorica", b"get_serie_historica")
+          for pid in os.listdir("/proc"):
+              if not pid.isdigit():
+                  continue
+              proc = Path("/proc") / pid
+              try:
+                  raw = (proc / "cmdline").read_bytes().lower()
+                  if not any(marker in raw for marker in markers):
+                      continue
+                  comm = (proc / "comm").read_text().strip()
+                  elapsed = subprocess.run(["ps", "-p", pid, "-o", "etime="], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=2).stdout.strip()
+                  print(f"IOL_HISTORY_PROCESS|PID={pid}|COMM={comm}|ELAPSED={elapsed or 'UNKNOWN'}")
+              except (OSError, subprocess.SubprocessError):
+                  pass
+          PY
           echo "HOST_MUTATION=NONE"
           echo "REAL_ORDER_ROUTES=NOT_CALLED"
           REMOTE
