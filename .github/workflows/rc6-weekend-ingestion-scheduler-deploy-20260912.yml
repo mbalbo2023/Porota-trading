@@ -1,0 +1,432 @@
+name: RC6 weekend ingestion scheduler deploy 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-weekend-ingestion-scheduler-deploy-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Deploy calendar-gated schedule and weekend exception
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          EXPECT='c8773c8346a880ac5ecfe99ece5555c5bb771524'
+          ACTUAL="$(git rev-parse HEAD)"
+          echo "HOST_SHA=$ACTUAL"
+          test "$ACTUAL" = "$EXPECT" || { echo 'ABORT=HOST_SHA_MOVED'; exit 31; }
+          test ! -e .git/index.lock || { echo 'ABORT=GIT_INDEX_LOCK_PRESENT'; exit 32; }
+
+          echo '=== PRE_SAFETY ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print('SAFETY=%s|%s'%r)
+          assert r[0]=='PRODUCTION_PAPER' and int(r[1] or 0)==0
+          PY
+
+          echo '=== CALENDAR_SYNTAX_PREFLIGHT ==='
+          for expr in \
+            'Mon..Fri *-*-* 09:15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires' \
+            'Mon..Fri *-*-* 10:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires' \
+            'Mon..Fri *-*-* 11:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires' \
+            'Mon..Fri *-*-* 12:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires' \
+            'Mon..Fri *-*-* 13:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires' \
+            'Mon..Fri *-*-* 14:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires' \
+            'Mon..Fri *-*-* 15:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires' \
+            'Mon..Fri *-*-* 16:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires' \
+            'Mon..Fri *-*-* 17:00,05,10,15:00 America/Argentina/Buenos_Aires' \
+            '2026-09-12 04:15:00 America/Argentina/Buenos_Aires' \
+            '2026-09-13 00:15:00 America/Argentina/Buenos_Aires' \
+            '2026-09-12 08:00:00 America/Argentina/Buenos_Aires'; do
+            systemd-analyze calendar "$expr" >/dev/null
+          done
+          echo 'CALENDAR_SYNTAX=GREEN'
+
+          BACKUP="/var/backups/porota-contract-schedule-$(date -u +%Y%m%dT%H%M%SZ)"
+          sudo -n install -d -m 0700 "$BACKUP"
+          sudo -n cp -a /etc/systemd/system/porota-contract-evidence-rc6.timer "$BACKUP/original.timer"
+          if [ -e /etc/systemd/system/porota-contract-evidence-rc6.service.d/30-tradingday-calendar.conf ]; then
+            sudo -n cp -a /etc/systemd/system/porota-contract-evidence-rc6.service.d/30-tradingday-calendar.conf "$BACKUP/original.30.conf"
+            HAD_30=1
+          else
+            HAD_30=0
+          fi
+          echo "BACKUP_DIR=$BACKUP"
+
+          ROLLBACK=1
+          rollback() {
+            rc=$?
+            if [ "$ROLLBACK" = 1 ]; then
+              echo "ROLLBACK=BEGIN|RC=$rc"
+              sudo -n cp -a "$BACKUP/original.timer" /etc/systemd/system/porota-contract-evidence-rc6.timer || true
+              if [ "$HAD_30" = 1 ]; then
+                sudo -n cp -a "$BACKUP/original.30.conf" /etc/systemd/system/porota-contract-evidence-rc6.service.d/30-tradingday-calendar.conf || true
+              else
+                sudo -n rm -f /etc/systemd/system/porota-contract-evidence-rc6.service.d/30-tradingday-calendar.conf || true
+              fi
+              sudo -n systemctl daemon-reload || true
+              sudo -n systemctl enable --now porota-contract-evidence-rc6.timer || true
+              echo 'ROLLBACK=END'
+            fi
+            exit "$rc"
+          }
+          trap rollback ERR INT TERM
+
+          echo '=== QUIESCE_NORMAL_SCRAPER ==='
+          sudo -n systemctl stop porota-contract-evidence-rc6.timer
+          for _ in $(seq 1 90); do
+            state="$(systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)"
+            case "$state" in inactive|failed|unknown) break;; esac
+            sleep 4
+          done
+          state="$(systemctl is-active porota-contract-evidence-rc6.service 2>/dev/null || true)"
+          case "$state" in inactive|failed|unknown) :;; *) echo "ABORT=CONTRACT_SERVICE_BUSY|$state"; false;; esac
+
+          echo '=== INSTALL_GUARDS_AND_WRAPPERS ==='
+          cat >/tmp/porota-contract-evidence-rc6-calendar-guard.sh <<'SH'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          python3 - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          import ak_byma_calendar as cal
+          now=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+          reason=cal.motivo_no_operativo(now.date())
+          if reason is not None:
+              print(f'SCRAPER_CALENDAR=SKIP|DATE={now.date().isoformat()}|REASON={reason}')
+              raise SystemExit(1)
+          print(f'SCRAPER_CALENDAR=ALLOW|DATE={now.date().isoformat()}')
+          PY
+          SH
+          sudo -n install -o root -g root -m 0755 /tmp/porota-contract-evidence-rc6-calendar-guard.sh /usr/local/sbin/porota-contract-evidence-rc6-calendar-guard.sh
+
+          cat >/tmp/porota-contract-evidence-rc6-tradingday.sh <<'SH'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          exec 9>/run/lock/porota-ppi-web-browser.lock
+          if ! flock -n 9; then
+            echo 'STATUS=GREEN_SKIP_BROWSER_LOCK_BUSY'
+            echo 'REAL_ORDERS_SENT=0'
+            exit 0
+          fi
+          exec /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh
+          SH
+          sudo -n install -o root -g root -m 0755 /tmp/porota-contract-evidence-rc6-tradingday.sh /usr/local/sbin/porota-contract-evidence-rc6-tradingday.sh
+
+          cat >/tmp/porota-contract-evidence-weekend-backfill-rc6.sh <<'SH'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          ROOT="${POROTA_ROOT:-/opt/porota-trading}"
+          CONTAINER="${POROTA_OBSERVER_CONTAINER:-porota_production_observer}"
+          DOCKER_BIN="${POROTA_DOCKER_BIN:-/usr/bin/docker}"
+          LIB="${POROTA_RC6_CE_LIB:-/usr/local/lib/porota-contract-evidence-rc6}"
+          CE_PYTHON="${POROTA_CE_PYTHON:-/opt/porota-contract-evidence-venv/bin/python}"
+          BASE="${POROTA_RC6_CE_BASE:-/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh}"
+          PROFILE="${POROTA_CHROME_PROFILE:-}"
+          if [ -z "$PROFILE" ]; then
+            PROFILE="$(find /home -maxdepth 4 -type d -path '*/porota-browser-lab/chrome-profile' -print -quit 2>/dev/null || true)"
+          fi
+          test -n "$PROFILE" -a -d "$PROFILE" || { echo 'WEEKEND_STATUS=BLOCKED_PROFILE_MISSING'; exit 4; }
+          ALLOWED='/Cotizaciones/Acciones,/Cotizaciones/Bonos,/Cotizaciones/Cauciones,/Cotizaciones/Cedears,/Cotizaciones/ETFs,/Cotizaciones/FCIs,/Cotizaciones/Futuros,/Cotizaciones/Letras,/Cotizaciones/Licitaciones,/Cotizaciones/Ons,/Cotizaciones/Opciones'
+          ROUTES="${POROTA_WEEKEND_ROUTES:-$ALLOWED}"
+          python3 - "$ROUTES" "$ALLOWED" <<'PY'
+          import sys
+          req=[x.strip() for x in sys.argv[1].split(',') if x.strip()]
+          allowed=set(x.strip() for x in sys.argv[2].split(',') if x.strip())
+          bad=[x for x in req if x not in allowed]
+          if bad or not req:
+              print('WEEKEND_STATUS=BLOCKED_UNSAFE_ROUTE:'+','.join(bad))
+              raise SystemExit(4)
+          PY
+          exec 9>/run/lock/porota-ppi-web-browser.lock
+          if ! flock -n 9; then
+            echo 'WEEKEND_STATUS=SKIP_BROWSER_LOCK_BUSY'
+            echo 'REAL_ORDERS_SENT=0'
+            exit 0
+          fi
+          "$BASE"
+          "$DOCKER_BIN" exec -i "$CONTAINER" python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print('WEEKEND_SAFETY=%s|%s'%r)
+          assert r[0]=='PRODUCTION_PAPER' and int(r[1] or 0)==0
+          PY
+          BROWSER_USER="$(stat -c '%U' "$PROFILE")"
+          STAGE="$(mktemp -d /tmp/porota-ce-weekend.XXXXXX)"
+          trap 'rm -rf "$STAGE"' EXIT
+          chown "$BROWSER_USER" "$STAGE"
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          STAGE_CAPTURE="$STAGE/weekend_${stamp}.json"
+          OUTDIR="$ROOT/data/contract_evidence_rc6_weekend"
+          CAPTURE="$OUTDIR/weekend_${stamp}.json"
+          install -d -m 0755 "$OUTDIR"
+          runuser -u "$BROWSER_USER" -- env PYTHONPATH="$LIB:$ROOT" "$CE_PYTHON" "$LIB/rc6_contract_dom_collector.py" \
+            --profile "$PROFILE" --output "$STAGE_CAPTURE" --routes "$ROUTES"
+          install -o root -g root -m 0644 "$STAGE_CAPTURE" "$CAPTURE"
+          REL="${CAPTURE#${ROOT}/data/}"
+          IMPORT_OUT="$($DOCKER_BIN exec -i "$CONTAINER" python - "/app/data/$REL" < "$LIB/rc6_contract_dom_importer.py" 2>&1)"
+          echo "$IMPORT_OUT"
+          REQUIRE="${POROTA_REQUIRE_RECORDS:-0}" IMPORT_OUT="$IMPORT_OUT" python3 - <<'PY'
+          import json,os
+          line=os.environ['IMPORT_OUT'].strip().splitlines()[-1]
+          d=json.loads(line)
+          if d.get('state') not in {'GREEN','YELLOW_NO_TABLE_THIS_PASS'}:
+              raise SystemExit(6)
+          if os.environ.get('REQUIRE')=='1' and int(d.get('records') or 0)<1:
+              raise SystemExit(7)
+          print('WEEKEND_IMPORT_STATE='+str(d.get('state'))+'|RECORDS='+str(d.get('records'))+'|FAMILIES='+','.join(d.get('families') or []))
+          PY
+          "$DOCKER_BIN" exec -i "$CONTAINER" python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          assert r[0]=='PRODUCTION_PAPER' and int(r[1] or 0)==0
+          print('WEEKEND_POST_SAFETY=%s|%s'%r)
+          PY
+          echo "WEEKEND_CAPTURE=$CAPTURE"
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDERS_SENT=0'
+          SH
+          sudo -n install -o root -g root -m 0755 /tmp/porota-contract-evidence-weekend-backfill-rc6.sh /usr/local/sbin/porota-contract-evidence-weekend-backfill-rc6.sh
+
+          sudo -n install -d -m 0755 /etc/systemd/system/porota-contract-evidence-rc6.service.d
+          cat >/tmp/30-tradingday-calendar.conf <<'UNIT'
+          [Service]
+          ExecCondition=/usr/local/sbin/porota-contract-evidence-rc6-calendar-guard.sh
+          ExecStart=
+          ExecStart=/usr/local/sbin/porota-contract-evidence-rc6-tradingday.sh
+          UNIT
+          sudo -n install -o root -g root -m 0644 /tmp/30-tradingday-calendar.conf /etc/systemd/system/porota-contract-evidence-rc6.service.d/30-tradingday-calendar.conf
+
+          cat >/tmp/porota-contract-evidence-rc6.timer <<'UNIT'
+          [Unit]
+          Description=Porota RC6 Contract Evidence - audited BYMA trading days/session window
+
+          [Timer]
+          OnCalendar=Mon..Fri *-*-* 09:15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires
+          OnCalendar=Mon..Fri *-*-* 10:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires
+          OnCalendar=Mon..Fri *-*-* 11:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires
+          OnCalendar=Mon..Fri *-*-* 12:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires
+          OnCalendar=Mon..Fri *-*-* 13:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires
+          OnCalendar=Mon..Fri *-*-* 14:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires
+          OnCalendar=Mon..Fri *-*-* 15:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires
+          OnCalendar=Mon..Fri *-*-* 16:00,05,10,15,20,25,30,35,40,45,50,55:00 America/Argentina/Buenos_Aires
+          OnCalendar=Mon..Fri *-*-* 17:00,05,10,15:00 America/Argentina/Buenos_Aires
+          AccuracySec=20s
+          RandomizedDelaySec=20s
+          Persistent=false
+          Unit=porota-contract-evidence-rc6.service
+
+          [Install]
+          WantedBy=timers.target
+          UNIT
+          sudo -n install -o root -g root -m 0644 /tmp/porota-contract-evidence-rc6.timer /etc/systemd/system/porota-contract-evidence-rc6.timer
+
+          cat >/tmp/porota-contract-evidence-weekend-backfill-rc6.service <<'UNIT'
+          [Unit]
+          Description=Porota RC6 one-off Sep 12-13 weekend contract/reference backfill (read-only PPI Web)
+          After=docker.service network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          WorkingDirectory=/opt/porota-trading
+          EnvironmentFile=-/etc/porota/contract-evidence-rc6.conf
+          Environment=POROTA_REQUIRE_RECORDS=0
+          ExecStart=/usr/local/sbin/porota-contract-evidence-weekend-backfill-rc6.sh
+          TimeoutStartSec=20min
+          TimeoutStopSec=2min
+          Nice=12
+          UNIT
+          sudo -n install -o root -g root -m 0644 /tmp/porota-contract-evidence-weekend-backfill-rc6.service /etc/systemd/system/porota-contract-evidence-weekend-backfill-rc6.service
+
+          cat >/tmp/porota-contract-evidence-weekend-backfill-rc6.timer <<'UNIT'
+          [Unit]
+          Description=Porota RC6 exact-date weekend backfill exception - expires after 2026-09-13
+
+          [Timer]
+          OnCalendar=2026-09-12 04:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-12 06:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-12 08:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-12 10:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-12 12:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-12 14:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-12 16:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-12 18:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-12 20:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-12 22:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 00:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 02:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 04:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 06:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 08:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 10:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 12:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 14:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 16:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 18:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 20:15:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 22:15:00 America/Argentina/Buenos_Aires
+          AccuracySec=1min
+          RandomizedDelaySec=2min
+          Persistent=false
+          Unit=porota-contract-evidence-weekend-backfill-rc6.service
+
+          [Install]
+          WantedBy=timers.target
+          UNIT
+          sudo -n install -o root -g root -m 0644 /tmp/porota-contract-evidence-weekend-backfill-rc6.timer /etc/systemd/system/porota-contract-evidence-weekend-backfill-rc6.timer
+
+          cat >/tmp/porota-weekend-ingestion-audit-rc6.sh <<'SH'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OUTDIR="$ROOT/data/audit"
+          install -d -m 0755 "$OUTDIR"
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          out="$OUTDIR/weekend_ingestion_${stamp}.txt"
+          {
+            echo "AUDIT_AT_UTC=$(date -u +%FT%TZ)"
+            echo "HOST_SHA=$(git -C "$ROOT" rev-parse HEAD)"
+            echo "HOST_BRANCH=$(git -C "$ROOT" branch --show-current || true)"
+            echo "NORMAL_TIMER_ENABLED=$(systemctl is-enabled porota-contract-evidence-rc6.timer 2>/dev/null || true)"
+            echo "NORMAL_TIMER_ACTIVE=$(systemctl is-active porota-contract-evidence-rc6.timer 2>/dev/null || true)"
+            echo "WEEKEND_TIMER_ENABLED=$(systemctl is-enabled porota-contract-evidence-weekend-backfill-rc6.timer 2>/dev/null || true)"
+            echo "WEEKEND_TIMER_ACTIVE=$(systemctl is-active porota-contract-evidence-weekend-backfill-rc6.timer 2>/dev/null || true)"
+            echo "HISTORY_TIMER_ENABLED=$(systemctl is-enabled porota-ppi-argentina-nightly-rc6.timer 2>/dev/null || true)"
+            echo "HISTORY_TIMER_ACTIVE=$(systemctl is-active porota-ppi-argentina-nightly-rc6.timer 2>/dev/null || true)"
+            /usr/bin/docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print('SAFETY=%s|%s'%s)
+          def one(sql):
+              try:return c.execute(sql).fetchone()[0]
+              except Exception:return 'NA'
+          print('ARG_API_IDENTITIES='+str(one('select count(*) from ppi_argentina_api_shadow')))
+          print('HISTORY_ATTEMPTS='+str(one('select count(*) from production_history_attempts')))
+          print('HISTORY_USABLE='+str(one("select count(*) from production_history_attempts where state in ('VALID_PAYLOAD','PARTIAL')")))
+          print('HISTORY_HARD='+str(one("select count(*) from production_history_attempts where state in ('EMPTY_OR_INVALID','ERROR')")))
+          print('CONTRACT_CURRENT='+str(one('select count(*) from contract_evidence_v2_current')))
+          print('CONTRACT_RUNS='+str(one('select count(*) from contract_evidence_v2_runs')))
+          print('CONTRACT_SNAPSHOTS='+str(one('select count(*) from contract_evidence_v2_snapshots')))
+          try:
+              for fam,n,mx in c.execute("select family,count(*),max(observed_at) from contract_evidence_v2_current where source_class='PPI_AUTHENTICATED_WEB' group by family order by family"):
+                  print('WEB_FAMILY=%s|ROWS=%s|LATEST=%s'%(fam,n,mx))
+          except Exception: pass
+          c.close()
+          PY
+            echo 'ORDER_ROUTES=NOT_CALLED'
+          } >"$out"
+          ln -sfn "$(basename "$out")" "$OUTDIR/weekend_ingestion_latest.txt"
+          echo "AUDIT_SNAPSHOT=$out"
+          SH
+          sudo -n install -o root -g root -m 0755 /tmp/porota-weekend-ingestion-audit-rc6.sh /usr/local/sbin/porota-weekend-ingestion-audit-rc6.sh
+
+          cat >/tmp/porota-weekend-ingestion-audit-rc6.service <<'UNIT'
+          [Unit]
+          Description=Porota RC6 read-only weekend ingestion morning snapshot
+          After=docker.service
+
+          [Service]
+          Type=oneshot
+          WorkingDirectory=/opt/porota-trading
+          ExecStart=/usr/local/sbin/porota-weekend-ingestion-audit-rc6.sh
+          TimeoutStartSec=5min
+          Nice=15
+          UNIT
+          sudo -n install -o root -g root -m 0644 /tmp/porota-weekend-ingestion-audit-rc6.service /etc/systemd/system/porota-weekend-ingestion-audit-rc6.service
+
+          cat >/tmp/porota-weekend-ingestion-audit-rc6.timer <<'UNIT'
+          [Unit]
+          Description=Porota RC6 morning audit snapshots for Sep 12-13 weekend
+
+          [Timer]
+          OnCalendar=2026-09-12 08:00:00 America/Argentina/Buenos_Aires
+          OnCalendar=2026-09-13 08:00:00 America/Argentina/Buenos_Aires
+          AccuracySec=1min
+          Persistent=false
+          Unit=porota-weekend-ingestion-audit-rc6.service
+
+          [Install]
+          WantedBy=timers.target
+          UNIT
+          sudo -n install -o root -g root -m 0644 /tmp/porota-weekend-ingestion-audit-rc6.timer /etc/systemd/system/porota-weekend-ingestion-audit-rc6.timer
+
+          sudo -n systemctl daemon-reload
+
+          echo '=== CANARY ==='
+          sudo -n env POROTA_WEEKEND_ROUTES='/Cotizaciones/Acciones,/Cotizaciones/Cedears,/Cotizaciones/Ons' POROTA_REQUIRE_RECORDS=1 \
+            /usr/local/sbin/porota-contract-evidence-weekend-backfill-rc6.sh
+          echo 'CANARY=GREEN'
+
+          echo '=== ENABLE_TIMERS ==='
+          sudo -n systemctl enable --now porota-contract-evidence-rc6.timer
+          sudo -n systemctl enable --now porota-contract-evidence-weekend-backfill-rc6.timer
+          sudo -n systemctl enable --now porota-weekend-ingestion-audit-rc6.timer
+          test "$(systemctl is-enabled porota-ppi-argentina-nightly-rc6.timer 2>/dev/null || true)" = enabled
+          test "$(systemctl is-active porota-ppi-argentina-nightly-rc6.timer 2>/dev/null || true)" = active
+
+          ROLLBACK=0
+          trap - ERR INT TERM
+
+          echo '=== VERIFY ==='
+          systemctl list-timers porota-contract-evidence-rc6.timer porota-contract-evidence-weekend-backfill-rc6.timer porota-weekend-ingestion-audit-rc6.timer porota-ppi-argentina-nightly-rc6.timer --all --no-pager || true
+          echo '--- NORMAL_TIMER ---'
+          systemctl cat porota-contract-evidence-rc6.timer
+          echo '--- NORMAL_SERVICE_EFFECTIVE ---'
+          systemctl cat porota-contract-evidence-rc6.service
+          echo '--- WEEKEND_TIMER ---'
+          systemctl cat porota-contract-evidence-weekend-backfill-rc6.timer
+          echo '--- HISTORY_TIMER_UNCHANGED ---'
+          systemctl cat porota-ppi-argentina-nightly-rc6.timer
+
+          echo '=== POST_SAFETY ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print('SAFETY=%s|%s'%r)
+          assert r[0]=='PRODUCTION_PAPER' and int(r[1] or 0)==0
+          PY
+          echo 'DEPLOY_STATUS=GREEN'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDERS_SENT=0'
+          HOST
