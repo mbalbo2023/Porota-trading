@@ -6,7 +6,9 @@ on:
       - fix/rc6-postfinal-contract-dom-stability-20260911
     paths:
       - rc6_api_universe_authority.py
+      - rc6_web_api_candidate_bridge.py
       - tests/test_rc6_api_universe_authority.py
+      - tests/test_rc6_web_api_candidate_bridge.py
       - .github/workflows/rc6-api-universe-authority-proof-20260912.yml
   workflow_dispatch:
 
@@ -19,17 +21,21 @@ jobs:
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
-      - name: Compile and test authority model
+      - name: Compile and test authority models
         env:
           PYTHONPATH: .
         run: |
           set -Eeuo pipefail
-          python -m py_compile rc6_api_universe_authority.py tests/test_rc6_api_universe_authority.py
+          python -m py_compile rc6_api_universe_authority.py rc6_web_api_candidate_bridge.py tests/test_rc6_api_universe_authority.py tests/test_rc6_web_api_candidate_bridge.py
           python tests/test_rc6_api_universe_authority.py
+          python tests/test_rc6_web_api_candidate_bridge.py
           python - <<'PY'
           import rc6_api_universe_authority as u
+          import rc6_web_api_candidate_bridge as w
           u.assert_no_execution_capability()
+          w.assert_no_execution_capability()
           print('API_UNIVERSE_AUTHORITY=GREEN')
+          print('WEB_CANDIDATE_BRIDGE=GREEN')
           print('AUTO_PAPER_PROMOTION=FALSE')
           print('ORDER_CAPABILITY=NONE')
           PY
