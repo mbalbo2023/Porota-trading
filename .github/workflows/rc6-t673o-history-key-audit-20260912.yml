@@ -52,7 +52,7 @@ jobs:
               return [{'name':r[1],'type':r[2],'notnull':r[3],'default':r[4],'pk':r[5]} for r in c.execute('pragma table_info('+t+')')]
           with store.connect() as c:
               print('OBSERVER_QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
-              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print('SAFETY=%s|%s'%s)
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'SAFETY={s[0]}|{s[1]}')
               tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
               for t in ['ppi_argentina_api_shadow','production_history_attempts','production_history','history_attempt_ledger_v2','history_row_rejections_v2','historical_raw_archive']:
                   if t in tabs: print('SCHEMA_'+t.upper()+'='+json.dumps(schema(c,t),sort_keys=True))
@@ -72,8 +72,9 @@ jobs:
               tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
               for t in ['history_canonical_v2','history_versions_v2','history_close_canonical_v1','history_close_versions_v1']:
                   if t in tabs:
-                      print('SCHEMA_'+t.upper()+'='+json.dumps(schema(c,t),sort_keys=True))
-                      cols={r['name'] for r in schema(c,t)}
+                      sc=schema(c,t)
+                      print('SCHEMA_'+t.upper()+'='+json.dumps(sc,sort_keys=True))
+                      cols={r['name'] for r in sc}
                       if 'symbol' in cols:
                           print('T673O_'+t.upper()+'='+json.dumps([dict(r) for r in c.execute("select * from "+t+" where symbol='T673O' limit 20")],default=str,sort_keys=True))
           print('HOST_MUTATION=NONE')
