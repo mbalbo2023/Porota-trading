@@ -78,3 +78,11 @@ El conector GitHub disponible no expone una operación de borrado de ramas. No s
 - El CI de `main` incluye `main`, `develop` y `testing` para push y pull request. El workflow manual `promote-to-production.yml` tiene `testing` como origen por defecto, acepta `testing` y `develop`, valida CI y puede hacer push a `main`. `deploy.yml` es manual y selecciona `main` por defecto.
 - Conclusión: `testing` sigue conectado al flujo GitHub de promoción, pero eso no prueba que su HEAD sea el runtime desplegado ni que sea el baseline RC6. No borrar/modificar `testing` ni el flujo de promoción hasta diseñar y revisar una migración que preserve el proceso manual vigente; no se ejecutó ningún workflow.
 - Corrección sobre permisos: la integración de GitHub sí tiene escritura/fusión en `main`, demostrado por los PRs #57 y #56 fusionados. El 403 corresponde a la consulta administrativa de branch protection; la lectura de rulesets tampoco está disponible por el plan/permisos. La Deploy Key del servidor es otra credencial y su carácter read-only no implica falta de permisos de escritura de la integración GitHub.
+
+### Resultado de la consulta actual de GitHub
+
+La rama `testing` existe en `612b0431a33909af3eeaaaa909db648c165a4ac9`; su último commit data del 2026-08-27 y se titula `feat: dashboard 24x7 y observabilidad v16.3.5`. Compara como 102 commits ahead y 2 behind de `main`. No existe branch `testigo` (404).
+
+El CI de `main` incluye `testing` y `develop` para push/PR. La promoción manual elige `testing` por defecto, permite `testing/develop`, verifica CI y actualiza `main`; el despliegue manual toma `main` por defecto. Esto confirma que `testing` está cableada como entrada de desarrollo/promoción, pero no prueba que su HEAD sea RC6 o el código vivo.
+
+GitHub enumera la rama `release-candidate/v17.0.0-rc6-deploy3-20260906` en SHA `5bdad270c2a23bb2456a320d41e18940ce70ec6f`; la enumeración de tags devuelve solo `v17.0.0-rc3-hf6`, no un tag RC6. La auditoría previa de este mismo checkpoint había anotado otro SHA para RC6. Antes de nombrar un “testigo” canónico o cambiar el selector de promoción, reconciliar el SHA/tag operativo con el checkpoint de runtime autorizado. No promover ni ejecutar workflows durante esa conciliación.
