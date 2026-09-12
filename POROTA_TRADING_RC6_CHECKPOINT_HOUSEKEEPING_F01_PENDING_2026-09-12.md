@@ -62,10 +62,22 @@ Preflights posteriores comprobaron que el host sí estaba en ese SHA y que los a
 - Ejecutar CI completa y postflight PAPER.
 - No marcar F01 como desplegado hasta verificar SHA del host, health, observer/dashboard sin reinicios, `PRODUCTION_PAPER`, `SIMULATED` y `real_orders_sent=0`.
 
-## Estado al crear este checkpoint
+## Incidente EOD UI durante este checkpoint
+
+- Run EOD UI: `34671405159`.
+- Validación offline: `SUCCESS` completa.
+- Fase remota: `FAILURE` por transporte SSH, no por código ni por los 58 archivos.
+- El guard nuevo aceptó correctamente `TRACKED_DIRTY_COUNT=0`, contabilizó `UNTRACKED_COUNT=58`, confirmó espacio suficiente y verificó `PRE_SAFETY=ok|PRODUCTION_PAPER|0`.
+- El fallo ocurrió durante `docker build`, en instalación de dependencias (`pip install`), con `client_loop: send disconnect: Broken pipe` / exit code `255`.
+- Según el orden del workflow, todavía no se había ejecutado `git checkout` al target, `docker tag` del candidato ni `porota_mode_manager.py simulation`; por lo tanto no se considera activado EOD UI.
+- Forward-fix pendiente: robustecer la sesión SSH/ejecución remota para builds largos y reintentar desde la misma base certificada, previa revalidación read-only del host.
+
+## Estado actualizado
 
 - Housekeeping: `PENDIENTE`.
 - Limpieza destructiva: `NO AUTORIZADA` sin clasificación previa.
 - F01 lógica/CI offline: `GREEN` en el candidato original.
-- F01 producción PAPER: `PENDIENTE DE REBASE/REVALIDACIÓN` después del deploy EOD UI actual.
-- EOD UI: deploy separado en curso; no mezclar ambas activaciones sobre el mismo host en paralelo.
+- F01 producción PAPER: `PENDIENTE DE REBASE/REVALIDACIÓN` después de cerrar EOD UI.
+- EOD UI código/CI: `GREEN`.
+- EOD UI activación: `NO ACTIVADA`; fallo de transporte SSH durante build remoto.
+- Runtime seguro esperado: baseline anterior `eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a`, sujeto a verificación read-only fresca antes del siguiente intento.
