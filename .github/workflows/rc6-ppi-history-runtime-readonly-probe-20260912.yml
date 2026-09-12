@@ -69,3 +69,5 @@ jobs:
           echo '--- JOURNAL_TAIL_READONLY ---'
           sudo -n journalctl -u "$SVC" -n 40 --no-pager 2>&1 || true
           HOST
+
+# refresh probe 2026-09-12 current-status
