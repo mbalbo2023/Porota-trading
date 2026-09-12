@@ -25,7 +25,7 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
 
-      - name: Read-only runtime proof
+      - name: Read-only runtime and yield proof
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -46,28 +46,73 @@ jobs:
           echo "SYSTEMD_MAINPID=$(systemctl show -p MainPID --value "$SVC" 2>/dev/null || true)"
           echo "DISK_ROOT=$(df -Pk / | awk 'NR==2{print $4"KB_free|"$5"_used"}')"
 
-          snapshot() {
-            sudo -n docker exec -i porota_production_observer python -u - status < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
-          }
-          integrity() {
-            sudo -n docker exec -i porota_production_observer python -u - integrity < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
-          }
+          echo '--- STATUS ---'
+          sudo -n docker exec -i porota_production_observer python -u - status < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
+          echo '--- INTEGRITY ---'
+          sudo -n docker exec -i porota_production_observer python -u - integrity < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
 
-          echo '--- SNAPSHOT_A ---'
-          A="$(snapshot)"
-          printf '%s\n' "$A"
-          echo '--- INTEGRITY_A ---'
-          integrity
-          sleep 45
-          echo '--- SNAPSHOT_B ---'
-          B="$(snapshot)"
-          printf '%s\n' "$B"
-          echo "SYSTEMD_ACTIVE_B=$(systemctl is-active "$SVC" 2>/dev/null || true)"
-          echo "SYSTEMD_MAINPID_B=$(systemctl show -p MainPID --value "$SVC" 2>/dev/null || true)"
-          echo '--- INTEGRITY_B ---'
-          integrity
+          echo '--- YIELD_DIAGNOSTIC_READONLY ---'
+          sudo -n docker exec -i porota_production_observer python -u - <<'PY'
+          import json, sqlite3
+          from collections import Counter, defaultdict
+          import bf_production_paper_observer as observer
+          from cv_history_store_adapter_hf6 import default_history_store
+
+          RUN_ID='PPI-HIST-20260912-001'
+          store=observer.runtime_store()
+          hstore=default_history_store()
+          def ro(path):
+              return sqlite3.connect('file:' + path + '?mode=ro', uri=True, timeout=10)
+
+          c=ro(store.path)
+          rows=c.execute('''SELECT state,count(*),coalesce(sum(provider_rows),0),coalesce(sum(valid_rows),0)
+                            FROM ppi_history_ingest_tasks WHERE run_id=?
+                            GROUP BY state ORDER BY state''',(RUN_ID,)).fetchall()
+          print('STATE_COUNTS=' + json.dumps([{'state':r[0],'count':r[1],'provider_rows':r[2],'valid_rows':r[3]} for r in rows], sort_keys=True))
+
+          fam=c.execute('''SELECT instrument_type,state,count(*),coalesce(sum(provider_rows),0),coalesce(sum(valid_rows),0)
+                           FROM ppi_history_ingest_tasks WHERE run_id=?
+                           GROUP BY instrument_type,state ORDER BY instrument_type,state''',(RUN_ID,)).fetchall()
+          print('FAMILY_STATE_COUNTS=' + json.dumps([{'family':r[0],'state':r[1],'count':r[2],'provider_rows':r[3],'valid_rows':r[4]} for r in fam], sort_keys=True))
+
+          done_rows=c.execute('''SELECT state,result FROM ppi_history_ingest_tasks
+                                 WHERE run_id=? AND state IN ('DONE_VALID','DONE_PARTIAL','DONE_EMPTY')''',(RUN_ID,)).fetchall()
+          agg=Counter(); result_parse_errors=0; positive_updates=0
+          for state,payload in done_rows:
+              try: d=json.loads(payload or '{}')
+              except Exception:
+                  result_parse_errors += 1; continue
+              for k in ('canonical_updates','versions_appended','rejected_rows','provider_rows','valid_rows'):
+                  try: agg[k] += int(d.get(k,0) or 0)
+                  except Exception: pass
+              try:
+                  if int(d.get('canonical_updates',0) or 0) > 0: positive_updates += 1
+              except Exception: pass
+          print('RESULT_TOTALS=' + json.dumps(dict(agg), sort_keys=True))
+          print(f'RESULT_TASKS_WITH_CANONICAL_UPDATES={positive_updates}')
+          print(f'RESULT_PARSE_ERRORS={result_parse_errors}')
+
+          err=c.execute('''SELECT symbol,instrument_type,market,settlement,attempts,last_error
+                           FROM ppi_history_ingest_tasks WHERE run_id=? AND state='ERROR'
+                           ORDER BY instrument_type,symbol,market,settlement''',(RUN_ID,)).fetchall()
+          reasons=Counter((r[5] or 'EMPTY_ERROR').split(':',1)[0] for r in err)
+          print('ERROR_REASON_COUNTS=' + json.dumps(reasons, sort_keys=True))
+          print('ERROR_SAMPLES=' + json.dumps([{'symbol':r[0],'family':r[1],'market':r[2],'settlement':r[3],'attempts':r[4],'error':r[5][:300]} for r in err[:22]], sort_keys=True))
+          c.close()
+
+          h=ro(hstore.path)
+          total=int(h.execute('SELECT count(*) FROM history_canonical_v2').fetchone()[0] or 0)
+          qc=h.execute('PRAGMA quick_check').fetchone()[0]
+          dups=int(h.execute('''SELECT count(*) FROM (
+              SELECT symbol,instrument_type,market,settlement,date,count(*) n
+              FROM history_canonical_v2 GROUP BY symbol,instrument_type,market,settlement,date HAVING n>1)''').fetchone()[0] or 0)
+          h.close()
+          print(f'CANONICAL_ROWS_LIVE={total}')
+          print(f'HISTORY_QUICK_CHECK_LIVE={qc}')
+          print(f'CANONICAL_DUPLICATES_LIVE={dups}')
+          print('YIELD_DIAGNOSTIC=PASS')
+          PY
+
           echo '--- JOURNAL_TAIL_READONLY ---'
-          sudo -n journalctl -u "$SVC" -n 40 --no-pager 2>&1 || true
+          sudo -n journalctl -u "$SVC" -n 25 --no-pager 2>&1 || true
           HOST
-
-# refresh probe 2026-09-12 current-status
