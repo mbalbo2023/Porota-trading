@@ -155,12 +155,14 @@ Se detectó un audit T673O paralelo que estaba ya en vuelo; terminó `SUCCESS` e
 
 Luego se ejecutó `RC6 ingestion GitHub Actions quiesce 2026-09-12`, run `34702148595` — `SUCCESS`.
 
-Resultado final después del quiesce:
+Durante el aislamiento aparecieron además dos workflows generados fuera de esta secuencia controlada: `RC6 T673O quarantine marker audit 2026-09-12` run `34702221186` y `RC6 canonical 1960 PPI API history audit 2026-09-12` run `34702320975`. Para respetar la orden de no tener agentes paralelos, se reejecutó el quiesce; el segundo quedó explícitamente `cancelled` y los dos dejaron de estar activos. No se toma ninguna de esas ejecuciones como autorización para adelantar Fase 2.
+
+Snapshot final verificado después del segundo quiesce:
 
 - GitHub Actions `in_progress=0`
 - GitHub Actions `queued=0`
 
-No queda ningún workflow GitHub concurrente al momento de este checkpoint.
+No queda ningún workflow GitHub concurrente en ese snapshot. Si otro chat/agente externo vuelve a crear un run, debe cancelarse antes de continuar con el productor canónico; no se permite competir por el runtime o las bases.
 
 ## Política de aislamiento hasta fin del trabajo de hoy
 
