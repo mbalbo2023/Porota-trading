@@ -185,6 +185,7 @@ CONFIG_METADATA = [
     ("IOL_PASSWORD", "Datos históricos", "Contraseña de IOL.", "tu_clave", True),
     ("IOL_TIMEOUT_SECONDS", "Datos históricos", "Tiempo máximo de espera por llamada a IOL.", "12", False),
     ("IOL_RATE_LIMIT_SLEEP", "Datos históricos", "Pausa entre llamadas a IOL. Protege la cuota mensual.", "0.25", False),
+    ("IOL_COST_ESTIMATE_EXPLICIT_OPT_IN", "Datos históricos", "Habilita manualmente la estimación POST de IOL; desactivado por defecto y nunca usado en PAPER.", "false", False),
     ("HIST_DB_PATH", "Datos históricos", "Archivo del histórico de precios.", "./data/market_history.db", False),
     ("HIST_DEFAULT_DAYS", "Datos históricos", "Días de historia que se bajan por instrumento.", "365", False),
     ("HIST_MIN_DAYS_USABLE", "Datos históricos", "Mínimo de velas para que las métricas históricas tengan sentido.", "90", False),
