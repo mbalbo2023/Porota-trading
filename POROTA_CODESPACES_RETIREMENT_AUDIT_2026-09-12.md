@@ -156,3 +156,14 @@ El PR [#59](https://github.com/mbalbo2023/Porota-trading/pull/59) continúa abie
 ### Decisiones de limpieza
 
 No se fusionará ninguna rama histórica de manera automática ni se reescribirá el historial. Solo se integran cambios únicos requeridos por RC6 mediante PR; referencias completamente redundantes se podrán borrar cuando reglas, propietario, PRs y dependencias estén comprobados. Se conservan los commits históricos como trazabilidad. Ningún cambio descrito aquí consulta, modifica o ejecuta la ingesta paralela.
+
+
+## Verificación adicional de ramas de housekeeping — 2026-09-12
+
+Se revisaron únicamente las referencias con nombre Codespaces/housekeeping, sin enumerar otras ramas ni entrar en el workstream de ingesta.
+
+- Las siete refs `codespace-setup`, `codespace-setup-v2` a `-v6` e `infra/v16.1-codespaces-ready` comparan contra `main` con 0 commits exclusivos, 18 detrás y 0 archivos distintos. Son refs redundantes; decisión: eliminar los punteros, no fusionarlos. La integración GitHub conectada no ofrece operación de borrado de ramas.
+- `chore/disable-codespaces-ci` compara 1 commit exclusivo y 4 detrás, pero su `.github/workflows/ci.yml` tiene el mismo blob SHA que `main` (`dc8864cc254fa7a6910d66aae92950a52d6e3b36`). Su commit solo quita la validación de archivos Codespaces que ya no existen en `main`; no aporta una variante de CI. Candidata a retiro de ref después de verificar protección/PRs.
+- `codespace-config` compara 11 commits exclusivos y 18 detrás. Sus siete rutas únicas forman un conjunto histórico de entorno/configuración de desarrollo y smoke test; no se fusiona a `main` ni se trata como código operativo RC6. Se conserva temporalmente como referencia hasta cerrar dependencias y decisión de retiro.
+
+Resultado de clasificación para las referencias revisadas: siete refs redundantes listas técnicamente para borrar, una ref CI redundante candidata a borrar, una rama de configuración divergente en cuarentena. **No se borró ninguna** por falta de operación de borrado en la conexión y por no poder verificar rulesets/propietarios desde esta integración. No se examinó ninguna ref del workstream de ingesta.
