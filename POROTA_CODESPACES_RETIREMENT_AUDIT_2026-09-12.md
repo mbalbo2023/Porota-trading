@@ -172,3 +172,10 @@ Resultado de clasificación para las referencias revisadas: siete refs redundant
 ## Límite de inventario histórico — 2026-09-12
 
 En la auditoría de solo lectura, una comparación de referencias históricas/audit previamente documentadas devolvió una divergencia amplia y listas de rutas fuera del alcance de housekeeping. Se detuvo la inspección de esos diffs inmediatamente; no se abrieron archivos, no se ejecutaron workflows y no se modificó ninguna rama o recurso operativo. Esas referencias quedan en conservación preventiva y no son candidatas de borrado en este lote. El inventario del paso 2 sigue limitado a referencias independientes de ese análisis. Para ampliarlo hace falta un método que excluya de manera verificable el workstream de ingesta; hasta entonces, no se presume que los datos obtenidos cubran todo el grafo.
+
+
+## Referencias de PRs ya integrados — 2026-09-12
+
+Se confirmó en GitHub que los PRs #56, #57 y #58 están fusionados y cerrados. Sus ramas de origen todavía existen: `chore/retire-codespaces-config-20260912`, `docs/parallel-chat-policy-20260912` y `docs/align-release-flow-rc6-20260912`. No hay que volver a fusionarlas; son refs de tareas completadas y candidatas a retiro. El conector no permitió leer el estado de protección de esas refs y no ofrece operación de borrado, así que no se eliminaron.
+
+La comprobación fue read-only. El intento de consultar protección por endpoint genérico fue rechazado por la integración; no se aplicó ningún cambio al repositorio operativo.
