@@ -78,8 +78,8 @@ jobs:
             enabled="$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || echo UNKNOWN)"
             echo "TIMER=$unit|ACTIVE=$active|ENABLED=$enabled"
           done
-          # Metadata/Git/process only; never display or execute target contents.
-          TARGETS="$(cat <<'TARGET_PATHS'
+          # Read file metadata/Git status and exact process/unit references; do not emit argv or file contents.
+          TARGETS="$(sed 's/^[[:space:]]*//' <<'TARGET_PATHS'
           scripts/ppi_web_authenticated_probe_hf6.py
           v17_build_cache_cleanup_1.py
           v17_build_cache_cleanup_1_result.json
@@ -144,49 +144,87 @@ jobs:
           while IFS= read -r rel; do
             [ -n "$rel" ] || continue
             full="$REPO/$rel"
-            if [ ! -e "$full" ] && [ ! -L "$full" ]; then
-              echo "PATH_META=$rel|MISSING"
-              continue
-            fi
+            if [ ! -e "$full" ] && [ ! -L "$full" ]; then echo "PATH_META=$rel|MISSING"; continue; fi
             meta="$(stat -c '%F|birth=%w|mtime=%y|ctime=%z|bytes=%s|mtime_epoch=%Y' -- "$full" 2>/dev/null || echo STAT_FAILED)"
             mtime_epoch="$(stat -c '%Y' -- "$full" 2>/dev/null || echo 0)"
             age_days=$(( (NOW - mtime_epoch) / 86400 ))
             echo "PATH_META=$rel|$meta|age_days=$age_days"
-            git_state="$(git -C "$REPO" status --porcelain=v1 --untracked-files=all -- "$rel" 2>/dev/null || true)"
-            if [ -n "$git_state" ]; then echo "PATH_GIT=$rel|\${git_state:0:2}"; else echo "PATH_GIT=$rel|CLEAN_OR_IGNORED"; fi
+            git_code="$(git -C "$REPO" status --porcelain=v1 --untracked-files=all -- "$rel" 2>/dev/null | awk 'NR==1{print substr($0,1,2)}' || true)"
+            [ -n "$git_code" ] || git_code="CLEAN_OR_IGNORED"
+            echo "PATH_GIT=$rel|$git_code"
           done <<< "$TARGETS"
 
-          # Match exact argv entries only; emit PID/comm, never command-line contents.
-          declare -A TARGET_MAP=()
-          while IFS= read -r rel; do [ -n "$rel" ] && TARGET_MAP["$rel"]=1; done <<< "$TARGETS"
-          for proc in /proc/[0-9]*; do
-            [ -r "$proc/cmdline" ] || continue
-            pid="\${proc##*/}"
-            while IFS= read -r -d '' arg; do
-              case "$arg" in "$REPO/"*) rel="\${arg#"$REPO/"}";; *) rel="$arg";; esac
-              if [ -n "\${TARGET_MAP[$rel]+x}" ]; then
-                comm="$(ps -p "$pid" -o comm= 2>/dev/null | tr -d '[:space:]')"
-                echo "PATH_PROCESS=$rel|PID=$pid|COMM=\${comm:-UNKNOWN}"
-              fi
-            done < "$proc/cmdline" 2>/dev/null
-          done
+          TARGETS="$TARGETS" python3 - "$REPO" <<'PY'
+          import os, subprocess, sys
+          from pathlib import Path
 
-          # Check PID file only; do not signal or launch it.
-          pidfile="$REPO/v17_hf1_resume_deploy.pid"
-          if [ -r "$pidfile" ]; then
-            IFS= read -r deploy_pid < "$pidfile" || true
-            if [[ "\${deploy_pid:-}" =~ ^[0-9]+$ ]] && [ -r "/proc/$deploy_pid/cmdline" ]; then
-              if tr '\\0' '\\n' < "/proc/$deploy_pid/cmdline" | grep -Fq 'v17_hf1_resume_deploy.sh'; then
-                echo "HF1_PIDFILE=ACTIVE_MATCH|PID=$deploy_pid"
-              else
-                echo "HF1_PIDFILE=PID_EXISTS_BUT_NOT_MATCHED|PID=$deploy_pid"
-              fi
-            else
-              echo "HF1_PIDFILE=STALE_OR_INVALID"
-            fi
-          else
-            echo "HF1_PIDFILE=ABSENT_OR_UNREADABLE"
-          fi
+          root = os.path.realpath(sys.argv[1])
+          targets = set(os.environ["TARGETS"].splitlines())
+          exact = {os.path.normpath(os.path.join(root, item)): item for item in targets}
+          seen = set()
+          for pid in os.listdir("/proc"):
+              if not pid.isdigit():
+                  continue
+              proc = Path("/proc") / pid
+              try:
+                  args = [os.fsdecode(x) for x in (proc / "cmdline").read_bytes().split(b"\\0") if x]
+                  cwd = os.path.realpath(proc / "cwd")
+                  comm = (proc / "comm").read_text().strip()
+              except (OSError, UnicodeError):
+                  continue
+              for arg in args:
+                  full = os.path.normpath(arg if os.path.isabs(arg) else os.path.join(cwd, arg))
+                  rel = exact.get(full)
+                  if rel and (rel, pid) not in seen:
+                      print(f"PATH_PROCESS={rel}|PID={pid}|COMM={comm}")
+                      seen.add((rel, pid))
+          def output(argv):
+              try:
+                  return subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3, check=False).stdout
+              except Exception:
+                  return ""
+          for kind in ("service", "timer"):
+              listing = output(["systemctl", "list-units", "--type=" + kind, "--state=active", "--no-legend", "--plain", "--no-pager"])
+              for row in listing.splitlines():
+                  fields = row.split()
+                  if not fields:
+                      continue
+                  unit = fields[0]
+                  service = output(["systemctl", "show", unit, "--property=Unit", "--value"]).strip() if kind == "timer" else unit
+                  if not service:
+                      continue
+                  spec = output(["systemctl", "show", service, "--property=ExecStart", "--value"])
+                  for rel in targets:
+                      if rel in spec or os.path.basename(rel) in spec:
+                          print(f"PATH_ACTIVE_UNIT={rel}|KIND={kind}|UNIT={unit}")
+          pidfile = Path(root) / "v17_hf1_resume_deploy.pid"
+          try:
+              text = pidfile.read_text().splitlines()[0].strip()
+              if not text.isdigit():
+                  print("HF1_PIDFILE=INVALID")
+              elif not Path("/proc", text, "cmdline").exists():
+                  print("HF1_PIDFILE=STALE")
+              else:
+                  argv = [os.fsdecode(x) for x in Path("/proc", text, "cmdline").read_bytes().split(b"\\0") if x]
+                  if any(os.path.basename(x) == "v17_hf1_resume_deploy.sh" for x in argv):
+                      print(f"HF1_PIDFILE=ACTIVE_MATCH|PID={text}")
+                  else:
+                      print(f"HF1_PIDFILE=PID_EXISTS_NOT_MATCHED|PID={text}")
+          except (OSError, IndexError):
+              print("HF1_PIDFILE=ABSENT_OR_UNREADABLE")
+          markers = (b"api.invertironline.com", b"seriehistorica", b"get_serie_historica")
+          count = 0
+          for pid in os.listdir("/proc"):
+              if not pid.isdigit():
+                  continue
+              try:
+                  raw = (Path("/proc") / pid / "cmdline").read_bytes().lower()
+                  if any(marker in raw for marker in markers):
+                      count += 1
+              except OSError:
+                  pass
+          print(f"IOL_HISTORY_QUERY_SIGNATURE_COUNT={count}")
+          PY
           echo "HOST_MUTATION=NONE"
           echo "REAL_ORDER_ROUTES=NOT_CALLED"
           REMOTE
