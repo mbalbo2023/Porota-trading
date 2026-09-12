@@ -36,9 +36,13 @@ jobs:
           echo "HOST_SHA=$(git -C /opt/porota-trading rev-parse HEAD)"
           echo '=== LOCKS ==='
           sudo -n lslocks 2>/dev/null | grep -E 'porota-ppi-fullfamily-history|porota-trading-history|COMMAND|flock' || true
-          echo '=== PS ==='
-          ps -eo pid,ppid,pcpu,pmem,stat,wchan:30,etimes,user,args | grep -E 'flock|porota_production_observer.*python|porota-ppi|history-postclose|a3-history' | grep -v grep || true
-          echo '=== PYTHON IO ==='
+          echo '=== HOST PROCESS TREE ==='
+          ps -eo pid,ppid,pcpu,pmem,stat,wchan:30,etimes,user,args | grep -E 'flock|porota_production_observer.*python|porota-ppi|history-postclose|a3-history|bash -s' | grep -v grep || true
+          echo '=== DOCKER TOP ==='
+          sudo -n docker top porota_production_observer -eo pid,ppid,pcpu,pmem,stat,etimes,args 2>/dev/null | grep -E 'python|PID' || true
+          echo '=== DB FILE STATS ==='
+          sudo -n find /opt/porota-trading/data -maxdepth 5 -type f \( -name '*.db' -o -name '*.db-wal' -o -name '*.db-shm' \) -printf '%T@ %s %p\n' 2>/dev/null | sort -nr | head -30 || true
+          echo '=== HOST DOCKER EXEC IO ==='
           for p in $(pgrep -f '/usr/bin/docker exec -i porota_production_observer python -' 2>/dev/null || true); do
             echo "PID=$p"; sudo -n cat "/proc/$p/io" 2>/dev/null || true
           done
