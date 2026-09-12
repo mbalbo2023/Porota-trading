@@ -1,0 +1,82 @@
+name: RC6 T673O history key audit 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-t673o-history-key-audit-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Audit T673O identity and history schemas read only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          EXPECT='a47f3339ec6dfe9d5afde444b1aaddabceb0e94d'
+          ACTUAL="$(git rev-parse HEAD)"; echo "HOST_SHA=$ACTUAL"; test "$ACTUAL" = "$EXPECT" || { echo ABORT=HOST_SHA_CHANGED; exit 31; }
+          for u in porota-ppi-argentina-nightly-rc6.service porota-history-postclose-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do
+            st="$(systemctl is-active "$u" 2>/dev/null || true)"; case "$st" in active|activating) echo "ABORT=HISTORY_SERVICE_ACTIVE:$u"; exit 32;; esac
+          done
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 600 9 || { echo ABORT=HISTORY_LOCK_BUSY; exit 33; }
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json
+          import bf_production_paper_observer as m
+          from cv_history_store_adapter_hf6 import default_history_store
+          store=m.runtime_store()
+          def schema(c,t):
+              return [{'name':r[1],'type':r[2],'notnull':r[3],'default':r[4],'pk':r[5]} for r in c.execute('pragma table_info('+t+')')]
+          with store.connect() as c:
+              print('OBSERVER_QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print('SAFETY=%s|%s'%s)
+              tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+              for t in ['ppi_argentina_api_shadow','production_history_attempts','production_history','history_attempt_ledger_v2','history_row_rejections_v2','historical_raw_archive']:
+                  if t in tabs: print('SCHEMA_'+t.upper()+'='+json.dumps(schema(c,t),sort_keys=True))
+              rows=[dict(r) for r in c.execute("select * from ppi_argentina_api_shadow where ticker='T673O' order by currency,market,settlement")]
+              print('T673O_SHADOW='+json.dumps(rows,default=str,sort_keys=True))
+              for t,sql in [
+                  ('production_history_attempts',"select * from production_history_attempts where symbol='T673O'"),
+                  ('production_history',"select * from production_history where symbol='T673O'"),
+                  ('history_attempt_ledger_v2',"select * from history_attempt_ledger_v2 where symbol='T673O'"),
+                  ('history_row_rejections_v2',"select * from history_row_rejections_v2 where symbol='T673O'"),
+              ]:
+                  if t in tabs:
+                      print('T673O_'+t.upper()+'='+json.dumps([dict(r) for r in c.execute(sql)],default=str,sort_keys=True))
+          h=default_history_store()
+          with h.connect() as c:
+              print('HISTORY_QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+              tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+              for t in ['history_canonical_v2','history_versions_v2','history_close_canonical_v1','history_close_versions_v1']:
+                  if t in tabs:
+                      print('SCHEMA_'+t.upper()+'='+json.dumps(schema(c,t),sort_keys=True))
+                      cols={r['name'] for r in schema(c,t)}
+                      if 'symbol' in cols:
+                          print('T673O_'+t.upper()+'='+json.dumps([dict(r) for r in c.execute("select * from "+t+" where symbol='T673O' limit 20")],default=str,sort_keys=True))
+          print('HOST_MUTATION=NONE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
