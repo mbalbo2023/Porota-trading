@@ -30,3 +30,11 @@ Por eso GitHub todavía ofrece una configuración de Codespaces al partir de `ma
 5. Mantener historial de commits/tags; no reescribir historia.
 
 En las ramas consultadas GitHub devuelve `protected: false`, pero la lectura de rulesets no está disponible. No se borró ni modificó ninguna referencia. Este checkpoint no incluye el circuito paralelo expresamente excluido.
+
+## Checkpoint de ejecución — 2026-09-12
+
+Se abrió el PR borrador [#56](https://github.com/mbalbo2023/Porota-trading/pull/56) desde `chore/retire-codespaces-config-20260912` hacia `main`. HEAD: `0eb29dde4c4771e85a504b52e54f5220e445c415`; base: `20f2365a87d896acf0c215931e043b185210706f`.
+
+El diff contiene únicamente cinco rutas: eliminación de `.devcontainer/devcontainer.json`, `.devcontainer/post-create.sh`, `.devcontainer/welcome.sh` y `codespace-test.sh`; además, actualización de `README.md` para quitar las instrucciones de Codespaces y la referencia v16.1, dejando RC6 como baseline operativa.
+
+El PR permanece abierto como borrador, sin fusión ni despliegue. No se tocaron código runtime, workflows, RC6 ni el trabajo paralelo de ingesta. La comparación contra `main` confirmó cinco rutas y cero commits de diferencia detrás de la base al momento de crear el PR.
