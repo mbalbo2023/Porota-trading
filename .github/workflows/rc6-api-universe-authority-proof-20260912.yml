@@ -1,0 +1,33 @@
+name: RC6 API Universe Authority Proof 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - rc6_api_universe_authority.py
+      - tests/test_rc6_api_universe_authority.py
+      - .github/workflows/rc6-api-universe-authority-proof-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test authority model
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_api_universe_authority.py tests/test_rc6_api_universe_authority.py
+          python -m pytest -q tests/test_rc6_api_universe_authority.py
+          python - <<'PY'
+          import rc6_api_universe_authority as u
+          u.assert_no_execution_capability()
+          print('API_UNIVERSE_AUTHORITY=GREEN')
+          print('AUTO_PAPER_PROMOTION=FALSE')
+          print('ORDER_CAPABILITY=NONE')
+          PY
