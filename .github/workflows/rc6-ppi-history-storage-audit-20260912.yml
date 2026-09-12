@@ -1,0 +1,137 @@
+name: RC6 PPI history storage audit 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-history-storage-audit-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Serialized read-only capacity and coverage audit
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          EXPECT='a47f3339ec6dfe9d5afde444b1aaddabceb0e94d'
+          ACTUAL="$(git rev-parse HEAD)"; echo "HOST_SHA=$ACTUAL"; test "$ACTUAL" = "$EXPECT" || { echo ABORT=HOST_SHA_CHANGED; exit 31; }
+
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 1800 9 || { echo ABORT=HISTORY_LOCK_TIMEOUT; exit 32; }
+
+          for u in porota-ppi-argentina-nightly-rc6.service porota-history-postclose-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do
+            st="$(systemctl is-active "$u" 2>/dev/null || true)"
+            case "$st" in active|activating) echo "ABORT=HISTORY_SERVICE_ACTIVE:$u"; exit 33;; esac
+          done
+
+          echo '=== HOST_DISK ==='
+          df -B1 / | tail -1 | awk '{print "ROOT_TOTAL_BYTES="$2" ROOT_USED_BYTES="$3" ROOT_FREE_BYTES="$4" ROOT_USED_PCT="$5}'
+          df -h /
+          echo '=== DATA_TREE ==='
+          sudo -n du -sb /opt/porota-trading/data 2>/dev/null || true
+          sudo -n find /opt/porota-trading/data -maxdepth 4 -type f -printf '%s %p\n' 2>/dev/null | sort -nr | head -40 || true
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,os,sqlite3
+          from collections import defaultdict
+          import bf_production_paper_observer as m
+          from cv_history_store_adapter_hf6 import default_history_store
+
+          MIN_START_FREE=8*1024**3
+          HARD_STOP_FREE=6*1024**3
+          MAX_USED_PCT=75.0
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              print(f'SAFETY={s[0]}|{s[1]}'); assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              dbpath=c.execute('pragma database_list').fetchone()[2]
+              tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+              shadow=c.execute("select count(*) from ppi_argentina_api_shadow where market in ('BYMA','ROFEX','A3','OTC') and instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')").fetchone()[0]
+              print('SHADOW_IDENTITIES='+str(shadow)); assert shadow==1960
+              if 'production_history_attempts' in tabs:
+                  rows=c.execute("""select s.instrument_type,coalesce(p.state,'MISSING') state,count(*) n
+                    from ppi_argentina_api_shadow s left join production_history_attempts p
+                      on p.symbol=s.ticker and p.instrument_type=s.instrument_type and p.settlement=s.settlement
+                    where s.market in ('BYMA','ROFEX','A3','OTC') and s.instrument_type not in ('ACCIONES-USA','FCI-EXTERIOR')
+                    group by s.instrument_type,coalesce(p.state,'MISSING') order by s.instrument_type,state""").fetchall()
+                  out=defaultdict(dict)
+                  for fam,state,n in rows: out[fam][state]=n
+                  print('ATTEMPT_STATE_BY_FAMILY='+json.dumps(out,sort_keys=True))
+              if 'production_history' in tabs:
+                  r=c.execute('select count(*),coalesce(sum(row_count),0),coalesce(sum(length(payload_json)),0) from production_history').fetchone()
+                  print('LEGACY_HISTORY_ROWS=%d LEGACY_PROVIDER_ROWS=%d LEGACY_JSON_BYTES=%d'%tuple(r))
+              if 'historical_raw_archive' in tabs:
+                  cols={r[1] for r in c.execute('pragma table_info(historical_raw_archive)')}
+                  body='body_json' if 'body_json' in cols else 'payload_json' if 'payload_json' in cols else None
+                  if body:
+                      q=f"select origin,count(*),coalesce(sum(length({body})),0) from historical_raw_archive where origin like 'PPI_HISTORY%' group by origin order by 3 desc"
+                      print('RAW_ARCHIVE_PPI='+json.dumps([tuple(r) for r in c.execute(q)],default=str))
+              print('OBSERVER_DB_PATH='+str(dbpath))
+              try: print('OBSERVER_DB_BYTES='+str(os.path.getsize(dbpath)))
+              except Exception: pass
+
+          hpath=default_history_store().path
+          h=sqlite3.connect(f'file:{hpath}?mode=ro',uri=True); h.row_factory=sqlite3.Row
+          assert h.execute('pragma quick_check').fetchone()[0]=='ok'
+          ht={r[0] for r in h.execute("select name from sqlite_master where type='table'")}
+          print('HISTORY_DB_PATH='+hpath)
+          try: print('HISTORY_DB_BYTES='+str(os.path.getsize(hpath)))
+          except Exception: pass
+          if 'history_canonical_v2' in ht:
+              total=h.execute('select count(*) from history_canonical_v2').fetchone()[0]
+              ids=h.execute("select count(*) from (select distinct symbol,instrument_type,market,settlement from history_canonical_v2)").fetchone()[0]
+              print(f'CANONICAL_V2_ROWS={total} CANONICAL_V2_IDENTITIES={ids}')
+              fam=[tuple(r) for r in h.execute("select instrument_type,count(*) rows,count(distinct symbol||'|'||market||'|'||settlement) identities,min(date),max(date) from history_canonical_v2 group by instrument_type order by instrument_type")]
+              print('CANONICAL_V2_BY_FAMILY='+json.dumps(fam,default=str))
+          if 'history_versions_v2' in ht:
+              n=h.execute('select count(*) from history_versions_v2').fetchone()[0]
+              print('HISTORY_VERSIONS_V2='+str(n))
+          if 'history_close_canonical_v1' in ht:
+              n=h.execute('select count(*) from history_close_canonical_v1').fetchone()[0]
+              print('CLOSE_CANONICAL_V1_ROWS='+str(n))
+          if 'history_close_versions_v1' in ht:
+              n=h.execute('select count(*) from history_close_versions_v1').fetchone()[0]
+              print('CLOSE_VERSIONS_V1='+str(n))
+          h.close()
+
+          st=os.statvfs('/')
+          total=st.f_frsize*st.f_blocks; free=st.f_frsize*st.f_bavail; used=total-free; pct=100.0*used/total if total else 100.0
+          gate='GREEN' if free>=MIN_START_FREE and pct<=MAX_USED_PCT else 'RED'
+          print('DISK_POLICY='+json.dumps({'start_min_free_bytes':MIN_START_FREE,'hard_stop_free_bytes':HARD_STOP_FREE,'max_used_pct':MAX_USED_PCT,'current_total':total,'current_free':free,'current_used_pct':round(pct,2),'start_gate':gate},sort_keys=True))
+          print('PROPOSED_HISTORY_WINDOWS='+json.dumps({
+            'ACCIONES':365,'BONOS':365,'CAUCIONES':365,'CEDEARS':365,'FCI':365,'LETRAS':365,'ON':365,
+            'FUTUROS':180,'OPCIONES':180,'LICITACIONES':90,'LEBACS':90
+          },sort_keys=True))
+          print('POLICY=ONE_TIME_BACKFILL_THEN_INCREMENTAL_DELTA_ONLY')
+          print('DELTA_POLICY=LAST_STORED_DATE_MINUS_5_CALENDAR_DAYS_TO_TODAY')
+          print('RAW_POLICY=NO_REPEAT_FULL_WINDOW_AFTER_INITIAL_BACKFILL')
+          print('HOST_MUTATION=NONE')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
