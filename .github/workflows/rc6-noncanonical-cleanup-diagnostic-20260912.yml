@@ -1,0 +1,85 @@
+name: RC6 noncanonical cleanup diagnostic 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-noncanonical-cleanup-diagnostic-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only SQLite cleanup diagnostic
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          EXPECT='a47f3339ec6dfe9d5afde444b1aaddabceb0e94d'
+          ACTUAL="$(git rev-parse HEAD)"; echo "HOST_SHA=$ACTUAL"; test "$ACTUAL" = "$EXPECT" || { echo ABORT=HOST_SHA_CHANGED; exit 31; }
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3, time
+          import bf_production_paper_observer as m
+          from cv_history_store_adapter_hf6 import default_history_store
+          RUN='RC6_NONCANONICAL_54_QUARANTINE_20260912'
+          store=m.runtime_store()
+          with store.connect() as c:
+              keys=[tuple(r) for r in c.execute("select distinct symbol,instrument_type,settlement from production_history_quarantine_rc6 where quarantine_run=?",(RUN,))]
+          print('TARGET_KEYS='+str(len(keys)))
+          hpath=default_history_store().path
+          h=sqlite3.connect(f'file:{hpath}?mode=ro',uri=True,timeout=5.0)
+          h.row_factory=sqlite3.Row
+          print('HISTORY_DB_PATH='+hpath)
+          tabs={r[0] for r in h.execute("select name from sqlite_master where type='table'")}
+          targets=['history_canonical_v2','history_canonical_v2_quarantine_rc6','history_close_canonical_v1','history_close_canonical_v1_quarantine_rc6','history_versions_v2','history_close_versions_v1','ppi_ingest_quarantine_identity_rc6','ppi_ingest_quarantine_version_ids_rc6']
+          for t in targets:
+              if t not in tabs: continue
+              t0=time.monotonic(); n=h.execute(f'select count(*) from {t}').fetchone()[0]; dt=time.monotonic()-t0
+              idx=[dict(r) for r in h.execute(f"pragma index_list('{t}')")]
+              cols=[]
+              for x in idx:
+                  cols.append({'name':x['name'],'unique':x['unique'],'cols':[r[2] for r in h.execute(f"pragma index_info('{x['name']}')")]})
+              print('TABLE='+json.dumps({'name':t,'rows':n,'count_seconds':round(dt,3),'indexes':cols},sort_keys=True))
+          h.execute('CREATE TEMP TABLE extra54(symbol TEXT,instrument_type TEXT,settlement TEXT,PRIMARY KEY(symbol,instrument_type,settlement))')
+          h.executemany('INSERT INTO extra54 VALUES(?,?,?)',keys)
+          checks=[
+            ('FULL_MATCH',"select count(*) from history_canonical_v2 x join extra54 e on e.symbol=x.symbol and e.instrument_type=x.instrument_type and e.settlement=x.settlement"),
+            ('CLOSE_MATCH',"select count(*) from history_close_canonical_v1 x join extra54 e on e.symbol=x.symbol and e.instrument_type=x.instrument_type and e.settlement=x.settlement"),
+            ('FULL_Q_TOTAL',"select count(*) from history_canonical_v2_quarantine_rc6"),
+            ('CLOSE_Q_TOTAL',"select count(*) from history_close_canonical_v1_quarantine_rc6"),
+          ]
+          for name,q in checks:
+              if all(t in tabs for t in (['history_canonical_v2','history_close_canonical_v1','history_canonical_v2_quarantine_rc6','history_close_canonical_v1_quarantine_rc6'])):
+                  t0=time.monotonic(); n=h.execute(q).fetchone()[0]; dt=time.monotonic()-t0
+                  print(f'{name}={n} SECONDS={dt:.3f}')
+          if 'history_canonical_v2' in tabs and 'history_canonical_v2_quarantine_rc6' in tabs:
+              q="select x.* from history_canonical_v2 x join extra54 e on e.symbol=x.symbol and e.instrument_type=x.instrument_type and e.settlement=x.settlement where not exists (select 1 from history_canonical_v2_quarantine_rc6 q where q.symbol=x.symbol and q.instrument_type=x.instrument_type and q.market=x.market and q.settlement=x.settlement and q.quarantine_run=?)"
+              print('PLAN_FULL='+json.dumps([tuple(r) for r in h.execute('explain query plan '+q,(RUN,))]))
+          if 'history_close_canonical_v1' in tabs and 'history_close_canonical_v1_quarantine_rc6' in tabs:
+              q="select x.* from history_close_canonical_v1 x join extra54 e on e.symbol=x.symbol and e.instrument_type=x.instrument_type and e.settlement=x.settlement where not exists (select 1 from history_close_canonical_v1_quarantine_rc6 q where q.symbol=x.symbol and q.instrument_type=x.instrument_type and q.market=x.market and q.settlement=x.settlement and q.quarantine_run=?)"
+              print('PLAN_CLOSE='+json.dumps([tuple(r) for r in h.execute('explain query plan '+q,(RUN,))]))
+          h.close()
+          print('HOST_MUTATION=NONE')
+          PY
+          HOST
