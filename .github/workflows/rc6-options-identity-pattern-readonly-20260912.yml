@@ -1,0 +1,81 @@
+name: RC6 Options Identity Pattern Readonly 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-options-identity-pattern-readonly-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Compare API and web option notation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          OBS=porota_production_observer
+          sudo -n docker exec -i "$OBS" python -u - <<'PY'
+          import sqlite3,json,re
+          from collections import Counter,defaultdict
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=30);c.row_factory=sqlite3.Row;c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0];st=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          assert q=='ok' and st and st['mode']=='PRODUCTION_PAPER' and int(st['real_orders_sent'] or 0)==0
+          api=[dict(r) for r in c.execute("select ticker,market,description,currency from api_universe_v1 where family='OPCIONES' order by ticker")]
+          print('API_OPTIONS_SUMMARY='+json.dumps({'count':len(api),'first80':api[:80]},ensure_ascii=False,sort_keys=True))
+          prefixes=Counter()
+          for r in api:
+              t=str(r['ticker'] or '').upper()
+              m=re.match(r'^([A-Z.]+)',t)
+              prefixes[m.group(1) if m else '?']+=1
+          print('API_PREFIXES='+json.dumps(prefixes.most_common(40),ensure_ascii=False))
+          row=c.execute('''select s.observed_at,s.evidence_json from contract_evidence_v2_current cur
+                           join contract_evidence_v2_snapshots s on s.snapshot_id=cur.snapshot_id
+                           where upper(cur.family)='OPCIONES' and cur.source_class='PPI_AUTHENTICATED_WEB'
+                           order by s.observed_at desc limit 1''').fetchone()
+          ev=json.loads(row['evidence_json'] or '{}') if row else {}
+          web=[]
+          for t in ev.get('tables') or []:
+              if not isinstance(t,dict):continue
+              for rr in t.get('rows') or []:
+                  if isinstance(rr,list) and rr:web.append(str(rr[0]).strip())
+          print('WEB_OPTIONS='+json.dumps({'observed_at':row['observed_at'] if row else None,'count':len(web),'first80':web[:80]},ensure_ascii=False,sort_keys=True))
+          under=Counter()
+          for w in web:
+              m=re.match(r'^\s*([A-Z.]+)\s+',w.upper())
+              under[m.group(1) if m else '?']+=1
+          print('WEB_UNDERLYINGS='+json.dumps(under.most_common(40),ensure_ascii=False))
+          # Search same-underlying API candidates only; no inference/binding.
+          samples=[]
+          for u,_ in under.most_common(12):
+              if u=='?':continue
+              cand=[r for r in api if str(r['ticker']).upper().startswith(u.replace('.','')) or str(r['description'] or '').upper().startswith(u)]
+              samples.append({'web_underlying':u,'api_candidates':cand[:30],'count':len(cand)})
+          print('UNDERLYING_CANDIDATES='+json.dumps(samples,ensure_ascii=False,sort_keys=True))
+          c.close()
+          print('MUTATIONS=NONE')
+          print('BROWSER_RUN=NO')
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
