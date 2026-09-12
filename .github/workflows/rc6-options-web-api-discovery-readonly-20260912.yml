@@ -1,0 +1,83 @@
+name: RC6 Options Web API Discovery Readonly 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - .github/workflows/rc6-options-web-api-discovery-readonly-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Validate representative current web option identities via PPI production API
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OBS=porota_production_observer
+          BASE=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          git -C "$ROOT" merge-base --is-ancestor "$BASE" "$HEAD"
+          echo "HOST_SHA=$HEAD"
+          curl -fsS --max-time 5 http://127.0.0.1:8000/health; echo
+          sudo -n docker exec -i "$OBS" python -u - <<'PY'
+          import sqlite3,json,time
+          from bf_production_paper_observer import _secret
+          from bd_ppi_readonly_guard import ProductionMarketReader
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20);c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0];st=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone();c.close()
+          assert q=='ok' and st and st[0]=='PRODUCTION_PAPER' and int(st[2] or 0)==0
+          print('PRE_SAFETY='+json.dumps({'quick_check':q,'mode':st[0],'session':st[1],'real_orders_sent':st[2]},sort_keys=True))
+          probes=['LOMC2800OC','LOMC3600OC','ALUC700.OC','ALUC700OC','ALUC1400DI','ALUV700.OC','ALUV700OC']
+          safe_keys=('ticker','description','currency','type','market','settlement','id','instrumentId','instrumentID')
+          calls=[]
+          def audit(method,path,result):calls.append((method,path,result))
+          reader=ProductionMarketReader(*_secret(),audit=audit)
+          try:
+              reader.login_once();cfg=reader.market_configuration()
+              assert 'OPCIONES' in {str(x).upper() for x in cfg['instrument_types']}
+              assert 'BYMA' in {str(x).upper() for x in cfg['markets']}
+              for query in probes:
+                  try:
+                      payload=reader.search_instruments(query,'OPCIONES',name=query,market='BYMA')
+                      rows=[{k:raw.get(k) for k in safe_keys if k in raw} for raw in payload[:40]]
+                      exact=[r for r in rows if str(r.get('ticker') or '').strip().upper()==query.upper()]
+                      dot_equiv=[r for r in rows if str(r.get('ticker') or '').replace('.','').strip().upper()==query.replace('.','').upper()]
+                      print('OPTION_DISCOVERY='+json.dumps({'query':query,'count':len(payload),'exact_count':len(exact),'dot_equiv_count':len(dot_equiv),'rows':rows},ensure_ascii=False,sort_keys=True,default=str))
+                  except Exception as exc:
+                      print('OPTION_DISCOVERY='+json.dumps({'query':query,'count':0,'error':type(exc).__name__+':'+str(exc)[:180]},ensure_ascii=False,sort_keys=True))
+                  time.sleep(0.20)
+              print('HTTP_BLOCKED='+str(reader.metrics['http_blocked']))
+              assert reader.metrics['http_blocked']==0
+          finally:
+              reader.close()
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True,timeout=20);c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0];st=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone();c.close()
+          assert q=='ok' and st and st[0]=='PRODUCTION_PAPER' and int(st[2] or 0)==0
+          print('FINAL_SAFETY='+json.dumps({'quick_check':q,'mode':st[0],'session':st[1],'real_orders_sent':st[2]},sort_keys=True))
+          print('MUTATIONS=NONE')
+          print('REAL_ORDER_ROUTES=NOT_CALLED')
+          PY
+          HOST
