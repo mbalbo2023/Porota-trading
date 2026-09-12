@@ -4,6 +4,15 @@
 
 Checkpoint operativo vivo. Objetivo: completar y clasificar toda la ingesta necesaria del universo argentino expuesto por PPI, agotando primero la API productiva de PPI y recién después usar PPI Web autenticada/scraping para los residuales. IOL queda exclusivamente como tercera fuente para huecos que sigan sin resolución después de PPI API + PPI Web.
 
+### Actualización operativa 2026-09-12 13:12 UTC
+
+- El primer intento de `API_CLOSEOUT` (run GitHub Actions `34695307006`) no llegó a mutar el shadow: la sesión SSH se cortó con `Broken pipe` durante la fase de discovery, antes de la transacción de refresh/clasificación. No se interpretó como fallo de PPI ni se avanzó a Web.
+- Se aplicó forward fix en el workflow: SSH keepalive (`ServerAliveInterval=20`, `ServerAliveCountMax=15`) y discovery acotada a la lógica productiva ya probada para familias que complementan el catálogo normalizado, preservando fail-safe el universo conocido para no achicarlo por respuestas parciales del buscador.
+- Nuevo `API_CLOSEOUT` activo: run `34695609656`, commit de workflow `0d27b1dbaab3fa3a0be5fa8d8af2f3db711f81b3`.
+- El closeout reintenta toda identidad local sin ledger o con `ERROR` hasta tres veces, ingiere cualquier identidad nueva, clasifica persistentes, exige `API_UNCLASSIFIED=0` y recién entonces genera `ppi_web_residual_manifest_rc6`.
+- PPI Web queda bloqueada hasta que `API_CLOSEOUT` cierre en verde. Ya existe el workflow preparado para iniciar captura read-only dirigida por las familias efectivamente presentes en el manifiesto residual; antes de usarlo se debe verificar el RCA del servicio weekend que estaba en `ExecMainStatus=4`.
+- Seguridad verificada antes del closeout: `PRODUCTION_PAPER|0`; ninguna ruta de órdenes forma parte de estos workflows.
+
 ## Invariantes de seguridad
 
 - Runtime: `PRODUCTION_PAPER`.
@@ -45,7 +54,7 @@ Shadow verificado: 1.960 identidades locales.
 | OPCIONES | 437 |
 | **TOTAL** | **1.960** |
 
-Fuentes del shadow: 901 identidades desde catálogo normalizado y 1.059 desde búsqueda productiva PPI. El shadow fue observado originalmente el 2026-09-12T04:02:07Z y debe ser rediscover/refrescado antes de declarar cierre definitivo de API.
+Fuentes del shadow: 901 identidades desde catálogo normalizado y 1.059 desde búsqueda productiva PPI. El shadow fue observado originalmente el 2026-09-12T04:02:07Z y se está refrescando/reconciliando en `API_CLOSEOUT` antes de declarar cierre definitivo de API.
 
 ## Histórico API — estado canónico antes del closeout final
 
@@ -73,7 +82,7 @@ La pasada masiva recorrió los 1.035 FCI que faltaban respecto de la semilla ini
 
 Host observado en el probe de 2026-09-12T12:59:33Z: `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d` (detached HEAD). Este SHA está 13 commits por delante del SHA usado al instalar inicialmente los schedulers de ingesta y contiene cambios de dashboard/scalping/swing; no debe revertirse ni reemplazarse por un SHA viejo.
 
-La rama de trabajo de ingesta, al crear este checkpoint, continúa separada del SHA desplegado del host. Toda mutación server-side nueva debe gatear contra el SHA host actual y volver a verificar que no haya otro deploy activo/queued.
+La rama de trabajo de ingesta continúa separada del SHA desplegado del host. Toda mutación server-side nueva debe gatear contra el SHA host actual y volver a verificar que no haya otro deploy activo/queued.
 
 ## Scheduler / Web
 
@@ -87,18 +96,19 @@ La rama de trabajo de ingesta, al crear este checkpoint, continúa separada del 
 
 No alcanza con tener filas. La fase API se cierra solamente cuando:
 
-1. se ejecuta una rediscovery productiva fresca del universo local y se compara con las 1.960 identidades de referencia;
-2. toda identidad local fresca queda reconciliada contra el ledger histórico;
+1. se ejecuta refresh/reconciliación productiva del universo local contra las 1.960 identidades de referencia sin achicar fail-open el universo por respuestas parciales;
+2. toda identidad local queda reconciliada contra el ledger histórico;
 3. toda identidad queda clasificada como `VALID_PAYLOAD`, `PARTIAL`, `EMPTY_OR_INVALID` o error persistente/taxonomía documentado después de reintentos acotados;
 4. cualquier identidad nueva descubierta recibe intento histórico;
 5. los errores transitorios son reintentados antes de derivar a Web;
-6. se conserva evidencia/provenance y `PRODUCTION_PAPER|0` antes/después.
+6. se conserva evidencia/provenance y `PRODUCTION_PAPER|0` antes/después;
+7. `API_UNCLASSIFIED=0` es condición obligatoria de salida.
 
 `EMPTY_OR_INVALID` confirmado no significa fallo de la ingesta: significa que PPI API fue agotada para esa identidad y el caso pasa al manifiesto residual Web.
 
 ## Residuales candidatos a PPI Web — NO cerrar hasta reconciliación
 
-Candidatos conocidos antes del refresh final: CEDEARS 8; FCI 24 + errores no recuperados; FUTUROS 7 vacíos + 9 errores; LEBACS/CEDI 1; LETRAS 4 vacíos + 3 errores; LICITACIONES 18; ON 58; OPCIONES 257. El manifiesto definitivo debe salir de la rediscovery + ledger final, no de estos números preliminares.
+Candidatos conocidos antes del refresh final: CEDEARS 8; FCI 24 + errores no recuperados; FUTUROS 7 vacíos + 9 errores; LEBACS/CEDI 1; LETRAS 4 vacíos + 3 errores; LICITACIONES 18; ON 58; OPCIONES 257. El manifiesto definitivo debe salir del ledger final de `API_CLOSEOUT`, no de estos números preliminares.
 
 PPI Web debe usarse primero para reconciliar identidad/contrato y luego para probes históricos residuales donde exista una ruta read-only comprobada. ETF Web permanece discovery-only hasta poder reconciliar una identidad local API/mercado válida. Ninguna evidencia Web auto-habilita operatoria PAPER.
 
@@ -108,6 +118,6 @@ PPI Web debe usarse primero para reconciliar identidad/contrato y luego para pro
 
 ## Próximo hito
 
-`API_CLOSEOUT`: fresh rediscovery + diff + reintento acotado de errores + ingesta de identidades nuevas + clasificación canónica 100%.
+`API_CLOSEOUT`: run `34695609656` en ejecución. Salida requerida: `API_UNCLASSIFIED=0`, manifiesto Web generado y seguridad `PRODUCTION_PAPER|0`.
 
-Al completar `API_CLOSEOUT`, actualizar este mismo archivo con los números finales y abrir inmediatamente `WEB_RESIDUAL_INGEST`, incluyendo RCA del servicio weekend fallido, manifiesto residual exacto, reconciliación API↔Web y scraping read-only dirigido. Solo después de agotar PPI Web se habilita análisis de IOL para los huecos restantes.
+Al completar `API_CLOSEOUT`, abrir inmediatamente `WEB_RESIDUAL_INGEST`: RCA del servicio weekend fallido, manifiesto residual exacto, reconciliación API↔Web y scraping read-only dirigido. Solo después de agotar PPI Web se habilita análisis de IOL para los huecos restantes.
