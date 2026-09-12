@@ -144,3 +144,12 @@ v17_trusted_history_catalog_import_2_result.json
 - Distinción operativa: en el snapshot 02:05:55 UTC sí aparecieron dos cadenas de procesos `timeout → sudo → docker compose` con firma de consulta autenticada/histórica de IOL. No coinciden con las rutas exactas inspeccionadas; no se pudo establecer propietario ni mecanismo de inicio. El patrón observado corresponde a consulta de credenciales/token e histórico, no a una ruta de órdenes. Debe identificarse su origen/frecuencia antes de atribuirlo a estos artefactos o declararlo resuelto.
 - La primera versión del sondeo de procesos tuvo un defecto que hizo que el log de Actions imprimiera argumentos de procesos; no se usó para concluir actividad. Se sustituyó por sondeo sanitizado que solo emite metadatos, estado Git y PID/nombre de proceso, nunca argv. En la salida observada no aparecieron valores de credenciales.
 - Conclusión: las rutas parecen **artefactos viejos y no activos en sí**, candidatos a archivo/revisión; no se califican como basura eliminable sin inspeccionar contenido y confirmar propiedad. No se borró ni alteró ninguna ruta del host.
+
+
+## Handoff a otro equipo — 2026-09-12
+
+- F-01 queda **READY FOR HANDOFF**: código acotado a seis archivos fuente/prueba, identidad PAPER preservada y validación exacta GREEN. No significa que el deploy ya pueda ejecutarse.
+- Rama de trabajo: `deploy/rc6-f01-paper-20260912`; commit de activación preparado: `55826f9b0a0ee7998f5498cc44d887f76ffc730f`. Su workflow validó y se detuvo antes de modificar el host por el guard de árbol limpio.
+- El paso operativo pendiente está registrado como [Issue #55](https://github.com/mbalbo2023/Porota-trading/issues/55), sin asignar a una persona/equipo específico. Incluye prerrequisitos, resguardo de artefactos, preflight y postflight.
+- No hay cambios requeridos al código F-01 para este traspaso. El equipo receptor debe resolver el checkout dirty preservando evidencias, identificar cualquier tarea paralela que siga activa y solo entonces reintentar el job fallido con el guard intacto.
+- Estado final hasta que postflight confirme el SHA candidato: **F-01 NO DESPLEGADO; host sigue en base RC6 certificada**. F-02 a F-10 continúan pendientes.
