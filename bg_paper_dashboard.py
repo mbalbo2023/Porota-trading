@@ -1913,10 +1913,11 @@ def trading_page(section=''):
     section=str(section or '').strip().lower()
     subnav=trading_nav_html()
     if section=='estrategias':
+        from fo_eod_overnight_dashboard_rc6 import render as render_eod_overnight
         body=("<h1>Trading — Estrategias</h1>"+subnav+
-              "<div class='paper-notice'><b>Scalping tiene menú principal y detalle propio.</b> "
-              "Esta vista lo conserva también dentro del agrupador de estrategias.</div>"+
-              _main_fragment(scalping_page()))
+              "<div class='paper-notice'>Las estrategias se muestran aquí sin duplicar módulos que ya tienen navegación propia. "
+              "Scalping permanece exclusivamente en su menú principal.</div>"+
+              render_eod_overnight())
         return _document('Trading — Estrategias',body,refresh=30)
     families=families_for_group(section)
     if families:
