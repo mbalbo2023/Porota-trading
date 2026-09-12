@@ -1,0 +1,53 @@
+name: RC6 ingestion interference inventory 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ingestion-interference-inventory-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inventory timers services cron and locks read only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          echo "AT=$(date -u +%FT%TZ)"
+          echo "HOST_SHA=$(git -C /opt/porota-trading rev-parse HEAD 2>/dev/null || true)"
+          echo '=== ACTIVE_RELEVANT_SERVICES ==='
+          systemctl list-units --type=service --state=active,activating --no-legend --no-pager 2>/dev/null | grep -Ei 'porota|ppi|history|contract|scrap|a3' || true
+          echo '=== RELEVANT_TIMERS_ALL ==='
+          systemctl list-timers --all --no-legend --no-pager 2>/dev/null | grep -Ei 'porota|ppi|history|contract|scrap|a3' || true
+          echo '=== ENABLED_RELEVANT_TIMERS ==='
+          for u in $(systemctl list-unit-files --type=timer --no-legend --no-pager 2>/dev/null | awk '$2=="enabled"{print $1}' | grep -Ei 'porota|ppi|history|contract|scrap|a3' || true); do
+            echo "TIMER=$u ACTIVE=$(systemctl is-active "$u" 2>/dev/null || true) ENABLED=$(systemctl is-enabled "$u" 2>/dev/null || true)"
+          done
+          echo '=== LOCKS ==='
+          sudo -n lslocks 2>/dev/null | grep -Ei 'porota|ppi|history|contract|scrap|a3' || true
+          echo '=== PROCESSES ==='
+          ps -eo pid,ppid,etimes,user,args | grep -Ei 'porota|ppi|history|contract|scrap|a3' | grep -v grep | head -n 200 || true
+          echo '=== CRON_REFERENCES ==='
+          sudo -n sh -c "grep -RIE 'porota|ppi|history|contract|scrap|a3' /etc/cron.d /etc/crontab /etc/cron.hourly /etc/cron.daily 2>/dev/null | head -n 200" || true
+          echo 'HOST_MUTATION=NONE'
+          HOST
