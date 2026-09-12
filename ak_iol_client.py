@@ -58,6 +58,10 @@ IOL_BASE_URL = os.getenv("IOL_BASE_URL", "https://api.invertironline.com")
 IOL_TIMEOUT = float(os.getenv("IOL_TIMEOUT_SECONDS", "12"))
 IOL_RATE_LIMIT_SLEEP = float(os.getenv("IOL_RATE_LIMIT_SLEEP", "0.25"))
 
+# El endpoint de estimación pertenece a la superficie de operación de IOL y
+# requiere opt-in manual explícito; no forma parte de lecturas automáticas.
+IOL_COST_ESTIMATE_OPT_IN_ENV = "IOL_COST_ESTIMATE_EXPLICIT_OPT_IN"
+
 # El token de IOL vive unos minutos y viene con refresh_token. Se renueva con
 # margen: pedir un token nuevo es barato, comerse un 401 en el medio de una
 # descarga de 400 instrumentos no lo es.
@@ -265,6 +269,13 @@ class IOLClient:
         Es la pieza que permite auditar el modelo de comisiones propio contra
         un bróker real. Ver reconciliar_costos() más abajo.
         """
+        habilitado = os.getenv(IOL_COST_ESTIMATE_OPT_IN_ENV, "false").strip().lower()             in {"1", "true", "yes", "on"}
+        if not habilitado:
+            logger.info(
+                "IOL estimar omitido: requiere %s=true en una corrida manual explícita.",
+                IOL_COST_ESTIMATE_OPT_IN_ENV,
+            )
+            return None
         headers = self._headers()
         if not headers:
             return None
