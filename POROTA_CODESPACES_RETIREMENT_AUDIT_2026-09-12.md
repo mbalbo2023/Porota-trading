@@ -62,3 +62,11 @@ Verificación en `main`: `AGENTS.md` y `.github/pull_request_template.md` existe
 El CI de push a `main`, run #254, terminó `success`: preflight de seguridad y Compose correctos; CI de aplicación omitido porque el paquete no está instalado. No se disparó ningún despliegue: `deploy.yml` y `promote-to-production.yml` son manuales (`workflow_dispatch`). No se tocó el runtime RC6 ni recursos del workstream PPI.
 
 Sigue pendiente verificar protecciones de rama desde una conexión con permisos adecuados y continuar la clasificación de ramas históricas. No borrar ramas hasta comprobar propietario, PRs y dependencias de workflows.
+
+## Inventario de ramas Codespaces posterior a la limpieza
+
+La búsqueda de refs todavía encuentra siete alias históricos: `codespace-setup`, `codespace-setup-v2` a `-v6` e `infra/v16.1-codespaces-ready`. Los seis alias sin prefijo `infra/` apuntan al mismo SHA vacío `f39cadaac8bff62f7176e10b80ffda80f6ee6f9b`; la comparación actual de `codespace-setup` e `infra/v16.1-codespaces-ready` contra `main` los deja en cero commits ahead y 17 behind. Los seis branches consultables devuelven `protected:false`; la política de rulesets global no pudo verificarse por las limitaciones de GitHub descritas arriba.
+
+`codespace-config` continúa divergente (11 commits ahead, 17 behind); su lado contiene historial de configuración/desarrollo, por lo que no debe borrarse por equivalencia con los alias vacíos. `chore/disable-codespaces-ci` continúa divergente (1 ahead, 3 behind) y su commit pendiente toca `.github/workflows/ci.yml`; no tocar ni borrar hasta revisar la diferencia con la política CI vigente y confirmar dueño/dependencias.
+
+El conector GitHub disponible no expone una operación de borrado de ramas. No se borró ninguna rama histórica. Las ramas de trabajo de los PRs ya integrados también permanecen como refs; se podrán retirar cuando exista una operación compatible y se cierre su checkpoint. Próximo paso: revisión de workflow/PR de la rama CI histórica y clasificación de ramas RC antiguas, siempre sin entrar en el workstream PPI.
