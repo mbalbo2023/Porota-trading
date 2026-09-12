@@ -144,3 +144,17 @@ Referencia de comparación: último deploy RC6 confirmado `a47f3339ec6dfe9d5afde
 - Según el usuario, el trabajo activo en PPI es ingesta de datos, sin deploy.
 - Se excluye `ops/rc6-ppi-fullfamily-history-20260912` de la poda y de cualquier cambio de base durante la limpieza.
 - En este paso no se borraron ramas ni se cambió código, datos o estado del host.
+
+
+---
+
+## Verificación de dependencias de alias RC3 / Codespaces — 2026-09-12
+
+Alcance read-only; comparación contra el último deploy confirmado `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d`.
+
+- Alias RC3 HF6/HF7: ambos apuntan a `9ec1fdb7f6571cc9c237276944b240c3469bd024`, ancestro del baseline RC6; no tienen trabajo único pendiente frente al deploy. No son cabeza de PR abierto. Para HF6 aparecen dos ejecuciones históricas de Actions del 02-Sep; para HF7 no aparecen ejecuciones.
+- El commit RC3 contiene `.github/workflows/deploy.yml`. Su blob es idéntico en el SHA desplegado `a47f3339…`: `workflow_dispatch` manual, confirmación `DESPLEGAR`, environment `production`, acción SSH y referencia de despliegue ingresable. Por eso, eliminar los refs RC3 no retiraría ese workflow del árbol RC6. Se debe auditar el flujo y su historial como tarea separada antes de modificarlo.
+- Aliases Codespaces: los siete nombres previamente identificados comparten `f39cadaac8bff62f7176e10b80ffda80f6ee6f9b`, ancestro del baseline RC6. En ese commit el API devuelve raíz vacía y no existe `.github/workflows`; no hay ejecuciones de Actions para esos nombres. Ninguno encabeza un PR abierto.
+- Los refs repetidos parecen redundantes por contenido y actividad observada, pero la conexión no pudo leer las reglas/rulesets del repositorio. No se considera probada la ausencia de protección.
+- No se borró ni actualizó ninguna rama. No se tocó el pipeline PPI, sus datos, ejecuciones ni el host. La limpieza de refs sigue pendiente de la auditoría restante y autorización destructiva específica.
+- Siguiente control de auditoría: inventariar workflows existentes en el árbol RC6, clasificar triggers y capacidad de despliegue/escritura, y cruzarlos con ejecuciones recientes; separar archivos realmente operativos de flujos manuales obsoletos antes de proponer cambios.
