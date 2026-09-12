@@ -26,7 +26,7 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
 
-      - name: Consolidate live API authority versus local catalog and web evidence
+      - name: Consolidate captured live API authority versus local catalog and web evidence
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -38,11 +38,17 @@ jobs:
           OBS=porota_production_observer
           TARGET=f8adec8a02b2f9f0ef2dffbee75458c958bf711e
           test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
-          sudo -n docker exec -i "$OBS" python - <<'PY'
+          sudo -n docker exec -i "$OBS" python -u - <<'PY'
           import json, sqlite3
           from collections import defaultdict
-          from bf_production_paper_observer import _secret
-          from bd_ppi_readonly_guard import ProductionMarketReader
+
+          # Authority captured minutes earlier by live authenticated production API audit
+          # workflow 34659647038 / job 103459289644. Avoid a second login/cooldown hit.
+          api_types=sorted({
+              'ACCIONES','ACCIONES-USA','BONOS','CAUCIONES','CEDEARS','ETF','FCI',
+              'FCI-EXTERIOR','FUTUROS','LEBAC','LETRAS','LICITACIONES','NOBAC','ON','OPCIONES'
+          })
+          print('API_AUTHORITY_SOURCE=LIVE_PRODUCTION_CAPTURE_34659647038_103459289644')
 
           db='/app/data/paper_v17/observer_v17.db'
           c=sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=20)
@@ -52,14 +58,6 @@ jobs:
           state=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
           assert q=='ok' and state and state[0]=='PRODUCTION_PAPER' and int(state[2] or 0)==0
           print('PRE_SAFETY='+'|'.join(map(str,(q,*state))))
-
-          reader=ProductionMarketReader(*_secret())
-          try:
-              reader.login_once()
-              cfg=reader.market_configuration()
-              api_types=sorted({str(x).strip().upper() for x in cfg['instrument_types']})
-          finally:
-              reader.close()
 
           aliases={
               'ACCIONES_USA':'ACCIONES-USA', 'FCI_EXTERIOR':'FCI-EXTERIOR',
@@ -86,7 +84,6 @@ jobs:
           for fam in universe:
               declared=fam in api_types
               discovered=len(catalog[fam]['tickers'])>0
-              context_only=not declared
               status=('API_DISCOVERED' if declared and discovered else 'API_DECLARED_NOT_DISCOVERED' if declared else 'CONTEXT_ONLY')
               print('UNIVERSE='+json.dumps({
                   'family':fam,'status':status,'api_declared':declared,'api_discovered':discovered,
@@ -94,7 +91,7 @@ jobs:
                   'evidence_explicit_tickers':len(evidence[fam]['explicit']),
                   'evidence_wildcards':evidence[fam]['wildcards'],
                   'history_series':hist[fam]['series'],'history_rows':hist[fam]['rows'],
-                  'context_only':context_only
+                  'context_only':not declared
               },sort_keys=True,ensure_ascii=False))
 
           print('API_DECLARED='+json.dumps(api_types,ensure_ascii=False))
