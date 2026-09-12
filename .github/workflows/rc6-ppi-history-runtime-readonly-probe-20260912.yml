@@ -1,0 +1,71 @@
+name: RC6 PPI history runtime readonly probe 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-history-runtime-readonly-probe-20260912.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-readonly-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only runtime proof
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=10 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          SVC=porota-ppi-fullfamily-history-rc6.service
+          cd /opt/porota-trading || exit 2
+          echo "PROBE_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "HOST_SHA=$(git rev-parse HEAD)"
+          echo "SYSTEMD_ACTIVE=$(systemctl is-active "$SVC" 2>/dev/null || true)"
+          echo "SYSTEMD_ENABLED=$(systemctl is-enabled "$SVC" 2>/dev/null || true)"
+          echo "SYSTEMD_MAINPID=$(systemctl show -p MainPID --value "$SVC" 2>/dev/null || true)"
+          echo "DISK_ROOT=$(df -Pk / | awk 'NR==2{print $4"KB_free|"$5"_used"}')"
+
+          snapshot() {
+            sudo -n docker exec -i porota_production_observer python -u - status < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
+          }
+          integrity() {
+            sudo -n docker exec -i porota_production_observer python -u - integrity < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
+          }
+
+          echo '--- SNAPSHOT_A ---'
+          A="$(snapshot)"
+          printf '%s\n' "$A"
+          echo '--- INTEGRITY_A ---'
+          integrity
+          sleep 45
+          echo '--- SNAPSHOT_B ---'
+          B="$(snapshot)"
+          printf '%s\n' "$B"
+          echo "SYSTEMD_ACTIVE_B=$(systemctl is-active "$SVC" 2>/dev/null || true)"
+          echo "SYSTEMD_MAINPID_B=$(systemctl show -p MainPID --value "$SVC" 2>/dev/null || true)"
+          echo '--- INTEGRITY_B ---'
+          integrity
+          echo '--- JOURNAL_TAIL_READONLY ---'
+          sudo -n journalctl -u "$SVC" -n 40 --no-pager 2>&1 || true
+          HOST
