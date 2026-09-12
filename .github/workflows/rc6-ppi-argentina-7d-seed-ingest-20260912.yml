@@ -1,0 +1,112 @@
+name: RC6 PPI Argentina 7d seed ingest 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-argentina-7d-seed-ingest-20260912.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Persist a tiny local-only seven-day API history sample
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = 'eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a' || exit 31
+          exec 9>/run/lock/porota-ppi-fullfamily-history.lock
+          flock -w 600 9 || exit 32
+          sudo -n timeout 600 docker exec -i porota_production_observer python - <<'PY'
+          import json
+          from datetime import timedelta
+          import bf_production_paper_observer as m
+          import ct_ppi_history_salvage_hf6 as salvage
+          from bl_candle_engine import canonical,archive_raw
+          try:
+              from fb_raw_evidence_exact_v1 import enabled as exact_enabled, archive_wrapper as archive_exact
+          except Exception:
+              exact_enabled=lambda:False; archive_exact=None
+          store=m.runtime_store()
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+              assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+              assert m._market_phase()=='CLOSED'
+              targets=[]
+              for fam,lim in [('FCI',5),('LICITACIONES',3),('LEBACS',1)]:
+                  targets += list(c.execute('''select ticker,instrument_type,market,currency,settlement,metadata_json
+                    from ppi_argentina_api_shadow where instrument_type=? order by ticker limit ?''',(fam,lim)))
+          end=m.datetime.now(m.TZ).date(); start=end-timedelta(days=7)
+          key,secret=m._secret(); reader=m.ProductionMarketReader(key,secret,audit=store.audit_http); reader.login_once()
+          results=[]
+          try:
+              for ticker,kind,market,currency,settlement,metadata_json in targets:
+                  attempted=m.now_iso(); provider=valid=0; state='ERROR'; detail=''
+                  try:
+                      payload=reader.history(ticker,kind,settlement,start,end)
+                      provider=len(payload) if isinstance(payload,list) else 0
+                      valid=m._history_count(payload,as_of=attempted,date_from=start,date_to=end)
+                      state='VALID_PAYLOAD' if valid and valid==provider else 'PARTIAL' if valid else 'EMPTY_OR_INVALID'
+                      wrapper={'symbol':ticker,'asset_class':kind,'market':market,'settlement':settlement,
+                        'date_from':start.isoformat(),'date_to':end.isoformat(),'metadata_json':metadata_json,
+                        'valid_rows':valid,'payload_json':json.dumps(payload,ensure_ascii=False,default=str)}
+                      row_key=canonical([ticker,kind,market,settlement,attempted])
+                      if exact_enabled() and archive_exact:
+                          archive_exact(row_key=row_key,wrapper=wrapper,recorded_at=attempted,quality=state)
+                      else:
+                          with store.connect() as c:
+                              archive_raw(c,origin='PPI_HISTORY_ARGENTINA_API_SEED',row_key=row_key,payload=wrapper,recorded_at=attempted,quality=state)
+                      v2=salvage.ingest_ppi_payload(store,symbol=ticker,instrument_type=kind,market=market,settlement=settlement,
+                        payload=payload,requested_from=start,requested_to=end,attempted_at=attempted)
+                      detail='v2_valid='+str(v2.get('valid_rows',0))
+                      with store.connect() as c:
+                          c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
+                            (ticker,kind,settlement,attempted,state,valid,'PPI Argentina 7d seed; '+detail))
+                          if state=='VALID_PAYLOAD':
+                              c.execute('INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)',
+                                (ticker,kind,settlement,start.isoformat(),end.isoformat(),attempted,valid,json.dumps(payload,ensure_ascii=False,default=str)))
+                  except Exception as exc:
+                      state='ERROR'; detail=type(exc).__name__+':'+str(exc)[:160]
+                      with store.connect() as c:
+                          c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
+                            (ticker,kind,settlement,attempted,state,0,'PPI Argentina 7d seed; '+detail))
+                  out={'family':kind,'ticker':ticker,'market':market,'state':state,'provider_rows':provider,'valid_rows':valid,'detail':detail}
+                  results.append(out); print('SEED7D='+json.dumps(out,ensure_ascii=False,sort_keys=True))
+              metrics=reader.metrics
+          finally:
+              reader.close()
+          print('SEED7D_SUMMARY='+json.dumps({'tested':len(results),'usable':sum(r['state'] in ('VALID_PAYLOAD','PARTIAL') for r in results),'valid_rows':sum(r['valid_rows'] for r in results)},sort_keys=True))
+          print('READER_METRICS='+json.dumps(metrics,sort_keys=True))
+          with store.connect() as c:
+              assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+              s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          assert s[0]=='PRODUCTION_PAPER' and int(s[1] or 0)==0
+          print('HOST_MUTATION=HISTORY_DATA_ONLY')
+          print('ORDER_ROUTES=NOT_CALLED')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
