@@ -114,3 +114,33 @@ Este addendum actualiza el campo histórico “runtime canónico” de este chec
 - F01 permanece como antecedente RC6; no se lo trata como el último deploy.
 - No se eliminaron ramas, tags, archivos ni artefactos del servidor.
 - Housekeeping destructivo sigue pendiente de clasificación y aprobación específica.
+
+
+---
+
+## Paso 2 — clasificación read-only de ramas — 2026-09-12
+
+Referencia de comparación: último deploy RC6 confirmado `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d`.
+
+### Inventario y PRs
+
+- Ramas GitHub observadas: 345.
+- La API de ramas marcó `protected=false` en todas las entradas consultadas. Esto no confirma la ausencia de rulesets; la configuración de rulesets/entornos no fue accesible desde la conexión de auditoría.
+- 13 grupos comparten SHA de cabecera idéntico; 39 nombres de rama involucrados (26 aliases adicionales dentro de esos grupos).
+- No hay PR abierto cuya rama de origen pertenezca a esos 13 grupos.
+- Único PR abierto del repositorio: #13, draft RC5 hacia `main`; no pertenece a esos grupos.
+- PR #5, RC3-HF6, está cerrado sin merge y corresponde a una de las ramas RC3 duplicadas.
+
+### Comparación con el último deploy RC6
+
+- Ocho grupos duplicados están enteramente contenidos en la historia de `a47f3339…` (0 commits por delante). Sus aliases son candidatos a poda de refs una vez revisados workflows y dependencias de nombre.
+- Cinco grupos divergen del baseline y tienen trabajo propio por delante: checkpoints del 09-Sep (+2), IOL auth (+7), cauciones cost authority (+2), contract evidence (+37) y waves 12–19 (+90). Debe permanecer al menos una referencia por cada SHA hasta integrar o archivar explícitamente ese trabajo.
+- Los aliases de checkpoints se conservan por continuidad, aunque compartan SHA.
+- Candidatos tentativos para una primera tanda, sin borrar todavía: alias RC3-HF6/HF7 (mismo SHA, PR #5 cerrado, su commit es ancestro del deploy actual) y aliases de Codespaces (siete nombres, mismo SHA, también ancestro del deploy actual). Antes de retirar nombres se debe completar el chequeo de workflows/rulesets y elegir qué referencia conservar.
+
+### Límite operativo PPI
+
+- El chat activo es ahora `Revisar estado del pipeline ppi`; el anterior `continuar pipeline ppi` quedó colgado.
+- Según el usuario, el trabajo activo en PPI es ingesta de datos, sin deploy.
+- Se excluye `ops/rc6-ppi-fullfamily-history-20260912` de la poda y de cualquier cambio de base durante la limpieza.
+- En este paso no se borraron ramas ni se cambió código, datos o estado del host.
