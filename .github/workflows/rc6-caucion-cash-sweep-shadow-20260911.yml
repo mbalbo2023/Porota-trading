@@ -1,0 +1,67 @@
+name: RC6 Caucion Cash Sweep Shadow 2026-09-11
+
+on:
+  push:
+    branches:
+      - feature/rc6-caucion-cash-sweep-shadow-20260911
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+
+      - name: Exact delta from deployed baseline
+        env:
+          BASE_SHA: eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BASE_SHA^{commit}"
+          git diff --name-only "$BASE_SHA"...HEAD | sort | tee /tmp/delta.txt
+          cat > /tmp/allowed.txt <<'EOF'
+          .github/workflows/rc6-caucion-cash-sweep-shadow-20260911.yml
+          fj_caucion_cash_sweep_shadow_rc6.py
+          tests/test_rc6_caucion_cash_sweep_shadow.py
+          EOF
+          diff -u /tmp/allowed.txt /tmp/delta.txt
+
+      - name: Compile shadow layer
+        run: python -m py_compile fj_caucion_cash_sweep_shadow_rc6.py tests/test_rc6_caucion_cash_sweep_shadow.py
+
+      - name: Cash sweep shadow tests
+        run: python -m pytest -q tests/test_rc6_caucion_cash_sweep_shadow.py
+
+      - name: Existing caucion sweep regressions
+        run: |
+          python -m pytest -q \
+            tests/test_dynamic_risk_and_caucion_sweep_hf6.py \
+            tests/test_cash_sweep_runtime_hf6.py \
+            tests/test_rc6_cauciones_official_contract.py
+
+      - name: Prove execution runtime remains untouched
+        env:
+          BASE_SHA: eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a
+        run: |
+          set -euo pipefail
+          git diff --exit-code "$BASE_SHA"...HEAD -- \
+            di_caucion_cash_sweep_runtime_hf6.py ca_caucion_allocator.py bt_caucion_paper.py
+          python - <<'PY'
+          import fj_caucion_cash_sweep_shadow_rc6 as s
+          s.assert_shadow_only()
+          assert s.SHADOW_MODE == 'SHADOW_ONLY'
+          print('RC6_CAUCION_CASH_SWEEP_SHADOW=GREEN')
+          PY
