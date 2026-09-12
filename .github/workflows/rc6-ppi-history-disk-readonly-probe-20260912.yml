@@ -1,0 +1,68 @@
+name: RC6 PPI history disk readonly probe 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-fullfamily-history-20260912]
+    paths: ['.github/workflows/rc6-ppi-history-disk-readonly-probe-20260912.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disk-readonly-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Measure disk and SQLite footprints read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          cd /opt/porota-trading || exit 2
+          echo "PROBE_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          df -B1 / | awk 'NR==2{print "ROOT_TOTAL_BYTES="$2; print "ROOT_USED_BYTES="$3; print "ROOT_FREE_BYTES="$4; print "ROOT_USED_PCT="$5}'
+          echo "SYSTEMD_ACTIVE=$(systemctl is-active porota-ppi-fullfamily-history-rc6.service 2>/dev/null || true)"
+          sudo -n docker exec -i porota_production_observer python -u - <<'PY'
+          import os, sqlite3, json
+          import bf_production_paper_observer as observer
+          from cv_history_store_adapter_hf6 import default_history_store
+          store=observer.runtime_store(); hstore=default_history_store()
+          def info(label,path):
+              print(label+'_PATH='+path)
+              for suffix in ('','-wal','-shm'):
+                  p=path+suffix
+                  print(label+suffix.upper().replace('-','_')+'_BYTES='+str(os.path.getsize(p) if os.path.exists(p) else 0))
+              c=sqlite3.connect('file:'+path+'?mode=ro',uri=True,timeout=10)
+              page_size=int(c.execute('PRAGMA page_size').fetchone()[0]); page_count=int(c.execute('PRAGMA page_count').fetchone()[0])
+              freelist=int(c.execute('PRAGMA freelist_count').fetchone()[0])
+              print(label+'_PAGE_SIZE='+str(page_size)); print(label+'_PAGE_COUNT='+str(page_count)); print(label+'_FREELIST_PAGES='+str(freelist))
+              print(label+'_LOGICAL_BYTES='+str(page_size*page_count)); print(label+'_FREE_INTERNAL_BYTES='+str(page_size*freelist))
+              tabs={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              for t in ('history_canonical_v2','history_versions_v2','history_close_canonical_v1','history_close_versions_v1'):
+                  if t in tabs:
+                      try: n=int(c.execute('SELECT count(*) FROM '+t).fetchone()[0]); print(label+'_'+t.upper()+'_ROWS='+str(n))
+                      except Exception as e: print(label+'_'+t.upper()+'_ROWS_ERROR='+type(e).__name__)
+              c.close()
+          info('OBSERVER_DB',store.path)
+          info('HISTORY_DB',hstore.path)
+          PY
+          sudo -n docker exec -i porota_production_observer python -u - status < /opt/porota-ingest/ppi_history_control_rc6.py 2>&1 || true
+          HOST
