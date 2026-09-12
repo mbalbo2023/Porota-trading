@@ -37,7 +37,11 @@ jobs:
           echo '=== LOCKS ==='
           sudo -n lslocks 2>/dev/null | grep -E 'porota-ppi-fullfamily-history|porota-trading-history|COMMAND|flock' || true
           echo '=== PS ==='
-          ps -eo pid,ppid,lstart,etimes,user,args | grep -E 'flock|porota_production_observer.*python|porota-ppi|history-postclose|a3-history' | grep -v grep || true
+          ps -eo pid,ppid,pcpu,pmem,stat,wchan:30,etimes,user,args | grep -E 'flock|porota_production_observer.*python|porota-ppi|history-postclose|a3-history' | grep -v grep || true
+          echo '=== PYTHON IO ==='
+          for p in $(pgrep -f '/usr/bin/docker exec -i porota_production_observer python -' 2>/dev/null || true); do
+            echo "PID=$p"; sudo -n cat "/proc/$p/io" 2>/dev/null || true
+          done
           echo '=== HISTORY SERVICES ==='
           for u in porota-ppi-argentina-nightly-rc6.service porota-history-postclose-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do systemctl show "$u" -p Id -p ActiveState -p SubState -p Result -p MainPID --no-pager 2>/dev/null || true; done
           echo 'HOST_MUTATION=NONE'
