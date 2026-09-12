@@ -26,6 +26,7 @@ jobs:
       BASE_SHA: d1d4c6c8c990ac5d47d4068eaed3d908ccd2e721
       DASHBOARD_OPERATION_MODE: PRODUCTION_PAPER
       CAUCIONES_AUTO_PLACEMENT: "false"
+      PYTHONPATH: .
     steps:
       - name: Checkout exact branch
         uses: actions/checkout@v4
@@ -75,7 +76,7 @@ jobs:
 
       - name: Trader dashboard placement and safety tests
         run: |
-          pytest -q \
+          python -m pytest -q \
             tests/test_rc6_trader_dashboard_shadow_observability.py \
             tests/test_rc6_swing_paper_shadow.py \
             tests/test_rc6_caucion_cash_sweep_shadow.py \
