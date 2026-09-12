@@ -1,83 +1,84 @@
-# POROTA TRADING RC6 — CHECKPOINT HOUSEKEEPING + F01 PENDING — 2026-09-12
+# POROTA TRADING RC6 — CHECKPOINT HOUSEKEEPING + F01 — 2026-09-12
 
-## Baseline de referencia
+## Runtime canónico vigente
 
-- Runtime observado antes del deploy EOD UI: `eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a`.
+- Versión: `17.0.0-rc6`.
+- Host SHA final certificado: `c8773c8346a880ac5ecfe99ece5555c5bb771524`.
 - Modo: `PRODUCTION_PAPER`.
 - Ejecución: `SIMULATED`.
-- Órdenes reales: `0`.
-- Política: NO ROLLBACK; forward-fix solamente.
+- `REAL_ORDER_CAPABILITY=BLOCKED`.
+- `REAL_ORDERS_SENT=0`.
+- Política de cambios: NO ROLLBACK; forward-fix solamente.
 
-## Pendientes de housekeeping
+## EOD / Overnight UI — DESPLEGADO GREEN
 
-Estado observado en el host `/opt/porota-trading` durante el preflight EOD UI:
+- Run: `34671405159`.
+- SHA desplegado inicialmente: `d719deeb379de285b07fa61a40f5d48d19d5bffd`.
+- Validación offline: GREEN.
+- Activación/postflight: GREEN.
+- `TRADING_ESTRATEGIAS_EOD_UI=GREEN`.
+- EOD / Overnight queda dentro de `Trading → Estrategias`.
+- Scalping no vuelve a aparecer dentro de Estrategias y mantiene su menú propio.
+- `EOD_POLICY_ACTIVE=CURRENT_EOD`.
+- `EOD_AUTO_PROMOTION=false`.
+- `REAL_ORDERS_SENT=0` y rutas reales no llamadas.
+- El posterior despliegue F01 preservó esta UI y política (`EOD_UI_PRESERVED=GREEN`).
+
+## F01 — DESPLEGADO GREEN
+
+Antecedente original:
+
+- Rama original: `deploy/rc6-f01-paper-20260912`.
+- Candidato original: `55826f9b0a0ee7998f5498cc44d887f76ffc730f`.
+- La lógica/CI original era GREEN, pero la activación fue bloqueada por un guard que exigía `git status --porcelain` completamente vacío mientras el host tenía 58 archivos no trackeados.
+- No fue un fallo funcional de F01.
+
+Rebase y despliegue final:
+
+- Base productiva exacta usada: `d719deeb379de285b07fa61a40f5d48d19d5bffd`.
+- Rama: `deploy/rc6-f01-paper-after-eod-20260912`.
+- Commit funcional rebased: `a42fdd4fbce05d9390e55cc8e73358e39c242961`.
+- Commit final autorizado/desplegado: `c8773c8346a880ac5ecfe99ece5555c5bb771524`.
+- Run final: `34673102199`.
+- Validación exacta: SUCCESS.
+- Build candidate: SUCCESS.
+- Tests F01 + backtest + regresión EOD: SUCCESS.
+- Activación/postflight PAPER: SUCCESS.
+- `F01_SOURCE_IDENTITY=GREEN`.
+- `F01_RUNTIME_MODEL=GREEN`.
+- `EOD_UI_PRESERVED=GREEN`.
+- `POST_SAFETY=ok|PRODUCTION_PAPER|0`.
+- `HEALTH_OK=YES`.
+- `REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED`.
+- `RC6_F01_DEPLOY_POSTFLIGHT=GREEN`.
+
+## Housekeeping — PENDIENTE
+
+Estado validado durante ambos despliegues:
 
 - `TRACKED_DIRTY_COUNT=0`: no hay código versionado modificado fuera de Git.
-- `HOST_DIRTY_COUNT=58`: hay 58 artefactos no trackeados, principalmente scripts/resultados históricos de diagnósticos y despliegues (`v17_*.py`, `*_result.json`, `.pid`, `.sh`, probes).
-- Espacio libre observado: ~14 GiB.
+- `UNTRACKED_COUNT=58`: existen 58 artefactos no trackeados, principalmente scripts/resultados históricos de diagnósticos y despliegues (`v17_*.py`, `*_result.json`, `.pid`, `.sh`, probes).
+- Los 58 artefactos fueron preservados exactamente antes/después de EOD UI y F01.
+- No hubo colisiones entre esos artefactos y los paths de los targets desplegados.
 
 Pendientes obligatorios:
 
-1. Inventariar y clasificar los 58 artefactos en: evidencia útil / activo / obsoleto.
-2. Preservar la evidencia útil fuera del checkout operativo (por ejemplo bajo `data/diagnosticos` o almacenamiento de artifacts) antes de eliminar nada.
+1. Inventariar y clasificar los 58 artefactos en evidencia útil / activo / obsoleto.
+2. Preservar la evidencia útil fuera del checkout operativo antes de eliminar nada.
 3. Retirar sólo residuos confirmados como obsoletos; prohibido `git clean` indiscriminado.
 4. Evitar que diagnósticos/deploys escriban nuevos `.json`, `.pid`, logs o scripts temporales en la raíz del repo.
-5. Endurecer `.gitignore` para artefactos inequívocos, sin patrones amplios que puedan ocultar código legítimo.
-6. Auditar y reducir la proliferación de ramas GitHub ya cerradas/integradas, preservando referencias canónicas, release, checkpoint y ramas realmente activas.
-7. Definir política de lifecycle de ramas: creación, convergencia, certificación y retiro luego de integrar.
-8. Converger a un workflow estable de deploy por SHA/dispatch, evitando workflows auxiliares temporales por cada intervención.
-9. Separar el deploy en pasos observables (preflight/build/activation/health/postflight) para evitar bloques largos sin visibilidad.
-10. Mantener siempre guardas: `PRODUCTION_PAPER`, `SIMULATED`, `REAL_ORDER_CAPABILITY=BLOCKED`, `real_orders_sent=0`.
+5. Endurecer `.gitignore` sólo para artefactos inequívocos, sin patrones amplios que oculten código legítimo.
+6. Auditar y reducir ramas GitHub cerradas/integradas preservando referencias canónicas, release, checkpoints y ramas activas.
+7. Establecer lifecycle de ramas: creación, convergencia, certificación y retiro.
+8. Converger a un workflow estable de deploy por SHA/dispatch.
+9. Mantener deploy observable por etapas: preflight, build, activation, health y postflight.
+10. Mantener siempre guardas `PRODUCTION_PAPER`, `SIMULATED`, `REAL_ORDER_CAPABILITY=BLOCKED`, `real_orders_sent=0`.
 
-## F01 — localización y causa del deploy pendiente
+## Estado final de este checkpoint
 
-Candidato autorizado original:
-
-- Rama: `deploy/rc6-f01-paper-20260912`.
-- Commit autorizado: `55826f9b0a0ee7998f5498cc44d887f76ffc730f`.
-- Workflow: `RC6 F01 PAPER exact-base deployment`.
-- Run de activación: `34665171825`.
-- La validación offline completa terminó GREEN: exact scope, compileall, build, tests RC6 e invariantes F01.
-- La fase `Activate and postflight PAPER F01` falló inmediatamente al comenzar el bloque remoto, antes de modificar el runtime.
-
-Causa operativa identificada:
-
-El workflow exigía simultáneamente:
-
-- host exactamente en `eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a`, y
-- `git status --porcelain` completamente vacío.
-
-Preflights posteriores comprobaron que el host sí estaba en ese SHA y que los archivos trackeados estaban limpios, pero existían 58 archivos **no trackeados**. Por lo tanto el guard de árbol limpio bloqueó el deploy F01 antes de build/activación en host. No fue un fallo de la lógica F01 ni de sus tests.
-
-## Plan F01 pendiente
-
-- NO reejecutar a ciegas el candidato viejo si el deploy EOD UI cambia el SHA productivo.
-- Esperar el cierre/postflight del deploy EOD UI en curso.
-- Tomar el SHA productivo resultante como nueva base exacta.
-- Reaplicar únicamente el delta funcional F01 (motor/modelo de salida/backtests/tests), sin arrastrar cambios ajenos.
-- Adaptar el guard del deploy para aceptar artefactos no trackeados preexistentes sólo si:
-  - `TRACKED_DIRTY_COUNT=0`;
-  - no colisionan con paths del target;
-  - la lista de no trackeados se preserva exactamente antes/después.
-- Ejecutar CI completa y postflight PAPER.
-- No marcar F01 como desplegado hasta verificar SHA del host, health, observer/dashboard sin reinicios, `PRODUCTION_PAPER`, `SIMULATED` y `real_orders_sent=0`.
-
-## Incidente EOD UI durante este checkpoint
-
-- Run EOD UI: `34671405159`.
-- Validación offline: `SUCCESS` completa.
-- Fase remota: `FAILURE` por transporte SSH, no por código ni por los 58 archivos.
-- El guard nuevo aceptó correctamente `TRACKED_DIRTY_COUNT=0`, contabilizó `UNTRACKED_COUNT=58`, confirmó espacio suficiente y verificó `PRE_SAFETY=ok|PRODUCTION_PAPER|0`.
-- El fallo ocurrió durante `docker build`, en instalación de dependencias (`pip install`), con `client_loop: send disconnect: Broken pipe` / exit code `255`.
-- Según el orden del workflow, todavía no se había ejecutado `git checkout` al target, `docker tag` del candidato ni `porota_mode_manager.py simulation`; por lo tanto no se considera activado EOD UI.
-- Forward-fix pendiente: robustecer la sesión SSH/ejecución remota para builds largos y reintentar desde la misma base certificada, previa revalidación read-only del host.
-
-## Estado actualizado
-
+- EOD / Overnight UI: `GREEN / DESPLEGADO`.
+- F01: `GREEN / DESPLEGADO`.
+- Runtime canónico: `c8773c8346a880ac5ecfe99ece5555c5bb771524`.
 - Housekeeping: `PENDIENTE`.
 - Limpieza destructiva: `NO AUTORIZADA` sin clasificación previa.
-- F01 lógica/CI offline: `GREEN` en el candidato original.
-- F01 producción PAPER: `PENDIENTE DE REBASE/REVALIDACIÓN` después de cerrar EOD UI.
-- EOD UI código/CI: `GREEN`.
-- EOD UI activación: `NO ACTIVADA`; fallo de transporte SSH durante build remoto.
-- Runtime seguro esperado: baseline anterior `eddcc29bc52eaf0b3d50f87dc851a48accb0fc8a`, sujeto a verificación read-only fresca antes del siguiente intento.
+- Los 58 untracked permanecen preservados para auditoría posterior.
