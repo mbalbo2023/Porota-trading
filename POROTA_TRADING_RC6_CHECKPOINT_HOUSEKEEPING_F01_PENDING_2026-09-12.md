@@ -185,3 +185,13 @@ Referencia: SHA desplegado `a47f3339ec6dfe9d5afde444b1aaddabceb0e94d`. Sólo lec
 - Los workflows `rc6-final-transactional-deploy`, `...deploy2` y `...deploy3` contienen comprobaciones/rehearsals con RC5. No retirar esas referencias a ciegas: falta determinar si son evidencia histórica, rollback local o ruta operativa.
 - Conclusión: triggers acotados reducen activaciones accidentales entre ramas distintas, pero el número de flujos con permiso de escritura/deploy permite que varias acciones sobre una misma rama se encadenen y cambien el checkout sin PR central. Son candidatos prioritarios para consolidar tras revisar cada rama, run y efecto.
 - Sin cambios a workflows, ramas de aplicación, host ni datos; sin poda. La configuración de rulesets sigue sin ser visible desde esta conexión.
+
+
+---
+
+## Actualización de actividad PPI observada después del inventario — 2026-09-12
+
+- El run `34705180201` de storage/capacity audit seguía `in_progress` al último chequeo; conserva su lock compartido de historial.
+- Nuevo run PPI `34705796508`, creado por `push` a SHA `68835673e0cdf1f70b4760831b64bf9d28e30800`, terminó `SUCCESS`. Workflow `rc6-noncanonical-cleanup-diagnostic-20260912.yml`, job `diagnostic`.
+- El diagnóstico consulta por SSH; valida el SHA de host `a47f3339…`, lee el observer DB y abre el history DB en `mode=ro`. Crea/inserta sólo una tabla temporal `extra54` en SQLite para medir cruces; no elimina ni repara filas persistentes y reporta `HOST_MUTATION=NONE`.
+- Ambos runs son auditorías de historial/storage, no deploys. Son actividad del branch PPI independiente y no fueron disparados, cambiados ni cancelados por este trabajo de housekeeping.
