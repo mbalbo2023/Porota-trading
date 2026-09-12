@@ -1,0 +1,48 @@
+name: RC6 API Universe Bootstrap Static Proof 2026-09-12
+
+on:
+  push:
+    branches:
+      - fix/rc6-postfinal-contract-dom-stability-20260911
+    paths:
+      - scripts/rc6_api_universe_bootstrap.py
+      - .github/workflows/rc6-api-universe-bootstrap-static-proof-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static safety proof
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile scripts/rc6_api_universe_bootstrap.py
+          python - <<'PY'
+          import ast, pathlib
+          p=pathlib.Path('scripts/rc6_api_universe_bootstrap.py')
+          text=p.read_text(encoding='utf-8')
+          tree=ast.parse(text)
+          forbidden_tokens=(
+              '.orders', '.budget(', '.confirm(', '.cancel(', 'send_order',
+              'place_order', 'cancel_order', '/api/1.0/orders', 'PPI(sandbox=True)'
+          )
+          hits=[x for x in forbidden_tokens if x in text]
+          assert not hits, hits
+          assert 'ProductionMarketReader' in text
+          assert 'PPI_PRODUCTION_API_CATALOG' in text
+          assert 'PPI_PRODUCTION_API_DIRECTED' in text
+          assert 'CHECK(paper_candidate=0)' in text
+          assert 'REAL_ORDER_ROUTES=NOT_CALLED' in text
+          assert 'PRODUCTION_PAPER' in text
+          attrs={n.attr for n in ast.walk(tree) if isinstance(n,ast.Attribute)}
+          assert not ({'orders','budget','confirm','cancel_order','send_order','place_order'} & attrs)
+          print('BOOTSTRAP_STATIC=GREEN')
+          print('MUTATION_SCOPE=ADDITIVE_METADATA_TABLE_ONLY')
+          print('AUTO_PAPER_PROMOTION=FALSE')
+          print('ORDER_CAPABILITY=NONE')
+          PY
