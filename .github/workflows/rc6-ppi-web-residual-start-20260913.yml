@@ -1,0 +1,124 @@
+name: RC6 PPI Web residual start 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-ppi-web-residual-start-20260913.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-ppi-web-residual-start
+  cancel-in-progress: false
+
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_start"
+          chmod 600 "$HOME/.ssh/porota_start"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Enable and start durable residual scraper
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_start" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-ingest/ppi-web-residual
+          UNIT=porota-ppi-web-residual-rc6.service
+          API_UNIT=porota-ppi-fullfamily-history-rc6.service
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+
+          echo '=== PRE-START SAFETY ==='
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          active=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in ('PENDING','RETRYABLE','RUNNING')").fetchone()[0]
+          total=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001'").fetchone()[0]
+          print(f'{qc}|{mode}|{orders}|{active}|{total}'); c.close()
+          PY
+          )"
+          echo "SAFETY_API_GATE=$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|1960'
+          test "$(sudo -n systemctl is-active "$API_UNIT" 2>/dev/null || true)" != active
+          test -f "$ROOT/residual.jsonl"
+          test -f "$ROOT/deferred_fci.jsonl"
+          test -f "$ROOT/manifest_meta.json"
+
+          python3 - "$ROOT/manifest_meta.json" <<'PY'
+          import json,sys
+          m=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert m['run_id']=='PPI-WEB-RESIDUAL-20260913-001'
+          assert int(m['runnable_count'])==642
+          assert int(m['deferred_fci_count'])==37
+          assert m['fci_policy']=='DEFERRED_PENDING_CHECKPOINT_NOT_DONE_EMPTY'
+          print('MANIFEST_GATE=GREEN')
+          print('RUNNABLE_COUNT='+str(m['runnable_count']))
+          print('DEFERRED_FCI_COUNT='+str(m['deferred_fci_count']))
+          PY
+
+          echo '=== START ==='
+          sudo -n touch "$ROOT/ENABLED"
+          sudo -n chmod 600 "$ROOT/ENABLED"
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl start "$UNIT"
+          sleep 8
+          STATE="$(sudo -n systemctl is-active "$UNIT" 2>/dev/null || true)"
+          echo "SERVICE_ACTIVE=$STATE"
+          test "$STATE" = active
+          test -f "$ROOT/ENABLED"
+
+          echo '=== RUNTIME STATUS ==='
+          for i in 1 2 3 4 5 6; do
+            if test -s "$ROOT/status.json"; then break; fi
+            sleep 5
+          done
+          test -s "$ROOT/status.json"
+          cat "$ROOT/status.json"
+          python3 - "$ROOT/status.json" <<'PY'
+          import json,sys
+          s=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert s['run_id']=='PPI-WEB-RESIDUAL-20260913-001'
+          assert int(s['total'])==642
+          assert s['run_status'] in ('READY','RUNNING','COMPLETED')
+          print('STATUS_GATE=GREEN')
+          print('RUN_STATUS='+s['run_status'])
+          print('PROGRESS_PCT='+str(s['progress_pct']))
+          print('HEARTBEAT='+str(s['heartbeat']))
+          print('TERMINAL='+str(s['terminal']))
+          print('CURRENT='+str(s.get('current')))
+          PY
+
+          echo '=== POST-START SAFETY ==='
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'{qc}|{mode}|{orders}'); c.close()
+          PY
+          )"
+          echo "SAFETY_AFTER=$POST"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          echo SCRAPER_STARTED=YES
+          echo RECOVERABLE_FROM_OTHER_CHAT=YES
+          HOST
