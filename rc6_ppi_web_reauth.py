@@ -3,12 +3,11 @@
 
 Security contract:
 - credentials come only from the local host secret and are never printed;
-- only GET/HEAD/OPTIONS plus the exact PPI login POST are allowed;
+- only GET/HEAD/OPTIONS plus the exact PPI authentication POSTs are allowed;
 - order/trade/cancel paths are never visited;
 - all other mutations are aborted;
 - OTP/2FA is never automated;
-- authentication is GREEN only after a read-only GET reaches Trading without a
-  login redirect. A successful Account /cuentas landing is only intermediate.
+- authentication is GREEN only after Trading opens without a login redirect.
 """
 from __future__ import annotations
 
@@ -24,11 +23,12 @@ TRADING_ROOT = "https://trading.portfoliopersonal.com/"
 ACCOUNT_HOST = "cuenta.portfoliopersonal.com"
 TRADING_HOST = "trading.portfoliopersonal.com"
 ALLOWED_PAGE_HOSTS = {ACCOUNT_HOST, TRADING_HOST}
-LOGIN_API_KEYS = {
+PRIMARY_LOGIN_KEYS = {
     ("cuenta.portfoliopersonal.com", "/api/Seguridad/Auth/Login"),
     ("api.portfoliopersonal.com", "/api/Seguridad/Auth/Login"),
 }
-APPROVED_AUTH_POSTS = set(LOGIN_API_KEYS)
+TRADING_SSO_KEY = (TRADING_HOST, "/api/logInSSO")
+APPROVED_AUTH_POSTS = set(PRIMARY_LOGIN_KEYS) | {TRADING_SSO_KEY}
 ORDER_PATH_HINT = re.compile(r"(^|/)(operar|orden|orders?|trade|confirm|cancel)(/|$)", re.I)
 OTP_TEXT_HINT = re.compile(
     r"(pin|otp|token|c[oó]digo).{0,120}(mail|correo|email|verific|seguridad|autentic)|"
@@ -179,7 +179,7 @@ def main() -> int:
                 nonlocal auth_observation
                 try:
                     u = urlsplit(response.url); key = (u.netloc, u.path.rstrip("/") or "/")
-                    if response.request.method.upper() != "POST" or key not in LOGIN_API_KEYS: return
+                    if response.request.method.upper() != "POST" or key not in PRIMARY_LOGIN_KEYS: return
                     obs = {"http_status": int(response.status), "json_object": False, "has_token": False,
                            "twofa": False, "change_password": False, "safe_keys": []}
                     try:
@@ -201,7 +201,7 @@ def main() -> int:
                 stage = label; page.goto(url, wait_until="commit", timeout=15000)
                 try: page.wait_for_load_state("domcontentloaded", timeout=7000)
                 except PlaywrightTimeoutError: pass
-                page.wait_for_timeout(700)
+                page.wait_for_timeout(1000)
 
             goto_fast(TRADING_ROOT, "OPEN_TRADING_ROOT")
             if authenticated_trading_url(page.url): ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=0)); return 0
@@ -234,7 +234,10 @@ def main() -> int:
                 final=page.url; ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE",attempts=attempts,stage=stage,page_url=final,auth_observation=auth_observation)); return 0
 
             if authenticated_account_intermediate(page.url) and 200 <= int(auth_observation.get("http_status") or 0) < 300:
+                blocked_post_path = ""
                 goto_fast(TRADING_ROOT, "VERIFY_TRADING_SESSION")
+                if blocked_post_path:
+                    final=page.url; ctx.close(); print(status_payload("BLOCKED_AUTH_UNAPPROVED_POST",attempts=attempts,blocked_post_path=blocked_post_path,stage=stage,page_url=final,auth_observation=auth_observation)); return 4
                 if authenticated_trading_url(page.url):
                     final=page.url; ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE",attempts=attempts,stage="VERIFY_TRADING_SESSION",page_url=final,auth_observation=auth_observation)); return 0
 
