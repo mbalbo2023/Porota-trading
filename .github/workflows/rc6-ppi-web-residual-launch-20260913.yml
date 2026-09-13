@@ -1,0 +1,104 @@
+name: RC6 PPI Web residual launch 2026-09-13
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-ppi-web-residual-launch
+  cancel-in-progress: false
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_launch"
+          chmod 600 "$HOME/.ssh/porota_launch"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage exact runtime
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/porota_launch" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            ops/ppi_web_residual_server_runner_rc6.py \
+            ops/ppi_web_residual_state_rc6.py \
+            ops/ppi_web_history_ingest_rc6.py \
+            ops/ppi_web_direct_history_collector_rc6.py \
+            ops/porota-ppi-web-residual-rc6.service \
+            rc6_ppi_web_reauth.py \
+            "$DO_USER@$DO_HOST:/tmp/"
+      - name: Gate deploy and start durable scraper
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_launch" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "EXPECTED_SHA='$EXPECTED_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          RROOT=/opt/porota-ingest/ppi-web-residual
+          BIN="$RROOT/bin"
+          UNIT=porota-ppi-web-residual-rc6.service
+          API_UNIT=porota-ppi-fullfamily-history-rc6.service
+
+          echo "LAUNCH_REPO_SHA=$EXPECTED_SHA"
+          GATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          active=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in ('PENDING','RETRYABLE','RUNNING')").fetchone()[0]
+          total=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001'").fetchone()[0]
+          print(f'{qc}|{mode}|{orders}|{active}|{total}'); c.close()
+          PY
+          )"
+          echo "SAFETY_API_GATE=$GATE"
+          test "$GATE" = 'ok|PRODUCTION_PAPER|0|0|1960'
+          test "$(sudo -n systemctl is-active "$API_UNIT" 2>/dev/null || true)" != active
+          test "$(sudo -n systemctl is-active "$UNIT" 2>/dev/null || true)" != active
+
+          sudo -n install -d -o root -g root -m 0755 "$RROOT" "$BIN"
+          sudo -n install -o root -g root -m 0755 /tmp/ppi_web_residual_server_runner_rc6.py "$BIN/ppi_web_residual_server_runner_rc6.py"
+          sudo -n install -o root -g root -m 0644 /tmp/ppi_web_residual_state_rc6.py "$BIN/ppi_web_residual_state_rc6.py"
+          sudo -n install -o root -g root -m 0644 /tmp/ppi_web_history_ingest_rc6.py "$BIN/ppi_web_history_ingest_rc6.py"
+          sudo -n install -o root -g root -m 0755 /tmp/ppi_web_direct_history_collector_rc6.py "$BIN/ppi_web_direct_history_collector_rc6.py"
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_reauth.py "$BIN/rc6_ppi_web_reauth.py"
+          sudo -n install -o root -g root -m 0644 /tmp/porota-ppi-web-residual-rc6.service "/etc/systemd/system/$UNIT"
+          sudo -n rm -f /tmp/ppi_web_residual_server_runner_rc6.py /tmp/ppi_web_residual_state_rc6.py /tmp/ppi_web_history_ingest_rc6.py /tmp/ppi_web_direct_history_collector_rc6.py /tmp/rc6_ppi_web_reauth.py /tmp/porota-ppi-web-residual-rc6.service
+          sudo -n systemctl daemon-reload
+          sudo -n systemd-analyze verify "/etc/systemd/system/$UNIT"
+
+          # Explicit launch authorization is represented by this manual workflow_dispatch.
+          sudo -n touch "$RROOT/ENABLED"
+          sudo -n chmod 0600 "$RROOT/ENABLED"
+          sudo -n systemctl start "$UNIT"
+          sleep 8
+          test "$(sudo -n systemctl is-active "$UNIT")" = active
+          PID="$(sudo -n systemctl show -p MainPID --value "$UNIT")"
+          test "${PID:-0}" -gt 0
+          echo "RESIDUAL_SERVICE=active"
+          echo "MAIN_PID=$PID"
+          echo "ENABLE_GATE=PRESENT"
+          echo "FCI_POLICY=DEFERRED_PENDING_CHECKPOINT"
+          echo "PRODUCER_TIMERS_RESTORE=NO"
+          echo "REAL_ORDERS_SENT=0"
+          echo "SCRAPING_STARTED=YES"
+          HOST
