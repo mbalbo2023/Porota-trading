@@ -1,0 +1,85 @@
+name: RC6 PPI history closeout read-only audit 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-history-closeout-audit-20260913.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Audit closed API ingestion and exact residual without writes
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          cd /opt/porota-trading
+          echo "AUDIT_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "API_SERVICE=$(sudo -n systemctl is-active porota-ppi-fullfamily-history-rc6.service 2>/dev/null || true)"
+          echo "WEB_SERVICE=$(sudo -n systemctl is-active porota-ppi-web-residual-rc6.service 2>/dev/null || true)"
+          test ! -e /opt/porota-ingest/ppi-web-residual/ENABLED && echo WEB_ENABLE_GATE=ABSENT
+          df -Pk /opt | awk 'NR==2{print "DISK_FREE_KB="$4}'
+          sudo -n docker exec -i porota_production_observer python -u - <<'PY'
+          import json, sqlite3
+          from collections import Counter,defaultdict
+          import bf_production_paper_observer as observer
+          from cv_history_store_adapter_hf6 import default_history_store
+          RUN='PPI-HIST-20260912-001'
+          store=observer.runtime_store(); hstore=default_history_store()
+          def ro(path):
+              c=sqlite3.connect('file:'+path+'?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on'); return c
+          c=ro(store.path)
+          print('RUNTIME_QUICK_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+          states={str(s):int(n) for s,n in c.execute('select state,count(*) from ppi_history_ingest_tasks where run_id=? group by state',(RUN,))}
+          total=sum(states.values()); active=sum(states.get(x,0) for x in ('PENDING','RETRYABLE','RUNNING'))
+          print('TASK_TOTAL='+str(total)); print('TASK_STATES='+json.dumps(states,sort_keys=True)); print('ACTIVE_TASKS='+str(active))
+          dup=c.execute('''select count(*) from (select symbol,instrument_type,market,settlement,count(*) n from ppi_history_ingest_tasks where run_id=? group by 1,2,3,4 having n>1)''',(RUN,)).fetchone()[0]
+          print('DUPLICATE_IDENTITIES='+str(dup))
+          rows=c.execute('''select symbol,instrument_type,market,settlement,state,provider_rows,valid_rows from ppi_history_ingest_tasks where run_id=? order by instrument_type,symbol,market,settlement''',(RUN,)).fetchall()
+          byclass=Counter(); byfamily=Counter(); byfamilyclass=Counter()
+          for sym,fam,mkt,sett,state,provider,valid in rows:
+              state=str(state or '').upper(); provider=int(provider or 0); valid=int(valid or 0)
+              cls=None
+              if state=='ERROR': cls='HARD_PROVIDER_ERROR'
+              elif state=='DONE_PARTIAL': cls='PARTIAL_VALID'
+              elif state=='DONE_EMPTY': cls='NO_PROVIDER_ROWS' if provider==0 else 'PROVIDER_INVALID'
+              if cls:
+                  byclass[cls]+=1; byfamily[str(fam)]+=1; byfamilyclass[(str(fam),cls)]+=1
+          print('RESIDUAL_TOTAL='+str(sum(byclass.values())))
+          print('RESIDUAL_BY_CLASS='+json.dumps(byclass,sort_keys=True))
+          print('RESIDUAL_BY_FAMILY='+json.dumps(byfamily,sort_keys=True))
+          print('RESIDUAL_BY_FAMILY_CLASS='+json.dumps({f'{k[0]}|{k[1]}':v for k,v in sorted(byfamilyclass.items())},sort_keys=True))
+          # Observer safety is read-only.
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print('SAFETY_MODE='+str(mode)); print('REAL_ORDERS_SENT='+str(int(orders or 0)))
+          c.close()
+          h=ro(hstore.path)
+          print('HISTORY_QUICK_CHECK='+str(h.execute('pragma quick_check').fetchone()[0]))
+          print('FULL_OHLC_CANONICAL_ROWS='+str(h.execute('select count(*) from history_canonical_v2').fetchone()[0]))
+          dups=h.execute('''select count(*) from (select symbol,instrument_type,market,settlement,date,count(*) n from history_canonical_v2 group by 1,2,3,4,5 having n>1)''').fetchone()[0]
+          print('FULL_OHLC_DUPLICATES='+str(dups))
+          h.close()
+          PY
+          echo '--- PAUSED/ACTIVE POROTA TIMERS ---'
+          systemctl list-timers --all --no-legend 2>/dev/null | grep -i porota || true
+          echo 'AUDIT_READ_ONLY=YES'
+          HOST
