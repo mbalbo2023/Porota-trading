@@ -1,0 +1,19 @@
+name: RC6 PPI Web broad static recon 2026-09-13
+on:
+  push:
+    branches: [ops/rc6-ppi-web-chunk-scan-20260913]
+    paths:
+      - 'ops/ppi_web_broad_static_recon_rc6.py'
+      - '.github/workflows/rc6-ppi-web-broad-static-recon-20260913.yml'
+permissions:
+  contents: read
+jobs:
+  recon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Broad public static recon
+        run: |
+          set -euo pipefail
+          python3 ops/ppi_web_broad_static_recon_rc6.py
