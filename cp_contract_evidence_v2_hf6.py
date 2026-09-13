@@ -40,6 +40,20 @@ FORBIDDEN_KEY_PARTS = (
     "session_token", "bearer", "private_key", "account_number", "numero_cuenta",
 )
 
+# Collection/provenance metadata may legitimately differ across API/XHR/Web
+# observations of the same financial identity.  It is auditable evidence, but
+# it is not itself a contractual term and therefore must not manufacture a
+# financial-source conflict.  Identity remains in the record key
+# (family,ticker,market,settlement); actual contract fields are never ignored.
+NON_CONTRACT_COMPARISON_FIELDS = frozenset({
+    "source_job", "source_route", "readiness_guard", "evidence_scope",
+    "provider", "provider_kind", "provider_schema", "sanitized_row_count",
+    "semantic_guard", "semantic_link", "semantic_link_method",
+    "contract_completeness", "identity_header", "identity_observed",
+    "table_headers_observed", "tables", "unlinked_observation_count",
+    "unlinked_observations_sample", "sanitized_rows_sample", "route",
+})
+
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
@@ -257,7 +271,7 @@ def current_records(store, *, family=None, ticker=None):
 
 
 def source_conflict(records):
-    """Detect contradictory non-empty values, respecting source provenance."""
+    """Detect contradictory financial values, excluding provenance metadata."""
     values={}
     for record in records or []:
         if not isinstance(record,dict):
@@ -267,6 +281,8 @@ def source_conflict(records):
         if source not in SOURCE_RANK or not isinstance(evidence,dict):
             continue
         for field,value in evidence.items():
+            if field in NON_CONTRACT_COMPARISON_FIELDS:
+                continue
             if value in (None,"",[],{}):
                 continue
             values.setdefault(field,[]).append((SOURCE_RANK[source],source,value))
