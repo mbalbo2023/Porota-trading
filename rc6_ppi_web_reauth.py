@@ -204,7 +204,8 @@ def main() -> int:
                 page.wait_for_timeout(1000)
 
             goto_fast(TRADING_ROOT, "OPEN_TRADING_ROOT")
-            if authenticated_trading_url(page.url): ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=0)); return 0
+            if authenticated_trading_url(page.url):
+                final=page.url; ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=0, stage="EXISTING_TRADING_SESSION", page_url=final)); return 0
 
             goto_fast(LOGIN_URL, "OPEN_LOGIN"); attempts = 1
             if not safe_page_url(page.url):
@@ -234,7 +235,18 @@ def main() -> int:
                 final=page.url; ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE",attempts=attempts,stage=stage,page_url=final,auth_observation=auth_observation)); return 0
 
             if authenticated_account_intermediate(page.url) and 200 <= int(auth_observation.get("http_status") or 0) < 300:
+                stage = "ACCOUNT_ENTER_SSO"
+                enter = first_visible(page, ["button:has-text('Ingresar')", "button[type='button']:has-text('Ingresar')"])
+                if enter is None:
+                    final=page.url; ctx.close(); print(status_payload("BLOCKED_ACCOUNT_ENTER_NOT_FOUND",attempts=attempts,stage=stage,page_url=final,auth_observation=auth_observation)); return 4
                 blocked_post_path = ""
+                enter.click(timeout=8000, no_wait_after=True)
+                page.wait_for_timeout(3500)
+                if blocked_post_path:
+                    final=page.url; ctx.close(); print(status_payload("BLOCKED_AUTH_UNAPPROVED_POST",attempts=attempts,blocked_post_path=blocked_post_path,stage=stage,page_url=final,auth_observation=auth_observation)); return 4
+                if authenticated_trading_url(page.url):
+                    final=page.url; ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE",attempts=attempts,stage=stage,page_url=final,auth_observation=auth_observation)); return 0
+                # Some account screens complete SSO asynchronously, then require a safe read-only GET.
                 goto_fast(TRADING_ROOT, "VERIFY_TRADING_SESSION")
                 if blocked_post_path:
                     final=page.url; ctx.close(); print(status_payload("BLOCKED_AUTH_UNAPPROVED_POST",attempts=attempts,blocked_post_path=blocked_post_path,stage=stage,page_url=final,auth_observation=auth_observation)); return 4
@@ -244,9 +256,11 @@ def main() -> int:
             classified = classify_auth(auth_observation) or "BLOCKED_AUTH_SESSION_EXPIRED"
             final=page.url; ctx.close(); print(status_payload(classified,attempts=attempts,blocked_post_path=blocked_post_path,stage=stage,page_url=final,auth_observation=auth_observation)); return 4
     except Exception as exc:
+        safe_page = ""
+        try: safe_page = clean_url(page.url)[:240] if page is not None else ""
+        except Exception: pass
         print(json.dumps({"status":"BLOCKED_BROWSER_ERROR","error_type":type(exc).__name__,"stage":stage,
-                          "page_url":clean_url(page.url)[:240] if page is not None else "",
-                          "blocked_post_path":blocked_post_path[:240],"credentials_exposed":False,
+                          "page_url":safe_page,"blocked_post_path":blocked_post_path[:240],"credentials_exposed":False,
                           "orders_visited":False,"real_orders_sent":0},sort_keys=True)); return 4
 
 
