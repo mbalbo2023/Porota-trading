@@ -1,0 +1,56 @@
+name: RC6 PPI Web profile owner trace 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-profile-owner-trace-20260913.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Trace process tree and cgroup read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          PID="$(pgrep -u porotaadmin -f -- "--user-data-dir=$PROFILE" | head -n1 || true)"
+          echo "PROFILE_CHROME_PID=${PID:-NONE}"
+          if [ -n "$PID" ]; then
+            echo '=== PROCESS ANCESTRY ==='
+            cur="$PID"
+            for _ in 1 2 3 4 5 6 7 8; do
+              [ -r "/proc/$cur/status" ] || break
+              ppid="$(awk '/^PPid:/{print $2}' "/proc/$cur/status")"
+              comm="$(cat "/proc/$cur/comm" 2>/dev/null || true)"
+              args="$(tr '\0' ' ' < "/proc/$cur/cmdline" 2>/dev/null | sed -E 's/(--user-data-dir=)[^ ]+/\1<PROFILE>/g')"
+              printf 'PID=%s PPID=%s COMM=%s ARGS=%s\n' "$cur" "$ppid" "$comm" "$args"
+              [ "$ppid" = 0 ] && break
+              cur="$ppid"
+            done
+            echo '=== CGROUP ==='
+            cat "/proc/$PID/cgroup" || true
+          fi
+          echo '=== RECENT RELATED JOURNAL ==='
+          sudo -n journalctl --since '10 minutes ago' --no-pager -o short-iso 2>/dev/null | grep -Ei 'porota.*(contract|browser|ppi.*web)|chrome-profile|playwright' | tail -n 80 || true
+          echo PROFILE_OWNER_TRACE=READ_ONLY
+          HOST
