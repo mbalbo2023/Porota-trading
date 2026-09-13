@@ -32,8 +32,11 @@ from urllib.parse import urlsplit
 LOGIN_URL = "https://cuenta.portfoliopersonal.com/login"
 TRADING_ROOT = "https://trading.portfoliopersonal.com/"
 ALLOWED_PAGE_HOSTS = {"cuenta.portfoliopersonal.com", "trading.portfoliopersonal.com"}
-LOGIN_API_KEY = ("cuenta.portfoliopersonal.com", "/api/Seguridad/Auth/Login")
-APPROVED_AUTH_POSTS = {LOGIN_API_KEY}
+LOGIN_API_KEYS = {
+    ("cuenta.portfoliopersonal.com", "/api/Seguridad/Auth/Login"),
+    ("api.portfoliopersonal.com", "/api/Seguridad/Auth/Login"),
+}
+APPROVED_AUTH_POSTS = set(LOGIN_API_KEYS)
 ORDER_PATH_HINT = re.compile(r"(^|/)(operar|orden|orders?|trade|confirm|cancel)(/|$)", re.I)
 OTP_TEXT_HINT = re.compile(
     r"(pin|otp|token|c[oó]digo).{0,120}(mail|correo|email|verific|seguridad|autentic)|"
@@ -237,7 +240,7 @@ def main() -> int:
                     req = response.request
                     u = urlsplit(response.url)
                     key = (u.netloc, u.path.rstrip("/") or "/")
-                    if req.method.upper() != "POST" or key != LOGIN_API_KEY:
+                    if req.method.upper() != "POST" or key not in LOGIN_API_KEYS:
                         return
                     obs = {
                         "http_status": int(response.status),
