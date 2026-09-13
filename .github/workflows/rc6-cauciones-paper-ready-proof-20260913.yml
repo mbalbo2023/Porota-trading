@@ -12,6 +12,7 @@ on:
       - 'rc6_caucion_fresh_data_agent.py'
       - 'rc6_caucion_intraday_opportunity.py'
       - 'rc6_caucion_readiness_state.py'
+      - 'rc6_caucion_schedule_gate.py'
       - 'di_caucion_cash_sweep_runtime_hf6.py'
       - 'df_caucion_end_of_day_sweep_hf6.py'
       - 'bt_caucion_paper.py'
@@ -23,6 +24,7 @@ on:
       - 'tests/test_rc6_caucion_fresh_data_agent.py'
       - 'tests/test_rc6_caucion_intraday_opportunity.py'
       - 'tests/test_rc6_caucion_readiness_state.py'
+      - 'tests/test_rc6_caucion_schedule_gate.py'
       - 'tests/test_rc6_caucion_paper_e2e.py'
       - 'tests/test_cash_sweep_runtime_hf6.py'
       - '.github/workflows/rc6-cauciones-paper-ready-proof-20260913.yml'
@@ -51,6 +53,7 @@ jobs:
             rc6_caucion_fresh_data_agent.py \
             rc6_caucion_intraday_opportunity.py \
             rc6_caucion_readiness_state.py \
+            rc6_caucion_schedule_gate.py \
             df_caucion_end_of_day_sweep_hf6.py \
             di_caucion_cash_sweep_runtime_hf6.py \
             bt_caucion_paper.py \
@@ -65,6 +68,7 @@ jobs:
             tests/test_rc6_caucion_fresh_data_agent.py \
             tests/test_rc6_caucion_intraday_opportunity.py \
             tests/test_rc6_caucion_readiness_state.py \
+            tests/test_rc6_caucion_schedule_gate.py \
             tests/test_rc6_caucion_paper_e2e.py \
             tests/test_cash_sweep_runtime_hf6.py
       - name: Prove new modules cannot route real orders or fetch network data
@@ -79,6 +83,7 @@ jobs:
               'rc6_caucion_fresh_data_agent.py',
               'rc6_caucion_intraday_opportunity.py',
               'rc6_caucion_readiness_state.py',
+              'rc6_caucion_schedule_gate.py',
           ]
           forbidden_imports=('requests','httpx','urllib','socket','ppi_client','playwright','selenium')
           forbidden_calls={'post','put','patch','delete','send_order','place_order','cancel_order','login_once','current','book','intraday'}
