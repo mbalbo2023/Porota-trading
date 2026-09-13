@@ -28,6 +28,7 @@ from typing import Iterable
 SOURCE_RANK = {
     "PPI_PRODUCTION_HISTORY": 10,
     "PPI_API": 10,
+    "PPI_WEB_HISTORY": 15,
     "BYMA_EOD": 20,
     "BYMA": 20,
     "A3_CEM_CLOSING": 20,
@@ -193,7 +194,6 @@ def _prefer(new: Candle, current) -> bool:
     current_rank = int(current["source_rank"])
     if new_rank != current_rank:
         return new_rank < current_rank
-    # Same authority: later observation may correct the same provider/date.
     return str(new.observed_at) >= str(current["observed_at"])
 
 
@@ -206,8 +206,6 @@ def append_candle(store, candle: Candle) -> dict:
     metadata_json = _canonical_json(value.metadata or {})
     rank = source_rank(value.source)
     with store.connect() as c:
-        # Prevent identical-version growth: an unchanged provider candle for the
-        # same complete financial identity/date is evidence already preserved.
         duplicate = c.execute(
             """SELECT id FROM history_versions_v2
                WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
