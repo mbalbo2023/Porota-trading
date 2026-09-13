@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Prepare SSH
         env:
-          SSH_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
