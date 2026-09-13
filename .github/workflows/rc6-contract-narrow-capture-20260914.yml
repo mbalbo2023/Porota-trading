@@ -5,6 +5,7 @@ on:
     branches: [ops/rc6-ppi-web-residual-ready-20260913]
     paths:
       - '.github/workflows/rc6-contract-narrow-capture-20260914.yml'
+      - 'scripts/rc6_contract_point1_reauth_capture.sh'
   workflow_dispatch:
 
 permissions:
@@ -18,6 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ops/rc6-ppi-web-residual-ready-20260913
+
       - name: Prepare SSH
         env:
           SSH_KEY: ${{ secrets.DO_SSH_KEY }}
@@ -25,135 +27,29 @@ jobs:
         run: |
           set -euo pipefail
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
-          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Run exactly one trusted narrow GET-only capture
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"
+          chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Apply known session-expired workaround and retry capture
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
           RESULT=POROTA_TRADING_CONTRACT_NARROW_CAPTURE_RESULT_2026-09-14.txt
-          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'HOST' > "$RESULT"
-          set -Eeuo pipefail
-          ROOT=/opt/porota-trading
-          CONTAINER=porota_production_observer
-          DOCKER=/usr/bin/docker
-          LIB=/usr/local/lib/porota-contract-evidence-rc6
-          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
-          CE_PYTHON=/opt/porota-contract-evidence-venv/bin/python
-          BROWSER_USER=porotaadmin
-          JOBS=CONTRACT_EVIDENCE_STATIC,CONTRACT_EVIDENCE_DYNAMIC,CONTRACT_EVIDENCE_CAUCIONES
-          OUTDIR="$ROOT/data/contract_evidence/rc6_trusted"
-          echo 'PROBE=RC6_CONTRACT_NARROW_CAPTURE_V2'
-          echo "NOW_UTC=$(date -u +%FT%TZ)"
-          echo "JOBS=$JOBS"
-
-          exec 9>/run/lock/porota-ppi-web-browser.lock
-          if ! flock -n 9; then
-            echo 'POINT1_CAPTURE_RESULT=YELLOW_BROWSER_LOCK_BUSY'
-            echo 'REAL_ORDERS_SENT=0'
-            exit 0
-          fi
-
-          PRE="$($DOCKER exec -i "$CONTAINER" python - <<'PY'
-          import sqlite3,json
-          p='/app/data/paper_v17/observer_v17.db'
-          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
-          qc=c.execute('pragma quick_check').fetchone()[0]
-          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
-          print(json.dumps({'quick_check':qc,'mode':r[0] if r else None,'orders':r[1] if r else None}))
-          PY
-          )"
-          PRE="$PRE" python3 - <<'PY'
-          import json,os
-          d=json.loads(os.environ['PRE'])
-          assert d.get('quick_check')=='ok'
-          assert d.get('mode')=='PRODUCTION_PAPER'
-          assert int(d.get('orders') or 0)==0
-          PY
-          echo 'PREFLIGHT=GREEN_PRODUCTION_PAPER_ORDERS0_DBOK'
-
-          test -r "$LIB/rc6_trusted_browser_contract_collector.py"
-          test -d "$PROFILE"
-          test -x "$CE_PYTHON"
-          test "$(stat -c '%U' "$PROFILE")" = "$BROWSER_USER"
-          "$CE_PYTHON" -c 'from playwright.sync_api import sync_playwright; print("PLAYWRIGHT=OK")' >/dev/null
-
-          BROWSER_HOME="$(getent passwd "$BROWSER_USER" | cut -d: -f6)"
-          BROWSER_GROUP="$(id -gn "$BROWSER_USER")"
-          STAGE_DIR="$BROWSER_HOME/porota-browser-lab/rc6-point1"
-          install -d -o "$BROWSER_USER" -g "$BROWSER_GROUP" -m 0700 "$STAGE_DIR"
-          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-          STAGE="$STAGE_DIR/contract_point1_${stamp}.json"
-          FINAL="$OUTDIR/contract_point1_${stamp}.json"
-          rm -f "$STAGE"
-
+          REMOTE="/tmp/porota-contract-point1-reauth-${GITHUB_RUN_ID}.sh"
+          SSH_OPTS=(-i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          scp "${SSH_OPTS[@]}" scripts/rc6_contract_point1_reauth_capture.sh "$DO_USER@$DO_HOST:$REMOTE"
           set +e
-          runuser -u "$BROWSER_USER" -- env HOME="$BROWSER_HOME" PYTHONPATH="$LIB:$ROOT" \
-            "$CE_PYTHON" "$LIB/rc6_trusted_browser_contract_collector.py" \
-            --profile "$PROFILE" --jobs "$JOBS" --output "$STAGE" >/tmp/porota-point1-collector.$$ 2>&1
+          ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" "chmod 700 '$REMOTE' && sudo -n bash '$REMOTE'; rc=\$?; rm -f '$REMOTE'; exit \$rc" > "$RESULT"
           RC=$?
           set -e
-          echo "COLLECTOR_RC=$RC"
-          test -f "$STAGE" || { echo 'POINT1_CAPTURE_RESULT=RED_CAPTURE_FILE_MISSING'; exit 6; }
-
-          install -d -m 0750 "$OUTDIR"
-          install -o root -g root -m 0644 "$STAGE" "$FINAL"
-          rm -f "$STAGE" /tmp/porota-point1-collector.$$
-
-          python3 - "$FINAL" <<'PY'
-          import json,sys
-          p=sys.argv[1]
-          d=json.load(open(p,encoding='utf-8'))
-          ep=d.get('endpoints') or {}
-          kinds={}; sources=[]
-          for x in ep.values():
-              if not isinstance(x,dict): continue
-              k=str(x.get('kind') or ''); kinds[k]=kinds.get(k,0)+1
-              if x.get('source_url'): sources.append(str(x.get('source_url')))
-          flags={'InstrumentosOperables':kinds.get('InstrumentosOperables',0)>0,'DatosTecnicos':kinds.get('DatosTecnicos',0)>0,'CaucionesOperables':kinds.get('CaucionesOperables',0)>0,'ConfiguracionOperatoriaSimplificada':any('ConfiguracionOperatoriaSimplificada' in s for s in sources)}
-          blocked=d.get('blocked_nonread') or []
-          print('CAPTURE_PATH='+p)
-          print('SCHEMA='+str(d.get('schema')))
-          print('AUTH_STATUS='+str(d.get('auth_status')))
-          print('REAL_ORDERS_SENT='+str(d.get('real_orders_sent')))
-          print('ROUTES_COUNT='+str(len(d.get('routes') or [])))
-          print('ENDPOINTS_COUNT='+str(len(ep)))
-          print('ENDPOINT_KINDS='+json.dumps(kinds,sort_keys=True,separators=(',',':')))
-          print('TARGET_FLAGS='+json.dumps(flags,sort_keys=True,separators=(',',':')))
-          print('BLOCKED_NONREAD_COUNT='+str(len(blocked)))
-          print('AMOUNT_FILLED='+str(bool(d.get('amount_filled'))))
-          print('PRICE_FILLED='+str(bool(d.get('price_filled'))))
-          structural=(d.get('schema')=='POROTA_RC6_PPI_TRUSTED_CONTRACT_V1' and d.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE' and int(d.get('real_orders_sent') or 0)==0 and isinstance(d.get('jobs'),list) and len(d.get('jobs') or [])>0 and isinstance(ep,dict) and len(ep)>0 and len(blocked)==0 and not d.get('amount_filled') and not d.get('price_filled'))
-          target=structural and flags['InstrumentosOperables'] and flags['DatosTecnicos'] and (flags['CaucionesOperables'] or flags['ConfiguracionOperatoriaSimplificada'])
-          print('STRUCTURALLY_IMPORTABLE='+('YES' if structural else 'NO'))
-          print('REUSABLE_TARGET='+('YES' if target else 'NO'))
-          if target: print('POINT1_CAPTURE_RESULT=GREEN_VALID_IMPORTABLE_CAPTURE')
-          elif structural: print('POINT1_CAPTURE_RESULT=YELLOW_IMPORTABLE_BUT_TARGET_ENDPOINTS_INCOMPLETE')
-          elif d.get('auth_status')!='AUTHENTICATED_TRUSTED_DEVICE': print('POINT1_CAPTURE_RESULT=RED_AUTH_NOT_TRUSTED')
-          else: print('POINT1_CAPTURE_RESULT=RED_CAPTURE_NOT_IMPORTABLE')
-          PY
-
-          POST="$($DOCKER exec -i "$CONTAINER" python - <<'PY'
-          import sqlite3,json
-          p='/app/data/paper_v17/observer_v17.db'
-          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
-          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); qc=c.execute('pragma quick_check').fetchone()[0]; c.close()
-          print(json.dumps({'mode':r[0] if r else None,'orders':r[1] if r else None,'quick_check':qc}))
-          PY
-          )"
-          POST="$POST" python3 - <<'PY'
-          import json,os
-          d=json.loads(os.environ['POST'])
-          assert d.get('mode')=='PRODUCTION_PAPER'; assert int(d.get('orders') or 0)==0; assert d.get('quick_check')=='ok'
-          PY
-          echo 'POSTFLIGHT=GREEN_PRODUCTION_PAPER_ORDERS0_DBOK'
-          echo 'DB_IMPORT_EXECUTED=NO'
-          echo 'SERVICE_RESTARTED=NO'
-          HOST
           cat "$RESULT"
-      - name: Persist sanitized capture result
+          exit "$RC"
+
+      - name: Persist sanitized reauth/capture result
         if: always()
         run: |
           set -euo pipefail
@@ -163,5 +59,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add "$RESULT"
           git diff --cached --quiet && exit 0
-          git commit -m 'audit(contract): persist narrow capture result [skip ci]'
+          git commit -m 'audit(contract): persist canonical reauth retry result [skip ci]'
           git push origin HEAD:ops/rc6-ppi-web-residual-ready-20260913
