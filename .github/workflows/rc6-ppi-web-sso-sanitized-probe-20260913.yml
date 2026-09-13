@@ -1,0 +1,124 @@
+name: RC6 PPI Web sanitized Trading SSO probe 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-sso-sanitized-probe-20260913.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Probe exact auth handoff without logging values
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin \
+            /opt/porota-contract-evidence-venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
+          LOGIN='https://cuenta.portfoliopersonal.com/login'
+          TRADING='https://trading.portfoliopersonal.com/'
+          AUTH_KEYS={
+            ('api.portfoliopersonal.com','/api/Seguridad/Auth/Login'),
+            ('cuenta.portfoliopersonal.com','/api/Seguridad/Auth/Login'),
+            ('trading.portfoliopersonal.com','/api/logInSSO'),
+          }
+          secret=Path('/etc/porota/contract-evidence-web.env')
+          vals={}
+          for raw in secret.read_text(encoding='utf-8').splitlines():
+              if '=' in raw and not raw.lstrip().startswith('#'):
+                  k,v=raw.split('=',1); vals[k.strip()]=v.strip().strip('"').strip("'")
+          user=vals.get('PPI_WEB_USERNAME',''); password=vals.get('PPI_WEB_PASSWORD','')
+          assert user and password
+          events=[]; blocked=[]
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(
+                  user_data_dir='/home/porotaadmin/porota-browser-lab/chrome-profile',
+                  executable_path='/usr/bin/google-chrome-stable',headless=True,
+                  locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',
+                  args=['--no-sandbox','--disable-dev-shm-usage'])
+              page=ctx.pages[0] if ctx.pages else ctx.new_page()
+              page.set_default_timeout(8000); page.set_default_navigation_timeout(15000)
+              def key(url):
+                  u=urlsplit(url); return (u.netloc,u.path.rstrip('/') or '/')
+              def clean(url):
+                  u=urlsplit(url); return f'{u.scheme}://{u.netloc}{u.path}'
+              def guard(route,request):
+                  m=request.method.upper(); k=key(request.url)
+                  if m in {'GET','HEAD','OPTIONS'}: return route.continue_()
+                  if m=='POST' and k in AUTH_KEYS:
+                      req_keys=[]
+                      try:
+                          d=request.post_data_json
+                          if isinstance(d,dict): req_keys=sorted(str(x) for x in d.keys())[:40]
+                      except Exception: pass
+                      events.append({'phase':'request','method':m,'host':k[0],'path':k[1],'json_keys':req_keys})
+                      return route.continue_()
+                  blocked.append({'method':m,'host':k[0],'path':k[1]})
+                  return route.abort()
+              def response(resp):
+                  k=key(resp.url)
+                  if resp.request.method.upper()!='POST' or k not in AUTH_KEYS: return
+                  top=[]; typ='non-json'
+                  try:
+                      d=resp.json(); typ=type(d).__name__
+                      if isinstance(d,dict): top=sorted(str(x) for x in d.keys())[:40]
+                  except Exception: pass
+                  events.append({'phase':'response','method':'POST','host':k[0],'path':k[1],
+                                 'http_status':int(resp.status),'json_type':typ,'json_keys':top})
+              ctx.route('**/*',guard); page.on('response',response)
+              page.goto(LOGIN,wait_until='domcontentloaded',timeout=20000); page.wait_for_timeout(800)
+              def first(selectors):
+                  for s in selectors:
+                      q=page.locator(s)
+                      for i in range(min(q.count(),10)):
+                          try:
+                              if q.nth(i).is_visible(): return q.nth(i)
+                          except Exception: pass
+                  return None
+              un=first(["input[autocomplete='username']","input[placeholder*='usuario' i]","input[name*='user' i]","input[id*='user' i]","input[type='email']"])
+              ps=first(["input[type='password']","input[autocomplete='current-password']","input[name*='pass' i]","input[id*='pass' i]"])
+              sub=first(["button:has-text('Ingresar')","button:has-text('Continuar')","button[type='submit']","input[type='submit']"])
+              assert un is not None and ps is not None and sub is not None
+              un.fill(user); ps.fill(password); sub.click(no_wait_after=True); page.wait_for_timeout(4000)
+              after_primary=clean(page.url)
+              try:
+                  page.goto(TRADING,wait_until='commit',timeout=15000)
+                  try: page.wait_for_load_state('domcontentloaded',timeout=7000)
+                  except PlaywrightTimeoutError: pass
+                  page.wait_for_timeout(2500)
+              except Exception: pass
+              final=clean(page.url)
+              ctx.close()
+          print('AFTER_PRIMARY_URL='+after_primary)
+          print('FINAL_URL='+final)
+          print('AUTH_EVENTS='+json.dumps(events,sort_keys=True,ensure_ascii=False))
+          print('BLOCKED_NONAUTH_MUTATIONS='+json.dumps(blocked,sort_keys=True,ensure_ascii=False))
+          print('CREDENTIAL_VALUES_PRINTED=NO')
+          print('COOKIE_OR_TOKEN_VALUES_PRINTED=NO')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
