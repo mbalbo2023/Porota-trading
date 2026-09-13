@@ -1,0 +1,116 @@
+name: RC6 PPI Web residual batchdir hotfix 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-ppi-web-residual-batchdir-hotfix-20260913.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-ppi-web-residual-hotfix
+  cancel-in-progress: false
+
+jobs:
+  hotfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_hotfix"
+          chmod 600 "$HOME/.ssh/porota_hotfix"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Fix batch directory traversal and restart durable scraper
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_hotfix" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-ingest/ppi-web-residual
+          BATCHES="$ROOT/batches"
+          UNIT=porota-ppi-web-residual-rc6.service
+          API_UNIT=porota-ppi-fullfamily-history-rc6.service
+
+          echo '=== SAFETY PRE ==='
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          active=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in ('PENDING','RETRYABLE','RUNNING')").fetchone()[0]
+          total=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001'").fetchone()[0]
+          print(f'{qc}|{mode}|{orders}|{active}|{total}')
+          PY
+          )"
+          echo "SAFETY_PRE=$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|1960'
+          test "$(sudo -n systemctl is-active "$API_UNIT" 2>/dev/null || true)" != active
+          sudo -n test -f "$ROOT/ENABLED"
+
+          echo '=== FIX BATCH ROOT ==='
+          sudo -n systemctl stop "$UNIT" || true
+          sudo -n install -d -o porotaadmin -g porotaadmin -m 0700 "$BATCHES"
+          echo "BATCH_OWNER=$(sudo -n stat -c '%U:%G' "$BATCHES")"
+          echo "BATCH_MODE=$(sudo -n stat -c '%a' "$BATCHES")"
+          test "$(sudo -n stat -c '%U:%G' "$BATCHES")" = 'porotaadmin:porotaadmin'
+          test "$(sudo -n stat -c '%a' "$BATCHES")" = '700'
+
+          echo '=== RESTART ==='
+          sudo -n systemctl reset-failed "$UNIT" || true
+          sudo -n systemctl start "$UNIT"
+          sleep 10
+          test "$(sudo -n systemctl is-active "$UNIT")" = active
+
+          echo '=== WAIT FOR REAL PROGRESS ==='
+          ok=0
+          for i in $(seq 1 18); do
+            sleep 5
+            if sudo -n test -s "$ROOT/status.json"; then
+              LINE="$(sudo -n python3 - "$ROOT/status.json" <<'PY'
+          import json,sys
+          s=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(f"{s.get('run_status')}|{s.get('terminal',0)}|{s.get('progress_pct',0)}|{s.get('heartbeat')}|{s.get('counts',{})}")
+          PY
+          )"
+              echo "STATUS=$LINE"
+              terminal="$(printf '%s' "$LINE" | cut -d'|' -f2)"
+              if [ "${terminal:-0}" -gt 0 ]; then ok=1; break; fi
+            fi
+            test "$(sudo -n systemctl is-active "$UNIT" 2>/dev/null || true)" = active || break
+          done
+
+          echo '=== FINAL STATUS ==='
+          sudo -n systemctl show "$UNIT" -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus --no-pager
+          if sudo -n test -s "$ROOT/status.json"; then sudo -n cat "$ROOT/status.json"; fi
+          sudo -n journalctl -u "$UNIT" -n 80 --no-pager
+          test "$ok" -eq 1
+
+          echo '=== SAFETY POST ==='
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'{qc}|{mode}|{orders}')
+          PY
+          )"
+          echo "SAFETY_POST=$POST"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          echo BATCHDIR_HOTFIX=GREEN
+          echo SCRAPER_REAL_PROGRESS=YES
+          HOST
