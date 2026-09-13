@@ -57,11 +57,11 @@ def canonical(ticker):
     }
 
 
-def schedule(*, broker_verified=True):
+def schedule(currency, *, broker_verified=True):
     day=NOW.date().isoformat()
     return CaucionScheduleEvidence(
         business_date=day,
-        currency="ARS",
+        currency=currency,
         operation="COLOCAR-CAUCION",
         opens_at=day+"T10:30:00-03:00",
         market_closes_at=day+"T17:00:00-03:00",
@@ -69,8 +69,15 @@ def schedule(*, broker_verified=True):
         byma_source="TEST_BYMA_VERSIONED",
         broker_source="TEST_PPI_VERSIONED" if broker_verified else "",
         broker_cutoff_verified=broker_verified,
-        evidence_version="TEST-SCHEDULE-V1",
+        evidence_version="TEST-SCHEDULE-V1-"+currency,
     )
+
+
+def schedules(*, usd_verified=True, ars_verified=True):
+    return {
+        "ARS": schedule("ARS", broker_verified=ars_verified),
+        "USD_MEP": schedule("USD_MEP", broker_verified=usd_verified),
+    }
 
 
 def statuses():
@@ -102,15 +109,25 @@ def refs():
     }
 
 
+def cycle(store, snapshots=None, schedule_map=None, opportunity=True):
+    return evaluate_and_persist_caucion_cycle(
+        store,
+        snapshots or [canonical(t) for t in DEFAULT_EXPECTED_TICKERS],
+        now=NOW,
+        heartbeat_at=(NOW-timedelta(seconds=5)).isoformat(),
+        schedule_evidence_by_currency=schedule_map or schedules(),
+        contract_status_by_ticker=statuses(),
+        references=refs() if opportunity else None,
+        opportunity_policy=policy() if opportunity else None,
+        liquidity_deadline=DEADLINE if opportunity else None,
+    )
+
+
 def test_green_schedule_and_all_ten_persist_single_ready_truth_and_find_ars_opportunity(tmp_path):
     store=PaperStore(str(tmp_path/"cycle.db"))
-    result=evaluate_and_persist_caucion_cycle(
-        store,[canonical(t) for t in DEFAULT_EXPECTED_TICKERS],
-        now=NOW,heartbeat_at=(NOW-timedelta(seconds=5)).isoformat(),
-        schedule_evidence=schedule(),contract_status_by_ticker=statuses(),
-        references=refs(),opportunity_policy=policy(),liquidity_deadline=DEADLINE,
-    )
+    result=cycle(store)
     assert result["schedule"]["state"]=="OPEN"
+    assert set(result["schedule"]["per_currency"])=={"ARS","USD_MEP"}
     assert result["freshness_gate"]["green"] is True
     assert result["readiness"]["state"]=="READY_PAPER"
     assert result["readiness"]["ready_paper_count"]==10
@@ -120,28 +137,34 @@ def test_green_schedule_and_all_ten_persist_single_ready_truth_and_find_ars_oppo
     assert reread["evidence_id"]==result["freshness_gate"]["evidence_id"]
 
 
-def test_unverified_ppi_cutoff_turns_same_cycle_red_and_persists_hold(tmp_path):
+def test_unverified_usd_ppi_cutoff_turns_entire_ten_ticker_gate_red(tmp_path):
     store=PaperStore(str(tmp_path/"cycle-red.db"))
-    result=evaluate_and_persist_caucion_cycle(
-        store,[canonical(t) for t in DEFAULT_EXPECTED_TICKERS],
-        now=NOW,heartbeat_at=(NOW-timedelta(seconds=5)).isoformat(),
-        schedule_evidence=schedule(broker_verified=False),contract_status_by_ticker=statuses(),
-        references=refs(),opportunity_policy=policy(),liquidity_deadline=DEADLINE,
-    )
-    assert result["schedule"]["reason"]=="PPI_BROKER_CUTOFF_UNVERIFIED"
+    result=cycle(store, schedule_map=schedules(usd_verified=False))
+    assert result["schedule"]["state"]=="HOLD"
+    assert result["schedule"]["per_currency"]["ARS"]["state"]=="OPEN"
+    assert result["schedule"]["per_currency"]["USD_MEP"]["reason"]=="PPI_BROKER_CUTOFF_UNVERIFIED"
     assert result["freshness_gate"]["green"] is False
     assert result["readiness"]["state"]=="HOLD"
     assert result["readiness"]["ready_paper_count"]==0
     assert result["opportunity"]["code"]=="CAUCION_SPECIALIZED_READINESS_NOT_GREEN"
 
 
+def test_single_ars_schedule_cannot_green_multi_currency_universe(tmp_path):
+    store=PaperStore(str(tmp_path/"cycle-one-schedule.db"))
+    result=evaluate_and_persist_caucion_cycle(
+        store,[canonical(t) for t in DEFAULT_EXPECTED_TICKERS],
+        now=NOW,heartbeat_at=NOW.isoformat(),schedule_evidence=schedule("ARS"),
+        contract_status_by_ticker=statuses(),
+    )
+    assert result["schedule"]["reason"]=="MULTI_CURRENCY_SCHEDULE_EVIDENCE_REQUIRED"
+    assert result["readiness"]["state"]=="HOLD"
+    assert result["freshness_gate"]["green"] is False
+
+
 def test_missing_one_ticker_turns_ready_count_to_zero(tmp_path):
     store=PaperStore(str(tmp_path/"cycle-missing.db"))
     values=[canonical(t) for t in DEFAULT_EXPECTED_TICKERS[:-1]]
-    result=evaluate_and_persist_caucion_cycle(
-        store,values,now=NOW,heartbeat_at=NOW.isoformat(),
-        schedule_evidence=schedule(),contract_status_by_ticker=statuses(),
-    )
+    result=cycle(store, snapshots=values, opportunity=False)
     assert result["freshness_gate"]["green"] is False
     assert result["readiness"]["ready_paper_count"]==0
     assert any(x.startswith("MISSING_TICKER:") for x in result["freshness_gate"]["reasons"])
@@ -149,11 +172,7 @@ def test_missing_one_ticker_turns_ready_count_to_zero(tmp_path):
 
 def test_green_readiness_without_opportunity_policy_remains_hold_for_intraday_execution(tmp_path):
     store=PaperStore(str(tmp_path/"cycle-no-policy.db"))
-    result=evaluate_and_persist_caucion_cycle(
-        store,[canonical(t) for t in DEFAULT_EXPECTED_TICKERS],
-        now=NOW,heartbeat_at=NOW.isoformat(),schedule_evidence=schedule(),
-        contract_status_by_ticker=statuses(),
-    )
+    result=cycle(store, opportunity=False)
     assert result["readiness"]["state"]=="READY_PAPER"
     assert result["opportunity"]["status"]=="HOLD"
     assert result["opportunity"]["code"]=="OPPORTUNITY_POLICY_NOT_CONFIGURED"
