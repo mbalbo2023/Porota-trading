@@ -1,0 +1,181 @@
+name: RC6 READY parallel RCA 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - 'cp_contract_evidence_v2_hf6.py'
+      - 'test_cp_contract_evidence_v2_conflicts_rc6.py'
+      - '.github/workflows/rc6-ready-parallel-rca-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  conflict-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test metadata-conflict fix
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_cp_contract_evidence_v2_conflicts_rc6.py
+
+  static-contract-artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail; install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Mine sanitized DatosTecnicos routes only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n python3 - <<'PY'
+          import os,re,json
+          from pathlib import Path
+          from urllib.parse import urlparse
+          roots=[Path('/opt/porota-ingest'),Path('/opt/porota-trading')]
+          found=[]; files_seen=0
+          pat=re.compile(r'''(?:https?://[^\s"'<>]+)?/[^\s"'<>]*DatosTecnicos[^\s"'<>]*''',re.I)
+          for root in roots:
+              if not root.exists(): continue
+              for base,dirs,files in os.walk(root):
+                  dirs[:]=[d for d in dirs if d not in {'.git','venv','.venv','node_modules'}]
+                  for name in files:
+                      if not name.lower().endswith(('.json','.jsonl','.log','.txt','.md')): continue
+                      p=Path(base)/name
+                      try:
+                          if p.stat().st_size>20_000_000: continue
+                          text=p.read_text(encoding='utf-8',errors='ignore')
+                      except Exception: continue
+                      files_seen+=1
+                      for m in pat.finditer(text):
+                          raw=m.group(0).rstrip('),]}')
+                          parsed=urlparse(raw if raw.startswith('http') else 'https://x.invalid'+raw)
+                          path=parsed.path
+                          if 'DatosTecnicos' in path:
+                              found.append({'file':str(p),'path':path})
+          uniq=[]; seen=set()
+          for x in found:
+              k=(x['file'],x['path'])
+              if k not in seen: seen.add(k); uniq.append(x)
+          print('DATOS_TECNICOS_ARTIFACTS='+json.dumps({'files_seen':files_seen,'matches':uniq[:100],'match_count':len(uniq)},ensure_ascii=False,sort_keys=True))
+          PY
+          HOST
+
+  history-gap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail; install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Explain 179 legacy history bridge gaps read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,collections
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          ready=[dict(r) for r in c.execute("select ticker,instrument_type,market,settlement from candidate_universe where can_simulate=1 and status='AVAILABLE' order by instrument_type,ticker")]
+          reasons=collections.Counter(); fam=collections.defaultdict(collections.Counter); samples=collections.defaultdict(list)
+          for r in ready:
+              exact=c.execute('select row_count,date_from,date_to,source,settlement from production_history where symbol=? and instrument_type=? and settlement=?',(r['ticker'],r['instrument_type'],r['settlement'])).fetchall()
+              if any(int(x['row_count'] or 0)>0 for x in exact): reason='EXACT_LEGACY_HISTORY'
+              else:
+                  alt=c.execute('select row_count,date_from,date_to,source,settlement from production_history where symbol=? and instrument_type=? order by settlement',(r['ticker'],r['instrument_type'])).fetchall()
+                  if any(int(x['row_count'] or 0)>0 for x in alt): reason='LEGACY_ALT_SETTLEMENT'
+                  else:
+                      task=c.execute("select state,result,provider_rows,valid_rows,first_after,last_after,settlement from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and symbol=? and instrument_type=? order by updated_at desc limit 1",(r['ticker'],r['instrument_type'])).fetchone()
+                      if task and str(task['state'])=='ALREADY_COVERED': reason='TASK_ALREADY_COVERED_BUT_NO_PRODUCTION_HISTORY'
+                      elif task and int(task['valid_rows'] or 0)>0: reason='TASK_VALID_ROWS_BUT_NO_PRODUCTION_HISTORY'
+                      elif task: reason='TASK_TERMINAL_NO_VALID_ROWS'
+                      else: reason='NO_API_TASK_MATCH'
+                  if len(samples[reason])<12:
+                      samples[reason].append({'ticker':r['ticker'],'family':r['instrument_type'],'market':r['market'],'settlement':r['settlement'],'alt_settlements':[dict(x) for x in alt] if 'alt' in locals() else [],'task':dict(task) if 'task' in locals() and task else None})
+              reasons[reason]+=1; fam[r['instrument_type']][reason]+=1
+          schemas={t:[x[1] for x in c.execute('pragma table_info('+t+')')] for t in sorted(tables) if t in {'history_versions_v2','history_canonical_v2','market_historical_ohlcv','production_history','history_attempt_ledger_v2'}}
+          counts={}
+          for t in schemas:
+              try: counts[t]=c.execute('select count(*) from '+t).fetchone()[0]
+              except Exception: counts[t]=None
+          print('HISTORY_GAP_JSON='+json.dumps({'quick_check':c.execute('pragma quick_check').fetchone()[0],'reasons':dict(reasons),'by_family':{k:dict(v) for k,v in fam.items()},'samples':dict(samples),'schemas':schemas,'counts':counts},ensure_ascii=False,sort_keys=True,default=str)); c.close()
+          PY
+          HOST
+
+  on-captured-rca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail; install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect only four captured ON artifacts read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n python3 - <<'PY'
+          import os,json,re
+          from pathlib import Path
+          target={'MRCGC','MRCGD','MRCLC','MRCPO'}; root=Path('/opt/porota-ingest/ppi-web-residual')
+          out={s:{'files':[],'observed_string_values':{},'date_like':[]} for s in target}
+          # Restrict to durable residual output; never print raw payloads, headers or secrets.
+          for base,dirs,files in os.walk(root):
+              for name in files:
+                  p=Path(base)/name
+                  if p.name=='state.sqlite3' or p.suffix.lower() not in {'.json','.jsonl'}: continue
+                  try:
+                      if p.stat().st_size>25_000_000: continue
+                      text=p.read_text(encoding='utf-8',errors='ignore')
+                  except Exception: continue
+                  hits=[s for s in target if s in text]
+                  if not hits: continue
+                  try: data=json.loads(text)
+                  except Exception: data=None
+                  for s in hits:
+                      if len(out[s]['files'])<20: out[s]['files'].append(str(p))
+                      strings=[]; dates=[]
+                      def walk(x,k=''):
+                          if isinstance(x,dict):
+                              for a,b in x.items(): walk(b,str(a))
+                          elif isinstance(x,list):
+                              for b in x[:500]: walk(b,k)
+                          elif isinstance(x,str):
+                              if len(x)<=120 and any(z in k.lower() for z in ('ticker','symbol','simbolo','especie','nombre')): strings.append((k,x))
+                              if re.match(r'^20\d\d[-/]\d\d[-/]\d\d',x): dates.append(x[:10])
+                      if data is not None: walk(data)
+                      ctr={}
+                      for k,v in strings:
+                          key=k+':'+v
+                          ctr[key]=ctr.get(key,0)+1
+                      out[s]['observed_string_values']=dict(sorted(ctr.items(),key=lambda kv:-kv[1])[:25])
+                      out[s]['date_like']=sorted(set(dates))[:5]+(['...'] if len(set(dates))>10 else [])+sorted(set(dates))[-5:]
+          print('ON_CAPTURE_RCA='+json.dumps(out,ensure_ascii=False,sort_keys=True))
+          PY
+          HOST
