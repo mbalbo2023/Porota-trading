@@ -1,0 +1,40 @@
+name: RC6 PPI Web canary sanitized error read 2026-09-13
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-canary-error-readonly-20260913.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read latest sanitized capture error only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'python3 - <<'"'"'PY'"'"'
+          import glob,json,os
+          files=sorted(glob.glob("/tmp/ppi-residual-canary.*/capture.json"),key=os.path.getmtime,reverse=True)
+          print("CAPTURE_FILES="+str(len(files)))
+          if not files: raise SystemExit(2)
+          x=json.load(open(files[0],encoding="utf-8"))
+          print("AUTH_STATUS="+str(x.get("auth_status")))
+          print("ERROR="+str(x.get("error",""))[:500])
+          print("TARGETS="+str(len(x.get("targets",[]))))
+          print("BLOCKED_NONREAD="+str(len(x.get("blocked_nonread",[]))))
+          print("BLOCKED_FORBIDDEN="+str(len(x.get("blocked_forbidden_paths",[]))))
+          print("REAL_ORDERS_SENT="+str(x.get("real_orders_sent")))
+          PY'
