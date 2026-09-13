@@ -1,0 +1,138 @@
+name: RC6 Contract capture locate proof 2026-09-14
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-contract-capture-locate-proof-20260914.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  locate-reusable-capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"
+          chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Locate and classify trusted contract captures read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'python3 -' <<'PY'
+          import json, os, pathlib, datetime
+
+          roots = [
+              pathlib.Path('/opt/porota-ingest'),
+              pathlib.Path('/opt/porota-trading/data/contract_evidence'),
+              pathlib.Path('/opt/porota-trading/data/diagnosticos'),
+              pathlib.Path('/opt/porota-trading/data/audit'),
+          ]
+          schema = 'POROTA_RC6_PPI_TRUSTED_CONTRACT_V1'
+          candidates = []
+          seen = set()
+
+          def interesting(p: pathlib.Path):
+              n = p.name.lower()
+              return p.suffix.lower() == '.json' and any(x in n for x in ('contract','trusted','capture','evidence','raw'))
+
+          for root in roots:
+              if not root.exists():
+                  continue
+              for base, dirs, files in os.walk(root):
+                  dirs[:] = [d for d in dirs if d not in {'.git','node_modules','venv','.venv','__pycache__','chroma','chromadb'}]
+                  bp = pathlib.Path(base)
+                  try:
+                      rel_depth = len(bp.relative_to(root).parts)
+                  except Exception:
+                      rel_depth = 0
+                  if rel_depth > 7:
+                      dirs[:] = []
+                      continue
+                  for fn in files:
+                      p = bp / fn
+                      if p in seen or not interesting(p):
+                          continue
+                      seen.add(p)
+                      try:
+                          st = p.stat()
+                          if st.st_size > 25_000_000:
+                              continue
+                          text = p.read_text(encoding='utf-8', errors='ignore')
+                          if schema not in text:
+                              continue
+                          raw = json.loads(text)
+                      except Exception:
+                          continue
+                      endpoints = raw.get('endpoints') or {}
+                      kinds = {}
+                      sources = []
+                      for item in endpoints.values() if isinstance(endpoints, dict) else []:
+                          if not isinstance(item, dict):
+                              continue
+                          k = str(item.get('kind') or '')
+                          kinds[k] = kinds.get(k, 0) + 1
+                          src = str(item.get('source_url') or '')
+                          if src:
+                              sources.append(src)
+                      flags = {
+                          'InstrumentosOperables': kinds.get('InstrumentosOperables',0) > 0,
+                          'DatosTecnicos': kinds.get('DatosTecnicos',0) > 0,
+                          'CaucionesOperables': kinds.get('CaucionesOperables',0) > 0,
+                          'ConfiguracionOperatoriaSimplificada': any('ConfiguracionOperatoriaSimplificada' in s for s in sources),
+                      }
+                      structurally_importable = (
+                          raw.get('schema') == schema and
+                          raw.get('auth_status') == 'AUTHENTICATED_TRUSTED_DEVICE' and
+                          int(raw.get('real_orders_sent') or 0) == 0 and
+                          isinstance(raw.get('jobs'), list) and
+                          isinstance(endpoints, dict) and len(endpoints) > 0
+                      )
+                      reusable_for_target = structurally_importable and flags['InstrumentosOperables'] and flags['DatosTecnicos'] and (flags['CaucionesOperables'] or flags['ConfiguracionOperatoriaSimplificada'])
+                      candidates.append({
+                          'path': str(p),
+                          'mtime_utc': datetime.datetime.fromtimestamp(st.st_mtime, datetime.timezone.utc).isoformat(),
+                          'size': st.st_size,
+                          'readable': os.access(p, os.R_OK),
+                          'auth_status': raw.get('auth_status'),
+                          'real_orders_sent': int(raw.get('real_orders_sent') or 0),
+                          'jobs': raw.get('jobs') or [],
+                          'endpoints_count': len(endpoints),
+                          'kinds': kinds,
+                          'flags': flags,
+                          'structurally_importable': structurally_importable,
+                          'reusable_for_target': reusable_for_target,
+                      })
+
+          candidates.sort(key=lambda x: x['mtime_utc'], reverse=True)
+          print('CAPTURE_PROBE_SCHEMA='+schema)
+          print('CAPTURE_CANDIDATE_COUNT='+str(len(candidates)))
+          for i, c in enumerate(candidates[:30], 1):
+              print('CAPTURE_CANDIDATE_'+str(i)+'='+json.dumps(c, ensure_ascii=False, sort_keys=True, separators=(',',':')))
+          reusable = [c for c in candidates if c['reusable_for_target']]
+          structural = [c for c in candidates if c['structurally_importable']]
+          print('STRUCTURALLY_IMPORTABLE_COUNT='+str(len(structural)))
+          print('REUSABLE_TARGET_COUNT='+str(len(reusable)))
+          if reusable:
+              print('BEST_REUSABLE='+json.dumps(reusable[0], ensure_ascii=False, sort_keys=True, separators=(',',':')))
+              print('POINT1_RESULT=GREEN_REUSABLE_CAPTURE_FOUND')
+          elif structural:
+              print('BEST_STRUCTURAL='+json.dumps(structural[0], ensure_ascii=False, sort_keys=True, separators=(',',':')))
+              print('POINT1_RESULT=YELLOW_CAPTURE_EXISTS_BUT_TARGET_ENDPOINTS_INCOMPLETE')
+          else:
+              print('POINT1_RESULT=RED_NO_IMPORTABLE_CAPTURE_FOUND')
+          PY
