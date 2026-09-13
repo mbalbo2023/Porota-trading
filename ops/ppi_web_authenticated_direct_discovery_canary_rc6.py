@@ -25,7 +25,7 @@ def rows(data):
 
 def family_match(desc,fam):
     d=' '.join(str(desc or '').upper().replace('_',' ').split())
-    if fam=='ON': return 'OBLIGACION' in d or 'OBLIGACIONES' in d
+    if fam=='ON': return d in {'ON','ONS'} or 'OBLIGACION' in d
     aliases={
       'CEDEARS':['CEDEAR'], 'BONOS':['BONO'], 'OPCIONES':['OPCION'],
       'FUTUROS':['FUTURO'], 'FCI':['FCI','FONDO']}
