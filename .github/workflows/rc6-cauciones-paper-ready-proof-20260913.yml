@@ -1,0 +1,87 @@
+name: RC6 Cauciones PAPER-ready proof 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - 'rc6_caucion_offer_adapter.py'
+      - 'rc6_cauciones_contract.py'
+      - 'rc6_caucion_paper_bridge.py'
+      - 'rc6_paper_obligation_snapshot.py'
+      - 'rc6_caucion_fresh_data_agent.py'
+      - 'tests/test_rc6_caucion_offer_adapter.py'
+      - 'tests/test_rc6_cauciones_contract.py'
+      - 'tests/test_rc6_caucion_paper_bridge.py'
+      - 'tests/test_rc6_paper_obligation_snapshot.py'
+      - 'tests/test_rc6_caucion_fresh_data_agent.py'
+      - 'tests/test_cash_sweep_runtime_hf6.py'
+      - '.github/workflows/rc6-cauciones-paper-ready-proof-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  paper-ready-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install focused test dependencies
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Compile caucion PAPER-ready modules
+        run: |
+          python -m py_compile \
+            rc6_caucion_offer_adapter.py \
+            rc6_cauciones_contract.py \
+            rc6_caucion_paper_bridge.py \
+            rc6_paper_obligation_snapshot.py \
+            rc6_caucion_fresh_data_agent.py \
+            df_caucion_end_of_day_sweep_hf6.py \
+            di_caucion_cash_sweep_runtime_hf6.py \
+            bt_caucion_paper.py \
+            ca_caucion_allocator.py
+      - name: Run focused PAPER-ready regression suite
+        run: |
+          python -m pytest -q \
+            tests/test_rc6_caucion_offer_adapter.py \
+            tests/test_rc6_cauciones_contract.py \
+            tests/test_rc6_caucion_paper_bridge.py \
+            tests/test_rc6_paper_obligation_snapshot.py \
+            tests/test_rc6_caucion_fresh_data_agent.py \
+            tests/test_cash_sweep_runtime_hf6.py
+      - name: Prove new modules cannot route real orders or fetch network data
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          files=[
+              'rc6_caucion_offer_adapter.py',
+              'rc6_caucion_paper_bridge.py',
+              'rc6_paper_obligation_snapshot.py',
+              'rc6_caucion_fresh_data_agent.py',
+          ]
+          forbidden_imports=('requests','httpx','urllib','socket','ppi_client','playwright','selenium')
+          forbidden_calls={'post','put','patch','delete','send_order','place_order','cancel_order','login_once','current','book','intraday'}
+          for name in files:
+              tree=ast.parse(Path(name).read_text(encoding='utf-8'))
+              imports=[]; calls=[]
+              for node in ast.walk(tree):
+                  if isinstance(node,ast.Import): imports += [a.name for a in node.names]
+                  elif isinstance(node,ast.ImportFrom): imports.append(node.module or '')
+                  elif isinstance(node,ast.Call):
+                      f=node.func
+                      calls.append(f.id if isinstance(f,ast.Name) else f.attr if isinstance(f,ast.Attribute) else '')
+              bad_imports=[x for x in imports if any(t in x.lower() for t in forbidden_imports)]
+              bad_calls=sorted(set(calls).intersection(forbidden_calls))
+              print(name,'BAD_IMPORTS=',bad_imports,'BAD_CALLS=',bad_calls)
+              assert not bad_imports and not bad_calls
+          import rc6_caucion_paper_bridge as b
+          import di_caucion_cash_sweep_runtime_hf6 as s
+          assert b.PAPER_BRIDGE_ORDER_ROUTING_ALLOWED is False
+          assert s.CASH_SWEEP_ORDER_ROUTING_ALLOWED is False
+          print('CAUCION_PAPER_ROUTING=BLOCKED')
+          PY
