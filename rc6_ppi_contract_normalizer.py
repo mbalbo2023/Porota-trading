@@ -17,6 +17,20 @@ def _currency(row):
     return None
 
 
+def _fee_schedule(row):
+    """Retain explicit PPI fee components without deriving or estimating new values."""
+    if not isinstance(row, dict):
+        return None
+    fields = {
+        "commission_minimum": row.get("comisionMontoMinimo"),
+        "commission_rate_estimated": row.get("porcentajeComisionEstimado"),
+        "commission_vat_rate_estimated": row.get("porcentajeIVAComisionEstimado"),
+        "market_fee_rate": row.get("porcentajeDerechoMercadoYBolsa"),
+    }
+    out = {k: v for k, v in fields.items() if v not in (None, "")}
+    return out or None
+
+
 def instrumentos_operables(payload):
     rows = (payload or {}).get("payload") if isinstance(payload, dict) else None
     if isinstance(rows, dict):
@@ -38,6 +52,7 @@ def instrumentos_operables(payload):
             "commission_rate_estimated": row.get("porcentajeComisionEstimado"),
             "commission_vat_rate_estimated": row.get("porcentajeIVAComisionEstimado"),
             "market_fee_rate": row.get("porcentajeDerechoMercadoYBolsa"),
+            "fee_schedule": _fee_schedule(row),
             "quantity_decimal_places": row.get("cantidadDecimales"),
             "price_decimal_places": row.get("cantidadDecimalesPrecio"),
             "derived_instrument_count": len(row.get("instrumentosDerivados") or []),
@@ -69,6 +84,16 @@ def bond_technical(payload):
             "modifiedDuration","paridad","interesesCorridos","valorTecnico","valorResidual")
     result = {k: row.get(k) for k in keys if row.get(k) not in (None, "")}
     result["currency"] = _currency(row)
+
+    # Canonical aliases are only direct semantic renames of explicit PPI fields.
+    # No order unit, quantity step, price tick or payment currency is inferred.
+    if row.get("fechaVencimiento") not in (None, ""):
+        result["maturity_date"] = row.get("fechaVencimiento")
+    if row.get("intereses") not in (None, "", [], {}):
+        result["coupon_terms"] = row.get("intereses")
+    if row.get("amortizacion") not in (None, "", [], {}):
+        result["amortization_terms"] = row.get("amortizacion")
+
     result["provider_nominales_en_precio"] = row.get("nominalesEnPrecio")
     result["provider_quantity_decimal_places"] = row.get("cantidadDecimales")
     result["provider_price_decimal_places"] = row.get("cantidadDecimalesPrecio")
