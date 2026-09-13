@@ -1,0 +1,104 @@
+name: RC6 PPI Web exact residual history canary 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-final-residual-canary-20260913.yml']
+permissions:
+  contents: read
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage read-only canary tooling
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            ops/ppi_history_residual_manifest_rc6.py ops/ppi_web_canary_selector_rc6.py rc6_ppi_web_history_shadow.py \
+            "$DO_USER@$DO_HOST:/tmp/"
+      - name: Generate exact residual and run read-only canary
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          BIN=/opt/porota-ingest/ppi-web-residual/bin
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          VENV=/opt/porota-contract-evidence-venv
+          ROOT=/opt/porota-ingest/ppi-web-residual
+          LOCK=/run/lock/porota-ppi-web-browser.lock
+          test ! -e "$ROOT/ENABLED"
+          test "$(sudo -n systemctl is-active porota-ppi-web-residual-rc6.service 2>/dev/null || true)" != active
+          sudo -n install -d -o root -g root -m 0755 "$BIN"
+          sudo -n install -o root -g root -m 0755 /tmp/ppi_history_residual_manifest_rc6.py "$BIN/ppi_history_residual_manifest_rc6.py"
+          sudo -n install -o root -g root -m 0755 /tmp/ppi_web_canary_selector_rc6.py "$BIN/ppi_web_canary_selector_rc6.py"
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_history_shadow.py "$BIN/rc6_ppi_web_history_shadow.py"
+          rm -f /tmp/ppi_history_residual_manifest_rc6.py /tmp/ppi_web_canary_selector_rc6.py /tmp/rc6_ppi_web_history_shadow.py
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]; mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'{qc}|{mode}|{orders}')
+          PY
+          )"
+          echo "SAFETY_BEFORE=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+          TD="$(mktemp -d /tmp/ppi-residual-canary.XXXXXX)"
+          export PYTHONPATH="$REPO:$BIN"
+          "$VENV/bin/python" "$BIN/ppi_history_residual_manifest_rc6.py" --output "$TD/residual.jsonl"
+          "$VENV/bin/python" "$BIN/ppi_web_canary_selector_rc6.py" --manifest "$TD/residual.jsonl" --output "$TD/canary.jsonl" --max-total 8 --max-per-family 1
+          python3 - "$TD/canary.jsonl" <<'PY'
+          import json,sys
+          rows=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip()]
+          print('CANARY_SELECTED='+str(len(rows)))
+          for i,r in enumerate(rows):
+              print(f"TARGET_{i}={r['instrument_type']}|{r['symbol']}|{r['market']}|{r['settlement']}|{r['residual_class']}")
+          PY
+          chown -R porotaadmin:porotaadmin "$TD"
+          sudo -n flock -w 240 "$LOCK" runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$REPO:$BIN" \
+            "$VENV/bin/python" "$BIN/rc6_ppi_web_history_shadow.py" --profile "$PROFILE" --output "$TD/capture.json" --targets-jsonl "$TD/canary.jsonl"
+          python3 - "$TD/capture.json" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1],encoding='utf-8'))
+          print('AUTH='+str(x.get('auth_status')))
+          print('TARGETS='+str(len(x.get('targets',[]))))
+          print('CAPTURES='+str(len(x.get('captures',[]))))
+          print('ROWS='+str(sum(len(c.get('rows',[])) for c in x.get('captures',[]))))
+          print('BLOCKED_NONREAD='+str(len(x.get('blocked_nonread',[]))))
+          print('BLOCKED_FORBIDDEN='+str(len(x.get('blocked_forbidden_paths',[]))))
+          print('REAL_ORDERS='+str(x.get('real_orders_sent')))
+          print('CANONICAL_WRITE='+str(x.get('canonical_write')))
+          for i,t in enumerate(x.get('targets',[])):
+              print(f"RESULT_{i}={t.get('instrument_type')}|{t.get('symbol')}|reached={t.get('reached')}|captures={t.get('captures_added')}|error={t.get('error','')}")
+          assert x.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert int(x.get('real_orders_sent',-1))==0
+          assert x.get('canonical_write')=='DENY'
+          PY
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]; mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'{qc}|{mode}|{orders}')
+          PY
+          )"
+          echo "SAFETY_AFTER=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          test ! -e "$ROOT/ENABLED"
+          echo MASS_SCRAPING_STARTED=NO
+          rm -rf "$TD"
+          HOST
