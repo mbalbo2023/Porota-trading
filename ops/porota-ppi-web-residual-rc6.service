@@ -20,7 +20,10 @@ Environment=PPI_WEB_PYTHON=/opt/porota-contract-evidence-venv/bin/python
 Environment=PPI_WEB_COLLECTOR=/opt/porota-ingest/ppi-web-residual/bin/rc6_ppi_web_history_shadow.py
 Environment=PPI_WEB_REAUTH=/opt/porota-ingest/ppi-web-residual/bin/rc6_ppi_web_reauth.py
 Environment=PPI_HISTORY_API_UNIT=porota-ppi-fullfamily-history-rc6.service
-ExecStart=/usr/bin/flock -n /run/lock/porota-ppi-web-residual-rc6.lock /opt/porota-contract-evidence-venv/bin/python /opt/porota-ingest/ppi-web-residual/bin/ppi_web_residual_server_runner_rc6.py
+# First lock prevents duplicate residual runners. Second lock owns the trusted
+# Chrome profile for the whole durable run so no other PPI Web browser process
+# can corrupt/collide with its ProcessSingleton.
+ExecStart=/usr/bin/flock -n /run/lock/porota-ppi-web-residual-rc6.lock /usr/bin/flock -w 300 /run/lock/porota-ppi-web-browser.lock /opt/porota-contract-evidence-venv/bin/python /opt/porota-ingest/ppi-web-residual/bin/ppi_web_residual_server_runner_rc6.py
 Restart=on-failure
 RestartSec=30s
 TimeoutStopSec=90s
