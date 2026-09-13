@@ -1,0 +1,51 @@
+name: RC6 PPI Web residual scraper validate 2026-09-12
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-scraper-20260912]
+    paths:
+      - 'ops/ppi_web_residual_scraper_rc6.py'
+      - 'tests/test_ppi_web_residual_scraper_rc6.py'
+      - '.github/workflows/rc6-ppi-web-residual-scraper-validate-20260912.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile scaffold
+        run: python -m py_compile ops/ppi_web_residual_scraper_rc6.py
+      - name: Install pytest
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Unit and safety tests
+        run: pytest -q tests/test_ppi_web_residual_scraper_rc6.py
+      - name: CLI smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/residual.jsonl <<'EOF'
+          {"symbol":"GGAL","instrument_type":"ACCIONES","market":"BYMA","settlement":"A-48HS","residual_class":"PARTIAL_VALID"}
+          {"symbol":"GD30","instrument_type":"BONOS","market":"BYMA","settlement":"A-48HS","residual_class":"NO_PROVIDER_ROWS"}
+          EOF
+          out=$(python ops/ppi_web_residual_scraper_rc6.py --manifest /tmp/residual.jsonl --mode validate)
+          echo "$out"
+          python - "$out" <<'PY'
+          import json, sys
+          x=json.loads(sys.argv[1])
+          assert x['mode']=='READ_ONLY_SCAFFOLD'
+          assert x['mass_scraping_started'] is False
+          assert x['identities']==2
+          PY
+      - name: Prove no network/browser dependency is used
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Eiq 'requests\.(post|put|delete)|place_order|send_order|buy_order|sell_order|selenium|playwright' ops/ppi_web_residual_scraper_rc6.py
