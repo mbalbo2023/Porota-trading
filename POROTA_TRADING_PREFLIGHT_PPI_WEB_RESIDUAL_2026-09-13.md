@@ -28,6 +28,13 @@ NO-GO para corrida larga todavía. La auditoría estricta detectó huecos reales
 6. Falta pre-flight real del servidor para verificar paths, Chrome/venv/profile owner, secreto local por existencia solamente, disk, locks, API writer inactive, timers pausados y safety `PRODUCTION_PAPER|0`.
 7. El canary live sólo puede cerrarse cuando exista residual final. Debe probar una muestra real, rows históricas, reconciliación y cero mutaciones antes del GO masivo.
 
+## Pendiente obligatorio posterior a validar ingesta + scraping
+- Auditar y revalidar todos los timers/jobs que recolectan información durante la jornada de mercado antes de reactivarlos.
+- Confirmar especialmente los jobs de Contract Evidence / scraping periódico: `CONTRACT_EVIDENCE_DYNAMIC`, `CONTRACT_EVIDENCE_CAUCIONES`, `CONTRACT_EVIDENCE_AUCTIONS`, `CONTRACT_EVIDENCE_DERIVATIVES` y cualquier equivalente vigente.
+- Verificar para cada timer: calendario/horario de mercado, frecuencia, autenticación PPI Web, lock de browser/profile, ausencia de concurrencia con writers históricos, registros efectivamente recolectados (>0 cuando corresponda), clasificación de estados AMARILLO/VERDE/ROJO, reintentos, idempotencia y `PRODUCTION_PAPER|0`.
+- No dar por válido un timer sólo porque esté `active (waiting)` o porque el job termine `success`: debe demostrarse que obtiene evidencia útil y la procesa sin conflictos.
+- Mantener los 18 producer timers pausados hasta que la ingesta histórica, el scraping Web residual y la validación final estén cerrados. Recién entonces hacer auditoría timer por timer y restauración controlada.
+
 ## Regla de GO
 No declarar 100% READY hasta que blockers 1-6 estén resueltos y validados offline/server-preflight. No declarar GO operativo para corrida larga hasta que, además, API haya cerrado (`PENDING+RETRYABLE+RUNNING=0`) y el canary live del blocker 7 sea GREEN.
 
