@@ -18,10 +18,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Test metadata-conflict fix
+      - name: Test metadata-conflict fix without external test dependencies
         run: |
           set -euo pipefail
-          python -m pytest -q test_cp_contract_evidence_v2_conflicts_rc6.py
+          python - <<'PY'
+          import test_cp_contract_evidence_v2_conflicts_rc6 as t
+          tests=[getattr(t,n) for n in sorted(dir(t)) if n.startswith('test_') and callable(getattr(t,n))]
+          assert tests, 'NO_CONFLICT_TESTS_FOUND'
+          for test in tests:
+              test()
+              print('PASS='+test.__name__)
+          print('CONFLICT_TESTS_OK='+str(len(tests)))
+          PY
 
   static-contract-artifacts:
     runs-on: ubuntu-latest
@@ -33,8 +41,11 @@ jobs:
           SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
-          set -euo pipefail; install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Mine sanitized DatosTecnicos routes only
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Mine sanitized DatosTecnicos routes and code references only
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -44,33 +55,32 @@ jobs:
           sudo -n python3 - <<'PY'
           import os,re,json
           from pathlib import Path
-          from urllib.parse import urlparse
           roots=[Path('/opt/porota-ingest'),Path('/opt/porota-trading')]
           found=[]; files_seen=0
-          pat=re.compile(r'''(?:https?://[^\s"'<>]+)?/[^\s"'<>]*DatosTecnicos[^\s"'<>]*''',re.I)
+          pat=re.compile(r'/[^\s"\'<>]*DatosTecnicos[^\s"\'<>]*',re.I)
+          allowed={'.json','.jsonl','.log','.txt','.md','.py','.js','.ts','.yml','.yaml','.sh'}
           for root in roots:
               if not root.exists(): continue
               for base,dirs,files in os.walk(root):
-                  dirs[:]=[d for d in dirs if d not in {'.git','venv','.venv','node_modules'}]
+                  dirs[:]=[d for d in dirs if d not in {'.git','venv','.venv','node_modules','__pycache__'}]
                   for name in files:
-                      if not name.lower().endswith(('.json','.jsonl','.log','.txt','.md')): continue
                       p=Path(base)/name
+                      if p.suffix.lower() not in allowed: continue
                       try:
                           if p.stat().st_size>20_000_000: continue
                           text=p.read_text(encoding='utf-8',errors='ignore')
                       except Exception: continue
                       files_seen+=1
                       for m in pat.finditer(text):
-                          raw=m.group(0).rstrip('),]}')
-                          parsed=urlparse(raw if raw.startswith('http') else 'https://x.invalid'+raw)
-                          path=parsed.path
-                          if 'DatosTecnicos' in path:
-                              found.append({'file':str(p),'path':path})
+                          raw=m.group(0).rstrip('),]}`')
+                          # Emit only path shape, never query strings, headers or payloads.
+                          path=raw.split('?',1)[0]
+                          found.append({'file':str(p),'path':path[:300]})
           uniq=[]; seen=set()
           for x in found:
               k=(x['file'],x['path'])
               if k not in seen: seen.add(k); uniq.append(x)
-          print('DATOS_TECNICOS_ARTIFACTS='+json.dumps({'files_seen':files_seen,'matches':uniq[:100],'match_count':len(uniq)},ensure_ascii=False,sort_keys=True))
+          print('DATOS_TECNICOS_ARTIFACTS='+json.dumps({'files_seen':files_seen,'matches':uniq[:150],'match_count':len(uniq)},ensure_ascii=False,sort_keys=True))
           PY
           HOST
 
@@ -84,8 +94,90 @@ jobs:
           SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
-          set -euo pipefail; install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Explain 179 legacy history bridge gaps read-only
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Reconcile READY-candidate history across all history stores read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,collections
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          def cols(t): return [r[1] for r in c.execute('pragma table_info("'+t.replace('"','""')+'")')]
+          def fam(v):
+              x=str(v or '').upper().strip().replace('OBLIGACIONES_NEGOCIABLES','ON')
+              if x=='CEDEAR': x='CEDEARS'
+              return x
+          ready=[dict(r) for r in c.execute("select ticker,instrument_type,market,settlement from candidate_universe where can_simulate=1 and status='AVAILABLE' order by instrument_type,ticker")]
+          ready_keys={(str(r['ticker']).upper(),fam(r['instrument_type']),str(r['settlement'] or '').upper()) for r in ready}
+          tables=[r[0] for r in c.execute("select name from sqlite_master where type='table' and lower(name) like '%history%' order by name")]
+          stores={}; union=set()
+          for t in tables:
+              cs=cols(t); low={x.lower():x for x in cs}
+              sym=next((low[x] for x in ('symbol','ticker','instrument','especie') if x in low),None)
+              typ=next((low[x] for x in ('instrument_type','family','type') if x in low),None)
+              stl=next((low[x] for x in ('settlement','plazo') if x in low),None)
+              metric=next((low[x] for x in ('valid_rows','row_count','rows_count','rows') if x in low),None)
+              entry={'columns':cs,'symbol_column':sym,'family_column':typ,'settlement_column':stl,'metric_column':metric,'table_rows':None,'ready_covered':0}
+              try: entry['table_rows']=int(c.execute('select count(*) from "'+t.replace('"','""')+'"').fetchone()[0])
+              except Exception as e: entry['count_error']=type(e).__name__
+              if not sym:
+                  stores[t]=entry; continue
+              select=[sym]
+              if typ: select.append(typ)
+              if stl: select.append(stl)
+              if metric: select.append(metric)
+              q='select '+','.join('"'+x.replace('"','""')+'"' for x in select)+' from "'+t.replace('"','""')+'" limit 200000'
+              covered=set()
+              try:
+                  for row in c.execute(q):
+                      d=dict(zip(select,row))
+                      if metric and d.get(metric) is not None:
+                          try:
+                              if float(d[metric])<=0: continue
+                          except Exception: pass
+                      ticker=str(d.get(sym) or '').upper()
+                      f=fam(d.get(typ)) if typ else None
+                      s=str(d.get(stl) or '').upper() if stl else None
+                      for rk in ready_keys:
+                          if rk[0]!=ticker: continue
+                          if f and rk[1]!=f: continue
+                          if s and rk[2]!=s: continue
+                          covered.add(rk)
+                  entry['ready_covered']=len(covered); union.update(covered)
+              except Exception as e: entry['scan_error']=type(e).__name__+':'+str(e)[:160]
+              stores[t]=entry
+          by_family=collections.defaultdict(lambda:{'total':0,'covered_any_history_store':0})
+          for k in ready_keys:
+              by_family[k[1]]['total']+=1
+              if k in union: by_family[k[1]]['covered_any_history_store']+=1
+          missing=sorted(ready_keys-union)
+          print('HISTORY_GAP_JSON='+json.dumps({'quick_check':c.execute('pragma quick_check').fetchone()[0],'ready_total':len(ready_keys),'covered_any_history_store':len(union),'missing_any_history_store':len(missing),'by_family':dict(by_family),'stores':stores,'missing_sample':missing[:80]},ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          HOST
+
+  contract-runtime-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Build exact contract evidence matrix read-only
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -96,29 +188,55 @@ jobs:
           import sqlite3,json,collections
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
           tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
-          ready=[dict(r) for r in c.execute("select ticker,instrument_type,market,settlement from candidate_universe where can_simulate=1 and status='AVAILABLE' order by instrument_type,ticker")]
-          reasons=collections.Counter(); fam=collections.defaultdict(collections.Counter); samples=collections.defaultdict(list)
-          for r in ready:
-              exact=c.execute('select row_count,date_from,date_to,source,settlement from production_history where symbol=? and instrument_type=? and settlement=?',(r['ticker'],r['instrument_type'],r['settlement'])).fetchall()
-              if any(int(x['row_count'] or 0)>0 for x in exact): reason='EXACT_LEGACY_HISTORY'
-              else:
-                  alt=c.execute('select row_count,date_from,date_to,source,settlement from production_history where symbol=? and instrument_type=? order by settlement',(r['ticker'],r['instrument_type'])).fetchall()
-                  if any(int(x['row_count'] or 0)>0 for x in alt): reason='LEGACY_ALT_SETTLEMENT'
+          required={
+            'ACCIONES':('instrument_id','ticker','market','currency','settlement','quantity_min','quantity_step','price_precision','cost_model'),
+            'CEDEARS':('instrument_id','ticker','market','currency','settlement','quantity_min','quantity_step','price_precision','cost_model','conversion_ratio'),
+            'BONOS':('instrument_id','ticker','market','currency','settlement','quantity_min','quantity_step','price_precision','cost_model','price_unit_nominals','nominal_value','lamina_minima','isin','maturity','coupon_terms','amortization_terms'),
+            'LETRAS':('instrument_id','ticker','market','currency','settlement','quantity_min','quantity_step','price_precision','cost_model','price_unit_nominals','nominal_value','lamina_minima','maturity'),
+            'ON':('instrument_id','ticker','market','currency','settlement','quantity_min','quantity_step','price_precision','cost_model','price_unit_nominals','nominal_value','lamina_minima','isin','maturity','coupon_terms','amortization_terms','payment_currency'),
+            'CAUCIONES':('instrument_id','currency','side','term_days','maturity','annual_rate','available_principal','minimum_principal','principal_step','day_count_basis','fee_model'),
+            'FUTUROS':('instrument_id','ticker','market','currency','underlying','expiry','contract_multiplier','quantity_step','price_tick','tick_value','initial_margin','settlement_rule','adjustment_rule','trading_hours','cost_model'),
+            'LICITACIONES':('auction_id','instrument_id','currency','open_at','close_at','status','minimum_amount','amount_step','settlement','allocation_rule','cost_model')}
+          aliases={'CEDEAR':'CEDEARS','OBLIGACIONES_NEGOCIABLES':'ON','OBLIGACIONES NEGOCIABLES':'ON'}
+          def F(x):
+              x=str(x or '').upper().strip(); return aliases.get(x,x)
+          out={'tables_present':sorted(tables & {'contract_evidence_v2_current','contract_evidence_v2_snapshots','contract_evidence_v2_changes'}),'by_family':{},'identities':0,'complete_execution':0,'conflict_identities':0}
+          if {'contract_evidence_v2_current','contract_evidence_v2_snapshots'}.issubset(tables):
+              rows=[dict(r) for r in c.execute("select cur.family,cur.ticker,cur.market,cur.settlement,cur.source_class,cur.observed_at,s.evidence_json from contract_evidence_v2_current cur join contract_evidence_v2_snapshots s on s.snapshot_id=cur.snapshot_id")]
+              rank={'PPI_STRUCTURED_API':10,'PPI_AUTHENTICATED_XHR':20,'PPI_OFFICIAL_DOCUMENTATION':30,'PPI_AUTHENTICATED_WEB':40,'PPI_SUPPORT':50,'POROTA_LEGACY_EVIDENCE':900}
+              metadata={'source_job','source_route','readiness_guard','evidence_scope','provider','provider_kind','provider_schema','sanitized_row_count','semantic_guard','semantic_link','semantic_link_method','contract_completeness','identity_header','identity_observed','table_headers_observed','tables','unlinked_observation_count','unlinked_observations_sample','sanitized_rows_sample','route'}
+              grouped=collections.defaultdict(list)
+              for r in rows: grouped[(F(r['family']),str(r['ticker']).upper(),str(r['market']).upper(),str(r['settlement']).upper())].append(r)
+              famstats=collections.defaultdict(lambda:{'identities':0,'complete_execution':0,'missing_execution':0,'conflict_identities':0,'missing_fields':collections.Counter(),'sources':collections.Counter()})
+              samples=[]
+              for key,recs in grouped.items():
+                  f=key[0]; fs=famstats[f]; fs['identities']+=1; out['identities']+=1
+                  decoded=[]
+                  for r in recs:
+                      try: ev=json.loads(r['evidence_json'] or '{}')
+                      except Exception: ev={}
+                      decoded.append((rank.get(r['source_class'],999),r['source_class'],ev)); fs['sources'][r['source_class']]+=1
+                  merged={}
+                  for _,_,ev in sorted(decoded,reverse=True): merged.update({k:v for k,v in ev.items() if v not in (None,'',[],{})})
+                  vals=collections.defaultdict(set)
+                  for _,src,ev in decoded:
+                      for field,val in ev.items():
+                          if field in metadata or val in (None,'',[],{}): continue
+                          try: rendered=json.dumps(val,sort_keys=True,ensure_ascii=False,default=str)
+                          except Exception: rendered=str(val)
+                          vals[field].add(rendered)
+                  conflicts=sorted(k for k,v in vals.items() if len(v)>1)
+                  req=required.get(f)
+                  missing=['family_requirements'] if req is None else [x for x in req if merged.get(x) in (None,'',[],{})]
+                  if conflicts: fs['conflict_identities']+=1; out['conflict_identities']+=1
+                  if not missing and not conflicts: fs['complete_execution']+=1; out['complete_execution']+=1
                   else:
-                      task=c.execute("select state,result,provider_rows,valid_rows,first_after,last_after,settlement from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and symbol=? and instrument_type=? order by updated_at desc limit 1",(r['ticker'],r['instrument_type'])).fetchone()
-                      if task and str(task['state'])=='ALREADY_COVERED': reason='TASK_ALREADY_COVERED_BUT_NO_PRODUCTION_HISTORY'
-                      elif task and int(task['valid_rows'] or 0)>0: reason='TASK_VALID_ROWS_BUT_NO_PRODUCTION_HISTORY'
-                      elif task: reason='TASK_TERMINAL_NO_VALID_ROWS'
-                      else: reason='NO_API_TASK_MATCH'
-                  if len(samples[reason])<12:
-                      samples[reason].append({'ticker':r['ticker'],'family':r['instrument_type'],'market':r['market'],'settlement':r['settlement'],'alt_settlements':[dict(x) for x in alt] if 'alt' in locals() else [],'task':dict(task) if 'task' in locals() and task else None})
-              reasons[reason]+=1; fam[r['instrument_type']][reason]+=1
-          schemas={t:[x[1] for x in c.execute('pragma table_info('+t+')')] for t in sorted(tables) if t in {'history_versions_v2','history_canonical_v2','market_historical_ohlcv','production_history','history_attempt_ledger_v2'}}
-          counts={}
-          for t in schemas:
-              try: counts[t]=c.execute('select count(*) from '+t).fetchone()[0]
-              except Exception: counts[t]=None
-          print('HISTORY_GAP_JSON='+json.dumps({'quick_check':c.execute('pragma quick_check').fetchone()[0],'reasons':dict(reasons),'by_family':{k:dict(v) for k,v in fam.items()},'samples':dict(samples),'schemas':schemas,'counts':counts},ensure_ascii=False,sort_keys=True,default=str)); c.close()
+                      fs['missing_execution']+=1
+                      for m in missing: fs['missing_fields'][m]+=1
+                  if (missing or conflicts) and len(samples)<80: samples.append({'identity':key,'missing':missing,'conflicts':conflicts,'sources':sorted({x[1] for x in decoded})})
+              out['by_family']={f:{**d,'missing_fields':dict(d['missing_fields']),'sources':dict(d['sources'])} for f,d in famstats.items()}
+              out['blocked_sample']=samples
+          print('CONTRACT_MATRIX_JSON='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str)); c.close()
           PY
           HOST
 
@@ -132,8 +250,11 @@ jobs:
           SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
-          set -euo pipefail; install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Inspect only four captured ON artifacts read-only
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect four captured ON structurally, no network and no raw secrets
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -141,11 +262,24 @@ jobs:
           set -euo pipefail
           ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
           sudo -n python3 - <<'PY'
-          import os,json,re
+          import os,json,sqlite3
           from pathlib import Path
           target={'MRCGC','MRCGD','MRCLC','MRCPO'}; root=Path('/opt/porota-ingest/ppi-web-residual')
-          out={s:{'files':[],'observed_string_values':{},'date_like':[]} for s in target}
-          # Restrict to durable residual output; never print raw payloads, headers or secrets.
+          out={s:{'files':[],'contexts':[],'state_rows':[]} for s in target}
+          def shape(v):
+              if isinstance(v,dict): return {'type':'dict','keys':sorted(str(k) for k in v.keys())[:80],'len':len(v)}
+              if isinstance(v,list): return {'type':'list','len':len(v),'item_types':sorted({type(x).__name__ for x in v[:50]})}
+              if isinstance(v,str): return {'type':'str','len':len(v)}
+              return {'type':type(v).__name__,'value':v if isinstance(v,(int,float,bool)) or v is None else None}
+          def walk(x,path,s,depth=0):
+              if depth>8 or len(out[s]['contexts'])>=40: return
+              if isinstance(x,dict):
+                  rendered=json.dumps(x,ensure_ascii=False,default=str)
+                  if s in rendered:
+                      out[s]['contexts'].append({'path':path,'node':shape(x),'children':{str(k):shape(v) for k,v in list(x.items())[:60]}})
+                  for k,v in x.items(): walk(v,path+'/'+str(k),s,depth+1)
+              elif isinstance(x,list):
+                  for i,v in enumerate(x[:200]): walk(v,path+'/'+str(i),s,depth+1)
           for base,dirs,files in os.walk(root):
               for name in files:
                   p=Path(base)/name
@@ -156,26 +290,67 @@ jobs:
                   except Exception: continue
                   hits=[s for s in target if s in text]
                   if not hits: continue
-                  try: data=json.loads(text)
-                  except Exception: data=None
                   for s in hits:
                       if len(out[s]['files'])<20: out[s]['files'].append(str(p))
-                      strings=[]; dates=[]
-                      def walk(x,k=''):
-                          if isinstance(x,dict):
-                              for a,b in x.items(): walk(b,str(a))
-                          elif isinstance(x,list):
-                              for b in x[:500]: walk(b,k)
-                          elif isinstance(x,str):
-                              if len(x)<=120 and any(z in k.lower() for z in ('ticker','symbol','simbolo','especie','nombre')): strings.append((k,x))
-                              if re.match(r'^20\d\d[-/]\d\d[-/]\d\d',x): dates.append(x[:10])
-                      if data is not None: walk(data)
-                      ctr={}
-                      for k,v in strings:
-                          key=k+':'+v
-                          ctr[key]=ctr.get(key,0)+1
-                      out[s]['observed_string_values']=dict(sorted(ctr.items(),key=lambda kv:-kv[1])[:25])
-                      out[s]['date_like']=sorted(set(dates))[:5]+(['...'] if len(set(dates))>10 else [])+sorted(set(dates))[-5:]
-          print('ON_CAPTURE_RCA='+json.dumps(out,ensure_ascii=False,sort_keys=True))
+                  try:
+                      docs=[json.loads(line) for line in text.splitlines() if line.strip()] if p.suffix.lower()=='.jsonl' else [json.loads(text)]
+                  except Exception: docs=[]
+                  for s in hits:
+                      for d in docs[:1000]: walk(d,'$',s)
+          db=root/'state.sqlite3'
+          if db.exists():
+              c=sqlite3.connect('file:'+str(db)+'?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+              tables=[r[0] for r in c.execute("select name from sqlite_master where type='table'")]
+              for t in tables:
+                  cs=[r[1] for r in c.execute('pragma table_info("'+t.replace('"','""')+'")')]
+                  sym=next((x for x in cs if x.lower() in {'symbol','ticker','especie'}),None)
+                  if not sym: continue
+                  safe=[x for x in cs if not any(z in x.lower() for z in ('token','cookie','secret','password','authorization','header','payload','body'))][:30]
+                  for s in target:
+                      try:
+                          q='select '+','.join('"'+x.replace('"','""')+'"' for x in safe)+' from "'+t.replace('"','""')+'" where upper("'+sym.replace('"','""')+'")=? limit 10'
+                          for r in c.execute(q,(s,)): out[s]['state_rows'].append({'table':t,'row':dict(r)})
+                      except Exception: pass
+              c.close()
+          print('ON_CAPTURE_RCA='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          PY
+          HOST
+
+  safety-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Verify writers inactive and observer candidate counts read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          for u in porota-ppi-web-residual-rc6.service porota-ppi-fullfamily-history-rc6.service; do
+            echo "UNIT=$u"
+            sudo -n systemctl show "$u" -p ActiveState -p SubState -p MainPID -p Result -p NRestarts --no-pager || true
+          done
+          echo 'WRITER_PROCESSES_BEGIN'
+          pgrep -af 'ppi_web_residual|ppi-fullfamily-history|ppi_fullfamily_history|Historico/' || true
+          echo 'WRITER_PROCESSES_END'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,collections
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          total=c.execute('select count(*) from candidate_universe').fetchone()[0]
+          sim=c.execute("select count(*) from candidate_universe where can_simulate=1 and status='AVAILABLE'").fetchone()[0]
+          fam={r[0]:r[1] for r in c.execute("select instrument_type,count(*) from candidate_universe where can_simulate=1 and status='AVAILABLE' group by instrument_type order by instrument_type")}
+          print('OBSERVER_SAFETY_JSON='+json.dumps({'quick_check':c.execute('pragma quick_check').fetchone()[0],'candidate_universe_rows':total,'can_simulate_available':sim,'can_simulate_by_family':fam},sort_keys=True)); c.close()
           PY
           HOST
