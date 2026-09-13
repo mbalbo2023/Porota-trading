@@ -1,0 +1,123 @@
+name: RC6 Cauciones deployed runtime read-only proof 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-cauciones-runtime-readonly-proof-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_runtime_audit"
+          chmod 600 "$HOME/.ssh/porota_runtime_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only observer and caucion evidence
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_runtime_audit" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$USER@$HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          CONTAINER=porota_production_observer
+          echo '=== CONTAINER_READONLY ==='
+          sudo -n docker inspect -f 'name={{.Name}} running={{.State.Running}} image={{.Config.Image}} restart={{.RestartCount}} readonly={{.HostConfig.ReadonlyRootfs}} started={{.State.StartedAt}}' "$CONTAINER"
+          IMAGE="$(sudo -n docker inspect -f '{{.Config.Image}}' "$CONTAINER")"
+          sudo -n docker image inspect -f 'image_commit={{index .Config.Labels "porota.commit"}} version={{index .Config.Labels "porota.version"}}' "$IMAGE"
+          echo '=== PROCESS_READONLY ==='
+          sudo -n docker top "$CONTAINER" -eo pid,ppid,etimes,args | sed -n '1,40p'
+          echo '=== SQLITE_READONLY ==='
+          sudo -n docker exec -i "$CONTAINER" python - <<'PY'
+          import json, sqlite3
+          DB='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(DB,uri=True,timeout=20); c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          print('DB_QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          interesting=sorted(t for t in tables if any(k in t.lower() for k in ('cauc','intraday','market','observer','catalog','readiness')))
+          print('INTERESTING_TABLES='+json.dumps(interesting))
+          if 'observer_state' not in tables:
+              raise SystemExit('OBSERVER_STATE_MISSING')
+          state=dict(c.execute('SELECT * FROM observer_state WHERE id=1').fetchone() or {})
+          safe={k:state.get(k) for k in ('mode','process_state','session_state','ppi_auth','heartbeat_at','last_market_data_at','real_orders_sent','http_allowed','http_blocked','detail') if k in state}
+          print('OBSERVER_STATE='+json.dumps(safe,default=str))
+          assert safe.get('mode')=='PRODUCTION_PAPER', safe
+          assert int(safe.get('real_orders_sent') or 0)==0, safe
+
+          if 'financial_instrument_catalog' in tables:
+              rows=[dict(r) for r in c.execute("""SELECT ticker,instrument_type,market,currency,settlement,status,capability,last_seen_at
+                FROM financial_instrument_catalog WHERE upper(instrument_type)='CAUCIONES'
+                ORDER BY ticker,currency,settlement""")]
+              print('CAUCION_CATALOG_COUNT='+str(len(rows)))
+              print('CAUCION_CATALOG='+json.dumps(rows[:40],default=str))
+          else:
+              print('CAUCION_CATALOG_COUNT=TABLE_MISSING')
+
+          if 'market_snapshots' in tables:
+              cols={r[1] for r in c.execute('PRAGMA table_info(market_snapshots)')}
+              wanted=[x for x in ('symbol','asset_class','settlement','currency','market','observed_at','book_at','trade_at','last','bid','ask','bid_size','ask_size','last_kind') if x in cols]
+              if {'symbol','asset_class'} <= cols:
+                  sql='SELECT '+','.join(wanted)+" FROM market_snapshots WHERE upper(asset_class) LIKE 'CAUC%' ORDER BY id DESC LIMIT 50"
+                  rows=[dict(r) for r in c.execute(sql)]
+                  print('CAUCION_MARKET_SNAPSHOT_ROWS='+str(len(rows)))
+                  print('CAUCION_MARKET_SNAPSHOTS='+json.dumps(rows,default=str))
+              else:
+                  print('CAUCION_MARKET_SNAPSHOT_ROWS=SCHEMA_UNEXPECTED')
+
+          if 'intraday_scalping_worker_state' in tables:
+              row=dict(c.execute('SELECT * FROM intraday_scalping_worker_state WHERE id=1').fetchone() or {})
+              safe={k:row.get(k) for k in ('heartbeat_at','state','detail','real_orders_sent') if k in row}
+              print('INTRADAY_WORKER='+json.dumps(safe,default=str))
+              if 'real_orders_sent' in safe:
+                  assert int(safe.get('real_orders_sent') or 0)==0, safe
+
+          if 'ppi_intraday_points' in tables:
+              cols={r[1] for r in c.execute('PRAGMA table_info(ppi_intraday_points)')}
+              family_col='asset_class' if 'asset_class' in cols else 'instrument_type' if 'instrument_type' in cols else None
+              order_col='id' if 'id' in cols else 'source_at' if 'source_at' in cols else None
+              wanted=[x for x in ('symbol','asset_class','instrument_type','market','currency','settlement','source_at','observed_at','price','volume') if x in cols]
+              if family_col and order_col:
+                  sql='SELECT '+','.join(wanted)+f" FROM ppi_intraday_points WHERE upper({family_col}) LIKE 'CAUC%' ORDER BY {order_col} DESC LIMIT 50"
+                  rows=[dict(r) for r in c.execute(sql)]
+                  print('CAUCION_INTRADAY_ROWS='+str(len(rows)))
+                  print('CAUCION_INTRADAY='+json.dumps(rows,default=str))
+              else:
+                  print('CAUCION_INTRADAY_ROWS=SCHEMA_UNEXPECTED')
+
+          if 'caucion_readiness_state' in tables:
+              row=dict(c.execute('SELECT * FROM caucion_readiness_state WHERE id=1').fetchone() or {})
+              safe={k:row.get(k) for k in ('evaluated_at','gate_name','green','contract_status','evidence_id','tickers_json','reasons_json','real_order_capability','source') if k in row}
+              print('CAUCION_SPECIALIZED_READINESS='+json.dumps(safe,default=str))
+              assert int(safe.get('real_order_capability') or 0)==0, safe
+          else:
+              print('CAUCION_SPECIALIZED_READINESS=NOT_DEPLOYED')
+
+          for table in sorted(tables):
+              if 'cauc' in table.lower() and table not in {'paper_cauciones','caucion_readiness_state'}:
+                  try:
+                      print('CAUCION_TABLE_COUNT '+table+'='+str(c.execute('SELECT COUNT(*) FROM '+table).fetchone()[0]))
+                  except sqlite3.Error:
+                      pass
+          c.close()
+          print('RUNTIME_READONLY_SAFETY=GREEN')
+          PY
+          HOST
