@@ -1,0 +1,123 @@
+name: RC6 PPI Web final serialized auth canary preflight 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-final-auth-canary-preflight-20260913.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  final-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage corrected helper and collector
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            rc6_ppi_web_reauth.py rc6_ppi_web_history_shadow.py \
+            "$DO_USER@$DO_HOST:/tmp/"
+      - name: Serialized auth and one-target read-only canary
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          BIN=/opt/porota-ingest/ppi-web-residual/bin
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          SECRET=/etc/porota/contract-evidence-web.env
+          VENV=/opt/porota-contract-evidence-venv
+          LOCK=/run/lock/porota-ppi-web-browser.lock
+          ROOT=/opt/porota-ingest/ppi-web-residual
+          sudo -n install -d -o root -g root -m 0755 "$BIN"
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_reauth.py "$BIN/rc6_ppi_web_reauth.py"
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_history_shadow.py "$BIN/rc6_ppi_web_history_shadow.py"
+          rm -f /tmp/rc6_ppi_web_reauth.py /tmp/rc6_ppi_web_history_shadow.py
+          test ! -e "$ROOT/ENABLED"
+          test "$(sudo -n systemctl is-active porota-ppi-web-residual-rc6.service 2>/dev/null || true)" != active
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          print('|'.join(map(str,c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()))); c.close()
+          PY
+          )"
+          echo "SAFETY_BEFORE=$PRE"; test "$PRE" = 'PRODUCTION_PAPER|0'
+          sudo -n flock -w 180 "$LOCK" bash -s <<'LOCKED'
+          set -Eeuo pipefail
+          BIN=/opt/porota-ingest/ppi-web-residual/bin
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          SECRET=/etc/porota/contract-evidence-web.env
+          VENV=/opt/porota-contract-evidence-venv
+          set +e
+          OUT="$(runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$BIN:/opt/porota-trading" "$VENV/bin/python" "$BIN/rc6_ppi_web_reauth.py" --profile "$PROFILE" --secret "$SECRET" 2>&1)"
+          RC=$?
+          set -e
+          OUT="$OUT" RC="$RC" python3 - <<'PY'
+          import json,os
+          obj={}
+          for line in reversed(os.environ.get('OUT','').splitlines()):
+              try:
+                  x=json.loads(line)
+                  if isinstance(x,dict): obj=x; break
+              except Exception: pass
+          print('REAUTH_RC='+os.environ['RC'])
+          for k in ('status','stage','page_url','auth_http_status','auth_twofa_shape','credentials_exposed','orders_visited','real_orders_sent','error_type'):
+              if k in obj: print(k.upper()+'='+str(obj[k]))
+          assert int(os.environ['RC'])==0
+          assert obj.get('status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert obj.get('credentials_exposed') is False
+          assert int(obj.get('real_orders_sent',-1))==0
+          PY
+          TD="$(mktemp -d /tmp/ppi-web-final.XXXXXX)"; chown porotaadmin:porotaadmin "$TD"
+          cat > "$TD/targets.jsonl" <<'EOF'
+          {"symbol":"GGAL","instrument_type":"ACCIONES","market":"BYMA","settlement":"A-48HS","residual_class":"PREFLIGHT_ONLY"}
+          EOF
+          chown porotaadmin:porotaadmin "$TD/targets.jsonl"
+          runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$BIN:/opt/porota-trading" \
+            "$VENV/bin/python" "$BIN/rc6_ppi_web_history_shadow.py" --profile "$PROFILE" --output "$TD/capture.json" --targets-jsonl "$TD/targets.jsonl" >/tmp/ppi-web-final-collector.out 2>&1
+          python3 - "$TD/capture.json" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1],encoding='utf-8'))
+          print('CANARY_AUTH='+str(x.get('auth_status')))
+          print('CANARY_TARGETS='+str(len(x.get('targets',[]))))
+          print('CANARY_CAPTURES='+str(len(x.get('captures',[]))))
+          print('CANARY_ROWS='+str(sum(len(c.get('rows',[])) for c in x.get('captures',[]))))
+          print('CANARY_REAL_ORDERS='+str(x.get('real_orders_sent')))
+          print('CANARY_CANONICAL_WRITE='+str(x.get('canonical_write')))
+          assert x.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert int(x.get('real_orders_sent',-1))==0
+          assert x.get('canonical_write')=='DENY'
+          PY
+          rm -rf "$TD" /tmp/ppi-web-final-collector.out
+          LOCKED
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.execute('pragma query_only=on')
+          print('|'.join(map(str,c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()))); c.close()
+          PY
+          )"
+          echo "SAFETY_AFTER=$POST"; test "$POST" = 'PRODUCTION_PAPER|0'
+          test ! -e "$ROOT/ENABLED"
+          echo MASS_SCRAPING_STARTED=NO
+          echo FINAL_AUTH_CANARY_PREFLIGHT=GREEN
+          HOST
