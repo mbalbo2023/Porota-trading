@@ -1,0 +1,169 @@
+name: RC6 READY reconcile contract gaps 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-ready-reconcile-contract-gap-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cedear7-web-reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Reconcile seven CEDEAR against closed PPI Web residual read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n python3 - <<'PY'
+          import sqlite3,json,os
+          from pathlib import Path
+          root=Path('/opt/porota-ingest/ppi-web-residual')
+          targets=['CRWVC','CVSC','MRVLC','VIVTC','VIVTD','VRTXC','VXXC']
+          out={s:{'state':[],'residual':[],'captures':[]} for s in targets}
+          db=root/'state.sqlite3'
+          if db.exists():
+              c=sqlite3.connect('file:'+str(db)+'?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+              tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+              if 'residual_task' in tables:
+                  cols={r[1] for r in c.execute('pragma table_info(residual_task)')}
+                  wanted=[x for x in ['run_id','symbol','instrument_type','market','settlement','state','attempts','provider_rows','valid_rows','residual_class','detail','started_at','finished_at','updated_at'] if x in cols]
+                  q='select '+','.join(wanted)+' from residual_task where upper(symbol)=?'
+                  for s in targets: out[s]['state']=[dict(r) for r in c.execute(q,(s,))]
+              c.close()
+          residual=root/'residual.jsonl'
+          if residual.exists():
+              for line in residual.read_text(encoding='utf-8',errors='ignore').splitlines():
+                  try: r=json.loads(line)
+                  except Exception: continue
+                  s=str(r.get('symbol') or '').upper()
+                  if s in out:
+                      out[s]['residual'].append({k:r.get(k) for k in ['symbol','instrument_type','market','settlement','residual_class','api_state','provider_rows','valid_rows'] if k in r})
+          for base,dirs,files in os.walk(root/'batches') if (root/'batches').exists() else []:
+              for name in files:
+                  if name!='capture.json': continue
+                  p=Path(base)/name
+                  try:
+                      doc=json.loads(p.read_text(encoding='utf-8',errors='ignore'))
+                  except Exception: continue
+                  for r in doc.get('target_results') or []:
+                      s=str(r.get('symbol') or '').upper()
+                      if s in out:
+                          out[s]['captures'].append({k:r.get(k) for k in ['symbol','resolved_ticker','instrument_type','market','settlement','item_id','type_id','term','discovery_http','detail_http','plazos_http','history_http','provider_rows','normalized_rows','valid_rows','rows_365d','dropped_old','result','residual_class'] if k in r})
+          print('CEDEAR7_WEB_RECON='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          PY
+          HOST
+
+  contract-key-gap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Measure evidence keys by family/source read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,collections
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          q='''select cur.family,cur.ticker,cur.market,cur.settlement,cur.source_class,s.evidence_json
+               from contract_evidence_v2_current cur join contract_evidence_v2_snapshots s on s.snapshot_id=cur.snapshot_id'''
+          counts=collections.defaultdict(collections.Counter); ids=collections.defaultdict(set)
+          for r in c.execute(q):
+              k=(str(r['family']).upper(),str(r['source_class']))
+              ids[k].add((r['ticker'],r['market'],r['settlement']))
+              try: ev=json.loads(r['evidence_json'] or '{}')
+              except Exception: ev={}
+              for field,val in ev.items():
+                  if val not in (None,'',[],{}): counts[k][str(field)]+=1
+          focus={'ACCIONES','CEDEARS','BONOS','LETRAS','ON','CAUCIONES','FUTUROS','ACCIONES_USA','ETF','LICITACIONES'}
+          out={}
+          for (fam,src),ctr in sorted(counts.items()):
+              if fam not in focus: continue
+              out[fam+'|'+src]={'identities':len(ids[(fam,src)]),'keys':dict(ctr.most_common())}
+          print('CONTRACT_KEY_GAP='+json.dumps(out,ensure_ascii=False,sort_keys=True))
+          c.close()
+          PY
+          HOST
+
+  capture-artifact-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Audit sanitized contract captures structurally read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n python3 - <<'PY'
+          import os,json,collections
+          from pathlib import Path
+          roots=[Path('/opt/porota-trading'),Path('/opt/porota-ingest')]
+          out=[]
+          for root in roots:
+              if not root.exists(): continue
+              for base,dirs,files in os.walk(root):
+                  dirs[:]=[d for d in dirs if d not in {'.git','venv','.venv','node_modules','__pycache__'}]
+                  for name in files:
+                      if not name.endswith('.json'): continue
+                      p=Path(base)/name
+                      try:
+                          if p.stat().st_size>30_000_000: continue
+                          doc=json.loads(p.read_text(encoding='utf-8',errors='ignore'))
+                      except Exception: continue
+                      if not isinstance(doc,dict) or doc.get('schema')!='POROTA_RC6_PPI_TRUSTED_CONTRACT_V1': continue
+                      kinds=collections.Counter(); row_keys=collections.defaultdict(collections.Counter)
+                      for ep in (doc.get('endpoints') or {}).values():
+                          if not isinstance(ep,dict): continue
+                          kind=str(ep.get('kind') or 'UNKNOWN'); kinds[kind]+=1
+                          rows=[]
+                          if isinstance(ep.get('row'),dict): rows=[ep['row']]
+                          elif isinstance(ep.get('rows'),list): rows=[r for r in ep['rows'] if isinstance(r,dict)]
+                          for r in rows[:1000]:
+                              for k,v in r.items():
+                                  if v not in (None,'',[],{}): row_keys[kind][str(k)]+=1
+                      out.append({'path':str(p),'generated_at':doc.get('generated_at'),'auth_status':doc.get('auth_status'),'jobs':doc.get('jobs'),'endpoint_kinds':dict(kinds),'row_keys':{k:dict(v) for k,v in row_keys.items()},'real_orders_sent':doc.get('real_orders_sent')})
+          print('CONTRACT_CAPTURE_AUDIT='+json.dumps({'capture_count':len(out),'captures':out[-30:]},ensure_ascii=False,sort_keys=True,default=str))
+          PY
+          HOST
