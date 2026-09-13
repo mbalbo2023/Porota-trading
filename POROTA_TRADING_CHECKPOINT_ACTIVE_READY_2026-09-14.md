@@ -1,347 +1,265 @@
 # POROTA TRADING — CHECKPOINT ACTIVE / READY 2026-09-14
 
-**Estado:** ACTIVO / CANÓNICO PARA CONTINUIDAD
-**Fecha de fijación:** 2026-09-13
-**Última actualización material:** 2026-09-13 14:46 UTC aprox.
-**Objetivo operativo:** maximizar la cantidad de instrumentos seguros en `READY_PAPER` para la rueda del lunes 2026-09-14, sin relajar contratos, identidad, settlement, calendarios, seguridad ni procedencia de datos.
+**Estado:** ACTIVO / CANÓNICO PARA CONTINUIDAD  
+**Fecha:** 2026-09-13  
+**Objetivo:** maximizar instrumentos seguros en `READY_PAPER` para la rueda del lunes 2026-09-14 sin relajar contratos, identidad, settlement, calendarios, riesgo, costos ni procedencia.
 
 ## 0. REGLA DE CONTINUIDAD OBLIGATORIA
 
-Este archivo es el punto de reanudación vigente. Si un chat/proceso se interrumpe, el siguiente DEBE leer este checkpoint antes de ejecutar nada y continuar desde `ÚLTIMO PASO CONFIRMADO` / `SIGUIENTE ACCIÓN EXACTA`.
+Este archivo es el ÚNICO punto canónico de reanudación. Si el chat/proceso se corta, el siguiente debe leerlo primero y continuar desde `ÚLTIMO PASO CONFIRMADO` y `SIGUIENTE ACCIÓN EXACTA`. No recomenzar desde checkpoints anteriores ni repetir pruebas cerradas sin nueva evidencia.
 
-NO reconstruir el trabajo desde checkpoints anteriores. NO repetir pruebas ya cerradas salvo nueva evidencia que lo justifique. Cada hito material debe actualizar este checkpoint con evidencia, semáforo, último paso confirmado y siguiente acción.
+Después de cada hito material actualizar este archivo con evidencia, semáforo, último paso y siguiente acción.
 
-## 1. REPOSITORIO / RAMA / HEAD
+## 1. REPO / RAMA / SAFETY
 
 - Repo: `mbalbo2023/Porota-trading`
-- Rama de trabajo canónica: `ops/rc6-ppi-web-residual-ready-20260913`
-- HEAD canónico observado tras las últimas regresiones: `a71d6f57ffabbd548bdb9a9833d0026667690ec2`
-- Commit: `test: fail closed on contract identity-key disagreement`
-- Universo canónico PPI: `1960` identidades históricas del run masivo.
-- `candidate_universe` actual observado: `911` filas.
-- Modo obligatorio: `PRODUCTION_PAPER`.
-- Órdenes reales permitidas durante este trabajo: `0`.
+- Rama canónica: `ops/rc6-ppi-web-residual-ready-20260913`
+- HEAD de trabajo al lanzar la última tanda: `09c5686a6e18f613e29247d1b574ac77e5ad66ed`
+- Universo histórico PPI masivo: `1960`
+- `candidate_universe`: `911` filas observadas
+- Modo obligatorio: `PRODUCTION_PAPER`
+- Órdenes reales: `0`
+- FCI y OPCIONES: excluidos REVERSIBLEMENTE del target del 2026-09-14; no borrar código/datos/histórico.
+- 18 producers/timers: mantener pausados hasta gate integral.
 
-## 2. CAMBIO DE ALCANCE DECIDIDO POR EL USUARIO
+Último safety snapshot read-only, run `34771504731`:
+- `porota-ppi-web-residual-rc6.service`: inactive/dead, Result=success, MainPID=0
+- `porota-ppi-fullfamily-history-rc6.service`: inactive/dead, Result=success, MainPID=0
+- procesos writers históricos detectados: 0
+- observer DB `quick_check=ok`
+- `can_simulate=1 AND AVAILABLE`: `246`
+  - ACCIONES: `55`
+  - CEDEARS: `191`
 
-### EXCLUIDOS DEL OBJETIVO READY PARA 2026-09-14
-
-1. `FCI`
-2. `OPCIONES`
-
-La exclusión es **reversible**. No borrar código, contratos, histórico, catálogo ni datos de estas familias. No contabilizarlas como resueltas ni como `DONE_EMPTY`; simplemente quedan fuera del gate de preparación para la rueda del 2026-09-14.
-
-### PRIORIDAD ACTUAL
-
-1. Conservar y validar end-to-end los instrumentos hoy simulables.
-2. Completar contratos, settlements y metadatos obligatorios de las familias restantes, priorizando `BONOS`, `LETRAS` y `ON`, luego `CAUCIONES` y `FUTUROS`.
-3. Consolidar `PPI API + PPI Web/XHR` sobre una única identidad canónica y una política explícita de precedencia/procedencia.
-4. Tratar histórico y contratos como dos ingestas distintas: NO repetir histórico masivo para resolver faltantes contractuales.
-5. Mantener los 18 producers/timers pausados hasta validación integral y reactivación controlada.
-
-## 3. LÓGICA CANÓNICA DE INGESTA — ACLARACIÓN IMPORTANTE
-
-Hay dos flujos distintos y no deben confundirse:
+## 2. DOS INGESTAS DISTINTAS — NO CONFUNDIR
 
 ### A. HISTÓRICO DE PRECIOS / VELAS
 
-Objetivo: alimentar al motor de decisión con series históricas.
-
-Estado:
-- corrida masiva PPI API: cerrada; NO repetir completa;
-- corrida PPI Web residual: cerrada; NO repetir completa;
-- reconciliar lo ya descargado entre stores;
-- cualquier nueva adquisición histórica debe ser residual, dirigida y justificada.
+Sirve al motor de decisión. La ingesta masiva PPI API ya cerró y la corrida Web residual también cerró. No repetir ninguna completa. Reconciliar stores y adquirir sólo residuales verdaderos y dirigidos.
 
 ### B. CONTRATOS / METADATOS OPERATIVOS
 
-Objetivo: saber cómo se puede operar correctamente un instrumento.
+Sirve para saber CÓMO operar correctamente un instrumento: identidad, mercado, moneda, settlement real, min/step/lote, precisión/tick, nominal, lámina mínima, ISIN, vencimiento, cupón/amortización, ratio CEDEAR, multiplicadores/margen de futuros, cauciones, costos, etc.
 
-Incluye, según familia: ticker/identidad, mercado, settlement real, moneda, mínimo/step/lote, precisión/tick, nominal, lámina mínima, ISIN, vencimiento, cupón, amortización, relación CEDEAR, multiplicador de futuros, márgenes, reglas de caución, costos y demás términos necesarios para sizing/órdenes.
+Precedencia por campo:
+1. PPI API estructurada válida.
+2. PPI Web/XHR autenticada como complemento.
+3. IOL sólo residual final después de reconciliar PPI, salvo decisión explícita.
 
-Precedencia:
-1. `PPI API` estructurada cuando el dato está presente y validado.
-2. `PPI Web/XHR autenticada` como complemento/fallback por campo.
-3. `IOL` sólo residual final después de reconciliar PPI, salvo decisión explícita.
+Histórico completo != contrato completo != READY end-to-end.
 
-Un histórico completo NO vuelve READY a un instrumento si su contrato está incompleto.
+## 3. HISTÓRICO PPI — ESTADO CERRADO
 
-## 4. RESULTADO FINAL DE LA CORRIDA PPI WEB RESIDUAL
+PPI API full-family: corrida masiva cerrada sobre `1960`; no rerun completo.
 
-Run: `PPI-WEB-RESIDUAL-20260913-001`
-Servicio: `porota-ppi-web-residual-rc6.service`
-Root durable: `/opt/porota-ingest/ppi-web-residual`
+PPI Web residual run `PPI-WEB-RESIDUAL-20260913-001`:
+- TOTAL `642/642`
+- ERROR `494`
+- DONE_PARTIAL `117`
+- DONE_EMPTY `31`
+- DONE_VALID `0`
+- pending/running `0`
 
-Resultado final:
-- TOTAL: `642/642`
-- ERROR: `494`
-- DONE_PARTIAL: `117`
-- DONE_EMPTY: `31`
-- DONE_VALID: `0`
-- PENDING: `0`
-- RUNNING: `0`
+Errores Web NO-OPCIONES exactos:
+- ON 42
+- LICITACIONES 18
+- FUTUROS 9
+- CAUCIONES 8
+- LETRAS 6
+- LEBACS 1
+- total 84
 
-Clasificación exacta de errores Web NO-OPCIONES ya obtenida:
-- `ON`: 42
-- `LICITACIONES`: 18
-- `FUTUROS`: 9
-- `CAUCIONES`: 8
-- `LETRAS`: 6
-- `LEBACS`: 1
-- Total NO-OPCIONES exacto: `84`
+BONOS: 0 ERROR Web; 5 `DONE_PARTIAL`, 1015 filas válidas de 1220 recibidas.
 
-`BONOS` no tuvo ERROR Web en ese residual; sus 5 residuales quedaron `DONE_PARTIAL` y aportaron 1015 filas válidas de 1220 recibidas.
+## 4. HISTÓRICO DE LOS 246 SIMULABLES
 
-### Semáforo Web
+Reconciliación de todos los stores:
+- cubiertos: `239/246 = 97,15%`
+- ACCIONES `55/55`
+- CEDEARS `184/191`
+- residual real: 7 CEDEAR
 
-- 🟢 corrida finalizada 642/642
-- 🟢 state durable preservado
-- 🟢 single-writer histórico respetado
-- 🟢 API historical writer inactivo
-- 🔴 OPCIONES: fuera del objetivo inmediato
-- 🟡 errores NO-OPCIONES: ya clasificados; tratar sólo los útiles para READY
-- 🟡 PARTIAL/EMPTY: reconciliar con API antes de declarar faltante real
+Los 7:
+`CRWVC`, `CVSC`, `MRVLC`, `VIVTC`, `VIVTD`, `VRTXC`, `VXXC`.
 
-## 5. SAFETY / WRITERS — ÚLTIMO SNAPSHOT VERIFICADO
+### RCA de los 7 — NUEVO HALLAZGO CONFIRMADO
 
-Workflow paralelo: `RC6 READY parallel RCA 2026-09-13`
-Run exitoso: `34763546320`
-Jobs: `6/6 success`.
+Run `34771504731`, job `cedear-seven-rca`, success.
 
-Estado runtime leído en modo read-only:
-- `porota-ppi-web-residual-rc6.service`: `inactive/dead`, `Result=success`, `MainPID=0`
-- `porota-ppi-fullfamily-history-rc6.service`: `inactive/dead`, `Result=success`, `MainPID=0`
-- procesos writer históricos detectados: `0`
-- observer DB `quick_check=ok`
-- `candidate_universe_rows=911`
-- `can_simulate=1 AND status=AVAILABLE`: `246`
-  - `ACCIONES`: `55`
-  - `CEDEARS`: `191`
+Los 7 son instrumentos vigentes en catálogo/API, están en `candidate_universe` como `can_simulate=1`, `AVAILABLE`, `READY_PAPER_SPOT`, tienen market snapshots y actividad PAPER. No son simples aliases ni símbolos muertos.
 
-No cambiar `PRODUCTION_PAPER`. No habilitar órdenes reales.
+En los ledgers PPI históricos aparecen repetidamente con `provider_rows=0`, `valid_rows=0`, `EMPTY_OR_INVALID`; en `ppi_history_ingest_tasks` quedaron `DONE_EMPTY` con provider=0. Por lo tanto son gaps genuinos del history provider PPI API actual.
 
-## 6. HISTÓRICO DE LOS 246 HOY SIMULABLES
+Próxima regla: antes de IOL, reconciliar estos 7 contra el state/capturas de la corrida PPI Web cerrada. Sólo si PPI Web tampoco aporta histórico, pasan a residual externo final.
 
-Reconciliación read-only sobre todos los stores históricos:
-- total simulables: `246`
-- con evidencia histórica en al menos un store: `239/246` = `97,15%`
-- faltantes reales en todos los stores examinados: `7`
+## 5. RCA CERRADO DE 4 ON
 
-Por familia:
-- `ACCIONES`: `55/55` cubiertas
-- `CEDEARS`: `184/191` cubiertos
+`MRCGC`: provider180/dropped_old180/rows_365d0  
+`MRCGD`: 339/339/0  
+`MRCLC`: 279/279/0  
+`MRCPO`: 480/480/0
 
-Residual exacto de 7 CEDEAR:
-- `CRWVC`
-- `CVSC`
-- `MRVLC`
-- `VIVTC`
-- `VIVTD`
-- `VRTXC`
-- `VXXC`
+PPI sí devolvió filas pero todas estaban fuera de 365 días. No hacer retry ciego.
 
-Regla: NO rerun masivo. Primero RCA de estos 7 usando tasks/attempt ledgers/catálogo; sólo después, si son faltantes verdaderos y vigentes, adquisición histórica dirigida.
+## 6. DASHBOARD / READY ACTUAL
 
-## 7. RCA CERRADO DE 4 ON CON HTTP 200 PERO 0 FILAS VÁLIDAS
+Flujo visual localizado:
+`bg_paper_dashboard.instruments_page -> _family_ux_table -> _family_ux_snapshot -> catalog_family_coverage.ready_paper_count`.
 
-Instrumentos:
-- `MRCGC`: provider 180, dropped_old 180, rows_365d 0
-- `MRCGD`: provider 339, dropped_old 339, rows_365d 0
-- `MRCLC`: provider 279, dropped_old 279, rows_365d 0
-- `MRCPO`: provider 480, dropped_old 480, rows_365d 0
+`ready_paper_count` cuenta `capability == READY_PAPER_SPOT`.
 
-Conclusión: PPI sí devolvió histórico, pero todas las filas estaban fuera de la ventana de 365 días. No es un error de transporte ni justifica retry ciego.
+Observado:
+- ACCIONES `55/55`
+- CEDEAR `191/191`
 
-## 8. CONTRACT EVIDENCE V2 — ESTADO
+Esto explica el dashboard pero NO equivale a autorización end-to-end.
 
-Tablas runtime presentes:
+## 7. CONTRACT EVIDENCE V2
+
+Tablas runtime:
 - `contract_evidence_v2_current`
 - `contract_evidence_v2_snapshots`
 - `contract_evidence_v2_changes`
 
-Identidades con evidencia v2 observadas: `447`.
+Identidades actuales con evidencia: `447`.
 
-Fuentes existentes incluyen `PPI_AUTHENTICATED_XHR` y `PPI_AUTHENTICATED_WEB`.
-
-La matriz de diagnóstico raw produjo `complete_execution=0/447`, PERO **NO interpretar ese 0 como resultado contractual final**, porque ese job inspeccionó `evidence_json` crudo y siguió marcando `ticker`, `market` y `settlement` como ausentes aunque forman parte de la identidad canónica del registro. El evaluador fue corregido después para reutilizar identidad unánime y fallar cerrado si existe discrepancia.
-
-### Corrección ya aplicada
-
-Se corrigió Contract Evidence v2 para:
-- no tratar metadatos de recolección como conflictos financieros;
-- reutilizar `ticker/market/settlement` de la identidad canónica cuando son unánimes;
-- marcar `CONFLICT` si fuentes/registro discrepan en cualquiera de esos campos;
-- no promover automáticamente ningún instrumento.
+Se corrigió `cp_contract_evidence_v2_hf6.py` para:
+- no confundir metadata de recolección con conflicto financiero;
+- reutilizar `ticker/market/settlement` de la identidad canónica cuando es unánime;
+- fail-closed si record key o payload discrepan;
+- nunca autoactivar.
 
 Regresiones: `7/7 PASS`.
 
-Tests confirmados:
-- diferencias sólo de metadata no son conflicto financiero;
-- desacuerdo de settlement en record key falla cerrado;
-- payload vs record key discrepante falla cerrado;
-- identidad unánime se inyecta correctamente;
-- metadata no puede ocultar un conflicto contractual real;
-- diferencias financieras reales siguen siendo conflicto;
-- mismo valor financiero desde múltiples fuentes no es conflicto.
+### MATRIZ CONTRACTUAL POST-FIX — NUEVO HALLAZGO
 
-## 9. DATOS TÉCNICOS / COLECTOR CONTRACTUAL
+Run `34771504731`, job `contract-postfix-matrix`, success. Se usó el evaluador real corregido `family_readiness_state`, no merge raw.
 
-Se inspeccionaron `2695` archivos bajo `/opt/porota-ingest` y `/opt/porota-trading` buscando referencias operativas a `DatosTecnicos`.
+- identidades v2: `447`
+- identidades target tras excluir FCI/FCI_EXTERIOR/OPCIONES actuales: `444`
+- conflictos detectados: `0`
+- `READY_PAPER_CANDIDATE` contractualmente completos: `0`
+- quick wins con <=2 campos faltantes: `0`
 
-Resultado:
-- `match_count=1`
-- única referencia: `/opt/porota-trading/PATCH_HF6_CONTRACT_EVIDENCE_V2_WIP.md`
-- path mencionado: `/DatosTecnicos`
+El falso faltante de `ticker/market/settlement` desapareció, confirmando el fix. Los faltantes restantes son reales según el gate contractual actual.
 
-Conclusión: **no hay hoy un colector operativo vivo de `DatosTecnicos` demostrado**. No asumir que existe. Hay que leer la especificación WIP y construir/adaptar un colector mínimo, autenticado y read-only si la ruta/semántica queda confirmada.
+Por familia:
+- ACCIONES 55: faltan en las 55 `cost_model`, `price_precision`, `quantity_min`, `quantity_step`; además currency1/instrument_id1.
+- CEDEARS 192: faltan en las 192 `conversion_ratio`, `cost_model`, `price_precision`, `quantity_min`, `quantity_step`; además currency1/instrument_id1.
+- BONOS 43: faltan en las 43 `amortization_terms`, `cost_model`, `coupon_terms`, `isin`, `lamina_minima`, `maturity`, `nominal_value`, `price_precision`, `price_unit_nominals`, `quantity_min`, `quantity_step`; además currency1/instrument_id1.
+- LETRAS 18: faltan en las 18 `cost_model`, `lamina_minima`, `maturity`, `nominal_value`, `price_precision`, `price_unit_nominals`, `quantity_min`, `quantity_step`; currency2/instrument_id2.
+- ON 85: faltan en las 85 `amortization_terms`, `cost_model`, `coupon_terms`, `isin`, `lamina_minima`, `maturity`, `nominal_value`, `payment_currency`, `price_precision`, `price_unit_nominals`, `quantity_min`, `quantity_step`; currency1/instrument_id1.
+- FUTUROS 43: faltan masivamente campos especializados (underlying, expiry, multiplier, quantity_step, tick/tick_value, margin, settlement/adjustment rules, trading hours, cost model, etc.).
+- CAUCIONES: evidencia incompleta de sus campos dinámicos/especializados.
 
-No iniciar navegador masivo ni scraping general para esto.
+Conclusión: el cuello de botella principal ya NO es histórico masivo; es poblar Contract Evidence v2 con metadatos contractuales reales.
 
-## 10. REGLA DE CONSOLIDACIÓN PPI API + WEB
+## 8. COLECTOR CONTRACTUAL — CORRECCIÓN DE DIAGNÓSTICO
 
-La consolidación debe ser por identidad canónica y por campo, no por concatenación de datasets.
+El barrido del filesystem vivo había encontrado sólo una referencia WIP a `DatosTecnicos`, por lo que no estaba demostrado un colector DESPLEGADO/VIVO en servidor.
 
-1. `PPI API` prima cuando hay dato válido y consistente.
-2. `PPI Web/XHR` complementa campos faltantes.
-3. Una fuente de menor calidad no sobrescribe silenciosamente una de mayor calidad.
-4. Conservar `source/provenance`, observación y conflictos.
-5. No fuzzy matching silencioso.
-6. Alias explícito vigente: `MRCTO -> MRCAC`.
-7. No datos sintéticos.
-8. No segundo historical writer concurrente.
-9. Conflictos críticos => fail-closed.
+La rama canónica sí contiene código reutilizable. Run `34771504731`, job `contract-collector-map`, success:
 
-## 11. SETTLEMENT / PLAZOS
+- `rc6_trusted_browser_contract_collector.py`
+  - targets: `InstrumentosOperables`, `CaucionesOperables`, `ConfiguracionOperatoriaSimplificada`, `SubyacenteOpciones`, `DatosTecnicos`
+  - sólo permite GET/HEAD/OPTIONS después de validar sesión
+  - bloquea requests no-read
+  - no rellena cantidad/precio
+  - no tiene imports de órdenes
+  - sanitiza respuestas
+- `rc6_contract_capture_importer.py`
+  - importa `InstrumentosOperables`, `CaucionesOperables`, `DatosTecnicos` a Contract Evidence v2
+  - escribe sólo evidence/audit; no cambia eligibility ni activa instrumentos
+- `rc6_ppi_contract_normalizer.py`
+  - normaliza InstrumentosOperables y DatosTecnicos
+  - deliberadamente NO inventa step/tick desde cantidad de decimales
+  - DatosTecnicos extrae ISIN, lámina mínima, vencimiento, intereses, amortización, etc., pero mantiene `price_unit_nominals`, order step/tick sin inferir cuando el proveedor no los define explícitamente.
 
-- BYMA estándar desde 2024-05-27: `T+1 / 24HS`.
-- `CI`: `T+0`.
-- `48HS`: legado; no asumirlo por default.
-- Usar `PlazosOperables` reales por instrumento.
-- No fuzzy matching de plazo.
+Por lo tanto: NO construir otro colector desde cero. Primero determinar si las capturas existentes ya contienen campos útiles no mapeados y, si no, ejecutar una captura autenticada, estrecha y read-only con este código revisado.
 
-## 12. READY_PAPER — DEFINICIÓN Y CAPAS
+## 9. REGLAS DE CONSOLIDACIÓN
 
-### Dashboard / catálogo
+- identidad canónica por familia+ticker+mercado+settlement;
+- PPI API prima cuando es válida;
+- XHR/Web complementa campo por campo;
+- no overwrite silencioso;
+- provenance obligatoria;
+- conflictos críticos => fail-closed;
+- no fuzzy matching de settlement;
+- alias explícito `MRCTO -> MRCAC`;
+- no datos sintéticos.
 
-Flujo localizado:
-`bg_paper_dashboard.instruments_page -> _family_ux_table -> _family_ux_snapshot -> catalog_family_coverage.ready_paper_count`
+Settlement:
+- BYMA estándar desde 2024-05-27: T+1 / 24HS
+- CI=T+0
+- 48HS legado
+- usar `PlazosOperables` reales.
 
-`ready_paper_count` cuenta instrumentos cuyo catálogo tiene `capability == READY_PAPER_SPOT`.
+## 10. SEMÁFORO ACTUAL
 
-Observado:
-- Acciones: `55/55`
-- CEDEAR: `191/191`
+- 🟢 checkpoint continuidad
+- 🟢 safety PAPER / real orders 0
+- 🟢 writers históricos detenidos
+- 🟢 último lote paralelo 4/4 success
+- 🟢 246 simulables actuales = 55 Acciones + 191 CEDEAR
+- 🟢 histórico Acciones 55/55
+- 🟡 histórico CEDEAR 184/191; 7 provider-empty genuinos, falta reconciliar Web
+- 🟢 fix identidad/conflictos 7/7 tests
+- 🟢 matriz contractual post-fix exacta obtenida
+- 🔴 Contract Evidence v2 completo: 0/447 bajo requisitos estrictos actuales
+- 🟡 colector contractual: código existe y fue auditado a nivel de seguridad; despliegue/capturas útiles aún por comprobar
+- 🟡 BONOS/LETRAS/ON: prioridad contractual
+- 🟡 CAUCIONES/FUTUROS: contratos especializados pendientes
+- ⚪ FCI/OPCIONES: fuera del target inmediato, reversiblemente
+- ⛔ IOL: no iniciar hasta reconciliar PPI Web para residuales reales
+- ⛔ 18 producers/timers: pausados
+- 🔴 READY end-to-end integral: aún no demostrado
 
-### Gate contractual v2
+## 11. NO HACER
 
-`cp_contract_evidence_v2_hf6.py` + `cq_contract_readiness_hf6.py` evalúan evidencia, identidad, requisitos de familia, conflictos, freshness y otras condiciones. Máximo automático: `READY_PAPER_CANDIDATE`; `auto_activation_allowed=False`.
+- no órdenes reales;
+- no salir de PRODUCTION_PAPER;
+- no rerun masivo PPI API;
+- no rerun masivo PPI Web;
+- no segundo writer histórico;
+- no borrar/resetear state.sqlite3/tasks;
+- no blind retry de errores;
+- no inventar contratos/steps/ticks;
+- no iniciar IOL antes de agotar/reconciliar PPI;
+- no reactivar 18 producers/timers;
+- no usar `READY_PAPER_SPOT` visual como autorización final.
 
-### Gate end-to-end
+## 12. ÚLTIMO PASO CONFIRMADO
 
-`READY_PAPER_SPOT` visual NO equivale a READY integral. Para READY end-to-end se requiere, según familia:
-- identidad canónica;
-- contrato obligatorio completo;
-- settlement real;
-- históricos suficientes cuando el motor los requiere;
-- calendario/sesión correspondiente;
-- costos/riesgo/sizing;
-- estado operable;
-- procedencia de campos críticos;
-- ningún conflicto crítico ni default inventado.
+Workflow `RC6 READY next parallel 2026-09-13`, run `34771504731`, terminó `4/4 success` en modo diagnóstico/read-only para runtime.
 
-## 13. FCI / OPCIONES
+Quedó confirmado:
+1. safety verde y writers inactivos;
+2. 246 can_simulate sin cambios;
+3. 7 CEDEAR son gaps provider-empty reales de PPI History API;
+4. matriz contractual post-fix = 447 identidades, 0 conflictos, 0 completas bajo requisitos estrictos actuales;
+5. los falsos faltantes de ticker/market/settlement quedaron eliminados;
+6. el código RC6 ya contiene collector/importer/normalizer reutilizable para XHR/`DatosTecnicos`; no reconstruir desde cero.
 
-- FCI diferidos conocidos: `37`.
-- FCI y OPCIONES permanecen excluidos reversiblemente del target 2026-09-14.
-- No borrar ni marcar como resueltos.
+## 13. SIGUIENTE ACCIÓN EXACTA
 
-## 14. REGLAS DE SEGURIDAD / NO HACER
+Ejecutar en paralelo:
 
-- NO enviar órdenes reales.
-- NO salir de `PRODUCTION_PAPER`.
-- NO reintentar a ciegas los 494 errores Web.
-- NO reiniciar la corrida completa PPI API.
-- NO reiniciar la corrida Web completa.
-- NO regenerar manifiestos históricos congelados como atajo.
-- NO borrar `state.sqlite3`.
-- NO resetear tasks a ciegas.
-- NO iniciar IOL antes de reconciliar PPI API + Web y calcular residual verdadero, salvo decisión explícita.
-- NO deshabilitar permanentemente FCI/OPCIONES.
-- NO reactivar los 18 producers/timers todavía.
-- NO promover instrumentos READY por simple presencia de histórico.
+### CARRIL A — CEDEAR7 vs PPI WEB CERRADA
+Consultar read-only `/opt/porota-ingest/ppi-web-residual/state.sqlite3` y capturas/residual para `CRWVC,CVSC,MRVLC,VIVTC,VIVTD,VRTXC,VXXC`. Determinar si Web ya los intentó y su state/provider/valid/error. Sin red. Si Web no los intentó o existe una causa dirigida corregible, evaluar adquisición dirigida; si Web también está vacío, recién entonces residual externo/IOL.
 
-## 15. SEMÁFORO GLOBAL ACTUALIZADO
+### CARRIL B — GAP DE CAPTURA CONTRACTUAL
+Medir por familia y fuente qué keys existen hoy en `evidence_json` y qué campos requeridos faltan. Inspeccionar capturas sanitizadas existentes para saber si el dato ya fue capturado pero no mapeado, o si nunca fue capturado.
 
-- 🟢 checkpoint de continuidad: activo/canónico
-- 🟢 scope 2026-09-14: definido
-- 🟢 FCI/OPCIONES: exclusión reversible decidida
-- 🟢 PPI API histórico masivo: cerrado
-- 🟢 PPI Web residual: cerrado 642/642
-- 🟢 writers históricos: inactivos
-- 🟢 observer DB: quick_check ok
-- 🟢 simulables actuales: 246 = 55 Acciones + 191 CEDEAR
-- 🟢 histórico Acciones: 55/55
-- 🟢 histórico CEDEAR: 184/191
-- 🟡 7 CEDEAR: RCA residual pendiente
-- 🟢 Contract Evidence v2: 447 identidades con evidencia
-- 🟢 fix de conflictos/identidad: 7/7 tests PASS
-- 🟡 matriz contractual post-fix: pendiente de recalcular con el evaluador corregido
-- 🟡 Bonos/Letras/ON: prioridad contractual alta
-- 🟡 Cauciones/Futuros: contratos especializados pendientes
-- 🔴 colector `DatosTecnicos`: no existe operativo; adaptar/implementar mínimo read-only
-- ⛔ IOL: no iniciar todavía
-- ⛔ 18 producers/timers: mantener pausados
-- 🔴 READY end-to-end integral: todavía NO demostrado
+### CARRIL C — COLECTOR EXISTENTE
+Leer y reutilizar `rc6_trusted_browser_contract_collector.py`, `rc6_contract_capture_importer.py`, `rc6_ppi_contract_normalizer.py`. Diseñar sólo el mínimo cambio necesario. No desplegar navegador masivo. Cualquier captura futura debe ser autenticada, read-only, de rutas concretas y con autoactivación imposible.
 
-## 16. ÚLTIMO PASO CONFIRMADO
-
-El último lote paralelo `RC6 READY parallel RCA 2026-09-13` terminó `6/6 success` sobre HEAD `a71d6f57ffabbd548bdb9a9833d0026667690ec2`.
-
-Se confirmó:
-1. safety/read-only verde y writers históricos detenidos;
-2. 246 instrumentos actualmente simulables;
-3. 239/246 tienen histórico en al menos un store;
-4. sólo 7 CEDEAR carecen de histórico localizado;
-5. los 4 ON investigados no requieren retry ciego: sus filas son antiguas y quedan fuera de 365 días;
-6. Contract Evidence v2 contiene 447 identidades;
-7. la matriz raw 0/447 estaba afectada por la forma de diagnóstico de identidad y debe recalcularse usando el evaluador corregido;
-8. el fix de identidad/conflictos tiene 7/7 regresiones verdes;
-9. no existe un colector operativo demostrado de `DatosTecnicos`.
-
-No se iniciaron writers históricos, no se reactivaron producers/timers y no se enviaron órdenes reales.
-
-## 17. SIGUIENTE ACCIÓN EXACTA
-
-Ejecutar en paralelo, sin compartir writers:
-
-### CARRIL A — MATRIZ CONTRACTUAL POST-FIX
-1. Evaluar las `447` identidades con el evaluador real corregido, no con merge raw ad-hoc.
-2. Obtener por familia/instrumento: `READY_PAPER_CANDIDATE`, `HOLD/BLOCKED`, campos faltantes, conflictos, stale, costos/simulador.
-3. Separar faltantes reales de falsos faltantes ya resueltos por identidad canónica.
-
-### CARRIL B — 7 CEDEAR SIN HISTÓRICO LOCALIZADO
-1. Inspeccionar `history_attempt_ledger_v2`, `production_history_attempts`, tasks PPI y aliases/identidad para esos 7.
-2. Determinar si son símbolos activos/válidos, aliases, provider empty, inválidos, o verdaderamente no ingeridos.
-3. Sólo si el faltante es real: adquisición dirigida de esos 7, nunca rerun masivo.
-
-### CARRIL C — COLECTOR CONTRACTUAL MÍNIMO
-1. Leer `PATCH_HF6_CONTRACT_EVIDENCE_V2_WIP.md` y código de importadores existentes.
-2. Confirmar la ruta/forma de `DatosTecnicos` sin inventar endpoint ni parámetros.
-3. Implementar/adaptar sólo el colector read-only mínimo necesario para completar campos críticos de `BONOS`, `LETRAS` y `ON`.
-4. Preservar provenance y fail-closed; no auto-activar.
-
-### CARRIL D — QUICK WINS DE READY
-1. Con la matriz post-fix, priorizar instrumentos que sólo tengan 1-2 campos críticos faltantes.
-2. No bloquear por metadata puramente accesoria.
-3. No relajar contrato, settlement, calendarios, costos o riesgo.
+### CARRIL D — PRIORIZACIÓN READY
+Con la evidencia del carril B, priorizar primero campos comunes que destraben bloques grandes (quantity_min/step, price_precision, cost_model, conversion_ratio y términos de renta fija) sin convertir decimales en step/tick por inferencia.
 
 ### CARRIL E — CHECKPOINT
-Después de cada hito material, actualizar este archivo con:
-- evidencia;
-- semáforo;
-- `ÚLTIMO PASO CONFIRMADO`;
-- `SIGUIENTE ACCIÓN EXACTA`.
+Actualizar este archivo después del próximo hito material.
 
 ---
 
-**Regla para cualquier chat siguiente:** este archivo es el único punto canónico de reanudación. Los checkpoints anteriores sirven sólo como antecedente. No recomenzar la ingesta histórica masiva ni volver a diagnosticar temas ya cerrados sin nueva evidencia.
+**Regla para nuevo chat:** leer este archivo primero. No recomenzar ingesta histórica masiva ni volver a diagnosticar puntos ya cerrados salvo evidencia nueva.
