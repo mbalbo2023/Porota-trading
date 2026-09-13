@@ -1,0 +1,45 @@
+name: RC6 PPI Web server prep validate 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-scraper-20260912]
+    paths:
+      - 'ops/ppi_web_residual_state_rc6.py'
+      - 'ops/porota-ppi-web-residual-rc6.service'
+      - 'tests/test_ppi_web_residual_state_rc6.py'
+      - '.github/workflows/rc6-ppi-web-server-prep-validate-20260913.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Compile state layer
+        run: python -m py_compile ops/ppi_web_residual_state_rc6.py
+      - name: Install pytest
+        run: python -m pip install -q pytest
+      - name: Resume/idempotency tests
+        run: pytest -q tests/test_ppi_web_residual_state_rc6.py
+      - name: Static service safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=ops/porota-ppi-web-residual-rc6.service
+          grep -q '^ConditionPathExists=/opt/porota-ingest/ppi-web-residual/ENABLED$' "$f"
+          grep -q '^Restart=on-failure$' "$f"
+          grep -q '/run/lock/porota-ppi-web-residual-rc6.lock' "$f"
+          grep -q '^NoNewPrivileges=true$' "$f"
+          grep -q '^ProtectSystem=full$' "$f"
+          ! grep -Eq 'WantedBy=.*default.target|ExecStart=.*curl|ExecStart=.*wget' "$f"
+      - name: Prove state layer has no browser broker or network capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Eiq 'playwright|selenium|requests\.|urllib\.request|send_order|place_order|buy_order|sell_order|ppi-client' ops/ppi_web_residual_state_rc6.py
