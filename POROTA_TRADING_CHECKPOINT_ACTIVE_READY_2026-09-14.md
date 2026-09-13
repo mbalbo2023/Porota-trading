@@ -127,36 +127,56 @@ Los campos exactos y gates existentes en código deben auditarse antes de agrega
 - NO borrar ni deshabilitar permanentemente FCI/OPCIONES; sólo excluirlas del target actual.
 - NO reactivar los 18 producers/timers todavía.
 
-## 9. SEMÁFORO GLOBAL AL CREAR ESTE CHECKPOINT
+## 9. SEMÁFORO GLOBAL ACTUALIZADO
 
 - 🟢 Alcance para mañana: definido
 - 🟢 FCI: decisión tomada, excluido reversiblemente
 - 🟢 OPCIONES: decisión tomada, excluido reversiblemente
 - 🟢 PPI Web residual: corrida finalizada
 - 🟢 Safety PAPER / real orders=0: última comprobación verde
-- 🟡 Consolidación PPI API + Web: por implementar/auditar
-- 🟡 Contratos/metadatos de familias restantes: inventario pendiente inmediato
+- 🟢 Clasificador visual `/instrumentos`: trazado hasta su fuente real
+- 🟢 Acciones: `55/55` observadas aparecen `READY_PAPER` en el catálogo/runtime mostrado
+- 🟢 CEDEAR: `191/191` observadas aparecen `READY_PAPER` en el catálogo/runtime mostrado
+- 🟡 Consolidación PPI API + Web: la infraestructura v2 ya existe; falta poblarla/reconciliarla con la evidencia actual y usarla como gate estricto
+- 🟡 Contratos/metadatos de familias restantes: inventario de campos faltantes localizado en código; falta medición runtime exacta por instrumento
 - 🟡 Errores Web no-OPCIONES: clasificación pendiente
-- 🔴 READY_PAPER por familia: todavía NO demostrado
+- 🟡 READY_PAPER mostrado en dashboard: es evidencia contractual/capability de catálogo, NO autorización end-to-end por sí sola
 - ⛔ IOL residual: no iniciar todavía
 - ⛔ 18 producers/timers: mantener pausados
 
 ## 10. ÚLTIMO PASO CONFIRMADO
 
-Se fijó el nuevo alcance (FCI + OPCIONES fuera de objetivo) y se comenzó la inspección de la rama canónica para localizar la lógica existente de catálogo, contratos, settlement y `READY_PAPER`. No se ha modificado todavía esa lógica ni se han hecho retries históricos.
+Se trazó la pantalla `/instrumentos` hasta la lógica exacta que genera el estado mostrado. El flujo es `bg_paper_dashboard.instruments_page -> _family_ux_table -> _family_ux_snapshot -> catalog_family_coverage.ready_paper_count`. El badge de familia se muestra `READY_PAPER` cuando `ready_paper_count > 0`; la columna `READY PAPER` contiene el conteo exacto.
+
+`catalog_family_coverage.ready_paper_count` se calcula en `bu_instrument_catalog.persist_family_coverage` contando registros cuya `capability == READY_PAPER_SPOT`. En la evidencia visual aportada por el usuario: Acciones `55/55` y CEDEAR `191/191` aparecen READY en ese catálogo/runtime.
+
+También se confirmó que existe un gate contractual v2 más estricto (`cp_contract_evidence_v2_hf6.py` + `cq_contract_readiness_hf6.py`) que evalúa identidad, campos obligatorios por familia, conflictos entre fuentes, freshness, costo y simulador. Su máximo automático es `READY_PAPER_CANDIDATE`; `auto_activation_allowed=False`. Por lo tanto, NO crear un tercer clasificador: consolidar el catálogo existente con este gate v2 y el gate final de integración.
+
+El propio dashboard advierte que la cobertura/compatibilidad PAPER del catálogo no acredita permisos ni implica ejecución real; faltan los demás portones. Esta diferencia queda fijada como regla para no confundir `READY_PAPER_SPOT` de catálogo con READY end-to-end.
 
 ## 11. SIGUIENTE ACCIÓN EXACTA
 
-**Auditoría read-only del código actual de la rama canónica para localizar y mapear:**
+1. Auditar las fuentes contractuales ya implementadas para `BONOS`, `LETRAS`, `ON`, `CAUCIONES`, `FUTUROS`, `ETF` y `ACCIONES_USA` (FCI/OPCIONES fuera del target inmediato).
+2. Medir en runtime, read-only, la matriz exacta por familia e instrumento: observados, `READY_PAPER_SPOT`, evidencia v1/v2, campos obligatorios faltantes, conflictos, stale, costo/simulador y `READY_PAPER_CANDIDATE`.
+3. Reutilizar `Contract Evidence v2` como capa canónica de reconciliación API + Web, respetando precedencia/procedencia y fail-closed ante contradicciones.
+4. Implementar sólo los adaptadores/capturas mínimas faltantes que destraben instrumentos seguros para 2026-09-14.
+5. Mantener `PRODUCTION_PAPER`, órdenes reales `0`, histórico API/Web sin nuevo writer y producers/timers pausados hasta el gate integral.
 
-1. modelo/catálogo de instrumentos;
-2. fuente PPI API de contratos/metadatos;
-3. fuente PPI Web equivalente/complementaria;
-4. reglas de settlement/plazos;
-5. gates/validadores que determinan operabilidad o `READY_PAPER`;
-6. familias NO-FCI/NO-OPCIONES presentes y campos críticos faltantes.
+## 12. HALLAZGO CANÓNICO — SEMÁNTICA DEL DASHBOARD `/instrumentos`
 
-Después de ese inventario, producir una matriz por familia `READY / BLOQUEADO / FALTA CAMPO`, y recién entonces implementar cambios mínimos sobre la lógica existente.
+### Capa visual/catalogal existente
+
+- `READY_PAPER` visible en la tabla NO es inventado ni decorativo.
+- La pantalla lee `catalog_family_coverage` y expone `ready_paper_count`.
+- Ese conteo proviene de `READY_PAPER_SPOT` en `financial_instrument_catalog`.
+- La etiqueta de familia pasa a `READY_PAPER` con al menos un registro compatible; por eso para evaluar cobertura completa se debe usar el conteo `READY PAPER`, no sólo el badge.
+- Acciones/CEDEAR BYMA pueden obtener contrato spot reconocido mediante la política explícita del catálogo; no extrapolar esa convención a renta fija, derivados, cauciones o FCI.
+
+### Capa contractual v2 existente
+
+`cq_contract_readiness_hf6.py` define campos obligatorios por familia y falla cerrado ante faltantes, stale o conflicto. `cp_contract_evidence_v2_hf6.py` persiste evidencia versionada por identidad `(familia,ticker,market,settlement)`, conserva procedencia por fuente, detecta contradicciones y nunca auto-activa una familia.
+
+La estrategia canónica desde este punto es **reconciliar y completar estas capas existentes**, no crear una clasificación paralela.
 
 ---
 
