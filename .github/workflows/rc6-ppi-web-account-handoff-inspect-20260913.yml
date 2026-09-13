@@ -1,0 +1,99 @@
+name: RC6 PPI Web sanitized account handoff inspect 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-account-handoff-inspect-20260913.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect sanitized account handoff under browser lock
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          sudo -n flock -w 240 /run/lock/porota-ppi-web-browser.lock runuser -u porotaadmin -- env HOME=/home/porotaadmin \
+            SECRET=/etc/porota/contract-evidence-web.env PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile \
+            /opt/porota-contract-evidence-venv/bin/python - <<'PY'
+          import os,re,json
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          from playwright.sync_api import sync_playwright
+          vals={}
+          for raw in Path(os.environ['SECRET']).read_text(encoding='utf-8').splitlines():
+              s=raw.strip()
+              if s and not s.startswith('#') and '=' in s:
+                  k,v=s.split('=',1); vals[k.strip()]=v.strip().strip('"').strip("'")
+          user=vals.get('PPI_WEB_USERNAME',''); password=vals.get('PPI_WEB_PASSWORD','')
+          assert user and password
+          login_keys={('api.portfoliopersonal.com','/api/Seguridad/Auth/Login'),('cuenta.portfoliopersonal.com','/api/Seguridad/Auth/Login')}
+          auth_status=[]; blocked=[]
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(user_data_dir=os.environ['PROFILE'],executable_path='/usr/bin/google-chrome-stable',headless=True,locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',args=['--no-sandbox','--disable-dev-shm-usage'])
+              page=ctx.pages[0] if ctx.pages else ctx.new_page(); page.set_default_timeout(8000)
+              def guard(route,request):
+                  u=urlsplit(request.url); m=request.method.upper(); key=(u.netloc,u.path.rstrip('/') or '/')
+                  if m in {'GET','HEAD','OPTIONS'}: return route.continue_()
+                  if m=='POST' and key in login_keys: return route.continue_()
+                  blocked.append((m,u.netloc,u.path)); return route.abort()
+              def obs(response):
+                  u=urlsplit(response.url); key=(u.netloc,u.path.rstrip('/') or '/')
+                  if response.request.method.upper()=='POST' and key in login_keys: auth_status.append(int(response.status))
+              ctx.route('**/*',guard); page.on('response',obs)
+              page.goto('https://cuenta.portfoliopersonal.com/login',wait_until='domcontentloaded',timeout=30000)
+              un=page.locator('#username'); pwf=page.locator('#password'); btn=page.locator("button:has-text('Ingresar')")
+              un.fill(user); pwf.fill(password); btn.click(no_wait_after=True); page.wait_for_timeout(4500)
+              u=urlsplit(page.url); print('ACCOUNT_AFTER_LOGIN='+f'{u.scheme}://{u.netloc}{u.path}')
+              print('AUTH_HTTP_STATUS='+str(auth_status[-1] if auth_status else 'NONE'))
+              links=[]
+              q=page.locator('a[href]')
+              for i in range(min(q.count(),120)):
+                  n=q.nth(i)
+                  try:
+                      href=n.get_attribute('href') or ''
+                      if not href: continue
+                      hu=urlsplit(href if '://' in href else 'https://cuenta.portfoliopersonal.com'+('/' if not href.startswith('/') else '')+href)
+                      if hu.netloc.endswith('portfoliopersonal.com'):
+                          txt=re.sub(r'\s+',' ',n.inner_text(timeout=700)).strip()[:120]
+                          item=(txt,hu.scheme,hu.netloc,hu.path)
+                          if item not in links: links.append(item)
+                  except Exception: pass
+              for idx,(txt,scheme,host,path) in enumerate(links[:80]):
+                  print(f'PPI_LINK_{idx}_TEXT={txt}')
+                  print(f'PPI_LINK_{idx}_URL={scheme}://{host}{path}')
+              buttons=[]
+              b=page.locator('button')
+              for i in range(min(b.count(),60)):
+                  try:
+                      if b.nth(i).is_visible():
+                          t=re.sub(r'\s+',' ',b.nth(i).inner_text(timeout=700)).strip()[:120]
+                          if t and t not in buttons: buttons.append(t)
+                  except Exception: pass
+              for idx,t in enumerate(buttons): print(f'BUTTON_{idx}={t}')
+              print('BLOCKED_MUTATIONS='+str(len(blocked)))
+              print('CREDENTIALS_PRINTED=NO')
+              print('COOKIES_TOKENS_PRINTED=NO')
+              print('REAL_ORDERS_SENT=0')
+              ctx.close()
+          PY
+          HOST
