@@ -1,0 +1,106 @@
+PROBE=RC6_CONTRACT_CAPTURE_RUNTIME_FOCUSED_V1
+NOW_UTC=2026-09-13T23:46:09Z
+SERVER_HEAD=a47f3339ec6dfe9d5afde444b1aaddabceb0e94d
+---SERVICE_SHOW---
+Result=success
+ExecMainStatus=0
+ExecStart={ path=/usr/local/sbin/porota-contract-evidence-rc6-tradingday.sh ; argv[]=/usr/local/sbin/porota-contract-evidence-rc6-tradingday.sh ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
+WorkingDirectory=/opt/porota-trading
+User=
+Group=
+ActiveState=inactive
+SubState=dead
+FragmentPath=/etc/systemd/system/porota-contract-evidence-rc6.service
+---TIMER_SHOW---
+NextElapseUSecRealtime=
+LastTriggerUSec=
+ActiveState=inactive
+SubState=dead
+FragmentPath=/etc/systemd/system/porota-contract-evidence-rc6.timer
+---UNIT_TEXT_SAFE---
+# /etc/systemd/system/porota-contract-evidence-rc6.service
+[Unit]
+Description=Porota RC6 native authenticated Contract Evidence (read-only PPI web)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+# Optional protected host configuration. It may define
+# POROTA_PPI_WEB_SECRET_FILE=/path/to/0600-browser-user-owned-secret.env.
+# The service fails closed if reauthentication is needed and the referenced
+# local secret <REDACTED> absent; no credentials are embedded in this unit.
+EnvironmentFile=-/etc/porota/contract-evidence-rc6.conf
+ExecStart=/usr/local/sbin/porota-contract-evidence-rc6-runtime.sh
+TimeoutStartSec=20min
+TimeoutStopSec=2min
+Nice=10
+
+# /etc/systemd/system/porota-contract-evidence-rc6.service.d/20-rc6-dom-extension.conf
+[Service]
+ExecStart=
+ExecStart=/usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh
+
+# /etc/systemd/system/porota-contract-evidence-rc6.service.d/30-tradingday-calendar.conf
+[Service]
+ExecCondition=/usr/local/sbin/porota-contract-evidence-rc6-calendar-guard.sh
+ExecStart=
+ExecStart=/usr/local/sbin/porota-contract-evidence-rc6-tradingday.sh
+---RUNTIME_FILES---
+FILE=/opt/porota-trading/scripts/porota_contract_evidence_hf6_runtime.sh
+9:if [ "$(docker inspect --format='{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)" != "running" ]; then
+14:IMAGE="$(docker inspect --format='{{.Config.Image}}' "$CONTAINER")"
+15:READONLY="$(docker inspect --format='{{.HostConfig.ReadonlyRootfs}}' "$CONTAINER")"
+26:# The HF6 observer rootfs is intentionally immutable. Never docker-cp code to
+42:docker exec "$CONTAINER" test -r "$CONTAINER_RUNTIME_DIR/ck_contract_evidence_runner_hf6.py"
+44:docker exec \
+48:  python "$CONTAINER_RUNTIME_DIR/ck_contract_evidence_runner_hf6.py"
+---PROFILE_PATH_STATUS---
+PROFILE=/home/porotaadmin/.config/google-chrome|type=directory|owner=porotaadmin:porotaadmin|mode=700|mtime=2026-09-02 17:19:32.768539074 +0000
+---PLAYWRIGHT_HOST---
+PY=/usr/bin/python3|PLAYWRIGHT=NO
+---RECENT_JOURNAL_SAFE---
+{"blocked_nonread": 0, "capture": "/tmp/porota-ce-dom.k6cdYI/dom_20260912T040850Z.json", "materializable_tables": 2, "real_orders_sent": 0, "routes": 2, "state": "AUTHENTICATED_TRUSTED_DEVICE"}
+{"families": ["CAUCIONES", "LICITACIONES"], "observed_at": "2026-09-12T04:08:51.241028+00:00", "real_orders_sent": 0, "recorded": [{"changed": true, "family": "CAUCIONES", "route": "/Cotizaciones/Cauciones", "snapshot_id": 1649, "status": "CHANGED_REVIEW_REQUIRED"}, {"changed": false, "family": "LICITACIONES", "route": "/Cotizaciones/Licitaciones", "snapshot_id": 1645, "status": "RECORDED"}], "records": 2, "requested_families": ["CAUCIONES", "LICITACIONES"], "skipped": [], "source_class": "PPI_AUTHENTICATED_WEB", "state": "GREEN"}
+porota-contract-evidence-rc6.service: Deactivated successfully.
+Finished porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web).
+Starting porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web)...
+AUTH_BROWSER_STARTED=NO
+{"blocked_nonread": 0, "capture": "/tmp/porota-ce-dom.ugux2N/dom_20260912T041359Z.json", "materializable_tables": 2, "real_orders_sent": 0, "routes": 2, "state": "AUTHENTICATED_TRUSTED_DEVICE"}
+{"families": ["CAUCIONES", "LICITACIONES"], "observed_at": "2026-09-12T04:13:59.905679+00:00", "real_orders_sent": 0, "recorded": [{"changed": true, "family": "CAUCIONES", "route": "/Cotizaciones/Cauciones", "snapshot_id": 1651, "status": "CHANGED_REVIEW_REQUIRED"}, {"changed": false, "family": "LICITACIONES", "route": "/Cotizaciones/Licitaciones", "snapshot_id": 1645, "status": "RECORDED"}], "records": 2, "requested_families": ["CAUCIONES", "LICITACIONES"], "skipped": [], "source_class": "PPI_AUTHENTICATED_WEB", "state": "GREEN"}
+porota-contract-evidence-rc6.service: Deactivated successfully.
+Finished porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web).
+Starting porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web)...
+AUTH_BROWSER_STARTED=NO
+{"blocked_nonread": 0, "capture": "/tmp/porota-ce-dom.LRnSzK/dom_20260912T041857Z.json", "materializable_tables": 3, "real_orders_sent": 0, "routes": 3, "state": "AUTHENTICATED_TRUSTED_DEVICE"}
+{"families": ["BONOS", "FUTUROS", "OPCIONES"], "observed_at": "2026-09-12T04:18:57.407942+00:00", "real_orders_sent": 0, "recorded": [{"changed": true, "family": "FUTUROS", "route": "/Cotizaciones/Futuros", "snapshot_id": 1653, "status": "CHANGED_REVIEW_REQUIRED"}, {"changed": true, "family": "BONOS", "route": "/Cotizaciones/Bonos", "snapshot_id": 1622, "status": "CHANGED_REVIEW_REQUIRED"}, {"changed": true, "family": "OPCIONES", "route": "/Cotizaciones/Opciones", "snapshot_id": 1655, "status": "CHANGED_REVIEW_REQUIRED"}], "records": 3, "requested_families": ["BONOS", "FUTUROS", "OPCIONES"], "skipped": [], "source_class": "PPI_AUTHENTICATED_WEB", "state": "GREEN"}
+porota-contract-evidence-rc6.service: Deactivated successfully.
+Finished porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web).
+Starting porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web)...
+AUTH_BROWSER_STARTED=NO
+{"blocked_nonread": 0, "capture": "/tmp/porota-ce-dom.ZVXvS1/dom_20260912T042357Z.json", "materializable_tables": 2, "real_orders_sent": 0, "routes": 2, "state": "AUTHENTICATED_TRUSTED_DEVICE"}
+{"families": ["CAUCIONES", "LICITACIONES"], "observed_at": "2026-09-12T04:23:57.500224+00:00", "real_orders_sent": 0, "recorded": [{"changed": true, "family": "CAUCIONES", "route": "/Cotizaciones/Cauciones", "snapshot_id": 1656, "status": "CHANGED_REVIEW_REQUIRED"}, {"changed": true, "family": "LICITACIONES", "route": "/Cotizaciones/Licitaciones", "snapshot_id": 1657, "status": "CHANGED_REVIEW_REQUIRED"}], "records": 2, "requested_families": ["CAUCIONES", "LICITACIONES"], "skipped": [], "source_class": "PPI_AUTHENTICATED_WEB", "state": "GREEN"}
+porota-contract-evidence-rc6.service: Deactivated successfully.
+Finished porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web).
+Starting porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web)...
+AUTH_BROWSER_STARTED=NO
+{"blocked_nonread": 0, "capture": "/tmp/porota-ce-dom.ng2VeP/dom_20260912T042904Z.json", "materializable_tables": 2, "real_orders_sent": 0, "routes": 2, "state": "AUTHENTICATED_TRUSTED_DEVICE"}
+{"families": ["CAUCIONES", "LICITACIONES"], "observed_at": "2026-09-12T04:29:04.510044+00:00", "real_orders_sent": 0, "recorded": [{"changed": true, "family": "CAUCIONES", "route": "/Cotizaciones/Cauciones", "snapshot_id": 1615, "status": "CHANGED_REVIEW_REQUIRED"}, {"changed": true, "family": "LICITACIONES", "route": "/Cotizaciones/Licitaciones", "snapshot_id": 1645, "status": "CHANGED_REVIEW_REQUIRED"}], "records": 2, "requested_families": ["CAUCIONES", "LICITACIONES"], "skipped": [], "source_class": "PPI_AUTHENTICATED_WEB", "state": "GREEN"}
+porota-contract-evidence-rc6.service: Deactivated successfully.
+Finished porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web).
+Starting porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web)...
+AUTH_BROWSER_STARTED=NO
+{"blocked_nonread": 0, "capture": "/tmp/porota-ce-dom.TWOcR8/dom_20260912T043418Z.json", "materializable_tables": 5, "real_orders_sent": 0, "routes": 5, "state": "AUTHENTICATED_TRUSTED_DEVICE"}
+{"families": ["BONOS", "CAUCIONES", "FUTUROS", "LICITACIONES", "OPCIONES"], "observed_at": "2026-09-12T04:34:18.612246+00:00", "real_orders_sent": 0, "recorded": [{"changed": true, "family": "CAUCIONES", "route": "/Cotizaciones/Cauciones", "snapshot_id": 1660, "status": "CHANGED_REVIEW_REQUIRED"}, {"changed": false, "family": "LICITACIONES", "route": "/Cotizaciones/Licitaciones", "snapshot_id": 1645, "status": "RECORDED"}, {"changed": true, "family": "FUTUROS", "route": "/Cotizaciones/Futuros", "snapshot_id": 1662, "status": "CHANGED_REVIEW_REQUIRED"}, {"changed": true, "family": "BONOS", "route": "/Cotizaciones/Bonos", "snapshot_id": 1663, "status": "CHANGED_REVIEW_REQUIRED"}, {"changed": true, "family": "OPCIONES", "route": "/Cotizaciones/Opciones", "snapshot_id": 1664, "status": "CHANGED_REVIEW_REQUIRED"}], "records": 5, "requested_families": ["BONOS", "CAUCIONES", "FUTUROS", "LICITACIONES", "OPCIONES"], "skipped": [], "source_class": "PPI_AUTHENTICATED_WEB", "state": "GREEN"}
+porota-contract-evidence-rc6.service: Deactivated successfully.
+Finished porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web).
+Starting porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web)...
+AUTH_BROWSER_STARTED=NO
+AUTH_BROWSER_STARTED=NO
+porota-contract-evidence-rc6.service: Deactivated successfully.
+Finished porota-contract-evidence-rc6.service - Porota RC6 native authenticated Contract Evidence (read-only PPI web).
+---SAFETY_DB---
+MODE=PRODUCTION_PAPER
+REAL_ORDERS_SENT=0
+MUTATIONS=NONE
