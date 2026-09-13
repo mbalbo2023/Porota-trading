@@ -68,10 +68,7 @@ def authenticated_trading_url(value: str) -> bool:
 
 def authenticated_account_intermediate(value: str) -> bool:
     u = urlsplit(str(value))
-    return (
-        u.scheme == "https" and u.netloc == ACCOUNT_HOST
-        and u.path.rstrip("/").lower() == "/cuentas"
-    )
+    return u.scheme == "https" and u.netloc == ACCOUNT_HOST and u.path.rstrip("/").lower() == "/cuentas"
 
 
 def parse_secret(path: Path) -> tuple[str, str]:
@@ -144,8 +141,7 @@ def classify_auth(obs: dict) -> str | None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--profile", required=True); ap.add_argument("--secret", required=True)
+    ap = argparse.ArgumentParser(); ap.add_argument("--profile", required=True); ap.add_argument("--secret", required=True)
     ap.add_argument("--chrome", default=os.getenv("POROTA_CHROME_EXECUTABLE", "/usr/bin/google-chrome-stable"))
     args = ap.parse_args(); profile = Path(args.profile); secret = Path(args.secret)
     if not profile.is_dir(): print(status_payload("BLOCKED_AUTH_PROFILE_MISSING")); return 4
@@ -165,8 +161,7 @@ def main() -> int:
                 user_data_dir=str(profile), executable_path=args.chrome, headless=True,
                 locale="es-AR", timezone_id="America/Argentina/Buenos_Aires",
                 viewport={"width": 1440, "height": 1000}, args=["--no-sandbox", "--disable-dev-shm-usage"])
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            page.set_default_timeout(8000); page.set_default_navigation_timeout(15000)
+            page = ctx.pages[0] if ctx.pages else ctx.new_page(); page.set_default_timeout(8000); page.set_default_navigation_timeout(15000)
 
             def guard(route, request):
                 nonlocal blocked_post_path
@@ -209,8 +204,7 @@ def main() -> int:
                 page.wait_for_timeout(700)
 
             goto_fast(TRADING_ROOT, "OPEN_TRADING_ROOT")
-            if authenticated_trading_url(page.url):
-                ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=0)); return 0
+            if authenticated_trading_url(page.url): ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE", attempts=0)); return 0
 
             goto_fast(LOGIN_URL, "OPEN_LOGIN"); attempts = 1
             if not safe_page_url(page.url):
@@ -237,12 +231,9 @@ def main() -> int:
                 skip.click(timeout=8000,no_wait_after=True); page.wait_for_timeout(1800)
 
             if authenticated_trading_url(page.url):
-                ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE",attempts=attempts,stage=stage,page_url=page.url,auth_observation=auth_observation)); return 0
+                final=page.url; ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE",attempts=attempts,stage=stage,page_url=final,auth_observation=auth_observation)); return 0
 
-            # Current PPI flow lands on Account /cuentas. Treat it only as an
-            # intermediate authentication signal, then prove the Trading session
-            # by a read-only GET. Never infer GREEN from the API response alone.
-            if authenticated_account_intermediate(page.url) and int(auth_observation.get("http_status") or 0) in range(200,300):
+            if authenticated_account_intermediate(page.url) and 200 <= int(auth_observation.get("http_status") or 0) < 300:
                 goto_fast(TRADING_ROOT, "VERIFY_TRADING_SESSION")
                 if authenticated_trading_url(page.url):
                     final=page.url; ctx.close(); print(status_payload("AUTHENTICATED_TRUSTED_DEVICE",attempts=attempts,stage="VERIFY_TRADING_SESSION",page_url=final,auth_observation=auth_observation)); return 0
