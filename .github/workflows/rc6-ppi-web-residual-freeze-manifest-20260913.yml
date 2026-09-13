@@ -1,0 +1,137 @@
+name: RC6 PPI Web residual freeze manifest 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-ppi-web-residual-freeze-manifest-20260913.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-ppi-web-residual-freeze-manifest
+  cancel-in-progress: false
+
+jobs:
+  freeze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_freeze"
+          chmod 600 "$HOME/.ssh/porota_freeze"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage manifest generator
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/porota_freeze" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            ops/ppi_history_residual_manifest_rc6.py \
+            "$DO_USER@$DO_HOST:/tmp/ppi_history_residual_manifest_rc6.py"
+      - name: Freeze immutable residual manifest without starting scraper
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_freeze" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-ingest/ppi-web-residual
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          UNIT=porota-ppi-web-residual-rc6.service
+          API_UNIT=porota-ppi-fullfamily-history-rc6.service
+          RUN_ID=PPI-WEB-RESIDUAL-20260913-001
+          sudo -n install -d -o root -g root -m 0755 "$ROOT"
+          test ! -e "$ROOT/ENABLED"
+          test "$(sudo -n systemctl is-active "$UNIT" 2>/dev/null || true)" != active
+          test "$(sudo -n systemctl is-active "$API_UNIT" 2>/dev/null || true)" != active
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          active=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in ('PENDING','RETRYABLE','RUNNING')").fetchone()[0]
+          total=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001'").fetchone()[0]
+          print(f'{qc}|{mode}|{orders}|{active}|{total}'); c.close()
+          PY
+          )"
+          echo "SAFETY_API_GATE=$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|1960'
+          test -f "$DB"
+          TMP="$(mktemp -d /tmp/ppi-web-freeze.XXXXXX)"
+          trap 'rm -rf "$TMP" /tmp/ppi_history_residual_manifest_rc6.py' EXIT
+          python3 /tmp/ppi_history_residual_manifest_rc6.py --db "$DB" --output "$TMP/all.jsonl"
+          sudo -n python3 - "$TMP/all.jsonl" "$ROOT" "$RUN_ID" <<'PY'
+          import hashlib,json,os,sys,tempfile
+          from datetime import datetime,timezone
+          src,root,run_id=sys.argv[1:]
+          rows=[json.loads(x) for x in open(src,encoding='utf-8') if x.strip()]
+          def deferred(r):
+              fam=str(r.get('instrument_type','')).strip().upper()
+              return ('FCI' in fam) or ('FONDO' in fam)
+          runnable=[r for r in rows if not deferred(r)]
+          fci=[r for r in rows if deferred(r)]
+          def rows_digest(xs):
+              b=''.join(json.dumps(r,ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n' for r in xs).encode()
+              return hashlib.sha256(b).hexdigest()
+          def file_sha(p):
+              h=hashlib.sha256()
+              with open(p,'rb') as f:
+                  for chunk in iter(lambda:f.read(1024*1024),b''): h.update(chunk)
+              return h.hexdigest()
+          os.makedirs(root,exist_ok=True)
+          final_r=os.path.join(root,'residual.jsonl'); final_f=os.path.join(root,'deferred_fci.jsonl'); final_m=os.path.join(root,'manifest_meta.json')
+          exists=[os.path.exists(p) for p in (final_r,final_f,final_m)]
+          if any(exists) and not all(exists): raise SystemExit('PARTIAL_IMMUTABLE_MANIFEST_SET')
+          def write_atomic(path,xs):
+              fd,tmp=tempfile.mkstemp(prefix='.freeze-',dir=root,text=True); os.close(fd)
+              with open(tmp,'w',encoding='utf-8') as fh:
+                  for r in xs: fh.write(json.dumps(r,ensure_ascii=False,sort_keys=True)+'\n')
+              os.chmod(tmp,0o600); os.replace(tmp,path)
+          if not all(exists):
+              write_atomic(final_r,runnable); write_atomic(final_f,fci)
+              meta={
+                'created_at':datetime.now(timezone.utc).isoformat(),'run_id':run_id,
+                'runnable_count':len(runnable),'deferred_fci_count':len(fci),
+                'runnable_rows_sha256':rows_digest(runnable),'deferred_rows_sha256':rows_digest(fci),
+                'runnable_file_sha256':file_sha(final_r),'deferred_file_sha256':file_sha(final_f),
+                'fci_policy':'DEFERRED_PENDING_CHECKPOINT_NOT_DONE_EMPTY'
+              }
+              fd,tmp=tempfile.mkstemp(prefix='.freeze-meta-',dir=root,text=True); os.close(fd)
+              with open(tmp,'w',encoding='utf-8') as fh: json.dump(meta,fh,ensure_ascii=False,indent=2,sort_keys=True)
+              os.chmod(tmp,0o600); os.replace(tmp,final_m)
+          meta=json.load(open(final_m,encoding='utf-8'))
+          if file_sha(final_r)!=meta['runnable_file_sha256'] or file_sha(final_f)!=meta['deferred_file_sha256']: raise SystemExit('IMMUTABLE_MANIFEST_FILE_CHANGED')
+          current_r=[json.loads(x) for x in open(final_r,encoding='utf-8') if x.strip()]
+          current_f=[json.loads(x) for x in open(final_f,encoding='utf-8') if x.strip()]
+          if rows_digest(current_r)!=meta['runnable_rows_sha256'] or rows_digest(current_f)!=meta['deferred_rows_sha256']: raise SystemExit('IMMUTABLE_MANIFEST_ROWS_CHANGED')
+          print('MANIFEST_FREEZE=GREEN')
+          print('RUN_ID='+meta['run_id'])
+          print('RUNNABLE_COUNT='+str(meta['runnable_count']))
+          print('DEFERRED_FCI_COUNT='+str(meta['deferred_fci_count']))
+          print('RUNNABLE_FILE_SHA256='+meta['runnable_file_sha256'])
+          print('DEFERRED_FILE_SHA256='+meta['deferred_file_sha256'])
+          print('RUNNABLE_ROWS_SHA256='+meta['runnable_rows_sha256'])
+          print('DEFERRED_ROWS_SHA256='+meta['deferred_rows_sha256'])
+          print('FCI_POLICY='+meta['fci_policy'])
+          PY
+          test ! -e "$ROOT/ENABLED"
+          test "$(sudo -n systemctl is-active "$UNIT" 2>/dev/null || true)" != active
+          echo MASS_SCRAPING_STARTED=NO
+          echo READY_FOR_HANDOFF_CHECKPOINT=YES
+          HOST
