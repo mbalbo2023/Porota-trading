@@ -56,17 +56,18 @@ Servicio planificado: `porota-ppi-web-residual-rc6.service`.
 Estados mínimos: `PENDING`, `RUNNING`, `DONE_VALID`, `DONE_PARTIAL`, `DONE_EMPTY`, `ERROR`.
 Un RUNNING huérfano se reencola al recuperar el lock después de reinicio.
 
-## Canary obligatorio
-Antes de la corrida residual completa se seleccionará un pequeño conjunto real del manifiesto, representativo de las familias presentes (prioridad: CEDEAR/acción si residual, renta fija/ON, opción, futuro y cualquier familia especial residual). El canary debe probar:
-- sesión autenticada trusted-device;
-- navegación real;
-- payload histórico detectado;
-- normalización compatible con contrato FULL_OHLC;
-- cero requests mutantes posteriores a autenticación;
-- cero órdenes reales;
-- persistencia de progreso y resume.
+## Canary obligatorio — SELECTOR IMPLEMENTADO Y VALIDADO
+`ops/ppi_web_canary_selector_rc6.py` NO fija símbolos por anticipado. Consume exclusivamente el manifiesto residual FINAL y elige una muestra determinística.
 
-No se promueve automáticamente nada a canónico durante el canary.
+Reglas:
+- misma entrada + mismas opciones => mismo canary;
+- por defecto máximo 1 identidad por familia y hasta 8 identidades totales;
+- familias representativas primero y cualquier familia extra residual se agrega en orden estable;
+- prioridad de casos dentro de cada familia: `PROVIDER_INVALID`, `PARTIAL_VALID`, `NO_PROVIDER_ROWS`, `HARD_PROVIDER_ERROR`;
+- nunca selecciona identidades fuera del residual;
+- manifiesto vacío, identidad incompleta, clase inválida o duplicado => fail-closed.
+
+El canary real se materializa recién después de `PENDING=0`, cuando exista el residual definitivo. No se promueve automáticamente nada a canónico durante el canary.
 
 ## Reconciliación — IMPLEMENTADA Y VALIDADA
 `ops/ppi_web_history_reconcile_rc6.py` recibe capturas sanitizadas por identidad y reutiliza sin modificar `cp_history_ingest_policy_hf6.validate_provider_history()`.
@@ -98,19 +99,40 @@ Por lo tanto: PPI API > PPI Web > IOL. Una vela PPI Web no puede reemplazar una 
 
 Sólo ese segundo residual queda habilitado como input eventual de IOL. IOL no se ejecuta en paralelo ni antes del cierre Web.
 
-## Validación CI puntos 8 y 9
-Workflow: `.github/workflows/rc6-ppi-web-reconcile-postweb-validate-20260913.yml`
-Run: `34730231639`
-Resultado: SUCCESS.
+## Contrato de estatus operativo desde chat — IMPLEMENTADO Y VALIDADO
+`ops/ppi_progress_status_rc6.py` es read-only y unifica el estatus de las etapas PPI API y PPI Web.
 
-Pruebas verificadas:
-- normalización aliases + mismo validador FULL_OHLC;
-- rechazo de OHLC inconsistente;
-- PPI Web protegido por precedencia frente a PPI API;
-- PPI Web prevalece sobre IOL;
-- residual post-Web contiene sólo identidades no resueltas;
-- estados desconocidos fallan cerrado;
-- módulos de reconciliación/residual no contienen navegador, red ni capacidad de órdenes.
+Salida mínima obligatoria para cualquier pedido de "estatus":
+- etapa/run_id/status/semáforo;
+- porcentaje terminal;
+- DONE/ERROR/PENDING;
+- familia o identidad actual;
+- batch cuando aplica;
+- heartbeat y antigüedad;
+- filas canónicas;
+- disco libre y safety cuando aplica;
+- throughput real de la última hora;
+- ETA estimada y nivel de confianza.
+
+Regla ETA:
+- se calcula sólo con `finished_at` reales de la última hora;
+- `HIGH` con >=30 muestras, `MEDIUM` con >=10, `LOW` con 1-9;
+- sin muestras recientes => `ETA unavailable`; nunca inventar una fecha/hora;
+- al finalizar => ETA=0.
+
+Para la etapa Web, `ResidualState` mantiene SQLite + `status.json` atómico, de modo que el progreso sobrevive a SSH, Actions y chats. Para la ingesta API actualmente activa no se modifica el writer; el estatus se consulta read-only desde las tablas runtime/tasks existentes.
+
+## Validaciones CI
+Puntos 8 y 9:
+- workflow `.github/workflows/rc6-ppi-web-reconcile-postweb-validate-20260913.yml`
+- run `34730231639`
+- SUCCESS.
+
+Selector canary + estatus/ETA:
+- workflow `.github/workflows/rc6-ppi-canary-status-validate-20260913.yml`
+- run `34730420448`
+- SUCCESS.
+- verifica determinismo, máximo por familia, prioridad residual, ETA fail-closed, conteo terminal y safety estática.
 
 ## Cierre final
 Antes de restaurar timers / READY_PAPER:
@@ -133,8 +155,9 @@ Fuente de verdad: SQLite de estado + systemd journal + `status.json` + checkpoin
 - Motor contractual existente: IDENTIFICADO y runtime trusted-device verificado por código.
 - systemd durable: PREPARADO, unit NO activada.
 - Persistencia/resume: IMPLEMENTADA Y VALIDADA.
-- Canary: criterio cerrado; targets concretos dependen del residual final.
+- Canary selector: IMPLEMENTADO Y VALIDADO; targets concretos dependen del residual final.
 - Reconciliación (punto 8): IMPLEMENTADA Y VALIDADA.
 - Residual post-Web -> IOL (punto 9): IMPLEMENTADO Y VALIDADO.
+- Estatus/throughput/ETA desde chat: IMPLEMENTADO Y VALIDADO.
 - IOL ejecución: BLOQUEADA hasta cierre real de PPI Web.
 - 18 timers: mantener pausados.
