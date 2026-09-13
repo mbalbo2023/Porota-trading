@@ -150,10 +150,10 @@ def test_red_freshness_gate_blocks_before_opportunity_analysis():
 
 
 def test_maturity_after_liquidity_deadline_is_hold_even_with_great_rate():
-    late = snapshot(maturity_at=(NOW + timedelta(days=7)).isoformat(), term_days=1)
+    late = snapshot(maturity_at=(NOW + timedelta(days=7)).isoformat())
     result = evaluate(canonical_snapshots=[late])
     assert result["status"] == "HOLD"
-    assert result["candidates"][0]["code"].startswith("INVALID_CANONICAL_OR_ECONOMIC_EVIDENCE")
+    assert result["candidates"][0]["code"] == "MATURITY_OUTSIDE_LIQUIDITY_WINDOW"
 
 
 def test_raw_ppi_field_cannot_create_opportunity():
