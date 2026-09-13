@@ -72,7 +72,8 @@ jobs:
               vals=[float(r['latency_ms']) for r in rows if r.get('latency_ms') is not None]
               if vals:
                   vals_sorted=sorted(vals)
-                  def pct(p): return vals_sorted[min(len(vals_sorted)-1,int(round((len(vals_sorted)-1)*p))]
+                  def pct(p):
+                      return vals_sorted[min(len(vals_sorted)-1,int(round((len(vals_sorted)-1)*p)))]
                   print('SYMBOL_LATENCY_MS_AVG='+str(round(statistics.fmean(vals),2)))
                   print('SYMBOL_LATENCY_MS_P50='+str(round(pct(.50),2)))
                   print('SYMBOL_LATENCY_MS_P95='+str(round(pct(.95),2)))
