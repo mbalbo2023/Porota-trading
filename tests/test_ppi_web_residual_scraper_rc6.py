@@ -1,14 +1,15 @@
-import importlib.util
+import importlib
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "ops" / "ppi_web_residual_scraper_rc6.py"
-spec = importlib.util.spec_from_file_location("ppi_web_residual_scraper_rc6", MODULE_PATH)
-mod = importlib.util.module_from_spec(spec)
-assert spec and spec.loader
-spec.loader.exec_module(mod)
+ROOT = Path(__file__).resolve().parents[1]
+OPS = ROOT / "ops"
+sys.path.insert(0, str(OPS))
+mod = importlib.import_module("ppi_web_residual_scraper_rc6")
+MODULE_PATH = OPS / "ppi_web_residual_scraper_rc6.py"
 
 
 def write_jsonl(tmp_path, rows):
