@@ -1,0 +1,19 @@
+name: RC6 PPI Web chunk endpoint scan 2026-09-13
+on:
+  push:
+    branches: [ops/rc6-ppi-web-chunk-scan-20260913]
+    paths:
+      - 'ops/ppi_web_chunk_endpoint_scan_rc6.py'
+      - '.github/workflows/rc6-ppi-web-chunk-endpoint-scan-20260913.yml'
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan current PPI quote page static chunk
+        run: |
+          set -euo pipefail
+          python3 ops/ppi_web_chunk_endpoint_scan_rc6.py
