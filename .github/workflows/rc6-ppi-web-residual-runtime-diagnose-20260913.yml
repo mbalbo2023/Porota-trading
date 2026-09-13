@@ -1,0 +1,86 @@
+name: RC6 PPI Web residual runtime diagnose 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-ppi-web-residual-runtime-diagnose-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_diag"
+          chmod 600 "$HOME/.ssh/porota_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect residual runtime read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          ROOT=/opt/porota-ingest/ppi-web-residual
+          UNIT=porota-ppi-web-residual-rc6.service
+          API_UNIT=porota-ppi-fullfamily-history-rc6.service
+          echo '=== UNIT ==='
+          sudo -n systemctl is-active "$UNIT" || true
+          sudo -n systemctl show "$UNIT" -p ActiveState -p SubState -p MainPID -p ExecMainStatus -p NRestarts -p Result --no-pager || true
+          echo '=== API UNIT ==='
+          sudo -n systemctl is-active "$API_UNIT" || true
+          echo '=== FILES ==='
+          sudo -n ls -la "$ROOT" || true
+          echo '=== STATUS ==='
+          if sudo -n test -s "$ROOT/status.json"; then sudo -n cat "$ROOT/status.json"; else echo STATUS_JSON=MISSING; fi
+          echo '=== STATE DB ==='
+          if sudo -n test -f "$ROOT/state.sqlite3"; then
+            sudo -n python3 - "$ROOT/state.sqlite3" <<'PY'
+          import sqlite3,sys,json
+          p=sys.argv[1]
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10)
+          out={}
+          try:
+              out['run']=c.execute('select run_id,manifest_sha256,manifest_rows,status,heartbeat,started_at,updated_at,completed_at from residual_run').fetchall()
+              out['counts']=c.execute('select state,count(*) from residual_task group by state').fetchall()
+              out['current']=c.execute("select symbol,instrument_type,market,settlement,started_at from residual_task where state='RUNNING' order by started_at limit 5").fetchall()
+          except Exception as e:
+              out['error']=repr(e)
+          print(json.dumps(out,default=str))
+          c.close()
+          PY
+          else echo STATE_DB=MISSING; fi
+          echo '=== PROCESSES ==='
+          sudo -n ps -eo pid,ppid,user,etime,stat,cmd | grep -E 'ppi_web_residual|ppi_web_direct_history|rc6_ppi_web_reauth|google-chrome|chromium|flock' | grep -v grep || true
+          echo '=== LOCKS ==='
+          sudo -n lslocks | grep -E 'porota-ppi-web|ppi-web-browser' || true
+          echo '=== JOURNAL LAST 200 ==='
+          sudo -n journalctl -u "$UNIT" -n 200 --no-pager || true
+          echo '=== SAFETY ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          active=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in ('PENDING','RETRYABLE','RUNNING')").fetchone()[0]
+          total=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001'").fetchone()[0]
+          print(f'SAFETY={qc}|{mode}|{orders}|{active}|{total}')
+          c.close()
+          PY
+          HOST
