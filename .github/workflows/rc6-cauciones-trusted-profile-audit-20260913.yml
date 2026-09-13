@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  AUDIT_HARNESS_REVISION: rc6-v3-pipefail-safe-venv-probe
+
 jobs:
   trusted-profile-runtime:
     runs-on: ubuntu-latest
@@ -30,20 +33,35 @@ jobs:
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
+          echo "AUDIT_HARNESS_REVISION=$AUDIT_HARNESS_REVISION"
           ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
           set -euo pipefail
           echo "CHROME=$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)"
           python3 - <<'PY'
           import importlib.util
-          print('PLAYWRIGHT_AVAILABLE='+('YES' if importlib.util.find_spec('playwright') else 'NO'))
+          print('PLAYWRIGHT_HOST_AVAILABLE='+('YES' if importlib.util.find_spec('playwright') else 'NO'))
           PY
+          echo PYTHON_ENV_PLAYWRIGHT_BEGIN
+          py_tmp="$(mktemp)"; trap 'rm -f "$py_tmp" "$profile_tmp" 2>/dev/null || true' EXIT
+          for root in /opt/porota-ingest /opt/porota-trading; do
+            [ -d "$root" ] || continue
+            find "$root" -maxdepth 5 -type f \( -path '*/bin/python' -o -path '*/bin/python3' \) -print 2>/dev/null >> "$py_tmp" || true
+          done
+          while IFS= read -r py; do
+            [ -x "$py" ] || continue
+            "$py" - <<'PY' 2>/dev/null || true
+          import importlib.util,sys
+          print('PYTHON_ENV|'+sys.executable+'|PLAYWRIGHT='+('YES' if importlib.util.find_spec('playwright') else 'NO'))
+          PY
+          done < <(sort -u "$py_tmp" | sed -n '1,40p')
+          echo PYTHON_ENV_PLAYWRIGHT_END
           echo PROFILE_CANDIDATES_BEGIN
-          tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+          profile_tmp="$(mktemp)"
           for root in /opt/porota-ingest /opt/porota-trading/data/diagnosticos /opt/porota-trading/data; do
             [ -d "$root" ] || continue
-            find "$root" -maxdepth 5 -type d \( -iname '*chrome*' -o -iname '*profile*' -o -iname '*trusted*' \) -print 2>/dev/null >> "$tmp" || true
+            find "$root" -maxdepth 6 -type d \( -iname '*chrome*' -o -iname '*profile*' -o -iname '*trusted*' -o -iname '*user-data*' \) -print 2>/dev/null >> "$profile_tmp" || true
           done
-          sort -u "$tmp" | sed -n '1,80p'
+          sort -u "$profile_tmp" | sed -n '1,100p'
           echo PROFILE_CANDIDATES_END
           echo COLLECTOR_REFERENCES_BEGIN
           (grep -RIl --exclude='*.db' --exclude='*.sqlite*' --exclude='*.json' 'rc6_trusted_browser_contract_collector.py' /opt/porota-trading/.github /opt/porota-ingest 2>/dev/null || true) | sed -n '1,40p'
