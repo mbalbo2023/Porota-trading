@@ -38,16 +38,18 @@ jobs:
           print('PLAYWRIGHT_AVAILABLE='+('YES' if importlib.util.find_spec('playwright') else 'NO'))
           PY
           echo PROFILE_CANDIDATES_BEGIN
+          tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
           for root in /opt/porota-ingest /opt/porota-trading/data/diagnosticos /opt/porota-trading/data; do
             [ -d "$root" ] || continue
-            find "$root" -maxdepth 5 -type d \( -iname '*chrome*' -o -iname '*profile*' -o -iname '*trusted*' \) -print 2>/dev/null | head -80
-          done | sort -u
+            find "$root" -maxdepth 5 -type d \( -iname '*chrome*' -o -iname '*profile*' -o -iname '*trusted*' \) -print 2>/dev/null >> "$tmp" || true
+          done
+          sort -u "$tmp" | sed -n '1,80p'
           echo PROFILE_CANDIDATES_END
           echo COLLECTOR_REFERENCES_BEGIN
-          grep -RIl --exclude='*.db' --exclude='*.sqlite*' --exclude='*.json' 'rc6_trusted_browser_contract_collector.py' /opt/porota-trading/.github /opt/porota-ingest 2>/dev/null | head -40 || true
+          (grep -RIl --exclude='*.db' --exclude='*.sqlite*' --exclude='*.json' 'rc6_trusted_browser_contract_collector.py' /opt/porota-trading/.github /opt/porota-ingest 2>/dev/null || true) | sed -n '1,40p'
           echo COLLECTOR_REFERENCES_END
           echo CAPTURE_FILES_BEGIN
-          find /opt/porota-ingest /opt/porota-trading/data/diagnosticos -maxdepth 6 -type f \( -iname '*contract*.json' -o -iname '*trusted*.json' \) -printf '%p|%TY-%Tm-%TdT%TH:%TM:%TS\n' 2>/dev/null | sort -r | head -40 || true
+          (find /opt/porota-ingest /opt/porota-trading/data/diagnosticos -maxdepth 6 -type f \( -iname '*contract*.json' -o -iname '*trusted*.json' \) -printf '%p|%TY-%Tm-%TdT%TH:%TM:%TS\n' 2>/dev/null || true) | sort -r | sed -n '1,40p'
           echo CAPTURE_FILES_END
           HOST
 
@@ -94,7 +96,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          files=[]; hits=[]
+          hits=[]
           needles=('cash_sweep','cash sweep','caucionar','colocar-caucion','colocar_caucion','caucion_eod','postclose')
           for p in Path('.').glob('*.py'):
               try: text=p.read_text(encoding='utf-8').lower()
