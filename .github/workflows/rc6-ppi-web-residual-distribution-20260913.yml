@@ -1,6 +1,10 @@
 name: RC6 PPI Web residual distribution 2026-09-13
 on:
   workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-ppi-web-residual-distribution-20260913.yml'
 permissions:
   contents: read
 jobs:
@@ -32,8 +36,6 @@ jobs:
           mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'SAFETY={mode}|{orders}')
           active=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in ('PENDING','RETRYABLE','RUNNING')").fetchone()[0]
           total=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001'").fetchone()[0]; print(f'API_TASKS_TOTAL={total}|ACTIVE={active}')
-          cols=[r['name'] for r in c.execute('pragma table_info(ppi_history_ingest_tasks)')]; print('TASK_COLUMNS='+','.join(cols))
-          # Exact residual states used by the Web manifest.
           residual_states=('ERROR','DONE_PARTIAL','DONE_EMPTY')
           rows=c.execute("select instrument_type,settlement,state,count(*) n from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in (?,?,?) group by instrument_type,settlement,state order by n desc,instrument_type,settlement,state",residual_states).fetchall()
           print('RESIDUAL_DISTRIBUTION_BEGIN')
