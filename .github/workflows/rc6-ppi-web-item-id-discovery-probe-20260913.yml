@@ -1,0 +1,62 @@
+name: RC6 PPI Web item id discovery probe 2026-09-13
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - 'ops/ppi_web_item_id_discovery_probe_rc6.py'
+      - '.github/workflows/rc6-ppi-web-item-id-discovery-probe-20260913.yml'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage probe
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" ops/ppi_web_item_id_discovery_probe_rc6.py "$DO_USER@$DO_HOST:/tmp/ppi_web_item_id_discovery_probe_rc6.py"
+      - name: Run item id discovery read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          VENV=/opt/porota-contract-evidence-venv
+          LOCK=/run/lock/porota-ppi-web-browser.lock
+          OUT=/tmp/ppi-web-item-id-discovery-probe.json
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('|'.join(map(str,c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()))); c.close()
+          PY
+          )"
+          echo SAFETY_BEFORE="$PRE"; test "$PRE" = 'PRODUCTION_PAPER|0'
+          chown porotaadmin:porotaadmin /tmp/ppi_web_item_id_discovery_probe_rc6.py
+          sudo -n flock -w 240 "$LOCK" runuser -u porotaadmin -- env HOME=/home/porotaadmin "$VENV/bin/python" /tmp/ppi_web_item_id_discovery_probe_rc6.py --profile "$PROFILE" --output "$OUT"
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('|'.join(map(str,c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()))); c.close()
+          PY
+          )"
+          echo SAFETY_AFTER="$POST"; test "$POST" = 'PRODUCTION_PAPER|0'
+          echo MASS_SCRAPING_STARTED=NO
+          rm -f /tmp/ppi_web_item_id_discovery_probe_rc6.py "$OUT"
+          HOST
