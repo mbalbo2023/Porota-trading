@@ -2,443 +2,423 @@
 
 **Estado:** ACTIVO / CANÓNICO PARA CONTINUIDAD  
 **Fecha:** 2026-09-13  
-**Objetivo inmediato:** maximizar instrumentos seguros en `READY_PAPER` para la rueda del lunes 2026-09-14 y, en paralelo, elevar **CAUCIONES** a prioridad operativa para completar la integración PAPER del uso del efectivo sobrante al cierre de la jornada cuando PPI/mercado lo permitan.
+**Objetivo inmediato:** maximizar instrumentos seguros en `READY_PAPER` para la rueda del lunes 2026-09-14, con CAUCIONES como prioridad operativa, manteniendo `PRODUCTION_PAPER`, `real_orders=0` y fail-closed.
 
 ## 0. REGLA DE CONTINUIDAD OBLIGATORIA
 
-Este archivo es el ÚNICO punto canónico de reanudación. Si el chat/proceso se corta, el siguiente debe leerlo primero y continuar desde `ÚLTIMO PASO CONFIRMADO` y `SIGUIENTE ACCIÓN EXACTA`. No reconstruir desde checkpoints viejos, no repetir pruebas ya cerradas sin nueva evidencia y no volver a lanzar ingestiones masivas cerradas.
+Este archivo es el único punto canónico de reanudación.
 
-Después de cada hito material actualizar este archivo con evidencia, semáforo, último paso confirmado y siguiente acción exacta.
+Antes de agregar cualquier paso nuevo:
+1. verificar primero si ya existe código, commit, workflow, run, captura, evidencia persistida o prueba que lo haya cerrado;
+2. no reconstruir desde checkpoints viejos si contradicen evidencia más reciente;
+3. no repetir pruebas o ingestiones ya cerradas sin una razón nueva y verificable;
+4. distinguir siempre entre **código existente**, **CI probada**, **runtime ejecutado**, **evidencia persistida** y **READY end-to-end**;
+5. actualizar este checkpoint después de cada hito material y no declarar checkpoint actualizado hasta tener commit SHA verificado.
 
 ## 1. REPO / RAMA / SAFETY
 
 - Repo: `mbalbo2023/Porota-trading`
 - Rama canónica: `ops/rc6-ppi-web-residual-ready-20260913`
-- HEAD previo a esta actualización: `ce077fee5733dfc6e6a5a3dd48104c7ca2a813af`
-- Universo histórico PPI masivo: `1960`
-- `candidate_universe`: `911` filas observadas
+- HEAD verificado antes de esta actualización: `82bc6bad4c1059c4628b1c48616950bbe413c73d`
 - Modo obligatorio: `PRODUCTION_PAPER`
 - Órdenes reales: `0`
-- FCI y OPCIONES: excluidos REVERSIBLEMENTE del target inmediato; no borrar código/datos/histórico.
-- 18 producers/timers: mantener pausados hasta gate integral.
+- `CASH_SWEEP_ORDER_ROUTING_ALLOWED=False`
+- FCI y OPCIONES: fuera del target inmediato de forma reversible; no borrar datos/código/histórico.
+- 18 producers/timers: mantener pausados hasta auditoría individual; no bulk-reactivate.
 
-Último safety snapshot read-only confirmado por workflow `RC6 Cauciones EOD read-only audit 2026-09-13`, run `34773204696`:
-- `porota-ppi-web-residual-rc6.service`: inactive/dead, Result=success, MainPID=0
-- `porota-ppi-fullfamily-history-rc6.service`: inactive/dead, Result=success, MainPID=0
-- procesos writers históricos detectados: 0
-- units/timers con nombre `cauc*` o `postclose*`: ninguno listado
+Safety snapshot read-only ya confirmado por workflow `RC6 Cauciones EOD read-only audit 2026-09-13`, run `34773204696`:
+- writers históricos activos: 0
+- servicios históricos de ingesta: inactive/dead con Result=success
 - no se inició/reinició ningún servicio
-- `can_simulate=1 AND AVAILABLE` global conocido: `246`
-  - ACCIONES: `55`
-  - CEDEARS: `191`
+- `can_simulate=1 AND AVAILABLE`: 246 = 55 ACCIONES + 191 CEDEARS
 
-## 2. DOS INGESTAS DISTINTAS — NO CONFUNDIR
+## 2. HISTÓRICO — CERRADO, NO REPETIR
 
-### A. HISTÓRICO DE PRECIOS / VELAS
-
-Sirve al motor de decisión. La ingesta masiva PPI API y la corrida residual PPI Web YA CERRARON. No repetir completas. Sólo reconciliar stores o adquirir residuales verdaderos y dirigidos.
-
-### B. CONTRATOS / METADATOS OPERATIVOS
-
-Sirve para saber CÓMO operar correctamente: identidad, mercado, moneda, settlement real, min/step/lote, tick/precisión, nominal, lámina mínima, ISIN, vencimiento, cupón/amortización, ratio CEDEAR, futuros, cauciones, costos, sesión, etc.
-
-Precedencia por campo:
-1. PPI API estructurada válida.
-2. PPI Web/XHR autenticada como complemento.
-3. IOL sólo residual final después de agotar/reconciliar PPI, salvo decisión explícita.
-
-Histórico completo != contrato completo != READY end-to-end.
-
-Para CAUCIONES, el histórico NO es el dato principal del cash sweep EOD: se necesitan términos contractuales correctos y dinámica fresca al momento de decidir.
-
-## 3. HISTÓRICO PPI — ESTADO CERRADO
-
-PPI API full-family: corrida masiva cerrada sobre `1960`; NO rerun completo.
+PPI API full-family: corrida masiva cerrada sobre universo 1960.
 
 PPI Web residual `PPI-WEB-RESIDUAL-20260913-001`:
-- TOTAL `642/642`
-- ERROR `494`
-- DONE_PARTIAL `117`
-- DONE_EMPTY `31`
-- DONE_VALID `0`
-- pending/running `0`
+- TOTAL 642/642
+- ERROR 494
+- DONE_PARTIAL 117
+- DONE_EMPTY 31
+- DONE_VALID 0
+- pending/running 0
 
-Errores Web NO-OPCIONES exactos:
-- ON 42
-- LICITACIONES 18
-- FUTUROS 9
-- CAUCIONES 8
-- LETRAS 6
-- LEBACS 1
-- total 84
+Histórico de los 246 simulables:
+- cubiertos 239/246 = 97,15%
+- ACCIONES 55/55
+- CEDEARS 184/191
 
-BONOS: 0 ERROR Web; 5 `DONE_PARTIAL`, 1015 filas válidas de 1220 recibidas.
-
-## 4. HISTÓRICO DE LOS 246 SIMULABLES
-
-Reconciliación de stores:
-- cubiertos: `239/246 = 97,15%`
-- ACCIONES `55/55`
-- CEDEARS `184/191`
-- residual real: 7 CEDEAR
-
-CEDEAR7:
+CEDEAR7 con `HISTORY_GAP` confirmado tras agotar PPI API + PPI Web + IOL:
 `CRWVC`, `CVSC`, `MRVLC`, `VIVTC`, `VIVTD`, `VRTXC`, `VXXC`.
 
-PPI API y PPI Web agotados para esos 7: provider_rows=0 / valid_rows=0. IOL residual read-only también agotado: cinco símbolos 0 barras; `CRWVC`/`VXXC` sólo una barra íntegramente en cero, inválida como OHLCV.
+No inventar OHLCV ni hacer rerun masivo.
 
-**Conclusión:** CEDEAR7 quedan `HISTORY_GAP`. No inventar datos ni repetir scraping sin nueva evidencia.
+RCA 4 ON cerrado:
+- MRCGC: provider180 / dropped_old180 / rows_365d0
+- MRCGD: 339 / 339 / 0
+- MRCLC: 279 / 279 / 0
+- MRCPO: 480 / 480 / 0
 
-## 5. RCA CERRADO DE 4 ON
+## 3. READY VISUAL / DASHBOARD
 
-- `MRCGC`: provider180 / dropped_old180 / rows_365d0
-- `MRCGD`: 339 / 339 / 0
-- `MRCLC`: 279 / 279 / 0
-- `MRCPO`: 480 / 480 / 0
+`ready_paper_count` actual del dashboard cuenta `capability == READY_PAPER_SPOT`.
 
-PPI devolvió filas pero todas fuera de 365 días. No hacer retry ciego.
+Confirmado:
+- ACCIONES 55/55
+- CEDEARS 191/191
+- total 246
 
-## 6. READY ACTUAL / DASHBOARD
+Esto NO equivale a READY end-to-end. Para READY integral siguen aplicando contrato + dinámica + settlement + calendario + histórico cuando corresponda + simulador/tests.
 
-Flujo localizado:
-`bg_paper_dashboard.instruments_page -> _family_ux_table -> _family_ux_snapshot -> catalog_family_coverage.ready_paper_count`.
+## 4. CONTRACT EVIDENCE V2 — ESTADO REAL
 
-`ready_paper_count` cuenta `capability == READY_PAPER_SPOT`.
+### 4.1 Motor / tablas / reglas — CERRADO
 
-Actualmente confirmados:
-- ACCIONES `55/55`
-- CEDEARS `191/191`
-- total dashboard/can_simulate: `246`
-
-Esto NO equivale a autorización end-to-end; faltan gates contractuales/dinámicos/integración.
-
-## 7. CONTRACT EVIDENCE V2
-
-Tablas runtime:
+Tablas:
 - `contract_evidence_v2_current`
 - `contract_evidence_v2_snapshots`
 - `contract_evidence_v2_changes`
 
-Identidades actuales con evidencia: `447`.
-
-Fix aplicado en `cp_contract_evidence_v2_hf6.py`:
-- metadata de recolección no se confunde con conflicto financiero;
-- ticker/market/settlement de identidad canónica sólo se reutilizan si son unánimes;
-- discrepancia crítica => fail-closed;
+Fix previo en `cp_contract_evidence_v2_hf6.py`:
+- metadata de recolección no se interpreta como conflicto financiero;
+- identidad canónica sólo reutiliza ticker/market/settlement cuando son unánimes;
+- conflicto crítico => fail-closed;
 - nunca autoactiva.
 
-Regresiones: `7/7 PASS`.
+Regresiones previas: 7/7 PASS.
 
-Matriz post-fix:
-- identidades v2: `447`
-- target tras excluir FCI/FCI_EXTERIOR/OPCIONES: `444`
-- conflictos: `0`
-- `READY_PAPER_CANDIDATE` contractualmente completos: `0`
-- quick wins <=2 faltantes: `0`
+Última matriz runtime confirmada antes de los fixes de ingesta recientes:
+- identidades con evidencia: 447
+- target inmediato excluyendo FCI/FCI_EXTERIOR/OPCIONES: 444
+- conflictos: 0
+- `READY_PAPER_CANDIDATE`: 0/444
+- quick wins <=2 faltantes: 0
 
-Faltantes principales:
-- ACCIONES 55: costos/precisión/min/step.
-- CEDEARS 192: ratio + costos/precisión/min/step.
-- BONOS 43: términos renta fija + constraints + costos.
-- LETRAS 18: lámina/vencimiento/nominal/unidad precio/constraints/costos.
-- ON 85: términos renta fija + moneda pago/constraints/costos.
-- FUTUROS 43: contrato especializado incompleto.
-- CAUCIONES: contrato por identidad + dinámica fresca todavía incompletos.
+**Importante:** `0/444` es la última matriz runtime confirmada; NO debe tratarse como recomputación posterior a los fixes de ingesta de 22:27-22:29Z. Hay que recomputar antes de afirmar el nuevo número.
 
-## 8. DATOS YA CAPTURADOS
+### 4.2 Normalización/importación PPI — FIX VERIFICADO
+
+Commits verificados en rama canónica:
+- `6c143af1031b9e31cc40d45c14a826dbb962e827` — `fix(contract): preserve explicit PPI canonical evidence fields`
+- `f41a9e9f041b9b951327dac17a624581a89f906f` — `fix(contract): merge same-source endpoint evidence before snapshot`
+- `0295bf0099008cdc870ac02d126a75a3b0489d88` — pruebas de aliases explícitos y merge fail-closed
+- `82bc6bad4c1059c4628b1c48616950bbe413c73d` — CI específica
+
+El normalizador ahora conserva campos explícitos PPI sin inventar semántica:
+- `fee_schedule` desde componentes explícitos de comisión/derechos;
+- alias canónicos directos para renta fija como `maturity_date`, `coupon_terms`, `amortization_terms`;
+- NO deriva `quantity_step`, `price_tick`, `conversion_ratio`, payment currency ni otras semánticas ausentes.
+
+El importer ahora:
+- agrupa/mergea evidencia de varios endpoints de la misma fuente por identidad antes del snapshot;
+- conserva metadata/provenance;
+- si dos endpoints de la misma captura discrepan en un campo contractual, registra conflicto y falla cerrado para esa identidad;
+- no cambia eligibility y no autoactiva.
+
+Workflow `RC6 Contract Evidence ingestion fix CI 2026-09-13`, run `34786919097`, job `103803958822`: **SUCCESS**.
+- syntax PASS
+- focused fail-closed regressions PASS
+- safety invariant PASS
+- regresiones focalizadas: 3/3 PASS
+
+### 4.3 Datos autenticados ya observados
 
 PPI authenticated XHR aporta ampliamente:
 - instrument_id
 - market
 - currency
-- commission/financial rights
+- componentes de comisión/derechos
 - price_decimal_places
 - quantity_decimal_places
 
-No inferir quantity_step/tick desde decimales.
+`DatosTecnicos` puede aportar en renta fija:
+- ISIN
+- lámina mínima
+- vencimiento
+- intereses
+- amortización
+- otros términos técnicos explícitos
 
-Para renta fija, `DatosTecnicos` puede aportar ISIN, lámina mínima, vencimiento, intereses, amortización y otros términos.
+No inferir step/tick sólo desde decimales.
 
-## 9. COLECTOR CONTRACTUAL EXISTENTE
+### 4.4 Captura contractual / reutilización
 
-Reutilizar, no crear arquitectura paralela:
+Stack existente a reutilizar:
 - `rc6_trusted_browser_contract_collector.py`
 - `rc6_contract_capture_importer.py`
 - `rc6_ppi_contract_normalizer.py`
 
-Collector trusted:
-- sesión trusted existente; no usuario/password/OTP;
+Collector:
+- trusted session; no usuario/password/OTP en el flujo esperado;
 - sólo GET/HEAD/OPTIONS después de validar sesión;
 - bloquea non-read;
-- no llena cantidad/precio;
-- sin imports de órdenes;
-- sanitiza evidencia;
 - `real_orders_sent=0`;
 - targets incluyen `InstrumentosOperables`, `CaucionesOperables`, `ConfiguracionOperatoriaSimplificada`, `DatosTecnicos`.
 
-Importer:
-- escribe sólo Contract Evidence/audit;
-- NO cambia eligibility ni autoactiva.
+Las 97 capturas trusted antiguas conocidas no alcanzan por sí solas para el importer actual porque no contienen todos los endpoint_kinds/row_keys/jobs requeridos.
 
-Las 97 capturas trusted antiguas no contienen endpoint_kinds/row_keys/jobs útiles para el importer actual; reimportarlas no alcanza.
+**Pendiente real aquí:** verificar si una captura autenticada más reciente y reutilizable quedó persistida con esos endpoints. Si existe, reimportar con el importer corregido; si no existe, relanzar sólo la captura contractual estrecha. NO repetir la prueba API read-only ni la ingesta histórica.
 
-Auditoría run `34773523459`:
-- collector sí targetea `CaucionesOperables` y `ConfiguracionOperatoriaSimplificada`;
-- importer sí tiene rama `CaucionesOperables` y NO auto-habilita;
-- **no existe un normalizador dedicado de CAUCIONES** en `rc6_ppi_contract_normalizer.py`;
-- el host tiene `/usr/bin/google-chrome-stable`;
-- `playwright` no está disponible en el Python host actual;
-- el job de búsqueda de profile terminó en failure por un problema del harness (`find|head` bajo `pipefail`) antes de enumerar candidatos: esto NO prueba ausencia de trusted profile. Corregir harness antes de concluir.
+## 5. CAUCIONES — ESTADO REAL VERIFICADO
 
-El workflow histórico `.github/workflows/rc6-cauciones-postclose-deploy-20260907.yml` NO debe ejecutarse ahora: es un deploy transaccional que recrea el observer. No es el cash-sweep PAPER final y contradice la política actual de no reactivar/recrear runtime mientras se audita.
+### 5.1 Inventario runtime — CERRADO
 
-## 10. CAUCIONES — PRIORIDAD ALTA / CASH SWEEP EOD
+Run `34773204696`:
+- 10/10 CAUCIONES observadas y `AVAILABLE`
+- `can_simulate=1`: 0/10
+- market BYMA
+- settlement observado `INMEDIATA`
+- PESOS: PESOS1, PESOS2, PESOS7, PESOS30, PESOS120
+- DÓLAR: DOLAR1, DOLAR2, DOLAR7, DOLAR30, DOLAR120
 
-Premisa funcional: evaluar si el efectivo sobrante realmente libre al final de la rueda puede colocarse en caución cuando sea seguro, líquido y económicamente conveniente.
+Contract Evidence de Cauciones en la última lectura runtime:
+- 2 filas agregadas
+- PPI_AUTHENTICATED_WEB: 1
+- PPI_AUTHENTICATED_XHR: 1
+- aún no equivalen a contrato completo por identidad
 
-### 10.1 Inventario runtime exacto — CERRADO
+### 5.2 PPI API one-shot read-only — CERRADO, NO REPETIR
 
-Workflow read-only: `RC6 Cauciones EOD read-only audit 2026-09-13`, run `34773204696`, **3/3 jobs success**.
+Workflow `RC6 Cauciones PPI API shape read-only 2026-09-13`, run `34773357093`, job `103766883647`: **SUCCESS**.
 
-`candidate_universe`:
-- CAUCIONES observadas: `10`
-- status `AVAILABLE`: `10/10`
-- `can_simulate=1`: `0/10`
-- market: `BYMA`
-- settlement observado: `INMEDIATA`
-- PESOS: `PESOS1`, `PESOS2`, `PESOS7`, `PESOS30`, `PESOS120`
-- DÓLAR: `DOLAR1`, `DOLAR2`, `DOLAR7`, `DOLAR30`, `DOLAR120`
-
-`catalog_family_coverage`:
-- declared=1
-- observed_count=10
-- discovery_status=`INSTRUMENTS_OBSERVED`
-- ready_paper_count=`0`
-
-`contract_evidence_v2_current` para CAUCIONES:
-- filas actuales: `2`
-- `PPI_AUTHENTICATED_WEB`: 1
-- `PPI_AUTHENTICATED_XHR`: 1
-- ambas son evidencia agregada `ticker='*'`, `market='UNKNOWN'`, `settlement='UNKNOWN'`
-
-### 10.2 PPI API one-shot read-only — CERRADO
-
-Workflow `RC6 Cauciones PPI API shape read-only 2026-09-13`, run `34773357093`, job `103766883647`, **success**.
-
-Guardas confirmadas:
-- autenticación única: `login_calls=1`
-- HTTP permitidos: `48`
-- HTTP bloqueados: `0`
-- sin métodos order/budget/cancel
-- sin DB write, service restart ni persistencia runtime.
-
-Configuración PPI observada:
-- `instrument_types` incluye `CAUCIONES`
-- market `BYMA` disponible
-- settlements declarados: `INMEDIATA`, `A-24HS`, `A-48HS`, `A-72HS`
-- quantity types: `DINERO`, `PAPELES`, `CANTIDAD-TOTAL`
-- operation type incluye mercado/límite
-- operations incluye explícitamente **`COLOCAR-CAUCION`**
-
-Descubrimiento oficial:
+Confirmado:
+- login_calls=1
+- HTTP permitidos=48
+- HTTP bloqueados=0
+- sin order/budget/cancel
+- sin DB write ni service restart
+- type CAUCIONES
+- BYMA
+- settlements declarados: INMEDIATA, A-24HS, A-48HS, A-72HS
+- quantity types: DINERO, PAPELES, CANTIDAD-TOTAL
+- operación explícita `COLOCAR-CAUCION`
 - 10/10 identidades devueltas
-- keys SearchInstrument: `cajaValoresCode`, `currency`, `description`, `isin`, `market`, `nominalInPrice`, `ticker`, `type`
-- `nominalInPrice=1` observado en las 10
-- monedas explícitas: Pesos y Dólares billete/MEP según ticker
+- `nominalInPrice=1` en las 10
+- monedas explícitas observadas
+- shapes `current`, `book`, `intraday` confirmados
 
-Shape MarketData para las 10:
-- `current`: `date, marketChange, marketChangePercent, max, min, openingPrice, previousClose, price, volume`
-- `book`: `bids, date, offers`
-- `intraday`: lista; domingo `len=0` en las 10
+Domingo:
+- `book.date` sentinel `0001-01-01T00:00:00-03:00`
+- current con fechas de ruedas anteriores
+- intraday vacío
 
-Freshness:
-- `book.date` dominical = sentinel `0001-01-01T00:00:00-03:00`
-- `current.date` = últimas ruedas 2026-09-09/10/11
-- esta corrida sirve para schema/semántica de transporte, NO para dinámica EOD fresca.
+Esta ejecución prueba transporte/schema y datos reales retornados por PPI, pero NO dinámica fresca de rueda.
 
-**Regla crítica:** NO mapear `current.price -> tna`, `volume -> available_principal` ni lado del book -> lado colocador hasta validar semántica PPI explícitamente.
+### 5.3 Semántica raw — REGLA VIGENTE
 
-### 10.3 Gate especializado existente
+No mapear automáticamente:
+- `current.price -> TNA`
+- `volume/quantity -> available_principal`
+- `bids/offers -> lado colocador`
 
-`cq_family_contract_rules_hf6.py` exige contrato estático:
-- market, currency, settlement, side, term_days, principal_min, principal_step, day_count_basis, fee_schedule, trading_session
+hasta tener semántica explícita validada upstream.
 
-y dinámica fresca:
-- operable, market_session_state, tna, available_principal, expiry_at
+### 5.4 Cash-sweep PAPER — YA EXISTE
 
-TTL:
-- tna 5m
-- available_principal 5m
-- market_session_state 5m
-- operable 15m
-- expiry_at 15m
+No construir un segundo sweeper.
 
-Sólo puede elevar a `READY_PAPER_CANDIDATE`; nunca habilita trading por sí mismo.
+Módulos existentes:
+- `df_caucion_end_of_day_sweep_hf6.py`
+- `di_caucion_cash_sweep_runtime_hf6.py`
+- `bt_caucion_paper.py`
+- `ca_caucion_allocator.py`
 
-### 10.4 CORRECCIÓN: EL CASH-SWEEP PAPER YA EXISTE EN CÓDIGO
+El runtime:
+- exige `ObligationSnapshot.complete=True`
+- falla cerrado si no hay snapshot completo
+- exige fee budget exacto
+- relee caja con `for_execution=True`
+- allocator revalida cash/risk/depth/fees/idempotency
+- `CASH_SWEEP_ORDER_ROUTING_ALLOWED=False`
 
-Auditoría run `34773523459` localizó implementación real que NO había sido incorporada al diagnóstico anterior:
-- `df_caucion_end_of_day_sweep_hf6.py`: planner EOD puro, sin PPI ni órdenes.
-- `di_caucion_cash_sweep_runtime_hf6.py`: orquestador que conecta planner con allocator PAPER y fija `CASH_SWEEP_ORDER_ROUTING_ALLOWED=False`.
-- `bt_caucion_paper.py`: modelo `CaucionOffer`, ledger PAPER, caja/settlement de cauciones y economía interés-costos.
-- `ca_caucion_allocator.py`: selección/colocación PAPER determinista, sin red ni programación automática.
+### 5.5 Adapter + bridge — YA EXISTEN, NO SON PENDIENTE DE CONSTRUCCIÓN
 
-El planner YA implementa conceptualmente la premisa pedida:
-- sólo caja libre/liquidada de la misma moneda;
-- resta reserva/obligaciones verificadas;
-- exige quote fresca, mínimo, step, profundidad, costos, vencimiento y schedule;
-- respeta liquidity deadline;
-- rechaza neto <=0;
-- selecciona mejor beneficio neto entre candidatos compatibles.
+`rc6_caucion_offer_adapter.py`:
+- convierte sólo snapshot canónico explícitamente VALIDATED a `CaucionOffer` PAPER;
+- rechaza campos raw ambiguos como `price`, `volume`, `quantity`, `bids`, `offers`, `current`, `book`;
+- exige `COLOCAR-CAUCION`, side COLOCADORA, BYMA, INMEDIATA, provenance, freshness y semantic_proof;
+- no importa red, broker, DB ni órdenes.
 
-El runtime de sweep:
-- exige `ObligationSnapshot.complete=True`; si no, HOLD fail-closed;
-- exige presupuesto de costos exacto;
-- vuelve a leer caja con `for_execution=True`;
-- usa allocator PAPER que vuelve a validar cash/risk/depth/fees/idempotency bajo transacción;
-- `CASH_SWEEP_ORDER_ROUTING_ALLOWED=False`: no puede rutear orden real.
+`rc6_caucion_paper_bridge.py`:
+- exige gate `CAUCION_FRESH_DATA_AGENT_GREEN`;
+- exige `contract_status=READY_PAPER_CANDIDATE`;
+- exige `real_order_capability=False`;
+- exige `ObligationSnapshot`;
+- delega al sweep PAPER existente;
+- mantiene `routing_allowed=False` y `real_order_capability=False`.
 
-**Conclusión corregida:** NO hay que construir el cash sweep desde cero. Hay que **integrar/alimentar y validar** la implementación existente con contratos PPI por identidad, quotes/depth frescos, fee budgets, schedule/cutoff, obligación/reserva completa y el gate v2.
+Tests existentes `tests/test_rc6_caucion_paper_bridge.py` cubren gate rojo, snapshot raw ambiguo, duplicados, obligación ausente/incompleta y routing PAPER-only.
 
-### 10.5 Qué falta realmente para poner Cauciones en funcionamiento PAPER
+### 5.6 Schedule/cutoff — IMPLEMENTADO Y VERSIONADO
 
-1. Normalizador específico CAUCIONES: convertir evidencia explícita PPI a `CaucionOffer`/Contract Evidence sin inferencias prohibidas.
-2. Semántica confirmada del lado colocador y de `current.price`/book/volume.
-3. `principal_min`, `principal_step`, day-count, fee payment/schedule y costos exactos.
-4. Schedule/cutoff EOD con fuente verificable.
-5. `ObligationSnapshot` completo para calcular la reserva real, no porcentaje fijo.
-6. Quotes/depth frescos durante rueda; snapshot domingo no sirve.
-7. Conectar offers verificados al sweep existente en un camino PAPER controlado.
-8. Recalcular gate de las 10 identidades y demostrar tests/invariantes.
+No reconstruir este componente.
 
-## 11. SETTLEMENT / CONSOLIDACIÓN
+`rc6_caucion_schedule_sources.py` fue agregado en commit `20c3f8206c883cc787d218e4c3dc24e76041d019`.
 
-- identidad canónica por familia+ticker+mercado+settlement;
-- PPI API prima si válida;
-- Web/XHR complementa campo por campo;
-- provenance obligatoria;
-- conflicto crítico => fail-closed;
-- no fuzzy settlement;
-- alias explícito `MRCTO -> MRCAC`;
-- no datos sintéticos.
+Evidencia congelada/versionada:
+- BYMA Comunicado 19016 (2026-09-01)
+- PPI Support `Horarios de Mercado` actualizado 2025-07-28
+- ventana congelada para Contado Inmediato/Cauciones: 10:30-17:00
+- evidencia separada para ARS y USD_MEP
+- calendario no certificado como abierto => fail-closed
 
-Settlement general:
-- BYMA estándar desde 2024-05-27: T+1 / 24HS
-- CI=T+0
-- 48HS legado
-- usar `PlazosOperables` reales.
+Commits relacionados posteriores incluyen tests de schedule por moneda y prueba CI.
 
-Para CAUCIONES, runtime observa `settlement=INMEDIATA`; conservar como evidencia específica, no reemplazar con regla spot genérica sin validación PPI.
+### 5.7 Controlador único de ciclo — YA EXISTE
 
-## 12. PLAN PARALELO ACTUAL
+`rc6_caucion_cycle_controller.py`:
+- agrega schedule por moneda + fresh-data agent + readiness persistida + política de oportunidad;
+- exige evidencia de schedule independiente para todas las monedas presentes;
+- persiste specialized readiness;
+- si readiness no está GREEN => HOLD;
+- si falta opportunity policy o liquidity deadline => HOLD;
+- `real_order_capability=False`.
 
-### CARRIL A — CAUCIONES EOD (PRIORIDAD ALTA)
-- **A1 API schema/discovery: CERRADO.** 10 identidades y shapes current/book confirmados; dinámica dominical stale.
-- **A2:** corregir audit harness de trusted profile; localizar profile/session y dependencia Playwright sin leer credenciales/cookies. Luego captura read-only estrecha `CaucionesOperables + ConfiguracionOperatoriaSimplificada`.
-- **A3:** implementar/adaptar normalizador específico CAUCIONES con tests; no auto-enable.
-- **A4:** validar semántica exacta de price/book/volume/COLOCAR-CAUCION y lado colocador.
-- **A5:** integrar evidence/market snapshot con `CaucionOffer` + sweep PAPER existente, no crear otro sweeper.
-- **A6:** validar `ObligationSnapshot`, caja libre/liquidada, fee budget y schedule/cutoff.
-- **A7:** lunes cerca EOD adquirir dinámica fresca y ejecutar PAPER/HOLD, nunca real.
+La CI de Cauciones incluye este controlador y chequea que los módulos nuevos no importen red ni superficies de orden.
 
-### CARRIL B — BONOS / LETRAS / ON
-1. Captura estrecha `InstrumentosOperables + DatosTecnicos`.
-2. Normalizar sólo equivalencias explícitas.
-3. Completar términos renta fija y constraints/costos reales.
-4. Recalcular READY por familia/instrumento.
+### 5.8 Lo que falta REALMENTE para cerrar Cauciones
 
-### CARRIL C — ACCIONES / CEDEAR
-1. Cerrar costos/precision/min/step con evidencia explícita.
-2. Obtener conversion_ratio real CEDEAR.
-3. Bloquear CEDEAR7 por `HISTORY_GAP` aunque sean `READY_PAPER_SPOT` visuales.
+No volver a listar adapter, bridge, sweeper, schedule source o cycle controller como “a construir”.
 
-### CARRIL D — FUTUROS
-Auditar contrato especializado en paralelo sin desplazar A/B.
+Pendientes verificables:
+1. confirmar productor runtime real de snapshots canónicos de las 10 identidades con semántica explícita validada;
+2. confirmar de dónde sale `ObligationSnapshot` completo en runtime, con provenance/as_of, y si realmente se produce hoy;
+3. completar por evidencia explícita cualquier campo contractual aún ausente: `principal_min`, `principal_step`, day-count, fee payment/schedule/costos exactos y otros requeridos por el gate;
+4. demostrar durante rueda activa current/book/intraday frescos y la semántica colocadora/TNA/depth sin inferencias;
+5. recomputar gate de las 10 identidades con las evidencias nuevas;
+6. demostrar E2E PAPER/HOLD con `CAUCION_FRESH_DATA_AGENT_GREEN`, nunca real.
 
-### CARRIL E — SAFETY / INTEGRACIÓN
-- writers históricos apagados;
-- PRODUCTION_PAPER;
-- real_orders=0;
-- writes/promociones al mismo store serializados;
-- 18 producers/timers pausados;
-- no ejecutar viejo deploy postclose;
-- ningún READY integral sin contrato + dinámica + histórico cuando corresponda + settlement + calendario + simulador/tests.
+## 6. OBSERVER / CAPACIDAD
 
-### CARRIL F — CHECKPOINT
-Actualizar este archivo tras cada hito material.
+Workflow read-only `RC6 observer capacity read-only proof 2026-09-13`, run `34781768296`: SUCCESS.
 
-## 13. SEMÁFORO ACTUAL
+Snapshot conocido:
+- CPU ~10.26%
+- memoria 241.9 MiB / 961.5 MiB ~25.16%
+- PIDs 13
+- `PAPER_ACTIVE_SYMBOL_LIMIT=20`
+- intervalo observer 60s
+- call budget PPI 2s
+- intraday scan 180s
+- batch 24
 
-- 🟢 continuidad/checkpoint
-- 🟢 safety PAPER / real orders 0
+Últimos 300 ciclos auditados:
+- selected_count 20 constante
+- mean processing ~36.4s
+- p95 ~50.2s
+- max ~67.7s
+
+Cuello de botella dominante: PPI/network serial current+book, no CPU/RAM.
+
+Arquitectura acordada:
+- HOT/CRITICAL: posiciones abiertas + todas las 10 CAUCIONES + foco líquido/señal reciente
+- ACTIVE: líquido/operable 1-3 min
+- BROAD: long tail 5-15 min, pantalla barata y promoción
+- no sacrificar posiciones abiertas ni contract freshness por broad discovery
+
+Safe experiment futuro en PAPER: 20 -> 30 sólo con telemetría; no saltar a 60 sin evidencia.
+
+## 7. 18 PRODUCERS / TIMERS PAUSADOS
+
+Estado: ⛔ siguen pausados por decisión intencional durante ingesta.
+
+Antes de reactivar, auditar uno por uno:
+- propósito
+- source
+- frecuencia
+- universo
+- settlement
+- dedupe
+- stale/error behavior
+- overlap/duplication
+- calendar
+- delta/365d
+- restart/resume
+- observabilidad/Telegram
+- writer vs read-only
+- branch/image/version
+- impacto readiness/freshness
+
+Clasificar cada uno como:
+- ACTIVE_EXPECTED
+- SAFE_TO_ENABLE
+- KEEP_PAUSED
+- OBSOLETE
+- DUPLICATE
+- NEEDS_FIX
+
+No bulk-reactivate.
+
+## 8. SEMÁFORO ACTUAL
+
+- 🟢 continuidad/checkpoint canónico
+- 🟢 PAPER / real orders 0
 - 🟢 writers históricos detenidos
-- 🟢 246 READY_PAPER_SPOT/dashboard = 55 Acciones + 191 CEDEAR
-- 🟢 histórico Acciones 55/55
-- 🟡 histórico CEDEAR 184/191
-- 🔴 CEDEAR7 `HISTORY_GAP` confirmado PPI API + Web + IOL
-- 🟢 Contract Evidence v2 identidad/conflictos fix 7/7
-- 🟢 matriz contractual post-fix
-- 🔴 READY contractual estricto global actual: 0/447
-- 🟡 BONOS/LETRAS/ON: captura/normalización pendiente
-- 🟢 CAUCIONES inventario: 10/10 observadas/AVAILABLE
-- 🔴 CAUCIONES can_simulate: 0/10
-- 🟢 CAUCIONES API discovery/config/schema one-shot: cerrado
-- 🟢 PPI config confirma operación `COLOCAR-CAUCION`
-- 🟡 CAUCIONES evidencia Web/XHR: 2 agregados, todavía no por identidad
-- 🟢 CAUCIONES gate estático/dinámico: definido
-- 🟢 CAUCIONES planner/orquestador/allocator PAPER: EXISTEN en código y orden real está bloqueado
-- 🔴 CAUCIONES integración feed->CaucionOffer->sweep demostrada: pendiente
-- 🔴 CAUCIONES dinámica EOD fresca: pendiente hasta rueda activa
-- 🟡 trusted browser: Chrome presente; Playwright host ausente; profile todavía no auditado por falla de harness
-- 🟡 FUTUROS: contrato especializado pendiente
-- ⚪ FCI/OPCIONES: fuera del target inmediato, reversible
-- ⛔ 18 producers/timers pausados
-- 🔴 READY end-to-end integral: aún no demostrado
+- 🟢 histórico PPI masivo cerrado
+- 🟢 ACCIONES histórico 55/55
+- 🟡 CEDEAR histórico 184/191
+- 🔴 CEDEAR7 HISTORY_GAP confirmado
+- 🟢 dashboard READY_PAPER_SPOT 246 = 55 ACCIONES + 191 CEDEARS
+- 🟢 Contract Evidence v2 engine/conflict handling
+- 🟢 normalización/importación PPI corregida
+- 🟢 Contract Evidence ingestion fix CI `34786919097`
+- 🟡 matriz strict READY: última runtime confirmada 0/444; falta recomputar post-fix
+- 🟢 CAUCIONES inventory 10/10
+- 🟢 CAUCIONES PPI API read-only `34773357093`
+- 🟢 operación `COLOCAR-CAUCION` confirmada
+- 🟢 cash-sweep PAPER existente
+- 🟢 adapter canónico existente
+- 🟢 bridge PAPER existente
+- 🟢 schedule/cutoff versionado por moneda existente
+- 🟢 cycle controller existente
+- 🟡 evidencia contractual por identidad completa: no demostrada todavía
+- 🟡 productor runtime de snapshot canónico: verificar
+- 🟡 productor runtime `ObligationSnapshot`: verificar
+- 🔴 dinámica fresca de Cauciones: requiere rueda activa
+- 🔴 READY end-to-end Cauciones: no demostrado todavía
+- ⛔ 18 producers/timers pausados hasta auditoría
 
-## 14. NO HACER
+## 9. NO HACER
 
-- no órdenes reales;
-- no salir de PRODUCTION_PAPER;
-- no rerun masivo PPI API/Web;
-- no segundo writer histórico;
-- no borrar/resetear state.sqlite3/tasks;
-- no blind retry;
-- no inventar contratos/steps/ticks/ratios;
-- no considerar OHLCV nulo como histórico;
-- no mapear `current.price` a TNA ni `volume` a capital disponible sin validación semántica;
-- no usar snapshot domingo como dinámica EOD fresca;
-- no construir un segundo cash-sweep: integrar el existente;
-- no automatizar caución EOD sin gate dinámico + sweep PAPER validado;
-- no reactivar 18 producers/timers;
-- no ejecutar `.github/workflows/rc6-cauciones-postclose-deploy-20260907.yml` durante esta fase;
-- no usar `READY_PAPER_SPOT` visual como autorización final.
+- no órdenes reales
+- no salir de PRODUCTION_PAPER
+- no rerun masivo PPI API/Web
+- no segundo writer histórico
+- no borrar/resetear state.sqlite3/tasks
+- no blind retry
+- no inventar contratos, steps, ticks, ratios, TNA o profundidad
+- no considerar OHLCV nulo como histórico
+- no usar snapshot domingo como dinámica fresca
+- no construir segundo cash-sweep
+- no volver a construir adapter/bridge/schedule/controller ya existentes
+- no reactivar los 18 jobs/timers en bloque
+- no ejecutar el viejo deploy postclose que recrea observer durante esta fase
+- no llamar READY final a `READY_PAPER_SPOT` visual
 
-## 15. ÚLTIMO PASO CONFIRMADO
+## 10. ÚLTIMO PASO CONFIRMADO
 
-1. CEDEAR7 agotó PPI API + PPI Web + IOL y queda `HISTORY_GAP`.
-2. CAUCIONES elevada a prioridad alta por cash sweep EOD.
-3. Runtime audit `34773204696`: 10 AVAILABLE, 0/10 can_simulate, 2 evidencias agregadas.
-4. PPI API one-shot `34773357093`: 10/10 identidades, `COLOCAR-CAUCION`, current/book schema; datos dominicales stale.
-5. Audit `34773523459` confirmó que collector/importer existen pero no hay normalizador dedicado CAUCIONES; no auto-enable.
-6. La búsqueda trusted-profile falló por harness después de confirmar Chrome presente y Playwright host ausente; NO concluir profile ausente.
-7. Audit de código descubrió implementación cash-sweep PAPER existente: `df_caucion_end_of_day_sweep_hf6.py`, `di_caucion_cash_sweep_runtime_hf6.py`, `bt_caucion_paper.py`, `ca_caucion_allocator.py`.
-8. El sweep existente ya resta obligaciones verificadas, exige datos/costos/schedule, falla cerrado y mantiene routing real en False.
-9. No se validó equivalencia `price=TNA`, `volume=available_principal` ni book-side colocador.
-10. Seguridad intacta: writers apagados, sin services/timers caución/postclose activos, órdenes reales 0.
+1. Se verificó HEAD `82bc6bad4c1059c4628b1c48616950bbe413c73d`.
+2. Se verificó que el read-only PPI de Cauciones `34773357093` ya se ejecutó con datos y no debe repetirse.
+3. Se verificó adapter `rc6_caucion_offer_adapter.py` existente y fail-closed.
+4. Se verificó bridge `rc6_caucion_paper_bridge.py` existente y PAPER-only.
+5. Se verificó schedule/cutoff versionado `rc6_caucion_schedule_sources.py` y evidencia por moneda.
+6. Se verificó `rc6_caucion_cycle_controller.py` existente.
+7. Se verificaron fixes de Contract Evidence de normalización/importer y CI `34786919097` SUCCESS.
+8. Se corrigió el diagnóstico anterior: NO construir adapter/bridge/schedule/controller; verificar productores y evidencia runtime real.
+9. Seguridad intacta: real orders 0, routing real bloqueado.
 
-## 16. SIGUIENTE ACCIÓN EXACTA
+## 11. SIGUIENTE ACCIÓN EXACTA
 
-Ejecutar en paralelo:
+Orden obligatorio, verificando antes de crear nada:
 
-- **A2:** corregir harness del profile audit y localizar profile/session + entorno Playwright seguro; luego captura read-only `CONTRACT_EVIDENCE_CAUCIONES`.
-- **A3:** leer/testear los cuatro módulos de sweep existentes y construir el adaptador mínimo de evidencia PPI -> `CaucionOffer`, sin red ni órdenes en el adaptador.
-- **A4:** validar semántica PPI de tasa, profundidad, lado y costos; cualquier ambigüedad = HOLD.
-- **B:** `InstrumentosOperables + DatosTecnicos` para BONOS/LETRAS/ON.
-- **C:** mapeo seguro costos/precision/min/step/ratios para Acciones/CEDEAR.
-- **D:** auditoría contractual FUTUROS.
-- **E:** safety read-only; no service restart, no writers, no real orders.
-- **F:** tras cada tanda, recalcular matriz READY por familia y actualizar checkpoint.
+1. **Captura contractual:** localizar/confirmar si existe una captura autenticada reciente persistida con `InstrumentosOperables`, `DatosTecnicos` y endpoints especializados en formato importable. Si existe, reutilizarla; si no, sólo entonces ejecutar captura estrecha read-only.
+2. **Reimport + recompute:** ejecutar/importar con los fixes actuales y recomputar la matriz strict READY. Reportar número exacto por familia y razones faltantes; no asumir mejora sin corrida.
+3. **Cauciones runtime producers:** localizar call sites/productores reales de snapshots canónicos y `ObligationSnapshot`; verificar provenance, `as_of`, completeness y wiring al controller/bridge.
+4. **Auditoría 18 jobs/timers:** inventario y clasificación uno por uno antes de cualquier enable.
+5. **Lunes rueda activa:** adquirir evidencia fresca, probar stale->HOLD->fresh recovery, `CAUCION_FRESH_DATA_AGENT_GREEN` y E2E PAPER/HOLD; nunca orden real.
+6. Actualizar este checkpoint tras cada hito con commit/run/SHA verificable.
 
 ---
 
-**Regla para nuevo chat:** leer este archivo primero. El foco NO es repetir histórico masivo. CAUCIONES es prioridad alta: el cash-sweep PAPER ya existe; ahora falta alimentarlo con evidencia PPI explícita y dinámica fresca, integrar y demostrar gates sin relajar seguridad.
+**Regla para nuevo chat:** leer este archivo primero. No repetir histórico masivo, read-only Cauciones, adapter/bridge, schedule ni controller. Primero verificar capturas/producers/runtime y sólo después crear o ejecutar lo que realmente falte.
