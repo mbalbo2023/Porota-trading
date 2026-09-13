@@ -1,0 +1,19 @@
+name: RC6 PPI Web API wrapper recon 2026-09-13
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - 'ops/ppi_web_api_wrapper_recon_rc6.py'
+      - '.github/workflows/rc6-ppi-web-api-wrapper-recon-20260913.yml'
+permissions:
+  contents: read
+jobs:
+  recon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Focused public wrapper recon
+        run: |
+          set -euo pipefail
+          python3 ops/ppi_web_api_wrapper_recon_rc6.py
