@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           RESULT=POROTA_TRADING_CONTRACT_NARROW_CAPTURE_RESULT_2026-09-14.txt
-          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' > "$RESULT"
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'HOST' > "$RESULT"
           set -Eeuo pipefail
           ROOT=/opt/porota-trading
           CONTAINER=porota_production_observer
@@ -45,11 +45,10 @@ jobs:
           BROWSER_USER=porotaadmin
           JOBS=CONTRACT_EVIDENCE_STATIC,CONTRACT_EVIDENCE_DYNAMIC,CONTRACT_EVIDENCE_CAUCIONES
           OUTDIR="$ROOT/data/contract_evidence/rc6_trusted"
-          echo 'PROBE=RC6_CONTRACT_NARROW_CAPTURE_V1'
+          echo 'PROBE=RC6_CONTRACT_NARROW_CAPTURE_V2'
           echo "NOW_UTC=$(date -u +%FT%TZ)"
           echo "JOBS=$JOBS"
 
-          # Serialize against every other PPI browser activity.
           exec 9>/run/lock/porota-ppi-web-browser.lock
           if ! flock -n 9; then
             echo 'POINT1_CAPTURE_RESULT=YELLOW_BROWSER_LOCK_BUSY'
@@ -57,7 +56,6 @@ jobs:
             exit 0
           fi
 
-          # Strict PAPER safety preflight, read-only DB access.
           PRE="$($DOCKER exec -i "$CONTAINER" python - <<'PY'
           import sqlite3,json
           p='/app/data/paper_v17/observer_v17.db'
@@ -105,23 +103,16 @@ jobs:
           rm -f "$STAGE" /tmp/porota-point1-collector.$$
 
           python3 - "$FINAL" <<'PY'
-          import json,sys,os
+          import json,sys
           p=sys.argv[1]
           d=json.load(open(p,encoding='utf-8'))
           ep=d.get('endpoints') or {}
-          kinds={}
-          sources=[]
+          kinds={}; sources=[]
           for x in ep.values():
               if not isinstance(x,dict): continue
-              k=str(x.get('kind') or '')
-              kinds[k]=kinds.get(k,0)+1
+              k=str(x.get('kind') or ''); kinds[k]=kinds.get(k,0)+1
               if x.get('source_url'): sources.append(str(x.get('source_url')))
-          flags={
-              'InstrumentosOperables':kinds.get('InstrumentosOperables',0)>0,
-              'DatosTecnicos':kinds.get('DatosTecnicos',0)>0,
-              'CaucionesOperables':kinds.get('CaucionesOperables',0)>0,
-              'ConfiguracionOperatoriaSimplificada':any('ConfiguracionOperatoriaSimplificada' in s for s in sources),
-          }
+          flags={'InstrumentosOperables':kinds.get('InstrumentosOperables',0)>0,'DatosTecnicos':kinds.get('DatosTecnicos',0)>0,'CaucionesOperables':kinds.get('CaucionesOperables',0)>0,'ConfiguracionOperatoriaSimplificada':any('ConfiguracionOperatoriaSimplificada' in s for s in sources)}
           blocked=d.get('blocked_nonread') or []
           print('CAPTURE_PATH='+p)
           print('SCHEMA='+str(d.get('schema')))
@@ -138,17 +129,12 @@ jobs:
           target=structural and flags['InstrumentosOperables'] and flags['DatosTecnicos'] and (flags['CaucionesOperables'] or flags['ConfiguracionOperatoriaSimplificada'])
           print('STRUCTURALLY_IMPORTABLE='+('YES' if structural else 'NO'))
           print('REUSABLE_TARGET='+('YES' if target else 'NO'))
-          if target:
-              print('POINT1_CAPTURE_RESULT=GREEN_VALID_IMPORTABLE_CAPTURE')
-          elif structural:
-              print('POINT1_CAPTURE_RESULT=YELLOW_IMPORTABLE_BUT_TARGET_ENDPOINTS_INCOMPLETE')
-          elif d.get('auth_status')!='AUTHENTICATED_TRUSTED_DEVICE':
-              print('POINT1_CAPTURE_RESULT=RED_AUTH_NOT_TRUSTED')
-          else:
-              print('POINT1_CAPTURE_RESULT=RED_CAPTURE_NOT_IMPORTABLE')
+          if target: print('POINT1_CAPTURE_RESULT=GREEN_VALID_IMPORTABLE_CAPTURE')
+          elif structural: print('POINT1_CAPTURE_RESULT=YELLOW_IMPORTABLE_BUT_TARGET_ENDPOINTS_INCOMPLETE')
+          elif d.get('auth_status')!='AUTHENTICATED_TRUSTED_DEVICE': print('POINT1_CAPTURE_RESULT=RED_AUTH_NOT_TRUSTED')
+          else: print('POINT1_CAPTURE_RESULT=RED_CAPTURE_NOT_IMPORTABLE')
           PY
 
-          # Safety postflight; the collector itself has no broker/order imports and blocks non-read HTTP.
           POST="$($DOCKER exec -i "$CONTAINER" python - <<'PY'
           import sqlite3,json
           p='/app/data/paper_v17/observer_v17.db'
@@ -160,9 +146,7 @@ jobs:
           POST="$POST" python3 - <<'PY'
           import json,os
           d=json.loads(os.environ['POST'])
-          assert d.get('mode')=='PRODUCTION_PAPER'
-          assert int(d.get('orders') or 0)==0
-          assert d.get('quick_check')=='ok'
+          assert d.get('mode')=='PRODUCTION_PAPER'; assert int(d.get('orders') or 0)==0; assert d.get('quick_check')=='ok'
           PY
           echo 'POSTFLIGHT=GREEN_PRODUCTION_PAPER_ORDERS0_DBOK'
           echo 'DB_IMPORT_EXECUTED=NO'
