@@ -13,7 +13,7 @@ permissions:
 jobs:
   caucion-runtime-db:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Prepare SSH
@@ -25,39 +25,44 @@ jobs:
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
-      - name: Caucion observer DB inventory read-only
+      - name: Caucion observer DB inventory read-only lightweight
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
           ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          timeout 90 sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3,json,collections
-          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
-          c=sqlite3.connect(db,uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
           tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
-          out={'quick_check':c.execute('pragma quick_check').fetchone()[0],'candidate_rows':0,'candidate_can_simulate':0,'candidate_statuses':{},'candidate_sample':[],'contract_current_rows':0,'contract_sources':{},'contract_sample':[],'tables_present':sorted(tables & {'candidate_universe','contract_evidence_v2_current','contract_evidence_v2_snapshots','catalog_family_coverage'})}
+          out={'candidate_rows':0,'candidate_can_simulate':0,'candidate_statuses':{},'candidate_sample':[],'contract_current_rows':0,'contract_sources':{},'contract_current_sample':[],'coverage':None,'tables_present':sorted(tables & {'candidate_universe','contract_evidence_v2_current','catalog_family_coverage'})}
           if 'candidate_universe' in tables:
               cols=[r[1] for r in c.execute('pragma table_info(candidate_universe)')]
               wanted=[x for x in ('ticker','instrument_type','market','settlement','status','can_simulate','capability') if x in cols]
-              q='select '+','.join('"'+x+'"' for x in wanted)+' from candidate_universe where upper(coalesce(instrument_type,\'\')) in (\'CAUCION\',\'CAUCIONES\') order by ticker'
+              q='select '+','.join('"'+x+'"' for x in wanted)+' from candidate_universe where upper(coalesce(instrument_type,\'\')) in (\'CAUCION\',\'CAUCIONES\') order by ticker limit 200'
               rows=[dict(r) for r in c.execute(q)]
-              out['candidate_rows']=len(rows)
-              out['candidate_can_simulate']=sum(1 for r in rows if str(r.get('can_simulate')) in ('1','True','true'))
-              out['candidate_statuses']=dict(collections.Counter(str(r.get('status')) for r in rows))
+              out['candidate_rows']=int(c.execute("select count(*) from candidate_universe where upper(coalesce(instrument_type,'')) in ('CAUCION','CAUCIONES')").fetchone()[0])
+              out['candidate_can_simulate']=int(c.execute("select count(*) from candidate_universe where upper(coalesce(instrument_type,'')) in ('CAUCION','CAUCIONES') and can_simulate=1").fetchone()[0]) if 'can_simulate' in cols else None
+              if 'status' in cols:
+                  out['candidate_statuses']=dict(c.execute("select coalesce(status,'NULL'),count(*) from candidate_universe where upper(coalesce(instrument_type,'')) in ('CAUCION','CAUCIONES') group by status").fetchall())
               out['candidate_sample']=rows[:30]
-          if {'contract_evidence_v2_current','contract_evidence_v2_snapshots'}.issubset(tables):
-              rows=[dict(r) for r in c.execute("select cur.family,cur.ticker,cur.market,cur.settlement,cur.source_class,cur.observed_at,s.evidence_json from contract_evidence_v2_current cur join contract_evidence_v2_snapshots s on s.snapshot_id=cur.snapshot_id where upper(cur.family) in ('CAUCION','CAUCIONES') order by cur.ticker,cur.source_class")]
-              out['contract_current_rows']=len(rows)
-              out['contract_sources']=dict(collections.Counter(str(r['source_class']) for r in rows))
-              safe=[]
-              for r in rows[:80]:
-                  try: ev=json.loads(r.get('evidence_json') or '{}')
-                  except Exception: ev={}
-                  safe.append({'family':r['family'],'ticker':r['ticker'],'market':r['market'],'settlement':r['settlement'],'source_class':r['source_class'],'observed_at':r['observed_at'],'keys':sorted(ev.keys())})
-              out['contract_sample']=safe
-          print('CAUCION_RUNTIME_JSON='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          if 'catalog_family_coverage' in tables:
+              cols=[r[1] for r in c.execute('pragma table_info(catalog_family_coverage)')]
+              if 'instrument_type' in cols:
+                  rows=[dict(r) for r in c.execute("select * from catalog_family_coverage where upper(instrument_type) in ('CAUCION','CAUCIONES') limit 10")]
+                  out['coverage']=rows
+          if 'contract_evidence_v2_current' in tables:
+              cols=[r[1] for r in c.execute('pragma table_info(contract_evidence_v2_current)')]
+              out['contract_current_rows']=int(c.execute("select count(*) from contract_evidence_v2_current where upper(coalesce(family,'')) in ('CAUCION','CAUCIONES')").fetchone()[0]) if 'family' in cols else 0
+              if all(x in cols for x in ('family','source_class')):
+                  out['contract_sources']=dict(c.execute("select source_class,count(*) from contract_evidence_v2_current where upper(coalesce(family,'')) in ('CAUCION','CAUCIONES') group by source_class").fetchall())
+              wanted=[x for x in ('family','ticker','market','settlement','source_class','observed_at','snapshot_id') if x in cols]
+              if wanted and 'family' in cols:
+                  q='select '+','.join('"'+x+'"' for x in wanted)+" from contract_evidence_v2_current where upper(coalesce(family,'')) in ('CAUCION','CAUCIONES') order by ticker,source_class limit 40"
+                  out['contract_current_sample']=[dict(r) for r in c.execute(q)]
+          print('CAUCION_RUNTIME_LIGHT_JSON='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
           c.close()
           PY
           HOST
@@ -97,7 +102,7 @@ jobs:
 
   caucion-safety:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - name: Prepare SSH
         env:
