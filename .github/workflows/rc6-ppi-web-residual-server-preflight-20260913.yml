@@ -141,7 +141,7 @@ jobs:
           echo '=== AUTHENTICATED DIRECT HISTORY SMOKE ==='
           TDIR="$(sudo -n -u porotaadmin mktemp -d /tmp/ppi-web-preflight.XXXXXX)"
           sudo -n -u porotaadmin tee "$TDIR/target.jsonl" >/dev/null <<'EOF'
-          {"symbol":"GGAL","instrument_type":"ACCIONES","market":"BYMA","settlement":"A-48HS","residual_class":"PREFLIGHT_ONLY"}
+          {"symbol":"GGAL","instrument_type":"ACCIONES","market":"BYMA","settlement":"24HS","residual_class":"PREFLIGHT_ONLY"}
           EOF
           set +e
           COLLECT_OUT="$(sudo -n flock -w 240 /run/lock/porota-ppi-web-browser.lock runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$ROOT:$BIN" \
