@@ -60,11 +60,11 @@ jobs:
           echo "SAFETY_API_GATE=$PRE"
           test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|1960'
           test "$(sudo -n systemctl is-active "$API_UNIT" 2>/dev/null || true)" != active
-          test -f "$ROOT/residual.jsonl"
-          test -f "$ROOT/deferred_fci.jsonl"
-          test -f "$ROOT/manifest_meta.json"
+          sudo -n test -f "$ROOT/residual.jsonl"
+          sudo -n test -f "$ROOT/deferred_fci.jsonl"
+          sudo -n test -f "$ROOT/manifest_meta.json"
 
-          python3 - "$ROOT/manifest_meta.json" <<'PY'
+          sudo -n python3 - "$ROOT/manifest_meta.json" <<'PY'
           import json,sys
           m=json.load(open(sys.argv[1],encoding='utf-8'))
           assert m['run_id']=='PPI-WEB-RESIDUAL-20260913-001'
@@ -85,16 +85,16 @@ jobs:
           STATE="$(sudo -n systemctl is-active "$UNIT" 2>/dev/null || true)"
           echo "SERVICE_ACTIVE=$STATE"
           test "$STATE" = active
-          test -f "$ROOT/ENABLED"
+          sudo -n test -f "$ROOT/ENABLED"
 
           echo '=== RUNTIME STATUS ==='
           for i in 1 2 3 4 5 6; do
-            if test -s "$ROOT/status.json"; then break; fi
+            if sudo -n test -s "$ROOT/status.json"; then break; fi
             sleep 5
           done
-          test -s "$ROOT/status.json"
-          cat "$ROOT/status.json"
-          python3 - "$ROOT/status.json" <<'PY'
+          sudo -n test -s "$ROOT/status.json"
+          sudo -n cat "$ROOT/status.json"
+          sudo -n python3 - "$ROOT/status.json" <<'PY'
           import json,sys
           s=json.load(open(sys.argv[1],encoding='utf-8'))
           assert s['run_id']=='PPI-WEB-RESIDUAL-20260913-001'
