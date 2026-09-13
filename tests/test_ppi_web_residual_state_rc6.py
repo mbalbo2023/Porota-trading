@@ -18,14 +18,30 @@ def test_seed_claim_finish_resume_and_atomic_status(tmp_path):
     s=m.ResidualState(tmp_path/'state.db',tmp_path/'status.json')
     s.seed('R1','abc',rows())
     x=s.summary('R1'); assert x['total']==2 and x['counts']=={'PENDING':2}
+    assert x['run_status']=='READY' and x['heartbeat']
     t=s.claim_next('R1'); assert t and t['symbol']=='A'
-    assert s.summary('R1')['counts']=={'PENDING':1,'RUNNING':1}
+    running=s.summary('R1')
+    assert running['counts']=={'PENDING':1,'RUNNING':1}
+    assert running['run_status']=='RUNNING' and running['heartbeat'] >= x['heartbeat']
     # Simulate process death after claim. New owner recovers only orphan RUNNING.
     assert s.recover_orphan_running('R1')==1
     assert s.summary('R1')['counts']=={'PENDING':2}
     t=s.claim_next('R1'); s.finish('R1',t,'DONE_EMPTY',provider_rows=0,valid_rows=0)
     x=s.summary('R1'); assert x['terminal']==1 and x['progress_pct']==50.0
+    assert s.complete_if_terminal('R1') is False
     assert (tmp_path/'status.json').is_file()
+
+
+def test_completion_is_formal_and_durable(tmp_path):
+    s=m.ResidualState(tmp_path/'state.db',tmp_path/'status.json')
+    s.seed('R2','ghi',[rows()[0]])
+    task=s.claim_next('R2')
+    s.finish('R2',task,'DONE_VALID',provider_rows=5,valid_rows=5)
+    assert s.complete_if_terminal('R2') is True
+    x=s.summary('R2')
+    assert x['run_status']=='COMPLETED'
+    assert x['completed_at']
+    assert x['progress_pct']==100.0
 
 
 def test_run_id_is_bound_to_manifest(tmp_path):
