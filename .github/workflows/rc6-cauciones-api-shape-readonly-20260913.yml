@@ -1,0 +1,87 @@
+name: RC6 Cauciones PPI API shape read-only 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-cauciones-api-shape-readonly-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cauciones-api-shape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: One-shot PPI cauciones market-data shape only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          timeout 180 sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json
+          from bf_production_paper_observer import _secret
+          from bd_ppi_readonly_guard import ProductionMarketReader, classify_read_error
+
+          SAFE_TOKENS=('ticker','symbol','type','market','currency','settlement','date','time','rate','tna','bid','ask','price','quantity','volume','term','name','description','nominal')
+          BLOCK_TOKENS=('token','secret','account','email','user','password','cookie','authorization')
+          def scalar(v): return isinstance(v,(str,int,float,bool)) or v is None
+          def safe_fields(d):
+              out={}
+              if not isinstance(d,dict): return out
+              for k,v in d.items():
+                  lk=str(k).lower()
+                  if any(x in lk for x in BLOCK_TOKENS): continue
+                  if any(x in lk for x in SAFE_TOKENS) and scalar(v): out[str(k)]=v
+              return out
+          def shape(v):
+              if isinstance(v,dict):
+                  return {'kind':'dict','keys':sorted(map(str,v.keys()))[:120],'safe':safe_fields(v)}
+              if isinstance(v,list):
+                  first=v[0] if v else None
+                  return {'kind':'list','len':len(v),'first_keys':sorted(map(str,first.keys()))[:120] if isinstance(first,dict) else [],'first_safe':safe_fields(first) if isinstance(first,dict) else None}
+              return {'kind':type(v).__name__}
+
+          reader=None
+          result={'discovery':None,'contracts':[],'configuration':None,'reader_metrics':None}
+          try:
+              reader=ProductionMarketReader(*_secret())
+              reader.login_once()
+              config=reader.market_configuration()
+              result['configuration']={k:list(v) for k,v in config.items()}
+              rows=reader.search_instruments('CAUCION','CAUCIONES',name='CAUCION',market='BYMA')
+              result['discovery']={'count':len(rows),'tickers':[str(r.get('ticker')) for r in rows if isinstance(r,dict)],'row_keys':sorted({str(k) for r in rows if isinstance(r,dict) for k in r.keys()})}
+              seen=set()
+              for r in rows:
+                  if not isinstance(r,dict): continue
+                  ticker=str(r.get('ticker') or '').strip()
+                  if not ticker or ticker in seen: continue
+                  seen.add(ticker)
+                  item={'ticker':ticker,'search_safe':safe_fields(r),'search_keys':sorted(map(str,r.keys()))}
+                  for name,call in (
+                      ('current',lambda t=ticker: reader.current(t,'CAUCIONES','INMEDIATA')),
+                      ('book',lambda t=ticker: reader.book(t,'CAUCIONES','INMEDIATA')),
+                      ('intraday',lambda t=ticker: reader.intraday(t,'CAUCIONES','INMEDIATA')),
+                  ):
+                      try: item[name]=shape(call())
+                      except Exception as exc: item[name]={'error':classify_read_error(exc),'type':type(exc).__name__}
+                  result['contracts'].append(item)
+              result['reader_metrics']=reader.metrics
+          finally:
+              if reader: reader.close()
+          print('CAUCION_API_SHAPE_JSON='+json.dumps(result,ensure_ascii=False,sort_keys=True,default=str))
+          PY
+          HOST
