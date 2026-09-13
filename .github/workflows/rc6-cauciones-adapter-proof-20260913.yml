@@ -25,8 +25,8 @@ jobs:
           python-version: '3.11'
       - name: Install focused test dependency
         run: python -m pip install --disable-pip-version-check pytest
-      - name: Run canonical adapter fail-closed tests
-        run: python -m pytest -q tests/test_rc6_caucion_offer_adapter.py
+      - name: Run canonical adapter and contract fail-closed tests
+        run: python -m pytest -q tests/test_rc6_caucion_offer_adapter.py tests/test_rc6_cauciones_contract.py
       - name: Prove adapter has no network/order/database surface
         run: |
           python - <<'PY'
@@ -51,6 +51,24 @@ jobs:
           print('ADAPTER_FORBIDDEN_IMPORTS='+repr(bad_imports))
           print('ADAPTER_FORBIDDEN_CALLS='+repr(bad_calls))
           assert not bad_imports and not bad_calls
+          PY
+      - name: Prove book semantics are fail-closed by default
+        run: |
+          python - <<'PY'
+          import rc6_cauciones_contract as c
+          sample={'bids':[{'price':20.1,'quantity':150000}], 'offers':[{'price':20.2,'quantity':200000}]}
+          try:
+              c.placed_side_book_levels(sample)
+          except c.CaucionContractError as exc:
+              print('RAW_BOOK_SIDE_FAIL_CLOSED=YES',str(exc))
+          else:
+              raise AssertionError('raw book side unexpectedly accepted')
+          try:
+              c.quote_from_book_level('PESOS7',sample['bids'][0])
+          except c.CaucionContractError as exc:
+              print('RAW_BOOK_RATE_DEPTH_FAIL_CLOSED=YES',str(exc))
+          else:
+              raise AssertionError('raw book level unexpectedly accepted')
           PY
       - name: Inventory raw book semantic helper call sites
         run: |
