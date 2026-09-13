@@ -71,8 +71,9 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import ast,json,re
+          import json
           from pathlib import Path
+          import bd_ppi_readonly_guard as guardmod
           rules=Path('cq_family_contract_rules_hf6.py').read_text(encoding='utf-8')
           guard=Path('bd_ppi_readonly_guard.py').read_text(encoding='utf-8')
           catalog=Path('bu_instrument_catalog.py').read_text(encoding='utf-8')
@@ -80,11 +81,13 @@ jobs:
           required_dynamic=['operable','market_session_state','tna','available_principal','expiry_at']
           missing_static=[x for x in required_static if x not in rules]
           missing_dynamic=[x for x in required_dynamic if x not in rules]
+          forbidden=('order_budget','budget','send_order','place_order','cancel_order','order')
           checks={
-            'api_search_present':'search_instruments' in guard,
-            'explicit_target_guard':'explicit target' in guard.lower() or 'explicit_target' in guard,
+            'official_caucion_discovery_present':'_search_cauciones_official' in guard and 'search_instrument' in guard,
+            'default_days_exact':tuple(guardmod.caucion_discovery_days('')) == (1,2,7,30,120),
             'read_market_methods':all(x in guard for x in ('current','book','intraday')),
-            'catalog_holds_caucion':'caucion' in catalog.lower() and 'HOLD' in catalog,
+            'no_order_surface':all(not hasattr(guardmod.ProductionMarketReader,x) for x in forbidden),
+            'catalog_holds_caucion':'NEEDS_CAUCION_TERMS' in catalog,
             'static_gate_complete':not missing_static,
             'dynamic_gate_complete':not missing_dynamic,
           }
