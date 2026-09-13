@@ -41,6 +41,37 @@ No borrar código, datos ni históricos de esas familias. No asumir ninguna otra
 - Workflow `34778690161`: SUCCESS; suite focalizada de bridge/freshness/obligaciones/sweep, sin red ni rutas reales.
 - Workflow `34778816227`: SUCCESS; **67 tests PASS**, incluyendo prueba E2E determinística `fresh GREEN -> PLACED_SIMULATED`, stale -> HOLD, obligaciones incompletas -> HOLD; rutas reales siguen bloqueadas.
 
+## AUDITORÍA RUNTIME / CADENCIA CAUCIONES — HALLAZGOS 2026-09-13
+
+### current + book
+
+`bf_production_paper_observer.py` ya incluye CAUCIONES en el universo observable cuando el catálogo la declara `AVAILABLE` y usa `settlement=INMEDIATA`. En rueda abierta, por identidad seleccionada, ejecuta `reader.current(...)` + `reader.book(...)`, persiste la quote y luego ejecuta el motor PAPER.
+
+Cadencia configurada del observer: `PAPER_OBSERVER_INTERVAL_SECONDS`, default **60 s** (mínimo 15 s), más el tiempo real de las llamadas PPI. **Importante:** CAUCIONES no pertenece al foco prioritario actual; entra por rotación del universo, por lo que no existe hoy garantía de refresco de cada caución cada 60 s.
+
+### intraday
+
+`cf_intraday_scalping.py` admite `CAUCIONES` como familia para **recolección** de `MarketData/Intraday`. Su worker usa `PAPER_INTRADAY_SCAN_SECONDS`, default **180 s**, lote default 24 y rotación de universo.
+
+Pero `evaluate_candidate()` exige `capability == READY_PAPER_SPOT`. El catálogo clasifica CAUCIONES como `NEEDS_CAUCION_TERMS`, no `READY_PAPER_SPOT`. Por lo tanto:
+- CAUCIONES puede ser observada/ingerida por el collector intradiario;
+- **NO puede hoy transformarse en candidato de scalping**;
+- el scanner spot existente NO es un detector de oportunidad intradía de CAUCIONES.
+
+### supervisor runtime
+
+`bv_paper_runtime.py` supervisa scanner, exit-reader, notificaciones, candles e intraday-scalping. **No existe aún un child dedicado a CAUCIONES** para freshness/oportunidades/sweep. Éste es un gap real de integración, no de scraping.
+
+### dashboard / READY
+
+`bg_paper_dashboard.py::_family_ux_snapshot()` determina visualmente `READY_PAPER` usando `catalog_family_coverage.ready_paper_count`. Ese conteo proviene de `READY_PAPER_SPOT` y **no consume todavía `CAUCION_FRESH_DATA_AGENT_GREEN`**.
+
+Hoy esto no promociona erróneamente CAUCIONES porque el catálogo la mantiene en `NEEDS_CAUCION_TERMS` y su ready count es 0. Sin embargo, antes de habilitar el ejecutor especializado es obligatorio cambiar la cadena de verdad: el dashboard/READY de CAUCIONES debe depender del gate especializado fresco, no de un contador spot.
+
+### calendario centralizado
+
+`co_market_sessions_hf6.py` centraliza BYMA spot `[10:30,17:00)` pero su set `BYMA_PAPER_SPOT_FAMILIES` **no incluye CAUCIONES**; por tanto `session_for('BYMA','CAUCIONES')` hoy devuelve `None`. A la vez, `rc6_cauciones_contract.py` conserva una ventana local 10:30–17:00. Esta duplicación debe resolverse después de cerrar evidencia oficial/PPI de horarios y cutoffs; no se agregará CAUCIONES al mapa central “por intuición”.
+
 ## PENDIENTES PARA READY_PAPER DE CAUCIONES
 
 1. Integrar el gate contractual/dinámico y el freshness gate con el runtime vivo, sin relajar TTL.
@@ -64,19 +95,20 @@ Documentar y validar cómo operará CAUCIONES durante toda la rueda, no sólo el
 - cómo trata oportunidades intradía versus el sweep de caja ociosa cercano al cierre;
 - persistencia/auditoría de la razón exacta de cada aceptación/rechazo.
 
-**Estado actual:** PENDIENTE DE DISEÑO/AUDITORÍA. El código existente probado cubre el cash-sweep PAPER y sus gates; no se declara todavía que exista un detector intradía completo de oportunidades de caución.
+**Estado auditado:** el collector actual puede traer `intraday` de CAUCIONES cada ~180 s cuando entra en el lote, y el observer puede traer `current/book`; **no existe todavía un detector intradía especializado de oportunidades de caución**. No se reutilizará el scanner spot fingiendo compatibilidad.
 
 ### PENDIENTE NUEVO B — HORARIOS DE CAUCIONES
 
 Verificar y congelar contractualmente los horarios efectivos de negociación de CAUCIONES y cualquier excepción por moneda, plazo, segmento o broker/PPI.
 
-**Evidencia preliminar verificada:**
-- La tabla oficial vigente enlazada por BYMA (Comunicado 18782, vigencia desde 28/07/2025) indica para PPT `Negociación Regular – Pase y Caución: 10:30 a 17:00 hs` GMT-3.
-- La página actual de horarios de BYMA sigue enlazando esa tabla.
-- PPI Support aloja copia del mismo Comunicado 18782.
-- No se debe asumir todavía que un cutoff operativo propio de PPI, una caución en USD o una condición excepcional de BYMA coincidan exactamente con el cierre general sin validación específica.
+**Evidencia verificada:**
+- BYMA tiene como comunicado vigente de horarios el **Comunicado 19016**, fechado 01/09/2026.
+- La ventana pública general vigente para negociación BYMA continúa en torno a **10:30–17:00**; la modificación desde 28/07/2025 incluyó explícitamente Caución.
+- PPI publica cauciones en pesos y dólares de 1 a 120 días; su página pública de cotizaciones se actualiza cada 15 minutos, pero eso NO define el cutoff de carga de órdenes ni sustituye el market data autenticado.
+- La Circular BYMA 3567 publicada 09/09/2026 trata Caución en Dólares/asignación de volúmenes; no debe reinterpretarse automáticamente como horario.
+- No se halló todavía en documentación pública indexada una regla PPI específica que demuestre un cutoff distinto por ARS/USD/plazo. Ausencia de evidencia NO equivale a “no existe”.
 
-**Pendiente exacto:** confirmar si existen cutoffs PPI/operativos distintos para ARS vs USD, colocadora vs tomadora, algún plazo específico o eventos especiales; incorporar fuente/versionado al gate `calendar/cutoff` y tests.
+**Pendiente exacto:** obtener/confirmar el detalle del 19016 y cualquier cutoff operativo PPI para colocadora/tomadora, ARS/USD y excepciones; incorporar fuente/versionado al gate `calendar/cutoff` y tests. Hasta entonces se usa HOLD ante una ventana específica no demostrada.
 
 ## TTL CANÓNICOS CAUCIONES
 
@@ -102,22 +134,24 @@ El bridge no puede relajar estos TTL.
 - 🟢 ObligationSnapshot PAPER: producer creado y probado fail-closed.
 - 🟢 Fresh-data aggregate gate: creado y probado determinísticamente.
 - 🟢 E2E sintético PAPER: fresh GREEN -> `PLACED_SIMULATED`; stale/obligaciones incompletas -> HOLD; 67 tests PASS.
-- 🟡 Lógica completa de oportunidades intradía: pendiente de diseño/auditoría.
-- 🟡 Horarios/cutoffs por modalidad/moneda/PPI: verificación en curso; BYMA general 10:30-17:00 ya evidenciado.
-- 🟡 Fresh-data gate -> runtime/dashboard: pendiente de integración viva.
+- 🟢 Auditoría de cadencias/gaps: cerrada; current/book ~60 s + rotación, intraday ~180 s + rotación, sin detector caución especializado.
+- 🟡 Lógica completa de oportunidades intradía: diseño/implementación especializada pendiente.
+- 🟡 Horarios/cutoffs por modalidad/moneda/PPI: BYMA general 10:30–17:00 evidenciado; cutoff PPI específico pendiente.
+- 🟡 Fresh-data gate -> runtime/dashboard: gap confirmado, pendiente de integración viva.
 - 🔴 Dinámica fresca de rueda real: pendiente hasta mercado activo.
 - 🔴 CAUCIONES `can_simulate`: no promover 10/10 hasta evidencia viva e integración READY/dashboard.
 - 🔴 READY_PAPER operativo end-to-end: todavía no demostrado en runtime desplegado.
 
 ## ÚLTIMO PASO CONFIRMADO
 
-Se cerró el circuito determinístico de prueba desde evidencia canónica + freshness GREEN + obligaciones PAPER reconciliadas hasta una colocación `PLACED_SIMULATED`, manteniendo `real_orders_sent=0` y rutas reales bloqueadas. También quedó probado que stale/missing e incompletitud de obligaciones producen HOLD. Esto prueba la lógica de integración en CI, no reemplaza la evidencia dinámica de rueda ni el deploy/runtime final.
+Se cerró el circuito determinístico de prueba desde evidencia canónica + freshness GREEN + obligaciones PAPER reconciliadas hasta una colocación `PLACED_SIMULATED`, manteniendo `real_orders_sent=0` y rutas reales bloqueadas. También quedó probado que stale/missing e incompletitud de obligaciones producen HOLD. La auditoría posterior confirmó que el scanner intradía existente recolecta CAUCIONES pero no las evalúa como oportunidad, que no hay worker dedicado de cauciones y que el dashboard READY todavía no consume el gate agregado.
 
 ## SIGUIENTE ACCIÓN EXACTA
 
 Avanzar en paralelo, sin tocar scraper/ingesta masiva:
-- auditar/diseñar detector intradía de oportunidades y su cadencia real;
+- definir/implementar detector intradía especializado de oportunidades con política explícita y fail-closed;
 - cerrar horarios/cutoffs oficiales BYMA + PPI por modalidad/moneda/plazo;
-- integrar/persistir `CAUCION_FRESH_DATA_AGENT_GREEN` en runtime y dashboard/READY;
+- persistir `CAUCION_FRESH_DATA_AGENT_GREEN` como estado runtime auditable;
+- integrar esa verdad especializada al dashboard/READY;
 - obtener prueba read-only del runtime desplegado (workers, heartbeat, timestamps, safety);
 - dejar lista la prueba de rueda activa real de las 10 identidades.
