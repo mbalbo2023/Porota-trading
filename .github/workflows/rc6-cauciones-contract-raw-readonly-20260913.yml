@@ -1,0 +1,56 @@
+name: RC6 Cauciones raw contract read-only proof 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-cauciones-contract-raw-readonly-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  raw-contract-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_caucion_raw"
+          chmod 600 "$HOME/.ssh/porota_caucion_raw"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect persisted CAUCIONES raw metadata only
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_caucion_raw" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$USER@$HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          for table in ('instrument_catalog','financial_instrument_catalog'):
+              print('SCHEMA_'+table+'='+json.dumps([dict(r) for r in c.execute('PRAGMA table_info('+table+')')],default=str))
+          if 'raw_json' in {r[1] for r in c.execute('PRAGMA table_info(instrument_catalog)')}:
+              rows=c.execute("SELECT ticker,instrument_type,market,settlement,downloaded_at,raw_json FROM instrument_catalog WHERE upper(instrument_type)='CAUCIONES' ORDER BY ticker").fetchall()
+              out=[]
+              for r in rows:
+                  raw=json.loads(r['raw_json']) if r['raw_json'] else {}
+                  safe={k:v for k,v in raw.items() if str(k).lower() not in {'token','access_token','refresh_token','authorization','cookie','password','secret','apikey','api_key'}}
+                  out.append({'ticker':r['ticker'],'market':r['market'],'settlement':r['settlement'],'downloaded_at':r['downloaded_at'],'raw':safe})
+              print('CAUCION_RAW_METADATA='+json.dumps(out,ensure_ascii=False,default=str))
+          c.close()
+          print('RAW_CONTRACT_READONLY=GREEN')
+          PY
+          HOST
