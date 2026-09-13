@@ -33,7 +33,7 @@ def list_rows(data):
 def norm_family(v): return str(v or '').strip().upper()
 def family_match(desc,fam):
     d=' '.join(str(desc or '').upper().replace('_',' ').split()); fam=norm_family(fam)
-    if fam in {'ON','OBLIGACIONES','OBLIGACIONES_NEGOCIABLES'}: return 'OBLIGACION' in d
+    if fam in {'ON','OBLIGACIONES','OBLIGACIONES_NEGOCIABLES'}: return d in {'ON','ONS'} or 'OBLIGACION' in d
     aliases={
         'ACCIONES':['ACCION'], 'CEDEARS':['CEDEAR'], 'BONOS':['BONO'], 'BONOS_USD':['BONO'],
         'OPCIONES':['OPCION'], 'FUTUROS':['FUTURO'], 'LETRAS':['LETRA'], 'ETF':['ETF'], 'ETFS':['ETF'],
