@@ -1,0 +1,47 @@
+name: RC6 PPI Web residual distribution 2026-09-13
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect closed API residual by family and settlement
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          print('QUICK_CHECK='+c.execute('pragma quick_check').fetchone()[0])
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'SAFETY={mode}|{orders}')
+          active=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in ('PENDING','RETRYABLE','RUNNING')").fetchone()[0]
+          total=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001'").fetchone()[0]; print(f'API_TASKS_TOTAL={total}|ACTIVE={active}')
+          cols=[r['name'] for r in c.execute('pragma table_info(ppi_history_ingest_tasks)')]; print('TASK_COLUMNS='+','.join(cols))
+          # Exact residual states used by the Web manifest.
+          residual_states=('ERROR','DONE_PARTIAL','DONE_EMPTY')
+          rows=c.execute("select instrument_type,settlement,state,count(*) n from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in (?,?,?) group by instrument_type,settlement,state order by n desc,instrument_type,settlement,state",residual_states).fetchall()
+          print('RESIDUAL_DISTRIBUTION_BEGIN')
+          for r in rows: print(f"{r['instrument_type']}|{r['settlement']}|{r['state']}|{r['n']}")
+          print('RESIDUAL_DISTRIBUTION_END')
+          c.close()
+          PY
+          echo CANONICAL_WRITE=DENY
+          echo REAL_ORDERS_SENT=0
+          echo MASS_SCRAPING_STARTED=NO
+          HOST
