@@ -1,0 +1,49 @@
+name: RC6 PPI Web Chrome profile lock diagnostic 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-profile-lock-diagnostic-20260913.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect profile owner processes and singleton state
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          echo '=== PROFILE OWNER PROCESSES ==='
+          ps -u porotaadmin -o pid=,ppid=,lstart=,comm=,args= | grep -E '(chrome|chromium|playwright)' | sed -E 's/(--user-data-dir=)[^ ]+/\1<PROFILE>/g' || true
+          echo '=== SINGLETON FILES ==='
+          for f in SingletonLock SingletonCookie SingletonSocket; do
+            p="$PROFILE/$f"
+            if [ -L "$p" ]; then echo "$f=SYMLINK:$(readlink "$p")";
+            elif [ -e "$p" ]; then echo "$f=EXISTS";
+            else echo "$f=ABSENT"; fi
+          done
+          echo '=== RELATED UNITS ==='
+          systemctl --no-pager --plain --type=service --state=running 2>/dev/null | grep -Ei 'porota.*(browser|contract|ppi-web)' || true
+          systemctl --no-pager --plain list-timers --all 2>/dev/null | grep -Ei 'porota.*(browser|contract|ppi-web)' || true
+          echo PROFILE_LOCK_DIAGNOSTIC=READ_ONLY
+          HOST
