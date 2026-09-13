@@ -17,7 +17,7 @@ Environment=PPI_WEB_BROWSER_USER=porotaadmin
 Environment=PPI_WEB_PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
 Environment=PPI_WEB_SECRET=/etc/porota/contract-evidence-web.env
 Environment=PPI_WEB_PYTHON=/opt/porota-contract-evidence-venv/bin/python
-Environment=PPI_WEB_COLLECTOR=/opt/porota-ingest/ppi-web-residual/bin/rc6_ppi_web_history_shadow.py
+Environment=PPI_WEB_COLLECTOR=/opt/porota-ingest/ppi-web-residual/bin/ppi_web_direct_history_collector_rc6.py
 Environment=PPI_WEB_REAUTH=/opt/porota-ingest/ppi-web-residual/bin/rc6_ppi_web_reauth.py
 Environment=PPI_HISTORY_API_UNIT=porota-ppi-fullfamily-history-rc6.service
 # First lock prevents duplicate residual runners. Second lock owns the trusted
