@@ -13,6 +13,7 @@ on:
       - 'rc6_caucion_intraday_opportunity.py'
       - 'rc6_caucion_readiness_state.py'
       - 'rc6_caucion_schedule_gate.py'
+      - 'rc6_caucion_schedule_sources.py'
       - 'rc6_caucion_cycle_controller.py'
       - 'di_caucion_cash_sweep_runtime_hf6.py'
       - 'df_caucion_end_of_day_sweep_hf6.py'
@@ -26,6 +27,7 @@ on:
       - 'tests/test_rc6_caucion_intraday_opportunity.py'
       - 'tests/test_rc6_caucion_readiness_state.py'
       - 'tests/test_rc6_caucion_schedule_gate.py'
+      - 'tests/test_rc6_caucion_schedule_sources.py'
       - 'tests/test_rc6_caucion_cycle_controller.py'
       - 'tests/test_rc6_caucion_paper_e2e.py'
       - 'tests/test_cash_sweep_runtime_hf6.py'
@@ -56,6 +58,7 @@ jobs:
             rc6_caucion_intraday_opportunity.py \
             rc6_caucion_readiness_state.py \
             rc6_caucion_schedule_gate.py \
+            rc6_caucion_schedule_sources.py \
             rc6_caucion_cycle_controller.py \
             df_caucion_end_of_day_sweep_hf6.py \
             di_caucion_cash_sweep_runtime_hf6.py \
@@ -72,6 +75,7 @@ jobs:
             tests/test_rc6_caucion_intraday_opportunity.py \
             tests/test_rc6_caucion_readiness_state.py \
             tests/test_rc6_caucion_schedule_gate.py \
+            tests/test_rc6_caucion_schedule_sources.py \
             tests/test_rc6_caucion_cycle_controller.py \
             tests/test_rc6_caucion_paper_e2e.py \
             tests/test_cash_sweep_runtime_hf6.py
@@ -88,6 +92,7 @@ jobs:
               'rc6_caucion_intraday_opportunity.py',
               'rc6_caucion_readiness_state.py',
               'rc6_caucion_schedule_gate.py',
+              'rc6_caucion_schedule_sources.py',
               'rc6_caucion_cycle_controller.py',
           ]
           forbidden_imports=('requests','httpx','urllib','socket','ppi_client','playwright','selenium')
