@@ -1,0 +1,67 @@
+name: RC6 PPI Web blocked read endpoints probe 2026-09-13
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-blocked-read-endpoints-probe-20260913.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage collector
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" rc6_ppi_web_history_shadow.py "$DO_USER@$DO_HOST:/tmp/rc6_ppi_web_history_shadow.py"
+      - name: Run one residual target with all non-read blocked and print sanitized paths
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          BIN=/opt/porota-ingest/ppi-web-residual/bin
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          VENV=/opt/porota-contract-evidence-venv
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_history_shadow.py "$BIN/rc6_ppi_web_history_shadow.py"
+          rm -f /tmp/rc6_ppi_web_history_shadow.py
+          TD="$(mktemp -d /tmp/ppi-read-endpoint-probe.XXXXXX)"; chown porotaadmin:porotaadmin "$TD"
+          cat > "$TD/targets.jsonl" <<'EOF'
+          {"symbol":"CRESD","instrument_type":"ACCIONES","market":"BYMA","settlement":"A-24HS","residual_class":"PARTIAL_VALID"}
+          EOF
+          chown porotaadmin:porotaadmin "$TD/targets.jsonl"
+          sudo -n flock -w 180 /run/lock/porota-ppi-web-browser.lock runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="/opt/porota-trading:$BIN" "$VENV/bin/python" "$BIN/rc6_ppi_web_history_shadow.py" --profile "$PROFILE" --output "$TD/capture.json" --targets-jsonl "$TD/targets.jsonl" >/tmp/ppi-read-endpoint-probe.out 2>&1 || true
+          python3 - "$TD/capture.json" <<'PY'
+          import json,sys
+          from urllib.parse import urlsplit
+          x=json.load(open(sys.argv[1],encoding='utf-8'))
+          print('AUTH='+str(x.get('auth_status')))
+          print('REAL_ORDERS='+str(x.get('real_orders_sent')))
+          seen=[]
+          for r in x.get('blocked_nonread',[]):
+              u=urlsplit(str(r.get('url','')))
+              item=(str(r.get('method','')).upper(),u.netloc,u.path)
+              if item not in seen: seen.append(item)
+          print('UNIQUE_BLOCKED_NONREAD='+str(len(seen)))
+          for i,(m,h,p) in enumerate(seen): print(f'BLOCKED_{i}={m}|{h}|{p}')
+          print('CAPTURES='+str(len(x.get('captures',[]))))
+          print('ROWS='+str(sum(len(c.get('rows',[])) for c in x.get('captures',[]))))
+          assert int(x.get('real_orders_sent',-1))==0
+          PY
+          rm -rf "$TD" /tmp/ppi-read-endpoint-probe.out
+          HOST
