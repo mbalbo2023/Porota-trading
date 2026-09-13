@@ -3,6 +3,12 @@
 
 Executed inside the observer container. It writes evidence/audit tables only;
 it never changes candidate eligibility and cannot activate an instrument.
+
+A single trusted-browser capture may observe several PPI endpoints for the same
+financial identity. They share source_class=PPI_AUTHENTICATED_XHR, while the
+Contract Evidence current table has one current row per identity/source_class.
+Therefore evidence is staged and strictly merged per identity before writing a
+single snapshot. Contractual disagreement inside the same capture is fail-closed.
 """
 from __future__ import annotations
 
@@ -57,6 +63,35 @@ def candidate_map(store):
         return out
 
 
+def stage_evidence(pending, merge_conflicts, *, family, ticker, market, settlement,
+                   source_class, source_ref, evidence):
+    """Strictly merge endpoint evidence for one identity/source within this capture.
+
+    Provenance-only fields may differ and the newest observation is retained.
+    Any non-metadata disagreement is recorded as an intra-source conflict and
+    prevents the affected identity from being written by this capture.
+    """
+    family, ticker, market, settlement = ce.normalize_identity(
+        family=family, ticker=ticker, market=market, settlement=settlement)
+    key = (family, ticker, market, settlement, source_class)
+    item = pending.setdefault(key, {"source_ref": str(source_ref), "evidence": {}})
+    item["source_ref"] = str(source_ref)
+    merged = item["evidence"]
+    for field, value in nonempty(evidence).items():
+        if field in ce.NON_CONTRACT_COMPARISON_FIELDS:
+            merged[field] = value
+            continue
+        previous = merged.get(field)
+        if previous not in (None, "", [], {}) and ce.canonical_json(previous) != ce.canonical_json(value):
+            merge_conflicts.setdefault(key, {})[field] = {
+                "previous": previous,
+                "incoming": value,
+            }
+            continue
+        merged[field] = value
+    return key
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("USAGE:capture.json")
@@ -78,8 +113,10 @@ def main():
         ce.start_run(store, run_id=rid, job_key=job,
                      detail="RC6 authenticated GET/XHR evidence; no auto activation")
 
-    total = changed = conflicts = 0
+    pending = {}
+    merge_conflicts = {}
     notes = []
+
     for _, item in (raw.get("endpoints") or {}).items():
         kind = item.get("kind")
         job = str(item.get("observed_job") or "")
@@ -98,13 +135,12 @@ def main():
                     notes.append("UNMAPPED:" + ticker)
                     continue
                 for ident in targets:
-                    try:
-                        result = ce.record_snapshot(store, family=ident.get("instrument_type"), ticker=ticker,
-                            market=ident.get("market") or "UNKNOWN", settlement=ident.get("settlement") or "UNKNOWN",
-                            source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
-                        total += 1; changed += int(bool(result.get("changed")))
-                    except Exception as exc:
-                        notes.append("INSTRUMENTOS:" + type(exc).__name__)
+                    stage_evidence(pending, merge_conflicts,
+                        family=ident.get("instrument_type"), ticker=ticker,
+                        market=ident.get("market") or "UNKNOWN",
+                        settlement=ident.get("settlement") or "UNKNOWN",
+                        source_class="PPI_AUTHENTICATED_XHR", source_ref=source,
+                        evidence=evidence)
 
         elif kind == "CaucionesOperables":
             rows = item.get("rows") or []
@@ -116,12 +152,9 @@ def main():
                 settlement = str(pick(row,["settlement","liquidacion","liquidación","plazo"]) or "UNKNOWN")
                 evidence = nonempty({**row,"source_job":job,"source_route":route,
                                      "readiness_guard":"NO_AUTO_ACTIVATION_MISSING_FIELDS_REMAIN"})
-                try:
-                    result = ce.record_snapshot(store, family="CAUCIONES", ticker=ticker, market=market,
-                        settlement=settlement, source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
-                    total += 1; changed += int(bool(result.get("changed")))
-                except Exception as exc:
-                    notes.append("CAUCIONES:" + type(exc).__name__)
+                stage_evidence(pending, merge_conflicts,
+                    family="CAUCIONES", ticker=ticker, market=market, settlement=settlement,
+                    source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
 
         elif kind == "DatosTecnicos":
             row = item.get("row") or {}
@@ -131,41 +164,52 @@ def main():
                     continue
                 evidence = nonempty({k:v for k,v in row.items() if k != "ticker"})
                 evidence.update({"source_job":job,"source_route":route,"readiness_guard":"NO_AUTO_ACTIVATION"})
-                try:
-                    result = ce.record_snapshot(store, family=ident.get("instrument_type"), ticker=ticker,
-                        market=ident.get("market") or "UNKNOWN", settlement=ident.get("settlement") or "UNKNOWN",
-                        source_class="PPI_AUTHENTICATED_XHR", source_ref=source, evidence=evidence)
-                    total += 1; changed += int(bool(result.get("changed")))
-                except Exception as exc:
-                    notes.append("TECHNICAL:" + type(exc).__name__)
+                stage_evidence(pending, merge_conflicts,
+                    family=ident.get("instrument_type"), ticker=ticker,
+                    market=ident.get("market") or "UNKNOWN",
+                    settlement=ident.get("settlement") or "UNKNOWN",
+                    source_class="PPI_AUTHENTICATED_XHR", source_ref=source,
+                    evidence=evidence)
 
         elif kind == "SubyacenteOpciones":
             rows = item.get("rows") or []
             if rows:
-                try:
-                    result = ce.record_snapshot(store, family="OPCIONES", ticker="*", market="UNKNOWN", settlement="UNKNOWN",
-                        source_class="PPI_AUTHENTICATED_XHR", source_ref=source,
-                        evidence={"underlyings":rows,"source_job":job,"source_route":route,
-                                  "evidence_scope":"UNDERLYING_CATALOG_ONLY","readiness_guard":"NO_AUTO_ACTIVATION"})
-                    total += 1; changed += int(bool(result.get("changed")))
-                except Exception as exc:
-                    notes.append("OPTIONS:" + type(exc).__name__)
+                stage_evidence(pending, merge_conflicts,
+                    family="OPCIONES", ticker="*", market="UNKNOWN", settlement="UNKNOWN",
+                    source_class="PPI_AUTHENTICATED_XHR", source_ref=source,
+                    evidence={"underlyings":rows,"source_job":job,"source_route":route,
+                              "evidence_scope":"UNDERLYING_CATALOG_ONLY","readiness_guard":"NO_AUTO_ACTIVATION"})
 
         elif kind == "SCHEMA_ONLY":
             family = {"CONTRACT_EVIDENCE_AUCTIONS":"LICITACIONES",
                       "CONTRACT_EVIDENCE_CAUCIONES":"CAUCIONES"}.get(job)
             if family:
-                try:
-                    result = ce.record_snapshot(store, family=family, ticker="*", market="UNKNOWN", settlement="UNKNOWN",
-                        source_class="PPI_AUTHENTICATED_XHR", source_ref=source,
-                        evidence={"provider_schema":item.get("schema") or {},"source_job":job,"source_route":route,
-                                  "evidence_scope":"ENDPOINT_SCHEMA_ONLY","readiness_guard":"NO_AUTO_ACTIVATION"})
-                    total += 1; changed += int(bool(result.get("changed")))
-                except Exception as exc:
-                    notes.append("SCHEMA:" + type(exc).__name__)
+                stage_evidence(pending, merge_conflicts,
+                    family=family, ticker="*", market="UNKNOWN", settlement="UNKNOWN",
+                    source_class="PPI_AUTHENTICATED_XHR", source_ref=source,
+                    evidence={"provider_schema":item.get("schema") or {},"source_job":job,"source_route":route,
+                              "evidence_scope":"ENDPOINT_SCHEMA_ONLY","readiness_guard":"NO_AUTO_ACTIVATION"})
 
-    state = "AMARILLO"
-    detail = f"records={total}; changed={changed}; conflicts={conflicts}; no_auto_activation=YES; notes={','.join(sorted(set(notes)))[:1000]}"
+    total = changed = 0
+    conflict_fields = sum(len(v) for v in merge_conflicts.values())
+    for key, staged in pending.items():
+        family, ticker, market, settlement, source_class = key
+        if key in merge_conflicts:
+            notes.append("INTRA_SOURCE_CONFLICT:" + family + ":" + ticker + ":" +
+                         ",".join(sorted(merge_conflicts[key])))
+            continue
+        try:
+            result = ce.record_snapshot(store, family=family, ticker=ticker,
+                market=market, settlement=settlement, source_class=source_class,
+                source_ref=staged["source_ref"], evidence=staged["evidence"])
+            total += 1
+            changed += int(bool(result.get("changed")))
+        except Exception as exc:
+            notes.append("WRITE:" + family + ":" + ticker + ":" + type(exc).__name__)
+
+    conflicts = conflict_fields
+    state = "ROJO" if conflicts else "AMARILLO"
+    detail = f"records={total}; changed={changed}; conflicts={conflicts}; staged={len(pending)}; no_auto_activation=YES; notes={','.join(sorted(set(notes)))[:1000]}"
     for rid in run_ids.values():
         ce.finish_run(store, run_id=rid, state=state, records=total, changed=changed,
                       conflicts=conflicts, detail=detail)
@@ -176,9 +220,9 @@ def main():
     if quick != "ok" or not runtime or runtime[0] != "PRODUCTION_PAPER" or int(runtime[1] or 0) != 0:
         raise SystemExit("POST_IMPORT_SAFETY_INVARIANT_FAILED")
     print(json.dumps({"state":state,"records":total,"changed":changed,"conflicts":conflicts,
-                      "notes":sorted(set(notes)),"quick_check":quick,"real_orders_sent":0},
-                     ensure_ascii=False, sort_keys=True))
-    return 0
+                      "staged":len(pending),"notes":sorted(set(notes)),"quick_check":quick,
+                      "real_orders_sent":0}, ensure_ascii=False, sort_keys=True))
+    return 0 if conflicts == 0 else 6
 
 
 if __name__ == "__main__":
