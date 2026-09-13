@@ -1,0 +1,70 @@
+name: RC6 PPI Web pending ON FCI closure canary 2026-09-13
+
+on:
+  push:
+    branches:
+      - ops/rc6-ppi-web-residual-ready-20260913
+    paths:
+      - 'ops/ppi_web_pending_closure_canary_rc6.py'
+      - '.github/workflows/rc6-ppi-web-pending-closure-canary-20260913.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Stage canary
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" ops/ppi_web_pending_closure_canary_rc6.py "$DO_USER@$DO_HOST:/tmp/ppi_web_pending_closure_canary_rc6.py"
+      - name: Run authenticated pending closure canary
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          VENV=/opt/porota-contract-evidence-venv
+          LOCK=/run/lock/porota-ppi-web-browser.lock
+          PROBE=/tmp/ppi_web_pending_closure_canary_rc6.py
+          safety() {
+            sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True)
+          c.execute('pragma query_only=on')
+          print('|'.join(map(str,c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))
+          c.close()
+          PY
+          }
+          PRE="$(safety)"; echo SAFETY_BEFORE="$PRE"; test "$PRE" = 'PRODUCTION_PAPER|0'
+          test -x /usr/bin/google-chrome-stable
+          test -x "$VENV/bin/python"
+          test -d "$PROFILE"
+          chown porotaadmin:porotaadmin "$PROBE"
+          sudo -n flock -w 240 "$LOCK" runuser -u porotaadmin -- env HOME=/home/porotaadmin "$VENV/bin/python" "$PROBE" --profile "$PROFILE"
+          POST="$(safety)"; echo SAFETY_AFTER="$POST"; test "$POST" = 'PRODUCTION_PAPER|0'
+          echo REAL_ORDERS_SENT=0
+          echo CANONICAL_WRITE=DENY
+          echo MASS_SCRAPING_STARTED=NO
+          rm -f "$PROBE"
+          HOST
