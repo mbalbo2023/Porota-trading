@@ -1,0 +1,56 @@
+name: RC6 Contract Evidence ingestion fix CI 2026-09-13
+
+on:
+  push:
+    branches:
+      - ops/rc6-ppi-web-residual-ready-20260913
+    paths:
+      - rc6_ppi_contract_normalizer.py
+      - rc6_contract_capture_importer.py
+      - test_rc6_contract_evidence_ingestion_20260913.py
+      - .github/workflows/rc6-contract-evidence-fix-ci-20260913.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-evidence-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax
+        run: |
+          python -m py_compile \
+            rc6_ppi_contract_normalizer.py \
+            rc6_contract_capture_importer.py \
+            cp_contract_evidence_v2_hf6.py \
+            cq_family_contract_rules_hf6.py \
+            test_rc6_contract_evidence_ingestion_20260913.py
+      - name: Focused fail-closed regressions
+        run: |
+          python - <<'PY'
+          import inspect
+          import test_rc6_contract_evidence_ingestion_20260913 as t
+          tests = [(name, fn) for name, fn in inspect.getmembers(t, inspect.isfunction)
+                   if name.startswith('test_')]
+          for name, fn in tests:
+              fn()
+              print('PASS', name)
+          assert len(tests) == 3, len(tests)
+          print('RESULT=3/3_PASS')
+          PY
+      - name: Safety invariant static check
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          collector = Path('rc6_trusted_browser_contract_collector.py').read_text()
+          importer = Path('rc6_contract_capture_importer.py').read_text()
+          assert 'real_orders_sent":0' in collector or 'real_orders_sent": 0' in collector
+          assert 'POST_IMPORT_SAFETY_INVARIANT_FAILED' in importer
+          assert 'NO_AUTO_ACTIVATION' in importer
+          print('PAPER_SAFETY_GUARDS=PASS')
+          PY
