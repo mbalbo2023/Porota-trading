@@ -17,6 +17,9 @@ API='https://api.portfoliopersonal.com'
 SAFE_METHODS={'GET','HEAD','OPTIONS'}
 FORBIDDEN=('/orden','/order','/operar/confirm','/confirmar','/cancel','/transfer','/suscribir','/rescatar','/caucion','/licit','/tender','/security','/password','/2fa')
 DEFERRED_FAMILIES={'FCI','FCIS','FCI_EXTERIOR','FCIS_EXTERIOR','FONDOS','FONDO'}
+# Proven authenticated read-only alias (resolver run 34741333234).
+# Explicit aliases only: no fuzzy substitution is permitted in the durable runner.
+KNOWN_SYMBOL_ALIASES={'MRCTO':('MRCAC',)}
 
 
 def now_iso(): return datetime.now(timezone.utc).isoformat(timespec='microseconds')
@@ -48,7 +51,8 @@ def item_match(obj,symbol):
     if isinstance(tipo,dict): tid=tipo.get('id'); tdesc=str(tipo.get('descripcion') or tipo.get('description') or '')
     tid=tid or obj.get('typeId') or obj.get('tipoItemId') or obj.get('instrumentTypeId')
     if iid is None: return None
-    if ticker.upper()==symbol.upper() or symbol.upper() in (ticker+' '+desc).upper():
+    wanted=str(symbol or '').upper(); accepted={wanted,*KNOWN_SYMBOL_ALIASES.get(wanted,())}
+    if ticker.upper() in accepted or wanted in (ticker+' '+desc).upper():
         return {'id':str(iid),'ticker':ticker or symbol,'desc':desc,'type_id':None if tid is None else str(tid),'type_desc':tdesc}
     return None
 def extract_type_items(cfg):
@@ -168,7 +172,7 @@ def main():
                         m=item_match(obj,sym)
                         if m: found=m; source='GLOBAL_SEARCH'; break
                     if found: break
-            tr={**target,'discovery_source':source or None,'discovery_http':last_http,'item_id':found.get('id') if found else None,'type_id':(found.get('type_id') if found else None) or tid,'result':'DISCOVERY_UNRESOLVED'}
+            tr={**target,'discovery_source':source or None,'discovery_http':last_http,'item_id':found.get('id') if found else None,'resolved_ticker':found.get('ticker') if found else None,'type_id':(found.get('type_id') if found else None) or tid,'result':'DISCOVERY_UNRESOLVED'}
             if not found: report['target_results'].append(tr); continue
             item=found['id']; detail_http,_=get_json('/api/Cotizaciones/Item/'+item); plazos_http,plazos=get_json('/api/Cotizaciones/Item/PlazosOperables',{'itemId':item}); term=settlement_term(plazos,target['settlement'])
             tr.update({'detail_http':detail_http,'plazos_http':plazos_http,'term':term})
@@ -181,7 +185,7 @@ def main():
             elif len(provider)==0: tr['result']='PROVIDER_EMPTY'
             elif len(normalized)==0: tr['result']='PROVIDER_INVALID_SHAPE'
             else:
-                tr['result']='CAPTURED'; cap={k:target[k] for k in ('symbol','instrument_type','market','settlement')}; cap.update({'residual_class':target.get('residual_class',''),'source':'PPI_WEB_HISTORY','item_id':item,'type_id':tr['type_id'],'term':term,'history_http':hist_http,'rows_sha256':digest(in_window),'rows':in_window}); report['captures'].append(cap)
+                tr['result']='CAPTURED'; cap={k:target[k] for k in ('symbol','instrument_type','market','settlement')}; cap.update({'residual_class':target.get('residual_class',''),'source':'PPI_WEB_HISTORY','item_id':item,'resolved_ticker':found.get('ticker'),'type_id':tr['type_id'],'term':term,'history_http':hist_http,'rows_sha256':digest(in_window),'rows':in_window}); report['captures'].append(cap)
             report['target_results'].append(tr)
         ctx.close()
     report['summary']={'targets':len(targets),'captured_targets':sum(1 for x in report['target_results'] if x['result']=='CAPTURED'),'provider_empty':sum(1 for x in report['target_results'] if x['result']=='PROVIDER_EMPTY'),'unresolved':sum(1 for x in report['target_results'] if x['result'] not in ('CAPTURED','PROVIDER_EMPTY')),'rows_365d':sum(len(x['rows']) for x in report['captures']),'alert_config_http':cfg_http,'history_horizon_policy':'PREVIOUS_365D'}
