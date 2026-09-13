@@ -53,6 +53,7 @@ NON_CONTRACT_COMPARISON_FIELDS = frozenset({
     "table_headers_observed", "tables", "unlinked_observation_count",
     "unlinked_observations_sample", "sanitized_rows_sample", "route",
 })
+IDENTITY_EVIDENCE_FIELDS = ("ticker", "market", "settlement")
 
 
 def now_iso():
@@ -323,6 +324,39 @@ def readiness_state(records, *, required_fields=(), max_age_seconds=None, now=No
             "evidence":merged,"auto_activation_allowed":False}
 
 
+def _merge_canonical_identity_fields(rows, merged, conflicts):
+    """Use canonical record-key identity without guessing or hiding disagreement.
+
+    Contract Evidence v2 stores ticker/market/settlement in its primary identity
+    key.  Those values are authoritative evidence for readiness even when a
+    provider payload does not duplicate them.  Any disagreement between record
+    keys, or between a record key and provider evidence, is fail-closed.
+    """
+    for field in IDENTITY_EVIDENCE_FIELDS:
+        entries=[]
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            source=row.get("source_class")
+            rank=SOURCE_RANK.get(source, 999)
+            key_value=row.get(field)
+            if key_value not in (None, "", [], {}):
+                entries.append((rank, source or "UNKNOWN_SOURCE",
+                                str(key_value).strip().upper(), "record_key"))
+            evidence=row.get("evidence") or {}
+            if isinstance(evidence, dict):
+                evidence_value=evidence.get(field)
+                if evidence_value not in (None, "", [], {}):
+                    entries.append((rank, source or "UNKNOWN_SOURCE",
+                                    str(evidence_value).strip().upper(), "evidence"))
+        values={entry[2] for entry in entries}
+        if len(values)>1:
+            conflicts[field]=sorted(entries, key=lambda x:(x[0], x[1], x[3], x[2]))
+        elif len(values)==1:
+            merged[field]=next(iter(values))
+    return merged, conflicts
+
+
 def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
                            simulator_ready=False, cost_ready=False):
     """Family-aware readiness using canonical execution requirements.
@@ -342,6 +376,7 @@ def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
     for row in sorted(rows, key=lambda r: SOURCE_RANK.get(r.get("source_class"), 999), reverse=True):
         merged.update({k:v for k,v in (row.get("evidence") or {}).items()
                        if v not in (None,"",[],{})})
+    merged, conflicts = _merge_canonical_identity_fields(rows, merged, conflicts)
     freshness_ok = True
     if max_age_seconds is not None:
         ref = now or datetime.now(timezone.utc)
