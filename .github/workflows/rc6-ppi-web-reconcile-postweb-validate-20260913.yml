@@ -1,0 +1,61 @@
+name: RC6 PPI Web reconcile + post-Web residual validate 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-scraper-20260912]
+    paths:
+      - 'cu_history_store_v2_hf6.py'
+      - 'ops/ppi_web_history_reconcile_rc6.py'
+      - 'ops/ppi_postweb_residual_manifest_rc6.py'
+      - 'tests/test_ppi_web_reconcile_and_postweb_residual_rc6.py'
+      - '.github/workflows/rc6-ppi-web-reconcile-postweb-validate-20260913.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-ppi-web-reconcile-postweb-validate
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            cu_history_store_v2_hf6.py \
+            cp_history_ingest_policy_hf6.py \
+            ops/ppi_web_history_reconcile_rc6.py \
+            ops/ppi_postweb_residual_manifest_rc6.py
+      - name: Install pytest
+        run: python -m pip install -q pytest
+      - name: Focused reconciliation tests
+        run: python -m pytest -q tests/test_ppi_web_reconcile_and_postweb_residual_rc6.py
+      - name: Prove source precedence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import cu_history_store_v2_hf6 as h
+          assert h.source_rank('PPI_PRODUCTION_HISTORY') == 10
+          assert h.source_rank('PPI_API') == 10
+          assert h.source_rank('PPI_WEB_HISTORY') == 15
+          assert h.source_rank('IOL') == 30
+          assert h.source_rank('PPI_API') < h.source_rank('PPI_WEB_HISTORY') < h.source_rank('IOL')
+          print('SOURCE_PRECEDENCE=PPI_API>PPI_WEB>IOL')
+          PY
+      - name: Static safety invariants
+        run: |
+          set -euo pipefail
+          ! grep -Eq 'requests\.|urlopen|playwright|selenium|send_order|place_order|order_budget' ops/ppi_web_history_reconcile_rc6.py
+          ! grep -Eq 'requests\.|urlopen|playwright|selenium|sqlite3|send_order|place_order|order_budget' ops/ppi_postweb_residual_manifest_rc6.py
+          grep -q 'validate_provider_history' ops/ppi_web_history_reconcile_rc6.py
+          grep -q 'ready_paper_implication.*NONE' ops/ppi_web_history_reconcile_rc6.py
+          grep -q 'execution_price_implication.*NONE' ops/ppi_web_history_reconcile_rc6.py
+          echo STATIC_SAFETY=PASS
