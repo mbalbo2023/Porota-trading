@@ -1,17 +1,25 @@
-name: RC6 PPI Web residual scraper validate 2026-09-12
+name: RC6 PPI Web residual scraper validate 2026-09-13
 
 on:
   push:
-    branches: [ops/rc6-ppi-web-residual-scraper-20260912]
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
     paths:
       - 'ops/ppi_web_residual_scraper_rc6.py'
       - 'ops/ppi_web_residual_pipeline_rc6.py'
       - 'ops/ppi_web_readonly_transport_rc6.py'
       - 'ops/ppi_history_residual_manifest_rc6.py'
+      - 'ops/ppi_web_residual_state_rc6.py'
+      - 'ops/ppi_web_history_ingest_rc6.py'
+      - 'ops/ppi_web_residual_server_runner_rc6.py'
+      - 'ops/porota-ppi-web-residual-rc6.service'
+      - 'rc6_ppi_web_history_shadow.py'
+      - 'rc6_ppi_web_reauth.py'
       - 'tests/test_ppi_web_residual_scraper_rc6.py'
       - 'tests/test_ppi_web_residual_pipeline_rc6.py'
       - 'tests/test_ppi_web_readonly_transport_rc6.py'
       - 'tests/test_ppi_history_residual_manifest_rc6.py'
+      - 'tests/test_ppi_web_residual_state_rc6.py'
+      - 'tests/test_ppi_web_residual_server_runner_rc6.py'
       - '.github/workflows/rc6-ppi-web-residual-scraper-validate-20260912.yml'
   workflow_dispatch:
 
@@ -33,6 +41,11 @@ jobs:
           python -m py_compile ops/ppi_web_residual_pipeline_rc6.py
           python -m py_compile ops/ppi_web_readonly_transport_rc6.py
           python -m py_compile ops/ppi_history_residual_manifest_rc6.py
+          python -m py_compile ops/ppi_web_residual_state_rc6.py
+          python -m py_compile ops/ppi_web_history_ingest_rc6.py
+          python -m py_compile ops/ppi_web_residual_server_runner_rc6.py
+          python -m py_compile rc6_ppi_web_history_shadow.py
+          python -m py_compile rc6_ppi_web_reauth.py
       - name: Install pytest
         run: python -m pip install --disable-pip-version-check pytest
       - name: Unit and safety tests
@@ -41,7 +54,9 @@ jobs:
             tests/test_ppi_web_residual_scraper_rc6.py \
             tests/test_ppi_web_residual_pipeline_rc6.py \
             tests/test_ppi_web_readonly_transport_rc6.py \
-            tests/test_ppi_history_residual_manifest_rc6.py
+            tests/test_ppi_history_residual_manifest_rc6.py \
+            tests/test_ppi_web_residual_state_rc6.py \
+            tests/test_ppi_web_residual_server_runner_rc6.py
       - name: Manifest CLI smoke test
         shell: bash
         run: |
@@ -89,4 +104,7 @@ jobs:
             ops/ppi_web_residual_scraper_rc6.py \
             ops/ppi_web_residual_pipeline_rc6.py \
             ops/ppi_web_readonly_transport_rc6.py \
-            ops/ppi_history_residual_manifest_rc6.py
+            ops/ppi_history_residual_manifest_rc6.py \
+            ops/ppi_web_residual_state_rc6.py \
+            ops/ppi_web_history_ingest_rc6.py \
+            ops/ppi_web_residual_server_runner_rc6.py
