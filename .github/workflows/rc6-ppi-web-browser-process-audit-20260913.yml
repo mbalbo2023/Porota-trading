@@ -1,0 +1,39 @@
+name: RC6 PPI Web browser process audit 2026-09-13
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-browser-process-audit-20260913.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Audit browser processes and services
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          echo "WEB_SERVICE=$(sudo -n systemctl is-active porota-ppi-web-residual-rc6.service 2>/dev/null || true)"
+          echo "API_SERVICE=$(sudo -n systemctl is-active porota-ppi-fullfamily-history-rc6.service 2>/dev/null || true)"
+          echo "ENABLE_GATE=$([ -e /opt/porota-ingest/ppi-web-residual/ENABLED ] && echo PRESENT || echo ABSENT)"
+          echo 'PROFILE_PROCESSES_BEGIN'
+          ps -eo pid=,ppid=,user=,lstart=,args= | grep -E '[g]oogle-chrome|[c]hromium' | grep '/home/porotaadmin/porota-browser-lab/chrome-profile' | sed -E 's/(--remote-debugging[^ ]*|--user-data-dir=[^ ]*)/[browser-arg]/g' || true
+          echo 'PROFILE_PROCESSES_END'
+          echo 'LOCK_TEST_BEGIN'
+          if sudo -n flock -n /run/lock/porota-ppi-web-browser.lock true; then echo BROWSER_LOCK=FREE; else echo BROWSER_LOCK=HELD; fi
+          echo 'LOCK_TEST_END'
+          HOST
