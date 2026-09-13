@@ -1,0 +1,85 @@
+name: RC6 observer capacity read-only proof 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-observer-capacity-readonly-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  observer-capacity-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DROPLET_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DROPLET_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_capacity"
+          chmod 600 "$HOME/.ssh/porota_capacity"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only observer and intraday capacity proof
+        env:
+          HOST: ${{ secrets.DROPLET_HOST }}
+          USER: ${{ secrets.DROPLET_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_capacity" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$USER@$HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          C=porota_production_observer
+          echo '=== CONTAINER_LIMITS ==='
+          sudo -n docker inspect -f 'cpus={{.HostConfig.NanoCpus}} cpu_period={{.HostConfig.CpuPeriod}} cpu_quota={{.HostConfig.CpuQuota}} memory={{.HostConfig.Memory}} pids={{.HostConfig.PidsLimit}}' "$C"
+          echo '=== CONTAINER_STATS ==='
+          sudo -n docker stats --no-stream --format 'cpu={{.CPUPerc}} mem={{.MemUsage}} mempct={{.MemPerc}} pids={{.PIDs}}' "$C"
+          echo '=== SAFE_ENV ==='
+          sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$C" | grep -E '^(PAPER_ACTIVE_SYMBOL_LIMIT|PAPER_OBSERVER_INTERVAL_SECONDS|PAPER_PPI_CALL_BUDGET_SECONDS|PAPER_INTRADAY_SCAN_SECONDS|PAPER_INTRADAY_BATCH_LIMIT|PAPER_SIGNAL_WINDOW_MINUTES|PAPER_SIGNAL_MIN_SAMPLES)=' || true
+          echo '=== CAPACITY_DB ==='
+          sudo -n docker exec -i "$C" python - <<'PY'
+          import json, sqlite3, statistics
+          DB='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(DB,uri=True,timeout=20); c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          def table(name):
+              return c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(name,)).fetchone() is not None
+          if table('financial_instrument_catalog'):
+              total=c.execute("SELECT COUNT(*) FROM financial_instrument_catalog WHERE status='AVAILABLE'").fetchone()[0]
+              print('AVAILABLE_TOTAL='+str(total))
+              rows=[dict(r) for r in c.execute("SELECT instrument_type,COUNT(*) n FROM financial_instrument_catalog WHERE status='AVAILABLE' GROUP BY instrument_type ORDER BY n DESC,instrument_type")]
+              print('AVAILABLE_BY_FAMILY='+json.dumps(rows,default=str))
+          if table('universe_cycle_metrics'):
+              rows=[dict(r) for r in c.execute("SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 300")]
+              print('CYCLE_COUNT='+str(len(rows)))
+              if rows:
+                  for key in ('eligible_total','selected_count','successful_count','failed_count','duration_seconds','recommended_limit'):
+                      vals=[float(r[key]) for r in rows if r.get(key) is not None]
+                      if vals:
+                          vals_sorted=sorted(vals)
+                          p95=vals_sorted[min(len(vals_sorted)-1,int(round((len(vals_sorted)-1)*0.95)))]
+                          print(key.upper()+'_AVG='+str(round(statistics.fmean(vals),3))+' P95='+str(round(p95,3))+' MAX='+str(round(max(vals),3)))
+                  print('LAST_CYCLE='+json.dumps(rows[0],default=str))
+          if table('symbol_cycle_metrics'):
+              rows=[dict(r) for r in c.execute("SELECT latency_ms,state FROM symbol_cycle_metrics ORDER BY id DESC LIMIT 5000")]
+              vals=[float(r['latency_ms']) for r in rows if r.get('latency_ms') is not None]
+              if vals:
+                  vals_sorted=sorted(vals)
+                  def pct(p): return vals_sorted[min(len(vals_sorted)-1,int(round((len(vals_sorted)-1)*p))]
+                  print('SYMBOL_LATENCY_MS_AVG='+str(round(statistics.fmean(vals),2)))
+                  print('SYMBOL_LATENCY_MS_P50='+str(round(pct(.50),2)))
+                  print('SYMBOL_LATENCY_MS_P95='+str(round(pct(.95),2)))
+                  print('SYMBOL_LATENCY_MS_P99='+str(round(pct(.99),2)))
+                  print('SYMBOL_LATENCY_MS_MAX='+str(round(max(vals),2)))
+          if table('intraday_scalping_worker_state'):
+              row=c.execute('SELECT * FROM intraday_scalping_worker_state WHERE id=1').fetchone()
+              print('INTRADAY_STATE='+json.dumps(dict(row) if row else {},default=str))
+          c.close()
+          print('OBSERVER_CAPACITY_READONLY=GREEN')
+          PY
+          HOST
