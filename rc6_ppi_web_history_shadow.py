@@ -16,12 +16,12 @@ TRADING="https://trading.portfoliopersonal.com"
 SAFE_METHODS={"GET","HEAD","OPTIONS"}
 FORBIDDEN_PATH_PARTS=("/orden","/order","/operar/confirm","/confirmar","/cancel","/transfer","/suscribir","/rescatar")
 DROP_KEY_PARTS=("account","cuenta","saldo","tenencia","disponible","comitente","cliente","documento","dni","cuit","email","mail","telefono","phone","token","password","passwd","cookie","authorization","secret","session","usuario","username","user_id")
-DATE_ALIASES=("date","fecha","datetime","timestamp","time","day","dia","día")
+DATE_ALIASES=("date","fecha","fechaCotizacion","datetime","timestamp","time","day","dia","día")
 FIELD_ALIASES={
  "openingPrice":("openingPrice","open","apertura"),
- "max":("max","high","maximo","máximo"),
- "min":("min","low","minimo","mínimo"),
- "price":("price","close","cierre","ultimo","último"),
+ "max":("max","high","maxDia","maximo","máximo"),
+ "min":("min","low","minDia","minimo","mínimo"),
+ "price":("price","close","cierre","ultOperado","ultimo","último"),
  "volume":("volume","volumen","quantity","cantidad","monto"),
 }
 ROUTES={
