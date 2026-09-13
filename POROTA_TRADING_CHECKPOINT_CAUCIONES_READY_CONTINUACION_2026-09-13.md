@@ -33,19 +33,50 @@ No borrar código, datos ni históricos de esas familias. No asumir ninguna otra
 - `CASH_SWEEP_ORDER_ROUTING_ALLOWED=False`.
 - Adaptador fail-closed creado: `rc6_caucion_offer_adapter.py`.
 - Contrato fail-closed corregido: ya no supone `bids=colocadora`, `price=TNA` ni `quantity=principal` sin prueba semántica explícita.
+- Bridge PAPER creado: `rc6_caucion_paper_bridge.py`.
+- Producer fail-closed de obligaciones PAPER creado: `rc6_paper_obligation_snapshot.py`.
+- Gate agregado de frescura creado: `rc6_caucion_fresh_data_agent.py`.
 - Workflow `34778094293`: SUCCESS; 36 tests PASS sobre adapter + contrato y pruebas de fail-closed.
-- Workflow `34778116633`: SUCCESS; confirmó que aún no había call-sites productivos de `offer_from_canonical_snapshot`, `run_paper_sweep` ni `ObligationSnapshot`.
+- Workflow `34778116633`: SUCCESS; dejó documentado el gap de integración previo.
+- Workflow `34778690161`: SUCCESS; suite focalizada de bridge/freshness/obligaciones/sweep, sin red ni rutas reales.
+- Workflow `34778816227`: SUCCESS; **67 tests PASS**, incluyendo prueba E2E determinística `fresh GREEN -> PLACED_SIMULATED`, stale -> HOLD, obligaciones incompletas -> HOLD; rutas reales siguen bloqueadas.
 
 ## PENDIENTES PARA READY_PAPER DE CAUCIONES
 
-1. Crear el bridge PAPER mínimo entre evidencia canónica validada y `run_paper_sweep` existente, sin red y sin capacidad de órdenes reales.
-2. Probar bridge positivo y negativos fail-closed.
-3. Crear/validar producer de `ObligationSnapshot` desde obligaciones reales del ledger PAPER, sin porcentaje fijo y sin inventar obligaciones.
-4. Integrar el gate contractual/dinámico de `cq_family_contract_rules_hf6.py` con el bridge.
-5. Demostrar stale/missing -> HOLD y fresh/valid -> PAPER candidate/PLACED_SIMULATED en test determinístico.
-6. Trazar dashboard/READY para impedir que muestre READY cuando el freshness gate esté rojo.
-7. Durante rueda activa, obtener evidencia fresca de CAUCIONES y validar semántica lado/profundidad/costos. Si sigue ambigua: HOLD.
-8. Recalcular las 10 identidades; objetivo 10/10 sólo si cada una cumple contrato + dinámica + integración + tests.
+1. Integrar el gate contractual/dinámico y el freshness gate con el runtime vivo, sin relajar TTL.
+2. Trazar dashboard/READY para impedir que muestre READY cuando el freshness gate esté rojo.
+3. Durante rueda activa, obtener evidencia fresca real de CAUCIONES y validar semántica lado/profundidad/costos. Si sigue ambigua: HOLD.
+4. Recalcular las 10 identidades; objetivo 10/10 sólo si cada una cumple contrato + dinámica + integración + tests.
+5. Verificar en el runtime desplegado heartbeat/timestamps de `current/book/intraday` para CAUCIONES y `real_orders_sent=0`.
+6. Demostrar en vivo o con evidencia runtime equivalente el ciclo fresh -> stale/missing -> HOLD -> fresh, sin afectar producción real.
+7. Verificar que dashboard y clasificador READY consumen la misma verdad agregada `CAUCION_FRESH_DATA_AGENT_GREEN` y nunca un criterio más permisivo.
+8. Prueba final de rueda activa y cierre de `READY_PAPER` sólo con todos los gates verdes.
+
+### PENDIENTE NUEVO A — LÓGICA DE OPORTUNIDADES INTRADÍA
+
+Documentar y validar cómo operará CAUCIONES durante toda la rueda, no sólo el cash-sweep EOD:
+- cómo detecta una oportunidad de tasa excepcionalmente atractiva;
+- qué universo/plazos/monedas evalúa en cada ciclo;
+- cada cuánto evalúa y si la evaluación se dispara por refresh/evento o scheduler;
+- qué compara: TNA neta de costos, profundidad disponible, plazo, calendario, liquidez futura, obligaciones/reserva, riesgo, concentración y costo de oportunidad frente a otras alternativas;
+- cómo evita perseguir un pico transitorio, usar book stale o duplicar la misma profundidad;
+- cuándo decide `HOLD`, `PAPER_CANDIDATE` o `PLACED_SIMULATED`;
+- cómo trata oportunidades intradía versus el sweep de caja ociosa cercano al cierre;
+- persistencia/auditoría de la razón exacta de cada aceptación/rechazo.
+
+**Estado actual:** PENDIENTE DE DISEÑO/AUDITORÍA. El código existente probado cubre el cash-sweep PAPER y sus gates; no se declara todavía que exista un detector intradía completo de oportunidades de caución.
+
+### PENDIENTE NUEVO B — HORARIOS DE CAUCIONES
+
+Verificar y congelar contractualmente los horarios efectivos de negociación de CAUCIONES y cualquier excepción por moneda, plazo, segmento o broker/PPI.
+
+**Evidencia preliminar verificada:**
+- La tabla oficial vigente enlazada por BYMA (Comunicado 18782, vigencia desde 28/07/2025) indica para PPT `Negociación Regular – Pase y Caución: 10:30 a 17:00 hs` GMT-3.
+- La página actual de horarios de BYMA sigue enlazando esa tabla.
+- PPI Support aloja copia del mismo Comunicado 18782.
+- No se debe asumir todavía que un cutoff operativo propio de PPI, una caución en USD o una condición excepcional de BYMA coincidan exactamente con el cierre general sin validación específica.
+
+**Pendiente exacto:** confirmar si existen cutoffs PPI/operativos distintos para ARS vs USD, colocadora vs tomadora, algún plazo específico o eventos especiales; incorporar fuente/versionado al gate `calendar/cutoff` y tests.
 
 ## TTL CANÓNICOS CAUCIONES
 
@@ -67,23 +98,26 @@ El bridge no puede relajar estos TTL.
 - 🟢 Orden real: bloqueada.
 - 🟢 Adapter canónico fail-closed: creado y probado.
 - 🟢 Semántica cruda peligrosa: bloqueada por código.
-- 🟡 Bridge evidencia -> PAPER sweep: en implementación.
-- 🟡 ObligationSnapshot productivo: pendiente.
-- 🟡 Fresh-data gate -> bridge/dashboard: pendiente.
-- 🔴 Dinámica fresca de rueda: pendiente hasta mercado activo.
-- 🔴 CAUCIONES `can_simulate`: 0/10 hasta completar gates.
-- 🔴 READY_PAPER end-to-end: todavía no demostrado.
+- 🟢 Bridge evidencia -> PAPER sweep: creado y probado.
+- 🟢 ObligationSnapshot PAPER: producer creado y probado fail-closed.
+- 🟢 Fresh-data aggregate gate: creado y probado determinísticamente.
+- 🟢 E2E sintético PAPER: fresh GREEN -> `PLACED_SIMULATED`; stale/obligaciones incompletas -> HOLD; 67 tests PASS.
+- 🟡 Lógica completa de oportunidades intradía: pendiente de diseño/auditoría.
+- 🟡 Horarios/cutoffs por modalidad/moneda/PPI: verificación en curso; BYMA general 10:30-17:00 ya evidenciado.
+- 🟡 Fresh-data gate -> runtime/dashboard: pendiente de integración viva.
+- 🔴 Dinámica fresca de rueda real: pendiente hasta mercado activo.
+- 🔴 CAUCIONES `can_simulate`: no promover 10/10 hasta evidencia viva e integración READY/dashboard.
+- 🔴 READY_PAPER operativo end-to-end: todavía no demostrado en runtime desplegado.
 
 ## ÚLTIMO PASO CONFIRMADO
 
-Se cerró la corrección de seguridad que impide convertir datos crudos PPI en una caución ejecutable por suposiciones semánticas. Adapter + contract tests están verdes y la arquitectura PAPER existente fue auditada. Se confirmó que faltan call-sites productivos que conecten el adapter y el cash-sweep y que `ObligationSnapshot` todavía no tiene producer productivo.
+Se cerró el circuito determinístico de prueba desde evidencia canónica + freshness GREEN + obligaciones PAPER reconciliadas hasta una colocación `PLACED_SIMULATED`, manteniendo `real_orders_sent=0` y rutas reales bloqueadas. También quedó probado que stale/missing e incompletitud de obligaciones producen HOLD. Esto prueba la lógica de integración en CI, no reemplaza la evidencia dinámica de rueda ni el deploy/runtime final.
 
 ## SIGUIENTE ACCIÓN EXACTA
 
 Avanzar en paralelo, sin tocar scraper/ingesta masiva:
-- bridge PAPER canónico + tests;
-- producer fail-closed de `ObligationSnapshot` + tests;
-- integración de gate contractual/dinámico y freshness con bridge;
-- traza de READY/dashboard;
-- workflow CI focalizado end-to-end;
-- dejar preparada la única prueba que requiere rueda activa: evidencia fresca real de CAUCIONES.
+- auditar/diseñar detector intradía de oportunidades y su cadencia real;
+- cerrar horarios/cutoffs oficiales BYMA + PPI por modalidad/moneda/plazo;
+- integrar/persistir `CAUCION_FRESH_DATA_AGENT_GREEN` en runtime y dashboard/READY;
+- obtener prueba read-only del runtime desplegado (workers, heartbeat, timestamps, safety);
+- dejar lista la prueba de rueda activa real de las 10 identidades.
