@@ -1,0 +1,76 @@
+name: RC6 Cauciones integration gap proof 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-cauciones-integration-gap-proof-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  integration-gap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static inventory of PAPER caucion integration surfaces
+        run: |
+          python - <<'PY'
+          import ast,json
+          from pathlib import Path
+
+          tokens=(
+              'run_paper_sweep',
+              'ObligationSnapshot',
+              'CaucionOffer',
+              'offer_from_canonical_snapshot',
+              'CASH_SWEEP_ORDER_ROUTING_ALLOWED',
+          )
+          hits={t:[] for t in tokens}
+          for p in sorted(Path('.').rglob('*.py')):
+              if any(part in {'.git','.venv','venv'} for part in p.parts):
+                  continue
+              try:
+                  lines=p.read_text(encoding='utf-8').splitlines()
+              except Exception:
+                  continue
+              for n,line in enumerate(lines,1):
+                  for token in tokens:
+                      if token in line:
+                          hits[token].append(f'{p}:{n}:{line.strip()[:180]}')
+          for token in tokens:
+              print(token+'_HITS='+json.dumps(hits[token],ensure_ascii=False))
+
+          # Distinguish definitions/imports/tests from actual non-test call sites.
+          production_calls={t:[] for t in ('run_paper_sweep','offer_from_canonical_snapshot','ObligationSnapshot')}
+          for p in sorted(Path('.').rglob('*.py')):
+              if 'tests' in p.parts or '.github' in p.parts:
+                  continue
+              try: tree=ast.parse(p.read_text(encoding='utf-8'))
+              except Exception: continue
+              for node in ast.walk(tree):
+                  if isinstance(node,ast.Call):
+                      f=node.func
+                      name=f.id if isinstance(f,ast.Name) else f.attr if isinstance(f,ast.Attribute) else None
+                      if name in production_calls:
+                          production_calls[name].append(f'{p}:{getattr(node,"lineno",0)}')
+          print('PRODUCTION_CALLS='+json.dumps(production_calls,sort_keys=True))
+
+          runtime=Path('di_caucion_cash_sweep_runtime_hf6.py').read_text(encoding='utf-8')
+          assert 'CASH_SWEEP_ORDER_ROUTING_ALLOWED = False' in runtime
+          assert 'OBLIGATION_SNAPSHOT_INCOMPLETE' in runtime
+          assert 'EXACT_FEE_BUDGET_MISSING' in runtime
+          print('PAPER_SWEEP_FAILCLOSED_STATIC=YES')
+          PY
+      - name: Compile caucion integration modules
+        run: |
+          python -m py_compile \
+            rc6_caucion_offer_adapter.py \
+            rc6_cauciones_contract.py \
+            bt_caucion_paper.py \
+            ca_caucion_allocator.py \
+            df_caucion_end_of_day_sweep_hf6.py \
+            di_caucion_cash_sweep_runtime_hf6.py
