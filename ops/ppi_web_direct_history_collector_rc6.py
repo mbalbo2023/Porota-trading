@@ -77,19 +77,23 @@ def normalize_history(payload):
 def parse_date(v):
     try: return datetime.fromisoformat(str(v).replace('Z','+00:00')).date()
     except Exception: return None
+def _term_candidates(value,depth=0):
+    if depth>5: return []
+    out=[]
+    if isinstance(value,dict):
+        iid=value.get('id') if value.get('id') is not None else value.get('value')
+        desc=value.get('descripcion') or value.get('description') or value.get('label') or value.get('nombre') or value.get('name')
+        if iid is not None and desc not in (None,''): out.append((str(iid),str(desc).upper()))
+        for v in value.values():
+            if isinstance(v,(dict,list)): out.extend(_term_candidates(v,depth+1))
+    elif isinstance(value,list):
+        for v in value: out.extend(_term_candidates(v,depth+1))
+    return out
 def settlement_term(plazos,settlement):
-    wanted=str(settlement or '').strip().upper(); pu=unwrap(plazos)
-    values=[]
-    if isinstance(pu,dict): values=pu.get('plazosOperables') or pu.get('terms') or []
-    elif isinstance(pu,list): values=pu
-    if not isinstance(values,list): values=[]
-    candidates=[]
-    for x in values:
-        if isinstance(x,dict):
-            iid=x.get('id') if x.get('id') is not None else x.get('value')
-            desc=str(x.get('descripcion') or x.get('description') or x.get('label') or x.get('nombre') or '')
-        else: iid=x; desc=str(x)
-        if iid is not None: candidates.append((str(iid),desc.upper()))
+    wanted=str(settlement or '').strip().upper()
+    candidates=[]; seen=set()
+    for pair in _term_candidates(plazos):
+        if pair not in seen: seen.add(pair); candidates.append(pair)
     def matches(desc):
         if wanted in {'CI','CONTADO INMEDIATO','INMEDIATO'}: return 'INMEDIATO' in desc or desc.strip()=='CI'
         for hrs in ('24','48','72'):
@@ -97,6 +101,7 @@ def settlement_term(plazos,settlement):
         return wanted and wanted in desc
     for iid,desc in candidates:
         if matches(desc): return iid
+    # Only the two term IDs already proven by normal PPI Web flow are safe fallbacks.
     if wanted in {'CI','CONTADO INMEDIATO','INMEDIATO'}: return '1'
     if '24' in wanted: return '2'
     return None
