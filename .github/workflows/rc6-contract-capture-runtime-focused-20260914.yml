@@ -1,0 +1,94 @@
+name: RC6 Contract capture runtime focused proof 2026-09-14
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-contract-capture-runtime-focused-20260914.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  runtime-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-ppi-web-residual-ready-20260913
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect exact capture runtime read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_CAPTURE_RUNTIME_FOCUSED_2026-09-14.txt
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' > "$RESULT"
+          set +e
+          ROOT=/opt/porota-trading
+          OUT="$ROOT/data/contract_evidence/rc6_trusted"
+          echo 'PROBE=RC6_CONTRACT_CAPTURE_RUNTIME_FOCUSED_V1'
+          echo "NOW_UTC=$(date -u +%FT%TZ)"
+          echo "SERVER_HEAD=$(git -c safe.directory="$ROOT" -C "$ROOT" rev-parse HEAD 2>/dev/null || echo UNKNOWN)"
+          echo '---SERVICE_SHOW---'
+          sudo -n systemctl show porota-contract-evidence-rc6.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p FragmentPath -p ExecStart -p User -p Group -p WorkingDirectory --no-pager 2>/dev/null | sed -E 's/([Pp]assword|[Tt]oken|[Ss]ecret|[Cc]ookie|[Aa]uthorization)([=: ]+)[^ ]+/\1\2<REDACTED>/g'
+          echo '---TIMER_SHOW---'
+          sudo -n systemctl show porota-contract-evidence-rc6.timer -p ActiveState -p SubState -p LastTriggerUSec -p NextElapseUSecRealtime -p FragmentPath --no-pager 2>/dev/null
+          echo '---UNIT_TEXT_SAFE---'
+          sudo -n systemctl cat porota-contract-evidence-rc6.service 2>/dev/null | sed -E 's/([Pp]assword|[Tt]oken|[Ss]ecret|[Cc]ookie|[Aa]uthorization)([=: ]+)[^ ]+/\1\2<REDACTED>/g' | sed -n '1,140p'
+          echo '---RUNTIME_FILES---'
+          for f in /usr/local/sbin/porota-contract-evidence-rc6 /usr/local/bin/porota-contract-evidence-rc6 "$ROOT/scripts/porota_contract_evidence_rc6_runtime.sh" "$ROOT/scripts/porota_contract_evidence_hf6_runtime.sh"; do
+            if [ -f "$f" ]; then
+              echo "FILE=$f"
+              grep -nE 'collector|profile|playwright|python|docker|contract_capture|import|normaliz|rc6_trusted' "$f" 2>/dev/null | sed -E 's/([Pp]assword|[Tt]oken|[Ss]ecret|[Cc]ookie|[Aa]uthorization)([=: ]+)[^ ]+/\1\2<REDACTED>/g' | sed -n '1,120p'
+            fi
+          done
+          echo '---PROFILE_PATH_STATUS---'
+          for p in /opt/porota-ingest/trusted_chrome_profile /opt/porota-trading/data/contract_evidence/rc6_trusted/profile /root/.config/google-chrome /home/*/.config/google-chrome; do
+            [ -e "$p" ] || continue
+            stat -c 'PROFILE=%n|type=%F|owner=%U:%G|mode=%a|mtime=%y' "$p" 2>/dev/null
+            [ -f "$p/Local State" ] && echo "PROFILE_LOCAL_STATE=YES|$p" || true
+          done
+          echo '---PLAYWRIGHT_HOST---'
+          for py in /usr/bin/python3 /opt/porota-trading/.venv/bin/python /opt/porota-ingest/.venv/bin/python /opt/porota-ingest/venv/bin/python; do
+            [ -x "$py" ] || continue
+            printf 'PY=%s|PLAYWRIGHT=' "$py"
+            "$py" -c 'import importlib.util; print("YES" if importlib.util.find_spec("playwright") else "NO")' 2>/dev/null || echo ERROR
+          done
+          echo '---RECENT_JOURNAL_SAFE---'
+          sudo -n journalctl -u porota-contract-evidence-rc6.service -n 100 --no-pager -o cat 2>/dev/null | grep -Eia 'capture|collector|profile|playwright|auth|trusted|import|python|docker|error|fail|success' | sed -E 's/([Pp]assword|[Tt]oken|[Ss]ecret|[Cc]ookie|[Aa]uthorization)([=: ]+)[^ ]+/\1\2<REDACTED>/g' | tail -80
+          echo '---SAFETY_DB---'
+          sudo -n python3 - "$ROOT/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          try:
+              c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True); c.execute('pragma query_only=on')
+              r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+              print('MODE='+str(r[0] if r else None)); print('REAL_ORDERS_SENT='+str(r[1] if r else None))
+          except Exception as e: print('SAFETY_DB_ERROR='+type(e).__name__)
+          PY
+          echo 'MUTATIONS=NONE'
+          HOST
+          cat "$RESULT"
+      - name: Persist result
+        if: always()
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_CAPTURE_RUNTIME_FOCUSED_2026-09-14.txt
+          test -f "$RESULT" || printf 'PROBE_RESULT=MISSING\n' > "$RESULT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist focused runtime proof [skip ci]'
+          git push origin HEAD:ops/rc6-ppi-web-residual-ready-20260913
