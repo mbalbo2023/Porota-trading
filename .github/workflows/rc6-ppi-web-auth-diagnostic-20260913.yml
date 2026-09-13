@@ -1,0 +1,65 @@
+name: RC6 PPI Web auth sanitized diagnostic 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-auth-diagnostic-20260913.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Run sanitized auth diagnostic
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          BIN=/opt/porota-ingest/ppi-web-residual/bin
+          SECRET=/etc/porota/contract-evidence-web.env
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          VENV=/opt/porota-contract-evidence-venv
+          KEYS="$(sudo -n -u porotaadmin awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/{print $1}' "$SECRET" | sort -u)"
+          printf '%s\n' "$KEYS" | grep -qx PPI_WEB_USERNAME && echo USERNAME_KEY=PRESENT || echo USERNAME_KEY=MISSING
+          printf '%s\n' "$KEYS" | grep -qx PPI_WEB_PASSWORD && echo PASSWORD_KEY=PRESENT || echo PASSWORD_KEY=MISSING
+          set +e
+          OUT="$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$BIN:/opt/porota-trading" \
+            "$VENV/bin/python" "$BIN/rc6_ppi_web_reauth.py" --profile "$PROFILE" --secret "$SECRET" 2>&1)"
+          RC=$?
+          set -e
+          OUT="$OUT" RC="$RC" python3 - <<'PY'
+          import json,os
+          lines=os.environ.get('OUT','').splitlines()
+          obj={}
+          for line in reversed(lines):
+              try:
+                  x=json.loads(line)
+                  if isinstance(x,dict): obj=x; break
+              except Exception: pass
+          allowed=('status','attempts','stage','page_url','blocked_post_path','auth_http_status','auth_json_object','auth_has_token_shape','auth_twofa_shape','auth_change_password_shape','auth_safe_keys','credentials_exposed','orders_visited','real_orders_sent','error_type')
+          print('REAUTH_RC='+os.environ.get('RC',''))
+          for k in allowed:
+              if k in obj: print(f'{k.upper()}={obj[k]}')
+          assert obj.get('credentials_exposed') is False
+          assert int(obj.get('real_orders_sent',0))==0
+          PY
+          HOST
