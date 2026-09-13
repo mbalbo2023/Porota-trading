@@ -1,0 +1,129 @@
+name: RC6 Cauciones EOD read-only audit 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-cauciones-eod-readonly-audit-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  caucion-runtime-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Caucion observer DB inventory read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,collections
+          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(db,uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          out={'quick_check':c.execute('pragma quick_check').fetchone()[0],'candidate_rows':0,'candidate_can_simulate':0,'candidate_statuses':{},'candidate_sample':[],'contract_current_rows':0,'contract_sources':{},'contract_sample':[],'tables_present':sorted(tables & {'candidate_universe','contract_evidence_v2_current','contract_evidence_v2_snapshots','catalog_family_coverage'})}
+          if 'candidate_universe' in tables:
+              cols=[r[1] for r in c.execute('pragma table_info(candidate_universe)')]
+              wanted=[x for x in ('ticker','instrument_type','market','settlement','status','can_simulate','capability') if x in cols]
+              q='select '+','.join('"'+x+'"' for x in wanted)+' from candidate_universe where upper(coalesce(instrument_type,\'\')) in (\'CAUCION\',\'CAUCIONES\') order by ticker'
+              rows=[dict(r) for r in c.execute(q)]
+              out['candidate_rows']=len(rows)
+              out['candidate_can_simulate']=sum(1 for r in rows if str(r.get('can_simulate')) in ('1','True','true'))
+              out['candidate_statuses']=dict(collections.Counter(str(r.get('status')) for r in rows))
+              out['candidate_sample']=rows[:30]
+          if {'contract_evidence_v2_current','contract_evidence_v2_snapshots'}.issubset(tables):
+              rows=[dict(r) for r in c.execute("select cur.family,cur.ticker,cur.market,cur.settlement,cur.source_class,cur.observed_at,s.evidence_json from contract_evidence_v2_current cur join contract_evidence_v2_snapshots s on s.snapshot_id=cur.snapshot_id where upper(cur.family) in ('CAUCION','CAUCIONES') order by cur.ticker,cur.source_class")]
+              out['contract_current_rows']=len(rows)
+              out['contract_sources']=dict(collections.Counter(str(r['source_class']) for r in rows))
+              safe=[]
+              for r in rows[:80]:
+                  try: ev=json.loads(r.get('evidence_json') or '{}')
+                  except Exception: ev={}
+                  safe.append({'family':r['family'],'ticker':r['ticker'],'market':r['market'],'settlement':r['settlement'],'source_class':r['source_class'],'observed_at':r['observed_at'],'keys':sorted(ev.keys())})
+              out['contract_sample']=safe
+          print('CAUCION_RUNTIME_JSON='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          HOST
+
+  caucion-code-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify caucion static/dynamic gate and API discovery are fail-closed
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast,json,re
+          from pathlib import Path
+          rules=Path('cq_family_contract_rules_hf6.py').read_text(encoding='utf-8')
+          guard=Path('bd_ppi_readonly_guard.py').read_text(encoding='utf-8')
+          catalog=Path('bu_instrument_catalog.py').read_text(encoding='utf-8')
+          required_static=['market','currency','settlement','side','term_days','principal_min','principal_step','day_count_basis','fee_schedule','trading_session']
+          required_dynamic=['operable','market_session_state','tna','available_principal','expiry_at']
+          missing_static=[x for x in required_static if x not in rules]
+          missing_dynamic=[x for x in required_dynamic if x not in rules]
+          checks={
+            'api_search_present':'search_instruments' in guard,
+            'explicit_target_guard':'explicit target' in guard.lower() or 'explicit_target' in guard,
+            'read_market_methods':all(x in guard for x in ('current','book','intraday')),
+            'catalog_holds_caucion':'caucion' in catalog.lower() and 'HOLD' in catalog,
+            'static_gate_complete':not missing_static,
+            'dynamic_gate_complete':not missing_dynamic,
+          }
+          print('CAUCION_CODE_AUDIT='+json.dumps({'checks':checks,'missing_static_tokens':missing_static,'missing_dynamic_tokens':missing_dynamic},sort_keys=True))
+          assert all(checks.values()), checks
+          PY
+
+  caucion-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Safety snapshot only - no starts or restarts
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          for u in porota-ppi-web-residual-rc6.service porota-ppi-fullfamily-history-rc6.service; do
+            echo "UNIT=$u"
+            sudo -n systemctl show "$u" -p ActiveState -p SubState -p Result -p MainPID --no-pager || true
+          done
+          echo 'CAUCION_RELATED_UNITS_BEGIN'
+          sudo -n systemctl list-units --all --no-pager --plain | grep -Ei 'cauc|postclose' || true
+          echo 'CAUCION_RELATED_UNITS_END'
+          echo 'CAUCION_RELATED_TIMERS_BEGIN'
+          sudo -n systemctl list-timers --all --no-pager | grep -Ei 'cauc|postclose' || true
+          echo 'CAUCION_RELATED_TIMERS_END'
+          echo 'WRITER_PROCESSES_BEGIN'
+          ps -eo pid,args | grep -E 'ppi-web-residual|ppi-fullfamily-history' | grep -v grep || true
+          echo 'WRITER_PROCESSES_END'
+          HOST
