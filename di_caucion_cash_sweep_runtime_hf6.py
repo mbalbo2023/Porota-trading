@@ -127,8 +127,13 @@ def run_paper_sweep(broker, offers, *, obligation_snapshot: ObligationSnapshot,
     if len(selected) != 1:
         result["code"]="SELECTED_OFFER_NOT_UNIQUE_OR_FEE_BUDGET_MISMATCH"
         return result
+
+    # CaucionPolicy requires the policy to exist no later than session_open_at.
+    # Using the evaluation timestamp here made every in-window EOD sweep invalid
+    # because at > sweep_start_at. The verified session opening is the earliest
+    # safe freeze instant available to this wrapper; no market term is invented.
     policy = CaucionPolicy(
-        frozen_at=at.isoformat(), currency=ccy, reserve_cash=reserve,
+        frozen_at=aware_datetime(sweep_start_at).isoformat(), currency=ccy, reserve_cash=reserve,
         maximum_cash_fraction=Decimal("1"), maximum_principal=plan.principal,
         liquidity_deadline=aware_datetime(liquidity_deadline).isoformat(),
         maximum_quote_age_seconds=decimal_value(max_quote_age_seconds,"antigüedad",nonnegative=True),
