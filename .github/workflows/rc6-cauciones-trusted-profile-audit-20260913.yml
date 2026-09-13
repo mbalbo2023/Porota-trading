@@ -1,0 +1,105 @@
+name: RC6 Cauciones trusted-profile and normalization audit 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-cauciones-trusted-profile-audit-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-profile-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Read-only trusted browser capability/path audit
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          echo "CHROME=$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)"
+          python3 - <<'PY'
+          import importlib.util
+          print('PLAYWRIGHT_AVAILABLE='+('YES' if importlib.util.find_spec('playwright') else 'NO'))
+          PY
+          echo PROFILE_CANDIDATES_BEGIN
+          for root in /opt/porota-ingest /opt/porota-trading/data/diagnosticos /opt/porota-trading/data; do
+            [ -d "$root" ] || continue
+            find "$root" -maxdepth 5 -type d \( -iname '*chrome*' -o -iname '*profile*' -o -iname '*trusted*' \) -print 2>/dev/null | head -80
+          done | sort -u
+          echo PROFILE_CANDIDATES_END
+          echo COLLECTOR_REFERENCES_BEGIN
+          grep -RIl --exclude='*.db' --exclude='*.sqlite*' --exclude='*.json' 'rc6_trusted_browser_contract_collector.py' /opt/porota-trading/.github /opt/porota-ingest 2>/dev/null | head -40 || true
+          echo COLLECTOR_REFERENCES_END
+          echo CAPTURE_FILES_BEGIN
+          find /opt/porota-ingest /opt/porota-trading/data/diagnosticos -maxdepth 6 -type f \( -iname '*contract*.json' -o -iname '*trusted*.json' \) -printf '%p|%TY-%Tm-%TdT%TH:%TM:%TS\n' 2>/dev/null | sort -r | head -40 || true
+          echo CAPTURE_FILES_END
+          HOST
+
+  caucion-normalization-gap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare caucion endpoint normalizer/importer with canonical gate
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,re
+          from pathlib import Path
+          import cq_family_contract_rules_hf6 as rules
+          normalizer=Path('rc6_ppi_contract_normalizer.py').read_text(encoding='utf-8')
+          importer=Path('rc6_contract_capture_importer.py').read_text(encoding='utf-8')
+          collector=Path('rc6_trusted_browser_contract_collector.py').read_text(encoding='utf-8')
+          required_static=sorted(rules.FAMILY_CONTRACT_FIELDS['CAUCIONES'])
+          required_dynamic=sorted(rules.FAMILY_DYNAMIC_FIELDS['CAUCIONES'])
+          out={
+            'required_static':required_static,
+            'required_dynamic':required_dynamic,
+            'dedicated_caucion_normalizer':bool(re.search(r'def\s+cauc',normalizer,re.I)),
+            'collector_cauciones_target':'CaucionesOperables' in collector,
+            'collector_config_target':'ConfiguracionOperatoriaSimplificada' in collector,
+            'importer_cauciones_branch':'kind == "CaucionesOperables"' in importer,
+            'importer_auto_enable':('can_simulate=1' in importer or 'UPDATE candidate_universe' in importer.upper()),
+            'semantic_risks':['current.price->tna UNVALIDATED','volume->available_principal UNVALIDATED','book side->COLOCAR-CAUCION UNVALIDATED'],
+          }
+          print('CAUCION_NORMALIZATION_GAP='+json.dumps(out,sort_keys=True))
+          assert out['collector_cauciones_target'] and out['collector_config_target'] and out['importer_cauciones_branch']
+          assert not out['importer_auto_enable']
+          PY
+
+  cash-sweep-code-gap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inventory existing cash-sweep/caucion execution logic without changing code
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files=[]; hits=[]
+          needles=('cash_sweep','cash sweep','caucionar','colocar-caucion','colocar_caucion','caucion_eod','postclose')
+          for p in Path('.').glob('*.py'):
+              try: text=p.read_text(encoding='utf-8').lower()
+              except Exception: continue
+              found=[n for n in needles if n in text]
+              if found: hits.append({'file':str(p),'tokens':found})
+          print('CASH_SWEEP_CODE_INVENTORY='+json.dumps({'hits':hits},sort_keys=True))
+          PY
