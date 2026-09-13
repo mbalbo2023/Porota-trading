@@ -1,0 +1,99 @@
+name: RC6 Cauciones preopen read-only proof 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-cauciones-preopen-readonly-proof-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preopen-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_caucion_preopen"
+          chmod 600 "$HOME/.ssh/porota_caucion_preopen"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only CAUCIONES preopen proof
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_caucion_preopen" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$USER@$HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          C=porota_production_observer
+          echo '=== PROCESS ==='
+          sudo -n docker inspect -f 'running={{.State.Running}} restart={{.RestartCount}} readonly={{.HostConfig.ReadonlyRootfs}} started={{.State.StartedAt}} image={{.Config.Image}}' "$C"
+          sudo -n docker top "$C" -eo pid,ppid,etimes,args | grep -E 'bv_paper_runtime|bf_production_paper_observer|intraday-scalping' || true
+          echo '=== SAFE_ENV ==='
+          sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$C" | grep -E '^(PAPER_OBSERVER_INTERVAL_SECONDS|PAPER_ACTIVE_SYMBOL_LIMIT|PAPER_INTRADAY_SCAN_SECONDS|PAPER_INTRADAY_BATCH_LIMIT|MARKET_OPEN_HOUR|MARKET_OPEN_MINUTE|MARKET_CLOSE_HOUR|MARKET_CLOSE_MINUTE|PAPER_PREOPEN_MINUTES|SERVER_TIMEZONE)=' || true
+          echo '=== DB ==='
+          sudo -n docker exec -i "$C" python - <<'PY'
+          import json, sqlite3
+          from datetime import datetime, timezone
+          DB='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(DB, uri=True, timeout=20); c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          print('DB_QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          state=dict(c.execute('SELECT * FROM observer_state WHERE id=1').fetchone() or {})
+          safe={k:state.get(k) for k in ('mode','process_state','session_state','ppi_auth','heartbeat_at','last_market_data_at','real_orders_sent','detail') if k in state}
+          print('OBSERVER_STATE='+json.dumps(safe,default=str))
+          assert safe.get('mode')=='PRODUCTION_PAPER'
+          assert int(safe.get('real_orders_sent') or 0)==0
+          expected=('DOLAR1','DOLAR2','DOLAR7','DOLAR30','DOLAR120','PESOS1','PESOS2','PESOS7','PESOS30','PESOS120')
+          if 'financial_instrument_catalog' in tables:
+              q='SELECT ticker,instrument_type,market,currency,settlement,status,capability,last_seen_at FROM financial_instrument_catalog WHERE upper(instrument_type)=\'CAUCIONES\' ORDER BY ticker'
+              rows=[dict(r) for r in c.execute(q)]
+              print('CATALOG='+json.dumps(rows,default=str))
+              present={r['ticker'] for r in rows}
+              print('CATALOG_10_OF_10='+str(set(expected)==present))
+          if 'market_snapshots' in tables:
+              rows=[]
+              for ticker in expected:
+                  r=c.execute("SELECT symbol,asset_class,market,currency,settlement,observed_at,book_at,trade_at,last,bid,ask,bid_size,ask_size FROM market_snapshots WHERE symbol=? AND upper(asset_class)='CAUCIONES' ORDER BY id DESC LIMIT 1",(ticker,)).fetchone()
+                  rows.append(dict(r) if r else {'symbol':ticker,'missing':True})
+              print('LATEST_CAUCION_MARKET='+json.dumps(rows,default=str))
+          if 'intraday_scalping_worker_state' in tables:
+              row=dict(c.execute('SELECT * FROM intraday_scalping_worker_state WHERE id=1').fetchone() or {})
+              safe={k:row.get(k) for k in ('heartbeat_at','state','cursor','selected','successful','failed','points_inserted','confirmed_identities','candidates','real_orders_sent','detail') if k in row}
+              print('INTRADAY_WORKER='+json.dumps(safe,default=str))
+              assert int(safe.get('real_orders_sent') or 0)==0
+          if 'ppi_intraday_points' in tables:
+              cols=[r[1] for r in c.execute('PRAGMA table_info(ppi_intraday_points)')]
+              print('INTRADAY_COLUMNS='+json.dumps(cols))
+              rows=[]
+              for ticker in expected:
+                  r=c.execute("SELECT symbol,asset_class,market,currency,settlement,MAX(event_at) AS last_event_at,MAX(last_verified_at) AS last_verified_at,COUNT(*) AS points FROM ppi_intraday_points WHERE symbol=? AND upper(asset_class)='CAUCIONES' GROUP BY symbol,asset_class,market,currency,settlement ORDER BY points DESC LIMIT 1",(ticker,)).fetchone()
+                  rows.append(dict(r) if r else {'symbol':ticker,'missing':True})
+              print('LATEST_CAUCION_INTRADAY='+json.dumps(rows,default=str))
+              missing=[r['symbol'] for r in rows if r.get('missing')]
+              print('INTRADAY_10_OF_10='+str(not missing)+' MISSING='+json.dumps(missing))
+          if 'caucion_readiness_state' in tables:
+              row=dict(c.execute('SELECT * FROM caucion_readiness_state WHERE id=1').fetchone() or {})
+              safe={k:row.get(k) for k in ('evaluated_at','gate_name','green','contract_status','evidence_id','tickers_json','reasons_json','real_order_capability','source') if k in row}
+              print('CAUCION_SPECIALIZED_READINESS='+json.dumps(safe,default=str))
+          else:
+              print('CAUCION_SPECIALIZED_READINESS=NOT_DEPLOYED')
+          c.close()
+          print('PREOPEN_READONLY_SAFETY=GREEN')
+          PY
+          HOST
