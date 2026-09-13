@@ -1,0 +1,81 @@
+name: RC6 Contract capture wrapper proof 2026-09-14
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-contract-capture-wrapper-proof-20260914.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wrapper-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-ppi-web-residual-ready-20260913
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect proven wrappers read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_CAPTURE_WRAPPER_PROOF_2026-09-14.txt
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST' > "$RESULT"
+          set +e
+          echo 'PROBE=RC6_CONTRACT_CAPTURE_WRAPPER_V1'
+          echo "NOW_UTC=$(date -u +%FT%TZ)"
+          for f in \
+            /usr/local/sbin/porota-contract-evidence-rc6-tradingday.sh \
+            /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh \
+            /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh \
+            /usr/local/sbin/porota-contract-evidence-rc6-calendar-guard.sh; do
+            echo "---FILE_BEGIN:$f---"
+            if sudo -n test -f "$f"; then
+              sudo -n sed -n '1,260p' "$f" 2>/dev/null \
+                | sed -E 's/([Pp]assword|[Tt]oken|[Ss]ecret|[Cc]ookie|[Aa]uthorization)([=: ]+)[^ ]+/\1\2<REDACTED>/g' \
+                | sed -E 's/(PPI_[A-Z0-9_]*(KEY|TOKEN|PASSWORD|SECRET)[A-Z0-9_]*=).*/\1<REDACTED>/g'
+            else
+              echo 'MISSING'
+            fi
+            echo "---FILE_END:$f---"
+          done
+          echo '---COLLECTOR_LOCATIONS---'
+          sudo -n find /opt/porota-trading /opt/porota-ingest /usr/local -maxdepth 6 -type f \( -name 'rc6_trusted_browser_contract_collector.py' -o -name '*contract*collector*.py' \) -printf '%p|%u:%g|%m|%TY-%Tm-%TdT%TH:%TM:%TSZ\n' 2>/dev/null | sort -u
+          echo '---PROFILE_EXACT---'
+          for p in /opt/porota-ingest/trusted_chrome_profile /home/porotaadmin/.config/google-chrome; do
+            if [ -d "$p" ]; then
+              stat -c 'PROFILE=%n|owner=%U:%G|mode=%a|mtime=%y' "$p"
+              find "$p" -maxdepth 2 -type f \( -name 'Cookies' -o -name 'Local State' -o -name 'Preferences' \) -printf '%p|%u:%g|%m|%TY-%Tm-%TdT%TH:%TM:%TSZ\n' 2>/dev/null | sed -n '1,30p'
+            else
+              echo "PROFILE_MISSING=$p"
+            fi
+          done
+          echo 'MUTATIONS=NONE'
+          HOST
+          cat "$RESULT"
+      - name: Persist result
+        if: always()
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_CAPTURE_WRAPPER_PROOF_2026-09-14.txt
+          test -f "$RESULT" || printf 'PROBE_RESULT=MISSING\n' > "$RESULT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist wrapper proof [skip ci]'
+          git push origin HEAD:ops/rc6-ppi-web-residual-ready-20260913
