@@ -1,0 +1,216 @@
+name: RC6 READY matrix runtime diagnose 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-ready-matrix-runtime-diagnose-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  observer-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_diag"
+          chmod 600 "$HOME/.ssh/porota_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Observer readiness matrix read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,collections
+          DB='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(DB,uri=True,timeout=20); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          def rows(sql,params=()): return [dict(r) for r in c.execute(sql,params).fetchall()]
+          out={'quick_check':c.execute('pragma quick_check').fetchone()[0],'tables':{}}
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          out['safety']={'mode':mode,'real_orders_sent':orders}
+          if 'catalog_family_coverage' in tables:
+              out['catalog_family_coverage']=rows('select instrument_type,declared,queries,observed_count,ready_paper_count,discovery_status,checked_at from catalog_family_coverage order by instrument_type')
+          if 'financial_instrument_catalog' in tables:
+              out['catalog_capability']=rows('select instrument_type,capability,count(*) n from financial_instrument_catalog group by instrument_type,capability order by instrument_type,capability')
+              out['catalog_settlement']=rows('select instrument_type,settlement,count(*) n from financial_instrument_catalog where status="AVAILABLE" group by instrument_type,settlement order by instrument_type,settlement')
+          if 'candidate_universe' in tables:
+              cols={r[1] for r in c.execute('pragma table_info(candidate_universe)')}
+              out['candidate_columns']=sorted(cols)
+              if {'instrument_type','status','can_simulate'} <= cols:
+                  out['candidate_gate']=rows('select instrument_type,status,can_simulate,count(*) n from candidate_universe group by instrument_type,status,can_simulate order by instrument_type,status,can_simulate')
+              elif {'instrument_type','status'} <= cols:
+                  out['candidate_gate']=rows('select instrument_type,status,count(*) n from candidate_universe group by instrument_type,status order by instrument_type,status')
+          if 'contract_evidence' in tables:
+              out['legacy_evidence']=rows('select instrument_type,status,owner,count(*) n from contract_evidence group by instrument_type,status,owner order by instrument_type,status,owner')
+          if 'contract_evidence_v2_current' in tables:
+              out['v2_sources']=rows('select family,source_class,count(*) n,max(observed_at) observed_at from contract_evidence_v2_current group by family,source_class order by family,source_class')
+          if 'contract_evidence_v2_changes' in tables:
+              out['v2_changes']=rows('select family,status,count(*) n,max(detected_at) latest from contract_evidence_v2_changes group by family,status order by family,status')
+          REQ={
+            'ACCIONES':{'market','currency','settlement','quantity_min','quantity_step','price_tick','fee_schedule','trading_session'},
+            'CEDEARS':{'market','currency','settlement','quantity_min','quantity_step','price_tick','conversion_ratio','fee_schedule','trading_session'},
+            'BONOS':{'market','currency','settlement','isin','price_quote_unit','quantity_min','quantity_step','maturity_date','payment_currency','coupon_terms','amortization_terms','fee_schedule','trading_session'},
+            'LETRAS':{'market','currency','settlement','isin','price_quote_unit','quantity_min','quantity_step','maturity_date','fee_schedule','trading_session'},
+            'ON':{'market','currency','settlement','isin','price_quote_unit','quantity_min','quantity_step','maturity_date','payment_currency','coupon_terms','amortization_terms','fee_schedule','trading_session'},
+            'CAUCIONES':{'market','currency','settlement','side','term_days','principal_min','principal_step','day_count_basis','fee_schedule','trading_session'},
+            'FUTUROS':{'market','currency','settlement','underlying','expiry_at','contract_multiplier','min_price_increment','tick_value','min_trade_volume','round_lot','settlement_method','fee_schedule','trading_session'},
+            'ETF':{'market','currency','settlement','isin','quantity_min','quantity_step','price_tick','fee_schedule','trading_session'},
+            'ACCIONES_USA':{'market','currency','settlement','exchange','isin','quantity_min','quantity_step','fractional_allowed','fee_schedule','trading_session'},
+            'LICITACIONES':{'currency','instrument','open_at','close_at','subscription_min','subscription_max','quantity_min','quantity_step','competitive_rules','award_settlement','proration_rules','fee_schedule'},
+            'CANJES':{'market','currency','eligible_species','exchange_ratio','open_at','close_at','settlement','quantity_min','quantity_step','fee_schedule'},
+          }
+          RANK={'PPI_STRUCTURED_API':10,'PPI_AUTHENTICATED_XHR':20,'PPI_OFFICIAL_DOCUMENTATION':30,'PPI_AUTHENTICATED_WEB':40,'PPI_SUPPORT':50,'A3_PRIMARY_API':10,'A3_RISK_POSTTRADE':10,'A3_OFFICIAL_DOCUMENTATION':30,'POROTA_LEGACY_EVIDENCE':900}
+          ALIAS={'OBLIGACIONES_NEGOCIABLES':'ON','OBLIGACIONES':'ON','ONS':'ON','ETFS':'ETF','ACCIONES-USA':'ACCIONES_USA','ACCIONES USA':'ACCIONES_USA'}
+          if {'contract_evidence_v2_current','contract_evidence_v2_snapshots'} <= tables:
+              q='''select x.family,x.ticker,x.market,x.settlement,x.source_class,x.observed_at,s.evidence_json from contract_evidence_v2_current x join contract_evidence_v2_snapshots s on s.snapshot_id=x.snapshot_id'''
+              grouped=collections.defaultdict(list)
+              for r in rows(q):
+                  fam=ALIAS.get(str(r['family']).upper(),str(r['family']).upper())
+                  if fam not in REQ or r['ticker']=='*': continue
+                  try: ev=json.loads(r['evidence_json'] or '{}')
+                  except Exception: ev={}
+                  grouped[(fam,r['ticker'],r['market'],r['settlement'])].append((RANK.get(r['source_class'],999),r['source_class'],ev))
+              famstats=collections.defaultdict(lambda:{'identities':0,'canonical_complete':0,'conflicts':0,'missing_fields':collections.Counter()})
+              for ident,entries in grouped.items():
+                  fam=ident[0]; stat=famstats[fam]; stat['identities']+=1
+                  fieldvals=collections.defaultdict(set)
+                  for _,_,ev in entries:
+                      if not isinstance(ev,dict): continue
+                      for k,v in ev.items():
+                          if v not in (None,'',[],{}): fieldvals[k].add(json.dumps(v,sort_keys=True,ensure_ascii=False,default=str))
+                  if any(len(v)>1 for v in fieldvals.values()): stat['conflicts']+=1
+                  merged={}
+                  for rank,src,ev in sorted(entries,key=lambda x:x[0],reverse=True):
+                      if isinstance(ev,dict): merged.update({k:v for k,v in ev.items() if v not in (None,'',[],{})})
+                  missing=sorted(f for f in REQ[fam] if merged.get(f) in (None,'',[],{}))
+                  if not missing: stat['canonical_complete']+=1
+                  stat['missing_fields'].update(missing)
+              out['v2_canonical_contract_presence']={fam:{'identities':v['identities'],'canonical_complete':v['canonical_complete'],'conflicts':v['conflicts'],'missing_fields':dict(v['missing_fields'].most_common())} for fam,v in sorted(famstats.items())}
+          if 'ppi_history_ingest_tasks' in tables:
+              out['history_active']=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in ('PENDING','RETRYABLE','RUNNING')").fetchone()[0]
+              out['history_total']=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001'").fetchone()[0]
+          print('READY_MATRIX_JSON='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          HOST
+
+  web-taxonomy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_diag"
+          chmod 600 "$HOME/.ssh/porota_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Exact web residual taxonomy read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          ROOT=/opt/porota-ingest/ppi-web-residual
+          sudo -n python3 - "$ROOT/state.sqlite3" <<'PY'
+          import sqlite3,json,sys,collections
+          p=sys.argv[1]
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          cols=[r[1] for r in c.execute('pragma table_info(residual_task)')]
+          fam='instrument_type' if 'instrument_type' in cols else ('family' if 'family' in cols else None)
+          out={'quick_check':c.execute('pragma quick_check').fetchone()[0],'columns':cols}
+          if fam:
+              out['by_family_state']=[dict(r) for r in c.execute(f'select {fam} family,state,count(*) n from residual_task group by {fam},state order by {fam},state')]
+              excluded={'OPCIONES','FCI','FCI_LOCAL','FCI_EXTERIOR'}
+              out['target_nonexcluded']=[r for r in out['by_family_state'] if str(r['family']).upper() not in excluded]
+              errcol=next((x for x in ('last_error','error','error_code','reason','detail') if x in cols),None)
+              out['error_column']=errcol
+              if errcol:
+                  sig=[]
+                  for r in c.execute(f"select {fam} family,{errcol} err,count(*) n from residual_task where state='ERROR' group by {fam},{errcol} order by n desc limit 100"):
+                      d=dict(r); d['err']=str(d.get('err') or '')[:240]; sig.append(d)
+                  out['error_signatures']=sig
+              sample_cols=[x for x in ('symbol','instrument_type','market','settlement','state',errcol) if x and x in cols]
+              if sample_cols:
+                  q='select '+','.join(sample_cols)+" from residual_task where state='ERROR' and upper("+fam+") not in ('OPCIONES','FCI','FCI_LOCAL','FCI_EXTERIOR') order by "+fam+",symbol limit 40"
+                  out['nonexcluded_error_samples']=[dict(r) for r in c.execute(q)]
+          out['counts']=[dict(r) for r in c.execute('select state,count(*) n from residual_task group by state order by state')]
+          print('WEB_TAXONOMY_JSON='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          HOST
+
+  safety-services:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_diag"
+          chmod 600 "$HOME/.ssh/porota_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Safety and paused services read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_diag" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          echo '=== HISTORICAL WRITERS ==='
+          for u in porota-ppi-web-residual-rc6.service porota-ppi-fullfamily-history-rc6.service; do
+            printf '%s=' "$u"; sudo -n systemctl is-active "$u" || true
+          done
+          echo '=== POROTA TIMERS ==='
+          sudo -n systemctl list-timers --all --no-pager | grep -i porota || true
+          echo '=== RESIDUAL PROCESSES/LOCKS ==='
+          sudo -n ps -eo pid,ppid,user,etime,stat,cmd | grep -E 'ppi_web_residual|ppi_web_direct_history|rc6_ppi_web_reauth|google-chrome|chromium|flock' | grep -v grep || true
+          sudo -n lslocks | grep -E 'porota-ppi-web|ppi-web-browser' || true
+          echo '=== SAFETY ==='
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          active=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' and state in ('PENDING','RETRYABLE','RUNNING')").fetchone()[0]
+          total=c.execute("select count(*) from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001'").fetchone()[0]
+          print(f'SAFETY={qc}|{mode}|{orders}|{active}|{total}')
+          c.close()
+          PY
+          HOST
