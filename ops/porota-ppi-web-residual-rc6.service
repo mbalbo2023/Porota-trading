@@ -1,0 +1,26 @@
+[Unit]
+Description=Porota RC6 PPI Web residual historical completion
+After=network-online.target docker.service
+Wants=network-online.target
+ConditionPathExists=/opt/porota-ingest/ppi-web-residual/ENABLED
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/porota-trading
+Environment=PYTHONUNBUFFERED=1
+Environment=PPI_WEB_RESIDUAL_RUN_ID=PPI-WEB-RESIDUAL-20260913-001
+ExecStart=/usr/bin/flock -n /run/lock/porota-ppi-web-residual-rc6.lock /opt/porota-contract-evidence-venv/bin/python /opt/porota-ingest/ppi_web_residual_server_runner_rc6.py
+Restart=on-failure
+RestartSec=30s
+TimeoutStopSec=90s
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/porota-ingest/ppi-web-residual /opt/porota-trading/data/contract_evidence
+
+[Install]
+WantedBy=multi-user.target
