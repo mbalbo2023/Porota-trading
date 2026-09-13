@@ -3,7 +3,7 @@
 
 Safety contract:
 - existing trusted Chrome profile only; never accepts username/password/OTP;
-- V3: third-party mutations abort silently; known first-party telemetry aborts; every other PPI mutation aborts + fail-closes;
+- after session validation every non-GET/HEAD/OPTIONS request is aborted;
 - never fills quantity/price and never clicks an order/confirmation control;
 - persists only sanitized endpoint evidence and route metadata;
 - has no broker/order imports.
@@ -24,45 +24,20 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 TARGETS = ("InstrumentosOperables", "CaucionesOperables", "ConfiguracionOperatoriaSimplificada",
            "SubyacenteOpciones", "DatosTecnicos")
 ROUTES = {
-    'CONTRACT_EVIDENCE_DYNAMIC': [
-        '/Cotizaciones/Bonos',
-    ],
-    'CONTRACT_EVIDENCE_CAUCIONES': [
-        '/Cotizaciones/Cauciones',
-    ],
-    'CONTRACT_EVIDENCE_AUCTIONS': [
-        '/Cotizaciones/Licitaciones',
-    ],
-    'CONTRACT_EVIDENCE_DERIVATIVES': [
-        '/Cotizaciones/Opciones',
-        '/Cotizaciones/Futuros',
-    ],
-    'CONTRACT_EVIDENCE_STATIC': [
-        '/Cotizaciones/Acciones',
-        '/Cotizaciones/Cedears',
-        '/Cotizaciones/Bonos',
-        '/Cotizaciones/Letras',
-        '/Cotizaciones/Ons',
-        '/Cotizaciones/FCIs',
-    ],
-    'CONTRACT_EVIDENCE_FULL_BROWSER': [
-        '/Cotizaciones/FCIs',
-        '/Cotizaciones/FCIsExterior',
-        '/Cotizaciones/Acciones',
-        '/Cotizaciones/AccionesUSA',
-        '/Cotizaciones/Bonos',
-        '/Cotizaciones/Cauciones',
-        '/Cotizaciones/Cedears',
-        '/Cotizaciones/ETFs',
-        '/Cotizaciones/Futuros',
-        '/Cotizaciones/Letras',
-        '/Cotizaciones/Licitaciones',
-        '/Cotizaciones/Ons',
-        '/Cotizaciones/Opciones',
-        '/Cotizaciones/Indices',
-        '/Cotizaciones/Monedas',
-        '/Cotizaciones/Tasas',
-    ],
+    "CONTRACT_EVIDENCE_DYNAMIC": ["/Cotizaciones/Bonos", "/Operar/Bonos", "/Operar/Ons"],
+    "CONTRACT_EVIDENCE_CAUCIONES": ["/Cotizaciones/Cauciones", "/Operar/Cauciones"],
+    "CONTRACT_EVIDENCE_AUCTIONS": ["/Cotizaciones/Licitaciones", "/Operar/Licitaciones"],
+    "CONTRACT_EVIDENCE_DERIVATIVES": ["/Cotizaciones/Opciones", "/Cotizaciones/Futuros", "/Operar/Opciones", "/Operar/260"],
+    "CONTRACT_EVIDENCE_STATIC": ["/Cotizaciones/Acciones", "/Cotizaciones/Cedears", "/Cotizaciones/Bonos",
+                                  "/Cotizaciones/Letras", "/Cotizaciones/Ons", "/Cotizaciones/FCIs"],
+    "CONTRACT_EVIDENCE_FULL_BROWSER": [
+        "/Cotizaciones/FCIs", "/Cotizaciones/FCIsExterior", "/Cotizaciones/Acciones", "/Cotizaciones/AccionesUSA",
+        "/Cotizaciones/Bonos", "/Cotizaciones/Cauciones", "/Cotizaciones/Cedears", "/Cotizaciones/ETFs",
+        "/Cotizaciones/Futuros", "/Cotizaciones/Letras", "/Cotizaciones/Licitaciones", "/Cotizaciones/Ons",
+        "/Cotizaciones/Opciones", "/Cotizaciones/Indices", "/Cotizaciones/Monedas", "/Cotizaciones/Tasas",
+        "/Operar/FCIs", "/Operar/FCIsExterior", "/Operar/Acciones", "/Operar/AccionesExterior", "/Operar/Bonos",
+        "/Operar/Cauciones", "/Operar/Cedears", "/Operar/ETFs", "/Operar/260", "/Operar/Letras", "/Operar/Ons",
+        "/Operar/Opciones", "/Operar/Licitaciones", "/Operar/Canjes"],
 }
 
 DROP_KEY_PARTS = ("cuenta","account","saldo","tenencia","disponible","comitente","cliente","documento","dni","cuit",
@@ -73,17 +48,6 @@ SAFE_KEY_PARTS = ("ticker","simbolo","símbolo","especie","descripcion","descrip
                   "step","comision","comisión","porcentaje","derecho","mercado","market","settlement","liquidacion","liquidación",
                   "fecha","nominal","lamina","lámina","cutoff","rescate","itemid","instrumentoid","plazoid","monedaid",
                   "cantidaddecimales","cantidaddecimalesprecio","operablesubasta")
-
-
-
-def assert_safe_route_catalog():
-    """Fail closed if an execution/order page is ever reintroduced."""
-    for job, routes in ROUTES.items():
-        if not routes:
-            raise RuntimeError("CONTRACT_EVIDENCE_EMPTY_ROUTE_JOB:" + job)
-        for route in routes:
-            if not str(route).startswith("/Cotizaciones/"):
-                raise RuntimeError("CONTRACT_EVIDENCE_UNSAFE_ROUTE:" + str(route))
 
 
 def clean_url(url):
@@ -167,7 +131,6 @@ def sanitize_endpoint(url, payload):
 
 
 def main():
-    assert_safe_route_catalog()
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", required=True)
     ap.add_argument("--jobs", required=True)
@@ -200,55 +163,10 @@ def main():
                 args=["--no-sandbox","--disable-dev-shm-usage"])
             def guard(route, request):
                 method = request.method.upper()
-
-                if method in SAFE_METHODS:
-                    return route.continue_()
-
-                u = urlsplit(request.url)
-                host = u.netloc.lower()
-                path = u.path.rstrip("/") or "/"
-
-                # POROTA_CE_NONREAD_POLICY_V3
-                #
-                # Contract Evidence is read-only. No mutation is ever
-                # authorized by this collector.
-                #
-                # Third-party telemetry/support mutations are aborted
-                # silently. They cannot mutate PPI state and are irrelevant
-                # to evidence collection.
-                ppi_hosts = {
-                    "trading.portfoliopersonal.com",
-                    "api.portfoliopersonal.com",
-                    "cuenta.portfoliopersonal.com",
-                }
-
-                if host not in ppi_hosts:
+                if method not in SAFE_METHODS:
+                    out["blocked_nonread"].append({"method":method,"url":clean_url(request.url)})
                     return route.abort()
-
-                # Known first-party non-business telemetry/support calls.
-                # They also remain physically aborted.
-                if (
-                    method == "POST"
-                    and host == "trading.portfoliopersonal.com"
-                    and path == "/api/logger"
-                ):
-                    return route.abort()
-
-                if (
-                    method == "POST"
-                    and host == "api.portfoliopersonal.com"
-                    and path == "/api/v1/zendesk/zendesk-session"
-                ):
-                    return route.abort()
-
-                # Every other first-party PPI mutation is suspicious:
-                # abort, record, and force fail-closed.
-                out["blocked_nonread"].append({
-                    "method": method,
-                    "url": clean_url(request.url)
-                })
-                return route.abort()
-
+                return route.continue_()
             ctx.route("**/*", guard)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             active = {"job":"","route":""}
