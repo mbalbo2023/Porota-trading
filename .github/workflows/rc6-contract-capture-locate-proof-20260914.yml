@@ -8,13 +8,17 @@ on:
       - '.github/workflows/rc6-contract-capture-locate-proof-20260914.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   locate-reusable-capture:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-ppi-web-residual-ready-20260913
+
       - name: Prepare SSH
         env:
           SSH_KEY: ${{ secrets.DO_SSH_KEY }}
@@ -33,7 +37,8 @@ jobs:
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
-          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'python3 -' <<'PY'
+          RESULT='POROTA_TRADING_CONTRACT_CAPTURE_LOCATE_RESULT_2026-09-14.txt'
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'python3 -' <<'PY' | tee "$RESULT"
           import json, os, pathlib, datetime
 
           roots = [
@@ -136,3 +141,17 @@ jobs:
           else:
               print('POINT1_RESULT=RED_NO_IMPORTABLE_CAPTURE_FOUND')
           PY
+
+      - name: Persist sanitized audit result
+        run: |
+          set -euo pipefail
+          RESULT='POROTA_TRADING_CONTRACT_CAPTURE_LOCATE_RESULT_2026-09-14.txt'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          if git diff --cached --quiet; then
+            echo 'RESULT_UNCHANGED=YES'
+            exit 0
+          fi
+          git commit -m 'audit(contract): persist capture locate result [skip ci]'
+          git push origin HEAD:ops/rc6-ppi-web-residual-ready-20260913
