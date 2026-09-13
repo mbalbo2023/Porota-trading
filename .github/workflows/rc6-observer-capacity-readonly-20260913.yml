@@ -16,9 +16,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Prepare strict SSH
+        shell: bash
         env:
-          SSH_KEY: ${{ secrets.DROPLET_SSH_PRIVATE_KEY }}
-          KNOWN_HOSTS: ${{ secrets.DROPLET_KNOWN_HOSTS }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           install -m 700 -d "$HOME/.ssh"
@@ -27,9 +28,10 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
       - name: Read-only observer and intraday capacity proof
+        shell: bash
         env:
-          HOST: ${{ secrets.DROPLET_HOST }}
-          USER: ${{ secrets.DROPLET_USER }}
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
           ssh -i "$HOME/.ssh/porota_capacity" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$USER@$HOST" 'bash -s' <<'HOST'
