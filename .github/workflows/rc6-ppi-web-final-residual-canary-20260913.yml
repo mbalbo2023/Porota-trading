@@ -44,6 +44,7 @@ jobs:
           VENV=/opt/porota-contract-evidence-venv
           ROOT=/opt/porota-ingest/ppi-web-residual
           LOCK=/run/lock/porota-ppi-web-browser.lock
+          DB="$REPO/data/paper_v17/observer_v17.db"
           test ! -e "$ROOT/ENABLED"
           test "$(sudo -n systemctl is-active porota-ppi-web-residual-rc6.service 2>/dev/null || true)" != active
           sudo -n install -d -o root -g root -m 0755 "$BIN"
@@ -60,15 +61,13 @@ jobs:
           )"
           echo "SAFETY_BEFORE=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0'
           TD="$(mktemp -d /tmp/ppi-residual-canary.XXXXXX)"
-          export PYTHONPATH="$REPO:$BIN"
-          "$VENV/bin/python" "$BIN/ppi_history_residual_manifest_rc6.py" --output "$TD/residual.jsonl"
+          "$VENV/bin/python" "$BIN/ppi_history_residual_manifest_rc6.py" --db "$DB" --output "$TD/residual.jsonl"
           "$VENV/bin/python" "$BIN/ppi_web_canary_selector_rc6.py" --manifest "$TD/residual.jsonl" --output "$TD/canary.jsonl" --max-total 8 --max-per-family 1
           python3 - "$TD/canary.jsonl" <<'PY'
           import json,sys
           rows=[json.loads(x) for x in open(sys.argv[1],encoding='utf-8') if x.strip()]
           print('CANARY_SELECTED='+str(len(rows)))
-          for i,r in enumerate(rows):
-              print(f"TARGET_{i}={r['instrument_type']}|{r['symbol']}|{r['market']}|{r['settlement']}|{r['residual_class']}")
+          for i,r in enumerate(rows): print(f"TARGET_{i}={r['instrument_type']}|{r['symbol']}|{r['market']}|{r['settlement']}|{r['residual_class']}")
           PY
           chown -R porotaadmin:porotaadmin "$TD"
           sudo -n flock -w 240 "$LOCK" runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$REPO:$BIN" \
@@ -76,19 +75,12 @@ jobs:
           python3 - "$TD/capture.json" <<'PY'
           import json,sys
           x=json.load(open(sys.argv[1],encoding='utf-8'))
-          print('AUTH='+str(x.get('auth_status')))
-          print('TARGETS='+str(len(x.get('targets',[]))))
-          print('CAPTURES='+str(len(x.get('captures',[]))))
-          print('ROWS='+str(sum(len(c.get('rows',[])) for c in x.get('captures',[]))))
-          print('BLOCKED_NONREAD='+str(len(x.get('blocked_nonread',[]))))
-          print('BLOCKED_FORBIDDEN='+str(len(x.get('blocked_forbidden_paths',[]))))
-          print('REAL_ORDERS='+str(x.get('real_orders_sent')))
-          print('CANONICAL_WRITE='+str(x.get('canonical_write')))
-          for i,t in enumerate(x.get('targets',[])):
-              print(f"RESULT_{i}={t.get('instrument_type')}|{t.get('symbol')}|reached={t.get('reached')}|captures={t.get('captures_added')}|error={t.get('error','')}")
-          assert x.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'
-          assert int(x.get('real_orders_sent',-1))==0
-          assert x.get('canonical_write')=='DENY'
+          print('AUTH='+str(x.get('auth_status'))); print('TARGETS='+str(len(x.get('targets',[]))))
+          print('CAPTURES='+str(len(x.get('captures',[])))); print('ROWS='+str(sum(len(c.get('rows',[])) for c in x.get('captures',[]))))
+          print('BLOCKED_NONREAD='+str(len(x.get('blocked_nonread',[])))); print('BLOCKED_FORBIDDEN='+str(len(x.get('blocked_forbidden_paths',[]))))
+          print('REAL_ORDERS='+str(x.get('real_orders_sent'))); print('CANONICAL_WRITE='+str(x.get('canonical_write')))
+          for i,t in enumerate(x.get('targets',[])): print(f"RESULT_{i}={t.get('instrument_type')}|{t.get('symbol')}|reached={t.get('reached')}|captures={t.get('captures_added')}|error={t.get('error','')}")
+          assert x.get('auth_status')=='AUTHENTICATED_TRUSTED_DEVICE'; assert int(x.get('real_orders_sent',-1))==0; assert x.get('canonical_write')=='DENY'
           PY
           POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
@@ -98,7 +90,7 @@ jobs:
           PY
           )"
           echo "SAFETY_AFTER=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0'
-          test ! -e "$ROOT/ENABLED"
-          echo MASS_SCRAPING_STARTED=NO
+          test ! -e "$ROOT/ENABLED"; echo MASS_SCRAPING_STARTED=NO
           rm -rf "$TD"
           HOST
+# status refresh 2026-09-13T02:10Z
