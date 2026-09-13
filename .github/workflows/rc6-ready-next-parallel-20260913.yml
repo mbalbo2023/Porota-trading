@@ -1,0 +1,216 @@
+name: RC6 READY next parallel 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-ready-next-parallel-20260913.yml'
+      - 'cp_contract_evidence_v2_hf6.py'
+      - 'cq_contract_readiness_hf6.py'
+
+permissions:
+  contents: read
+
+jobs:
+  contract-postfix-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Export sanitized current Contract Evidence v2 read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' > /tmp/contract_records.json <<'HOST'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          rows=[]
+          q="""select cur.family,cur.ticker,cur.market,cur.settlement,cur.source_class,
+          cur.observed_at,s.evidence_json from contract_evidence_v2_current cur
+          join contract_evidence_v2_snapshots s on s.snapshot_id=cur.snapshot_id
+          order by cur.family,cur.ticker,cur.market,cur.settlement,cur.source_class"""
+          for r in c.execute(q):
+              d=dict(r)
+              try: d['evidence']=json.loads(d.pop('evidence_json') or '{}')
+              except Exception: d['evidence']={}
+              rows.append(d)
+          print(json.dumps(rows,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          HOST
+          test -s /tmp/contract_records.json
+      - name: Evaluate 447 identities with corrected canonical evaluator
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,collections
+          from cp_contract_evidence_v2_hf6 import family_readiness_state
+          rows=json.load(open('/tmp/contract_records.json',encoding='utf-8'))
+          aliases={'CEDEAR':'CEDEARS','OBLIGACIONES_NEGOCIABLES':'ON','OBLIGACIONES NEGOCIABLES':'ON'}
+          def F(x):
+              x=str(x or '').upper().strip(); return aliases.get(x,x)
+          grouped=collections.defaultdict(list)
+          for r in rows:
+              key=(F(r.get('family')),str(r.get('ticker') or '').upper(),str(r.get('market') or '').upper(),str(r.get('settlement') or '').upper())
+              grouped[key].append(r)
+          target_excluded={'FCI','FCI_LOCAL','FCI_EXTERIOR','OPCIONES'}
+          fam=collections.defaultdict(lambda:{'identities':0,'contract_candidate':0,'missing':0,'conflict':0,'other':0,'missing_fields':collections.Counter(),'quick_win_le2':0})
+          quick=[]; conflicts=[]
+          for key,recs in sorted(grouped.items()):
+              family=key[0]
+              result=family_readiness_state(recs,family=family,max_age_seconds=None,simulator_ready=True,cost_ready=True)
+              st=str(result.get('status') or result.get('state') or 'UNKNOWN')
+              f=fam[family]; f['identities']+=1
+              missing=list(result.get('missing') or [])
+              if st=='READY_PAPER_CANDIDATE': f['contract_candidate']+=1
+              elif st=='MISSING':
+                  f['missing']+=1
+                  for m in missing: f['missing_fields'][m]+=1
+                  if len(missing)<=2:
+                      f['quick_win_le2']+=1
+                      if len(quick)<100: quick.append({'identity':key,'missing':missing,'sources':sorted({r.get('source_class') for r in recs})})
+              elif st=='CONFLICT':
+                  f['conflict']+=1
+                  if len(conflicts)<60: conflicts.append({'identity':key,'fields':sorted((result.get('conflicts') or {}).keys())})
+              else: f['other']+=1
+          out={
+              'identities':len(grouped),
+              'target_identities':sum(1 for k in grouped if k[0] not in target_excluded),
+              'by_family':{k:{**v,'missing_fields':dict(v['missing_fields'])} for k,v in fam.items()},
+              'quick_win_sample':quick,
+              'conflict_sample':conflicts,
+              'note':'contract_candidate isolates contract completeness by setting simulator/cost gates true; it is NOT final READY and does not mutate runtime.'
+          }
+          print('POSTFIX_CONTRACT_MATRIX='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          PY
+
+  cedear-seven-rca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: RCA seven CEDEAR across ledgers and catalog read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          targets={'CRWVC','CVSC','MRVLC','VIVTC','VIVTD','VRTXC','VXXC'}
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          tables=[r[0] for r in c.execute("select name from sqlite_master where type='table' order by name")]
+          out={s:{'tables':{}} for s in targets}
+          excluded_parts=('payload','body','cookie','token','secret','password','authorization','header')
+          for t in tables:
+              cols=[r[1] for r in c.execute('pragma table_info("'+t.replace('"','""')+'")')]
+              sym=next((x for x in cols if x.lower() in {'symbol','ticker','especie','instrument'}),None)
+              if not sym: continue
+              safe=[x for x in cols if not any(p in x.lower() for p in excluded_parts)]
+              # keep outputs bounded and useful
+              preferred=[x for x in safe if x.lower() in {'symbol','ticker','especie','instrument','instrument_type','family','market','settlement','status','state','result','attempts','provider_rows','valid_rows','rejected_rows','row_count','rows_last','last_error','detail','can_simulate','reason','capability','currency','instrument_id','item_id','source','attempted_at','completed_at','finished_at','updated_at'}]
+              if sym not in preferred: preferred.insert(0,sym)
+              preferred=preferred[:24]
+              for s in targets:
+                  try:
+                      q='select '+','.join('"'+x.replace('"','""')+'"' for x in preferred)+' from "'+t.replace('"','""')+'" where upper("'+sym.replace('"','""')+'")=? limit 20'
+                      rows=[dict(r) for r in c.execute(q,(s,))]
+                      if rows: out[s]['tables'][t]=rows
+                  except Exception: pass
+          print('CEDEAR7_RCA='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          HOST
+
+  contract-collector-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Map reusable structured contract collectors and routes
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,re,json
+          pats=[r'InstrumentosOperables',r'ConfiguracionOperatoriaSimplificada',r'CaucionesOperables',r'DatosTecnicos',r'contract_evidence_v2',r'PPI_AUTHENTICATED_XHR']
+          hits={p:[] for p in pats}
+          allowed={'.py','.md','.yml','.yaml','.sh','.json','.js','.ts'}
+          for base,dirs,files in os.walk('.'):
+              dirs[:]=[d for d in dirs if d not in {'.git','node_modules','.venv','venv','__pycache__'}]
+              for name in files:
+                  path=os.path.join(base,name)
+                  if os.path.splitext(name)[1].lower() not in allowed: continue
+                  try:
+                      text=open(path,encoding='utf-8',errors='ignore').read()
+                  except Exception: continue
+                  lines=text.splitlines()
+                  for p in pats:
+                      rx=re.compile(p,re.I)
+                      for i,line in enumerate(lines,1):
+                          if rx.search(line):
+                              snippet=re.sub(r'(?i)(authorization|cookie|token|secret|password)\s*[:=]\s*[^\s,]+',r'\1=<redacted>',line.strip())
+                              hits[p].append({'file':path.lstrip('./'),'line':i,'snippet':snippet[:240]})
+          print('CONTRACT_COLLECTOR_MAP='+json.dumps({k:v[:120] for k,v in hits.items()},ensure_ascii=False,sort_keys=True))
+          PY
+
+  safety-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Verify no historical writer and current simulation candidates
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          for u in porota-ppi-web-residual-rc6.service porota-ppi-fullfamily-history-rc6.service; do
+            echo "UNIT=$u"
+            sudo -n systemctl show "$u" -p ActiveState -p SubState -p MainPID -p Result --no-pager || true
+          done
+          echo WRITER_PROCESSES_BEGIN
+          pgrep -af 'ppi_web_residual|ppi-fullfamily-history|ppi_fullfamily_history|Historico/' || true
+          echo WRITER_PROCESSES_END
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          fam={r[0]:r[1] for r in c.execute("select instrument_type,count(*) from candidate_universe where can_simulate=1 and status='AVAILABLE' group by instrument_type")}
+          print('SAFETY_NEXT='+json.dumps({'quick_check':c.execute('pragma quick_check').fetchone()[0],'can_simulate':sum(fam.values()),'by_family':fam},sort_keys=True)); c.close()
+          PY
+          HOST
