@@ -14,7 +14,7 @@ Después de cada hito material actualizar este archivo con evidencia, semáforo,
 
 - Repo: `mbalbo2023/Porota-trading`
 - Rama canónica: `ops/rc6-ppi-web-residual-ready-20260913`
-- HEAD previo a esta actualización: `6c4368bc5f3c2d79257f6bd2ab7cfa64f81c592d`
+- HEAD previo a esta actualización: `ff71e9d0d5a83461339cc191d1d15bea8cc1ebdc`
 - Universo histórico PPI masivo: `1960`
 - `candidate_universe`: `911` filas observadas
 - Modo obligatorio: `PRODUCTION_PAPER`
@@ -222,9 +222,44 @@ Workflow read-only: `RC6 Cauciones EOD read-only audit 2026-09-13`, run `3477320
 - `PPI_AUTHENTICATED_XHR`: 1
 - ambas son evidencia agregada `ticker='*'`, `market='UNKNOWN'`, `settlement='UNKNOWN'`
 
-**Conclusión:** PPI ya nos identifica exactamente 10 contratos candidatos, pero Contract Evidence todavía no posee contrato especializado por identidad y el catálogo los mantiene fail-closed. Esto es correcto hasta completar integración.
+### 10.2 PPI API one-shot read-only — CERRADO
 
-### 10.2 Gate especializado existente
+Workflow `RC6 Cauciones PPI API shape read-only 2026-09-13`, run `34773357093`, job `103766883647`, **success**.
+
+Guardas confirmadas:
+- autenticación única: `login_calls=1`
+- HTTP permitidos: `48`
+- HTTP bloqueados: `0`
+- sin métodos order/budget/cancel
+- sin DB write, service restart ni persistencia runtime.
+
+Configuración PPI observada:
+- `instrument_types` incluye `CAUCIONES`
+- market `BYMA` disponible
+- settlements declarados: `INMEDIATA`, `A-24HS`, `A-48HS`, `A-72HS`
+- quantity types: `DINERO`, `PAPELES`, `CANTIDAD-TOTAL`
+- operation type incluye mercado/límite
+- operations incluye explícitamente **`COLOCAR-CAUCION`**
+
+Descubrimiento oficial:
+- 10/10 identidades devueltas
+- keys de SearchInstrument: `cajaValoresCode`, `currency`, `description`, `isin`, `market`, `nominalInPrice`, `ticker`, `type`
+- `nominalInPrice=1` observado en las 10
+- monedas explícitas: Pesos y Dólares billete/MEP según ticker
+
+Shape MarketData observado para las 10:
+- `current`: `date, marketChange, marketChangePercent, max, min, openingPrice, previousClose, price, volume`
+- `book`: `bids, date, offers`
+- `intraday`: lista; el domingo devolvió `len=0` en las 10
+
+Freshness del snapshot:
+- `book.date` del domingo devolvió sentinel `0001-01-01T00:00:00-03:00`
+- `current.date` correspondía a últimas ruedas 2026-09-09/10/11
+- por lo tanto esta corrida sirve para **schema/semántica de transporte**, NO para dinámica EOD fresca.
+
+**Regla crítica:** todavía NO mapear `current.price -> tna` ni `volume -> available_principal` hasta validar semántica contractual/proveedor. Tampoco usar bids/offers del snapshot dominical como ejecutables. La API muestra campos que probablemente contienen la tasa/precio de caución y profundidad, pero el mapping canónico debe ser explícito y probado.
+
+### 10.3 Gate especializado existente
 
 `cq_family_contract_rules_hf6.py` exige:
 
@@ -256,19 +291,19 @@ TTL:
 
 El módulo sólo puede elevar a `READY_PAPER_CANDIDATE`; nunca habilita trading por sí mismo.
 
-### 10.3 Qué falta para el cash sweep EOD
+### 10.4 Qué falta para el cash sweep EOD
 
 No alcanza con saber que existen `PESOS1` o `DOLAR1`. Para el sobrante EOD deben resolverse en secuencia:
 1. **Caja realmente libre y liquidada**, después de reservas para órdenes, costos, garantías y necesidades del día siguiente.
-2. **Lado correcto** para colocar fondos (semántica exacta PPI, no asumir nombres).
+2. **Lado correcto** para colocar fondos usando semántica PPI confirmada; `COLOCAR-CAUCION` existe en configuración pero no asumir mapping book-side sin evidencia.
 3. **Plazo elegible** real en ese momento; no asumir 1 día aunque sea el candidato natural.
 4. **Capital mínimo y step/múltiplo** reales.
-5. **TNA ejecutable y capital disponible** frescos desde market data/book/endpoints estructurados.
+5. **TNA ejecutable y capital disponible** frescos desde market data/book/endpoints estructurados con mapping validado.
 6. **Costos/fee schedule** y day-count basis para rendimiento neto.
 7. **Trading session/cutoff** y estado de mercado vigente.
-8. **Settlement/vencimiento** compatible con la necesidad de caja siguiente.
+8. **Settlement/vencimiento** compatible con necesidad de caja siguiente.
 9. Simulación PAPER específica y decisión `HOLD` vs `CAUCIONAR`; sin órdenes reales.
-10. Sólo después de pruebas/gates se considerará integración READY.
+10. Sólo después de pruebas/gates considerar integración READY.
 
 ## 11. SETTLEMENT / CONSOLIDACIÓN
 
@@ -287,18 +322,18 @@ Settlement general:
 - 48HS legado
 - usar `PlazosOperables` reales.
 
-Para CAUCIONES, el runtime actualmente observa `settlement=INMEDIATA`; conservar ese valor como evidencia específica de la familia y NO reemplazarlo por una regla spot genérica sin validación PPI.
+Para CAUCIONES, el runtime observa `settlement=INMEDIATA`; conservar ese valor como evidencia específica y NO reemplazarlo por regla spot genérica sin validación PPI.
 
 ## 12. PLAN PARALELO ACTUAL
 
 ### CARRIL A — CAUCIONES EOD (PRIORIDAD ALTA)
-A1. Ejecutar snapshot PPI API **one-shot read-only** sobre las 10 cauciones usando el guard existente; capturar sólo forma/campos sanitizados de current/book/intraday y configuración, sin servicio persistente ni órdenes.
-A2. En paralelo, captura trusted Web/XHR estrecha de `CaucionesOperables` + `ConfiguracionOperatoriaSimplificada` para términos estáticos que API marketdata no entregue.
-A3. Mapear por identidad los campos estáticos al Contract Evidence v2 con provenance; no auto-enable.
-A4. Determinar fuente exacta de `tna`, `available_principal`, `operable`, `market_session_state`, `expiry_at` y sus timestamps.
-A5. Recalcular `cq_family_contract_rules_hf6.evaluate_family('CAUCIONES', ...)` por cada una de las 10 identidades.
-A6. Construir simulador PAPER específico de cash sweep: `cash_free -> plazo/lado -> principal válido -> tasa ejecutable -> costos -> rendimiento neto -> disponibilidad futura -> HOLD/CAUCIONAR`.
-A7. Tests de EOD/cutoff/settlement/caja/reserva y fail-closed ante dato stale/ausente.
+- **A1 API schema/discovery: CERRADO.** 10 identidades y shapes current/book confirmados; dinámica dominical stale.
+- **A2:** captura trusted Web/XHR estrecha de `CaucionesOperables` + `ConfiguracionOperatoriaSimplificada` para términos estáticos y semántica faltante.
+- **A3:** construir normalizador específico de CAUCIONES que mapee únicamente campos explícitos por identidad a Contract Evidence v2 con provenance; no auto-enable.
+- **A4:** validar semántica exacta de `current.price`, `book.bids/offers`, `volume`, `COLOCAR-CAUCION` y lado colocador antes de mapear `tna`/`available_principal`.
+- **A5:** lunes cerca del EOD, adquirir snapshot dinámico fresco con TTL y recalcular gate por las 10 identidades.
+- **A6:** construir simulador PAPER de cash sweep: `cash_free -> moneda/plazo/lado -> principal válido -> tasa ejecutable -> costos -> rendimiento neto -> disponibilidad futura -> HOLD/CAUCIONAR`.
+- **A7:** tests de cutoff, settlement, caja reservada, dato stale/ausente, book vacío, monto mínimo, step y rentabilidad neta.
 
 ### CARRIL B — BONOS / LETRAS / ON
 1. Captura estrecha `InstrumentosOperables + DatosTecnicos`.
@@ -341,9 +376,11 @@ Actualizar este archivo tras cada hito material.
 - 🟡 BONOS/LETRAS/ON: captura/normalización pendiente
 - 🟢 CAUCIONES inventario: 10/10 observadas/AVAILABLE
 - 🔴 CAUCIONES can_simulate: 0/10
-- 🟡 CAUCIONES evidencia: 2 registros agregados, todavía no por identidad
+- 🟢 CAUCIONES API discovery/config/schema one-shot: cerrado
+- 🟢 PPI config confirma operación `COLOCAR-CAUCION`
+- 🟡 CAUCIONES evidencia Web/XHR: 2 registros agregados, todavía no por identidad
 - 🟢 CAUCIONES gate estático/dinámico: definido en código
-- 🟢 CAUCIONES PPI API read-only discovery: definido y auditado
+- 🔴 CAUCIONES dinámica EOD fresca: pendiente hasta rueda activa
 - 🔴 CAUCIONES cash-sweep PAPER integrado: todavía no implementado/demostrado
 - 🟡 FUTUROS: contrato especializado pendiente
 - ⚪ FCI/OPCIONES: fuera del target inmediato, reversible
@@ -360,6 +397,8 @@ Actualizar este archivo tras cada hito material.
 - no blind retry;
 - no inventar contratos/steps/ticks/ratios;
 - no considerar OHLCV nulo como histórico;
+- no mapear `current.price` a TNA ni `volume` a capital disponible sin validación semántica;
+- no usar snapshot de domingo como dinámica EOD fresca;
 - no automatizar caución EOD sin gate dinámico + simulador PAPER;
 - no reactivar 18 producers/timers;
 - no ejecutar `.github/workflows/rc6-cauciones-postclose-deploy-20260907.yml` durante esta fase;
@@ -369,26 +408,26 @@ Actualizar este archivo tras cada hito material.
 
 1. CEDEAR7 agotó PPI API + PPI Web + IOL y queda `HISTORY_GAP`.
 2. CAUCIONES fue elevada a prioridad alta por el caso de cash sweep EOD.
-3. Auditoría read-only run `34773204696` cerró 3/3 success.
-4. Se confirmaron 10 cauciones PPI disponibles: PESOS/DOLAR x 1/2/7/30/120 días; 0/10 can_simulate y ready_paper_count=0.
-5. Contract Evidence v2 sólo tiene 2 evidencias agregadas de Cauciones, todavía sin identidad operativa completa.
-6. El guard API oficial ya puede descubrir cauciones y leer current/book/intraday sin superficie de órdenes.
-7. El gate v2 de Cauciones ya define contrato estático y dinámica fresca con TTL.
+3. Auditoría read-only run `34773204696` cerró 3/3 success: 10 cauciones AVAILABLE, 0/10 can_simulate, 2 evidencias agregadas v2.
+4. One-shot PPI API run `34773357093` cerró success: 10/10 identidades, configuración PPI con `COLOCAR-CAUCION`, shapes `current`/`book` confirmados, `intraday` vacío en domingo, sin órdenes ni writes.
+5. Los datos dinámicos observados son stale por ser domingo y NO autorizan decisión EOD.
+6. No se validó todavía la equivalencia `price=TNA` ni `volume=available_principal`; queda explícitamente prohibido inferirla.
+7. El guard API y el gate v2 especializado existen y están fail-closed.
 8. El viejo workflow postclose es un deploy/recreate del observer y NO se ejecutó.
-9. Seguridad intacta: writers apagados, ningún unit/timer caución/postclose listado, órdenes reales 0.
+9. Seguridad intacta: writers apagados, ningún unit/timer caución/postclose activo, órdenes reales 0.
 
 ## 16. SIGUIENTE ACCIÓN EXACTA
 
-Ejecutar en paralelo sin reactivar servicios persistentes:
+Ejecutar en paralelo, sin reactivar servicios persistentes:
 
-- **A1:** one-shot PPI API read-only sobre las 10 cauciones para inventariar campos reales de current/book/intraday/configuración y determinar qué dinámica aporta la API.
-- **A2:** captura trusted Web/XHR estrecha de `CaucionesOperables` + `ConfiguracionOperatoriaSimplificada` para completar contrato estático.
+- **A2:** localizar/validar profile trusted y ejecutar captura Web/XHR estrecha `CONTRACT_EVIDENCE_CAUCIONES` para `CaucionesOperables` + `ConfiguracionOperatoriaSimplificada`, sólo GET/HEAD/OPTIONS.
+- **A3/A4:** diseñar normalizador específico CAUCIONES y tests de semántica; no escribir Contract Evidence hasta validar mapeos explícitos.
 - **B:** `InstrumentosOperables + DatosTecnicos` para BONOS/LETRAS/ON.
 - **C:** mapeo seguro costos/precision/min/step/ratios para Acciones/CEDEAR.
 - **D:** auditoría contractual FUTUROS.
 - **E:** safety read-only; no service restart, no writers, no real orders.
-- **F:** después de la tanda, recalcular matriz READY por familia y actualizar este checkpoint.
+- **F:** después de cada tanda, recalcular matriz READY por familia y actualizar este checkpoint.
 
 ---
 
-**Regla para nuevo chat:** leer este archivo primero. El foco NO es repetir ingesta histórica masiva. El foco es completar contratos/dinámica; CAUCIONES es ahora prioridad alta por el cash sweep EOD y debe permanecer fail-closed hasta demostrar contrato + dinámica + simulador PAPER.
+**Regla para nuevo chat:** leer este archivo primero. El foco NO es repetir ingesta histórica masiva. El foco es completar contratos/dinámica; CAUCIONES es prioridad alta por cash sweep EOD y permanece fail-closed hasta demostrar contrato + dinámica fresca + simulador PAPER.
