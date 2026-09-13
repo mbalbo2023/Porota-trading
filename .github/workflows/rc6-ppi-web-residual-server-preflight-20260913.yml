@@ -1,0 +1,204 @@
+name: RC6 PPI Web residual server preflight 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - 'ops/ppi_web_residual_server_runner_rc6.py'
+      - 'ops/ppi_web_residual_state_rc6.py'
+      - 'ops/ppi_web_history_ingest_rc6.py'
+      - 'ops/porota-ppi-web-residual-rc6.service'
+      - 'rc6_ppi_web_history_shadow.py'
+      - 'rc6_ppi_web_reauth.py'
+      - 'tests/test_ppi_web_residual_state_rc6.py'
+      - '.github/workflows/rc6-ppi-web-residual-server-preflight-20260913.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-rc6-ppi-web-residual-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+
+      - name: Offline compile and state tests
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            ops/ppi_web_residual_server_runner_rc6.py \
+            ops/ppi_web_residual_state_rc6.py \
+            ops/ppi_web_history_ingest_rc6.py \
+            rc6_ppi_web_history_shadow.py \
+            rc6_ppi_web_reauth.py
+          python -m pip install -q pytest
+          pytest -q tests/test_ppi_web_residual_state_rc6.py
+          grep -q 'ConditionPathExists=/opt/porota-ingest/ppi-web-residual/ENABLED' ops/porota-ppi-web-residual-rc6.service
+          grep -q 'PPI_WEB_BROWSER_USER=porotaadmin' ops/porota-ppi-web-residual-rc6.service
+          grep -q '/home/porotaadmin/porota-browser-lab/chrome-profile' ops/porota-ppi-web-residual-rc6.service
+          echo OFFLINE_PREFLIGHT=GREEN
+
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_preflight"
+          chmod 600 "$HOME/.ssh/porota_preflight"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Stage runtime files only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/porota_preflight" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            ops/ppi_web_residual_server_runner_rc6.py \
+            ops/ppi_web_residual_state_rc6.py \
+            ops/ppi_web_history_ingest_rc6.py \
+            ops/porota-ppi-web-residual-rc6.service \
+            rc6_ppi_web_history_shadow.py rc6_ppi_web_reauth.py \
+            "$DO_USER@$DO_HOST:/tmp/"
+
+      - name: Install disabled runtime and run real preflight
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_preflight" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          RROOT=/opt/porota-ingest/ppi-web-residual
+          BIN="$RROOT/bin"
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          SECRET=/etc/porota/contract-evidence-web.env
+          VENV=/opt/porota-contract-evidence-venv
+          UNIT=porota-ppi-web-residual-rc6.service
+          API_UNIT=porota-ppi-fullfamily-history-rc6.service
+
+          echo '=== SAFETY PRECHECK ==='
+          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'{qc}|{mode}|{orders}'); c.close()
+          PY
+          )"
+          echo "SAFETY_BEFORE=$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+          echo "API_INGEST_SERVICE=$(sudo -n systemctl is-active "$API_UNIT" 2>/dev/null || true)"
+
+          echo '=== HOST PATHS ==='
+          test -d "$ROOT"
+          test -d "$PROFILE"
+          test "$(stat -c '%U' "$PROFILE")" = porotaadmin
+          test -x "$VENV/bin/python"
+          test -x /usr/bin/google-chrome-stable
+          test -f "$SECRET"
+          test "$(stat -c '%U' "$SECRET")" = porotaadmin
+          test "$(stat -c '%a' "$SECRET")" = 600
+          echo PROFILE_OWNER=porotaadmin
+          echo SECRET=PRESENT_RESTRICTED
+          echo SECRET_VALUES_PRINTED=NO
+          df -Pk /opt | awk 'NR==2{print "DISK_FREE_KB="$4}'
+
+          echo '=== INSTALL DISABLED RUNTIME ==='
+          sudo -n install -d -o root -g root -m 0755 "$RROOT" "$BIN"
+          sudo -n rm -f "$RROOT/ENABLED"
+          sudo -n install -o root -g root -m 0755 /tmp/ppi_web_residual_server_runner_rc6.py "$BIN/ppi_web_residual_server_runner_rc6.py"
+          sudo -n install -o root -g root -m 0644 /tmp/ppi_web_residual_state_rc6.py "$BIN/ppi_web_residual_state_rc6.py"
+          sudo -n install -o root -g root -m 0644 /tmp/ppi_web_history_ingest_rc6.py "$BIN/ppi_web_history_ingest_rc6.py"
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_history_shadow.py "$BIN/rc6_ppi_web_history_shadow.py"
+          sudo -n install -o root -g root -m 0755 /tmp/rc6_ppi_web_reauth.py "$BIN/rc6_ppi_web_reauth.py"
+          sudo -n install -o root -g root -m 0644 /tmp/porota-ppi-web-residual-rc6.service "/etc/systemd/system/$UNIT"
+          sudo -n rm -f /tmp/ppi_web_residual_server_runner_rc6.py /tmp/ppi_web_residual_state_rc6.py /tmp/ppi_web_history_ingest_rc6.py /tmp/rc6_ppi_web_history_shadow.py /tmp/rc6_ppi_web_reauth.py /tmp/porota-ppi-web-residual-rc6.service
+          sudo -n systemctl daemon-reload
+          sudo -n systemd-analyze verify "/etc/systemd/system/$UNIT"
+          sudo -n systemctl disable "$UNIT" >/dev/null 2>&1 || true
+          sudo -n systemctl stop "$UNIT" >/dev/null 2>&1 || true
+          test ! -e "$RROOT/ENABLED"
+          echo RESIDUAL_SERVICE_ENABLED=NO
+          echo RESIDUAL_SERVICE_ACTIVE="$(sudo -n systemctl is-active "$UNIT" 2>/dev/null || true)"
+          echo ENABLE_GATE_PRESENT=NO
+
+          echo '=== REAUTH EXISTING TRUSTED PROFILE ==='
+          set +e
+          AUTH_OUT="$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$ROOT:$BIN" \
+            "$VENV/bin/python" "$BIN/rc6_ppi_web_reauth.py" --profile "$PROFILE" --secret "$SECRET" 2>&1)"
+          AUTH_RC=$?
+          set -e
+          printf '%s\n' "$AUTH_OUT"
+          echo "REAUTH_RC=$AUTH_RC"
+          AUTH_STATE="$(AUTH_OUT="$AUTH_OUT" python3 - <<'PY'
+          import json,os
+          try: print(json.loads(os.environ['AUTH_OUT'].splitlines()[-1]).get('status','UNKNOWN'))
+          except Exception: print('INVALID_AUTH_OUTPUT')
+          PY
+          )"
+          echo "REAUTH_STATE=$AUTH_STATE"
+          test "$AUTH_RC" -eq 0
+          test "$AUTH_STATE" = AUTHENTICATED_TRUSTED_DEVICE
+
+          echo '=== ONE-TARGET READONLY ENGINE SMOKE ==='
+          TDIR="$(sudo -n -u porotaadmin mktemp -d /tmp/ppi-web-preflight.XXXXXX)"
+          sudo -n -u porotaadmin tee "$TDIR/target.jsonl" >/dev/null <<'EOF'
+          {"symbol":"GGAL","instrument_type":"ACCIONES","market":"BYMA","settlement":"A-48HS","residual_class":"PREFLIGHT_ONLY"}
+          EOF
+          set +e
+          COLLECT_OUT="$(sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin PYTHONPATH="$ROOT:$BIN" \
+            "$VENV/bin/python" "$BIN/rc6_ppi_web_history_shadow.py" --profile "$PROFILE" --output "$TDIR/capture.json" --targets-jsonl "$TDIR/target.jsonl" 2>&1)"
+          COLLECT_RC=$?
+          set -e
+          printf '%s\n' "$COLLECT_OUT"
+          test "$COLLECT_RC" -eq 0
+          python3 - "$TDIR/capture.json" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert x['auth_status']=='AUTHENTICATED_TRUSTED_DEVICE'
+          assert x['canonical_write']=='DENY'
+          assert x['db_write']=='NO'
+          assert int(x['real_orders_sent'])==0
+          assert len(x['targets'])==1
+          print('ONE_TARGET_AUTH_READONLY=GREEN')
+          print('TARGETS=',len(x['targets']))
+          print('CAPTURES=',len(x.get('captures',[])))
+          print('ROWS=',sum(len(c.get('rows',[])) for c in x.get('captures',[])))
+          print('BLOCKED_NONREAD=',len(x.get('blocked_nonread',[])))
+          print('BLOCKED_FORBIDDEN=',len(x.get('blocked_forbidden_paths',[])))
+          PY
+          sudo -n rm -rf "$TDIR"
+
+          echo '=== POST SAFETY ==='
+          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print(f'{qc}|{mode}|{orders}'); c.close()
+          PY
+          )"
+          echo "SAFETY_AFTER=$POST"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          test ! -e "$RROOT/ENABLED"
+          test "$(sudo -n systemctl is-active "$UNIT" 2>/dev/null || true)" != active
+          echo REAL_ORDERS_SENT=0
+          echo MASS_SCRAPING_STARTED=NO
+          echo PREFLIGHT=GREEN
+          HOST
