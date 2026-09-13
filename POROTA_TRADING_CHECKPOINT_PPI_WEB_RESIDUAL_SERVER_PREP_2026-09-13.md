@@ -68,12 +68,49 @@ Antes de la corrida residual completa se seleccionará un pequeño conjunto real
 
 No se promueve automáticamente nada a canónico durante el canary.
 
-## Reconciliación
-Orden de autoridad: PPI API > PPI Web > IOL.
-PPI Web sólo puede completar faltantes o evidencia residual. No pisa una fila FULL_OHLC válida proveniente de PPI API. No repara/sintetiza OHLC. Toda fila conserva source, timestamp de captura y evidencia de origen.
+## Reconciliación — IMPLEMENTADA Y VALIDADA
+`ops/ppi_web_history_reconcile_rc6.py` recibe capturas sanitizadas por identidad y reutiliza sin modificar `cp_history_ingest_policy_hf6.validate_provider_history()`.
 
-## Post-Web
-Al terminar Web se genera un segundo residual. Sólo éste queda habilitado como input eventual de IOL. IOL no se ejecuta en paralelo ni antes del cierre Web.
+Reglas verificadas:
+- no interpolación, forward-fill, reparación ni OHLC sintético;
+- aliases Web se mapean explícitamente al esquema `date/openingPrice/max/min/price/volume`;
+- toda fila pasa el mismo contrato FULL_OHLC utilizado por PPI API;
+- fuente persistida: `PPI_WEB_HISTORY`;
+- `ready_paper_implication=NONE`;
+- `execution_price_implication=NONE`.
+
+Precedencia en `cu_history_store_v2_hf6.py`:
+- PPI API / `PPI_PRODUCTION_HISTORY` = rank 10
+- `PPI_WEB_HISTORY` = rank 15
+- IOL = rank 30
+
+Por lo tanto: PPI API > PPI Web > IOL. Una vela PPI Web no puede reemplazar una canónica PPI API válida; sí puede completar un hueco o reemplazar un fallback IOL de menor autoridad.
+
+## Post-Web hacia IOL — IMPLEMENTADO Y VALIDADO
+`ops/ppi_postweb_residual_manifest_rc6.py` consume resultados terminales de reconciliación Web.
+
+- `DONE_VALID` queda resuelto para la ventana solicitada y NO pasa a IOL.
+- `DONE_PARTIAL` -> `PPI_WEB_PARTIAL_VALID`.
+- `DONE_EMPTY` sin filas -> `PPI_WEB_NO_ROWS`.
+- `DONE_EMPTY` con filas rechazadas -> `PPI_WEB_PROVIDER_INVALID`.
+- `ERROR` -> `PPI_WEB_ERROR`.
+- cualquier estado desconocido/no terminal falla cerrado.
+
+Sólo ese segundo residual queda habilitado como input eventual de IOL. IOL no se ejecuta en paralelo ni antes del cierre Web.
+
+## Validación CI puntos 8 y 9
+Workflow: `.github/workflows/rc6-ppi-web-reconcile-postweb-validate-20260913.yml`
+Run: `34730231639`
+Resultado: SUCCESS.
+
+Pruebas verificadas:
+- normalización aliases + mismo validador FULL_OHLC;
+- rechazo de OHLC inconsistente;
+- PPI Web protegido por precedencia frente a PPI API;
+- PPI Web prevalece sobre IOL;
+- residual post-Web contiene sólo identidades no resueltas;
+- estados desconocidos fallan cerrado;
+- módulos de reconciliación/residual no contienen navegador, red ni capacidad de órdenes.
 
 ## Cierre final
 Antes de restaurar timers / READY_PAPER:
@@ -91,12 +128,13 @@ Fuente de verdad: SQLite de estado + systemd journal + `status.json` + checkpoin
 
 ## Estado de preparación
 - Gate API->Web: VERIFICADO / esperando PENDING=0.
-- Manifest residual: IMPLEMENTADO y fail-closed.
+- Manifest residual API: IMPLEMENTADO y fail-closed.
 - Motor histórico existente: IDENTIFICADO y tests de safety existentes verificados.
 - Motor contractual existente: IDENTIFICADO y runtime trusted-device verificado por código.
-- systemd durable: DISEÑO CERRADO, unit aún no activada.
-- Persistencia/resume: por implementar/validar en capa de orquestación, no en motor scraper.
+- systemd durable: PREPARADO, unit NO activada.
+- Persistencia/resume: IMPLEMENTADA Y VALIDADA.
 - Canary: criterio cerrado; targets concretos dependen del residual final.
-- Reconciliación: política cerrada; integración final pendiente.
-- IOL: bloqueado hasta residual post-Web.
+- Reconciliación (punto 8): IMPLEMENTADA Y VALIDADA.
+- Residual post-Web -> IOL (punto 9): IMPLEMENTADO Y VALIDADO.
+- IOL ejecución: BLOQUEADA hasta cierre real de PPI Web.
 - 18 timers: mantener pausados.
