@@ -1,0 +1,109 @@
+name: RC6 PPI Web auth POST path fail-closed probe 2026-09-13
+
+on:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths: ['.github/workflows/rc6-ppi-web-auth-postpath-probe-20260913.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Detect attempted auth POST without sending it
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -euo pipefail
+          sudo -n runuser -u porotaadmin -- env HOME=/home/porotaadmin \
+            /opt/porota-contract-evidence-venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          from playwright.sync_api import sync_playwright
+
+          secret=Path('/etc/porota/contract-evidence-web.env')
+          vals={}
+          for raw in secret.read_text(encoding='utf-8').splitlines():
+              if '=' in raw and not raw.lstrip().startswith('#'):
+                  k,v=raw.split('=',1); vals[k.strip()]=v.strip().strip('"').strip("'")
+          user=vals.get('PPI_WEB_USERNAME',''); password=vals.get('PPI_WEB_PASSWORD','')
+          assert user and password
+          attempted=[]
+          with sync_playwright() as pw:
+              ctx=pw.chromium.launch_persistent_context(
+                  user_data_dir='/home/porotaadmin/porota-browser-lab/chrome-profile',
+                  executable_path='/usr/bin/google-chrome-stable',headless=True,
+                  locale='es-AR',timezone_id='America/Argentina/Buenos_Aires',
+                  args=['--no-sandbox','--disable-dev-shm-usage'])
+              page=ctx.pages[0] if ctx.pages else ctx.new_page()
+              page.set_default_timeout(8000)
+              def guard(route,request):
+                  m=request.method.upper(); u=urlsplit(request.url)
+                  if m not in {'GET','HEAD','OPTIONS'}:
+                      attempted.append({'method':m,'host':u.netloc,'path':u.path})
+                      return route.abort()
+                  return route.continue_()
+              ctx.route('**/*',guard)
+              page.goto('https://cuenta.portfoliopersonal.com/login',wait_until='domcontentloaded',timeout=20000)
+              inputs=[]
+              q=page.locator('input')
+              for i in range(min(q.count(),20)):
+                  n=q.nth(i)
+                  try:
+                      if n.is_visible():
+                          inputs.append({
+                            'type':n.get_attribute('type'),'name':n.get_attribute('name'),
+                            'id':n.get_attribute('id'),'autocomplete':n.get_attribute('autocomplete'),
+                            'placeholder':n.get_attribute('placeholder'),'disabled':n.is_disabled(),
+                          })
+                  except Exception: pass
+              def first(selectors):
+                  for s in selectors:
+                      q=page.locator(s)
+                      for i in range(min(q.count(),10)):
+                          try:
+                              if q.nth(i).is_visible(): return q.nth(i)
+                          except Exception: pass
+                  return None
+              un=first(["input[autocomplete='username']","input[placeholder*='usuario' i]","input[name*='user' i]","input[id*='user' i]","input[type='email']"])
+              pwf=first(["input[type='password']","input[autocomplete='current-password']","input[name*='pass' i]","input[id*='pass' i]"])
+              submit=first(["button:has-text('Ingresar')","button:has-text('Continuar')","button[type='submit']","input[type='submit']"])
+              print('VISIBLE_INPUTS='+json.dumps(inputs,ensure_ascii=False,sort_keys=True))
+              print('USERNAME_SELECTOR_FOUND='+str(un is not None))
+              print('PASSWORD_SELECTOR_FOUND='+str(pwf is not None))
+              print('SUBMIT_FOUND='+str(submit is not None))
+              if un is not None: un.fill(user)
+              if pwf is not None: pwf.fill(password)
+              if submit is not None:
+                  print('SUBMIT_DISABLED='+str(submit.is_disabled()))
+                  submit.click(no_wait_after=True)
+                  page.wait_for_timeout(3000)
+              ctx.close()
+          unique=[]
+          for x in attempted:
+              if x not in unique: unique.append(x)
+          print('ATTEMPTED_NONREAD='+json.dumps(unique,sort_keys=True))
+          print('POSTS_SENT=0')
+          print('CREDENTIALS_PRINTED=NO')
+          print('REAL_ORDERS_SENT=0')
+          PY
+          HOST
