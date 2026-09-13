@@ -1,0 +1,145 @@
+name: RC6 READY deep diagnose 2026-09-13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-ppi-web-residual-ready-20260913]
+    paths:
+      - '.github/workflows/rc6-ready-deep-diagnose-20260913.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-shape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail; install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Contract evidence shapes read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,collections
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          fams={'ACCIONES','CEDEARS','BONOS','LETRAS','ON','CAUCIONES','FUTUROS','ETF','ACCIONES_USA','LICITACIONES'}
+          alias={'OBLIGACIONES_NEGOCIABLES':'ON','OBLIGACIONES':'ON','ONS':'ON','ACCIONES-USA':'ACCIONES_USA'}
+          q='''select x.family,x.ticker,x.market,x.settlement,x.source_class,x.observed_at,s.evidence_json from contract_evidence_v2_current x join contract_evidence_v2_snapshots s on s.snapshot_id=x.snapshot_id order by x.family,x.source_class,x.ticker'''
+          keycov=collections.defaultdict(lambda:collections.defaultdict(collections.Counter)); samples={}; conflict_fields=collections.defaultdict(collections.Counter)
+          grouped=collections.defaultdict(list)
+          for r in c.execute(q):
+              fam=alias.get(str(r['family']).upper(),str(r['family']).upper())
+              if fam not in fams: continue
+              try: ev=json.loads(r['evidence_json'] or '{}')
+              except Exception: ev={}
+              if not isinstance(ev,dict): ev={}
+              src=r['source_class']; keycov[fam][src].update(k for k,v in ev.items() if v not in (None,'',[],{}))
+              sk=(fam,src)
+              if sk not in samples and r['ticker']!='*': samples[sk]={'ticker':r['ticker'],'market':r['market'],'settlement':r['settlement'],'keys':sorted(k for k,v in ev.items() if v not in (None,'',[],{})),'values':{k:ev[k] for k in sorted(ev) if k in {'isin','laminaMinima','multiploMinimo','fechaVencimiento','intereses','amortizacion','provider_nominales_en_precio','currency','instrument_id','quantity_step','price_tick','market','settlement'}}}
+              if r['ticker']!='*': grouped[(fam,r['ticker'],r['market'],r['settlement'])].append((src,ev))
+          for ident,entries in grouped.items():
+              vals=collections.defaultdict(set)
+              for src,ev in entries:
+                  for k,v in ev.items():
+                      if v not in (None,'',[],{}): vals[k].add(json.dumps(v,sort_keys=True,ensure_ascii=False,default=str))
+              for k,v in vals.items():
+                  if len(v)>1: conflict_fields[ident[0]][k]+=1
+          out={'quick_check':c.execute('pragma quick_check').fetchone()[0],
+               'key_coverage':{f:{s:dict(cnt.most_common()) for s,cnt in srcs.items()} for f,srcs in keycov.items()},
+               'samples':{f'{f}|{s}':v for (f,s),v in samples.items()},
+               'conflict_fields':{f:dict(cnt.most_common()) for f,cnt in conflict_fields.items()}}
+          print('EVIDENCE_SHAPE_JSON='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str)); c.close()
+          PY
+          HOST
+
+  residual-detail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail; install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Residual useful detail read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n python3 - <<'PY'
+          import sqlite3,json,collections
+          p='/opt/porota-ingest/ppi-web-residual/state.sqlite3'; c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=20); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          target=('ACCIONES','CEDEARS','BONOS','LETRAS','ON','CAUCIONES','FUTUROS','LICITACIONES','LEBACS')
+          ph=','.join('?' for _ in target)
+          rows=[dict(r) for r in c.execute(f'''select symbol,instrument_type,market,settlement,residual_class,state,attempts,provider_rows,valid_rows,detail from residual_task where instrument_type in ({ph}) order by instrument_type,state,symbol''',target)]
+          by=collections.defaultdict(lambda:{'tasks':0,'provider_rows':0,'valid_rows':0,'state':collections.Counter(),'residual_class':collections.Counter()})
+          for r in rows:
+              x=by[r['instrument_type']]; x['tasks']+=1; x['provider_rows']+=int(r.get('provider_rows') or 0); x['valid_rows']+=int(r.get('valid_rows') or 0); x['state'][r['state']]+=1; x['residual_class'][r['residual_class']]+=1
+          special=[r for r in rows if r['instrument_type']=='ON' and r['state']=='ERROR' and 'CAPTURED' in str(r.get('detail') or '')]
+          partial=[r for r in rows if r['state']=='DONE_PARTIAL']
+          out={'quick_check':c.execute('pragma quick_check').fetchone()[0],
+               'by_family':{k:{**v,'state':dict(v['state']),'residual_class':dict(v['residual_class'])} for k,v in by.items()},
+               'on_captured_errors':special,
+               'partial_rows':partial}
+          print('RESIDUAL_DETAIL_JSON='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str)); c.close()
+          PY
+          HOST
+
+  ready-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail; install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: READY candidates and history bridge read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,collections
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          ready=[dict(r) for r in c.execute("select ticker,instrument_type,market,settlement,detail,last_checked_at from candidate_universe where can_simulate=1 and status='AVAILABLE' order by instrument_type,ticker")]
+          out={'quick_check':c.execute('pragma quick_check').fetchone()[0],'ready_count':len(ready),'ready_by_family':dict(collections.Counter(r['instrument_type'] for r in ready))}
+          if 'production_history' in tables:
+              hits=[]
+              for r in ready:
+                  h=c.execute('select row_count,date_from,date_to,downloaded_at from production_history where symbol=? and instrument_type=? and settlement=?',(r['ticker'],r['instrument_type'],r['settlement'])).fetchone()
+                  hits.append((r,h))
+              out['legacy_history_ready']={'with_rows':sum(bool(h and int(h['row_count'] or 0)>0) for _,h in hits),'missing':sum(not h or int(h['row_count'] or 0)<=0 for _,h in hits),'by_family':{}}
+              for fam in sorted(set(r['instrument_type'] for r in ready)):
+                  rr=[(r,h) for r,h in hits if r['instrument_type']==fam]; out['legacy_history_ready']['by_family'][fam]={'total':len(rr),'with_rows':sum(bool(h and int(h['row_count'] or 0)>0) for _,h in rr),'missing':sum(not h or int(h['row_count'] or 0)<=0 for _,h in rr)}
+          hist_tables=sorted(t for t in tables if 'history' in t.lower() or 'histor' in t.lower())
+          out['history_tables']=hist_tables
+          out['history_table_counts']={}
+          for t in hist_tables:
+              try: out['history_table_counts'][t]=c.execute('select count(*) from '+t).fetchone()[0]
+              except Exception as e: out['history_table_counts'][t]='ERR:'+type(e).__name__
+          if 'ppi_history_ingest_tasks' in tables:
+              out['ppi_task_columns']=[r[1] for r in c.execute('pragma table_info(ppi_history_ingest_tasks)')]
+              out['ppi_task_states']=[dict(r) for r in c.execute("select instrument_type,state,count(*) n from ppi_history_ingest_tasks where run_id='PPI-HIST-20260912-001' group by instrument_type,state order by instrument_type,state")]
+          print('READY_HISTORY_JSON='+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str)); c.close()
+          PY
+          HOST
