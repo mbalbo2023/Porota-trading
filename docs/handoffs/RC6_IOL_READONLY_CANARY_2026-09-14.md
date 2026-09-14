@@ -56,3 +56,13 @@ Si no hay una ubicación aprobada y reproducible, dejar el canary detenido y con
 - Ese head añade sincronización de este handoff hacia `/opt/porota-trading/docs/handoffs/`; el paso comprueba primero la imagen RC6 y solo copia este documento.
 - No marcar la copia al servidor como confirmada hasta ver `SERVER_HANDOFF_SYNC=OK` en el run correspondiente. La conexión de Actions a RC6 ya se utilizó para los dos preflights descritos arriba, ambos detenidos antes de red IOL.
 - Mantener las próximas notas de resultado en este archivo, en GitHub. Al ejecutarse el workflow, vuelve a copiar la versión del handoff del commit al servidor. No guardar secretos ni respuestas completas.
+
+## Resultado confirmado del seguimiento
+
+- Run [34899652579](https://github.com/mbalbo2023/Porota-trading/actions/runs/34899652579), commit `0ef4ac384ff22096987b7be15b1c8a8d698d64f8): `SERVER_HANDOFF_SYNC=OK`; destino confirmó `true|porota-trading-bot:17.0.0-rc6`. El handoff fue copiado a `/opt/porota-trading/docs/handoffs/RC6_IOL_READONLY_CANARY_2026-09-14.md`.
+- En el mismo run, el preflight informó `IOL_CREDENTIAL_NAMES_PRESENT=NONE` y `CANARY=STOPPED_BEFORE_NETWORK`. No hubo POST de autenticación ni GET a IOL.
+- El run termina en fallo deliberado del canary porque el preflight no encontró las variables; la sincronización documental sí terminó correctamente.
+
+## Hallazgo de integración paralelo (DTO)
+
+El wrapper offline de PR #64 conserva operación, consulta, hora tomada antes de la llamada y estado `NONEMPTY_UNVALIDATED` / `EMPTY_OR_UNAVAILABLE`. No alcanza todavía para persistir evidencia validada: la hora no es recepción, el mercado es el solicitado y no incluye ID del proveedor, venue, moneda, settlement ni resultado de validación campo por campo. No persistir `payload` directamente ni convertir respuesta no vacía en readiness. Antes de conectarlo a Evidence v2 hacen falta identidad ampliada y un contrato de procedencia/validación que evite claves con `UNKNOWN`; no llamar a una lectura “read-only” si ejecuta inicialización/DDL.
