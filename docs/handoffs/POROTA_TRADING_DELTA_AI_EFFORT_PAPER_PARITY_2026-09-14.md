@@ -64,3 +64,17 @@ La regla se agregó a `AGENTS.md`, `POROTA_TRADING_CONTINUIDAD_OBLIGATORIA.md` y
 - `POROTA_TRADING_CHAT_START_HERE.md`: blob `b7e6713e02494e8873efd1140abef511ec8e9aae`, commit `8188102c23cc53037adea2719c500889abef20db`.
 
 La entrada de chat nuevo apunta explícitamente a este delta. No se fusionó ni se desplegó; queda pendiente de integración por el chat integrador. No hay CI de aplicación ejecutada para estos cambios documentales.
+
+
+## Alternativa oficial de datos investigada en esta sesión
+
+La búsqueda actual de documentación oficial encontró una vía nueva respecto de las corridas PPI ya cerradas:
+
+- BYMA publica una API de Market Data y una API Market Data Instruments. BYMA describe la segunda como fuente de datos de Acciones, CEDEARs, Bonos y otros instrumentos, con características y parámetros de negociación; la API de precios publica información negociada durante el día. La página de APIs enumera renta variable, renta fija, futuros, opciones, cauciones e intradiarios. La implementación depende de requisitos/acceso comercial y técnicos. La documentación indica que las APIs Market Data son la excepción a la regla de acceso reservado a agentes miembros.
+- Esto es una alternativa oficial que vale la pena evaluar para precios y ciertos términos estructurados de BYMA. No se probó conexión, alcance por campo/universo, profundidad histórica, límites, precio/licencia ni cobertura de los 444. No prueba ejecución PPI y no cubre por sí sola activos fuera de BYMA (por ejemplo, acciones USA).
+- IOL ya tiene cliente REST read-only en el código y su documentación oficial ofrece cotizaciones actuales e históricas para instrumentos del mercado argentino; ya se probaron ejemplos, pero no un barrido API completo de 444. La siguiente prueba de cobertura debe ser API-first, por muestras/campos faltantes y con rate/call budget; no scraping web masivo.
+- PPI documenta API para buscar instrumentos, consultar históricos/cotizaciones en tiempo real y operar. Los pases históricos masivos PPI del checkpoint ya se agotaron y no se repiten; datos de cotización/contrato actual deben tratarse en capturas read-only y gates separados, sin importar ni operar.
+
+Fuentes primarias consultadas: [BYMA Market Data APIs](https://www.byma.com.ar/productos/productos-de-datos/market-data/apis), [BYMA APIs y requisitos de acceso](https://www.byma.com.ar/byma-apis), [API oficial de IOL](https://www.invertironline.com/api), [PPI Docs](https://itatppi.github.io/ppi-official-api-docs/).
+
+Conclusión: para los activos BYMA, el siguiente camino nuevo y concreto es solicitar/evaluar BYMA Market Data + Market Data Instruments; en paralelo, medir cobertura y calidad de IOL API sobre los 444 identificados. Ninguna de las dos fuentes reemplaza el contrato de ejecución PPI. Para proveedores terceros adicionales: `NOT_RESEARCHED` y no recomendados todavía.
