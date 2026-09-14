@@ -1,0 +1,105 @@
+name: RC6 Contract blocked32 classification 2026-09-14
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-contract-blocked-nonread-audit-20260914]
+    paths:
+      - '.github/workflows/rc6-contract-blocked32-classification-20260914.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-contract-blocked-nonread-audit-20260914
+      - name: Prepare SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Classify blocked nonread from existing capture only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_BLOCKED32_CLASSIFICATION_2026-09-14.txt
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY' > "$RESULT"
+          import json, collections
+          from urllib.parse import urlsplit
+          p='/opt/porota-trading/data/contract_evidence/rc6_trusted/contract_point1_20260914T001900Z.json'
+          print('PROBE=RC6_CONTRACT_BLOCKED32_CLASSIFICATION_V1')
+          print('READ_ONLY=YES')
+          print('BROWSER_STARTED=NO')
+          print('DB_TOUCHED=NO')
+          d=json.load(open(p,encoding='utf-8'))
+          blocked=d.get('blocked_nonread') or []
+          print('AUTH_STATUS='+str(d.get('auth_status')))
+          print('REAL_ORDERS_SENT='+str(d.get('real_orders_sent')))
+          print('BLOCKED_TOTAL='+str(len(blocked)))
+          counts=collections.Counter()
+          sample={}
+          for x in blocked:
+              if not isinstance(x,dict):
+                  continue
+              method=str(x.get('method') or '').upper()
+              raw=str(x.get('url') or '')
+              u=urlsplit(raw)
+              host=(u.netloc or '').lower()
+              path=u.path or '/'
+              key=(method,host,path)
+              counts[key]+=1
+              sample[key]=x
+          print('BLOCKED_UNIQUE='+str(len(counts)))
+          targets=('instrumentosoperables','caucionesoperables','configuracionoperatoriasimplificada','subyacenteopciones','datostecnicos')
+          mutation_terms=('orden','orders','comprar','vender','compra','venta','cancel','anular','confirm','operacion','operar','budget','presupuesto')
+          for i,((method,host,path),n) in enumerate(sorted(counts.items(), key=lambda z:(z[0][1],z[0][2],z[0][0])),1):
+              low=(host+path).lower()
+              if 'refiner.io' in host or 'zendesk' in host or path == '/api/logger':
+                  cls='ACCESSORY_TELEMETRY_SUPPORT'
+              elif any(t in low for t in targets):
+                  cls='CONTRACT_TARGET_HINT_REVIEW_REQUIRED'
+              elif '/auth/' in low or 'login' in low or 'sso' in low:
+                  cls='AUTH_REVIEW_REQUIRED'
+              elif any(t in low for t in mutation_terms):
+                  cls='POTENTIAL_MUTATION_KEEP_BLOCKED'
+              elif host.endswith('portfoliopersonal.com'):
+                  cls='FIRSTPARTY_UNKNOWN_REVIEW_REQUIRED'
+              else:
+                  cls='THIRDPARTY_UNKNOWN_KEEP_BLOCKED'
+              print(f'UNIQUE_{i}=count:{n}|method:{method}|host:{host}|path:{path}|class:{cls}')
+          # Endpoint evidence already captured, path only, no query/body.
+          eps=d.get('endpoints') or {}
+          print('ENDPOINTS_COUNT='+str(len(eps) if isinstance(eps,dict) else 0))
+          if isinstance(eps,dict):
+              for i,(k,v) in enumerate(sorted(eps.items()),1):
+                  if not isinstance(v,dict): continue
+                  src=str(v.get('source_url') or '')
+                  u=urlsplit(src)
+                  print(f'ENDPOINT_{i}=kind:{v.get("kind")}|host:{u.netloc}|path:{u.path}')
+          print('RESULT=GREEN_BLOCKED32_CLASSIFIED_NO_MUTATION')
+          PY
+          cat "$RESULT"
+      - name: Persist sanitized classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_BLOCKED32_CLASSIFICATION_2026-09-14.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist blocked32 classification [skip ci]'
+          git push origin HEAD:ops/rc6-contract-blocked-nonread-audit-20260914
