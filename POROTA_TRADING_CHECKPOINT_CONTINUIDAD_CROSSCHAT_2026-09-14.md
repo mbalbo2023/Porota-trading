@@ -462,3 +462,27 @@ Orden obligatorio, verificando antes de crear nada:
 ---
 
 **Regla para nuevo chat:** leer este archivo primero. No repetir histórico masivo, read-only Cauciones, adapter/bridge, schedule ni controller. Primero verificar capturas/producers/runtime y sólo después crear o ejecutar lo que realmente falte.
+
+
+## Addendum verificado 2026-09-14 — continuidad y READY_PAPER
+
+**Baseline activo confirmado por el usuario:** RC6. SHA canónico operativo que consta en el repo: `f8adec8a02b2f9f0ef2dffbee75458c958bf711e`. Las referencias de nombre heredadas no sustituyen este baseline.
+
+### Evidencia reciente de captura contractual
+
+- Captura RC6 run `34792235187`: autenticación GREEN; se navegaron 10 rutas; 2 observaciones, ambas `ConfiguracionOperatoriaSimplificada`; faltan `InstrumentosOperables`, `CaucionesOperables` y `DatosTecnicos`. `STRUCTURALLY_IMPORTABLE=NO`, `DB_IMPORT_EXECUTED=NO`, `SERVICE_RESTARTED=NO`, `REAL_ORDERS_SENT=0`.
+- Los 32 POST bloqueados auditados corresponden a cinco endpoints accesorios; ninguno es endpoint contractual, de orden o confirmación. No hay evidencia para relajar el guard.
+- Audits de solo lectura 34792080425, 34792041294, 34792145180, 34792187207, 34793520147 y 34793659648: no iniciaron navegador ni tocaron DB. Confirmaron que la versión instalada anterior carecía de rutas `/Operar`, ya corregidas en el colector RC6; la clasificación de POST accesorios no explica los endpoints ausentes.
+- Hallazgo de código para una siguiente instrumentación segura: el colector actual descarta respuestas GET con status >=400 y no conserva su status/path; por eso la captura no distingue entre solicitud nunca disparada y respuesta fallida. Próxima acción permitida: observabilidad sanitizada de GET de primer partido (host/path/status), sin query, body ni headers. No está probado que esa diferencia sea la causa.
+
+### READY_PAPER — estado verificado, no recomputado
+
+- Universo estricto inmediato: 444 identidades, excluye FCI/FCI_EXTERIOR/OPCIONES. Última matriz runtime conocida: `READY_PAPER_CANDIDATE=0/444`; es anterior a los fixes de importación y no se ha vuelto a calcular. No afirmar un resultado nuevo hasta que la evidencia contractual sea importable y se autorice la recomputación.
+- El indicador visual 246 (`55 ACCIONES + 191 CEDEARS`) mide `READY_PAPER_SPOT`, no readiness contractual end-to-end. Históricos: 239/246; siete CEDEARs tienen `HISTORY_GAP` documentado. No inventar datos.
+- Las reglas existentes exigen campos contractuales explícitos por familia, dinámica fresca dentro de TTL, costos, calendario/settlement, simulación y regresiones. Faltantes desconocidos no se derivan de decimales ni de datos de otra identidad.
+- Cauciones: inventario 10/10; `can_simulate=0/10`; gate vigente `NEEDS_CAUCION_TERMS`. Falta demostrar en runtime la producción canónica de términos y snapshots dinámicos frescos conectada a readiness. La implementación de diseño/pruebas no cuenta como runtime READY.
+- No se ejecutó importador ni recomputación: la recaptura no es estructuralmente importable. Próxima secuencia segura: instrumentar sólo GET sanitizados; completar una captura contractual importable; revisar diff y guardas; importar/recomputar únicamente con autorización futura específica. Sin escritores nuevos, reinicios, POST, órdenes ni mutación de DB.
+
+### Estado de continuidad
+
+Este addendum preserva íntegra la copia del checkpoint activo anterior que sigue a continuación. Rama de trabajo de la política: `docs/mandatory-cross-chat-continuity-20260914`; este addendum debe quedar verificado por SHA en GitHub antes de declarar actualizado el checkpoint.
