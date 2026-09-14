@@ -135,3 +135,8 @@ Validación local aislada: preservó los bytes existentes, anexó las claves, pe
 ### Addendum v4: sesión Termius abierta al finalizar — 2026-09-14
 
 La v4 agrega pausa final leyendo desde /dev/tty, para mantener Termius abierto hasta que el operador indique Enter por voz. El bloque de instalación se ejecuta en subshell, con noclobber limitado a ese subshell; así no cambia opciones del shell interactivo ni puede cerrarlo por errexit. Mantiene la elevación automática sudo, nombre fijo/versionado, append-only de .env, salida saneada y emisión OSC 52. Validación aislada: append y modo 0600, sin secretos en salida/clipboard, marcador TERMINAL_MANTENIDA=SI. No se ejecutó contra droplet ni IOL.
+
+
+### Addendum v5: ruta temporal única para reintento de Termius — 2026-09-14
+
+El intento del bloque v4 encontró el archivo ya existente en /tmp y, correctamente, la protección impidió sobrescribirlo; no pedir al operador borrar ni renombrar archivos. La v5 crea un nombre temporal único con etiqueta v5 en cada pegado, ejecuta la copia recién creada con sudo y mantiene la terminal en pausa final. Repite únicamente la prueba de escritura del .env si las claves aún no existen; no toca servicios y, si detecta claves preexistentes, no modifica el archivo.
