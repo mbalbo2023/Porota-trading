@@ -1,8 +1,8 @@
 """Offline canonical instrument identity resolver for Wave A.
 
-Inputs must already be mapped by an explicit provider adapter into the
-normalized field names below. This module does not scrape, fetch, infer from a
-ticker, query a database, or enable orders/readiness.
+Provider adapters must map raw fields explicitly to the normalized names below.
+This module has no I/O and does not infer identity from a ticker. It neither
+checks readiness nor enables orders.
 """
 from __future__ import annotations
 
@@ -14,13 +14,18 @@ import unicodedata
 from collections.abc import Iterable, Mapping
 
 
-_REQUIRED_FIELDS = ("family", "ticker", "market", "venue", "currency", "settlement")
-_OPTIONAL_DISCRIMINATORS = ("underlying", "issuer", "share_class")
+_REQUIRED_FIELDS = ("family", "subfamily", "ticker", "market", "venue", "currency", "settlement")
+_IDENTITY_DETAILS = ("underlying", "issuer", "share_class", "expiry", "strike", "put_call")
 _SUPPORTED_FAMILIES = frozenset({
     "ACCIONES", "ACCIONES_USA", "CEDEARS", "ETF", "BONOS", "LETRAS", "LEBAC",
     "NOBAC", "ON", "CAUCIONES", "OPCIONES", "FUTUROS", "FCI", "FCI_LOCAL",
     "FCI_EXTERIOR", "LICITACIONES", "INDICES", "CANJES",
 })
+_FAMILY_REQUIRED_DETAILS = {
+    "CEDEARS": ("underlying",),
+    "OPCIONES": ("underlying", "expiry", "strike", "put_call"),
+    "FUTUROS": ("underlying", "expiry"),
+}
 
 
 def _plain(value: object) -> str:
@@ -29,23 +34,29 @@ def _plain(value: object) -> str:
     return " ".join(text.split())
 
 
-def _family(value: object) -> str:
+def _family_details(value: object) -> tuple[str, str]:
     token = re.sub(r"[^A-Z0-9]", "", _plain(value))
     aliases = {
         "ACCION": "ACCIONES",
         "EQUITY": "ACCIONES",
         "ACCIONESUSA": "ACCIONES_USA",
         "CEDEAR": "CEDEARS",
+        "CEDEARETF": ("CEDEARS", "ETF"),
+        "CEDEARETFS": ("CEDEARS", "ETF"),
+        "ETFCEDEAR": ("CEDEARS", "ETF"),
         "ETF": "ETF",
         "ETFS": "ETF",
         "BONO": "BONOS",
         "TITULOSPUBLICOS": "BONOS",
         "LETRA": "LETRAS",
+        "LETRALINKED": ("LETRAS", "LINKED"),
         "ON": "ON",
         "OBLIGACION": "ON",
         "OBLIGACIONES": "ON",
         "OBLIGACIONESNEGOCIABLES": "ON",
         "CAUCION": "CAUCIONES",
+        "CAUCIONCOLOCADORA": ("CAUCIONES", "COLOCADORA"),
+        "CAUCIONTOMADORA": ("CAUCIONES", "TOMADORA"),
         "OPCION": "OPCIONES",
         "OPTIONS": "OPCIONES",
         "FUTURO": "FUTUROS",
@@ -53,7 +64,13 @@ def _family(value: object) -> str:
         "FCIEXTERIOR": "FCI_EXTERIOR",
     }
     normalized = aliases.get(token, token)
-    return normalized if normalized in _SUPPORTED_FAMILIES else ""
+    if isinstance(normalized, tuple):
+        family, inline_subfamily = normalized
+    else:
+        family, inline_subfamily = normalized, ""
+    if family not in _SUPPORTED_FAMILIES:
+        return "", ""
+    return family, inline_subfamily
 
 
 def _field_value(field: str, value: object) -> str:
@@ -61,18 +78,25 @@ def _field_value(field: str, value: object) -> str:
     if not text:
         return ""
     if field == "family":
-        return _family(value)
+        return _family_details(value)[0]
+    if field == "subfamily":
+        return re.sub(r"[^A-Z0-9]+", "_", text).strip("_")
     if field == "currency":
         aliases = {
             "PESOS": "ARS",
             "PESO ARGENTINO": "ARS",
+            "PESOS ARGENTINOS": "ARS",
             "DOLARES BILLETE | MEP": "USD_MEP",
             "DOLARES DIVISA | CCL": "USD_CCL",
             "USD MEP": "USD_MEP",
             "USD CCL": "USD_CCL",
         }
         text = aliases.get(text, text)
+        if text in {"D", "C"} or not re.fullmatch(r"(?:[A-Z]{3}|USD_MEP|USD_CCL)", text):
+            return ""
     if field == "settlement":
+        return re.sub(r"\s+", "_", text)
+    if field in {"expiry", "put_call"}:
         return re.sub(r"\s+", "_", text)
     return text
 
@@ -80,6 +104,7 @@ def _field_value(field: str, value: object) -> str:
 @dataclass(frozen=True)
 class CanonicalIdentity:
     family: str
+    subfamily: str
     ticker: str
     market: str
     venue: str
@@ -88,6 +113,9 @@ class CanonicalIdentity:
     underlying: str = ""
     issuer: str = ""
     share_class: str = ""
+    expiry: str = ""
+    strike: str = ""
+    put_call: str = ""
 
 
 @dataclass(frozen=True)
@@ -101,8 +129,6 @@ class IdentityResolution:
 
     def to_dict(self) -> dict:
         result = asdict(self)
-        if self.identity is not None:
-            result["identity"] = asdict(self.identity)
         result["missing"] = list(self.missing)
         result["conflicts"] = list(self.conflicts)
         result["provider_ids"] = {source: list(ids) for source, ids in self.provider_ids}
@@ -110,31 +136,36 @@ class IdentityResolution:
 
 
 def resolve_canonical_identity(records: Iterable[Mapping[str, object]]) -> IdentityResolution:
-    """Resolve identity only when independent normalized claims agree.
+    """Resolve only explicit, provenance-backed identity claims that agree.
 
-    Required identity includes family, ticker, market, venue, currency, and
-    settlement. A ticker alone is never a join key. Conflicting values or
-    multiple IDs from one provider fail closed; optional discriminators are
-    retained and conflicts in them also block resolution.
+    Family subfamily is explicit and required. CEDEARs require an underlying;
+    options require underlying/expiry/strike/put_call; futures require
+    underlying/expiry. Provider IDs are retained as provenance and at least one
+    source ID is required. Optional descriptive enrichment does not change the
+    canonical key, while conflicts in it still block resolution.
     """
     if records is None:
         records = ()
     if isinstance(records, (str, bytes)) or not isinstance(records, Iterable):
         raise TypeError("records must be an iterable of normalized mappings")
 
-    claims: dict[str, set[str]] = {field: set() for field in _REQUIRED_FIELDS + _OPTIONAL_DISCRIMINATORS}
+    claim_fields = _REQUIRED_FIELDS + _IDENTITY_DETAILS
+    claims: dict[str, set[str]] = {field: set() for field in claim_fields}
     ids_by_source: dict[str, set[str]] = {}
     malformed = False
     for record in records:
         if not isinstance(record, Mapping):
             malformed = True
             continue
-        for field in claims:
+        for field in claim_fields:
             value = _field_value(field, record.get(field))
             if value:
                 claims[field].add(value)
+        family, inline_subfamily = _family_details(record.get("family"))
+        if inline_subfamily:
+            claims["subfamily"].add(_field_value("subfamily", inline_subfamily))
         source = _plain(record.get("source"))
-        provider_id = _plain(record.get("provider_id"))
+        provider_id = str(record.get("provider_id") or "").strip()
         if provider_id and not source:
             malformed = True
         elif source and provider_id:
@@ -146,15 +177,28 @@ def resolve_canonical_identity(records: Iterable[Mapping[str, object]]) -> Ident
     if any(len(values) > 1 for values in ids_by_source.values()):
         conflicts.add("provider_id")
 
-    missing = tuple(sorted(field for field in _REQUIRED_FIELDS if not claims[field]))
+    required = set(_REQUIRED_FIELDS)
+    family_values = claims["family"]
+    if len(family_values) == 1:
+        required.update(_FAMILY_REQUIRED_DETAILS.get(next(iter(family_values)), ()))
+    missing = {field for field in required if not claims[field]}
+    if not ids_by_source:
+        missing.add("provider_id")
+
+    missing_tuple = tuple(sorted(missing))
     provider_ids = tuple(sorted((source, tuple(sorted(values))) for source, values in ids_by_source.items()))
     if conflicts:
-        return IdentityResolution("CONFLICT", None, None, missing, tuple(sorted(conflicts)), provider_ids)
-    if missing:
-        return IdentityResolution("INSUFFICIENT", None, None, missing, (), provider_ids)
+        return IdentityResolution("CONFLICT", None, None, missing_tuple, tuple(sorted(conflicts)), provider_ids)
+    if missing_tuple:
+        return IdentityResolution("INSUFFICIENT", None, None, missing_tuple, (), provider_ids)
 
-    fields = {field: next(iter(claims[field])) if claims[field] else "" for field in claims}
+    fields = {field: next(iter(claims[field])) if claims[field] else "" for field in claim_fields}
     identity = CanonicalIdentity(**fields)
-    canonical_payload = json.dumps(asdict(identity), sort_keys=True, separators=(",", ":"))
+    key_fields = sorted(required)
+    canonical_payload = json.dumps(
+        {field: getattr(identity, field) for field in key_fields},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     canonical_id = "ci:v1:" + hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
     return IdentityResolution("RESOLVED", identity, canonical_id, (), (), provider_ids)
