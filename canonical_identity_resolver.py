@@ -99,7 +99,7 @@ def _field_value(field: str, value: object) -> str:
         if text in {"D", "C"} or not re.fullmatch(r"(?:[A-Z]{3}|USD_MEP|USD_CCL)", text):
             return ""
     if field == "settlement":
-        normalized = re.sub(r"\\s+", "_", text)
+        normalized = re.sub(r"\s+", "_", text)
         return normalized if normalized in _CANONICAL_SETTLEMENTS else ""
     if field in {"expiry", "put_call"}:
         return re.sub(r"\s+", "_", text)
