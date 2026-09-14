@@ -1,0 +1,98 @@
+PROBE=RC6_CONTRACT_ENDPOINT_PROVENANCE_AUDIT_V1
+READ_ONLY=YES
+BROWSER_STARTED=NO
+DB_TOUCHED=NO
+--- CURRENT_CAPTURE_ROUTES ---
+CURRENT_AUTH=AUTHENTICATED_TRUSTED_DEVICE
+CURRENT_ENDPOINTS=0
+CURRENT_BLOCKED_NONREAD=27
+ROUTE_1=job:CONTRACT_EVIDENCE_STATIC|requested:/Cotizaciones/Acciones|reached:True|url:https://trading.portfoliopersonal.com/Cotizaciones/Acciones|error:|title:Cotizaciones de Acciones | PPI
+ROUTE_2=job:CONTRACT_EVIDENCE_STATIC|requested:/Cotizaciones/Cedears|reached:True|url:https://trading.portfoliopersonal.com/Cotizaciones/Cedears|error:|title:Cotizaciones de Cedears | PPI
+ROUTE_3=job:CONTRACT_EVIDENCE_STATIC|requested:/Cotizaciones/Bonos|reached:True|url:https://trading.portfoliopersonal.com/Cotizaciones/Bonos|error:|title:Cotizaciones de Bonos | PPI
+ROUTE_4=job:CONTRACT_EVIDENCE_STATIC|requested:/Cotizaciones/Letras|reached:True|url:https://trading.portfoliopersonal.com/Cotizaciones/Letras|error:|title:Cotizaciones de Letras | PPI
+ROUTE_5=job:CONTRACT_EVIDENCE_STATIC|requested:/Cotizaciones/Ons|reached:True|url:https://trading.portfoliopersonal.com/Cotizaciones/Ons|error:|title:Cotizaciones de Obligaciones Negociables | PPI
+ROUTE_6=job:CONTRACT_EVIDENCE_STATIC|requested:/Cotizaciones/FCIs|reached:True|url:https://trading.portfoliopersonal.com/Cotizaciones/FCIs|error:|title:Cotizaciones de Fondos Locales | PPI
+ROUTE_7=job:CONTRACT_EVIDENCE_CAUCIONES|requested:/Cotizaciones/Cauciones|reached:True|url:https://trading.portfoliopersonal.com/Cotizaciones/Cauciones|error:|title:Cotizaciones de Cauciones | PPI
+--- HISTORICAL_TRUSTED_CAPTURES_WITH_ENDPOINTS ---
+HIST_CAPTURES_ENDPOINTS_COUNT=1
+CAPTURE=contract_current_get_v2_20260909T194143Z.json|generated:2026-09-09T19:41:43.749051+00:00|auth:AUTHENTICATED_TRUSTED_DEVICE|endpoints:40|kinds:{"GENERIC_FIRSTPARTY_GET":40}
+  SOURCE=GENERIC_FIRSTPARTY_GET|api.portfoliopersonal.com|/api/Configuracion/Servicios/GetServiciosAplicaciones
+  SOURCE=GENERIC_FIRSTPARTY_GET|api.portfoliopersonal.com|/api/Cuenta/ComitentesAsignados
+  SOURCE=GENERIC_FIRSTPARTY_GET|api.portfoliopersonal.com|/api/TranYDep/BuscarDepositoAutomaticoByUserId
+  SOURCE=GENERIC_FIRSTPARTY_GET|api.portfoliopersonal.com|/api/v1/notifications
+--- INSTALLED_DOM_PATH ---
+WITHDOM_PRESENT=YES
+WITHDOM_SHA256=18b52972fe3b30f621dd1a7ac0219d62099614ddd92aff6e69d75bcea5e6c2da
+4:ROOT="${POROTA_ROOT:-/opt/porota-trading}"
+7:LIB="${POROTA_RC6_CE_LIB:-/usr/local/lib/porota-contract-evidence-rc6}"
+8:PROFILE="${POROTA_CHROME_PROFILE:-/home/porotaadmin/porota-browser-lab/chrome-profile}"
+9:CE_PYTHON="${POROTA_CE_PYTHON:-/opt/porota-contract-evidence-venv/bin/python}"
+11:OUTDIR="$ROOT/data/contract_evidence_rc6_dom"
+15:safety="$($DOCKER_BIN exec -i "$CONTAINER" python - <<'PY'
+16:import sqlite3,json
+18:c.execute('pragma query_only=on')
+19:r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+24:SAFETY="$safety" python3 - <<'PY'
+25:import os,json,sys
+31:ROUTES="$($DOCKER_BIN exec -i "$CONTAINER" python - <<'PY'
+32:import sqlite3
+33:from datetime import datetime,timezone
+37:c.execute('pragma query_only=on')
+38:rows=dict(c.execute("""
+72:if [ -z "$ROUTES" ]; then
+73:  printf 'STATUS=GREEN_DOM_NOT_DUE\nAUTH_BROWSER_STARTED=REDACTED
+77:BROWSER_USER="$(stat -c '%U' "$PROFILE")"
+78:STAGE="$(mktemp -d /tmp/porota-ce-dom.XXXXXX)"
+82:STAGE_CAPTURE="$STAGE/dom_${stamp}.json"
+83:CAPTURE="$OUTDIR/dom_${stamp}.json"
+84:install -d -m 0755 "$OUTDIR"
+86:echo "DOM_DUE_ROUTES=$ROUTES"
+87:runuser -u "$BROWSER_USER" -- env PYTHONPATH="$LIB:$ROOT" "$CE_PYTHON" "$LIB/rc6_contract_dom_collector.py" \
+88:  --profile "$PROFILE" --output "$STAGE_CAPTURE" --routes "$ROUTES"
+91:REL="${CAPTURE#${ROOT}/data/}"
+92:IMPORT_OUT="$($DOCKER_BIN exec -i "$CONTAINER" python - "/app/data/$REL" < "$LIB/rc6_contract_dom_importer.py" 2>&1)"
+93:echo "$IMPORT_OUT"
+95:POST="$($DOCKER_BIN exec -i "$CONTAINER" python - <<'PY'
+96:import sqlite3,json
+97:from datetime import datetime,timezone
+100:c.execute('pragma query_only=on')
+101:r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+102:ce=c.execute("""
+107:fam=[x[0] for x in c.execute("""
+135:echo "DOM_POST=$POST"
+137:IMPORT_OUT="$IMPORT_OUT" POST="$POST" python3 - <<'PY'
+138:import os,json,sys
+139:line=os.environ['IMPORT_OUT'].strip().splitlines()[-1]
+145:    print('STATUS=RED_DOM_NO_PERSISTED_EVIDENCE')
+149:    print('STATUS=GREEN_DOM_EXTENSION')
+154:        print('STATUS=YELLOW_DOM_NO_TABLE_THIS_PASS')
+156:    print('STATUS=RED_DOM_STALE_AFTER_EMPTY_PASS')
+158:print('STATUS=RED_DOM_IMPORT_UNEXPECTED')
+--- LIB_FILES_RELEVANT_TO_DOM_OR_TARGETS ---
+rc6_contract_capture_importer.py
+rc6_contract_dom_collector.py
+rc6_contract_dom_importer.py
+rc6_contract_due_job.py
+rc6_contract_schedule.py
+rc6_ppi_contract_normalizer.py
+rc6_trusted_browser_contract_collector.py
+rc6_trusted_browser_contract_collector.py.pre_policy_v3_20260908T031413Z
+rc6_trusted_browser_contract_collector.py.pre_telemetry_20260908T025809Z
+rc6_trusted_browser_contract_collector.py.pre_telemetry_v2_20260908T030753Z
+--- TARGET_REFERENCES_IN_LIB ---
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:24:TARGETS = ("InstrumentosOperables", "CaucionesOperables", "ConfiguracionOperatoriaSimplificada",
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:25:           "SubyacenteOpciones", "DatosTecnicos")
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:117:    if "InstrumentosOperables" in url:
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:118:        return {"kind":"InstrumentosOperables","rows":instrumentos_operables(payload)}
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:119:    if "SubyacenteOpciones" in url:
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:120:        return {"kind":"SubyacenteOpciones","rows":option_underlyings(payload)}
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:121:    if "DatosTecnicos" in url:
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:122:        return {"kind":"DatosTecnicos","row":bond_technical(payload)}
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:123:    if "CaucionesOperables" in url:
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:124:        return {"kind":"CaucionesOperables","rows":payload_rows(payload),"schema":schema_shape(payload)}
+/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py:125:    if "ConfiguracionOperatoriaSimplificada" in url:
+/usr/local/lib/porota-contract-evidence-rc6/rc6_contract_capture_importer.py:89:        if kind == "InstrumentosOperables":
+/usr/local/lib/porota-contract-evidence-rc6/rc6_contract_capture_importer.py:109:        elif kind == "CaucionesOperables":
+/usr/local/lib/porota-contract-evidence-rc6/rc6_contract_capture_importer.py:126:        elif kind == "DatosTecnicos":
+/usr/local/lib/porota-contract-evidence-rc6/rc6_contract_capture_importer.py:142:        elif kind == "SubyacenteOpciones":
+RESULT=GREEN_ENDPOINT_PROVENANCE_AUDIT_COMPLETE_NO_MUTATION
