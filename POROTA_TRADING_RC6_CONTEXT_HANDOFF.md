@@ -114,3 +114,8 @@ El operador Tincho tiene cuadriplejia, usa Android/Termius y no puede escribir m
 ## Addendum de continuidad de terminal — 2026-09-14
 
 Los scripts ejecutados por Termius deben dejar la sesión visible y abierta al terminar, para que Tincho pueda revisar/copiar el resultado y volver al prompt mediante control por voz. El script debe leer una confirmación final desde /dev/tty y no cerrar la sesión inmediatamente; cualquier bloque pegado debe aislar opciones de shell en subshell para no activar errexit/noclobber en la sesión interactiva. Mantener salida breve y OSC 52 saneado. Tincho no tiene root: usar sudo automáticamente. Los scripts y checkpoints existentes no se sobrescriben; las revisiones se agregan con nombre de versión/addendum.
+
+
+## Addendum de recuperación de scripts en Termius — 2026-09-14
+
+La ejecución de la v4 mostró que el archivo versionado ya estaba en /tmp y la protección contra sobrescritura detuvo el bloque. No pedir borrar, renombrar ni reemplazar ese archivo. Los bloques de instalación deben crear rutas únicas (mktemp) con etiqueta de versión, ejecutarlas con sudo, aislar sus opciones en subshell y mantener la terminal abierta mediante espera final por /dev/tty. Si un archivo ya existe, registrar el hecho y generar otra versión/ruta única.
