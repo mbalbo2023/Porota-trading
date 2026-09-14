@@ -99,6 +99,31 @@ class CanonicalIdentityResolverTests(unittest.TestCase):
         self.assertEqual(result.status, "CONFLICT")
         self.assertIn("underlying", result.conflicts)
 
+    def test_caucion_placer_and_taker_are_distinct_subfamilies(self):
+        placer = resolve_canonical_identity([{
+            **self.base, "family": "CAUCION COLOCADORA", "subfamily": "COLOCADORA",
+        }])
+        taker = resolve_canonical_identity([{
+            **self.base, "family": "CAUCION TOMADORA", "subfamily": "TOMADORA",
+        }])
+        self.assertEqual(placer.identity.subfamily, "COLOCADORA")
+        self.assertEqual(taker.identity.subfamily, "TOMADORA")
+        self.assertNotEqual(placer.canonical_id, taker.canonical_id)
+
+    def test_etf_subfamily_prevents_direct_inverse_collapse(self):
+        direct = resolve_canonical_identity([{**self.base, "family": "ETF", "subfamily": "STANDARD"}])
+        inverse = resolve_canonical_identity([{**self.base, "family": "ETF", "subfamily": "INVERSE"}])
+        self.assertNotEqual(direct.canonical_id, inverse.canonical_id)
+
+    def test_unmapped_settlement_aliases_conflict_instead_of_being_guessed(self):
+        records = [
+            self.base,
+            {**self.base, "settlement": "T+1", "source": "IOL", "provider_id": "GGAL"},
+        ]
+        result = resolve_canonical_identity(records)
+        self.assertEqual(result.status, "CONFLICT")
+        self.assertIn("settlement", result.conflicts)
+
     def test_d_and_c_are_not_guessed_as_currencies(self):
         for code in ("D", "C"):
             result = resolve_canonical_identity([{**self.base, "currency": code}])
