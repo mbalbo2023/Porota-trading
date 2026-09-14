@@ -73,3 +73,21 @@ El wrapper offline de PR #64 conserva operación, consulta, hora tomada antes de
 - El observer PAPER RC6 actual toma cotización y libro PPI, valida timestamps recientes/no futuros, identidad monetaria y consistencia con contrato, además de sesión y riesgo. IOL debe quedar como contraste hasta tener el mismo instrumento inequívoco, timestamps con semántica conocida y campos comparables.
 - Un panel, una cotización o un histórico no aportan por sí solos el último trade, el libro ni la disponibilidad de apertura en PPI. Payload ausente, viejo, incompleto o en conflicto debe quedar como observación no validada y no elevar readiness.
 - Pendiente de diseño antes de codificar: envolvente de observación con hora de inicio/recepción, hora efectiva del proveedor si existe, endpoint y parámetros; identidad de proveedor y contrato; validaciones por campo; y comparación de IOL contra PPI en símbolo/mercado/moneda/settlement coincidentes.
+
+## Revisión reiniciada desde la web de IOL — 2026-09-14
+
+La página pública `Herramientas → API` presenta documentación y enlace a la consola de API. La documentación visible indica:
+
+- Requiere cuenta abierta; para habilitar el servicio, la guía indica solicitarlo desde Mensajes y aceptar términos bajo `Mi Cuenta → Personalización → APIs`. El estado de activación de esta cuenta no se verificó en sesión autenticada.
+- La consola anuncia API 2.0 y recuerda que las acciones impactan en el entorno REAL. El canary queda limitado a autenticación y GET allowlisted; se excluyen todos los endpoints de cuenta, órdenes, cancelación y cualquier POST distinto de `/token`.
+- La ayuda de autenticación se titula API V1 y documenta POST `/token` con `grant_type=password`, bearer token con vencimiento a los 15 minutos y renovación mediante `refresh_token`. No presenta en esa guía otro flujo alternativo de usuario/contraseña.
+
+### Historial de almacenamiento de credenciales (sin valores)
+
+El bootstrap de 2026-09-09 registró el guardado directo de las variables IOL en `/opt/porota-trading/.env`, con reemplazo atómico y permisos restringidos `0600`; no reinició el runtime ni intentó operar. Ese procedimiento no fue un hash. Una contraseña hasheada no permite obtener el token: la API necesita el secreto original o un almacén cifrado/reversible.
+
+La Action del 2026-09-14 volvió a consultar únicamente presencia de los nombres esperados en el entorno del contenedor y `/opt/porota-trading/.env`; ambos dieron `NONE`. Por lo tanto, el dato histórico de guardado no demuestra que sigan presentes hoy. No se imprimió ni se incorporó ningún valor al repo, logs o artefactos.
+
+### Fallback de lectura web
+
+La lectura de `Herramientas → API` completó la documentación pública y no constituye fallo de la API. El scraping autenticado de datos privados queda como fallback solo si el acceso read-only por API realmente falla y la cuenta puede abrirse con el flujo seguro. No usarlo para eludir login/2FA/bloqueos, recorrer páginas de órdenes, ni hacer captura masiva; priorizar consultas puntuales de datos de mercado.
