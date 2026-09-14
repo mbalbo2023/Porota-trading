@@ -1,0 +1,12 @@
+[Unit]
+Description=Porota RC6 controlled contract evidence recovery cadence
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=30min
+RandomizedDelaySec=2min
+Persistent=true
+Unit=porota-contract-recovery-rc6.service
+
+[Install]
+WantedBy=timers.target
