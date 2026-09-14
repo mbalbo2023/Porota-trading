@@ -31,11 +31,11 @@ class CanonicalIdentityResolverTests(unittest.TestCase):
         self.assertIn("family", result.missing)
         self.assertIsNone(result.canonical_id)
 
-    def test_identity_without_provenance_id_is_insufficient(self):
+    def test_identity_without_provenance_id_is_conflict(self):
         record = {key: value for key, value in self.base.items() if key not in {"source", "provider_id"}}
         result = resolve_canonical_identity([record])
-        self.assertEqual(result.status, "INSUFFICIENT")
-        self.assertIn("provider_id", result.missing)
+        self.assertEqual(result.status, "CONFLICT")
+        self.assertIn("malformed_record", result.conflicts)
 
     def test_conflicting_currency_blocks_resolution(self):
         records = [self.base, {**self.base, "currency": "USD", "source": "IOL", "provider_id": "GGAL"}]
