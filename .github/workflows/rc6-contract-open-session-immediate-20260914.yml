@@ -1,0 +1,120 @@
+name: RC6 immediate open-session contract probe 2026-09-14
+
+on:
+  push:
+    branches:
+      - ops/rc6-contract-open-session-immediate-20260914
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-contract-open-session-immediate-20260914
+  cancel-in-progress: false
+
+jobs:
+  contract-readonly-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Enforce approved date
+        run: |
+          set -euo pipefail
+          test "$(TZ=America/Argentina/Buenos_Aires date +%F)" = "2026-09-14" || {
+            echo "STATE=SKIPPED_OUTSIDE_APPROVED_DATE"
+            exit 0
+          }
+
+      - name: Configure audited SSH
+        env:
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DO_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DO_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+
+      - name: Capture and inspect AL30 plus Cauciones
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set +e
+          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE' 2>&1 | tee probe.log
+          set -euo pipefail
+          umask 077
+          exec 9>/run/lock/porota-contract-open-session-immediate-rc6.lock
+          flock -n 9 || { echo "STATE=SKIPPED_LOCK_HELD"; exit 0; }
+
+          systemctl is-active --quiet porota-ppi-web-residual-rc6.service && {
+            echo "STATE=SKIPPED_COMPETING_CONTRACT_WRITER"
+            exit 0
+          }
+
+          test -x /usr/local/sbin/porota-contract-point1-recovery-rc6 || {
+            echo "STATE=BLOCKED_HARNESS_MISSING"
+            exit 4
+          }
+
+          echo "POROTA_CONTRACT_OPEN_SESSION_IMMEDIATE"
+          echo "MUTATIONS=CAPTURE_FILE_ONLY"
+          echo "DB_IMPORT_EXECUTED=NO"
+          echo "REAL_ORDERS_SENT=0"
+          echo "ORDER_POST_ALLOWED=NO"
+
+          before="$(date -u +%s)"
+          /usr/local/sbin/porota-contract-point1-recovery-rc6
+
+          capture="$(find /opt/porota-trading/data/contract_evidence/rc6_trusted -maxdepth 1 -type f -name 'contract_point1_*.json' -newermt "@$before" -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)"
+          test -n "$capture" && test -r "$capture" || {
+            echo "STATE=BLOCKED_FRESH_CAPTURE_MISSING"
+            exit 4
+          }
+
+          python3 - "$capture" <<'PY'
+          import json, os, sys
+          path=sys.argv[1]
+          with open(path, encoding="utf-8") as fh:
+              doc=json.load(fh)
+
+          hits={"AL30": [], "CAUCIONES": []}
+          def walk(x):
+              if isinstance(x, dict):
+                  rendered=" ".join(str(v) for v in x.values()).upper()
+                  keys=sorted(str(k) for k in x.keys())
+                  if "AL30" in rendered:
+                      hits["AL30"].append(keys)
+                  if "CAUCION" in rendered:
+                      hits["CAUCIONES"].append(keys)
+                  for v in x.values():
+                      walk(v)
+              elif isinstance(x, list):
+                  for v in x:
+                      walk(v)
+          walk(doc)
+
+          print("CAPTURE_FILE="+os.path.basename(path))
+          print("CAPTURE_BYTES="+str(os.path.getsize(path)))
+          print("AL30_EVIDENCE="+("YES" if hits["AL30"] else "NO"))
+          print("AL30_FIELDSETS="+json.dumps(hits["AL30"][:10], ensure_ascii=False))
+          print("CAUCIONES_EVIDENCE="+("YES" if hits["CAUCIONES"] else "NO"))
+          print("CAUCIONES_FIELDSETS="+json.dumps(hits["CAUCIONES"][:10], ensure_ascii=False))
+          print("CAPTURE_ANALYSIS=READ_ONLY_NO_DB_IMPORT_NO_ORDERS")
+          PY
+          REMOTE
+          rc=${PIPESTATUS[0]}
+          tail -c 7000 probe.log >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: Notify Telegram
+        if: always()
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          test -f probe.log || printf 'STATE=NO_PROBE_LOG\n' > probe.log
+          tail -c 3200 probe.log | base64 -w0 | ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n python3 -c '"'"'import base64,sys,urllib.parse,urllib.request; from pathlib import Path; raw=base64.b64decode(sys.stdin.read()).decode("utf-8","replace"); text="POROTA — prueba contractual inmediata AL30 y Cauciones\n"+raw[-3200:]; token=Path("/opt/porota-control-plane-rc6/secrets/critical_telegram.token").read_text().strip(); chat=Path("/opt/porota-control-plane-rc6/secrets/critical_telegram.chat").read_text().strip(); data=urllib.parse.urlencode({"chat_id":chat,"text":text[:3800]}).encode(); urllib.request.urlopen(urllib.request.Request("https://api.telegram.org/bot"+token+"/sendMessage",data=data,method="POST"),timeout=15).read(); print("TELEGRAM=DELIVERED")'"'"''
