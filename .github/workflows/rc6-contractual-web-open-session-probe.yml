@@ -27,12 +27,13 @@ jobs:
           chmod 600 "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$DO_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
       - name: Capture AL30 contractual availability (read-only)
+        id: probe
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
-          set -euo pipefail
-          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE'
+          set +e
+          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE' 2>&1 | tee probe.log
           set -euo pipefail
           umask 077
           exec 9>/run/lock/porota-contract-open-session-probe-rc6.lock
@@ -49,8 +50,7 @@ jobs:
           hits=[]
           def walk(x):
               if isinstance(x, dict):
-                  rendered=" ".join(str(v) for v in x.values())
-                  if "AL30" in rendered.upper():
+                  if "AL30" in " ".join(str(v) for v in x.values()).upper():
                       hits.append(sorted(x.keys()))
                   for v in x.values(): walk(v)
               elif isinstance(x, list):
@@ -61,3 +61,15 @@ jobs:
           print("CAPTURE_ANALYSIS=READ_ONLY_NO_DB_IMPORT_NO_ORDERS")
           PY
           REMOTE
+          rc=${PIPESTATUS[0]}
+          tail -c 5000 probe.log >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+      - name: Send compact result to Telegram
+        if: always()
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          test -f probe.log || printf 'STATE=NO_PROBE_LOG\n' > probe.log
+          tail -c 3200 probe.log | base64 -w0 | ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n python3 -c '"'"'import base64,json,sys,urllib.parse,urllib.request; from pathlib import Path; raw=base64.b64decode(sys.stdin.read()).decode("utf-8","replace"); text="POROTA — prueba contractual Web AL30\n"+raw[-3200:]; token=Path("/opt/porota-control-plane-rc6/secrets/critical_telegram.token").read_text().strip(); chat=Path("/opt/porota-control-plane-rc6/secrets/critical_telegram.chat").read_text().strip(); data=urllib.parse.urlencode({"chat_id":chat,"text":text[:3800]}).encode(); urllib.request.urlopen(urllib.request.Request("https://api.telegram.org/bot"+token+"/sendMessage",data=data,method="POST"),timeout=15).read(); print("TELEGRAM=DELIVERED")'"'"''
