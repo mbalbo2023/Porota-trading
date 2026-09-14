@@ -36,12 +36,23 @@ Commit de creación:
 
 `6ac14197e97f528ea91b085806709fecf8492d5e`
 
-Los dos documentos deben leerse junto con:
+### Blueprint de solución integral
+
+`docs/research/POROTA_INTEGRAL_INSTRUMENT_SOLUTION_BLUEPRINT_2026-09-14.md`
+
+Commit de creación:
+
+`28521663e9c73d79bae30562daec778a9e783a23`
+
+Los documentos deben leerse junto con:
 
 - `docs/handoffs/POROTA_TRADING_CHECKPOINT_CONTRACT_EVIDENCE_2026-09-14.md`
 - `docs/handoffs/POROTA_TRADING_PENDING_MULTI_SOURCE_PPI_IOL_2026-09-14.md`
+- `docs/handoffs/POROTA_TRADING_PENDING_OPERABILITY_BY_FAMILY_2026-09-14.md`
 - `docs/research/POROTA_MULTI_SOURCE_MARKET_DATA_AND_CONTRACT_ARCHITECTURE_2026-09-14.md`
 - `docs/research/POROTA_PROVIDER_COVERAGE_MATRIX_INITIAL_2026-09-14.md`
+- `docs/research/POROTA_OPERABILITY_REQUIREMENTS_AND_SOURCE_MAP_BY_FAMILY_2026-09-14.md`
+- `docs/research/POROTA_INTEGRAL_INSTRUMENT_SOLUTION_BLUEPRINT_2026-09-14.md`
 
 ## Decisión arquitectónica confirmada
 
@@ -212,12 +223,70 @@ El stopper crítico para ampliar `READY_PAPER_PPI` es completar por familia:
 - horarios;
 - requisitos específicos de riesgo/margen/cut-off.
 
+## Solución integral trazada — NUEVO CHECKPOINT
+
+La solución ya no se define como parches por instrumento aislado. Se adopta un pipeline común:
+
+`DISCOVERY -> IDENTITY -> MARKET DATA -> ANALYTICS -> CONTRACT PPI -> RISK -> READY_PAPER_PPI`
+
+Componentes obligatorios:
+
+1. `PPIContractProvider` — contrato PPI read-only.
+2. `IOLReadOnlyProvider` — datos/analytics sin métodos mutativos.
+3. `OfficialTermsProvider` — BYMA/Tesoro/BCRA/CNV/emisor.
+4. `CanonicalIdentityResolver` — evita matching por ticker solo.
+5. `EvidenceStore` — provenance por campo.
+6. `ReadinessEngine` — cinco gates independientes.
+7. `ProviderReconciliation` — staleness/divergence/identity conflicts.
+8. `FixedIncomeAnalytics` — fallback Porota cuando IOL no cubre, como D30O6.
+9. risk plugins específicos para Opciones y Futuros.
+10. state machines separados para FCI y Licitaciones.
+
+Blueprint detallado:
+
+`docs/research/POROTA_INTEGRAL_INSTRUMENT_SOLUTION_BLUEPRINT_2026-09-14.md`
+
+### Orden de implementación adoptado
+
+- `WAVE A`: núcleo reusable — identity, provenance, IOL read-only, PPI contract, readiness, divergence.
+- `WAVE B`: spot — GGAL, AAPL CEDEAR, IVV, AAPL USA si PPI soporta.
+- `WAVE C`: renta fija — AL30, S30O6, D30O6, YMCJO.
+- `WAVE D`: cauciones colocadora/tomadora.
+- `WAVE E`: opciones/futuros con motores de riesgo dedicados.
+- `WAVE F`: FCI/FCI exterior, licitaciones, índices, legacy.
+
+### Regla de escala
+
+No resolver cientos de especies manualmente. Primero validar un **instrumento patrón por familia**. Una vez que pasa los gates, escalar mediante discovery + normalización + readiness automática al resto de las especies de esa familia.
+
+### Acceptance mínimo por ejemplo patrón
+
+Debe producir:
+
+```text
+canonical_id
+family
+identity_ready
+market_data_ready
+analytics_ready
+contract_ready_ppi
+risk_ready
+ready_paper_ppi
+hold_reasons
+field_sources
+provider_conflicts
+stale_fields
+real_orders_sent=0
+```
+
+No se permite `ready_paper_ppi=true` si algún gate obligatorio está en false.
+
 ## Prioridad de continuación
 
-1. AL30 PPI contract end-to-end.
-2. Cauciones PPI semantics end-to-end.
-3. Contract sample PPI de GGAL, AAPL CEDEAR, IVV, S30O6 y YMCJO.
-4. `IOLReadOnlyProvider`.
+1. Construir WAVE A sin tocar ejecución real.
+2. AL30 PPI contract end-to-end.
+3. Cauciones PPI semantics end-to-end.
+4. Contract sample PPI de GGAL, AAPL CEDEAR, IVV, S30O6 y YMCJO.
 5. identity map + provenance + divergence gate.
 6. PPI-vs-IOL historical reconciliation.
 7. Futuros/options dedicated risk work.
@@ -226,3 +295,5 @@ El stopper crítico para ampliar `READY_PAPER_PPI` es completar por familia:
 ## Regla para próximos chats
 
 Ningún chat debe volver a concluir que PPI “fracasó” o que Porota debe quedar sólo en Acciones + CEDEAR sin revisar este checkpoint y el informe exhaustivo asociado. Tampoco debe declarar nuevas familias READY basándose sólo en IOL analytics.
+
+Todo chat que continúe esta línea debe leer además `POROTA_INTEGRAL_INSTRUMENT_SOLUTION_BLUEPRINT_2026-09-14.md` y mantener el avance por WAVE y por ejemplo patrón.
