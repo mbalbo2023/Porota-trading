@@ -11,6 +11,7 @@ from iol_readonly_provider import (
 class FakeIOLClient:
     def __init__(self):
         self.calls = []
+        self.quote_response = {"ultimoPrecio": 1234.5}
 
     def get_panel(self, instrument, panel, country):
         self.calls.append(("get_panel", instrument, panel, country))
@@ -18,7 +19,7 @@ class FakeIOLClient:
 
     def get_cotizacion(self, symbol, market):
         self.calls.append(("get_cotizacion", symbol, market))
-        return {"ultimoPrecio": 1234.5}
+        return self.quote_response
 
     def get_serie_historica(self, symbol, market, *, dias, ajustada):
         self.calls.append(("get_serie_historica", symbol, market, dias, ajustada))
@@ -66,13 +67,13 @@ class IOLReadOnlyProviderTests(unittest.TestCase):
         self.assertEqual(self.client.calls, [("get_panel", "acciones", "lideres", "argentina")])
 
     def test_empty_source_response_is_not_readiness(self):
-        self.client.get_cotizacion = lambda *_args: None
+        self.client.quote_response = None
         result = self.provider.get_quote("GGAL")
         self.assertEqual(result.status, "EMPTY_OR_UNAVAILABLE")
         self.assertFalse(hasattr(result, "ready"))
 
     def test_malformed_nonempty_payload_is_explicitly_unvalidated(self):
-        self.client.get_cotizacion = lambda *_args: {"unexpected": object()}
+        self.client.quote_response = {"unexpected": object()}
         result = self.provider.get_quote("GGAL")
         self.assertEqual(result.status, "NONEMPTY_UNVALIDATED")
         self.assertFalse(hasattr(result, "ready"))
