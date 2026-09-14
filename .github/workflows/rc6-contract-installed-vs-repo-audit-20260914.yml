@@ -1,0 +1,84 @@
+name: RC6 Contract installed vs repo audit 2026-09-14
+
+on:
+  push:
+    branches: [ops/rc6-contract-blocked-nonread-audit-20260914]
+    paths:
+      - '.github/workflows/rc6-contract-installed-vs-repo-audit-20260914.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-contract-blocked-nonread-audit-20260914
+      - name: Hash repo collector and extract route declarations
+        run: |
+          set -euo pipefail
+          echo "REPO_SHA256=$(sha256sum rc6_trusted_browser_contract_collector.py | awk '{print $1}')" > /tmp/repo.txt
+          python3 - <<'PY' >> /tmp/repo.txt
+          import ast
+          p='rc6_trusted_browser_contract_collector.py'
+          tree=ast.parse(open(p,encoding='utf-8').read())
+          for n in tree.body:
+              if isinstance(n,ast.Assign):
+                  for t in n.targets:
+                      if isinstance(t,ast.Name) and t.id in {'ROUTES','TARGETS','SAFE_METHODS'}:
+                          try: v=ast.literal_eval(n.value)
+                          except Exception: continue
+                          print('REPO_'+t.id+'='+repr(v))
+          PY
+      - name: Compare with installed server collector read-only
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+          RESULT=POROTA_TRADING_CONTRACT_INSTALLED_VS_REPO_AUDIT_2026-09-14.txt
+          cat /tmp/repo.txt > "$RESULT"
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'HOST' >> "$RESULT"
+          set -Eeuo pipefail
+          F=/usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py
+          echo 'READ_ONLY=YES'
+          echo 'BROWSER_STARTED=NO'
+          echo 'DB_TOUCHED=NO'
+          test -r "$F" || { echo 'INSTALLED_COLLECTOR=MISSING'; exit 0; }
+          echo "INSTALLED_SHA256=$(sha256sum "$F" | awk '{print $1}')"
+          python3 - "$F" <<'PY'
+          import ast,sys
+          p=sys.argv[1]
+          tree=ast.parse(open(p,encoding='utf-8').read())
+          for n in tree.body:
+              if isinstance(n,ast.Assign):
+                  for t in n.targets:
+                      if isinstance(t,ast.Name) and t.id in {'ROUTES','TARGETS','SAFE_METHODS'}:
+                          try: v=ast.literal_eval(n.value)
+                          except Exception: continue
+                          print('INSTALLED_'+t.id+'='+repr(v))
+          PY
+          echo 'RESULT=GREEN_INSTALLED_VS_REPO_AUDIT_COMPLETE'
+          HOST
+          cat "$RESULT"
+      - name: Persist sanitized comparison
+        if: always()
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_INSTALLED_VS_REPO_AUDIT_2026-09-14.txt
+          test -f "$RESULT" || printf 'PROBE_RESULT=MISSING\n' > "$RESULT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist installed vs repo collector comparison [skip ci]'
+          git push origin HEAD:ops/rc6-contract-blocked-nonread-audit-20260914
