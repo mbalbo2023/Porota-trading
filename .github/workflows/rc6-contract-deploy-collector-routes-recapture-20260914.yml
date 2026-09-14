@@ -1,0 +1,155 @@
+name: RC6 Contract deploy audited collector routes and recapture 2026-09-14
+
+on:
+  push:
+    branches: [ops/rc6-contract-blocked-nonread-audit-20260914]
+    paths:
+      - '.github/workflows/rc6-contract-deploy-collector-routes-recapture-20260914.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-recapture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-contract-blocked-nonread-audit-20260914
+
+      - name: Verify audited collector locally
+        run: |
+          set -euo pipefail
+          test "$(sha256sum rc6_trusted_browser_contract_collector.py | awk '{print $1}')" = '740a2641daedc2df8d21fccf00c78098c242650b927911ce00353cdfed25d8cf'
+          python3 - <<'PY'
+          import ast,re
+          p='rc6_trusted_browser_contract_collector.py'
+          s=open(p,encoding='utf-8').read(); ast.parse(s)
+          assert 'method not in SAFE_METHODS' in s and 'route.abort()' in s
+          assert '.fill(' not in s and '.click(' not in s
+          assert '/Operar/Bonos' in s and '/Operar/Ons' in s and '/Operar/Cauciones' in s
+          assert not re.search(r'^\s*(from|import)\s+.*(broker|ppi_client|orders?)',s,re.M|re.I)
+          print('LOCAL_STATIC_SAFETY=PASS')
+          PY
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Deploy one collector file and perform one capture-only retry
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(-i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          REMOTE_COL=/tmp/rc6_trusted_browser_contract_collector.${GITHUB_RUN_ID}.py
+          REMOTE_HARNESS=/tmp/rc6_contract_point1_reauth_capture.${GITHUB_RUN_ID}.sh
+          scp "${SSH_OPTS[@]}" rc6_trusted_browser_contract_collector.py "$DO_USER@$DO_HOST:$REMOTE_COL"
+          scp "${SSH_OPTS[@]}" scripts/rc6_contract_point1_reauth_capture.sh "$DO_USER@$DO_HOST:$REMOTE_HARNESS"
+          RESULT=POROTA_TRADING_CONTRACT_COLLECTOR_DEPLOY_RECAPTURE_RESULT_2026-09-14.txt
+          ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" "sudo -n bash -s '$REMOTE_COL' '$REMOTE_HARNESS'" <<'HOST' > "$RESULT"
+          set -Eeuo pipefail
+          SRC="$1"; HARNESS="$2"
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          DST="$LIB/rc6_trusted_browser_contract_collector.py"
+          EXPECTED=740a2641daedc2df8d21fccf00c78098c242650b927911ce00353cdfed25d8cf
+          CONTAINER=porota_production_observer
+          DOCKER=/usr/bin/docker
+
+          cleanup(){ rm -f "$SRC" "$HARNESS"; }
+          trap cleanup EXIT
+
+          echo 'PROBE=RC6_CONTRACT_COLLECTOR_DEPLOY_RECAPTURE_V1'
+          echo "NOW_UTC=$(date -u +%FT%TZ)"
+          echo "OLD_INSTALLED_SHA256=$(sha256sum "$DST" | awk '{print $1}')"
+          echo "SOURCE_SHA256=$(sha256sum "$SRC" | awk '{print $1}')"
+          test "$(sha256sum "$SRC" | awk '{print $1}')" = "$EXPECTED"
+
+          # Prevent replacement/capture racing another PPI browser process.
+          exec 9>/run/lock/porota-ppi-web-browser.lock
+          if ! flock -n 9; then
+            echo 'DEPLOY_RESULT=YELLOW_BROWSER_LOCK_BUSY'
+            exit 0
+          fi
+
+          PRE="$($DOCKER exec -i "$CONTAINER" python - <<'PY'
+          import sqlite3,json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(json.dumps({'quick_check':qc,'mode':r[0] if r else None,'orders':r[1] if r else None}))
+          PY
+          )"
+          PRE="$PRE" python3 - <<'PY'
+          import json,os
+          d=json.loads(os.environ['PRE'])
+          assert d.get('quick_check')=='ok' and d.get('mode')=='PRODUCTION_PAPER' and int(d.get('orders') or 0)==0
+          PY
+          echo 'PREFLIGHT=GREEN_PRODUCTION_PAPER_ORDERS0_DBOK'
+
+          # Compile source without writing pyc, then atomically install exactly one file.
+          python3 - "$SRC" <<'PY'
+          import sys
+          s=open(sys.argv[1],encoding='utf-8').read(); compile(s,sys.argv[1],'exec')
+          print('SOURCE_COMPILE=PASS')
+          PY
+          install -o root -g root -m 0644 "$SRC" "$DST"
+          echo "NEW_INSTALLED_SHA256=$(sha256sum "$DST" | awk '{print $1}')"
+          test "$(sha256sum "$DST" | awk '{print $1}')" = "$EXPECTED"
+          echo 'DEPLOY_RESULT=GREEN_SINGLE_COLLECTOR_FILE_INSTALLED'
+          echo 'SERVICE_RESTARTED=NO'
+
+          # Release our lock because the canonical harness acquires the same lock itself.
+          flock -u 9
+          chmod 700 "$HARNESS"
+          set +e
+          bash "$HARNESS"
+          HRC=$?
+          set -e
+          echo "HARNESS_RC=$HRC"
+
+          POST="$($DOCKER exec -i "$CONTAINER" python - <<'PY'
+          import sqlite3,json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          qc=c.execute('pragma quick_check').fetchone()[0]
+          r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(json.dumps({'quick_check':qc,'mode':r[0] if r else None,'orders':r[1] if r else None}))
+          PY
+          )"
+          POST="$POST" python3 - <<'PY'
+          import json,os
+          d=json.loads(os.environ['POST'])
+          assert d.get('quick_check')=='ok' and d.get('mode')=='PRODUCTION_PAPER' and int(d.get('orders') or 0)==0
+          PY
+          echo 'FINAL_SAFETY=GREEN_PRODUCTION_PAPER_ORDERS0_DBOK'
+          echo 'DB_IMPORT_EXECUTED=NO'
+          exit "$HRC"
+          HOST
+          RC=$?
+          set -e
+          cat "$RESULT"
+          exit "$RC"
+
+      - name: Persist sanitized deploy/recapture result
+        if: always()
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_COLLECTOR_DEPLOY_RECAPTURE_RESULT_2026-09-14.txt
+          test -f "$RESULT" || printf 'PROBE_RESULT=MISSING\n' > "$RESULT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist collector deploy recapture result [skip ci]'
+          git push origin HEAD:ops/rc6-contract-blocked-nonread-audit-20260914
