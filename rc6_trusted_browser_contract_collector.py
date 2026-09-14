@@ -129,6 +129,26 @@ def sanitize_endpoint(url, payload):
         return {"kind":"SCHEMA_ONLY","schema":schema_shape(payload)}
     return None
 
+API_SEARCH_ROUTES = {"/Operar/Bonos", "/Operar/Ons", "/Operar/Cauciones"}
+
+def open_api_catalog(page, route):
+    """Trigger only the visible PPI API-backed catalog; never select an instrument."""
+    if route not in API_SEARCH_ROUTES:
+        return "NOT_APPLICABLE"
+    try:
+        boxes = page.locator("input[role='combobox']")
+        if boxes.count() < 2:
+            return "SEARCH_CONTROL_NOT_FOUND"
+        search = boxes.nth(1)
+        if not search.is_visible() or not search.is_enabled():
+            return "SEARCH_CONTROL_NOT_READY"
+        search.click(timeout=5000)
+        page.wait_for_timeout(1200)
+        return "SEARCH_OPENED"
+    except Exception as exc:
+        return "SEARCH_ERROR:" + type(exc).__name__
+
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -199,6 +219,7 @@ def main():
                     try:
                         page.goto(TRADING + route, wait_until="domcontentloaded", timeout=45000)
                         page.wait_for_timeout(900)
+                        row["api_catalog_action"] = open_api_catalog(page, route)
                         pu = urlsplit(page.url)
                         row["url"] = clean_url(page.url)
                         row["title"] = page.title()[:180]
