@@ -2,6 +2,10 @@
 
 La referencia operativa vigente es RC6.
 
+## Continuidad obligatoria entre chats
+
+Antes de cualquier estatus o acción, lee completos [AGENTS.md](AGENTS.md), [el protocolo de continuidad](POROTA_TRADING_CONTINUIDAD_OBLIGATORIA.md), [el inicio de chat](POROTA_TRADING_CHAT_START_HERE.md) y [el checkpoint cross-chat](POROTA_TRADING_CHECKPOINT_CONTINUIDAD_CROSSCHAT_2026-09-14.md). Verifica también en GitHub los cambios posteriores al checkpoint. La memoria del chat, un mensaje anterior o una captura parcial no bastan. Actualiza y verifica el checkpoint por commit después de cada hito material.
+
 ## Baseline operativo
 
 - Versión: `17.0.0-rc6`
