@@ -82,6 +82,26 @@ jobs:
             echo 'CANARY=STOPPED_RUNTIME_IDENTITY_MISMATCH'
             exit 10
           }
+          sudo -n python3 - <<'HOST_PY'
+          import os, stat
+          from pathlib import Path
+          p = Path("/opt/porota-trading/.env")
+          allowed = {"IOL_USERNAME", "IOL_PASSWORD", "IOL_API_USERNAME", "IOL_API_PASSWORD"}
+          present = set()
+          if p.is_file():
+              for raw in p.read_text(encoding="utf-8").splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith("#"):
+                      continue
+                  sep = "=" if "=" in line else ":" if ":" in line else None
+                  if sep is not None:
+                      key = line.split(sep, 1)[0].strip()
+                      if key in allowed:
+                          present.add(key)
+          print("IOL_ENV_HOST_FILE=" + ("YES" if p.is_file() else "NO"))
+          print("IOL_ENV_HOST_MODE=" + (format(stat.S_IMODE(p.stat().st_mode), "04o") if p.is_file() else "NA"))
+          print("IOL_ENV_HOST_KEYS=" + (",".join(sorted(present)) if present else "NONE"))
+          HOST_PY
           sudo -n docker exec -i porota_production_observer python3 - <<'PY'
           import json
           import os
@@ -96,6 +116,7 @@ jobs:
           from pathlib import Path
           values = dict(os.environ)
           env_path = Path("/opt/porota-trading/.env")
+          print("IOL_ENV_CONTAINER_FILE=" + ("YES" if env_path.is_file() else "NO"))
           allowed_names = {"IOL_USERNAME", "IOL_PASSWORD", "IOL_API_USERNAME", "IOL_API_PASSWORD"}
           try:
               if env_path.is_file():
