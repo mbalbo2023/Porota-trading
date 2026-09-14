@@ -1,0 +1,106 @@
+name: RC6 Contract successful vs current capture audit 2026-09-14
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-contract-blocked-nonread-audit-20260914]
+    paths:
+      - '.github/workflows/rc6-contract-success-vs-current-capture-audit-20260914.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-contract-blocked-nonread-audit-20260914
+      - name: Prepare SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Compare sanitized capture structures only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_SUCCESS_VS_CURRENT_CAPTURE_AUDIT_2026-09-14.txt
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY' > "$RESULT"
+          import json, os, collections
+          from urllib.parse import urlsplit
+          files=[
+            ('HIST_SUCCESS','/opt/porota-trading/data/contract_evidence/rc4_trusted/contract_20260904T194055Z.json'),
+            ('HIST_SUCCESS_2','/opt/porota-trading/data/contract_evidence/rc4_trusted/contract_20260904T203757Z.json'),
+            ('CURRENT','/opt/porota-trading/data/contract_evidence/rc6_trusted/contract_point1_20260914T001900Z.json'),
+          ]
+          print('PROBE=RC6_CONTRACT_SUCCESS_VS_CURRENT_CAPTURE_AUDIT_V1')
+          print('READ_ONLY=YES')
+          print('BROWSER_STARTED=NO')
+          print('DB_TOUCHED=NO')
+          safe_top=('schema','generated_at','auth_status','jobs','continue_clicked','amount_filled','price_filled','real_orders_sent','error','collector_version','version','policy')
+          for label,p in files:
+              print('--- '+label+' ---')
+              print('FILE_EXISTS='+str(os.path.isfile(p)))
+              if not os.path.isfile(p): continue
+              d=json.load(open(p,encoding='utf-8'))
+              print('TOP_KEYS='+','.join(sorted(str(k) for k in d.keys())))
+              for k in safe_top:
+                  if k in d:
+                      v=d.get(k)
+                      if isinstance(v,(dict,list)):
+                          v=json.dumps(v,ensure_ascii=False,sort_keys=True,separators=(',',':'))
+                      print(f'{k.upper()}={str(v)[:1000]}')
+              routes=d.get('routes') or []
+              print('ROUTES_COUNT='+str(len(routes)))
+              for i,r in enumerate(routes,1):
+                  if not isinstance(r,dict): continue
+                  u=urlsplit(str(r.get('url') or ''))
+                  print(f'ROUTE_{i}=job:{r.get("job")}|requested:{r.get("requested")}|reached:{r.get("reached")}|host:{u.netloc}|path:{u.path}|title:{str(r.get("title") or "")[:100]}|error:{r.get("error","")}')
+              eps=d.get('endpoints') or {}
+              print('ENDPOINTS_COUNT='+str(len(eps) if isinstance(eps,dict) else 0))
+              if isinstance(eps,dict):
+                  for i,(key,v) in enumerate(sorted(eps.items()),1):
+                      if not isinstance(v,dict): continue
+                      u=urlsplit(str(v.get('source_url') or ''))
+                      rows=v.get('rows')
+                      row=v.get('row')
+                      rc=len(rows) if isinstance(rows,list) else (1 if isinstance(row,dict) and row else 0)
+                      print(f'ENDPOINT_{i}=kind:{v.get("kind")}|status:{v.get("status")}|job:{v.get("observed_job")}|route:{v.get("observed_route")}|host:{u.netloc}|path:{u.path}|row_count:{rc}')
+              blocked=d.get('blocked_nonread') or []
+              c=collections.Counter()
+              for x in blocked:
+                  if not isinstance(x,dict): continue
+                  u=urlsplit(str(x.get('url') or ''))
+                  c[(str(x.get('method') or '').upper(),u.netloc,u.path)]+=1
+              print('BLOCKED_TOTAL='+str(len(blocked)))
+              print('BLOCKED_UNIQUE='+str(len(c)))
+              for i,((m,h,path),n) in enumerate(sorted(c.items()),1):
+                  print(f'BLOCKED_{i}=count:{n}|method:{m}|host:{h}|path:{path}')
+              # Surface only names of any extra top-level action-ish keys, never values.
+              actionish=[k for k in d.keys() if any(t in str(k).lower() for t in ('click','select','action','interaction','continue','filled','input'))]
+              print('ACTIONISH_TOP_KEYS='+','.join(sorted(map(str,actionish))))
+          print('RESULT=GREEN_CAPTURE_COMPARISON_COMPLETE_NO_MUTATION')
+          PY
+          cat "$RESULT"
+      - name: Persist sanitized comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_SUCCESS_VS_CURRENT_CAPTURE_AUDIT_2026-09-14.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist successful-vs-current capture comparison [skip ci]'
+          git push origin HEAD:ops/rc6-contract-blocked-nonread-audit-20260914
