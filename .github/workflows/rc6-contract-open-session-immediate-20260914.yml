@@ -1,4 +1,4 @@
-name: RC6 immediate open-session contract probe 2026-09-14
+name: RC6 locate installed contract collector 2026-09-14
 
 on:
   push:
@@ -14,18 +14,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  contract-readonly-probe:
+  locate-readonly-collector:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
-      - name: Enforce approved date
-        run: |
-          set -euo pipefail
-          test "$(TZ=America/Argentina/Buenos_Aires date +%F)" = "2026-09-14" || {
-            echo "STATE=SKIPPED_OUTSIDE_APPROVED_DATE"
-            exit 0
-          }
-
       - name: Configure audited SSH
         env:
           DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
@@ -37,84 +29,42 @@ jobs:
           chmod 600 "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$DO_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
 
-      - name: Capture and inspect AL30 plus Cauciones
+      - name: Locate collector without executing it
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set +e
-          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE' 2>&1 | tee probe.log
+          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE' 2>&1 | tee locate.log
           set -euo pipefail
-          umask 077
-          exec 9>/run/lock/porota-contract-open-session-immediate-rc6.lock
-          flock -n 9 || { echo "STATE=SKIPPED_LOCK_HELD"; exit 0; }
-
-          systemctl is-active --quiet porota-ppi-web-residual-rc6.service && {
-            echo "STATE=SKIPPED_COMPETING_CONTRACT_WRITER"
-            exit 0
-          }
-
-          test -x /usr/local/sbin/porota-contract-point1-recovery-rc6 || {
-            echo "STATE=BLOCKED_HARNESS_MISSING"
-            exit 4
-          }
-
-          echo "POROTA_CONTRACT_OPEN_SESSION_IMMEDIATE"
-          echo "MUTATIONS=CAPTURE_FILE_ONLY"
-          echo "DB_IMPORT_EXECUTED=NO"
+          echo "POROTA_CONTRACT_COLLECTOR_LOCATE"
+          echo "MUTATIONS=NONE"
           echo "REAL_ORDERS_SENT=0"
-          echo "ORDER_POST_ALLOWED=NO"
+          echo "DB_IMPORT_EXECUTED=NO"
 
-          before="$(date -u +%s)"
-          /usr/local/sbin/porota-contract-point1-recovery-rc6
+          echo "=== UNITS ==="
+          for u in porota-contract-evidence-rc6.service porota-contract-evidence-hf6.service porota-contract-evidence-weekend-backfill-rc6.service porota-ppi-web-residual-rc6.service; do
+            systemctl show "$u" -p Id -p LoadState -p ActiveState -p SubState -p FragmentPath -p ExecStart --no-pager 2>/dev/null || true
+          done
 
-          capture="$(find /opt/porota-trading/data/contract_evidence/rc6_trusted -maxdepth 1 -type f -name 'contract_point1_*.json' -newermt "@$before" -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)"
-          test -n "$capture" && test -r "$capture" || {
-            echo "STATE=BLOCKED_FRESH_CAPTURE_MISSING"
-            exit 4
-          }
+          echo "=== CANDIDATE_FILES ==="
+          find /usr/local/sbin /opt/porota-trading -maxdepth 3 -type f \( -iname '*contract*' -o -iname '*ppi*web*probe*' \) -printf '%m %u:%g %TY-%Tm-%TdT%TH:%TM:%TSZ %p\n' 2>/dev/null | sort | tail -120
 
-          python3 - "$capture" <<'PY'
-          import json, os, sys
-          path=sys.argv[1]
-          with open(path, encoding="utf-8") as fh:
-              doc=json.load(fh)
+          echo "=== KNOWN_PROBE_SOURCE ==="
+          p=/opt/porota-trading/scripts/ppi_web_authenticated_probe_hf6.py
+          if test -r "$p"; then
+            echo "PROBE_PRESENT=YES"
+            stat -c 'mode=%a owner=%U:%G bytes=%s modified=%y path=%n' "$p"
+            sed -n '1,280p' "$p" | sed -E 's/(token|password|secret|cookie|authorization)([[:space:]_=:]+).*/\1\2[REDACTED]/Ig'
+          else
+            echo "PROBE_PRESENT=NO"
+          fi
 
-          hits={"AL30": [], "CAUCIONES": []}
-          def walk(x):
-              if isinstance(x, dict):
-                  rendered=" ".join(str(v) for v in x.values()).upper()
-                  keys=sorted(str(k) for k in x.keys())
-                  if "AL30" in rendered:
-                      hits["AL30"].append(keys)
-                  if "CAUCION" in rendered:
-                      hits["CAUCIONES"].append(keys)
-                  for v in x.values():
-                      walk(v)
-              elif isinstance(x, list):
-                  for v in x:
-                      walk(v)
-          walk(doc)
+          echo "=== RECENT_CAPTURE_FILES ==="
+          find /opt/porota-trading/data/contract_evidence -maxdepth 3 -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ %s %p\n' 2>/dev/null | sort | tail -30
 
-          print("CAPTURE_FILE="+os.path.basename(path))
-          print("CAPTURE_BYTES="+str(os.path.getsize(path)))
-          print("AL30_EVIDENCE="+("YES" if hits["AL30"] else "NO"))
-          print("AL30_FIELDSETS="+json.dumps(hits["AL30"][:10], ensure_ascii=False))
-          print("CAUCIONES_EVIDENCE="+("YES" if hits["CAUCIONES"] else "NO"))
-          print("CAUCIONES_FIELDSETS="+json.dumps(hits["CAUCIONES"][:10], ensure_ascii=False))
-          print("CAPTURE_ANALYSIS=READ_ONLY_NO_DB_IMPORT_NO_ORDERS")
-          PY
+          echo "STATE=INVENTORY_COMPLETE_NO_EXECUTION"
           REMOTE
           rc=${PIPESTATUS[0]}
-          tail -c 7000 probe.log >> "$GITHUB_STEP_SUMMARY"
+          tail -c 12000 locate.log >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
-
-      - name: Notify Telegram
-        if: always()
-        env:
-          DO_HOST: ${{ secrets.DO_HOST }}
-          DO_USER: ${{ secrets.DO_USER }}
-        run: |
-          set -euo pipefail
-          test -f probe.log || printf 'STATE=NO_PROBE_LOG\n' > probe.log
-          tail -c 3200 probe.log | base64 -w0 | ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n python3 -c '"'"'import base64,sys,urllib.parse,urllib.request; from pathlib import Path; raw=base64.b64decode(sys.stdin.read()).decode("utf-8","replace"); text="POROTA — prueba contractual inmediata AL30 y Cauciones\n"+raw[-3200:]; token=Path("/opt/porota-control-plane-rc6/secrets/critical_telegram.token").read_text().strip(); chat=Path("/opt/porota-control-plane-rc6/secrets/critical_telegram.chat").read_text().strip(); data=urllib.parse.urlencode({"chat_id":chat,"text":text[:3800]}).encode(); urllib.request.urlopen(urllib.request.Request("https://api.telegram.org/bot"+token+"/sendMessage",data=data,method="POST"),timeout=15).read(); print("TELEGRAM=DELIVERED")'"'"''
