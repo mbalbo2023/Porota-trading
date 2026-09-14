@@ -1,0 +1,63 @@
+name: RC6 Contractual Web Open-Session Probe
+
+on:
+  schedule:
+    - cron: "0 14 14 9 *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  al30-read-only-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Refuse any date other than the approved window
+        run: |
+          test "$(TZ=America/Argentina/Buenos_Aires date +%F)" = "2026-09-14" || { echo "STATE=SKIPPED_OUTSIDE_APPROVED_WINDOW"; exit 0; }
+      - name: Configure audited SSH transport
+        env:
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DO_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DO_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+      - name: Capture AL30 contractual availability (read-only)
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE'
+          set -euo pipefail
+          umask 077
+          exec 9>/run/lock/porota-contract-open-session-probe-rc6.lock
+          flock -n 9 || { echo "STATE=SKIPPED_LOCK_HELD"; exit 0; }
+          systemctl is-active --quiet porota-ppi-web-residual-rc6.service && { echo "STATE=SKIPPED_COMPETING_WRITER"; exit 0; }
+          test -x /usr/local/sbin/porota-contract-point1-recovery-rc6 || { echo "STATE=BLOCKED_HARNESS_MISSING"; exit 4; }
+          echo "PROBE=AL30_CONTRACTUAL_WEB_OPEN_SESSION_READONLY"
+          /usr/local/sbin/porota-contract-point1-recovery-rc6
+          capture="$(find /opt/porota-trading/data/contract_evidence/rc6_trusted -maxdepth 1 -type f -name "contract_point1_*.json" -printf "%T@ %p\n" | sort -n | tail -1 | cut -d" " -f2-)"
+          test -n "$capture" && test -r "$capture" || { echo "STATE=BLOCKED_CAPTURE_MISSING"; exit 4; }
+          python3 - "$capture" <<'PY'
+          import json, sys
+          doc=json.load(open(sys.argv[1], encoding="utf-8"))
+          hits=[]
+          def walk(x):
+              if isinstance(x, dict):
+                  rendered=" ".join(str(v) for v in x.values())
+                  if "AL30" in rendered.upper():
+                      hits.append(sorted(x.keys()))
+                  for v in x.values(): walk(v)
+              elif isinstance(x, list):
+                  for v in x: walk(v)
+          walk(doc)
+          print("AL30_EVIDENCE=YES" if hits else "AL30_EVIDENCE=NO")
+          print("AL30_FIELDSETS="+json.dumps(hits[:10], ensure_ascii=False))
+          print("CAPTURE_ANALYSIS=READ_ONLY_NO_DB_IMPORT_NO_ORDERS")
+          PY
+          REMOTE
