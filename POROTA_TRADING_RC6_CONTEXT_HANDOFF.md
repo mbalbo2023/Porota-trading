@@ -109,3 +109,8 @@ El operador Tincho tiene cuadriplejia, usa Android/Termius y no puede escribir m
 - No pedirle que sobrescriba/reescriba archivos existentes. Para nuevos scripts, usar un nombre versionado nuevo; para checkpoints/documentación, agregar un addendum con fecha sin borrar historial.
 - Los nombres de descarga pueden recibir sufijos. El método principal debe ser un bloque Termius que cree un archivo versionado fijo y luego lo ejecute con sudo, sin depender del nombre local descargado. Cuando haya que ejecutar un archivo descargado, usar su ruta real o un patrón único que tolere el sufijo, y no solicitar que lo renombre manualmente.
 - Antes de modificar, detectar si las claves ya existen. Si el alcance es anexar, añadir al final sin reserializar el archivo; ante claves existentes ambiguas, detenerse sin cambiarlo.
+
+
+## Addendum de continuidad de terminal — 2026-09-14
+
+Los scripts ejecutados por Termius deben dejar la sesión visible y abierta al terminar, para que Tincho pueda revisar/copiar el resultado y volver al prompt mediante control por voz. El script debe leer una confirmación final desde /dev/tty y no cerrar la sesión inmediatamente; cualquier bloque pegado debe aislar opciones de shell en subshell para no activar errexit/noclobber en la sesión interactiva. Mantener salida breve y OSC 52 saneado. Tincho no tiene root: usar sudo automáticamente. Los scripts y checkpoints existentes no se sobrescriben; las revisiones se agregan con nombre de versión/addendum.
