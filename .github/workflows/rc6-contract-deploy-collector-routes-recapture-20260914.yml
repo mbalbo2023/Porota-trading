@@ -1,8 +1,8 @@
-name: RC6 Contract deploy audited collector routes and recapture 2026-09-14
+name: RC6 API-supported contract catalog capture 2026-09-14
 
 on:
   push:
-    branches: [ops/rc6-contract-blocked-nonread-audit-20260914]
+    branches: [ops/rc6-contract-api-supported-capture-20260914]
     paths:
       - '.github/workflows/rc6-contract-deploy-collector-routes-recapture-20260914.yml'
   workflow_dispatch:
@@ -17,21 +17,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ops/rc6-contract-blocked-nonread-audit-20260914
+          ref: ops/rc6-contract-api-supported-capture-20260914
 
       - name: Verify audited collector locally
         run: |
           set -euo pipefail
-          test "$(sha256sum rc6_trusted_browser_contract_collector.py | awk '{print $1}')" = '740a2641daedc2df8d21fccf00c78098c242650b927911ce00353cdfed25d8cf'
+          test "$(sha256sum rc6_trusted_browser_contract_collector.py | awk '{print $1}')" = '51acc0e14a40afc2fcf7a391b33e983f30ccb078db82d01d04b7d34b63bd0a40'
           python3 - <<'PY'
           import ast,re
           p='rc6_trusted_browser_contract_collector.py'
           s=open(p,encoding='utf-8').read(); ast.parse(s)
           assert 'method not in SAFE_METHODS' in s and 'route.abort()' in s
-          assert '.fill(' not in s and '.click(' not in s
+          assert '.fill(' not in s
+          assert s.count('.click(') == 1 and 'search.click(timeout=5000)' in s
+          assert "boxes = page.locator(\"input[role='combobox']\")" in s
           assert '/Operar/Bonos' in s and '/Operar/Ons' in s and '/Operar/Cauciones' in s
           assert not re.search(r'^\s*(from|import)\s+.*(broker|ppi_client|orders?)',s,re.M|re.I)
-          print('LOCAL_STATIC_SAFETY=PASS')
+          print('LOCAL_STATIC_SAFETY=PASS_API_SEARCH_ONLY')
           PY
 
       - name: Prepare SSH
@@ -55,13 +57,13 @@ jobs:
           REMOTE_HARNESS=/tmp/rc6_contract_point1_reauth_capture.${GITHUB_RUN_ID}.sh
           scp "${SSH_OPTS[@]}" rc6_trusted_browser_contract_collector.py "$DO_USER@$DO_HOST:$REMOTE_COL"
           scp "${SSH_OPTS[@]}" scripts/rc6_contract_point1_reauth_capture.sh "$DO_USER@$DO_HOST:$REMOTE_HARNESS"
-          RESULT=POROTA_TRADING_CONTRACT_COLLECTOR_DEPLOY_RECAPTURE_RESULT_2026-09-14.txt
+          RESULT=POROTA_TRADING_CONTRACT_API_SUPPORTED_CAPTURE_RESULT_2026-09-14.txt
           ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" "sudo -n bash -s '$REMOTE_COL' '$REMOTE_HARNESS'" <<'HOST' > "$RESULT"
           set -Eeuo pipefail
           SRC="$1"; HARNESS="$2"
           LIB=/usr/local/lib/porota-contract-evidence-rc6
           DST="$LIB/rc6_trusted_browser_contract_collector.py"
-          EXPECTED=740a2641daedc2df8d21fccf00c78098c242650b927911ce00353cdfed25d8cf
+          EXPECTED=51acc0e14a40afc2fcf7a391b33e983f30ccb078db82d01d04b7d34b63bd0a40
           CONTAINER=porota_production_observer
           DOCKER=/usr/bin/docker
 
@@ -145,11 +147,11 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          RESULT=POROTA_TRADING_CONTRACT_COLLECTOR_DEPLOY_RECAPTURE_RESULT_2026-09-14.txt
+          RESULT=POROTA_TRADING_CONTRACT_API_SUPPORTED_CAPTURE_RESULT_2026-09-14.txt
           test -f "$RESULT" || printf 'PROBE_RESULT=MISSING\n' > "$RESULT"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add "$RESULT"
           git diff --cached --quiet && exit 0
           git commit -m 'audit(contract): persist collector deploy recapture result [skip ci]'
-          git push origin HEAD:ops/rc6-contract-blocked-nonread-audit-20260914
+          git push origin HEAD:ops/rc6-contract-api-supported-capture-20260914
