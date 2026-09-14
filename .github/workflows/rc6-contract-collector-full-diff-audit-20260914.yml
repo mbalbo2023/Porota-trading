@@ -1,0 +1,78 @@
+name: RC6 Contract collector full diff audit 2026-09-14
+
+on:
+  push:
+    branches: [ops/rc6-contract-blocked-nonread-audit-20260914]
+    paths:
+      - '.github/workflows/rc6-contract-collector-full-diff-audit-20260914.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-contract-blocked-nonread-audit-20260914
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Fetch installed source and generate sanitized diff
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(-i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'sudo -n cat /usr/local/lib/porota-contract-evidence-rc6/rc6_trusted_browser_contract_collector.py' > /tmp/installed.py
+          RESULT=POROTA_TRADING_CONTRACT_COLLECTOR_FULL_DIFF_AUDIT_2026-09-14.txt
+          {
+            echo 'PROBE=RC6_CONTRACT_COLLECTOR_FULL_DIFF_AUDIT_V1'
+            echo 'READ_ONLY=YES'
+            echo 'BROWSER_STARTED=NO'
+            echo 'DB_TOUCHED=NO'
+            echo "REPO_SHA256=$(sha256sum rc6_trusted_browser_contract_collector.py | awk '{print $1}')"
+            echo "INSTALLED_SHA256=$(sha256sum /tmp/installed.py | awk '{print $1}')"
+            echo '--- DIFF ---'
+            diff -u /tmp/installed.py rc6_trusted_browser_contract_collector.py || true
+            echo '--- STATIC_SAFETY_REPO ---'
+            python3 - <<'PY'
+          import ast,re
+          p='rc6_trusted_browser_contract_collector.py'
+          s=open(p,encoding='utf-8').read(); ast.parse(s)
+          checks={
+            'safe_methods_get_head_options': bool(re.search(r'SAFE_METHODS\s*=.*GET.*HEAD.*OPTIONS|SAFE_METHODS\s*=.*OPTIONS.*HEAD.*GET',s,re.S)),
+            'has_real_orders_zero': 'real_orders_sent' in s and ':0' in s.replace(' ',''),
+            'blocks_non_safe': 'method not in SAFE_METHODS' in s and 'route.abort()' in s,
+            'no_broker_import': not bool(re.search(r'^\s*(from|import)\s+.*(broker|ppi_client|orders?)',s,re.M|re.I)),
+            'never_fills_form': '.fill(' not in s,
+            'never_clicks': '.click(' not in s,
+          }
+          for k,v in checks.items(): print(k+'='+('PASS' if v else 'FAIL'))
+          print('STATIC_SAFETY_ALL='+('PASS' if all(checks.values()) else 'FAIL'))
+          PY
+            echo 'RESULT=GREEN_DIFF_AUDIT_COMPLETE_NO_MUTATION'
+          } > "$RESULT"
+          cat "$RESULT"
+      - name: Persist diff audit
+        if: always()
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_COLLECTOR_FULL_DIFF_AUDIT_2026-09-14.txt
+          test -f "$RESULT" || printf 'PROBE_RESULT=MISSING\n' > "$RESULT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist collector full diff [skip ci]'
+          git push origin HEAD:ops/rc6-contract-blocked-nonread-audit-20260914
