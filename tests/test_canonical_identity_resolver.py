@@ -7,18 +7,18 @@ class CanonicalIdentityResolverTests(unittest.TestCase):
     def setUp(self):
         self.base = {
             "family": "ACCIONES",
+            "subfamily": "ORDINARY",
             "ticker": "GGAL",
             "market": "ARGENTINA",
             "venue": "BYMA",
             "currency": "ARS",
             "settlement": "24 horas",
+            "source": "PPI",
+            "provider_id": "101",
         }
 
     def test_agreeing_sources_resolve_and_keep_provenance_ids(self):
-        records = [
-            {**self.base, "source": "PPI", "provider_id": "101"},
-            {**self.base, "source": "IOL", "provider_id": "GGAL"},
-        ]
+        records = [self.base, {**self.base, "source": "IOL", "provider_id": "GGAL"}]
         result = resolve_canonical_identity(records)
         self.assertEqual(result.status, "RESOLVED")
         self.assertEqual(result.identity.settlement, "24_HORAS")
@@ -26,16 +26,19 @@ class CanonicalIdentityResolverTests(unittest.TestCase):
         self.assertTrue(result.canonical_id.startswith("ci:v1:"))
 
     def test_ticker_alone_never_resolves(self):
-        result = resolve_canonical_identity([{"ticker": "GGAL"}])
+        result = resolve_canonical_identity([{"ticker": "GGAL", "source": "PPI", "provider_id": "101"}])
         self.assertEqual(result.status, "INSUFFICIENT")
         self.assertIn("family", result.missing)
         self.assertIsNone(result.canonical_id)
 
+    def test_identity_without_provenance_id_is_insufficient(self):
+        record = {key: value for key, value in self.base.items() if key not in {"source", "provider_id"}}
+        result = resolve_canonical_identity([record])
+        self.assertEqual(result.status, "INSUFFICIENT")
+        self.assertIn("provider_id", result.missing)
+
     def test_conflicting_currency_blocks_resolution(self):
-        records = [
-            {**self.base, "source": "PPI", "provider_id": "101"},
-            {**self.base, "currency": "USD", "source": "IOL", "provider_id": "GGAL"},
-        ]
+        records = [self.base, {**self.base, "currency": "USD", "source": "IOL", "provider_id": "GGAL"}]
         result = resolve_canonical_identity(records)
         self.assertEqual(result.status, "CONFLICT")
         self.assertIn("currency", result.conflicts)
@@ -56,29 +59,51 @@ class CanonicalIdentityResolverTests(unittest.TestCase):
         self.assertEqual(us.identity.family, "ACCIONES_USA")
         self.assertEqual(foreign_fund.identity.family, "FCI_EXTERIOR")
 
-    def test_etf_aliases_converge_without_collapsing_other_families(self):
-        etf = resolve_canonical_identity([{**self.base, "family": "ETFS"}])
-        equity = resolve_canonical_identity([self.base])
-        self.assertEqual(etf.identity.family, "ETF")
-        self.assertNotEqual(etf.canonical_id, equity.canonical_id)
+    def test_cedear_etf_and_linked_letter_keep_subfamily(self):
+        cedear_etf = resolve_canonical_identity([{**self.base, "family": "CEDEAR ETF", "underlying": "IVV"}])
+        linked = resolve_canonical_identity([{**self.base, "family": "LETRA LINKED"}])
+        self.assertEqual(cedear_etf.identity.family, "CEDEARS")
+        self.assertEqual(cedear_etf.identity.subfamily, "ETF")
+        self.assertEqual(linked.identity.family, "LETRAS")
+        self.assertEqual(linked.identity.subfamily, "LINKED")
+
+    def test_cedear_requires_underlying(self):
+        record = {**self.base, "family": "CEDEAR", "subfamily": "ORDINARY"}
+        result = resolve_canonical_identity([record])
+        self.assertEqual(result.status, "INSUFFICIENT")
+        self.assertIn("underlying", result.missing)
+
+    def test_options_require_series_dimensions(self):
+        record = {**self.base, "family": "OPCIONES", "subfamily": "CALL"}
+        result = resolve_canonical_identity([record])
+        self.assertEqual(result.status, "INSUFFICIENT")
+        self.assertTrue({"underlying", "expiry", "strike", "put_call"}.issubset(result.missing))
 
     def test_two_ids_from_same_provider_are_a_conflict(self):
-        records = [
-            {**self.base, "source": "PPI", "provider_id": "101"},
-            {**self.base, "source": "PPI", "provider_id": "102"},
-        ]
+        records = [self.base, {**self.base, "provider_id": "102"}]
         result = resolve_canonical_identity(records)
         self.assertEqual(result.status, "CONFLICT")
         self.assertIn("provider_id", result.conflicts)
 
+    def test_optional_enrichment_does_not_change_canonical_id(self):
+        first = resolve_canonical_identity([self.base])
+        enriched = resolve_canonical_identity([{**self.base, "issuer": "Example Issuer", "share_class": "A"}])
+        self.assertEqual(first.canonical_id, enriched.canonical_id)
+
     def test_optional_identity_discriminator_conflict_blocks_resolution(self):
         records = [
-            {**self.base, "underlying": "GGAL", "source": "PPI"},
-            {**self.base, "underlying": "YPFD", "source": "IOL"},
+            {**self.base, "underlying": "GGAL"},
+            {**self.base, "underlying": "YPFD", "source": "IOL", "provider_id": "YPFD"},
         ]
         result = resolve_canonical_identity(records)
         self.assertEqual(result.status, "CONFLICT")
         self.assertIn("underlying", result.conflicts)
+
+    def test_d_and_c_are_not_guessed_as_currencies(self):
+        for code in ("D", "C"):
+            result = resolve_canonical_identity([{**self.base, "currency": code}])
+            self.assertEqual(result.status, "INSUFFICIENT")
+            self.assertIn("currency", result.missing)
 
     def test_malformed_evidence_fails_closed(self):
         result = resolve_canonical_identity([self.base, None])
