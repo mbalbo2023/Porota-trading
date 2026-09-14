@@ -1,6 +1,6 @@
 ## Preflight de concurrencia (requerido)
 
-- [ ] Leí `/AGENTS.md`, versión `2026-09-12/1`, y cualquier política aplicable del subdirectorio.
+- [ ] Leí `/AGENTS.md`, versión `2026-09-14/3`, y cualquier política aplicable del subdirectorio.
 - [ ] Leí el checkpoint canónico vigente y confirmé allí el identificador exacto del baseline RC6.
 - [ ] Confirmé que esta rama no pertenece a otro chat ni hay cambios concurrentes en las mismas rutas.
 - [ ] Dejé identificados el responsable/chat, el alcance, la rama y el SHA base.
@@ -32,6 +32,7 @@
 **Impacto operativo:**  
 
 - [ ] Este PR no interactúa con el workstream/recursos PPI de ingesta, o incluye la autorización explícita de su responsable.
+- [ ] Para cualquier tarea larga, verifiqué status/progreso directo del droplet; una ingesta total corre directamente allí, no mediante Actions.
 - [ ] No ejecuté despliegues, órdenes ni workflows manuales de producción.
 - [ ] Revisé el diff completo y confirmé que contiene solo el alcance declarado.
 - [ ] Actualicé el checkpoint o indiqué el PR/commit donde quedará actualizado.
