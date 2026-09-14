@@ -30,7 +30,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
-      - name: Read existing capture metadata only
+      - name: Read existing capture and strict target identities (read-only)
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -40,7 +40,7 @@ jobs:
           RESULT=POROTA_TRADING_CONTRACT_API_CAPTURE_READONLY_AUDIT_RESULT_2026-09-14.txt
           CAPTURE=/opt/porota-trading/data/contract_evidence/rc6_trusted/contract_point1_20260914T023138Z.json
           ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" "sudo -n python3 - '$CAPTURE'" > "$RESULT" <<'PY'
-          import collections,json,re,sys
+          import collections,json,re,subprocess,sys
           from urllib.parse import urlsplit
           path=sys.argv[1]
           try:
@@ -49,40 +49,78 @@ jobs:
           except Exception as exc:
               print('EXISTING_CAPTURE_READ=ERROR_'+type(exc).__name__)
               raise SystemExit(0)
+          dbcode = """import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=30)
+          c.row_factory=sqlite3.Row
+          c.execute('pragma query_only=on')
+          rows=c.execute('select distinct family,ticker,market,settlement from contract_evidence_v2_current').fetchall()
+          print(json.dumps([dict(r) for r in rows],ensure_ascii=False))
+          c.close()
+          """
+          p=subprocess.run(['/usr/bin/docker','exec','-i','porota_production_observer','python','-c',dbcode],capture_output=True,text=True)
+          targets=[]
+          if p.returncode==0:
+              try:
+                  targets=json.loads(p.stdout)
+              except Exception:
+                  pass
+          aliases={'CEDEAR':'CEDEARS','OBLIGACIONES_NEGOCIABLES':'ON','OBLIGACIONES NEGOCIABLES':'ON'}
+          def family(value):
+              x=str(value or '').upper().strip()
+              return aliases.get(x,x)
+          targets=[{'family':family(x.get('family')),'ticker':str(x.get('ticker') or '').upper(),
+                    'market':str(x.get('market') or '').upper(),'settlement':str(x.get('settlement') or '').upper()}
+                   for x in targets if isinstance(x,dict)]
+          excluded={'FCI','FCI_LOCAL','FCI_EXTERIOR','FCI EXTERIOR','OPCIONES'}
+          targets=[x for x in targets if x['family'] not in excluded]
+          target_counts=collections.Counter(x['family'] for x in targets)
           endpoints=data.get('endpoints') or {}
           kinds=collections.Counter()
-          total_rows=collections.Counter()
-          endpoint_summaries=[]
-          for _,item in sorted(endpoints.items()):
+          row_counts=collections.Counter()
+          target_tickers=collections.defaultdict(set)
+          for item in endpoints.values():
               if not isinstance(item,dict):
                   continue
               kind=str(item.get('kind') or 'UNKNOWN')
               kinds[kind]+=1
               rows=item.get('rows')
-              row=item.get('row')
-              values=rows if isinstance(rows,list) else ([row] if isinstance(row,dict) and row else [])
-              total_rows[kind]+=len(values)
-              keys=sorted({str(k) for value in values if isinstance(value,dict) for k in value})
-              if not keys and isinstance(item.get('schema'),dict):
-                  keys=sorted(str(k) for k in item['schema'].get('keys',[]) if isinstance(k,str))
-              endpoint_summaries.append({
-                  'kind':kind,
-                  'job':str(item.get('observed_job') or ''),
-                  'route':str(item.get('observed_route') or ''),
-                  'status':item.get('status'),
-                  'rows':len(values),
-                  'field_names':keys[:80],
-              })
+              if not isinstance(rows,list):
+                  rows=[]
+              row_counts[kind]+=len(rows)
+              if kind!='InstrumentosOperables':
+                  continue
+              route=str(item.get('observed_route') or '')
+              routed_families={'/Operar/Bonos':{'BONOS','LETRAS'},'/Operar/Ons':{'ON'}}
+              allowed=routed_families.get(route,set())
+              for row in rows:
+                  if isinstance(row,dict) and row.get('ticker') and allowed:
+                      target_tickers[route].add(str(row['ticker']).upper())
+          api_report={}
+          for route, fams in {'/Operar/Bonos':{'BONOS','LETRAS'},'/Operar/Ons':{'ON'}}.items():
+              ids=[x for x in targets if x['family'] in fams]
+              tickers=target_tickers.get(route,set())
+              matched=[x for x in ids if x['ticker'] in tickers]
+              api_report[route]={
+                  'target_identities':len(ids),
+                  'target_tickers_matched':len(matched),
+                  'target_tickers_unmatched':len(ids)-len(matched),
+                  'distinct_target_tickers':len({x['ticker'] for x in ids}),
+                  'matched_distinct_tickers':len({x['ticker'] for x in matched}),
+                  'exact_identity_join_possible':False,
+                  'reason':'Captured InstrumentosOperables fields do not include market or settlement.',
+              }
           print('EXISTING_CAPTURE_READ=OK')
+          print('TARGET_QUERY='+('OK' if p.returncode==0 and targets else 'UNAVAILABLE'))
+          print('TARGET_IDENTITY_COUNT='+str(len(targets)))
+          print('TARGET_BY_FAMILY='+json.dumps(target_counts,sort_keys=True,separators=(',',':')))
           print('CAPTURE_SCHEMA='+str(data.get('schema')))
           print('AUTH_STATUS='+str(data.get('auth_status')))
           print('REAL_ORDERS_SENT='+str(data.get('real_orders_sent')))
           print('ROUTES_COUNT='+str(len(data.get('routes') or [])))
           print('ENDPOINT_COUNT='+str(len(endpoints)))
           print('ENDPOINT_KIND_COUNTS='+json.dumps(kinds,sort_keys=True,separators=(',',':')))
-          print('ROW_COUNTS_BY_KIND='+json.dumps(total_rows,sort_keys=True,separators=(',',':')))
-          for index,item in enumerate(endpoint_summaries,1):
-              print('ENDPOINT_'+str(index)+'='+json.dumps(item,sort_keys=True,separators=(',',':')))
+          print('ROW_COUNTS_BY_KIND='+json.dumps(row_counts,sort_keys=True,separators=(',',':')))
+          print('TARGET_TICKER_MATCH_COUNTS='+json.dumps(api_report,sort_keys=True,separators=(',',':')))
           for item in data.get('routes') or []:
               if isinstance(item,dict):
                   safe={k:item.get(k) for k in ('job','requested','reached','api_catalog_action') if k in item}
@@ -101,8 +139,6 @@ jobs:
               print('BLOCKED_NONREAD_CLASS='+json.dumps({'method':method,'host':host,'route':route,'count':count},sort_keys=True,separators=(',',':')))
           print('AMOUNT_FILLED='+str(bool(data.get('amount_filled'))))
           print('PRICE_FILLED='+str(bool(data.get('price_filled'))))
-          print('DB_READ=NO')
-          print('DB_WRITE=NO')
           print('DB_IMPORT_EXECUTED=NO')
           print('SERVICE_RESTARTED=NO')
           PY
@@ -111,5 +147,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add "$RESULT"
           git diff --cached --quiet && exit 0
-          git commit -m 'audit(contract): summarize existing API capture without values [skip ci]'
+          git commit -m 'audit(contract): compare existing API capture to target identities [skip ci]'
           git push origin HEAD:ops/rc6-contract-api-capture-readonly-audit-20260914
