@@ -1,0 +1,115 @@
+name: RC6 read-only audit of API-supported capture 2026-09-14
+
+on:
+  push:
+    branches:
+      - ops/rc6-contract-api-capture-readonly-audit-20260914
+    paths-ignore:
+      - POROTA_TRADING_CONTRACT_API_CAPTURE_READONLY_AUDIT_RESULT_2026-09-14.txt
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  inspect-existing-capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"
+          chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read existing capture metadata only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(-i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          RESULT=POROTA_TRADING_CONTRACT_API_CAPTURE_READONLY_AUDIT_RESULT_2026-09-14.txt
+          CAPTURE=/opt/porota-trading/data/contract_evidence/rc6_trusted/contract_point1_20260914T023138Z.json
+          ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" "sudo -n python3 - '$CAPTURE'" > "$RESULT" <<'PY'
+          import collections,json,re,sys
+          from urllib.parse import urlsplit
+          path=sys.argv[1]
+          try:
+              with open(path,encoding='utf-8') as f:
+                  data=json.load(f)
+          except Exception as exc:
+              print('EXISTING_CAPTURE_READ=ERROR_'+type(exc).__name__)
+              raise SystemExit(0)
+          endpoints=data.get('endpoints') or {}
+          kinds=collections.Counter()
+          total_rows=collections.Counter()
+          endpoint_summaries=[]
+          for _,item in sorted(endpoints.items()):
+              if not isinstance(item,dict):
+                  continue
+              kind=str(item.get('kind') or 'UNKNOWN')
+              kinds[kind]+=1
+              rows=item.get('rows')
+              row=item.get('row')
+              values=rows if isinstance(rows,list) else ([row] if isinstance(row,dict) and row else [])
+              total_rows[kind]+=len(values)
+              keys=sorted({str(k) for value in values if isinstance(value,dict) for k in value})
+              if not keys and isinstance(item.get('schema'),dict):
+                  keys=sorted(str(k) for k in item['schema'].get('keys',[]) if isinstance(k,str))
+              endpoint_summaries.append({
+                  'kind':kind,
+                  'job':str(item.get('observed_job') or ''),
+                  'route':str(item.get('observed_route') or ''),
+                  'status':item.get('status'),
+                  'rows':len(values),
+                  'field_names':keys[:80],
+              })
+          print('EXISTING_CAPTURE_READ=OK')
+          print('CAPTURE_SCHEMA='+str(data.get('schema')))
+          print('AUTH_STATUS='+str(data.get('auth_status')))
+          print('REAL_ORDERS_SENT='+str(data.get('real_orders_sent')))
+          print('ROUTES_COUNT='+str(len(data.get('routes') or [])))
+          print('ENDPOINT_COUNT='+str(len(endpoints)))
+          print('ENDPOINT_KIND_COUNTS='+json.dumps(kinds,sort_keys=True,separators=(',',':')))
+          print('ROW_COUNTS_BY_KIND='+json.dumps(total_rows,sort_keys=True,separators=(',',':')))
+          for index,item in enumerate(endpoint_summaries,1):
+              print('ENDPOINT_'+str(index)+'='+json.dumps(item,sort_keys=True,separators=(',',':')))
+          for item in data.get('routes') or []:
+              if isinstance(item,dict):
+                  safe={k:item.get(k) for k in ('job','requested','reached','api_catalog_action') if k in item}
+                  print('ROUTE_ACTION='+json.dumps(safe,sort_keys=True,separators=(',',':')))
+          blocked=data.get('blocked_nonread') or []
+          blocked_counts=collections.Counter()
+          for item in blocked:
+              if not isinstance(item,dict):
+                  continue
+              u=urlsplit(str(item.get('url') or ''))
+              clean=re.sub(r'/[0-9a-f-]{16,}(?=/|$)','/:id',u.path,flags=re.I)
+              clean=re.sub(r'/[0-9]{3,}(?=/|$)','/:n',clean)
+              blocked_counts[(str(item.get('method') or ''),u.netloc,clean)]+=1
+          print('BLOCKED_NONREAD_COUNT='+str(len(blocked)))
+          for (method,host,route),count in sorted(blocked_counts.items()):
+              print('BLOCKED_NONREAD_CLASS='+json.dumps({'method':method,'host':host,'route':route,'count':count},sort_keys=True,separators=(',',':')))
+          print('AMOUNT_FILLED='+str(bool(data.get('amount_filled'))))
+          print('PRICE_FILLED='+str(bool(data.get('price_filled'))))
+          print('DB_READ=NO')
+          print('DB_WRITE=NO')
+          print('DB_IMPORT_EXECUTED=NO')
+          print('SERVICE_RESTARTED=NO')
+          PY
+          cat "$RESULT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): summarize existing API capture without values [skip ci]'
+          git push origin HEAD:ops/rc6-contract-api-capture-readonly-audit-20260914
