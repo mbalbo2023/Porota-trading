@@ -26,6 +26,10 @@ _FAMILY_REQUIRED_DETAILS = {
     "OPCIONES": ("underlying", "expiry", "strike", "put_call"),
     "FUTUROS": ("underlying", "expiry"),
 }
+_CANONICAL_SETTLEMENTS = frozenset({
+    "CI", "CONTADO_INMEDIATO", "T+0", "T+1", "T+2", "T+3", "T0", "T1", "T2", "T3",
+    "24_HORAS", "48_HORAS", "72_HORAS", "SPOT", "NON_INTRADAY", "NO_APLICA",
+})
 
 
 def _plain(value: object) -> str:
@@ -141,8 +145,10 @@ def resolve_canonical_identity(records: Iterable[Mapping[str, object]]) -> Ident
     Family subfamily is explicit and required. CEDEARs require an underlying;
     options require underlying/expiry/strike/put_call; futures require
     underlying/expiry. Provider IDs are retained as provenance and at least one
-    source ID is required. Optional descriptive enrichment does not change the
-    canonical key, while conflicts in it still block resolution.
+    source ID is required on every contributing record. Settlement uses a
+    closed canonical vocabulary; unknown aliases remain unresolved until an
+    evidence-backed adapter maps them. Optional descriptive enrichment does
+    not change the canonical key, while conflicts in it still block resolution.
     """
     if records is None:
         records = ()
@@ -166,9 +172,9 @@ def resolve_canonical_identity(records: Iterable[Mapping[str, object]]) -> Ident
             claims["subfamily"].add(_field_value("subfamily", inline_subfamily))
         source = _plain(record.get("source"))
         provider_id = str(record.get("provider_id") or "").strip()
-        if provider_id and not source:
+        if not source or not provider_id:
             malformed = True
-        elif source and provider_id:
+        else:
             ids_by_source.setdefault(source, set()).add(provider_id)
 
     conflicts = {field for field, values in claims.items() if len(values) > 1}
