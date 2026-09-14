@@ -1,0 +1,31 @@
+PROBE=RC6_CONTRACT_BLOCKED_NONREAD_AUDIT_V1
+CAPTURE=/opt/porota-trading/data/contract_evidence/rc6_trusted/contract_point1_20260914T000107Z.json
+READ_ONLY=YES
+DB_TOUCHED=NO
+BROWSER_STARTED=NO
+AUTH_STATUS=AUTHENTICATED_TRUSTED_DEVICE
+REAL_ORDERS_SENT=0
+BLOCKED_NONREAD_RAW_COUNT=27
+BLOCKED_NONREAD_UNIQUE_COUNT=5
+--- UNIQUE_GROUPS ---
+2	PPI_AUTH_OR_SSO	POST	api.portfoliopersonal.com	/api/v1/zendesk/zendesk-session
+7	THIRD_PARTY_NONREAD_REVIEW_REQUIRED	POST	api.refiner.io	/js-client/v1/c2731740-f679-11ee-9f44-338bb8d8fd30/identify-user
+3	THIRD_PARTY_TELEMETRY_CANDIDATE	POST	portfoliopersonalsupport.zendesk.com	/frontendevents/pv
+2	THIRD_PARTY_NONREAD_REVIEW_REQUIRED	POST	portfoliopersonalsupport.zendesk.com	/sc/sdk/v2/apps/615641321065b800df569ab5/login
+13	PPI_TECHNICAL_NONREAD_REVIEW_REQUIRED	POST	trading.portfoliopersonal.com	/api/logger
+--- CATEGORY_COUNTS ---
+PPI_AUTH_OR_SSO=2
+PPI_TECHNICAL_NONREAD_REVIEW_REQUIRED=13
+THIRD_PARTY_NONREAD_REVIEW_REQUIRED=9
+THIRD_PARTY_TELEMETRY_CANDIDATE=3
+--- CLASSIFICATION_SUMMARY ---
+[PPI_AUTH_OR_SSO]
+2x POST api.portfoliopersonal.com/api/v1/zendesk/zendesk-session
+[PPI_TECHNICAL_NONREAD_REVIEW_REQUIRED]
+13x POST trading.portfoliopersonal.com/api/logger
+[THIRD_PARTY_NONREAD_REVIEW_REQUIRED]
+7x POST api.refiner.io/js-client/v1/c2731740-f679-11ee-9f44-338bb8d8fd30/identify-user
+2x POST portfoliopersonalsupport.zendesk.com/sc/sdk/v2/apps/615641321065b800df569ab5/login
+[THIRD_PARTY_TELEMETRY_CANDIDATE]
+3x POST portfoliopersonalsupport.zendesk.com/frontendevents/pv
+RESULT=GREEN_AUDIT_COMPLETE_NO_MUTATION
