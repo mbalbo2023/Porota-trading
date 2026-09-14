@@ -422,3 +422,26 @@ Orden obligatorio, verificando antes de crear nada:
 ---
 
 **Regla para nuevo chat:** leer este archivo primero. No repetir histórico masivo, read-only Cauciones, adapter/bridge, schedule ni controller. Primero verificar capturas/producers/runtime y sólo después crear o ejecutar lo que realmente falte.
+
+---
+
+## 4.5 UPDATE DE CONTINUIDAD — CAPTURA API RC6 2026-09-14
+
+Una sola recaptura contractual estrecha, run GitHub Actions `34799337006`, job `103838639363`, commit del workflow `12ccddc96090e944d550eda83a823a59711801cf`. El collector desplegado tiene SHA-256 `51acc0e14a40afc2fcf7a391b33e983f30ccb078db82d01d04b7d34b63bd0a40`. Se reutilizó la sesión trusted RC6 y el guard siguió abortando todos los métodos distintos de GET/HEAD/OPTIONS.
+
+La captura autenticada persistida está en `/opt/porota-trading/data/contract_evidence/rc6_trusted/contract_point1_20260914T023138Z.json`. Auditoría read-only del archivo: run `34800062452`, commit de resultado `a44fa47a2db93254c0aeed7ae9aa9b9b417493a9`, sin imprimir valores de instrumentos ni leer/escribir la DB.
+
+Resultados:
+- PAPER/safety preflight y postflight verdes; `AUTHENTICATED_TRUSTED_DEVICE`; `REAL_ORDERS_SENT=0`; montos y precios no completados; `DB_IMPORT_EXECUTED=NO`; `SERVICE_RESTARTED=NO`.
+- `ROUTES_COUNT=10`; búsqueda API abierta en `/Operar/Bonos` y `/Operar/Ons`. Cauciones llegó a la ruta, pero su control de búsqueda terminó en `SEARCH_ERROR:TimeoutError`.
+- La API devolvió 2 respuestas `InstrumentosOperables`: 2.628 filas de Bonos y 2.931 de ON. Campos explícitos: ID/ticker, proveedor, moneda, operabilidad de subasta, comisión/derechos y decimales de cantidad/precio. `quantity_step` y `price_tick` no están informados: NO derivarlos de decimales.
+- `CaucionesOperables`: 120 filas con descripción, días y precisiones decimales; no aparecen moneda, lado, tasa anual, disponibilidad, mínimo/paso de principal, base de días ni modelo de costos requeridos por el gate.
+- Dos respuestas adicionales sólo contienen schema de `ConfiguracionOperatoriaSimplificada`; no hubo respuesta `DatosTecnicos`.
+- Se interceptaron y abortaron 47 POST. La lectura de sus categorías mostró sólo telemetría/soporte (`Zendesk`, `Refiner`, `Amplitude`, `Clarity` y `/api/logger`); no habilitar POST.
+- `STRUCTURALLY_IMPORTABLE=NO`, `REUSABLE_TARGET=NO`. No importar esta captura.
+
+**Alcance corregido por el usuario:** procesar sólo campos realmente entregados por API y sólo las 444 identidades del target inmediato. Las 5.559 filas de las dos listas son evidencia de las respuestas API existentes, no el universo a importar. No repetir esas listas ni ninguna ingesta histórica; el procesamiento siguiente debe filtrarlas contra las 444 identidades y persistir únicamente campos API explícitos.
+
+**Siguiente paso autorizado:** determinar y capturar de forma estrecha el GET autenticado `DatosTecnicos` para las identidades de Bonos/ON del target 444, sin abrir controles de orden. Reutilizar la evidencia API de Cauciones ya existente (`34773357093`) en vez de repetir su probe. Recalcular la matriz strict READY sólo después de tener evidencia importable; el último `0/444` sigue siendo el último valor confirmado, no una recomputación posterior a esta captura.
+
+Esta recaptura no completa por sí sola contratos READY ni cambia elegibilidad.
