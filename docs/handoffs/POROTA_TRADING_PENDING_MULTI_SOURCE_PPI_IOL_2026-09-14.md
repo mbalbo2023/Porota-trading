@@ -15,9 +15,10 @@ Branch de continuidad:
 
 `ops/rc6-contract-open-session-immediate-20260914`
 
-Documento técnico asociado:
+Documentos técnicos asociados:
 
-`docs/research/POROTA_MULTI_SOURCE_MARKET_DATA_AND_CONTRACT_ARCHITECTURE_2026-09-14.md`
+- `docs/research/POROTA_MULTI_SOURCE_MARKET_DATA_AND_CONTRACT_ARCHITECTURE_2026-09-14.md`
+- `docs/research/POROTA_PROVIDER_COVERAGE_MATRIX_INITIAL_2026-09-14.md`
 
 ## Objetivo
 
@@ -45,7 +46,8 @@ Ya obtenido:
 - precisión decimal;
 - evidencia IOL de lote, T1, símbolos ARS/D/C;
 - precio/caja de puntas IOL;
-- TIR, duration, valor técnico, paridad y cashflow IOL.
+- histórico diario IOL 2026-09-01..2026-09-14 con OHLCV;
+- TIR, TEM, duration, valor técnico, paridad y cashflow IOL.
 
 Falta:
 
@@ -55,6 +57,7 @@ Falta:
 - determinar `price_tick` explícito si existe;
 - validar settlement/plazo PPI exacto;
 - confirmar restricciones de operatoria/subasta relevantes;
+- comparar histórico IOL vs PPI para mismas fechas;
 - producir veredicto `READY_PPI` / `HOLD` con causas enumeradas.
 
 Criterio de salida:
@@ -121,6 +124,16 @@ Capacidades ya verificadas:
 - caucion rates;
 - corporate events;
 - FCI listing.
+
+Documentación oficial ya verificada:
+
+- HTTPS + JSON;
+- bearer + refresh token;
+- bearer TTL documentado de 15 minutos;
+- `/token` para autenticación/refresh;
+- existencia de sandbox separado;
+- producción puede impactar REAL;
+- bonificación pública informada hasta 25.000 API calls/mes, sujeta a condiciones vigentes.
 
 Pendiente:
 
@@ -189,9 +202,21 @@ Pendiente:
 
 ### MS-P1-05 — Crear matriz de cobertura por campo y familia
 
-Estado: `TODO`
+Estado: `IN_PROGRESS`
 
-Familias mínimas:
+Archivo creado:
+
+`docs/research/POROTA_PROVIDER_COVERAGE_MATRIX_INITIAL_2026-09-14.md`
+
+Commit inicial:
+
+`ced8a71bc2f7e6ddbe70c712c1f8d6e8c944180f`
+
+Actualización con pruebas de históricos/intradiario:
+
+`454548fce663986d4474ed4baead6fca63cdeaa0`
+
+Familias mínimas incluidas:
 
 - ACCIONES
 - CEDEAR
@@ -201,22 +226,10 @@ Familias mínimas:
 - ON
 - CAUCIONES
 - OPCIONES
-- FUTUROS si están soportados por los proveedores y por el alcance de Porota
+- FUTUROS cuando corresponda
+- FCI como familia diferida, sin borrado.
 
-Columnas mínimas:
-
-- campo canónico;
-- PPI API;
-- PPI Web;
-- IOL API;
-- IOL Web;
-- fuente preferida para análisis;
-- fuente obligatoria para ejecución PPI;
-- freshness esperada;
-- criticidad;
-- fallback;
-- conflicto semántico posible;
-- estado.
+Pendiente completar todos los UNKNOWN/PARTIAL con evidencia.
 
 ### MS-P1-06 — Reconciliación de identidad
 
@@ -253,25 +266,26 @@ Definir:
 
 ### MS-P1-08 — Validar históricos IOL por muestra representativa
 
-Estado: `TODO`
+Estado: `IN_PROGRESS`
 
-Probar al menos:
+Completado hasta ahora:
 
-- 1 Acción líquida;
-- 1 CEDEAR líquido;
-- AL30;
+- Acción líquida `GGAL`: histórico diario 2026-09-01..2026-09-14, OHLCV disponible.
+- CEDEAR `AAPL`: histórico diario 2026-09-01..2026-09-14, OHLCV disponible.
+- Bono `AL30`: histórico diario 2026-09-01..2026-09-14, OHLCV disponible.
+- `GGAL` intradiario 2026-09-14: secuencia de trades timestamp/precio/volumen disponible; `dates_without_intraday=[]` para la consulta probada.
+
+Falta:
+
 - 1 Letra;
-- 1 ON.
-
-Medir:
-
-- profundidad temporal;
+- 1 ON;
+- comparar GGAL/AAPL/AL30 contra PPI para mismas fechas;
+- medir profundidad temporal real;
+- medir retención intradiaria consultando fechas previas;
 - huecos;
-- volumen;
 - ajuste/no ajuste;
 - fechas/feriados;
-- consistencia con PPI;
-- intradiario disponible y retención.
+- consistencia de volumen.
 
 ### MS-P1-09 — Renta fija multi-source
 
@@ -296,9 +310,9 @@ Crear provenance por campo.
 
 ### MS-P1-10 — Opciones: investigación analítica, NO READY
 
-Estado: `TODO`
+Estado: `IN_PROGRESS_RESEARCH_ONLY`
 
-IOL ya demuestra capacidad de cadena + Greeks.
+IOL ya demuestra capacidad de cadena + Greeks con GGAL.
 
 Antes de cualquier habilitación PAPER operativa:
 
