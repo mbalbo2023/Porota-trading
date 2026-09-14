@@ -90,3 +90,14 @@ Then:
 GLOBAL_RC6=YELLOW
 GO_18_OF_18=NO
 READY_FOR_FINAL_DEPLOY=NO
+
+
+## REGLAS OBLIGATORIAS DE ACCESIBILIDAD DEL OPERADOR — persistentes
+
+El operador Tincho tiene cuadriplejia, usa Android/Termius y no puede escribir manualmente. Todo chat debe tratarlo como restricción permanente antes de dar instrucciones, sin volver a pedirle que lo repita.
+
+- No solicitar tipeo manual, selección manual de salida, ni correcciones de comandos línea por línea. Preferir voz y un único bloque íntegro para pegar.
+- Entregar scripts operativos como .sh. Evitar prompts interactivos alimentados por stdin del bloque pegado; si son inevitables, leer desde /dev/tty y aceptar pegado en el prompt. Nunca encadenar un heredoc de instalación con una ejecución que consuma stdin interactivo sin separar ambas entradas o usar /dev/tty.
+- Toda salida de diagnóstico/script debe ser breve, saneada y preparada para copiar de vuelta. En Termius emitir OSC 52 hacia el portapapeles con terminadores BEL y ST y reportar exactamente PORTAPAPELES_OSC52=EMITIDO cuando se emita; usar termux-clipboard-set si se ejecuta localmente en Termux. Si el canal no admite portapapeles, decirlo claramente y no simular éxito.
+- Nunca copiar secretos, tokens, cookies ni contenido de .env al portapapeles o a la salida. Mostrar estado/nombres de variables únicamente.
+- Dar pasos adaptados a voz/pegado y detenerse para recibir el resultado cuando un paso requiera confirmación operativa del usuario.
