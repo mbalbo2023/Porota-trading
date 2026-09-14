@@ -23,3 +23,9 @@ Sólo si las pruebas en rueda confirman que PPI Web/API no expone los campos req
 3. Registrar procedencia, fecha de vigencia, campo exacto y validación cruzada.
 4. No usar CNV, mercado ni emisor como sustituto automático de configuración operativa PPI.
 5. Sin evidencia explícita y consistente, el instrumento sigue HOLD; nunca READY_PAPER por inferencia.
+
+## Estado actualizado
+
+`PAUSADA_POR_SEGURIDAD`.
+
+La programación fue retirada antes de la rueda: el workflow invocaba el harness global, no una captura focalizada; no compartía lock PPI global con Cauciones/supervisor, no validaba frescura de la captura, no comprobaba en forma fail-closed los invariantes de seguridad y el resumen Telegram podía incluir log crudo. Requisitos antes de reprogramar: lock PPI global único, selector de familia/instrumento realmente soportado por el collector, run-id/timestamp fresco, asserts de seguridad, campos obligatorios y resumen redactado.
