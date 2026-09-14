@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/rc6-iol-readonly-canary.yml
       - docs/handoffs/RC6_IOL_READONLY_CANARY_2026-09-14.md
+      - docs/handoffs/RC6_SOURCE_INVENTORY_TRADING_PRACTICES_2026-09-14.md
   workflow_dispatch:
 
 permissions:
@@ -53,6 +54,15 @@ jobs:
              sudo -n chmod 0644 /opt/porota-trading/docs/handoffs/RC6_IOL_READONLY_CANARY_2026-09-14.md
              sudo -n sha256sum /opt/porota-trading/docs/handoffs/RC6_IOL_READONLY_CANARY_2026-09-14.md
              printf "SERVER_HANDOFF_SYNC=OK\\n"' < docs/handoffs/RC6_IOL_READONLY_CANARY_2026-09-14.md
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$USER@$HOST" 'set -Eeuo pipefail
+             image="$(sudo -n docker inspect -f "{{.State.Running}}|{{.Config.Image}}" porota_production_observer)"
+             printf "RC6_DOC_TARGET=%s\\n" "$image"
+             test "$image" = "true|porota-trading-bot:17.0.0-rc6"
+             sudo -n install -d -m 0755 /opt/porota-trading/docs/handoffs
+             sudo -n tee /opt/porota-trading/docs/handoffs/RC6_SOURCE_INVENTORY_TRADING_PRACTICES_2026-09-14.md >/dev/null
+             sudo -n chmod 0644 /opt/porota-trading/docs/handoffs/RC6_SOURCE_INVENTORY_TRADING_PRACTICES_2026-09-14.md
+             sudo -n sha256sum /opt/porota-trading/docs/handoffs/RC6_SOURCE_INVENTORY_TRADING_PRACTICES_2026-09-14.md
+             printf "SERVER_INVENTORY_SYNC=OK\\n"' < docs/handoffs/RC6_SOURCE_INVENTORY_TRADING_PRACTICES_2026-09-14.md
 
       - name: Run RC6 and IOL read-only canary
         shell: bash
