@@ -66,6 +66,19 @@ def clean_url(url: str) -> str:
     return f"{u.scheme}://{u.netloc}{u.path}"[:240]
 
 
+def authenticated_trading_url(url: str) -> bool:
+    u = urlsplit(str(url))
+    p = u.path.lower()
+    return (
+        u.scheme == "https"
+        and u.netloc == TRADING_HOST
+        and bool(u.path.rstrip("/"))
+        and "login" not in p
+        and "logout" not in p
+        and ORDER_PATH_HINT.search(p) is None
+    )
+
+
 def read_secret(path: Path) -> tuple[str, str]:
     vals: dict[str, str] = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -101,7 +114,6 @@ def safe_json_shape(data):
     if not isinstance(data, dict):
         return {"json_object": False, "safe_keys": []}
     keys = sorted(k for k in data.keys() if str(k) in SAFE_RESPONSE_KEYS)
-    # Presence only; never emit values.
     return {
         "json_object": True,
         "safe_keys": keys,
@@ -124,7 +136,7 @@ def main() -> int:
     profile = Path(args.profile)
     secret = Path(args.secret)
     result = {
-        "schema": "porota-ppi-auth-diagnostic-oneshot-v1",
+        "schema": "porota-ppi-auth-diagnostic-oneshot-v2",
         "login_submissions": 0,
         "credentials_exposed": False,
         "cookies_exposed": False,
@@ -193,10 +205,7 @@ def main() -> int:
                     key = hp(response.url)
                     if req.method.upper() != "POST" or key not in APPROVED_AUTH_POSTS:
                         return
-                    item = {
-                        "host_path": f"{key[0]}{key[1]}",
-                        "http_status": int(response.status),
-                    }
+                    item = {"host_path": f"{key[0]}{key[1]}", "http_status": int(response.status)}
                     try:
                         item.update(safe_json_shape(response.json()))
                     except Exception:
@@ -221,8 +230,7 @@ def main() -> int:
 
             go(TRADING_ROOT)
             result["initial_url"] = clean_url(page.url)
-            iu = urlsplit(page.url)
-            if iu.netloc == TRADING_HOST and "login" not in iu.path.lower() and iu.path.rstrip("/"):
+            if authenticated_trading_url(page.url):
                 result["state"] = "AUTHENTICATED_EXISTING_SESSION"
                 result["final_url"] = clean_url(page.url)
                 ctx.close()
@@ -284,7 +292,7 @@ def main() -> int:
             result["final_url"] = clean_url(page.url)
             fu = urlsplit(page.url)
             result["landed_account_cuentas"] = fu.netloc == ACCOUNT_HOST and fu.path.rstrip("/").lower() == "/cuentas"
-            result["landed_trading_nonroot"] = fu.netloc == TRADING_HOST and bool(fu.path.rstrip("/")) and "login" not in fu.path.lower()
+            result["landed_trading_nonroot"] = authenticated_trading_url(page.url)
             result["password_field_visible_after"] = visible(page, ["input[type='password']", "#password"]) is not None
             result["otp_shape_after"] = bool(OTP_TEXT_HINT.search(text_after)) or visible(page, [
                 "input[autocomplete='one-time-code']", "input[name*='otp' i]", "input[id*='otp' i]",
@@ -317,7 +325,6 @@ def main() -> int:
             print(json.dumps(result, sort_keys=True))
             return 0 if result["state"].startswith("AUTHENTICATED_") else 4
     except Exception as exc:
-        # Exception class only. Never stringify exception because browser errors may embed URLs or page data.
         result["state"] = "DIAGNOSTIC_EXCEPTION_FAIL_CLOSED"
         result["exception_class"] = exc.__class__.__name__
         print(json.dumps(result, sort_keys=True))
