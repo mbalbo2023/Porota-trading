@@ -1,0 +1,85 @@
+PROBE=RC6_LOCATE_RC4_TRUSTED_COLLECTOR_SOURCE_V1
+READ_ONLY=YES
+BROWSER_STARTED=NO
+DB_TOUCHED=NO
+FOUND_FILE=/opt/porota-trading/scripts/porota_contract_evidence_session_runner_rc4.py
+META=owner:porotaadmin|group:porotaadmin|mode:755|size:22180|mtime:2026-09-05 01:41:39.267942702 +0000
+SHA256=a5086b22f9714c2095bc553a7066c554728f2ed371eac753109058b36980fd1b
+INTERESTING_LINES_BEGIN
+149:    if "CaucionesOperables" in url:
+150:        return {"kind":"CaucionesOperables","rows":payload_rows(payload),"schema":schema_shape(payload)}
+160:    if force:return list(base.ROUTES.keys())
+165:        d=json.loads(p.stdout); return [j for j in d.get("due_jobs",[]) if j in base.ROUTES]
+223:    if kind=="CaucionesOperables":
+247:    elif kind=="InstrumentosOperables":
+254:            if job=="CONTRACT_EVIDENCE_AUCTIONS":
+256:            elif job=="CONTRACT_EVIDENCE_CAUCIONES":
+270:    elif kind=="DatosTecnicos":
+282:    elif kind=="SubyacenteOpciones":
+285:        fam={"CONTRACT_EVIDENCE_AUCTIONS":"LICITACIONES",
+286:             "CONTRACT_EVIDENCE_CAUCIONES":"CAUCIONES"}.get(job)
+323:    out={"schema":"POROTA_RC4_PPI_TRUSTED_CONTRACT_2",
+326:         "blocked_nonread":[],"continue_clicked":False,"amount_filled":False,
+348:                def guard(route,request):
+350:                    if method in base.SAFE_METHODS:return route.continue_()
+354:                        out["blocked_nonread"].append(row); return route.abort()
+355:                    if u.netloc=="cuenta.portfoliopersonal.com": return route.continue_()
+357:                        return route.continue_()
+359:                        return route.continue_()
+360:                    out["blocked_nonread"].append(row); return route.abort()
+363:                def on_response(response):
+365:                        if response.request.method.upper()!="GET" or not any(x in response.url for x in base.TARGETS): return
+374:                page.on("response",on_response)
+379:                        page.goto(base.TRADING+"/",wait_until="domcontentloaded",timeout=45000); page.wait_for_timeout(1100)
+382:                    page.goto(LOGIN,wait_until="domcontentloaded",timeout=45000); page.wait_for_timeout(900)
+390:                        pin.fill(code); del code
+393:                        b.click(); page.wait_for_timeout(3200); continue
+397:                            if not u.input_value():u.fill(user)
+401:                        try:p.fill(password); acted=True
+406:                        b.click(); page.wait_for_timeout(3000); continue
+409:                    if back: back.click(); page.wait_for_timeout(1200); continue
+415:                        for route in base.ROUTES[job]:
+422:                            page.goto(base.TRADING+route,wait_until="domcontentloaded",timeout=45000)
+423:                            page.wait_for_timeout(1200)
+INTERESTING_LINES_END
+FOUND_FILE=/usr/local/sbin/porota-contract-evidence-session-runner.py
+META=owner:root|group:root|mode:755|size:22180|mtime:2026-09-05 01:54:56.545969178 +0000
+SHA256=a5086b22f9714c2095bc553a7066c554728f2ed371eac753109058b36980fd1b
+INTERESTING_LINES_BEGIN
+149:    if "CaucionesOperables" in url:
+150:        return {"kind":"CaucionesOperables","rows":payload_rows(payload),"schema":schema_shape(payload)}
+160:    if force:return list(base.ROUTES.keys())
+165:        d=json.loads(p.stdout); return [j for j in d.get("due_jobs",[]) if j in base.ROUTES]
+223:    if kind=="CaucionesOperables":
+247:    elif kind=="InstrumentosOperables":
+254:            if job=="CONTRACT_EVIDENCE_AUCTIONS":
+256:            elif job=="CONTRACT_EVIDENCE_CAUCIONES":
+270:    elif kind=="DatosTecnicos":
+282:    elif kind=="SubyacenteOpciones":
+285:        fam={"CONTRACT_EVIDENCE_AUCTIONS":"LICITACIONES",
+286:             "CONTRACT_EVIDENCE_CAUCIONES":"CAUCIONES"}.get(job)
+323:    out={"schema":"POROTA_RC4_PPI_TRUSTED_CONTRACT_2",
+326:         "blocked_nonread":[],"continue_clicked":False,"amount_filled":False,
+348:                def guard(route,request):
+350:                    if method in base.SAFE_METHODS:return route.continue_()
+354:                        out["blocked_nonread"].append(row); return route.abort()
+355:                    if u.netloc=="cuenta.portfoliopersonal.com": return route.continue_()
+357:                        return route.continue_()
+359:                        return route.continue_()
+360:                    out["blocked_nonread"].append(row); return route.abort()
+363:                def on_response(response):
+365:                        if response.request.method.upper()!="GET" or not any(x in response.url for x in base.TARGETS): return
+374:                page.on("response",on_response)
+379:                        page.goto(base.TRADING+"/",wait_until="domcontentloaded",timeout=45000); page.wait_for_timeout(1100)
+382:                    page.goto(LOGIN,wait_until="domcontentloaded",timeout=45000); page.wait_for_timeout(900)
+390:                        pin.fill(code); del code
+393:                        b.click(); page.wait_for_timeout(3200); continue
+397:                            if not u.input_value():u.fill(user)
+401:                        try:p.fill(password); acted=True
+406:                        b.click(); page.wait_for_timeout(3000); continue
+409:                    if back: back.click(); page.wait_for_timeout(1200); continue
+415:                        for route in base.ROUTES[job]:
+422:                            page.goto(base.TRADING+route,wait_until="domcontentloaded",timeout=45000)
+423:                            page.wait_for_timeout(1200)
+INTERESTING_LINES_END
+RESULT=GREEN_RC4_SOURCE_LOCATE_COMPLETE_NO_MUTATION
