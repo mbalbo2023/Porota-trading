@@ -1,0 +1,223 @@
+name: RC6 one-target DatosTecnicos off-hours probe 2026-09-14
+
+on:
+  push:
+    branches:
+      - ops/rc6-datos-tecnicos-offhours-probe-20260914
+    paths:
+      - .github/workflows/rc6-contract-datos-tecnicos-offhours-probe-20260914.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe-one-target:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-datos-tecnicos-offhours-probe-20260914
+
+      - name: Verify one-target collector statically
+        run: |
+          set -euo pipefail
+          test "$(sha256sum rc6_trusted_browser_contract_collector.py | awk '{print $1}')" = '33eaaa9ac8105d8f6944e1006187104c60275481bf68d27539bb9bf34b350f06'
+          python3 - <<'PY'
+          import ast,re
+          p='rc6_trusted_browser_contract_collector.py'
+          s=open(p,encoding='utf-8').read(); ast.parse(s)
+          assert 'method not in SAFE_METHODS' in s and 'route.abort()' in s
+          assert 'search.fill(probe_ticker, timeout=5000)' in s
+          assert 'matches[0].click(timeout=5000)' in s
+          assert s.count('.click(')==2 and s.count('.fill(')==1
+          assert 'page.get_by_role("option")' in s
+          assert 'sanitized.get("kind") == "InstrumentosOperables"' in s
+          assert 'TARGET_SELECTED_FOR_TECHNICAL_GET_PROBE' in s
+          assert 'DatosTecnicos' in s and '/Operar/Bonos' in s and '/Operar/Ons' in s
+          assert 'amount_filled":False' in s and 'price_filled":False' in s
+          assert not re.search(r'^\s*(from|import)\s+.*(broker|ppi_client|orders?)',s,re.M|re.I)
+          h=open('scripts/rc6_contract_point1_reauth_capture.sh',encoding='utf-8').read()
+          assert 'POROTA_TECHNICAL_PROBE_TICKER="$PROBE_TICKER"' in h
+          print('LOCAL_STATIC_SAFETY=PASS_ONE_TARGET_READ_ONLY_TECHNICAL_PROBE')
+          PY
+          bash -n scripts/rc6_contract_point1_reauth_capture.sh
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Select one existing target and run one GET-only probe
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(-i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          REMOTE_COL=/tmp/rc6_trusted_browser_contract_collector.${GITHUB_RUN_ID}.py
+          REMOTE_HARNESS=/tmp/rc6_contract_point1_reauth_capture.${GITHUB_RUN_ID}.sh
+          scp "${SSH_OPTS[@]}" rc6_trusted_browser_contract_collector.py "$DO_USER@$DO_HOST:$REMOTE_COL"
+          scp "${SSH_OPTS[@]}" scripts/rc6_contract_point1_reauth_capture.sh "$DO_USER@$DO_HOST:$REMOTE_HARNESS"
+          RESULT=POROTA_TRADING_DATOS_TECNICOS_OFFHOURS_PROBE_RESULT_2026-09-14.txt
+          ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" "sudo -n bash -s '$REMOTE_COL' '$REMOTE_HARNESS'" <<'HOST' > "$RESULT"
+          set -Eeuo pipefail
+          SRC="$1"; HARNESS="$2"
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          DST="$LIB/rc6_trusted_browser_contract_collector.py"
+          CAPTURE_SOURCE=/opt/porota-trading/data/contract_evidence/rc6_trusted/contract_point1_20260914T023138Z.json
+          OUTDIR=/opt/porota-trading/data/contract_evidence/rc6_trusted
+          CONTAINER=porota_production_observer
+          DOCKER=/usr/bin/docker
+          EXPECTED=33eaaa9ac8105d8f6944e1006187104c60275481bf68d27539bb9bf34b350f06
+          cleanup(){ rm -f "$SRC" "$HARNESS"; }
+          trap cleanup EXIT
+          echo 'PROBE=RC6_SINGLE_TARGET_DATOS_TECNICOS_OFFHOURS_GET_ONLY'
+          echo "NOW_UTC=$(date -u +%FT%TZ)"
+          test "$(sha256sum "$SRC" | awk '{print $1}')" = "$EXPECTED"
+          exec 9>/run/lock/porota-ppi-web-browser.lock
+          if ! flock -n 9; then
+            echo 'PROBE_RESULT=YELLOW_BROWSER_LOCK_BUSY'
+            echo 'REAL_ORDERS_SENT=0'
+            exit 0
+          fi
+          PRE="$($DOCKER exec -i "$CONTAINER" python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          qc=c.execute('pragma quick_check').fetchone()[0]; c.close()
+          print(json.dumps({'mode':mode,'orders':orders,'quick_check':qc}))
+          PY
+          )"
+          PRE="$PRE" python3 - <<'PY'
+          import json,os
+          d=json.loads(os.environ['PRE'])
+          assert d['mode']=='PRODUCTION_PAPER' and int(d['orders'] or 0)==0 and d['quick_check']=='ok'
+          PY
+          echo 'PREFLIGHT=GREEN_PRODUCTION_PAPER_ORDERS0_DBOK'
+          # Choose one uniquely mapped target ticker from the existing captured list; no list payload is recaptured to disk.
+          TARGET_JSON="$(python3 - "$CAPTURE_SOURCE" <<'PY'
+          import collections,json,subprocess,sys,textwrap
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          dbcode=textwrap.dedent("""
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+          c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          rows=c.execute("select distinct family,ticker from contract_evidence_v2_current").fetchall()
+          print(json.dumps([dict(r) for r in rows]))
+          c.close()
+          """)
+          p=subprocess.run(['/usr/bin/docker','exec','-i','porota_production_observer','python','-c',dbcode],capture_output=True,text=True)
+          if p.returncode: raise SystemExit(2)
+          targets=json.loads(p.stdout)
+          allowed={str(r['ticker']).strip().upper() for r in targets
+                   if str(r.get('family') or '').upper().strip() in {'BONOS','LETRAS'} and r.get('ticker')}
+          counts=collections.Counter()
+          for item in (d.get('endpoints') or {}).values():
+              if not isinstance(item,dict) or item.get('kind')!='InstrumentosOperables' or item.get('observed_route')!='/Operar/Bonos': continue
+              for row in item.get('rows') or []:
+                  if isinstance(row,dict) and row.get('ticker'): counts[str(row['ticker']).strip().upper()]+=1
+          candidates=sorted(t for t in allowed if counts[t]==1)
+          print(json.dumps({'route':'/Operar/Bonos','ticker':candidates[0] if candidates else ''}))
+          PY
+          )"
+          TARGET_ROUTE="$(TARGET_JSON="$TARGET_JSON" python3 -c "import json,os;print(json.loads(os.environ['TARGET_JSON']).get('route',''))")"
+          TARGET_TICKER="$(TARGET_JSON="$TARGET_JSON" python3 -c "import json,os;print(json.loads(os.environ['TARGET_JSON']).get('ticker',''))")"
+          if [[ -z "$TARGET_TICKER" || "$TARGET_ROUTE" != /Operar/Bonos ]]; then
+            echo 'TARGET_MATCH=NO_UNIQUE_BONOS_LETRAS_API_TICKER'
+            echo 'DB_IMPORT_EXECUTED=NO'
+            echo 'SERVICE_RESTARTED=NO'
+            exit 0
+          fi
+          echo 'TARGET_MATCH=ONE_UNIQUE_TARGET_TICKER_SELECTED_FROM_EXISTING_API_CAPTURE'
+          python3 - "$SRC" <<'PY'
+          import sys
+          compile(open(sys.argv[1],encoding='utf-8').read(),sys.argv[1],'exec')
+          PY
+          install -o root -g root -m 0644 "$SRC" "$DST"
+          test "$(sha256sum "$DST" | awk '{print $1}')" = "$EXPECTED"
+          echo 'DEPLOY_RESULT=GREEN_SINGLE_COLLECTOR_FILE_INSTALLED'
+          echo 'SERVICE_RESTARTED=NO'
+          flock -u 9
+          chmod 700 "$HARNESS"
+          export POROTA_POINT1_JOBS=CONTRACT_EVIDENCE_DYNAMIC
+          export POROTA_TECHNICAL_PROBE_ROUTE="$TARGET_ROUTE"
+          export POROTA_TECHNICAL_PROBE_TICKER="$TARGET_TICKER"
+          set +e
+          bash "$HARNESS"
+          HRC=$?
+          set -e
+          echo "HARNESS_RC=$HRC"
+          python3 - "$OUTDIR" "$TARGET_TICKER" <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          outdir=Path(sys.argv[1]); target=sys.argv[2].upper()
+          captures=sorted(outdir.glob('contract_point1_*.json'),key=lambda p:p.stat().st_mtime_ns)
+          if not captures:
+              print('TECHNICAL_CAPTURE=NO_FILE')
+              raise SystemExit(0)
+          p=captures[-1]
+          d=json.load(open(p,encoding='utf-8'))
+          print('TECHNICAL_CAPTURE_PATH='+str(p))
+          print('TECHNICAL_PROBE_ATTEMPTED='+str(bool(d.get('targeted_technical_probe'))))
+          for route in d.get('routes') or []:
+              if route.get('requested')=='/Operar/Bonos':
+                  print('TECHNICAL_PROBE_ACTION='+str(route.get('api_catalog_action')))
+          rows=[]
+          for item in (d.get('endpoints') or {}).values():
+              if isinstance(item,dict) and item.get('kind')=='DatosTecnicos':
+                  row=item.get('row') or {}
+                  rows.append((item.get('status'),row))
+          print('DATOS_TECNICOS_ENDPOINT_COUNT='+str(len(rows)))
+          for status,row in rows:
+              print('DATOS_TECNICOS_HTTP_STATUS='+str(status))
+              print('DATOS_TECNICOS_FIELD_NAMES='+json.dumps(sorted(str(k) for k in row.keys()),separators=(',',':')))
+              print('DATOS_TECNICOS_TICKER_MATCH='+str(str(row.get('ticker') or '').upper()==target))
+          print('REAL_ORDERS_SENT='+str(d.get('real_orders_sent')))
+          print('BLOCKED_NONREAD_COUNT='+str(len(d.get('blocked_nonread') or [])))
+          print('AMOUNT_FILLED='+str(bool(d.get('amount_filled'))))
+          print('PRICE_FILLED='+str(bool(d.get('price_filled'))))
+          PY
+          POST="$($DOCKER exec -i "$CONTAINER" python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('pragma query_only=on')
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          qc=c.execute('pragma quick_check').fetchone()[0]; c.close()
+          print(json.dumps({'mode':mode,'orders':orders,'quick_check':qc}))
+          PY
+          )"
+          POST="$POST" python3 - <<'PY'
+          import json,os
+          d=json.loads(os.environ['POST'])
+          assert d['mode']=='PRODUCTION_PAPER' and int(d['orders'] or 0)==0 and d['quick_check']=='ok'
+          PY
+          echo 'FINAL_SAFETY=GREEN_PRODUCTION_PAPER_ORDERS0_DBOK'
+          echo 'DB_IMPORT_EXECUTED=NO'
+          echo 'SERVICE_RESTARTED=NO'
+          exit "$HRC"
+          HOST
+          RC=$?
+          set -e
+          cat "$RESULT"
+          exit "$RC"
+
+      - name: Persist sanitized probe result
+        if: always()
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_DATOS_TECNICOS_OFFHOURS_PROBE_RESULT_2026-09-14.txt
+          test -f "$RESULT" || printf 'PROBE_RESULT=MISSING\n' > "$RESULT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist one-target DatosTecnicos probe [skip ci]'
+          git push origin HEAD:ops/rc6-datos-tecnicos-offhours-probe-20260914
