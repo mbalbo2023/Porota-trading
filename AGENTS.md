@@ -1,6 +1,6 @@
 # Política obligatoria de repositorio y continuidad entre chats
 
-Versión: `2026-09-14/2`
+Versión: `2026-09-14/3`
 
 Aplica a toda persona, chat, agente o automatización que inspeccione o modifique este repositorio. Antes de trabajar, cada agente compatible debe cargar este archivo automáticamente; si no lo hace, debe leerlo manualmente como primer paso. También debe leer cualquier `AGENTS.md` más específico en el subdirectorio que vaya a tocar.
 
@@ -22,6 +22,14 @@ En cada respuesta separa código, CI, runtime, evidencia/importación y READY en
 Cuando el workstream `pipeline ppi watch` tenga una ingesta activa, su responsable mantiene propiedad exclusiva. Otros chats no deben inspeccionar ni cambiar su host, DB, locks, timers, writer o configuración, y no deben usar su rama como base. Si el checkpoint no demuestra que la ejecución terminó, presume que sigue activa y no la inspecciones.
 
 El checkpoint PPI vigente registra cerrados e inactivos los pases históricos API y Web que identifica. No los reinicies ni repitas masivamente. Un checkpoint explícito del usuario puede autorizar una consulta GitHub de solo lectura a runs, código o evidencias nombrados para un alcance distinto; esa autorización no permite acceder o cambiar el host o la DB, iniciar/reiniciar servicios, importar evidencia ni habilitar POST. Si hay riesgo de afectar a un owner o writer activo, detente y coordina.
+
+## Ingesta directa en Droplet y progreso observable
+
+- Toda ingesta histórica total/masiva corre directamente en el droplet mediante el runner/servicio operativo versionado. GitHub Actions no se usa para lanzarla, reanudarla, controlarla ni hacer de túnel/orquestador; CI de código puede seguir corriendo por Actions.
+- Antes de iniciar cualquier trabajo largo, debe existir y probarse en runtime el estado de sólo lectura descrito en `/POROTA_TRADING_JOB_PROGRESS_CONTRACT.md`. La consulta estándar será `sudo porota-job status <run_id>`; el checkpoint debe registrar el comando y run_id concretos. No iniciar si el estado/progreso no puede consultarse directamente en el droplet.
+- El estado muestra qué se ejecuta ahora, progreso con numerador/denominador reales, heartbeat UTC (máximo 60 s entre heartbeats), contadores de resultados, logs/resultados y gates de seguridad. Sin denominador válido, no se inventa un porcentaje.
+- Si el entorno no expone una terminal directa y autorizada al droplet, detener el lanzamiento; no reemplazarla con Actions. Esto no autoriza a repetir ninguna ingesta PPI cerrada ni a importar evidencia.
+- La especificación no prueba que el comando esté instalado: hasta que la implementación y el runtime se validen, registrar `NOT_IMPLEMENTED_OR_RUNTIME_NOT_VERIFIED` y no ejecutar ingestas largas.
 
 ## Ramas, PRs y operación
 
