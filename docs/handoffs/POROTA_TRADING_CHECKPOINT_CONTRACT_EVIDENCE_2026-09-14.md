@@ -2,7 +2,7 @@
 
 ## Canonical scope for this investigation
 
-This checkpoint covers the PPI authenticated contractual-evidence work performed on 2026-09-14. It is intentionally isolated from the canonical trading/history databases until explicit provider evidence is captured and validated.
+This checkpoint covers the PPI authenticated contractual-evidence work performed on 2026-09-14 and the mandatory transition toward a multi-source PPI + IOL architecture.
 
 Canonical working branch:
 
@@ -24,6 +24,7 @@ Repository:
 - Credentials, cookies, tokens, authorization headers, query strings and account data must never be printed or persisted in diagnostic logs.
 - The global browser lock `/run/lock/porota-ppi-web-browser.lock` is mandatory.
 - Do not run while `porota-ppi-web-residual-rc6.service` is active.
+- No family may be declared `READY_PPI` solely from external analytics. Broker contract evidence remains broker-specific.
 
 ## Authentication diagnosis completed
 
@@ -72,7 +73,7 @@ Result:
 - `DB_IMPORT_EXECUTED=NO`
 - `SERVICE_RESTARTED=NO`
 
-But contractual payload evidence was insufficient:
+But contractual payload evidence was initially insufficient:
 
 - `ENDPOINT_KIND_COUNTS={"SCHEMA_ONLY":1}`
 - `AL30_EXPLICIT=NO`
@@ -123,8 +124,6 @@ Crucial discovery: the current PPI frontend DID emit the contractual endpoints d
 
 `CaucionesOperables` was specifically observed from `/Operar/Cauciones` with provider fields including `cantidadDecimales` and `cantidadDecimalesPrecio`.
 
-Other account-related endpoints were deliberately NOT treated as contract evidence.
-
 Updated RCA:
 
 - Authentication works.
@@ -132,17 +131,11 @@ Updated RCA:
 - The previous passive collector failed because its observation/capture behavior was insufficient, NOT because those endpoints no longer exist.
 - We now have current endpoint-path proof from the live authenticated frontend.
 
-## Targeted contractual response capture — STARTED
+## Targeted contractual response capture — COMPLETED
 
-Added:
+Script:
 
 `ops/rc6_ppi_contract_targeted_capture_20260914.py`
-
-Commit:
-
-`8ccded6033676bfb7e3f953d00421eb67f83189f`
-
-Workflow updated to capture only sanitized provider responses from the three proven current endpoints.
 
 Workflow commit:
 
@@ -152,21 +145,239 @@ Run:
 
 `34865452877`
 
-State at this checkpoint update: queued/starting.
+Final result:
 
-Targeted capture design:
+- Workflow/job: SUCCESS.
+- `AUTH_STATUS=AUTHENTICATED_TRUSTED_DEVICE`.
+- `ROUTES_REACHED=3/3`.
+- Captured kinds:
+  - `InstrumentosOperables`
+  - `CaucionesOperables`
+  - `ConfiguracionOperatoriaSimplificada`
+- `AL30_EXPLICIT=YES`.
+- `AL30_ROWS=1`.
+- `CAUCIONES_ROWS=120`.
+- `DB_IMPORT_EXECUTED=FALSE`.
+- `SERVICE_RESTARTED=FALSE`.
+- `REAL_ORDERS_SENT=0`.
 
-- Trusted authenticated PPI browser profile.
-- Routes: `/Operar/Bonos`, `/Operar/Ons`, `/Operar/Cauciones`.
-- GET/HEAD/OPTIONS only.
-- Capture only the three proven contractual endpoints.
-- Raw response bodies are NOT logged.
-- InstrumentosOperables is normalized with the existing RC6 normalizer and only explicit AL30 rows are retained for the AL30 proof summary.
-- Cauciones rows are sanitized to contractual safe fields only.
-- ConfiguracionOperatoriaSimplificada is sanitized/schema captured.
-- No canonical import.
-- No service restart.
-- Real orders remain forbidden/zero.
+AL30 normalized provider evidence included:
+
+- `instrument_id`
+- `ticker`
+- `currency`
+- `provider_name`
+- commission fields
+- market fee rate
+- auction flag
+- quantity decimal places
+- price decimal places
+- semantic guard
+- `quantity_step=None`
+- `price_tick=None`
+
+**Important:** PPI decimal places are not interpreted as step or tick.
+
+Cauciones evidence included 120 rows with fields including:
+
+- `dias`
+- `descripcion`
+- `pildoraDescripcion`
+- `cantidadDecimales`
+- `cantidadDecimalesPrecio`
+
+Conclusion: PPI contractual investigation is NOT a failure. The provider is returning current explicit contract-related data, but some semantic fields remain unresolved.
+
+## AL30 technical-data probe — COMPLETED, partial negative result
+
+Script:
+
+`ops/rc6_ppi_al30_technical_probe_20260914.py`
+
+Run:
+
+`34865706726`
+
+Result:
+
+- Workflow/job: SUCCESS.
+- authenticated session remained valid;
+- `/Operar/Bonos` reached successfully;
+- nine visible input candidates detected;
+- no safe unique instrument selector was selected automatically;
+- `AL30_TYPED=FALSE`;
+- `AL30_OPTION_CLICKED=FALSE`;
+- `QUANTITY_FILLED=FALSE`;
+- `PRICE_FILLED=FALSE`;
+- `ORDER_CONTROL_CLICKED=FALSE`;
+- no `DatosTecnicos` response was triggered;
+- only `ConfiguracionOperatoriaSimplificada` was observed among technical-shape responses;
+- `REAL_ORDERS_SENT=0`.
+
+This was a deliberate fail-safe outcome, not a failed safety control.
+
+## AL30 input metadata inspection — COMPLETED
+
+Run:
+
+`34865900760`
+
+Final state: SUCCESS.
+
+Sanitized input metadata showed two React Select combobox candidates:
+
+- `react-select-2-input`
+- `react-select-158-input`
+
+and separate fields for period, amount type, amount, price type, price, expiry period type and expiry period.
+
+The probe correctly refused to guess which React Select represented the instrument selector.
+
+No mutation was executed.
+
+## Strategic decision — MULTI-SOURCE architecture is now mandatory pending work
+
+Decision recorded on 2026-09-14:
+
+**Do NOT abandon PPI. Do NOT permanently reduce Porota to Acciones + CEDEAR. Do NOT start mass IOL scraping.**
+
+Porota must evolve toward:
+
+> **multi-source market data + multi-source analytics + broker-specific execution contract + fail-closed execution gate**
+
+Roles:
+
+### PPI
+
+PPI remains the authority for `READY_PPI` execution semantics:
+
+- exact operable identity;
+- availability;
+- market/currency;
+- settlement;
+- broker restrictions;
+- minimums/steps/ticks when required and explicitly supplied;
+- execution configuration.
+
+### IOL API
+
+IOL is approved for investigation as a second structured provider for:
+
+- instrument metadata;
+- quotes/order book;
+- daily history;
+- intraday history;
+- fixed-income analytics;
+- caucion rates;
+- options chain/Greeks;
+- corporate events;
+- cross-provider validation.
+
+IOL analytics may support a decision for an instrument that will ultimately execute through PPI, but **IOL cannot by itself make that instrument `READY_PPI`.**
+
+### IOL Web scraping
+
+Deferred and blocked by design until the API coverage matrix proves a critical missing field exists only on the web.
+
+## IOL investigation started — actual read-only findings
+
+Read-only market-data tests performed on 2026-09-14:
+
+### AL30
+
+IOL asset metadata returned:
+
+- family/type `TIT. PUBLICOS`;
+- ARS currency;
+- `units_per_lot=100`;
+- settlement `T1`;
+- related symbols `AL30`, `AL30D`, `AL30C`.
+
+IOL market quote returned:
+
+- last/open/previous close/high/low;
+- variation;
+- nominal and cash volume;
+- multi-level bid/ask order book.
+
+IOL fixed-income analytics returned:
+
+- clean/dirty price;
+- accrued interest;
+- technical value;
+- parity;
+- TIR/TEM;
+- Macaulay and modified duration;
+- issue/maturity and settlement dates;
+- cashflow schedule with interest/amortization/residual balance.
+
+Conclusion: IOL can provide a substantial professional analytics layer for fixed income while PPI remains the execution-contract authority.
+
+### GGAL / AAPL
+
+IOL metadata correctly differentiated:
+
+- `GGAL` as `ACCIONES`, T1, lot 1;
+- `AAPL` BCBA as `CEDEARS`, T1, lot 1, with `AAPLD`/`AAPLC` related symbols.
+
+### Cauciones
+
+IOL read-only rates provided current term, rate, due date and minimum amount for 1/2/3-day cauciones.
+
+### Opciones
+
+IOL options-chain query for GGAL returned active expirations, strikes, call/put, bid/ask, IV, theoretical price and Greeks where market data was available.
+
+This is research evidence only. Options remain outside immediate READY scope pending dedicated risk and broker-contract work.
+
+## Official IOL API documentation findings
+
+Official documentation reviewed on 2026-09-14 states:
+
+- HTTPS + JSON API;
+- bearer token + refresh token authentication;
+- documented bearer lifetime of 15 minutes;
+- `/token` used for initial authentication and refresh;
+- IOL provides a sandbox environment separate from the real account/environment;
+- production API actions can affect the REAL environment;
+- public IOL information currently states API usage is bonified up to 25,000 calls/month, subject to current terms/tariffs.
+
+Implication for Porota:
+
+- initial integration must be read-only and default-deny;
+- mutation methods must not be part of the first IOL adapter;
+- call budget/cache/rate monitoring is required before mass ingestion.
+
+## Mandatory linked documents
+
+### Architecture research
+
+`docs/research/POROTA_MULTI_SOURCE_MARKET_DATA_AND_CONTRACT_ARCHITECTURE_2026-09-14.md`
+
+Commit creating it:
+
+`cd9a2d80f1f983d8b592c5cf31c3edf774d9300f`
+
+### Mandatory pending backlog
+
+`docs/handoffs/POROTA_TRADING_PENDING_MULTI_SOURCE_PPI_IOL_2026-09-14.md`
+
+Commit creating it:
+
+`dbb16db4dc5d74a72d667da14ba3fa4dea8555b8`
+
+The pending backlog is mandatory and items may only be resolved as `DONE`, `DEFERRED`, or `WONT_DO` with explicit evidence/reason. They must not silently disappear from future checkpoints.
+
+## Current priority order
+
+1. Keep Acciones + CEDEAR as the mature PAPER core; do not interpret this as permanent scope reduction.
+2. Finish AL30 as the representative fixed-income case.
+3. Complete Cauciones contract mapping.
+4. Build PPI-vs-IOL coverage matrix by family/field.
+5. Design `IOLReadOnlyProvider` with no mutation methods.
+6. Validate IOL histories on representative Acción, CEDEAR, Bono, Letra and ON.
+7. Add source provenance/freshness/divergence to canonical data model.
+8. Only then decide whether IOL web scraping is necessary for any residual field.
 
 ## Required evidence before READY/import
 
@@ -177,20 +388,18 @@ For the currently blocked contractual layer, explicit provider evidence is still
 1. AL30 as a representative bond with explicit provider contract/operability fields.
 2. Cauciones with explicit operable rows/terms.
 3. Discovery/operability endpoint sufficient to map provider item/ticker identity and settlement context.
-4. Technical endpoint(s) or equivalent current frontend API exposing maturity/coupon/amortization and other bond technical terms needed by the canonical contract model.
+4. Technical endpoint(s) or equivalent current frontend API exposing maturity/coupon/amortization and other bond technical terms needed by the canonical contract model, OR documented substitution of those analytics from IOL while maintaining PPI execution-contract evidence separately.
 
-Decimal precision must NOT be interpreted as quantity step or price tick unless PPI explicitly supplies that semantic.
-
-## Planned continuation
-
-1. Finish run `34865452877`.
-2. Validate AL30 explicit row and Cauciones rows/fieldsets from targeted sanitized capture.
-3. If AL30 technical terms are still missing, perform a separate read-only interaction/probe that selects AL30 without filling quantity/price and captures `DatosTecnicos` or the current equivalent GET endpoint.
-4. Validate structural/semantic mapping.
-5. Only after evidence is sufficient, prepare a separate guarded import/recompute proposal. Discovery and import remain separate operations.
+Decimal precision must NOT be interpreted as quantity step or price tick unless a provider explicitly supplies that semantic.
 
 ## Stopper status
 
-Contract evidence remains a blocker for declaring the affected instruments fully `READY` until the provider contract fields are captured and validated.
+PPI contract evidence remains a blocker for declaring affected non-core instruments fully `READY_PPI`, but PPI itself is **not considered failed**.
+
+The architectural response is now multi-source:
+
+- PPI for execution contract;
+- IOL for additional structured market data/analytics and cross-check;
+- Porota for canonical normalization, provenance, reconciliation, decision and risk.
 
 This blocker does not mean the PAPER observer is sending real orders; real orders remain zero. Evaluations/simulations must not be interpreted as contractual readiness for families whose provider evidence is incomplete.
