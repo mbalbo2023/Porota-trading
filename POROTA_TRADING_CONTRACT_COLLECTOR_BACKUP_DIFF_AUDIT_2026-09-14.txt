@@ -1,0 +1,150 @@
+PROBE=RC6_CONTRACT_COLLECTOR_BACKUP_DIFF_AUDIT_V1
+READ_ONLY=YES
+BROWSER_STARTED=NO
+DB_TOUCHED=NO
+CURRENT_SHA256=740a2641daedc2df8d21fccf00c78098c242650b927911ce00353cdfed25d8cf
+BACKUP_COUNT=3
+--- BACKUP_1=rc6_trusted_browser_contract_collector.py.pre_policy_v3_20260908T031413Z|sha256:9cf24865d1d75dc1fcda8969fc63cbf50b45d399d0dc9f1ce334fa322546e449 ---
+B1_L23=SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+B1_L24=TARGETS = ("InstrumentosOperables", "CaucionesOperables", "ConfiguracionOperatoriaSimplificada",
+B1_L25="SubyacenteOpciones", "DatosTecnicos")
+B1_L26=ROUTES = {
+B1_L27="CONTRACT_EVIDENCE_DYNAMIC": ["/Cotizaciones/Bonos", "/Operar/Bonos", "/Operar/Ons"],
+B1_L28="CONTRACT_EVIDENCE_CAUCIONES": ["/Cotizaciones/Cauciones", "/Operar/Cauciones"],
+B1_L29="CONTRACT_EVIDENCE_AUCTIONS": ["/Cotizaciones/Licitaciones", "/Operar/Licitaciones"],
+B1_L30="CONTRACT_EVIDENCE_DERIVATIVES": ["/Cotizaciones/Opciones", "/Cotizaciones/Futuros", "/Operar/Opciones", "/Operar/260"],
+B1_L31="CONTRACT_EVIDENCE_STATIC": ["/Cotizaciones/Acciones", "/Cotizaciones/Cedears", "/Cotizaciones/Bonos",
+B1_L33="CONTRACT_EVIDENCE_FULL_BROWSER": [
+B1_L120=if "InstrumentosOperables" in url:
+B1_L121=return {"kind":"InstrumentosOperables","rows":instrumentos_operables(payload)}
+B1_L122=if "SubyacenteOpciones" in url:
+B1_L123=return {"kind":"SubyacenteOpciones","rows":option_underlyings(payload)}
+B1_L124=if "DatosTecnicos" in url:
+B1_L125=return {"kind":"DatosTecnicos","row":bond_technical(payload)}
+B1_L126=if "CaucionesOperables" in url:
+B1_L127=return {"kind":"CaucionesOperables","rows":payload_rows(payload),"schema":schema_shape(payload)}
+B1_L128=if "ConfiguracionOperatoriaSimplificada" in url:
+B1_L164=def guard(route, request):
+B1_L165=method = request.method.upper()
+B1_L166=if method not in SAFE_METHODS:
+B1_L174=if method == "POST":
+B1_L179=return route.abort()
+B1_L186=return route.abort()
+B1_L192=return route.abort()
+B1_L197=if method == "POST":
+B1_L202=return route.abort()
+B1_L208=return route.abort()
+B1_L215=return route.abort()
+B1_L222=return route.abort()
+B1_L229=return route.abort()
+B1_L231=return route.continue_()
+B1_L235=def on_response(response):
+B1_L237=if response.request.method.upper() != "GET" or response.status >= 400 or not any(x in response.url for x in TARGETS):
+B1_L247=page.on("response", on_response)
+B1_L248=page.goto(TRADING + "/", wait_until="domcontentloaded", timeout=45000)
+B1_L249=page.wait_for_timeout(900)
+B1_L262=page.goto(TRADING + route, wait_until="domcontentloaded", timeout=45000)
+B1_L263=page.wait_for_timeout(900)
+B1_DIFF_INTERESTING_COUNT=15
+DIFF=--- rc6_trusted_browser_contract_collector.py.pre_policy_v3_20260908T031413Z
+
+DIFF=+++ current
+
+DIFF=@@ -166,66 +166,4 @@
+
+DIFF=                 if method not in SAFE_METHODS:
+DIFF=-                    if method == "POST":
+DIFF=-                            return route.abort()
+DIFF=-                            return route.abort()
+DIFF=-                            return route.abort()
+DIFF=-                    if method == "POST":
+DIFF=-                            return route.abort()
+DIFF=-                            return route.abort()
+DIFF=-                            return route.abort()
+DIFF=-                            return route.abort()
+DIFF=                     return route.abort()
+DIFF=                 return route.continue_()
+--- BACKUP_2=rc6_trusted_browser_contract_collector.py.pre_telemetry_20260908T025809Z|sha256:740a2641daedc2df8d21fccf00c78098c242650b927911ce00353cdfed25d8cf ---
+B2_L23=SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+B2_L24=TARGETS = ("InstrumentosOperables", "CaucionesOperables", "ConfiguracionOperatoriaSimplificada",
+B2_L25="SubyacenteOpciones", "DatosTecnicos")
+B2_L26=ROUTES = {
+B2_L27="CONTRACT_EVIDENCE_DYNAMIC": ["/Cotizaciones/Bonos", "/Operar/Bonos", "/Operar/Ons"],
+B2_L28="CONTRACT_EVIDENCE_CAUCIONES": ["/Cotizaciones/Cauciones", "/Operar/Cauciones"],
+B2_L29="CONTRACT_EVIDENCE_AUCTIONS": ["/Cotizaciones/Licitaciones", "/Operar/Licitaciones"],
+B2_L30="CONTRACT_EVIDENCE_DERIVATIVES": ["/Cotizaciones/Opciones", "/Cotizaciones/Futuros", "/Operar/Opciones", "/Operar/260"],
+B2_L31="CONTRACT_EVIDENCE_STATIC": ["/Cotizaciones/Acciones", "/Cotizaciones/Cedears", "/Cotizaciones/Bonos",
+B2_L33="CONTRACT_EVIDENCE_FULL_BROWSER": [
+B2_L120=if "InstrumentosOperables" in url:
+B2_L121=return {"kind":"InstrumentosOperables","rows":instrumentos_operables(payload)}
+B2_L122=if "SubyacenteOpciones" in url:
+B2_L123=return {"kind":"SubyacenteOpciones","rows":option_underlyings(payload)}
+B2_L124=if "DatosTecnicos" in url:
+B2_L125=return {"kind":"DatosTecnicos","row":bond_technical(payload)}
+B2_L126=if "CaucionesOperables" in url:
+B2_L127=return {"kind":"CaucionesOperables","rows":payload_rows(payload),"schema":schema_shape(payload)}
+B2_L128=if "ConfiguracionOperatoriaSimplificada" in url:
+B2_L164=def guard(route, request):
+B2_L165=method = request.method.upper()
+B2_L166=if method not in SAFE_METHODS:
+B2_L168=return route.abort()
+B2_L169=return route.continue_()
+B2_L173=def on_response(response):
+B2_L175=if response.request.method.upper() != "GET" or response.status >= 400 or not any(x in response.url for x in TARGETS):
+B2_L185=page.on("response", on_response)
+B2_L186=page.goto(TRADING + "/", wait_until="domcontentloaded", timeout=45000)
+B2_L187=page.wait_for_timeout(900)
+B2_L200=page.goto(TRADING + route, wait_until="domcontentloaded", timeout=45000)
+B2_L201=page.wait_for_timeout(900)
+B2_DIFF_INTERESTING_COUNT=0
+--- BACKUP_3=rc6_trusted_browser_contract_collector.py.pre_telemetry_v2_20260908T030753Z|sha256:59efb3e2b6f0ec063c9b308456980c4d7bd128b029ab047124e3e90b5b177049 ---
+B3_L23=SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+B3_L24=TARGETS = ("InstrumentosOperables", "CaucionesOperables", "ConfiguracionOperatoriaSimplificada",
+B3_L25="SubyacenteOpciones", "DatosTecnicos")
+B3_L26=ROUTES = {
+B3_L27="CONTRACT_EVIDENCE_DYNAMIC": ["/Cotizaciones/Bonos", "/Operar/Bonos", "/Operar/Ons"],
+B3_L28="CONTRACT_EVIDENCE_CAUCIONES": ["/Cotizaciones/Cauciones", "/Operar/Cauciones"],
+B3_L29="CONTRACT_EVIDENCE_AUCTIONS": ["/Cotizaciones/Licitaciones", "/Operar/Licitaciones"],
+B3_L30="CONTRACT_EVIDENCE_DERIVATIVES": ["/Cotizaciones/Opciones", "/Cotizaciones/Futuros", "/Operar/Opciones", "/Operar/260"],
+B3_L31="CONTRACT_EVIDENCE_STATIC": ["/Cotizaciones/Acciones", "/Cotizaciones/Cedears", "/Cotizaciones/Bonos",
+B3_L33="CONTRACT_EVIDENCE_FULL_BROWSER": [
+B3_L120=if "InstrumentosOperables" in url:
+B3_L121=return {"kind":"InstrumentosOperables","rows":instrumentos_operables(payload)}
+B3_L122=if "SubyacenteOpciones" in url:
+B3_L123=return {"kind":"SubyacenteOpciones","rows":option_underlyings(payload)}
+B3_L124=if "DatosTecnicos" in url:
+B3_L125=return {"kind":"DatosTecnicos","row":bond_technical(payload)}
+B3_L126=if "CaucionesOperables" in url:
+B3_L127=return {"kind":"CaucionesOperables","rows":payload_rows(payload),"schema":schema_shape(payload)}
+B3_L128=if "ConfiguracionOperatoriaSimplificada" in url:
+B3_L164=def guard(route, request):
+B3_L165=method = request.method.upper()
+B3_L166=if method not in SAFE_METHODS:
+B3_L174=if method == "POST":
+B3_L179=return route.abort()
+B3_L186=return route.abort()
+B3_L192=return route.abort()
+B3_L199=return route.abort()
+B3_L201=return route.continue_()
+B3_L205=def on_response(response):
+B3_L207=if response.request.method.upper() != "GET" or response.status >= 400 or not any(x in response.url for x in TARGETS):
+B3_L217=page.on("response", on_response)
+B3_L218=page.goto(TRADING + "/", wait_until="domcontentloaded", timeout=45000)
+B3_L219=page.wait_for_timeout(900)
+B3_L232=page.goto(TRADING + route, wait_until="domcontentloaded", timeout=45000)
+B3_L233=page.wait_for_timeout(900)
+B3_DIFF_INTERESTING_COUNT=10
+DIFF=--- rc6_trusted_browser_contract_collector.py.pre_telemetry_v2_20260908T030753Z
+
+DIFF=+++ current
+
+DIFF=@@ -166,36 +166,4 @@
+
+DIFF=                 if method not in SAFE_METHODS:
+DIFF=-                    if method == "POST":
+DIFF=-                            return route.abort()
+DIFF=-                            return route.abort()
+DIFF=-                            return route.abort()
+DIFF=                     return route.abort()
+DIFF=                 return route.continue_()
+RESULT=GREEN_BACKUP_DIFF_COMPLETE_NO_MUTATION
