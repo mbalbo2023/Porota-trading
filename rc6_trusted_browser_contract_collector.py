@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -131,8 +132,8 @@ def sanitize_endpoint(url, payload):
 
 API_SEARCH_ROUTES = {"/Operar/Bonos", "/Operar/Ons", "/Operar/Cauciones"}
 
-def open_api_catalog(page, route):
-    """Trigger only the visible PPI API-backed catalog; never select an instrument."""
+def open_api_catalog(page, route, probe_ticker="", probe_route=""):
+    """Open the API catalog; optionally select one exact target for a GET-only technical probe."""
     if route not in API_SEARCH_ROUTES:
         return "NOT_APPLICABLE"
     try:
@@ -144,7 +145,26 @@ def open_api_catalog(page, route):
             return "SEARCH_CONTROL_NOT_READY"
         search.click(timeout=5000)
         page.wait_for_timeout(1200)
-        return "SEARCH_OPENED"
+        if not probe_ticker or route != probe_route:
+            return "SEARCH_OPENED"
+        search.fill(probe_ticker, timeout=5000)
+        page.wait_for_timeout(900)
+        options = page.get_by_role("option")
+        pattern = re.compile(r"(?<![A-Z0-9])" + re.escape(probe_ticker.upper()) + r"(?![A-Z0-9])")
+        matches = []
+        for index in range(min(options.count(), 200)):
+            option = options.nth(index)
+            try:
+                label = option.inner_text(timeout=1000).upper()
+            except Exception:
+                continue
+            if pattern.search(label):
+                matches.append(option)
+        if len(matches) != 1:
+            return "TARGET_OPTION_MISSING_OR_AMBIGUOUS"
+        matches[0].click(timeout=5000)
+        page.wait_for_timeout(1500)
+        return "TARGET_SELECTED_FOR_TECHNICAL_GET_PROBE"
     except Exception as exc:
         return "SEARCH_ERROR:" + type(exc).__name__
 
@@ -157,10 +177,15 @@ def main():
     ap.add_argument("--output", required=True)
     ap.add_argument("--chrome", default=os.getenv("POROTA_CHROME_EXECUTABLE", "/usr/bin/google-chrome-stable"))
     args = ap.parse_args()
+    probe_ticker = os.getenv("POROTA_TECHNICAL_PROBE_TICKER", "").strip().upper()
+    probe_route = os.getenv("POROTA_TECHNICAL_PROBE_ROUTE", "").strip()
+    if bool(probe_ticker) != bool(probe_route) or (probe_route and probe_route not in API_SEARCH_ROUTES):
+        raise SystemExit("invalid technical probe target")
     jobs = [j for j in args.jobs.split(",") if j in ROUTES]
     out = {"schema":"POROTA_RC6_PPI_TRUSTED_CONTRACT_V1","generated_at":datetime.now(timezone.utc).isoformat(),
            "auth_status":"UNKNOWN","jobs":jobs,"routes":[],"endpoints":{},"blocked_nonread":[],
-           "continue_clicked":False,"amount_filled":False,"price_filled":False,"real_orders_sent":0}
+           "continue_clicked":False,"amount_filled":False,"price_filled":False,"real_orders_sent":0,
+           "targeted_technical_probe":bool(probe_ticker)}
     target = Path(args.output)
     target.parent.mkdir(parents=True, exist_ok=True)
     if not Path(args.profile).is_dir():
@@ -197,6 +222,10 @@ def main():
                     sanitized = sanitize_endpoint(response.url, response.json())
                     if sanitized is None:
                         return
+                    # The existing catalog response is used only for selection in this probe;
+                    # persist only the selected instrument's DatosTecnicos response.
+                    if probe_ticker and sanitized.get("kind") == "InstrumentosOperables":
+                        return
                     key = clean_url(response.url) + "|" + active["job"] + "|" + active["route"]
                     out["endpoints"][key] = {"status":response.status,"source_url":clean_url(response.url),
                                               "observed_job":active["job"],"observed_route":active["route"],**sanitized}
@@ -219,7 +248,7 @@ def main():
                     try:
                         page.goto(TRADING + route, wait_until="domcontentloaded", timeout=45000)
                         page.wait_for_timeout(900)
-                        row["api_catalog_action"] = open_api_catalog(page, route)
+                        row["api_catalog_action"] = open_api_catalog(page, route, probe_ticker, probe_route)
                         pu = urlsplit(page.url)
                         row["url"] = clean_url(page.url)
                         row["title"] = page.title()[:180]
