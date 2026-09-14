@@ -125,3 +125,9 @@ Los patrones B/C/D son pruebas de escalamiento, mientras AL30 y Cauciones siguen
 - WA-04: DTO tipado de observación PPI alrededor del normalizador existente. Preservar IDs, currency observada, flags, fees, precisión, referencia y timestamp; representar campos ausentes explícitamente. No inferir venue/familia/plaza/settlement ni equiparar precisión decimal con quantity_step o price_tick; no ordenar, importar, activar ni decidir readiness. Capturas sanitizadas/mock únicamente.
 - Bloqueadores Wave A: CanonicalIdentity/dimensiones/enums pendientes de ratificación; Evidence v2 no puede persistir clave expandida sin colisión; PPI no ha expuesto términos faltantes de AL30 como tick/step; proveedor IOL debe añadirse formalmente al mapa de fuentes antes de persistir. WA-05 readiness, WA-06 divergencias, WA-07 schema/sidecar y gate de apertura PAPER siguen pendientes.
 - Status separado: WA-01 código/CI aislado verde (20 pruebas); WA-03 código existe, CI final aislada verde (10 pruebas); PR #64 borrador; WA-02 diseño; runtime, DB, imports, evidence fresco, apertura/fill y 444 actuales = NOT_VERIFIED. No fusionado, desplegado ni conectado.
+
+
+## CI de continuidad — actualización 2026-09-14
+
+- En la rama documental, CI run 34888869539 SUCCESS: infraestructura/preflight pasó; CI de aplicación quedó SKIPPED porque esa rama no instala el paquete de aplicación, así que no es validación de runtime ni tests de app.
+- Checkpoint attestation runs 34888869545 y 34888892288 fallaron porque el body del PR no incluía las cinco líneas exactas obligatorias. Se actualizó el body del PR #62 con Checkpoint ID, ruta, SHA, baseline RC6 e invariantes. Workflow escucha eventos edited; verificar el run posterior a esta corrección antes de cerrar el gate documental.
