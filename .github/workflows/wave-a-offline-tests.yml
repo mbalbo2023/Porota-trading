@@ -27,8 +27,8 @@ jobs:
       - name: Test canonical identity
         run: python -m unittest discover -s tests -p "test_canonical_identity_resolver.py" -v
       - name: Compile IOL read-only adapter
-        if: \${{ hashFiles('iol_readonly_provider.py', 'tests/test_iol_readonly_provider.py') != '' }}
+        if: ${{ hashFiles('iol_readonly_provider.py', 'tests/test_iol_readonly_provider.py') != '' }}
         run: python -m compileall -q iol_readonly_provider.py tests/test_iol_readonly_provider.py
       - name: Test IOL read-only adapter
-        if: \${{ hashFiles('iol_readonly_provider.py', 'tests/test_iol_readonly_provider.py') != '' }}
+        if: ${{ hashFiles('iol_readonly_provider.py', 'tests/test_iol_readonly_provider.py') != '' }}
         run: python -m unittest discover -s tests -p "test_iol_readonly_provider.py" -v
