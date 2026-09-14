@@ -91,3 +91,23 @@ La Action del 2026-09-14 volvió a consultar únicamente presencia de los nombre
 ### Fallback de lectura web
 
 La lectura de `Herramientas → API` completó la documentación pública y no constituye fallo de la API. El scraping autenticado de datos privados queda como fallback solo si el acceso read-only por API realmente falla y la cuenta puede abrirse con el flujo seguro. No usarlo para eludir login/2FA/bloqueos, recorrer páginas de órdenes, ni hacer captura masiva; priorizar consultas puntuales de datos de mercado.
+
+
+## Continuidad — persistencia local y MCP IOL (2026-09-14)
+
+### Script de credenciales para ejecutar en el droplet
+
+Se generó guardar_credenciales_iol_en_droplet.sh como artefacto entregable, sin valores de credenciales. El usuario lo ejecutará en la terminal del droplet con permisos root. Solicita el usuario y la contraseña interactivamente (la contraseña no se muestra), actualiza únicamente IOL_USERNAME y IOL_PASSWORD en /opt/porota-trading/.env, conserva el resto del archivo y normaliza definiciones duplicadas; escribe atómicamente y fija modo 0600. No imprime secretos, activa IOL_ENABLED, reinicia servicios ni inicia autenticación. No comprobar contenido mediante cat, docker compose config u otra salida que revele valores. Una vez que el usuario termine, el próximo paso es volver a ejecutar el preflight de presencia del canary antes de cualquier red IOL.
+
+### MCP oficial de IOL
+
+La documentación pública en https://mcp.invertironline.com/ describe un servidor MCP con transporte Streamable HTTP y autorización OAuth 2.0 con consentimiento del usuario. IOL lo presenta para conectar asistentes, con acceso de solo lectura por defecto; puede consultar información privada de cuenta, cartera y órdenes pendientes. La misma documentación contempla ampliar funcionalidades al desconectar y volver a autorizar. Por tanto, “solo lectura por defecto” no significa acceso solo a datos públicos ni elimina la exposición de datos personales/financieros.
+
+El MCP es una integración independiente de las credenciales IOL_USERNAME/IOL_PASSWORD usadas por REST /token: el login ocurre en el flujo OAuth oficial y no se deben reutilizar o capturar credenciales en RC6. No conectar ni autorizar MCP automáticamente. Para el trabajo de RC6, priorizar REST oficial con endpoints públicos de mercado allowlisted; estudiar MCP en paralelo como fuente conversacional/consulta de cuenta, solo con autorización OAuth explícita, mínimo alcance y pruebas que no consulten ni almacenen cartera u órdenes. No usar MCP para órdenes, operaciones ni para inferir readiness del motor.
+
+### Estado para retomar
+
+1. El usuario ejecuta el script en el droplet, pudiendo pegar los datos en la entrada oculta; no debe enviarlos al chat.
+2. Confirmar solo presencia de nombres/permisos por el preflight ya existente, nunca los valores.
+3. Si preflight pasa, correr una sola vez el canary GET de mercado restringido ya definido, manteniendo RC6 exacto, cero órdenes y sin tocar PPI Watch.
+4. Evaluar MCP como pista separada; no instalar/conectar ni usar credenciales hasta definir alcance y verificar el OAuth oficial en modo de lectura.
