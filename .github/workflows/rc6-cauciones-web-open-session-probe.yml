@@ -1,8 +1,6 @@
 name: RC6 Cauciones Web Open-Session Probe
 
 on:
-  schedule:
-    - cron: "30 13 14 9 *"
   workflow_dispatch:
 
 permissions:
