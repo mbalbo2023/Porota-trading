@@ -71,10 +71,45 @@ La entrada de chat nuevo apunta explícitamente a este delta. No se fusionó ni 
 La búsqueda actual de documentación oficial encontró una vía nueva respecto de las corridas PPI ya cerradas:
 
 - BYMA publica una API de Market Data y una API Market Data Instruments. BYMA describe la segunda como fuente de datos de Acciones, CEDEARs, Bonos y otros instrumentos, con características y parámetros de negociación; la API de precios publica información negociada durante el día. La página de APIs enumera renta variable, renta fija, futuros, opciones, cauciones e intradiarios. La implementación depende de requisitos/acceso comercial y técnicos. La documentación indica que las APIs Market Data son la excepción a la regla de acceso reservado a agentes miembros.
-- Esto es una alternativa oficial que vale la pena evaluar para precios y ciertos términos estructurados de BYMA. No se probó conexión, alcance por campo/universo, profundidad histórica, límites, precio/licencia ni cobertura de los 444. No prueba ejecución PPI y no cubre por sí sola activos fuera de BYMA (por ejemplo, acciones USA).
+- Es una alternativa oficial para medir precios y ciertos términos estructurados de BYMA. La página publica para Market Data Instruments 1.000 solicitudes/mes: sin costo para miembros y USD 200/mes para no miembros. Para Market Data, EOD publica 1.000 solicitudes/mes (sin costo para miembros, USD 50/mes no miembros); los planes Snapshot/Delay tienen otras cuotas y precios. La suscripción requiere solicitar acceso/documentación y firmar el contrato de Market Data y/o disclaimer aplicable. Aún no se probó conexión, método bulk/paginación, alcance por campo/universo, profundidad histórica ni cobertura de los 444. No prueba ejecución PPI y no cubre por sí sola activos fuera de BYMA (por ejemplo, acciones USA).
 - IOL ya tiene cliente REST read-only en el código y su documentación oficial ofrece cotizaciones actuales e históricas para instrumentos del mercado argentino; ya se probaron ejemplos, pero no un barrido API completo de 444. La siguiente prueba de cobertura debe ser API-first, por muestras/campos faltantes y con rate/call budget; no scraping web masivo.
 - PPI documenta API para buscar instrumentos, consultar históricos/cotizaciones en tiempo real y operar. Los pases históricos masivos PPI del checkpoint ya se agotaron y no se repiten; datos de cotización/contrato actual deben tratarse en capturas read-only y gates separados, sin importar ni operar.
 
 Fuentes primarias consultadas: [BYMA Market Data APIs](https://www.byma.com.ar/productos/productos-de-datos/market-data/apis), [BYMA APIs y requisitos de acceso](https://www.byma.com.ar/byma-apis), [API oficial de IOL](https://www.invertironline.com/api), [PPI Docs](https://itatppi.github.io/ppi-official-api-docs/).
 
 Conclusión: para los activos BYMA, el siguiente camino nuevo y concreto es solicitar/evaluar BYMA Market Data + Market Data Instruments; en paralelo, medir cobertura y calidad de IOL API sobre los 444 identificados. Ninguna de las dos fuentes reemplaza el contrato de ejecución PPI. Para proveedores terceros adicionales: `NOT_RESEARCHED` y no recomendados todavía.
+
+## Semáforo de ejecución después de Wave A
+
+**Regla común:** 🟢 sólo cuando hay código integrado en la rama acordada, tests/CI del patrón verdes, evidencia trazable y vigente, cinco gates verificados y comportamiento runtime PAPER de apertura/HOLD probado. 🟡 significa investigación o evidencia parcial: HOLD para aperturas. 🔴 indica ambigüedad, conflicto, stale, falta contractual/riesgo o prueba fallida: bloquear. Éxito de workflow no basta. PAPER nunca autoriza órdenes reales.
+
+### Estado actual para comenzar
+
+- 🔴 Paridad de apertura PAPER: el código legacy permite potencial OPENED_SIMULATED bajo READY_PAPER_SPOT; READY_PAPER_PPI no está conectado. Política documentada en PR #62, pendiente de integración y wiring de código. Fill runtime concreto: NOT_VERIFIED.
+- 🟡 246 READY_PAPER_SPOT: 55 ACCIONES + 191 CEDEARS, pool de elegibilidad, no readiness integral.
+- 🟡 Universo estricto 444: último 0/444 es anterior a fixes; valor actual NOT_VERIFIED.
+- 🟡 Wave A: auditoría de fundamentos realizada, implementación/tests aún no iniciados; rama/owner de integración no resueltos.
+- 🟢 Corridas masivas históricas PPI cerradas: no repetirlas. 🟡 API IOL y nueva opción BYMA por medir; BYMA requiere documentación/acceso y su cobertura sigue sin probarse.
+
+### Wave A — core reusable y regla de apertura
+
+1. 🔴 Resolver branch/owner integrador de código desde el baseline RC6 exacto f8adec8…; no usar rama de deploy, docs/ops ni pipeline PPI.
+2. 🔴 Acordar vocabulario canónico: identidad/provider IDs, venue, family/subfamily, moneda, settlement, ARS/D/C, underlying/emisor; unificar aliases y semántica de price_precision, quantity_step y price_tick sin inferir equivalencias.
+3. 🟡 WA-01/02: resolver identidad pura y vistas/adaptadores de provenance sobre Evidence v2; conservar snapshots/conflicts/freshness existentes, sin duplicar tablas ni migrar.
+4. 🟡 WA-03/04: IOL provider estrictamente allowlisted read-only y PPIContractProvider sobre normalizador existente; pruebas DTO/mocks sin red ni credenciales.
+5. 🟡 WA-05/06: evaluator de gates identity/market data/analytics/contract PPI/risk más divergence gate; conflicto o campo crítico ausente => HOLD.
+6. 🔴 Conectar gate estricto al punto de apertura PAPER: evaluación diagnóstica puede seguir en SHADOW, OPENED_SIMULATED no puede saltar READY_PAPER_PPI.
+7. 🟡 WA-07: diseño de schema y estrategia de migración; no migrar runtime en Wave A.
+8. 🟢 Wave A sólo al integrar en rama de código válida, pasar tests/CI, demostrar que missing/stale/conflict bloquea y demostrar HOLD versus apertura simulada controlada en PAPER sin DB productiva ni órdenes reales.
+
+### Después de Wave A
+
+| Orden | Ola y patrón | Qué hacer | Verde sólo si… |
+|---|---|---|---|
+| 1 | **B — Spot**: GGAL; AAPL CEDEAR; IVV; AAPL NASDAQ | Validar identidad/venue por separado; para CEDEAR, ratio, ARS/D/C, doble calendario y eventos; para ETF, clasificación y leverage/inverse; USA separado con FX/costos/calendario. | Cada patrón tiene contrato PPI, datos/analytics, riesgo y prueba PAPER individual. No extrapolar un ticker a toda su familia. |
+| 2 | **C — Renta fija**: AL30, S30O6, D30O6, YMCJO | AL30 stopper: nominal/mínimo/step/tick/settlement/disponibilidad/horario explícitos. S30O6 con IOL + términos oficiales. D30O6 con fallback analítico Porota porque IOL devolvió not_found. YMCJO con términos CNV/emisor y crédito/liquidez. | Analytics trazable y contrato PPI completo por patrón; no inferir steps/ticks de decimales. |
+| 3 | **D — Cauciones**: colocadora y tomadora | Mantener motores/lados separados; mapear 120 filas por moneda/lado/plazo y validar semántica. Verificar productores canónicos, ObligationSnapshot, datos frescos, aforo/collateral y gates. Reutilizar sweeper/adapter/bridge/controller existentes. | Semántica contractual y dinámica fresca completas; productor y obligaciones runtime comprobados; PAPER E2E permite o retiene correctamente. |
+| 4 | **E — Derivados**: opciones y futuros | Opciones: contrato/multiplicador/tick/step/ejercicio/asignación y OptionsRiskEngine. Futuros: spec BYMA + contrato PPI, margin/fees/MTM/rollover. | Contrato y motor de riesgo propios pasan pruebas de estrés, vencimiento/rollover y HOLD. Hasta entonces, research/HOLD. |
+| 5 | **F — Flujos especiales**: FCI, exterior, primario, índices, legacy | FCI con state machine de suscripción/rescate; exterior sólo con ejemplo PPI vigente; licitaciones como flujo primario aparte; índices analytics-only; LEBAC/NOBAC inactivos sin evidencia actual. | Cada flujo usa criterios propios; ninguna métrica analytics-only se convierte en READY PPI. |
+
+Los patrones B/C/D son pruebas de escalamiento, mientras AL30 y Cauciones siguen como blockers paralelos prioritarios. Waves E/F no desaparecen: se difieren hasta pasar sus gates específicos.
