@@ -12,7 +12,7 @@ CONTAINER=porota_production_observer
 OUTDIR="$ROOT/data/contract_evidence/rc6_trusted"
 
 printf '%s\n' \
-  'POROTA_CONTRACT_EVIDENCE_PURE_COLLECTOR_V6' \
+  'POROTA_CONTRACT_EVIDENCE_PURE_COLLECTOR_V7' \
   'MUTATIONS=AUTH_SESSION_AND_CAPTURE_FILE_ONLY' \
   'DB_IMPORT_EXECUTED=NO' \
   'SERVICE_RESTARTED=NO' \
@@ -39,7 +39,7 @@ grep -F 'if method == "POST" and key in APPROVED_AUTH_POSTS:' "$REAUTH" >/dev/nu
 grep -F 'ORDER_PATH_HINT = re.compile' "$REAUTH" >/dev/null || { echo 'STATE=BLOCKED_REAUTH_ORDER_GUARD'; exit 5; }
 echo 'SAFETY_AUDIT=PASS'
 
-SAFETY="$(docker exec -i "$CONTAINER" python -c "import sqlite3,json; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close(); print(json.dumps({'mode':r[0] if r else None,'real_orders_sent':r[1] if r else None},sort_keys=True))")"
+SAFETY="$(docker exec "$CONTAINER" python -c "import sqlite3,json; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close(); print(json.dumps({'mode':r[0] if r else None,'real_orders_sent':r[1] if r else None},sort_keys=True))")"
 echo "OBSERVER_PREFLIGHT=$SAFETY"
 SAFETY="$SAFETY" python3 -c "import os,json,sys; d=json.loads(os.environ['SAFETY']); sys.exit(0 if d.get('mode')=='PRODUCTION_PAPER' and int(d.get('real_orders_sent') or 0)==0 else 1)" || { echo 'STATE=BLOCKED_OBSERVER_SAFETY'; exit 5; }
 
