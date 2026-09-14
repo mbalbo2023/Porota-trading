@@ -1,6 +1,6 @@
 # Protocolo obligatorio de continuidad POROTA TRADING
 
-Versión: `2026-09-14/1`
+Versión: `2026-09-14/2`
 
 Aplica a toda persona, chat, agente o automatización que trabaje sobre POROTA TRADING. La memoria conversacional, un mensaje aislado o un checkpoint viejo nunca sustituyen la verificación del repositorio y del estado más reciente.
 
@@ -50,3 +50,7 @@ El aislamiento del workstream `pipeline ppi watch` sigue vigente cuando su respo
 ## Límites de lo que GitHub puede exigir
 
 `AGENTS.md` es el punto de entrada para agentes que cargan instrucciones del repositorio; el README, este protocolo y el archivo de inicio lo hacen visible para las demás herramientas. Ningún archivo dentro de un repositorio puede obligar técnicamente a un chat externo que no esté conectado a leerlo. Si el entorno no carga automáticamente estas reglas, usa el prompt de `POROTA_TRADING_CHAT_START_HERE.md` y verifica manualmente la lectura antes de continuar.
+
+## Ingesta directa y seguimiento de progreso
+
+Para una ingesta histórica total/masiva, el runner se lanza directamente en el droplet; Actions queda para CI de código y no se usa como lanzador, reanudador, orquestador ni túnel. Antes de iniciar cualquier tarea larga se requiere el estado runtime de sólo lectura definido en `/POROTA_TRADING_JOB_PROGRESS_CONTRACT.md`, consultable con `sudo porota-job status <run_id>`. Si la terminal directa o el estado consultable no están disponibles, no se inicia el trabajo ni se sustituye por Actions. El estado debe indicar etapa, progreso con numerador/denominador reales, último heartbeat UTC (máximo 60 s), resultados, logs, y safety. El porcentaje se omite si el total es desconocido. La especificación no equivale a implementación; se verifica el comando en el droplet antes de declarar el gate cumplido. Ninguna regla de observabilidad autoriza a repetir las corridas PPI cerradas.
