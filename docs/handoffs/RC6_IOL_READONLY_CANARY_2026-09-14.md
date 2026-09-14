@@ -48,3 +48,11 @@ Si no hay una ubicación aprobada y reproducible, dejar el canary detenido y con
 - PR #65, combinación offline WA-01 + WA-03: https://github.com/mbalbo2023/Porota-trading/pull/65. Continúa en borrador; no habilita el runtime ni órdenes.
 - El workflow de canary está aislado en esta rama y no está desplegado en el servicio productivo.
 - Mantener este handoff actualizado con los SHA de commit y los IDs de Actions de cada nueva comprobación. No reemplazar esta evidencia con conclusiones inferidas.
+
+## Seguimiento de continuidad — PR #66
+
+- PR borrador: https://github.com/mbalbo2023/Porota-trading/pull/66.
+- Head actual al preparar este seguimiento: `8e5cf25718b79337b7db73c0bc7b253281776876`.
+- Ese head añade sincronización de este handoff hacia `/opt/porota-trading/docs/handoffs/`; el paso comprueba primero la imagen RC6 y solo copia este documento.
+- No marcar la copia al servidor como confirmada hasta ver `SERVER_HANDOFF_SYNC=OK` en el run correspondiente. La conexión de Actions a RC6 ya se utilizó para los dos preflights descritos arriba, ambos detenidos antes de red IOL.
+- Mantener las próximas notas de resultado en este archivo, en GitHub. Al ejecutarse el workflow, vuelve a copiar la versión del handoff del commit al servidor. No guardar secretos ni respuestas completas.
