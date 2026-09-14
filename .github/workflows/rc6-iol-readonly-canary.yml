@@ -178,7 +178,7 @@ jobs:
               parsed = urlparse(BASE + path)
               if parsed.scheme != "https" or parsed.netloc != "api.invertironline.com":
                   raise RuntimeError("HOST_BLOCKED")
-              if method == "POST" and path == "/token":
+              if method == "POST" and path == "/api/v2/token":
                   return BASE + path
               if method == "GET" and (
                   path in allowed_fixed_gets or allowed_history.fullmatch(path)
@@ -205,7 +205,7 @@ jobs:
           print("IOL_CANARY_START=" + datetime.now(timezone.utc).isoformat())
           try:
               auth_status, auth_body = request(
-                  checked_url("/token", "POST"),
+                  checked_url("/api/v2/token", "POST"),
                   "POST",
                   data=urlencode({
                       "username": USERNAME,
