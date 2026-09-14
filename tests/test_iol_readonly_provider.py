@@ -47,7 +47,7 @@ class IOLReadOnlyProviderTests(unittest.TestCase):
         result = self.provider.get_quote("AAPL", "nasdaq")
         self.assertEqual(result.source_class, SOURCE_CLASS)
         self.assertEqual(result.operation, "quote")
-        self.assertEqual(result.status, "SOURCE_RETURNED_DATA")
+        self.assertEqual(result.status, "NONEMPTY_UNVALIDATED")
         self.assertEqual(result.observed_at, "2026-09-14T12:30:00.000000+00:00")
         self.assertEqual(result.request, {"symbol": "AAPL", "market": "nasdaq"})
         self.assertEqual(self.client.calls, [("get_cotizacion", "AAPL", "nasdaq")])
@@ -71,9 +71,17 @@ class IOLReadOnlyProviderTests(unittest.TestCase):
         self.assertEqual(result.status, "EMPTY_OR_UNAVAILABLE")
         self.assertFalse(hasattr(result, "ready"))
 
+    def test_malformed_nonempty_payload_is_explicitly_unvalidated(self):
+        self.client.get_cotizacion = lambda *_args: {"unexpected": object()}
+        result = self.provider.get_quote("GGAL")
+        self.assertEqual(result.status, "NONEMPTY_UNVALIDATED")
+        self.assertFalse(hasattr(result, "ready"))
+
     def test_account_portfolio_operation_and_estimate_are_not_exposed(self):
         for name in ("get_estado_cuenta", "get_portafolio", "get_estado_operacion", "estimar_operacion"):
             self.assertFalse(hasattr(self.provider, name))
+        # This wrapper narrows its public API; it is not a Python security boundary.
+        self.assertFalse(hasattr(self.provider, "_client"))
         self.provider.get_quote("GGAL")
         self.assertEqual(len(self.client.calls), 1)
 
