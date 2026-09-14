@@ -1,8 +1,6 @@
 name: RC6 Contractual Web Open-Session Probe
 
 on:
-  schedule:
-    - cron: "0 14 14 9 *"
   workflow_dispatch:
 
 permissions:
