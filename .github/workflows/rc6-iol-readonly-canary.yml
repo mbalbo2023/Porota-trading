@@ -1,0 +1,213 @@
+name: RC6 IOL read-only market-data canary
+
+on:
+  push:
+    branches:
+      - feature/rc6-iol-readonly-canary-20260914
+    paths:
+      - .github/workflows/rc6-iol-readonly-canary.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-iol-readonly-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Run RC6 and IOL read-only canary
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/iol-rc6-canary.txt"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            -i "$HOME/.ssh/id_ed25519" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$USER@$HOST" 'bash -s' <<'REMOTE' | tee "$report"
+          set -Eeuo pipefail
+          image="$(sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}' porota_production_observer)"
+          printf 'RC6_OBSERVER=%s\n' "$image"
+          test "$image" = 'true|porota-trading-bot:17.0.0-rc6' || {
+            echo 'CANARY=STOPPED_RUNTIME_IDENTITY_MISMATCH'
+            exit 10
+          }
+          sudo -n docker exec -i porota_production_observer python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          import time
+          from datetime import datetime, timedelta, timezone
+          from urllib.parse import urlparse
+          import requests
+
+          BASE = "https://api.invertironline.com"
+          USERNAME = os.environ.get("IOL_USERNAME", "")
+          PASSWORD = os.environ.get("IOL_PASSWORD", "")
+          if not USERNAME or not PASSWORD:
+              print("IOL_CREDENTIALS=NOT_PRESENT_IN_RC6_CONTAINER")
+              print("CANARY=STOPPED_BEFORE_NETWORK")
+              sys.exit(21)
+
+          session = requests.Session()
+          allowed_fixed_gets = {
+              "/api/v2/Cotizaciones/acciones/lideres/argentina",
+              "/api/v2/bcba/Titulos/GGAL/Cotizacion",
+              "/api/v2/bcba/Titulos/AL30/Cotizacion",
+          }
+          allowed_history = re.compile(
+              r"^/api/v2/bcba/Titulos/(GGAL|AL30)/Cotizacion/seriehistorica/"
+              r"\d{4}-\d{2}-\d{2}/\d{4}-\d{2}-\d{2}/true$"
+          )
+
+          def checked_url(path, method):
+              parsed = urlparse(BASE + path)
+              if parsed.scheme != "https" or parsed.netloc != "api.invertironline.com":
+                  raise RuntimeError("HOST_BLOCKED")
+              if method == "POST" and path == "/token":
+                  return BASE + path
+              if method == "GET" and (
+                  path in allowed_fixed_gets or allowed_history.fullmatch(path)
+              ):
+                  return BASE + path
+              raise RuntimeError("METHOD_OR_PATH_BLOCKED")
+
+          def safe_json(response):
+              try:
+                  return response.json()
+              except Exception:
+                  return None
+
+          print("IOL_CANARY_START=" + datetime.now(timezone.utc).isoformat())
+          try:
+              auth = session.post(
+                  checked_url("/token", "POST"),
+                  data={"username": USERNAME, "password": PASSWORD, "grant_type": "password"},
+                  headers={"Content-Type": "application/x-www-form-urlencoded"},
+                  timeout=(5, 15),
+              )
+          except Exception as exc:
+              print("IOL_AUTH=NETWORK_ERROR_" + type(exc).__name__)
+              print("CANARY=FAILED")
+              sys.exit(22)
+          print("IOL_AUTH=HTTP_" + str(auth.status_code))
+          if auth.status_code != 200:
+              print("CANARY=FAILED_NO_RESPONSE_BODY_LOGGED")
+              sys.exit(23)
+          token_data = safe_json(auth)
+          token = token_data.get("access_token") if isinstance(token_data, dict) else None
+          if not token:
+              print("CANARY=FAILED_TOKEN_FIELD_MISSING")
+              sys.exit(24)
+          headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
+          del token_data
+          del token
+          print("IOL_AUTH_TOKEN=HELD_IN_MEMORY_ONLY")
+
+          def print_rows(label, rows):
+              print(label + "_ROW_COUNT=" + str(len(rows)))
+              if not rows or not isinstance(rows[-1], dict):
+                  return
+              row = rows[-1]
+              print(label + "_ROW_KEYS=" + ",".join(sorted(str(k) for k in row.keys())[:60]))
+              allowed_values = {
+                  "fecha", "timestamp", "date", "open", "high", "low", "close",
+                  "volume", "simbolo", "mercado", "moneda", "ultimoPrecio",
+                  "precioApertura", "precioCierre", "precioMaximo", "precioMinimo",
+                  "variacion", "montoOperado", "cantidadOperaciones",
+              }
+              sample = {
+                  k: row[k] for k in row
+                  if k in allowed_values and isinstance(row[k], (str, int, float, bool, type(None)))
+              }
+              print(label + "_LATEST_ROW=" + json.dumps(sample, ensure_ascii=False, sort_keys=True))
+
+          def get(path, label):
+              url = checked_url(path, "GET")
+              received_at = datetime.now(timezone.utc).isoformat()
+              try:
+                  response = session.get(url, headers=headers, timeout=(5, 15))
+              except Exception as exc:
+                  print(label + "=NETWORK_ERROR_" + type(exc).__name__)
+                  return
+              print(label + "_HTTP=" + str(response.status_code))
+              print(label + "_RECEIVED_AT=" + received_at)
+              if response.status_code != 200:
+                  return
+              data = safe_json(response)
+              if isinstance(data, dict):
+                  print(label + "_TOP_KEYS=" + ",".join(sorted(str(k) for k in data.keys())[:60]))
+                  items = data.get("titulos")
+                  if isinstance(items, list):
+                      symbols = [
+                          str(item.get("simbolo"))
+                          for item in items[:8]
+                          if isinstance(item, dict) and item.get("simbolo") is not None
+                      ]
+                      print(label + "_ITEM_COUNT=" + str(len(items)))
+                      print(label + "_SAMPLE_SYMBOLS=" + ",".join(symbols))
+                  rows = data.get("precios")
+                  if isinstance(rows, list):
+                      print_rows(label, rows)
+              elif isinstance(data, list):
+                  print_rows(label, data)
+              else:
+                  print(label + "_JSON_TYPE=" + type(data).__name__)
+
+          print("IOL_REQUEST_BUDGET=1_AUTH_POST+5_MARKET_GETS")
+          get("/api/v2/Cotizaciones/acciones/lideres/argentina", "IOL_PANEL_ACCIONES")
+          get("/api/v2/bcba/Titulos/GGAL/Cotizacion", "IOL_QUOTE_GGAL")
+          get("/api/v2/bcba/Titulos/AL30/Cotizacion", "IOL_QUOTE_AL30")
+          today = datetime.now(timezone.utc).date()
+          start = today - timedelta(days=30)
+          for symbol in ("GGAL", "AL30"):
+              path = (
+                  f"/api/v2/bcba/Titulos/{symbol}/Cotizacion/seriehistorica/"
+                  f"{start:%Y-%m-%d}/{today:%Y-%m-%d}/true"
+              )
+              get(path, "IOL_HISTORY_" + symbol)
+              time.sleep(0.35)
+          headers.clear()
+          session.close()
+          print("IOL_CANARY_GETS=5")
+          print("IOL_CANARY_END=" + datetime.now(timezone.utc).isoformat())
+          print("CANARY=COMPLETED_WITHOUT_READINESS_INFERENCE")
+          PY
+          REMOTE
+
+          {
+            echo "RC6 IOL read-only canary"
+            echo
+            echo "Sanitized output only; one token request and up to five market-data GETs."
+            echo
+            sed -n '1,240p' "$report"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve sanitized canary report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-iol-readonly-canary
+          path: ${{ runner.temp }}/iol-rc6-canary.txt
+          if-no-files-found: ignore
+          retention-days: 30
