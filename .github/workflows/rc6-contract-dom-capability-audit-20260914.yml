@@ -1,0 +1,121 @@
+name: RC6 Contract DOM capability audit 2026-09-14
+
+on:
+  push:
+    branches: [ops/rc6-contract-blocked-nonread-audit-20260914]
+    paths:
+      - '.github/workflows/rc6-contract-dom-capability-audit-20260914.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  dom-capability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-contract-blocked-nonread-audit-20260914
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Audit installed DOM collector and historical DOM captures
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_DOM_CAPABILITY_AUDIT_2026-09-14.txt
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'HOST' > "$RESULT"
+          set -Eeuo pipefail
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          COL="$LIB/rc6_contract_dom_collector.py"
+          IMP="$LIB/rc6_contract_dom_importer.py"
+          DOMDIR=/opt/porota-trading/data/contract_evidence_rc6_dom
+
+          echo 'PROBE=RC6_CONTRACT_DOM_CAPABILITY_AUDIT_V1'
+          echo 'READ_ONLY=YES'
+          echo 'BROWSER_STARTED=NO'
+          echo 'DB_TOUCHED=NO'
+
+          for f in "$COL" "$IMP"; do
+            if [[ -r "$f" ]]; then
+              echo "FILE_PRESENT=$(basename "$f")"
+              echo "SHA256_$(basename "$f")=$(sha256sum "$f" | awk '{print $1}')"
+            else
+              echo "FILE_MISSING=$(basename "$f")"
+            fi
+          done
+
+          echo '--- COLLECTOR_STRUCTURE ---'
+          if [[ -r "$COL" ]]; then
+            grep -nE 'ROUTE|route|TABLE|table|header|column|thead|tbody|text_content|inner_text|selector|AUTH|auth|amount|price|order|confirm|click|goto|SAFE|GET|POST|output|schema|family|ticker|moneda|currency|settlement|plazo|tasa|tna|minim|step|comision|fee|lamina|venc' "$COL" \
+              | sed -E 's#([A-Za-z_]*(TOKEN|PASSWORD|SECRET|COOKIE|AUTHORIZATION)[A-Za-z_]*)=[^ ]+#\1=REDACTED#gI' \
+              | head -n 260 || true
+          fi
+
+          echo '--- IMPORTER_STRUCTURE ---'
+          if [[ -r "$IMP" ]]; then
+            grep -nE 'schema|table|header|family|ticker|moneda|currency|settlement|plazo|tasa|tna|minim|step|comision|fee|lamina|venc|evidence|source|conflict|insert|update|contract' "$IMP" \
+              | sed -E 's#([A-Za-z_]*(TOKEN|PASSWORD|SECRET|COOKIE|AUTHORIZATION)[A-Za-z_]*)=[^ ]+#\1=REDACTED#gI' \
+              | head -n 320 || true
+          fi
+
+          echo '--- HISTORICAL_DOM_CAPTURE_SHAPES ---'
+          python3 - "$DOMDIR" <<'PY'
+          import json,glob,os,sys,re
+          domdir=sys.argv[1]
+          files=sorted(glob.glob(os.path.join(domdir,'dom_*.json')))
+          print('DOM_FILE_COUNT='+str(len(files)))
+          sensitive=re.compile(r'(cuenta|comitente|dni|cuit|mail|email|telefono|saldo|tenencia|disponible|cliente|usuario|token|cookie|secret|password)',re.I)
+          def safe_header(x):
+              s=str(x).strip().replace('\n',' ')[:100]
+              return '[REDACTED]' if sensitive.search(s) else s
+          for p in files[-20:]:
+              try: d=json.load(open(p,encoding='utf-8'))
+              except Exception as e:
+                  print('DOM_FILE='+os.path.basename(p)+'|read_error='+type(e).__name__); continue
+              routes=d.get('routes') or d.get('pages') or []
+              print('DOM_FILE='+os.path.basename(p)+'|schema='+str(d.get('schema'))+'|generated='+str(d.get('generated_at'))+'|auth='+str(d.get('auth_status'))+'|routes='+str(len(routes)))
+              for i,r in enumerate(routes[:40],1):
+                  if not isinstance(r,dict): continue
+                  path=str(r.get('route') or r.get('requested') or r.get('url') or '')
+                  # URL query/fragment intentionally excluded
+                  if '://' in path:
+                      from urllib.parse import urlsplit
+                      u=urlsplit(path); path=u.path
+                  tables=r.get('tables') or []
+                  print(f'  ROUTE_{i}=path:{path}|reached:{r.get("reached")}|tables:{len(tables)}')
+                  for j,t in enumerate(tables[:20],1):
+                      if not isinstance(t,dict): continue
+                      heads=t.get('headers') or t.get('columns') or []
+                      rows=t.get('rows') or []
+                      print('    TABLE_'+str(j)+'=headers:'+json.dumps([safe_header(h) for h in heads[:40]],ensure_ascii=False,separators=(',',':'))+'|rows:'+str(len(rows)))
+          PY
+
+          echo 'RESULT=GREEN_DOM_CAPABILITY_AUDIT_COMPLETE_NO_MUTATION'
+          HOST
+          cat "$RESULT"
+
+      - name: Persist sanitized DOM capability audit
+        if: always()
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_DOM_CAPABILITY_AUDIT_2026-09-14.txt
+          test -f "$RESULT" || printf 'PROBE_RESULT=MISSING\n' > "$RESULT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist DOM capability audit [skip ci]'
+          git push origin HEAD:ops/rc6-contract-blocked-nonread-audit-20260914
