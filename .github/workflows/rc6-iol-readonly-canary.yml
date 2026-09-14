@@ -102,24 +102,28 @@ jobs:
           print("IOL_ENV_HOST_MODE=" + (format(stat.S_IMODE(p.stat().st_mode), "04o") if p.is_file() else "NA"))
           print("IOL_ENV_HOST_KEYS=" + (",".join(sorted(present)) if present else "NONE"))
           HOST_PY
-          sudo -n docker exec -i porota_production_observer python3 - <<'PY'
+          sudo -n python3 - <<'PY'
           import json
           import os
           import re
           import sys
           import time
           from datetime import datetime, timedelta, timezone
-          from urllib.parse import urlparse
-          import requests
+          from pathlib import Path
+          from urllib.error import HTTPError, URLError
+          from urllib.parse import urlencode, urlparse
+          from urllib.request import HTTPRedirectHandler, Request, build_opener
 
           BASE = "https://api.invertironline.com"
-          from pathlib import Path
-          values = dict(os.environ)
           env_path = Path("/opt/porota-trading/.env")
-          print("IOL_ENV_CONTAINER_FILE=" + ("YES" if env_path.is_file() else "NO"))
           allowed_names = {"IOL_USERNAME", "IOL_PASSWORD", "IOL_API_USERNAME", "IOL_API_PASSWORD"}
+          values = dict(os.environ)
           try:
+              print("IOL_ENV_READ_SOURCE=RC6_HOST_FILESYSTEM")
+              print("IOL_ENV_SERVER_FILE=" + ("YES" if env_path.is_file() else "NO"))
               if env_path.is_file():
+                  import stat
+                  print("IOL_ENV_SERVER_MODE=" + format(stat.S_IMODE(env_path.stat().st_mode), "04o"))
                   for raw_line in env_path.read_text(encoding="utf-8").splitlines():
                       line = raw_line.strip()
                       if not line or line.startswith("#"):
@@ -137,12 +141,13 @@ jobs:
                               if quote == "'":
                                   value = value.replace("\\'", "'")
                               else:
-                                  value = value.replace("\\\"", '"').replace("\\\\", "\\")
+                                  value = value.replace('\\"', '"').replace("\\\\", "\\")
                           values[key] = value
           except Exception as exc:
               print("IOL_CONFIG=UNREADABLE_" + type(exc).__name__)
               print("CANARY=STOPPED_BEFORE_NETWORK")
               sys.exit(20)
+
           pairs = [("IOL_USERNAME", "IOL_PASSWORD"), ("IOL_API_USERNAME", "IOL_API_PASSWORD")]
           pair = next(((u, p) for u, p in pairs if values.get(u) and values.get(p)), None)
           if pair is None:
@@ -153,7 +158,11 @@ jobs:
           USERNAME, PASSWORD = values[pair[0]], values[pair[1]]
           del values
 
-          session = requests.Session()
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = build_opener(NoRedirect())
           allowed_fixed_gets = {
               "/api/v2/Cotizaciones/acciones/lideres/argentina",
               "/api/v2/bcba/Titulos/GGAL/Cotizacion",
@@ -176,37 +185,49 @@ jobs:
                   return BASE + path
               raise RuntimeError("METHOD_OR_PATH_BLOCKED")
 
-          def safe_json(response):
+          def request(url, method, data=None, headers=None):
+              req = Request(url, data=data, headers=headers or {}, method=method)
               try:
-                  return response.json()
+                  with opener.open(req, timeout=20) as response:
+                      return int(response.status), response.read(4 * 1024 * 1024)
+              except HTTPError as exc:
+                  return int(exc.code), b""
+              except Exception as exc:
+                  raise RuntimeError(type(exc).__name__) from None
+
+          def safe_json(raw):
+              try:
+                  return json.loads(raw.decode("utf-8"))
               except Exception:
                   return None
 
           print("IOL_CANARY_START=" + datetime.now(timezone.utc).isoformat())
           try:
-              auth = session.post(
+              auth_status, auth_body = request(
                   checked_url("/token", "POST"),
-                  data={"username": USERNAME, "password": PASSWORD, "grant_type": "password"},
-                  headers={"Content-Type": "application/x-www-form-urlencoded"},
-                  timeout=(5, 15),
-                  allow_redirects=False,
+                  "POST",
+                  data=urlencode({
+                      "username": USERNAME,
+                      "password": PASSWORD,
+                      "grant_type": "password",
+                  }).encode("utf-8"),
+                  headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
               )
           except Exception as exc:
               print("IOL_AUTH=NETWORK_ERROR_" + type(exc).__name__)
               print("CANARY=FAILED")
               sys.exit(22)
-          print("IOL_AUTH=HTTP_" + str(auth.status_code))
-          if auth.status_code != 200:
+          print("IOL_AUTH=HTTP_" + str(auth_status))
+          if auth_status != 200:
               print("CANARY=FAILED_NO_RESPONSE_BODY_LOGGED")
               sys.exit(23)
-          token_data = safe_json(auth)
+          token_data = safe_json(auth_body)
           token = token_data.get("access_token") if isinstance(token_data, dict) else None
           if not token:
               print("CANARY=FAILED_TOKEN_FIELD_MISSING")
               sys.exit(24)
           headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
-          del token_data
-          del token
+          del token_data, token, auth_body, USERNAME, PASSWORD
           print("IOL_AUTH_TOKEN=HELD_IN_MEMORY_ONLY")
 
           def print_rows(label, rows):
@@ -231,15 +252,15 @@ jobs:
               url = checked_url(path, "GET")
               received_at = datetime.now(timezone.utc).isoformat()
               try:
-                  response = session.get(url, headers=headers, timeout=(5, 15))
+                  status, body = request(url, "GET", headers=headers)
               except Exception as exc:
                   print(label + "=NETWORK_ERROR_" + type(exc).__name__)
                   return
-              print(label + "_HTTP=" + str(response.status_code))
+              print(label + "_HTTP=" + str(status))
               print(label + "_RECEIVED_AT=" + received_at)
-              if response.status_code != 200:
+              if status != 200:
                   return
-              data = safe_json(response)
+              data = safe_json(body)
               if isinstance(data, dict):
                   print(label + "_TOP_KEYS=" + ",".join(sorted(str(k) for k in data.keys())[:60]))
                   items = data.get("titulos")
@@ -273,7 +294,6 @@ jobs:
               get(path, "IOL_HISTORY_" + symbol)
               time.sleep(0.35)
           headers.clear()
-          session.close()
           print("IOL_CANARY_GETS=5")
           print("IOL_CANARY_END=" + datetime.now(timezone.utc).isoformat())
           print("CANARY=COMPLETED_WITHOUT_READINESS_INFERENCE")
