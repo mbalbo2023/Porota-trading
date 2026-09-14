@@ -53,3 +53,8 @@ La rama reciente `ops/rc6-contract-open-session-immediate-20260914` sólo contie
 - Capturas/ingesta masiva: no se repitieron.
 - Órdenes reales: no habilitadas; invariantes PAPER/fail-closed se preservan.
 - Checkpoint canónico: este archivo es delta aislado, no reemplaza ni sobrescribe el checkpoint activo.
+
+
+## Estado de esta rama documental
+
+Esta fue una rama preliminar creada desde la rama de diagnóstico. Para integrar cambios contra el default branch, usar únicamente el PR borrador [#62](https://github.com/mbalbo2023/Porota-trading/pull/62), basado en `main` @ `fc9e8f9872c3669f934debbd36a41982ec40e7cf`, que contiene la política y el delta actualizado con la investigación de BYMA. Esta rama preliminar queda como registro y no debe integrarse en paralelo.
