@@ -101,3 +101,11 @@ El operador Tincho tiene cuadriplejia, usa Android/Termius y no puede escribir m
 - Toda salida de diagnóstico/script debe ser breve, saneada y preparada para copiar de vuelta. En Termius emitir OSC 52 hacia el portapapeles con terminadores BEL y ST y reportar exactamente PORTAPAPELES_OSC52=EMITIDO cuando se emita; usar termux-clipboard-set si se ejecuta localmente en Termux. Si el canal no admite portapapeles, decirlo claramente y no simular éxito.
 - Nunca copiar secretos, tokens, cookies ni contenido de .env al portapapeles o a la salida. Mostrar estado/nombres de variables únicamente.
 - Dar pasos adaptados a voz/pegado y detenerse para recibir el resultado cuando un paso requiera confirmación operativa del usuario.
+
+
+## Addendum de accesibilidad — sudo, archivos y nombres descargados (2026-09-14)
+
+- El operador no tiene acceso root. Todo script que modifique rutas protegidas debe elevar con sudo automáticamente y volver a ejecutar su propia ruta actual (`sudo bash "$0")); no dar por sentado root.
+- No pedirle que sobrescriba/reescriba archivos existentes. Para nuevos scripts, usar un nombre versionado nuevo; para checkpoints/documentación, agregar un addendum con fecha sin borrar historial.
+- Los nombres de descarga pueden recibir sufijos. El método principal debe ser un bloque Termius que cree un archivo versionado fijo y luego lo ejecute con sudo, sin depender del nombre local descargado. Cuando haya que ejecutar un archivo descargado, usar su ruta real o un patrón único que tolere el sufijo, y no solicitar que lo renombre manualmente.
+- Antes de modificar, detectar si las claves ya existen. Si el alcance es anexar, añadir al final sin reserializar el archivo; ante claves existentes ambiguas, detenerse sin cambiarlo.
