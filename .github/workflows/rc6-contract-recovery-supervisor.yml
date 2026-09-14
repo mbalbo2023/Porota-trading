@@ -1,0 +1,67 @@
+name: RC6 contract recovery supervisor
+
+on:
+  push:
+    branches: [ops/rc6-contract-recovery-supervisor-20260914]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-supervisor:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify recovery assets
+        run: |
+          set -euo pipefail
+          bash -n scripts/rc6_contract_point1_reauth_capture.sh
+          bash -n scripts/rc6_contract_recovery_supervisor.sh
+          test -s systemd/porota-contract-recovery-rc6.service
+          test -s systemd/porota-contract-recovery-rc6.timer
+          ! grep -Eqi '(submit_order|send_order|broker.*order|\.fill\(|\.click\()' scripts/rc6_contract_recovery_supervisor.sh
+
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/k" "$HOME/.ssh/known_hosts"
+
+      - name: Deploy hardened recovery and start one supervised attempt
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(-i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          tag="${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          scp "${SSH_OPTS[@]}" scripts/rc6_contract_point1_reauth_capture.sh "$DO_USER@$DO_HOST:/tmp/porota_contract_runner_${tag}.sh"
+          scp "${SSH_OPTS[@]}" scripts/rc6_contract_recovery_supervisor.sh "$DO_USER@$DO_HOST:/tmp/porota_contract_supervisor_${tag}.sh"
+          scp "${SSH_OPTS[@]}" systemd/porota-contract-recovery-rc6.service "$DO_USER@$DO_HOST:/tmp/porota_contract_recovery_${tag}.service"
+          scp "${SSH_OPTS[@]}" systemd/porota-contract-recovery-rc6.timer "$DO_USER@$DO_HOST:/tmp/porota_contract_recovery_${tag}.timer"
+          ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" "sudo -n bash -s '$tag'" <<'HOST'
+          set -Eeuo pipefail
+          tag="$1"
+          trap 'rm -f "/tmp/porota_contract_runner_${tag}.sh" "/tmp/porota_contract_supervisor_${tag}.sh" "/tmp/porota_contract_recovery_${tag}.service" "/tmp/porota_contract_recovery_${tag}.timer"' EXIT
+          test ! -f /run/lock/porota-ppi-web-browser.lock || true
+          install -o root -g root -m 0700 "/tmp/porota_contract_runner_${tag}.sh" /usr/local/sbin/porota-contract-point1-recovery-rc6
+          install -o root -g root -m 0700 "/tmp/porota_contract_supervisor_${tag}.sh" /usr/local/sbin/porota-contract-recovery-supervisor-rc6
+          install -o root -g root -m 0644 "/tmp/porota_contract_recovery_${tag}.service" /etc/systemd/system/porota-contract-recovery-rc6.service
+          install -o root -g root -m 0644 "/tmp/porota_contract_recovery_${tag}.timer" /etc/systemd/system/porota-contract-recovery-rc6.timer
+          systemctl daemon-reload
+          systemctl enable porota-contract-recovery-rc6.timer
+          systemctl start --no-block porota-contract-recovery-rc6.service
+          sleep 15
+          systemctl show porota-contract-recovery-rc6.service --no-pager -p ActiveState -p SubState -p Result -p MainPID -p ExecMainStatus
+          systemctl show porota-contract-recovery-rc6.timer --no-pager -p ActiveState -p SubState -p NextElapseUSecRealtime
+          test "$(systemctl is-enabled porota-contract-recovery-rc6.timer)" = enabled
+          test "$(systemctl is-active porota-contract-recovery-rc6.timer)" = active
+          echo 'RECOVERY_SUPERVISOR=GREEN_ENABLED'
+HOST
