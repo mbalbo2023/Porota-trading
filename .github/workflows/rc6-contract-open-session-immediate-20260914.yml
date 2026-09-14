@@ -1,4 +1,4 @@
-name: RC6 audit installed contract collector source 2026-09-14
+name: RC6 pure read-only contractual evidence capture 2026-09-14
 
 on:
   push:
@@ -14,10 +14,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  audit-collector-readonly:
+  contractual-evidence-readonly:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
+      - name: Enforce approved date
+        run: |
+          set -euo pipefail
+          test "$(TZ=America/Argentina/Buenos_Aires date +%F)" = "2026-09-14" || {
+            echo "STATE=SKIPPED_OUTSIDE_APPROVED_DATE"
+            exit 0
+          }
+
       - name: Configure audited SSH
         env:
           DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
@@ -29,29 +37,172 @@ jobs:
           chmod 600 "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$DO_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
 
-      - name: Audit deployed wrapper without execution
+      - name: Capture Bonos and Cauciones with collector only
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set +e
-          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE' 2>&1 | tee audit.log
+          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE' 2>&1 | tee probe.log
           set -euo pipefail
-          echo "POROTA_CONTRACT_COLLECTOR_SOURCE_AUDIT"
-          echo "MUTATIONS=NONE"
-          for p in             /etc/systemd/system/porota-contract-evidence-rc6.service             /usr/local/sbin/porota-contract-evidence-rc6-tradingday.sh             /usr/local/sbin/porota-contract-evidence-rc6-calendar-guard.sh             /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh             /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh; do
-            echo "=== FILE $p ==="
-            if test -r "$p"; then
-              stat -c 'mode=%a owner=%U:%G bytes=%s modified=%y' "$p"
-              sed -n '1,360p' "$p" | sed -E 's/(token|password|secret|cookie|authorization)([[:space:]_=:]+).*/\1\2[REDACTED]/Ig'
-            else
-              echo "MISSING"
-            fi
-          done
-          echo "=== DANGEROUS_ROUTE_SCAN ==="
-          grep -Ein 'place.?order|send.?order|cancel.?order|crear.?orden|comprar|vender|/orders?|http.*post|requests\.post|curl.*(-X|--request).*POST'             /usr/local/sbin/porota-contract-evidence-rc6-tradingday.sh             /usr/local/sbin/porota-contract-evidence-rc6-calendar-guard.sh             /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh             /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh 2>/dev/null || true
-          echo "STATE=SOURCE_AUDIT_COMPLETE_NO_EXECUTION"
+          umask 077
+
+          echo "POROTA_CONTRACT_EVIDENCE_PURE_COLLECTOR"
+          echo "MUTATIONS=CAPTURE_FILE_ONLY"
+          echo "DB_IMPORT_EXECUTED=NO"
+          echo "SERVICE_RESTARTED=NO"
+          echo "REAL_ORDERS_SENT=0"
+          echo "ORDER_POST_ALLOWED=NO"
+
+          ROOT=/opt/porota-trading
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          CE_PYTHON=/opt/porota-contract-evidence-venv/bin/python
+          COLLECTOR="$LIB/rc6_trusted_browser_contract_collector.py"
+          CONTAINER=porota_production_observer
+
+          exec 9>/run/lock/porota-ppi-web-browser.lock
+          if ! flock -w 20 9; then
+            echo "STATE=SKIPPED_GLOBAL_PPI_BROWSER_LOCK_BUSY"
+            exit 5
+          fi
+          echo "GLOBAL_PPI_BROWSER_LOCK=ACQUIRED"
+
+          if systemctl is-active --quiet porota-ppi-web-residual-rc6.service; then
+            echo "STATE=BLOCKED_RESIDUAL_WRITER_ACTIVE"
+            exit 5
+          fi
+
+          test -r "$COLLECTOR" || { echo "STATE=BLOCKED_COLLECTOR_MISSING"; exit 5; }
+          test -x "$CE_PYTHON" || { echo "STATE=BLOCKED_CE_PYTHON_MISSING"; exit 5; }
+          test -d "$PROFILE" || { echo "STATE=BLOCKED_PROFILE_MISSING"; exit 5; }
+
+          echo "=== COLLECTOR_SAFETY_AUDIT ==="
+          grep -F 'SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}' "$COLLECTOR" >/dev/null || {
+            echo "STATE=BLOCKED_SAFE_METHOD_GUARD_NOT_FOUND"
+            exit 5
+          }
+          grep -F 'return route.abort()' "$COLLECTOR" >/dev/null || {
+            echo "STATE=BLOCKED_NONREAD_ABORT_GUARD_NOT_FOUND"
+            exit 5
+          }
+          if grep -Ein 'requests\.post|httpx\.post|place.?order|send.?order|cancel.?order|crear.?orden|broker\..*order|curl.*(-X|--request).*POST' "$COLLECTOR"; then
+            echo "STATE=BLOCKED_DANGEROUS_COLLECTOR_PATTERN"
+            exit 5
+          fi
+          echo "COLLECTOR_SAFETY_AUDIT=PASS"
+          sha256sum "$COLLECTOR" | sed 's#  .*#  [DEPLOYED_COLLECTOR]#'
+
+          safety="$(docker exec -i "$CONTAINER" python - <<'PY'
+          import json,sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=15)
+          c.execute('PRAGMA query_only=ON')
+          qc=c.execute('PRAGMA quick_check').fetchone()[0]
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print(json.dumps({'quick_check':qc,'mode':row[0] if row else None,'real_orders_sent':row[1] if row else None},sort_keys=True))
+          PY
+          )"
+          echo "OBSERVER_PREFLIGHT=$safety"
+          SAFETY="$safety" python3 - <<'PY'
+          import json,os,sys
+          d=json.loads(os.environ['SAFETY'])
+          ok=(d.get('quick_check')=='ok' and d.get('mode')=='PRODUCTION_PAPER' and int(d.get('real_orders_sent') or 0)==0)
+          raise SystemExit(0 if ok else 1)
+          PY
+
+          BROWSER_USER="$(stat -c '%U' "$PROFILE")"
+          BROWSER_GROUP="$(id -gn "$BROWSER_USER")"
+          BROWSER_HOME="$(getent passwd "$BROWSER_USER" | cut -d: -f6)"
+          test -n "$BROWSER_HOME" -a -d "$BROWSER_HOME" || { echo "STATE=BLOCKED_BROWSER_HOME_INVALID"; exit 5; }
+
+          STAGE="$BROWSER_HOME/porota-browser-lab/rc6-open-session"
+          install -d -o "$BROWSER_USER" -g "$BROWSER_GROUP" -m 0700 "$STAGE"
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          STAGE_CAPTURE="$STAGE/contract_open_session_${stamp}.json"
+          OUTDIR="$ROOT/data/contract_evidence/rc6_trusted"
+          CAPTURE="$OUTDIR/contract_open_session_${stamp}.json"
+
+          echo "JOBS=CONTRACT_EVIDENCE_DYNAMIC,CONTRACT_EVIDENCE_CAUCIONES"
+          set +e
+          runuser -u "$BROWSER_USER" -- env HOME="$BROWSER_HOME" PYTHONPATH="$LIB:$ROOT" \
+            "$CE_PYTHON" "$COLLECTOR" \
+            --profile "$PROFILE" \
+            --jobs "CONTRACT_EVIDENCE_DYNAMIC,CONTRACT_EVIDENCE_CAUCIONES" \
+            --output "$STAGE_CAPTURE"
+          COLLECT_RC=$?
+          set -e
+          echo "COLLECT_RC=$COLLECT_RC"
+
+          test -r "$STAGE_CAPTURE" || { echo "STATE=BLOCKED_FRESH_CAPTURE_MISSING"; exit 6; }
+          install -d -m 0750 "$OUTDIR"
+          install -o root -g root -m 0600 "$STAGE_CAPTURE" "$CAPTURE"
+          rm -f "$STAGE_CAPTURE"
+
+          python3 - "$CAPTURE" "$COLLECT_RC" <<'PY'
+          import json,os,sys
+          from collections import Counter
+
+          path=sys.argv[1]
+          rc=int(sys.argv[2])
+          with open(path,encoding='utf-8') as fh:
+              doc=json.load(fh)
+
+          eps=list((doc.get('endpoints') or {}).values())
+          kinds=Counter(str(e.get('kind') or 'UNKNOWN') for e in eps if isinstance(e,dict))
+
+          al30_hits=[]
+          cauc_rows=0
+          cauc_endpoint=False
+          for e in eps:
+              if not isinstance(e,dict):
+                  continue
+              rendered=json.dumps(e,ensure_ascii=False,sort_keys=True).upper()
+              if 'AL30' in rendered:
+                  fieldsets=[]
+                  rows=e.get('rows') if isinstance(e.get('rows'),list) else []
+                  for row in rows:
+                      if isinstance(row,dict) and 'AL30' in json.dumps(row,ensure_ascii=False).upper():
+                          fieldsets.append(sorted(str(k) for k in row.keys())[:80])
+                  row=e.get('row')
+                  if isinstance(row,dict) and 'AL30' in json.dumps(row,ensure_ascii=False).upper():
+                      fieldsets.append(sorted(str(k) for k in row.keys())[:80])
+                  al30_hits.append({
+                      'kind':e.get('kind'),
+                      'route':e.get('observed_route'),
+                      'fieldsets':fieldsets[:8],
+                  })
+              if e.get('kind')=='CaucionesOperables':
+                  cauc_endpoint=True
+                  rows=e.get('rows') if isinstance(e.get('rows'),list) else []
+                  cauc_rows += len(rows)
+
+          required={'InstrumentosOperables','CaucionesOperables','DatosTecnicos'}
+          present=set(kinds)
+          print('CAPTURE_FILE='+os.path.basename(path))
+          print('CAPTURE_BYTES='+str(os.path.getsize(path)))
+          print('AUTH_STATUS='+str(doc.get('auth_status')))
+          print('ROUTES_REACHED='+str(sum(1 for r in doc.get('routes',[]) if isinstance(r,dict) and r.get('reached')))+'/'+str(len(doc.get('routes',[]))))
+          print('ENDPOINT_KIND_COUNTS='+json.dumps(dict(sorted(kinds.items())),ensure_ascii=False,sort_keys=True))
+          print('AL30_EXPLICIT='+('YES' if al30_hits else 'NO'))
+          print('AL30_FIELD_EVIDENCE='+json.dumps(al30_hits[:12],ensure_ascii=False,sort_keys=True))
+          print('CAUCIONES_OPERABLES_ENDPOINT='+('YES' if cauc_endpoint else 'NO'))
+          print('CAUCIONES_OPERABLES_ROWS='+str(cauc_rows))
+          print('REQUIRED_ENDPOINT_KINDS_PRESENT='+','.join(sorted(required & present)))
+          print('REQUIRED_ENDPOINT_KINDS_MISSING='+','.join(sorted(required - present)))
+          print('STRUCTURALLY_IMPORTABLE_CANDIDATE='+('YES' if required <= present and al30_hits and cauc_rows>0 else 'NO'))
+          print('BLOCKED_NONREAD_COUNT='+str(len(doc.get('blocked_nonread') or [])))
+          print('DB_IMPORT_EXECUTED=NO')
+          print('SERVICE_RESTARTED=NO')
+          print('REAL_ORDERS_SENT='+str(doc.get('real_orders_sent',0)))
+          print('CAPTURE_ANALYSIS=SANITIZED_FIELDS_ONLY')
+          if rc != 0 or doc.get('auth_status')!='AUTHENTICATED_TRUSTED_DEVICE':
+              print('STATE=BLOCKED_COLLECTION_NOT_AUTHENTICATED')
+              raise SystemExit(6)
+          print('STATE=EVIDENCE_CAPTURE_COMPLETE')
+          PY
           REMOTE
           rc=${PIPESTATUS[0]}
-          tail -c 30000 audit.log >> "$GITHUB_STEP_SUMMARY"
+          tail -c 16000 probe.log >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
