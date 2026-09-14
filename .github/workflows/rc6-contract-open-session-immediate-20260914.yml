@@ -1,4 +1,4 @@
-name: RC6 AL30 technical evidence probe 2026-09-14
+name: RC6 inspect sanitized AL30 input metadata 2026-09-14
 
 on:
   push:
@@ -6,26 +6,18 @@ on:
       - ops/rc6-contract-open-session-immediate-20260914
     paths:
       - .github/workflows/rc6-contract-open-session-immediate-20260914.yml
-      - ops/rc6_ppi_al30_technical_probe_20260914.py
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: rc6-contract-open-session-immediate-20260914
-  cancel-in-progress: false
-
 jobs:
-  al30-technical-probe-readonly:
+  inspect-al30-input-metadata-readonly:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 5
     steps:
       - name: Enforce approved date
         run: test "$(TZ=America/Argentina/Buenos_Aires date +%F)" = "2026-09-14"
-
-      - name: Checkout technical probe
-        uses: actions/checkout@v4
 
       - name: Configure audited SSH
         env:
@@ -38,120 +30,37 @@ jobs:
           chmod 600 "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$DO_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
 
-      - name: Stage AL30 technical probe
+      - name: Read latest sanitized candidate metadata
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
-          REMOTE_SCRIPT="/tmp/porota-ppi-al30-technical-${GITHUB_RUN_ID}.py"
-          scp -q -o BatchMode=yes -o ConnectTimeout=20 \
-            ops/rc6_ppi_al30_technical_probe_20260914.py \
-            "$DO_USER@$DO_HOST:$REMOTE_SCRIPT"
-          echo "REMOTE_SCRIPT=$REMOTE_SCRIPT" >> "$GITHUB_ENV"
-
-      - name: Run AL30 technical probe
-        env:
-          DO_HOST: ${{ secrets.DO_HOST }}
-          DO_USER: ${{ secrets.DO_USER }}
-        run: |
-          set +e
-          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" \
-            "sudo -n bash -s -- '$REMOTE_SCRIPT'" <<'REMOTE' 2>&1 | tee al30tech.log
+          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE' | tee inspect.log
           set -Eeuo pipefail
-          umask 077
-          SCRIPT="$1"
-          ROOT=/opt/porota-trading
-          LIB=/usr/local/lib/porota-contract-evidence-rc6
-          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
-          CE_PYTHON=/opt/porota-contract-evidence-venv/bin/python
-          CONTAINER=porota_production_observer
-          OUTDIR="$ROOT/data/contract_evidence/rc6_al30_technical"
-          trap 'rm -f "$SCRIPT"' EXIT
-
-          echo POROTA_AL30_TECHNICAL_PROBE
-          echo MUTATIONS=CAPTURE_FILE_AND_SEARCH_SELECTION_ONLY
-          echo HTTP_METHODS_ALLOWED=GET_HEAD_OPTIONS
-          echo QUANTITY_FILLED=NO
-          echo PRICE_FILLED=NO
-          echo ORDER_CONTROL_CLICKED=NO
-          echo DB_IMPORT_EXECUTED=NO
-          echo SERVICE_RESTARTED=NO
-          echo REAL_ORDERS_SENT=0
-
-          exec 9>/run/lock/porota-ppi-web-browser.lock
-          flock -w 20 9 || { echo STATE=SKIPPED_GLOBAL_PPI_BROWSER_LOCK_BUSY; exit 5; }
-          echo GLOBAL_PPI_BROWSER_LOCK=ACQUIRED
-          ! systemctl is-active --quiet porota-ppi-web-residual-rc6.service || { echo STATE=BLOCKED_RESIDUAL_WRITER_ACTIVE; exit 5; }
-
-          test -r "$SCRIPT" || { echo STATE=BLOCKED_TECH_SCRIPT_MISSING; exit 5; }
-          grep -F 'SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}' "$SCRIPT" >/dev/null || { echo STATE=BLOCKED_METHOD_GUARD; exit 5; }
-          grep -F 'return route.abort()' "$SCRIPT" >/dev/null || { echo STATE=BLOCKED_ABORT_GUARD; exit 5; }
-          echo TECH_PROBE_SAFETY=PASS
-
-          SAFETY="$(docker exec "$CONTAINER" python -c "import sqlite3,json; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close(); print(json.dumps({'mode':r[0] if r else None,'real_orders_sent':r[1] if r else None},sort_keys=True))")"
-          echo "OBSERVER_PREFLIGHT=$SAFETY"
-          SAFETY="$SAFETY" python3 -c "import os,json,sys; d=json.loads(os.environ['SAFETY']); sys.exit(0 if d.get('mode')=='PRODUCTION_PAPER' and int(d.get('real_orders_sent') or 0)==0 else 1)" || { echo STATE=BLOCKED_OBSERVER_SAFETY; exit 5; }
-
-          BROWSER_USER="$(stat -c '%U' "$PROFILE")"
-          BROWSER_HOME="$(getent passwd "$BROWSER_USER" | cut -d: -f6)"
-          BROWSER_GROUP="$(id -gn "$BROWSER_USER")"
-          STAGE_DIR="$BROWSER_HOME/porota-browser-lab/rc6-open-session"
-          install -d -o "$BROWSER_USER" -g "$BROWSER_GROUP" -m 0700 "$STAGE_DIR"
-          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-          STAGE="$STAGE_DIR/al30_technical_${stamp}.json"
-          CAPTURE="$OUTDIR/al30_technical_${stamp}.json"
-
-          set +e
-          runuser -u "$BROWSER_USER" -- env HOME="$BROWSER_HOME" PYTHONPATH="$LIB:$ROOT" \
-            "$CE_PYTHON" "$SCRIPT" --profile "$PROFILE" --output "$STAGE"
-          TECH_RC=$?
-          set -e
-          echo "TECH_RC=$TECH_RC"
-          test -r "$STAGE" || { echo STATE=BLOCKED_CAPTURE_MISSING; exit 6; }
-
-          install -d -m 0750 "$OUTDIR"
-          install -o root -g root -m 0600 "$STAGE" "$CAPTURE"
-          rm -f "$STAGE"
-
-          python3 - "$CAPTURE" "$TECH_RC" <<'PY'
+          D=/opt/porota-trading/data/contract_evidence/rc6_al30_technical
+          F="$(find "$D" -maxdepth 1 -type f -name 'al30_technical_*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)"
+          test -n "$F" -a -r "$F" || { echo STATE=BLOCKED_CAPTURE_NOT_FOUND; exit 4; }
+          python3 - "$F" <<'PY'
           import json,os,sys
-          path=sys.argv[1]; rc=int(sys.argv[2])
-          d=json.load(open(path,encoding='utf-8'))
-          trs=d.get('technical_responses') or []
-          explicit=[x for x in trs if isinstance(x,dict) and x.get('kind')=='DatosTecnicos']
-          print('CAPTURE_FILE='+os.path.basename(path))
-          print('CAPTURE_BYTES='+str(os.path.getsize(path)))
+          p=sys.argv[1]
+          d=json.load(open(p,encoding='utf-8'))
+          print('POROTA_AL30_INPUT_METADATA_INSPECTION')
+          print('MUTATIONS=NONE')
+          print('CAPTURE_FILE='+os.path.basename(p))
           print('AUTH_STATUS='+str(d.get('auth_status')))
-          print('ROUTE_REACHED='+str(bool(d.get('route_reached'))).upper())
-          print('INPUT_CANDIDATE_COUNT='+str(len(d.get('input_candidates') or [])))
+          print('INPUT_CANDIDATES='+json.dumps(d.get('input_candidates') or [],ensure_ascii=False,sort_keys=True))
           print('SELECTED_INPUT='+json.dumps(d.get('selected_input'),ensure_ascii=False,sort_keys=True))
-          print('AL30_TYPED='+str(bool(d.get('al30_typed'))).upper())
-          print('AL30_OPTION_CLICKED='+str(bool(d.get('al30_option_clicked'))).upper())
-          print('KEYBOARD_SELECTION_USED='+str(bool(d.get('keyboard_selection_used'))).upper())
-          print('TECHNICAL_RESPONSE_COUNT='+str(len(trs)))
-          print('TECHNICAL_HOST_PATHS='+json.dumps([x.get('host_path') for x in trs if isinstance(x,dict)],ensure_ascii=False))
-          print('DATOS_TECNICOS_EXPLICIT='+('YES' if explicit else 'NO'))
-          print('DATOS_TECNICOS_FIELDSETS='+json.dumps([sorted((x.get('normalized') or {}).keys()) for x in explicit],ensure_ascii=False))
-          print('BLOCKED_NONREAD_COUNT='+str(d.get('blocked_nonread',0)))
-          print('QUANTITY_FILLED='+str(bool(d.get('quantity_filled'))).upper())
-          print('PRICE_FILLED='+str(bool(d.get('price_filled'))).upper())
-          print('ORDER_CONTROL_CLICKED='+str(bool(d.get('order_control_clicked'))).upper())
+          print('TECHNICAL_HOST_PATHS='+json.dumps([x.get('host_path') for x in (d.get('technical_responses') or []) if isinstance(x,dict)],ensure_ascii=False))
+          print('REAL_ORDERS_SENT='+str(d.get('real_orders_sent',0)))
           print('DB_IMPORT_EXECUTED='+str(bool(d.get('db_import_executed'))).upper())
           print('SERVICE_RESTARTED='+str(bool(d.get('service_restarted'))).upper())
-          print('REAL_ORDERS_SENT='+str(d.get('real_orders_sent',0)))
-          if rc != 0 or d.get('auth_status')!='AUTHENTICATED_TRUSTED_DEVICE':
-              print('STATE=BLOCKED_AL30_TECHNICAL_PROBE')
-              raise SystemExit(6)
-          print('STATE=AL30_TECHNICAL_PROBE_COMPLETE')
+          print('STATE=INPUT_METADATA_INSPECTION_COMPLETE')
           PY
           REMOTE
-          rc=${PIPESTATUS[0]}
-          echo "REMOTE_RC=$rc" | tee -a al30tech.log
-          exit "$rc"
 
-      - name: Publish sanitized technical result
+      - name: Publish sanitized inspection
         if: always()
         run: |
-          test -f al30tech.log || exit 0
-          tail -n 140 al30tech.log >> "$GITHUB_STEP_SUMMARY"
+          test -f inspect.log || exit 0
+          tail -n 80 inspect.log >> "$GITHUB_STEP_SUMMARY"
