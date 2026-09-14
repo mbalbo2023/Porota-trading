@@ -7,20 +7,28 @@ on:
     paths:
       - canonical_identity_resolver.py
       - tests/test_canonical_identity_resolver.py
+      - iol_readonly_provider.py
+      - tests/test_iol_readonly_provider.py
       - .github/workflows/wave-a-offline-tests.yml
 
 permissions:
   contents: read
 
 jobs:
-  canonical-identity:
+  wave-a-offline:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Compile focused files
+      - name: Compile canonical identity
         run: python -m compileall -q canonical_identity_resolver.py tests/test_canonical_identity_resolver.py
-      - name: Run focused offline tests
+      - name: Test canonical identity
         run: python -m unittest discover -s tests -p "test_canonical_identity_resolver.py" -v
+      - name: Compile IOL read-only adapter
+        if: \${{ hashFiles('iol_readonly_provider.py', 'tests/test_iol_readonly_provider.py') != '' }}
+        run: python -m compileall -q iol_readonly_provider.py tests/test_iol_readonly_provider.py
+      - name: Test IOL read-only adapter
+        if: \${{ hashFiles('iol_readonly_provider.py', 'tests/test_iol_readonly_provider.py') != '' }}
+        run: python -m unittest discover -s tests -p "test_iol_readonly_provider.py" -v
