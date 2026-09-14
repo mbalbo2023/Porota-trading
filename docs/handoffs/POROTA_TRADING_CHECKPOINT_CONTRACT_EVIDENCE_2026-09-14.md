@@ -50,7 +50,7 @@ Observed facts:
 
 Conclusion: authentication credentials/session establishment are not the contractual-evidence blocker.
 
-## Authenticated contractual capture completed
+## Authenticated contractual passive capture completed
 
 ### Run 34864255027
 
@@ -80,17 +80,9 @@ But contractual payload evidence was insufficient:
 - Missing endpoint kinds: `InstrumentosOperables`, `CaucionesOperables`, `DatosTecnicos`
 - `STRUCTURALLY_IMPORTABLE_CANDIDATE=NO`
 
-Conclusion: simply visiting the known pages no longer causes the frontend to emit the legacy contractual GETs expected by the passive collector.
+Conclusion: the old passive collector was not observing the requests correctly enough to collect current evidence.
 
-## Current RCA
-
-The remaining blocker is NOT authentication.
-
-The current passive collector waits for frontend requests whose endpoint names are known from earlier evidence. During the authenticated 2026-09-14 session those requests were not emitted just by navigating the pages.
-
-Therefore the next task is to discover the first-party GET endpoints currently used by the PPI frontend and then reproduce the required read-only calls explicitly while preserving the authenticated browser context.
-
-## Network inventory diagnostic
+## Network inventory diagnostic — COMPLETED
 
 Added:
 
@@ -100,31 +92,81 @@ Commit:
 
 `202879bc16e3083d4ad53568e4e6c41e9db81f16`
 
-Purpose:
-
-- visit account/Bonos/ON/Cauciones pages under the trusted authenticated profile;
-- record only first-party GET host/path, status and sanitized JSON schema shape;
-- never persist query strings, headers, cookies, bodies, credentials or account data;
-- abort every non-read request;
-- no DB or service mutation capability.
-
-Workflow updated to execute that inventory safely:
-
-`.github/workflows/rc6-contract-open-session-immediate-20260914.yml`
-
-Workflow commit:
+Workflow execution commit:
 
 `02db32a53e7142452b6e57db641e3dc857bd29bd`
 
-The workflow now has push path filters so documentation/checkpoint commits do not retrigger the probe.
+Run:
 
-Current run at checkpoint creation:
+`34865060794`
 
-- Run ID: `34865060794`
-- Job: `contractual-network-inventory-readonly`
-- State at last observation: `in_progress`
-- Checkout/SSH/staging completed successfully.
-- Step currently running: `Run GET-only network inventory`.
+Final result:
+
+- Workflow/job: SUCCESS.
+- `AUTH_STATUS=AUTHENTICATED_TRUSTED_DEVICE`.
+- `ROUTES_REACHED=6/6`.
+- `FIRST_PARTY_GET_RECORDS=154`.
+- `JSON_GET_RECORDS=28`.
+- `BLOCKED_NONREAD_COUNT=13` — blocked by design.
+- `QUERY_STRINGS_LOGGED=FALSE`.
+- `HEADERS_LOGGED=FALSE`.
+- `RESPONSE_BODIES_LOGGED=FALSE`.
+- `DB_IMPORT_EXECUTED=FALSE`.
+- `SERVICE_RESTARTED=FALSE`.
+- `REAL_ORDERS_SENT=0`.
+
+Crucial discovery: the current PPI frontend DID emit the contractual endpoints during the authenticated run. Relevant first-party GET host/path values observed:
+
+- `api.portfoliopersonal.com/api/Ordenes/InstrumentosOperables`
+- `api.portfoliopersonal.com/api/Ordenes/CaucionesOperables`
+- `api.portfoliopersonal.com/api/Ordenes/ConfiguracionOperatoriaSimplificada`
+
+`CaucionesOperables` was specifically observed from `/Operar/Cauciones` with provider fields including `cantidadDecimales` and `cantidadDecimalesPrecio`.
+
+Other account-related endpoints were deliberately NOT treated as contract evidence.
+
+Updated RCA:
+
+- Authentication works.
+- The PPI frontend still uses `InstrumentosOperables`, `CaucionesOperables`, and `ConfiguracionOperatoriaSimplificada`.
+- The previous passive collector failed because its observation/capture behavior was insufficient, NOT because those endpoints no longer exist.
+- We now have current endpoint-path proof from the live authenticated frontend.
+
+## Targeted contractual response capture — STARTED
+
+Added:
+
+`ops/rc6_ppi_contract_targeted_capture_20260914.py`
+
+Commit:
+
+`8ccded6033676bfb7e3f953d00421eb67f83189f`
+
+Workflow updated to capture only sanitized provider responses from the three proven current endpoints.
+
+Workflow commit:
+
+`173572b27bad423b6346f16c1289e4ad3ade9f98`
+
+Run:
+
+`34865452877`
+
+State at this checkpoint update: queued/starting.
+
+Targeted capture design:
+
+- Trusted authenticated PPI browser profile.
+- Routes: `/Operar/Bonos`, `/Operar/Ons`, `/Operar/Cauciones`.
+- GET/HEAD/OPTIONS only.
+- Capture only the three proven contractual endpoints.
+- Raw response bodies are NOT logged.
+- InstrumentosOperables is normalized with the existing RC6 normalizer and only explicit AL30 rows are retained for the AL30 proof summary.
+- Cauciones rows are sanitized to contractual safe fields only.
+- ConfiguracionOperatoriaSimplificada is sanitized/schema captured.
+- No canonical import.
+- No service restart.
+- Real orders remain forbidden/zero.
 
 ## Required evidence before READY/import
 
@@ -132,24 +174,23 @@ Do NOT mark instruments READY based on assumptions or metadata inference.
 
 For the currently blocked contractual layer, explicit provider evidence is still required. Priority proof targets are:
 
-1. AL30 as a representative bond with explicit provider contract/technical fields.
+1. AL30 as a representative bond with explicit provider contract/operability fields.
 2. Cauciones with explicit operable rows/terms.
 3. Discovery/operability endpoint sufficient to map provider item/ticker identity and settlement context.
-4. Technical endpoint(s) or equivalent current frontend API exposing the contractual fields needed by the canonical contract model.
+4. Technical endpoint(s) or equivalent current frontend API exposing maturity/coupon/amortization and other bond technical terms needed by the canonical contract model.
 
 Decimal precision must NOT be interpreted as quantity step or price tick unless PPI explicitly supplies that semantic.
 
 ## Planned continuation
 
-1. Finish run `34865060794`.
-2. Read the sanitized GET inventory and identify first-party JSON host/path candidates used on Bonos/ON/Cauciones pages.
-3. Build a minimal authenticated GET-only direct probe for the candidate endpoints, initially AL30 + Cauciones.
-4. Capture explicit provider fields and schema only; no canonical import.
-5. Validate structural mapping and semantic guards.
-6. Only if evidence is sufficient, perform a separate guarded import/recompute proposal. Import must remain a separate action and must not be silently bundled with discovery.
+1. Finish run `34865452877`.
+2. Validate AL30 explicit row and Cauciones rows/fieldsets from targeted sanitized capture.
+3. If AL30 technical terms are still missing, perform a separate read-only interaction/probe that selects AL30 without filling quantity/price and captures `DatosTecnicos` or the current equivalent GET endpoint.
+4. Validate structural/semantic mapping.
+5. Only after evidence is sufficient, prepare a separate guarded import/recompute proposal. Discovery and import remain separate operations.
 
 ## Stopper status
 
-Contract evidence is still a blocker for declaring the affected instruments fully `READY`.
+Contract evidence remains a blocker for declaring the affected instruments fully `READY` until the provider contract fields are captured and validated.
 
-This blocker does not mean the PAPER observer is sending real orders; real orders remain zero. It means evaluations/simulations must not be interpreted as contractual readiness for families whose required provider evidence is incomplete.
+This blocker does not mean the PAPER observer is sending real orders; real orders remain zero. Evaluations/simulations must not be interpreted as contractual readiness for families whose provider evidence is incomplete.
