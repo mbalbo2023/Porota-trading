@@ -6,6 +6,7 @@ on:
       - feature/rc6-iol-readonly-canary-20260914
     paths:
       - .github/workflows/rc6-iol-readonly-canary.yml
+      - docs/handoffs/RC6_IOL_READONLY_CANARY_2026-09-14.md
   workflow_dispatch:
 
 permissions:
