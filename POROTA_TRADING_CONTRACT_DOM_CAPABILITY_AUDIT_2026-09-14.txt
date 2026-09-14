@@ -1,0 +1,267 @@
+PROBE=RC6_CONTRACT_DOM_CAPABILITY_AUDIT_V1
+READ_ONLY=YES
+BROWSER_STARTED=NO
+DB_TOUCHED=NO
+FILE_PRESENT=rc6_contract_dom_collector.py
+SHA256_rc6_contract_dom_collector.py=e5e2d6da08f28d9d1fc2313cf5ac3b6a7d929eeb2e5d7746f6259ec78ce28d5c
+FILE_PRESENT=rc6_contract_dom_importer.py
+SHA256_rc6_contract_dom_importer.py=b2edea69a7c1139d13ba43af9dd87f86f0b9a0025d6774d9262f7d9200f2a0ad
+--- COLLECTOR_STRUCTURE ---
+2:"""RC6 authenticated PPI DOM Contract Evidence collector.
+7:- permits GET/HEAD/OPTIONS only;
+9:- extracts only visible quote-table headers/cells when headers are explicit;
+10:- supports HTML tables and ARIA grid/table roles without inferring semantics;
+12:- never visits /Operar, fills order fields, clicks confirmations, or imports broker-order code;
+13:- never stores cookies, headers, query strings, request bodies, credentials, account data or HTML.
+26:SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+32:ROUTE_FAMILY = {
+47:DEFAULT_ROUTES = (
+68:def safe_routes(raw: str | None) -> list[str]:
+69:    requested = [x.strip() for x in (raw or "").split(",") if x.strip()] or list(DEFAULT_ROUTES)
+71:    for route in requested:
+72:        if route not in ROUTE_FAMILY or not route.startswith("/Cotizaciones/"):
+73:            raise ValueError("UNSAFE_OR_UNKNOWN_ROUTE:" + route)
+74:        if route not in out:
+75:            out.append(route)
+87:            text = clean_text(locator.nth(i).inner_text(timeout=timeout_ms), 100)
+95:def html_table_snapshot(table) -> dict:
+96:    headers: list[str] = []
+97:    for selector in ("thead th", "th"):
+99:            headers = _texts(table.locator(selector), 40)
+100:            if headers:
+103:            headers = []
+105:        rows_loc = table.locator("tbody tr")
+107:            rows_loc = table.locator("tr")
+113:    if not headers or rows_loc is None:
+115:            "kind": "html_table",
+116:            "headers": [],
+127:                clean_text(cells.nth(ci).inner_text(timeout=500))
+135:        "kind": "html_table",
+136:        "headers": headers[:40],
+139:        "materializable": bool(headers and rows),
+144:    headers: list[str] = []
+146:        headers = _texts(grid.locator('[role="columnheader"]'), 40)
+148:        headers = []
+157:    if not headers or rows_loc is None:
+160:            "headers": [],
+170:            data_cells = row.locator('[role="gridcell"],[role="cell"],[role="rowheader"]')
+174:                clean_text(data_cells.nth(ci).inner_text(timeout=500))
+183:        "headers": headers[:40],
+186:        "materializable": bool(headers and rows),
+193:        tables = page.locator("table")
+194:        for ti in range(min(tables.count(), 8)):
+195:            snap = html_table_snapshot(tables.nth(ti))
+196:            snap["table_index"] = ti
+202:        grids = page.locator('[role="grid"],[role="table"],[role="treegrid"]')
+205:            snap["table_index"] = 1000 + gi
+231:    ap.add_argument("--output", required=True)
+232:    ap.add_argument("--routes", default="")
+233:    ap.add_argument("--chrome", default=os.getenv("POROTA_CHROME_EXECUTABLE", "/usr/bin/google-chrome-stable"))
+235:    routes = safe_routes(args.routes)
+237:        "schema": "POROTA_RC6_PPI_AUTH_DOM_V2",
+239:        "auth_status": "UNKNOWN",
+240:        "routes": [],
+242:        "real_orders_sent": 0,
+244:    target = Path(args.output)
+247:        out["auth_status"] = "BLOCKED_AUTH_PROFILE_MISSING"
+254:        out["auth_status"] = "BLOCKED_PLAYWRIGHT_UNAVAILABLE"
+264:                executable_path=args.chrome,
+272:            def guard(route, request):
+274:                if method in SAFE_METHODS:
+275:                    return route.continue_()
+280:                    return route.abort()
+281:                if method == "POST" and host == "trading.portfoliopersonal.com" and path == "/api/logger":
+282:                    return route.abort()
+283:                if method == "POST" and host == "api.portfoliopersonal.com" and path == "/api/v1/zendesk/zendesk-session":
+284:                    return route.abort()
+286:                return route.abort()
+288:            ctx.route("**/*", guard)
+290:            page.goto(TRADING + "/", wait_until="domcontentloaded", timeout=45000)
+293:            authenticated = (
+298:            if not authenticated:
+299:                out["auth_status"] = "BLOCKED_AUTH_SESSION_EXPIRED"
+301:                out["auth_status"] = "AUTHENTICATED_TRUSTED_DEVICE"
+302:                for requested in routes:
+305:                        "family": ROUTE_FAMILY[requested],
+308:                        "tables": [],
+313:                        page.goto(TRADING + requested, wait_until="domcontentloaded", timeout=45000)
+328:                            item["tables"] = snaps
+331:                    out["routes"].append(item)
+334:        if out["auth_status"] == "UNKNOWN":
+335:            out["auth_status"] = "BLOCKED_BROWSER_ERROR"
+341:        1 for r in out["routes"] for t in r.get("tables", []) if t.get("materializable")
+344:        "state": out["auth_status"],
+345:        "routes": len(out["routes"]),
+346:        "materializable_tables": materializable,
+348:        "real_orders_sent": 0,
+352:    if out["auth_status"] != "AUTHENTICATED_TRUSTED_DEVICE":
+--- IMPORTER_STRUCTURE ---
+2:"""Import sanitized authenticated PPI DOM quote-table evidence into Contract Evidence v2.
+4:Only aggregate route/family snapshots are written. No column semantics, instrument IDs,
+5:market/settlement values, or economic contract fields are inferred. Readiness therefore
+8:A fully authenticated pass with zero explicit materializable tables is treated as a
+10:owned by the wrapper, which checks the last persisted PPI_AUTHENTICATED_WEB evidence.
+19:import cp_contract_evidence_v2_hf6 as ce
+63:    if raw.get("schema") not in SUPPORTED_SCHEMAS:
+83:        family = ROUTE_FAMILY.get(route)
+84:        if family and family not in requested_families:
+85:            requested_families.append(family)
+86:        if not family or not route_item.get("reached"):
+90:        for table in route_item.get("tables") or []:
+91:            if not isinstance(table, dict) or not table.get("materializable"):
+93:            headers = [str(x)[:100] for x in (table.get("headers") or []) if str(x).strip()][:40]
+95:            for row in (table.get("rows") or [])[:100]:
+98:            if headers and rows:
+100:                    "table_index": int(table.get("table_index") or 0),
+101:                    "kind": str(table.get("kind") or "html_table")[:40],
+102:                    "headers": headers,
+103:                    "row_count": int(table.get("row_count") or len(rows)),
+109:        evidence = {
+112:            "tables": material,
+117:                family=family,
+118:                ticker="*",
+120:                settlement="UNKNOWN",
+121:                source_class="PPI_AUTHENTICATED_WEB",
+122:                source_ref="https://trading.portfoliopersonal.com" + route,
+123:                evidence=evidence,
+128:                "family": family,
+134:            return fail("RECORD_ERROR:" + family + ":" + type(exc).__name__)
+139:        "source_class": "PPI_AUTHENTICATED_WEB",
+141:        "families": sorted({x["family"] for x in records}),
+--- HISTORICAL_DOM_CAPTURE_SHAPES ---
+DOM_FILE_COUNT=92
+DOM_FILE=dom_20260912T024847Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T02:48:47.127623+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","TNA TOM.","TNA COL.","MONTO COL.","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T025907Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T02:59:07.103508+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=5
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","MONTO TOM.","TNA TOM.","MONTO COL.","VOLUMEN","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:49
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","FECHA FIN","ESTADO"]|rows:1
+  ROUTE_3=path:/Cotizaciones/Futuros|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","MÍN.","MÁX.","AjusteAnt.","Últimaact."]|rows:48
+  ROUTE_4=path:/Cotizaciones/Bonos|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","TIR","APER.","MÍN.","Últimaact."]|rows:50
+  ROUTE_5=path:/Cotizaciones/Opciones|reached:True|tables:1
+    TABLE_1=headers:["PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+DOM_FILE=dom_20260912T030412Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:04:12.600416+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","VAR.","MONTO TOM.","TNA TOM.","TNA COL.","MONTO COL.","VOLUMEN","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T030945Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:09:45.169083+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","VAR.","MONTO TOM.","TNA TOM.","TNA COL.","MONTO COL.","VOLUMEN","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T031447Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:14:47.964453+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=5
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","VAR.","MONTO TOM.","TNA TOM.","TNA COL.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+  ROUTE_3=path:/Cotizaciones/Futuros|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","AjusteAnt.","Últimaact."]|rows:50
+  ROUTE_4=path:/Cotizaciones/Bonos|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","TIR","APER.","MÍN.","Máx.","Mod.Duration","Últimaact."]|rows:50
+  ROUTE_5=path:/Cotizaciones/Opciones|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","VOLUMEN","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+DOM_FILE=dom_20260912T032011Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:20:11.622785+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","VAR.","MONTO TOM.","TNA TOM.","TNA COL.","MONTO COL.","VOLUMEN","FECHA VTO.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T032523Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:25:23.538969+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","VAR.","MONTO TOM.","TNA TOM.","TNA COL.","MONTO COL.","VOLUMEN","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T033105Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:31:05.269117+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=5
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","VAR.","MONTO TOM.","TNA TOM.","TNA COL.","MONTO COL.","VOLUMEN","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+  ROUTE_3=path:/Cotizaciones/Futuros|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","AjusteAnt.","Últimaact."]|rows:50
+  ROUTE_4=path:/Cotizaciones/Bonos|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","TIR","APER.","MÍN.","Máx.","Mod.Duration","Últimaact."]|rows:50
+  ROUTE_5=path:/Cotizaciones/Opciones|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+DOM_FILE=dom_20260912T033615Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:36:15.455785+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","VAR.","MONTO TOM.","TNA TOM.","TNA COL.","MONTO COL.","VOLUMEN","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T034152Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:41:52.254602+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","VAR.","MONTO TOM.","TNA COL.","APER.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN"]|rows:1
+DOM_FILE=dom_20260912T034720Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:47:20.374552+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=5
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","VAR.","TNA COL.","MONTO COL.","VOLUMEN","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+  ROUTE_3=path:/Cotizaciones/Futuros|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","Últimaact."]|rows:50
+  ROUTE_4=path:/Cotizaciones/Bonos|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","TIR","APER.","MÍN.","Mod.Duration","Últimaact."]|rows:50
+  ROUTE_5=path:/Cotizaciones/Opciones|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+DOM_FILE=dom_20260912T035301Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:53:01.258913+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","MONTO COL.","VOLUMEN","FECHA VTO.","MÍN.","MÁX.","Últimaact."]|rows:45
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T035810Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T03:58:10.414073+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","VAR.","MONTO COL."]|rows:43
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T040257Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T04:02:58.186071+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=3
+  ROUTE_1=path:/Cotizaciones/Futuros|reached:True|tables:1
+    TABLE_1=headers:["ÚLTIMO PRECIO","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","MÍN."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Bonos|reached:True|tables:1
+    TABLE_1=headers:["VAR.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","TIR","APER.","MÍN.","Máx.","Mod.Duration"]|rows:50
+  ROUTE_3=path:/Cotizaciones/Opciones|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+DOM_FILE=dom_20260912T040850Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T04:08:51.241028+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["ÚLTIMO OPER.","MONTO TOM.","TNA TOM.","VOLUMEN"]|rows:47
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T041359Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T04:13:59.905679+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","VAR.","MONTO TOM.","FECHA VTO.","MÁX.","Cierreant."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T041857Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T04:18:57.407942+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=3
+  ROUTE_1=path:/Cotizaciones/Futuros|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","AjusteAnt.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Bonos|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","TIR","APER.","MÍN.","Máx.","Mod.Duration","Últimaact."]|rows:50
+  ROUTE_3=path:/Cotizaciones/Opciones|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","Cierreant."]|rows:49
+DOM_FILE=dom_20260912T042357Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T04:23:57.500224+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["ÚLTIMO OPER.","VAR.","MONTO TOM.","TNA TOM.","TNA COL.","MONTO COL.","VOLUMEN","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T042904Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T04:29:04.510044+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=2
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","VAR.","MONTO TOM.","TNA TOM.","TNA COL.","MONTO COL.","VOLUMEN","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+DOM_FILE=dom_20260912T043418Z.json|schema=POROTA_RC6_PPI_AUTH_DOM_V2|generated=2026-09-12T04:34:18.612246+00:00|auth=AUTHENTICATED_TRUSTED_DEVICE|routes=5
+  ROUTE_1=path:/Cotizaciones/Cauciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. DE DÍAS","ÚLTIMO OPER.","VAR.","MONTO TOM.","TNA TOM.","TNA COL.","MONTO COL.","VOLUMEN","FECHA VTO.","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:49
+  ROUTE_2=path:/Cotizaciones/Licitaciones|reached:True|tables:1
+    TABLE_1=headers:["NOMBRE","INVERSIÓN MINIMA","MONEDA / ESPECIE","TASA","PLAZO","FECHA FIN","ESTADO"]|rows:1
+  ROUTE_3=path:/Cotizaciones/Futuros|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","AjusteAnt.","Últimaact."]|rows:50
+  ROUTE_4=path:/Cotizaciones/Bonos|reached:True|tables:1
+    TABLE_1=headers:["ESPECIE","ÚLTIMO PRECIO","VAR.","CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","TIR","APER.","MÍN.","Máx.","Mod.Duration","Últimaact."]|rows:49
+  ROUTE_5=path:/Cotizaciones/Opciones|reached:True|tables:1
+    TABLE_1=headers:["CANT. COMP.","PRECIO COMP.","PRECIO VENTA","CANT. VENTA","VOLUMEN","APER.","MÍN.","MÁX.","Cierreant.","Últimaact."]|rows:50
+RESULT=GREEN_DOM_CAPABILITY_AUDIT_COMPLETE_NO_MUTATION
