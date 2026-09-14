@@ -1,0 +1,44 @@
+PROBE=RC6_CONTRACT_COLLECTOR_FULL_DIFF_AUDIT_V1
+READ_ONLY=YES
+BROWSER_STARTED=NO
+DB_TOUCHED=NO
+REPO_SHA256=740a2641daedc2df8d21fccf00c78098c242650b927911ce00353cdfed25d8cf
+INSTALLED_SHA256=efc5040db1aa50359368949110ae4bc1340f1c4ed75efe4f42d6ca6d29436408
+--- DIFF ---
+--- /tmp/installed.py	2026-09-14 00:16:41.942174718 +0000
++++ rc6_trusted_browser_contract_collector.py	2026-09-14 00:16:40.827183173 +0000
+@@ -24,17 +24,20 @@
+ TARGETS = ("InstrumentosOperables", "CaucionesOperables", "ConfiguracionOperatoriaSimplificada",
+            "SubyacenteOpciones", "DatosTecnicos")
+ ROUTES = {
+-    "CONTRACT_EVIDENCE_DYNAMIC": ["/Cotizaciones/Bonos"],
+-    "CONTRACT_EVIDENCE_CAUCIONES": ["/Cotizaciones/Cauciones"],
+-    "CONTRACT_EVIDENCE_AUCTIONS": ["/Cotizaciones/Licitaciones"],
+-    "CONTRACT_EVIDENCE_DERIVATIVES": ["/Cotizaciones/Opciones", "/Cotizaciones/Futuros"],
++    "CONTRACT_EVIDENCE_DYNAMIC": ["/Cotizaciones/Bonos", "/Operar/Bonos", "/Operar/Ons"],
++    "CONTRACT_EVIDENCE_CAUCIONES": ["/Cotizaciones/Cauciones", "/Operar/Cauciones"],
++    "CONTRACT_EVIDENCE_AUCTIONS": ["/Cotizaciones/Licitaciones", "/Operar/Licitaciones"],
++    "CONTRACT_EVIDENCE_DERIVATIVES": ["/Cotizaciones/Opciones", "/Cotizaciones/Futuros", "/Operar/Opciones", "/Operar/260"],
+     "CONTRACT_EVIDENCE_STATIC": ["/Cotizaciones/Acciones", "/Cotizaciones/Cedears", "/Cotizaciones/Bonos",
+                                   "/Cotizaciones/Letras", "/Cotizaciones/Ons", "/Cotizaciones/FCIs"],
+     "CONTRACT_EVIDENCE_FULL_BROWSER": [
+         "/Cotizaciones/FCIs", "/Cotizaciones/FCIsExterior", "/Cotizaciones/Acciones", "/Cotizaciones/AccionesUSA",
+         "/Cotizaciones/Bonos", "/Cotizaciones/Cauciones", "/Cotizaciones/Cedears", "/Cotizaciones/ETFs",
+         "/Cotizaciones/Futuros", "/Cotizaciones/Letras", "/Cotizaciones/Licitaciones", "/Cotizaciones/Ons",
+-        "/Cotizaciones/Opciones", "/Cotizaciones/Indices", "/Cotizaciones/Monedas", "/Cotizaciones/Tasas"],
++        "/Cotizaciones/Opciones", "/Cotizaciones/Indices", "/Cotizaciones/Monedas", "/Cotizaciones/Tasas",
++        "/Operar/FCIs", "/Operar/FCIsExterior", "/Operar/Acciones", "/Operar/AccionesExterior", "/Operar/Bonos",
++        "/Operar/Cauciones", "/Operar/Cedears", "/Operar/ETFs", "/Operar/260", "/Operar/Letras", "/Operar/Ons",
++        "/Operar/Opciones", "/Operar/Licitaciones", "/Operar/Canjes"],
+ }
+ 
+ DROP_KEY_PARTS = ("cuenta","account","saldo","tenencia","disponible","comitente","cliente","documento","dni","cuit",
+--- STATIC_SAFETY_REPO ---
+safe_methods_get_head_options=PASS
+has_real_orders_zero=PASS
+blocks_non_safe=PASS
+no_broker_import=PASS
+never_fills_form=PASS
+never_clicks=PASS
+STATIC_SAFETY_ALL=PASS
+RESULT=GREEN_DIFF_AUDIT_COMPLETE_NO_MUTATION
