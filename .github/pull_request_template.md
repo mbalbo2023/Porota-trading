@@ -32,7 +32,7 @@
 **Impacto operativo:**  
 
 - [ ] Este PR no interactúa con el workstream/recursos PPI de ingesta, o incluye la autorización explícita de su responsable.
-- [ ] Para cualquier tarea larga, verifiqué status/progreso directo del droplet; una ingesta total corre directamente allí, no mediante Actions.
+- [ ] (Si aplica) Para una tarea larga, verifiqué status/progreso directo del droplet; una ingesta total corre directamente allí, no mediante Actions. Si no hubo tarea larga, anoté N/A.
 - [ ] No ejecuté despliegues, órdenes ni workflows manuales de producción.
 - [ ] Revisé el diff completo y confirmé que contiene solo el alcance declarado.
 - [ ] Actualicé el checkpoint o indiqué el PR/commit donde quedará actualizado.
