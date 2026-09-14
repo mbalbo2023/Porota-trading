@@ -12,9 +12,14 @@ No empieces sólo con el último mensaje, una captura o una memoria aislada. Pri
 
 Si este chat no tiene acceso al repositorio, informa que no pudo pasar esta puerta y pide el checkpoint completo o el acceso faltante. No digas que recuperaste todo leyendo sólo un título, extracto o mensaje.
 
+
+## Progreso consultable en Droplet
+
+Antes de una tarea larga, comprueba que el comando de estado `sudo porota-job status <run_id>` existe y funciona directamente en el droplet; registra etapa, progreso real, heartbeat, resultados y gates. La especificación obligatoria está en `/POROTA_TRADING_JOB_PROGRESS_CONTRACT.md`. Toda ingesta histórica total/masiva debe lanzarse directamente en el droplet; no se ejecuta ni se controla con Actions. Si no hay terminal directa o status runtime, detén el lanzamiento y marca el bloqueo como `NOT_IMPLEMENTED_OR_RUNTIME_NOT_VERIFIED`.
+
 ## Prompt breve para copiar en chats sin carga automática del repositorio
 
-> Continúa POROTA TRADING desde su checkpoint, sin reconstruir desde cero. Antes de dar estatus o ejecutar nada, lee íntegramente `/AGENTS.md`, `/POROTA_TRADING_CONTINUIDAD_OBLIGATORIA.md`, `/POROTA_TRADING_CHAT_START_HERE.md` y `/POROTA_TRADING_CHECKPOINT_CONTINUIDAD_CROSSCHAT_2026-09-14.md`. Lee también cualquier checkpoint posterior que yo adjunte o nombre y verifica en GitHub la rama, SHA, PRs y runs posteriores. Conserva todas las decisiones, restricciones, pendientes y evidencia; distingue código, CI, runtime, evidencia/importación y READY end-to-end; marca lo no verificado y no inventes ni repitas trabajos cerrados. Informa primero lo que entendiste y continúa sólo dentro del alcance autorizado. Actualiza el checkpoint después de cada hito y verifica su commit SHA.
+> Continúa POROTA TRADING desde su checkpoint, sin reconstruir desde cero. Antes de dar estatus o ejecutar nada, lee íntegramente `/AGENTS.md`, `/POROTA_TRADING_CONTINUIDAD_OBLIGATORIA.md`, `/POROTA_TRADING_CHAT_START_HERE.md` y `/POROTA_TRADING_CHECKPOINT_CONTINUIDAD_CROSSCHAT_2026-09-14.md`. Lee también cualquier checkpoint posterior que yo adjunte o nombre y verifica en GitHub la rama, SHA, PRs y runs posteriores. Lee `/POROTA_TRADING_JOB_PROGRESS_CONTRACT.md` antes de cualquier tarea larga. Conserva todas las decisiones, restricciones, pendientes y evidencia; distingue código, CI, runtime, evidencia/importación y READY end-to-end; marca lo no verificado y no inventes ni repitas trabajos cerrados. Informa primero lo que entendiste y continúa sólo dentro del alcance autorizado. Actualiza el checkpoint después de cada hito y verifica su commit SHA. Las ingestas masivas se ejecutan en el droplet y requieren estado/progreso runtime consultable antes de arrancar.
 
 ## Punto operativo actual incluido en el checkpoint
 
