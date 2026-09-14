@@ -118,3 +118,15 @@ El MCP es una integración independiente de las credenciales IOL_USERNAME/IOL_PA
 El primer bloque pegado en Termius intentó leer el usuario desde stdin mientras stdin seguía siendo consumido por el pegado del heredoc; terminó con EOF antes de modificar el archivo. No hubo escritura confirmada por ese intento. Versión corregida: abrir /dev/tty para prompts interactivos, conservar entrada oculta para la contraseña y enviar al portapapeles solo un resumen saneado mediante OSC 52 (BEL y ST). Nunca incluir secretos en el resultado/clipboard. El script no debe depender de escritura manual ni de seleccionar salida en pantalla.
 
 Regla global persistida también en POROTA_TRADING_RC6_CONTEXT_HANDOFF.md: Tincho tiene cuadriplejia y no puede escribir; cada chat debe asumir voz/pegado, entregar bloques completos y hacer que los scripts preparen la salida para portapapeles antes de empezar instrucciones. Validar PORTAPAPELES_OSC52=EMITIDO; si no se puede emitir, informar el límite sin fingir éxito.
+
+
+### Addendum v3 de persistencia accesible — 2026-09-14
+
+La versión v3 del script:
+- se eleva con sudo de forma automática y no presupone acceso root;
+- se entrega con nombre versionado nuevo; el bloque de Termius crea ese nombre fijo con noclobber y lo ejecuta, por lo que los sufijos de descarga no intervienen;
+- no reescribe .env: comprueba bajo lock si IOL_USERNAME/IOL_PASSWORD ya están definidos y, si no, anexa ambos al final; si ya existen, se detiene sin modificarlos;
+- lee entradas desde /dev/tty para evitar EOF cuando el bloque completo se pega de una sola vez;
+- fija permisos 0600 al anexar y no reinicia servicios;
+- imprime y emite por OSC 52 (BEL y ST) solo un resumen saneado. PORTAPAPELES_OSC52=EMITIDO confirma la emisión; nunca incluye valores secretos.
+Validación local aislada: preservó los bytes existentes, anexó las claves, permisos 0600 y ausencia de secretos en salida/clipboard. No se ejecutó contra el droplet ni contra IOL. Requiere que el usuario pegue los valores en los prompts ocultando la contraseña; ningún valor se incluye en archivo/código/commit.
