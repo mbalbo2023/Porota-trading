@@ -53,3 +53,14 @@ La rama reciente `ops/rc6-contract-open-session-immediate-20260914` sólo contie
 - Capturas/ingesta masiva: no se repitieron.
 - Órdenes reales: no habilitadas; invariantes PAPER/fail-closed se preservan.
 - Checkpoint canónico: este archivo es delta aislado, no reemplaza ni sobrescribe el checkpoint activo.
+
+
+## Entrega documental y verificación
+
+La regla se agregó a `AGENTS.md`, `POROTA_TRADING_CONTINUIDAD_OBLIGATORIA.md` y `POROTA_TRADING_CHAT_START_HERE.md` en esta rama aislada. Cada archivo se volvió a leer desde GitHub después del commit:
+
+- `AGENTS.md`: blob `d06d6de0b634526c84444dc04914ef40b1d609ff`, commit `549d55caac81c5820091daebf363fc6b2c5fdb1e`.
+- `POROTA_TRADING_CONTINUIDAD_OBLIGATORIA.md`: blob `b473a7792a42dcf472c300275e6499b819535349`, commit `22343149e7e08d5c001705db582c1f581e48c23c`.
+- `POROTA_TRADING_CHAT_START_HERE.md`: blob `b7e6713e02494e8873efd1140abef511ec8e9aae`, commit `8188102c23cc53037adea2719c500889abef20db`.
+
+La entrada de chat nuevo apunta explícitamente a este delta. No se fusionó ni se desplegó; queda pendiente de integración por el chat integrador. No hay CI de aplicación ejecutada para estos cambios documentales.
