@@ -33,6 +33,30 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
+      - name: Check out branch documentation
+        uses: actions/checkout@v4
+
+      - name: Copy sanitized handoff to RC6 server
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \\
+            -i "$HOME/.ssh/id_ed25519" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \\
+            "$USER@$HOST" \
+            'set -Eeuo pipefail
+             image="$(sudo -n docker inspect -f "{{.State.Running}}|{{.Config.Image}}" porota_production_observer)"
+             printf "RC6_DOC_TARGET=%s\\n" "$image"
+             test "$image" = "true|porota-trading-bot:17.0.0-rc6"
+             sudo -n install -d -m 0755 /opt/porota-trading/docs/handoffs
+             sudo -n tee /opt/porota-trading/docs/handoffs/RC6_IOL_READONLY_CANARY_2026-09-14.md >/dev/null
+             sudo -n chmod 0644 /opt/porota-trading/docs/handoffs/RC6_IOL_READONLY_CANARY_2026-09-14.md
+             sudo -n sha256sum /opt/porota-trading/docs/handoffs/RC6_IOL_READONLY_CANARY_2026-09-14.md
+             printf "SERVER_HANDOFF_SYNC=OK\\n"' \\
+            < docs/handoffs/RC6_IOL_READONLY_CANARY_2026-09-14.md
+
       - name: Run RC6 and IOL read-only canary
         shell: bash
         env:
