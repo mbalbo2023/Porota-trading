@@ -1,50 +1,13 @@
-name: RC6 reauth and pure contractual evidence capture 2026-09-14
+name: RC6 contractual auth diagnosis 2026-09-14
 
 on:
-  push:
-    branches:
-      - ops/rc6-contract-open-session-immediate-20260914
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: rc6-contract-open-session-immediate-20260914
-  cancel-in-progress: false
-
 jobs:
-  contractual-evidence-readonly:
+  paused:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - name: Enforce approved date
-        run: test "$(TZ=America/Argentina/Buenos_Aires date +%F)" = "2026-09-14"
-
-      - name: Checkout audited runner
-        uses: actions/checkout@v4
-
-      - name: Configure audited SSH
-        env:
-          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
-          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$DO_SSH_KEY" > "$HOME/.ssh/id_ed25519"
-          chmod 600 "$HOME/.ssh/id_ed25519"
-          printf '%s\n' "$DO_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-
-      - name: Capture contractual evidence
-        env:
-          DO_HOST: ${{ secrets.DO_HOST }}
-          DO_USER: ${{ secrets.DO_USER }}
-        run: |
-          set -o pipefail
-          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' < ops/rc6_contract_evidence_capture_open_session_20260914.sh | tee capture.log
-
-      - name: Publish concise result
-        if: always()
-        run: |
-          test -f capture.log || exit 0
-          tail -n 80 capture.log >> "$GITHUB_STEP_SUMMARY"
+      - run: echo "STATE=PAUSED_PENDING_ONE_SHOT_AUTH_DIAGNOSTIC"
