@@ -47,7 +47,7 @@ jobs:
           set -euo pipefail
           umask 077
 
-          echo "POROTA_CONTRACT_EVIDENCE_PURE_COLLECTOR_V3"
+          echo "POROTA_CONTRACT_EVIDENCE_PURE_COLLECTOR_V4"
           echo "MUTATIONS=AUTH_SESSION_AND_CAPTURE_FILE_ONLY"
           echo "DB_IMPORT_EXECUTED=NO"
           echo "SERVICE_RESTARTED=NO"
@@ -121,15 +121,11 @@ jobs:
 
           collect_once() {
             rm -f "$STAGE_CAPTURE"
-            set +e
             runuser -u "$BROWSER_USER" -- env HOME="$BROWSER_HOME" PYTHONPATH="$LIB:$ROOT" \
               "$CE_PYTHON" "$COLLECTOR" \
               --profile "$PROFILE" \
               --jobs "CONTRACT_EVIDENCE_DYNAMIC,CONTRACT_EVIDENCE_CAUCIONES" \
               --output "$STAGE_CAPTURE"
-            local rc=$?
-            set -e
-            return "$rc"
           }
 
           echo "JOBS=CONTRACT_EVIDENCE_DYNAMIC,CONTRACT_EVIDENCE_CAUCIONES"
