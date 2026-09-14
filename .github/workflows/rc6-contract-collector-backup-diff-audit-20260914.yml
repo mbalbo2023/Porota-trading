@@ -1,0 +1,84 @@
+name: RC6 Contract collector backup diff audit 2026-09-14
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-contract-blocked-nonread-audit-20260914]
+    paths:
+      - '.github/workflows/rc6-contract-collector-backup-diff-audit-20260914.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-contract-blocked-nonread-audit-20260914
+      - name: Prepare SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Compare current installed collector with historical backups
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_COLLECTOR_BACKUP_DIFF_AUDIT_2026-09-14.txt
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY' > "$RESULT"
+          import os,glob,hashlib,difflib,re
+          LIB='/usr/local/lib/porota-contract-evidence-rc6'
+          cur=os.path.join(LIB,'rc6_trusted_browser_contract_collector.py')
+          pats=sorted(glob.glob(cur+'.*'))
+          print('PROBE=RC6_CONTRACT_COLLECTOR_BACKUP_DIFF_AUDIT_V1')
+          print('READ_ONLY=YES')
+          print('BROWSER_STARTED=NO')
+          print('DB_TOUCHED=NO')
+          def read(p):
+              return open(p,encoding='utf-8',errors='replace').read().splitlines()
+          def sha(p):
+              return hashlib.sha256(open(p,'rb').read()).hexdigest()
+          print('CURRENT_SHA256='+sha(cur))
+          print('BACKUP_COUNT='+str(len(pats)))
+          cur_lines=read(cur)
+          interesting=re.compile(r'(SAFE_METHODS|ROUTES\s*=|CONTRACT_EVIDENCE_|def guard|method\s*=|route\.abort|route\.continue|on_response|response\.request\.method|wait_for_timeout|page\.goto|TARGETS\s*=|InstrumentosOperables|CaucionesOperables|DatosTecnicos|SubyacenteOpciones|ConfiguracionOperatoriaSimplificada)',re.I)
+          for idx,p in enumerate(pats,1):
+              print(f'--- BACKUP_{idx}={os.path.basename(p)}|sha256:{sha(p)} ---')
+              lines=read(p)
+              # compact interesting lines
+              for n,line in enumerate(lines,1):
+                  if interesting.search(line):
+                      print(f'B{idx}_L{n}='+line.strip()[:500])
+              # compact semantic diff only around interesting lines
+              diff=list(difflib.unified_diff(lines,cur_lines,fromfile=os.path.basename(p),tofile='current',n=1))
+              kept=[]
+              for i,line in enumerate(diff):
+                  if line.startswith(('---','+++','@@')) or interesting.search(line):
+                      kept.append(line[:600])
+              print(f'B{idx}_DIFF_INTERESTING_COUNT={len(kept)}')
+              for line in kept[:180]: print('DIFF='+line)
+          print('RESULT=GREEN_BACKUP_DIFF_COMPLETE_NO_MUTATION')
+          PY
+          cat "$RESULT"
+      - name: Persist sanitized backup diff audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_COLLECTOR_BACKUP_DIFF_AUDIT_2026-09-14.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist collector backup diff [skip ci]'
+          git push origin HEAD:ops/rc6-contract-blocked-nonread-audit-20260914
