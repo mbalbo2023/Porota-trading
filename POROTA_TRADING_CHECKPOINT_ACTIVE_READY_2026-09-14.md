@@ -445,3 +445,15 @@ Resultados:
 **Siguiente paso autorizado:** determinar y capturar de forma estrecha el GET autenticado `DatosTecnicos` para las identidades de Bonos/ON del target 444, sin abrir controles de orden. Reutilizar la evidencia API de Cauciones ya existente (`34773357093`) en vez de repetir su probe. Recalcular la matriz strict READY sólo después de tener evidencia importable; el último `0/444` sigue siendo el último valor confirmado, no una recomputación posterior a esta captura.
 
 Esta recaptura no completa por sí sola contratos READY ni cambia elegibilidad.
+
+
+## 4.6 TARGET 444 / RESPUESTA AL HORARIO DE DATOS TÉCNICOS — 2026-09-14
+
+La auditoría read-only contrastó la captura existente con `contract_evidence_v2_current`, sin imprimir tickers:
+- target exacto: `444` identidades; familias: ACCIONES 55, ACCIONES_USA 1, BONOS 43, CAUCIONES 1, CEDEARS 192, ETF 1, FUTUROS 43, INDICES 1, LETRAS 18, LICITACIONES 2, ON 85, MONEDAS 1, TASAS 1.
+- En `/Operar/Bonos`, coincidencia por ticker de 42/61 identidades BONOS+LETRAS; en `/Operar/Ons`, 84/85 ON.
+- Ninguna coincidencia es unión exacta: el payload no contiene `market` ni `settlement`; no usarlo para importar por ticker a ciegas. El resto de familias no fue capturado por estas dos listas.
+
+**Hipótesis de ventana horaria:** la captura guardada fue a las 23:31 hora Argentina, fuera de rueda. Aun así, el collector abrió las listas y nunca seleccionó un instrumento; por eso no solicitó `DatosTecnicos`. No se puede concluir que el endpoint se oculte fuera de horario. Es posible que algunos valores dinámicos dependan de la rueda, pero los términos estáticos de emisión no se deben suponer sujetos al horario. Pendiente una prueba GET autenticada de un instrumento target y fuera de rueda; no seleccionar controles de compra/venta, no habilitar POST y no importar.
+
+La captura actual sólo se reutiliza para el filtrado por target y campos explícitos; no repetirla para reconstruir los 5.559 registros.
