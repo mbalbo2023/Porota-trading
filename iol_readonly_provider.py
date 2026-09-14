@@ -55,15 +55,24 @@ class IOLReadOnlyProvider:
             raise IOLReadOnlyProviderError(f"{name} must be one path token")
         return token
 
-    def _observation(self, operation: str, request: dict[str, Any], payload: Any) -> IOLObservation:
+    def _timestamp(self) -> str:
         observed = self._clock()
         if not isinstance(observed, datetime) or observed.tzinfo is None or observed.utcoffset() is None:
             raise IOLReadOnlyProviderError("clock must return a timezone-aware datetime")
+        return observed.astimezone(timezone.utc).isoformat(timespec="microseconds")
+
+    @staticmethod
+    def _observation(
+        operation: str,
+        request: dict[str, Any],
+        payload: Any,
+        observed_at: str,
+    ) -> IOLObservation:
         status = "SOURCE_RETURNED_DATA" if payload not in (None, [], {}) else "EMPTY_OR_UNAVAILABLE"
         return IOLObservation(
             source_class=SOURCE_CLASS,
             operation=operation,
-            observed_at=observed.astimezone(timezone.utc).isoformat(timespec="microseconds"),
+            observed_at=observed_at,
             status=status,
             request=request,
             payload=payload,
@@ -83,12 +92,13 @@ class IOLReadOnlyProvider:
         method = getattr(self._client, "get_panel", None)
         if not callable(method):
             raise IOLReadOnlyProviderError("allowlisted IOL panel method is unavailable")
+        observed_at = self._timestamp()
         payload = method(
             request["instrument"],
             request["panel"],
             request["country"],
         )
-        return self._observation("panel", request, payload)
+        return self._observation("panel", request, payload, observed_at)
 
     def get_quote(self, symbol: str, market: str = "bcba") -> IOLObservation:
         request = {
@@ -98,8 +108,9 @@ class IOLReadOnlyProvider:
         method = getattr(self._client, "get_cotizacion", None)
         if not callable(method):
             raise IOLReadOnlyProviderError("allowlisted IOL quote method is unavailable")
+        observed_at = self._timestamp()
         payload = method(request["symbol"], request["market"])
-        return self._observation("quote", request, payload)
+        return self._observation("quote", request, payload, observed_at)
 
     def get_history(
         self,
@@ -122,10 +133,11 @@ class IOLReadOnlyProvider:
         method = getattr(self._client, "get_serie_historica", None)
         if not callable(method):
             raise IOLReadOnlyProviderError("allowlisted IOL history method is unavailable")
+        observed_at = self._timestamp()
         payload = method(
             request["symbol"],
             request["market"],
             dias=request["days"],
             ajustada=request["adjusted"],
         )
-        return self._observation("history", request, payload)
+        return self._observation("history", request, payload, observed_at)
