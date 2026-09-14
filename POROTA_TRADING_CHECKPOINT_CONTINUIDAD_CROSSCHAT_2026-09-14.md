@@ -32,6 +32,28 @@
 - Siguiente paso: inspeccionar sólo código/evidencia ya persistida para localizar el flujo GET de los tres endpoints. Si no hay evidencia reutilizable, proponer/ejecutar sólo un probe contractual estrecho, read-only, serializado por el lock compartido y con salida saneada; sin clics de orden, sin POST nuevos, sin escritura DB, sin importación y sin reinicio de servicios. Importación/recompute requieren captura estructuralmente válida y autorización aplicable posterior.
 - Invariantes: PRODUCTION_PAPER; REAL_ORDERS_SENT=0; CASH_SWEEP_ORDER_ROUTING_ALLOWED=False; fail-closed.
 
+## Delta más reciente: sonda limitada DatosTecnicos y requisito de jobs visibles (2026-09-14)
+
+### Sonda fuera de rueda — resultado inconcluso sobre horario
+
+- Workflow/run GitHub `34801210987`, job `103844101204`, rama `ops/rc6-datos-tecnicos-offhours-probe-20260914`, HEAD de ejecución `bb978c9d319fb8bbfc8122fed2404dc07c9adb47`: **SUCCESS**. El API de jobs muestra todas las etapas completas: chequeo estático, preparación SSH, probe de un instrumento GET-only y persistencia del resumen saneado.
+- Auth `AUTHENTICATED_TRUSTED_DEVICE`; selección única reportada como `TARGET_SELECTED_FOR_TECHNICAL_GET_PROBE`; se recorrieron 3 rutas. Dos respuestas persistidas fueron sólo `SCHEMA_ONLY`; `DATOS_TECNICOS_ENDPOINT_COUNT=0`, y los flags de endpoint contractual quedaron false.
+- Esto NO demuestra una restricción horaria: el collector sólo conserva GET exitosos con URL objetivo, omite respuestas HTTP >=400 y aborta todos los métodos distintos de GET/HEAD/OPTIONS. El resumen no confirma si el frontend no disparó petición, si hubo un GET fallido o si una petición relevante fue abortada. Hubo 34 non-read bloqueadas; sus categorías en esta captura están `NOT_VERIFIED` (la auditoría anterior cubría 32 de otra captura).
+- Seguridad: preflight y postflight `GREEN_PRODUCTION_PAPER_ORDERS0_DBOK`; `REAL_ORDERS_SENT=0`; `AMOUNT_FILLED=False`; `PRICE_FILLED=False`; `DB_IMPORT_EXECUTED=NO`; `SERVICE_RESTARTED=NO`. La captura permanece `STRUCTURALLY_IMPORTABLE=NO`; no se importó ni se recomputó la matriz.
+- Conclusión: que `DatosTecnicos` sólo aparezca durante rueda sigue siendo una hipótesis plausible, pero no verificada. Primero se debe clasificar en forma read-only y sanitizada el registro de red ya guardado; no repetir browser/captura hasta aclarar qué ocurrió. No habilitar POST.
+
+### Preferencia operativa del usuario: no ingesta total por Actions
+
+- Las ingestas históricas totales/massivas ya cerradas no se repiten. Si en el futuro existe una razón autorizada para una ingesta total, se ejecutará directamente en el droplet, nunca mediante GitHub Actions.
+- Antes de cualquier trabajo largo, debe haber una consulta de sólo lectura en el droplet que indique estado, etapa, progreso numérico reproducible, resultados y heartbeat. La especificación está en `POROTA_TRADING_JOB_PROGRESS_CONTRACT.md`; la interfaz `sudo porota-job status <run_id>` aún está `NOT_IMPLEMENTED_OR_RUNTIME_NOT_VERIFIED`.
+- En esta sesión no se expone una terminal directa al droplet. No usar Actions como sustituto para ingestas totales. La sonda anterior fue acotada a una identidad, no una ingesta histórica.
+- El job GitHub anterior permitió consultar run/job y etapas, pero el proceso remoto no produjo progreso/heartbeat directo desde el droplet. Esto no satisface el requisito futuro.
+
+### READY_PAPER y siguiente paso
+
+- La sonda no añadió evidencia contractual importable; la última matriz estricta conocida sigue siendo `READY_PAPER_CANDIDATE=0/444`, anterior a la importación corregida. No existe recomputación nueva.
+- Siguiente acción exacta: auditar sólo el archivo de captura ya persistido para clasificar los 34 métodos/paths bloqueados mediante categorías sanitizadas y confirmar acciones/errores de ruta; sin abrir navegador, nuevas peticiones, DB writes, importación, reinicio u órdenes. Después, si queda probado que el GET contractual nunca se disparó o fue abortado, estudiar el flujo de UI/código. Sólo comparar fuera/dentro de rueda con la misma solicitud GET demostrada y sin relajar el guard.
+
 ## Checkpoint heredado íntegro
 
 El cuerpo siguiente conserva íntegramente el checkpoint fuente. El delta superior sólo actualiza los temas y runs que identifica; no elimina las tareas o restricciones todavía vigentes del cuerpo heredado.
