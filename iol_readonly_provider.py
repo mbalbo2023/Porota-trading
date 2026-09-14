@@ -40,12 +40,14 @@ class IOLReadOnlyProvider:
     This adapter intentionally does not provide a generic method dispatcher.
     """
 
-    __slots__ = ("_client", "_clock")
+    __slots__ = ("__get_panel", "__get_quote", "__get_history", "_clock")
 
     def __init__(self, client: Any, *, clock: Callable[[], datetime] | None = None):
         if client is None:
             raise IOLReadOnlyProviderError("An IOL client is required")
-        self._client = client
+        self.__get_panel = getattr(client, "get_panel", None)
+        self.__get_quote = getattr(client, "get_cotizacion", None)
+        self.__get_history = getattr(client, "get_serie_historica", None)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     @staticmethod
@@ -68,7 +70,7 @@ class IOLReadOnlyProvider:
         payload: Any,
         observed_at: str,
     ) -> IOLObservation:
-        status = "SOURCE_RETURNED_DATA" if payload not in (None, [], {}) else "EMPTY_OR_UNAVAILABLE"
+        status = "NONEMPTY_UNVALIDATED" if payload not in (None, [], {}) else "EMPTY_OR_UNAVAILABLE"
         return IOLObservation(
             source_class=SOURCE_CLASS,
             operation=operation,
@@ -89,7 +91,7 @@ class IOLReadOnlyProvider:
             "panel": self._token(panel, "panel"),
             "country": self._token(country, "country"),
         }
-        method = getattr(self._client, "get_panel", None)
+        method = self.__get_panel
         if not callable(method):
             raise IOLReadOnlyProviderError("allowlisted IOL panel method is unavailable")
         observed_at = self._timestamp()
@@ -105,7 +107,7 @@ class IOLReadOnlyProvider:
             "symbol": self._token(symbol, "symbol"),
             "market": self._token(market, "market"),
         }
-        method = getattr(self._client, "get_cotizacion", None)
+        method = self.__get_quote
         if not callable(method):
             raise IOLReadOnlyProviderError("allowlisted IOL quote method is unavailable")
         observed_at = self._timestamp()
@@ -130,7 +132,7 @@ class IOLReadOnlyProvider:
             "days": days,
             "adjusted": adjusted,
         }
-        method = getattr(self._client, "get_serie_historica", None)
+        method = self.__get_history
         if not callable(method):
             raise IOLReadOnlyProviderError("allowlisted IOL history method is unavailable")
         observed_at = self._timestamp()
