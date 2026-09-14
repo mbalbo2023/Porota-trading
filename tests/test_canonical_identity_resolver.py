@@ -60,8 +60,8 @@ class CanonicalIdentityResolverTests(unittest.TestCase):
         self.assertEqual(foreign_fund.identity.family, "FCI_EXTERIOR")
 
     def test_cedear_etf_and_linked_letter_keep_subfamily(self):
-        cedear_etf = resolve_canonical_identity([{**self.base, "family": "CEDEAR ETF", "underlying": "IVV"}])
-        linked = resolve_canonical_identity([{**self.base, "family": "LETRA LINKED"}])
+        cedear_etf = resolve_canonical_identity([{**self.base, "family": "CEDEAR ETF", "subfamily": "ETF", "underlying": "IVV"}])
+        linked = resolve_canonical_identity([{**self.base, "family": "LETRA LINKED", "subfamily": "LINKED"}])
         self.assertEqual(cedear_etf.identity.family, "CEDEARS")
         self.assertEqual(cedear_etf.identity.subfamily, "ETF")
         self.assertEqual(linked.identity.family, "LETRAS")
