@@ -1,4 +1,4 @@
-name: RC6 targeted contractual GET response capture 2026-09-14
+name: RC6 AL30 technical evidence probe 2026-09-14
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - ops/rc6-contract-open-session-immediate-20260914
     paths:
       - .github/workflows/rc6-contract-open-session-immediate-20260914.yml
-      - ops/rc6_ppi_contract_targeted_capture_20260914.py
+      - ops/rc6_ppi_al30_technical_probe_20260914.py
   workflow_dispatch:
 
 permissions:
@@ -17,14 +17,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  targeted-contractual-capture-readonly:
+  al30-technical-probe-readonly:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
       - name: Enforce approved date
         run: test "$(TZ=America/Argentina/Buenos_Aires date +%F)" = "2026-09-14"
 
-      - name: Checkout targeted probe
+      - name: Checkout technical probe
         uses: actions/checkout@v4
 
       - name: Configure audited SSH
@@ -38,26 +38,26 @@ jobs:
           chmod 600 "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$DO_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
 
-      - name: Stage targeted capture
+      - name: Stage AL30 technical probe
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
-          REMOTE_SCRIPT="/tmp/porota-ppi-contract-targeted-${GITHUB_RUN_ID}.py"
+          REMOTE_SCRIPT="/tmp/porota-ppi-al30-technical-${GITHUB_RUN_ID}.py"
           scp -q -o BatchMode=yes -o ConnectTimeout=20 \
-            ops/rc6_ppi_contract_targeted_capture_20260914.py \
+            ops/rc6_ppi_al30_technical_probe_20260914.py \
             "$DO_USER@$DO_HOST:$REMOTE_SCRIPT"
           echo "REMOTE_SCRIPT=$REMOTE_SCRIPT" >> "$GITHUB_ENV"
 
-      - name: Run targeted GET-only capture
+      - name: Run AL30 technical probe
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set +e
           ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" \
-            "sudo -n bash -s -- '$REMOTE_SCRIPT'" <<'REMOTE' 2>&1 | tee targeted.log
+            "sudo -n bash -s -- '$REMOTE_SCRIPT'" <<'REMOTE' 2>&1 | tee al30tech.log
           set -Eeuo pipefail
           umask 077
           SCRIPT="$1"
@@ -66,15 +66,15 @@ jobs:
           PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
           CE_PYTHON=/opt/porota-contract-evidence-venv/bin/python
           CONTAINER=porota_production_observer
-          OUTDIR="$ROOT/data/contract_evidence/rc6_targeted"
+          OUTDIR="$ROOT/data/contract_evidence/rc6_al30_technical"
           trap 'rm -f "$SCRIPT"' EXIT
 
-          echo POROTA_TARGETED_CONTRACT_CAPTURE
-          echo MUTATIONS=CAPTURE_FILE_ONLY
+          echo POROTA_AL30_TECHNICAL_PROBE
+          echo MUTATIONS=CAPTURE_FILE_AND_SEARCH_SELECTION_ONLY
           echo HTTP_METHODS_ALLOWED=GET_HEAD_OPTIONS
-          echo QUERY_STRINGS_LOGGED=NO
-          echo REQUEST_HEADERS_LOGGED=NO
-          echo RAW_RESPONSE_BODIES_LOGGED=NO
+          echo QUANTITY_FILLED=NO
+          echo PRICE_FILLED=NO
+          echo ORDER_CONTROL_CLICKED=NO
           echo DB_IMPORT_EXECUTED=NO
           echo SERVICE_RESTARTED=NO
           echo REAL_ORDERS_SENT=0
@@ -84,10 +84,10 @@ jobs:
           echo GLOBAL_PPI_BROWSER_LOCK=ACQUIRED
           ! systemctl is-active --quiet porota-ppi-web-residual-rc6.service || { echo STATE=BLOCKED_RESIDUAL_WRITER_ACTIVE; exit 5; }
 
-          test -r "$SCRIPT" || { echo STATE=BLOCKED_TARGETED_SCRIPT_MISSING; exit 5; }
+          test -r "$SCRIPT" || { echo STATE=BLOCKED_TECH_SCRIPT_MISSING; exit 5; }
           grep -F 'SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}' "$SCRIPT" >/dev/null || { echo STATE=BLOCKED_METHOD_GUARD; exit 5; }
           grep -F 'return route.abort()' "$SCRIPT" >/dev/null || { echo STATE=BLOCKED_ABORT_GUARD; exit 5; }
-          echo TARGETED_SAFETY=PASS
+          echo TECH_PROBE_SAFETY=PASS
 
           SAFETY="$(docker exec "$CONTAINER" python -c "import sqlite3,json; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close(); print(json.dumps({'mode':r[0] if r else None,'real_orders_sent':r[1] if r else None},sort_keys=True))")"
           echo "OBSERVER_PREFLIGHT=$SAFETY"
@@ -99,59 +99,59 @@ jobs:
           STAGE_DIR="$BROWSER_HOME/porota-browser-lab/rc6-open-session"
           install -d -o "$BROWSER_USER" -g "$BROWSER_GROUP" -m 0700 "$STAGE_DIR"
           stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-          STAGE="$STAGE_DIR/contract_targeted_${stamp}.json"
-          CAPTURE="$OUTDIR/contract_targeted_${stamp}.json"
+          STAGE="$STAGE_DIR/al30_technical_${stamp}.json"
+          CAPTURE="$OUTDIR/al30_technical_${stamp}.json"
 
           set +e
           runuser -u "$BROWSER_USER" -- env HOME="$BROWSER_HOME" PYTHONPATH="$LIB:$ROOT" \
             "$CE_PYTHON" "$SCRIPT" --profile "$PROFILE" --output "$STAGE"
-          TARGET_RC=$?
+          TECH_RC=$?
           set -e
-          echo "TARGET_RC=$TARGET_RC"
+          echo "TECH_RC=$TECH_RC"
           test -r "$STAGE" || { echo STATE=BLOCKED_CAPTURE_MISSING; exit 6; }
 
           install -d -m 0750 "$OUTDIR"
           install -o root -g root -m 0600 "$STAGE" "$CAPTURE"
           rm -f "$STAGE"
 
-          python3 - "$CAPTURE" "$TARGET_RC" <<'PY'
+          python3 - "$CAPTURE" "$TECH_RC" <<'PY'
           import json,os,sys
           path=sys.argv[1]; rc=int(sys.argv[2])
           d=json.load(open(path,encoding='utf-8'))
-          caps=d.get('captures') or []
-          kinds=sorted(set(str(x.get('kind')) for x in caps if isinstance(x,dict)))
-          al30=[]; cauc=[]
-          for x in caps:
-              if not isinstance(x,dict): continue
-              if x.get('kind')=='InstrumentosOperables': al30.extend(x.get('al30_rows') or [])
-              if x.get('kind')=='CaucionesOperables': cauc.extend(x.get('rows') or [])
+          trs=d.get('technical_responses') or []
+          explicit=[x for x in trs if isinstance(x,dict) and x.get('kind')=='DatosTecnicos']
           print('CAPTURE_FILE='+os.path.basename(path))
           print('CAPTURE_BYTES='+str(os.path.getsize(path)))
           print('AUTH_STATUS='+str(d.get('auth_status')))
-          print('ROUTES_REACHED='+str(sum(1 for x in d.get('routes',[]) if isinstance(x,dict) and x.get('reached')))+'/'+str(len(d.get('routes',[]))))
-          print('CAPTURE_KINDS='+','.join(kinds))
-          print('CAPTURE_RECORDS='+str(len(caps)))
-          print('AL30_EXPLICIT='+('YES' if al30 else 'NO'))
-          print('AL30_ROWS='+str(len(al30)))
-          print('AL30_FIELDSETS='+json.dumps([sorted(map(str,r.keys())) for r in al30 if isinstance(r,dict)][:10],ensure_ascii=False))
-          print('CAUCIONES_ROWS='+str(len(cauc)))
-          print('CAUCIONES_FIELDSETS='+json.dumps([sorted(map(str,r.keys())) for r in cauc if isinstance(r,dict)][:20],ensure_ascii=False))
+          print('ROUTE_REACHED='+str(bool(d.get('route_reached'))).upper())
+          print('INPUT_CANDIDATE_COUNT='+str(len(d.get('input_candidates') or [])))
+          print('SELECTED_INPUT='+json.dumps(d.get('selected_input'),ensure_ascii=False,sort_keys=True))
+          print('AL30_TYPED='+str(bool(d.get('al30_typed'))).upper())
+          print('AL30_OPTION_CLICKED='+str(bool(d.get('al30_option_clicked'))).upper())
+          print('KEYBOARD_SELECTION_USED='+str(bool(d.get('keyboard_selection_used'))).upper())
+          print('TECHNICAL_RESPONSE_COUNT='+str(len(trs)))
+          print('TECHNICAL_HOST_PATHS='+json.dumps([x.get('host_path') for x in trs if isinstance(x,dict)],ensure_ascii=False))
+          print('DATOS_TECNICOS_EXPLICIT='+('YES' if explicit else 'NO'))
+          print('DATOS_TECNICOS_FIELDSETS='+json.dumps([sorted((x.get('normalized') or {}).keys()) for x in explicit],ensure_ascii=False))
           print('BLOCKED_NONREAD_COUNT='+str(d.get('blocked_nonread',0)))
+          print('QUANTITY_FILLED='+str(bool(d.get('quantity_filled'))).upper())
+          print('PRICE_FILLED='+str(bool(d.get('price_filled'))).upper())
+          print('ORDER_CONTROL_CLICKED='+str(bool(d.get('order_control_clicked'))).upper())
           print('DB_IMPORT_EXECUTED='+str(bool(d.get('db_import_executed'))).upper())
           print('SERVICE_RESTARTED='+str(bool(d.get('service_restarted'))).upper())
           print('REAL_ORDERS_SENT='+str(d.get('real_orders_sent',0)))
           if rc != 0 or d.get('auth_status')!='AUTHENTICATED_TRUSTED_DEVICE':
-              print('STATE=BLOCKED_TARGETED_CAPTURE')
+              print('STATE=BLOCKED_AL30_TECHNICAL_PROBE')
               raise SystemExit(6)
-          print('STATE=TARGETED_CAPTURE_COMPLETE')
+          print('STATE=AL30_TECHNICAL_PROBE_COMPLETE')
           PY
           REMOTE
           rc=${PIPESTATUS[0]}
-          echo "REMOTE_RC=$rc" | tee -a targeted.log
+          echo "REMOTE_RC=$rc" | tee -a al30tech.log
           exit "$rc"
 
-      - name: Publish sanitized targeted result
+      - name: Publish sanitized technical result
         if: always()
         run: |
-          test -f targeted.log || exit 0
-          tail -n 120 targeted.log >> "$GITHUB_STEP_SUMMARY"
+          test -f al30tech.log || exit 0
+          tail -n 140 al30tech.log >> "$GITHUB_STEP_SUMMARY"
