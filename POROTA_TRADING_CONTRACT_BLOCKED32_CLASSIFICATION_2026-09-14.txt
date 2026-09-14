@@ -1,0 +1,17 @@
+PROBE=RC6_CONTRACT_BLOCKED32_CLASSIFICATION_V1
+READ_ONLY=YES
+BROWSER_STARTED=NO
+DB_TOUCHED=NO
+AUTH_STATUS=AUTHENTICATED_TRUSTED_DEVICE
+REAL_ORDERS_SENT=0
+BLOCKED_TOTAL=32
+BLOCKED_UNIQUE=5
+UNIQUE_1=count:2|method:POST|host:api.portfoliopersonal.com|path:/api/v1/zendesk/zendesk-session|class:FIRSTPARTY_UNKNOWN_REVIEW_REQUIRED
+UNIQUE_2=count:9|method:POST|host:api.refiner.io|path:/js-client/v1/c2731740-f679-11ee-9f44-338bb8d8fd30/identify-user|class:ACCESSORY_TELEMETRY_SUPPORT
+UNIQUE_3=count:3|method:POST|host:portfoliopersonalsupport.zendesk.com|path:/frontendevents/pv|class:ACCESSORY_TELEMETRY_SUPPORT
+UNIQUE_4=count:2|method:POST|host:portfoliopersonalsupport.zendesk.com|path:/sc/sdk/v2/apps/615641321065b800df569ab5/login|class:ACCESSORY_TELEMETRY_SUPPORT
+UNIQUE_5=count:16|method:POST|host:trading.portfoliopersonal.com|path:/api/logger|class:ACCESSORY_TELEMETRY_SUPPORT
+ENDPOINTS_COUNT=2
+ENDPOINT_1=kind:SCHEMA_ONLY|host:api.portfoliopersonal.com|path:/api/Ordenes/ConfiguracionOperatoriaSimplificada
+ENDPOINT_2=kind:SCHEMA_ONLY|host:api.portfoliopersonal.com|path:/api/Ordenes/ConfiguracionOperatoriaSimplificada
+RESULT=GREEN_BLOCKED32_CLASSIFIED_NO_MUTATION
