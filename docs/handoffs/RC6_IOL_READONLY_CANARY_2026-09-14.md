@@ -111,3 +111,10 @@ El MCP es una integración independiente de las credenciales IOL_USERNAME/IOL_PA
 2. Confirmar solo presencia de nombres/permisos por el preflight ya existente, nunca los valores.
 3. Si preflight pasa, correr una sola vez el canary GET de mercado restringido ya definido, manteniendo RC6 exacto, cero órdenes y sin tocar PPI Watch.
 4. Evaluar MCP como pista separada; no instalar/conectar ni usar credenciales hasta definir alcance y verificar el OAuth oficial en modo de lectura.
+
+
+### Corrección de accesibilidad del script — 2026-09-14
+
+El primer bloque pegado en Termius intentó leer el usuario desde stdin mientras stdin seguía siendo consumido por el pegado del heredoc; terminó con EOF antes de modificar el archivo. No hubo escritura confirmada por ese intento. Versión corregida: abrir /dev/tty para prompts interactivos, conservar entrada oculta para la contraseña y enviar al portapapeles solo un resumen saneado mediante OSC 52 (BEL y ST). Nunca incluir secretos en el resultado/clipboard. El script no debe depender de escritura manual ni de seleccionar salida en pantalla.
+
+Regla global persistida también en POROTA_TRADING_RC6_CONTEXT_HANDOFF.md: Tincho tiene cuadriplejia y no puede escribir; cada chat debe asumir voz/pegado, entregar bloques completos y hacer que los scripts preparen la salida para portapapeles antes de empezar instrucciones. Validar PORTAPAPELES_OSC52=EMITIDO; si no se puede emitir, informar el límite sin fingir éxito.
