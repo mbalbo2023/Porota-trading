@@ -1,0 +1,20 @@
+[Unit]
+Description=Porota RC6 contract evidence recovery supervisor (read-only)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/porota-trading
+ExecStart=/usr/local/sbin/porota-contract-recovery-supervisor-rc6
+TimeoutStartSec=20min
+TimeoutStopSec=2min
+Nice=12
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/porota-contract-recovery-rc6 /run/lock /opt/porota-trading/data/contract_evidence /home/porotaadmin/porota-browser-lab/rc6-point1
