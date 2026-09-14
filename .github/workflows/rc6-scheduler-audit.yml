@@ -11,6 +11,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -30,27 +31,27 @@ jobs:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
-          set -euo pipefail
-          SSH_OPTS=(-i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          set +e
           RESULT=POROTA_TRADING_SCHEDULER_AUDIT_RAW_2026-09-14.md
-          ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'HOST' > "$RESULT"
-          set -Eeuo pipefail
+          SSH_OPTS=(-i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'HOST' > "$RESULT" 2>&1
+          set -u
           echo '# POROTA RC6 — Scheduler and Scalping Read-only Evidence'
           echo
           echo "UTC=$(date -u -Is)"
           echo 'MUTATIONS=NONE'
           echo
           echo '## Timers'
-          systemctl list-timers --all --no-pager
+          systemctl list-timers --all --no-pager || true
           echo
           echo '## Matching unit files'
-          systemctl list-unit-files --no-pager | awk '/^(porota|a3)/ {print}'
+          systemctl list-unit-files --no-pager | awk '/^(porota|a3)/ {print}' || true
           echo
           echo '## Unit evidence'
           mapfile -t units < <(systemctl list-unit-files --no-legend --no-pager | awk '/^(porota|a3)/ && ($1 ~ /\.(timer|service)$/) {print $1}' | sort -u)
           for u in "${units[@]}"; do
             echo
-            echo "### `$u`"
+            echo "### $u"
             systemctl show "$u" --no-pager -p Id -p Description -p LoadState -p ActiveState -p SubState -p UnitFileState -p Result -p MainPID -p ExecMainStatus -p ExecStart -p FragmentPath -p Wants -p Requires -p After || true
             echo '#### Config'
             systemctl cat "$u" 2>&1 || true
@@ -61,22 +62,33 @@ jobs:
           done
           echo
           echo '## Runtime/scalping evidence'
-          ps -eo pid,ppid,etime,%cpu,%mem,stat,cmd --sort=-%cpu | awk 'NR==1 || /bv_paper_runtime|candle-worker|scalp|observer|telegram/i'
+          ps -eo pid,ppid,etime,%cpu,%mem,stat,cmd --sort=-%cpu | awk 'NR==1 || /bv_paper_runtime|candle-worker|scalp|observer|telegram/' || true
           echo
           echo '## Containers'
-          docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+          docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || true
           echo
           echo '## Safety probe'
-          docker exec -i porota_production_observer python - <<'PY'
-import json,sqlite3
+          observer="$(docker ps --format '{{.Names}}' | awk '/observer/ {print; exit}')"
+          if [ -n "$observer" ]; then
+            docker exec -i "$observer" python - <<'PY'
+import json, sqlite3
 p='/app/data/paper_v17/observer_v17.db'
-c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10)
-c.execute('pragma query_only=on')
-qc=c.execute('pragma quick_check').fetchone()[0]
-r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
-print(json.dumps({'quick_check':qc,'mode':r[0] if r else None,'real_orders_sent':r[1] if r else None},sort_keys=True))
+try:
+    c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10)
+    c.execute('pragma query_only=on')
+    q=c.execute('pragma quick_check').fetchone()[0]
+    r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+    print(json.dumps({'quick_check':q,'mode':r[0] if r else None,'real_orders_sent':r[1] if r else None},sort_keys=True))
+except Exception as e:
+    print('OBSERVER_SAFETY_PROBE_ERROR='+type(e).__name__)
 PY
-HOST
+          else
+            echo 'OBSERVER_SAFETY_PROBE=CONTAINER_NOT_FOUND'
+          fi
+          HOST
+          rc=$?
+          printf '\n## Transport result\nSSH_RC=%s\n' "$rc" >> "$RESULT"
+          exit 0
 
       - name: Persist raw evidence
         run: |
