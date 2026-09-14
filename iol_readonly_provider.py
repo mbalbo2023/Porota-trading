@@ -51,7 +51,7 @@ class IOLReadOnlyProvider:
     @staticmethod
     def _token(value: object, name: str) -> str:
         token = str(value or "").strip()
-        if not token or not _ALLOWED_TOKEN.fullmatch(token):
+        if not token or token in {".", ".."} or not _ALLOWED_TOKEN.fullmatch(token):
             raise IOLReadOnlyProviderError(f"{name} must be one path token")
         return token
 
