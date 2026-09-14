@@ -2,8 +2,8 @@
 
 **ID:** POROTA-DELTA-AI-EFFORT-PAPER-PARITY-20260914-01  
 **Estado:** PENDING_INTEGRATION  
-**Rama aislada:** `docs/ai-effort-and-paper-parity-20260914`  
-**Base:** `ad0259c04c396f7fb40bbd06bab3b05f971298bc`  
+**Rama aislada:** `docs/ai-effort-paper-parity-main-20260914`  
+**Base:** `fc9e8f9872c3669f934debbd36a41982ec40e7cf`  
 **Baseline de código RC6:** `f8adec8a02b2f9f0ef2dffbee75458c958bf711e`  
 **Alcance:** política cross-chat y hallazgos de solo lectura. No modifica runtime, DB, importación, servicios ni órdenes.
 
@@ -43,12 +43,13 @@ Código reusable en RC6: `bs_instrument_contracts.py`, `cp_contract_evidence_v2_
 
 Slices independientes a preparar sobre una rama de código RC6 aislada, con pruebas offline: resolver identidad canónica puro; vistas/adaptadores de provenance sobre Evidence v2; allowlist de IOL read-only; PPI contract DTO a partir de normalizador actual; evaluator unificado de gates; comparador de divergencias. Diseño de DB primero, sin migraciones.
 
-La rama reciente `ops/rc6-contract-open-session-immediate-20260914` sólo contiene documentación y diagnósticos; no es base de código para Wave A. `main` también es docs/ops-only. El SHA RC6 `f8adec…` es el baseline de código. No se tocaron la rama del pipeline PPI, runtime ni DB. Implementación/CI quedan pendientes de fijar la rama/owner de integración y disponer de verificación de pruebas sobre la base de código.
+La rama reciente `ops/rc6-contract-open-session-immediate-20260914` sólo contiene documentación y diagnósticos; no es base de código para Wave A. `main` también es docs/ops-only. El SHA RC6 `f8adec…` es el baseline de código. No se tocaron la rama del pipeline PPI, runtime ni DB. El 2026-09-14 se abrió una rama propia de integración de código, `integration/rc6-wave-a-core-20260914`, desde el baseline RC6 exacto `f8adec8a02b2f9f0ef2dffbee75458c958bf711e`; la feature `feature/wave-a-canonical-identity-20260914` aporta WA-01 en PR borrador #63. El resolver permanece aislado y no se conectó al runtime.
 
 ## Estado de ejecución
 
-- Código: no modificado en este delta.
-- CI/tests: no ejecutados.
+- Código WA-01: `canonical_identity_resolver.py` en PR borrador #63. Requiere familia/subfamilia, ticker, mercado, venue, moneda, settlement y provider ID; faltantes/conflictos => sin canonical ID. CEDEAR exige underlying; opciones/futuros, sus dimensiones contractuales de identidad.
+- CI de WA-01: primer diseño rechazado en review interna y corregido; run final de Actions pendiente. El CI offline compila sólo este slice y corre sus pruebas unitarias.
+- Pendiente de Wave A: ratificar taxonomía con módulos existentes; WA-02 provenance, WA-03 IOL read-only, WA-04 DTO PPI, WA-05 readiness, WA-06 divergencias y conexión del gate al punto de apertura.
 - Runtime/DB/importación/readiness recompute: no inspeccionados ni ejecutados.
 - Capturas/ingesta masiva: no se repitieron.
 - Órdenes reales: no habilitadas; invariantes PAPER/fail-closed se preservan.
@@ -88,16 +89,16 @@ Conclusión: para los activos BYMA, el siguiente camino nuevo y concreto es soli
 - 🔴 Paridad de apertura PAPER: el código legacy permite potencial OPENED_SIMULATED bajo READY_PAPER_SPOT; READY_PAPER_PPI no está conectado. Política documentada en PR #62, pendiente de integración y wiring de código. Fill runtime concreto: NOT_VERIFIED.
 - 🟡 246 READY_PAPER_SPOT: 55 ACCIONES + 191 CEDEARS, pool de elegibilidad, no readiness integral.
 - 🟡 Universo estricto 444: último 0/444 es anterior a fixes; valor actual NOT_VERIFIED.
-- 🟡 Wave A: auditoría de fundamentos realizada, implementación/tests aún no iniciados; rama/owner de integración no resueltos.
+- 🟡 Wave A completa: rama de integración propia creada desde el SHA RC6 correcto; WA-01 está en PR #63 borrador, con el CI de la versión revisada pendiente. Resto de WA aún pendiente; el slice no está integrado ni conectado al runtime.
 - 🟢 Corridas masivas históricas PPI cerradas: no repetirlas. 🟡 API IOL y nueva opción BYMA por medir; BYMA requiere documentación/acceso y su cobertura sigue sin probarse.
 
 ### Wave A — core reusable y regla de apertura
 
-1. 🔴 Resolver branch/owner integrador de código desde el baseline RC6 exacto f8adec8…; no usar rama de deploy, docs/ops ni pipeline PPI.
-2. 🔴 Acordar vocabulario canónico: identidad/provider IDs, venue, family/subfamily, moneda, settlement, ARS/D/C, underlying/emisor; unificar aliases y semántica de price_precision, quantity_step y price_tick sin inferir equivalencias.
-3. 🟡 WA-01/02: resolver identidad pura y vistas/adaptadores de provenance sobre Evidence v2; conservar snapshots/conflicts/freshness existentes, sin duplicar tablas ni migrar.
-4. 🟡 WA-03/04: IOL provider estrictamente allowlisted read-only y PPIContractProvider sobre normalizador existente; pruebas DTO/mocks sin red ni credenciales.
-5. 🟡 WA-05/06: evaluator de gates identity/market data/analytics/contract PPI/risk más divergence gate; conflicto o campo crítico ausente => HOLD.
+1. 🟢 Base de integración aislada creada desde RC6 `f8adec8a02b2f9f0ef2dffbee75458c958bf711e`: `integration/rc6-wave-a-core-20260914`. No se usa rama deploy/docs/ops ni pipeline PPI.
+2. 🟡 Ratificar vocabulario canónico con evidencia y módulos existentes: identity/provider IDs, venue, family/subfamily, moneda/plaza ARS/D/C, underlying/emisor, settlement; resolver aliases y `price_precision`/`price_tick`/`quantity_step` sin equivalencias inferidas.
+3. 🟡 WA-01/02: PR #63 implementa WA-01; review detectó y motivó fixes para estabilidad del ID, procedencia obligatoria, CEDEAR ETF, letra linked, FX y términos de series. CI revisado pendiente. Después implementar provenance adapters sobre Evidence v2, sin tablas duplicadas ni migración.
+4. 🟡 WA-03/04: IOL provider estrictamente allowlisted read-only y DTO PPI sobre normalizador existente; tests con DTO/mocks, sin red ni credenciales.
+5. 🟡 WA-05/06: evaluator de los cinco gates identity/market data/analytics/contract PPI/risk más divergence gate; conflicto o campo crítico ausente => HOLD.
 6. 🔴 Conectar gate estricto al punto de apertura PAPER: evaluación diagnóstica puede seguir en SHADOW, OPENED_SIMULATED no puede saltar READY_PAPER_PPI.
 7. 🟡 WA-07: diseño de schema y estrategia de migración; no migrar runtime en Wave A.
 8. 🟢 Wave A sólo al integrar en rama de código válida, pasar tests/CI, demostrar que missing/stale/conflict bloquea y demostrar HOLD versus apertura simulada controlada en PAPER sin DB productiva ni órdenes reales.
