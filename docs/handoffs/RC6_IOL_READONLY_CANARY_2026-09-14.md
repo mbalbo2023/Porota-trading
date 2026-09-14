@@ -130,3 +130,8 @@ La versión v3 del script:
 - fija permisos 0600 al anexar y no reinicia servicios;
 - imprime y emite por OSC 52 (BEL y ST) solo un resumen saneado. PORTAPAPELES_OSC52=EMITIDO confirma la emisión; nunca incluye valores secretos.
 Validación local aislada: preservó los bytes existentes, anexó las claves, permisos 0600 y ausencia de secretos en salida/clipboard. No se ejecutó contra el droplet ni contra IOL. Requiere que el usuario pegue los valores en los prompts ocultando la contraseña; ningún valor se incluye en archivo/código/commit.
+
+
+### Addendum v4: sesión Termius abierta al finalizar — 2026-09-14
+
+La v4 agrega pausa final leyendo desde /dev/tty, para mantener Termius abierto hasta que el operador indique Enter por voz. El bloque de instalación se ejecuta en subshell, con noclobber limitado a ese subshell; así no cambia opciones del shell interactivo ni puede cerrarlo por errexit. Mantiene la elevación automática sudo, nombre fijo/versionado, append-only de .env, salida saneada y emisión OSC 52. Validación aislada: append y modo 0600, sin secretos en salida/clipboard, marcador TERMINAL_MANTENIDA=SI. No se ejecutó contra droplet ni IOL.
