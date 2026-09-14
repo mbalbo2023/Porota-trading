@@ -1,0 +1,89 @@
+name: RC6 scheduler and scalping audit
+
+on:
+  push:
+    branches: [ops/rc6-scheduler-audit-20260914]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/k" "$HOME/.ssh/known_hosts"
+
+      - name: Collect read-only scheduler and scalping evidence
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          SSH_OPTS=(-i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          RESULT=POROTA_TRADING_SCHEDULER_AUDIT_RAW_2026-09-14.md
+          ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'HOST' > "$RESULT"
+          set -Eeuo pipefail
+          echo '# POROTA RC6 — Scheduler and Scalping Read-only Evidence'
+          echo
+          echo "UTC=$(date -u -Is)"
+          echo 'MUTATIONS=NONE'
+          echo
+          echo '## Timers'
+          systemctl list-timers --all --no-pager
+          echo
+          echo '## Matching unit files'
+          systemctl list-unit-files --no-pager | awk '/^(porota|a3)/ {print}'
+          echo
+          echo '## Unit evidence'
+          mapfile -t units < <(systemctl list-unit-files --no-legend --no-pager | awk '/^(porota|a3)/ && ($1 ~ /\.(timer|service)$/) {print $1}' | sort -u)
+          for u in "${units[@]}"; do
+            echo
+            echo "### `$u`"
+            systemctl show "$u" --no-pager -p Id -p Description -p LoadState -p ActiveState -p SubState -p UnitFileState -p Result -p MainPID -p ExecMainStatus -p ExecStart -p FragmentPath -p Wants -p Requires -p After || true
+            echo '#### Config'
+            systemctl cat "$u" 2>&1 || true
+            echo '#### Dependencies'
+            systemctl list-dependencies --plain --no-pager "$u" 2>&1 || true
+            echo '#### Recent logs'
+            journalctl -u "$u" -n 25 --no-pager -o short-iso 2>&1 || true
+          done
+          echo
+          echo '## Runtime/scalping evidence'
+          ps -eo pid,ppid,etime,%cpu,%mem,stat,cmd --sort=-%cpu | awk 'NR==1 || /bv_paper_runtime|candle-worker|scalp|observer|telegram/i'
+          echo
+          echo '## Containers'
+          docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+          echo
+          echo '## Safety probe'
+          docker exec -i porota_production_observer python - <<'PY'
+import json,sqlite3
+p='/app/data/paper_v17/observer_v17.db'
+c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10)
+c.execute('pragma query_only=on')
+qc=c.execute('pragma quick_check').fetchone()[0]
+r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+print(json.dumps({'quick_check':qc,'mode':r[0] if r else None,'real_orders_sent':r[1] if r else None},sort_keys=True))
+PY
+HOST
+
+      - name: Persist raw evidence
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add POROTA_TRADING_SCHEDULER_AUDIT_RAW_2026-09-14.md
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(scheduler): persist RC6 read-only evidence [skip ci]'
+          git push origin HEAD:ops/rc6-scheduler-audit-20260914
