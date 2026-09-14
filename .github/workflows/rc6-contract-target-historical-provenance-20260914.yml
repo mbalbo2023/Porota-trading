@@ -1,0 +1,125 @@
+name: RC6 Contract target historical provenance 2026-09-14
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-contract-blocked-nonread-audit-20260914]
+    paths:
+      - '.github/workflows/rc6-contract-target-historical-provenance-20260914.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-contract-blocked-nonread-audit-20260914
+      - name: Prepare SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Trace target endpoints in persisted files and runtime source only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_TARGET_HISTORICAL_PROVENANCE_2026-09-14.txt
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY' > "$RESULT"
+          import os,json
+          from urllib.parse import urlsplit,parse_qsl
+          ROOT='/opt/porota-trading/data'
+          LIB='/usr/local/lib/porota-contract-evidence-rc6'
+          TARGETS=('InstrumentosOperables','CaucionesOperables','ConfiguracionOperatoriaSimplificada','SubyacenteOpciones','DatosTecnicos')
+          print('PROBE=RC6_CONTRACT_TARGET_HISTORICAL_PROVENANCE_V1')
+          print('READ_ONLY=YES')
+          print('BROWSER_STARTED=NO')
+          print('DB_TOUCHED=NO')
+          hits=[]
+          scanned=0
+          def sanitize_url(raw):
+              try:
+                  u=urlsplit(str(raw));
+                  qkeys=sorted({k for k,_ in parse_qsl(u.query,keep_blank_values=True)})
+                  return (u.netloc,u.path,qkeys)
+              except Exception:
+                  return ('',str(raw)[:200],[])
+          def walk(obj, file, parent=None, depth=0):
+              if depth>10 or len(hits)>=200: return
+              if isinstance(obj,dict):
+                  # inspect candidate URL/path values in this dict
+                  method=str(obj.get('method') or obj.get('request_method') or obj.get('http_method') or '')[:20].upper()
+                  kind=str(obj.get('kind') or obj.get('type') or '')[:80]
+                  for k,v in obj.items():
+                      if isinstance(v,str) and any(t.lower() in v.lower() for t in TARGETS):
+                          host,path,qkeys=sanitize_url(v)
+                          hits.append((file,str(k),method,kind,host,path,','.join(qkeys)))
+                      elif isinstance(k,str) and any(t.lower() in k.lower() for t in TARGETS):
+                          hits.append((file,'KEY:'+str(k),method,kind,'','',''))
+                  for v in obj.values(): walk(v,file,obj,depth+1)
+              elif isinstance(obj,list):
+                  for v in obj[:5000]: walk(v,file,parent,depth+1)
+          for base,dirs,files in os.walk(ROOT):
+              dirs[:]=[d for d in dirs if not d.startswith('.')]
+              for fn in files:
+                  if len(hits)>=200: break
+                  if not fn.lower().endswith('.json'): continue
+                  p=os.path.join(base,fn)
+                  try:
+                      if os.path.getsize(p)>25_000_000: continue
+                      with open(p,encoding='utf-8') as f: d=json.load(f)
+                  except Exception:
+                      continue
+                  scanned+=1
+                  walk(d,p)
+              if len(hits)>=200: break
+          print('JSON_FILES_SCANNED='+str(scanned))
+          print('TARGET_HITS='+str(len(hits)))
+          # dedupe and output only basename/relative path + sanitized path/query-key names, no values/bodies.
+          uniq=[]; seen=set()
+          for row in hits:
+              rel=os.path.relpath(row[0],ROOT)
+              safe=(rel,)+row[1:]
+              if safe in seen: continue
+              seen.add(safe); uniq.append(safe)
+          print('TARGET_HITS_UNIQUE='+str(len(uniq)))
+          for i,row in enumerate(uniq[:200],1):
+              rel,field,method,kind,host,path,qkeys=row
+              print(f'HIT_{i}=file:{rel}|field:{field}|method:{method}|kind:{kind}|host:{host}|path:{path}|query_keys:{qkeys}')
+          print('--- INSTALLED_SOURCE_REFERENCES ---')
+          if os.path.isdir(LIB):
+              for fn in sorted(os.listdir(LIB)):
+                  if not (fn.endswith('.py') or fn.endswith('.sh')): continue
+                  p=os.path.join(LIB,fn)
+                  try: lines=open(p,encoding='utf-8',errors='replace').read().splitlines()
+                  except Exception: continue
+                  for n,line in enumerate(lines,1):
+                      if any(t.lower() in line.lower() for t in TARGETS):
+                          # Do not print long literals or secrets; target references are source constants/logic.
+                          clean=line.strip()[:500]
+                          print(f'SOURCE_REF={fn}:{n}:{clean}')
+          print('RESULT=GREEN_TARGET_PROVENANCE_COMPLETE_NO_MUTATION')
+          PY
+          cat "$RESULT"
+      - name: Persist sanitized target provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_CONTRACT_TARGET_HISTORICAL_PROVENANCE_2026-09-14.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist target historical provenance [skip ci]'
+          git push origin HEAD:ops/rc6-contract-blocked-nonread-audit-20260914
