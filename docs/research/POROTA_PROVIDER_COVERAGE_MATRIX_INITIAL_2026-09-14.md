@@ -23,15 +23,16 @@ Leyenda:
 |---|---|---:|---:|---|---:|---|
 | ACCIONES | identidad/ticker | YES | YES | PPI + IOL cross-check | YES | PPI ya integrado; IOL probado con GGAL |
 | ACCIONES | quote/order book | YES/PARTIAL según canal | YES | dual-source | NO | investigar tolerancia/freshness |
-| ACCIONES | histórico diario | YES | YES | PPI primary + IOL cross-check | NO | validar profundidad/huecos IOL |
-| ACCIONES | intradiario | YES/PARTIAL | YES | dual-source | NO | validar retención IOL |
+| ACCIONES | histórico diario | YES | YES | PPI primary + IOL cross-check | NO | IOL GGAL 2026-09-01..14 probado con OHLCV completo |
+| ACCIONES | intradiario | YES/PARTIAL | YES | dual-source | NO | IOL GGAL 2026-09-14 probado con trades timestamp/precio/volumen; retención aún a medir |
 | ACCIONES | lot/min/step/tick | PARTIAL | PARTIAL | N/A | YES | no inferir step/tick |
 | CEDEAR | identidad + ARS/D/C | YES/PARTIAL | YES | dual-source | YES | IOL probado con AAPL/AAPLD/AAPLC |
 | CEDEAR | quote/order book | YES/PARTIAL | YES | dual-source | NO | pendiente reconciliación por plazo/moneda |
-| CEDEAR | histórico | YES | YES | dual-source | NO | 7 CEDEAR siguen con HISTORY_GAP en PPI histórico |
+| CEDEAR | histórico | YES | YES | dual-source | NO | IOL AAPL 2026-09-01..14 probado; 7 CEDEAR siguen con HISTORY_GAP en PPI histórico |
 | CEDEAR | calendario US/ARG | PARTIAL | UNKNOWN | Porota canonical calendar | YES para elegibilidad | investigar doble calendario y eventos |
 | BONOS | identidad operable | YES | YES | PPI para ejecución, IOL para cross-check | YES | AL30 explícito en PPI + IOL |
 | BONOS | quote/order book | YES/PARTIAL | YES | dual-source | NO | IOL probado AL30 |
+| BONOS | histórico diario | YES | YES | dual-source | NO | IOL AL30 2026-09-01..14 probado con OHLCV completo |
 | BONOS | settlement | PARTIAL | YES | PPI authoritative | YES | IOL reporta T1 para AL30; confirmar PPI exacto |
 | BONOS | lot/unidad | PARTIAL | YES | PPI authoritative para ejecución | YES | IOL AL30 units_per_lot=100 |
 | BONOS | price/quantity decimals | YES | UNKNOWN | PPI | PARTIAL | no equivalen a tick/step |
@@ -95,6 +96,7 @@ Confirmado:
 - T1;
 - AL30/AL30D/AL30C;
 - quote + bid/ask;
+- histórico diario 2026-09-01..2026-09-14 con OHLCV;
 - TIR/TEM;
 - duration;
 - valor técnico/paridad;
@@ -107,7 +109,10 @@ Confirmado:
 - `ACCIONES`;
 - ARS;
 - lote 1;
-- T1.
+- T1;
+- histórico diario 2026-09-01..2026-09-14 con OHLCV;
+- intradiario 2026-09-14 disponible como secuencia de trades con timestamp, precio y volumen;
+- `dates_without_intraday=[]` para la consulta probada.
 
 ### IOL AAPL BCBA
 
@@ -117,7 +122,8 @@ Confirmado:
 - ARS;
 - lote 1;
 - T1;
-- AAPL/AAPLD/AAPLC.
+- AAPL/AAPLD/AAPLC;
+- histórico diario 2026-09-01..2026-09-14 con OHLCV.
 
 ### IOL Cauciones
 
@@ -141,15 +147,38 @@ Confirmado:
 - volumen;
 - stale flag.
 
+## Hallazgo de diseño derivado de históricos/intradiario
+
+IOL ya demostró técnicamente que puede cubrir el rol `SECONDARY_MARKET_DATA_PROVIDER` para al menos:
+
+- Acción líquida (GGAL);
+- CEDEAR líquido (AAPL);
+- Bono soberano (AL30).
+
+Aún **NO** se declara cobertura general de todas las especies: falta medir profundidad histórica, huecos, ajustes, retención intradiaria y muestras de Letras/ON.
+
+El adapter futuro debe conservar por registro:
+
+- provider=`IOL`;
+- market;
+- symbol/provider identity;
+- timestamp/date;
+- settlement cuando aplique;
+- freshness;
+- raw-provider timestamp normalizado;
+- ingest timestamp;
+- quality flags.
+
 ## Próximas muestras obligatorias
 
-1. Acción líquida: validar histórico + intradiario IOL contra PPI.
-2. CEDEAR líquido: validar histórico + intradiario IOL contra PPI.
-3. AL30: validar histórico IOL + PPI y terminar contrato PPI.
-4. Letra: seleccionar ticker real y probar info/quote/history/fixed income analytics.
-5. ON: seleccionar ticker real y probar info/quote/history/fixed income analytics.
-6. Cauciones: mapear PPI rows vs IOL 1/2/3 días, ARS/USD y colocadora/tomadora.
-7. Opciones: mantener solo investigación hasta contrato/riesgo completo.
+1. Acción líquida: comparar GGAL IOL vs PPI para mismas fechas y detectar divergencias.
+2. CEDEAR líquido: comparar AAPL IOL vs PPI para mismas fechas y detectar divergencias.
+3. AL30: comparar histórico IOL + PPI y terminar contrato PPI.
+4. Medir retención intradiaria IOL consultando días previos conocidos.
+5. Letra: seleccionar ticker real y probar info/quote/history/fixed income analytics.
+6. ON: seleccionar ticker real y probar info/quote/history/fixed income analytics.
+7. Cauciones: mapear PPI rows vs IOL 1/2/3 días, ARS/USD y colocadora/tomadora.
+8. Opciones: mantener solo investigación hasta contrato/riesgo completo.
 
 ## Stop conditions
 
