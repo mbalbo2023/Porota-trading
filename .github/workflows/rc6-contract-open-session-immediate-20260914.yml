@@ -1,13 +1,119 @@
-name: RC6 contractual auth diagnosis 2026-09-14
+name: RC6 one-shot PPI auth diagnosis 2026-09-14
 
 on:
+  push:
+    branches:
+      - ops/rc6-contract-open-session-immediate-20260914
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: rc6-contract-open-session-immediate-20260914
+  cancel-in-progress: false
+
 jobs:
-  paused:
+  auth-diagnostic-oneshot:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - run: echo "STATE=PAUSED_PENDING_ONE_SHOT_AUTH_DIAGNOSTIC"
+      - name: Enforce approved date
+        run: test "$(TZ=America/Argentina/Buenos_Aires date +%F)" = "2026-09-14"
+
+      - name: Checkout diagnostic
+        uses: actions/checkout@v4
+
+      - name: Configure audited SSH
+        env:
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DO_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DO_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+
+      - name: Stage one-shot diagnostic
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          REMOTE_DIAG="/tmp/porota-ppi-auth-diagnostic-${GITHUB_RUN_ID}.py"
+          scp -q -o BatchMode=yes -o ConnectTimeout=20 \
+            ops/rc6_ppi_auth_diagnostic_oneshot_20260914.py \
+            "$DO_USER@$DO_HOST:$REMOTE_DIAG"
+          echo "REMOTE_DIAG=$REMOTE_DIAG" >> "$GITHUB_ENV"
+
+      - name: Execute exactly one login diagnostic
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set +e
+          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" \
+            "sudo -n bash -s -- '$REMOTE_DIAG'" <<'REMOTE' 2>&1 | tee authdiag.log
+          set -Eeuo pipefail
+          DIAG="$1"
+          PROFILE=/home/porotaadmin/porota-browser-lab/chrome-profile
+          CE_PYTHON=/opt/porota-contract-evidence-venv/bin/python
+          CONTAINER=porota_production_observer
+          trap 'rm -f "$DIAG"' EXIT
+
+          echo POROTA_AUTH_DIAGNOSTIC_ONESHOT
+          echo MUTATIONS=TEMP_DIAGNOSTIC_FILE_AND_AUTH_SESSION_ONLY
+          echo LOGIN_SUBMISSION_MAX=1
+          echo DB_IMPORT_EXECUTED=NO
+          echo SERVICE_RESTARTED=NO
+          echo REAL_ORDERS_SENT=0
+
+          exec 9>/run/lock/porota-ppi-web-browser.lock
+          flock -w 20 9 || { echo STATE=SKIPPED_GLOBAL_PPI_BROWSER_LOCK_BUSY; exit 5; }
+          echo GLOBAL_PPI_BROWSER_LOCK=ACQUIRED
+          ! systemctl is-active --quiet porota-ppi-web-residual-rc6.service || { echo STATE=BLOCKED_RESIDUAL_WRITER_ACTIVE; exit 5; }
+
+          test -r "$DIAG" || { echo STATE=BLOCKED_DIAGNOSTIC_FILE_MISSING; exit 5; }
+          test -x "$CE_PYTHON" || { echo STATE=BLOCKED_CE_PYTHON_MISSING; exit 5; }
+          test -d "$PROFILE" || { echo STATE=BLOCKED_PROFILE_MISSING; exit 5; }
+
+          SAFETY="$(docker exec "$CONTAINER" python -c "import sqlite3,json; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close(); print(json.dumps({'mode':r[0] if r else None,'real_orders_sent':r[1] if r else None},sort_keys=True))")"
+          echo "OBSERVER_PREFLIGHT=$SAFETY"
+          SAFETY="$SAFETY" python3 -c "import os,json,sys; d=json.loads(os.environ['SAFETY']); sys.exit(0 if d.get('mode')=='PRODUCTION_PAPER' and int(d.get('real_orders_sent') or 0)==0 else 1)" || { echo STATE=BLOCKED_OBSERVER_SAFETY; exit 5; }
+
+          BROWSER_USER="$(stat -c '%U' "$PROFILE")"
+          SECRET_FILE=''
+          CONF=/etc/porota/contract-evidence-rc6.conf
+          if [ -r "$CONF" ]; then
+            for key in POROTA_PPI_WEB_SECRET_FILE PPI_WEB_SECRET_FILE; do
+              line="$(grep -E "^${key}=" "$CONF" 2>/dev/null | tail -1 || true)"
+              if [ -n "$line" ]; then
+                candidate="${line#*=}"
+                candidate="${candidate%\"}"; candidate="${candidate#\"}"
+                candidate="${candidate%\'}"; candidate="${candidate#\'}"
+                if [ -f "$candidate" ]; then SECRET_FILE="$candidate"; break; fi
+              fi
+            done
+          fi
+          if [ -z "$SECRET_FILE" ]; then
+            while IFS= read -r -d '' f; do
+              if grep -q '^PPI_WEB_PASSWORD=' "$f" 2>/dev/null; then SECRET_FILE="$f"; break; fi
+            done < <(find /etc/porota -maxdepth 2 -type f -print0 2>/dev/null)
+          fi
+          test -n "$SECRET_FILE" -a -f "$SECRET_FILE" || { echo STATE=BLOCKED_AUTH_LOCAL_SECRET_NOT_FOUND; exit 6; }
+          runuser -u "$BROWSER_USER" -- test -r "$SECRET_FILE" || { echo STATE=BLOCKED_AUTH_SECRET_NOT_READABLE; exit 6; }
+          echo LOCAL_REAUTH_SECRET=FOUND_AND_NOT_PRINTED
+
+          runuser -u "$BROWSER_USER" -- env HOME="$(getent passwd "$BROWSER_USER" | cut -d: -f6)" \
+            "$CE_PYTHON" "$DIAG" --profile "$PROFILE" --secret "$SECRET_FILE"
+          REMOTE
+          rc=${PIPESTATUS[0]}
+          echo "DIAGNOSTIC_REMOTE_RC=$rc" | tee -a authdiag.log
+          exit 0
+
+      - name: Publish sanitized diagnostic result
+        if: always()
+        run: |
+          test -f authdiag.log || exit 0
+          tail -n 60 authdiag.log >> "$GITHUB_STEP_SUMMARY"
