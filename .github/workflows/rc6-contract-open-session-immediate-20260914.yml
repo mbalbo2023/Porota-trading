@@ -1,4 +1,4 @@
-name: RC6 locate installed contract collector 2026-09-14
+name: RC6 audit installed contract collector source 2026-09-14
 
 on:
   push:
@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  locate-readonly-collector:
+  audit-collector-readonly:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -29,42 +29,29 @@ jobs:
           chmod 600 "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$DO_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
 
-      - name: Locate collector without executing it
+      - name: Audit deployed wrapper without execution
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set +e
-          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE' 2>&1 | tee locate.log
+          ssh -o BatchMode=yes -o ConnectTimeout=20 "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'REMOTE' 2>&1 | tee audit.log
           set -euo pipefail
-          echo "POROTA_CONTRACT_COLLECTOR_LOCATE"
+          echo "POROTA_CONTRACT_COLLECTOR_SOURCE_AUDIT"
           echo "MUTATIONS=NONE"
-          echo "REAL_ORDERS_SENT=0"
-          echo "DB_IMPORT_EXECUTED=NO"
-
-          echo "=== UNITS ==="
-          for u in porota-contract-evidence-rc6.service porota-contract-evidence-hf6.service porota-contract-evidence-weekend-backfill-rc6.service porota-ppi-web-residual-rc6.service; do
-            systemctl show "$u" -p Id -p LoadState -p ActiveState -p SubState -p FragmentPath -p ExecStart --no-pager 2>/dev/null || true
+          for p in             /etc/systemd/system/porota-contract-evidence-rc6.service             /usr/local/sbin/porota-contract-evidence-rc6-tradingday.sh             /usr/local/sbin/porota-contract-evidence-rc6-calendar-guard.sh             /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh             /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh; do
+            echo "=== FILE $p ==="
+            if test -r "$p"; then
+              stat -c 'mode=%a owner=%U:%G bytes=%s modified=%y' "$p"
+              sed -n '1,360p' "$p" | sed -E 's/(token|password|secret|cookie|authorization)([[:space:]_=:]+).*/\1\2[REDACTED]/Ig'
+            else
+              echo "MISSING"
+            fi
           done
-
-          echo "=== CANDIDATE_FILES ==="
-          find /usr/local/sbin /opt/porota-trading -maxdepth 3 -type f \( -iname '*contract*' -o -iname '*ppi*web*probe*' \) -printf '%m %u:%g %TY-%Tm-%TdT%TH:%TM:%TSZ %p\n' 2>/dev/null | sort | tail -120
-
-          echo "=== KNOWN_PROBE_SOURCE ==="
-          p=/opt/porota-trading/scripts/ppi_web_authenticated_probe_hf6.py
-          if test -r "$p"; then
-            echo "PROBE_PRESENT=YES"
-            stat -c 'mode=%a owner=%U:%G bytes=%s modified=%y path=%n' "$p"
-            sed -n '1,280p' "$p" | sed -E 's/(token|password|secret|cookie|authorization)([[:space:]_=:]+).*/\1\2[REDACTED]/Ig'
-          else
-            echo "PROBE_PRESENT=NO"
-          fi
-
-          echo "=== RECENT_CAPTURE_FILES ==="
-          find /opt/porota-trading/data/contract_evidence -maxdepth 3 -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ %s %p\n' 2>/dev/null | sort | tail -30
-
-          echo "STATE=INVENTORY_COMPLETE_NO_EXECUTION"
+          echo "=== DANGEROUS_ROUTE_SCAN ==="
+          grep -Ein 'place.?order|send.?order|cancel.?order|crear.?orden|comprar|vender|/orders?|http.*post|requests\.post|curl.*(-X|--request).*POST'             /usr/local/sbin/porota-contract-evidence-rc6-tradingday.sh             /usr/local/sbin/porota-contract-evidence-rc6-calendar-guard.sh             /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh             /usr/local/sbin/porota-contract-evidence-rc6-with-dom.sh 2>/dev/null || true
+          echo "STATE=SOURCE_AUDIT_COMPLETE_NO_EXECUTION"
           REMOTE
           rc=${PIPESTATUS[0]}
-          tail -c 12000 locate.log >> "$GITHUB_STEP_SUMMARY"
+          tail -c 30000 audit.log >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
