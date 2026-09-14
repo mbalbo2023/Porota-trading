@@ -93,10 +93,16 @@ class IOLReadOnlyProviderTests(unittest.TestCase):
             self.provider.get_history("GGAL", adjusted=1)
         self.assertEqual(self.client.calls, [])
 
-    def test_invalid_clock_is_rejected(self):
+    def test_invalid_clock_is_rejected_before_any_allowed_call(self):
         provider = IOLReadOnlyProvider(self.client, clock=lambda: datetime(2026, 9, 14))
-        with self.assertRaises(IOLReadOnlyProviderError):
-            provider.get_quote("GGAL")
+        operations = (
+            lambda: provider.get_panel(),
+            lambda: provider.get_quote("GGAL"),
+            lambda: provider.get_history("GGAL"),
+        )
+        for operation in operations:
+            with self.assertRaises(IOLReadOnlyProviderError):
+                operation()
         self.assertEqual(self.client.calls, [])
 
     def test_missing_allowlisted_method_is_explicit_error(self):
