@@ -66,3 +66,10 @@ Si no hay una ubicación aprobada y reproducible, dejar el canary detenido y con
 ## Hallazgo de integración paralelo (DTO)
 
 El wrapper offline de PR #64 conserva operación, consulta, hora tomada antes de la llamada y estado `NONEMPTY_UNVALIDATED` / `EMPTY_OR_UNAVAILABLE`. No alcanza todavía para persistir evidencia validada: la hora no es recepción, el mercado es el solicitado y no incluye ID del proveedor, venue, moneda, settlement ni resultado de validación campo por campo. No persistir `payload` directamente ni convertir respuesta no vacía en readiness. Antes de conectarlo a Evidence v2 hacen falta identidad ampliada y un contrato de procedencia/validación que evite claves con `UNKNOWN`; no llamar a una lectura “read-only” si ejecuta inicialización/DDL.
+
+## Proyección a evaluación PAPER — revisión paralela
+
+- No se hizo cambio de motor ni del esquema. El mapeo automático de la observación IOL a la evidencia actual sería especulativo: la clave existente no preserva toda la identidad contractual (incluidos venue, moneda y un identificador estable del proveedor), y leer la vista actual también ejecuta inicialización de esquema. No se consultó la base de datos.
+- El observer PAPER RC6 actual toma cotización y libro PPI, valida timestamps recientes/no futuros, identidad monetaria y consistencia con contrato, además de sesión y riesgo. IOL debe quedar como contraste hasta tener el mismo instrumento inequívoco, timestamps con semántica conocida y campos comparables.
+- Un panel, una cotización o un histórico no aportan por sí solos el último trade, el libro ni la disponibilidad de apertura en PPI. Payload ausente, viejo, incompleto o en conflicto debe quedar como observación no validada y no elevar readiness.
+- Pendiente de diseño antes de codificar: envolvente de observación con hora de inicio/recepción, hora efectiva del proveedor si existe, endpoint y parámetros; identidad de proveedor y contrato; validaciones por campo; y comparación de IOL contra PPI en símbolo/mercado/moneda/settlement coincidentes.
