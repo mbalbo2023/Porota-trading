@@ -10,6 +10,8 @@ DOCKER="${POROTA_DOCKER_BIN:-/usr/bin/docker}"
 LIB="${POROTA_RC6_CE_LIB:-/usr/local/lib/porota-contract-evidence-rc6}"
 PROFILE="${POROTA_CHROME_PROFILE:-/home/porotaadmin/porota-browser-lab/chrome-profile}"
 CE_PYTHON="${POROTA_CE_PYTHON:-/opt/porota-contract-evidence-venv/bin/python}"
+PROBE_TICKER="${POROTA_TECHNICAL_PROBE_TICKER:-}"
+PROBE_ROUTE="${POROTA_TECHNICAL_PROBE_ROUTE:-}"
 BROWSER_USER="${POROTA_CE_BROWSER_USER:-porotaadmin}"
 JOBS="${POROTA_POINT1_JOBS:-CONTRACT_EVIDENCE_STATIC,CONTRACT_EVIDENCE_DYNAMIC,CONTRACT_EVIDENCE_CAUCIONES}"
 OUTDIR="$ROOT/data/contract_evidence/rc6_trusted"
@@ -166,6 +168,7 @@ rm -f "$stage"
 
 set +e
 runuser -u "$BROWSER_USER" -- env HOME="$browser_home" PYTHONPATH="$LIB:$ROOT" \
+  POROTA_TECHNICAL_PROBE_TICKER="$PROBE_TICKER" POROTA_TECHNICAL_PROBE_ROUTE="$PROBE_ROUTE" \
   "$CE_PYTHON" "$COLLECTOR" --profile "$PROFILE" --jobs "$JOBS" --output "$stage" \
   >/tmp/porota-point1-collector.$$ 2>&1
 collector_rc=$?
