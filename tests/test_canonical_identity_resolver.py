@@ -124,6 +124,17 @@ class CanonicalIdentityResolverTests(unittest.TestCase):
         self.assertEqual(result.status, "CONFLICT")
         self.assertIn("settlement", result.conflicts)
 
+    def test_unknown_settlement_without_conflicting_source_stays_unresolved(self):
+        result = resolve_canonical_identity([{**self.base, "settlement": "GARBAGE"}])
+        self.assertEqual(result.status, "INSUFFICIENT")
+        self.assertIn("settlement", result.missing)
+
+    def test_unprovenanced_claim_cannot_complete_identity(self):
+        records = [self.base, {"settlement": "24 horas"}]
+        result = resolve_canonical_identity(records)
+        self.assertEqual(result.status, "CONFLICT")
+        self.assertIn("malformed_record", result.conflicts)
+
     def test_d_and_c_are_not_guessed_as_currencies(self):
         for code in ("D", "C"):
             result = resolve_canonical_identity([{**self.base, "currency": code}])
