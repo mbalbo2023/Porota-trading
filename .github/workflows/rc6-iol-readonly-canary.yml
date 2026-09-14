@@ -62,12 +62,36 @@ jobs:
           import requests
 
           BASE = "https://api.invertironline.com"
-          USERNAME = os.environ.get("IOL_USERNAME", "")
-          PASSWORD = os.environ.get("IOL_PASSWORD", "")
-          if not USERNAME or not PASSWORD:
-              print("IOL_CREDENTIALS=NOT_PRESENT_IN_RC6_CONTAINER")
+          from pathlib import Path
+          values = dict(os.environ)
+          env_path = Path("/opt/porota-trading/.env")
+          allowed_names = {"IOL_USERNAME", "IOL_PASSWORD", "IOL_API_USERNAME", "IOL_API_PASSWORD"}
+          try:
+              if env_path.is_file():
+                  for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+                      line = raw_line.strip()
+                      if not line or line.startswith("#") or "=" not in line:
+                          continue
+                      key, value = line.split("=", 1)
+                      key = key.strip()
+                      if key in allowed_names:
+                          value = value.strip()
+                          if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                              value = value[1:-1]
+                          values[key] = value
+          except Exception as exc:
+              print("IOL_CONFIG=UNREADABLE_" + type(exc).__name__)
+              print("CANARY=STOPPED_BEFORE_NETWORK")
+              sys.exit(20)
+          pairs = [("IOL_USERNAME", "IOL_PASSWORD"), ("IOL_API_USERNAME", "IOL_API_PASSWORD")]
+          pair = next(((u, p) for u, p in pairs if values.get(u) and values.get(p)), None)
+          if pair is None:
+              present = sorted(k for k in allowed_names if values.get(k))
+              print("IOL_CREDENTIAL_NAMES_PRESENT=" + (",".join(present) if present else "NONE"))
               print("CANARY=STOPPED_BEFORE_NETWORK")
               sys.exit(21)
+          USERNAME, PASSWORD = values[pair[0]], values[pair[1]]
+          del values
 
           session = requests.Session()
           allowed_fixed_gets = {
@@ -105,6 +129,7 @@ jobs:
                   data={"username": USERNAME, "password": PASSWORD, "grant_type": "password"},
                   headers={"Content-Type": "application/x-www-form-urlencoded"},
                   timeout=(5, 15),
+                  allow_redirects=False,
               )
           except Exception as exc:
               print("IOL_AUTH=NETWORK_ERROR_" + type(exc).__name__)
