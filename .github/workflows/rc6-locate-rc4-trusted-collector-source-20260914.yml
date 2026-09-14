@@ -1,0 +1,76 @@
+name: RC6 Locate RC4 trusted collector source 2026-09-14
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ops/rc6-contract-blocked-nonread-audit-20260914]
+    paths:
+      - '.github/workflows/rc6-locate-rc4-trusted-collector-source-20260914.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  locate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/rc6-contract-blocked-nonread-audit-20260914
+      - name: Prepare SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"; chmod 600 "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Locate exact historical collector implementation
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_LOCATE_RC4_TRUSTED_COLLECTOR_SOURCE_2026-09-14.txt
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n bash -s' <<'HOST' > "$RESULT"
+          set -euo pipefail
+          echo 'PROBE=RC6_LOCATE_RC4_TRUSTED_COLLECTOR_SOURCE_V1'
+          echo 'READ_ONLY=YES'
+          echo 'BROWSER_STARTED=NO'
+          echo 'DB_TOUCHED=NO'
+          roots=(/opt/porota-trading /usr/local/lib /usr/local/sbin /opt)
+          tmp=$(mktemp)
+          trap 'rm -f "$tmp"' EXIT
+          for root in "${roots[@]}"; do
+            [[ -e "$root" ]] || continue
+            grep -RIl --exclude='*.json' --exclude='*.db' --exclude='*.sqlite*' --exclude-dir='.git' --exclude-dir='node_modules' --exclude-dir='__pycache__' 'POROTA_RC4_PPI_TRUSTED_CONTRACT_2' "$root" 2>/dev/null >> "$tmp" || true
+          done
+          sort -u "$tmp" | head -n 40 | while read -r f; do
+            [[ -n "$f" ]] || continue
+            echo "FOUND_FILE=$f"
+            stat -c 'META=owner:%U|group:%G|mode:%a|size:%s|mtime:%y' "$f" 2>/dev/null || true
+            sha256sum "$f" 2>/dev/null | awk '{print "SHA256=" $1}' || true
+            echo 'INTERESTING_LINES_BEGIN'
+            grep -nE 'POROTA_RC4_PPI_TRUSTED_CONTRACT_2|SAFE_METHODS|ROUTES|CONTRACT_EVIDENCE_|def guard|route\.abort|route\.continue|on_response|response\.request\.method|wait_for_timeout|page\.goto|TARGETS|InstrumentosOperables|CaucionesOperables|DatosTecnicos|SubyacenteOpciones|ConfiguracionOperatoriaSimplificada|continue_clicked|\.click\(|\.fill\(' "$f" 2>/dev/null \
+              | sed -E 's#([A-Za-z_]*(TOKEN|PASSWORD|SECRET|COOKIE|AUTHORIZATION)[A-Za-z_]*)=[^ ]+#\1=REDACTED#gI' \
+              | head -n 240 || true
+            echo 'INTERESTING_LINES_END'
+          done
+          echo 'RESULT=GREEN_RC4_SOURCE_LOCATE_COMPLETE_NO_MUTATION'
+          HOST
+          cat "$RESULT"
+      - name: Persist sanitized locator result
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT=POROTA_TRADING_LOCATE_RC4_TRUSTED_COLLECTOR_SOURCE_2026-09-14.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$RESULT"
+          git diff --cached --quiet && exit 0
+          git commit -m 'audit(contract): persist RC4 trusted collector source locator [skip ci]'
+          git push origin HEAD:ops/rc6-contract-blocked-nonread-audit-20260914
