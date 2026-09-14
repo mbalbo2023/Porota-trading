@@ -11,6 +11,18 @@
 **Checkpoint canónico:**  
 **Rutas modificadas y motivo:**  
 
+## Continuidad entre chats (requerido)
+
+**Checkpoint ID y ruta leídos completos:**  
+**Rama/ref y SHA exactos verificados:**  
+**Commits/runs posteriores revisados:**  
+**Delta actualizado en este PR (ruta) o motivo verificable si no cambió el estado:**  
+**Commit SHA del checkpoint:**  
+
+- [ ] Conservé pendientes, decisiones, invariantes, evidencia única, errores y parciales; marqué lo no verificado.
+- [ ] Separé código, CI, runtime, evidencia/importación y READY end-to-end.
+- [ ] Volví a leer desde GitHub el checkpoint y verifiqué su commit SHA.
+
 ## Cambio y validación
 
 **Resultado esperado:**  
