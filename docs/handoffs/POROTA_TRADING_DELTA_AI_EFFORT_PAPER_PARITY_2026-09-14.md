@@ -63,7 +63,7 @@ La regla se agregó a `AGENTS.md`, `POROTA_TRADING_CONTINUIDAD_OBLIGATORIA.md` y
 
 - `AGENTS.md`: blob `d06d6de0b634526c84444dc04914ef40b1d609ff`, commit `549d55caac81c5820091daebf363fc6b2c5fdb1e`.
 - `POROTA_TRADING_CONTINUIDAD_OBLIGATORIA.md`: blob `b473a7792a42dcf472c300275e6499b819535349`, commit `22343149e7e08d5c001705db582c1f581e48c23c`.
-- `POROTA_TRADING_CHAT_START_HERE.md`: blob `b5f2ac88b3a71c0f1cba90922cf199c0939a3da7`, commit `572ab770e0c729ee5b318c231130ec3bd070eddb`; se corrigieron separadores literales `\\n` a saltos reales y se releeyó desde GitHub.
+- `POROTA_TRADING_CHAT_START_HERE.md`: blob `b5f2ac88b3a71c0f1cba90922cf199c0939a3da7`, commit `572ab770e0c729ee5b318c231130ec3bd070eddb`; se corrigieron separadores literales `\n` a saltos reales y se volvió a leer desde GitHub.
 
 La entrada de chat nuevo apunta explícitamente a este delta. No se fusionó ni se desplegó; queda pendiente de integración por el chat integrador. No hay CI de aplicación ejecutada para estos cambios documentales.
 
