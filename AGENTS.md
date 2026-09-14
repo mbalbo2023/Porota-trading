@@ -36,6 +36,14 @@ El checkpoint PPI vigente registra cerrados e inactivos los pases históricos AP
 
 Todo cambio material —decisión, commit, run, prueba, despliegue autorizado, hallazgo, bloqueo o estado— debe actualizar el checkpoint en el mismo flujo, aunque sea un delta breve. Conserva todo lo no resuelto y la evidencia única. Si no hay datos suficientes, registra `NOT_VERIFIED` y el paso exacto para resolverlo. Después del commit, vuelve a leer el archivo desde GitHub y verifica contenido y SHA; no declares un checkpoint actualizado antes de hacerlo. Antes de un cambio de chat o límite de contexto, deja un handoff autocontenido para el siguiente chat.
 
+
+## Ajuste de esfuerzo, contexto y paridad PAPER
+
+- Ajusta razonamiento, herramientas y longitud al riesgo, incertidumbre y alcance: usa el mínimo suficiente para completar con evidencia; profundiza cuando sea operativo, financiero o ambiguo. La eficiencia no omite lecturas obligatorias, autorizaciones, pruebas necesarias ni verificación.
+- Agrupa lecturas independientes; paraleliza sólo análisis o cambios aislados sin conflicto. Lleva un checkpoint compacto con hechos, fuente/SHA, restricciones, incertidumbres y siguiente paso. No repitas tareas cerradas.
+- Si el usuario pide consultar chats anteriores, usa el historial sólo si la herramienta está disponible. Si no lo está, dilo expresamente y usa GitHub como evidencia; nunca atribuyas al historial inaccesible afirmaciones no comprobadas.
+- En las familias con órdenes PPI simulables, `READY_PAPER_SPOT` autoriza análisis de mercado, no apertura/fill. Un nuevo `OPENED_SIMULATED` requiere `READY_PAPER_PPI` y los gates contractuales, de identidad, frescura, costos, settlement/calendario y riesgo. El modo SHADOW informa would-block, pero no saltea el gate de apertura. No declarar paridad PAPER/producción hasta verificar el wiring runtime.
+
 ## Regla de parada
 
 Si no puedes leer la política o el checkpoint, si hay discrepancia sobre RC6, si hay un dueño/alcance en conflicto o si no puedes demostrar que la acción queda aislada, limita el trabajo a análisis de solo lectura y deja constancia de qué falta.
