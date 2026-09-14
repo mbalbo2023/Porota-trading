@@ -37,7 +37,7 @@ Esta es una política/documentación propuesta a partir de la aclaración expres
 - Las fuentes disponibles no documentan pruebas de proveedores de mercado terceros o alternativas de bulk feed. Quedan `NOT_RESEARCHED`, no son opciones validadas.
 - El usuario solicitó revisar los últimos diez chats. En esta sesión no hay herramienta para leer conversaciones anteriores; GitHub es la fuente comprobable. No se pueden certificar intentos que sólo estén en transcripciones inaccesibles.
 
-## Wave A — base auditada y WA-01 en revisión
+## Wave A — base auditada; WA-01 y WA-03 implementados en PRs aislados
 
 Código reusable en RC6: `bs_instrument_contracts.py`, `cp_contract_evidence_v2_hf6.py`, `cq_family_contract_rules_hf6.py`, `cq_contract_readiness_hf6.py`, `rc6_ppi_contract_normalizer.py` y cliente IOL legacy `ak_iol_client.py`. No duplicar contratos/evidence store/readiness. Riesgos de diseño: aliases divergentes de familias, campos distintos `price_precision`/ `price_tick`, fuente prioritaria dependiente del campo/familia, y superficie account/portfolio amplia del cliente IOL.
 
@@ -50,7 +50,8 @@ La rama reciente `ops/rc6-contract-open-session-immediate-20260914` sólo contie
 - Código WA-01: `canonical_identity_resolver.py` en PR borrador #63. Requiere familia/subfamilia, ticker, mercado, venue, moneda, settlement y provider ID; faltantes/conflictos => sin canonical ID. CEDEAR exige underlying; opciones/futuros, sus dimensiones contractuales de identidad.
 - CI de WA-01: run final `34887025560` SUCCESS en head `3d4459efd0fd617a8e736b63c80e509b76366f19`; compileall y 20 pruebas offline pasaron. El run `34886924059` falló una expectativa: un registro sin provenance por fila debe ser `CONFLICT`, no `INSUFFICIENT`; se corrigió y el final quedó verde. Valida sólo el slice aislado.
 - WA-02 no debe usar `current_records()` ni escribir en Evidence v2 actual. Diseñar/validar primero la vista read-only ampliada y sus colisiones; no se inspeccionó ni modificó DB.
-- Pendiente de Wave A: ratificar taxonomía canónica; WA-03 IOL read-only, WA-04 DTO PPI, WA-05 readiness, WA-06 divergencias y wiring del gate en la apertura PAPER.
+- WA-03: PR borrador #64, wrapper IOL read-only con 10 pruebas offline; Actions run 34888608698 SUCCESS en head 3f634b5b0066e752cfd64b9be646a1adb00dff56. El wrapper no valida payload ni calcula freshness/readiness y sigue sin integrarse.
+- Pendiente de Wave A: ratificar taxonomía canónica; WA-02 proyección read-only, WA-04 DTO PPI, WA-05 readiness, WA-06 divergencias, WA-07 diseño de persistencia y wiring del gate de apertura PAPER.
 - Runtime/DB/importación/readiness recompute: no inspeccionados ni ejecutados.
 - Capturas/ingesta masiva: no se repitieron.
 - Órdenes reales: no habilitadas; invariantes PAPER/fail-closed se preservan.
@@ -90,7 +91,7 @@ Conclusión: para los activos BYMA, el siguiente camino nuevo y concreto es soli
 - 🔴 Paridad de apertura PAPER: el código legacy permite potencial OPENED_SIMULATED bajo READY_PAPER_SPOT; READY_PAPER_PPI no está conectado. Política documentada en PR #62, pendiente de integración y wiring de código. Fill runtime concreto: NOT_VERIFIED.
 - 🟡 246 READY_PAPER_SPOT: 55 ACCIONES + 191 CEDEARS, pool de elegibilidad, no readiness integral.
 - 🟡 Universo estricto 444: último 0/444 es anterior a fixes; valor actual NOT_VERIFIED.
-- 🟡 Wave A completa: rama de integración propia desde el SHA RC6 correcto; PR #63 sigue en borrador y CI WA-01 está verde (20 pruebas). Resto de WA pendiente; el slice aún no está integrado al branch de integración ni conectado al runtime.
+- 🟡 Wave A: base aislada correcta; WA-01 (#63, 20 pruebas) y WA-03 (#64, 10 pruebas) tienen CI verde en PRs borrador. WA-02/04/05/06/07 y wiring pendientes; los slices no están integrados al branch de integración ni conectados al runtime.
 - 🟢 Corridas masivas históricas PPI cerradas: no repetirlas. 🟡 API IOL y nueva opción BYMA por medir; BYMA requiere documentación/acceso y su cobertura sigue sin probarse.
 
 ### Wave A — core reusable y regla de apertura
@@ -98,7 +99,7 @@ Conclusión: para los activos BYMA, el siguiente camino nuevo y concreto es soli
 1. 🟢 Base de integración aislada creada desde RC6 `f8adec8a02b2f9f0ef2dffbee75458c958bf711e`: `integration/rc6-wave-a-core-20260914`. No se usa rama deploy/docs/ops ni pipeline PPI.
 2. 🟡 Ratificar vocabulario canónico con evidencia y módulos existentes: identity/provider IDs, venue, family/subfamily, moneda/plaza ARS/D/C, underlying/emisor, settlement; resolver aliases y `price_precision`/`price_tick`/`quantity_step` sin equivalencias inferidas.
 3. 🟡 WA-01/02: PR #63 implementa WA-01; CI final verde con 20 tests. Requiere subfamily y provider ID por fila, underlying para CEDEAR, dimensiones de serie en opciones/futuros y settlement canónico cerrado. Pendiente integrar/revisar el slice y ratificar vocabulario. Para provenance, Evidence v2 no es clave segura: falta venue/currency/subfamily y `current_records()` ejecuta DDL; primero diseñar la proyección read-only con detección de colisiones, sin migración.
-4. 🟡 WA-03/04: IOL provider estrictamente allowlisted read-only y DTO PPI sobre normalizador existente; tests con DTO/mocks, sin red ni credenciales.
+4. 🟡 WA-03 quedó implementado en PR #64 con 10 tests offline y CI verde; WA-04 sigue pendiente como DTO PPI sobre normalizador existente, con fixtures sanitizados/mocks y sin red ni credenciales.
 5. 🟡 WA-05/06: evaluator de los cinco gates identity/market data/analytics/contract PPI/risk más divergence gate; conflicto o campo crítico ausente => HOLD.
 6. 🔴 Conectar gate estricto al punto de apertura PAPER: evaluación diagnóstica puede seguir en SHADOW, OPENED_SIMULATED no puede saltar READY_PAPER_PPI.
 7. 🟡 WA-07: diseñar el key/schema ampliado o sidecar con venue/currency/subfamily y reglas de historial/colisión; es prerequisito para persistencia WA-02. En esta ola sólo diseño, sin DDL, migración ni backfill.
