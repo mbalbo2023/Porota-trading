@@ -99,3 +99,5 @@ PY
           git diff --cached --quiet && exit 0
           git commit -m 'audit(scheduler): persist RC6 read-only evidence [skip ci]'
           git push origin HEAD:ops/rc6-scheduler-audit-20260914
+
+# policy-retry-2026-09-15
