@@ -164,6 +164,24 @@ class PositionExitSupervisor:
             return verdict(prefix + "NO_LIQUIDITY", "Puntas inválidas o sin precio")
         # El stop puede dispararse con precio y cantidad cero: decide salir y
         # conserva la intención; la ejecución todavía exige profundidad.
+        # Take Profit shadow: evalúa neto/costos/impuesto configurado sin
+        # cambiar el disparador vigente ni cerrar por sí mismo.
+        if not cause and bid >= Decimal(p["target_price"]):
+            try:
+                import rc6_cost_settlement_takeprofit_shadow as shadow_costs
+                features = json.loads(p.get("features_json") or "{}")
+                factor = Decimal(str(features.get("contract_cash_multiplier", "1")))
+                diagnostic = shadow_costs.net_take_profit(
+                    p["entry_price"], bid, p["quantity"], factor,
+                    p["entry_cost"], "0")
+                self.store.event("TAKE_PROFIT_SHADOW",
+                                 json.dumps({"paper_id": p["paper_id"],
+                                             "bid": str(bid),
+                                             "diagnostic": diagnostic},
+                                            ensure_ascii=False)[:1000])
+            except Exception as exc:
+                self.store.event("TAKE_PROFIT_SHADOW_ERROR",
+                                 f"{p['paper_id']}: {type(exc).__name__}")
         if not cause and bid <= Decimal(p["stop_price"]):
             cause = "STOP_PAPER"
         elif not cause and bid >= Decimal(p["target_price"]):
