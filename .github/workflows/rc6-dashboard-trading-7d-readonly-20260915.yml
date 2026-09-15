@@ -166,6 +166,7 @@ jobs:
             "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
           sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import json
           import os
           import re
           import urllib.request
@@ -212,6 +213,12 @@ jobs:
                   "learning_samples": text.lower().count("muestras cerradas"),
                   "empirical_expectancy": text.lower().count("expectativa empírica"),
                   "download_links": hrefs,
+                  "hold_text": text.upper().count("HOLD"),
+                  "blocked_text": text.upper().count("BLOCKED"),
+                  "rejected_text": text.upper().count("REJECTED"),
+                  "opened_text": text.upper().count("OPENED_SIMULATED"),
+                  "buy_text": text.upper().count("BUY"),
+                  "abstention_text": text.lower().count("abstencion") + text.lower().count("abstención"),
               }
 
           print("RC6_DASHBOARD_SURFACE_SWEEP=START")
@@ -230,6 +237,12 @@ jobs:
                             " MFE=" + str(metrics["mfe"]) +
                             " MAE=" + str(metrics["mae"]) +
                             " MATH_EXPLANATIONS=" + str(metrics["math_explanations"]) +
+                            " HOLD_TEXT=" + str(metrics["hold_text"]) +
+                            " BLOCKED_TEXT=" + str(metrics["blocked_text"]) +
+                            " REJECTED_TEXT=" + str(metrics["rejected_text"]) +
+                            " OPENED_TEXT=" + str(metrics["opened_text"]) +
+                            " BUY_TEXT=" + str(metrics["buy_text"]) +
+                            " ABSTENTION_TEXT=" + str(metrics["abstention_text"]) +
                             " DOWNLOAD_LINKS=" + str(len(metrics["download_links"])))
                       if metrics["download_links"]:
                           for link in metrics["download_links"]:
@@ -252,6 +265,18 @@ jobs:
                             " TYPE=" + content_type +
                             " LENGTH=" + content_length +
                             " DISPOSITION=" + disposition)
+                      if "application/json" in content_type:
+                          raw_json = response.read()
+                          try:
+                              payload = json.loads(raw_json.decode("utf-8"))
+                              if isinstance(payload, dict):
+                                  print("AI_REPORT_SCHEMA=" + path +
+                                        " TOP_KEYS=" + ",".join(sorted(str(k) for k in payload)[:30]))
+                              else:
+                                  print("AI_REPORT_SCHEMA=" + path +
+                                        " TOP_TYPE=" + type(payload).__name__)
+                          except Exception as exc:
+                              print("AI_REPORT_SCHEMA=" + path + " ERROR=" + type(exc).__name__)
               except Exception as exc:
                   print("DOWNLOAD_CHECK=" + path + " ERROR=" + type(exc).__name__)
 
