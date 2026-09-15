@@ -144,6 +144,8 @@ def _candle_features(store, q, at):
 
 def collect(store, q, at):
     """Collect point-in-time historical/candle features for SHADOW only."""
+    if not isinstance(at, datetime):
+        at = _dt(at)
     history = _history_features(store, q, at)
     candles = _candle_features(store, q, at)
     ready = history["state"] == "READY" and candles["state"] == "READY"
