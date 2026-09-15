@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TARGET_SHA: 0a533f23cd074b39cf5c11654d8f03e9870cfd4
+  TARGET_SHA: 0a533f23cd074b39cf5c11654d8f03e9870c0fd4
   TARGET_BRANCH: fix/rc6-issue67-reports-action4-20260915-v2
   ARCHIVE_DIGEST: PR69_LOCAL_REMOTE_BUILD
 
