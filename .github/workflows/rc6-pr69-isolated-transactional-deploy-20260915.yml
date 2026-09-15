@@ -133,19 +133,9 @@ jobs:
           done
           echo "DASHBOARD_ROUTE_FAILURES=$ROUTE_FAILURES"
           RENDER_FAILURES=0
-          if ! sudo -n docker exec -i porota_production_dashboard timeout 30 python - <<'PY'
-          import traceback
-          try:
-              import bg_paper_dashboard as bg
-              import en_validation_project_dashboard_rc6 as project
-              bg.validation_page()
-              project.page(limit_days=1)
-              print('DASHBOARD_RENDER=GREEN')
-          except Exception:
-              traceback.print_exc()
-              raise
-          PY
-          then
+          RENDER_OUTPUT="$(sudo -n docker exec porota_production_dashboard python -c "import bg_paper_dashboard as bg; import en_validation_project_dashboard_rc6 as project; bg.validation_page(); project.page(limit_days=1); print('DASHBOARD_RENDER=GREEN')" 2>&1 || true)"
+          echo "$RENDER_OUTPUT"
+          if ! grep -q "DASHBOARD_RENDER=GREEN" <<< "$RENDER_OUTPUT"; then
             RENDER_FAILURES=1
             sudo -n docker logs --tail 200 porota_production_dashboard || true
           fi
