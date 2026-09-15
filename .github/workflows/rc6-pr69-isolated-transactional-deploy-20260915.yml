@@ -105,9 +105,10 @@ jobs:
             for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py; do sudo -n cp "$BACKUP/$f" "$REPO/$f"; done
             exit 1
           fi
-          BUILT_IMAGE_ID="$(sudo -n docker compose images -q bot | head -n 1)"
-          test -n "$BUILT_IMAGE_ID"
-          sudo -n docker tag "$BUILT_IMAGE_ID" "$TARGET_IMAGE"
+          BUILT_IMAGE_NAME="$(sudo -n docker compose config --images | head -n 1)"
+          test -n "$BUILT_IMAGE_NAME"
+          sudo -n docker image inspect "$BUILT_IMAGE_NAME" >/dev/null
+          sudo -n docker tag "$BUILT_IMAGE_NAME" "$TARGET_IMAGE"
           sudo -n python3 "$REPO/porota_mode_manager.py" simulation
           OK=NO
           for _ in $(seq 1 45); do
