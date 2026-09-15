@@ -141,6 +141,15 @@ def _operational_daily_section(limit_days=10):
     )
 
 
+def _safe_shadow_view():
+    try:
+        return shadow_view.render()
+    except Exception as exc:
+        return ("<section class='paper-card'><h2>SHADOW</h2>"
+                "<div class='paper-warning'><b>Evidencia SHADOW no disponible.</b> "
+                f"{bg._e(type(exc).__name__)}. La página de Validación continúa operativa.</div></section>")
+
+
 def page(limit_days=10):
     records, ledger_error = _safe_records()
     latest = dynamic_validation.evaluate(records)
@@ -182,7 +191,7 @@ def page(limit_days=10):
         "Governance futura → Real-money.</p>"
         f"<div class='paper-grid'>{cards}</div>"
         + _operational_daily_section(limit_days=limit_days)
-        + shadow_view.render()
+        + _safe_shadow_view()
         + "<section class='paper-card'><h2>Hitos del camino crítico M0–M11</h2>"
         "<p>Cada hito muestra objetivo, evidencia esperada/observada, desviación, blocker y próximo paso.</p>"
         f"{roadmap}</section>"
