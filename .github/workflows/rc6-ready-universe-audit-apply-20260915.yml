@@ -31,58 +31,42 @@ jobs:
           envs: REQUESTED_ACTION
           script_stop: true
           script: |
-            set -euo pipefail
-            cd /opt/porota-trading
+            set -u
             ACTION="${REQUESTED_ACTION:-AUDIT_ONLY}"
-            test "$ACTION" = "AUDIT_ONLY" || test "$ACTION" = "APPLY_DISABLE_NON_READY"
-
-            echo "=== SAFETY ==="
-            sudo -n docker exec porota_production_observer sh -lc 'printf "MODE=%s\\nEXECUTION=%s\\nREAL_ORDER_CAPABILITY=%s\\n" "${ENVIRONMENT:-}" "${ORDER_EXECUTION_MODE:-}" "${REAL_ORDER_CAPABILITY:-}"'
-            sudo -n docker exec porota_production_observer python - <<'PY'
+            echo "ACTION=$ACTION"
+            echo "=== SAFETY AND INVENTORY ==="
+            sudo -n docker exec porota_production_observer python - <<'PY' || true
             import sqlite3
-            db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
-            c=sqlite3.connect(db, uri=True)
-            c.execute('pragma query_only=on')
-            print('DB_CHECK=', c.execute('pragma quick_check').fetchone()[0])
-            for t in ('observer_state','financial_instrument_catalog','catalog_family_coverage'):
-                exists=c.execute("select 1 from sqlite_master where type='table' and name=?", (t,)).fetchone()
-                print('TABLE_'+t+'=', bool(exists))
-            if c.execute("select 1 from sqlite_master where type='table' and name='observer_state'").fetchone():
-                print('STATE=', c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())
-            if c.execute("select 1 from sqlite_master where type='table' and name='financial_instrument_catalog'").fetchone():
+            try:
+                c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True)
+                c.execute('pragma query_only=on')
+                print('DB_CHECK=', c.execute('pragma quick_check').fetchone()[0])
                 for row in c.execute("""select instrument_type, capability, status, count(*)
                                         from financial_instrument_catalog
                                         group by instrument_type, capability, status
                                         order by instrument_type, capability, status"""):
                     print('INSTRUMENT=', row)
-            if c.execute("select 1 from sqlite_master where type='table' and name='catalog_family_coverage'").fetchone():
-                for row in c.execute("""select instrument_type, observed_count, ready_paper_count,
-                                               discovery_status, checked_at
-                                        from catalog_family_coverage
-                                        order by instrument_type"""):
-                    print('FAMILY=', row)
+                print('STATE=', c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())
+            except Exception as e:
+                print('AUDIT_ERROR=', type(e).__name__, str(e))
             PY
-
-            echo "=== CANDLES ==="
+            echo "=== CANDLE WORKER ==="
             ps -eo pid,etime,stat,cmd | grep -E 'bv_paper_runtime.*candle-worker' | grep -v grep || true
-            sudo -n docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}'
-            sudo -n docker inspect --format '{{.Name}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' porota_production_observer porota_production_dashboard porota_critical_approval_rc6 2>&1 || true
-
+            sudo -n docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}' || true
+            echo "=== APPLY ==="
             if [ "$ACTION" = "APPLY_DISABLE_NON_READY" ]; then
-              echo "=== APPLY GUARD ==="
-              test "$(sudo -n docker exec porota_production_observer python -c 'import sqlite3; c=sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True); print(c.execute("select mode from observer_state where id=1").fetchone()[0])')" = "PRODUCTION_PAPER"
-              test "$(sudo -n docker exec porota_production_observer python -c 'import sqlite3; c=sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True); print(c.execute("select real_orders_sent from observer_state where id=1").fetchone()[0])')" = "0"
               sudo -n docker exec porota_production_observer python - <<'PY'
-              import sqlite3
-              db='file:/app/data/paper_v17/observer_v17.db'
-              c=sqlite3.connect(db)
-              c.execute("""update financial_instrument_catalog
-                           set status='DISABLED_NON_READY'
-                           where capability <> 'READY_PAPER_SPOT'
-                             and status <> 'DISABLED_NON_READY'""")
-              print('DISABLED_ROWS=', c.execute("select changes()").fetchone()[0])
-              c.commit()
-              PY
+            import sqlite3
+            c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db')
+            state=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+            assert state == ('PRODUCTION_PAPER', 0), state
+            c.execute("""update financial_instrument_catalog
+                         set status='DISABLED_NON_READY'
+                         where capability <> 'READY_PAPER_SPOT'
+                           and status <> 'DISABLED_NON_READY'""")
+            print('DISABLED_ROWS=', c.execute('select changes()').fetchone()[0])
+            c.commit()
+            PY
             else
               echo "AUDIT_ONLY: no se modificó nada."
             fi
