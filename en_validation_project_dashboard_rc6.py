@@ -175,7 +175,7 @@ def page(limit_days=10):
     body = (
         "<h1>Validación — Camino a Producción</h1>"
         + dynamic_notice
-        "<div class='paper-warning'><b>Este tablero gestiona evidencia; no habilita dinero real.</b> "
+        + "<div class='paper-warning'><b>Este tablero gestiona evidencia; no habilita dinero real.</b> "
         "El último hito M11 continúa BLOCKED hasta un proyecto futuro explícito de governance, permisos y canary.</div>"
         "<p class='paper-muted'>Horizonte: Infraestructura → Safety → Fuentes/Contratos → Históricos → Estabilidad PAPER → "
         "Realismo de ejecución → Evidencia estadística → Operabilidad/A11Y → Campaña sostenida → Auditoría/consenso → "
