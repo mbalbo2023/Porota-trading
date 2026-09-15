@@ -1,49 +1,40 @@
-"""RC6 shadow diagnostics for taxes, settlement and take profit.
+"""RC6 shadow diagnostics for published costs, settlement and take profit.
 
-No function in this module changes a paper position or routes an order.
+Personal taxes are intentionally out of scope. This module only reports
+published broker/market costs already represented by au_fee_schedule.
 """
 from __future__ import annotations
 
-import os
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 
-def configured_gain_tax_rate():
-    raw = os.getenv("PAPER_GAIN_TAX_RATE", "").strip()
-    if not raw:
-        return None
-    try:
-        rate = Decimal(raw)
-    except (InvalidOperation, ValueError):
-        return None
-    return rate if Decimal("0") <= rate <= Decimal("1") else None
-
-
-def tax_diagnostic(gross_gain):
-    rate = configured_gain_tax_rate()
-    if rate is None:
-        return {"state": "UNKNOWN", "rate": None, "amount": None,
-                "effect": "NO_BINDING_TAX_ASSUMPTION"}
-    gain = max(Decimal("0"), Decimal(str(gross_gain)))
-    return {"state": "CONFIGURED", "rate": str(rate),
-            "amount": str(gain * rate), "effect": "SHADOW_ONLY"}
+def published_cost_diagnostic(gross_gain):
+    return {
+        "state": "NOT_APPLICABLE",
+        "rate": None,
+        "amount": "0",
+        "effect": "PERSONAL_TAXES_OUT_OF_SCOPE",
+        "published_costs_source": "au_fee_schedule",
+    }
 
 
 def net_take_profit(entry, target, quantity, factor, entry_cost, exit_cost,
                     gross_gain=None):
-    entry = Decimal(str(entry)); target = Decimal(str(target))
-    quantity = Decimal(str(quantity)); factor = Decimal(str(factor))
-    entry_cost = Decimal(str(entry_cost)); exit_cost = Decimal(str(exit_cost))
-    gross = (target - entry) * quantity * factor if gross_gain is None else Decimal(str(gross_gain))
-    tax = tax_diagnostic(gross)
-    tax_amount = Decimal(tax["amount"]) if tax["amount"] is not None else Decimal("0")
+    entry = Decimal(str(entry))
+    target = Decimal(str(target))
+    quantity = Decimal(str(quantity))
+    factor = Decimal(str(factor))
+    entry_cost = Decimal(str(entry_cost))
+    exit_cost = Decimal(str(exit_cost))
+    gross = ((target - entry) * quantity * factor
+             if gross_gain is None else Decimal(str(gross_gain)))
+    published = published_cost_diagnostic(gross)
     return {
         "gross_pnl": str(gross),
         "known_costs": str(entry_cost + exit_cost),
-        "fiscal_tax": tax,
-        "net_pnl_known": str(gross - entry_cost - exit_cost),
-        "net_pnl_with_configured_tax": str(gross - entry_cost - exit_cost - tax_amount),
-        "state": "CONFIGURED" if tax["state"] == "CONFIGURED" else "PARTIAL",
+        "published_costs_note": published,
+        "net_pnl_after_published_costs": str(gross - entry_cost - exit_cost),
+        "state": "PARTIAL",
         "effect": "SHADOW_ONLY",
     }
 
