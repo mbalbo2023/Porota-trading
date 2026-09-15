@@ -40,6 +40,11 @@ jobs:
             echo "=== CANDLES ==="
             ps -eo pid,etime,stat,cmd | grep -E 'bv_paper_runtime.*candle-worker' | grep -v grep || true
             sudo -n docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}' || true
+            echo "=== CRITICAL APPROVAL HEALTH ==="
+            sudo -n docker inspect --format '{{json .State.Health}}' porota_critical_approval_rc6 2>&1 || true
+            sudo -n docker logs --tail 80 porota_critical_approval_rc6 2>&1 || true
+            echo "=== EOD MAX HOLD ==="
+            sudo -n docker exec porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); print('CLOSE_REASONS=',list(c.execute(\"select coalesce(close_reason,'OPEN'),count(*) from paper_positions group by close_reason order by count(*) desc\"))); print('EOD_TODAY=',c.execute(\"select count(*) from paper_positions where close_reason='EOD_PAPER' and date(closed_at,'-3 hours')=date('now','-3 hours')\").fetchone()[0]); print('MAX_HOLD_TODAY=',c.execute(\"select count(*) from paper_positions where close_reason in ('MAX_HOLD_PAPER','SCALPING_MAX_HOLD_PAPER') and date(closed_at,'-3 hours')=date('now','-3 hours')\").fetchone()[0])" 2>&1 || true
             echo "=== APPLY ==="
             if [ "$ACTION" = "APPLY_DISABLE_NON_READY" ]; then
               sudo -n docker exec porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db'); s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); assert s==('PRODUCTION_PAPER',0),s; t=c.execute(\"select name from sqlite_master where type='table' and name='financial_instrument_catalog'\").fetchone(); assert t, 'CATALOG_TABLE_MISSING'; c.execute(\"update financial_instrument_catalog set status='DISABLED_NON_READY' where capability <> 'READY_PAPER_SPOT' and status <> 'DISABLED_NON_READY'\"); print('DISABLED_ROWS=',c.execute('select changes()').fetchone()[0]); c.commit()" 2>&1 || echo "APPLY_BLOCKED"
