@@ -34,7 +34,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
-          python -m compileall -q _version.py bg_paper_dashboard.py
+          python -m py_compile _version.py bg_paper_dashboard.py
           python - <<'PY'
           import _version
           print('VERSION_VALUES=', repr(_version.VERSION), repr(_version.MODE), repr(_version.EXECUTION), repr(_version.REAL_ORDER_CAPABILITY))
