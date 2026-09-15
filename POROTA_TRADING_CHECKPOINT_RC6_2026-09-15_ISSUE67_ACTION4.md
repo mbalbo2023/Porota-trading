@@ -17,6 +17,7 @@ La página Reportes del runtime congelado no contiene el registro de auditoría/
 - Añade tarjeta RC6_ACTION4 en Reportes.
 - La Action lee únicamente /api/observer/state y el reporte diario por HTTP autenticado.
 - La escritura es atómica, sanitaria y fuera de report_registry; no reemplaza el PDF/JSON diario.
+- Reportes vuelve a mostrar los reportes DIARIO de los últimos 7 días; el JSON de aprendizaje IA del 2026-09-14 deja de quedar oculto por el filtro de "hoy".
 - Incluye ventana, run, commit, operaciones cerradas, BUY/HOLD y resumen de gates.
 - Rechaza fuente/alcance inválidos, acceso directo a DB, órdenes reales y claves sensibles.
 
