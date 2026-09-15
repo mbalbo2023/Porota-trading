@@ -148,3 +148,111 @@ jobs:
           print("RC6_DASHBOARD_WEEKLY_READONLY=END")
           PY
           REMOTE
+
+      - name: Sweep dashboard surfaces and locate downloadable outputs
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os
+          import re
+          import urllib.request
+          from urllib.parse import urlparse
+
+          BASE = "http://127.0.0.1:8000"
+          TOKEN = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
+          if not TOKEN:
+              print("DASHBOARD_AUTH_TOKEN=NOT_AVAILABLE")
+              raise SystemExit(2)
+
+          PAGES = [
+              "/", "/en-vivo", "/motor-trading", "/aprendizaje", "/reportes",
+              "/trading", "/instrumentos", "/scalping", "/validacion",
+              "/informacion-financiera", "/observacion", "/dashboard/logs",
+              "/config", "/sistema", "/sre",
+          ]
+
+          def request(path):
+              req = urllib.request.Request(
+                  BASE + path,
+                  headers={
+                      "Authorization": "Bearer " + TOKEN,
+                      "Cache-Control": "no-cache",
+                  },
+              )
+              return urllib.request.urlopen(req, timeout=20)
+
+          def html_metrics(body):
+              text = body.decode("utf-8", "replace")
+              hrefs = sorted(set(re.findall(r'href=["\\']([^"\\']*(?:/api/reports/|\\.pdf|\\.json)[^"\\']*)', text)))
+              return {
+                  "bytes": len(body),
+                  "paper_trade_blocks": text.count("paper-trade"),
+                  "mfe": text.upper().count("MFE"),
+                  "mae": text.upper().count("MAE"),
+                  "math_explanations": sum(text.lower().count(x) for x in (
+                      "variables utilizadas", "explicación", "explicacion",
+                      "decisión reproducible", "decision reproducible",
+                  )),
+                  "closed_today": text.lower().count("operaciones cerradas hoy"),
+                  "live_decisions": text.lower().count("decisiones en vivo"),
+                  "motor_decisions": text.lower().count("decisiones bloqueadas o aprobadas de hoy"),
+                  "learning_samples": text.lower().count("muestras cerradas"),
+                  "empirical_expectancy": text.lower().count("expectativa empírica"),
+                  "download_links": hrefs,
+              }
+
+          print("RC6_DASHBOARD_SURFACE_SWEEP=START")
+          print("SOURCE=authenticated_dashboard_http")
+          print("DATABASE_ACCESS_FROM_ACTION=NO")
+          report_links = set()
+          for path in PAGES:
+              try:
+                  with request(path) as response:
+                      body = response.read()
+                      metrics = html_metrics(body)
+                      report_links.update(metrics["download_links"])
+                      print("PAGE=" + path + " HTTP=" + str(response.status) +
+                            " BYTES=" + str(metrics["bytes"]) +
+                            " PAPER_TRADE_BLOCKS=" + str(metrics["paper_trade_blocks"]) +
+                            " MFE=" + str(metrics["mfe"]) +
+                            " MAE=" + str(metrics["mae"]) +
+                            " MATH_EXPLANATIONS=" + str(metrics["math_explanations"]) +
+                            " DOWNLOAD_LINKS=" + str(len(metrics["download_links"])))
+                      if metrics["download_links"]:
+                          for link in metrics["download_links"]:
+                              print("DISCOVERED_DOWNLOAD_LINK=" + link)
+              except Exception as exc:
+                  print("PAGE=" + path + " ERROR=" + type(exc).__name__)
+
+          for link in sorted(report_links):
+              parsed = urlparse(link)
+              path = parsed.path
+              if not path.startswith("/"):
+                  continue
+              try:
+                  with request(path) as response:
+                      disposition = response.headers.get("Content-Disposition", "ABSENT")
+                      content_type = response.headers.get("Content-Type", "ABSENT")
+                      content_length = response.headers.get("Content-Length", "ABSENT")
+                      print("DOWNLOAD_CHECK=" + path +
+                            " HTTP=" + str(response.status) +
+                            " TYPE=" + content_type +
+                            " LENGTH=" + content_length +
+                            " DISPOSITION=" + disposition)
+              except Exception as exc:
+                  print("DOWNLOAD_CHECK=" + path + " ERROR=" + type(exc).__name__)
+
+          print("RC6_DASHBOARD_SURFACE_SWEEP=END")
+          PY
+          REMOTE
