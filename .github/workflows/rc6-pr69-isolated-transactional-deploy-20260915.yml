@@ -128,7 +128,7 @@ jobs:
           fi
           for PATH_CHECK in /trading /motor-trading /validacion /reportes; do
             CODE="$(curl -sS -o /tmp/porota-dashboard-check -w '%{http_code}' --max-time 10 "http://127.0.0.1:8000$PATH_CHECK" || true)"
-            case "$CODE" in 200|401) ;; *) echo "DASHBOARD_ROUTE_FAILED=$PATH_CHECK HTTP=$CODE"; exit 1 ;; esac
+            case "$CODE" in 200|401) ;; *) echo "DASHBOARD_ROUTE_FAILED=$PATH_CHECK HTTP=$CODE"; sed -n "1,120p" /tmp/porota-dashboard-check; exit 1 ;; esac
           done
           echo 'DASHBOARD_ROUTES=GREEN'
           timeout 30 python3 - <<'PY'
