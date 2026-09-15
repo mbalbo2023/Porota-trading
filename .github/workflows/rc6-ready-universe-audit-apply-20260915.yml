@@ -23,7 +23,7 @@ jobs:
       - name: Audit and guarded apply on Droplet
         uses: appleboy/ssh-action@v1.2.0
         env:
-          REQUESTED_ACTION: ${{ github.event.inputs.action || 'APPLY_DISABLE_NON_READY' }}
+          REQUESTED_ACTION: ${{ github.event.inputs.action || 'AUDIT_ONLY' }}
         with:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USER }}
@@ -32,7 +32,7 @@ jobs:
           script_stop: false
           script: |
             set +e
-            ACTION="${REQUESTED_ACTION:-APPLY_DISABLE_NON_READY}"
+            ACTION="${REQUESTED_ACTION:-AUDIT_ONLY}"
             echo "ACTION=$ACTION"
             echo "=== SAFETY ==="
             sudo -n docker exec porota_production_observer env | grep -E 'ENVIRONMENT|ORDER_EXECUTION_MODE|REAL_ORDER_CAPABILITY' || true
