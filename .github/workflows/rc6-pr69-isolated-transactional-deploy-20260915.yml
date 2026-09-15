@@ -27,7 +27,7 @@ jobs:
       - name: Checkout exact PR69 source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_SHA }}
+          ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
       - name: Validate exact source and safety identity
         shell: bash
@@ -66,4 +66,4 @@ jobs:
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_pr69_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='${TARGET_SHA}' TARGET_BRANCH='${TARGET_BRANCH}' ARCHIVE_DIGEST='${ARCHIVE_DIGEST}' bash -s" < scripts/rc6_transactional_host_deploy_v3.sh
-# policy-retry
+# checkout-branch-fix
