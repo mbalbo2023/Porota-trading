@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   audit:
@@ -90,14 +90,9 @@ PY
           printf '\n## Transport result\nSSH_RC=%s\n' "$rc" >> "$RESULT"
           exit 0
 
-      - name: Persist raw evidence
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add POROTA_TRADING_SCHEDULER_AUDIT_RAW_2026-09-14.md
-          git diff --cached --quiet && exit 0
-          git commit -m 'audit(scheduler): persist RC6 read-only evidence [skip ci]'
-          git push origin HEAD:ops/rc6-scheduler-audit-20260914
-
-# policy-retry-2026-09-15
+      - name: Persist raw evidence as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-scheduler-audit-20260915
+          path: POROTA_TRADING_SCHEDULER_AUDIT_RAW_2026-09-14.md
+          if-no-files-found: error
