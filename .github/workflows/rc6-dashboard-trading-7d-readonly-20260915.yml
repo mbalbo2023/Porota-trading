@@ -81,11 +81,16 @@ jobs:
               try:
                   _, page_raw = get("/reportes")
                   links = sorted(set(re.findall(r'/api/reports/[0-9]+/ai', page_raw.decode("utf-8", "replace"))))
+                  best = (None, {}, "")
                   for link in links:
                       _, report_raw = get(link)
                       candidate = json.loads(report_raw.decode("utf-8"))
-                      if isinstance(candidate, dict) and candidate.get("operaciones") is not None:
-                          return link, candidate
+                      if not isinstance(candidate, dict) or candidate.get("operaciones") is None:
+                          continue
+                      freshness = str(candidate.get("generado_en") or candidate.get("periodo") or "")
+                      if freshness > best[2]:
+                          best = (link, candidate, freshness)
+                  return best[0], best[1]
               except Exception as exc:
                   print("DAILY_REPORT_READ_ERROR=" + type(exc).__name__)
               return None, {}
