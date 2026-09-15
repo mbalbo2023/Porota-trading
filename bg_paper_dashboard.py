@@ -1625,13 +1625,14 @@ def reports_page():
     reports=_rows("SELECT * FROM report_registry ORDER BY period_key DESC,period_type") if _table("report_registry") else []
     today=datetime.now(TZ).date().isoformat()
     # IA intradía/paquetes IA: legado deprecado. No forman parte de la operación HF6-v2.
+    recent_cutoff=(datetime.now(TZ).date()-timedelta(days=7)).isoformat()
     reports=[r for r in reports if r.get('period_type')!='IA_SEMANAL'
-             and (r.get('period_type')!='DIARIO' or r.get('period_key')==today)]
+             and (r.get('period_type')!='DIARIO' or r.get('period_key','')>=recent_cutoff)]
     body=("<h1>Reportes</h1>"
           "<p class='paper-muted'>Reportes operativos PAPER. La experiencia principal usa tarjetas verticales para tablet/móvil.</p>"
           + _action4_report_card()
           + report_cards_html(reports)
-          + "<div class='paper-notice'>Los diarios anteriores se consultan desde Aprendizaje. "
+          + "<div class='paper-notice'>Se muestran los reportes diarios recientes y la auditoría Action 4. "
             "Los artefactos IA heredados permanecen sólo por trazabilidad y no participan de HF6-v2.</div>")
     return _document("Reportes",body,refresh=300)
 
