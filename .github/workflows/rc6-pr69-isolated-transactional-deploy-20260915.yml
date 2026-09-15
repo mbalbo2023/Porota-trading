@@ -126,18 +126,29 @@ jobs:
             sudo -n python3 "$REPO/porota_mode_manager.py" simulation
             exit 1
           fi
+          ROUTE_FAILURES=0
           for PATH_CHECK in /trading /motor-trading /validacion /reportes; do
             CODE="$(curl -sS -o /tmp/porota-dashboard-check -w '%{http_code}' --max-time 10 "http://127.0.0.1:8000$PATH_CHECK" || true)"
-            case "$CODE" in 200|401) ;; *) echo "DASHBOARD_ROUTE_FAILED=$PATH_CHECK HTTP=$CODE"; sed -n "1,120p" /tmp/porota-dashboard-check; exit 1 ;; esac
+            case "$CODE" in 200|401) ;; *) echo "DASHBOARD_ROUTE_FAILED=$PATH_CHECK HTTP=$CODE"; sed -n "1,120p" /tmp/porota-dashboard-check; ROUTE_FAILURES=1 ;; esac
           done
-          echo 'DASHBOARD_ROUTES=GREEN'
-          timeout 30 python3 - <<'PY'
-          import bg_paper_dashboard as bg
-          import en_validation_project_dashboard_rc6 as project
-          bg.validation_page()
-          project.page(limit_days=1)
-          print('DASHBOARD_RENDER=GREEN')
+          echo "DASHBOARD_ROUTE_FAILURES=$ROUTE_FAILURES"
+          RENDER_FAILURES=0
+          if ! timeout 30 python3 - <<'PY'
+          import traceback
+          try:
+              import bg_paper_dashboard as bg
+              import en_validation_project_dashboard_rc6 as project
+              bg.validation_page()
+              project.page(limit_days=1)
+              print('DASHBOARD_RENDER=GREEN')
+          except Exception:
+              traceback.print_exc()
+              raise
           PY
+          then RENDER_FAILURES=1; fi
+          echo "DASHBOARD_RENDER_FAILURES=$RENDER_FAILURES"
+          test "$ROUTE_FAILURES" = 0
+          test "$RENDER_FAILURES" = 0
           POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
