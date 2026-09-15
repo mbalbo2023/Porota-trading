@@ -102,14 +102,13 @@ jobs:
           test -s "$PATCH"
           git -C "$REPO" worktree add --detach "$WT" "$CURRENT_SHA" >/dev/null
           git -C "$WT" apply --3way --whitespace=nowarn "$PATCH"
-          test "$(git -C "$WT" diff --name-only | sort)" = "$(printf '%s\n' POROTA_TRADING_CHECKPOINT_RC6_2026-09-15_ISSUE67_ACTION4.md bg_paper_dashboard.py | sort)"
+          test "$(git -C "$WT" diff --name-only | sort)" = "bg_paper_dashboard.py"
           python3 -m py_compile "$WT/bg_paper_dashboard.py" "$WT/_version.py"
 
           sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label "porota.version=17.0.0-rc6" -t "$CANDIDATE_IMAGE" "$WT"
           sudo -n docker run --rm --pull never --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --entrypoint python "$CANDIDATE_IMAGE" -c "import _version; assert _version.VERSION=='17.0.0-rc6'; assert _version.MODE=='PRODUCTION_PAPER'; assert _version.EXECUTION=='SIMULATED'; assert _version.REAL_ORDER_CAPABILITY=='BLOCKED'; print('PR69_IMAGE_POLICY=GREEN')"
 
           cp "$REPO/bg_paper_dashboard.py" "/tmp/bg_paper_dashboard.py.pr69-backup"
-          cp "$REPO/POROTA_TRADING_CHECKPOINT_RC6_2026-09-15_ISSUE67_ACTION4.md" "/tmp/action4.md.pr69-backup" 2>/dev/null || true
           git -C "$REPO" apply --3way --whitespace=nowarn "$PATCH"
           sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
           sudo -n python3 "$REPO/porota_mode_manager.py" simulation
