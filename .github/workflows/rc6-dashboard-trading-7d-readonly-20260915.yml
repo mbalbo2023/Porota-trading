@@ -299,6 +299,15 @@ jobs:
                                                     " " + json.dumps(dict(sorted(counts.items(),
                                                     key=lambda pair: (-pair[1], pair[0]))[:40]),
                                                     ensure_ascii=False, sort_keys=True))
+                                          if key == "secuencia_de_portones" and isinstance(value, list):
+                                              gate_counts = {}
+                                              for item in value:
+                                                  if not isinstance(item, dict):
+                                                      continue
+                                                  result = str(item.get("final_result") or "NO_FINAL_RESULT")
+                                                  gate_counts[result] = gate_counts.get(result, 0) + 1
+                                              print("AI_REPORT_GATE_COUNTS=" + path +
+                                                    " " + json.dumps(gate_counts, ensure_ascii=False, sort_keys=True))
                                       elif value is not None:
                                           print("AI_REPORT_SECTION=" + path +
                                                 " KEY=" + key +
