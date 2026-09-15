@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          tar -czf /tmp/porota-rc6-candidate.tgz bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py
+          tar -czf /tmp/porota-rc6-candidate.tgz bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py historical_candle_shadow_rc6.py rc6_cost_settlement_takeprofit_shadow.py rc6_report_retention.py rc6_validation_dynamic.py en_validation_project_dashboard_rc6.py
       - name: Deploy exact candidate to Droplet and verify
         shell: bash
         env:
@@ -95,7 +95,7 @@ jobs:
           BACKUP="/tmp/porota-rc6-backup-$TARGET_SHA"
           sudo -n rm -rf "$BACKUP"
           sudo -n mkdir -p "$BACKUP"
-          for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py; do
+          for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py historical_candle_shadow_rc6.py rc6_cost_settlement_takeprofit_shadow.py rc6_report_retention.py rc6_validation_dynamic.py en_validation_project_dashboard_rc6.py; do
             sudo -n cp "$REPO/$f" "$BACKUP/$f"
             sudo -n cp "$STAGE/$f" "$REPO/$f"
           done
