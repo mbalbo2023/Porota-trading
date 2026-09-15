@@ -71,6 +71,7 @@ jobs:
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
+          cd "$REPO"
           TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
           PRE_SHA="$(sudo -n git -C "$REPO" rev-parse HEAD)"
           PRE_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
