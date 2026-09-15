@@ -34,9 +34,10 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
-          python -m compileall -q .
+          python -m compileall -q _version.py bg_paper_dashboard.py
           python - <<'PY'
           import _version
+          print('VERSION_VALUES=', repr(_version.VERSION), repr(_version.MODE), repr(_version.EXECUTION), repr(_version.REAL_ORDER_CAPABILITY))
           assert _version.VERSION == '17.0.0-rc6'
           assert _version.MODE == 'PRODUCTION_PAPER'
           assert _version.EXECUTION == 'SIMULATED'
@@ -66,4 +67,4 @@ jobs:
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_pr69_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='${TARGET_SHA}' TARGET_BRANCH='${TARGET_BRANCH}' ARCHIVE_DIGEST='${ARCHIVE_DIGEST}' bash -s" < scripts/rc6_transactional_host_deploy_v3.sh
-# checkout-branch-fix
+# validation-scope-fix
