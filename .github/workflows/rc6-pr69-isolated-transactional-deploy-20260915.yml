@@ -126,6 +126,11 @@ jobs:
             sudo -n python3 "$REPO/porota_mode_manager.py" simulation
             exit 1
           fi
+          for PATH_CHECK in /trading /motor-trading /validacion /reportes; do
+            CODE="$(curl -sS -o /tmp/porota-dashboard-check -w '%{http_code}' --max-time 10 "http://127.0.0.1:8000$PATH_CHECK" || true)"
+            test "$CODE" = "200" || { echo "DASHBOARD_ROUTE_FAILED=$PATH_CHECK HTTP=$CODE"; exit 1; }
+          done
+          echo 'DASHBOARD_ROUTES=GREEN'
           POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
