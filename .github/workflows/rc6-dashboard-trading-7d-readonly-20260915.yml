@@ -145,6 +145,8 @@ jobs:
               action = str(decision.get("action") or "UNKNOWN")
               actions[action] = actions.get(action, 0) + 1
           print("DECISIONS_BY_ACTION=" + json.dumps(actions, sort_keys=True))
+          print("DECISIONS_INCLUDED_IN_ANALYSIS=YES")
+          print("DECISIONS_SEMANTICS=EXECUTED_CLOSED_SEPARATE_FROM_REJECTED_AND_HOLD")
           print("RC6_DASHBOARD_WEEKLY_READONLY=END")
           PY
           REMOTE
@@ -194,7 +196,7 @@ jobs:
 
           def html_metrics(body):
               text = body.decode("utf-8", "replace")
-              hrefs = sorted(set(re.findall(r'href=["\\']([^"\\']*(?:/api/reports/|\\.pdf|\\.json)[^"\\']*)', text)))
+              hrefs = sorted(set(re.findall(r"""href=["']([^"']*(?:/api/reports/|\\.pdf|\\.json)[^"']*)""", text)))
               return {
                   "bytes": len(body),
                   "paper_trade_blocks": text.count("paper-trade"),
