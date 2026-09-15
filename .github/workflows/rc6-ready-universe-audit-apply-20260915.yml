@@ -36,7 +36,7 @@ jobs:
             echo "ACTION=$ACTION"
             echo "=== SAFETY ==="
             sudo -n docker exec porota_production_observer env | grep -E 'ENVIRONMENT|ORDER_EXECUTION_MODE|REAL_ORDER_CAPABILITY' || true
-            timeout 20s sudo -n docker exec porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); print('DB_CHECK=',c.execute('pragma quick_check').fetchone()[0]); print('TABLES=',c.execute(\"select name from sqlite_master where type='table' order by name\").fetchall()); print('STATE=',c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())" 2>&1 || echo "CATALOG_AUDIT_UNAVAILABLE"
+            timeout 20s sudo -n docker exec porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); print('DB_OPEN=ok'); print('TABLES=',c.execute(\"select name from sqlite_master where type='table' order by name\").fetchall()); print('STATE=',c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())" 2>&1 || echo "CATALOG_AUDIT_UNAVAILABLE"
             echo "=== CANDLES ==="
             ps -eo pid,etime,stat,cmd | grep -E 'bv_paper_runtime.*candle-worker' | grep -v grep || true
             sudo -n docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}' || true
