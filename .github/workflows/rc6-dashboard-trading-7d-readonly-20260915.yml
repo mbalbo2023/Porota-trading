@@ -280,6 +280,25 @@ jobs:
                                                 " KEY=" + key +
                                                 " TYPE=" + type(value).__name__ +
                                                 " SIZE=" + str(len(value)))
+                                          if isinstance(value, list) and value and isinstance(value[0], dict):
+                                              print("AI_REPORT_ITEM_KEYS=" + path +
+                                                    " KEY=" + key +
+                                                    " KEYS=" + ",".join(sorted(str(k) for k in value[0])[:30]))
+                                          if key == "decisiones" and isinstance(value, list):
+                                              counts = {}
+                                              for item in value:
+                                                  if not isinstance(item, dict):
+                                                      continue
+                                                  for field in ("action", "decision", "resultado", "final_result",
+                                                                "status", "estado", "reason", "motivo"):
+                                                      raw_value = item.get(field)
+                                                      if raw_value not in (None, ""):
+                                                          label = field + "=" + str(raw_value)
+                                                          counts[label] = counts.get(label, 0) + 1
+                                              print("AI_REPORT_DECISION_COUNTS=" + path +
+                                                    " " + json.dumps(dict(sorted(counts.items(),
+                                                    key=lambda pair: (-pair[1], pair[0]))[:40]),
+                                                    ensure_ascii=False, sort_keys=True))
                                       elif value is not None:
                                           print("AI_REPORT_SECTION=" + path +
                                                 " KEY=" + key +
