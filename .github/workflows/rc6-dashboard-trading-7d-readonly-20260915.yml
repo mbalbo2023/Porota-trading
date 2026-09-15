@@ -272,6 +272,18 @@ jobs:
                               if isinstance(payload, dict):
                                   print("AI_REPORT_SCHEMA=" + path +
                                         " TOP_KEYS=" + ",".join(sorted(str(k) for k in payload)[:30]))
+                                  for key in ("operaciones", "decisiones", "secuencia_de_portones",
+                                              "ordenes_reales", "noticias_relevantes"):
+                                      value = payload.get(key)
+                                      if isinstance(value, (list, dict)):
+                                          print("AI_REPORT_SECTION=" + path +
+                                                " KEY=" + key +
+                                                " TYPE=" + type(value).__name__ +
+                                                " SIZE=" + str(len(value)))
+                                      elif value is not None:
+                                          print("AI_REPORT_SECTION=" + path +
+                                                " KEY=" + key +
+                                                " TYPE=" + type(value).__name__)
                               else:
                                   print("AI_REPORT_SCHEMA=" + path +
                                         " TOP_TYPE=" + type(payload).__name__)
