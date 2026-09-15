@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse
 import bg_paper_dashboard as bg
 import ev_shadow_validation_view_rc6 as shadow_view
 import rc6_validation_operational_daily as operational_daily
+import rc6_validation_dynamic as dynamic_validation
 from em_validation_campaign_rc6 import (
     MILESTONES,
     load_records,
@@ -142,13 +143,14 @@ def _operational_daily_section(limit_days=10):
 
 def page(limit_days=10):
     records, ledger_error = _safe_records()
-    latest = latest_by_milestone(records)
-    summary = project_summary(records)
+    latest = dynamic_validation.evaluate(records)
+    summary = dynamic_validation.summary(latest)
+    ledger_summary = project_summary(records)
     cards = "".join((
         bg._card("Hitos GREEN", f"{summary['milestones_green']}/{summary['milestones_total']}",
                  "Conteo descriptivo; no autoriza real-money", "green" if summary['milestones_green'] else "gray"),
-        bg._card("Avance descriptivo", f"{summary['descriptive_completion_pct']:.1f}%",
-                 "Hitos GREEN / hitos totales; no es readiness ponderado", "gray"),
+        bg._card("Avance dinámico", f"{summary['milestones_green']}/{summary['milestones_total']}",
+                 "Objetivos evaluados con evidencia actual; no es readiness ponderado", "gray"),
         bg._card("Avance ponderado", "NO CALCULADO",
                  "Los pesos deben ser aprobados por el operador antes de usarse", "yellow"),
         bg._card("Camino crítico RED", len(summary['critical_red']),
@@ -156,10 +158,11 @@ def page(limit_days=10):
         bg._card("Real-money", "BLOCKED",
                  "M11 no se habilita por porcentaje, días verdes ni backtest", "green"),
         bg._card("Ledger de campaña", "OK" if ledger_error is None else "ERROR",
-                 f"{summary['records']} registros · SHA-256 chain" if ledger_error is None else f"{ledger_error}; revisar antes de confiar en historial",
+                 f"{ledger_summary['records']} registros · SHA-256 chain · evaluación dinámica activa" if ledger_error is None else f"{ledger_error}; revisar antes de confiar en historial",
                  "green" if ledger_error is None else "red"),
     ))
     roadmap = "".join(_milestone_card(m, latest.get(m.code, {})) for m in MILESTONES)
+    dynamic_notice = "<div class='paper-notice'><b>Evaluación dinámica activa:</b> los estados se recalculan en cada carga usando evidencia read-only del runtime y del ledger. No se escriben registros ni se habilitan órdenes. La historia append-only se conserva por separado.</div>"
     campaign_history = _campaign_daily_history(records, limit_days=limit_days)
     campaign_controls = (
         "<section class='paper-card'><h2>Ledger de campaña / auditoría por día</h2>"
@@ -171,6 +174,7 @@ def page(limit_days=10):
     )
     body = (
         "<h1>Validación — Camino a Producción</h1>"
+        + dynamic_notice
         "<div class='paper-warning'><b>Este tablero gestiona evidencia; no habilita dinero real.</b> "
         "El último hito M11 continúa BLOCKED hasta un proyecto futuro explícito de governance, permisos y canary.</div>"
         "<p class='paper-muted'>Horizonte: Infraestructura → Safety → Fuentes/Contratos → Históricos → Estabilidad PAPER → "
