@@ -1,0 +1,42 @@
+name: RC6 repair critical approval runtime
+
+on:
+  push:
+    branches:
+      - ops/rc6-ready-universe-actions-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Restart only critical approval and verify
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            echo "BEFORE"
+            sudo -n docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+            sudo -n docker restart --time 30 porota_critical_approval_rc6
+            OK=0
+            for i in $(seq 1 18); do
+              STATUS=$(sudo -n docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' porota_critical_approval_rc6 2>/dev/null || true)
+              echo "CHECK_${i}=${STATUS}"
+              if [ "$STATUS" = "healthy" ]; then OK=1; break; fi
+              sleep 5
+            done
+            sudo -n docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+            test "$OK" = "1"
+            OBSERVER=$(sudo -n docker inspect --format '{{.State.Status}}' porota_production_observer)
+            DASHBOARD=$(sudo -n docker inspect --format '{{.State.Health.Status}}' porota_production_dashboard)
+            test "$OBSERVER" = "running"
+            test "$DASHBOARD" = "healthy"
+            sudo -n docker exec porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); print('STATE=',c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())"
+            echo "CRITICAL_REPAIR_GREEN"
