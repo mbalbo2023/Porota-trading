@@ -96,14 +96,14 @@ jobs:
           sudo -n rm -rf "$BACKUP"
           sudo -n mkdir -p "$BACKUP"
           for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py historical_candle_shadow_rc6.py rc6_cost_settlement_takeprofit_shadow.py rc6_report_retention.py rc6_validation_dynamic.py en_validation_project_dashboard_rc6.py; do
-            sudo -n cp "$REPO/$f" "$BACKUP/$f"
+            if sudo -n test -f "$REPO/$f"; then sudo -n cp "$REPO/$f" "$BACKUP/$f"; fi
             sudo -n cp "$STAGE/$f" "$REPO/$f"
           done
           PREV_IMAGE_TAG="porota-trading-bot:17.0.0-rc6-rollback-$TARGET_SHA"
           CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA"
           sudo -n docker tag "$TARGET_IMAGE" "$PREV_IMAGE_TAG"
           if ! sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label "porota.version=17.0.0-rc6" -t "$CANDIDATE_IMAGE" "$REPO"; then
-            for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py; do sudo -n cp "$BACKUP/$f" "$REPO/$f"; done
+            for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py historical_candle_shadow_rc6.py rc6_cost_settlement_takeprofit_shadow.py rc6_report_retention.py rc6_validation_dynamic.py en_validation_project_dashboard_rc6.py; do if sudo -n test -f "$BACKUP/$f"; then sudo -n cp "$BACKUP/$f" "$REPO/$f"; fi; done
             exit 1
           fi
           sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
