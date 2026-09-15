@@ -23,7 +23,7 @@ jobs:
       - name: Audit and guarded apply on Droplet
         uses: appleboy/ssh-action@v1.2.0
         env:
-          REQUESTED_ACTION: ${{ github.event.inputs.action || 'AUDIT_ONLY' }}
+          REQUESTED_ACTION: ${{ github.event.inputs.action || 'APPLY_DISABLE_NON_READY' }}
         with:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USER }}
