@@ -33,7 +33,10 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
+          HEAD_SHA="$(git rev-parse HEAD)"
+          echo "CHECKOUT_HEAD=${HEAD_SHA}"
+          echo "EXPECTED_TARGET_SHA=${TARGET_SHA}"
+          test "${HEAD_SHA}" = "${TARGET_SHA}"
           python -m py_compile _version.py bg_paper_dashboard.py
           python - <<'PY'
           import _version
