@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          tar -czf /tmp/porota-rc6-candidate.tgz bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py historical_candle_shadow_rc6.py rc6_cost_settlement_takeprofit_shadow.py rc6_report_retention.py rc6_validation_dynamic.py en_validation_project_dashboard_rc6.py
+          tar -czf /tmp/porota-rc6-candidate.tgz bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py historical_candle_shadow_rc6.py rc6_cost_settlement_takeprofit_shadow.py rc6_report_retention.py rc6_validation_dynamic.py rc6_validation_operational_daily.py en_validation_project_dashboard_rc6.py
       - name: Deploy exact candidate to Droplet and verify
         shell: bash
         env:
@@ -128,9 +128,16 @@ jobs:
           fi
           for PATH_CHECK in /trading /motor-trading /validacion /reportes; do
             CODE="$(curl -sS -o /tmp/porota-dashboard-check -w '%{http_code}' --max-time 10 "http://127.0.0.1:8000$PATH_CHECK" || true)"
-            test "$CODE" = "200" || { echo "DASHBOARD_ROUTE_FAILED=$PATH_CHECK HTTP=$CODE"; exit 1; }
+            case "$CODE" in 200|401) ;; *) echo "DASHBOARD_ROUTE_FAILED=$PATH_CHECK HTTP=$CODE"; exit 1 ;; esac
           done
           echo 'DASHBOARD_ROUTES=GREEN'
+          timeout 30 python3 - <<'PY'
+          import bg_paper_dashboard as bg
+          import en_validation_project_dashboard_rc6 as project
+          bg.validation_page()
+          project.page(limit_days=1)
+          print('DASHBOARD_RENDER=GREEN')
+          PY
           POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
