@@ -57,7 +57,7 @@ PAPER_INITIAL_CAPITALS = {
 PAPER_INITIAL_CAPITAL = PAPER_INITIAL_CAPITALS["ARS"]
 PAPER_ACTIVE_SYMBOL_LIMIT = int(os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "20"))
 PAPER_ECONOMIC_GATE_MODE = os.getenv("PAPER_ECONOMIC_GATE_MODE", "SHADOW").upper()
-PAPER_SCALPING_MODE = os.getenv("PAPER_SCALPING_MODE", "ACTIVE_OBSERVE").upper()
+PAPER_SCALPING_MODE = os.getenv("PAPER_SCALPING_MODE", "OFF").upper()
 REFRESH_SECONDS = max(0, int(os.getenv("DASHBOARD_REFRESH_SECONDS", "30")))
 _installed = False
 
@@ -979,7 +979,7 @@ def _economic_shadow_panel():
 
 def scalping_page():
     worker=(_rows("SELECT * FROM intraday_scalping_worker_state WHERE id=1") or [{}])[0] if _table("intraday_scalping_worker_state") else {}
-    state=worker.get("state","NOT_STARTED")
+    state="DISABLED" if PAPER_SCALPING_MODE=="OFF" else worker.get("state","NOT_STARTED")
     try:
         age=(datetime.now(TZ)-aware_datetime(worker["heartbeat_at"]).astimezone(TZ)).total_seconds()
         if not 0 <= age <= 240:
@@ -1015,7 +1015,9 @@ def scalping_page():
       _card("Órdenes reales",worker.get("real_orders_sent",0),"Debe ser siempre cero","green" if worker.get("real_orders_sent",0)==0 else "red"),
     ))
     scalp_rows="".join(f"<tr><td>{_local_time(p['opened_at'])}</td><td>{_e(p['symbol'])}</td><td>{_e(p['currency'])}</td><td>{_status(p['status'])}</td><td>{_e(p['quantity'])}</td><td>{_money(p.get('net_pnl'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in scalp_positions) or "<tr><td colspan='7'>Todavía no hubo fills scalping PAPER.</td></tr>"
-    execution_notice=("<div class='paper-notice'><b>ACTIVE_PAPER:</b> los candidatos validados pueden abrir sólo posiciones simuladas. Riesgo 0,10%, máximo una posición scalping y permanencia máxima 30 minutos. PPI Orders permanece bloqueado.</div>"
+    execution_notice=("<div class='paper-warning'><b>DESACTIVADO:</b> scalping no está disponible con el universo READY actual. No se generan candidatos ni fills scalping.</div>"
+                      if PAPER_SCALPING_MODE=="OFF" else
+                      "<div class='paper-notice'><b>ACTIVE_PAPER:</b> los candidatos validados pueden abrir sólo posiciones simuladas. Riesgo 0,10%, máximo una posición scalping y permanencia máxima 30 minutos. PPI Orders permanece bloqueado.</div>"
                       if PAPER_SCALPING_MODE=="ACTIVE_PAPER" else
                       "<div class='paper-warning'><b>ACTIVE_OBSERVE:</b> el scanner observa; no genera fills.</div>")
     body=(f"<h1>Scalping intradiario</h1><div class='paper-grid'>{cards}</div>{execution_notice}"
@@ -1140,10 +1142,15 @@ def _universe_execution_panel():
       FROM financial_instrument_catalog WHERE status='AVAILABLE'
       GROUP BY instrument_type,currency,capability ORDER BY instrument_type,currency,capability""")
     items=''.join(f"<tr><td>{_e(r['instrument_type'])}</td><td>{_e(r['currency'])}</td><td>{_e(r['capability'])}</td><td>{r['total']}</td></tr>" for r in rows)
+    unavailable=_rows("""SELECT instrument_type,COUNT(*) total FROM financial_instrument_catalog
+      WHERE status='DISABLED_NON_READY' GROUP BY instrument_type ORDER BY instrument_type""")
+    unavailable_text=", ".join(f"{_e(r['instrument_type'])}: {r['total']}" for r in unavailable) or "ninguna"
     usd_ready=sum(int(r['total']) for r in rows if r['currency'] in {'USD','USD_MEP','USD_CCL'} and r['capability']=='READY_PAPER_SPOT')
     usd_positions=(_rows("""SELECT COUNT(*) n FROM paper_positions
       WHERE date(opened_at,'-3 hours')=date('now','-3 hours') AND currency IN ('USD','USD_MEP','USD_CCL')""") or [{'n':0}])[0]['n']
     return ("<div class='paper-card'><h2>Universo por familia y moneda</h2>"
+            f"<div class='paper-notice'><b>Universo operativo actual:</b> solo Acciones y CEDEARs ({sum(int(r['total']) for r in rows if r['capability']=='READY_PAPER_SPOT')} instrumentos READY). "
+            f"Familias no disponibles y excluidas del motor: {unavailable_text}.</div>"
             f"<div class='paper-notice'>Contratos spot USD listos: {usd_ready}; operaciones USD hoy: {usd_positions}. "
             "Saldo intacto significa que ninguna señal USD atravesó todos los portones; nunca se fabrican transacciones para mover caja.</div>"
             "<table class='paper-table'><tr><th>Familia</th><th>Moneda/plaza</th><th>Capacidad contractual</th><th>Instrumentos</th></tr>"+items+"</table></div>")
