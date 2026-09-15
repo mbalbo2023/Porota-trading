@@ -1621,7 +1621,8 @@ def _action4_report_card() -> str:
     )
 
 
-def reports_page():    reports=_rows("SELECT * FROM report_registry ORDER BY period_key DESC,period_type") if _table("report_registry") else []
+def reports_page():
+    reports=_rows("SELECT * FROM report_registry ORDER BY period_key DESC,period_type") if _table("report_registry") else []
     today=datetime.now(TZ).date().isoformat()
     # IA intradía/paquetes IA: legado deprecado. No forman parte de la operación HF6-v2.
     reports=[r for r in reports if r.get('period_type')!='IA_SEMANAL'
