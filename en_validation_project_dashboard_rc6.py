@@ -106,7 +106,7 @@ def _campaign_daily_history(records, limit_days=10):
 
 def _operational_daily_section(limit_days=10):
     try:
-        data = operational_daily.collect(limit_days=limit_days)
+        data = operational_daily.collect(limit_days=limit_days, event_limit=50000)
     except Exception as exc:
         return (
             "<section class='paper-card'><h2>Actividad PAPER por jornada</h2>"
