@@ -1,0 +1,414 @@
+name: RC6 Dashboard Trading 7D Read-Only 2026-09-15
+
+on:
+  push:
+    branches:
+      - ops/rc6-dashboard-trading-readonly-20260915
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard_7d_readonly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read dashboard weekly activity without database access
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          ACTION_RUN_ID: ${{ github.run_id }}
+          ACTION_RUN_NUMBER: ${{ github.run_number }}
+          ACTION_COMMIT: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          ORIGIN_RUN_ID=$(printf '%q' "$ACTION_RUN_ID")
+          ORIGIN_RUN_NUMBER=$(printf '%q' "$ACTION_RUN_NUMBER")
+          ORIGIN_COMMIT=$(printf '%q' "$ACTION_COMMIT")
+          ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "AUDIT_RUN_ID=$ORIGIN_RUN_ID AUDIT_RUN_NUMBER=$ORIGIN_RUN_NUMBER AUDIT_COMMIT=$ORIGIN_COMMIT bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_dashboard python - "$AUDIT_RUN_ID" "$AUDIT_RUN_NUMBER" "$AUDIT_COMMIT" <<'PY'
+          import json
+          import os
+          import urllib.request
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+          import re
+          import sys
+
+          BASE = "http://127.0.0.1:8000"
+          TOKEN = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
+          if not TOKEN:
+              print("DASHBOARD_AUTH_TOKEN=NOT_AVAILABLE")
+              raise SystemExit(2)
+          TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+          START = datetime.fromisoformat("2026-09-08T00:00:00-03:00")
+          END = datetime.fromisoformat("2026-09-15T00:00:00-03:00")
+
+          def get(path):
+              request = urllib.request.Request(
+                  BASE + path,
+                  headers={
+                      "Authorization": "Bearer " + TOKEN,
+                      "Cache-Control": "no-cache",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=15) as response:
+                  return response.status, response.read()
+
+          def latest_daily_report():
+              try:
+                  _, page_raw = get("/reportes")
+                  links = sorted(set(re.findall(r'/api/reports/[0-9]+/ai', page_raw.decode("utf-8", "replace"))))
+                  for link in links:
+                      _, report_raw = get(link)
+                      candidate = json.loads(report_raw.decode("utf-8"))
+                      if isinstance(candidate, dict) and candidate.get("operaciones") is not None:
+                          return link, candidate
+              except Exception as exc:
+                  print("DAILY_REPORT_READ_ERROR=" + type(exc).__name__)
+              return None, {}
+
+          def count_values(items, field):
+              counts = {}
+              for item in items if isinstance(items, list) else []:
+                  if not isinstance(item, dict):
+                      continue
+                  value = str(item.get(field) or "UNKNOWN")
+                  counts[value] = counts.get(value, 0) + 1
+              return dict(sorted(counts.items()))
+
+          def local_dt(value):
+              if not value:
+                  return None
+              parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+              if parsed.tzinfo is None:
+                  parsed = parsed.replace(tzinfo=TZ)
+              return parsed.astimezone(TZ)
+
+          def in_window(value):
+              parsed = local_dt(value)
+              return parsed is not None and START <= parsed < END
+
+          status, raw = get("/api/observer/state")
+          payload = json.loads(raw.decode("utf-8"))
+          state = payload.get("state") or {}
+          closed = payload.get("closed") or []
+          opened = [p for p in closed if in_window(p.get("opened_at"))]
+          closed_window = [p for p in closed if in_window(p.get("closed_at"))]
+          open_now = payload.get("open") or []
+          decisions = payload.get("decisions") or []
+          decisions_window = [d for d in decisions if in_window(d.get("decided_at"))]
+          report_link, daily_report = latest_daily_report()
+          daily_report_decisions = daily_report.get("decisiones") or []
+          daily_report_gates = daily_report.get("secuencia_de_portones") or []
+          daily_summary = {
+              "link": report_link,
+              "periodo": daily_report.get("periodo"),
+              "operations_count": len(daily_report.get("operaciones") or []),
+              "decisions_count": len(daily_report_decisions),
+              "decision_action_counts": count_values(daily_report_decisions, "action"),
+              "decision_reason_counts": count_values(daily_report_decisions, "reason"),
+              "gate_final_counts": count_values(daily_report_gates, "final_result"),
+          }
+
+          def money(value):
+              try:
+                  return f"{float(value):.2f}"
+              except (TypeError, ValueError):
+                  return "NA"
+
+          print("RC6_DASHBOARD_WEEKLY_READONLY=START")
+          print("READ_SOURCE=/api/observer/state")
+          print("DATABASE_ACCESS_FROM_ACTION=NO")
+          print("WINDOW_LOCAL=2026-09-08T00:00:00-03:00..2026-09-15T00:00:00-03:00")
+          print("HTTP_STATE=" + str(status))
+          print("MODE=" + str(state.get("mode", "UNKNOWN")))
+          print("PROCESS_STATE=" + str(state.get("process_state", "UNKNOWN")))
+          print("SESSION_STATE=" + str(state.get("session_state", "UNKNOWN")))
+          print("REAL_ORDERS_SENT=" + str(state.get("real_orders_sent", "UNKNOWN")))
+          print("OPEN_PAPER_NOW=" + str(len(open_now)))
+          print("CLOSED_PAPER_WINDOW=" + str(len(closed_window)))
+          print("OPENED_PAPER_WINDOW=" + str(len(opened)))
+          print("PAPER_DECISIONS_WINDOW=" + str(len(decisions_window)))
+
+          operations = []
+          by_day = {}
+          by_reason = {}
+          pnl = 0.0
+          for position in sorted(closed_window, key=lambda item: str(item.get("closed_at") or "")):
+              closed_at = local_dt(position.get("closed_at"))
+              day = closed_at.date().isoformat() if closed_at else "UNKNOWN"
+              by_day[day] = by_day.get(day, 0) + 1
+              reason = str(position.get("close_reason") or "NO_CLOSE_REASON")
+              by_reason[reason] = by_reason.get(reason, 0) + 1
+              try:
+                  pnl += float(position.get("net_pnl") or 0)
+              except (TypeError, ValueError):
+                  pass
+              operation = {
+                  "symbol": position.get("symbol"),
+                  "asset_class": position.get("asset_class"),
+                  "settlement": position.get("settlement"),
+                  "opened_at": position.get("opened_at"),
+                  "closed_at": position.get("closed_at"),
+                  "close_reason": reason,
+                  "net_pnl": money(position.get("net_pnl")),
+              }
+              operations.append(operation)
+              print("CLOSED_PAPER=" + json.dumps(operation, ensure_ascii=False, sort_keys=True))
+
+          print("CLOSED_BY_LOCAL_DAY=" + json.dumps(by_day, sort_keys=True))
+          print("CLOSED_BY_REASON=" + json.dumps(by_reason, sort_keys=True))
+          print("CLOSED_PNL_WINDOW_ARS=" + f"{pnl:.2f}")
+          actions = {}
+          for decision in decisions_window:
+              action = str(decision.get("action") or "UNKNOWN")
+              actions[action] = actions.get(action, 0) + 1
+          print("DECISIONS_BY_ACTION=" + json.dumps(actions, sort_keys=True))
+          audit_payload = {
+              "scope": "RC6",
+              "status": "SUCCESS",
+              "source": "/api/observer/state",
+              "database_access_from_action": "NO",
+              "generated_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+              "window": {
+                  "from_local": "2026-09-08T00:00:00-03:00",
+                  "to_local": "2026-09-15T00:00:00-03:00",
+              },
+              "origin": {
+                  "workflow": "RC6 Dashboard Trading 7D Read-Only",
+                  "run_id": sys.argv[1],
+                  "run_number": sys.argv[2],
+                  "commit": sys.argv[3],
+              },
+              "mode": state.get("mode"),
+              "process_state": state.get("process_state"),
+              "session_state": state.get("session_state"),
+              "real_orders_sent": state.get("real_orders_sent"),
+              "separation": {
+                  "executed_closed": len(closed_window),
+                  "opened_simulated": len(opened),
+                  "hold": actions.get("HOLD", 0),
+                  "buy": actions.get("BUY", 0),
+                  "decision_snapshot": len(decisions_window),
+                  "decision_semantics": "BUY candidates and HOLD/non-executed decisions remain distinct; gate outcomes are in dashboard_daily_report",
+              },
+              "operations": operations,
+              "closed_by_local_day": by_day,
+              "closed_by_reason": by_reason,
+              "closed_pnl_window_ars": f"{pnl:.2f}",
+              "decisions_by_action_snapshot": actions,
+              "dashboard_daily_report": daily_summary,
+          }
+          publish_request = urllib.request.Request(
+              BASE + "/api/reports/action4",
+              data=json.dumps(audit_payload, ensure_ascii=False).encode("utf-8"),
+              headers={
+                  "Authorization": "Bearer " + TOKEN,
+                  "Content-Type": "application/json",
+                  "Cache-Control": "no-cache",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(publish_request, timeout=20) as response:
+              print("ACTION4_PUBLISH_HTTP=" + str(response.status))
+          print("DECISIONS_INCLUDED_IN_ANALYSIS=YES")
+          print("DECISIONS_SEMANTICS=EXECUTED_CLOSED_SEPARATE_FROM_REJECTED_AND_HOLD")
+          print("RC6_DASHBOARD_WEEKLY_READONLY=END")
+          PY
+          REMOTE
+
+      - name: Sweep dashboard surfaces and locate downloadable outputs
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+          from urllib.parse import urlparse
+
+          BASE = "http://127.0.0.1:8000"
+          TOKEN = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
+          if not TOKEN:
+              print("DASHBOARD_AUTH_TOKEN=NOT_AVAILABLE")
+              raise SystemExit(2)
+
+          PAGES = [
+              "/", "/en-vivo", "/motor-trading", "/aprendizaje", "/reportes",
+              "/trading", "/instrumentos", "/scalping", "/validacion",
+              "/informacion-financiera", "/observacion", "/dashboard/logs",
+              "/config", "/sistema", "/sre",
+          ]
+
+          def request(path):
+              req = urllib.request.Request(
+                  BASE + path,
+                  headers={
+                      "Authorization": "Bearer " + TOKEN,
+                      "Cache-Control": "no-cache",
+                  },
+              )
+              return urllib.request.urlopen(req, timeout=20)
+
+          def html_metrics(body):
+              text = body.decode("utf-8", "replace")
+              hrefs = sorted(set(re.findall(r"""href=["']([^"']*(?:/api/reports/|\\.pdf|\\.json)[^"']*)""", text)))
+              return {
+                  "bytes": len(body),
+                  "paper_trade_blocks": text.count("paper-trade"),
+                  "mfe": text.upper().count("MFE"),
+                  "mae": text.upper().count("MAE"),
+                  "math_explanations": sum(text.lower().count(x) for x in (
+                      "variables utilizadas", "explicación", "explicacion",
+                      "decisión reproducible", "decision reproducible",
+                  )),
+                  "closed_today": text.lower().count("operaciones cerradas hoy"),
+                  "live_decisions": text.lower().count("decisiones en vivo"),
+                  "motor_decisions": text.lower().count("decisiones bloqueadas o aprobadas de hoy"),
+                  "learning_samples": text.lower().count("muestras cerradas"),
+                  "empirical_expectancy": text.lower().count("expectativa empírica"),
+                  "download_links": hrefs,
+                  "hold_text": text.upper().count("HOLD"),
+                  "blocked_text": text.upper().count("BLOCKED"),
+                  "rejected_text": text.upper().count("REJECTED"),
+                  "opened_text": text.upper().count("OPENED_SIMULATED"),
+                  "buy_text": text.upper().count("BUY"),
+                  "abstention_text": text.lower().count("abstencion") + text.lower().count("abstención"),
+              }
+
+          print("RC6_DASHBOARD_SURFACE_SWEEP=START")
+          print("SOURCE=authenticated_dashboard_http")
+          print("DATABASE_ACCESS_FROM_ACTION=NO")
+          report_links = set()
+          for path in PAGES:
+              try:
+                  with request(path) as response:
+                      body = response.read()
+                      metrics = html_metrics(body)
+                      report_links.update(metrics["download_links"])
+                      print("PAGE=" + path + " HTTP=" + str(response.status) +
+                            " BYTES=" + str(metrics["bytes"]) +
+                            " PAPER_TRADE_BLOCKS=" + str(metrics["paper_trade_blocks"]) +
+                            " MFE=" + str(metrics["mfe"]) +
+                            " MAE=" + str(metrics["mae"]) +
+                            " MATH_EXPLANATIONS=" + str(metrics["math_explanations"]) +
+                            " HOLD_TEXT=" + str(metrics["hold_text"]) +
+                            " BLOCKED_TEXT=" + str(metrics["blocked_text"]) +
+                            " REJECTED_TEXT=" + str(metrics["rejected_text"]) +
+                            " OPENED_TEXT=" + str(metrics["opened_text"]) +
+                            " BUY_TEXT=" + str(metrics["buy_text"]) +
+                            " ABSTENTION_TEXT=" + str(metrics["abstention_text"]) +
+                            " DOWNLOAD_LINKS=" + str(len(metrics["download_links"])))
+                      if metrics["download_links"]:
+                          for link in metrics["download_links"]:
+                              print("DISCOVERED_DOWNLOAD_LINK=" + link)
+              except Exception as exc:
+                  print("PAGE=" + path + " ERROR=" + type(exc).__name__)
+
+          for link in sorted(report_links):
+              parsed = urlparse(link)
+              path = parsed.path
+              if not path.startswith("/"):
+                  continue
+              try:
+                  with request(path) as response:
+                      disposition = response.headers.get("Content-Disposition", "ABSENT")
+                      content_type = response.headers.get("Content-Type", "ABSENT")
+                      content_length = response.headers.get("Content-Length", "ABSENT")
+                      print("DOWNLOAD_CHECK=" + path +
+                            " HTTP=" + str(response.status) +
+                            " TYPE=" + content_type +
+                            " LENGTH=" + content_length +
+                            " DISPOSITION=" + disposition)
+                      if "application/json" in content_type:
+                          raw_json = response.read()
+                          try:
+                              payload = json.loads(raw_json.decode("utf-8"))
+                              if isinstance(payload, dict):
+                                  print("AI_REPORT_SCHEMA=" + path +
+                                        " TOP_KEYS=" + ",".join(sorted(str(k) for k in payload)[:30]))
+                                  for key in ("operaciones", "decisiones", "secuencia_de_portones",
+                                              "ordenes_reales", "noticias_relevantes"):
+                                      value = payload.get(key)
+                                      if isinstance(value, (list, dict)):
+                                          print("AI_REPORT_SECTION=" + path +
+                                                " KEY=" + key +
+                                                " TYPE=" + type(value).__name__ +
+                                                " SIZE=" + str(len(value)))
+                                          if isinstance(value, list) and value and isinstance(value[0], dict):
+                                              print("AI_REPORT_ITEM_KEYS=" + path +
+                                                    " KEY=" + key +
+                                                    " KEYS=" + ",".join(sorted(str(k) for k in value[0])[:30]))
+                                          if key == "decisiones" and isinstance(value, list):
+                                              counts = {}
+                                              for item in value:
+                                                  if not isinstance(item, dict):
+                                                      continue
+                                                  for field in ("action", "decision", "resultado", "final_result",
+                                                                "status", "estado", "reason", "motivo"):
+                                                      raw_value = item.get(field)
+                                                      if raw_value not in (None, ""):
+                                                          label = field + "=" + str(raw_value)
+                                                          counts[label] = counts.get(label, 0) + 1
+                                              print("AI_REPORT_DECISION_COUNTS=" + path +
+                                                    " " + json.dumps(dict(sorted(counts.items(),
+                                                    key=lambda pair: (-pair[1], pair[0]))[:40]),
+                                                    ensure_ascii=False, sort_keys=True))
+                                          if key == "secuencia_de_portones" and isinstance(value, list):
+                                              gate_counts = {}
+                                              for item in value:
+                                                  if not isinstance(item, dict):
+                                                      continue
+                                                  result = str(item.get("final_result") or "NO_FINAL_RESULT")
+                                                  gate_counts[result] = gate_counts.get(result, 0) + 1
+                                              print("AI_REPORT_GATE_COUNTS=" + path +
+                                                    " " + json.dumps(gate_counts, ensure_ascii=False, sort_keys=True))
+                                      elif value is not None:
+                                          print("AI_REPORT_SECTION=" + path +
+                                                " KEY=" + key +
+                                                " TYPE=" + type(value).__name__)
+                              else:
+                                  print("AI_REPORT_SCHEMA=" + path +
+                                        " TOP_TYPE=" + type(payload).__name__)
+                          except Exception as exc:
+                              print("AI_REPORT_SCHEMA=" + path + " ERROR=" + type(exc).__name__)
+              except Exception as exc:
+                  print("DOWNLOAD_CHECK=" + path + " ERROR=" + type(exc).__name__)
+
+          print("RC6_DASHBOARD_SURFACE_SWEEP=END")
+          PY
+          REMOTE
