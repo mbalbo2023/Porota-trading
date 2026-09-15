@@ -1,0 +1,78 @@
+name: RC6 PR69 Isolated Transactional Deploy 2026-09-15
+
+on:
+  push:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-pr69-isolated-deploy
+  cancel-in-progress: false
+
+env:
+  TARGET_SHA: 0a533f23cd074b39cf5c11654d8f03e9870c0fd4
+  TARGET_BRANCH: fix/rc6-issue67-reports-action4-20260915-v2
+  ARCHIVE_DIGEST: PR69_LOCAL_REMOTE_BUILD
+
+jobs:
+  deploy:
+    name: Deploy exact PR69 through RC6 transactional host gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact PR69 source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+
+      - name: Validate exact source and safety identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
+          python -m compileall -q .
+          python - <<'PY'
+          import _version
+          assert _version.VERSION == '17.0.0-rc6'
+          assert _version.MODE == 'PRODUCTION_PAPER'
+          assert _version.EXECUTION == 'SIMULATED'
+          assert _version.REAL_ORDER_CAPABILITY == 'BLOCKED'
+          print('PR69_SOURCE_IDENTITY=GREEN')
+          PY
+          echo "TARGET_SHA=${TARGET_SHA}"
+          echo "TARGET_BRANCH=${TARGET_BRANCH}"
+          echo "REAL_ORDER_ROUTES=NOT_CALLED"
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_pr69_deploy"
+          chmod 600 "$HOME/.ssh/porota_pr69_deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Run RC6 transactional host deploy only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_pr69_deploy" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "TARGET_SHA='${TARGET_SHA}' TARGET_BRANCH='${TARGET_BRANCH}' ARCHIVE_DIGEST='${ARCHIVE_DIGEST}' bash -s" \
+            < scripts/rc6_transactional_host_deploy_v3.sh
