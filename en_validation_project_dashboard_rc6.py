@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from fastapi.responses import HTMLResponse
+from fastapi import HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
 
 import bg_paper_dashboard as bg
 import ev_shadow_validation_view_rc6 as shadow_view
@@ -216,7 +217,10 @@ def install(app, check_auth):
             return await call_next(request)
         token = request.query_params.get("token", "")
         authorization = request.headers.get("authorization")
-        bg._authorize(check_auth, request, token, authorization)
+        try:
+            bg._authorize(check_auth, request, token, authorization)
+        except HTTPException as exc:
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
         try:
             days = int(request.query_params.get("days", "10"))
         except ValueError:
