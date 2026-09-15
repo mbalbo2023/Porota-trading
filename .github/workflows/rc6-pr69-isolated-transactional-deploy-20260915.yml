@@ -100,15 +100,13 @@ jobs:
             sudo -n cp "$STAGE/$f" "$REPO/$f"
           done
           PREV_IMAGE_TAG="porota-trading-bot:17.0.0-rc6-rollback-$TARGET_SHA"
+          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA"
           sudo -n docker tag "$TARGET_IMAGE" "$PREV_IMAGE_TAG"
-          if ! sudo -n docker compose build; then
+          if ! sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label "porota.version=17.0.0-rc6" -t "$CANDIDATE_IMAGE" "$REPO"; then
             for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py; do sudo -n cp "$BACKUP/$f" "$REPO/$f"; done
             exit 1
           fi
-          BUILT_IMAGE_NAME="$(sudo -n docker compose config --images | head -n 1)"
-          test -n "$BUILT_IMAGE_NAME"
-          sudo -n docker image inspect "$BUILT_IMAGE_NAME" >/dev/null
-          sudo -n docker tag "$BUILT_IMAGE_NAME" "$TARGET_IMAGE"
+          sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
           sudo -n python3 "$REPO/porota_mode_manager.py" simulation
           OK=NO
           for _ in $(seq 1 45); do
