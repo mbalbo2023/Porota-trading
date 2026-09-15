@@ -1,0 +1,30 @@
+name: RC6 final paper validation
+
+on:
+  push:
+    branches:
+      - ops/rc6-ready-universe-actions-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  final-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate code and live Paper state
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            echo "=== LIVE PAPER ==="
+            sudo -n docker exec porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); print('STATE=',c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()); print('UNIVERSE=',list(c.execute(\"select status,count(*) from financial_instrument_catalog group by status order by status\"))); print('READY=',list(c.execute(\"select instrument_type,count(*) from financial_instrument_catalog where status='AVAILABLE' and capability='READY_PAPER_SPOT' group by instrument_type order by instrument_type\"))); print('DISABLED=',list(c.execute(\"select instrument_type,count(*) from financial_instrument_catalog where status='DISABLED_NON_READY' group by instrument_type order by instrument_type\"))); print('EOD=',c.execute(\"select count(*) from paper_positions where close_reason='EOD_PAPER'\").fetchone()[0]); print('MAX_HOLD=',c.execute(\"select count(*) from paper_positions where close_reason in ('MAX_HOLD_PAPER','SCALPING_MAX_HOLD_PAPER')\").fetchone()[0]); print('CANDLES=',c.execute(\"select state,heartbeat_at from candle_worker_state order by rowid desc limit 1\").fetchall())"
+            echo "=== PROCESOS Y SALUD ==="
+            ps -eo pid,etime,stat,cmd | grep -E 'bv_paper_runtime.*(candle-worker|intraday-scalping-worker)' | grep -v grep || true
+            sudo -n docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+            echo "=== FIN ==="
