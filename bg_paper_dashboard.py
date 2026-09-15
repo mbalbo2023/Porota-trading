@@ -1559,14 +1559,76 @@ def financial_page():
     return _document("Información financiera",_spot_warning(spot["state"])+body,refresh=300)
 
 
-def reports_page():
-    reports=_rows("SELECT * FROM report_registry ORDER BY period_key DESC,period_type") if _table("report_registry") else []
+_ACTION4_FILENAME = "rc6_action4_auditoria_latest.json"
+
+
+def _action4_path() -> Path:
+    root = (artifact_root(DB_PATH) / "reports").resolve()
+    return (root / _ACTION4_FILENAME).resolve()
+
+
+def _read_action4() -> dict:
+    path = _action4_path()
+    try:
+        if not path.exists() or not path.is_file():
+            return {}
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _action4_contains_sensitive_key(value) -> bool:
+    forbidden = ("token", "secret", "password", "authorization", "private_key", "api_key")
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            key_text = str(key).lower()
+            if any(word in key_text for word in forbidden):
+                return True
+            if _action4_contains_sensitive_key(nested):
+                return True
+    elif isinstance(value, list):
+        return any(_action4_contains_sensitive_key(item) for item in value)
+    return False
+
+
+def _action4_report_card() -> str:
+    payload = _read_action4()
+    if not payload:
+        return ("<div class='paper-card'><h2>Auditoría Action 4</h2>"
+                "<p class='paper-muted'>Todavía no hay una auditoría RC6 publicada.</p></div>")
+    window = payload.get("window") or {}
+    origin = payload.get("origin") or {}
+    separation = payload.get("separation") or {}
+    daily = payload.get("dashboard_daily_report") or {}
+    return (
+        "<article class='report-card'>"
+        "<div class='report-card-head'><b>RC6_ACTION4</b>"
+        f"<span>{_e(window.get('from_local'))} → {_e(window.get('to_local'))}</span></div>"
+        f"<p><b>Estado:</b> {_e(payload.get('status'))} · "
+        f"<b>Generado UTC:</b> {_e(payload.get('generated_at_utc'))}</p>"
+        f"<p><b>Cerradas:</b> {_e(separation.get('executed_closed'))} · "
+        f"<b>Abiertas simuladas:</b> {_e(separation.get('opened_simulated'))} · "
+        f"<b>HOLD:</b> {_e(separation.get('hold'))} · "
+        f"<b>BUY:</b> {_e(separation.get('buy'))}</p>"
+        f"<p><b>Reporte diario asociado:</b> {_e(daily.get('periodo') or 'no disponible')} · "
+        f"gates: {_e(daily.get('gate_final_counts') or 'no disponible')}</p>"
+        f"<p class='paper-muted'>Origen: run {_e(origin.get('run_number') or origin.get('run_id'))} · "
+        f"commit {_e(origin.get('commit'))}</p>"
+        "<div class='report-card-actions'>"
+        "<a class='paper-action' href='/api/reports/action4'>Descargar auditoría JSON</a>"
+        "</div></article>"
+    )
+
+
+def reports_page():    reports=_rows("SELECT * FROM report_registry ORDER BY period_key DESC,period_type") if _table("report_registry") else []
     today=datetime.now(TZ).date().isoformat()
     # IA intradía/paquetes IA: legado deprecado. No forman parte de la operación HF6-v2.
     reports=[r for r in reports if r.get('period_type')!='IA_SEMANAL'
              and (r.get('period_type')!='DIARIO' or r.get('period_key')==today)]
     body=("<h1>Reportes</h1>"
           "<p class='paper-muted'>Reportes operativos PAPER. La experiencia principal usa tarjetas verticales para tablet/móvil.</p>"
+          + _action4_report_card()
           + report_cards_html(reports)
           + "<div class='paper-notice'>Los diarios anteriores se consultan desde Aprendizaje. "
             "Los artefactos IA heredados permanecen sólo por trazabilidad y no participan de HF6-v2.</div>")
@@ -2430,6 +2492,45 @@ def install(app,check_auth):
         auth(request,token,authorization)
         data = allocation_history(DB_PATH,limit=limit,offset=offset,require_workspace=True)
         return JSONResponse(data,status_code=503 if data['state']=='READ_ERROR' else 200)
+    @app.post("/api/reports/action4")
+    async def action4_publish(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)):
+        auth(request,token,authorization)
+        raw=await request.body()
+        if len(raw) > 5 * 1024 * 1024:
+            raise HTTPException(413,"Auditoría demasiado grande")
+        try:
+            payload=json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise HTTPException(400,"JSON inválido")
+        if not isinstance(payload,dict):
+            raise HTTPException(400,"La auditoría debe ser un objeto JSON")
+        if payload.get("scope") != "RC6" or payload.get("source") != "/api/observer/state":
+            raise HTTPException(400,"Fuente o alcance no autorizados")
+        if payload.get("database_access_from_action") != "NO":
+            raise HTTPException(400,"La Action no puede leer la base directamente")
+        try:
+            real_orders_sent=int(payload.get("real_orders_sent",0))
+        except (TypeError,ValueError):
+            raise HTTPException(400,"real_orders_sent inválido")
+        if real_orders_sent != 0:
+            raise HTTPException(409,"La auditoría no puede registrar órdenes reales")
+        if _action4_contains_sensitive_key(payload):
+            raise HTTPException(400,"La auditoría contiene una clave sensible")
+        path=_action4_path()
+        path.parent.mkdir(parents=True,exist_ok=True)
+        temporary=path.with_name(path.name+".tmp")
+        temporary.write_text(json.dumps(payload,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+        os.replace(temporary,path)
+        return JSONResponse({"status":"STORED","scope":"RC6","filename":path.name})
+
+    @app.get("/api/reports/action4")
+    def action4_download(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)):
+        auth(request,token,authorization)
+        path=_action4_path()
+        if not path.exists() or not path.is_file():
+            raise HTTPException(404,"Auditoría Action 4 no disponible")
+        return FileResponse(path,media_type="application/json",filename=path.name)
+
     @app.get("/api/reports/{report_id}/{kind}")
     def report_download(report_id:int,kind:str,request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
