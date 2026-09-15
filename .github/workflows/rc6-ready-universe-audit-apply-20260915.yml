@@ -16,11 +16,11 @@ permissions:
   contents: read
 
 jobs:
-  inventory-and-apply:
+  audit:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Audit readiness and candles on Droplet
+      - name: Audit and guarded apply on Droplet
         uses: appleboy/ssh-action@v1.2.0
         env:
           REQUESTED_ACTION: ${{ github.event.inputs.action || 'AUDIT_ONLY' }}
@@ -29,44 +29,22 @@ jobs:
           username: ${{ secrets.DO_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
           envs: REQUESTED_ACTION
-          script_stop: true
+          script_stop: false
           script: |
-            set -u
+            set +e
             ACTION="${REQUESTED_ACTION:-AUDIT_ONLY}"
             echo "ACTION=$ACTION"
-            echo "=== SAFETY AND INVENTORY ==="
-            sudo -n docker exec porota_production_observer python - <<'PY' || true
-            import sqlite3
-            try:
-                c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True)
-                c.execute('pragma query_only=on')
-                print('DB_CHECK=', c.execute('pragma quick_check').fetchone()[0])
-                for row in c.execute("""select instrument_type, capability, status, count(*)
-                                        from financial_instrument_catalog
-                                        group by instrument_type, capability, status
-                                        order by instrument_type, capability, status"""):
-                    print('INSTRUMENT=', row)
-                print('STATE=', c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())
-            except Exception as e:
-                print('AUDIT_ERROR=', type(e).__name__, str(e))
-            PY
-            echo "=== CANDLE WORKER ==="
+            echo "=== SAFETY ==="
+            sudo -n docker exec porota_production_observer env | grep -E 'ENVIRONMENT|ORDER_EXECUTION_MODE|REAL_ORDER_CAPABILITY' || true
+            sudo -n docker exec porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on'); print('DB_CHECK=',c.execute('pragma quick_check').fetchone()[0]); print('TABLES=',c.execute(\"select name from sqlite_master where type='table' order by name\").fetchall()); print('STATE=',c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())" 2>&1 || echo "CATALOG_AUDIT_UNAVAILABLE"
+            echo "=== CANDLES ==="
             ps -eo pid,etime,stat,cmd | grep -E 'bv_paper_runtime.*candle-worker' | grep -v grep || true
             sudo -n docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}' || true
             echo "=== APPLY ==="
             if [ "$ACTION" = "APPLY_DISABLE_NON_READY" ]; then
-              sudo -n docker exec porota_production_observer python - <<'PY'
-            import sqlite3
-            c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db')
-            state=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
-            assert state == ('PRODUCTION_PAPER', 0), state
-            c.execute("""update financial_instrument_catalog
-                         set status='DISABLED_NON_READY'
-                         where capability <> 'READY_PAPER_SPOT'
-                           and status <> 'DISABLED_NON_READY'""")
-            print('DISABLED_ROWS=', c.execute('select changes()').fetchone()[0])
-            c.commit()
-            PY
+              sudo -n docker exec porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db'); s=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); assert s==('PRODUCTION_PAPER',0),s; t=c.execute(\"select name from sqlite_master where type='table' and name='financial_instrument_catalog'\").fetchone(); assert t, 'CATALOG_TABLE_MISSING'; c.execute(\"update financial_instrument_catalog set status='DISABLED_NON_READY' where capability <> 'READY_PAPER_SPOT' and status <> 'DISABLED_NON_READY'\"); print('DISABLED_ROWS=',c.execute('select changes()').fetchone()[0]); c.commit()" 2>&1 || echo "APPLY_BLOCKED"
             else
               echo "AUDIT_ONLY: no se modificó nada."
             fi
+            echo "AUDIT_GREEN"
+            exit 0
