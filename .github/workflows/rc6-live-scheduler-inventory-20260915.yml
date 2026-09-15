@@ -1,0 +1,73 @@
+name: RC6 Live Scheduler Inventory 2026-09-15
+
+on:
+  push:
+    branches:
+      - audit/rc6-scheduler-live-20260915
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/k"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/k" "$HOME/.ssh/known_hosts"
+      - name: Collect scheduler inventory read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n bash -s' > scheduler-inventory-20260915.txt 2>&1 <<'REMOTE'
+          set -u
+          echo "UTC=$(date -u -Is)"
+          echo "MUTATIONS=NONE"
+          echo "=== TIMERS ==="
+          systemctl list-timers --all --no-pager || true
+          echo "=== UNIT FILES ==="
+          systemctl list-unit-files --no-pager | awk '/^(porota|a3)/ {print}' || true
+          mapfile -t units < <(systemctl list-unit-files --no-legend --no-pager | awk '/^(porota|a3)/ && ($1 ~ /\.(timer|service)$/) {print $1}' | sort -u)
+          for u in "${units[@]}"; do
+            echo "=== UNIT $u ==="
+            systemctl show "$u" --no-pager -p Id -p Description -p LoadState -p ActiveState -p SubState -p UnitFileState -p Result -p MainPID -p ExecMainStatus -p ExecStart -p FragmentPath -p Wants -p Requires -p After || true
+            echo "--- LOGS $u ---"
+            journalctl -u "$u" -n 20 --no-pager -o short-iso 2>&1 || true
+          done
+          echo "=== CRON ==="
+          crontab -l 2>&1 || true
+          ls -la /etc/cron.d 2>&1 || true
+          echo "=== PROCESSES ==="
+          ps -eo pid,ppid,etime,stat,cmd --sort=pid | awk 'NR==1 || /porota|ppi|candle|scalp|observer|scheduler/' || true
+          echo "=== CONTAINERS ==="
+          docker ps --format 'table {{.Names}}	{{.Status}}	{{.Image}}' || true
+          echo "=== SAFETY ==="
+          o=$(docker ps --format '{{.Names}}' | awk '/observer/ {print; exit}')
+          if [ -n "$o" ]; then
+            docker exec -i "$o" python - <<'PY'
+import sqlite3
+c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+c.execute('pragma query_only=on')
+print('DB_CHECK='+str(c.execute('pragma quick_check').fetchone()[0]))
+print('STATE='+str(c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()))
+PY
+          fi
+          REMOTE
+      - name: Upload inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-scheduler-inventory-20260915
+          path: scheduler-inventory-20260915.txt
+          if-no-files-found: error
