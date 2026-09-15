@@ -726,7 +726,7 @@ class PaperBroker:
         passed = net_reward > 0 and ratio >= self.min_net_reward_risk
         try:
             import rc6_cost_settlement_takeprofit_shadow as shadow_costs
-            tax_shadow = shadow_costs.tax_diagnostic(net_reward)
+            tax_shadow = shadow_costs.published_cost_diagnostic(net_reward)
         except Exception as exc:
             tax_shadow = {"state": "ERROR", "rate": None, "amount": None,
                           "effect": type(exc).__name__}
@@ -742,8 +742,8 @@ class PaperBroker:
             "breakeven_win_rate": str(breakeven),
             "minimum_net_reward_risk": str(self.min_net_reward_risk),
             "passed": passed,
-            "tax_shadow": tax_shadow,
-            "taxes_effective": False,
+            "published_costs_note": tax_shadow,
+            "personal_taxes": "OUT_OF_SCOPE",
         }
 
     def on_quote(self, q: Quote, *, allow_new_openings=True,
