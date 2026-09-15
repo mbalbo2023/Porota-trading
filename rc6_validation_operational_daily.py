@@ -50,7 +50,7 @@ def _decimal(value) -> Decimal:
         return Decimal("0")
 
 
-def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int = 250000) -> dict:
+def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int = 50000) -> dict:
     """Return evidence derived from the operational PAPER DB, without writes."""
     limit_days = max(0, min(int(limit_days), 365))
     event_limit = max(1, min(int(event_limit), 500000))
@@ -81,7 +81,7 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
             if row["paper_id"]:
                 slot["paper_ids"].add(str(row["paper_id"]))
 
-        for row in conn.execute("SELECT paper_id,opened_at,closed_at,status,net_pnl FROM paper_positions"):
+        for row in conn.execute("SELECT paper_id,opened_at,closed_at,status,net_pnl FROM paper_positions ORDER BY opened_at DESC LIMIT ?", (event_limit,)):
             opened = _as_ar_day(row["opened_at"])
             if opened:
                 by_day[opened]["opened"] += 1
@@ -92,12 +92,12 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
                 by_day[closed]["paper_ids"].add(str(row["paper_id"]))
                 by_day[closed]["realized_net_pnl"] += _decimal(row["net_pnl"])
 
-        for row in conn.execute("SELECT decided_at FROM paper_decisions"):
+        for row in conn.execute("SELECT decided_at FROM paper_decisions ORDER BY decided_at DESC LIMIT ?", (event_limit,)):
             day = _as_ar_day(row["decided_at"])
             if day:
                 by_day[day]["decisions"] += 1
 
-        for row in conn.execute("SELECT filled_at FROM paper_fills"):
+        for row in conn.execute("SELECT filled_at FROM paper_fills ORDER BY filled_at DESC LIMIT ?", (event_limit,)):
             day = _as_ar_day(row["filled_at"])
             if day:
                 by_day[day]["fills"] += 1
