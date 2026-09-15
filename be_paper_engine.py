@@ -724,6 +724,12 @@ class PaperBroker:
         ratio = net_reward / net_loss if net_loss > 0 else ZERO
         breakeven = net_loss / (net_loss + max(ZERO, net_reward)) if net_loss > 0 else D(1)
         passed = net_reward > 0 and ratio >= self.min_net_reward_risk
+        try:
+            import rc6_cost_settlement_takeprofit_shadow as shadow_costs
+            tax_shadow = shadow_costs.tax_diagnostic(net_reward)
+        except Exception as exc:
+            tax_shadow = {"state": "ERROR", "rate": None, "amount": None,
+                          "effect": type(exc).__name__}
         return {
             "modeled_tariff": ("PPI_INTRADAY_REBATE_ON_SMALLER_LEG"
                                if self.intraday_fee_rebate else
@@ -736,6 +742,8 @@ class PaperBroker:
             "breakeven_win_rate": str(breakeven),
             "minimum_net_reward_risk": str(self.min_net_reward_risk),
             "passed": passed,
+            "tax_shadow": tax_shadow,
+            "taxes_effective": False,
         }
 
     def on_quote(self, q: Quote, *, allow_new_openings=True,
