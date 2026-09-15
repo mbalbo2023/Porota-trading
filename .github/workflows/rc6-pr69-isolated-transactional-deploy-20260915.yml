@@ -133,7 +133,7 @@ jobs:
           done
           echo "DASHBOARD_ROUTE_FAILURES=$ROUTE_FAILURES"
           RENDER_FAILURES=0
-          if ! timeout 30 python3 - <<'PY'
+          if ! sudo -n docker exec -i porota_production_dashboard timeout 30 python - <<'PY'
           import traceback
           try:
               import bg_paper_dashboard as bg
@@ -145,7 +145,10 @@ jobs:
               traceback.print_exc()
               raise
           PY
-          then RENDER_FAILURES=1; fi
+          then
+            RENDER_FAILURES=1
+            sudo -n docker logs --tail 200 porota_production_dashboard || true
+          fi
           echo "DASHBOARD_RENDER_FAILURES=$RENDER_FAILURES"
           test "$ROUTE_FAILURES" = 0
           test "$RENDER_FAILURES" = 0
