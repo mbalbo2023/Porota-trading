@@ -682,6 +682,23 @@ class PaperBroker:
                     "spread": str(spread), "samples": len(values),
                     "signal_window_minutes": self.signal_window_minutes,
                     "paper_threshold": str(self.threshold(at))}
+        # Historical/candle features are intentionally SHADOW-only. They are
+        # persisted beside the baseline decision and cannot alter BUY/HOLD.
+        if os.getenv("PAPER_HISTORICAL_CANDLE_SHADOW", "ON").upper() in {"ON", "SHADOW", "TRUE", "1"}:
+            try:
+                import historical_candle_shadow_rc6
+                shadow = historical_candle_shadow_rc6.collect(self.store, q, at)
+                features["historical_candle_shadow"] = shadow
+                features["decision_shadow"] = (
+                    "BUY" if D(score) + D(shadow.get("shadow_score_delta", "0")) >= self.threshold(at)
+                    else "HOLD"
+                )
+            except Exception as exc:
+                features["historical_candle_shadow"] = {
+                    "mode": "SHADOW", "state": "ERROR",
+                    "decision_effect": "OBSERVE_ONLY",
+                    "error": f"{type(exc).__name__}:{str(exc)[:180]}",
+                }
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
             return "HOLD", score, "Puntas o profundidad insuficientes", features
         if spread > D("0.02"):
