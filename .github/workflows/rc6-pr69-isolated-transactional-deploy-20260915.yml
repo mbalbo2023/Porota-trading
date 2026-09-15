@@ -1,4 +1,4 @@
-name: RC6 PR69 Incremental Deploy 2026-09-15
+name: RC6 unified Paper deploy 2026-09-15
 
 on:
   push:
@@ -10,38 +10,32 @@ permissions:
   contents: read
 
 concurrency:
-  group: rc6-pr69-incremental-deploy
+  group: rc6-unified-paper-deploy
   cancel-in-progress: false
-
-env:
-  CURRENT_SHA: a47f3339ec6dfe9d5afde444b1aaddabceb0e94d
-  TARGET_SHA: 0a533f23cd074b39cf5c11654d8f03e9870c0fd4
-  TARGET_BRANCH: fix/rc6-issue67-reports-action4-20260915-v2
-  BASE_BRANCH: fix/rc6-w10-sector-map-binding-20260910
 
 jobs:
   deploy:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - name: Checkout deploy control branch
+      - name: Checkout exact candidate
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Validate target PR identity
+      - name: Validate RC6 Paper invariants
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m py_compile _version.py bg_paper_dashboard.py
+          python -m py_compile _version.py bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py
           python - <<'PY'
           import _version as v
           assert v.VERSION == '17.0.0-rc6'
           assert v.MODE == 'PRODUCTION_PAPER'
           assert v.EXECUTION == 'SIMULATED'
           assert v.REAL_ORDER_CAPABILITY == 'BLOCKED'
-          print('PR69_SOURCE_POLICY=GREEN')
+          print('RC6_PAPER_POLICY=GREEN')
           PY
 
       - name: Prepare strict SSH
@@ -55,36 +49,24 @@ jobs:
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_pr69_deploy"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_deploy"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/porota_pr69_deploy" "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
 
-      - name: Apply and deploy PR69 incrementally over active RC6
+      - name: Deploy exact candidate to Droplet and verify
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
-          ssh -i "$HOME/.ssh/porota_pr69_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "CURRENT_SHA='${CURRENT_SHA}' TARGET_SHA='${TARGET_SHA}' TARGET_BRANCH='${TARGET_BRANCH}' BASE_BRANCH='${BASE_BRANCH}' bash -s" <<'REMOTE'
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           TARGET_IMAGE=porota-trading-bot:17.0.0-rc6
-          SHORT_SHA="$(printf '%s' "$TARGET_SHA" | cut -c1-12)"
-          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-pr69-$SHORT_SHA"
-          WT="/tmp/porota-pr69-$SHORT_SHA-$$"
-          PATCH="/tmp/porota-pr69-$SHORT_SHA.patch"
-          cleanup(){ set +e; [ ! -d "$WT" ] || git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1; rm -f "$PATCH"; }
-          trap cleanup EXIT
-
-          echo '=== PR69 INCREMENTAL PREDEPLOY ==='
-          echo "CURRENT_SHA=$CURRENT_SHA"
-          echo "TARGET_SHA=$TARGET_SHA"
-          echo "TARGET_BRANCH=$TARGET_BRANCH"
-          test "$(git -C "$REPO" rev-parse HEAD)" = "$CURRENT_SHA"
-          test "$(sudo -n docker inspect -f '{{.Config.Image}}' porota_production_observer)" = "$TARGET_IMAGE"
-
-          PRE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          PRE_SHA="$(sudo -n git -C "$REPO" rev-parse HEAD)"
+          PRE_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
           c.execute('PRAGMA query_only=ON')
@@ -93,38 +75,36 @@ jobs:
           c.close(); print('|'.join(map(str,(q,mode,orders))))
           PY
           )"
-          echo "PRE_SAFETY=$PRE"
-          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
-
-          git -C "$REPO" fetch --no-tags origin "$BASE_BRANCH" "$TARGET_BRANCH"
-          test "$(git -C "$REPO" rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
-          git -C "$REPO" diff --binary "origin/$BASE_BRANCH" "$TARGET_SHA" --             .github/workflows/rc6-dashboard-trading-7d-readonly-20260915.yml             POROTA_TRADING_CHECKPOINT_RC6_2026-09-15_ISSUE67_ACTION4.md             bg_paper_dashboard.py > "$PATCH"
-          test -s "$PATCH"
-          git -C "$REPO" worktree add --detach "$WT" "$CURRENT_SHA" >/dev/null
-          git -C "$WT" apply --whitespace=nowarn "$PATCH"
-          test "$(git -C "$WT" diff --name-only | sort)" = "bg_paper_dashboard.py"
-          python3 -m py_compile "$WT/bg_paper_dashboard.py" "$WT/_version.py"
-
-          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label "porota.version=17.0.0-rc6" -t "$CANDIDATE_IMAGE" "$WT"
-          sudo -n docker run --rm --pull never --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --entrypoint python "$CANDIDATE_IMAGE" -c "import _version; assert _version.VERSION=='17.0.0-rc6'; assert _version.MODE=='PRODUCTION_PAPER'; assert _version.EXECUTION=='SIMULATED'; assert _version.REAL_ORDER_CAPABILITY=='BLOCKED'; print('PR69_IMAGE_POLICY=GREEN')"
-
-          cp "$REPO/bg_paper_dashboard.py" "/tmp/bg_paper_dashboard.py.pr69-backup"
-          git -C "$REPO" apply --whitespace=nowarn "$PATCH"
-          sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
-          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
-
+          echo "PRE_SHA=$PRE_SHA"
+          echo "PRE_STATE=$PRE_STATE"
+          test "$PRE_STATE" = 'ok|PRODUCTION_PAPER|0'
+          sudo -n git -C "$REPO" fetch --no-tags origin deploy/rc6-pr69-isolated-20260915
+          test "$(sudo -n git -C "$REPO" rev-parse "origin/deploy/rc6-pr69-isolated-20260915")" = "$TARGET_SHA"
+          sudo -n git -C "$REPO" checkout --detach "$TARGET_SHA"
+          if ! sudo -n docker compose build; then
+            sudo -n git -C "$REPO" checkout --detach "$PRE_SHA"
+            sudo -n docker compose up -d --build
+            exit 1
+          fi
+          sudo -n docker compose up -d
           OK=NO
           for _ in $(seq 1 45); do
-            if H="$(curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null)"; then
-              python3 - "$H" <<'PY' >/dev/null 2>&1 && { OK=YES; break; }
+            H="$(curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null || true)"
+            if python3 - "$H" <<'PY'
           import json,sys
-          x=json.loads(sys.argv[1]); assert x.get('status')=='ok' and x.get('version')=='17.0.0-rc6'
+          try:
+              x=json.loads(sys.argv[1]); assert x.get('status')=='ok' and x.get('version')=='17.0.0-rc6'
+          except Exception: raise SystemExit(1)
           PY
-            fi
+            then OK=YES; break; fi
             sleep 2
           done
-          test "$OK" = YES
-          POST="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          if [ "$OK" != YES ]; then
+            sudo -n git -C "$REPO" checkout --detach "$PRE_SHA"
+            sudo -n docker compose up -d --build
+            exit 1
+          fi
+          POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
           c.execute('PRAGMA query_only=ON')
@@ -133,10 +113,10 @@ jobs:
           c.close(); print('|'.join(map(str,(q,mode,orders))))
           PY
           )"
-          echo "POST_SAFETY=$POST"
-          test "$POST" = 'ok|PRODUCTION_PAPER|0'
-          test "$(sudo -n docker inspect -f '{{ index .Config.Labels "porota.commit" }}' porota_production_observer)" = "$TARGET_SHA"
-          echo "HOST_SHA_FINAL=$TARGET_SHA"
+          echo "POST_STATE=$POST_STATE"
+          test "$POST_STATE" = 'ok|PRODUCTION_PAPER|0'
+          echo "DEPLOYED_SHA=$TARGET_SHA"
           echo 'REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED'
-          echo 'RC6_PR69_INCREMENTAL_DEPLOY=GREEN'
+          echo 'RC6_UNIFIED_PAPER_DEPLOY=GREEN'
+          sudo -n docker compose ps
           REMOTE

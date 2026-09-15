@@ -234,7 +234,8 @@ def main(argv=None):
             "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
             "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
             "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],
-            "intraday_scalping": [sys.executable, str(Path(__file__).resolve()), "--intraday-scalping-worker"],
+            **({"intraday_scalping": [sys.executable, str(Path(__file__).resolve()), "--intraday-scalping-worker"]}
+              if os.getenv("PAPER_SCALPING_MODE", "OFF").upper() in {"ACTIVE_PAPER", "ACTIVE_OBSERVE"} else {}),
         })
         run_clock(store,children,stop)
     return 0
