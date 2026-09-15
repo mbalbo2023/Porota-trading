@@ -1,0 +1,140 @@
+name: RC6 Dashboard Trading 7D Read-Only 2026-09-15
+
+on:
+  push:
+    branches:
+      - ops/rc6-dashboard-trading-readonly-20260915
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard_7d_readonly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read dashboard weekly activity without database access
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import urllib.request
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          BASE = "http://127.0.0.1:8000"
+          TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+          START = datetime.fromisoformat("2026-09-08T00:00:00-03:00")
+          END = datetime.fromisoformat("2026-09-15T00:00:00-03:00")
+
+          def get(path):
+              request = urllib.request.Request(BASE + path, headers={"Cache-Control": "no-cache"})
+              with urllib.request.urlopen(request, timeout=15) as response:
+                  return response.status, response.read()
+
+          def local_dt(value):
+              if not value:
+                  return None
+              raw = str(value).replace("Z", "+00:00")
+              parsed = datetime.fromisoformat(raw)
+              if parsed.tzinfo is None:
+                  parsed = parsed.replace(tzinfo=TZ)
+              return parsed.astimezone(TZ)
+
+          def in_window(value):
+              parsed = local_dt(value)
+              return parsed is not None and START <= parsed < END
+
+          status, raw = get("/api/observer/state")
+          payload = json.loads(raw.decode("utf-8"))
+          state = payload.get("state") or {}
+          closed = payload.get("closed") or []
+          opened = [p for p in closed if in_window(p.get("opened_at"))]
+          closed_window = [p for p in closed if in_window(p.get("closed_at"))]
+          open_now = payload.get("open") or []
+          decisions = payload.get("decisions") or []
+          decisions_window = [d for d in decisions if in_window(d.get("decided_at"))]
+
+          def money(value):
+              try:
+                  return f"{float(value):.2f}"
+              except (TypeError, ValueError):
+                  return "NA"
+
+          print("RC6_DASHBOARD_WEEKLY_READONLY=START")
+          print("READ_SOURCE=/api/observer/state")
+          print("DATABASE_ACCESS_FROM_ACTION=NO")
+          print("WINDOW_LOCAL=2026-09-08T00:00:00-03:00..2026-09-15T00:00:00-03:00")
+          print("HTTP_STATE=" + str(status))
+          print("MODE=" + str(state.get("mode", "UNKNOWN")))
+          print("PROCESS_STATE=" + str(state.get("process_state", "UNKNOWN")))
+          print("SESSION_STATE=" + str(state.get("session_state", "UNKNOWN")))
+          print("REAL_ORDERS_SENT=" + str(state.get("real_orders_sent", "UNKNOWN")))
+          print("OPEN_PAPER_NOW=" + str(len(open_now)))
+          print("CLOSED_PAPER_WINDOW=" + str(len(closed_window)))
+          print("OPENED_PAPER_WINDOW=" + str(len(opened)))
+          print("PAPER_DECISIONS_WINDOW=" + str(len(decisions_window)))
+
+          by_day = {}
+          by_reason = {}
+          pnl = 0.0
+          for position in sorted(closed_window, key=lambda item: str(item.get("closed_at") or "")):
+              day = (local_dt(position.get("closed_at")).date().isoformat()
+                     if local_dt(position.get("closed_at")) else "UNKNOWN")
+              by_day[day] = by_day.get(day, 0) + 1
+              reason = str(position.get("close_reason") or "NO_CLOSE_REASON")
+              by_reason[reason] = by_reason.get(reason, 0) + 1
+              try:
+                  pnl += float(position.get("net_pnl") or 0)
+              except (TypeError, ValueError):
+                  pass
+              print(
+                  "CLOSED_PAPER="
+                  + json.dumps({
+                      "symbol": position.get("symbol"),
+                      "asset_class": position.get("asset_class"),
+                      "settlement": position.get("settlement"),
+                      "opened_at": position.get("opened_at"),
+                      "closed_at": position.get("closed_at"),
+                      "close_reason": reason,
+                      "net_pnl": money(position.get("net_pnl")),
+                  }, ensure_ascii=False, sort_keys=True)
+              )
+
+          print("CLOSED_BY_LOCAL_DAY=" + json.dumps(by_day, sort_keys=True))
+          print("CLOSED_BY_REASON=" + json.dumps(by_reason, sort_keys=True))
+          print("CLOSED_PNL_WINDOW_ARS=" + f"{pnl:.2f}")
+          actions = {}
+          for decision in decisions_window:
+              action = str(decision.get("action") or "UNKNOWN")
+              actions[action] = actions.get(action, 0) + 1
+          print("DECISIONS_BY_ACTION=" + json.dumps(actions, sort_keys=True))
+          print("RC6_DASHBOARD_WEEKLY_READONLY=END")
+          PY
+          REMOTE
