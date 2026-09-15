@@ -109,7 +109,18 @@ class PositionExitSupervisor:
             if age < 0:
                 return verdict("WATCH_INVALID_CLOCK", "Apertura posterior al reloj")
             if not cause and self.session_policy and self.session_policy.exit_due(p, at):
-                cause = "EOD_PAPER"
+                # EOD seguro por defecto: el motor queda flat al cierre.
+                # CARRY_ELIGIBLE es opt-in y no se activa en este deploy:
+                # solo conserva acciones/CEDEARs para una validacion posterior
+                # con cotizacion fresca, identidad consistente y riesgo vigente.
+                eod_policy = os.getenv("PAPER_EOD_POLICY", "FORCE_CLOSE").upper()
+                asset_class = str(p.get("asset_class") or "").upper()
+                carry_eligible = (
+                    eod_policy == "CARRY_ELIGIBLE"
+                    and asset_class in {"ACCIONES", "CEDEARS", "EQUITIES", "CEDEAR"}
+                )
+                if not carry_eligible:
+                    cause = "EOD_PAPER"
             hold_limit = self.max_hold_minutes
             is_scalping = False
             try:
