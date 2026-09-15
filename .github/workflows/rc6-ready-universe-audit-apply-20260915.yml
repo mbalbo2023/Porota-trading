@@ -32,7 +32,7 @@ jobs:
           script_stop: false
           script: |
             set +e
-            ACTION="${REQUESTED_ACTION:-AUDIT_ONLY}"
+            ACTION="${REQUESTED_ACTION:-APPLY_DISABLE_NON_READY}"
             echo "ACTION=$ACTION"
             echo "=== SAFETY ==="
             sudo -n docker exec porota_production_observer env | grep -E 'ENVIRONMENT|ORDER_EXECUTION_MODE|REAL_ORDER_CAPABILITY' || true
