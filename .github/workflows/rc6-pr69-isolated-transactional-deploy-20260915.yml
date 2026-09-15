@@ -53,14 +53,21 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
 
+      - name: Package exact candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tar -czf /tmp/porota-rc6-candidate.tgz bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py
       - name: Deploy exact candidate to Droplet and verify
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
           TARGET_SHA: ${{ github.sha }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
         run: |
           set -Eeuo pipefail
+          scp -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" /tmp/porota-rc6-candidate.tgz "$DO_USER@$DO_HOST:/tmp/porota-rc6-candidate-$TARGET_SHA.tgz"
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
@@ -78,11 +85,21 @@ jobs:
           echo "PRE_SHA=$PRE_SHA"
           echo "PRE_STATE=$PRE_STATE"
           test "$PRE_STATE" = 'ok|PRODUCTION_PAPER|0'
-          sudo -n git -C "$REPO" fetch --no-tags origin deploy/rc6-pr69-isolated-20260915
-          test "$(sudo -n git -C "$REPO" rev-parse "origin/deploy/rc6-pr69-isolated-20260915")" = "$TARGET_SHA"
-          sudo -n git -C "$REPO" checkout --detach "$TARGET_SHA"
+          REMOTE_TGZ="/tmp/porota-rc6-candidate-$TARGET_SHA.tgz"
+          test -f "$REMOTE_TGZ"
+          STAGE="/tmp/porota-rc6-candidate-$TARGET_SHA"
+          sudo -n rm -rf "$STAGE"
+          sudo -n mkdir -p "$STAGE"
+          sudo -n tar -xzf "$REMOTE_TGZ" -C "$STAGE"
+          BACKUP="/tmp/porota-rc6-backup-$TARGET_SHA"
+          sudo -n rm -rf "$BACKUP"
+          sudo -n mkdir -p "$BACKUP"
+          for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py; do
+            sudo -n cp "$REPO/$f" "$BACKUP/$f"
+            sudo -n cp "$STAGE/$f" "$REPO/$f"
+          done
           if ! sudo -n docker compose build; then
-            sudo -n git -C "$REPO" checkout --detach "$PRE_SHA"
+            for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py; do sudo -n cp "$BACKUP/$f" "$REPO/$f"; done
             sudo -n docker compose up -d --build
             exit 1
           fi
