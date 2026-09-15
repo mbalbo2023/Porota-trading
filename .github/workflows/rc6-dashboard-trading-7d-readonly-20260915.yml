@@ -42,27 +42,37 @@ jobs:
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
-          python3 - <<'PY'
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
           import json
+          import os
           import urllib.request
           from datetime import datetime
           from zoneinfo import ZoneInfo
 
           BASE = "http://127.0.0.1:8000"
+          TOKEN = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
+          if not TOKEN:
+              print("DASHBOARD_AUTH_TOKEN=NOT_AVAILABLE")
+              raise SystemExit(2)
           TZ = ZoneInfo("America/Argentina/Buenos_Aires")
           START = datetime.fromisoformat("2026-09-08T00:00:00-03:00")
           END = datetime.fromisoformat("2026-09-15T00:00:00-03:00")
 
           def get(path):
-              request = urllib.request.Request(BASE + path, headers={"Cache-Control": "no-cache"})
+              request = urllib.request.Request(
+                  BASE + path,
+                  headers={
+                      "Authorization": "Bearer " + TOKEN,
+                      "Cache-Control": "no-cache",
+                  },
+              )
               with urllib.request.urlopen(request, timeout=15) as response:
                   return response.status, response.read()
 
           def local_dt(value):
               if not value:
                   return None
-              raw = str(value).replace("Z", "+00:00")
-              parsed = datetime.fromisoformat(raw)
+              parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
               if parsed.tzinfo is None:
                   parsed = parsed.replace(tzinfo=TZ)
               return parsed.astimezone(TZ)
@@ -105,8 +115,8 @@ jobs:
           by_reason = {}
           pnl = 0.0
           for position in sorted(closed_window, key=lambda item: str(item.get("closed_at") or "")):
-              day = (local_dt(position.get("closed_at")).date().isoformat()
-                     if local_dt(position.get("closed_at")) else "UNKNOWN")
+              closed_at = local_dt(position.get("closed_at"))
+              day = closed_at.date().isoformat() if closed_at else "UNKNOWN"
               by_day[day] = by_day.get(day, 0) + 1
               reason = str(position.get("close_reason") or "NO_CLOSE_REASON")
               by_reason[reason] = by_reason.get(reason, 0) + 1
