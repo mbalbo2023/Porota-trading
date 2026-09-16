@@ -72,8 +72,8 @@ def build_scheduler() -> BackgroundScheduler:
     scheduler.add_job(_run_job, "interval", id="maintenance_news_scan",
                       minutes=45, args=["news_scan"])
 
-    scheduler.add_job(_run_job, "interval", id="maintenance_validation_projection",
-                      minutes=10, args=["validation_projection"])
+    scheduler.add_job(_run_job, "cron", id="maintenance_validation_projection",
+                      hour=7, minute=15, args=["validation_projection"])
 
     scheduler.add_job(_run_job, "date", id="maintenance_historical_startup_catchup",
                       args=["historical_refresh_if_needed"])
