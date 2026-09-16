@@ -1173,6 +1173,17 @@ def motor_page():
         gate=gate_by_paper.get(p.get("paper_id")) or gate_by_symbol.get(p["symbol"],{})
         features=_features(p.get("features_json")); variables="".join(f"<tr><td>{_e(k)}</td><td>{_e(v)}</td></tr>" for k,v in sorted(features.items()))
         economics=features.get("economics") if isinstance(features.get("economics"),dict) else {}
+        macro_risk=features.get("macro_risk_shadow") if isinstance(features.get("macro_risk_shadow"),dict) else {}
+        macro_risk_html=(
+            "<div class='paper-card'><h3>Riesgo macro / BCRA — SHADOW</h3>"
+            f"<p><b>Estado:</b> {_e(macro_risk.get('state','SIN_DATO'))} · "
+            f"<b>Fuente:</b> {_e(macro_risk.get('source','caché local'))}</p>"
+            "<p class='paper-muted'>Se conserva para análisis posterior: no bloquea, "
+            "no modifica tamaño y no autoriza órdenes.</p></div>"
+            if macro_risk else
+            "<div class='paper-warning'><b>Riesgo macro SHADOW sin registro.</b> "
+            "La operación es anterior a esta integración.</div>"
+        )
         exit_policy=features.get("exit_policy") if isinstance(features.get("exit_policy"),dict) else {}
         exit_policy_html=(
             "<div class='paper-card'><h3>Política de salida simulada</h3>"
@@ -1200,7 +1211,7 @@ def motor_page():
         <p><b>Explicación:</b> {_e(gate.get('reason','Operación histórica sin secuencia completa persistida.'))}</p>
         <p class='paper-notice'><b>Decisión reproducible:</b> la IA no participa de la rueda. Señal, economía, capital, exposición y profundidad se resuelven con reglas versionadas de Python.</p>
         <p><b>Cantidad remanente:</b> {_e(p['quantity'] if p['status']=='OPEN' else '0')}. <b>PnL parcial realizado:</b> {_e(p.get('realized_net_pnl','—'))} {_e(p.get('currency','ARS'))}. Una operación abierta todavía no tiene resultado final.</p>
-        {exit_policy_html}{_stop_forensic(p)}<h3>Variables utilizadas</h3><table class='paper-table'><tr><th>Variable</th><th>Valor</th></tr>{variables}</table>
+        {exit_policy_html}{macro_risk_html}{_stop_forensic(p)}<h3>Variables utilizadas</h3><table class='paper-table'><tr><th>Variable</th><th>Valor</th></tr>{variables}</table>
         <h3>Lección aprendida</h3><p class='{cls}'>{_e(lesson)}</p></div></details>""")
     gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(_economics_status(g.get('detail_json')))}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas del día.</div>'
