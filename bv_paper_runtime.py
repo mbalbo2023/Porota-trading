@@ -144,7 +144,8 @@ def run_reader(store, stop):
     # ni comparte cliente HTTP mutable con el escáner.
     from bd_ppi_readonly_guard import ProductionMarketReader, session_invalid
     from bf_production_paper_observer import _secret, _support_schema, _market_phase
-    _support_schema(store)
+    if os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() != "1":
+        _support_schema(store)
     policy = PaperSessionPolicy()
     reader, next_login = None, 0.0
     def status(state,detail=""):
@@ -212,6 +213,10 @@ def main(argv=None):
     # esta marca y sólo abren la base, sin volver a ejecutar migraciones pesadas.
     os.environ.pop("POROTA_RUNTIME_SCHEMA_READY", None)
     store = runtime_store()
+    # Todas las migraciones operativas se completan una vez en el padre.
+    # Scanner, reader, velas y avisos sólo consumen el esquema ya preparado.
+    from bf_production_paper_observer import _support_schema
+    _support_schema(store)
     os.environ["POROTA_RUNTIME_SCHEMA_READY"] = "1"
     # Los hijos cambian cwd; todos deben heredar la misma ruta absoluta.
     os.environ[DB_ENV] = store.path
