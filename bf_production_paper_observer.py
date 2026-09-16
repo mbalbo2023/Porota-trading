@@ -1114,7 +1114,8 @@ def run():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     store = runtime_store(DB_PATH)
-    _support_schema(store)
+    if os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() != "1":
+        _support_schema(store)
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
                 real_orders_sent=0, detail="Inicializando servicios 24x7.")
