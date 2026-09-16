@@ -1,8 +1,8 @@
 """HF6 Contract/Data v2: policy for progressive historical ingestion.
 
-Historical collection and PAPER readiness are deliberately independent. A HOLD
-family may accumulate verified history before contract/sizing/settlement rules
-are ready.
+Historical collection and PAPER readiness are deliberately independent. In RC6,
+collection is restricted to the current operational families (ACCIONES and
+CEDEARS); legacy history is preserved for audit but never refreshed.
 
 Policy proven from the 02-Sep-2026 HF6 audit:
 - 169 PPI payloads were PARTIAL but contained 31,654 valid daily bars;
@@ -22,12 +22,14 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
-HISTORY_DATA_FAMILIES = frozenset({
-    "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "ON", "OBLIGACIONES",
-    "OPCIONES", "FUTUROS", "ETF", "ETFS", "INDICES",
+OPERATIONAL_HISTORY_FAMILIES = frozenset({"ACCIONES", "CEDEARS"})
+# Retained only to explain why legacy instruments are not scheduled for new
+# collection. They are not an ingest permission in RC6.
+LEGACY_HISTORY_FAMILIES = frozenset({
+    "BONOS", "LETRAS", "ON", "OBLIGACIONES", "OPCIONES", "FUTUROS",
+    "ETF", "ETFS", "INDICES", "CAUCIONES", "FCI", "FCIS", "LICITACIONES",
 })
-SPECIALIZED_HISTORY_FAMILIES = frozenset({"CAUCIONES", "FCI", "FCIS", "LICITACIONES"})
-DATA912_FALLBACK_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "BONOS"})
+DATA912_FALLBACK_FAMILIES = OPERATIONAL_HISTORY_FAMILIES
 
 MIN_CONTEXT_BARS = 30
 PREFERRED_CONTEXT_BARS = 90
@@ -167,10 +169,10 @@ def history_collection_capability(instrument_type: str, *, status: str,
         return "HOLD_NOT_AVAILABLE"
     if not identity_complete:
         return "HOLD_IDENTITY_INCOMPLETE"
-    if family in HISTORY_DATA_FAMILIES:
+    if family in OPERATIONAL_HISTORY_FAMILIES:
         return "READONLY_HISTORY_ALLOWED"
-    if family in SPECIALIZED_HISTORY_FAMILIES:
-        return "SPECIALIZED_HISTORY_ADAPTER_REQUIRED"
+    if family in LEGACY_HISTORY_FAMILIES:
+        return "OUT_OF_SCOPE_READONLY_LEGACY"
     return "UNSUPPORTED_HISTORY_FAMILY"
 
 
