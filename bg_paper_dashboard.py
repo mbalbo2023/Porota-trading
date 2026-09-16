@@ -2125,6 +2125,27 @@ def _trading_motor_summary():
         "<p class='paper-muted'>Consulta acotada y caché local. Sólo contexto: "
         "no bloquea, no cambia el tamaño y no autoriza órdenes.</p></div>"
     )
+    try:
+        import rc6_macro_risk_shadow
+        macro = rc6_macro_risk_shadow.collect()
+    except Exception as exc:
+        macro = {"state": "UNAVAILABLE", "reason": type(exc).__name__,
+                 "decision_effect": "OBSERVE_ONLY", "indicators": {}}
+    macro_indicators = macro.get("indicators") if isinstance(macro.get("indicators"), dict) else {}
+    macro_rows = "".join(
+        f"<li><b>{_e(name)}</b>: {_e(item.get('ultimo'))} · {_e(item.get('tendencia'))} · "
+        f"{_e(item.get('fecha_ultimo'))}</li>"
+        for name, item in sorted(macro_indicators.items())[:8]
+        if isinstance(item, dict)
+    ) or "<li>Sin series macro disponibles en caché local.</li>"
+    macro_html = (
+        "<div class='paper-card'><h3>Riesgo macro BCRA — SHADOW</h3>"
+        f"<p><b>Estado:</b> {_e(macro.get('state', 'UNAVAILABLE'))} · "
+        f"<b>Indicadores:</b> {_e(len(macro_indicators))}</p>"
+        f"<ul>{macro_rows}</ul>"
+        "<p class='paper-muted'>Lee la caché local sólo en modo lectura. Es contexto explicable: "
+        "no bloquea, no cambia tamaño y no habilita órdenes.</p></div>"
+    )
     return (
         "<div class='paper-card'><h2>Motor de trading — actual e histórico reciente</h2>"
         f"<p><b>{open_count}</b> abiertas simuladas · <b>{closed_count}</b> cerradas recientes. "
@@ -2132,7 +2153,7 @@ def _trading_motor_summary():
         "<table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Familia</th>"
         "<th>Estado</th><th>Salida</th><th>PnL</th></tr>" + position_rows + "</table>"
         "<h3>Decisiones recientes</h3><table class='paper-table'><tr><th>Hora</th>"
-        "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>" + gdelt_html +
+        "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>" + gdelt_html + macro_html +
         "<p class='paper-muted'>El detalle forense completo sigue disponible en Motor de trading; "
         "esta tabla evita cargar masivamente operaciones, fills o históricos al abrir Trading.</p></div>"
     )
