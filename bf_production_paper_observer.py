@@ -1133,15 +1133,15 @@ def run():
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
                 real_orders_sent=0, detail="Inicializando servicios 24x7.")
-    # PPI arranca antes que cualquier mantenimiento secundario.
+    # El login PPI no depende del motor. Se posterga la construcción de
+    # componentes de decisión/settlement hasta que la sesión de sólo lectura
+    # esté confirmada, para que un componente local lento no simule un fallo
+    # de autenticación ni bloquee el primer pulso.
     from bv_paper_runtime import broker_from_environment
-    # La IA queda disponible como módulo offline, pero no se inicializa, no se
-    # consulta y no participa de ninguna decisión intradiaria.
-    broker = broker_from_environment(store, ai_gate=None, require_ai=False,
-                                     ai_mode="OFF", context_fn=None)
+    broker = None
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", real_orders_sent=0,
-                detail="Simulacion productiva inicializando.")
+                detail="Iniciando sesión PPI de solo lectura antes del motor PAPER.")
     if _market_phase() == "CLOSED":
         store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
                     ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
@@ -1156,7 +1156,8 @@ def run():
         while not STOP:
             # Una caución vence por contrato, aunque el mercado esté cerrado
             # o falle el login. No depende de cotizaciones ni de IA.
-            broker.settle_cauciones()
+            if broker is not None:
+                broker.settle_cauciones()
             # La lectura de PPI tiene prioridad sobre mantenimiento y sondas.
             # No se bloquea una rueda recién abierta con backups/reportes.
             command = _claim_command(store)
@@ -1185,7 +1186,11 @@ def run():
                             "Login automático de solo lectura correcto.",
                             "PPI Producción", success=True)
                     store.state(ppi_auth="OK", session_state=phase,
-                                detail="Login de solo lectura correcto.")
+                                detail="Login de solo lectura correcto; inicializando motor PAPER.")
+                    # La IA continúa OFF; este paso no envía órdenes ni llama
+                    # rutas operativas. Sólo prepara decisiones simuladas.
+                    broker = broker_from_environment(store, ai_gate=None, require_ai=False,
+                                                     ai_mode="OFF", context_fn=None)
                     _daily_sync(reader, store)
                 except Exception as exc:
                     _health(store, "PPI_PRODUCTION_AUTH", "ROJO",
