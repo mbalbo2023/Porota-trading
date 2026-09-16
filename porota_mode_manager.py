@@ -306,6 +306,8 @@ def stop():
 
 def copy_output(text):
     """OSC 52 para Termius/terminal: evita seleccionar texto manualmente."""
+    if os.getenv("POROTA_COPY_OUTPUT", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return
     try:
         encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
         print(f"\033]52;c;{encoded}\a", end="")
