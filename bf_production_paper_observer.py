@@ -1114,9 +1114,7 @@ def run():
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
                 real_orders_sent=0, detail="Inicializando servicios 24x7.")
-    # Nunca bloquea el arranque de mercado con backups, reportes o mantenimiento.
-    # Cada tarea secundaria conserva su TTL y se ejecuta después del login PPI.
-    operations.service_tick(store, _market_phase(), force=False)
+    # PPI arranca antes que cualquier mantenimiento secundario.
     from bv_paper_runtime import broker_from_environment
     # La IA queda disponible como módulo offline, pero no se inicializa, no se
     # consulta y no participa de ninguna decisión intradiaria.
@@ -1140,12 +1138,8 @@ def run():
             # Una caución vence por contrato, aunque el mercado esté cerrado
             # o falle el login. No depende de cotizaciones ni de IA.
             broker.settle_cauciones()
-            # Estos trabajos continúan con la rueda cerrada: dashboard, SRE,
-            # backups, noticias, macro, reportes y resumen Telegram son 24x7.
-            operations.service_tick(store, _market_phase())
-            if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:
-                _public_probe(store)
-                last_public_check = time.time()
+            # La lectura de PPI tiene prioridad sobre mantenimiento y sondas.
+            # No se bloquea una rueda recién abierta con backups/reportes.
             command = _claim_command(store)
             if command:
                 reader = _run_command(store, reader, command, None)
@@ -1184,6 +1178,11 @@ def run():
                     next_login_at = time.time() + LOGIN_COOLDOWN_SECONDS
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
+            # Login listo: recién ahora corren servicios no críticos por TTL.
+            operations.service_tick(store, phase)
+            if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:
+                _public_probe(store)
+                last_public_check = time.time()
             if phase == "CLOSED":
                 # El catálogo se renueva una vez por fecha local. Los históricos
                 # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.
