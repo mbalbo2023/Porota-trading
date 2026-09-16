@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import bg_paper_dashboard as bg
 import bh_universe_dashboard_hf6 as universe
@@ -44,6 +45,16 @@ def _time_answer(status):
 
 
 def _contract_section():
+    mode = os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "DISABLED_SOURCE_UNAVAILABLE").upper()
+    if mode != "ENABLED":
+        return (
+            "<div class='paper-card'><h2>Evidencia contractual</h2>"
+            "<div class='paper-warning'><b>DESACTIVADA POR ALCANCE.</b> "
+            "La recolección contractual y el scraping no se ejecutan para el universo actual. "
+            "El perfil Chrome confiable se preserva, sin abrir sesión ni realizar consultas.</div>"
+            "<p class='paper-muted'>Acciones y CEDEARs se gobiernan por catálogo, historial, velas, "
+            "riesgo y portones PAPER; no se infiere ni se reintenta evidencia contractual heredada.</p></div>"
+        )
     if not bg._table("contract_evidence"):
         return (
             "<div class='paper-card'><h2>Evidencia contractual</h2>"
