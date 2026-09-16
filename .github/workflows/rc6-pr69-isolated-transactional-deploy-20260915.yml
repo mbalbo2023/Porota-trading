@@ -244,17 +244,31 @@ jobs:
           PY
           )"
           echo "$SCOPE_CHECK"
+          # El observador se recrea en el deploy. Esperamos su primer pulso
+          # real de PPI en lugar de reprobar el estado STARTING transitorio.
           RUNTIME_CHECK="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
-          c.execute('PRAGMA query_only=ON')
-          mode,orders,auth,process,session,last_market = c.execute(
-              'SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at FROM observer_state WHERE id=1'
-          ).fetchone()
-          c.close()
-          if mode != 'PRODUCTION_PAPER' or int(orders or 0) != 0 or auth != 'OK' or not last_market:
-              raise SystemExit(f'GO_CHECK_FAILED={mode}|{orders}|{auth}|{process}|{session}|{last_market}')
-          print(f'GO_CHECK=GREEN|{mode}|{auth}|{process}|{session}|{last_market}')
+          import time
+
+          deadline = time.monotonic() + 75
+          last = None
+          while time.monotonic() < deadline:
+              try:
+                  c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=3)
+                  c.execute('PRAGMA query_only=ON')
+                  last = c.execute(
+                      'SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at '
+                      'FROM observer_state WHERE id=1'
+                  ).fetchone()
+                  c.close()
+              except sqlite3.Error as exc:
+                  last = ('DB_ERROR', 0, type(exc).__name__, '', '', '')
+              if last and last[0] == 'PRODUCTION_PAPER' and int(last[1] or 0) == 0 and last[2] == 'OK' and last[5]:
+                  print(f'GO_CHECK=GREEN|{"|".join(map(str,last))}')
+                  break
+              time.sleep(5)
+          else:
+              raise SystemExit(f'GO_CHECK_FAILED_AFTER_STARTUP={last}')
           PY
           )"
           echo "$RUNTIME_CHECK"
