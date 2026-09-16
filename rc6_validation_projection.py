@@ -95,7 +95,7 @@ def refresh(root: Path | str | None = None, *, full_verify: bool | None = None) 
         records = _latched_rows(previous)
         ledger_status = "DAILY_COMPACT"
 
-    rows = dynamic.evaluate(records)
+    rows = dynamic.evaluate(records, deep_db_check=bool(full_verify))
     summary = dynamic.summary(rows)
     payload = {"schema_version": SCHEMA_VERSION, "generated_at": generated_at,
         "source": "rc6-validation-projection-worker", "ledger_status": ledger_status,
