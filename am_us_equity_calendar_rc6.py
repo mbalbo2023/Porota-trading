@@ -6,7 +6,7 @@ haya rueda del subyacente. Fuera del año auditado el resultado es fail-closed.
 """
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 NY_TZ = ZoneInfo("America/New_York")
@@ -28,15 +28,22 @@ REGULAR_CLOSE = time(16, 0)
 EARLY_CLOSE = time(13, 0)
 
 
+def us_equity_business_day(day: date) -> bool:
+    """True sólo si el día pertenece al calendario US equity auditado."""
+    return (
+        day.year == AUDITED_YEAR
+        and day.weekday() < 5
+        and day.isoformat() not in US_EQUITY_FULL_CLOSURES_2026
+    )
+
+
 def us_equity_phase(now: datetime | None = None) -> str:
     """Devuelve OPEN sólo dentro de sesión regular US del año auditado."""
     local = (now or datetime.now(NY_TZ)).astimezone(NY_TZ)
     if local.year != AUDITED_YEAR:
         return "UNAUDITED_YEAR"
-    if local.weekday() >= 5:
-        return "WEEKEND"
-    if local.date().isoformat() in US_EQUITY_FULL_CLOSURES_2026:
-        return "HOLIDAY"
+    if not us_equity_business_day(local.date()):
+        return "WEEKEND" if local.weekday() >= 5 else "HOLIDAY"
     clock = local.time().replace(tzinfo=None)
     if clock < REGULAR_OPEN:
         return "PREOPEN"
