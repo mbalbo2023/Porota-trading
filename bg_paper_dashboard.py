@@ -2071,8 +2071,7 @@ def _trading_motor_summary():
         "<table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Familia</th>"
         "<th>Estado</th><th>Salida</th><th>PnL</th></tr>" + position_rows + "</table>"
         "<h3>Decisiones recientes</h3><table class='paper-table'><tr><th>Hora</th>"
-        "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>"
-        gdelt_html +
+        "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>" + gdelt_html +
         "<p class='paper-muted'>El detalle forense completo sigue disponible en Motor de trading; "
         "esta tabla evita cargar masivamente operaciones, fills o históricos al abrir Trading.</p></div>"
     )
