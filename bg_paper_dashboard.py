@@ -1772,9 +1772,22 @@ def live_page(*, offset=0, limit=20):
     intents={r.get('paper_id'):r for r in data.get('exit_intents',[])}
 
     gates=[]
-    if _table('trade_gate_evaluations'):
-        gates=live_policy.rows_for_today(_rows("""SELECT * FROM trade_gate_evaluations
-          ORDER BY evaluated_at DESC,id DESC LIMIT 500"""),'evaluated_at',now=now)
+    if _table('trade_gate_evaluations') and _table('financial_instrument_catalog'):
+        gates=live_policy.rows_for_today(_rows("""SELECT g.* FROM trade_gate_evaluations g
+          WHERE EXISTS (
+              SELECT 1 FROM financial_instrument_catalog f
+              WHERE f.ticker=g.symbol AND f.status='AVAILABLE'
+                AND UPPER(f.instrument_type) IN ('ACCIONES','CEDEARS')
+          )
+          ORDER BY g.evaluated_at DESC,g.id DESC LIMIT 500"""),'evaluated_at',now=now)
+    elif _table('trade_gate_evaluations') and _table('candidate_universe'):
+        gates=live_policy.rows_for_today(_rows("""SELECT g.* FROM trade_gate_evaluations g
+          WHERE EXISTS (
+              SELECT 1 FROM candidate_universe u
+              WHERE u.ticker=g.symbol AND u.can_simulate=1
+                AND UPPER(u.instrument_type) IN ('ACCIONES','CEDEARS')
+          )
+          ORDER BY g.evaluated_at DESC,g.id DESC LIMIT 500"""),'evaluated_at',now=now)
     gate_by_paper={r.get('paper_id'):r for r in gates if r.get('paper_id')}
     gate_by_symbol={}
     for row in gates:
@@ -2063,11 +2076,30 @@ def _trading_motor_summary():
         f"{_e(row.get('currency') or '')}</td></tr>"
         for row in positions
     ) or "<tr><td colspan='6'>Sin operaciones PAPER de acciones o CEDEARs registradas.</td></tr>"
-    gates = (
-        _rows("SELECT evaluated_at,symbol,final_result,reason FROM trade_gate_evaluations "
-              "ORDER BY evaluated_at DESC LIMIT 16")
-        if _table("trade_gate_evaluations") else []
-    )
+    if _table("trade_gate_evaluations") and _table("financial_instrument_catalog"):
+        gates = _rows(
+            """SELECT g.evaluated_at,g.symbol,g.final_result,g.reason
+               FROM trade_gate_evaluations g
+               WHERE EXISTS (
+                   SELECT 1 FROM financial_instrument_catalog f
+                   WHERE f.ticker=g.symbol AND f.status='AVAILABLE'
+                     AND UPPER(f.instrument_type) IN ('ACCIONES','CEDEARS')
+               )
+               ORDER BY g.evaluated_at DESC LIMIT 16"""
+        )
+    elif _table("trade_gate_evaluations") and _table("candidate_universe"):
+        gates = _rows(
+            """SELECT g.evaluated_at,g.symbol,g.final_result,g.reason
+               FROM trade_gate_evaluations g
+               WHERE EXISTS (
+                   SELECT 1 FROM candidate_universe u
+                   WHERE u.ticker=g.symbol AND u.can_simulate=1
+                     AND UPPER(u.instrument_type) IN ('ACCIONES','CEDEARS')
+               )
+               ORDER BY g.evaluated_at DESC LIMIT 16"""
+        )
+    else:
+        gates = []
     gate_rows = "".join(
         f"<tr><td>{_local_time(row.get('evaluated_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
         f"<td>{_status(row.get('final_result'))}</td><td>{_e(row.get('reason'))}</td></tr>"
