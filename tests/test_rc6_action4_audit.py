@@ -43,6 +43,7 @@ def test_build_is_read_only_and_summarizes_daily_data(tmp_path):
     assert payload["separation"]["exit_reasons"]["TAKE_PROFIT"] == 1
     assert payload["separation"]["buy"] == 1
     assert payload["safety"]["broker_routes_called"] is False
+    assert payload["dashboard_daily_report"]["scope_evidence"]["positions"] == "LEGACY_SCHEMA_UNFILTERED"
 
 
 def test_publish_is_atomic_json_artifact(tmp_path):
