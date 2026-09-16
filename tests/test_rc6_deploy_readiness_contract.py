@@ -18,3 +18,10 @@ def test_deploy_bootstraps_compact_daily_views_once_without_reenabling_real_orde
     assert "for job in validation_projection action4_audit; do" in body
     assert 'timeout 30 python az_maintenance_job.py "$job"' in body
     assert "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED" in body
+
+
+def test_deploy_storage_audit_is_explicitly_read_only():
+    body = WORKFLOW.read_text(encoding="utf-8")
+    assert "STORAGE_AUDIT=READ_ONLY" in body
+    assert "STORAGE_CLEANUP=NOT_EXECUTED" in body
+    assert "docker system prune" not in body
