@@ -58,3 +58,32 @@ def test_publish_is_atomic_json_artifact(tmp_path):
     target = root / "reports" / audit.FILENAME
     assert target.exists()
     assert json.loads(target.read_text(encoding="utf-8")) == payload
+
+
+def test_build_includes_bounded_event_and_learning_lessons(tmp_path):
+    database = tmp_path / "paper.db"
+    _database(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE paper_events (event_at TEXT, event_type TEXT)")
+        connection.execute(
+            "INSERT INTO paper_events VALUES (?, ?)",
+            ("2026-09-16T12:00:00-03:00", "TAKE_PROFIT_SHADOW"),
+        )
+        connection.execute(
+            "CREATE TABLE paper_learning_samples (label_timestamp TEXT, feature_timestamp TEXT, outcome TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO paper_learning_samples VALUES (?, ?, ?)",
+            ("2026-09-16T12:30:00-03:00", "2026-09-16T11:00:00-03:00", "WIN"),
+        )
+        connection.commit()
+
+    payload = audit.build(
+        db_path=database,
+        now=datetime(2026, 9, 16, 13, 0, tzinfo=TZ),
+    )
+
+    report = payload["dashboard_daily_report"]
+    assert report["event_counts"]["TAKE_PROFIT_SHADOW"] == 1
+    assert report["learning_outcomes"]["WIN"] == 1
+    assert any("Etiquetas de aprendizaje" in lesson for lesson in report["lessons"])
