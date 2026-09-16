@@ -71,6 +71,8 @@ def build_scheduler() -> BackgroundScheduler:
                       day_of_week="sun", hour=20, args=["weekly_report"])
     scheduler.add_job(_run_job, "interval", id="maintenance_news_scan",
                       minutes=45, args=["news_scan"])
+    scheduler.add_job(_run_job, "interval", id="maintenance_gdelt_shadow",
+                      minutes=30, args=["gdelt_shadow_refresh"])
 
     scheduler.add_job(_run_job, "cron", id="maintenance_action4_audit",
                       hour=7, minute=5, args=["action4_audit"])
