@@ -208,7 +208,11 @@ def main(argv=None):
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
+    # El padre completa el esquema antes de crear workers. Los hijos reciben
+    # esta marca y sólo abren la base, sin volver a ejecutar migraciones pesadas.
+    os.environ.pop("POROTA_RUNTIME_SCHEMA_READY", None)
     store = runtime_store()
+    os.environ["POROTA_RUNTIME_SCHEMA_READY"] = "1"
     # Los hijos cambian cwd; todos deben heredar la misma ruta absoluta.
     os.environ[DB_ENV] = store.path
     if argv == ["--exit-reader"]:
