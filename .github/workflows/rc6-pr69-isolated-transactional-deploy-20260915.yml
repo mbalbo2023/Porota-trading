@@ -314,3 +314,19 @@ jobs:
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
           echo "RC6_UNIFIED_PAPER_DEPLOY=GREEN"
           VERIFY
+
+      - name: Audit deployed storage footprint (read-only)
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "bash -s" <<'AUDIT'
+          set -Eeuo pipefail
+          echo 'STORAGE_AUDIT=READ_ONLY'
+          df -h / /opt /var/lib/docker 2>/dev/null || df -h /
+          sudo -n docker system df
+          sudo -n du -sh /opt/porota-trading/data /opt/porota-trading 2>/dev/null || true
+          echo 'STORAGE_CLEANUP=NOT_EXECUTED'
+          AUDIT
