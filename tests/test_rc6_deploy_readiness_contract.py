@@ -40,3 +40,11 @@ def test_new_paper_database_initializes_spot_liquidity_ledger():
     engine = Path("be_paper_engine.py").read_text(encoding="utf-8")
 
     assert "spot_liquidity.init_schema(self)" in engine
+
+
+def test_release_gate_packages_cedear_calendar_without_early_remote_success_exit():
+    body = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "am_us_equity_calendar_rc6.py" in body
+    assert "tests/test_rc6_cedear_underlying_calendar.py" in body
+    assert 'echo "RC6_DEPLOY_STAGE_ONE=GREEN"\n          exit 0' not in body
