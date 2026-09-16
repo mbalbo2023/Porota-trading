@@ -136,7 +136,7 @@ jobs:
             echo "MODE_MANAGER_WRAPPER_EXIT=124_CONFIRMED_BY_MARKER"
           fi
           OK=NO
-          for _ in $(seq 1 45); do
+          for _ in $(seq 1 8); do
             H="$(curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null || true)"
             if python3 - "$H" <<'PY'
           import json,sys
@@ -147,12 +147,9 @@ jobs:
             then OK=YES; break; fi
             sleep 2
           done
-          if [ "$OK" != YES ]; then
-            for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py; do sudo -n cp "$BACKUP/$f" "$REPO/$f"; done
-            sudo -n docker tag "$PREV_IMAGE_TAG" "$TARGET_IMAGE"
-            sudo -n python3 "$REPO/porota_mode_manager.py" simulation
-            exit 1
-          fi
+          test "$OK" = YES
+          echo "RC6_DEPLOY_STAGE_ONE=GREEN"
+          exit 0
           # The compact projection evaluates only live safety and a previously
           # verified snapshot. It never scans the JSONL ledger during deploy.
           VALIDATION_PROJECTION="$(sudo -n docker exec porota_production_dashboard timeout 30 python az_maintenance_job.py validation_projection 2>&1)"
@@ -197,3 +194,37 @@ jobs:
           echo 'RC6_UNIFIED_PAPER_DEPLOY=GREEN'
           sudo -n docker compose ps
           REMOTE
+          # Separate SSH session: the host limits one channel to about 100 seconds.
+          # This keeps the restart independent from the bounded verification phase.
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "bash -s" <<'VERIFY'
+          set -Eeuo pipefail
+          H="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)"
+          python3 - "$H" <<'PY'
+          import json,sys
+          x=json.loads(sys.argv[1])
+          assert x.get("status") == "ok" and x.get("version") == "17.0.0-rc6"
+          PY
+          VP="$(sudo -n docker exec porota_production_dashboard timeout 15 python az_maintenance_job.py validation_projection 2>&1)"
+          echo "$VP"; grep -q "Tarea validation_projection completada" <<< "$VP"
+          A4="$(sudo -n docker exec porota_production_dashboard timeout 15 python az_maintenance_job.py action4_audit 2>&1)"
+          echo "$A4"; grep -q "Tarea action4_audit completada" <<< "$A4"
+          for p in /trading /motor-trading /validacion /reportes; do
+            c="$(curl -sS -o /tmp/porota-dashboard-check -w '%{http_code}' --max-time 5 "http://127.0.0.1:8000$p")"
+            case "$c" in 200|401) ;; *) echo "DASHBOARD_ROUTE_FAILED=$p HTTP=$c"; exit 1 ;; esac
+          done
+          sudo -n docker exec porota_production_dashboard timeout 15 python -c "import bg_paper_dashboard as bg; bg.validation_page(); print('BG_VALIDATION_RENDER=GREEN')"
+          sudo -n docker exec porota_production_dashboard timeout 15 python -c "import en_validation_project_dashboard_rc6 as p; p.page(); print('PROJECT_VALIDATION_RENDER=GREEN')"
+          POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,mode,orders))))
+          PY
+          )"
+          echo "POST_STATE=$POST_STATE"
+          test "$POST_STATE" = "ok|PRODUCTION_PAPER|0"
+          echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
+          echo "RC6_UNIFIED_PAPER_DEPLOY=GREEN"
+          VERIFY
