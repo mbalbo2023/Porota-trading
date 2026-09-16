@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m pytest -q tests/test_rc6_report_retention.py tests/test_rc6_action4_audit.py tests/test_rc6_macro_risk_shadow.py tests/test_rc6_operational_scope.py tests/test_rc6_data912_operational_scope.py tests/test_rc6_validation_projection.py tests/test_rc6_gdelt_shadow.py tests/test_rc6_legacy_history_scope.py
+          python -m pytest -q tests/test_rc6_report_retention.py tests/test_rc6_action4_audit.py tests/test_rc6_macro_risk_shadow.py tests/test_rc6_operational_scope.py tests/test_rc6_data912_operational_scope.py tests/test_rc6_validation_projection.py tests/test_rc6_gdelt_shadow.py tests/test_rc6_legacy_history_scope.py tests/test_rc6_deploy_readiness_contract.py
 
       - name: Prepare strict SSH
         shell: bash
