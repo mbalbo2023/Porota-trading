@@ -19,6 +19,9 @@ def test_cedear_entries_require_regular_us_session_but_actions_do_not():
     assert allowed is False and reason == "CEDEAR_UNDERLYING_US_PREOPEN"
     allowed, reason = cedear_opening_gate("CEDEARS", at(2026, 1, 5, 18))
     assert allowed is False and reason == "CEDEAR_UNDERLYING_US_CLOSED"
+    # 15:30 ART del 27/11 equivale a 13:30 ET: rueda US acortada ya cerrada.
+    allowed, reason = cedear_opening_gate("CEDEARS", at(2026, 11, 27, 15, 30))
+    assert allowed is False and reason == "CEDEAR_UNDERLYING_US_CLOSED"
     assert cedear_opening_gate("ACCIONES", at(2026, 1, 19, 13)) == (True, "")
 
 
