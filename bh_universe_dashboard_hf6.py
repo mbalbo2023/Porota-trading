@@ -53,6 +53,7 @@ def _page():
             discovery_status,
             checked_at
         FROM catalog_family_coverage
+        WHERE upper(instrument_type) IN ('ACCIONES','CEDEARS')
         ORDER BY instrument_type
     """) if bg._table("catalog_family_coverage") else []
 
@@ -68,6 +69,7 @@ def _page():
             last_seen_at
         FROM financial_instrument_catalog
         WHERE status='AVAILABLE'
+          AND upper(instrument_type) IN ('ACCIONES','CEDEARS')
         ORDER BY instrument_type,ticker,market,currency,settlement
     """) if bg._table("financial_instrument_catalog") else []
 
@@ -81,6 +83,7 @@ def _page():
             COUNT(*) snapshots,
             MAX(observed_at) last_observed
         FROM market_snapshots
+        WHERE upper(asset_class) IN ('ACCIONES','CEDEARS','ACCION','CEDEAR')
         GROUP BY
             symbol,
             asset_class,
@@ -101,6 +104,7 @@ def _page():
             SUM(CASE WHEN status='CLOSED' THEN 1 ELSE 0 END) closed,
             MAX(opened_at) last_opened
         FROM paper_positions
+        WHERE upper(asset_class) IN ('ACCIONES','CEDEARS','ACCION','CEDEAR')
         GROUP BY
             symbol,
             asset_class,
@@ -126,6 +130,7 @@ def _page():
             close_reason,
             strategy_version
         FROM paper_positions
+        WHERE upper(asset_class) IN ('ACCIONES','CEDEARS','ACCION','CEDEAR')
         ORDER BY julianday(opened_at) DESC,paper_id DESC
     """) if bg._table("paper_positions") else []
 
@@ -134,6 +139,7 @@ def _page():
             symbol,
             COUNT(*) decisions
         FROM paper_decisions
+        WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE' AND upper(instrument_type) IN ('ACCIONES','CEDEARS'))
         GROUP BY symbol
     """) if bg._table("paper_decisions") else []
 
@@ -150,6 +156,7 @@ def _page():
                 ELSE 0
             END) opened
         FROM trade_gate_evaluations
+        WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE' AND upper(instrument_type) IN ('ACCIONES','CEDEARS'))
         GROUP BY symbol
     """) if bg._table("trade_gate_evaluations") else []
 
@@ -618,10 +625,10 @@ def _page():
     )
 
     body = (
-        "<h1>Universo operativo — todos los instrumentos y operaciones</h1>"
+        "<h1>Universo operativo — acciones y CEDEARs</h1>"
 
         "<div class='paper-notice'>"
-        "<b>Lectura única.</b> Esta página reúne catálogo PPI, "
+        <b>Alcance operativo actual: acciones y CEDEARs.</b> Bonos, cauciones, opciones, futuros y demás familias están deshabilitados por alcance y no se procesan aquí. <b>Lectura única.</b> Esta página reúne catálogo PPI, "
         "observación real de mercado, capacidad contractual, "
         "decisiones, gates y ledger PAPER. "
         "<b>Observado no significa operable:</b> una familia puede "
