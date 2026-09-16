@@ -957,6 +957,16 @@ class PaperBroker:
         )
         by_total_cap = (exposure_remaining / (entry * factor)).to_integral_value(ROUND_DOWN)
         qty = (min(by_risk, by_cash, by_book, by_position_cap, by_total_cap) / step).to_integral_value(ROUND_DOWN) * step
+        max_hold_minutes = int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360"))
+        features["exit_policy"] = {
+            "mode": "SIMULATED",
+            "stop_loss_price": str(stop),
+            "take_profit_price": str(target),
+            "max_hold_minutes": max_hold_minutes,
+            "end_of_day": bool(getattr(self.session_policy, "close_at_eod", False)),
+            "execution": "SUPERVISED_EXIT_READER",
+            "meaning": "Una salida requiere libro fresco y se registra; nunca envía una orden real.",
+        }
         features.update({
             "book_source_at": q.book_at, "trade_source_at": q.trade_at,
             "received_at": q.observed_at, "last_kind": q.last_kind,
