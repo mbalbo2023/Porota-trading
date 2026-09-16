@@ -88,3 +88,33 @@ def test_build_includes_bounded_event_and_learning_lessons(tmp_path):
     assert report["event_counts"]["TAKE_PROFIT_SHADOW"] == 1
     assert report["learning_outcomes"]["WIN"] == 1
     assert any("Etiquetas de aprendizaje" in lesson for lesson in report["lessons"])
+
+
+def test_build_filters_positions_to_operational_families_when_schema_has_asset_class(tmp_path):
+    database = tmp_path / "scoped-paper.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute("""
+            CREATE TABLE paper_positions (
+                paper_id TEXT, status TEXT, opened_at TEXT, closed_at TEXT,
+                close_reason TEXT, asset_class TEXT
+            )
+        """)
+        connection.executemany(
+            "INSERT INTO paper_positions VALUES (?,?,?,?,?,?)",
+            [
+                ("PAPER-A", "OPEN", "2026-09-16T11:00:00-03:00", None, None, "ACCIONES"),
+                ("PAPER-B", "CLOSED", "2026-09-16T11:00:00-03:00",
+                 "2026-09-16T12:00:00-03:00", "TAKE_PROFIT", "BONOS"),
+            ],
+        )
+        connection.execute("CREATE TABLE trade_gate_evaluations (evaluated_at TEXT, final_result TEXT)")
+        connection.commit()
+
+    payload = audit.build(
+        db_path=database,
+        now=datetime(2026, 9, 16, 13, 0, tzinfo=TZ),
+    )
+
+    assert payload["separation"]["opened_simulated"] == 1
+    assert payload["separation"]["executed_closed"] == 0
+    assert payload["dashboard_daily_report"]["scope_evidence"]["positions"] == "FILTERED_ACCIONES_CEDEARS"
