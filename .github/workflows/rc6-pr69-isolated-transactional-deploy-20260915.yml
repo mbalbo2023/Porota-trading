@@ -136,6 +136,12 @@ jobs:
           # per day as a bounded background task; a deploy only verifies rendering.
           # This prevents an archive scan from holding SSH or blocking a safe release.
           echo "VALIDATION_PROJECTION_BOOTSTRAP=DEFERRED_DAILY_JOB"
+          # Publica la auditoría compacta ahora para que Reportes no espere
+          # hasta la próxima cadencia diaria. Sólo lee SQLite y escribe un JSON.
+          ACTION4_AUDIT="$(sudo -n docker exec porota_production_dashboard timeout 30 python az_maintenance_job.py action4_audit 2>&1)"
+          echo "$ACTION4_AUDIT"
+          grep -q "Tarea action4_audit completada" <<< "$ACTION4_AUDIT"
+          echo "ACTION4_AUDIT_BOOTSTRAP=GREEN"
           ROUTE_FAILURES=0
           for PATH_CHECK in /trading /motor-trading /validacion /reportes; do
             CODE="$(curl -sS -o /tmp/porota-dashboard-check -w '%{http_code}' --max-time 10 "http://127.0.0.1:8000$PATH_CHECK" || true)"
