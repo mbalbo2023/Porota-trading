@@ -24,6 +24,7 @@ from bd_ppi_readonly_guard import ProductionMarketReader
 
 DB = os.getenv("POROTA_CONTRACT_EVIDENCE_DB", "/app/data/paper_v17/observer_v17.db")
 SECRET = os.getenv("PPI_PRODUCTION_SECRET_FILE", "/run/secrets/ppi_production.json")
+CONTRACT_EVIDENCE_MODE = os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "DISABLED_SOURCE_UNAVAILABLE").upper()
 
 
 class Store:
@@ -45,6 +46,12 @@ def observer_state(store):
 
 
 def main():
+    if CONTRACT_EVIDENCE_MODE != "ENABLED":
+        print("STATUS=SKIPPED_SOURCE_UNAVAILABLE_BY_SCOPE")
+        print("CONTRACT_EVIDENCE_MODE=" + CONTRACT_EVIDENCE_MODE)
+        print("PROFILE_PRESERVED=YES")
+        return 0
+
     store = Store(DB)
     before = observer_state(store)
     print("OBSERVER_BEFORE=" + repr(before))
