@@ -225,6 +225,9 @@ class PaperStore:
                         c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
             c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_identity ON market_snapshots(symbol,asset_class,settlement,currency,market,id)")
         spot_ledger.init_schema(self)
+        # Fills PAPER consumen profundidad por snapshot. Esta tabla debe existir
+        # también en una base nueva creada por los tests/runtime, antes del primer fill.
+        spot_liquidity.init_schema(self)
         init_financial_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
