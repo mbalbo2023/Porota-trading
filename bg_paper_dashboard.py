@@ -1389,7 +1389,11 @@ def history_page():
     by_family=store_v2.get('by_family',{}) if isinstance(store_v2,dict) else {}
     targets=dynamic.get('target_by_family',{}) if isinstance(dynamic,dict) else {}
     caps=dynamic.get('source_capabilities',{}) if isinstance(dynamic,dict) else {}
-    all_families=sorted(set(targets)|set(by_family)|set(caps))
+    operational_families={"ACCIONES","CEDEARS"}
+    all_families=sorted(
+        family for family in (set(targets)|set(by_family)|set(caps))
+        if str(family or "").upper() in operational_families
+    )
     for family in all_families:
         current=by_family.get(family,{})
         target=int(targets.get(family) or 0)
@@ -1406,7 +1410,7 @@ def history_page():
         f"Hay {fresh_v5.get('stale_ge90_count',0)} identidades con al menos 90 barras pero historia stale; no cuentan como fresh ≥90. "
         "CLOSE_ONLY se informa por separado y nunca habilita ATR, VWAP, precio de ejecución ni READY PAPER.</div>"
     )
-    body=f"<h1>Históricos y universo</h1><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
+    body=f"<h1>Históricos y universo operativo</h1><div class='paper-warning'><b>Alcance actual:</b> esta vista y el motor usan acciones y CEDEARs. Los datos de otras familias se conservan sólo como legado/auditoría y no disparan ingesta ni decisiones.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
     return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
 
 
