@@ -50,3 +50,14 @@ def test_paper_green_needs_runtime_row_with_zero_real_orders(tmp_path, monkeypat
 
     assert rows["M1"]["state"] == "GRAY"
     assert "real_orders_sent=UNKNOWN" in rows["M1"]["observed_evidence"]
+
+
+def test_daily_db_probe_avoids_quick_check_but_explicit_deep_check_keeps_it(tmp_path, monkeypatch):
+    database = tmp_path / "paper.db"
+    with sqlite3.connect(database) as c:
+        c.execute("CREATE TABLE observer_state (id INTEGER PRIMARY KEY)")
+        c.execute("INSERT INTO observer_state VALUES (1)")
+    monkeypatch.setenv("POROTA_PAPER_DB", str(database))
+
+    assert dynamic._db_ok(deep=False) == (True, "OBSERVER_ROW_READ_ONLY")
+    assert dynamic._db_ok(deep=True) == (True, "ok")
