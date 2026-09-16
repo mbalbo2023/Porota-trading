@@ -29,6 +29,7 @@ VALID_JOBS = {
     "learning_diagnostic",
     "model_guardian",
     "monthly_report",
+    "validation_projection",
 }
 
 
@@ -80,6 +81,12 @@ def run(job_name: str) -> None:
     elif job_name == "monthly_report":
         import z_reports_engine
         _notifier().send_telegram(z_reports_engine.build_monthly_summary_text())
+    elif job_name == "validation_projection":
+        import rc6_validation_projection
+        snapshot = rc6_validation_projection.refresh()
+        logger.info("Proyección RC6 actualizada: %s/%s hitos GREEN.",
+                    snapshot["summary"]["milestones_green"],
+                    snapshot["summary"]["milestones_total"])
     else:
         raise ValueError(f"Tarea de mantenimiento desconocida: {job_name}")
 
