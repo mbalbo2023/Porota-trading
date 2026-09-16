@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import faulthandler
+faulthandler.enable()
+# Debe instalarse antes de importar módulos internos: si uno queda esperando
+# I/O local, el volcado permite identificarlo sin exponer secretos.
+faulthandler.dump_traceback_later(45, repeat=True)
+
 import json
 import math
 import os
