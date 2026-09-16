@@ -19,9 +19,13 @@ US_EQUITY_FULL_CLOSURES_2026 = frozenset({
     "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07",
     "2026-11-26", "2026-12-25",
 })
+# Las sesiones acortadas también se bloquean al cierre regular del subyacente.
+# Fuente auditada: Nasdaq Trader, US Equity and Options Markets Holiday Schedule 2026.
+US_EQUITY_EARLY_CLOSES_2026 = frozenset({"2026-11-27", "2026-12-24"})
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
+EARLY_CLOSE = time(13, 0)
 
 
 def us_equity_phase(now: datetime | None = None) -> str:
@@ -36,7 +40,8 @@ def us_equity_phase(now: datetime | None = None) -> str:
     clock = local.time().replace(tzinfo=None)
     if clock < REGULAR_OPEN:
         return "PREOPEN"
-    if clock >= REGULAR_CLOSE:
+    closing = EARLY_CLOSE if local.date().isoformat() in US_EQUITY_EARLY_CLOSES_2026 else REGULAR_CLOSE
+    if clock >= closing:
         return "CLOSED"
     return "OPEN"
 
