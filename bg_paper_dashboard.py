@@ -1984,10 +1984,21 @@ def trading_page(section=''):
     section=str(section or '').strip().lower()
     subnav=trading_nav_html()
     if section=='estrategias':
-        body=("<h1>Trading — Estrategias</h1>"+subnav+
-              "<div class='paper-notice'><b>Scalping tiene menú principal y detalle propio.</b> "
-              "Esta vista lo conserva también dentro del agrupador de estrategias.</div>"+
-              _main_fragment(scalping_page()))
+        if PAPER_SCALPING_MODE=="OFF":
+            body=("<h1>Trading — Estrategias</h1>"+subnav+
+                  "<div class='paper-warning'><b>Scalping desactivado por alcance operativo.</b> "
+                  "El universo actual de acciones y CEDEARs no cuenta todavía con una "
+                  "validación intradiaria suficiente. No se producen candidatos ni fills.</div>"
+                  "<div class='paper-card'><h2>Estrategia activa</h2>"
+                  "<p>El motor PAPER evalúa posiciones de acciones y CEDEARs. Las velas e "
+                  "históricos generan señales en <b>SHADOW</b>; Riesgo, costos, liquidación, "
+                  "take-profit, End of Day y Max Hold quedan registrados como portones explicables."
+                  "</p></div>")
+        else:
+            body=("<h1>Trading — Estrategias</h1>"+subnav+
+                  "<div class='paper-notice'>Scalping sólo puede operar en PAPER con contratos "
+                  "intradiarios confirmados; PPI Orders permanece bloqueado.</div>"+
+                  _main_fragment(scalping_page()))
         return _document('Trading — Estrategias',body,refresh=30)
     families=families_for_group(section)
     if families:
@@ -2002,8 +2013,18 @@ def trading_page(section=''):
               f"<th>Interpretación</th></tr>{table}</table></div>")
         return _document('Trading — '+title,body,refresh=30)
 
+    if section:
+        body=("<h1>Trading — familia no operativa</h1>"+subnav+
+              "<div class='paper-warning'><b>DESACTIVADO POR ALCANCE:</b> "
+              "por ahora el motor sólo analiza y opera PAPER sobre acciones y CEDEARs. "
+              "La ruta se conserva para enlaces anteriores, sin ejecutar ingestión ni decisiones.</div>")
+        return _document('Trading — fuera de alcance',body,refresh=60)
+
     cards=[]
-    for group,families in FAMILY_GROUPS.items():
+    for group,all_families in FAMILY_GROUPS.items():
+        families=families_for_group(group)
+        if not families:
+            continue
         snap=_family_ux_snapshot(families)
         ready=sum(x['ready'] for x in snap)
         observed=sum(x['observed'] for x in snap)
@@ -2018,9 +2039,18 @@ def trading_page(section=''):
           "<div class='paper-notice'>PPI es la fuente live primaria. A3/CEM/Data912 no agregan latencia al camino de decisión. "
           "Los datos background enriquecen contratos/históricos y nunca habilitan una familia por sí solos.</div>"
           "<div class='paper-grid'>"+''.join(cards)+"</div>"
-          "<div class='paper-card'><h2>Motor general</h2><p>La URL histórica <code>/motor-trading</code> permanece disponible, "
-          "pero el acceso canónico se organiza por familia y estrategia.</p>"
-          "<a class='paper-action' href='/motor-trading'>Ver trazabilidad completa del motor</a></div>")
+          "<div class='paper-card'><h2>Motor de decisiones PAPER</h2>"
+          "<p><b>Secuencia:</b> elegibilidad del instrumento → señal técnica → datos de velas e "
+          "históricos en SHADOW → riesgo GDELT/CB en SHADOW → costos y liquidación → "
+          "take-profit / End of Day / Max Hold → decisión simulada explicable.</p>"
+          "<p>Una señal de vela o histórico <b>no habilita sola</b> una operación: queda guardada "
+          "para comparar decisiones y ajustar el motor con evidencia. No se envían órdenes reales.</p>"
+          "<p>El detalle histórico y actual convive en esta sección; la URL anterior se mantiene "
+          "sólo por compatibilidad.</p>"
+          "<a class='paper-action' href='/motor-trading'>Abrir detalle y auditoría del motor</a></div>"
+          "<div class='paper-warning'><b>Alcance actual:</b> acciones y CEDEARs. "
+          "Bonos, cauciones, opciones, futuros, FCI y licitaciones no se procesan ni consumen "
+          "ciclo de decisión.</div>")
     return _document('Trading',body,refresh=30)
 
 
