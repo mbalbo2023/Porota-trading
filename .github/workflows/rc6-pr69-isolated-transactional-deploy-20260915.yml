@@ -126,6 +126,15 @@ jobs:
             sudo -n python3 "$REPO/porota_mode_manager.py" simulation
             exit 1
           fi
+          # Initial compact projection: once per deployment. Subsequent refreshes are daily
+          # through az_maintenance_scheduler; never inside an HTTP request.
+          PROJECTION_BOOTSTRAP="$(sudo -n docker exec porota_production_dashboard timeout 600 python az_maintenance_job.py validation_projection 2>&1 || true)"
+          echo "$PROJECTION_BOOTSTRAP"
+          if ! grep -q "completada" <<< "$PROJECTION_BOOTSTRAP"; then
+            echo "VALIDATION_PROJECTION_BOOTSTRAP=FAILED"
+            exit 1
+          fi
+          echo "VALIDATION_PROJECTION_BOOTSTRAP=GREEN"
           ROUTE_FAILURES=0
           for PATH_CHECK in /trading /motor-trading /validacion /reportes; do
             CODE="$(curl -sS -o /tmp/porota-dashboard-check -w '%{http_code}' --max-time 10 "http://127.0.0.1:8000$PATH_CHECK" || true)"
@@ -136,7 +145,7 @@ jobs:
           BG_RENDER="$(sudo -n docker exec porota_production_dashboard timeout 30 python -c "import bg_paper_dashboard as bg; bg.validation_page(); print('BG_VALIDATION_RENDER=GREEN')" 2>&1 || true)"
           echo "$BG_RENDER"
           if ! grep -q "BG_VALIDATION_RENDER=GREEN" <<< "$BG_RENDER"; then RENDER_FAILURES=1; fi
-          PROJECT_RENDER="$(sudo -n docker exec porota_production_dashboard timeout 30 python -c "import rc6_validation_projection as v; v.refresh(); import en_validation_project_dashboard_rc6 as p; p.page(); print('PROJECT_VALIDATION_RENDER=GREEN')" 2>&1 || true)"
+          PROJECT_RENDER="$(sudo -n docker exec porota_production_dashboard timeout 30 python -c "import en_validation_project_dashboard_rc6 as p; p.page(); print('PROJECT_VALIDATION_RENDER=GREEN')" 2>&1 || true)"
           echo "$PROJECT_RENDER"
           if ! grep -q "PROJECT_VALIDATION_RENDER=GREEN" <<< "$PROJECT_RENDER"; then RENDER_FAILURES=1; fi
           echo "DASHBOARD_RENDER_FAILURES=$RENDER_FAILURES"
