@@ -718,6 +718,18 @@ class PaperBroker:
             return "HOLD", score, "Spread superior al 2%", features
         if score < self.threshold(at):
             return "HOLD", score, "Score paper debajo del umbral versionado", features
+        # Contexto BCRA/macro: persistido sólo para candidatos BUY y sin
+        # autoridad sobre la decisión. La fuente se actualiza fuera de rueda.
+        if os.getenv("PAPER_MACRO_RISK_SHADOW", "ON").upper() in {"ON", "SHADOW", "TRUE", "1"}:
+            try:
+                import rc6_macro_risk_shadow
+                features["macro_risk_shadow"] = rc6_macro_risk_shadow.collect()
+            except Exception as exc:
+                features["macro_risk_shadow"] = {
+                    "mode": "SHADOW", "state": "ERROR",
+                    "decision_effect": "OBSERVE_ONLY",
+                    "reason": f"{type(exc).__name__}:{str(exc)[:180]}",
+                }
         return "BUY", score, "Momentum positivo y friccion admisible", features
 
     def _economic_diagnostics(self, q):
