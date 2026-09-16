@@ -57,15 +57,20 @@ def compress_verified(source, destination):
     with source.open("rb") as src, gzip.open(destination, "wb", compresslevel=6) as dst:
         while chunk := src.read(1024 * 1024):
             dst.write(chunk)
-    if _sha(source) == _sha(destination):
-        # A gzip hash cannot equal the source hash; verify decompression instead.
-        import gzip as _gzip
-        with _gzip.open(destination, "rb") as check:
-            restored = check.read()
-        if restored != source.read_bytes():
-            raise ValueError("REPORT_COMPRESSION_VERIFY_FAILED")
+    source_sha256 = _sha(source)
+    # A gzip file necessarily has a different hash. Verify the *restored*
+    # stream instead, without loading the whole report into memory.
+    restored_hash = hashlib.sha256()
+    with gzip.open(destination, "rb") as check:
+        while chunk := check.read(1024 * 1024):
+            restored_hash.update(chunk)
+    if restored_hash.hexdigest() != source_sha256:
+        raise ValueError("REPORT_COMPRESSION_VERIFY_FAILED")
     return {"source": str(source), "destination": str(destination),
-            "source_sha256": _sha(source), "compressed_bytes": destination.stat().st_size}
+            "source_sha256": source_sha256,
+            "restored_sha256": restored_hash.hexdigest(),
+            "verified": True,
+            "compressed_bytes": destination.stat().st_size}
 
 
 def apply_plan(plan_data):

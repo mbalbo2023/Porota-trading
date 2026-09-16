@@ -23,6 +23,15 @@ from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
 import cc_spot_liquidity as spot_liquidity
 import cd_spot_ledger as spot_ledger
 
+# RC6 operational scope: candidates outside shares/CEDEARs are observed only.
+OPERATIONAL_FAMILIES = frozenset(
+    part.strip().upper() for part in os.getenv("POROTA_OPERATIONAL_FAMILIES", "ACCIONES,CEDEARS").split(",")
+    if part.strip()
+)
+
+def _family_operable(family: str) -> bool:
+    return str(family or "").upper() in OPERATIONAL_FAMILIES
+
 
 SOURCE = "PRODUCTION_PAPER"
 STRATEGY_VERSION = "paper-momentum-v17.0-rc3-hf4"
@@ -656,6 +665,10 @@ class PaperBroker:
                     f"{family}: requiere su ciclo financiero específico; "
                     "el ejecutor de contado no dimensiona prima ni garantía",
                     {"samples": 0, "family": family})
+        if not _family_operable(family):
+            return ("HOLD", ZERO,
+                    f"{family}: fuera del alcance operativo RC6 (sólo acciones y CEDEARs)",
+                    {"samples": 0, "family": family, "operational_scope": "DISABLED_BY_SCOPE"})
         if q.opening_block_reason:
             return "HOLD", ZERO, q.opening_block_reason, {"samples": 0}
         at = self.execution_time(q)
@@ -705,6 +718,30 @@ class PaperBroker:
             return "HOLD", score, "Spread superior al 2%", features
         if score < self.threshold(at):
             return "HOLD", score, "Score paper debajo del umbral versionado", features
+        # Contexto BCRA/macro: persistido sólo para candidatos BUY y sin
+        # autoridad sobre la decisión. La fuente se actualiza fuera de rueda.
+        if os.getenv("PAPER_MACRO_RISK_SHADOW", "ON").upper() in {"ON", "SHADOW", "TRUE", "1"}:
+            try:
+                import rc6_macro_risk_shadow
+                features["macro_risk_shadow"] = rc6_macro_risk_shadow.collect()
+            except Exception as exc:
+                features["macro_risk_shadow"] = {
+                    "mode": "SHADOW", "state": "ERROR",
+                    "decision_effect": "OBSERVE_ONLY",
+                    "reason": f"{type(exc).__name__}:{str(exc)[:180]}",
+                }
+        # Noticias GDELT: sólo cache local y sólo contexto reproducible.
+        # Nunca consulta red en la rueda ni tiene autoridad de veto.
+        if os.getenv("PAPER_GDELT_SHADOW", "ON").upper() in {"ON", "SHADOW", "TRUE", "1"}:
+            try:
+                import rc6_gdelt_shadow
+                features["gdelt_risk_shadow"] = rc6_gdelt_shadow.collect()
+            except Exception as exc:
+                features["gdelt_risk_shadow"] = {
+                    "mode": "SHADOW", "state": "ERROR",
+                    "decision_effect": "OBSERVE_ONLY",
+                    "reason": f"{type(exc).__name__}:{str(exc)[:180]}",
+                }
         return "BUY", score, "Momentum positivo y friccion admisible", features
 
     def _economic_diagnostics(self, q):
@@ -829,6 +866,8 @@ class PaperBroker:
             return False, str(exc), None
         if family not in SPOT_FAMILIES:
             return False, f"{family} requiere su ciclo financiero específico; no se compra como una acción", None
+        if not _family_operable(family):
+            return False, f"{family} fuera del alcance operativo RC6 (sólo acciones y CEDEARs)", None
         if market != "BYMA":
             return False, "Ejecutor de contado pendiente para este mercado", None
 
@@ -942,6 +981,16 @@ class PaperBroker:
         )
         by_total_cap = (exposure_remaining / (entry * factor)).to_integral_value(ROUND_DOWN)
         qty = (min(by_risk, by_cash, by_book, by_position_cap, by_total_cap) / step).to_integral_value(ROUND_DOWN) * step
+        max_hold_minutes = int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360"))
+        features["exit_policy"] = {
+            "mode": "SIMULATED",
+            "stop_loss_price": str(stop),
+            "take_profit_price": str(target),
+            "max_hold_minutes": max_hold_minutes,
+            "end_of_day": bool(getattr(self.session_policy, "close_at_eod", False)),
+            "execution": "SUPERVISED_EXIT_READER",
+            "meaning": "Una salida requiere libro fresco y se registra; nunca envía una orden real.",
+        }
         features.update({
             "book_source_at": q.book_at, "trade_source_at": q.trade_at,
             "received_at": q.observed_at, "last_kind": q.last_kind,

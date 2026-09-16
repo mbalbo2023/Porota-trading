@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import bg_paper_dashboard as bg
 import bh_universe_dashboard_hf6 as universe
@@ -14,6 +15,8 @@ def _status_badge(status):
     value = str(status or "UNKNOWN")
     if value.startswith("VERIFIED"):
         return bg._status("OK")
+    if value in {"SOURCE_UNAVAILABLE_BY_SCOPE", "DISABLED_SOURCE_UNAVAILABLE"}:
+        return bg._status("GRIS")
     if value.startswith("PPI_") or "SUPPORT" in value:
         return bg._status("AMARILLO")
     if value.startswith("POROTA_") or "INTEGRATION" in value:
@@ -23,6 +26,8 @@ def _status_badge(status):
 
 def _time_answer(status):
     value = str(status or "")
+    if value in {"SOURCE_UNAVAILABLE_BY_SCOPE", "DISABLED_SOURCE_UNAVAILABLE"}:
+        return "NO APLICA — fuente contractual fuera de alcance actual"
     if value in {
         "PPI_SEARCH_HTTP200_EMPTY_SUPPORT_REQUIRED",
         "PPI_FIELD_PRESENT_SEMANTICS_UNDOCUMENTED",
@@ -40,6 +45,16 @@ def _time_answer(status):
 
 
 def _contract_section():
+    mode = os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "DISABLED_SOURCE_UNAVAILABLE").upper()
+    if mode != "ENABLED":
+        return (
+            "<div class='paper-card'><h2>Evidencia contractual</h2>"
+            "<div class='paper-warning'><b>DESACTIVADA POR ALCANCE.</b> "
+            "La recolección contractual y el scraping no se ejecutan para el universo actual. "
+            "El perfil Chrome confiable se preserva, sin abrir sesión ni realizar consultas.</div>"
+            "<p class='paper-muted'>Acciones y CEDEARs se gobiernan por catálogo, historial, velas, "
+            "riesgo y portones PAPER; no se infiere ni se reintenta evidencia contractual heredada.</p></div>"
+        )
     if not bg._table("contract_evidence"):
         return (
             "<div class='paper-card'><h2>Evidencia contractual</h2>"

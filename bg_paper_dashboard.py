@@ -1173,6 +1173,42 @@ def motor_page():
         gate=gate_by_paper.get(p.get("paper_id")) or gate_by_symbol.get(p["symbol"],{})
         features=_features(p.get("features_json")); variables="".join(f"<tr><td>{_e(k)}</td><td>{_e(v)}</td></tr>" for k,v in sorted(features.items()))
         economics=features.get("economics") if isinstance(features.get("economics"),dict) else {}
+        macro_risk=features.get("macro_risk_shadow") if isinstance(features.get("macro_risk_shadow"),dict) else {}
+        macro_risk_html=(
+            "<div class='paper-card'><h3>Riesgo macro / BCRA — SHADOW</h3>"
+            f"<p><b>Estado:</b> {_e(macro_risk.get('state','SIN_DATO'))} · "
+            f"<b>Fuente:</b> {_e(macro_risk.get('source','caché local'))}</p>"
+            "<p class='paper-muted'>Se conserva para análisis posterior: no bloquea, "
+            "no modifica tamaño y no autoriza órdenes.</p></div>"
+            if macro_risk else
+            "<div class='paper-warning'><b>Riesgo macro SHADOW sin registro.</b> "
+            "La operación es anterior a esta integración.</div>"
+        )
+        gdelt_risk=features.get("gdelt_risk_shadow") if isinstance(features.get("gdelt_risk_shadow"),dict) else {}
+        gdelt_risk_html=(
+            "<div class='paper-card'><h3>Noticias GDELT — SHADOW</h3>"
+            f"<p><b>Estado:</b> {_e(gdelt_risk.get('state','SIN_DATO'))} · "
+            f"<b>Observaciones:</b> {_e(gdelt_risk.get('articles_count',0))} · "
+            f"<b>Actualizado:</b> {_e(gdelt_risk.get('refreshed_at','sin registro'))}</p>"
+            "<p class='paper-muted'>Sólo contexto local capturado al decidir: "
+            "no bloquea, no modifica tamaño y no autoriza órdenes.</p></div>"
+            if gdelt_risk else
+            "<div class='paper-warning'><b>GDELT SHADOW sin registro.</b> "
+            "La operación es anterior a esta integración.</div>"
+        )
+        exit_policy=features.get("exit_policy") if isinstance(features.get("exit_policy"),dict) else {}
+        exit_policy_html=(
+            "<div class='paper-card'><h3>Política de salida simulada</h3>"
+            f"<p><b>Take-profit:</b> {_e(exit_policy.get('take_profit_price','sin registro'))} · "
+            f"<b>Stop:</b> {_e(exit_policy.get('stop_loss_price','sin registro'))} · "
+            f"<b>Max Hold:</b> {_e(exit_policy.get('max_hold_minutes','sin registro'))} min · "
+            f"<b>End of Day:</b> {_e('sí' if exit_policy.get('end_of_day') else 'no')}</p>"
+            "<p class='paper-muted'>La supervisión exige sesión habilitada, identidad y libro fresco. "
+            "Una salida sólo registra un fill simulado; nunca envía una orden a PPI.</p></div>"
+            if exit_policy else
+            "<div class='paper-warning'><b>Política de salida no registrada.</b> "
+            "Es una operación histórica anterior al registro explicable actual.</div>"
+        )
         economic_state=_economics_status(gate.get("detail_json")) if gate else ("APPROVE" if economics.get("passed") else "SIN_REGISTRO")
         contradictory=(gate.get("final_result")=="OPENED_SIMULATED" and
                        (gate.get("technical_gate")!="APPROVE" or gate.get("patrimonial_gate")!="APPROVE" or economic_state!="APPROVE"))
@@ -1187,7 +1223,7 @@ def motor_page():
         <p><b>Explicación:</b> {_e(gate.get('reason','Operación histórica sin secuencia completa persistida.'))}</p>
         <p class='paper-notice'><b>Decisión reproducible:</b> la IA no participa de la rueda. Señal, economía, capital, exposición y profundidad se resuelven con reglas versionadas de Python.</p>
         <p><b>Cantidad remanente:</b> {_e(p['quantity'] if p['status']=='OPEN' else '0')}. <b>PnL parcial realizado:</b> {_e(p.get('realized_net_pnl','—'))} {_e(p.get('currency','ARS'))}. Una operación abierta todavía no tiene resultado final.</p>
-        {_stop_forensic(p)}<h3>Variables utilizadas</h3><table class='paper-table'><tr><th>Variable</th><th>Valor</th></tr>{variables}</table>
+        {exit_policy_html}{macro_risk_html}{gdelt_risk_html}{_stop_forensic(p)}<h3>Variables utilizadas</h3><table class='paper-table'><tr><th>Variable</th><th>Valor</th></tr>{variables}</table>
         <h3>Lección aprendida</h3><p class='{cls}'>{_e(lesson)}</p></div></details>""")
     gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(_economics_status(g.get('detail_json')))}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas del día.</div>'
@@ -1195,7 +1231,7 @@ def motor_page():
                   "Su Cantidad remanente, realizaciones y resultado permanecen conciliados en Aprendizaje y Reportes.</div>"
                   if previous else "")
     body=f"<h1>Motor de trading — rueda actual</h1><p class='paper-muted'>Trazabilidad técnica → economía matemática → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{history_note}{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas de hoy</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>Economía</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + _economic_shadow_panel() + body + _rejection_funnel() + _universe_execution_panel() + _balances_panel() + _caucion_allocations_panel() + _cauciones_panel())
+    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + _economic_shadow_panel() + body + _rejection_funnel() + _universe_execution_panel() + _balances_panel() + "<div class='paper-warning'><b>Alcance operativo:</b> cauciones y demás familias no operativas no se evalúan ni se muestran como estrategia activa.</div>")
 
 
 def _next_check(component, checked):
@@ -1376,7 +1412,11 @@ def history_page():
     by_family=store_v2.get('by_family',{}) if isinstance(store_v2,dict) else {}
     targets=dynamic.get('target_by_family',{}) if isinstance(dynamic,dict) else {}
     caps=dynamic.get('source_capabilities',{}) if isinstance(dynamic,dict) else {}
-    all_families=sorted(set(targets)|set(by_family)|set(caps))
+    operational_families={"ACCIONES","CEDEARS"}
+    all_families=sorted(
+        family for family in (set(targets)|set(by_family)|set(caps))
+        if str(family or "").upper() in operational_families
+    )
     for family in all_families:
         current=by_family.get(family,{})
         target=int(targets.get(family) or 0)
@@ -1393,7 +1433,7 @@ def history_page():
         f"Hay {fresh_v5.get('stale_ge90_count',0)} identidades con al menos 90 barras pero historia stale; no cuentan como fresh ≥90. "
         "CLOSE_ONLY se informa por separado y nunca habilita ATR, VWAP, precio de ejecución ni READY PAPER.</div>"
     )
-    body=f"<h1>Históricos y universo</h1><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
+    body=f"<h1>Históricos y universo operativo</h1><div class='paper-warning'><b>Alcance actual:</b> esta vista y el motor usan acciones y CEDEARs. Los datos de otras familias se conservan sólo como legado/auditoría y no disparan ingesta ni decisiones.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
     return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
 
 
@@ -1980,14 +2020,82 @@ def _family_ux_table(families):
     return ''.join(rows) or "<tr><td colspan='10'>Sin evidencia para este grupo.</td></tr>"
 
 
+
+def _trading_motor_summary():
+    """Resumen liviano para unir Trading y Motor sin cargar el ledger completo."""
+    positions = (
+        _rows("SELECT * FROM paper_positions ORDER BY COALESCE(closed_at, opened_at) DESC LIMIT 24")
+        if _table("paper_positions") else []
+    )
+    positions = [
+        row for row in positions
+        if str(row.get("asset_class") or "").upper() in {"ACCIONES", "ACCION", "CEDEARS", "CEDEAR"}
+    ]
+    open_count = sum(str(row.get("status")) == "OPEN" for row in positions)
+    closed_count = sum(str(row.get("status")) == "CLOSED" for row in positions)
+    position_rows = "".join(
+        f"<tr><td>{_local_time(row.get('opened_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+        f"<td>{_e(row.get('asset_class'))}</td><td>{_status(row.get('status'))}</td>"
+        f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_e(row.get('net_pnl') or '—')} "
+        f"{_e(row.get('currency') or '')}</td></tr>"
+        for row in positions
+    ) or "<tr><td colspan='6'>Sin operaciones PAPER de acciones o CEDEARs registradas.</td></tr>"
+    gates = (
+        _rows("SELECT evaluated_at,symbol,final_result,reason FROM trade_gate_evaluations "
+              "ORDER BY evaluated_at DESC LIMIT 16")
+        if _table("trade_gate_evaluations") else []
+    )
+    gate_rows = "".join(
+        f"<tr><td>{_local_time(row.get('evaluated_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+        f"<td>{_status(row.get('final_result'))}</td><td>{_e(row.get('reason'))}</td></tr>"
+        for row in gates
+    ) or "<tr><td colspan='4'>Sin decisiones persistidas todavía.</td></tr>"
+    try:
+        import rc6_gdelt_shadow
+        gdelt = rc6_gdelt_shadow.collect()
+    except Exception as exc:
+        gdelt = {"state": "UNAVAILABLE", "reason": type(exc).__name__,
+                 "decision_effect": "OBSERVE_ONLY", "articles_count": 0}
+    gdelt_html = (
+        "<div class='paper-card'><h3>Noticias GDELT — SHADOW</h3>"
+        f"<p><b>Estado:</b> {_e(gdelt.get('state', 'UNAVAILABLE'))} · "
+        f"<b>Observaciones:</b> {_e(gdelt.get('articles_count', 0))} · "
+        f"<b>Actualizado:</b> {_e(gdelt.get('refreshed_at', 'sin caché'))}</p>"
+        "<p class='paper-muted'>Consulta acotada y caché local. Sólo contexto: "
+        "no bloquea, no cambia el tamaño y no autoriza órdenes.</p></div>"
+    )
+    return (
+        "<div class='paper-card'><h2>Motor de trading — actual e histórico reciente</h2>"
+        f"<p><b>{open_count}</b> abiertas simuladas · <b>{closed_count}</b> cerradas recientes. "
+        "Sólo acciones y CEDEARs.</p>"
+        "<table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Familia</th>"
+        "<th>Estado</th><th>Salida</th><th>PnL</th></tr>" + position_rows + "</table>"
+        "<h3>Decisiones recientes</h3><table class='paper-table'><tr><th>Hora</th>"
+        "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>"
+        gdelt_html +
+        "<p class='paper-muted'>El detalle forense completo sigue disponible en Motor de trading; "
+        "esta tabla evita cargar masivamente operaciones, fills o históricos al abrir Trading.</p></div>"
+    )
+
 def trading_page(section=''):
     section=str(section or '').strip().lower()
     subnav=trading_nav_html()
     if section=='estrategias':
-        body=("<h1>Trading — Estrategias</h1>"+subnav+
-              "<div class='paper-notice'><b>Scalping tiene menú principal y detalle propio.</b> "
-              "Esta vista lo conserva también dentro del agrupador de estrategias.</div>"+
-              _main_fragment(scalping_page()))
+        if PAPER_SCALPING_MODE=="OFF":
+            body=("<h1>Trading — Estrategias</h1>"+subnav+
+                  "<div class='paper-warning'><b>Scalping desactivado por alcance operativo.</b> "
+                  "El universo actual de acciones y CEDEARs no cuenta todavía con una "
+                  "validación intradiaria suficiente. No se producen candidatos ni fills.</div>"
+                  "<div class='paper-card'><h2>Estrategia activa</h2>"
+                  "<p>El motor PAPER evalúa posiciones de acciones y CEDEARs. Las velas e "
+                  "históricos generan señales en <b>SHADOW</b>; Riesgo, costos, liquidación, "
+                  "take-profit, End of Day y Max Hold quedan registrados como portones explicables."
+                  "</p></div>")
+        else:
+            body=("<h1>Trading — Estrategias</h1>"+subnav+
+                  "<div class='paper-notice'>Scalping sólo puede operar en PAPER con contratos "
+                  "intradiarios confirmados; PPI Orders permanece bloqueado.</div>"+
+                  _main_fragment(scalping_page()))
         return _document('Trading — Estrategias',body,refresh=30)
     families=families_for_group(section)
     if families:
@@ -2002,8 +2110,18 @@ def trading_page(section=''):
               f"<th>Interpretación</th></tr>{table}</table></div>")
         return _document('Trading — '+title,body,refresh=30)
 
+    if section:
+        body=("<h1>Trading — familia no operativa</h1>"+subnav+
+              "<div class='paper-warning'><b>DESACTIVADO POR ALCANCE:</b> "
+              "por ahora el motor sólo analiza y opera PAPER sobre acciones y CEDEARs. "
+              "La ruta se conserva para enlaces anteriores, sin ejecutar ingestión ni decisiones.</div>")
+        return _document('Trading — fuera de alcance',body,refresh=60)
+
     cards=[]
-    for group,families in FAMILY_GROUPS.items():
+    for group,all_families in FAMILY_GROUPS.items():
+        families=families_for_group(group)
+        if not families:
+            continue
         snap=_family_ux_snapshot(families)
         ready=sum(x['ready'] for x in snap)
         observed=sum(x['observed'] for x in snap)
@@ -2018,37 +2136,44 @@ def trading_page(section=''):
           "<div class='paper-notice'>PPI es la fuente live primaria. A3/CEM/Data912 no agregan latencia al camino de decisión. "
           "Los datos background enriquecen contratos/históricos y nunca habilitan una familia por sí solos.</div>"
           "<div class='paper-grid'>"+''.join(cards)+"</div>"
-          "<div class='paper-card'><h2>Motor general</h2><p>La URL histórica <code>/motor-trading</code> permanece disponible, "
-          "pero el acceso canónico se organiza por familia y estrategia.</p>"
-          "<a class='paper-action' href='/motor-trading'>Ver trazabilidad completa del motor</a></div>")
+          +_trading_motor_summary()+
+          "<div class='paper-card'><h2>Motor de decisiones PAPER</h2>"
+          "<p><b>Secuencia:</b> elegibilidad del instrumento → señal técnica → datos de velas e "
+          "históricos en SHADOW → riesgo macro BCRA en SHADOW → costos y liquidación → "
+          "take-profit / End of Day / Max Hold → decisión simulada explicable.</p>"
+          "<p><b>BCRA Shadow:</b> usa caché local diaria de reservas, TAMAR, dólar oficial, "
+          "IPC, actividad y brecha cambiaria con tendencia/percentil. Sólo documenta contexto; "
+          "no bloquea ni cambia el tamaño. GDELT también se consulta en un worker acotado y "
+          "se lee desde caché local, siempre OBSERVE_ONLY.</p>"
+          "<p>Una señal de vela o histórico <b>no habilita sola</b> una operación: queda guardada "
+          "para comparar decisiones y ajustar el motor con evidencia. No se envían órdenes reales.</p>"
+          "<p>El detalle histórico y actual convive en esta sección; la URL anterior se mantiene "
+          "sólo por compatibilidad.</p>"
+          "<a class='paper-action' href='/motor-trading'>Abrir detalle y auditoría del motor</a></div>"
+          "<div class='paper-warning'><b>Alcance actual:</b> acciones y CEDEARs. "
+          "Bonos, cauciones, opciones, futuros, FCI y licitaciones no se procesan ni consumen "
+          "ciclo de decisión.</div>")
     return _document('Trading',body,refresh=30)
 
 
 def instruments_page():
-    families=[]
-    for values in FAMILY_GROUPS.values():
-        for family in values:
-            if family not in families:
-                families.append(family)
-    for family in ('ETF','ACCIONES_USA'):
-        if family not in families:
-            families.append(family)
+    families=families_for_group("acciones-cedears")
     table=_family_ux_table(families)
-    body=("<h1>Instrumentos y contratos</h1>"
-          "<div class='paper-notice'>Fuente de verdad visual de cobertura contractual. "
-          "MISSING/STALE/HOLD se muestran; no se esconden familias por no estar operativas.</div>"
+    body=("<h1>Instrumentos operativos</h1>"
+          "<div class='paper-notice'><b>Alcance actual: acciones y CEDEARs.</b> "
+          "La cobertura contractual heredada de bonos, cauciones, opciones, futuros, FCI y "
+          "licitaciones está desactivada: no hay scraping, ingestión ni decisión PAPER para esas familias.</div>"
           "<div class='paper-card'><table class='paper-table'><tr><th>Familia</th><th>Readiness</th>"
           "<th>Observadas</th><th>Evidencias</th><th>Verificadas</th><th>READY PAPER</th>"
           "<th>Bloqueadas/pendientes</th><th>Cambios v2</th><th>Principales bloqueos</th>"
           f"<th>Interpretación</th></tr>{table}</table></div>")
-    return _document('Instrumentos y contratos',body,refresh=60)
+    return _document('Instrumentos operativos',body,refresh=60)
 
 
 SYSTEM_SECTIONS = (
     ("introspeccion", "Introspección"),
     ("salud", "Salud y SRE"),
     ("scheduler", "Scheduler"),
-    ("scraping", "Scraping"),
     ("backups", "Backups"),
     ("configuracion", "Configuración"),
     ("telegram", "Telegram"),
@@ -2136,9 +2261,9 @@ def introspection_content():
         _card("GitHub observabilidad", publication.get("status", "SIN_REGISTRO"),
               f"Última confirmación {_local_time(publication.get('recorded_at'))} · retención {publication.get('retention_days',90)} días",
               "green" if publication.get("status") in {"PUBLISHED", "UNCHANGED"} else "red"),
-        _card("Cauciones", cauciones.get("state", "SIN_DATOS"),
-              f"Contratos observados {cauciones.get('observed_contracts',0)} · ofertas completas {cauciones.get('complete_offers',0)} · colocadas hoy {cauciones.get('placed_today',0)}",
-              "green" if cauciones.get("state")=="READY" else "yellow"),
+        _card("Alcance operativo", "ACCIONES Y CEDEARs",
+              "Bonos, cauciones, opciones, futuros, FCI y licitaciones están desactivados; no consumen ciclo del motor.",
+              "green"),
         _card("Régimen observado", regime.get("state", "SIN_DATOS"),
               f"Suben {regime.get('rising',0)} · bajan {regime.get('falling',0)} · política ALERT_ONLY",
               "yellow" if regime.get("state")=="BEARISH_BREADTH" else "gray"),
@@ -2239,10 +2364,13 @@ def scheduler_content():
     source_sync=_rows('SELECT * FROM source_sync') if _table('source_sync') else []
     api_health=_rows('SELECT * FROM api_health ORDER BY checked_at DESC') if _table('api_health') else []
     contract_runs=[]
-    if _table('contract_evidence_v2_runs'):
-        contract_runs=_rows('SELECT job_key,started_at,finished_at,state,detail FROM contract_evidence_v2_runs ORDER BY started_at DESC')
-    elif _table('contract_evidence_runs'):
-        contract_runs=_rows("SELECT 'CONTRACT_EVIDENCE_DYNAMIC' job_key,started_at,finished_at,'OK' state,detail FROM contract_evidence_runs ORDER BY started_at DESC")
+    # Contract scraping is deliberately out of scope. Historic rows stay in the
+    # database for audit, but do not appear as an active scheduler workload.
+    if os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "DISABLED_SOURCE_UNAVAILABLE").upper() == "ENABLED":
+        if _table('contract_evidence_v2_runs'):
+            contract_runs=_rows('SELECT job_key,started_at,finished_at,state,detail FROM contract_evidence_v2_runs ORDER BY started_at DESC')
+        elif _table('contract_evidence_runs'):
+            contract_runs=_rows("SELECT 'CONTRACT_EVIDENCE_DYNAMIC' job_key,started_at,finished_at,'OK' state,detail FROM contract_evidence_runs ORDER BY started_at DESC")
     internal=internal_rows(db_jobs,source_sync_rows=source_sync,api_health_rows=api_health,contract_run_rows=contract_runs)
     systemd=load_systemd_snapshot()
     timers=systemd.get('timers',[]) if isinstance(systemd,dict) else []
@@ -2381,9 +2509,15 @@ def validation_page():
 
 
 def system_page(section="introspeccion"):
+    requested_section = section
     if section not in {key for key,_ in SYSTEM_SECTIONS}:
         section = "introspeccion"
-    if section == "introspeccion":
+    if requested_section == "scraping":
+        content = ("<h1>Scraping / evidencia contractual</h1>"
+                   "<div class='paper-warning'><b>DESACTIVADO POR ALCANCE.</b> "
+                   "No hay scraping activo ni reintentos contractuales. El perfil Chrome confiable "
+                   "se conserva sin abrirse.</div>")
+    elif section == "introspeccion":
         content = introspection_content()
     elif section == "salud":
         content = _main_fragment(health_page()) + _main_fragment(sre_page())

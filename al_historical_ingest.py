@@ -81,6 +81,11 @@ logger = logging.getLogger("historical_ingest")
 HIST_DB_PATH = os.getenv("HIST_DB_PATH", "./data/market_history.db")
 HIST_DEFAULT_DAYS = int(os.getenv("HIST_DEFAULT_DAYS", "365"))
 HIST_MIN_DAYS_USABLE = int(os.getenv("HIST_MIN_DAYS_USABLE", "90"))
+OPERATIONAL_FAMILIES = frozenset({"ACCIONES", "ACCION", "CEDEARS", "CEDEAR"})
+
+
+def _operable_family(asset_class: str) -> bool:
+    return str(asset_class or "").upper().strip() in OPERATIONAL_FAMILIES
 HIST_BATCH_SLEEP = float(os.getenv("HIST_BATCH_SLEEP", "0.25"))
 
 BYMA_OPEN_BASE = os.getenv("BYMA_OPEN_BASE", "https://open.bymadata.com.ar")
@@ -173,6 +178,9 @@ def backfill_desde_iol(iol_client, simbolos: List[str], asset_class: str = "ACCI
     cuatrocientos instrumentos lleva minutos, y el bucle de trading no puede
     quedar esperando eso. j_main la programa fuera del horario de rueda.
     """
+    if not _operable_family(asset_class):
+        return {"ok": False, "motivo": "FAMILIA_FUERA_DE_ALCANCE_OPERATIVO",
+                "asset_class": str(asset_class or "").upper()}
     if not getattr(iol_client, "enabled", False):
         return {"ok": False, "motivo": "El conector de IOL está desactivado o sin credenciales."}
 
@@ -263,6 +271,7 @@ def estado_del_archivo() -> dict:
         fila = conn.execute("""
             SELECT COUNT(DISTINCT symbol), MAX(date), COUNT(*)
             FROM market_historical_ohlcv
+            WHERE UPPER(asset_class) IN ('ACCIONES','ACCION','CEDEARS','CEDEAR')
         """).fetchone()
         ultima = conn.execute("""
             SELECT finished_at, source, symbols_ok, symbols_failed

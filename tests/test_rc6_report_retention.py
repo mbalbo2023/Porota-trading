@@ -17,4 +17,6 @@ def test_compression_round_trip(tmp_path):
     source.write_bytes(b"paper report")
     result = retention.compress_verified(source, destination)
     assert result["source_sha256"]
+    assert result["restored_sha256"] == result["source_sha256"]
+    assert result["verified"] is True
     assert destination.exists()

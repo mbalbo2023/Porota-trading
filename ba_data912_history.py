@@ -40,8 +40,10 @@ STATE_PATH = os.getenv("DATA912_STATE_PATH", "./data/data912_refresh_state.json"
 GROUPS = {
     "ACCIONES": ("/live/arg_stocks", "/historical/stocks/{ticker}"),
     "CEDEARS": ("/live/arg_cedears", "/historical/cedears/{ticker}"),
+    # La ruta se conserva para leer legado; no puede ingresar a nuevos refresh.
     "BONOS": ("/live/arg_bonds", "/historical/bonds/{ticker}"),
 }
+OPERATIONAL_FAMILIES = frozenset(("ACCIONES", "CEDEARS"))
 
 # Data912 es fallback. Nunca debe degradar una fila que ya llegó de una fuente
 # de mayor autoridad ni una serie ajustada.
@@ -195,6 +197,9 @@ def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
 
     try:
         for asset_class, (live_path, historical_path) in GROUPS.items():
+            if asset_class not in OPERATIONAL_FAMILIES:
+                logger.info("Data912 %s: omitida fuera de alcance operativo.", asset_class)
+                continue
             live = _get_json(client, live_path)
             if not isinstance(live, list):
                 raise RuntimeError(f"Data912 {asset_class}: respuesta live inválida")
@@ -255,7 +260,10 @@ def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
 def ensure_symbol(symbol: str, asset_class: str,
                   days: int = hist.HIST_DEFAULT_DAYS) -> int:
     """Completa un símbolo sin sobreescribir fuentes históricas superiores."""
-    config = GROUPS.get(asset_class)
+    family = str(asset_class or "").upper()
+    if family not in OPERATIONAL_FAMILIES:
+        return 0
+    config = GROUPS.get(family)
     if not config:
         return 0
     client = _session()
@@ -286,7 +294,7 @@ def refresh_symbols(targets: Iterable[Tuple[str, str]],
         symbol = str(raw_symbol or "").strip().upper()
         family = str(raw_family or "").strip().upper()
         key = (symbol, family)
-        if not symbol or family not in GROUPS or key in seen:
+        if not symbol or family not in OPERATIONAL_FAMILIES or family not in GROUPS or key in seen:
             continue
         seen.add(key)
         normalized.append(key)

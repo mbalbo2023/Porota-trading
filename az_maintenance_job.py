@@ -26,10 +26,12 @@ VALID_JOBS = {
     "monthly_autotune",
     "data_retention",
     "news_scan",
+    "gdelt_shadow_refresh",
     "learning_diagnostic",
     "model_guardian",
     "monthly_report",
     "validation_projection",
+    "action4_audit",
 }
 
 
@@ -72,6 +74,10 @@ def run(job_name: str) -> None:
     elif job_name == "news_scan":
         import r_news_engine_247
         r_news_engine_247.run_continuous_scan()
+    elif job_name == "gdelt_shadow_refresh":
+        import rc6_gdelt_shadow
+        payload = rc6_gdelt_shadow.refresh()
+        logger.info("GDELT Shadow actualizado: %s.", payload["state"])
     elif job_name == "learning_diagnostic":
         from s_learning_engine import LearningEngine
         LearningEngine(_notifier()).analyze_and_diagnose()
@@ -81,6 +87,10 @@ def run(job_name: str) -> None:
     elif job_name == "monthly_report":
         import z_reports_engine
         _notifier().send_telegram(z_reports_engine.build_monthly_summary_text())
+    elif job_name == "action4_audit":
+        import rc6_action4_audit
+        payload = rc6_action4_audit.publish()
+        logger.info("Auditoría Action 4 publicada: %s.", payload["dashboard_daily_report"]["periodo"])
     elif job_name == "validation_projection":
         import rc6_validation_projection
         snapshot = rc6_validation_projection.refresh()

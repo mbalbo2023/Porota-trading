@@ -32,16 +32,14 @@ TOP_NAV = (
 )
 
 TRADING_NAV = (
-    NavItem("/trading", "Resumen"),
+    NavItem("/trading", "Resumen y motor"),
     NavItem("/trading/estrategias", "Estrategias"),
     NavItem("/trading/acciones-cedears", "Acciones y CEDEAR"),
-    NavItem("/trading/renta-fija", "Renta fija"),
-    NavItem("/trading/cauciones", "Cauciones"),
-    NavItem("/trading/opciones", "Opciones"),
-    NavItem("/trading/futuros", "Futuros"),
-    NavItem("/trading/fci", "FCI"),
-    NavItem("/trading/licitaciones", "Licitaciones"),
 )
+
+# El alcance operativo de RC6 es explícito: no se exploran ni procesan otras
+# familias hasta que haya una decisión de producto que las re-habilite.
+OPERATIONAL_FAMILIES = frozenset(("ACCIONES", "CEDEARS"))
 
 # Legacy routes are kept intentionally so bookmarks and old links do not break.
 LEGACY_ROUTE_REDIRECTS = {
@@ -96,7 +94,8 @@ def trading_nav_html() -> str:
 
 
 def families_for_group(group: str) -> tuple[str, ...]:
-    return FAMILY_GROUPS.get(str(group or "").lower(), ())
+    families = FAMILY_GROUPS.get(str(group or "").lower(), ())
+    return tuple(family for family in families if family in OPERATIONAL_FAMILIES)
 
 
 def assert_ux_invariants() -> None:
@@ -109,5 +108,7 @@ def assert_ux_invariants() -> None:
         raise AssertionError("Validation destination missing")
     if "/trading" not in hrefs or "/instrumentos" not in hrefs:
         raise AssertionError("canonical Trading/Instrumentos destinations missing")
-    if "FUTUROS" not in FAMILY_GROUPS["futuros"]:
-        raise AssertionError("Futures page must remain visible")
+    if families_for_group("acciones-cedears") != ("ACCIONES", "CEDEARS"):
+        raise AssertionError("operational actions/CEDEAR scope missing")
+    if families_for_group("futuros"):
+        raise AssertionError("non-operational families must not enter Trading navigation")
