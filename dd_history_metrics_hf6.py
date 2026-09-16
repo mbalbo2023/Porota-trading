@@ -180,5 +180,5 @@ def effective_store_metrics(observer_connection,path=None,families=None):
 def assert_history_metric_invariants() -> None:
     if "PROBE_REQUIRED" not in source_capabilities("ON"):
         raise AssertionError("Unproven history family must not be marked supported")
-    if source_capabilities("FUTUROS") != ("A3_CEM",):
-        raise AssertionError("Futures history capability must remain explicit")
+    if source_capabilities("FUTUROS") != ("PROBE_REQUIRED",):
+        raise AssertionError("Out-of-scope futures must remain probe-required")
