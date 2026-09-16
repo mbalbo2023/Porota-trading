@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m py_compile _version.py bg_paper_dashboard.py be_paper_engine.py bh_universe_dashboard_hf6.py da_dashboard_ux_hf6.py ck_contract_evidence_runner_hf6.py cl_contract_evidence_dashboard_hf6.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py rc6_report_retention.py rc6_action4_audit.py rc6_macro_risk_shadow.py rc6_gdelt_shadow.py ba_data912_history.py al_historical_ingest.py rc6_validation_projection.py en_validation_project_dashboard_rc6.py az_maintenance_job.py az_maintenance_scheduler.py
+          python -m py_compile _version.py bf_production_paper_observer.py bg_paper_dashboard.py be_paper_engine.py bh_universe_dashboard_hf6.py da_dashboard_ux_hf6.py ck_contract_evidence_runner_hf6.py cl_contract_evidence_dashboard_hf6.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py rc6_report_retention.py rc6_action4_audit.py rc6_macro_risk_shadow.py rc6_gdelt_shadow.py ba_data912_history.py al_historical_ingest.py rc6_validation_projection.py en_validation_project_dashboard_rc6.py az_maintenance_job.py az_maintenance_scheduler.py
           python - <<'PY'
           import _version as v
           assert v.VERSION == '17.0.0-rc6'
