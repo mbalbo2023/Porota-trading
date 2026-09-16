@@ -1,4 +1,4 @@
-\n# RC6 operational scope: candidates outside shares/CEDEARs are observed only.\nOPERATIONAL_FAMILIES = frozenset(\n    part.strip().upper() for part in os.getenv("POROTA_OPERATIONAL_FAMILIES", "ACCIONES,CEDEARS").split(",")\n    if part.strip()\n)\n\ndef _family_operable(family: str) -> bool:\n    return str(family or "").upper() in OPERATIONAL_FAMILIES\n"""Motor paper independiente para observar PPI Produccion sin operar cuentas.
+"""Motor paper independiente para observar PPI Produccion sin operar cuentas.
 
 Usa exclusivamente Decimal y una base SQLite separada. Cada operacion queda
 marcada PRODUCTION_PAPER/SIMULATED y los identificadores comienzan con PAPER-.
@@ -22,6 +22,15 @@ from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
 import cc_spot_liquidity as spot_liquidity
 import cd_spot_ledger as spot_ledger
+
+# RC6 operational scope: candidates outside shares/CEDEARs are observed only.
+OPERATIONAL_FAMILIES = frozenset(
+    part.strip().upper() for part in os.getenv("POROTA_OPERATIONAL_FAMILIES", "ACCIONES,CEDEARS").split(",")
+    if part.strip()
+)
+
+def _family_operable(family: str) -> bool:
+    return str(family or "").upper() in OPERATIONAL_FAMILIES
 
 
 SOURCE = "PRODUCTION_PAPER"
