@@ -69,7 +69,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          tar -czf /tmp/porota-rc6-candidate.tgz bg_paper_dashboard.py be_paper_engine.py bh_universe_dashboard_hf6.py da_dashboard_ux_hf6.py ck_contract_evidence_runner_hf6.py cl_contract_evidence_dashboard_hf6.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py historical_candle_shadow_rc6.py al_historical_ingest.py ba_data912_history.py rc6_cost_settlement_takeprofit_shadow.py rc6_report_retention.py rc6_action4_audit.py rc6_macro_risk_shadow.py rc6_gdelt_shadow.py rc6_validation_dynamic.py rc6_validation_operational_daily.py rc6_validation_projection.py en_validation_project_dashboard_rc6.py az_maintenance_job.py az_maintenance_scheduler.py
+          tar -czf /tmp/porota-rc6-candidate.tgz bf_production_paper_observer.py bg_paper_dashboard.py be_paper_engine.py bh_universe_dashboard_hf6.py da_dashboard_ux_hf6.py ck_contract_evidence_runner_hf6.py cl_contract_evidence_dashboard_hf6.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py historical_candle_shadow_rc6.py al_historical_ingest.py ba_data912_history.py rc6_cost_settlement_takeprofit_shadow.py rc6_report_retention.py rc6_action4_audit.py rc6_macro_risk_shadow.py rc6_gdelt_shadow.py rc6_validation_dynamic.py rc6_validation_operational_daily.py rc6_validation_projection.py en_validation_project_dashboard_rc6.py az_maintenance_job.py az_maintenance_scheduler.py
       - name: Deploy exact candidate to Droplet and verify
         shell: bash
         env:
@@ -232,6 +232,32 @@ jobs:
           )"
           echo "POST_STATE=$POST_STATE"
           test "$POST_STATE" = "ok|PRODUCTION_PAPER|0"
+          SCOPE_CHECK="$(sudo -n docker exec porota_production_observer python - <<'PY'
+          import bf_production_paper_observer as observer
+          permitted = {"ACCIONES", "CEDEARS"}
+          assert set(observer.OPERATIONAL_FAMILIES) == permitted
+          assert set(observer.SAFE_PAPER_TYPES) == permitted
+          assert all(kind in permitted for _, kind, _ in observer.CORE_SYMBOLS)
+          assert set(observer.DISCOVERY_SEEDS).issubset(permitted)
+          assert all(kind in permitted for _, kind, _, _, _ in observer._candidate_universe())
+          print("OPERATIONAL_SCOPE=ACCIONES_CEDEARS_ONLY")
+          PY
+          )"
+          echo "$SCOPE_CHECK"
+          RUNTIME_CHECK="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          mode,orders,auth,process,session,last_market = c.execute(
+              'SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at FROM observer_state WHERE id=1'
+          ).fetchone()
+          c.close()
+          if mode != 'PRODUCTION_PAPER' or int(orders or 0) != 0 or auth != 'OK' or not last_market:
+              raise SystemExit(f'GO_CHECK_FAILED={mode}|{orders}|{auth}|{process}|{session}|{last_market}')
+          print(f'GO_CHECK=GREEN|{mode}|{auth}|{process}|{session}|{last_market}')
+          PY
+          )"
+          echo "$RUNTIME_CHECK"
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
           echo "RC6_UNIFIED_PAPER_DEPLOY=GREEN"
           VERIFY
