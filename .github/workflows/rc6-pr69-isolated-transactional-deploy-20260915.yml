@@ -194,8 +194,14 @@ jobs:
           echo 'RC6_UNIFIED_PAPER_DEPLOY=GREEN'
           sudo -n docker compose ps
           REMOTE
-          # Separate SSH session: the host limits one channel to about 100 seconds.
-          # This keeps the restart independent from the bounded verification phase.
+
+      - name: Verify deployed candidate and Paper safety
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "bash -s" <<'VERIFY'
           set -Eeuo pipefail
           H="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)"
