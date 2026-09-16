@@ -200,6 +200,7 @@ jobs:
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "bash -s" <<'VERIFY'
@@ -210,11 +211,23 @@ jobs:
           x=json.loads(sys.argv[1])
           assert x.get("status") == "ok" and x.get("version") == "17.0.0-rc6"
           PY
-          # Daily maintenance is intentionally outside the deployment gate:
-          # it is non-safety work and can be retried by its scheduler without
-          # holding the transactional Paper deploy channel.
-          echo "VALIDATION_PROJECTION=DEFERRED_TO_DAILY_SCHEDULER"
-          echo "ACTION4_AUDIT=DEFERRED_TO_DAILY_SCHEDULER"
+          # Bootstrap compacto una sola vez tras un deploy correcto. La cadencia
+          # ordinaria sigue siendo diaria; esto evita dejar Validación y Reportes
+          # vacíos hasta el día siguiente sin recorrer el ledger en HTTP.
+          for job in validation_projection action4_audit; do
+            JOB_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 30 python az_maintenance_job.py "$job" 2>&1)"
+            echo "$JOB_OUTPUT"
+            grep -Fq "Tarea $job completada." <<< "$JOB_OUTPUT"
+            echo "BOOTSTRAP_$(tr '[:lower:]' '[:upper:]' <<< "$job")=GREEN"
+          done
+          # Prueba que el proceso en ejecución contiene el observer del candidato
+          # recién desplegado. Evita repetir una omisión de copia en el workflow.
+          STAGED_OBSERVER="/tmp/porota-rc6-candidate-$TARGET_SHA/bf_production_paper_observer.py"
+          test -f "$STAGED_OBSERVER"
+          EXPECTED_OBSERVER_SHA="$(sha256sum "$STAGED_OBSERVER" | awk '{print $1}')"
+          RUNNING_OBSERVER_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/bf_production_paper_observer.py | awk '{print $1}')"
+          test "$RUNNING_OBSERVER_SHA" = "$EXPECTED_OBSERVER_SHA"
+          echo "OBSERVER_CANDIDATE_SHA=GREEN"
           for p in /trading /motor-trading /validacion /reportes; do
             c="$(curl -sS -o /tmp/porota-dashboard-check -w '%{http_code}' --max-time 5 "http://127.0.0.1:8000$p")"
             case "$c" in 200|401) ;; *) echo "DASHBOARD_ROUTE_FAILED=$p HTTP=$c"; exit 1 ;; esac
@@ -249,6 +262,7 @@ jobs:
           RUNTIME_CHECK="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           import time
+          from datetime import datetime, timezone
 
           deadline = time.monotonic() + 75
           last = None
@@ -257,14 +271,27 @@ jobs:
                   c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=3)
                   c.execute('PRAGMA query_only=ON')
                   last = c.execute(
-                      'SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at '
-                      'FROM observer_state WHERE id=1'
+                      'SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,'
+                      'last_market_data_at,heartbeat_at FROM observer_state WHERE id=1'
                   ).fetchone()
                   c.close()
               except sqlite3.Error as exc:
-                  last = ('DB_ERROR', 0, type(exc).__name__, '', '', '')
-              if last and last[0] == 'PRODUCTION_PAPER' and int(last[1] or 0) == 0 and last[2] == 'OK' and last[5]:
-                  print(f'GO_CHECK=GREEN|{"|".join(map(str,last))}')
+                  last = ('DB_ERROR', 0, type(exc).__name__, '', '', '', '')
+              def fresh(value, seconds):
+                  try:
+                      observed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+                      if observed.tzinfo is None:
+                          return False
+                      age = (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()
+                      return 0 <= age <= seconds
+                  except (TypeError, ValueError):
+                      return False
+              paper_safe = last and last[0] == 'PRODUCTION_PAPER' and int(last[1] or 0) == 0 and last[2] == 'OK'
+              heartbeat_fresh = paper_safe and fresh(last[6], 120)
+              market_data_required = last and last[4] == 'MARKET_OPEN'
+              market_data_fresh = (not market_data_required) or fresh(last[5], 180)
+              if paper_safe and heartbeat_fresh and market_data_fresh:
+                  print(f'GO_CHECK=GREEN|{"|".join(map(str,last))}|MARKET_DATA_REQUIRED={market_data_required}')
                   break
               time.sleep(5)
           else:
