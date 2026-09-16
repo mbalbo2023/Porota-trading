@@ -51,6 +51,20 @@ def build(db_path=None, now=None):
             SELECT final_result FROM trade_gate_evaluations
             WHERE date(evaluated_at, '-3 hours')=?
         """, (day,))
+        events = _rows(connection, """
+            SELECT event_type, COUNT(*) AS total
+            FROM paper_events
+            WHERE date(event_at, '-3 hours')=?
+            GROUP BY event_type
+            ORDER BY event_type
+        """, (day,))
+        learning = _rows(connection, """
+            SELECT outcome, COUNT(*) AS total
+            FROM paper_learning_samples
+            WHERE date(COALESCE(label_timestamp, feature_timestamp), '-3 hours')=?
+            GROUP BY outcome
+            ORDER BY outcome
+        """, (day,))
     finally:
         connection.close()
 
@@ -58,6 +72,29 @@ def build(db_path=None, now=None):
     opened = [row for row in positions if row.get("status") == "OPEN" or _local_day(row.get("opened_at")) == day]
     final = Counter(str(row.get("final_result") or "UNKNOWN") for row in gates)
     reasons = Counter(str(row.get("close_reason") or "UNSPECIFIED") for row in closed)
+    events_by_type = {str(row.get("event_type") or "UNKNOWN"): int(row.get("total") or 0)
+                      for row in events}
+    outcomes = {str(row.get("outcome") or "UNLABELED"): int(row.get("total") or 0)
+                for row in learning}
+    lessons = []
+    if closed:
+        lessons.append(
+            f"Cierres simulados del día: {len(closed)}; causas: "
+            + (", ".join(f"{name}={count}" for name, count in sorted(reasons.items()))
+               or "sin causa informada")
+        )
+    if final:
+        lessons.append(
+            "Decisiones finales: "
+            + ", ".join(f"{name}={count}" for name, count in sorted(final.items()))
+        )
+    if outcomes:
+        lessons.append(
+            "Etiquetas de aprendizaje incorporadas: "
+            + ", ".join(f"{name}={count}" for name, count in sorted(outcomes.items()))
+        )
+    if not lessons:
+        lessons.append("Sin actividad PAPER verificable para esta jornada; no se infieren conclusiones.")
     return {
         "schema_version": 1,
         "status": "PAPER_READ_ONLY",
@@ -78,6 +115,9 @@ def build(db_path=None, now=None):
         "dashboard_daily_report": {
             "periodo": day,
             "gate_final_counts": dict(sorted(final.items())),
+            "event_counts": dict(sorted(events_by_type.items())),
+            "learning_outcomes": dict(sorted(outcomes.items())),
+            "lessons": lessons,
             "scope": "ACCIONES_Y_CEDEARS_PAPER",
         },
         "safety": {
