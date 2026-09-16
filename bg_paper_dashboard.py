@@ -1648,6 +1648,8 @@ def _action4_report_card() -> str:
     origin = payload.get("origin") or {}
     separation = payload.get("separation") or {}
     daily = payload.get("dashboard_daily_report") or {}
+    lessons = daily.get("lessons") if isinstance(daily.get("lessons"), list) else []
+    lessons_html = "".join(f"<li>{_e(item)}</li>" for item in lessons) or "<li>Sin lecciones publicadas.</li>"
     return (
         "<article class='report-card'>"
         "<div class='report-card-head'><b>RC6_ACTION4</b>"
@@ -1659,7 +1661,9 @@ def _action4_report_card() -> str:
         f"<b>HOLD:</b> {_e(separation.get('hold'))} · "
         f"<b>BUY:</b> {_e(separation.get('buy'))}</p>"
         f"<p><b>Reporte diario asociado:</b> {_e(daily.get('periodo') or 'no disponible')} · "
-        f"gates: {_e(daily.get('gate_final_counts') or 'no disponible')}</p>"
+        f"gates: {_e(daily.get('gate_final_counts') or 'no disponible')} · "
+        f"eventos: {_e(daily.get('event_counts') or 'no disponible')}</p>"
+        f"<p><b>Lecciones verificables:</b></p><ul>{lessons_html}</ul>"
         f"<p class='paper-muted'>Origen: run {_e(origin.get('run_number') or origin.get('run_id'))} · "
         f"commit {_e(origin.get('commit'))}</p>"
         "<div class='report-card-actions'>"
