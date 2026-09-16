@@ -1,4 +1,4 @@
-"""Motor paper independiente para observar PPI Produccion sin operar cuentas.
+\n# RC6 operational scope: candidates outside shares/CEDEARs are observed only.\nOPERATIONAL_FAMILIES = frozenset(\n    part.strip().upper() for part in os.getenv("POROTA_OPERATIONAL_FAMILIES", "ACCIONES,CEDEARS").split(",")\n    if part.strip()\n)\n\ndef _family_operable(family: str) -> bool:\n    return str(family or "").upper() in OPERATIONAL_FAMILIES\n"""Motor paper independiente para observar PPI Produccion sin operar cuentas.
 
 Usa exclusivamente Decimal y una base SQLite separada. Cada operacion queda
 marcada PRODUCTION_PAPER/SIMULATED y los identificadores comienzan con PAPER-.
@@ -656,6 +656,10 @@ class PaperBroker:
                     f"{family}: requiere su ciclo financiero específico; "
                     "el ejecutor de contado no dimensiona prima ni garantía",
                     {"samples": 0, "family": family})
+        if not _family_operable(family):
+            return ("HOLD", ZERO,
+                    f"{family}: fuera del alcance operativo RC6 (sólo acciones y CEDEARs)",
+                    {"samples": 0, "family": family, "operational_scope": "DISABLED_BY_SCOPE"})
         if q.opening_block_reason:
             return "HOLD", ZERO, q.opening_block_reason, {"samples": 0}
         at = self.execution_time(q)
@@ -829,6 +833,8 @@ class PaperBroker:
             return False, str(exc), None
         if family not in SPOT_FAMILIES:
             return False, f"{family} requiere su ciclo financiero específico; no se compra como una acción", None
+        if not _family_operable(family):
+            return False, f"{family} fuera del alcance operativo RC6 (sólo acciones y CEDEARs)", None
         if market != "BYMA":
             return False, "Ejecutor de contado pendiente para este mercado", None
 
