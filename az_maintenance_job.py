@@ -26,6 +26,7 @@ VALID_JOBS = {
     "monthly_autotune",
     "data_retention",
     "news_scan",
+    "gdelt_shadow_refresh",
     "learning_diagnostic",
     "model_guardian",
     "monthly_report",
@@ -73,6 +74,10 @@ def run(job_name: str) -> None:
     elif job_name == "news_scan":
         import r_news_engine_247
         r_news_engine_247.run_continuous_scan()
+    elif job_name == "gdelt_shadow_refresh":
+        import rc6_gdelt_shadow
+        payload = rc6_gdelt_shadow.refresh()
+        logger.info("GDELT Shadow actualizado: %s.", payload["state"])
     elif job_name == "learning_diagnostic":
         from s_learning_engine import LearningEngine
         LearningEngine(_notifier()).analyze_and_diagnose()
