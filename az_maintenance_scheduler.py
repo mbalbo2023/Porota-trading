@@ -72,6 +72,8 @@ def build_scheduler() -> BackgroundScheduler:
     scheduler.add_job(_run_job, "interval", id="maintenance_news_scan",
                       minutes=45, args=["news_scan"])
 
+    scheduler.add_job(_run_job, "cron", id="maintenance_action4_audit",
+                      hour=7, minute=5, args=["action4_audit"])
     scheduler.add_job(_run_job, "cron", id="maintenance_validation_projection",
                       hour=7, minute=15, args=["validation_projection"])
 
