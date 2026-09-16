@@ -13,6 +13,7 @@ from pathlib import Path
 import sqlite3
 
 import ak_byma_calendar as byma_calendar
+from am_us_equity_calendar_rc6 import us_equity_business_day
 from dd_history_metrics_hf6 import history_db_path, target_universe
 
 
@@ -28,7 +29,7 @@ def _depth(rows: int) -> str:
     return "GE180"
 
 
-def _business_gap_2026(last_day: date, latest: date) -> int:
+def _business_gap_2026(last_day: date, latest: date, family: str = "ACCIONES") -> int:
     if last_day >= latest:
         return 0
     if last_day.year not in byma_calendar.ANIOS_AUDITADOS or latest.year not in byma_calendar.ANIOS_AUDITADOS:
@@ -40,20 +41,22 @@ def _business_gap_2026(last_day: date, latest: date) -> int:
         guard += 1
         if guard > 400:
             raise RuntimeError("HISTORY_FRESHNESS_GUARD_EXCEEDED")
-        if byma_calendar.es_dia_habil_operativo(d):
+        byma_open = byma_calendar.es_dia_habil_operativo(d)
+        underlying_open = str(family or "").upper() not in {"CEDEAR", "CEDEARS"} or us_equity_business_day(d)
+        if byma_open and underlying_open:
             count += 1
         d += timedelta(days=1)
     return count
 
 
-def _freshness(last_day: date | None, latest: date) -> tuple[str, str]:
+def _freshness(last_day: date | None, latest: date, family: str = "ACCIONES") -> tuple[str, str]:
     if last_day is None:
         return "NO_HISTORY", "NA"
     if last_day > latest:
         return "FUTURE_ANOMALY", "NEGATIVE"
     if last_day.year not in byma_calendar.ANIOS_AUDITADOS:
         return "STALE_UNVERIFIED_CALENDAR", "UNVERIFIED_PRE2026"
-    gap=_business_gap_2026(last_day,latest)
+    gap=_business_gap_2026(last_day,latest,family)
     if gap <= 2:
         return "FRESH", str(gap)
     if gap <= 10:
@@ -61,8 +64,9 @@ def _freshness(last_day: date | None, latest: date) -> tuple[str, str]:
     return "SEVERELY_STALE", str(gap)
 
 
-def freshness_qualified_metrics(observer_connection, path: Path | None = None) -> dict:
-    targets=target_universe(observer_connection)
+def freshness_qualified_metrics(observer_connection, path: Path | None = None, families=None) -> dict:
+    """Read-only freshness metrics for an explicitly bounded dashboard scope."""
+    targets=target_universe(observer_connection, families=families)
     db=(path or history_db_path()).resolve()
     base={
         "available":False,
@@ -108,7 +112,7 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None) -
             rows,first,last=groups.get(key,(0,None,None))
             dep=_depth(rows)
             last_day=date.fromisoformat(str(last)[:10]) if last else None
-            fr,gap=_freshness(last_day,latest)
+            fr,gap=_freshness(last_day,latest,item["family"])
             depths[dep]+=1
             freshness[fr]+=1
             if fr == "FRESH":
@@ -140,7 +144,7 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None) -
             stale_ge90_count=len(stale_ge90),
             depth_counts=dict(sorted(depths.items())),
             freshness_counts=dict(sorted(freshness.items())),
-            calendar_source="BYMA_AUDITED_YEAR_ONLY",
+            calendar_source="BYMA_AUDITED_PLUS_US_UNDERLYING_FOR_CEDEARS",
         )
     finally:
         c.close()
@@ -154,3 +158,4 @@ def assert_freshness_metric_contract() -> None:
     assert _depth(180)=="GE180"
     assert _freshness(None,date(2026,9,4))[0]=="NO_HISTORY"
     assert _freshness(date(2025,12,9),date(2026,9,4))[0]=="STALE_UNVERIFIED_CALENDAR"
+    assert _business_gap_2026(date(2026,9,4),date(2026,9,8),"CEDEARS") == 1

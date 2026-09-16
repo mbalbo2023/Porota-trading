@@ -29,6 +29,7 @@ from be_paper_engine import D, PaperBroker, PaperStore, Quote, now_iso
 import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
 from _version import VERSION
+from am_us_equity_calendar_rc6 import cedear_opening_gate
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -1279,15 +1280,10 @@ def run():
                         lambda: reader.book(symbol, asset_class, settlement), retries=1)
                     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement)
                     q = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+                    # Persistir la observación sirve para trazabilidad, pero un
+                    # trade/libro stale nunca alcanza al motor ni a sus gates.
                     store.add_quote(q)
                     quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
-                    broker.on_quote(
-                        q, allow_new_openings=focus["allow_new_openings"],
-                        opening_block_reason=(
-                            f"Cobertura prioritaria insuficiente: "
-                            f"{focus['matched_count']}/{focus['configured_count']}"
-                        ),
-                    )
                     data_error = q.time_error(
                         now_iso(), require_trade=True,
                         max_age_seconds=broker.quote_max_age_seconds,
@@ -1295,6 +1291,21 @@ def run():
                     if data_error:
                         store.event("DATA_REJECTED", f"{symbol}: {data_error}")
                         continue
+                    allow_openings = bool(focus["allow_new_openings"])
+                    opening_reason = (
+                        f"Cobertura prioritaria insuficiente: "
+                        f"{focus['matched_count']}/{focus['configured_count']}"
+                    )
+                    # Para CEDEARs se conserva la observación BYMA, pero la
+                    # apertura requiere también rueda regular del subyacente US.
+                    cedear_allowed, cedear_reason = cedear_opening_gate(asset_class, datetime.now(TZ))
+                    if not cedear_allowed:
+                        allow_openings = False
+                        opening_reason = cedear_reason
+                    broker.on_quote(
+                        q, allow_new_openings=allow_openings,
+                        opening_block_reason=opening_reason,
+                    )
                     cycle_ok += 1
                     store.state(last_market_data_at=q.observed_at)
                 except ReadOnlyPolicyViolation as exc:

@@ -86,6 +86,25 @@ INTERNAL_JOBS = (
     InternalJob("FUNCTIONAL_DEEP_AUDIT", "Control funcional integral", "Auditoría funcional read-only.", 60*60),
 )
 
+# These workloads are deliberately not part of the current ACCIONES/CEDEARS
+# production-PAPER scope. They may remain as historic evidence, but the dashboard
+# must not present them as active internal work.
+DISABLED_SCOPE_JOB_PREFIXES = (
+    "CAUCION_",
+    "CONTRACT_EVIDENCE_",
+    "SCALP",
+)
+
+
+def _is_active_scope_job(key: str) -> bool:
+    normalized=str(key or "").upper()
+    return bool(normalized) and not normalized.startswith(DISABLED_SCOPE_JOB_PREFIXES)
+
+
+def active_internal_jobs() -> tuple[InternalJob, ...]:
+    return tuple(job for job in INTERNAL_JOBS if _is_active_scope_job(job.key))
+
+
 SYSTEMD_DESCRIPTIONS = {
     "porota-introspeccion-hf5.timer": "Genera snapshot horario de introspección funcional. El nombre HF5 es legado; el contenido se usa también en HF6.",
     "porota-introspection-publish.timer": "Publica a GitHub una copia sanitizada de observabilidad; GitHub nunca controla el runtime.",
@@ -138,7 +157,7 @@ def internal_rows(db_rows: list[dict], *, source_sync_rows=None, api_health_rows
         if key and key not in persisted:persisted[key]={"job_key":key,"last_run_at":raw.get("started_at") or raw.get("created_at"),"last_success_at":raw.get("finished_at"),"state":raw.get("state") or "SIN_REGISTRO","detail":raw.get("detail") or "","evidence_table":"contract_evidence_runs"}
     result=[]
     known={j.key for j in INTERNAL_JOBS}
-    for job in INTERNAL_JOBS:
+    for job in active_internal_jobs():
         row=persisted.get(job.key,{})
         result.append({
             "key":job.key,
@@ -155,7 +174,7 @@ def internal_rows(db_rows: list[dict], *, source_sync_rows=None, api_health_rows
             "evidence_table":row.get("evidence_table") or "SIN_EVIDENCIA",
         })
     for key,row in sorted(persisted.items()):
-        if key in known:
+        if key in known or not _is_active_scope_job(key):
             continue
         result.append({
             "key":key,"label":key,"description":"Job interno descubierto en operational_jobs.",
@@ -185,7 +204,7 @@ def assert_scheduler_invariants() -> None:
     keys=[j.key for j in INTERNAL_JOBS]
     if len(keys)!=len(set(keys)):
         raise AssertionError("duplicate internal scheduler job")
-    if "CAUCION_CASH_SWEEP" not in keys:
-        raise AssertionError("caucion cash sweep must be visible in scheduler")
+    if any(not _is_active_scope_job(key) for key in [j.key for j in active_internal_jobs()]):
+        raise AssertionError("disabled scope jobs must not be listed as internal active work")
     if "porota-preopen.timer" not in SYSTEMD_DESCRIPTIONS:
         raise AssertionError("legacy preopen timer must remain visible until retirement is verified")

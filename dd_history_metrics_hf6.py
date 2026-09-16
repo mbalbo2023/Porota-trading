@@ -23,10 +23,18 @@ CEM_FAMILIES = {"FUTUROS", "OPCIONES"}
 PPI_PROVEN_HISTORY_FAMILIES = {"ACCIONES", "CEDEARS", "BONOS"}
 
 
-def target_universe(connection) -> list[dict]:
+def _family_scope(families) -> set[str] | None:
+    if families is None:
+        return None
+    return {str(family or "").upper() for family in families}
+
+
+def target_universe(connection, families=None) -> list[dict]:
+    """Read AVAILABLE identities, optionally restricted to an explicit family scope."""
     tables={r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if "candidate_universe" not in tables:
         return []
+    scope=_family_scope(families)
     result=[]
     for r in connection.execute(
         """SELECT ticker,instrument_type,market,settlement,status
@@ -34,9 +42,12 @@ def target_universe(connection) -> list[dict]:
            ORDER BY instrument_type,ticker,market,settlement"""
     ):
         symbol,family,market,settlement,status=r
+        family=str(family or "").upper()
+        if scope is not None and family not in scope:
+            continue
         result.append({
             "symbol":str(symbol or "").upper(),
-            "family":str(family or "").upper(),
+            "family":family,
             "market":str(market or "").upper(),
             "settlement":str(settlement or "").upper(),
             "status":str(status or ""),
@@ -56,8 +67,8 @@ def source_capabilities(family: str) -> tuple[str, ...]:
     return tuple(out) if out else ("PROBE_REQUIRED",)
 
 
-def observer_history_metrics(connection) -> dict:
-    targets=target_universe(connection)
+def observer_history_metrics(connection, families=None) -> dict:
+    targets=target_universe(connection, families=families)
     by_family=Counter(x["family"] for x in targets)
     capabilities={family:source_capabilities(family) for family in sorted(by_family)}
     tables={r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -80,22 +91,25 @@ def history_db_path() -> Path:
     return Path(os.getenv("HIST_DB_PATH","data/market_history.db")).resolve()
 
 
-def _close_series_metrics(connection, tables) -> dict:
+def _close_series_metrics(connection, tables, families=None) -> dict:
     required={"history_close_versions_v1","history_close_canonical_v1"}
     if not required.issubset(tables):
         return {"available":False,"canonical_rows":0,"identities":0,"by_family":{},
                 "quality":"CLOSE_ONLY_PROVIDER_PARTIAL"}
-    rows=int(connection.execute("SELECT COUNT(*) FROM history_close_canonical_v1").fetchone()[0] or 0)
+    scope=_family_scope(families)
+    where="" if scope is None else " WHERE UPPER(instrument_type) IN ("+",".join("?" for _ in scope)+")"
+    params=tuple(sorted(scope or ()))
+    rows=int(connection.execute("SELECT COUNT(*) FROM history_close_canonical_v1"+where,params).fetchone()[0] or 0)
     identities=int(connection.execute(
         """SELECT COUNT(*) FROM (
            SELECT symbol,instrument_type,market,settlement
-           FROM history_close_canonical_v1
-           GROUP BY symbol,instrument_type,market,settlement)"""
+           FROM history_close_canonical_v1"""+where+"""
+           GROUP BY symbol,instrument_type,market,settlement)""",params
     ).fetchone()[0] or 0)
     by={}
     for r in connection.execute(
         """SELECT instrument_type,COUNT(DISTINCT symbol),COUNT(*),MIN(date),MAX(date)
-           FROM history_close_canonical_v1 GROUP BY instrument_type ORDER BY instrument_type"""
+           FROM history_close_canonical_v1"""+where+""" GROUP BY instrument_type ORDER BY instrument_type""",params
     ):
         by[str(r[0])]={"symbols":int(r[1] or 0),"rows":int(r[2] or 0),
                        "first_date":r[3],"last_date":r[4]}
@@ -105,7 +119,7 @@ def _close_series_metrics(connection, tables) -> dict:
             "forbidden_uses":["atr","high_low_range","candlestick_patterns","volume","vwap","execution_price","ready_paper"]}
 
 
-def v2_store_metrics(path: Path | None = None) -> dict:
+def v2_store_metrics(path: Path | None = None, families=None) -> dict:
     db=(path or history_db_path()).resolve()
     if not db.exists() or not db.is_file():
         return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,
@@ -115,21 +129,24 @@ def v2_store_metrics(path: Path | None = None) -> dict:
     try:
         tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         required={"history_versions_v2","history_canonical_v2"}
-        close=_close_series_metrics(c,tables)
+        close=_close_series_metrics(c,tables,families=families)
         if not required.issubset(tables):
             return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,
                     "by_family":{},"reason":"V2_SCHEMA_NOT_PRESENT","close_series":close}
-        row=c.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()
+        scope=_family_scope(families)
+        where="" if scope is None else " WHERE UPPER(instrument_type) IN ("+",".join("?" for _ in scope)+")"
+        params=tuple(sorted(scope or ()))
+        row=c.execute("SELECT COUNT(*) FROM history_canonical_v2"+where,params).fetchone()
         identities=c.execute(
             """SELECT COUNT(*) FROM (
                SELECT symbol,instrument_type,market,settlement
-               FROM history_canonical_v2
-               GROUP BY symbol,instrument_type,market,settlement)"""
+               FROM history_canonical_v2"""+where+"""
+               GROUP BY symbol,instrument_type,market,settlement)""",params
         ).fetchone()
         by={}
         for r in c.execute(
             """SELECT instrument_type,COUNT(DISTINCT symbol),COUNT(*),MIN(date),MAX(date)
-               FROM history_canonical_v2 GROUP BY instrument_type ORDER BY instrument_type"""
+               FROM history_canonical_v2"""+where+""" GROUP BY instrument_type ORDER BY instrument_type""",params
         ):
             by[str(r[0])]={"symbols":int(r[1] or 0),"rows":int(r[2] or 0),
                            "first_date":r[3],"last_date":r[4]}
@@ -141,21 +158,24 @@ def v2_store_metrics(path: Path | None = None) -> dict:
         c.close()
 
 
-def legacy_family_metrics(connection) -> dict:
+def legacy_family_metrics(connection, families=None) -> dict:
     tables={r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if "production_history" not in tables:return {}
     cols={r[1] for r in connection.execute("PRAGMA table_info(production_history)")}
     if not {"symbol","instrument_type"}.issubset(cols):return {}
     out={}
-    for r in connection.execute("SELECT instrument_type,COUNT(DISTINCT symbol),COALESCE(SUM(row_count),0),MIN(date_from),MAX(date_to) FROM production_history GROUP BY instrument_type"):
+    scope=_family_scope(families)
+    where="" if scope is None else " WHERE UPPER(instrument_type) IN ("+",".join("?" for _ in scope)+")"
+    params=tuple(sorted(scope or ()))
+    for r in connection.execute("SELECT instrument_type,COUNT(DISTINCT symbol),COALESCE(SUM(row_count),0),MIN(date_from),MAX(date_to) FROM production_history"+where+" GROUP BY instrument_type",params):
         out[str(r[0] or "UNKNOWN").upper()]={"symbols":int(r[1] or 0),"rows":int(r[2] or 0),"first_date":r[3],"last_date":r[4],"identity":"LEGACY_SYMBOL_TYPE"}
     return out
 
 
-def effective_store_metrics(observer_connection,path=None):
-    v2=v2_store_metrics(path)
+def effective_store_metrics(observer_connection,path=None,families=None):
+    v2=v2_store_metrics(path,families=families)
     if v2.get("available"):return dict(v2,layer="V2")
-    legacy=legacy_family_metrics(observer_connection)
+    legacy=legacy_family_metrics(observer_connection,families=families)
     return {"available":False,"path":v2.get("path"),"canonical_rows":sum(x["rows"] for x in legacy.values()),"identities":sum(x["symbols"] for x in legacy.values()),"by_family":legacy,"reason":v2.get("reason") or "V2_UNAVAILABLE","layer":"LEGACY_FALLBACK","close_series":v2.get("close_series",{})}
 
 
