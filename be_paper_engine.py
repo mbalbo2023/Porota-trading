@@ -730,6 +730,18 @@ class PaperBroker:
                     "decision_effect": "OBSERVE_ONLY",
                     "reason": f"{type(exc).__name__}:{str(exc)[:180]}",
                 }
+        # Noticias GDELT: sólo cache local y sólo contexto reproducible.
+        # Nunca consulta red en la rueda ni tiene autoridad de veto.
+        if os.getenv("PAPER_GDELT_SHADOW", "ON").upper() in {"ON", "SHADOW", "TRUE", "1"}:
+            try:
+                import rc6_gdelt_shadow
+                features["gdelt_risk_shadow"] = rc6_gdelt_shadow.collect()
+            except Exception as exc:
+                features["gdelt_risk_shadow"] = {
+                    "mode": "SHADOW", "state": "ERROR",
+                    "decision_effect": "OBSERVE_ONLY",
+                    "reason": f"{type(exc).__name__}:{str(exc)[:180]}",
+                }
         return "BUY", score, "Momentum positivo y friccion admisible", features
 
     def _economic_diagnostics(self, q):
