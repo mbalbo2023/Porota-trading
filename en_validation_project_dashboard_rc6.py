@@ -107,7 +107,7 @@ def _campaign_daily_history(records, limit_days=10):
 
 def _operational_daily_section(limit_days=10):
     try:
-        data = operational_daily.collect(limit_days=limit_days, event_limit=50000)
+        data = operational_daily.collect(limit_days=limit_days, event_limit=5000)
     except Exception as exc:
         return (
             "<section class='paper-card'><h2>Actividad PAPER por jornada</h2>"
@@ -173,10 +173,10 @@ def page(limit_days=10):
     ))
     roadmap = "".join(_milestone_card(m, latest.get(m.code, {})) for m in MILESTONES)
     dynamic_notice = "<div class='paper-notice'><b>Evaluación dinámica activa:</b> los estados se recalculan en cada carga usando evidencia read-only del runtime y del ledger. No se escriben registros ni se habilitan órdenes. La historia append-only se conserva por separado.</div>"
-    campaign_history = _campaign_daily_history(records, limit_days=limit_days)
+    campaign_history = _campaign_daily_history(records[-1000:], limit_days=limit_days)
     campaign_controls = (
         "<section class='paper-card'><h2>Ledger de campaña / auditoría por día</h2>"
-        "<p class='paper-muted'>Append-only de hitos M0–M11. No representa por sí solo la actividad diaria del motor PAPER.</p>"
+        "<p class='paper-muted'>Append-only de hitos M0–M11. La vista carga los últimos 1.000 registros para preservar respuesta ágil; el ledger completo no se modifica.</p>"
         "<a class='paper-action' href='/validacion?days=10'>Últimos 10 días</a>"
         "<a class='paper-action' href='/validacion?days=30'>Últimos 30 días</a>"
         "<a class='paper-action' href='/validacion?days=0'>Todo</a>"
