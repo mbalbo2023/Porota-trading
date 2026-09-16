@@ -1663,6 +1663,8 @@ def _action4_report_card() -> str:
         f"<p><b>Reporte diario asociado:</b> {_e(daily.get('periodo') or 'no disponible')} · "
         f"gates: {_e(daily.get('gate_final_counts') or 'no disponible')} · "
         f"eventos: {_e(daily.get('event_counts') or 'no disponible')}</p>"
+        f"<p><b>Alcance:</b> {_e(daily.get('scope'))} · "
+        f"{_e((daily.get('scope_evidence') or {}).get('positions') or 'sin evidencia de alcance')}</p>"
         f"<p><b>Lecciones verificables:</b></p><ul>{lessons_html}</ul>"
         f"<p class='paper-muted'>Origen: run {_e(origin.get('run_number') or origin.get('run_id'))} · "
         f"commit {_e(origin.get('commit'))}</p>"
