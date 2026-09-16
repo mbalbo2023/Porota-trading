@@ -16,11 +16,11 @@ import os
 import sqlite3
 
 
-DATA912_FAMILIES = {"ACCIONES", "CEDEARS", "BONOS"}
-CEM_FAMILIES = {"FUTUROS", "OPCIONES"}
-# Existing PPI history path is already proven for these families. Other
-# families stay PROBE_REQUIRED until a real endpoint/payload is validated.
-PPI_PROVEN_HISTORY_FAMILIES = {"ACCIONES", "CEDEARS", "BONOS"}
+OPERATIONAL_HISTORY_FAMILIES = {"ACCIONES", "CEDEARS"}
+# Existing PPI and batch history paths are proven only for the current
+# operational scope. Legacy rows can be displayed as audit evidence but are
+# never considered an enabled collection source.
+PPI_PROVEN_HISTORY_FAMILIES = OPERATIONAL_HISTORY_FAMILIES
 
 
 def _family_scope(families) -> set[str] | None:
@@ -60,10 +60,8 @@ def source_capabilities(family: str) -> tuple[str, ...]:
     out=[]
     if family in PPI_PROVEN_HISTORY_FAMILIES:
         out.append("PPI_HISTORY")
-    if family in DATA912_FAMILIES:
+    if family in OPERATIONAL_HISTORY_FAMILIES:
         out.append("DATA912_BATCH")
-    if family in CEM_FAMILIES:
-        out.append("A3_CEM")
     return tuple(out) if out else ("PROBE_REQUIRED",)
 
 
