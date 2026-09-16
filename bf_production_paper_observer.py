@@ -51,9 +51,11 @@ MARKET_OPEN_MINUTE = int(os.getenv("MARKET_OPEN_MINUTE", "30"))
 MARKET_CLOSE_HOUR = int(os.getenv("MARKET_CLOSE_HOUR", "17"))
 MARKET_CLOSE_MINUTE = int(os.getenv("MARKET_CLOSE_MINUTE", "0"))
 PREOPEN_MINUTES = max(5, int(os.getenv("PAPER_PREOPEN_MINUTES", "15")))
+# Alcance operativo estricto RC6: contado argentino y CEDEARs únicamente.
+# No se recorren ni se persisten familias fuera de este conjunto.
+OPERATIONAL_FAMILIES = frozenset({"ACCIONES", "CEDEARS"})
 CORE_SYMBOLS = (
     ("GGAL", "ACCIONES", "A-24HS"),
-    ("AL30", "BONOS", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
 )
 # Núcleo operativo observado en todos los ciclos. La lista no habilita un
@@ -99,28 +101,15 @@ DISCOVERY_SEEDS = {
     "ACCIONES": ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "TXAR",
                  "ALUA", "LOMA", "COME", "EDN", "TGSU2", "TGNO4", "TRAN", "BYMA",
                  "CRES", "HARG", "IRSA", "TECO2", "VALO", "MIRG", "MOLI", "AGRO"),
-    "CEDEARS": ("AAPL", "AAPLD", "AAPLC", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "SPY",
-                "DIA", "QQQ", "IWM", "KO", "MCD", "WMT", "DIS", "NFLX", "AMD",
-                "INTC", "AVGO", "ORCL", "IBM", "CRM", "JPM", "BAC", "V", "MA",
-                "XOM", "CVX", "GOLD", "VALE", "PBR", "BABA", "MELI", "NU"),
-    "BONOS": ("AL29", "AL30", "AL35", "AE38", "AL41", "GD29", "GD30", "GD35",
-              "GD38", "GD41", "GD46", "BPOA7", "BPOB7", "TX26", "TX28", "TZX27"),
-    "ETF": ("SPY", "DIA", "QQQ", "IWM"),
-    # Filtros de búsqueda, no tickers confirmados ni autorización de operación.
-    "LETRAS": ("LETRA", "S", "T"), "ON": ("YPF", "MRC", "YMC"),
-    "CAUCIONES": ("CAUCION",), "FCI": ("FONDO",),
-    "OPCIONES": ("GFG", "YPF", "PAM"),
-    "INDICES": ("MERVAL", "SPMERVAL"),
+    "CEDEARS": ("AAPL", "AAPLD", "AAPLC", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
+                "KO", "MCD", "WMT", "DIS", "NFLX", "AMD", "INTC", "AVGO", "ORCL",
+                "IBM", "CRM", "JPM", "BAC", "V", "MA", "XOM", "CVX", "GOLD", "VALE",
+                "PBR", "BABA", "MELI", "NU"),
 }
 STOP = False
 
-SAFE_PAPER_TYPES = {"ACCIONES", "CEDEARS", "BONOS", "ETF", "ETFS"}
-SETTLEMENT_BY_TYPE = {
-    "ACCIONES": "A-24HS", "CEDEARS": "A-24HS", "BONOS": "A-24HS",
-    "ETF": "A-24HS", "ETFS": "A-24HS", "OPCIONES": "INMEDIATA",
-    "LETRAS": "A-24HS", "ON": "A-24HS", "OBLIGACIONES": "A-24HS",
-    "INDICES": "A-24HS", "FUTUROS": "A-24HS", "CAUCIONES": "INMEDIATA", "FCI": "INMEDIATA",
-}
+SAFE_PAPER_TYPES = set(OPERATIONAL_FAMILIES)
+SETTLEMENT_BY_TYPE = {"ACCIONES": "A-24HS", "CEDEARS": "A-24HS"}
 WATCHLIST_PATH = Path(os.getenv("INSTRUMENT_WATCHLIST_PATH", "n_instrument_watchlist.json"))
 
 
@@ -166,7 +155,7 @@ def _market_open(now=None):
 
 
 def _candidate_universe():
-    """Todas las familias; descubrir no equivale a habilitar una operación."""
+    """Universo operativo estricto: acciones y CEDEARs, sin barrido residual."""
     rows = {(ticker, kind, settlement, "BYMA", True)
             for ticker, kind, settlement in CORE_SYMBOLS}
     try:
@@ -175,22 +164,18 @@ def _candidate_universe():
             if str(asset_class).startswith("_") or not isinstance(block, dict):
                 continue
             kind = str(block.get("instrument_type") or asset_class).upper()
-            settlement = str(block.get("settlement") or SETTLEMENT_BY_TYPE.get(kind, "A-24HS"))
+            if kind not in OPERATIONAL_FAMILIES:
+                continue
+            settlement = str(block.get("settlement") or SETTLEMENT_BY_TYPE[kind])
             for ticker in block.get("tickers", []):
                 if str(ticker).strip():
-                    rows.add((str(ticker).strip().upper(), kind, settlement, "BYMA",
-                              kind in SAFE_PAPER_TYPES))
+                    rows.add((str(ticker).strip().upper(), kind, settlement, "BYMA", True))
     except Exception:
         pass
     for kind, tickers in DISCOVERY_SEEDS.items():
         for ticker in tickers:
-            rows.add((ticker, kind, SETTLEMENT_BY_TYPE.get(kind, "A-24HS"),
-                      "BYMA", kind in SAFE_PAPER_TYPES))
-    # Contexto derivado: se valida disponibilidad, nunca entra al paper broker
-    # sin multiplicador, vencimiento y margen atribuible al contrato.
-    rows.add(("DLR", "FUTUROS", "A-24HS", "ROFEX", False))
-    rows.add(("GGAL", "OPCIONES", "INMEDIATA", "BYMA", False))
-    return sorted(rows, key=lambda value: (not value[4], value[1], value[0]))
+            rows.add((ticker, kind, SETTLEMENT_BY_TYPE[kind], "BYMA", True))
+    return sorted(rows, key=lambda value: (value[1], value[0]))
 
 
 def _walk_numbers(value, keys):
@@ -491,27 +476,32 @@ def _download_catalog(reader, store):
 
 
 def _eligible_symbols(store):
-    """Universo observable. La capacidad financiera se verifica por contrato."""
+    """Universo operativo estricto: sólo acciones y CEDEARs disponibles."""
     core = list(CORE_SYMBOLS)
     try:
         with store.connect() as c:
             normalized_count = c.execute("SELECT COUNT(*) FROM financial_instrument_catalog").fetchone()[0]
             if normalized_count:
-                rows = c.execute("""SELECT DISTINCT ticker,instrument_type,settlement FROM financial_instrument_catalog
-                  WHERE status='AVAILABLE' ORDER BY instrument_type,ticker,settlement""").fetchall()
+                rows = c.execute("""SELECT DISTINCT ticker,instrument_type,settlement
+                  FROM financial_instrument_catalog
+                  WHERE status='AVAILABLE'
+                    AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS')
+                  ORDER BY instrument_type,ticker,settlement""").fetchall()
             else:
                 rows = c.execute("""SELECT ticker,instrument_type,settlement FROM candidate_universe
-              WHERE can_simulate=1 AND status='AVAILABLE'
-              ORDER BY CASE WHEN ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
-              instrument_type,ticker""").fetchall()
+                  WHERE can_simulate=1 AND status='AVAILABLE'
+                    AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS')
+                  ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
+                  instrument_type,ticker""").fetchall()
         seen = set(core)
-        groups = {kind: [] for kind in ("ACCIONES", "CEDEARS", "BONOS", "ETF", "ETFS", "LETRAS", "ON", "OBLIGACIONES",
-                                        "OPCIONES", "FUTUROS", "CAUCIONES", "FCI")}
+        groups = {kind: [] for kind in ("ACCIONES", "CEDEARS")}
         for ticker, kind, settlement in rows:
-            if (ticker, kind, settlement) not in seen and kind in groups:
-                groups[kind].append((ticker, kind, settlement))
+            kind = str(kind).upper()
+            value = (ticker, kind, settlement)
+            if value not in seen and kind in groups:
+                groups[kind].append(value)
         while any(groups.values()):
-            for kind in groups:
+            for kind in ("ACCIONES", "CEDEARS"):
                 if groups[kind]:
                     value = groups[kind].pop(0)
                     if value not in seen:
