@@ -46,22 +46,22 @@ def test_context_thresholds_do_not_equal_paper_readiness():
         payload, as_of=datetime(2026, 9, 2, 20, tzinfo=TZ)
     )
     assert result.context_state == "PREFERRED_CONTEXT"
-    # History permission is separate from trading permission.
-    assert policy.history_collection_capability("BONOS", status="AVAILABLE") == "READONLY_HISTORY_ALLOWED"
+    # Legacy history remains auditable, but no longer enters a new refresh.
+    assert policy.history_collection_capability("BONOS", status="AVAILABLE") == "OUT_OF_SCOPE_READONLY_LEGACY"
     assert "READY_PAPER" not in policy.history_collection_capability("BONOS", status="AVAILABLE")
 
 
-def test_hold_family_can_collect_history_when_market_identity_is_explicit():
-    assert policy.history_collection_capability("OPCIONES", status="AVAILABLE", identity_complete=True) == "READONLY_HISTORY_ALLOWED"
-    assert policy.history_collection_capability("FUTUROS", status="AVAILABLE", identity_complete=True) == "READONLY_HISTORY_ALLOWED"
-    assert policy.history_collection_capability("BONOS", status="AVAILABLE", identity_complete=True) == "READONLY_HISTORY_ALLOWED"
+def test_non_operational_family_is_out_of_scope_before_new_history_collection():
+    assert policy.history_collection_capability("OPCIONES", status="AVAILABLE", identity_complete=True) == "OUT_OF_SCOPE_READONLY_LEGACY"
+    assert policy.history_collection_capability("FUTUROS", status="AVAILABLE", identity_complete=True) == "OUT_OF_SCOPE_READONLY_LEGACY"
+    assert policy.history_collection_capability("BONOS", status="AVAILABLE", identity_complete=True) == "OUT_OF_SCOPE_READONLY_LEGACY"
     assert policy.history_collection_capability("BONOS", status="AVAILABLE", identity_complete=False) == "HOLD_IDENTITY_INCOMPLETE"
 
 
-def test_specialized_families_do_not_get_generic_ohlc_forced_on_them():
-    assert policy.history_collection_capability("CAUCIONES", status="AVAILABLE") == "SPECIALIZED_HISTORY_ADAPTER_REQUIRED"
-    assert policy.history_collection_capability("FCI", status="AVAILABLE") == "SPECIALIZED_HISTORY_ADAPTER_REQUIRED"
-    assert policy.history_collection_capability("LICITACIONES", status="AVAILABLE") == "SPECIALIZED_HISTORY_ADAPTER_REQUIRED"
+def test_specialized_legacy_families_are_out_of_scope_for_new_collection():
+    assert policy.history_collection_capability("CAUCIONES", status="AVAILABLE") == "OUT_OF_SCOPE_READONLY_LEGACY"
+    assert policy.history_collection_capability("FCI", status="AVAILABLE") == "OUT_OF_SCOPE_READONLY_LEGACY"
+    assert policy.history_collection_capability("LICITACIONES", status="AVAILABLE") == "OUT_OF_SCOPE_READONLY_LEGACY"
 
 
 def test_retry_backoff_is_bounded():
