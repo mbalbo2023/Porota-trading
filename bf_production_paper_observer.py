@@ -29,6 +29,7 @@ from be_paper_engine import D, PaperBroker, PaperStore, Quote, now_iso
 import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
 from _version import VERSION
+from ak_byma_calendar import es_dia_habil_operativo
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -135,8 +136,9 @@ def _secret():
 
 def _business_day(day):
     try:
-        import ak_byma_calendar as calendar
-        return bool(calendar.es_dia_habil_operativo(day))
+        # El calendario es local y estático: se carga una sola vez al iniciar.
+        # Evita bloquear el primer pulso del scanner en un import dinámico.
+        return bool(es_dia_habil_operativo(day))
     except Exception:
         # Safety gate: without a verifiable BYMA calendar, never admit a PAPER session.
         return False
@@ -1151,7 +1153,7 @@ def run():
     last_public_check = 0.0
     last_readiness_check = 0.0
     next_login_at = 0.0
-    last_phase = _market_phase()
+    last_phase = None  # Publicar BOOT_* antes de resolver el calendario.
     try:
         while not STOP:
             # Una caución vence por contrato, aunque el mercado esté cerrado

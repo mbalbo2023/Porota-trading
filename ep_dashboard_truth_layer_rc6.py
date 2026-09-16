@@ -70,11 +70,13 @@ def _fresh_internal_state(row: dict, default="NOT_STARTED", max_age_seconds=20) 
 
 def _truth_banner() -> str:
     truth = runtime_truth()
-    session_label = (
-        "MERCADO ABIERTO"
-        if truth["market_open"]
-        else "MERCADO CERRADO / SIN EJECUCIÓN DE MERCADO"
-    )
+    session = truth["session_state"]
+    if truth["market_open"]:
+        session_label = "MERCADO ABIERTO"
+    elif session in {"CHECKING", "BOOT_CALENDAR", "STARTING", "UNKNOWN"}:
+        session_label = "INICIALIZANDO / VERIFICANDO SESIÓN DE MERCADO"
+    else:
+        session_label = "MERCADO CERRADO / SIN EJECUCIÓN DE MERCADO"
     css = "paper-notice" if truth["real_orders_sent"] == 0 else "paper-warning"
     return (
         f"<div id='porota-runtime-truth' class='{css}'>"
