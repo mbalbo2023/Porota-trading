@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import faulthandler
 import json
 import math
 import os
@@ -1113,6 +1114,10 @@ def _announce_phase(store, previous, current):
 def run():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
+    # Sólo ante un arranque anormalmente lento se vuelca la pila Python para
+    # localizar I/O local; no contiene ni lee secretos.
+    faulthandler.enable()
+    faulthandler.dump_traceback_later(45, repeat=True)
     # Bajo el runtime padre, el esquema y la identidad ya fueron validados
     # una sola vez. El scanner no debe competir por el lock de arranque.
     if os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1":
