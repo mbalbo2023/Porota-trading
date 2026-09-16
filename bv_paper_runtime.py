@@ -209,15 +209,19 @@ def main(argv=None):
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
-    # El padre completa el esquema antes de crear workers. Los hijos reciben
-    # esta marca y sólo abren la base, sin volver a ejecutar migraciones pesadas.
-    os.environ.pop("POROTA_RUNTIME_SCHEMA_READY", None)
-    store = runtime_store()
-    # Todas las migraciones operativas se completan una vez en el padre.
-    # Scanner, reader, velas y avisos sólo consumen el esquema ya preparado.
-    from bf_production_paper_observer import _support_schema
-    _support_schema(store)
-    os.environ["POROTA_RUNTIME_SCHEMA_READY"] = "1"
+    # Sólo el proceso padre prepara el esquema. Los hijos heredan la marca
+    # y deben abrir SQLite sin ejecutar DDL ni reconstruir índices: al borrar
+    # esa marca cada worker volvía a tomar el lock y el scanner nunca llegaba
+    # a su primer login PPI.
+    inherited_schema = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+    if argv and inherited_schema:
+        store = runtime_store()
+    else:
+        os.environ.pop("POROTA_RUNTIME_SCHEMA_READY", None)
+        store = runtime_store()
+        from bf_production_paper_observer import _support_schema
+        _support_schema(store)
+        os.environ["POROTA_RUNTIME_SCHEMA_READY"] = "1"
     # Los hijos cambian cwd; todos deben heredar la misma ruta absoluta.
     os.environ[DB_ENV] = store.path
     if argv == ["--exit-reader"]:
