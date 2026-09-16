@@ -30,6 +30,7 @@ VALID_JOBS = {
     "model_guardian",
     "monthly_report",
     "validation_projection",
+    "action4_audit",
 }
 
 
@@ -81,6 +82,10 @@ def run(job_name: str) -> None:
     elif job_name == "monthly_report":
         import z_reports_engine
         _notifier().send_telegram(z_reports_engine.build_monthly_summary_text())
+    elif job_name == "action4_audit":
+        import rc6_action4_audit
+        payload = rc6_action4_audit.publish()
+        logger.info("Auditoría Action 4 publicada: %s.", payload["dashboard_daily_report"]["periodo"])
     elif job_name == "validation_projection":
         import rc6_validation_projection
         snapshot = rc6_validation_projection.refresh()
