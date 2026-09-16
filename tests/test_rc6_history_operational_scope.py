@@ -49,3 +49,10 @@ def test_dashboard_passes_operational_scope_to_all_history_summary_metrics():
     assert "effective_store_metrics(c,families=operational_families)" in source
     assert "freshness_qualified_metrics(c,families=operational_families)" in source
     assert "Cobertura histórica operativa" in source
+
+
+def test_dashboard_explains_dual_calendar_for_cedear_freshness():
+    source = open("bg_paper_dashboard.py", encoding="utf-8").read()
+
+    assert "Para CEDEAR cada día faltante exige rueda BYMA y rueda del subyacente US." in source
+    assert "calendar_source" in source
