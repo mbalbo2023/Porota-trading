@@ -203,7 +203,7 @@ jobs:
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
-          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "bash -s" <<'VERIFY'
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'VERIFY'
           set -Eeuo pipefail
           H="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)"
           python3 - "$H" <<'PY'
