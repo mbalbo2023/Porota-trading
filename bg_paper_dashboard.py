@@ -2008,6 +2008,48 @@ def _family_ux_table(families):
     return ''.join(rows) or "<tr><td colspan='10'>Sin evidencia para este grupo.</td></tr>"
 
 
+
+def _trading_motor_summary():
+    """Resumen liviano para unir Trading y Motor sin cargar el ledger completo."""
+    positions = (
+        _rows("SELECT * FROM paper_positions ORDER BY COALESCE(closed_at, opened_at) DESC LIMIT 24")
+        if _table("paper_positions") else []
+    )
+    positions = [
+        row for row in positions
+        if str(row.get("asset_class") or "").upper() in {"ACCIONES", "ACCION", "CEDEARS", "CEDEAR"}
+    ]
+    open_count = sum(str(row.get("status")) == "OPEN" for row in positions)
+    closed_count = sum(str(row.get("status")) == "CLOSED" for row in positions)
+    position_rows = "".join(
+        f"<tr><td>{_local_time(row.get('opened_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+        f"<td>{_e(row.get('asset_class'))}</td><td>{_status(row.get('status'))}</td>"
+        f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_e(row.get('net_pnl') or '—')} "
+        f"{_e(row.get('currency') or '')}</td></tr>"
+        for row in positions
+    ) or "<tr><td colspan='6'>Sin operaciones PAPER de acciones o CEDEARs registradas.</td></tr>"
+    gates = (
+        _rows("SELECT evaluated_at,symbol,final_result,reason FROM trade_gate_evaluations "
+              "ORDER BY evaluated_at DESC LIMIT 16")
+        if _table("trade_gate_evaluations") else []
+    )
+    gate_rows = "".join(
+        f"<tr><td>{_local_time(row.get('evaluated_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+        f"<td>{_status(row.get('final_result'))}</td><td>{_e(row.get('reason'))}</td></tr>"
+        for row in gates
+    ) or "<tr><td colspan='4'>Sin decisiones persistidas todavía.</td></tr>"
+    return (
+        "<div class='paper-card'><h2>Motor de trading — actual e histórico reciente</h2>"
+        f"<p><b>{open_count}</b> abiertas simuladas · <b>{closed_count}</b> cerradas recientes. "
+        "Sólo acciones y CEDEARs.</p>"
+        "<table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Familia</th>"
+        "<th>Estado</th><th>Salida</th><th>PnL</th></tr>" + position_rows + "</table>"
+        "<h3>Decisiones recientes</h3><table class='paper-table'><tr><th>Hora</th>"
+        "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>"
+        "<p class='paper-muted'>El detalle forense completo sigue disponible en Motor de trading; "
+        "esta tabla evita cargar masivamente operaciones, fills o históricos al abrir Trading.</p></div>"
+    )
+
 def trading_page(section=''):
     section=str(section or '').strip().lower()
     subnav=trading_nav_html()
@@ -2067,6 +2109,7 @@ def trading_page(section=''):
           "<div class='paper-notice'>PPI es la fuente live primaria. A3/CEM/Data912 no agregan latencia al camino de decisión. "
           "Los datos background enriquecen contratos/históricos y nunca habilitan una familia por sí solos.</div>"
           "<div class='paper-grid'>"+''.join(cards)+"</div>"
+          +_trading_motor_summary()+
           "<div class='paper-card'><h2>Motor de decisiones PAPER</h2>"
           "<p><b>Secuencia:</b> elegibilidad del instrumento → señal técnica → datos de velas e "
           "históricos en SHADOW → riesgo macro BCRA en SHADOW → costos y liquidación → "
