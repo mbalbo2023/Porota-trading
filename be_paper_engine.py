@@ -468,7 +468,8 @@ class PaperBroker:
         for key, value in (initial_cash_by_currency or {}).items():
             self.initial_balances[cash_currency(key)] = decimal_value(value, "capital por moneda", nonnegative=True)
         self.cauciones = CaucionBook(store)
-        spot_liquidity.init_schema(store)
+        # El esquema de liquidez se migra al iniciar el runtime. No se crea un
+        # índice desde cada PaperBroker: scanner y supervisor arrancan en paralelo.
         # Sin reloj inyectado, llamadas directas son simulación por tiempo de
         # evento. El runtime vivo SIEMPRE inyecta reloj real y política de sesión.
         self.clock_fn = clock_fn
