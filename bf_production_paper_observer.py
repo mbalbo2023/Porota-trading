@@ -1155,10 +1155,9 @@ def run():
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", real_orders_sent=0,
                 detail="Iniciando sesión PPI de solo lectura antes del motor PAPER.")
-    if _market_phase() == "CLOSED":
-        store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
-                    ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),
-                    detail="Proceso disponible y en espera; estrategia detenida por mercado cerrado.")
+    # La fase de mercado se resuelve dentro del ciclo, después de publicar
+    # BOOT_COMMAND/BOOT_CALENDAR. Así un calendario lento nunca deja al
+    # operador con STARTING/CHECKING sin evidencia del punto de arranque.
     reader = None
     quotes = {}
     last_public_check = 0.0
