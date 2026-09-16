@@ -128,12 +128,21 @@ jobs:
           fi
           # Initial compact projection: once per deployment. Subsequent refreshes are daily
           # through az_maintenance_scheduler; never inside an HTTP request.
-          PROJECTION_BOOTSTRAP="$(sudo -n docker exec porota_production_dashboard timeout 600 python az_maintenance_job.py validation_projection 2>&1 || true)"
-          echo "$PROJECTION_BOOTSTRAP"
-          if ! grep -q "completada" <<< "$PROJECTION_BOOTSTRAP"; then
+          # Keep SSH alive while the one-time read-only evidence scan is running.
+          PROJECTION_LOG="/tmp/porota-validation-projection-$TARGET_SHA.log"
+          sudo -n docker exec porota_production_dashboard timeout 600 python az_maintenance_job.py validation_projection >"$PROJECTION_LOG" 2>&1 &
+          PROJECTION_PID=$!
+          while kill -0 "$PROJECTION_PID" 2>/dev/null; do
+            echo "VALIDATION_PROJECTION_BOOTSTRAP=RUNNING"
+            sleep 15
+          done
+          if ! wait "$PROJECTION_PID"; then
+            cat "$PROJECTION_LOG"
             echo "VALIDATION_PROJECTION_BOOTSTRAP=FAILED"
             exit 1
           fi
+          cat "$PROJECTION_LOG"
+          grep -q "completada" "$PROJECTION_LOG"
           echo "VALIDATION_PROJECTION_BOOTSTRAP=GREEN"
           ROUTE_FAILURES=0
           for PATH_CHECK in /trading /motor-trading /validacion /reportes; do
