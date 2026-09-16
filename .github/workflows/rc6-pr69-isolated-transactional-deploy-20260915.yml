@@ -274,7 +274,12 @@ jobs:
           echo "$RUNTIME_CHECK"
           if ! grep -q '^GO_CHECK=GREEN' <<< "$RUNTIME_CHECK"; then
             echo "OBSERVER_PROCESS_DIAGNOSTIC:"
-            sudo -n docker top porota_production_observer -eo pid,ppid,stat,etime,cmd || true
+            sudo -n docker top porota_production_observer -eo pid,ppid,stat,wchan:32,etime,cmd || true
+            for pid in $(sudo -n docker top porota_production_observer -eo pid= 2>/dev/null || true); do
+              echo "OBSERVER_KERNEL_STACK_PID=$pid"
+              sudo -n cat "/proc/$pid/wchan" || true
+              sudo -n cat "/proc/$pid/stack" || true
+            done
             echo "OBSERVER_LOG_TAIL:"
             sudo -n docker logs --tail 160 porota_production_observer || true
             exit 1
