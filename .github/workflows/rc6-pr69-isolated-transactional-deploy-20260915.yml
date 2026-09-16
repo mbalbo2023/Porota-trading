@@ -123,7 +123,7 @@ jobs:
           # Continue only after its explicit success marker; all health and safety
           # checks below remain mandatory.
           set +e
-          MODE_OUTPUT="$(sudo -n python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
+          MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
           MODE_RC=$?
           set -e
           echo "$MODE_OUTPUT"
