@@ -1113,8 +1113,12 @@ def _announce_phase(store, previous, current):
 def run():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    store = runtime_store(DB_PATH)
-    if os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() != "1":
+    # Bajo el runtime padre, el esquema y la identidad ya fueron validados
+    # una sola vez. El scanner no debe competir por el lock de arranque.
+    if os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1":
+        store = PaperStore(DB_PATH)
+    else:
+        store = runtime_store(DB_PATH)
         _support_schema(store)
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(),

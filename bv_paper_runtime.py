@@ -19,7 +19,7 @@ from pathlib import Path
 from be_paper_engine import PaperBroker, PaperStore, now_iso
 from bm_exit_supervisor import PositionExitSupervisor
 from bq_exit_policy import PaperSessionPolicy
-from cg_paper_workspace import DB_ENV, runtime_store
+from cg_paper_workspace import DB_ENV, database_path, runtime_store
 
 ROOT = Path(__file__).resolve().parent
 
@@ -215,7 +215,9 @@ def main(argv=None):
     # a su primer login PPI.
     inherited_schema = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
     if argv and inherited_schema:
-        store = runtime_store()
+        # El padre ya verificó identidad, capital y esquema. Evitamos el lock
+        # de inicialización y las lecturas WAL concurrentes en cada hijo.
+        store = PaperStore(str(database_path()))
     else:
         os.environ.pop("POROTA_RUNTIME_SCHEMA_READY", None)
         store = runtime_store()
