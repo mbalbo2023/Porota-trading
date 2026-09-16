@@ -1195,7 +1195,7 @@ def motor_page():
                   "Su Cantidad remanente, realizaciones y resultado permanecen conciliados en Aprendizaje y Reportes.</div>"
                   if previous else "")
     body=f"<h1>Motor de trading — rueda actual</h1><p class='paper-muted'>Trazabilidad técnica → economía matemática → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{history_note}{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas de hoy</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>Economía</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + _economic_shadow_panel() + body + _rejection_funnel() + _universe_execution_panel() + _balances_panel() + _caucion_allocations_panel() + _cauciones_panel())
+    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + _economic_shadow_panel() + body + _rejection_funnel() + _universe_execution_panel() + _balances_panel() + "<div class='paper-warning'><b>Alcance operativo:</b> cauciones y demás familias no operativas no se evalúan ni se muestran como estrategia activa.</div>")
 
 
 def _next_check(component, checked):
@@ -2078,7 +2078,6 @@ SYSTEM_SECTIONS = (
     ("introspeccion", "Introspección"),
     ("salud", "Salud y SRE"),
     ("scheduler", "Scheduler"),
-    ("scraping", "Scraping"),
     ("backups", "Backups"),
     ("configuracion", "Configuración"),
     ("telegram", "Telegram"),
@@ -2166,9 +2165,9 @@ def introspection_content():
         _card("GitHub observabilidad", publication.get("status", "SIN_REGISTRO"),
               f"Última confirmación {_local_time(publication.get('recorded_at'))} · retención {publication.get('retention_days',90)} días",
               "green" if publication.get("status") in {"PUBLISHED", "UNCHANGED"} else "red"),
-        _card("Cauciones", cauciones.get("state", "SIN_DATOS"),
-              f"Contratos observados {cauciones.get('observed_contracts',0)} · ofertas completas {cauciones.get('complete_offers',0)} · colocadas hoy {cauciones.get('placed_today',0)}",
-              "green" if cauciones.get("state")=="READY" else "yellow"),
+        _card("Alcance operativo", "ACCIONES Y CEDEARs",
+              "Bonos, cauciones, opciones, futuros, FCI y licitaciones están desactivados; no consumen ciclo del motor.",
+              "green"),
         _card("Régimen observado", regime.get("state", "SIN_DATOS"),
               f"Suben {regime.get('rising',0)} · bajan {regime.get('falling',0)} · política ALERT_ONLY",
               "yellow" if regime.get("state")=="BEARISH_BREADTH" else "gray"),
@@ -2269,10 +2268,13 @@ def scheduler_content():
     source_sync=_rows('SELECT * FROM source_sync') if _table('source_sync') else []
     api_health=_rows('SELECT * FROM api_health ORDER BY checked_at DESC') if _table('api_health') else []
     contract_runs=[]
-    if _table('contract_evidence_v2_runs'):
-        contract_runs=_rows('SELECT job_key,started_at,finished_at,state,detail FROM contract_evidence_v2_runs ORDER BY started_at DESC')
-    elif _table('contract_evidence_runs'):
-        contract_runs=_rows("SELECT 'CONTRACT_EVIDENCE_DYNAMIC' job_key,started_at,finished_at,'OK' state,detail FROM contract_evidence_runs ORDER BY started_at DESC")
+    # Contract scraping is deliberately out of scope. Historic rows stay in the
+    # database for audit, but do not appear as an active scheduler workload.
+    if os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "DISABLED_SOURCE_UNAVAILABLE").upper() == "ENABLED":
+        if _table('contract_evidence_v2_runs'):
+            contract_runs=_rows('SELECT job_key,started_at,finished_at,state,detail FROM contract_evidence_v2_runs ORDER BY started_at DESC')
+        elif _table('contract_evidence_runs'):
+            contract_runs=_rows("SELECT 'CONTRACT_EVIDENCE_DYNAMIC' job_key,started_at,finished_at,'OK' state,detail FROM contract_evidence_runs ORDER BY started_at DESC")
     internal=internal_rows(db_jobs,source_sync_rows=source_sync,api_health_rows=api_health,contract_run_rows=contract_runs)
     systemd=load_systemd_snapshot()
     timers=systemd.get('timers',[]) if isinstance(systemd,dict) else []
@@ -2411,9 +2413,15 @@ def validation_page():
 
 
 def system_page(section="introspeccion"):
+    requested_section = section
     if section not in {key for key,_ in SYSTEM_SECTIONS}:
         section = "introspeccion"
-    if section == "introspeccion":
+    if requested_section == "scraping":
+        content = ("<h1>Scraping / evidencia contractual</h1>"
+                   "<div class='paper-warning'><b>DESACTIVADO POR ALCANCE.</b> "
+                   "No hay scraping activo ni reintentos contractuales. El perfil Chrome confiable "
+                   "se conserva sin abrirse.</div>")
+    elif section == "introspeccion":
         content = introspection_content()
     elif section == "salud":
         content = _main_fragment(health_page()) + _main_fragment(sre_page())
