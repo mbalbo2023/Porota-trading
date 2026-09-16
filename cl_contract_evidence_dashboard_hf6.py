@@ -14,6 +14,8 @@ def _status_badge(status):
     value = str(status or "UNKNOWN")
     if value.startswith("VERIFIED"):
         return bg._status("OK")
+    if value in {"SOURCE_UNAVAILABLE_BY_SCOPE", "DISABLED_SOURCE_UNAVAILABLE"}:
+        return bg._status("GRIS")
     if value.startswith("PPI_") or "SUPPORT" in value:
         return bg._status("AMARILLO")
     if value.startswith("POROTA_") or "INTEGRATION" in value:
@@ -23,6 +25,8 @@ def _status_badge(status):
 
 def _time_answer(status):
     value = str(status or "")
+    if value in {"SOURCE_UNAVAILABLE_BY_SCOPE", "DISABLED_SOURCE_UNAVAILABLE"}:
+        return "NO APLICA — fuente contractual fuera de alcance actual"
     if value in {
         "PPI_SEARCH_HTTP200_EMPTY_SUPPORT_REQUIRED",
         "PPI_FIELD_PRESENT_SEMANTICS_UNDOCUMENTED",
