@@ -61,8 +61,9 @@ def _freshness(last_day: date | None, latest: date) -> tuple[str, str]:
     return "SEVERELY_STALE", str(gap)
 
 
-def freshness_qualified_metrics(observer_connection, path: Path | None = None) -> dict:
-    targets=target_universe(observer_connection)
+def freshness_qualified_metrics(observer_connection, path: Path | None = None, families=None) -> dict:
+    """Read-only freshness metrics for an explicitly bounded dashboard scope."""
+    targets=target_universe(observer_connection, families=families)
     db=(path or history_db_path()).resolve()
     base={
         "available":False,
