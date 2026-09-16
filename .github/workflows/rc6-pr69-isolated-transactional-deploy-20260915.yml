@@ -268,10 +268,17 @@ jobs:
                   break
               time.sleep(5)
           else:
-              raise SystemExit(f'GO_CHECK_FAILED_AFTER_STARTUP={last}')
+              print(f'GO_CHECK_FAILED_AFTER_STARTUP={last}')
           PY
           )"
           echo "$RUNTIME_CHECK"
+          if ! grep -q '^GO_CHECK=GREEN' <<< "$RUNTIME_CHECK"; then
+            echo "OBSERVER_PROCESS_DIAGNOSTIC:"
+            sudo -n docker exec porota_production_observer ps -ef || true
+            echo "OBSERVER_LOG_TAIL:"
+            sudo -n docker logs --tail 160 porota_production_observer || true
+            exit 1
+          fi
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
           echo "RC6_UNIFIED_PAPER_DEPLOY=GREEN"
           VERIFY
