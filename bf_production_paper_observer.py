@@ -29,7 +29,6 @@ from be_paper_engine import D, PaperBroker, PaperStore, Quote, now_iso
 import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
 from _version import VERSION
-from ak_byma_calendar import es_dia_habil_operativo
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -134,14 +133,26 @@ def _secret():
     return key, secret
 
 
+# Calendario BYMA RC6, fuente auditada: https://www.byma.com.ar/mercado/calendario-bursatil
+# Está deliberadamente embebido en el observer: el primer pulso no debe depender
+# de una importación diferida ni de I/O del filesystem del contenedor.
+BYMA_CALENDAR_AUDITED_YEAR = 2026
+BYMA_NON_OPERATIVE_DAYS = frozenset({
+    "2026-01-01", "2026-02-16", "2026-02-17", "2026-03-23", "2026-03-24",
+    "2026-04-02", "2026-04-03", "2026-05-01", "2026-05-25", "2026-06-15",
+    "2026-07-09", "2026-07-10", "2026-08-17", "2026-10-12", "2026-11-06",
+    "2026-11-23", "2026-12-07", "2026-12-08", "2026-12-24", "2026-12-25",
+    "2026-12-31",
+})
+
+
 def _business_day(day):
-    try:
-        # El calendario es local y estático: se carga una sola vez al iniciar.
-        # Evita bloquear el primer pulso del scanner en un import dinámico.
-        return bool(es_dia_habil_operativo(day))
-    except Exception:
-        # Safety gate: without a verifiable BYMA calendar, never admit a PAPER session.
-        return False
+    # Fail closed fuera del año auditado, fines de semana y feriados BYMA.
+    return (
+        day.year == BYMA_CALENDAR_AUDITED_YEAR
+        and day.weekday() < 5
+        and day.isoformat() not in BYMA_NON_OPERATIVE_DAYS
+    )
 
 
 def _market_phase(now=None):
