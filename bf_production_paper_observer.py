@@ -1158,11 +1158,21 @@ def run():
             # o falle el login. No depende de cotizaciones ni de IA.
             if broker is not None:
                 broker.settle_cauciones()
+            # Breadcrumbs de arranque: permiten distinguir qué paso local
+            # antecede al login sin tocar órdenes ni datos de mercado.
+            if reader is None:
+                store.state(session_state="BOOT_COMMAND", ppi_auth="NOT_ATTEMPTED",
+                            heartbeat_at=now_iso(), real_orders_sent=0,
+                            detail="Arranque: revisando comandos locales.")
             # La lectura de PPI tiene prioridad sobre mantenimiento y sondas.
             # No se bloquea una rueda recién abierta con backups/reportes.
             command = _claim_command(store)
             if command:
                 reader = _run_command(store, reader, command, None)
+            if reader is None:
+                store.state(session_state="BOOT_CALENDAR", ppi_auth="NOT_ATTEMPTED",
+                            heartbeat_at=now_iso(), real_orders_sent=0,
+                            detail="Arranque: verificando calendario operativo.")
             phase = _market_phase()
             if phase != last_phase:
                 _announce_phase(store, last_phase, phase)
@@ -1177,9 +1187,18 @@ def run():
                                 detail="PPI en espera de reintento; no se abre una tormenta de logins.")
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
+                store.state(session_state="BOOT_PPI_SECRET", ppi_auth="NOT_ATTEMPTED",
+                            heartbeat_at=now_iso(), real_orders_sent=0,
+                            detail="Arranque: leyendo secreto PPI local.")
                 key, secret = _secret()
+                store.state(session_state="BOOT_PPI_CLIENT", ppi_auth="NOT_ATTEMPTED",
+                            heartbeat_at=now_iso(), real_orders_sent=0,
+                            detail="Arranque: creando cliente PPI de solo lectura.")
                 reader = ProductionMarketReader(key, secret, audit=store.audit_http)
                 try:
+                    store.state(session_state="BOOT_PPI_LOGIN", ppi_auth="NOT_ATTEMPTED",
+                                heartbeat_at=now_iso(), real_orders_sent=0,
+                                detail="Arranque: autenticando PPI de solo lectura.")
                     reader.login_once()
                     store.event("PPI_LOGIN", "owner=scanner")
                     _health(store, "PPI_PRODUCTION_AUTH", "VERDE",
