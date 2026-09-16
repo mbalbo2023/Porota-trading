@@ -1173,6 +1173,19 @@ def motor_page():
         gate=gate_by_paper.get(p.get("paper_id")) or gate_by_symbol.get(p["symbol"],{})
         features=_features(p.get("features_json")); variables="".join(f"<tr><td>{_e(k)}</td><td>{_e(v)}</td></tr>" for k,v in sorted(features.items()))
         economics=features.get("economics") if isinstance(features.get("economics"),dict) else {}
+        exit_policy=features.get("exit_policy") if isinstance(features.get("exit_policy"),dict) else {}
+        exit_policy_html=(
+            "<div class='paper-card'><h3>Política de salida simulada</h3>"
+            f"<p><b>Take-profit:</b> {_e(exit_policy.get('take_profit_price','sin registro'))} · "
+            f"<b>Stop:</b> {_e(exit_policy.get('stop_loss_price','sin registro'))} · "
+            f"<b>Max Hold:</b> {_e(exit_policy.get('max_hold_minutes','sin registro'))} min · "
+            f"<b>End of Day:</b> {_e('sí' if exit_policy.get('end_of_day') else 'no')}</p>"
+            "<p class='paper-muted'>La supervisión exige sesión habilitada, identidad y libro fresco. "
+            "Una salida sólo registra un fill simulado; nunca envía una orden a PPI.</p></div>"
+            if exit_policy else
+            "<div class='paper-warning'><b>Política de salida no registrada.</b> "
+            "Es una operación histórica anterior al registro explicable actual.</div>"
+        )
         economic_state=_economics_status(gate.get("detail_json")) if gate else ("APPROVE" if economics.get("passed") else "SIN_REGISTRO")
         contradictory=(gate.get("final_result")=="OPENED_SIMULATED" and
                        (gate.get("technical_gate")!="APPROVE" or gate.get("patrimonial_gate")!="APPROVE" or economic_state!="APPROVE"))
@@ -1187,7 +1200,7 @@ def motor_page():
         <p><b>Explicación:</b> {_e(gate.get('reason','Operación histórica sin secuencia completa persistida.'))}</p>
         <p class='paper-notice'><b>Decisión reproducible:</b> la IA no participa de la rueda. Señal, economía, capital, exposición y profundidad se resuelven con reglas versionadas de Python.</p>
         <p><b>Cantidad remanente:</b> {_e(p['quantity'] if p['status']=='OPEN' else '0')}. <b>PnL parcial realizado:</b> {_e(p.get('realized_net_pnl','—'))} {_e(p.get('currency','ARS'))}. Una operación abierta todavía no tiene resultado final.</p>
-        {_stop_forensic(p)}<h3>Variables utilizadas</h3><table class='paper-table'><tr><th>Variable</th><th>Valor</th></tr>{variables}</table>
+        {exit_policy_html}{_stop_forensic(p)}<h3>Variables utilizadas</h3><table class='paper-table'><tr><th>Variable</th><th>Valor</th></tr>{variables}</table>
         <h3>Lección aprendida</h3><p class='{cls}'>{_e(lesson)}</p></div></details>""")
     gate_rows="".join(f"<tr><td>{_local_time(g['evaluated_at'])}</td><td><b>{_e(g['symbol'])}</b></td><td>{_status(_economics_status(g.get('detail_json')))}</td><td>{_status(g['patrimonial_gate'])}</td><td>{_status(g['final_result'])}</td><td>{_e(g['reason'])}</td></tr>" for g in gates[:50]) or "<tr><td colspan='6'>Aún no hay secuencias nuevas.</td></tr>"
     trade_cards="".join(cards) or '<div class="paper-card">Sin operaciones simuladas del día.</div>'
