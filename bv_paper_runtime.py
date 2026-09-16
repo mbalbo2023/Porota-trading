@@ -53,10 +53,18 @@ def broker_from_environment(store, **overrides):
 
 class ChildProcesses:
     """Reinicia sólo el hijo caído; no espera su trabajo para avanzar el reloj."""
-    def __init__(self, commands, *, cooldown_seconds=30, spawn=subprocess.Popen, clock=time.monotonic):
+    def __init__(self, commands, *, cooldown_seconds=30, startup_grace_seconds=25,
+                 spawn=subprocess.Popen, clock=time.monotonic):
         self.commands, self.cooldown = commands, cooldown_seconds
         self.spawn, self.clock = spawn, clock
-        self.processes, self.next_start = {}, {}
+        # El scanner recibe el primer acceso a SQLite/PPI. Arrancar todos los
+        # consumidores juntos generaba I/O local antes de su primer pulso.
+        started = self.clock()
+        self.processes = {}
+        self.next_start = {
+            name: (started if name == "scanner" else started + startup_grace_seconds)
+            for name in commands
+        }
 
     def poll(self):
         now = self.clock()
