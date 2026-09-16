@@ -1,43 +1,39 @@
-import sys
-import types
+import sqlite3
 
 import rc6_macro_risk_shadow as shadow
 
 
-def test_collect_compacts_cached_bcra_context(monkeypatch):
-    module = types.SimpleNamespace(
-        get_macro_context=lambda dias: {
-            "indicadores": {
-                "reservas_bcra_usd_mn": {
-                    "ultimo": 41000,
-                    "fecha_ultimo": "2026-09-15",
-                    "tendencia": "A_LA_BAJA",
-                    "percentil_actual": 12.0,
-                    "fuente": "BCRA",
-                    "ignored": "not persisted",
-                }
-            }
-        }
-    )
-    monkeypatch.setitem(sys.modules, "ad_macro_history", module)
+def _seed(path):
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE macro_series (serie TEXT, fecha TEXT, valor REAL, fuente TEXT)"
+        )
+        for day, value in enumerate(range(40000, 41000, 100), start=1):
+            connection.execute(
+                "INSERT INTO macro_series VALUES (?,?,?,?)",
+                ("bcra_reservas_usd_millones", f"2026-09-{day:02d}", value, "BCRA"),
+            )
 
-    result = shadow.collect()
+
+def test_collect_compacts_cached_bcra_context_read_only(tmp_path):
+    database = tmp_path / "macro.db"
+    _seed(database)
+
+    result = shadow.collect(database, days=3650)
 
     assert result["mode"] == "SHADOW"
     assert result["decision_effect"] == "OBSERVE_ONLY"
     assert result["state"] == "READY"
-    assert result["indicators"]["reservas_bcra_usd_mn"]["ultimo"] == 41000
-    assert "ignored" not in result["indicators"]["reservas_bcra_usd_mn"]
+    assert result["indicators"]["reservas_bcra_usd_mn"]["ultimo"] == 40900.0
+    assert result["feature_version"].endswith("read-only")
 
 
-def test_collect_fails_open_for_shadow(monkeypatch):
-    module = types.SimpleNamespace(
-        get_macro_context=lambda dias: (_ for _ in ()).throw(RuntimeError("cache unavailable"))
-    )
-    monkeypatch.setitem(sys.modules, "ad_macro_history", module)
+def test_collect_does_not_create_missing_cache(tmp_path):
+    database = tmp_path / "missing.db"
 
-    result = shadow.collect()
+    result = shadow.collect(database)
 
     assert result["mode"] == "SHADOW"
     assert result["state"] == "UNAVAILABLE"
     assert result["decision_effect"] == "OBSERVE_ONLY"
+    assert not database.exists()
