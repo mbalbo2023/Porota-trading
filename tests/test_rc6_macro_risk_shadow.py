@@ -37,3 +37,10 @@ def test_collect_does_not_create_missing_cache(tmp_path):
     assert result["state"] == "UNAVAILABLE"
     assert result["decision_effect"] == "OBSERVE_ONLY"
     assert not database.exists()
+
+
+def test_trading_dashboard_exposes_macro_shadow_without_trading_authority():
+    source = open("bg_paper_dashboard.py", encoding="utf-8").read()
+
+    assert "Riesgo macro BCRA — SHADOW" in source
+    assert "no bloquea, no cambia tamaño y no habilita órdenes" in source
