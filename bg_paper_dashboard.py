@@ -1828,10 +1828,33 @@ def live_page(*, offset=0, limit=20):
     # sólo existe después de una decisión BUY que alcanzó los gates. Un gate viejo
     # nunca debe ocultar HOLD/abstenciones nuevas del motor.
     decision_rows=[]
-    all_live_decisions=live_policy.decisions_for_live((_rows(
-        "SELECT decided_at,symbol,action,score,reason FROM paper_decisions "
-        "ORDER BY decided_at DESC LIMIT 500"
-    ) if _table('paper_decisions') else []),now=now)
+    # Fail-closed también en presentación: decisiones históricas de familias
+    # retiradas no vuelven a aparecer aunque permanezcan auditables en SQLite.
+    if _table('paper_decisions') and _table('financial_instrument_catalog'):
+        decision_source = _rows(
+            """SELECT d.decided_at,d.symbol,d.action,d.score,d.reason
+               FROM paper_decisions d
+               WHERE EXISTS (
+                   SELECT 1 FROM financial_instrument_catalog f
+                   WHERE f.ticker=d.symbol AND f.status='AVAILABLE'
+                     AND UPPER(f.instrument_type) IN ('ACCIONES','CEDEARS')
+               )
+               ORDER BY d.decided_at DESC LIMIT 500"""
+        )
+    elif _table('paper_decisions') and _table('candidate_universe'):
+        decision_source = _rows(
+            """SELECT d.decided_at,d.symbol,d.action,d.score,d.reason
+               FROM paper_decisions d
+               WHERE EXISTS (
+                   SELECT 1 FROM candidate_universe u
+                   WHERE u.ticker=d.symbol AND u.can_simulate=1
+                     AND UPPER(u.instrument_type) IN ('ACCIONES','CEDEARS')
+               )
+               ORDER BY d.decided_at DESC LIMIT 500"""
+        )
+    else:
+        decision_source = []
+    all_live_decisions=live_policy.decisions_for_live(decision_source,now=now)
     decision_page=live_policy.page_for_tablet(all_live_decisions,offset=offset,limit=limit)
     live_decisions=list(decision_page.items)
     for row in live_decisions:
