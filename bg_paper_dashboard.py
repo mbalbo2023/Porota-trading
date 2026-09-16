@@ -2376,21 +2376,7 @@ def introspection_content():
             f"{ppi_rows}</table></div>"
             "<div class='paper-card'><h2>Embudo por moneda</h2><table class='paper-table'><tr><th>Moneda</th><th>Símbolos observados</th><th>Última observación</th></tr>"
             f"{currency_rows}</table></div>"
-            "<div class='paper-card'><h2>Aprendizaje matemático</h2><p class='paper-muted'>Descriptivo, neto y no vinculante; no se interpreta como probabilidad futura.</p>"
-            "<table class='paper-table'><tr><th>Moneda</th><th>Muestras</th><th>Win rate</th><th>Expectativa/operación</th><th>Profit factor</th><th>Estado</th></tr>"
-            f"{expectancy_rows}</table></div>"
-            "<div class='paper-card'><h2>Políticas de contexto autorizadas</h2>"
-            "<p><b>Economía matemática:</b> BINDING. <b>Expectativa insuficiente:</b> OBSERVATION_ONLY. "
-            "<b>Régimen:</b> ALERT_ONLY. <b>Sector:</b> OBSERVATION_ONLY, sin límite vinculante.</p>"
-            "<p class='paper-muted'>La amplitud usa primera y última muestra de negocio observada; no se presenta como índice ni como OHLC completo.</p></div>"
-            "<div class='paper-card'><h2>Cauciones — preparación contractual</h2>"
-            f"<p>Estado: {_status(cauciones.get('state','SIN_DATOS'))}.</p>"
-            f"<p><b>Oferta actual faltante:</b> {_e(caucion_missing_offer)}.</p>"
-            f"<p><b>Política diaria faltante:</b> {_e(caucion_missing_policy)}.</p>"
-            "<p class='paper-muted'>La incertidumbre se observa y conserva; sólo una oferta con todos los términos validados puede llegar al asignador PAPER.</p></div>"
-            "<div class='paper-card'><h2>Familias financieras — descubrimiento y capacidad</h2>"
-            "<table class='paper-table'><tr><th>Familia</th><th>Observadas</th><th>Contado PAPER listo</th><th>Descubrimiento</th><th>Capacidades/pendientes</th><th>Excluida por defecto</th></tr>"
-            f"{family_rows}</table></div>")
+)
 
 
 
