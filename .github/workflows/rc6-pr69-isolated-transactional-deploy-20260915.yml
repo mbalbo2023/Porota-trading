@@ -168,11 +168,11 @@ jobs:
           x=json.loads(sys.argv[1])
           assert x.get("status") == "ok" and x.get("version") == "17.0.0-rc6"
           PY
-          # Bootstrap compacto una sola vez tras un deploy correcto. La cadencia
+          # Bootstrap compacto una sola vez tras un deploy correcto. Cada tarea es diaria y acotada; 60 s cubren el arranque de Python sin autorizar un recorrido de ledger. La cadencia
           # ordinaria sigue siendo diaria; esto evita dejar Validación y Reportes
           # vacíos hasta el día siguiente sin recorrer el ledger en HTTP.
           for job in validation_projection action4_audit; do
-            JOB_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 30 python az_maintenance_job.py "$job" 2>&1)"
+            JOB_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 60 python az_maintenance_job.py "$job" 2>&1)"
             echo "$JOB_OUTPUT"
             grep -Fq "Tarea $job completada." <<< "$JOB_OUTPUT"
             echo "BOOTSTRAP_$(tr '[:lower:]' '[:upper:]' <<< "$job")=GREEN"
