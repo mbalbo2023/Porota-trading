@@ -2055,23 +2055,17 @@ def trading_page(section=''):
 
 
 def instruments_page():
-    families=[]
-    for values in FAMILY_GROUPS.values():
-        for family in values:
-            if family not in families:
-                families.append(family)
-    for family in ('ETF','ACCIONES_USA'):
-        if family not in families:
-            families.append(family)
+    families=families_for_group("acciones-cedears")
     table=_family_ux_table(families)
-    body=("<h1>Instrumentos y contratos</h1>"
-          "<div class='paper-notice'>Fuente de verdad visual de cobertura contractual. "
-          "MISSING/STALE/HOLD se muestran; no se esconden familias por no estar operativas.</div>"
+    body=("<h1>Instrumentos operativos</h1>"
+          "<div class='paper-notice'><b>Alcance actual: acciones y CEDEARs.</b> "
+          "La cobertura contractual heredada de bonos, cauciones, opciones, futuros, FCI y "
+          "licitaciones está desactivada: no hay scraping, ingestión ni decisión PAPER para esas familias.</div>"
           "<div class='paper-card'><table class='paper-table'><tr><th>Familia</th><th>Readiness</th>"
           "<th>Observadas</th><th>Evidencias</th><th>Verificadas</th><th>READY PAPER</th>"
           "<th>Bloqueadas/pendientes</th><th>Cambios v2</th><th>Principales bloqueos</th>"
           f"<th>Interpretación</th></tr>{table}</table></div>")
-    return _document('Instrumentos y contratos',body,refresh=60)
+    return _document('Instrumentos operativos',body,refresh=60)
 
 
 SYSTEM_SECTIONS = (
