@@ -119,7 +119,85 @@ jobs:
             exit 1
           fi
           sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
-          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+          # El host finaliza el cambio de modo correctamente, pero su wrapper SSH
+          # puede devolver 124 al cerrar el canal. Sólo se tolera ese código si el
+          # propio gestor confirma POROTA_MODE=OK; las verificaciones posteriores
+          # (health, rutas, render y SQLite) siguen siendo obligatorias.
+          set +e
+          MODE_OUTPUT="$(sudo -n python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
+          MODE_RC=$?
+          set -e
+          echo "$MODE_OUTPUT"
+          grep -q '^POROTA_MODE=OK
+          for _ in $(seq 1 45); do
+            H="$(curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null || true)"
+            if python3 - "$H" <<'PY'
+          import json,sys
+          try:
+              x=json.loads(sys.argv[1]); assert x.get('status')=='ok' and x.get('version')=='17.0.0-rc6'
+          except Exception: raise SystemExit(1)
+          PY
+            then OK=YES; break; fi
+            sleep 2
+          done
+          if [ "$OK" != YES ]; then
+            for f in bg_paper_dashboard.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py; do sudo -n cp "$BACKUP/$f" "$REPO/$f"; done
+            sudo -n docker tag "$PREV_IMAGE_TAG" "$TARGET_IMAGE"
+            sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+            exit 1
+          fi
+          # The compact projection evaluates only live safety and a previously
+          # verified snapshot. It never scans the JSONL ledger during deploy.
+          VALIDATION_PROJECTION="$(sudo -n docker exec porota_production_dashboard timeout 30 python az_maintenance_job.py validation_projection 2>&1)"
+          echo "$VALIDATION_PROJECTION"
+          grep -q "Tarea validation_projection completada" <<< "$VALIDATION_PROJECTION"
+          echo "VALIDATION_PROJECTION_BOOTSTRAP=GREEN"
+          # Publica la auditoría compacta ahora para que Reportes no espere
+          # hasta la próxima cadencia diaria. Sólo lee SQLite y escribe un JSON.
+          ACTION4_AUDIT="$(sudo -n docker exec porota_production_dashboard timeout 30 python az_maintenance_job.py action4_audit 2>&1)"
+          echo "$ACTION4_AUDIT"
+          grep -q "Tarea action4_audit completada" <<< "$ACTION4_AUDIT"
+          echo "ACTION4_AUDIT_BOOTSTRAP=GREEN"
+          ROUTE_FAILURES=0
+          for PATH_CHECK in /trading /motor-trading /validacion /reportes; do
+            CODE="$(curl -sS -o /tmp/porota-dashboard-check -w '%{http_code}' --max-time 10 "http://127.0.0.1:8000$PATH_CHECK" || true)"
+            case "$CODE" in 200|401) ;; *) echo "DASHBOARD_ROUTE_FAILED=$PATH_CHECK HTTP=$CODE"; sed -n "1,120p" /tmp/porota-dashboard-check; ROUTE_FAILURES=1 ;; esac
+          done
+          echo "DASHBOARD_ROUTE_FAILURES=$ROUTE_FAILURES"
+          RENDER_FAILURES=0
+          BG_RENDER="$(sudo -n docker exec porota_production_dashboard timeout 30 python -c "import bg_paper_dashboard as bg; bg.validation_page(); print('BG_VALIDATION_RENDER=GREEN')" 2>&1 || true)"
+          echo "$BG_RENDER"
+          if ! grep -q "BG_VALIDATION_RENDER=GREEN" <<< "$BG_RENDER"; then RENDER_FAILURES=1; fi
+          PROJECT_RENDER="$(sudo -n docker exec porota_production_dashboard timeout 30 python -c "import en_validation_project_dashboard_rc6 as p; p.page(); print('PROJECT_VALIDATION_RENDER=GREEN')" 2>&1 || true)"
+          echo "$PROJECT_RENDER"
+          if ! grep -q "PROJECT_VALIDATION_RENDER=GREEN" <<< "$PROJECT_RENDER"; then RENDER_FAILURES=1; fi
+          echo "DASHBOARD_RENDER_FAILURES=$RENDER_FAILURES"
+          test "$ROUTE_FAILURES" = 0
+          test "$RENDER_FAILURES" = 0
+          POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close(); print('|'.join(map(str,(q,mode,orders))))
+          PY
+          )"
+          echo "POST_STATE=$POST_STATE"
+          test "$POST_STATE" = 'ok|PRODUCTION_PAPER|0'
+          echo "DEPLOYED_SHA=$TARGET_SHA"
+          echo 'REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'RC6_UNIFIED_PAPER_DEPLOY=GREEN'
+          sudo -n docker compose ps
+          REMOTE
+ <<< "$MODE_OUTPUT"
+          if [ "$MODE_RC" -ne 0 ] && [ "$MODE_RC" -ne 124 ]; then
+            echo "MODE_MANAGER_EXIT=$MODE_RC"
+            exit "$MODE_RC"
+          fi
+          if [ "$MODE_RC" -eq 124 ]; then
+            echo "MODE_MANAGER_WRAPPER_EXIT=124_CONFIRMED_BY_SENTINEL"
+          fi
           OK=NO
           for _ in $(seq 1 45); do
             H="$(curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null || true)"
