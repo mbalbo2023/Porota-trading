@@ -1336,10 +1336,11 @@ def health_page():
     return _document("Salud de APIs", body, refresh=60)
 
 def history_page():
+    operational_families=("ACCIONES","CEDEARS")
     catalog=(_rows("SELECT COUNT(*) n FROM instrument_catalog") or [{"n":0}])[0]["n"] if _table("instrument_catalog") else 0
-    eligible=(_rows("SELECT COUNT(*) n FROM candidate_universe WHERE can_simulate=1 AND status='AVAILABLE'") or [{"n":0}])[0]["n"] if _table("candidate_universe") else 0
-    history=(_rows("SELECT COUNT(*) instruments,SUM(row_count) rows,MAX(downloaded_at) latest FROM production_history") or [{}])[0] if _table("production_history") else {}
-    last_market=(_rows("SELECT MAX(date_to) latest FROM production_history") or [{}])[0].get("latest") if _table("production_history") else None
+    eligible=(_rows("SELECT COUNT(*) n FROM candidate_universe WHERE can_simulate=1 AND status='AVAILABLE' AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS')") or [{"n":0}])[0]["n"] if _table("candidate_universe") else 0
+    history=(_rows("SELECT COUNT(*) instruments,SUM(row_count) rows,MAX(downloaded_at) latest FROM production_history WHERE UPPER(instrument_type) IN ('ACCIONES','CEDEARS')") or [{}])[0] if _table("production_history") else {}
+    last_market=(_rows("SELECT MAX(date_to) latest FROM production_history WHERE UPPER(instrument_type) IN ('ACCIONES','CEDEARS')") or [{}])[0].get("latest") if _table("production_history") else None
     sync=(_rows("""SELECT source,status,last_attempt_at,last_success_at,items,detail
       FROM source_sync WHERE source LIKE 'PPI_%' ORDER BY last_attempt_at DESC""")
       if _table("source_sync") else [])
@@ -1349,17 +1350,17 @@ def history_page():
     cycle_rows="".join(f"<tr><td>{_local_time(r['started_at'])}</td><td>{r['selected_count']}/{r['eligible_total']}</td><td>{r['successful_count']}</td><td>{r['failed_count']}</td><td>{r['duration_seconds']:.2f}s</td><td>{r['recommended_limit']}</td></tr>" for r in cycles) or "<tr><td colspan='6'>Esperando métricas.</td></tr>"
     try:
         with closing(_conn()) as c:
-            dynamic=observer_history_metrics(c)
+            dynamic=observer_history_metrics(c,families=operational_families)
     except Exception:
         dynamic={"target_total":0,"target_by_family":{},"source_capabilities":{}}
     try:
         with closing(_conn()) as c:
-            store_v2=effective_store_metrics(c)
+            store_v2=effective_store_metrics(c,families=operational_families)
     except Exception:
-        store_v2=v2_store_metrics()
+        store_v2=v2_store_metrics(families=operational_families)
     try:
         with closing(_conn()) as c:
-            fresh_v5=freshness_qualified_metrics(c)
+            fresh_v5=freshness_qualified_metrics(c,families=operational_families)
     except Exception as exc:
         fresh_v5={"available":False,"reason":type(exc).__name__,"target_total":0,
                   "fresh_total":0,"fresh_ge30":0,"fresh_ge90":0,"fresh_ge180":0,
@@ -1380,7 +1381,7 @@ def history_page():
     cards="".join((
         _card("Catálogo PPI",catalog,"Inventario PPI observado; no equivale a READY PAPER","green" if catalog else "gray"),
         _card("Universo elegible",eligible,"Elegible para motor PAPER; distinto del universo histórico","green" if eligible else "gray"),
-        _card("Cobertura histórica ANY",target_label,coverage_detail+" · profundidad/freshness se informan por separado",
+        _card("Cobertura histórica operativa",target_label,coverage_detail+" · profundidad/freshness se informan por separado",
               "green" if coverage_complete else "gray"),
         _card("Historia fresca ≥30",
               f"{fresh_v5.get('fresh_ge30',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
@@ -1395,7 +1396,7 @@ def history_page():
               "FULL_OHLC profundo y fresco; no es precio de ejecución ni autorización PAPER",
               "green" if fresh_v5.get('available') else "yellow"),
         _card("Historia efectiva",f"{store_v2.get('canonical_rows',0)} filas",
-              f"capa {store_v2.get('layer','V2')} · {store_v2.get('reason','OK')} · ANY no equivale a fresh",
+              f"capa {store_v2.get('layer','V2')} · sólo acciones/CEDEARs · coverage no equivale a fresh",
               "green" if store_v2.get('available') else "yellow"),
         _card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,"Ventana rotativa del motor; no limita la cola histórica","green"),
         _card("Última fecha PPI legacy",_e(last_market),"Dato de production_history; History Store v2 puede contener otras fuentes","gray"),
@@ -1412,7 +1413,6 @@ def history_page():
     by_family=store_v2.get('by_family',{}) if isinstance(store_v2,dict) else {}
     targets=dynamic.get('target_by_family',{}) if isinstance(dynamic,dict) else {}
     caps=dynamic.get('source_capabilities',{}) if isinstance(dynamic,dict) else {}
-    operational_families={"ACCIONES","CEDEARS"}
     all_families=sorted(
         family for family in (set(targets)|set(by_family)|set(caps))
         if str(family or "").upper() in operational_families
@@ -1433,7 +1433,7 @@ def history_page():
         f"Hay {fresh_v5.get('stale_ge90_count',0)} identidades con al menos 90 barras pero historia stale; no cuentan como fresh ≥90. "
         "CLOSE_ONLY se informa por separado y nunca habilita ATR, VWAP, precio de ejecución ni READY PAPER.</div>"
     )
-    body=f"<h1>Históricos y universo operativo</h1><div class='paper-warning'><b>Alcance actual:</b> esta vista y el motor usan acciones y CEDEARs. Los datos de otras familias se conservan sólo como legado/auditoría y no disparan ingesta ni decisiones.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
+    body=f"<h1>Históricos y universo operativo</h1><div class='paper-warning'><b>Alcance actual:</b> esta vista y el motor usan acciones y CEDEARs. Los datos de otras familias se conservan sólo como legado/auditoría y no disparan ingesta ni decisiones.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
     return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
 
 
