@@ -96,18 +96,34 @@ def _dynamic_row(milestone, prior):
     observer = _observer_evidence()
     data = _bounded_data_evidence()
 
+    runtime_orders = observer.get("real_orders_sent")
+    runtime_mode = str(observer.get("mode") or "")
+    try:
+        runtime_zero_orders = int(runtime_orders) == 0
+    except (TypeError, ValueError):
+        runtime_zero_orders = False
+    runtime_paper = runtime_mode == "PRODUCTION_PAPER"
+
     if code == "M0" and ok_db:
         state, pct = "GREEN", 100
         observed = f"Base accesible en modo read-only; quick_check={db_detail}"
         deviation = "Ninguna detectada por este evaluador"
         blocker = "Ninguno en la evidencia local"
         next_action = "Mantener backup, timers y restart behavior bajo observación"
-    elif code == "M1" and safe:
+    elif code == "M1" and safe and runtime_paper and runtime_zero_orders:
         state, pct = "GREEN", 100
-        observed = f"Invariantes PAPER observadas: {safety_detail}; real_orders_sent=0 requerido"
+        observed = (f"Invariantes PAPER observadas: {safety_detail}; "
+                    f"runtime mode={runtime_mode}; real_orders_sent={runtime_orders}")
         deviation = "Ninguna detectada por este evaluador"
         blocker = "Ninguno en la evidencia local"
         next_action = "Revalidar en cada deploy y no promover a real-money"
+    elif code == "M1":
+        observed = (f"Invariantes incompletas: {safety_detail}; "
+                    f"runtime mode={runtime_mode or 'UNKNOWN'}; "
+                    f"real_orders_sent={runtime_orders if runtime_orders is not None else 'UNKNOWN'}")
+        deviation = "No se puede demostrar simultáneamente PAPER, SIMULATED y cero órdenes"
+        blocker = "Observer runtime o configuración no verificables"
+        next_action = "Restablecer evidencia runtime antes de considerar el hito GREEN"
     elif code == "M2":
         auth = str(observer.get("ppi_auth") or "UNKNOWN")
         scope = "ACCIONES/CEDEARS" if safe else "SIN_SCOPE_CONFIRMADO"
