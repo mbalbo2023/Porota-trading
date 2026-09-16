@@ -133,12 +133,12 @@ jobs:
           done
           echo "DASHBOARD_ROUTE_FAILURES=$ROUTE_FAILURES"
           RENDER_FAILURES=0
-          RENDER_OUTPUT="$(sudo -n docker exec porota_production_dashboard python -c "import bg_paper_dashboard as bg; import en_validation_project_dashboard_rc6 as project; bg.validation_page(); project.page(limit_days=1); print('DASHBOARD_RENDER=GREEN')" 2>&1 || true)"
-          echo "$RENDER_OUTPUT"
-          if ! grep -q "DASHBOARD_RENDER=GREEN" <<< "$RENDER_OUTPUT"; then
-            RENDER_FAILURES=1
-            sudo -n docker logs --tail 200 porota_production_dashboard || true
-          fi
+          BG_RENDER="$(sudo -n docker exec porota_production_dashboard timeout 30 python -c "import bg_paper_dashboard as bg; bg.validation_page(); print('BG_VALIDATION_RENDER=GREEN')" 2>&1 || true)"
+          echo "$BG_RENDER"
+          if ! grep -q "BG_VALIDATION_RENDER=GREEN" <<< "$BG_RENDER"; then RENDER_FAILURES=1; fi
+          PROJECT_RENDER="$(sudo -n docker exec porota_production_dashboard timeout 30 python -c "import en_validation_project_dashboard_rc6 as p; p.page(limit_days=1); print('PROJECT_VALIDATION_RENDER=GREEN')" 2>&1 || true)"
+          echo "$PROJECT_RENDER"
+          if ! grep -q "PROJECT_VALIDATION_RENDER=GREEN" <<< "$PROJECT_RENDER"; then RENDER_FAILURES=1; fi
           echo "DASHBOARD_RENDER_FAILURES=$RENDER_FAILURES"
           test "$ROUTE_FAILURES" = 0
           test "$RENDER_FAILURES" = 0
