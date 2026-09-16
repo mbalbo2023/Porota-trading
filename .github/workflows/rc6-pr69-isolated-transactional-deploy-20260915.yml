@@ -38,6 +38,12 @@ jobs:
           print('RC6_PAPER_POLICY=GREEN')
           PY
 
+      - name: Install focused test runner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check "pytest>=8.3.0,<9"
+
       - name: Run focused release tests
         shell: bash
         run: |
