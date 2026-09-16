@@ -628,7 +628,7 @@ def _page():
         "<h1>Universo operativo — acciones y CEDEARs</h1>"
 
         "<div class='paper-notice'>"
-        <b>Alcance operativo actual: acciones y CEDEARs.</b> Bonos, cauciones, opciones, futuros y demás familias están deshabilitados por alcance y no se procesan aquí. <b>Lectura única.</b> Esta página reúne catálogo PPI, "
+        "<b>Alcance operativo actual: acciones y CEDEARs.</b> Bonos, cauciones, opciones, futuros y demás familias están deshabilitados por alcance y no se procesan aquí. <b>Lectura única.</b> Esta página reúne catálogo PPI, "
         "observación real de mercado, capacidad contractual, "
         "decisiones, gates y ledger PAPER. "
         "<b>Observado no significa operable:</b> una familia puede "
