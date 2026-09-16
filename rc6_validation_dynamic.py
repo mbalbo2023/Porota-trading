@@ -124,7 +124,7 @@ def _dynamic_row(milestone, prior):
         deviation = "No se puede demostrar simultáneamente PAPER, SIMULATED y cero órdenes"
         blocker = "Observer runtime o configuración no verificables"
         next_action = "Restablecer evidencia runtime antes de considerar el hito GREEN"
-    elif code == "M2":
+    elif code == "M2" and not prior:
         auth = str(observer.get("ppi_auth") or "UNKNOWN")
         scope = "ACCIONES/CEDEARS" if safe else "SIN_SCOPE_CONFIRMADO"
         if auth == "OK" and safe:
@@ -138,7 +138,7 @@ def _dynamic_row(milestone, prior):
             deviation = "No hay autenticación PPI verificable en el snapshot"
             blocker = "PPI/contratos sin evidencia suficiente"
             next_action = "Esperar pulso PPI válido y revisar contratos"
-    elif code == "M3":
+    elif code == "M3" and not prior:
         history_at, candle_at = data.get("history_at"), data.get("candle_at")
         if history_at and candle_at:
             state, pct = "YELLOW", 50
@@ -151,7 +151,7 @@ def _dynamic_row(milestone, prior):
             deviation = "Datos insuficientes"
             blocker = "Ingesta o versionado pendientes"
             next_action = "Verificar ingesta legacy/PPI y el worker de velas"
-    elif code == "M5":
+    elif code == "M5" and not prior:
         positions, gates = data.get("positions"), data.get("gates")
         if positions is not None or gates is not None:
             state, pct = "YELLOW", 40
