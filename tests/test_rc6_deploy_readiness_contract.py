@@ -16,7 +16,8 @@ def test_deploy_requires_a_fresh_observer_heartbeat_and_candidate_source():
 def test_deploy_bootstraps_compact_daily_views_once_without_reenabling_real_orders():
     body = WORKFLOW.read_text(encoding="utf-8")
     assert "for job in validation_projection action4_audit; do" in body
-    assert 'timeout 30 python az_maintenance_job.py "$job"' in body
+    assert 'timeout 60 python az_maintenance_job.py "$job"' in body
+    assert "Cada tarea es diaria y acotada" in body
     assert "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED" in body
 
 

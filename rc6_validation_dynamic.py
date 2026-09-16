@@ -19,14 +19,17 @@ def _db_path():
     return os.getenv("POROTA_PAPER_DB", "/app/data/paper_v17/observer_v17.db")
 
 
-def _db_ok():
+def _db_ok(*, deep: bool = False):
     path = Path(_db_path())
     if not path.exists():
         return False, "Base PAPER no encontrada"
     try:
         with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=3) as c:
-            result = c.execute("PRAGMA quick_check").fetchone()
-        return bool(result and result[0] == "ok"), str(result[0] if result else "sin resultado")
+            if deep:
+                result = c.execute("PRAGMA quick_check").fetchone()
+                return bool(result and result[0] == "ok"), str(result[0] if result else "sin resultado")
+            result = c.execute("SELECT 1 FROM observer_state WHERE id=1").fetchone()
+        return bool(result and result[0] == 1), "OBSERVER_ROW_READ_ONLY"
     except Exception as exc:
         return False, type(exc).__name__
 
@@ -82,7 +85,7 @@ def _runtime_safety():
     return safe, f"mode={mode or 'UNKNOWN'} execution={execution or 'UNKNOWN'} routes={routes or 'UNSET'}"
 
 
-def _dynamic_row(milestone, prior):
+def _dynamic_row(milestone, prior, *, deep_db_check: bool = False):
     prior = dict(prior or {})
     code = milestone.code
     state = "GRAY"
@@ -91,7 +94,7 @@ def _dynamic_row(milestone, prior):
     blocker = "Requiere evidencia verificable"
     next_action = "Ejecutar la validación correspondiente y publicar su evidencia"
     pct = 0
-    ok_db, db_detail = _db_ok()
+    ok_db, db_detail = _db_ok(deep=deep_db_check)
     safe, safety_detail = _runtime_safety()
     observer = _observer_evidence()
     data = _bounded_data_evidence()
@@ -104,12 +107,18 @@ def _dynamic_row(milestone, prior):
         runtime_zero_orders = False
     runtime_paper = runtime_mode == "PRODUCTION_PAPER"
 
-    if code == "M0" and ok_db:
+    if code == "M0" and ok_db and deep_db_check:
         state, pct = "GREEN", 100
         observed = f"Base accesible en modo read-only; quick_check={db_detail}"
         deviation = "Ninguna detectada por este evaluador"
         blocker = "Ninguno en la evidencia local"
         next_action = "Mantener backup, timers y restart behavior bajo observación"
+    elif code == "M0" and ok_db:
+        state, pct = "YELLOW", 60
+        observed = "Base PAPER accesible por lectura acotada; el quick_check completo queda reservado al control profundo"
+        deviation = "La proyección diaria no recorre toda la base"
+        blocker = "Falta evidencia de control profundo para GREEN"
+        next_action = "Conservar el último control profundo y ejecutar quick_check sólo en la auditoría programada"
     elif code == "M1" and safe and runtime_paper and runtime_zero_orders:
         state, pct = "GREEN", 100
         observed = (f"Invariantes PAPER observadas: {safety_detail}; "
@@ -190,9 +199,9 @@ def _dynamic_row(milestone, prior):
     }
 
 
-def evaluate(records=()):
+def evaluate(records=(), *, deep_db_check: bool = False):
     prior = latest_by_milestone(records or [])
-    return {milestone.code: _dynamic_row(milestone, prior.get(milestone.code))
+    return {milestone.code: _dynamic_row(milestone, prior.get(milestone.code), deep_db_check=deep_db_check)
             for milestone in MILESTONES}
 
 

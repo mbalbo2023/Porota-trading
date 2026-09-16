@@ -40,3 +40,13 @@ def test_daily_projection_does_not_trust_unverified_snapshot(tmp_path):
     payload = projection.refresh(tmp_path, full_verify=False)
 
     assert payload["milestones"]["M2"]["state"] == "GRAY"
+
+def test_explicit_full_verify_is_the_only_path_that_requests_deep_db_check(tmp_path, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(projection.dynamic, "evaluate",
+                        lambda records, *, deep_db_check: captured.setdefault("deep", deep_db_check) or {})
+    monkeypatch.setattr(projection.dynamic, "summary", lambda rows: {"milestones_green": 0, "milestones_total": 0, "critical_red": [], "dynamic": True})
+
+    projection.refresh(tmp_path, full_verify=False)
+
+    assert captured["deep"] is False
