@@ -271,6 +271,10 @@ def _support_schema(store):
           market TEXT NOT NULL, can_simulate INTEGER NOT NULL, status TEXT NOT NULL,
           detail TEXT NOT NULL, last_checked_at TEXT NOT NULL,
           PRIMARY KEY(ticker,instrument_type,market));
+        CREATE TABLE IF NOT EXISTS paper_book_consumption(
+          fill_id INTEGER PRIMARY KEY REFERENCES paper_fills(id),
+          instrument_key TEXT NOT NULL, book_at TEXT NOT NULL,
+          side TEXT NOT NULL, quantity TEXT NOT NULL, book_json TEXT NOT NULL);
         """)
     operations.init_schema(store)
     financial_catalog.init_schema(store)
