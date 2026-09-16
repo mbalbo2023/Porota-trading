@@ -2038,6 +2038,20 @@ def _trading_motor_summary():
         f"<td>{_status(row.get('final_result'))}</td><td>{_e(row.get('reason'))}</td></tr>"
         for row in gates
     ) or "<tr><td colspan='4'>Sin decisiones persistidas todavía.</td></tr>"
+    try:
+        import rc6_gdelt_shadow
+        gdelt = rc6_gdelt_shadow.collect()
+    except Exception as exc:
+        gdelt = {"state": "UNAVAILABLE", "reason": type(exc).__name__,
+                 "decision_effect": "OBSERVE_ONLY", "articles_count": 0}
+    gdelt_html = (
+        "<div class='paper-card'><h3>Noticias GDELT — SHADOW</h3>"
+        f"<p><b>Estado:</b> {_e(gdelt.get('state', 'UNAVAILABLE'))} · "
+        f"<b>Observaciones:</b> {_e(gdelt.get('articles_count', 0))} · "
+        f"<b>Actualizado:</b> {_e(gdelt.get('refreshed_at', 'sin caché'))}</p>"
+        "<p class='paper-muted'>Consulta acotada y caché local. Sólo contexto: "
+        "no bloquea, no cambia el tamaño y no autoriza órdenes.</p></div>"
+    )
     return (
         "<div class='paper-card'><h2>Motor de trading — actual e histórico reciente</h2>"
         f"<p><b>{open_count}</b> abiertas simuladas · <b>{closed_count}</b> cerradas recientes. "
@@ -2046,6 +2060,7 @@ def _trading_motor_summary():
         "<th>Estado</th><th>Salida</th><th>PnL</th></tr>" + position_rows + "</table>"
         "<h3>Decisiones recientes</h3><table class='paper-table'><tr><th>Hora</th>"
         "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>"
+        gdelt_html +
         "<p class='paper-muted'>El detalle forense completo sigue disponible en Motor de trading; "
         "esta tabla evita cargar masivamente operaciones, fills o históricos al abrir Trading.</p></div>"
     )
@@ -2116,7 +2131,8 @@ def trading_page(section=''):
           "take-profit / End of Day / Max Hold → decisión simulada explicable.</p>"
           "<p><b>BCRA Shadow:</b> usa caché local diaria de reservas, TAMAR, dólar oficial, "
           "IPC, actividad y brecha cambiaria con tendencia/percentil. Sólo documenta contexto; "
-          "no bloquea ni cambia el tamaño. GDELT queda pendiente de un adaptador real.</p>"
+          "no bloquea ni cambia el tamaño. GDELT también se consulta en un worker acotado y "
+          "se lee desde caché local, siempre OBSERVE_ONLY.</p>"
           "<p>Una señal de vela o histórico <b>no habilita sola</b> una operación: queda guardada "
           "para comparar decisiones y ajustar el motor con evidencia. No se envían órdenes reales.</p>"
           "<p>El detalle histórico y actual convive en esta sección; la URL anterior se mantiene "
