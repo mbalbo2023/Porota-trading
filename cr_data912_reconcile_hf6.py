@@ -71,6 +71,8 @@ def load_targets(connection) -> list[HistoricalIdentity]:
         family = str(family or "").upper()
         market = str(market or "").upper()
         settlement = str(settlement or "").upper()
+        if family not in policy.OPERATIONAL_HISTORY_FAMILIES:
+            continue
         if not policy.data912_fallback_allowed(family):
             continue
         if not market or market == "UNKNOWN" or not settlement or settlement == "UNKNOWN":
