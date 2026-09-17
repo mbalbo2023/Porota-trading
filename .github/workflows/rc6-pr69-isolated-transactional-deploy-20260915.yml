@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - deploy/rc6-pr69-isolated-20260915
+    paths-ignore:
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -15,6 +17,8 @@ concurrency:
 
 jobs:
   deploy:
+    # Defensive: checkpoints/notes must never recreate the observer.
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'docs(')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
