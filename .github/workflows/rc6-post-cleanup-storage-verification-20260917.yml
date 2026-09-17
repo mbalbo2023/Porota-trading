@@ -1,0 +1,53 @@
+name: RC6 post-cleanup storage verification 2026-09-17
+
+on:
+  push:
+    branches: [ops/rc6-safe-builder-cache-cleanup-20260917]
+    paths:
+      - '.github/workflows/rc6-post-cleanup-storage-verification-20260917.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_storage_verify"
+          chmod 600 "$HOME/.ssh/porota_rc6_storage_verify"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Verify live state and capacity read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_storage_verify" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'POST_CLEANUP_DB={q}|{mode}|{orders}')
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(orders)==0
+          PY
+          df -h / | awk 'NR==1 || NR==2 {print "POST_CLEANUP_DF=" $0}'
+          sudo -n docker system df
+          echo HOST_MUTATION=NO
+          echo ORDER_ROUTES=NOT_CALLED
+          echo RC6_POST_CLEANUP_VERIFY=GREEN
+          REMOTE
