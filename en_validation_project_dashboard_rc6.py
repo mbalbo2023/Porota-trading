@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
 import bg_paper_dashboard as bg
+import ez_iol_shadow_validation_view_rc6 as iol_shadow_view
 import rc6_validation_projection as projection
 from em_validation_campaign_rc6 import MILESTONES
 
@@ -86,6 +87,7 @@ def page() -> str:
         + "<p class='paper-muted'>Los hitos M0–M11 se actualizan por worker cada 10 minutos. "
           "No se muestra ni se carga el historial de campañas, operaciones o registros de auditoría en esta pantalla.</p>"
         + f"<div class='paper-grid'>{cards}</div>"
+        + iol_shadow_view.render()
         + "<section class='paper-card'><h2>Estado actual de los hitos M0–M11</h2>"
           "<p>Cada hito muestra su objetivo, evidencia actual, blocker y próximo paso.</p>"
           f"{roadmap}</section>"
