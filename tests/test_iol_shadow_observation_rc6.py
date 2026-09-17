@@ -24,3 +24,14 @@ def test_ppi_remains_primary_for_actions():
     assert policy.primary_live_source("ACCIONES")=="PPI"
     assert policy.SYNCHRONOUS_SECONDARY_VALIDATION_ALLOWED is False
     assert policy.BACKGROUND_DIVERGENCE_CAN_HOLD_LIVE is False
+
+
+def test_refresh_is_bounded_and_uses_only_read_only_tools(tmp_path):
+    seen=[]
+    def tool(name,args):
+        seen.append(name)
+        return {"last":1} if name=="get_asset_quote" else {"type":"ACCIONES"}
+    symbols=[f"S{i}" for i in range(60)]
+    data=shadow.refresh(symbols,tool,root=tmp_path)
+    assert len(data["symbols"]) == shadow.MAX_SYMBOLS_PER_REFRESH
+    assert set(seen) == shadow.READ_ONLY_TOOLS
