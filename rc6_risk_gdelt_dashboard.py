@@ -49,12 +49,14 @@ def render_section() -> str:
         <div class='paper-card'><h3>Estado</h3><span class='paper-status {css}'>{_e(state)}</span></div>
         <div class='paper-card'><h3>Autoridad</h3><b class='metric'>{_e(status.get('authority') or 'SHADOW_ONLY')}</b></div>
         <div class='paper-card'><h3>Eventos persistidos</h3><b class='metric'>{_e(status.get('events_total', 0))}</b></div>
+        <div class='paper-card'><h3>Frescura</h3><b class='metric'>{_e(status.get('freshness'))}</b><div class='paper-muted'>{_e(status.get('freshness_seconds'))} s</div></div>
         <div class='paper-card'><h3>Último evento disponible</h3><b class='metric'>{_e(status.get('latest_event_available_at'))}</b></div>
       </div>
       <table class='paper-table classic-responsive-table'>
-        <thead><tr><th>Run</th><th>Inicio</th><th>Fin</th><th>Tipos OK/solicitados</th><th>Fetched</th><th>Stored</th><th>Errores</th></tr></thead>
+        <thead><tr><th>Run</th><th>Estado de corrida</th><th>Inicio</th><th>Fin</th><th>Tipos OK/solicitados</th><th>Fetched</th><th>Stored</th><th>Errores</th></tr></thead>
         <tbody><tr>
           <td>{_e(status.get('run_id'))}</td>
+          <td>{_e(status.get('last_run_state', state))}</td>
           <td>{_e(status.get('started_at'))}</td>
           <td>{_e(status.get('finished_at'))}</td>
           <td>{_e(status.get('successful_event_types', 0))}/{_e(status.get('requested_event_types', 0))}</td>
@@ -63,7 +65,7 @@ def render_section() -> str:
           <td data-wrap='true'>{_e(errors)}</td>
         </tr></tbody>
       </table>
-      <p class='paper-muted'>Lectura local solamente. Esta pantalla no dispara HTTP, scraping, broker ni BUY/SELL.</p>
+      <p class='paper-muted'>Lectura local solamente. FRESH exige una corrida dentro del TTL configurado; STALE, NOT_RUN o READ_ERROR no se interpretan como datos válidos. Esta pantalla no dispara HTTP, scraping, broker ni BUY/SELL.</p>
     </section>"""
 
 
