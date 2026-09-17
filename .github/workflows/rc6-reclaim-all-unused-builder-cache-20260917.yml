@@ -1,0 +1,73 @@
+name: RC6 reclaim all unused Docker builder cache 2026-09-17
+
+on:
+  push:
+    branches: [ops/rc6-safe-builder-cache-cleanup-20260917]
+    paths:
+      - '.github/workflows/rc6-reclaim-all-unused-builder-cache-20260917.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-reclaim-all-unused-builder-cache
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_builder_all"
+          chmod 600 "$HOME/.ssh/porota_rc6_builder_all"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Reclaim only unused builder cache with pre and post gates
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_builder_all" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          state() {
+            sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'{q}|{mode}|{orders}')
+          PY
+          }
+          PRE="$(state)"
+          echo "PRE_STATE=$PRE"
+          test "$PRE" = 'ok|PRODUCTION_PAPER|0'
+          sudo -n docker inspect porota_production_observer porota_production_dashboard >/dev/null
+          df -h / | awk 'NR==1 || NR==2 {print "DF_BEFORE=" $0}'
+          sudo -n docker system df
+          sudo -n docker builder prune --all --force
+          POST="$(state)"
+          echo "POST_STATE=$POST"
+          test "$POST" = 'ok|PRODUCTION_PAPER|0'
+          df -h / | awk 'NR==1 || NR==2 {print "DF_AFTER=" $0}'
+          sudo -n docker system df
+          echo CLEANUP_SCOPE=UNUSED_DOCKER_BUILDER_CACHE_ONLY
+          echo IMAGES_DELETED=NO
+          echo CONTAINERS_DELETED=NO
+          echo VOLUMES_DELETED=NO
+          echo DATABASES_TOUCHED=NO
+          echo ORDER_ROUTES=NOT_CALLED
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo RC6_BUILDER_CACHE_RECLAIM=GREEN
+          REMOTE
