@@ -1,9 +1,6 @@
 name: RC6 IOL MCP OAuth Bootstrap
 
 on:
-  push:
-    branches:
-      - test/iol-mcp-connectivity-20260917
   workflow_dispatch:
 
 permissions:
@@ -131,8 +128,6 @@ jobs:
           print('REDIRECT_URI=' + redirect)
           print('AUTHORIZATION_URL=' + auth_url)
 
-          # Non-interactive preflight only: verify the authorization endpoint accepts
-          # the generated client request. Do not submit IOL credentials or consent.
           req=urllib.request.Request(auth_url,headers={'User-Agent':'Porota-RC6-OAuth-Preflight/1.0'},method='GET')
           opener=urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
           try:
