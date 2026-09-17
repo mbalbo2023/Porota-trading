@@ -1569,7 +1569,7 @@ def learning_page():
           "<div class='paper-notice'><b>Aprendizaje event-driven.</b> Cada compra simulada conserva señal, economía, riesgo, liquidez, resultado y lección. "
           "Sólo un nuevo cierre PAPER produce una nueva etiqueta; por eso una etiqueta antigua sin cierres posteriores no significa pipeline detenido. "
           "La expectativa mostrada es descriptiva y neta sobre fills PAPER cerrados; no prueba ventaja futura, no bloquea operaciones y no cambia parámetros automáticamente.</div>" + counterfactual_panel
-          "<div class='paper-card'><h2>Expectativa empírica por moneda — últimas 100 cerradas</h2>"
+          + "<div class='paper-card'><h2>Expectativa empírica por moneda — últimas 100 cerradas</h2>"
           "<table class='paper-table'><tr><th>Moneda</th><th>Muestras</th><th>Win rate</th><th>Ganancia media</th>"
           "<th>Pérdida media</th><th>Expectativa por operación</th><th>Profit factor</th><th>Estado muestral</th></tr>"
           f"{expectancy_rows}</table><p class='paper-muted'>Menos de 30 muestras se marca como insuficiente; aun con 30 o más permanece observacional hasta validación fuera de muestra.</p></div>"
