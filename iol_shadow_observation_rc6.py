@@ -17,6 +17,8 @@ DECISION_EFFECT="OBSERVE_ONLY"
 SOURCE="IOL_MCP"
 LIVE_DECISION_AUTHORITY=False
 DEFAULT_MARKET="BCBA"
+READ_ONLY_TOOLS=frozenset({"get_asset_quote","get_asset_info"})
+MAX_SYMBOLS_PER_REFRESH=50
 
 def cache_path(root: Path | str | None=None) -> Path:
     if root is not None:
@@ -48,12 +50,16 @@ def refresh(symbols: Iterable[str], call_tool: Callable[[str,dict],dict], *, roo
     observed_at=(now or datetime.now(timezone.utc)).isoformat()
     primary=primary_last_by_symbol or {}
     rows=[]
-    for raw in symbols:
+    for raw in list(symbols)[:MAX_SYMBOLS_PER_REFRESH]:
         symbol=str(raw or "").upper().strip()
         if not symbol: continue
         try:
-            quote=_quote_summary(call_tool("get_asset_quote",{"symbol":symbol,"market":market}))
-            info=call_tool("get_asset_info",{"symbol":symbol,"market":market})
+            quote_tool="get_asset_quote"
+            info_tool="get_asset_info"
+            if {quote_tool,info_tool} != READ_ONLY_TOOLS:
+                raise PermissionError("IOL_SHADOW_TOOL_ALLOWLIST_VIOLATION")
+            quote=_quote_summary(call_tool(quote_tool,{"symbol":symbol,"market":market}))
+            info=call_tool(info_tool,{"symbol":symbol,"market":market})
             primary_last=_number(primary.get(symbol))
             rows.append({"symbol":symbol,"market":market,"state":"READY" if quote else "UNAVAILABLE","quote":quote,"asset_type":str((info or {}).get("type") or ""),"currency":str((info or {}).get("currency") or ""),"units_per_lot":(info or {}).get("units_per_lot"),"primary_comparison":compare_background_numeric(primary_last,quote.get("last"),tolerance_pct=tolerance_pct),"decision_effect":DECISION_EFFECT})
         except Exception as exc:
