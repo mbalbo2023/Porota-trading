@@ -185,29 +185,33 @@ jobs:
           RUNNING_OBSERVER_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/bf_production_paper_observer.py | awk '{print $1}')"
           test "$RUNNING_OBSERVER_SHA" = "$EXPECTED_OBSERVER_SHA"
           echo "OBSERVER_CANDIDATE_SHA=GREEN"
-          SCHEDULER_HISTORY_GUARD="$(sudo -n docker exec porota_production_observer python - <<'PY'
+          if ! SCHEDULER_HISTORY_GUARD="$(sudo -n docker exec porota_production_observer python - <<'PY' 2>&1
           from pathlib import Path
 
           source = Path("/app/az_maintenance_scheduler.py").read_text(encoding="utf-8")
-          guard = "if job_name in INTERNAL_HISTORICAL_WRITE_JOBS:"
-          launch = "result = subprocess.run("
-          assert guard in source and source.index(guard) < source.index(launch)
-          for job_id in (
-              "maintenance_historical_catchup",
-              "maintenance_historical_refresh",
-              "maintenance_historical_startup_catchup",
-          ):
-              assert f'id="{job_id}"' not in source
-          for job_id in (
-              "maintenance_news_scan",
-              "maintenance_gdelt_shadow",
-              "maintenance_action4_audit",
-              "maintenance_validation_projection",
-          ):
-              assert f'id="{job_id}"' in source
+          checks = {
+              "guard_before_launch": (
+                  "if job_name in INTERNAL_HISTORICAL_WRITE_JOBS:" in source
+                  and source.index("if job_name in INTERNAL_HISTORICAL_WRITE_JOBS:")
+                  < source.index("result = subprocess.run(")
+              ),
+              "catchup_absent": 'id="maintenance_historical_catchup"' not in source,
+              "refresh_absent": 'id="maintenance_historical_refresh"' not in source,
+              "startup_absent": 'id="maintenance_historical_startup_catchup"' not in source,
+              "news_present": 'id="maintenance_news_scan"' in source,
+              "gdelt_present": 'id="maintenance_gdelt_shadow"' in source,
+              "audit_present": 'id="maintenance_action4_audit"' in source,
+              "projection_present": 'id="maintenance_validation_projection"' in source,
+          }
+          print(f"SCHEDULER_GUARD_DETAILS={checks}")
+          if not all(checks.values()):
+              raise SystemExit(1)
           print("INTERNAL_HISTORY_WRITES=DISABLED")
           PY
-          )"
+          )"; then
+            echo "$SCHEDULER_HISTORY_GUARD"
+            exit 1
+          fi
           echo "$SCHEDULER_HISTORY_GUARD"
           grep -Fqx "INTERNAL_HISTORY_WRITES=DISABLED" <<< "$SCHEDULER_HISTORY_GUARD"
           for p in /trading /motor-trading /validacion /reportes; do
