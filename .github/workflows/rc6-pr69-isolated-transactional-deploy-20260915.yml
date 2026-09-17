@@ -185,7 +185,7 @@ jobs:
           RUNNING_OBSERVER_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/bf_production_paper_observer.py | awk '{print $1}')"
           test "$RUNNING_OBSERVER_SHA" = "$EXPECTED_OBSERVER_SHA"
           echo "OBSERVER_CANDIDATE_SHA=GREEN"
-          if ! SCHEDULER_HISTORY_GUARD="$(sudo -n docker exec porota_production_observer python - <<'PY' 2>&1
+          if ! SCHEDULER_HISTORY_GUARD="$(sudo -n docker exec -i porota_production_observer python - <<'PY' 2>&1
           from pathlib import Path
 
           source = Path("/app/az_maintenance_scheduler.py").read_text(encoding="utf-8")
