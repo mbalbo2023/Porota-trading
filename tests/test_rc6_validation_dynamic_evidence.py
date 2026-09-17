@@ -3,7 +3,7 @@ import sqlite3
 import rc6_validation_dynamic as dynamic
 
 
-def test_validation_exposes_bounded_history_candle_and_execution_evidence(tmp_path, monkeypatch):
+def test_validation_does_not_present_bounded_old_data_as_current_evidence(tmp_path, monkeypatch):
     database = tmp_path / "paper.db"
     with sqlite3.connect(database) as c:
         c.executescript("""
@@ -31,10 +31,10 @@ def test_validation_exposes_bounded_history_candle_and_execution_evidence(tmp_pa
 
     rows = dynamic.evaluate()
 
-    assert rows["M2"]["state"] == "YELLOW"
-    assert rows["M3"]["state"] == "YELLOW"
-    assert "Históricos hasta" in rows["M3"]["observed_evidence"]
-    assert rows["M5"]["state"] == "YELLOW"
+    for code in ("M2", "M3", "M5"):
+        assert rows[code]["state"] == "GRAY"
+        assert rows[code]["claim_status"] == "PENDING"
+    assert rows["M3"]["observed_evidence"] == "Sin evidencia verificable actual"
 
 
 def test_paper_green_needs_runtime_row_with_zero_real_orders(tmp_path, monkeypatch):
@@ -49,7 +49,8 @@ def test_paper_green_needs_runtime_row_with_zero_real_orders(tmp_path, monkeypat
     rows = dynamic.evaluate()
 
     assert rows["M1"]["state"] == "GRAY"
-    assert "real_orders_sent=UNKNOWN" in rows["M1"]["observed_evidence"]
+    assert rows["M1"]["claim_status"] == "PENDING"
+    assert rows["M1"]["observed_evidence"] == "Sin evidencia verificable actual"
 
 
 def test_daily_db_probe_avoids_quick_check_but_explicit_deep_check_keeps_it(tmp_path, monkeypatch):
