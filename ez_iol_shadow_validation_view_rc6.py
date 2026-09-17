@@ -127,6 +127,7 @@ def render() -> str:
         comparison = _text(row.get("primary_comparison"), UNKNOWN)
         difference = row.get("difference_pct", row.get("ppi_iol_difference_pct"))
         what_if, what_if_detail = _counterfactual(row)
+        reason = _text(row.get("reason"), "")
         rendered_rows.append(
             "<tr>"
             f"<td><b>{escape(_text(row.get('symbol')))}</b></td>"
@@ -136,7 +137,7 @@ def render() -> str:
             f"<td>{escape(freshness)}</td>"
             f"<td>{escape(quality)}</td>"
             f"<td>{escape(comparison)} · {_number(difference, '%')}</td>"
-            f"<td>{escape(what_if)}<br><span class='paper-muted'>{escape(what_if_detail)}</span></td>"
+            f"<td>{escape(what_if)}<br><span class='paper-muted'>{escape(what_if_detail)} {escape(reason)}</span></td>"
             "</tr>"
         )
     rows_html = "".join(rendered_rows) or (
@@ -145,7 +146,7 @@ def render() -> str:
     )
     return (
         "<section class='paper-card'>"
-        "<h2>IOL — calidad, reconciliación y contrafactual SHADOW</h2>"
+        "<h2>IOL — evidencia SHADOW: calidad, reconciliación y contrafactual</h2>"
         "<div class='paper-warning'><b>Observación únicamente.</b> PPI conserva la autoridad primaria. "
         "Esta evidencia no puede cambiar READY/HOLD, señales, tamaños, entradas, salidas ni órdenes.</div>"
         f"<p class='paper-muted'>Fuente: {escape(_text(data.get('source'), 'IOL_MCP'))} · "
