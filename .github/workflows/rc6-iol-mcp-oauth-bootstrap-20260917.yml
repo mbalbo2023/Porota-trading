@@ -1,0 +1,148 @@
+name: RC6 IOL MCP OAuth Bootstrap
+
+on:
+  push:
+    branches:
+      - test/iol-mcp-connectivity-20260917
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_iol_oauth"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_iol_oauth" "$HOME/.ssh/known_hosts"
+          echo 'SSH_MATERIAL=READY'
+
+      - name: Register read-only MCP OAuth client and persist PKCE bootstrap on droplet
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_iol_oauth" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import base64, hashlib, json, os, secrets, urllib.error, urllib.parse, urllib.request
+          from pathlib import Path
+
+          ISSUER='https://mcp.invertironline.com'
+          REGISTER=ISSUER + '/register'
+          AUTHORIZE=ISSUER + '/authorize'
+          RESOURCE=ISSUER
+          STORE=Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
+          REDIRECTS=[
+              'http://127.0.0.1:8765/callback',
+              'http://localhost:8765/callback',
+          ]
+
+          print('IOL_MCP_OAUTH_BOOTSTRAP=START')
+          print('MUTATIONS=OAUTH_CLIENT_REGISTRATION_ONLY')
+          print('TRADING_MUTATIONS=NONE')
+          print('REQUESTED_SCOPE=SERVER_DEFAULT_READ_ONLY')
+
+          def post_json(url, payload):
+              data=json.dumps(payload).encode()
+              req=urllib.request.Request(url,data=data,headers={'Content-Type':'application/json','Accept':'application/json'},method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r:
+                      return r.status, json.loads(r.read().decode())
+              except urllib.error.HTTPError as e:
+                  body=e.read().decode(errors='replace')
+                  try: obj=json.loads(body)
+                  except Exception: obj={'raw':body[:500]}
+                  return e.code,obj
+
+          reg=None
+          redirect=None
+          attempts=[]
+          for candidate in REDIRECTS:
+              payload={
+                  'client_name':'Porota Trading RC6 read-only MCP',
+                  'redirect_uris':[candidate],
+                  'grant_types':['authorization_code','refresh_token'],
+                  'response_types':['code'],
+                  'token_endpoint_auth_method':'none',
+              }
+              status,obj=post_json(REGISTER,payload)
+              attempts.append((candidate,status))
+              if status in (200,201) and isinstance(obj,dict) and obj.get('client_id'):
+                  reg=obj; redirect=candidate; break
+
+          print('REGISTRATION_ATTEMPTS=' + ','.join(f'{u}:{s}' for u,s in attempts))
+          if not reg:
+              print('CLIENT_REGISTRATION=FAILED')
+              raise SystemExit(1)
+
+          verifier=base64.urlsafe_b64encode(secrets.token_bytes(64)).rstrip(b'=').decode()
+          challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+          state=secrets.token_urlsafe(32)
+
+          persisted={
+              'issuer':ISSUER,
+              'resource':RESOURCE,
+              'redirect_uri':redirect,
+              'client_registration':reg,
+              'pkce_verifier':verifier,
+              'oauth_state':state,
+          }
+          STORE.parent.mkdir(parents=True,exist_ok=True)
+          tmp=STORE.with_suffix('.tmp')
+          tmp.write_text(json.dumps(persisted,indent=2,sort_keys=True))
+          os.chmod(tmp,0o600)
+          tmp.replace(STORE)
+          os.chmod(STORE,0o600)
+
+          q={
+              'response_type':'code',
+              'client_id':reg['client_id'],
+              'redirect_uri':redirect,
+              'code_challenge':challenge,
+              'code_challenge_method':'S256',
+              'state':state,
+              'resource':RESOURCE,
+          }
+          auth_url=AUTHORIZE + '?' + urllib.parse.urlencode(q)
+
+          print('CLIENT_REGISTRATION=SUCCESS')
+          print('CLIENT_ID_PRESENT=YES')
+          print('PKCE=S256')
+          print('REFRESH_TOKEN_GRANT_REQUESTED=YES')
+          print('BOOTSTRAP_FILE_PRESENT=' + ('YES' if STORE.exists() else 'NO'))
+          print('BOOTSTRAP_FILE_MODE=' + oct(STORE.stat().st_mode & 0o777))
+          print('REDIRECT_URI=' + redirect)
+          print('AUTHORIZATION_URL=' + auth_url)
+
+          # Non-interactive preflight only: verify the authorization endpoint accepts
+          # the generated client request. Do not submit IOL credentials or consent.
+          req=urllib.request.Request(auth_url,headers={'User-Agent':'Porota-RC6-OAuth-Preflight/1.0'},method='GET')
+          opener=urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
+          try:
+              with opener.open(req,timeout=20) as r:
+                  print('AUTHORIZATION_PREFLIGHT_HTTP_STATUS=' + str(r.status))
+                  print('AUTHORIZATION_PREFLIGHT_FINAL_HOST=' + urllib.parse.urlsplit(r.geturl()).netloc)
+          except urllib.error.HTTPError as e:
+              print('AUTHORIZATION_PREFLIGHT_HTTP_STATUS=' + str(e.code))
+              print('AUTHORIZATION_PREFLIGHT_FINAL_HOST=' + urllib.parse.urlsplit(e.geturl()).netloc)
+
+          print('OAUTH_USER_CONSENT_REQUIRED=YES')
+          print('IOL_MCP_OAUTH_BOOTSTRAP=END')
+          PY
