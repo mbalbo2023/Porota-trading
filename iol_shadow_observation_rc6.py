@@ -66,6 +66,6 @@ def collect(root: Path | str | None=None) -> dict:
     """Read the last observation only; never access IOL."""
     try: payload=json.loads(cache_path(root).read_text(encoding="utf-8"))
     except (FileNotFoundError,OSError,json.JSONDecodeError): payload={}
-    if payload.get("schema_version") != SCHEMA_VERSION:
+    if payload.get("schema_version") not in (SCHEMA_VERSION, 2):
         return {"source":SOURCE,"mode":MODE,"state":"UNAVAILABLE","decision_effect":DECISION_EFFECT,"live_decision_authority":False,"real_money_authorized":False,"symbols":[],"reason":"CACHE_MISSING_OR_INVALID"}
     return {"source":SOURCE,"mode":MODE,"state":"READY" if payload.get("symbols") else "INSUFFICIENT_DATA","decision_effect":DECISION_EFFECT,"live_decision_authority":False,"real_money_authorized":False,"refreshed_at":payload.get("refreshed_at"),"symbols":payload.get("symbols") or []}
