@@ -1,0 +1,59 @@
+name: IOL MCP OAuth read-only verification
+
+on:
+  push:
+    branches:
+      - ops/iol-mcp-oauth-verify-20260917
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Verify IOL MCP OAuth from droplet
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_iol_verify"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_iol_verify" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/porota_iol_verify" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json, urllib.request, urllib.error
+          from pathlib import Path
+          STORE=Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
+          print('IOL_MCP_VERIFY=START')
+          print('TRADING_MUTATIONS=NONE')
+          if not STORE.exists():
+              print('TOKEN_STORE=ABSENT'); raise SystemExit(1)
+          data=json.loads(STORE.read_text())
+          token=(data.get('tokens') or {}).get('access_token')
+          print('TOKEN_PRESENT=' + ('YES' if token else 'NO'))
+          if not token: raise SystemExit(1)
+          headers={'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'application/json, text/event-stream'}
+          def rpc(i, method, params):
+              req=urllib.request.Request(data['issuer'],data=json.dumps({'jsonrpc':'2.0','id':i,'method':method,'params':params}).encode(),headers=headers,method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r:
+                      body=r.read().decode(errors='replace')
+                      return r.status, dict(r.headers), body
+              except urllib.error.HTTPError as e:
+                  return e.code, dict(e.headers), e.read().decode(errors='replace')
+          status,h,body=rpc(1,'initialize',{'protocolVersion':'2025-06-18','capabilities':{},'clientInfo':{'name':'porota-rc6-iol-verify','version':'1.0'}})
+          print('INITIALIZE_HTTP='+str(status))
+          sid=h.get('Mcp-Session-Id') or h.get('mcp-session-id')
+          if sid: headers['Mcp-Session-Id']=sid
+          status2,h2,body2=rpc(2,'tools/list',{})
+          print('TOOLS_LIST_HTTP='+str(status2))
+          print('MCP_AUTH_VERIFIED=' + ('YES' if status in (200,202) and status2 in (200,202) else 'NO'))
+          print('IOL_MCP_VERIFY=END')
+          PY
