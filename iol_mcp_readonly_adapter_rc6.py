@@ -42,7 +42,17 @@ def _json_from_mcp_body(body: str) -> dict[str, Any]:
             if isinstance(value.get("error"), dict):
                 raise IOLMCPError("IOL_MCP_RPC_ERROR:" + str(value["error"].get("code", "unknown")))
             result = value.get("result", value)
-            return result if isinstance(result, dict) else {"content": result}
+            if isinstance(result, dict):
+                for item in result.get("content") or []:
+                    if isinstance(item, dict) and isinstance(item.get("text"), str):
+                        try:
+                            decoded = json.loads(item["text"])
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(decoded, dict):
+                            return decoded
+                return result
+            return {"content": result}
     raise IOLMCPError("IOL_MCP_INVALID_RESPONSE")
 
 
