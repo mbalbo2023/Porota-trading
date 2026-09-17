@@ -77,7 +77,7 @@ jobs:
           os.chmod(STORE, 0o600)
 
           code = r'''#!/usr/bin/env python3
-          import json, os, sys, time, urllib.parse, urllib.request
+          import json, os, sys, time, urllib.error, urllib.parse, urllib.request
           from http.server import BaseHTTPRequestHandler, HTTPServer
           from pathlib import Path
           STORE=Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
@@ -95,13 +95,15 @@ jobs:
                   q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                   if self.path.split('?')[0] != '/callback' or q.get('state',[''])[0] != data['oauth_state'] or not q.get('code',[''])[0]:
                       self.done('error','Autorización inválida o cancelada'); return
-                  body=urllib.parse.urlencode({'grant_type':'authorization_code','code':q['code'][0],'redirect_uri':data['redirect_uri'],'client_id':data['client_registration']['client_id'],'code_verifier':data['pkce_verifier']}).encode()
+                  body=urllib.parse.urlencode({'grant_type':'authorization_code','code':q['code'][0],'redirect_uri':data['redirect_uri'],'client_id':data['client_registration']['client_id'],'code_verifier':data['pkce_verifier'],'resource':data['issuer']}).encode()
                   try:
                       req=urllib.request.Request(data['issuer']+'/token',data=body,headers={'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},method='POST')
                       with urllib.request.urlopen(req,timeout=20) as r: tokens=json.loads(r.read().decode())
                       if not tokens.get('access_token'): raise RuntimeError('token missing')
                       safe=dict(data); safe['tokens']=tokens; STORE.write_text(json.dumps(safe)); os.chmod(STORE,0o600)
                       self.done('success','Autorización de datos IOL completada')
+                  except urllib.error.HTTPError as exc:
+                      self.done('error','No se pudo completar el intercambio OAuth (HTTP '+str(exc.code)+')')
                   except Exception:
                       self.done('error','No se pudo completar el intercambio OAuth')
                   finally:
