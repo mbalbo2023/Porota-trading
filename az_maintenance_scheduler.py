@@ -14,9 +14,23 @@ logger = logging.getLogger("maintenance_scheduler")
 SERVER_TIMEZONE = os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires")
 JOB_TIMEOUT_SECONDS = int(os.getenv("MAINTENANCE_JOB_TIMEOUT_SECONDS", "1800"))
 
+# El histórico completo quedó aislado fuera del scheduler del observer. PPI Watch
+# conserva su circuito propio; este bloqueo sólo impide escrituras históricas desde
+# el mantenimiento interno del proceso siempre activo.
+INTERNAL_HISTORICAL_WRITE_JOBS = frozenset({
+    "historical_refresh",
+    "historical_refresh_if_needed",
+})
+
 
 def _run_job(job_name: str) -> None:
     """Ejecuta y libera toda la memoria importada por una tarea pesada."""
+    if job_name in INTERNAL_HISTORICAL_WRITE_JOBS:
+        logger.warning(
+            "Mantenimiento histórico %s bloqueado por política RC6.", job_name
+        )
+        return
+
     try:
         result = subprocess.run(
             [sys.executable, "az_maintenance_job.py", job_name],
@@ -55,12 +69,8 @@ def build_scheduler() -> BackgroundScheduler:
                       hour=2, minute=30, args=["macro_refresh"])
     scheduler.add_job(_run_job, "cron", id="maintenance_daily_backup",
                       hour=3, minute=0, args=["backup"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_historical_catchup",
-                      day_of_week="mon-fri", hour=10, minute=15,
-                      args=["historical_refresh_if_needed"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_historical_refresh",
-                      day_of_week="mon-fri", hour=19, minute=20,
-                      args=["historical_refresh"])
+    # Sin catch-up de arranque ni cron histórico: sólo PPI Watch puede gestionar
+    # ese circuito tras su revisión individual.
     scheduler.add_job(_run_job, "cron", id="maintenance_model_guardian",
                       day_of_week="mon", hour=9, args=["model_guardian"])
     scheduler.add_job(_run_job, "cron", id="maintenance_monthly_report",
@@ -78,9 +88,6 @@ def build_scheduler() -> BackgroundScheduler:
                       hour=7, minute=5, args=["action4_audit"])
     scheduler.add_job(_run_job, "cron", id="maintenance_validation_projection",
                       hour=7, minute=15, args=["validation_projection"])
-
-    scheduler.add_job(_run_job, "date", id="maintenance_historical_startup_catchup",
-                      args=["historical_refresh_if_needed"])
 
     return scheduler
 
