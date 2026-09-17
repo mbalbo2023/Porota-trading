@@ -1,33 +1,31 @@
 from __future__ import annotations
 
-import json
-
+import rc6_gdelt_event_risk_job as job
 import rc6_gdelt_shadow as gdelt
 
 
-def test_collect_reads_local_cache_only(tmp_path):
-    path = gdelt.cache_path(tmp_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "schema_version": 1,
-        "state": "READY",
-        "refreshed_at": "2026-09-16T10:00:00+00:00",
-        "query": "Argentina OR BYMA",
-        "articles": [{"id": "a"}, {"id": "b"}],
-    }), encoding="utf-8")
+def test_collect_projects_structured_store_read_only(monkeypatch):
+    monkeypatch.setattr(job, "latest_status", lambda: {
+        "state": "GREEN",
+        "freshness": "FRESH",
+        "finished_at": "2026-09-17T10:00:00Z",
+        "events_total": 12,
+    })
 
-    result = gdelt.collect(tmp_path)
+    result = gdelt.collect()
 
     assert result["mode"] == "SHADOW"
     assert result["decision_effect"] == "OBSERVE_ONLY"
-    assert result["articles_count"] == 2
+    assert result["state"] == "GREEN"
+    assert result["freshness"] == "FRESH"
+    assert result["articles_count"] == 12
 
 
-def test_refresh_failure_is_observe_only(tmp_path):
-    def offline(*_args, **_kwargs):
-        raise OSError("offline")
+def test_legacy_refresh_never_performs_network():
+    result = gdelt.refresh(opener=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("network forbidden")
+    ))
 
-    result = gdelt.refresh(tmp_path, opener=offline)
-
-    assert result["state"] == "UNAVAILABLE"
+    assert result["state"] == "RETIRED_GENERIC_COLLECTOR"
     assert result["decision_effect"] == "OBSERVE_ONLY"
+    assert result["reason"] == "USE_RC6_GDELT_EVENT_RISK_JOB"

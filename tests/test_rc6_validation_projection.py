@@ -9,7 +9,7 @@ def test_daily_projection_latches_only_fully_verified_snapshot(tmp_path):
     path = projection.snapshot_path(tmp_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
-        "schema_version": 2,
+        "schema_version": 3,
         "ledger_status": "FULLY_VERIFIED",
         "milestones": {"M2": {
             "state": "GREEN",
@@ -24,7 +24,8 @@ def test_daily_projection_latches_only_fully_verified_snapshot(tmp_path):
     payload = projection.refresh(tmp_path, full_verify=False)
 
     assert payload["ledger_status"] == "DAILY_COMPACT"
-    assert payload["milestones"]["M2"]["state"] == "GREEN"
+    assert payload["milestones"]["M2"]["state"] == "YELLOW"
+    assert payload["milestones"]["M2"]["claim_status"] == "VERIFIED_HISTORICAL"
     assert payload["milestones"]["M2"]["observed_evidence"] == "evidence"
 
 

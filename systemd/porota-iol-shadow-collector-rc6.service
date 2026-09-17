@@ -1,0 +1,14 @@
+[Unit]
+Description=Porota RC6 IOL MCP observation-only collection
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/root/.config/porota/iol_mcp_oauth_bootstrap.json
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+Environment=POROTA_IOL_SHADOW_MODE=OBSERVE_ONLY
+Environment=POROTA_IOL_SHADOW_ROOT=/opt/porota-trading/data/market
+ExecStart=/usr/bin/python3 /opt/porota-trading/scripts/rc6_iol_shadow_collect.py
+NoNewPrivileges=true
+PrivateTmp=true

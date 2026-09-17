@@ -17,6 +17,7 @@ from fk_gdelt_shadow_feed_rc6 import QUERY_PACKS, GDELTShadowError, collect_shad
 
 DEFAULT_DB = os.environ.get("POROTA_GDELT_EVENT_DB", "/app/data/event_risk/gdelt_shadow_rc6.db")
 DEFAULT_SAFETY_DB = os.environ.get("POROTA_PAPER_DB", "/app/data/paper_v17/observer_v17.db")
+DEFAULT_MAX_AGE_SECONDS = max(60, int(os.environ.get("POROTA_GDELT_MAX_AGE_SECONDS", "5400")))
 
 
 class GDELTEventRiskJobError(RuntimeError):
@@ -177,20 +178,57 @@ def run_once(*, db_path: str = DEFAULT_DB, safety_db_path: str = DEFAULT_SAFETY_
         conn.close()
 
 
-def latest_status(db_path: str = DEFAULT_DB) -> dict:
+def latest_status(db_path: str = DEFAULT_DB, *, now: datetime | None = None) -> dict:
+    """Read local GDELT evidence and make stale/missing evidence explicit."""
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        raise GDELTEventRiskJobError("NOW_TIMESTAMP_NAIVE")
     if not os.path.exists(db_path):
-        return {"state": "NOT_RUN", "authority": "SHADOW_ONLY"}
+        return {
+            "state": "NOT_RUN",
+            "last_run_state": "NOT_RUN",
+            "freshness": "UNKNOWN",
+            "freshness_seconds": None,
+            "authority": "SHADOW_ONLY",
+        }
     with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA query_only=ON")
-        row = conn.execute("SELECT * FROM gdelt_event_risk_runs ORDER BY started_at DESC LIMIT 1").fetchone()
-        events = conn.execute("SELECT COUNT(*),MAX(available_to_engine_at) FROM gdelt_event_risk_events").fetchone()
+        row = conn.execute(
+            "SELECT * FROM gdelt_event_risk_runs ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+        events = conn.execute(
+            "SELECT COUNT(*),MAX(available_to_engine_at) FROM gdelt_event_risk_events"
+        ).fetchone()
     out = dict(row) if row else {"state": "NOT_RUN"}
+    last_run_state = str(out.get("state") or "NOT_RUN")
+    finished = str(out.get("finished_at") or "").strip()
+    age = None
+    if finished:
+        try:
+            completed = datetime.fromisoformat(finished.replace("Z", "+00:00"))
+            if completed.tzinfo is None:
+                raise ValueError("naive")
+            age = max(0, int((now.astimezone(timezone.utc) -
+                              completed.astimezone(timezone.utc)).total_seconds()))
+        except (TypeError, ValueError):
+            out["state"] = "INVALID_TIMESTAMP"
+            out["freshness"] = "UNKNOWN"
+            out["freshness_seconds"] = None
+        else:
+            out["freshness_seconds"] = age
+            out["freshness"] = "FRESH" if age <= DEFAULT_MAX_AGE_SECONDS else "STALE"
+            if out["freshness"] == "STALE":
+                out["state"] = "STALE"
+    else:
+        out["freshness"] = "UNKNOWN"
+        out["freshness_seconds"] = None
+    out["last_run_state"] = last_run_state
     out["events_total"] = int(events[0] or 0)
     out["latest_event_available_at"] = events[1]
     out["authority"] = "SHADOW_ONLY"
+    out["decision_effect"] = "OBSERVE_ONLY"
     return out
-
 
 def main() -> int:
     try:

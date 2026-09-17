@@ -21,6 +21,7 @@ from bl_candle_engine import fingerprint
 from cb_caucion_audit import allocation_history
 from ch_empirical_learning import empirical_expectancy
 from ci_operational_context import breadth_observation, sector_observation
+import rc6_counterfactual_learning as counterfactual_learning
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
 from bt_caucion_paper import validate_position, pending_proceeds
@@ -1537,11 +1538,38 @@ def learning_page():
                 "green" if Decimal(item["net_total"])>0 else "red" if Decimal(item["net_total"])<0 else "gray")
           for item in expectancy),
     ))
+    counterfactual = counterfactual_learning.read()
+    cf_counts = counterfactual["counts"]
+    cf_cards = "".join((
+        _card("Contrafácticos verificables", sum(cf_counts[key] for key in ("WOULD_CONFIRM", "WOULD_WARN", "WOULD_REJECT")),
+              "Sólo con decisión original y snapshot comparable", "green" if counterfactual["available"] else "gray"),
+        _card("Confirmaría", cf_counts["WOULD_CONFIRM"], "Evidencia observacional; no reescribe la decisión", "green" if cf_counts["WOULD_CONFIRM"] else "gray"),
+        _card("Advertiría / rechazaría", cf_counts["WOULD_WARN"] + cf_counts["WOULD_REJECT"],
+              "Señales que la capa nueva habría marcado", "yellow" if (cf_counts["WOULD_WARN"] + cf_counts["WOULD_REJECT"]) else "gray"),
+        _card("No evaluables", cf_counts["INSUFFICIENT_EVIDENCE"],
+              "Nunca se inventa un resultado sin evidencia contemporánea", "yellow" if cf_counts["INSUFFICIENT_EVIDENCE"] else "green"),
+    ))
+    cf_rows = "".join(
+        f"<tr><td>{_e(row['candidate_id'])}</td><td><b>{_e(row['symbol'])}</b></td>"
+        f"<td>{_status(row['original_decision'])}</td><td>{_status(row['outcome'])}</td>"
+        f"<td>{_local_time(row['evidence_at'])}</td><td>{_e(row['reason'])}</td></tr>"
+        for row in counterfactual["rows"]
+    ) or "<tr><td colspan='6'>Aún no hay casos contrafácticos publicados. Las decisiones históricas no se reinterpretan.</td></tr>"
+    counterfactual_panel = (
+        "<div class='paper-card'><h2>Aprendizaje contrafáctico — observación</h2>"
+        "<div class='paper-grid'>" + cf_cards + "</div>"
+        "<div class='paper-notice'><b>Qué habría pasado.</b> Compara una decisión PAPER ya registrada con la información contemporánea nueva. "
+        "Sólo admite un resultado cuando hay identificador, decisión original y snapshots comparables. "
+        "No cambia decisiones pasadas, parámetros, riesgo ni rutas de órdenes.</div>"
+        "<table class='paper-table'><tr><th>Candidato</th><th>Instrumento</th><th>Decisión original</th><th>Contrafáctico</th>"
+        "<th>Evidencia</th><th>Motivo</th></tr>" + cf_rows + "</table>"
+        f"<p class='paper-muted'>Fuente: {_e(counterfactual['source'])} · publicado: {_local_time(counterfactual['generated_at'])}</p></div>"
+    )
     body=(f"<h1>Aprendizaje del sistema</h1><div class='paper-grid'>{cards}</div>"
           "<div class='paper-notice'><b>Aprendizaje event-driven.</b> Cada compra simulada conserva señal, economía, riesgo, liquidez, resultado y lección. "
           "Sólo un nuevo cierre PAPER produce una nueva etiqueta; por eso una etiqueta antigua sin cierres posteriores no significa pipeline detenido. "
-          "La expectativa mostrada es descriptiva y neta sobre fills PAPER cerrados; no prueba ventaja futura, no bloquea operaciones y no cambia parámetros automáticamente.</div>"
-          "<div class='paper-card'><h2>Expectativa empírica por moneda — últimas 100 cerradas</h2>"
+          "La expectativa mostrada es descriptiva y neta sobre fills PAPER cerrados; no prueba ventaja futura, no bloquea operaciones y no cambia parámetros automáticamente.</div>" + counterfactual_panel
+          + "<div class='paper-card'><h2>Expectativa empírica por moneda — últimas 100 cerradas</h2>"
           "<table class='paper-table'><tr><th>Moneda</th><th>Muestras</th><th>Win rate</th><th>Ganancia media</th>"
           "<th>Pérdida media</th><th>Expectativa por operación</th><th>Profit factor</th><th>Estado muestral</th></tr>"
           f"{expectancy_rows}</table><p class='paper-muted'>Menos de 30 muestras se marca como insuficiente; aun con 30 o más permanece observacional hasta validación fuera de muestra.</p></div>"
