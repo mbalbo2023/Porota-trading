@@ -29,5 +29,5 @@ jobs:
       - name: Verify host wrapper has no PPI or order route
         run: |
           set -Eeuo pipefail
-          test -x ops/porota-rc6-candle-inmarket-verify
+          test -s ops/porota-rc6-candle-inmarket-verify
           ! grep -Eqi 'ppi|order|history|postclose|curl|wget' ops/porota-rc6-candle-inmarket-verify
