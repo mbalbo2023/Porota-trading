@@ -39,6 +39,17 @@ def main() -> int:
         'real_order_capability': 'BLOCKED',
         'network_order_test_performed': False,
     }
+    # RC6 policy: full-history completed and post-close recovery is quarantined.
+    # Keep this executable as a visible, fail-closed audit surface; it must
+    # never create a PPI client or write historical rows unless a separate,
+    # explicitly authorized recovery project replaces this guard.
+    print(json.dumps(base | {
+        'status': 'BLOCKED_BY_POLICY',
+        'reason': 'RC6_HISTORY_QUARANTINE',
+        'history_writes_started': False,
+    }, sort_keys=True))
+    return 0
+
     if not byma.es_dia_habil_operativo(now.date()):
         print(json.dumps(base | {'status': 'NOT_DUE', 'reason': 'BYMA_NON_OPERATIONAL_DAY'}, sort_keys=True))
         return 0

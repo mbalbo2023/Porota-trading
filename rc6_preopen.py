@@ -27,7 +27,6 @@ EXPECTED_IMAGE = 'porota-trading-bot:17.0.0-rc6'
 MIN_FREE_BYTES = 8 * 1024**3
 REQUIRED_TIMERS = (
     'porota-functional-health-rc6.timer',
-    'porota-history-postclose-rc6.timer',
     'porota-host-general-backup-rc6.timer',
     'porota-preopen-rc6.timer',
     'porota-candle-integrity-rc6.timer',
@@ -70,6 +69,31 @@ def observer_db():
         return {'state':'GREEN' if ok else 'RED','quick_check':qc,'observer_state':state}
     except Exception as exc:
         return {'state':'RED','detail':f'{type(exc).__name__}:{exc}'}
+
+
+BLOCKED_HISTORY_TIMERS = (
+    'porota-history-postclose-rc6.timer',
+)
+
+
+def blocked_history_timers():
+    """Quarantine must be visible: inactive and not enabled is the only GREEN."""
+    values = {}
+    ok = True
+    for unit in BLOCKED_HISTORY_TIMERS:
+        rc1, enabled, _ = cmd(['systemctl', 'is-enabled', unit])
+        rc2, active, _ = cmd(['systemctl', 'is-active', unit])
+        good = enabled in {'disabled', 'masked'} and active in {'inactive', 'failed'}
+        values[unit] = {
+            'state': 'GREEN' if good else 'RED',
+            'enabled': enabled,
+            'active': active,
+            'is_enabled_rc': rc1,
+            'is_active_rc': rc2,
+        }
+        ok = ok and good
+    return {'state': 'GREEN' if ok else 'RED', 'units': values,
+            'policy': 'RC6_HISTORY_QUARANTINE'}
 
 
 def required_timers():
@@ -133,6 +157,7 @@ def main():
         'observer_db': observer_db(),
         'disk': {'state':'GREEN' if free >= MIN_FREE_BYTES else 'RED','free':free,'minimum':MIN_FREE_BYTES},
         'required_rc6_timers': required_timers(),
+        'history_quarantine': blocked_history_timers(),
         'foreign_market_policy': foreign_market_policy(today),
     }
     reds = [k for k,v in checks.items() if v.get('state') == 'RED']
