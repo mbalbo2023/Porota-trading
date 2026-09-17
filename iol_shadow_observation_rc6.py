@@ -33,6 +33,8 @@ def _number(value: Any) -> float | None:
 
 def _first_number(*values: Any) -> float | None:
     for value in values:
+        if isinstance(value, dict):
+            value = value.get("value") or value.get("amount") or value.get("price")
         number=_number(value)
         if number is not None: return number
     return None
