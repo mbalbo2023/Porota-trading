@@ -81,7 +81,7 @@ class RateGovernor:
             waits.append(self.policy.min_interval_seconds - (now - self.last))
         if len(self.calls) >= self.policy.max_calls_per_minute:
             waits.append(60.0 - (now - self.calls[0]))
-        delay = max(0.0, *waits)
+        delay = max([0.0, *waits])
         if delay:
             self.sleep(delay)
         now = self.clock()
