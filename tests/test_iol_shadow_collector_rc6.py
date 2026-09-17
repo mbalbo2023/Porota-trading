@@ -15,6 +15,7 @@ def test_quote_uses_required_term_and_normalizes_real_iol_shape(tmp_path):
     client=FakeClient()
     result=collector.run_batch(["YPFD"],client,root=tmp_path,policy=policy())
     row=result["symbols"][0]
+    assert client.calls, result
     assert client.calls[0]==("get_asset_quote",{"symbol":"YPFD","market":"BCBA","term":"t1"})
     assert row["quote"]["last"]==100
     assert row["state"]=="READY"
