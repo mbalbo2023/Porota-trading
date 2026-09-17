@@ -102,7 +102,7 @@ def render() -> str:
         f"llamadas: {_number(call_count)} · 429: {_number(rate_limited)} · "
         f"errores: {_number(errors)} · cache hits: {_number(cache_hits)}"
         if any(value is not None for value in (call_count, rate_limited, errors, cache_hits))
-        else "Métricas MCP aún no publicadas por el collector."
+        else "Collector pendiente: métricas MCP aún no publicadas."
     )
     cache_note = (
         "No hay cache IOL válida. La ausencia de IOL no bloquea ni degrada PAPER."
@@ -116,7 +116,7 @@ def render() -> str:
         bg._card("Calidad MCP", cache_label,
                  "Las métricas se muestran sólo si fueron registradas en el cache aislado.", "gray"),
         bg._card("Reconciliación PPI/IOL", f"{aligned} alineados · {divergent} divergentes",
-                 "Divergencia es diagnóstico background, nunca cambia HOLD/READY.", "yellow" if divergent else "green"),
+                 "Divergencia = diagnóstico background, nunca HOLD/READY.", "yellow" if divergent else "green"),
         bg._card("No disponibles", unavailable,
                  "Faltantes y errores se mantienen visibles; no se completan con supuestos.", "gray"),
     ))
