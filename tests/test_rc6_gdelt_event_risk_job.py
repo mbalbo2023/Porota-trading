@@ -57,3 +57,28 @@ def test_no_generic_news_or_broker_order_imports():
     source=inspect.getsource(m)
     forbidden=['g_news_feed','financial_news','ppi_client','send_order','place_order','buy_order','sell_order']
     assert not any(x in source.lower() for x in forbidden)
+
+
+def test_latest_status_marks_stale_evidence_explicitly(tmp_path):
+    safety = tmp_path / "observer.db"
+    store = tmp_path / "gdelt.db"
+    _safety_db(safety)
+
+    def empty_collect(**_kwargs):
+        return []
+
+    original = m.collect_shadow
+    m.collect_shadow = empty_collect
+    try:
+        m.run_once(db_path=str(store), safety_db_path=str(safety),
+                   event_types=["WAR_ESCALATION"], maxrecords=5)
+    finally:
+        m.collect_shadow = original
+
+    status = m.latest_status(
+        str(store), now=m.datetime(2030, 1, 1, tzinfo=m.timezone.utc)
+    )
+    assert status["state"] == "STALE"
+    assert status["freshness"] == "STALE"
+    assert status["last_run_state"] == "GREEN"
+    assert status["authority"] == "SHADOW_ONLY"
