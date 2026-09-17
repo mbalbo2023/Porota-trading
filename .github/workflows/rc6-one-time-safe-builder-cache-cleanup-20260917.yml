@@ -1,0 +1,55 @@
+name: RC6 one-time safe builder-cache cleanup 2026-09-17
+
+on:
+  push:
+    branches: [ops/rc6-safe-builder-cache-cleanup-20260917]
+    paths:
+      - 'ops/rc6_build_cache_safe_cleanup.sh'
+      - '.github/workflows/rc6-one-time-safe-builder-cache-cleanup-20260917.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-safe-builder-cache-cleanup-once
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - name: Validate strictly limited cleanup script
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          bash -n ops/rc6_build_cache_safe_cleanup.sh
+          ! grep -E 'docker system prune|docker image prune|docker container prune|docker volume prune|docker rm|docker rmi|rm -rf|VACUUM|git clean' ops/rc6_build_cache_safe_cleanup.sh
+          grep -Fq 'docker builder prune -f' ops/rc6_build_cache_safe_cleanup.sh
+          grep -Fq 'CLEANUP_SCOPE=DOCKER_BUILD_CACHE_ONLY' ops/rc6_build_cache_safe_cleanup.sh
+          echo CLEANUP_PREFLIGHT=GREEN
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_cleanup"
+          chmod 600 "$HOME/.ssh/porota_rc6_cleanup"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Run only safe builder-cache cleanup and postflight
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_cleanup" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' < ops/rc6_build_cache_safe_cleanup.sh
