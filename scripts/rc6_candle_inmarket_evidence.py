@@ -100,7 +100,8 @@ def build_summary(
     *, baseline_cursor: Any, current_cursor: Any, worker_state: str,
     heartbeat_at: str, quick_check: str, dirty_due_bars: Any,
     dirty_open_bars: Any, invalid_dirty_timestamp_count: Any,
-    observed_at: str, collection_error: str | None = None,\n    required_tables: list[str] | None = None,
+    observed_at: str, collection_error: str | None = None,
+    required_tables: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build fail-closed proof. Open bars are reported but never treated as dirty."""
     baseline = _as_nonnegative_int(baseline_cursor, "baseline_cursor")
@@ -133,6 +134,7 @@ def build_summary(
         "dirty_due_bars": due,
         "dirty_open_bars": open_bars,
         "invalid_dirty_timestamp_count": invalid,
+        "required_tables": required_tables or [],
         "checks": checks,
         "collection_error": collection_error,
         "data_mutation": "EVIDENCE_JSON_ONLY",
