@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m pip install --disable-pip-version-check "pytest>=8.3.0,<9" requests
+          python -m pip install --disable-pip-version-check "pytest>=8.3.0,<9" requests fastapi
 
       - name: Run focused release tests
         shell: bash
