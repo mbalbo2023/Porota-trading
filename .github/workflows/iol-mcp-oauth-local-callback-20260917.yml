@@ -1,0 +1,125 @@
+name: IOL MCP OAuth local callback (temporary)
+
+on:
+  push:
+    branches:
+      - ops/iol-oauth-local-callback-20260917
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-consent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_iol_oauth_callback"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_iol_oauth_callback" "$HOME/.ssh/known_hosts"
+
+      - name: Register read-only client and start loopback callback on droplet
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_iol_oauth_callback" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import base64, hashlib, json, os, secrets, subprocess, sys, textwrap, urllib.error, urllib.parse, urllib.request
+          from pathlib import Path
+
+          ISSUER = 'https://mcp.invertironline.com'
+          STORE = Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
+          CALLBACK = Path('/usr/local/sbin/porota-iol-mcp-oauth-callback.py')
+          REDIRECT = 'http://127.0.0.1:8765/callback'
+
+          def post_json(url, data):
+              req = urllib.request.Request(url, data=json.dumps(data).encode(), headers={'Content-Type':'application/json','Accept':'application/json'}, method='POST')
+              with urllib.request.urlopen(req, timeout=20) as res:
+                  return res.status, json.loads(res.read().decode())
+
+          print('IOL_OAUTH_PREPARE=START')
+          print('TRADING_MUTATIONS=NONE')
+          print('NETWORK_EXPOSURE=LOOPBACK_ONLY')
+          reg_status, reg = post_json(ISSUER + '/register', {
+              'client_name':'Porota Trading RC6 read-only MCP temporary callback',
+              'redirect_uris':[REDIRECT],
+              'grant_types':['authorization_code','refresh_token'],
+              'response_types':['code'],
+              'token_endpoint_auth_method':'none',
+          })
+          if reg_status not in (200, 201) or not reg.get('client_id'):
+              raise RuntimeError('dynamic client registration failed')
+          verifier = base64.urlsafe_b64encode(secrets.token_bytes(64)).rstrip(b'=').decode()
+          challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+          state = secrets.token_urlsafe(32)
+          payload = {'issuer':ISSUER, 'redirect_uri':REDIRECT, 'client_registration':reg, 'pkce_verifier':verifier, 'oauth_state':state}
+          STORE.parent.mkdir(parents=True, exist_ok=True)
+          temp = STORE.with_suffix('.tmp')
+          temp.write_text(json.dumps(payload))
+          os.chmod(temp, 0o600)
+          temp.replace(STORE)
+          os.chmod(STORE, 0o600)
+
+          code = r'''#!/usr/bin/env python3
+          import json, os, sys, time, urllib.parse, urllib.request
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          from pathlib import Path
+          STORE=Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
+          STATUS=Path('/root/.config/porota/iol_mcp_oauth_status.json')
+          data=json.loads(STORE.read_text())
+          class H(BaseHTTPRequestHandler):
+              def log_message(self,*args): pass
+              def done(self, status, message):
+                  STATUS.write_text(json.dumps({'status':status,'message':message,'at':int(time.time())}))
+                  os.chmod(STATUS,0o600)
+                  self.send_response(200 if status=='success' else 400)
+                  self.send_header('Content-Type','text/html; charset=utf-8'); self.end_headers()
+                  self.wfile.write(('<h1>'+message+'</h1><p>Podés volver a ChatGPT.</p>').encode())
+              def do_GET(self):
+                  q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                  if self.path.split('?')[0] != '/callback' or q.get('state',[''])[0] != data['oauth_state'] or not q.get('code',[''])[0]:
+                      self.done('error','Autorización inválida o cancelada'); return
+                  body=urllib.parse.urlencode({'grant_type':'authorization_code','code':q['code'][0],'redirect_uri':data['redirect_uri'],'client_id':data['client_registration']['client_id'],'code_verifier':data['pkce_verifier']}).encode()
+                  try:
+                      req=urllib.request.Request(data['issuer']+'/token',data=body,headers={'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},method='POST')
+                      with urllib.request.urlopen(req,timeout=20) as r: tokens=json.loads(r.read().decode())
+                      if not tokens.get('access_token'): raise RuntimeError('token missing')
+                      safe=dict(data); safe['tokens']=tokens; STORE.write_text(json.dumps(safe)); os.chmod(STORE,0o600)
+                      self.done('success','Autorización de datos IOL completada')
+                  except Exception:
+                      self.done('error','No se pudo completar el intercambio OAuth')
+                  finally:
+                      self.server.should_stop=True
+          server=HTTPServer(('127.0.0.1',8765),H); server.timeout=1
+          until=time.time()+900
+          while time.time()<until and not getattr(server,'should_stop',False): server.handle_request()
+          if not STATUS.exists(): STATUS.write_text(json.dumps({'status':'expired','message':'Consentimiento no recibido','at':int(time.time())})); os.chmod(STATUS,0o600)
+          '''
+          CALLBACK.write_text(textwrap.dedent(code))
+          os.chmod(CALLBACK, 0o700)
+          subprocess.run(['pkill','-f','/usr/local/sbin/porota-iol-mcp-oauth-callback.py'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+          with open('/dev/null','wb') as sink:
+              subprocess.Popen([sys.executable, str(CALLBACK)], stdin=sink, stdout=sink, stderr=sink, start_new_session=True)
+          q={'response_type':'code','client_id':reg['client_id'],'redirect_uri':REDIRECT,'code_challenge':challenge,'code_challenge_method':'S256','state':state,'resource':ISSUER}
+          print('CALLBACK_LISTENER=READY')
+          print('CALLBACK_BIND=127.0.0.1:8765')
+          print('CALLBACK_TTL_MINUTES=15')
+          print('AUTHORIZATION_URL=' + ISSUER + '/authorize?' + urllib.parse.urlencode(q))
+          print('IOL_OAUTH_PREPARE=END')
+          PY
