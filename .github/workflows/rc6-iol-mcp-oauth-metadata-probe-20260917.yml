@@ -12,7 +12,7 @@ permissions:
 jobs:
   oauth-metadata:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Inspect public OAuth authorization-server metadata
         shell: bash
@@ -36,4 +36,206 @@ jobs:
           print('RESPONSE_TYPES=' + ','.join(d.get('response_types_supported') or []))
           print('PKCE_METHODS=' + ','.join(d.get('code_challenge_methods_supported') or []))
           print('TOKEN_AUTH_METHODS=' + ','.join(d.get('token_endpoint_auth_methods_supported') or []))
+          PY
+
+      - name: Prepare strict SSH to Porota droplet
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_iol_probe"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_iol_probe" "$HOME/.ssh/known_hosts"
+          echo 'SSH_MATERIAL=READY'
+
+      - name: Probe droplet IOL MCP credentials without exposing secrets
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_iol_probe" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json, os, re, sys, urllib.error, urllib.parse, urllib.request
+          from pathlib import Path
+
+          MCP_URL='https://mcp.invertironline.com'
+          TOKEN_URL='https://mcp.invertironline.com/token'
+          ENV_PATH=Path('/opt/porota-trading/.env')
+          print('DROPLET_IOL_MCP_PROBE=START')
+          print('MUTATIONS=NONE')
+          print('REAL_ORDERS=DISABLED_BY_PROBE')
+          print('ENV_FILE_PRESENT=' + ('YES' if ENV_PATH.exists() else 'NO'))
+
+          env={}
+          if ENV_PATH.exists():
+              for raw in ENV_PATH.read_text(errors='replace').splitlines():
+                  line=raw.strip()
+                  if not line or line.startswith('#') or '=' not in line:
+                      continue
+                  k,v=line.split('=',1)
+                  k=k.strip(); v=v.strip().strip('"').strip("'")
+                  if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', k):
+                      env[k]=v
+
+          related=sorted(k for k,v in env.items() if v and ('IOL' in k.upper() or 'MCP' in k.upper()))
+          print('IOL_MCP_RELATED_KEYS_PRESENT=' + (','.join(related) if related else 'NONE'))
+
+          def present(pattern):
+              return [k for k,v in env.items() if v and re.search(pattern,k,re.I)]
+
+          user_keys=present(r'IOL.*(USER|EMAIL|LOGIN)|(USER|EMAIL|LOGIN).*IOL')
+          pass_keys=present(r'IOL.*PASS|PASS.*IOL')
+          refresh_keys=present(r'(IOL|MCP).*(REFRESH.*TOKEN)|REFRESH.*TOKEN.*(IOL|MCP)')
+          client_keys=present(r'(IOL|MCP).*CLIENT.*ID|CLIENT.*ID.*(IOL|MCP)')
+          access_keys=[]
+          for k,v in env.items():
+              u=k.upper()
+              if not v or ('IOL' not in u and 'MCP' not in u):
+                  continue
+              if 'REFRESH' in u or 'CLIENT' in u or 'SECRET' in u or 'PASSWORD' in u or 'PASS' in u:
+                  continue
+              if 'ACCESS_TOKEN' in u or u.endswith('_TOKEN'):
+                  access_keys.append(k)
+
+          print('IOL_USERNAME_PRESENT=' + ('YES' if user_keys else 'NO'))
+          print('IOL_PASSWORD_PRESENT=' + ('YES' if pass_keys else 'NO'))
+          print('MCP_ACCESS_TOKEN_PRESENT=' + ('YES' if access_keys else 'NO'))
+          print('MCP_REFRESH_TOKEN_PRESENT=' + ('YES' if refresh_keys else 'NO'))
+          print('MCP_CLIENT_ID_PRESENT=' + ('YES' if client_keys else 'NO'))
+
+          def request_json(url, payload, token=None, extra_headers=None):
+              data=json.dumps(payload).encode()
+              headers={'Content-Type':'application/json','Accept':'application/json, text/event-stream'}
+              if token:
+                  headers['Authorization']='Bearer '+token
+              if extra_headers:
+                  headers.update(extra_headers)
+              req=urllib.request.Request(url,data=data,headers=headers,method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r:
+                      return r.status, dict(r.headers), r.read().decode(errors='replace')
+              except urllib.error.HTTPError as e:
+                  return e.code, dict(e.headers), e.read().decode(errors='replace')
+              except Exception as e:
+                  return 0, {}, type(e).__name__
+
+          def refresh_access_token():
+              if not refresh_keys:
+                  return None, 'NO_REFRESH_TOKEN'
+              form={
+                  'grant_type':'refresh_token',
+                  'refresh_token':env[refresh_keys[0]],
+              }
+              if client_keys:
+                  form['client_id']=env[client_keys[0]]
+              req=urllib.request.Request(TOKEN_URL,data=urllib.parse.urlencode(form).encode(),headers={'Content-Type':'application/x-www-form-urlencoded'},method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r:
+                      body=json.loads(r.read().decode())
+                      tok=body.get('access_token')
+                      return tok, ('HTTP_'+str(r.status)) if tok else 'NO_ACCESS_TOKEN_IN_RESPONSE'
+              except urllib.error.HTTPError as e:
+                  return None, 'HTTP_'+str(e.code)
+              except Exception as e:
+                  return None, type(e).__name__
+
+          token=env[access_keys[0]] if access_keys else None
+          token_source='EXISTING_ACCESS_TOKEN' if token else 'NONE'
+          if not token and refresh_keys:
+              token,refresh_result=refresh_access_token()
+              print('MCP_REFRESH_ATTEMPT=' + refresh_result)
+              if token:
+                  token_source='REFRESH_TOKEN'
+          else:
+              print('MCP_REFRESH_ATTEMPT=NOT_NEEDED' if token else 'MCP_REFRESH_ATTEMPT=NOT_AVAILABLE')
+
+          init={
+              'jsonrpc':'2.0','id':1,'method':'initialize',
+              'params':{
+                  'protocolVersion':'2025-06-18','capabilities':{},
+                  'clientInfo':{'name':'porota-rc6-droplet-probe','version':'0.1.0'}
+              }
+          }
+          status,headers,body=request_json(MCP_URL,init,token)
+          print('MCP_INITIALIZE_HTTP_STATUS='+str(status))
+          print('MCP_TOKEN_SOURCE='+token_source)
+          if status not in (200,202):
+              print('MCP_AUTHENTICATED=NO')
+              if user_keys and pass_keys and not token:
+                  print('PASSWORD_CREDENTIALS_ONLY=YES')
+                  print('OAUTH_PASSWORD_GRANT_SUPPORTED=NO')
+                  print('NEXT_AUTH_STEP=AUTHORIZATION_CODE_ONCE')
+              print('DROPLET_IOL_MCP_PROBE=END')
+              raise SystemExit(0)
+
+          print('MCP_AUTHENTICATED=YES')
+          sid=''
+          for k,v in headers.items():
+              if k.lower()=='mcp-session-id': sid=v
+          common={'Mcp-Session-Id':sid} if sid else {}
+
+          request_json(MCP_URL,{'jsonrpc':'2.0','method':'notifications/initialized','params':{}},token,common)
+          status2,headers2,body2=request_json(MCP_URL,{'jsonrpc':'2.0','id':2,'method':'tools/list','params':{}},token,common)
+          print('MCP_TOOLS_LIST_HTTP_STATUS='+str(status2))
+          names=[]
+          try:
+              text=body2
+              if text.lstrip().startswith('event:') or '\ndata:' in text:
+                  candidates=[]
+                  for line in text.splitlines():
+                      if line.startswith('data:'):
+                          candidates.append(line[5:].strip())
+                  text=candidates[-1] if candidates else '{}'
+              obj=json.loads(text)
+              names=[t.get('name','') for t in (obj.get('result',{}).get('tools') or [])]
+          except Exception:
+              pass
+          print('MCP_TOOL_COUNT='+str(len(names)))
+          print('GET_ASSET_INFO_AVAILABLE=' + ('YES' if 'get_asset_info' in names else 'NO'))
+          dangerous=[n for n in names if any(x in n.lower() for x in ('place_order','validate_order','cancel_order','subscribe','redeem','place_caucion'))]
+          print('WRITE_TOOLS_EXPOSED=' + ('YES' if dangerous else 'NO'))
+
+          if 'get_asset_info' not in names:
+              print('YPFD_READ_TEST=SKIPPED')
+              print('DROPLET_IOL_MCP_PROBE=END')
+              raise SystemExit(0)
+
+          call={
+              'jsonrpc':'2.0','id':3,'method':'tools/call',
+              'params':{'name':'get_asset_info','arguments':{'symbol':'YPFD','market':'BCBA'}}
+          }
+          status3,headers3,body3=request_json(MCP_URL,call,token,common)
+          print('GET_ASSET_INFO_YPFD_HTTP_STATUS='+str(status3))
+          safe={}
+          try:
+              text=body3
+              if text.lstrip().startswith('event:') or '\ndata:' in text:
+                  candidates=[]
+                  for line in text.splitlines():
+                      if line.startswith('data:'):
+                          candidates.append(line[5:].strip())
+                  text=candidates[-1] if candidates else '{}'
+              obj=json.loads(text)
+              result=obj.get('result') or {}
+              sc=result.get('structuredContent') or result.get('structured_content') or {}
+              if isinstance(sc,dict):
+                  src=sc.get('result') if isinstance(sc.get('result'),dict) else sc
+                  for key in ('symbol','description','market','type','currency','units_per_lot','term'):
+                      if key in src:
+                          safe[key]=src[key]
+          except Exception:
+              pass
+          print('YPFD_READ_TEST=' + ('SUCCESS' if status3 in (200,202) else 'FAILED'))
+          print('YPFD_SAFE_FIELDS=' + json.dumps(safe,ensure_ascii=False,sort_keys=True))
+          print('DROPLET_IOL_MCP_PROBE=END')
           PY
