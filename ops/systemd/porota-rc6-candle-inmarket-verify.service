@@ -1,0 +1,10 @@
+[Unit]
+Description=Porota RC6 intramarket candle read-only evidence
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/porota-rc6-candle-inmarket-verify
+NoNewPrivileges=true
+PrivateTmp=true
