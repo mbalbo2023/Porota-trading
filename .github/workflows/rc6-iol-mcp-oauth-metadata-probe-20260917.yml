@@ -1,0 +1,39 @@
+name: RC6 IOL MCP OAuth Metadata Probe
+
+on:
+  push:
+    branches:
+      - test/iol-mcp-connectivity-20260917
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oauth-metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect public OAuth authorization-server metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://mcp.invertironline.com/.well-known/oauth-authorization-server'
+          CODE=$(curl -sS --connect-timeout 10 --max-time 20 -o /tmp/oauth.json -w '%{http_code}' "$URL")
+          echo "OAUTH_AS_METADATA_HTTP_STATUS=$CODE"
+          if [ "$CODE" != "200" ]; then
+            echo "OAUTH_AS_METADATA_AVAILABLE=NO"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/oauth.json').read_text())
+          print('OAUTH_AS_METADATA_AVAILABLE=YES')
+          for k in ('issuer','authorization_endpoint','token_endpoint','registration_endpoint'):
+              print(f'{k.upper()}={d.get(k, "")}')
+          print('GRANT_TYPES=' + ','.join(d.get('grant_types_supported') or []))
+          print('RESPONSE_TYPES=' + ','.join(d.get('response_types_supported') or []))
+          print('PKCE_METHODS=' + ','.join(d.get('code_challenge_methods_supported') or []))
+          print('TOKEN_AUTH_METHODS=' + ','.join(d.get('token_endpoint_auth_methods_supported') or []))
+          PY
