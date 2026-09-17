@@ -5,6 +5,7 @@ import json, os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Callable, Iterable
+from cy_market_source_arbitration_hf6 import compare_background_numeric
 
 SCHEMA_VERSION=1
 MODE="SHADOW"
@@ -68,7 +69,7 @@ def refresh(symbols: Iterable[str], call_tool: Callable[[str,dict],dict], *, roo
             info=call_tool("get_asset_info",{"symbol":symbol,"market":market}) or {}
             rows.append({"symbol":symbol,"market":market,"term":"t1","state":"READY" if quote.get("last") is not None else "UNAVAILABLE",
                          "quote":quote,"asset_type":str(info.get("type") or ""), "currency":str(info.get("currency") or ""),
-                         "units_per_lot":info.get("units_per_lot"),"decision_effect":DECISION_EFFECT})
+                         "units_per_lot":info.get("units_per_lot"),"primary_comparison":compare_background_numeric(_number(primary.get(symbol)),quote.get("last"),tolerance_pct=tolerance_pct),"decision_effect":DECISION_EFFECT})
         except Exception as exc:
             rows.append({"symbol":symbol,"market":market,"term":"t1","state":"UNAVAILABLE","reason":f"{type(exc).__name__}:{str(exc)[:160]}","decision_effect":DECISION_EFFECT})
     payload={"schema_version":SCHEMA_VERSION,"refreshed_at":observed_at,"source":SOURCE,"mode":MODE,"decision_effect":DECISION_EFFECT,
