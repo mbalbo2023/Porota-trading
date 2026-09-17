@@ -12,6 +12,11 @@ on:
       - 'bm_exit_supervisor.py'
       - 'rc6_macro_risk_shadow.py'
       - 'rc6_action4_audit.py'
+      - 'cp_history_ingest_policy_hf6.py'
+      - 'cr_data912_reconcile_hf6.py'
+      - 'dd_history_metrics_hf6.py'
+      - 'test_hf6_history_data912_v2.py'
+      - 'test_cp_history_ingest_policy_hf6.py'
       - 'bg_paper_dashboard.py'
       - 'tests/test_rc6_*.py'
       - '.github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml'
@@ -35,5 +40,6 @@ jobs:
       - name: Mirror canonical compile and deterministic release tests
         run: |
           set -Eeuo pipefail
+          python -m pytest -q test_hf6_history_data912_v2.py test_cp_history_ingest_policy_hf6.py
           python -m pytest -q tests/test_rc6_report_retention.py tests/test_rc6_action4_audit.py tests/test_rc6_macro_risk_shadow.py tests/test_rc6_operational_scope.py tests/test_rc6_data912_operational_scope.py tests/test_rc6_validation_projection.py tests/test_rc6_gdelt_shadow.py tests/test_rc6_legacy_history_scope.py tests/test_rc6_deploy_readiness_contract.py tests/test_rc6_validation_dynamic_evidence.py tests/test_rc6_live_scope_gate_fallback.py tests/test_rc6_history_operational_scope.py tests/test_rc6_introspection_scope.py tests/test_rc6_scheduler_operational_scope.py tests/test_rc6_take_profit_regression.py tests/test_rc6_cedear_underlying_calendar.py tests/test_rc6_history_cedear_calendar.py
           python -m pytest -q tests/test_exit_supervision_v17.py -k "max_hold_sin_datos_persiste_y_se_ejecuta_despues_de_reiniciar or 1655_sigue_dentro_de_rueda_y_un_stop_puede_cerrar or eod_no_aplica_a_cauciones_o_derivados_y_frena_entradas"

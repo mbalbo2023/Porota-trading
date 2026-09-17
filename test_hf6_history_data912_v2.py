@@ -52,14 +52,14 @@ def test_context_thresholds_match_audited_policy():
 
 def test_history_collection_does_not_equal_ready_paper():
     capability=policy.history_collection_capability("BONOS",status="AVAILABLE",identity_complete=True)
-    assert capability=="READONLY_HISTORY_ALLOWED"
+    assert capability=="OUT_OF_SCOPE_READONLY_LEGACY"
     assert "READY_PAPER" not in capability
 
 
 def test_data912_fallback_only_supported_families_and_under_90():
     assert policy.needs_data912_reconciliation("ACCIONES",89,"PARTIAL") is True
     assert policy.needs_data912_reconciliation("CEDEARS",90,"PARTIAL") is False
-    assert policy.needs_data912_reconciliation("BONOS",180,"EMPTY_OR_INVALID") is True
+    assert policy.needs_data912_reconciliation("BONOS",180,"EMPTY_OR_INVALID") is False
     assert policy.needs_data912_reconciliation("OPCIONES",0,"EMPTY_OR_INVALID") is False
     assert policy.needs_data912_reconciliation("FUTUROS",0,"ERROR") is False
 
@@ -87,7 +87,6 @@ def test_reconciler_uses_porota_universe_with_full_identity():
     targets=reconcile.load_targets(c)
     assert [(x.symbol,x.instrument_type,x.market,x.settlement) for x in targets]==[
         ("AAA","ACCIONES","BYMA","A-24HS"),
-        ("CCC","BONOS","BYMA","A-24HS"),
     ]
 
 
