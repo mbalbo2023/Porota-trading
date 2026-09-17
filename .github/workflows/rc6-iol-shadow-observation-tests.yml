@@ -1,0 +1,17 @@
+name: RC6 IOL shadow observation tests
+on:
+  push:
+    branches:
+      - feature/rc6-iol-shadow-observation-20260917
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pytest -q tests/test_iol_shadow_observation_rc6.py
