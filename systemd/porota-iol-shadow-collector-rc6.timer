@@ -1,0 +1,12 @@
+[Unit]
+Description=Run bounded Porota RC6 IOL SHADOW observation cycle
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Persistent=false
+Unit=porota-iol-shadow-collector-rc6.service
+
+[Install]
+WantedBy=timers.target
