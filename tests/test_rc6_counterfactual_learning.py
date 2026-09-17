@@ -25,7 +25,7 @@ def test_requires_contemporaneous_comparable_evidence(tmp_path: Path):
 
 def test_keeps_verified_counterfactual_observational(tmp_path: Path):
     path = counterfactual.snapshot_path(tmp_path)
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"entries": [{
         "candidate_id": "c-2", "symbol": "GGAL", "original_decision": "BLOCKED",
         "evidence_at": "2026-09-17T14:00:00+00:00", "compared_at": "2026-09-17T14:00:05+00:00",
