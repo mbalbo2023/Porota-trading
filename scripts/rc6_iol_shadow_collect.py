@@ -15,7 +15,7 @@ from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
 from iol_shadow_collector_rc6 import CollectionPolicy, run_batch
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
-DEFAULT_ROOT = Path("/app/data/market")
+DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
 
 
 def _universe() -> list[str]:
