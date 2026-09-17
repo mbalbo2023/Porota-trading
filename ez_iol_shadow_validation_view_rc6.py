@@ -77,7 +77,7 @@ def _counterfactual(row: dict[str, Any]) -> tuple[str, str]:
     if evidence != "VERIFIED" or not candidate or not original or not outcome:
         return (INSUFFICIENT_EVIDENCE,
                 "Sin candidato, decisión PAPER original y evidencia temporal verificable; no se infiere un resultado.")
-    return (outcome, f"Candidato {candidate}; PAPER original: {original}. {_text(rationale, "Sin detalle adicional.")}")
+    return (outcome, f"Candidato {candidate}; PAPER original: {original}. {_text(rationale, 'Sin detalle adicional.')}")
 
 
 def _summary(rows: list[dict[str, Any]]) -> tuple[int, int, int]:
