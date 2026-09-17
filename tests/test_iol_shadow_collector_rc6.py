@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import iol_shadow_collector_rc6 as collector
+import iol_shadow_observation_rc6 as observation
 
 
 class FakeClient:
@@ -26,6 +27,7 @@ def test_batch_is_observation_only_and_has_no_secret_output(tmp_path):
     rendered = (tmp_path / "iol_shadow_checkpoint.json").read_text()
     assert "token" not in rendered.lower()
     assert "password" not in rendered.lower()
+    assert observation.collect(tmp_path)["state"] == "READY"
 
 
 def test_same_run_resumes_idempotently_without_recalling_completed_symbols(tmp_path):
