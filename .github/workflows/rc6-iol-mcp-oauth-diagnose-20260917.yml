@@ -1,0 +1,103 @@
+name: RC6 IOL MCP OAuth Diagnose
+
+on:
+  push:
+    branches:
+      - test/iol-mcp-connectivity-20260917
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_iol_oauth_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_iol_oauth_diag" "$HOME/.ssh/known_hosts"
+
+      - name: Diagnose authorization request on droplet
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_iol_oauth_diag" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json, re, urllib.parse, urllib.request, urllib.error
+          from pathlib import Path
+
+          ISSUER='https://mcp.invertironline.com'
+          STORE=Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
+          print('IOL_OAUTH_DIAG=START')
+          print('TRADING_MUTATIONS=NONE')
+          if not STORE.exists():
+              print('BOOTSTRAP_FILE=ABSENT'); raise SystemExit(1)
+          b=json.loads(STORE.read_text())
+          reg=b.get('client_registration') or {}
+          print('REGISTRATION_KEYS=' + ','.join(sorted(reg.keys())))
+          print('CLIENT_ID_PRESENT=' + ('YES' if reg.get('client_id') else 'NO'))
+          print('REGISTERED_REDIRECT=' + str(b.get('redirect_uri','')))
+          print('REGISTERED_GRANTS=' + ','.join(reg.get('grant_types') or []))
+          print('REGISTERED_RESPONSES=' + ','.join(reg.get('response_types') or []))
+          print('TOKEN_AUTH_METHOD=' + str(reg.get('token_endpoint_auth_method','')))
+
+          meta=json.load(urllib.request.urlopen(ISSUER+'/.well-known/oauth-authorization-server',timeout=20))
+          scopes=meta.get('scopes_supported') or []
+          print('SCOPES_SUPPORTED=' + (','.join(scopes) if scopes else 'NONE_DECLARED'))
+          print('CODE_CHALLENGE_METHODS=' + ','.join(meta.get('code_challenge_methods_supported') or []))
+
+          import base64, hashlib
+          verifier=b['pkce_verifier']
+          challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+          base={
+              'response_type':'code',
+              'client_id':reg['client_id'],
+              'redirect_uri':b['redirect_uri'],
+              'code_challenge':challenge,
+              'code_challenge_method':'S256',
+              'state':b['oauth_state'],
+              'resource':ISSUER,
+          }
+
+          def probe(label, params):
+              url=ISSUER+'/authorize?'+urllib.parse.urlencode(params)
+              opener=urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
+              try:
+                  with opener.open(urllib.request.Request(url,headers={'User-Agent':'Porota-RC6-OAuth-Diag/1.0'}),timeout=20) as r:
+                      body=r.read().decode(errors='replace')
+                      code=r.status; final=r.geturl()
+              except urllib.error.HTTPError as e:
+                  body=e.read().decode(errors='replace'); code=e.code; final=e.geturl()
+              title=''
+              m=re.search(r'<title[^>]*>(.*?)</title>',body,re.I|re.S)
+              if m: title=re.sub(r'\s+',' ',m.group(1)).strip()
+              low=body.lower()
+              print(f'{label}_HTTP={code}')
+              print(f'{label}_FINAL_HOST={urllib.parse.urlsplit(final).netloc}')
+              print(f'{label}_TITLE={title[:160]}')
+              print(f'{label}_INVALID_REFERENCE=' + ('YES' if 'referencia inválida' in low or 'referencia invalida' in low else 'NO'))
+              print(f'{label}_LOGIN_HINT=' + ('YES' if ('iniciar sesión' in low or 'iniciar sesion' in low or 'login' in low) else 'NO'))
+
+          probe('AUTH_NO_SCOPE', dict(base))
+          if scopes:
+              p=dict(base); p['scope']=' '.join(scopes)
+              probe('AUTH_ALL_DECLARED_SCOPES', p)
+          print('IOL_OAUTH_DIAG=END')
+          PY
