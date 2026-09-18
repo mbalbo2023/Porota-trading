@@ -42,15 +42,18 @@ jobs:
           systemctl list-timers --all --no-pager --plain
           echo 'SYSTEMD_ALL_TIMERS_END'
 
+          failures=0
           required=(porota-snapshot-preopen-rc6.timer porota-snapshot-postclose-rc6.timer porota-iol-shadow-collector-rc6.timer porota-rc6-candle-inmarket-verify.timer)
           for unit in "${required[@]}"; do
-            enabled="$(systemctl is-enabled "$unit")"
-            active="$(systemctl is-active "$unit")"
-            next="$(systemctl show "$unit" --property=NextElapseUSecRealtime --value)"
-            test "$enabled" = enabled
-            test "$active" = active
-            test -n "$next"
-            echo "RC6_TIMER_OK=$unit|NEXT=$next"
+            enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+            active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+            next="$(systemctl show "$unit" --property=NextElapseUSecRealtime --value 2>/dev/null || true)"
+            if [ "$enabled" = enabled ] && [ "$active" = active ] && [ -n "$next" ]; then
+              echo "RC6_TIMER_OK=$unit|NEXT=$next"
+            else
+              echo "RC6_TIMER_NOT_READY=$unit|enabled=$enabled|active=$active|next=$next"
+              failures=1
+            fi
           done
 
           echo 'RC6_TIMER_CALENDAR_PREOPEN:'
@@ -100,5 +103,9 @@ jobs:
           )"
           test "$POST_STATE" = 'ok|PRODUCTION_PAPER|0'
           echo "POST_STATE=$POST_STATE"
+          if [ "$failures" -ne 0 ]; then
+            echo 'RC6_LIVE_SCHEDULER_AUDIT=NOT_READY'
+            exit 1
+          fi
           echo 'RC6_LIVE_SCHEDULER_AUDIT=GREEN'
           REMOTE
