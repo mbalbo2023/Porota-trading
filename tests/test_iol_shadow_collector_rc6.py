@@ -65,3 +65,11 @@ def test_market_window_is_limited_to_normal_byma_session():
     assert not collector.is_operational_market_window(__import__("datetime").datetime(2026, 9, 18, 10, 29, tzinfo=tz))
     assert not collector.is_operational_market_window(__import__("datetime").datetime(2026, 9, 18, 17, 0, tzinfo=tz))
     assert not collector.is_operational_market_window(__import__("datetime").datetime(2026, 9, 19, 12, 0, tzinfo=tz))
+
+
+def test_rotating_batches_preserve_prior_symbols_in_latest_cache(tmp_path):
+    client=FakeClient()
+    collector.run_batch(["AAPL"], client, root=tmp_path, policy=policy())
+    result=collector.run_batch(["GGAL"], client, root=tmp_path, policy=policy())
+    assert [row["symbol"] for row in result["symbols"]] == ["AAPL", "GGAL"]
+    assert result["telemetry"]["calls_total"] >= 1
