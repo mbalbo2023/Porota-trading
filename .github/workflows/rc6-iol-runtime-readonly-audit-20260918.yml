@@ -122,9 +122,25 @@ jobs:
           echo "--- DASHBOARD VIEW PATH ---"
           sudo -n docker exec porota_production_dashboard sh -lc 'if test -f /app/data/market/iol_shadow_latest.json; then stat -c "DASHBOARD_CACHE_STAT=%s|%y" /app/data/market/iol_shadow_latest.json; else echo DASHBOARD_CACHE=ABSENT; fi' 2>&1 || true
 
+          echo "--- DASHBOARD RENDER (READ-ONLY) ---"
+          sudo -n docker exec porota_production_dashboard python - <<'PY' 2>&1 || true
+          import urllib.request
+          try:
+              with urllib.request.urlopen("http://127.0.0.1:8000/validacion", timeout=10) as response:
+                  body=response.read().decode("utf-8","replace")
+                  print("DASHBOARD_VALIDATION_HTTP="+str(response.status))
+                  print("DASHBOARD_RENDER_IOL_READY="+str("Estado IOL</div><div class='paper-card-value'>READY" in body or ">READY</" in body))
+                  print("DASHBOARD_RENDER_IOL_UNAVAILABLE="+str(">UNAVAILABLE</" in body))
+                  print("DASHBOARD_RENDER_IOL_ROWS="+str("Aún no hay evidencia IOL cacheada" not in body))
+          except Exception as exc:
+              print("DASHBOARD_VALIDATION_ERROR="+type(exc).__name__)
+          PY
+
           echo "--- SERVICE JOURNAL (SANITIZED) ---"
           sudo -n journalctl -u porota-iol-shadow-collector-rc6.service -n 80 --no-pager 2>&1 | sed -E 's/(Bearer |access_token["=: ]+|refresh_token["=: ]+)[^[:space:]]+/\1[REDACTED]/g' || true
           echo "RC6_IOL_AUDIT_COMPLETE=YES"
           HOST
 
 # Re-run after IOL OAuth refresh deployment.
+
+# Re-run to verify rendered dashboard after IOL recovery.
