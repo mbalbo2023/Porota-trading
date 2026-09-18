@@ -9,6 +9,7 @@ Type=oneshot
 WorkingDirectory=/opt/porota-trading
 Environment=POROTA_IOL_SHADOW_MODE=OBSERVE_ONLY
 Environment=POROTA_IOL_SHADOW_ROOT=/opt/porota-trading/data/market
+Environment=PYTHONPATH=/opt/porota-trading
 ExecStart=/usr/bin/python3 /opt/porota-trading/scripts/rc6_iol_shadow_collect.py
 NoNewPrivileges=true
 PrivateTmp=true
