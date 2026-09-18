@@ -16,6 +16,7 @@ def test_verified_snapshot_is_paper_only_and_keeps_operation_trace():
     snap = build_snapshot("postclose", datetime(2026, 9, 18, 17, 15, tzinfo=TZ), payload())
     assert snap["status"] == "VERIFIED"
     assert snap["real_orders_sent"] == 0
+    assert snap["metrics"] == {"closed_operations": 1, "net_pnl_ars": 125.5, "winners": 1, "losers": 0, "breakeven": 0, "win_rate_pct": 100.0, "decisions_observed": 1}
     assert snap["operations"] == [{
         "symbol": "GGAL", "type": "PAPER", "opened_at": "2026-09-18T11:00:00-03:00",
         "closed_at": "2026-09-18T15:00:00-03:00", "net_pnl_ars": 125.5,
@@ -32,3 +33,12 @@ def test_write_is_valid_json(tmp_path):
     output = tmp_path / "snapshots" / "latest.json"
     write_snapshot({"schema_version": 1, "status": "VERIFIED"}, output)
     assert output.read_text(encoding="utf-8").startswith("{")
+
+
+def test_snapshot_reports_zero_closed_operations_without_inventing_win_rate():
+    empty = payload()
+    empty["closed"] = []
+    snap = build_snapshot("postclose", datetime(2026, 9, 18, 17, 15, tzinfo=TZ), empty)
+    assert snap["metrics"]["closed_operations"] == 0
+    assert snap["metrics"]["net_pnl_ars"] == 0.0
+    assert snap["metrics"]["win_rate_pct"] is None
