@@ -74,7 +74,10 @@ jobs:
           try:
               x=json.load(open(p,encoding='utf-8'))
               tokens=x.get('tokens') if isinstance(x,dict) else {}
+              registration=x.get('client_registration') if isinstance(x,dict) else {}
+              oauth_state=x.get('oauth_state') if isinstance(x,dict) else {}
               print('IOL_OAUTH_SCHEMA=top_keys:'+','.join(sorted(map(str,x.keys())))+'|token_keys:'+','.join(sorted(map(str,tokens.keys()))) if isinstance(tokens,dict) else 'IOL_OAUTH_SCHEMA=TOKENS_INVALID')
+              print('IOL_OAUTH_METADATA_KEYS=registration:'+','.join(sorted(map(str,registration.keys())))+'|state:'+','.join(sorted(map(str,oauth_state.keys()))) if isinstance(registration,dict) and isinstance(oauth_state,dict) else 'IOL_OAUTH_METADATA_KEYS=INVALID')
           except Exception as e:
               print('IOL_OAUTH_SCHEMA_ERROR='+type(e).__name__)
           PY
