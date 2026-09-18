@@ -255,7 +255,7 @@ jobs:
           test "$(systemctl is-enabled porota-public-snapshot-rc6.service)" = enabled
           test "$(systemctl is-active porota-public-snapshot-rc6.service)" = active
           PUBLIC_SNAPSHOT="$(curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8089/latest.json)"
-          python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")==1; assert d.get("real_orders_sent")==0; print("RC6_PUBLIC_SNAPSHOT=GREEN")' <<< "$PUBLIC_SNAPSHOT"
+          python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")==1; assert d.get("real_orders_sent")==0; print("RC6_PUBLIC_SNAPSHOT=GREEN")' <<< "$PUBLIC_SNAPSHOT"
           POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
