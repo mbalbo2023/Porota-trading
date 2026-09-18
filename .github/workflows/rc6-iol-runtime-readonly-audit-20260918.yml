@@ -193,3 +193,5 @@ jobs:
 # Re-run to identify dashboard cache resolution without exposing paths.
 
 # Re-run to identify dashboard component cache-schema compatibility.
+
+# Re-run after dashboard cache permission deployment.
