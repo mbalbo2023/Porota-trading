@@ -1,0 +1,10 @@
+[Unit]
+Description=Porota RC6 preopen snapshot at 10:10 Argentina on weekdays
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 10:10:00 America/Argentina/Buenos_Aires
+AccuracySec=30s
+Unit=porota-snapshot-preopen-rc6.service
+
+[Install]
+WantedBy=timers.target
