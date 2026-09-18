@@ -42,7 +42,9 @@ def _latched_rows(previous):
 
 def refresh(root=None, *, full_verify=None):
     if full_verify is None:
-        full_verify = os.getenv("POROTA_VALIDATION_FULL_VERIFY", "").strip() == "1"
+        # This is the once-per-day audit: verify the append-only chain and run
+        # the read-only DB integrity pulse. It never calls market ingestion.
+        full_verify = os.getenv("POROTA_VALIDATION_FULL_VERIFY", "1").strip() != "0"
     previous, error = _read_raw(root), None
     if full_verify:
         try:
@@ -52,7 +54,7 @@ def refresh(root=None, *, full_verify=None):
     else:
         records, ledger_status = _latched_rows(previous), "DAILY_COMPACT"
     rows = dynamic.evaluate(records, deep_db_check=bool(full_verify))
-    payload = {"schema_version": SCHEMA_VERSION, "generated_at": datetime.now(timezone.utc).isoformat(), "source": "rc6-validation-projection-worker", "ledger_status": ledger_status, "ledger_error": error, "verification_note": "Cadena completa verificada" if full_verify and not error else "Proyección diaria: la evidencia histórica no se presenta como estado actual", "milestones": rows, "summary": dynamic.summary(rows), "real_money_state": "BLOCKED"}
+    payload = {"schema_version": SCHEMA_VERSION, "generated_at": datetime.now(timezone.utc).isoformat(), "source": "rc6-validation-projection-worker", "ledger_status": ledger_status, "ledger_error": error, "verification_note": "Auditoría diaria: cadena, DB y pulsos operativos verificados por lectura" if full_verify and not error else "Proyección diaria limitada: la evidencia histórica no se presenta como estado actual", "milestones": rows, "summary": dynamic.summary(rows), "real_money_state": "BLOCKED"}
     _write_atomic(snapshot_path(root), payload); return payload
 
 
