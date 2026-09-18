@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
-from iol_shadow_collector_rc6 import CollectionPolicy, run_batch
+from iol_shadow_collector_rc6 import CollectionPolicy, is_operational_market_window, run_batch
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
@@ -38,6 +38,9 @@ def _primary_snapshot() -> dict[str, float]:
 def main() -> int:
     if os.getenv("POROTA_IOL_SHADOW_MODE", "OBSERVE_ONLY").strip() != "OBSERVE_ONLY":
         print("IOL_SHADOW_COLLECTION=BLOCKED_BY_POLICY")
+        return 0
+    if not is_operational_market_window():
+        print("IOL_SHADOW_COLLECTION=NOT_DUE_OUTSIDE_MARKET")
         return 0
     payload = run_batch(
         _universe(), OAuthStoreReadOnlyMCP(), root=DEFAULT_ROOT,

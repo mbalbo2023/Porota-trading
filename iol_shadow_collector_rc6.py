@@ -7,7 +7,10 @@ signals, READY/HOLD, sizing, or orders.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, time as clock_time, timezone
+from zoneinfo import ZoneInfo
+
+import ak_byma_calendar as byma
 import json
 import os
 from pathlib import Path
@@ -27,6 +30,18 @@ DEFAULT_TERM = "t1"
 METADATA_TTL_SECONDS = 24 * 60 * 60
 CACHE_SCHEMA_VERSION = 3
 CHECKPOINT_SCHEMA_VERSION = 2
+MARKET_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+MARKET_OPEN = clock_time(10, 30)
+MARKET_CLOSE = clock_time(17, 0)
+
+
+def is_operational_market_window(now: datetime | None = None) -> bool:
+    """True only during a normal BYMA session; unknown dates fail closed."""
+    local = (now or datetime.now(MARKET_TZ)).astimezone(MARKET_TZ)
+    return (
+        byma.es_dia_habil_operativo(local.date())
+        and MARKET_OPEN <= local.time() < MARKET_CLOSE
+    )
 
 
 class ReadOnlyMCP(Protocol):
