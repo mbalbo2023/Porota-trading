@@ -109,26 +109,6 @@ def _row(milestone, prior, *, deep_db_check=False):
         deviation = "Pulso de enrutamiento pendiente de evidencia de deploy."
         blocker = "Sin acceso de auditoría a las variables de rutas."
         next_action = "Conservar BLOCKED y validar rutas en el próximo deploy."
-    elif code == "M2":
-        observed_count, target_count = _iol_coverage()
-        if target_count:
-            state, pct = "YELLOW", min(95, round(observed_count * 100 / target_count))
-            observed = f"IOL SHADOW OBSERVE_ONLY: {observed_count}/{target_count} instrumentos cacheados; contratos fuera del universo actual se conservan sólo como auditoría."
-            deviation = "Cobertura o evidencia contractual aún no completa; no afecta READY/HOLD ni órdenes."
-            blocker = "Completar rotación y publicar la evidencia disponible, sin reactivar fuentes descartadas."
-            next_action = "Auditoría diaria de cobertura IOL y contratos operativos."
-        else:
-            state, pct = "YELLOW", 40
-            observed = "Implementación SHADOW disponible; cache de cobertura IOL aún no observable desde este worker."
-            deviation = "Falta pulso de cobertura actual."
-            blocker = "Esperar publicación del colector."
-            next_action = "Revisar la próxima auditoría diaria."
-    elif code == "M3":
-        state, pct = "YELLOW", 60
-        observed = "History Store v2 operativo se audita por cobertura, profundidad y freshness; esta proyección no reingesta históricos."
-        deviation = "La frescura se mide por instrumento y no se infiere como cobertura faltante."
-        blocker = "Publicar el pulso de freshness consolidado."
-        next_action = "Auditoría diaria de históricos sin catch-up automático."
     elif prior:
         # Historical records remain visible, but are never a current GREEN.
         claim = historical_claim(prior)
