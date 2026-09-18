@@ -103,6 +103,12 @@ def _row(milestone, prior, *, deep_db_check=False):
         state, pct, claim = "GREEN", 100, "VERIFIED_CURRENT"
         observed, deviation, blocker = f"PAPER observado; {safety_detail}; real_orders_sent=0", "Ninguna detectada", "Ninguno"
         next_action = "Revalidar en cada deploy; no promover dinero real"
+    elif code == "M1" and runtime_paper and runtime_zero:
+        state, pct = "YELLOW", 80
+        observed = "PAPER observado y real_orders_sent=0; la capacidad de rutas no se puede probar desde este proceso de lectura."
+        deviation = "Pulso de enrutamiento pendiente de evidencia de deploy."
+        blocker = "Sin acceso de auditoría a las variables de rutas."
+        next_action = "Conservar BLOCKED y validar rutas en el próximo deploy."
     elif code == "M2":
         observed_count, target_count = _iol_coverage()
         if target_count:
