@@ -148,6 +148,21 @@ jobs:
               print("DASHBOARD_COMPONENT_RENDER_ERROR="+type(exc).__name__)
           PY
 
+          echo "--- DASHBOARD CACHE RESOLUTION (READ-ONLY) ---"
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY' 2>&1 || true
+          try:
+              import os
+              import iol_shadow_observation_rc6 as observation
+              path=observation.cache_path()
+              data=observation.collect()
+              print("DASHBOARD_CACHE_OVERRIDE_SET="+str(bool(os.getenv("POROTA_IOL_SHADOW_CACHE_PATH","").strip())))
+              print("DASHBOARD_COMPONENT_CACHE_EXISTS="+str(path.is_file()))
+              print("DASHBOARD_COMPONENT_COLLECT_STATE="+str(data.get("state")))
+              print("DASHBOARD_COMPONENT_COLLECT_ROWS="+str(len(data.get("symbols") or [])))
+          except Exception as exc:
+              print("DASHBOARD_CACHE_RESOLUTION_ERROR="+type(exc).__name__)
+          PY
+
           echo "--- SERVICE JOURNAL (SANITIZED) ---"
           sudo -n journalctl -u porota-iol-shadow-collector-rc6.service -n 80 --no-pager 2>&1 | sed -E 's/(Bearer |access_token["=: ]+|refresh_token["=: ]+)[^[:space:]]+/\1[REDACTED]/g' || true
           echo "RC6_IOL_AUDIT_COMPLETE=YES"
@@ -160,3 +175,5 @@ jobs:
 # Re-run with container stdin attached for dashboard render proof.
 
 # Re-run to prove the IOL view component reads the mounted cache.
+
+# Re-run to identify dashboard cache resolution without exposing paths.
