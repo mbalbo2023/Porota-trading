@@ -47,7 +47,7 @@ def _operational_universe() -> list[str]:
     return list(DEFAULT_UNIVERSE)
 
 
-def _rotation(universe: list[str]) -> list[str]:
+def _rotation(universe: list[str]) -> tuple[list[str], int]:
     state_path = DEFAULT_ROOT / "iol_shadow_rotation.json"
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -55,9 +55,12 @@ def _rotation(universe: list[str]) -> list[str]:
         state = {}
     start = int(state.get("next_index") or 0) % max(1, len(universe))
     selected = [universe[(start + offset) % len(universe)] for offset in range(min(BATCH_SIZE, len(universe)))]
+    return selected, start
+
+def _commit_rotation(universe: list[str], start: int, selected: list[str]) -> None:
+    state_path = DEFAULT_ROOT / "iol_shadow_rotation.json"
     _atomic_json(state_path, {"schema_version": 1, "universe_size": len(universe),
                               "next_index": (start + len(selected)) % len(universe)})
-    return selected
 
 
 def _primary_snapshot() -> dict[str, float]:
@@ -98,10 +101,11 @@ def main() -> int:
         print("IOL_SHADOW_COLLECTION=NOT_DUE_OUTSIDE_MARKET")
         return 0
     universe = _operational_universe()
-    batch = _rotation(universe)
+    batch, rotation_start = _rotation(universe)
     payload = run_batch(batch, OAuthStoreReadOnlyMCP(), root=DEFAULT_ROOT,
         primary_last_by_symbol=_primary_snapshot(),
         policy=CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40))
+    _commit_rotation(universe, rotation_start, batch)
     payload = _publish_progress(len(universe), batch)
     ready = sum(1 for row in payload.get("symbols", []) if row.get("state") == "READY")
     print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={ready} TOTAL={len(payload.get('symbols', []))} UNIVERSE={len(universe)}")
