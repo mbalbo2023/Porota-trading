@@ -84,4 +84,4 @@ def collect(root: Path | str | None=None) -> dict:
     if payload.get("schema_version") not in (SCHEMA_VERSION,2,3):
         return {"source":SOURCE,"mode":MODE,"state":"UNAVAILABLE","decision_effect":DECISION_EFFECT,"live_decision_authority":False,"real_money_authorized":False,"symbols":[],"reason":"CACHE_MISSING_OR_INVALID"}
     return {"source":SOURCE,"mode":MODE,"state":"READY" if payload.get("symbols") else "INSUFFICIENT_DATA","decision_effect":DECISION_EFFECT,
-            "live_decision_authority":False,"real_money_authorized":False,"refreshed_at":payload.get("refreshed_at"),"symbols":payload.get("symbols") or []}
+            "live_decision_authority":False,"real_money_authorized":False,"refreshed_at":payload.get("refreshed_at"),"progress":payload.get("progress") if isinstance(payload.get("progress"),dict) else {},"telemetry":payload.get("telemetry") if isinstance(payload.get("telemetry"),dict) else {},"symbols":payload.get("symbols") or []}
