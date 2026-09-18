@@ -97,7 +97,7 @@ def run(job_name: str) -> None:
         logger.info("Auditoría Action 4 publicada: %s.", payload["dashboard_daily_report"]["periodo"])
     elif job_name == "validation_projection":
         import rc6_validation_projection
-        snapshot = rc6_validation_projection.refresh()
+        snapshot = rc6_validation_projection.refresh(full_verify=False, daily_audit=True)
         logger.info("Proyección RC6 actualizada: %s/%s hitos GREEN.",
                     snapshot["summary"]["milestones_green"],
                     snapshot["summary"]["milestones_total"])
