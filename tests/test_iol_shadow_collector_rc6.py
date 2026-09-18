@@ -56,3 +56,12 @@ def test_429_trips_circuit_and_does_not_fall_back_to_orders(tmp_path):
 
 def test_observation_parser_accepts_trade_lot_price():
     assert observation._quote_summary({"trade":{"lot_price":123.4}})["last"]==123.4
+
+
+def test_market_window_is_limited_to_normal_byma_session():
+    tz = collector.MARKET_TZ
+    assert collector.is_operational_market_window(__import__("datetime").datetime(2026, 9, 18, 10, 30, tzinfo=tz))
+    assert collector.is_operational_market_window(__import__("datetime").datetime(2026, 9, 18, 16, 59, tzinfo=tz))
+    assert not collector.is_operational_market_window(__import__("datetime").datetime(2026, 9, 18, 10, 29, tzinfo=tz))
+    assert not collector.is_operational_market_window(__import__("datetime").datetime(2026, 9, 18, 17, 0, tzinfo=tz))
+    assert not collector.is_operational_market_window(__import__("datetime").datetime(2026, 9, 19, 12, 0, tzinfo=tz))
