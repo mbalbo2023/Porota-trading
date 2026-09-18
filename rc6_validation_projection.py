@@ -73,11 +73,11 @@ def _apply_daily_operational_audit(rows: dict[str, dict]) -> dict[str, dict]:
     return result
 
 
-def refresh(root=None, *, full_verify=None):
+def refresh(root=None, *, full_verify=None, daily_audit=False):
     if full_verify is None:
-        # This is the once-per-day audit: verify the append-only chain and run
-        # the read-only DB integrity pulse. It never calls market ingestion.
-        full_verify = os.getenv("POROTA_VALIDATION_FULL_VERIFY", "1").strip() != "0"
+        # Full hash-chain verification can be expensive. The daily worker is
+        # intentionally bounded; a deep verification remains an explicit task.
+        full_verify = os.getenv("POROTA_VALIDATION_FULL_VERIFY", "").strip() == "1"
     previous, error = _read_raw(root), None
     if full_verify:
         try:
@@ -87,9 +87,9 @@ def refresh(root=None, *, full_verify=None):
     else:
         records, ledger_status = _latched_rows(previous), "DAILY_COMPACT"
     rows = dynamic.evaluate(records, deep_db_check=bool(full_verify))
-    if full_verify:
+    if full_verify or daily_audit:
         rows = _apply_daily_operational_audit(rows)
-    payload = {"schema_version": SCHEMA_VERSION, "generated_at": datetime.now(timezone.utc).isoformat(), "source": "rc6-validation-projection-worker", "ledger_status": ledger_status, "ledger_error": error, "verification_note": "Auditoría diaria: cadena, DB y pulsos operativos verificados por lectura" if full_verify and not error else "Proyección diaria limitada: la evidencia histórica no se presenta como estado actual", "milestones": rows, "summary": dynamic.summary(rows), "real_money_state": "BLOCKED"}
+    payload = {"schema_version": SCHEMA_VERSION, "generated_at": datetime.now(timezone.utc).isoformat(), "source": "rc6-validation-projection-worker", "ledger_status": ledger_status, "ledger_error": error, "verification_note": "Auditoría profunda: cadena y DB verificadas por lectura" if full_verify and not error else ("Auditoría diaria acotada: pulsos operativos actuales; la cadena profunda queda programada por separado" if daily_audit else "Proyección diaria limitada: la evidencia histórica no se presenta como estado actual"), "milestones": rows, "summary": dynamic.summary(rows), "real_money_state": "BLOCKED"}
     _write_atomic(snapshot_path(root), payload); return payload
 
 
