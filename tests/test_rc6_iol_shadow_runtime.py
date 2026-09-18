@@ -1,7 +1,7 @@
 from pathlib import Path
 from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
 from iol_shadow_collector_rc6 import CollectionPolicy
-from scripts.rc6_iol_shadow_collect import _universe
+import scripts.rc6_iol_shadow_collect as runtime
 
 def test_iol_collector_policy_is_bounded():
     policy=CollectionPolicy()
@@ -18,11 +18,22 @@ def test_iol_adapter_denies_mutating_tools(tmp_path: Path):
     else:
         raise AssertionError("mutation unexpectedly admitted")
 
-def test_default_universe_is_small_and_unique(monkeypatch):
+def test_configured_operational_universe_is_unique(monkeypatch):
+    monkeypatch.setenv("POROTA_IOL_SHADOW_UNIVERSE", "aapl,ggal,AAPL")
+    universe=runtime._operational_universe()
+    assert universe == ["AAPL", "GGAL"]
+
+def test_operational_catalog_includes_actions_and_cedears(monkeypatch, tmp_path):
+    db = tmp_path / "observer.db"
+    import sqlite3
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE financial_instrument_catalog (ticker TEXT, status TEXT, instrument_type TEXT)")
+        conn.executemany("INSERT INTO financial_instrument_catalog VALUES (?,?,?)", [
+            ("GGAL", "AVAILABLE", "ACCIONES"), ("AAPL", "AVAILABLE", "CEDEARS"),
+            ("BAD", "DISABLED", "ACCIONES"), ("BONO", "AVAILABLE", "BONOS")])
     monkeypatch.delenv("POROTA_IOL_SHADOW_UNIVERSE", raising=False)
-    universe=_universe()
-    assert 1 <= len(universe) <= 25
-    assert len(universe) == len(set(universe))
+    monkeypatch.setattr(runtime, "DEFAULT_DB", str(db))
+    assert runtime._operational_universe() == ["AAPL", "GGAL"]
 
 
 def test_systemd_collector_exposes_repository_root_to_python():
