@@ -136,6 +136,18 @@ jobs:
               print("DASHBOARD_VALIDATION_ERROR="+type(exc).__name__)
           PY
 
+          echo "--- DASHBOARD COMPONENT RENDER (READ-ONLY) ---"
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY' 2>&1 || true
+          try:
+              import ez_iol_shadow_validation_view_rc6 as iol_view
+              body=iol_view.render()
+              print("DASHBOARD_COMPONENT_IOL_READY="+str(">READY</" in body))
+              print("DASHBOARD_COMPONENT_IOL_UNAVAILABLE="+str(">UNAVAILABLE</" in body))
+              print("DASHBOARD_COMPONENT_IOL_ROWS="+str("Aún no hay evidencia IOL cacheada" not in body))
+          except Exception as exc:
+              print("DASHBOARD_COMPONENT_RENDER_ERROR="+type(exc).__name__)
+          PY
+
           echo "--- SERVICE JOURNAL (SANITIZED) ---"
           sudo -n journalctl -u porota-iol-shadow-collector-rc6.service -n 80 --no-pager 2>&1 | sed -E 's/(Bearer |access_token["=: ]+|refresh_token["=: ]+)[^[:space:]]+/\1[REDACTED]/g' || true
           echo "RC6_IOL_AUDIT_COMPLETE=YES"
@@ -146,3 +158,5 @@ jobs:
 # Re-run to verify rendered dashboard after IOL recovery.
 
 # Re-run with container stdin attached for dashboard render proof.
+
+# Re-run to prove the IOL view component reads the mounted cache.
