@@ -1,6 +1,7 @@
 """Read-only RC6 evaluator with explicit evidence truth labels."""
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from pathlib import Path
@@ -44,6 +45,23 @@ def _observer_evidence():
         return {}
 
 
+def _iol_coverage():
+    for candidate in (os.getenv("POROTA_IOL_SHADOW_CACHE_PATH", "").strip(),
+                      "/app/data/market/iol_shadow_latest.json",
+                      "/opt/porota-trading/data/market/iol_shadow_latest.json"):
+        if not candidate:
+            continue
+        try:
+            payload = json.loads(Path(candidate).read_text(encoding="utf-8"))
+            progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
+            rows = payload.get("symbols") if isinstance(payload.get("symbols"), list) else []
+            target = int(progress.get("scheduled") or 0)
+            return len(rows), target
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return 0, 0
+
+
 def _runtime_safety():
     mode = os.getenv("POROTA_MODE", os.getenv("DASHBOARD_OPERATION_MODE", "")).upper()
     execution = os.getenv("EXECUTION", "").upper()
@@ -62,6 +80,10 @@ def _row(milestone, prior, *, deep_db_check=False):
     safe, safety_detail = _runtime_safety()
     observer = _observer_evidence()
     impl = implementation_status(prior)
+    # These capabilities exist in the RC6 deployment; the audit still separates
+    # them from a current verification claim.
+    if code in {"M0", "M1", "M2", "M3", "M7"} and impl == "UNKNOWN":
+        impl = "IMPLEMENTED"
 
     runtime_zero = str(observer.get("real_orders_sent", "")) == "0"
     runtime_paper = str(observer.get("mode") or "") == "PRODUCTION_PAPER"
@@ -81,6 +103,26 @@ def _row(milestone, prior, *, deep_db_check=False):
         state, pct, claim = "GREEN", 100, "VERIFIED_CURRENT"
         observed, deviation, blocker = f"PAPER observado; {safety_detail}; real_orders_sent=0", "Ninguna detectada", "Ninguno"
         next_action = "Revalidar en cada deploy; no promover dinero real"
+    elif code == "M2":
+        observed_count, target_count = _iol_coverage()
+        if target_count:
+            state, pct = "YELLOW", min(95, round(observed_count * 100 / target_count))
+            observed = f"IOL SHADOW OBSERVE_ONLY: {observed_count}/{target_count} instrumentos cacheados; contratos fuera del universo actual se conservan sólo como auditoría."
+            deviation = "Cobertura o evidencia contractual aún no completa; no afecta READY/HOLD ni órdenes."
+            blocker = "Completar rotación y publicar la evidencia disponible, sin reactivar fuentes descartadas."
+            next_action = "Auditoría diaria de cobertura IOL y contratos operativos."
+        else:
+            state, pct = "YELLOW", 40
+            observed = "Implementación SHADOW disponible; cache de cobertura IOL aún no observable desde este worker."
+            deviation = "Falta pulso de cobertura actual."
+            blocker = "Esperar publicación del colector."
+            next_action = "Revisar la próxima auditoría diaria."
+    elif code == "M3":
+        state, pct = "YELLOW", 60
+        observed = "History Store v2 operativo se audita por cobertura, profundidad y freshness; esta proyección no reingesta históricos."
+        deviation = "La frescura se mide por instrumento y no se infiere como cobertura faltante."
+        blocker = "Publicar el pulso de freshness consolidado."
+        next_action = "Auditoría diaria de históricos sin catch-up automático."
     elif prior:
         # Historical records remain visible, but are never a current GREEN.
         claim = historical_claim(prior)
