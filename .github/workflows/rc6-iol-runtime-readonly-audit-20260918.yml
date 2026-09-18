@@ -127,4 +127,4 @@ jobs:
           echo "RC6_IOL_AUDIT_COMPLETE=YES"
           HOST
 
-# Re-run after IOL PYTHONPATH fix deployment.
+# Re-run after IOL OAuth refresh deployment.
