@@ -1,0 +1,104 @@
+name: RC6 live scheduler audit (read-only)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/rc6-live-scheduler-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Audit all systemd timers and RC6 scheduler
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo 'SYSTEMD_ALL_TIMERS_BEGIN'
+          systemctl list-timers --all --no-pager --plain
+          echo 'SYSTEMD_ALL_TIMERS_END'
+
+          required=(porota-snapshot-preopen-rc6.timer porota-snapshot-postclose-rc6.timer porota-iol-shadow-collector-rc6.timer porota-rc6-candle-inmarket-verify.timer)
+          for unit in "${required[@]}"; do
+            enabled="$(systemctl is-enabled "$unit")"
+            active="$(systemctl is-active "$unit")"
+            next="$(systemctl show "$unit" --property=NextElapseUSecRealtime --value)"
+            test "$enabled" = enabled
+            test "$active" = active
+            test -n "$next"
+            echo "RC6_TIMER_OK=$unit|NEXT=$next"
+          done
+
+          echo 'RC6_TIMER_CALENDAR_PREOPEN:'
+          systemd-analyze calendar 'Mon..Fri *-*-* 10:10:00 America/Argentina/Buenos_Aires'
+          echo 'RC6_TIMER_CALENDAR_POSTCLOSE:'
+          systemd-analyze calendar 'Mon..Fri *-*-* 17:15:00 America/Argentina/Buenos_Aires'
+
+          forbidden=(porota-history-postclose-rc6.timer porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer)
+          for unit in "${forbidden[@]}"; do
+            enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+            active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+            test "$enabled" != enabled
+            test "$active" != active
+            echo "RC6_FORBIDDEN_TIMER_DISABLED=$unit|enabled=$enabled|active=$active"
+          done
+
+          ! systemctl is-active --quiet porota-public-snapshot-rc6.service
+          ! test -e /etc/systemd/system/porota-public-snapshot-rc6.service
+          ! test -e /opt/porota-trading/rc6_public_snapshot_server.py
+          echo 'RC6_PUBLIC_SNAPSHOT=DISABLED'
+
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import az_maintenance_scheduler as scheduler
+          configured = {job.id for job in scheduler.build_scheduler().get_jobs()}
+          expected = {
+              'maintenance_monthly_autotune', 'maintenance_data_retention',
+              'maintenance_macro_refresh', 'maintenance_daily_backup',
+              'maintenance_model_guardian', 'maintenance_monthly_report',
+              'maintenance_learning_diagnostic', 'maintenance_weekly_report',
+              'maintenance_news_scan', 'maintenance_gdelt_shadow',
+              'maintenance_action4_audit', 'maintenance_validation_projection',
+          }
+          assert configured == expected, (configured, expected)
+          assert not any('historical' in job_id for job_id in configured)
+          print('RC6_MAINTENANCE_SCHEDULER=GREEN')
+          PY
+
+          POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c = sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro', uri=True, timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          quick = c.execute('PRAGMA quick_check').fetchone()[0]
+          mode, orders = c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print('|'.join(map(str, (quick, mode, orders))))
+          PY
+          )"
+          test "$POST_STATE" = 'ok|PRODUCTION_PAPER|0'
+          echo "POST_STATE=$POST_STATE"
+          echo 'RC6_LIVE_SCHEDULER_AUDIT=GREEN'
+          REMOTE
