@@ -6,6 +6,7 @@ sizing, or any order path. Unknown or incomplete cache fields remain explicit.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from html import escape
 from typing import Any
 
@@ -62,8 +63,18 @@ def _progress(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _row_quality(row: dict[str, Any]) -> tuple[str, str]:
-    freshness = _text(row.get("freshness_state") or row.get("freshness"), UNKNOWN).upper()
-    quality = _text(row.get("data_quality") or row.get("quality"), UNKNOWN).upper()
+    """Derive truthfully from the collector timestamp; never manufacture MCP fields."""
+    freshness = _text(row.get("freshness_state") or row.get("freshness"), "").upper()
+    if not freshness:
+        try:
+            captured = datetime.fromisoformat(str(row.get("captured_at") or "").replace("Z", "+00:00"))
+            age = max(0.0, (datetime.now(timezone.utc) - captured.astimezone(timezone.utc)).total_seconds())
+            freshness = "FRESH" if age <= 180 else "AGING" if age <= 900 else "STALE"
+        except (TypeError, ValueError):
+            freshness = UNKNOWN
+    quality = _text(row.get("data_quality") or row.get("quality"), "").upper()
+    if not quality:
+        quality = "VALID" if _text(row.get("state"), UNKNOWN).upper() == "READY" and isinstance(row.get("quote"), dict) and row["quote"].get("last") is not None else UNKNOWN
     return freshness, quality
 
 
@@ -80,11 +91,19 @@ def _counterfactual(row: dict[str, Any]) -> tuple[str, str]:
     return (outcome, f"Candidato {candidate}; PAPER original: {original}. {_text(rationale, 'Sin detalle adicional.')}")
 
 
-def _summary(rows: list[dict[str, Any]]) -> tuple[int, int, int]:
-    aligned = sum(_text(row.get("primary_comparison"), "").upper() == "BACKGROUND_ALIGNED" for row in rows)
-    divergent = sum(_text(row.get("primary_comparison"), "").upper() == "BACKGROUND_DIVERGENCE" for row in rows)
+def _comparison(row: dict[str, Any]) -> tuple[str, Any]:
+    value = row.get("primary_comparison")
+    if isinstance(value, dict):
+        return _text(value.get("state"), UNKNOWN).upper(), value.get("difference_pct")
+    return _text(value, UNKNOWN).upper(), row.get("difference_pct", row.get("ppi_iol_difference_pct"))
+
+def _summary(rows: list[dict[str, Any]]) -> tuple[int, int, int, int]:
+    states = [_comparison(row)[0] for row in rows]
+    aligned = sum(state in {"MATCH", "BACKGROUND_ALIGNED"} for state in states)
+    divergent = sum(state in {"PRICE_DIVERGENCE", "BACKGROUND_DIVERGENCE"} for state in states)
+    incomplete = sum(state in {"BACKGROUND_COMPARISON_INCOMPLETE", UNKNOWN} for state in states)
     unavailable = sum(_text(row.get("state"), UNKNOWN).upper() != "READY" for row in rows)
-    return aligned, divergent, unavailable
+    return aligned, divergent, incomplete, unavailable
 
 
 def render() -> str:
@@ -92,7 +111,7 @@ def render() -> str:
     data = observation.collect()
     rows = [row for row in (data.get("symbols") or []) if isinstance(row, dict)]
     state = _text(data.get("state"), UNKNOWN).upper()
-    aligned, divergent, unavailable = _summary(rows)
+    aligned, divergent, incomplete, unavailable = _summary(rows)
     progress = _progress(data)
     call_count = _metric(data, "calls_total")
     rate_limited = _metric(data, "calls_429")
@@ -102,7 +121,8 @@ def render() -> str:
         f"llamadas: {_number(call_count)} · 429: {_number(rate_limited)} · "
         f"errores: {_number(errors)} · cache hits: {_number(cache_hits)}"
         if any(value is not None for value in (call_count, rate_limited, errors, cache_hits))
-        else "Collector pendiente: métricas MCP aún no publicadas."
+        else ("Collector pendiente: métricas MCP aún no publicadas." if not rows
+              else f"Último lote: {_number(_metric(data, 'last_batch_size') or _metric(data, 'batch_symbols'))} · cache: {len(rows)} instrumentos")
     )
     cache_note = (
         "No hay cache IOL válida. La ausencia de IOL no bloquea ni degrada PAPER."
@@ -115,8 +135,8 @@ def render() -> str:
                  "Plan publicado por collector; nunca inicia una consulta desde esta vista.", _card_state(progress["state"])),
         bg._card("Calidad MCP", cache_label,
                  "Las métricas se muestran sólo si fueron registradas en el cache aislado.", "gray"),
-        bg._card("Reconciliación PPI/IOL", f"{aligned} alineados · {divergent} divergentes",
-                 "Divergencia = diagnóstico background, nunca HOLD/READY.", "yellow" if divergent else "green"),
+        bg._card("Reconciliación PPI/IOL", f"{aligned} alineados · {divergent} divergentes · {incomplete} sin base comparable",
+                 "Divergencia = diagnóstico background, nunca HOLD/READY.", "yellow" if divergent or incomplete else "green"),
         bg._card("No disponibles", unavailable,
                  "Faltantes y errores se mantienen visibles; no se completan con supuestos.", "gray"),
     ))
@@ -124,8 +144,7 @@ def render() -> str:
     for row in rows[:MAX_ROWS]:
         quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
         freshness, quality = _row_quality(row)
-        comparison = _text(row.get("primary_comparison"), UNKNOWN)
-        difference = row.get("difference_pct", row.get("ppi_iol_difference_pct"))
+        comparison, difference = _comparison(row)
         what_if, what_if_detail = _counterfactual(row)
         reason = _text(row.get("reason"), "")
         rendered_rows.append(

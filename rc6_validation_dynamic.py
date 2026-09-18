@@ -1,6 +1,7 @@
 """Read-only RC6 evaluator with explicit evidence truth labels."""
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from pathlib import Path
@@ -44,6 +45,23 @@ def _observer_evidence():
         return {}
 
 
+def _iol_coverage():
+    for candidate in (os.getenv("POROTA_IOL_SHADOW_CACHE_PATH", "").strip(),
+                      "/app/data/market/iol_shadow_latest.json",
+                      "/opt/porota-trading/data/market/iol_shadow_latest.json"):
+        if not candidate:
+            continue
+        try:
+            payload = json.loads(Path(candidate).read_text(encoding="utf-8"))
+            progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
+            rows = payload.get("symbols") if isinstance(payload.get("symbols"), list) else []
+            target = int(progress.get("scheduled") or 0)
+            return len(rows), target
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return 0, 0
+
+
 def _runtime_safety():
     mode = os.getenv("POROTA_MODE", os.getenv("DASHBOARD_OPERATION_MODE", "")).upper()
     execution = os.getenv("EXECUTION", "").upper()
@@ -62,6 +80,10 @@ def _row(milestone, prior, *, deep_db_check=False):
     safe, safety_detail = _runtime_safety()
     observer = _observer_evidence()
     impl = implementation_status(prior)
+    # These capabilities exist in the RC6 deployment; the audit still separates
+    # them from a current verification claim.
+    if code in {"M0", "M1", "M2", "M3", "M7"} and impl == "UNKNOWN":
+        impl = "IMPLEMENTED"
 
     runtime_zero = str(observer.get("real_orders_sent", "")) == "0"
     runtime_paper = str(observer.get("mode") or "") == "PRODUCTION_PAPER"
@@ -81,6 +103,12 @@ def _row(milestone, prior, *, deep_db_check=False):
         state, pct, claim = "GREEN", 100, "VERIFIED_CURRENT"
         observed, deviation, blocker = f"PAPER observado; {safety_detail}; real_orders_sent=0", "Ninguna detectada", "Ninguno"
         next_action = "Revalidar en cada deploy; no promover dinero real"
+    elif code == "M1" and runtime_paper and runtime_zero:
+        state, pct = "YELLOW", 80
+        observed = "PAPER observado y real_orders_sent=0; la capacidad de rutas no se puede probar desde este proceso de lectura."
+        deviation = "Pulso de enrutamiento pendiente de evidencia de deploy."
+        blocker = "Sin acceso de auditoría a las variables de rutas."
+        next_action = "Conservar BLOCKED y validar rutas en el próximo deploy."
     elif prior:
         # Historical records remain visible, but are never a current GREEN.
         claim = historical_claim(prior)

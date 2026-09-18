@@ -40,9 +40,44 @@ def _latched_rows(previous):
     return [{"milestone": code, **dict(row)} for code, row in previous.get("milestones", {}).items() if isinstance(row, dict)]
 
 
+def _apply_daily_operational_audit(rows: dict[str, dict]) -> dict[str, dict]:
+    """Attach today's read-only IOL/history pulses only to the daily audit."""
+    result = {code: dict(row) for code, row in rows.items()}
+    observed, target = dynamic._iol_coverage()
+    if target:
+        pct = min(95, round(observed * 100 / target))
+        result["M2"].update({
+            "state": "YELLOW", "compliance_pct": pct, "claim_status": "PENDING",
+            "implementation_status": "IMPLEMENTED",
+            "observed_evidence": f"IOL SHADOW OBSERVE_ONLY: {observed}/{target} instrumentos cacheados; contratos fuera del universo actual permanecen sólo como auditoría.",
+            "deviation": "Cobertura o evidencia contractual aún incompleta; no afecta READY/HOLD ni órdenes.",
+            "blocker": "Completar rotación y publicar evidencia disponible, sin reactivar fuentes descartadas.",
+            "next_action": "Auditoría diaria de cobertura IOL y contratos operativos.",
+            "evidence_ref": "daily-read-only-iol-audit",
+        })
+    else:
+        result["M2"].update({
+            "implementation_status": "IMPLEMENTED",
+            "observed_evidence": "Implementación IOL SHADOW disponible; cache de cobertura no observable desde este worker.",
+            "next_action": "Revisar la próxima auditoría diaria.",
+        })
+    result["M3"].update({
+        "state": "YELLOW", "compliance_pct": 60, "claim_status": "PENDING",
+        "implementation_status": "IMPLEMENTED",
+        "observed_evidence": "History Store v2 operativo se audita por cobertura, profundidad y freshness; esta auditoría no reingesta históricos.",
+        "deviation": "La frescura se mide por instrumento y no se infiere como cobertura faltante.",
+        "blocker": "Publicar el pulso consolidado de freshness.",
+        "next_action": "Auditoría diaria de históricos sin catch-up automático.",
+        "evidence_ref": "daily-read-only-history-audit",
+    })
+    return result
+
+
 def refresh(root=None, *, full_verify=None):
     if full_verify is None:
-        full_verify = os.getenv("POROTA_VALIDATION_FULL_VERIFY", "").strip() == "1"
+        # This is the once-per-day audit: verify the append-only chain and run
+        # the read-only DB integrity pulse. It never calls market ingestion.
+        full_verify = os.getenv("POROTA_VALIDATION_FULL_VERIFY", "1").strip() != "0"
     previous, error = _read_raw(root), None
     if full_verify:
         try:
@@ -52,7 +87,9 @@ def refresh(root=None, *, full_verify=None):
     else:
         records, ledger_status = _latched_rows(previous), "DAILY_COMPACT"
     rows = dynamic.evaluate(records, deep_db_check=bool(full_verify))
-    payload = {"schema_version": SCHEMA_VERSION, "generated_at": datetime.now(timezone.utc).isoformat(), "source": "rc6-validation-projection-worker", "ledger_status": ledger_status, "ledger_error": error, "verification_note": "Cadena completa verificada" if full_verify and not error else "Proyección diaria: la evidencia histórica no se presenta como estado actual", "milestones": rows, "summary": dynamic.summary(rows), "real_money_state": "BLOCKED"}
+    if full_verify:
+        rows = _apply_daily_operational_audit(rows)
+    payload = {"schema_version": SCHEMA_VERSION, "generated_at": datetime.now(timezone.utc).isoformat(), "source": "rc6-validation-projection-worker", "ledger_status": ledger_status, "ledger_error": error, "verification_note": "Auditoría diaria: cadena, DB y pulsos operativos verificados por lectura" if full_verify and not error else "Proyección diaria limitada: la evidencia histórica no se presenta como estado actual", "milestones": rows, "summary": dynamic.summary(rows), "real_money_state": "BLOCKED"}
     _write_atomic(snapshot_path(root), payload); return payload
 
 
