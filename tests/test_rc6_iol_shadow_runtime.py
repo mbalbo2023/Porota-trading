@@ -28,4 +28,4 @@ def test_default_universe_is_small_and_unique(monkeypatch):
 def test_systemd_collector_exposes_repository_root_to_python():
     service = (Path(__file__).parents[1] / "systemd" / "porota-iol-shadow-collector-rc6.service").read_text(encoding="utf-8")
     assert "Environment=PYTHONPATH=/opt/porota-trading" in service
-    assert "ExecStart=/usr/bin/python3 /opt/porota-trading/scripts/rc6_iol_shadow_collect.py" in service
+    assert "rc6_iol_shadow_collect.py && /bin/chmod 0644 /opt/porota-trading/data/market/iol_shadow_latest.json" in service
