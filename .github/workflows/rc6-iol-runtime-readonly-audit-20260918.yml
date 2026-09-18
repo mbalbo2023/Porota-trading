@@ -1,0 +1,110 @@
+name: RC6 IOL runtime readonly audit 2026-09-18
+
+on:
+  push:
+    branches:
+      - audit/rc6-iol-runtime-readonly-20260918
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-iol-runtime-readonly-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_iol_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_iol_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only IOL runtime proof
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_iol_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -u
+          echo "RC6_IOL_AUDIT_UTC=$(date -u +%FT%TZ)"
+          echo "MUTATIONS=NONE"
+          echo "REAL_ORDER_ROUTES=NOT_CALLED"
+          echo "HOST_SHA=$(sudo -n git -C /opt/porota-trading rev-parse HEAD 2>&1 || true)"
+
+          echo "--- SAFETY ---"
+          sudo -n docker exec -i porota_production_observer python - <<'PY' 2>&1 || true
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          print('POST_STATE='+'|'.join(map(str,c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone())))
+          print('SQLITE_QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+          c.close()
+          PY
+
+          echo "--- IOL UNITS ---"
+          for unit in porota-iol-shadow-collector-rc6.timer porota-iol-shadow-collector-rc6.service; do
+            echo "UNIT=$unit"
+            sudo -n systemctl is-enabled "$unit" 2>&1 || true
+            sudo -n systemctl is-active "$unit" 2>&1 || true
+            sudo -n systemctl show "$unit" -p Result -p ActiveState -p SubState -p ExecMainStatus -p LastTriggerUSec -p NextElapseUSecRealtime -p Conditions --no-pager 2>&1 || true
+          done
+
+          echo "--- OAUTH PRESENCE ONLY ---"
+          if sudo -n test -r /root/.config/porota/iol_mcp_oauth_bootstrap.json; then
+            echo "IOL_OAUTH_BOOTSTRAP=READABLE"
+          else
+            echo "IOL_OAUTH_BOOTSTRAP=NOT_READABLE"
+          fi
+
+          echo "--- HOST CACHE ---"
+          CACHE=/opt/porota-trading/data/market/iol_shadow_latest.json
+          if sudo -n test -f "$CACHE"; then
+            sudo -n stat -c 'IOL_CACHE_STAT=%s|%y' "$CACHE"
+            sudo -n python3 - "$CACHE" <<'PY'
+          import json,sys
+          try:
+              p=json.load(open(sys.argv[1],encoding='utf-8'))
+              rows=p.get('symbols') if isinstance(p,dict) else []
+              states={}
+              for row in rows if isinstance(rows,list) else []:
+                  state=str(row.get('state','UNKNOWN')).upper() if isinstance(row,dict) else 'INVALID'
+                  states[state]=states.get(state,0)+1
+              print('IOL_CACHE_SUMMARY='+'|'.join([
+                  'schema='+str(p.get('schema_version')),
+                  'source='+str(p.get('source')),
+                  'mode='+str(p.get('mode')),
+                  'effect='+str(p.get('decision_effect')),
+                  'refreshed_at='+str(p.get('refreshed_at')),
+                  'symbols='+str(len(rows) if isinstance(rows,list) else 0),
+                  'states='+','.join(f'{k}:{v}' for k,v in sorted(states.items())),
+              ]))
+          except Exception as exc:
+              print('IOL_CACHE_PARSE_ERROR='+type(exc).__name__)
+          PY
+          else
+            echo "IOL_CACHE=ABSENT"
+          fi
+
+          echo "--- DASHBOARD VIEW PATH ---"
+          sudo -n docker exec porota_production_dashboard sh -lc 'if test -f /app/data/market/iol_shadow_latest.json; then stat -c "DASHBOARD_CACHE_STAT=%s|%y" /app/data/market/iol_shadow_latest.json; else echo DASHBOARD_CACHE=ABSENT; fi' 2>&1 || true
+
+          echo "--- SERVICE JOURNAL (SANITIZED) ---"
+          sudo -n journalctl -u porota-iol-shadow-collector-rc6.service -n 80 --no-pager 2>&1 | sed -E 's/(Bearer |access_token["=: ]+|refresh_token["=: ]+)[^[:space:]]+/\1[REDACTED]/g' || true
+          echo "RC6_IOL_AUDIT_COMPLETE=YES"
+          HOST
