@@ -43,15 +43,29 @@ jobs:
           echo 'SYSTEMD_ALL_TIMERS_END'
 
           failures=0
-          required=(porota-snapshot-preopen-rc6.timer porota-snapshot-postclose-rc6.timer porota-iol-shadow-collector-rc6.timer porota-rc6-candle-inmarket-verify.timer)
-          for unit in "${required[@]}"; do
+          calendar_timers=(porota-snapshot-preopen-rc6.timer porota-snapshot-postclose-rc6.timer)
+          relative_timers=(porota-iol-shadow-collector-rc6.timer porota-rc6-candle-inmarket-verify.timer)
+
+          for unit in "${calendar_timers[@]}"; do
             enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
             active="$(systemctl is-active "$unit" 2>/dev/null || true)"
             next="$(systemctl show "$unit" --property=NextElapseUSecRealtime --value 2>/dev/null || true)"
             if [ "$enabled" = enabled ] && [ "$active" = active ] && [ -n "$next" ]; then
-              echo "RC6_TIMER_OK=$unit|NEXT=$next"
+              echo "RC6_CALENDAR_TIMER_OK=$unit|NEXT=$next"
             else
               echo "RC6_TIMER_NOT_READY=$unit|enabled=$enabled|active=$active|next=$next"
+              failures=1
+            fi
+          done
+
+          for unit in "${relative_timers[@]}"; do
+            enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+            active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+            monotonic="$(systemctl show "$unit" --property=TimersMonotonic --value 2>/dev/null || true)"
+            if [ "$enabled" = enabled ] && [ "$active" = active ]; then
+              echo "RC6_RELATIVE_TIMER_OK=$unit|TIMERS_MONOTONIC=$monotonic"
+            else
+              echo "RC6_TIMER_NOT_READY=$unit|enabled=$enabled|active=$active|timers_monotonic=$monotonic"
               failures=1
             fi
           done
