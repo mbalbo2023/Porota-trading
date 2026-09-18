@@ -121,7 +121,8 @@ def render() -> str:
         f"llamadas: {_number(call_count)} · 429: {_number(rate_limited)} · "
         f"errores: {_number(errors)} · cache hits: {_number(cache_hits)}"
         if any(value is not None for value in (call_count, rate_limited, errors, cache_hits))
-        else f"Último lote: {_number(_metric(data, 'last_batch_size') or _metric(data, 'batch_symbols'))} · cache: {len(rows)} instrumentos"
+        else ("Collector pendiente: métricas MCP aún no publicadas." if not rows
+              else f"Último lote: {_number(_metric(data, 'last_batch_size') or _metric(data, 'batch_symbols'))} · cache: {len(rows)} instrumentos")
     )
     cache_note = (
         "No hay cache IOL válida. La ausencia de IOL no bloquea ni degrada PAPER."
