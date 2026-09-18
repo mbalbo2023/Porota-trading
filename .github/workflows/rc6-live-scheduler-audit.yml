@@ -62,10 +62,17 @@ jobs:
             enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
             active="$(systemctl is-active "$unit" 2>/dev/null || true)"
             monotonic="$(systemctl show "$unit" --property=TimersMonotonic --value 2>/dev/null || true)"
-            if [ "$enabled" = enabled ] && [ "$active" = active ]; then
-              echo "RC6_RELATIVE_TIMER_OK=$unit|TIMERS_MONOTONIC=$monotonic"
+            last="$(systemctl show "$unit" --property=LastTriggerUSec --value 2>/dev/null || true)"
+            max_age=900
+            [ "$unit" = porota-iol-shadow-collector-rc6.timer ] && max_age=180
+            last_epoch="$(date -u -d "$last" +%s 2>/dev/null || true)"
+            now_epoch="$(date -u +%s)"
+            age=-1
+            if [ -n "$last_epoch" ]; then age=$((now_epoch-last_epoch)); fi
+            if [ "$enabled" = enabled ] && [ "$active" = active ] && [ "$age" -ge 0 ] && [ "$age" -le "$max_age" ]; then
+              echo "RC6_RELATIVE_TIMER_OK=$unit|LAST=$last|AGE_SECONDS=$age|TIMERS_MONOTONIC=$monotonic"
             else
-              echo "RC6_TIMER_NOT_READY=$unit|enabled=$enabled|active=$active|timers_monotonic=$monotonic"
+              echo "RC6_TIMER_NOT_READY=$unit|enabled=$enabled|active=$active|last=$last|age_seconds=$age|max_age=$max_age|timers_monotonic=$monotonic"
               failures=1
             fi
           done
