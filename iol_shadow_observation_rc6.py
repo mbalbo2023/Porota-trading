@@ -26,6 +26,8 @@ def _write_atomic(path: Path, payload: dict) -> None:
     with NamedTemporaryFile("w",encoding="utf-8",dir=path.parent,prefix=".iol-shadow-",suffix=".tmp",delete=False) as h:
         json.dump(payload,h,ensure_ascii=False,sort_keys=True,separators=(",",":"))
         h.write("\n"); h.flush(); os.fsync(h.fileno()); temp=Path(h.name)
+    # The cache is sanitized market observation, not OAuth material. The dashboard runs as a non-root user.
+    os.chmod(temp,0o644)
     os.replace(temp,path)
 
 def _number(value: Any) -> float | None:

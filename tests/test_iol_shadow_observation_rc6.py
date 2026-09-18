@@ -35,3 +35,8 @@ def test_refresh_is_bounded_and_uses_only_read_only_tools(tmp_path):
     data=shadow.refresh(symbols,tool,root=tmp_path)
     assert len(data["symbols"]) == shadow.MAX_SYMBOLS_PER_REFRESH
     assert set(seen) == shadow.READ_ONLY_TOOLS
+
+
+def test_sanitized_cache_is_readable_by_dashboard_user(tmp_path):
+    shadow.refresh(["GGAL"],lambda name,args: {"last":100} if name=="get_asset_quote" else {"type":"ACCIONES"},root=tmp_path)
+    assert (shadow.cache_path(tmp_path).stat().st_mode & 0o777) == 0o644
