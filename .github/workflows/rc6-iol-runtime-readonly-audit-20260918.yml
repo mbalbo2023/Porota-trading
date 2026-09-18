@@ -108,3 +108,5 @@ jobs:
           sudo -n journalctl -u porota-iol-shadow-collector-rc6.service -n 80 --no-pager 2>&1 | sed -E 's/(Bearer |access_token["=: ]+|refresh_token["=: ]+)[^[:space:]]+/\1[REDACTED]/g' || true
           echo "RC6_IOL_AUDIT_COMPLETE=YES"
           HOST
+
+# Re-run after IOL PYTHONPATH fix deployment.
