@@ -1,0 +1,10 @@
+[Unit]
+Description=Porota RC6 post-close operational snapshot (read-only)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+ExecStart=/usr/bin/docker exec porota_production_dashboard python /app/rc6_snapshot.py --phase postclose
+TimeoutStartSec=2min
