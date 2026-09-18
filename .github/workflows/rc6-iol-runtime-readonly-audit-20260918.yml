@@ -163,6 +163,20 @@ jobs:
               print("DASHBOARD_CACHE_RESOLUTION_ERROR="+type(exc).__name__)
           PY
 
+          echo "--- DASHBOARD CACHE FORMAT (READ-ONLY) ---"
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY' 2>&1 || true
+          try:
+              import inspect, json
+              import iol_shadow_observation_rc6 as observation
+              raw=json.loads(observation.cache_path().read_text(encoding="utf-8"))
+              source=inspect.getsource(observation.collect)
+              print("DASHBOARD_CACHE_SCHEMA="+str(raw.get("schema_version")))
+              print("DASHBOARD_CACHE_RAW_ROWS="+str(len(raw.get("symbols") or [])))
+              print("DASHBOARD_COMPONENT_ACCEPTS_SCHEMA3="+str("3" in source))
+          except Exception as exc:
+              print("DASHBOARD_CACHE_FORMAT_ERROR="+type(exc).__name__)
+          PY
+
           echo "--- SERVICE JOURNAL (SANITIZED) ---"
           sudo -n journalctl -u porota-iol-shadow-collector-rc6.service -n 80 --no-pager 2>&1 | sed -E 's/(Bearer |access_token["=: ]+|refresh_token["=: ]+)[^[:space:]]+/\1[REDACTED]/g' || true
           echo "RC6_IOL_AUDIT_COMPLETE=YES"
@@ -177,3 +191,5 @@ jobs:
 # Re-run to prove the IOL view component reads the mounted cache.
 
 # Re-run to identify dashboard cache resolution without exposing paths.
+
+# Re-run to identify dashboard component cache-schema compatibility.
