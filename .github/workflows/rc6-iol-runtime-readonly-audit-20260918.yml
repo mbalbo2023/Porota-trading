@@ -68,6 +68,16 @@ jobs:
           echo "--- OAUTH PRESENCE ONLY ---"
           if sudo -n test -r /root/.config/porota/iol_mcp_oauth_bootstrap.json; then
             echo "IOL_OAUTH_BOOTSTRAP=READABLE"
+            sudo -n python3 - <<'PY'
+          import json
+          p='/root/.config/porota/iol_mcp_oauth_bootstrap.json'
+          try:
+              x=json.load(open(p,encoding='utf-8'))
+              tokens=x.get('tokens') if isinstance(x,dict) else {}
+              print('IOL_OAUTH_SCHEMA=top_keys:'+','.join(sorted(map(str,x.keys())))+'|token_keys:'+','.join(sorted(map(str,tokens.keys()))) if isinstance(tokens,dict) else 'IOL_OAUTH_SCHEMA=TOKENS_INVALID')
+          except Exception as e:
+              print('IOL_OAUTH_SCHEMA_ERROR='+type(e).__name__)
+          PY
           else
             echo "IOL_OAUTH_BOOTSTRAP=NOT_READABLE"
           fi
