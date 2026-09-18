@@ -71,6 +71,19 @@ def build_snapshot(phase: str, now: datetime, payload: dict) -> dict:
         real_orders_sent = int(state.get("real_orders_sent"))
     except (TypeError, ValueError):
         real_orders_sent = None
+    closed_pnl = [item["net_pnl_ars"] for item in operations if item.get("net_pnl_ars") is not None]
+    winners = sum(value > 0 for value in closed_pnl)
+    losers = sum(value < 0 for value in closed_pnl)
+    flat = sum(value == 0 for value in closed_pnl)
+    metrics = {
+        "closed_operations": len(operations),
+        "net_pnl_ars": round(sum(closed_pnl), 2) if closed_pnl else 0.0,
+        "winners": winners,
+        "losers": losers,
+        "breakeven": flat,
+        "win_rate_pct": round(winners * 100 / len(closed_pnl), 2) if closed_pnl else None,
+        "decisions_observed": min(len(decisions), MAX_DECISIONS),
+    }
     alerts = []
     if mode != "PRODUCTION_PAPER":
         alerts.append("MODE_NOT_PRODUCTION_PAPER")
@@ -86,8 +99,9 @@ def build_snapshot(phase: str, now: datetime, payload: dict) -> dict:
         "mode": mode,
         "real_orders_sent": real_orders_sent,
         "summary": "Snapshot RC6 de solo lectura; métricas exclusivamente PAPER/SIMULATED.",
+        "metrics": metrics,
         "operations": operations,
-        "decision_count": min(len(decisions), MAX_DECISIONS),
+        "decision_count": metrics["decisions_observed"],
         "external_sources": [],
         "urgent_alerts": alerts,
     }
