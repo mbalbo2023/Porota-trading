@@ -32,3 +32,44 @@ def test_write_is_valid_json(tmp_path):
     output = tmp_path / "snapshots" / "latest.json"
     write_snapshot({"schema_version": 1, "status": "VERIFIED"}, output)
     assert output.read_text(encoding="utf-8").startswith("{")
+
+
+import json
+
+
+def test_postclose_evidence_reads_iol_cache_without_authorizing_ready(tmp_path):
+    cache = tmp_path / "iol_shadow_latest.json"
+    cache.write_text(json.dumps({
+        "source": "IOL_MCP",
+        "mode": "SHADOW",
+        "refreshed_at": "2026-09-18T19:59:00+00:00",
+        "symbols": [{
+            "symbol": "GGAL", "state": "READY",
+            "captured_at": "2026-09-18T19:59:00+00:00",
+            "asset_type": "ACCIONES", "currency": "ARS", "units_per_lot": 1,
+            "primary_comparison": {"state": "MATCH"},
+        }],
+    }), encoding="utf-8")
+    from rc6_snapshot import build_postclose_evidence
+    evidence = build_postclose_evidence(
+        datetime(2026, 9, 18, 17, 15, tzinfo=TZ), cache
+    )
+    assert evidence["status"] == "OBSERVED"
+    assert evidence["ready_paper_authorized"] is False
+    assert evidence["decision_effect"] == "OBSERVE_ONLY"
+    assert evidence["contract_gate"] == "SOURCE_UNAVAILABLE_BY_SCOPE"
+    assert evidence["counts"] == {"observed": 1, "ready": 1, "unavailable": 0}
+
+
+def test_postclose_evidence_fails_closed_when_iol_cache_is_stale(tmp_path):
+    cache = tmp_path / "iol_shadow_latest.json"
+    cache.write_text(json.dumps({
+        "source": "IOL_MCP", "mode": "SHADOW",
+        "refreshed_at": "2026-09-17T20:00:00+00:00", "symbols": [],
+    }), encoding="utf-8")
+    from rc6_snapshot import build_postclose_evidence
+    evidence = build_postclose_evidence(
+        datetime(2026, 9, 18, 17, 15, tzinfo=TZ), cache
+    )
+    assert evidence["status"] == "INSUFFICIENT_EVIDENCE"
+    assert evidence["reason"] == "IOL_SHADOW_CACHE_STALE"
