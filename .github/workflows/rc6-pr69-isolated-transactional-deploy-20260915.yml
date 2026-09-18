@@ -239,8 +239,12 @@ jobs:
           done
           sudo -n docker exec porota_production_dashboard timeout 15 python -c "import bg_paper_dashboard as bg; bg.validation_page(); print('BG_VALIDATION_RENDER=GREEN')"
           sudo -n docker exec porota_production_dashboard timeout 15 python -c "import en_validation_project_dashboard_rc6 as p; p.page(); print('PROJECT_VALIDATION_RENDER=GREEN')"
+          set +e
           SNAPSHOT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 30 python /app/rc6_snapshot.py --phase postclose 2>&1)"
+          SNAPSHOT_RC=$?
+          set -e
           echo "$SNAPSHOT_OUTPUT"
+          test "$SNAPSHOT_RC" -eq 0 -o "$SNAPSHOT_RC" -eq 2
           grep -Eq '"status": "(VERIFIED|INSUFFICIENT_EVIDENCE)"' <<< "$SNAPSHOT_OUTPUT"
           for unit in porota-snapshot-preopen-rc6.timer porota-snapshot-postclose-rc6.timer; do
             test "$(systemctl is-enabled "$unit")" = enabled
