@@ -256,9 +256,20 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
     _atomic_json(_metadata_path(root), metadata_store)
     state["status"], state["completed_at"] = "COMPLETE", now().isoformat()
     _atomic_json(checkpoint_file, state)
+    # Preserve prior symbols so a rotating universe accumulates evidence instead
+    # of replacing the dashboard with only the latest batch.
+    prior_cache = _load_json(cache_path(root))
+    prior_rows = {
+        str(row.get("symbol") or "").upper(): row
+        for row in (prior_cache.get("symbols") or []) if isinstance(row, dict) and row.get("symbol")
+    }
+    prior_rows.update({symbol: completed[symbol] for symbol in universe if symbol in completed})
     payload = {"schema_version": CACHE_SCHEMA_VERSION, "source": SOURCE, "mode": MODE,
         "decision_effect": DECISION_EFFECT, "live_decision_authority": False, "real_money_authorized": False,
         "run_id": active_run_id, "market": market, "term": term, "refreshed_at": state["completed_at"],
-        "symbols": [completed[symbol] for symbol in universe if symbol in completed]}
+        "telemetry": {"batch_symbols": len(universe), "ready_in_batch": sum(
+            1 for symbol in universe if completed.get(symbol, {}).get("state") == "READY"),
+            "unavailable_in_batch": sum(1 for symbol in universe if completed.get(symbol, {}).get("state") != "READY")},
+        "symbols": [prior_rows[symbol] for symbol in sorted(prior_rows)]}
     _atomic_json(cache_path(root), payload)
     return payload
