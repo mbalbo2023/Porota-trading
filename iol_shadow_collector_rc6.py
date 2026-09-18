@@ -85,6 +85,8 @@ class RateGovernor:
         self.calls: list[float] = []
         self.last: float | None = None
         self.open_until = 0.0
+        self.calls_total = 0
+        self.calls_429 = 0
 
     def acquire(self) -> None:
         now = self.clock()
@@ -103,8 +105,10 @@ class RateGovernor:
         self.calls = [at for at in self.calls if now - at < 60.0]
         self.calls.append(now)
         self.last = now
+        self.calls_total += 1
 
     def trip(self, retry_after: float | None = None) -> None:
+        self.calls_429 += 1
         delay = retry_after if retry_after is not None else self.policy.circuit_breaker_seconds
         self.open_until = max(self.open_until, self.clock() + max(1.0, delay))
 
@@ -226,6 +230,7 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
     completed, primary = dict(state.get("completed") or {}), primary_last_by_symbol or {}
     rate_governor = governor or RateGovernor(policy)
 
+    errors_total = 0
     for symbol in universe:
         if symbol in completed:
             continue
@@ -246,6 +251,7 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
                 "primary_comparison": _comparison(primary.get(symbol), quote.get("last"), policy.tolerance_pct),
                 "decision_effect": DECISION_EFFECT}
         except Exception as exc:
+            errors_total += 1
             completed[symbol] = {"symbol": symbol, "market": market, "term": term, "state": "UNAVAILABLE",
                 "captured_at": captured_at, "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
                 "decision_effect": DECISION_EFFECT}
@@ -269,7 +275,9 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
         "run_id": active_run_id, "market": market, "term": term, "refreshed_at": state["completed_at"],
         "telemetry": {"batch_symbols": len(universe), "ready_in_batch": sum(
             1 for symbol in universe if completed.get(symbol, {}).get("state") == "READY"),
-            "unavailable_in_batch": sum(1 for symbol in universe if completed.get(symbol, {}).get("state") != "READY")},
+            "unavailable_in_batch": sum(1 for symbol in universe if completed.get(symbol, {}).get("state") != "READY"),
+            "calls_total": rate_governor.calls_total, "calls_429": rate_governor.calls_429,
+            "errors_total": errors_total},
         "symbols": [prior_rows[symbol] for symbol in sorted(prior_rows)]}
     _atomic_json(cache_path(root), payload)
     return payload
