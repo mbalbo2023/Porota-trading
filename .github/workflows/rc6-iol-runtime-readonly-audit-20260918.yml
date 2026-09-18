@@ -82,9 +82,13 @@ jobs:
               p=json.load(open(sys.argv[1],encoding='utf-8'))
               rows=p.get('symbols') if isinstance(p,dict) else []
               states={}
+              reasons={}
               for row in rows if isinstance(rows,list) else []:
                   state=str(row.get('state','UNKNOWN')).upper() if isinstance(row,dict) else 'INVALID'
                   states[state]=states.get(state,0)+1
+                  reason=str(row.get('reason','') if isinstance(row,dict) else '')[:120]
+                  if reason:
+                      reasons[reason]=reasons.get(reason,0)+1
               print('IOL_CACHE_SUMMARY='+'|'.join([
                   'schema='+str(p.get('schema_version')),
                   'source='+str(p.get('source')),
@@ -93,6 +97,7 @@ jobs:
                   'refreshed_at='+str(p.get('refreshed_at')),
                   'symbols='+str(len(rows) if isinstance(rows,list) else 0),
                   'states='+','.join(f'{k}:{v}' for k,v in sorted(states.items())),
+                  'reasons='+','.join(f'{k}:{v}' for k,v in sorted(reasons.items())),
               ]))
           except Exception as exc:
               print('IOL_CACHE_PARSE_ERROR='+type(exc).__name__)
