@@ -13,7 +13,7 @@ from typing import Any
 import bg_paper_dashboard as bg
 import iol_shadow_observation_rc6 as observation
 
-MAX_ROWS = 20
+MAX_ROWS = 10
 UNKNOWN = "UNKNOWN"
 INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
 
@@ -112,6 +112,7 @@ def render() -> str:
     rows = [row for row in (data.get("symbols") or []) if isinstance(row, dict)]
     state = _text(data.get("state"), UNKNOWN).upper()
     aligned, divergent, incomplete, unavailable = _summary(rows)
+    fresh_rows = sum(_row_quality(row)[0] == "FRESH" for row in rows)
     progress = _progress(data)
     call_count = _metric(data, "calls_total")
     rate_limited = _metric(data, "calls_429")
@@ -139,6 +140,16 @@ def render() -> str:
                  "Divergencia = diagnóstico background, nunca HOLD/READY.", "yellow" if divergent or incomplete else "green"),
         bg._card("No disponibles", unavailable,
                  "Faltantes y errores se mantienen visibles; no se completan con supuestos.", "gray"),
+    ))
+    contribution = "".join((
+        bg._card("Cobertura para análisis", progress["label"],
+                 "IOL amplía el contexto del universo ACCIONES/CEDEARs; no crea ni descarta señales.", _card_state(progress["state"])),
+        bg._card("Datos frescos IOL", f"{fresh_rows}/{len(rows)}",
+                 "Últimos precios utilizables como contraste informativo, según su timestamp cacheado.", "green" if fresh_rows else "yellow"),
+        bg._card("Contraste con fuente primaria", f"{aligned} coinciden · {divergent} difieren",
+                 "Una divergencia se muestra para revisión; jamás cambia la decisión PAPER.", "yellow" if divergent or incomplete else "green"),
+        bg._card("Efecto en el motor", "INFORMATIVO",
+                 "Aporta contexto, calidad y alertas de revisión. Autoridad decisoria: PPI/PAPER.", "green"),
     ))
     rendered_rows = []
     for row in rows[:MAX_ROWS]:
@@ -173,11 +184,13 @@ def render() -> str:
         f"efecto: {escape(_text(data.get('decision_effect'), 'OBSERVE_ONLY'))} · "
         f"última cache: {escape(_text(data.get('refreshed_at'), 'pendiente'))}</p>"
         f"<div class='paper-grid'>{cards}</div>"
+        "<h3>Aporte de IOL al análisis del motor</h3>"
+        f"<div class='paper-grid'>{contribution}</div>"
         "<div class='paper-table-wrap'><table><thead><tr>"
         "<th>Especie</th><th>Mercado</th><th>Estado</th><th>Último IOL</th>"
         "<th>Freshness</th><th>Calidad</th><th>PPI/IOL</th><th>Qué habría pasado</th>"
         "</tr></thead><tbody>" + rows_html + "</tbody></table></div>"
-        "<p class='paper-muted'>“Qué habría pasado” sólo se muestra como VERIFIED cuando existe el candidato, "
+        f"<p class='paper-muted'>Se muestran los 10 instrumentos más recientes de un cache acumulado de {len(rows)}. “Qué habría pasado” sólo se muestra como VERIFIED cuando existe el candidato, "
         "la decisión PAPER original y evidencia temporal comparable. En cualquier otro caso figura "
         "INSUFFICIENT_EVIDENCE. Es explicación posterior; jamás reescribe la decisión histórica ni ejecuta acciones.</p>"
         "</section>"

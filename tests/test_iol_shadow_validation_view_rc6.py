@@ -36,7 +36,9 @@ def test_view_renders_bounded_escaped_cached_rows(monkeypatch):
     assert html.count("&lt;YPFD&gt;") == view.MAX_ROWS
     assert "&lt;untrusted&gt;" in html
     assert "<untrusted>" not in html
-    assert "0 alineados · 25 divergentes" in html
+    assert "0 alineados · 25 divergentes · 0 sin base comparable" in html
+    assert "Aporte de IOL al análisis del motor" in html
+    assert "Efecto en el motor" in html
     assert "Divergencia = diagnóstico background, nunca HOLD/READY" in html
 
 
