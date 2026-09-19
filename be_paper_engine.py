@@ -142,30 +142,45 @@ def _evidence_safe(value, *, field_name=""):
 
 def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
                                ai: str, patrimonial: str, final: str,
-                               reason: str, paper_id, detail: dict) -> dict:
+                               reason: str, paper_id, detail: dict, *, action=None,
+                               score=None, include_iol=True) -> dict:
     """Capture only the data already in-memory at the gate write point.
 
     The collector remains the sole owner of market ingestion.  This payload is
     deliberately local and contemporaneous: missing fields remain missing.
     """
     contract = asdict(q.contract) if q.contract is not None else None
-    # IOL is read only from its existing atomic cache. It is evidence for
-    # SHADOW dual evaluation, never a factual decision input at this stage.
-    try:
-        from iol_shadow_decision_input_rc6 import read_for_decision
-        iol_input = read_for_decision(q.symbol)
-        if not isinstance(iol_input, dict):
-            raise TypeError("IOL_DECISION_INPUT_INVALID")
-    except Exception as exc:
+    # IOL is read only from its existing atomic cache for gate-reaching
+    # candidates. HOLD/WAIT snapshots deliberately do not read it: they record
+    # the factual non-candidate decision without adding another cache consumer.
+    if include_iol:
+        try:
+            from iol_shadow_decision_input_rc6 import read_for_decision
+            iol_input = read_for_decision(q.symbol)
+            if not isinstance(iol_input, dict):
+                raise TypeError("IOL_DECISION_INPUT_INVALID")
+        except Exception as exc:
+            iol_input = {
+                "source": "IOL_MCP",
+                "mode": "SHADOW_DUAL_EVALUATION",
+                "decision_effect": "NO_FACTUAL_BINDING",
+                "symbol": q.symbol,
+                "state": "UNAVAILABLE",
+                "quality": "UNKNOWN",
+                "freshness": "UNKNOWN",
+                "reason": "DECISION_INPUT_UNAVAILABLE:" + type(exc).__name__,
+                "coverage": {},
+            }
+    else:
         iol_input = {
             "source": "IOL_MCP",
             "mode": "SHADOW_DUAL_EVALUATION",
             "decision_effect": "NO_FACTUAL_BINDING",
             "symbol": q.symbol,
-            "state": "UNAVAILABLE",
+            "state": "NOT_CAPTURED",
             "quality": "UNKNOWN",
             "freshness": "UNKNOWN",
-            "reason": "DECISION_INPUT_UNAVAILABLE:" + type(exc).__name__,
+            "reason": "NON_CANDIDATE_DECISION_NO_IOL_CACHE_READ",
             "coverage": {},
         }
     inputs_used = dict(detail) if isinstance(detail, dict) else {"detail": detail}
@@ -176,6 +191,8 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
         "captured_at": q.observed_at,
         "decision": {
             "symbol": q.symbol,
+            "action": action,
+            "score": str(score) if score is not None else None,
             "technical_gate": technical,
             "ai_gate": ai,
             "patrimonial_gate": patrimonial,
@@ -209,6 +226,18 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
         },
         "inputs_used": inputs_used,
     })
+
+def _insert_evidence_snapshot(connection, evidence: dict) -> None:
+    """Insert once in the caller's existing transaction; never overwrite evidence."""
+    evidence_json = json.dumps(
+        evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    evidence_hash = hashlib.sha256(evidence_json.encode("utf-8")).hexdigest()
+    connection.execute("""INSERT OR IGNORE INTO decision_evidence_snapshots
+      (decision_key,captured_at,schema_version,payload_sha256,payload_json)
+      VALUES(?,?,?,?,?)""",
+      (evidence["decision_key"], evidence["captured_at"], DECISION_EVIDENCE_SCHEMA,
+       evidence_hash, evidence_json))
+
 
 
 class PaperStore:
@@ -497,6 +526,15 @@ class PaperStore:
                 c.execute("""INSERT INTO paper_decisions VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
                           (SOURCE, STRATEGY_VERSION, key, q.observed_at, q.symbol,
                            action, str(score), reason, json.dumps(features, ensure_ascii=False)))
+                # BUY candidates receive their fuller snapshot in record_gates
+                # after the final gates are known. HOLD/WAIT has no gate writer,
+                # so capture it here without reading IOL or changing the action.
+                if str(action).upper() != "BUY":
+                    evidence = _decision_evidence_payload(
+                        q, key, "NOT_CANDIDATE", "NOT_USED", "NOT_EVALUATED",
+                        str(action).upper(), reason, None, features,
+                        action=action, score=score, include_iol=False)
+                    _insert_evidence_snapshot(c, evidence)
             return True
         except sqlite3.IntegrityError:
             return False
@@ -534,9 +572,6 @@ class PaperStore:
             reason = "INVARIANTE_DE_PORTONES_INCUMPLIDA: " + str(reason)
         evidence = _decision_evidence_payload(
             q, decision_key, technical, ai, patrimonial, final, reason, paper_id, detail)
-        evidence_json = json.dumps(
-            evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        evidence_hash = hashlib.sha256(evidence_json.encode("utf-8")).hexdigest()
         with self.connect() as c:
             c.execute("""INSERT OR REPLACE INTO trade_gate_evaluations
               (evaluated_at,decision_key,symbol,technical_gate,ai_gate,
@@ -548,11 +583,7 @@ class PaperStore:
             # First capture wins. A later retry may refresh the mutable gate
             # projection, but it must never rewrite evidence from the instant
             # the decision was made.
-            c.execute("""INSERT OR IGNORE INTO decision_evidence_snapshots
-              (decision_key,captured_at,schema_version,payload_sha256,payload_json)
-              VALUES(?,?,?,?,?)""",
-              (decision_key, q.observed_at, DECISION_EVIDENCE_SCHEMA,
-               evidence_hash, evidence_json))
+            _insert_evidence_snapshot(c, evidence)
             if contradiction:
                 c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                           (q.observed_at, SOURCE, "GATE_INVARIANT_ERROR", paper_id,
