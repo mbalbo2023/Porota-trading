@@ -149,6 +149,27 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
     deliberately local and contemporaneous: missing fields remain missing.
     """
     contract = asdict(q.contract) if q.contract is not None else None
+    # IOL is read only from its existing atomic cache. It is evidence for
+    # SHADOW dual evaluation, never a factual decision input at this stage.
+    try:
+        from iol_shadow_decision_input_rc6 import read_for_decision
+        iol_input = read_for_decision(q.symbol)
+        if not isinstance(iol_input, dict):
+            raise TypeError("IOL_DECISION_INPUT_INVALID")
+    except Exception as exc:
+        iol_input = {
+            "source": "IOL_MCP",
+            "mode": "SHADOW_DUAL_EVALUATION",
+            "decision_effect": "NO_FACTUAL_BINDING",
+            "symbol": q.symbol,
+            "state": "UNAVAILABLE",
+            "quality": "UNKNOWN",
+            "freshness": "UNKNOWN",
+            "reason": "DECISION_INPUT_UNAVAILABLE:" + type(exc).__name__,
+            "coverage": {},
+        }
+    inputs_used = dict(detail) if isinstance(detail, dict) else {"detail": detail}
+    inputs_used["iol"] = iol_input
     return _evidence_safe({
         "schema": DECISION_EVIDENCE_SCHEMA,
         "decision_key": decision_key,
@@ -186,7 +207,7 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
             "execution_mode": "PRODUCTION_PAPER_SIMULATED",
             "real_money_authorized": False,
         },
-        "inputs_used": detail,
+        "inputs_used": inputs_used,
     })
 
 
