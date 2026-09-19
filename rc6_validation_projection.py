@@ -12,6 +12,7 @@ from typing import Any
 import rc6_validation_dynamic as dynamic
 from em_validation_campaign_rc6 import load_records
 from ek_history_freshness_metrics_rc5 import freshness_qualified_metrics
+from rc6_validation_operational_daily import collect as collect_operational_daily
 
 SNAPSHOT_NAME = "validation_milestones_rc6.json"
 SCHEMA_VERSION = 3
@@ -68,6 +69,13 @@ def _freshness_pulse() -> dict:
         return {"available": False, "reason": f"FRESHNESS_PULSE_UNAVAILABLE:{type(exc).__name__}"}
 
 
+def _operational_pulse() -> dict:
+    try:
+        return collect_operational_daily(limit_days=30)
+    except Exception as exc:
+        return {"days": [], "reason": f"OPERATIONAL_PULSE_UNAVAILABLE:{type(exc).__name__}"}
+
+
 def _apply_daily_operational_audit(rows: dict[str, dict]) -> dict[str, dict]:
     """Attach today's read-only IOL/history pulses only to the daily audit."""
     result = {code: dict(row) for code, row in rows.items()}
@@ -88,6 +96,30 @@ def _apply_daily_operational_audit(rows: dict[str, dict]) -> dict[str, dict]:
             "implementation_status": "IMPLEMENTED",
             "observed_evidence": "Implementación IOL SHADOW disponible; cache de cobertura no observable desde este worker.",
             "next_action": "Revisar la próxima auditoría diaria.",
+        })
+    operational = _operational_pulse()
+    days = operational.get("days") if isinstance(operational.get("days"), list) else []
+    if days:
+        latest = days[0] if isinstance(days[0], dict) else {}
+        result["M4"].update({
+            "state": "YELLOW", "compliance_pct": min(75, 10 + len(days) * 5),
+            "claim_status": "VERIFIED_CURRENT", "implementation_status": "IMPLEMENTED",
+            "work_status": "IN_PROGRESS", "evidence_status": "CURRENT",
+            "observed_evidence": f"Actividad PAPER agrupada por rueda: {len(days)} días observados; último {latest.get('date_ar') or 'UNKNOWN'} con {latest.get('decisions', 0)} decisiones, {latest.get('fills', 0)} fills y {latest.get('closed', 0)} cierres.",
+            "deviation": "Evidencia de actividad no equivale aún a campaña PAPER sostenida ni a estabilidad multi-rueda.",
+            "blocker": "Acumular y revisar sesiones independientes sin incidentes críticos.",
+            "next_action": "Revisión post-cierre diaria y sign-off humano; no automatizar cambios de estrategia.",
+            "evidence_ref": "observer_v17.db/read-only/operational-daily",
+        })
+    else:
+        result["M4"].update({
+            "state": "GRAY", "compliance_pct": 0, "claim_status": "PENDING",
+            "implementation_status": "IMPLEMENTED", "work_status": "IN_PROGRESS",
+            "evidence_status": "UNAVAILABLE",
+            "observed_evidence": "No hubo pulso diario PAPER verificable en esta corrida.",
+            "blocker": str(operational.get("reason") or "OPERATIONAL_DAILY_EVIDENCE_UNAVAILABLE"),
+            "next_action": "Restablecer sólo la lectura de auditoría diaria.",
+            "evidence_ref": "observer_v17.db/read-only/operational-daily",
         })
     freshness = _freshness_pulse()
     if freshness.get("available"):
