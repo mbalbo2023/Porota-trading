@@ -148,7 +148,9 @@ def _evaluate(profile: str, snapshot: Mapping[str, Any], factual: Mapping[str, A
         "profile": profile,
         "mode": MODE,
         "state": "EVALUATED",
-        "action": "HOLD" if failures else "OPEN_SIMULATED",
+        # This is an entry-criteria counterfactual, not a simulated fill:
+        # downstream sizing/risk gates still require their own frozen evidence.
+        "action": "HOLD" if failures else "CANDIDATE_OPEN",
         "reason_codes": failures or ["PROFILE_ENTRY_CRITERIA_MET"],
         "factual_action": factual.get("action") or None,
         "can_affect_factual": False,
