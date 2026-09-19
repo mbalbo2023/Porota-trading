@@ -41,3 +41,21 @@ When editing it:
 ## Continuity record
 
 After a material image cleanup or workflow change, update the latest RC6 checkpoint with the branch/commit, PR, workflow run, before/after image totals and disk use, cleanup result, active image identity, container-reference exceptions, PAPER safety state, and remaining unknowns. Verify the checkpoint artifact after saving it.
+
+
+## Explicit legacy RC6 tag allowlist
+
+The canonical workflow may also remove these known pre-SHA legacy refs when no container references their image ID:
+
+- `porota-trading-bot:17.0.0-rc6-pr69-<12 lowercase hex>`
+- `porota-trading-bot:17.0.0-rc6-strategy-<12 lowercase hex>`
+- `porota-trading-bot:17.0.0-rc6-eod-only-<12 lowercase hex>`
+- `porota-trading-bot:17.0.0-rc6-p0-eod-<12 lowercase hex>`
+- `porota-trading-bot:17.0.0-rc6-f01-<12 lowercase hex>`
+- `porota-trading-bot:17.0.0-rc6-eod-ui-<12 lowercase hex>`
+- `porota-trading-bot:17.0.0-rc6-scalping-<7 lowercase hex>`
+- Exact tag `porota-trading-bot:17.0.0-rc6-candidate-e47eeffc`.
+
+These are allowlist patterns based on the observed legacy naming scheme, not permission to broaden deletion to other repositories, tags, containers, or Docker data. Preserve every image ID referenced by any container, including exited/created containers. The workflow must enumerate and protect those IDs before each removal and fail closed if inventory fails. Do not remove build cache: in the 2026-09-19 recheck it occupied 2.882 GB logically while only 8.188 MB was reclaimable.
+
+The 2026-09-19 canonical cleanup removed eight unused refs and reduced Docker's reported reclaimable image space from 117 MB to 0 B. Exact disk free after cleanup was 6,785,351,680 bytes on `/dev/vda1`. These figures are a historical checkpoint; always take a fresh read-only measurement before deciding on future cleanup.
