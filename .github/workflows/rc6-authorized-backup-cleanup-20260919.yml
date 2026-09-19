@@ -40,7 +40,7 @@ jobs:
           test "$(sudo -n docker inspect -f '{{.State.Running}}' porota_production_dashboard)" = true
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
-          p='/app/data/paper_v17/observer_v17.db'
+          p='/opt/porota-trading/data/paper_v17/observer_v17.db'
           c=sqlite3.connect('file:'+p+'?mode=ro',uri=True)
           c.execute('pragma query_only=on')
           assert c.execute('pragma quick_check').fetchone()[0]=='ok'
@@ -62,10 +62,10 @@ jobs:
                       pass
           print('HOST_ARCHIVE_PREFLIGHT=OK|LATEST='+keep.name+'|OLDER='+old.name)
           PY
-          sudo -n docker exec -u 0 -i porota_production_observer python - <<'PY'
+          sudo -n python3 - <<'PY'
           from pathlib import Path
           import gzip, re, sqlite3, os
-          daily=Path('/app/data/paper_v17/artifacts/observer_v17.db/backups')
+          daily=Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups')
           expected_dates=[f'2026-09-{d:02d}' for d in range(11,20)]
           files=sorted(daily.glob('*/*.db.gz'))
           names={p.name for p in files}
@@ -78,13 +78,13 @@ jobs:
                   assert f.read(16).startswith(b'SQLite format 3'), p
                   while f.read(1024*1024):
                       pass
-          wave=Path('/app/data/backups/wave4_closure/observer_v17_pre_wave4_cleanup_20260909T024209Z.db.gz')
+          wave=Path('/opt/porota-trading/data/backups/wave4_closure/observer_v17_pre_wave4_cleanup_20260909T024209Z.db.gz')
           assert wave.is_file() and not wave.is_symlink()
           with gzip.open(wave,'rb') as f:
               assert f.read(16).startswith(b'SQLite format 3')
               while f.read(1024*1024):
                   pass
-          legacy=Path('/app/data/backups')
+          legacy=Path('/opt/porota-trading/data/backups')
           candidates=[]
           for p in legacy.iterdir():
               if p.name=='wave4_closure':
@@ -137,7 +137,7 @@ jobs:
           PY
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
-          p='/app/data/paper_v17/observer_v17.db'
+          p='/opt/porota-trading/data/paper_v17/observer_v17.db'
           c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
           assert c.execute('pragma quick_check').fetchone()[0]=='ok'
           mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
