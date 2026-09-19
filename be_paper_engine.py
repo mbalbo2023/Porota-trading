@@ -852,10 +852,28 @@ class PaperBroker:
         momentum = (short / long - 1) if long else ZERO
         spread = (q.ask / q.bid - 1) if q.bid else D("99")
         score = max(ZERO, min(D(1), D("0.5") + momentum * D(40) - spread * D(10)))
+        threshold = self.threshold(at)
+        # Frozen, normalized evidence for the entry-criteria counterfactuals.
+        # It is available for BUY and HOLD decisions alike and does not bypass
+        # the later patrimonial/risk gates required for a simulated position.
         features = {"sma3": str(short), f"sma{long_span}": str(long), "momentum": str(momentum),
                     "spread": str(spread), "samples": len(values),
                     "signal_window_minutes": self.signal_window_minutes,
-                    "paper_threshold": str(self.threshold(at))}
+                    "paper_threshold": str(threshold),
+                    "candidate": {
+                        "action": "BUY", "score": str(score),
+                        "score_threshold": str(threshold),
+                        "spread_bps": str(spread * D(10000)),
+                        "max_spread_bps": "200",
+                        "confirmation_count": len(values),
+                        "required_confirmations": self.signal_min_samples,
+                    },
+                    "hard_safety": {
+                        "operational_scope": True,
+                        "quote_identity": True,
+                        "market_admission": True,
+                        "real_orders_blocked": True,
+                    }}
         # Historical/candle features are intentionally SHADOW-only. They are
         # persisted beside the baseline decision and cannot alter BUY/HOLD.
         if os.getenv("PAPER_HISTORICAL_CANDLE_SHADOW", "ON").upper() in {"ON", "SHADOW", "TRUE", "1"}:
@@ -864,7 +882,7 @@ class PaperBroker:
                 shadow = historical_candle_shadow_rc6.collect(self.store, q, at)
                 features["historical_candle_shadow"] = shadow
                 features["decision_shadow"] = (
-                    "BUY" if D(score) + D(shadow.get("shadow_score_delta", "0")) >= self.threshold(at)
+                    "BUY" if D(score) + D(shadow.get("shadow_score_delta", "0")) >= threshold
                     else "HOLD"
                 )
             except Exception as exc:
@@ -877,7 +895,7 @@ class PaperBroker:
             return "HOLD", score, "Puntas o profundidad insuficientes", features
         if spread > D("0.02"):
             return "HOLD", score, "Spread superior al 2%", features
-        if score < self.threshold(at):
+        if score < threshold:
             return "HOLD", score, "Score paper debajo del umbral versionado", features
         # Contexto BCRA/macro: persistido sólo para candidatos BUY y sin
         # autoridad sobre la decisión. La fuente se actualiza fuera de rueda.
