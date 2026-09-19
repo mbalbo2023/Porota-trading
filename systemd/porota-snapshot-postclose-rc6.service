@@ -6,5 +6,5 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/porota-trading
-ExecStart=/usr/bin/docker exec porota_production_dashboard python /app/rc6_snapshot.py --phase postclose
+ExecStart=/bin/bash -c '/usr/bin/docker exec porota_production_dashboard python /app/rc6_snapshot.py --phase postclose && /usr/bin/docker exec porota_production_dashboard python /app/rc6_postclose_review.py'
 TimeoutStartSec=2min
