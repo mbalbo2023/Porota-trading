@@ -85,6 +85,8 @@ def test_private_site_renders_live_and_limits_rows(monkeypatch, tmp_path):
 
     assert "Decision Cockpit privado" in rendered
     assert "Por qué NO operó" in rendered
+    assert "Trazabilidad · últimas 10 decisiones" in rendered
+    assert "Contrafáctico LIVE" in rendered
     assert "NONE_OBSERVE_ONLY" in rendered
     assert rendered.count("<td><b>S") == site.MAX_ROWS
     assert "sin controles de ejecución" in rendered
