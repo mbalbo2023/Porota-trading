@@ -5,6 +5,9 @@ Solo lectura. Reutiliza la base PAPER del dashboard y no contiene rutas de escri
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from datetime import datetime, timedelta
+
+from ak_byma_calendar import es_dia_habil_operativo
 
 from fastapi import Header, Query, Request
 from fastapi.responses import HTMLResponse
@@ -568,23 +571,43 @@ def _page():
         if key not in catalog_key
     ]
 
-    orphan_rows = "".join(
-        "<tr>"
-        f"<td><b>{bg._e(r.get('symbol'))}</b></td>"
-        f"<td>{bg._e(r.get('asset_class'))}</td>"
-        f"<td>{bg._e(r.get('market'))}</td>"
-        f"<td>{bg._e(r.get('currency'))}</td>"
-        f"<td>{bg._e(r.get('settlement'))}</td>"
-        f"<td>{_int(r.get('snapshots'))}</td>"
-        f"<td>{bg._local_time(r.get('last_observed'))}</td>"
-        "</tr>"
-        for r in orphan_market
-    ) or (
-        "<tr><td colspan='7'>"
-        "Ninguna: toda observación de mercado concilia "
-        "con el catálogo actual."
-        "</td></tr>"
-    )
+    today = datetime.now(bg.TZ).date()
+    sessions = []
+    cursor = today
+    for _ in range(40):
+        if es_dia_habil_operativo(cursor):
+            sessions.append(cursor)
+            if len(sessions) == 5:
+                break
+        cursor -= timedelta(days=1)
+    cutoff = min(sessions) if sessions else today
+
+    def _is_recent_orphan(row):
+        try:
+            observed = bg.aware_datetime(row.get("last_observed")).astimezone(bg.TZ).date()
+            return observed >= cutoff
+        except (ValueError, TypeError):
+            return False
+
+    recent_orphans = [row for row in orphan_market if _is_recent_orphan(row)]
+    archived_orphans = [row for row in orphan_market if not _is_recent_orphan(row)]
+
+    def _orphan_rows(rows):
+        return "".join(
+            "<tr>"
+            f"<td><b>{bg._e(r.get('symbol'))}</b></td>"
+            f"<td>{bg._e(r.get('asset_class'))}</td>"
+            f"<td>{bg._e(r.get('market'))}</td>"
+            f"<td>{bg._e(r.get('currency'))}</td>"
+            f"<td>{bg._e(r.get('settlement'))}</td>"
+            f"<td>{_int(r.get('snapshots'))}</td>"
+            f"<td>{bg._local_time(r.get('last_observed'))}</td>"
+            "</tr>"
+            for r in rows
+        ) or "<tr><td colspan='7'>Sin observaciones en este grupo.</td></tr>"
+
+    orphan_rows = _orphan_rows(recent_orphans)
+    orphan_archive_rows = _orphan_rows(archived_orphans)
 
     operation_rows = "".join(
         "<tr>"
@@ -595,8 +618,8 @@ def _page():
         f"<td>{bg._e(r.get('settlement'))}</td>"
         f"<td>{bg._status(r.get('status'))}</td>"
         f"<td>{bg._e(r.get('quantity'))}</td>"
-        f"<td>{bg._e(r.get('entry_price'))}</td>"
-        f"<td>{bg._e(r.get('net_pnl'))}</td>"
+        f"<td>{bg._amount(r.get('entry_price'), r.get('currency'))}</td>"
+        f"<td>{bg._amount(r.get('net_pnl'), r.get('currency'))}</td>"
         f"<td>{bg._e(r.get('close_reason'))}</td>"
         f"<td>{bg._e(r.get('strategy_version'))}</td>"
         "</tr>"
@@ -613,7 +636,7 @@ def _page():
         f"<td><b>{bg._e(r.get('instrument_id'))}</b></td>"
         f"<td>{bg._e(r.get('currency'))}</td>"
         f"<td>{bg._status(r.get('status'))}</td>"
-        f"<td>{bg._e(r.get('principal'))}</td>"
+        f"<td>{bg._amount(r.get('principal'), r.get('currency'))}</td>"
         f"<td>{bg._e(r.get('annual_rate_fraction'))}</td>"
         f"<td>{bg._local_time(r.get('maturity_at'))}</td>"
         "</tr>"
@@ -685,7 +708,7 @@ def _page():
         + "</table></div>"
 
         "<div class='paper-card'>"
-        "<h2>Observaciones de mercado sin identidad AVAILABLE actual</h2>"
+        "<h2>Observaciones recientes fuera del catálogo actual (no READY)</h2>"
         "<p class='paper-muted'>"
         "Sirve para detectar legado, catálogo stale o diferencias "
         "entre descubrimiento y observación. "
@@ -702,7 +725,10 @@ def _page():
         "<th>Última observación</th>"
         "</tr>"
         + orphan_rows
-        + "</table></div>"
+        + "</table>"
+        + f"<details><summary class='paper-action'>Ver evidencia histórica fuera de vigencia ({len(archived_orphans)})</summary>"
+        + "<table class='paper-table'><tr><th>Ticker</th><th>Familia</th><th>Mercado</th><th>Moneda</th><th>Plazo</th><th>Snapshots</th><th>Última observación</th></tr>"
+        + orphan_archive_rows + "</table></details></div>"
 
         "<div class='paper-card'>"
         "<h2>Todas las operaciones spot PAPER</h2>"
