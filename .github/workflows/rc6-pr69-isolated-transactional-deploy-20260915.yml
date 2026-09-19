@@ -132,7 +132,15 @@ jobs:
             if [ "$inventory_ok" -eq 1 ]; then
               while IFS=' ' read -r ref image_id; do
                 [ -n "$ref" ] || continue
-                [[ "$ref" =~ ^porota-trading-bot:17\.0\.0-rc6-(candidate|rollback)-[0-9a-f]{40}$ ]] || continue
+                if [[ "$ref" =~ ^porota-trading-bot:17\.0\.0-rc6-(candidate|rollback)-[0-9a-f]{40}$ ]]; then
+                  :
+                elif [[ "$ref" =~ ^porota-trading-bot:17\.0\.0-rc6-(pr69|strategy|eod-only|p0-eod|f01|eod-ui)-[0-9a-f]{12}$ ]] || \
+                     [[ "$ref" =~ ^porota-trading-bot:17\.0\.0-rc6-scalping-[0-9a-f]{7}$ ]] || \
+                     [ "$ref" = "porota-trading-bot:17.0.0-rc6-candidate-e47eeffc" ]; then
+                  :
+                else
+                  continue
+                fi
                 [ "$ref" = "$CANDIDATE_IMAGE" ] && { echo "RC6_IMAGE_TAG_KEPT=$ref|CURRENT_CANDIDATE"; continue; }
                 if grep -Fxq "$image_id" <<< "$container_image_ids"; then
                   echo "RC6_IMAGE_TAG_KEPT=$ref|CONTAINER_REFERENCED"
@@ -423,7 +431,9 @@ jobs:
           set -Eeuo pipefail
           echo 'STORAGE_AUDIT=READ_ONLY'
           df -h / /opt /var/lib/docker 2>/dev/null || df -h /
+          df -PB1 /
           sudo -n docker system df
           sudo -n du -sh /opt/porota-trading/data /opt/porota-trading 2>/dev/null || true
           echo 'STORAGE_CLEANUP=ALLOWLISTED_RC6_CANDIDATE_ROLLBACK_TAGS_ONLY'
+          echo 'STORAGE_CLEANUP_SCOPE=FULL_SHA_CANDIDATE_ROLLBACK_PLUS_EXPLICIT_UNUSED_LEGACY_RC6_TAGS'
           AUDIT
