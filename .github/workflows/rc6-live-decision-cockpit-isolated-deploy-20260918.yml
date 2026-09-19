@@ -1,0 +1,240 @@
+name: RC6 Live Decision Cockpit isolated deploy 2026-09-18
+
+on:
+  push:
+    branches:
+      - "feat/rc6-live-decision-cockpit-20260919"
+    paths:
+      - ".github/workflows/rc6-live-decision-cockpit-isolated-deploy-20260918.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-isolated-cockpit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/rc6-live-decision-cockpit-20260919
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate isolated candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q "pytest>=8.3.0,<9"
+          python -m py_compile rc6_live_decision_cockpit.py rc6_private_site_8766.py
+          PYTHONPATH=. pytest -q tests/test_rc6_live_decision_cockpit.py
+          bash -n ops/porota-private-snapshot-archive
+          systemd-analyze calendar 'Mon..Fri *-*-* 10:30..59:00 America/Argentina/Buenos_Aires' >/dev/null
+          systemd-analyze calendar 'Mon..Fri *-*-* 11..16:*:00 America/Argentina/Buenos_Aires' >/dev/null
+          grep -Fq 'HOST = "127.0.0.1"' rc6_private_site_8766.py
+          grep -Fq '"decision_authority": "OBSERVE_ONLY"' rc6_live_decision_cockpit.py
+          grep -Fq '"real_orders_authorized": False' rc6_live_decision_cockpit.py
+          ! grep -Eqi 'place_order|send_order|submit_order|cancel_order|budget_order|masscancel' rc6_live_decision_cockpit.py
+          echo "CANDIDATE_SHA=$GITHUB_SHA"
+          echo "CANDIDATE=GREEN"
+
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_live_cockpit"
+          chmod 600 "$HOME/.ssh/porota_live_cockpit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Stage isolated files on droplet
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          STAGE="/tmp/porota-live-cockpit-${GITHUB_SHA}"
+          SSH=(ssh -i "$HOME/.ssh/porota_live_cockpit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          SCP=(scp -i "$HOME/.ssh/porota_live_cockpit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "rm -rf '$STAGE' && mkdir -p '$STAGE/dropins/pre' '$STAGE/dropins/post'"
+          "${SCP[@]}" rc6_live_decision_cockpit.py "$DO_USER@$DO_HOST:$STAGE/live_collector.py"
+          "${SCP[@]}" rc6_private_site_8766.py "$DO_USER@$DO_HOST:$STAGE/server.py"
+          "${SCP[@]}" ops/porota-private-snapshot-archive "$DO_USER@$DO_HOST:$STAGE/archive_snapshot.sh"
+          "${SCP[@]}" systemd/porota-live-decision-cockpit-rc6.service "$DO_USER@$DO_HOST:$STAGE/"
+          "${SCP[@]}" systemd/porota-live-decision-cockpit-rc6.timer "$DO_USER@$DO_HOST:$STAGE/"
+          "${SCP[@]}" systemd/porota-private-snapshot.service "$DO_USER@$DO_HOST:$STAGE/"
+          "${SCP[@]}" systemd/dropins/porota-snapshot-preopen-rc6.service.d/90-private-site-archive.conf "$DO_USER@$DO_HOST:$STAGE/dropins/pre/"
+          "${SCP[@]}" systemd/dropins/porota-snapshot-preopen-rc6.service.d/95-private-site-baseline.conf "$DO_USER@$DO_HOST:$STAGE/dropins/pre/"
+          "${SCP[@]}" systemd/dropins/porota-snapshot-postclose-rc6.service.d/90-private-site-archive.conf "$DO_USER@$DO_HOST:$STAGE/dropins/post/"
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "find '$STAGE' -type f -maxdepth 3 -print | sort"
+
+      - name: Deploy, prove and leave canonical runtime untouched
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_live_cockpit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          STAGE="/tmp/porota-live-cockpit-$TARGET_SHA"
+          APP="/opt/porota-private-snapshot"
+          SNAP="/opt/porota-trading/data/paper_v17/snapshots"
+
+          echo "=== PRECHECK ==="
+          cd /opt/porota-trading
+          PRE_HEAD="$(git rev-parse HEAD)"
+          PRE_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+          OBS_BEFORE="$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_observer)"
+          DASH_BEFORE="$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo "PRE_HEAD=$PRE_HEAD"
+          echo "PRE_BRANCH=$PRE_BRANCH"
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True)
+          c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'PRE_DB={q}|{mode}|{real}')
+          assert q=='ok' and mode=='PRODUCTION_PAPER' and int(real)==0
+          PY
+
+          echo "=== STAGED VALIDATION ==="
+          python3 - "$STAGE/live_collector.py" "$STAGE/server.py" <<'PY'
+          import sys
+          for p in sys.argv[1:]:
+              compile(open(p,encoding='utf-8').read(),p,'exec')
+              print('SYNTAX_OK='+p)
+          PY
+          bash -n "$STAGE/archive_snapshot.sh"
+          sudo -n systemd-analyze verify             "$STAGE/porota-live-decision-cockpit-rc6.service"             "$STAGE/porota-live-decision-cockpit-rc6.timer"             "$STAGE/porota-private-snapshot.service" >/dev/null
+
+          echo "=== INSTALL ISOLATED SURFACE ==="
+          sudo -n install -d -m 0755 "$APP" "$SNAP/archive"
+          sudo -n install -m 0755 "$STAGE/live_collector.py" "$APP/live_collector.py"
+          sudo -n install -m 0755 "$STAGE/server.py" "$APP/server.py"
+          sudo -n install -m 0755 "$STAGE/archive_snapshot.sh" "$APP/archive_snapshot.sh"
+          sudo -n install -m 0644 "$STAGE/porota-live-decision-cockpit-rc6.service" /etc/systemd/system/porota-live-decision-cockpit-rc6.service
+          sudo -n install -m 0644 "$STAGE/porota-live-decision-cockpit-rc6.timer" /etc/systemd/system/porota-live-decision-cockpit-rc6.timer
+          sudo -n install -m 0644 "$STAGE/porota-private-snapshot.service" /etc/systemd/system/porota-private-snapshot.service
+
+          sudo -n install -d -m 0755             /etc/systemd/system/porota-snapshot-preopen-rc6.service.d             /etc/systemd/system/porota-snapshot-postclose-rc6.service.d
+          sudo -n install -m 0644 "$STAGE/dropins/pre/90-private-site-archive.conf"             /etc/systemd/system/porota-snapshot-preopen-rc6.service.d/90-private-site-archive.conf
+          sudo -n install -m 0644 "$STAGE/dropins/pre/95-private-site-baseline.conf"             /etc/systemd/system/porota-snapshot-preopen-rc6.service.d/95-private-site-baseline.conf
+          sudo -n install -m 0644 "$STAGE/dropins/post/90-private-site-archive.conf"             /etc/systemd/system/porota-snapshot-postclose-rc6.service.d/90-private-site-archive.conf
+
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl enable porota-private-snapshot.service porota-live-decision-cockpit-rc6.timer >/dev/null
+          sudo -n systemctl restart porota-private-snapshot.service
+          sudo -n systemctl restart porota-live-decision-cockpit-rc6.timer
+          sleep 2
+
+          echo "=== READ-ONLY LIVE PROBE ==="
+          sudo -n env PYTHONPATH=/opt/porota-trading:/opt/porota-private-snapshot python3 - <<'PY'
+          import json
+          from datetime import datetime
+          import live_collector as lc
+          obs=lc._observer_state_via_container()
+          payload=lc.build_payload(
+              obs,
+              lc._read_json(lc.IOL_CACHE),
+              lc._read_json(lc.VALIDATION),
+              lc._read_json(lc.PREOPEN),
+              lc._read_json(lc.POSTCLOSE),
+              datetime.now(lc.TZ),
+          )
+          print(json.dumps({
+              'mode':payload.get('mode'),
+              'real_orders_sent':payload.get('real_orders_sent'),
+              'decision_authority':payload.get('decision_authority'),
+              'real_orders_authorized':payload.get('real_orders_authorized'),
+              'opportunities':len(payload.get('top_opportunities') or []),
+              'iol_mode':(payload.get('iol') or {}).get('mode'),
+              'iol_decision_effect':(payload.get('iol') or {}).get('decision_effect'),
+          },sort_keys=True))
+          assert payload.get('mode')=='PRODUCTION_PAPER'
+          assert payload.get('real_orders_sent')==0
+          assert payload.get('decision_authority')=='OBSERVE_ONLY'
+          assert payload.get('real_orders_authorized') is False
+          PY
+
+          echo "=== SITE HEALTH ==="
+          HEALTH="$(curl -fsS http://127.0.0.1:8766/health)"
+          printf '%s\n' "$HEALTH"
+          python3 - "$HEALTH" <<'PY'
+          import json,sys
+          x=json.loads(sys.argv[1])
+          assert x['status']=='ok'
+          assert x['bind']=='127.0.0.1'
+          assert int(x['port'])==8766
+          assert x['public_exposure'] is False
+          print('SITE_HEALTH=GREEN')
+          PY
+
+          LISTEN="$(ss -ltnp 2>/dev/null | awk '$4 ~ /:8766$/ {print}')"
+          printf '%s\n' "$LISTEN"
+          echo "$LISTEN" | grep -q '127.0.0.1:8766'
+          if echo "$LISTEN" | grep -Eq '(^|[[:space:]])(0\.0\.0\.0|\[::\]):8766'; then
+            echo "PUBLIC_BIND_DETECTED"
+            exit 1
+          fi
+
+          echo "=== SYSTEMD ==="
+          systemctl is-active porota-private-snapshot.service
+          systemctl is-enabled porota-private-snapshot.service
+          systemctl is-active porota-live-decision-cockpit-rc6.timer
+          systemctl is-enabled porota-live-decision-cockpit-rc6.timer
+          systemctl list-timers porota-live-decision-cockpit-rc6.timer --all --no-pager
+          systemctl cat porota-snapshot-preopen-rc6.service --no-pager | grep -F 'archive_snapshot.sh preopen'
+          systemctl cat porota-snapshot-preopen-rc6.service --no-pager | grep -F -- '--capture-preopen-baseline'
+          systemctl cat porota-snapshot-postclose-rc6.service --no-pager | grep -F 'archive_snapshot.sh postclose'
+
+          echo "=== NON-INTERFERENCE PROOF ==="
+          test "$(git rev-parse HEAD)" = "$PRE_HEAD"
+          test "$(git rev-parse --abbrev-ref HEAD)" = "$PRE_BRANCH"
+          test "$OBS_BEFORE" = "$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_observer)"
+          test "$DASH_BEFORE" = "$(sudo -n docker inspect -f '{{.Id}}|{{.State.Running}}|{{.RestartCount}}' porota_production_dashboard)"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True)
+          c.execute('pragma query_only=on')
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'POST_DB={mode}|{real}')
+          assert mode=='PRODUCTION_PAPER' and int(real)==0
+          PY
+
+          rm -rf "$STAGE"
+          echo "RUNTIME_GIT_CHANGED=NO"
+          echo "DOCKER_CHANGED=NO"
+          echo "DASHBOARD_8000_CHANGED=NO"
+          echo "REAL_ORDERS_SENT=0"
+          echo "PRIVATE_BIND=127.0.0.1:8766"
+          echo "LIVE_TIMER=ENABLED"
+          echo "DEPLOY_SHA=$TARGET_SHA"
+          echo "POROTA_LIVE_DECISION_COCKPIT_DEPLOY=GREEN"
+          REMOTE
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### RC6 Live Decision Cockpit isolated deploy"
+            echo "- SHA: `$GITHUB_SHA`"
+            echo "- Branch: `feat/rc6-live-decision-cockpit-20260919`"
+            echo "- Scope: localhost-only Site + read-only LIVE collector + systemd timer"
+            echo "- Result: `${{ job.status }}`"
+          } >> "$GITHUB_STEP_SUMMARY"
