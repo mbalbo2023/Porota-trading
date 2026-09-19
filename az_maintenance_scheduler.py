@@ -86,14 +86,11 @@ def build_scheduler() -> BackgroundScheduler:
 
     scheduler.add_job(_run_job, "cron", id="maintenance_action4_audit",
                       hour=7, minute=5, args=["action4_audit"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_validation_projection_preopen",
+    scheduler.add_job(_run_job, "cron", id="maintenance_validation_projection",
                       hour=7, minute=15, args=["validation_projection"])
     # Evidencia pre-rueda: lectura solamente contra la última sesión esperada.
     scheduler.add_job(_run_job, "cron", id="maintenance_preopen_freshness_audit",
                       hour=8, minute=30, args=["preopen_freshness_audit"])
-    # Reexpone al cierre la auditoría diaria; no cambia estrategia ni escribe históricos.
-    scheduler.add_job(_run_job, "cron", id="maintenance_validation_projection_postclose",
-                      hour=18, minute=15, args=["validation_projection"])
 
     return scheduler
 
