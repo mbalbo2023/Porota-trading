@@ -121,12 +121,22 @@ def _row(milestone, prior, *, deep_db_check=False):
             state = "YELLOW"
         else:
             state = str(prior.get("state") or "GRAY")
+    evidence_status = {
+        "VERIFIED_CURRENT": "CURRENT", "VERIFIED_HISTORICAL": "HISTORICAL",
+        "STALE": "STALE", "BLOCKED_BY_POLICY": "POLICY_BLOCKED",
+    }.get(claim, str(prior.get("evidence_status") or "PENDING").upper())
+    work_status = str(prior.get("work_status") or ("BLOCKED" if claim == "BLOCKED_BY_POLICY" else "PENDING")).upper()
+    if work_status not in {"COMPLETED", "IN_PROGRESS", "PENDING", "BLOCKED", "UNKNOWN"}:
+        work_status = "UNKNOWN"
     return {
         "state": state, "compliance_pct": pct, "claim_status": claim,
-        "implementation_status": impl, "objective": milestone.goal,
+        "implementation_status": impl, "work_status": work_status,
+        "evidence_status": evidence_status, "owner": str(prior.get("owner") or "POROTA"),
+        "evidence_at": str(prior.get("evidence_at") or prior.get("recorded_at") or ""),
+        "objective": milestone.goal,
         "expected_evidence": ", ".join(milestone.exit_criteria),
         "observed_evidence": observed, "deviation": deviation, "blocker": blocker,
-        "next_action": next_action, "evidence_ref": "dynamic-read-only-evaluator",
+        "next_action": next_action, "evidence_ref": str(prior.get("evidence_ref") or "dynamic-read-only-evaluator"),
         "evaluated_at": iso_now(), "dynamic": True,
     }
 
