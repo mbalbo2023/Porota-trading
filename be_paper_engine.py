@@ -39,6 +39,9 @@ STRATEGY_VERSION = "paper-momentum-v17.0-rc3-hf4"
 # Snapshot contemporáneo de evidencia por decisión. No es un replay, no consulta
 # fuentes externas y no tiene autoridad para modificar la acción PAPER.
 DECISION_EVIDENCE_SCHEMA = "rc6.decision-inputs.v1"
+# Estas acciones se completan más tarde en record_gates. Cualquier otra decisión
+# queda capturada al instante en record_decision, sin permitir doble evidencia.
+EVIDENCE_GATE_ACTIONS = frozenset({"BUY", "OPEN", "OPEN_SIMULATED", "ENTER"})
 EVIDENCE_SECRET_MARKERS = (
     "secret", "password", "token", "api_key", "apikey", "authorization", "cookie",
 )
@@ -150,9 +153,8 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
     deliberately local and contemporaneous: missing fields remain missing.
     """
     contract = asdict(q.contract) if q.contract is not None else None
-    # IOL is read only from its existing atomic cache for gate-reaching
-    # candidates. HOLD/WAIT snapshots deliberately do not read it: they record
-    # the factual non-candidate decision without adding another cache consumer.
+    # IOL is read only from its existing atomic cache.  This never invokes
+    # the collector, changes gates or changes the factual PAPER action.
     if include_iol:
         try:
             from iol_shadow_decision_input_rc6 import read_for_decision
@@ -526,14 +528,16 @@ class PaperStore:
                 c.execute("""INSERT INTO paper_decisions VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
                           (SOURCE, STRATEGY_VERSION, key, q.observed_at, q.symbol,
                            action, str(score), reason, json.dumps(features, ensure_ascii=False)))
-                # BUY candidates receive their fuller snapshot in record_gates
-                # after the final gates are known. HOLD/WAIT has no gate writer,
-                # so capture it here without reading IOL or changing the action.
-                if str(action).upper() != "BUY":
+                # Entry candidates receive their fuller snapshot in record_gates
+                # after their final gates are known. Every other decision is
+                # captured here with the current IOL cache as a SHADOW input.
+                # That local read cannot change the factual PAPER action.
+                action_code = str(action or "").upper()
+                if action_code not in EVIDENCE_GATE_ACTIONS:
                     evidence = _decision_evidence_payload(
                         q, key, "NOT_CANDIDATE", "NOT_USED", "NOT_EVALUATED",
-                        str(action).upper(), reason, None, features,
-                        action=action, score=score, include_iol=False)
+                        action_code, reason, None, features,
+                        action=action_code, score=score, include_iol=True)
                     _insert_evidence_snapshot(c, evidence)
             return True
         except sqlite3.IntegrityError:
