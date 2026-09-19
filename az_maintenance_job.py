@@ -31,6 +31,7 @@ VALID_JOBS = {
     "model_guardian",
     "monthly_report",
     "validation_projection",
+    "preopen_freshness_audit",
     "action4_audit",
 }
 
@@ -91,6 +92,10 @@ def run(job_name: str) -> None:
     elif job_name == "monthly_report":
         import z_reports_engine
         _notifier().send_telegram(z_reports_engine.build_monthly_summary_text())
+    elif job_name == "preopen_freshness_audit":
+        import rc6_preopen_freshness_audit
+        payload = rc6_preopen_freshness_audit.refresh()
+        logger.info("Freshness pre-rueda publicado: %s (%s/%s).", payload["state"], payload["fresh_total"], payload["target_total"])
     elif job_name == "action4_audit":
         import rc6_action4_audit
         payload = rc6_action4_audit.publish()
