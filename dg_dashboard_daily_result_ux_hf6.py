@@ -46,7 +46,7 @@ def _currency_result(row: dict) -> str:
 
 def daily_results_html(days: list[dict], *, max_symbols: int = 6) -> str:
     if not days:
-        return ("<section class='paper-card'><h2>Resultado de las últimas jornadas</h2>"
+        return ("<section class='paper-card'><h2>Resultado de las últimas cinco ruedas BYMA</h2>"
                 "<p class='paper-muted'>Aún no existe cierre diario conciliado.</p></section>")
     cards=[]
     for item in days:
@@ -68,8 +68,8 @@ def daily_results_html(days: list[dict], *, max_symbols: int = 6) -> str:
             f"<p class='paper-muted'>Familias: {families} · fills: {_e(item.get('fills',0))} · posiciones cerradas: {_e(item.get('closed_positions',0))}</p>"
             "</article>"
         )
-    return ("<section class='paper-card daily-results-section'><h2>Resultado de las últimas jornadas</h2>"
-            "<p class='paper-muted'>PnL y retorno permanecen separados por moneda/plaza. No se suman ARS y USD.</p>"
+    return ("<section class='paper-card daily-results-section'><h2>Resultado de las últimas cinco ruedas BYMA</h2>"
+            "<p class='paper-muted'>Se muestran sólo las últimas cinco ruedas BYMA; fines de semana y feriados quedan excluidos. PnL y retorno permanecen separados por moneda/plaza. No se suman ARS y USD.</p>"
             f"<div class='daily-results-grid'>{''.join(cards)}</div></section>")
 
 
