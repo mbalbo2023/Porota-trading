@@ -77,6 +77,10 @@ jobs:
           sudo -n docker exec porota_production_observer sh -lc 'du -x -B1 -d 2 /app/data 2>/dev/null | sort -nr | head -n 15 | sed "s#^[[:space:]]*#DATA_DIR=#"'
           echo '=== HOST_LAYOUT ==='
           sudo -n du -x -B1 -d 1 / 2>/dev/null | sort -nr | head -n 20 | sed 's#^[[:space:]]*#HOST_DIR=#' || true
+          echo '=== ROOT_FILES ==='
+          sudo -n find / -maxdepth 1 -xdev -type f -printf 'ROOT_FILE=%s|%TY-%Tm-%TdT%TH:%TM:%TS|%p\\n' 2>/dev/null | sort -nr
+          echo '=== VAR_TOP_LEVEL ==='
+          sudo -n du -x -B1 -d 1 /var 2>/dev/null | sort -nr | head -n 20 || true
           echo '=== HOST_BACKUP_FILES ==='
           for root in /opt/porota-trading /opt/porota-backups /var/backups /root /srv; do
             if [ -e "$root" ]; then
