@@ -64,8 +64,13 @@ def _freshness(last_day: date | None, latest: date, family: str = "ACCIONES") ->
     return "SEVERELY_STALE", str(gap)
 
 
-def freshness_qualified_metrics(observer_connection, path: Path | None = None, families=None) -> dict:
-    """Read-only freshness metrics for an explicitly bounded dashboard scope."""
+def freshness_qualified_metrics(observer_connection, path: Path | None = None, families=None, *, expected_session_date: date | None = None) -> dict:
+    """Read-only freshness metrics for an explicitly bounded dashboard scope.
+
+    expected_session_date makes the pre-open audit compare each instrument with
+    the last session that should already be present, rather than silently using
+    the newest date found in the store as its own benchmark.
+    """
     targets=target_universe(observer_connection, families=families)
     db=(path or history_db_path()).resolve()
     base={
@@ -94,8 +99,9 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None, f
         if not latest_raw:
             return dict(base,reason="HISTORY_STORE_EMPTY")
         latest=date.fromisoformat(str(latest_raw)[:10])
-        if latest.year not in byma_calendar.ANIOS_AUDITADOS:
-            return dict(base,reason="LATEST_CALENDAR_YEAR_NOT_AUDITED",store_latest_date=latest.isoformat())
+        expected = expected_session_date or latest
+        if latest.year not in byma_calendar.ANIOS_AUDITADOS or expected.year not in byma_calendar.ANIOS_AUDITADOS:
+            return dict(base,reason="FRESHNESS_CALENDAR_YEAR_NOT_AUDITED",store_latest_date=latest.isoformat(),expected_session_date=expected.isoformat())
 
         groups={}
         for r in c.execute(
@@ -105,14 +111,19 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None, f
         ):
             groups[tuple(str(x or "").upper() for x in r[:4])]=(int(r[4] or 0),r[5],r[6])
 
-        depths=Counter(); freshness=Counter(); stale_ge90=[]
+        depths=Counter(); freshness=Counter(); stale_ge90=[]; instrument_rows=[]
         fresh_ge30=fresh_ge90=fresh_ge180=fresh_total=0
         for item in targets:
             key=(item["symbol"],item["family"],item["market"],item["settlement"])
             rows,first,last=groups.get(key,(0,None,None))
             dep=_depth(rows)
             last_day=date.fromisoformat(str(last)[:10]) if last else None
-            fr,gap=_freshness(last_day,latest,item["family"])
+            fr,gap=_freshness(last_day,expected,item["family"])
+            instrument_rows.append({
+                "symbol": item["symbol"], "family": item["family"], "market": item["market"],
+                "settlement": item["settlement"], "rows": rows, "last_date": last,
+                "expected_session_date": expected.isoformat(), "freshness": fr, "business_gap": gap,
+            })
             depths[dep]+=1
             freshness[fr]+=1
             if fr == "FRESH":
@@ -136,6 +147,7 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None, f
             available=True,
             reason="OK",
             store_latest_date=latest.isoformat(),
+            expected_session_date=expected.isoformat(),
             fresh_total=fresh_total,
             fresh_ge30=fresh_ge30,
             fresh_ge90=fresh_ge90,
@@ -144,6 +156,7 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None, f
             stale_ge90_count=len(stale_ge90),
             depth_counts=dict(sorted(depths.items())),
             freshness_counts=dict(sorted(freshness.items())),
+            instrument_rows=sorted(instrument_rows, key=lambda row: (str(row["freshness"]) == "FRESH", str(row["symbol"]))),
             calendar_source="BYMA_AUDITED_PLUS_US_UNDERLYING_FOR_CEDEARS",
         )
     finally:
