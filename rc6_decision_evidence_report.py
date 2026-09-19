@@ -136,3 +136,12 @@ def publish(**kwargs) -> dict[str, Any]:
     payload = build(**kwargs)
     write(payload, root=root)
     return payload
+
+
+if __name__ == "__main__":
+    try:
+        result = publish()
+        print(json.dumps({"status": "OK", "decisions": len(result["decisions"]), "read_only": True}, sort_keys=True))
+    except Exception as exc:
+        print(json.dumps({"status": "ERROR", "error": type(exc).__name__, "read_only": True}, sort_keys=True))
+        raise
