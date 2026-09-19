@@ -246,19 +246,19 @@ jobs:
           sudo -n docker exec porota_production_dashboard timeout 15 python -c "import bg_paper_dashboard as bg; bg.validation_page(); print('BG_VALIDATION_RENDER=GREEN')"
           sudo -n docker exec porota_production_dashboard timeout 15 python -c "import en_validation_project_dashboard_rc6 as p; p.page(); print('PROJECT_VALIDATION_RENDER=GREEN')"
           sudo -n docker exec porota_production_dashboard timeout 15 python -c "import rc6_postclose_review_dashboard as p; p.page(); print('POSTCLOSE_REVIEW_RENDER=GREEN')"
-          set +e
-          SNAPSHOT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 30 python /app/rc6_snapshot.py --phase postclose 2>&1)"
-          SNAPSHOT_RC=$?
-          set -e
+          # NOT_DUE exits 2 outside the post-close window. Capture it with an
+          # explicit OR-list so bash -e cannot terminate before verification.
+          SNAPSHOT_RC=0
+          SNAPSHOT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 30 python /app/rc6_snapshot.py --phase postclose 2>&1)" || SNAPSHOT_RC=$?
           echo "$SNAPSHOT_OUTPUT"
-          test "$SNAPSHOT_RC" -eq 0 -o "$SNAPSHOT_RC" -eq 2
+          case "$SNAPSHOT_RC" in 0|2) ;; *) echo "SNAPSHOT_UNEXPECTED_EXIT=$SNAPSHOT_RC"; exit "$SNAPSHOT_RC";; esac
           # Fuera de la ventana postcierre, NOT_DUE prueba que el guard de horario
           # está activo. No se fuerza ni inventa un snapshot postcierre.
           grep -Eq '"status": "(VERIFIED|INSUFFICIENT_EVIDENCE|NOT_DUE)"' <<< "$SNAPSHOT_OUTPUT"
-          REVIEW_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 15 python /app/rc6_postclose_review.py 2>&1)"
-          REVIEW_RC=$?
+          REVIEW_RC=0
+          REVIEW_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 15 python /app/rc6_postclose_review.py 2>&1)" || REVIEW_RC=$?
           echo "$REVIEW_OUTPUT"
-          test "$REVIEW_RC" -eq 0 -o "$REVIEW_RC" -eq 2
+          case "$REVIEW_RC" in 0|2) ;; *) echo "REVIEW_UNEXPECTED_EXIT=$REVIEW_RC"; exit "$REVIEW_RC";; esac
           grep -Eq '"status": "(VERIFIED|INSUFFICIENT_EVIDENCE|NOT_DUE)"' <<< "$REVIEW_OUTPUT"
           for unit in porota-snapshot-preopen-rc6.timer porota-snapshot-postclose-rc6.timer; do
             test "$(systemctl is-enabled "$unit")" = enabled
