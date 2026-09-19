@@ -69,13 +69,24 @@ jobs:
               h.close()
           PY
           echo '=== RAW_EVIDENCE ==='
-          sudo -n docker exec -i porota_production_observer sh -lc 'for p in /app/data/evidence /app/data/paper_v17/evidence; do if [ -e "$p" ]; then B=$(du -sb "$p" | awk "{print \$1}"); N=$(find "$p" -type f 2>/dev/null | wc -l); echo "EVIDENCE_PATH=$p|BYTES=$B|FILES=$N"; fi; done'
+          sudo -n docker exec porota_production_observer sh -lc 'for p in /app/data/evidence /app/data/paper_v17/evidence; do if [ -e "$p" ]; then B=$(du -sb "$p" | awk "{print \$1}"); N=$(find "$p" -type f 2>/dev/null | wc -l); echo "EVIDENCE_PATH=$p|BYTES=$B|FILES=$N"; fi; done'
           echo '=== BACKUPS ==='
-          sudo -n docker exec -i porota_production_observer sh -lc 'find /app/data -type d -iname "*backup*" -print 2>/dev/null | while read p; do B=$(du -sb "$p" 2>/dev/null | awk "{print \$1}"); N=$(find "$p" -type f 2>/dev/null | wc -l); echo "BACKUP_PATH=$p|BYTES=${B:-0}|FILES=$N"; done'
+          sudo -n docker exec porota_production_observer sh -lc 'find /app/data -type d -iname "*backup*" -print 2>/dev/null | while read p; do B=$(du -sb "$p" 2>/dev/null | awk "{print \$1}"); N=$(find "$p" -type f 2>/dev/null | wc -l); echo "BACKUP_PATH=$p|BYTES=${B:-0}|FILES=$N"; done'
           echo '=== TOP_DATA_DIRS ==='
-          sudo -n docker exec -i porota_production_observer sh -lc 'du -x -B1 -d 2 /app/data 2>/dev/null | sort -nr | head -n 15 | sed "s#^[[:space:]]*#DATA_DIR=#"'
+          sudo -n docker exec porota_production_observer sh -lc 'du -x -B1 -d 2 /app/data 2>/dev/null | sort -nr | head -n 15 | sed "s#^[[:space:]]*#DATA_DIR=#"'
+          echo '=== HOST_LAYOUT ==='
+          sudo -n du -x -B1 -d 1 / 2>/dev/null | sort -nr | head -n 20 | sed 's#^[[:space:]]*#HOST_DIR=#'
+          echo '=== HOST_BACKUP_FILES ==='
+          for root in /opt/porota-trading /var/backups /root /srv; do
+            if [ -e "$root" ]; then
+              sudo -n find "$root" -xdev -type f \( -iname '*backup*' -o -iname '*bak*' -o -iname '*.tar' -o -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.zip' -o -iname '*.dump' \) -printf 'BACKUP_FILE=%s|%TY-%Tm-%TdT%TH:%TM:%TS|%p\\n' 2>/dev/null | sort -nr | head -n 100
+            fi
+          done
+          echo '=== CONTAINER_MOUNTS ==='
+          sudo -n docker inspect -f 'OBSERVER_MOUNTS={{range .Mounts}}{{.Source}}|{{.Destination}}|{{.Type}};{{end}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD_MOUNTS={{range .Mounts}}{{.Source}}|{{.Destination}}|{{.Type}};{{end}}' porota_production_dashboard
           echo '=== DOCKER ==='
-          sudo -n docker system df --format 'TYPE={{.Type}}|TOTAL={{.TotalCount}}|ACTIVE={{.Active}}|SIZE={{.Size}}|RECLAIMABLE={{.Reclaimable}}'
+          sudo -n docker system df -v | sed -n '1,180p'\n          sudo -n docker system df --format 'TYPE={{.Type}}|TOTAL={{.TotalCount}}|ACTIVE={{.Active}}|SIZE={{.Size}}|RECLAIMABLE={{.Reclaimable}}'
           echo '=== WAVE4 ==='
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import fa_raw_evidence_store_rc6 as s
