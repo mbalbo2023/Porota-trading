@@ -1,6 +1,13 @@
-"""Rotating read-only IOL SHADOW collection for the RC6 operational universe."""
+"""Rotating read-only IOL SHADOW collection for the RC6 operational universe.
+
+The collector is observational only.  It never changes PAPER readiness, signals,
+sizing or order routing.  Coverage is defined by the active universe cycle, not
+by arbitrary rows accumulated in cache across older cycles.
+"""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -10,12 +17,11 @@ from typing import Any
 from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
 from iol_shadow_collector_rc6 import CollectionPolicy, is_operational_market_window, run_batch
 
-# Emergency fallback only. Normal operation derives ACCIONES/CEDEARs from the
-# existing local catalog; it never calls PPI from this worker.
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
 DEFAULT_DB = os.getenv("POROTA_IOL_OPERATIONAL_DB", "/opt/porota-trading/data/paper_v17/observer_v17.db")
 BATCH_SIZE = 20
+PRIMARY_MAX_AGE_SECONDS = 300
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -26,10 +32,12 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def _operational_universe() -> list[str]:
+def _operational_universe() -> tuple[list[str], str]:
     configured = os.getenv("POROTA_IOL_SHADOW_UNIVERSE", "").strip()
     if configured:
-        return sorted({item.strip().upper() for item in configured.split(",") if item.strip()})
+        values = sorted({item.strip().upper() for item in configured.split(",") if item.strip()})
+        if values:
+            return values, "CONFIGURED_OPERATIONAL_UNIVERSE"
     try:
         conn = sqlite3.connect(f"file:{DEFAULT_DB}?mode=ro", uri=True, timeout=10)
         conn.execute("PRAGMA query_only=ON")
@@ -39,55 +47,94 @@ def _operational_universe() -> list[str]:
             "AND trim(ticker)<>'' ORDER BY ticker"
         ).fetchall()
         conn.close()
-        universe = sorted({str(row[0]).strip().upper() for row in rows if row and row[0]})
-        if universe:
-            return universe
+        values = sorted({str(row[0]).strip().upper() for row in rows if row and row[0]})
+        if values:
+            return values, "OBSERVER_OPERATIONAL_CATALOG"
     except sqlite3.Error:
         pass
-    return list(DEFAULT_UNIVERSE)
+    return list(DEFAULT_UNIVERSE), "EMERGENCY_FALLBACK_8"
 
 
-def _rotation(universe: list[str]) -> tuple[list[str], int]:
+def _fingerprint(universe: list[str]) -> str:
+    return sha256(",".join(universe).encode("utf-8")).hexdigest()[:16]
+
+
+def _rotation(universe: list[str], fingerprint: str) -> tuple[list[str], int, dict[str, Any]]:
     state_path = DEFAULT_ROOT / "iol_shadow_rotation.json"
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         state = {}
+    if state.get("universe_fingerprint") != fingerprint or int(state.get("universe_size") or 0) != len(universe):
+        state = {"schema_version": 2, "cycle_id": 1, "next_index": 0, "seen": []}
+    seen = {str(x).upper() for x in state.get("seen", []) if str(x).strip() in set(universe)}
+    if len(seen) >= len(universe):
+        state = {"schema_version": 2, "cycle_id": int(state.get("cycle_id") or 0) + 1, "next_index": 0, "seen": []}
     start = int(state.get("next_index") or 0) % max(1, len(universe))
     selected = [universe[(start + offset) % len(universe)] for offset in range(min(BATCH_SIZE, len(universe)))]
-    return selected, start
-
-def _commit_rotation(universe: list[str], start: int, selected: list[str]) -> None:
-    state_path = DEFAULT_ROOT / "iol_shadow_rotation.json"
-    _atomic_json(state_path, {"schema_version": 1, "universe_size": len(universe),
-                              "next_index": (start + len(selected)) % len(universe)})
+    state["seen"] = sorted(seen)
+    return selected, start, state
 
 
-def _primary_snapshot() -> dict[str, float]:
-    for candidate in (
-        os.getenv("POROTA_PRIMARY_LAST_CACHE_PATH", "").strip(),
-        str(DEFAULT_ROOT / "primary_last.json"),
-        "/app/data/market/primary_last.json",
-    ):
+def _commit_rotation(universe: list[str], fingerprint: str, start: int, selected: list[str], state: dict[str, Any]) -> dict[str, Any]:
+    seen = {str(x).upper() for x in state.get("seen", [])}
+    seen.update(selected)
+    committed = {
+        "schema_version": 2,
+        "universe_size": len(universe),
+        "universe_fingerprint": fingerprint,
+        "cycle_id": int(state.get("cycle_id") or 1),
+        "next_index": (start + len(selected)) % len(universe),
+        "seen": sorted(seen),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _atomic_json(DEFAULT_ROOT / "iol_shadow_rotation.json", committed)
+    return committed
+
+
+def _parse_time(value: Any) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _primary_snapshot() -> tuple[dict[str, float], dict[str, Any]]:
+    for candidate in (os.getenv("POROTA_PRIMARY_LAST_CACHE_PATH", "").strip(), str(DEFAULT_ROOT / "primary_last.json"), "/app/data/market/primary_last.json"):
         if not candidate:
             continue
         try:
             payload: Any = json.loads(Path(candidate).read_text(encoding="utf-8"))
-            values = payload.get("last_by_symbol") if isinstance(payload, dict) else {}
-            if isinstance(values, dict):
-                return values
         except (OSError, json.JSONDecodeError):
             continue
-    return {}
+        values = payload.get("last_by_symbol") if isinstance(payload, dict) else {}
+        timestamp = _parse_time(payload.get("observed_at") or payload.get("refreshed_at") or payload.get("captured_at")) if isinstance(payload, dict) else None
+        source = str(payload.get("source") or "").upper() if isinstance(payload, dict) else ""
+        market = str(payload.get("market") or "").upper() if isinstance(payload, dict) else ""
+        age = (datetime.now(timezone.utc) - timestamp.astimezone(timezone.utc)).total_seconds() if timestamp else None
+        valid = isinstance(values, dict) and bool(values) and timestamp is not None and age is not None and 0 <= age <= PRIMARY_MAX_AGE_SECONDS and source.startswith("PPI") and market == "BCBA"
+        contract = {"state": "READY" if valid else "UNAVAILABLE", "source": source or "UNKNOWN", "market": market or "UNKNOWN", "observed_at": timestamp.isoformat() if timestamp else None, "age_seconds": round(age, 1) if age is not None else None, "reason": "OK" if valid else "PRIMARY_CACHE_CONTRACT_INVALID_OR_STALE"}
+        return (values if valid else {}), contract
+    return {}, {"state": "UNAVAILABLE", "reason": "PRIMARY_CACHE_NOT_FOUND"}
 
 
-def _publish_progress(total: int, batch: list[str]) -> dict[str, Any]:
+def _publish_progress(total: int, batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:
     path = DEFAULT_ROOT / "iol_shadow_latest.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     rows = payload.get("symbols") if isinstance(payload.get("symbols"), list) else []
-    ready = sum(isinstance(row, dict) and row.get("state") == "READY" for row in rows)
+    by_symbol = {str(row.get("symbol") or "").upper(): row for row in rows if isinstance(row, dict)}
+    observed = [symbol for symbol in cycle.get("seen", []) if symbol in by_symbol]
+    ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in observed)
+    unavailable = len(observed) - ready
+    cycle_complete = len(observed) == total and total > 0
     telemetry = payload.get("telemetry") if isinstance(payload.get("telemetry"), dict) else {}
-    payload["progress"] = {"scheduled": total, "completed": len(rows), "batch_size": len(batch)}
+    payload["progress"] = {
+        "scheduled": total, "completed": len(observed), "ready": ready, "unavailable": unavailable,
+        "batch_size": len(batch), "cycle_id": cycle.get("cycle_id"), "cycle_complete": cycle_complete,
+        "universe_fingerprint": fingerprint, "universe_source": source,
+    }
+    payload["primary_comparison_contract"] = primary_contract
     payload["telemetry"] = {**telemetry, "ready_total": ready, "last_batch_size": len(batch)}
     _atomic_json(path, payload)
     return payload
@@ -100,15 +147,16 @@ def main() -> int:
     if not is_operational_market_window():
         print("IOL_SHADOW_COLLECTION=NOT_DUE_OUTSIDE_MARKET")
         return 0
-    universe = _operational_universe()
-    batch, rotation_start = _rotation(universe)
-    payload = run_batch(batch, OAuthStoreReadOnlyMCP(), root=DEFAULT_ROOT,
-        primary_last_by_symbol=_primary_snapshot(),
-        policy=CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40))
-    _commit_rotation(universe, rotation_start, batch)
-    payload = _publish_progress(len(universe), batch)
-    ready = sum(1 for row in payload.get("symbols", []) if row.get("state") == "READY")
-    print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={ready} TOTAL={len(payload.get('symbols', []))} UNIVERSE={len(universe)}")
+    universe, universe_source = _operational_universe()
+    fingerprint = _fingerprint(universe)
+    batch, rotation_start, prior_cycle = _rotation(universe, fingerprint)
+    primary, primary_contract = _primary_snapshot()
+    run_batch(batch, OAuthStoreReadOnlyMCP(), root=DEFAULT_ROOT, primary_last_by_symbol=primary,
+              policy=CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40))
+    cycle = _commit_rotation(universe, fingerprint, rotation_start, batch, prior_cycle)
+    payload = _publish_progress(len(universe), batch, universe_source, fingerprint, cycle, primary_contract)
+    progress = payload.get("progress", {})
+    print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source}")
     return 0
 
 
