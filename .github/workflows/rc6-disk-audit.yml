@@ -3,7 +3,7 @@ name: RC6 read-only disk usage audit
 on:
   push:
     branches:
-      - audit/rc6-disk-usage-20260907
+      - audit/rc6-disk-usage-recheck-20260919
     paths:
       - '.github/workflows/rc6-disk-audit.yml'
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout audit branch
         uses: actions/checkout@v4
         with:
-          ref: audit/rc6-disk-usage-20260907
+          ref: audit/rc6-disk-usage-recheck-20260919
           fetch-depth: 0
 
       - name: Prepare strict SSH
@@ -48,7 +48,7 @@ jobs:
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -euo pipefail
-          REPORT="POROTA_DISK_AUDIT_RC6_2026-09-07.txt"
+          REPORT="POROTA_DISK_AUDIT_RC6_RECHECK_2026-09-19.txt"
           ssh -i "$HOME/.ssh/porota_audit" \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
@@ -72,6 +72,7 @@ jobs:
 
           sep '01. FILESYSTEM CAPACITY AND INODES'
           run df -hT /
+          run df -PB1 /
           run df -hT "$REPO"
           run df -ih /
           run lsblk -o NAME,SIZE,FSTYPE,TYPE,MOUNTPOINTS
@@ -152,9 +153,13 @@ jobs:
           echo 'Description: images, containers, local volumes and build cache. No prune is executed.'
           run sudo -n docker system df
           echo '-- Images --'
-          sudo -n docker image ls --digests --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}' 2>&1 || true
+          sudo -n docker image ls --no-trunc --digests --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}' 2>&1 || true
           echo '-- Containers incl. writable size --'
           sudo -n docker ps -a --size --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Size}}' 2>&1 || true
+          echo '-- Container image IDs for running and stopped containers --'
+          for cid in $(sudo -n docker ps -aq 2>/dev/null); do
+            sudo -n docker inspect --format '{{.Id}}|{{.State.Status}}|{{.Image}}|{{.Config.Image}}' "$cid" 2>&1 || true
+          done
           echo '-- Volumes --'
           sudo -n docker volume ls 2>&1 || true
           echo '-- Build cache --'
@@ -231,9 +236,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          REPORT="POROTA_DISK_AUDIT_RC6_2026-09-07.txt"
+          REPORT="POROTA_DISK_AUDIT_RC6_RECHECK_2026-09-19.txt"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add "$REPORT"
           git commit -m 'audit: capture RC6 Droplet disk usage read-only report'
-          git push origin HEAD:audit/rc6-disk-usage-20260907
+          git push origin HEAD:audit/rc6-disk-usage-recheck-20260919
