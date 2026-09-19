@@ -6,6 +6,7 @@ marcada PRODUCTION_PAPER/SIMULATED y los identificadores comienzan con PAPER-.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -35,6 +36,15 @@ def _family_operable(family: str) -> bool:
 
 SOURCE = "PRODUCTION_PAPER"
 STRATEGY_VERSION = "paper-momentum-v17.0-rc3-hf4"
+# Snapshot contemporáneo de evidencia por decisión. No es un replay, no consulta
+# fuentes externas y no tiene autoridad para modificar la acción PAPER.
+DECISION_EVIDENCE_SCHEMA = "rc6.decision-inputs.v1"
+# Estas acciones se completan más tarde en record_gates. Cualquier otra decisión
+# queda capturada al instante en record_decision, sin permitir doble evidencia.
+EVIDENCE_GATE_ACTIONS = frozenset({"BUY", "OPEN", "OPEN_SIMULATED", "ENTER"})
+EVIDENCE_SECRET_MARKERS = (
+    "secret", "password", "token", "api_key", "apikey", "authorization", "cookie",
+)
 ZERO = Decimal("0")
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
@@ -110,6 +120,126 @@ class Quote:
         if self.contract and (self.contract.currency != currency or self.contract.market != market):
             raise ValueError("Moneda/mercado de la cotización contradice el contrato")
         return currency, market
+
+
+def _evidence_safe(value, *, field_name=""):
+    """Normaliza evidencia para hash y persiste sin secretos ni objetos mutables."""
+    name = str(field_name or "").lower()
+    if any(marker in name for marker in EVIDENCE_SECRET_MARKERS):
+        return "[REDACTED]"
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return {
+            str(key): _evidence_safe(item, field_name=str(key))
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_evidence_safe(item) for item in value]
+    if isinstance(value, set):
+        return sorted(_evidence_safe(item) for item in value)
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    return str(value)
+
+
+def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
+                               ai: str, patrimonial: str, final: str,
+                               reason: str, paper_id, detail: dict, *, action=None,
+                               score=None, include_iol=True) -> dict:
+    """Capture only the data already in-memory at the gate write point.
+
+    The collector remains the sole owner of market ingestion.  This payload is
+    deliberately local and contemporaneous: missing fields remain missing.
+    """
+    contract = asdict(q.contract) if q.contract is not None else None
+    # IOL is read only from its existing atomic cache.  This never invokes
+    # the collector, changes gates or changes the factual PAPER action.
+    if include_iol:
+        try:
+            from iol_shadow_decision_input_rc6 import read_for_decision
+            iol_input = read_for_decision(q.symbol)
+            if not isinstance(iol_input, dict):
+                raise TypeError("IOL_DECISION_INPUT_INVALID")
+        except Exception as exc:
+            iol_input = {
+                "source": "IOL_MCP",
+                "mode": "SHADOW_DUAL_EVALUATION",
+                "decision_effect": "NO_FACTUAL_BINDING",
+                "symbol": q.symbol,
+                "state": "UNAVAILABLE",
+                "quality": "UNKNOWN",
+                "freshness": "UNKNOWN",
+                "reason": "DECISION_INPUT_UNAVAILABLE:" + type(exc).__name__,
+                "coverage": {},
+            }
+    else:
+        iol_input = {
+            "source": "IOL_MCP",
+            "mode": "SHADOW_DUAL_EVALUATION",
+            "decision_effect": "NO_FACTUAL_BINDING",
+            "symbol": q.symbol,
+            "state": "NOT_CAPTURED",
+            "quality": "UNKNOWN",
+            "freshness": "UNKNOWN",
+            "reason": "NON_CANDIDATE_DECISION_NO_IOL_CACHE_READ",
+            "coverage": {},
+        }
+    inputs_used = dict(detail) if isinstance(detail, dict) else {"detail": detail}
+    inputs_used["iol"] = iol_input
+    return _evidence_safe({
+        "schema": DECISION_EVIDENCE_SCHEMA,
+        "decision_key": decision_key,
+        "captured_at": q.observed_at,
+        "decision": {
+            "symbol": q.symbol,
+            "action": action,
+            "score": str(score) if score is not None else None,
+            "technical_gate": technical,
+            "ai_gate": ai,
+            "patrimonial_gate": patrimonial,
+            "final_result": final,
+            "reason": str(reason),
+            "paper_id": paper_id,
+        },
+        "quote_used": {
+            "symbol": q.symbol,
+            "asset_class": q.asset_class,
+            "settlement": q.settlement,
+            "currency": q.currency,
+            "market": q.market,
+            "last": q.last,
+            "bid": q.bid,
+            "ask": q.ask,
+            "bid_size": q.bid_size,
+            "ask_size": q.ask_size,
+            "observed_at": q.observed_at,
+            "book_at": q.book_at,
+            "trade_at": q.trade_at,
+            "last_kind": q.last_kind,
+            "metadata_source": q.metadata_source,
+            "financial_contract": contract,
+        },
+        "runtime": {
+            "source": SOURCE,
+            "strategy_version": STRATEGY_VERSION,
+            "execution_mode": "PRODUCTION_PAPER_SIMULATED",
+            "real_money_authorized": False,
+        },
+        "inputs_used": inputs_used,
+    })
+
+def _insert_evidence_snapshot(connection, evidence: dict) -> None:
+    """Insert once in the caller's existing transaction; never overwrite evidence."""
+    evidence_json = json.dumps(
+        evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    evidence_hash = hashlib.sha256(evidence_json.encode("utf-8")).hexdigest()
+    connection.execute("""INSERT OR IGNORE INTO decision_evidence_snapshots
+      (decision_key,captured_at,schema_version,payload_sha256,payload_json)
+      VALUES(?,?,?,?,?)""",
+      (evidence["decision_key"], evidence["captured_at"], DECISION_EVIDENCE_SCHEMA,
+       evidence_hash, evidence_json))
+
 
 
 class PaperStore:
@@ -202,6 +332,12 @@ class PaperStore:
               technical_gate TEXT NOT NULL, ai_gate TEXT NOT NULL,
               patrimonial_gate TEXT NOT NULL, final_result TEXT NOT NULL,
               reason TEXT NOT NULL, paper_id TEXT, detail_json TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS decision_evidence_snapshots(
+              decision_key TEXT PRIMARY KEY, captured_at TEXT NOT NULL,
+              schema_version TEXT NOT NULL, payload_sha256 TEXT NOT NULL,
+              payload_json TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS idx_decision_evidence_captured
+              ON decision_evidence_snapshots(captured_at, decision_key);
             INSERT OR IGNORE INTO observer_state(id,mode,process_state,session_state,ppi_auth)
               VALUES(1,'PRODUCTION_PAPER','STOPPED','UNKNOWN','NOT_ATTEMPTED');
             """)
@@ -392,6 +528,17 @@ class PaperStore:
                 c.execute("""INSERT INTO paper_decisions VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
                           (SOURCE, STRATEGY_VERSION, key, q.observed_at, q.symbol,
                            action, str(score), reason, json.dumps(features, ensure_ascii=False)))
+                # Entry candidates receive their fuller snapshot in record_gates
+                # after their final gates are known. Every other decision is
+                # captured here with the current IOL cache as a SHADOW input.
+                # That local read cannot change the factual PAPER action.
+                action_code = str(action or "").upper()
+                if action_code not in EVIDENCE_GATE_ACTIONS:
+                    evidence = _decision_evidence_payload(
+                        q, key, "NOT_CANDIDATE", "NOT_USED", "NOT_EVALUATED",
+                        action_code, reason, None, features,
+                        action=action_code, score=score, include_iol=True)
+                    _insert_evidence_snapshot(c, evidence)
             return True
         except sqlite3.IntegrityError:
             return False
@@ -427,6 +574,8 @@ class PaperStore:
             # Nunca reescribir el fill: conservar la anomalía de forma
             # explícita para que introspección bloquee el GO.
             reason = "INVARIANTE_DE_PORTONES_INCUMPLIDA: " + str(reason)
+        evidence = _decision_evidence_payload(
+            q, decision_key, technical, ai, patrimonial, final, reason, paper_id, detail)
         with self.connect() as c:
             c.execute("""INSERT OR REPLACE INTO trade_gate_evaluations
               (evaluated_at,decision_key,symbol,technical_gate,ai_gate,
@@ -435,6 +584,10 @@ class PaperStore:
               (q.observed_at, decision_key, q.symbol, technical, ai,
                patrimonial, final, str(reason)[:1000], paper_id,
                json.dumps(detail, ensure_ascii=False, default=str)[:8000]))
+            # First capture wins. A later retry may refresh the mutable gate
+            # projection, but it must never rewrite evidence from the instant
+            # the decision was made.
+            _insert_evidence_snapshot(c, evidence)
             if contradiction:
                 c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                           (q.observed_at, SOURCE, "GATE_INVARIANT_ERROR", paper_id,
@@ -699,10 +852,28 @@ class PaperBroker:
         momentum = (short / long - 1) if long else ZERO
         spread = (q.ask / q.bid - 1) if q.bid else D("99")
         score = max(ZERO, min(D(1), D("0.5") + momentum * D(40) - spread * D(10)))
+        threshold = self.threshold(at)
+        # Frozen, normalized evidence for the entry-criteria counterfactuals.
+        # It is available for BUY and HOLD decisions alike and does not bypass
+        # the later patrimonial/risk gates required for a simulated position.
         features = {"sma3": str(short), f"sma{long_span}": str(long), "momentum": str(momentum),
                     "spread": str(spread), "samples": len(values),
                     "signal_window_minutes": self.signal_window_minutes,
-                    "paper_threshold": str(self.threshold(at))}
+                    "paper_threshold": str(threshold),
+                    "candidate": {
+                        "action": "BUY", "score": str(score),
+                        "score_threshold": str(threshold),
+                        "spread_bps": str(spread * D(10000)),
+                        "max_spread_bps": "200",
+                        "confirmation_count": len(values),
+                        "required_confirmations": self.signal_min_samples,
+                    },
+                    "hard_safety": {
+                        "operational_scope": True,
+                        "quote_identity": True,
+                        "market_admission": True,
+                        "real_orders_blocked": True,
+                    }}
         # Historical/candle features are intentionally SHADOW-only. They are
         # persisted beside the baseline decision and cannot alter BUY/HOLD.
         if os.getenv("PAPER_HISTORICAL_CANDLE_SHADOW", "ON").upper() in {"ON", "SHADOW", "TRUE", "1"}:
@@ -711,7 +882,7 @@ class PaperBroker:
                 shadow = historical_candle_shadow_rc6.collect(self.store, q, at)
                 features["historical_candle_shadow"] = shadow
                 features["decision_shadow"] = (
-                    "BUY" if D(score) + D(shadow.get("shadow_score_delta", "0")) >= self.threshold(at)
+                    "BUY" if D(score) + D(shadow.get("shadow_score_delta", "0")) >= threshold
                     else "HOLD"
                 )
             except Exception as exc:
@@ -724,7 +895,7 @@ class PaperBroker:
             return "HOLD", score, "Puntas o profundidad insuficientes", features
         if spread > D("0.02"):
             return "HOLD", score, "Spread superior al 2%", features
-        if score < self.threshold(at):
+        if score < threshold:
             return "HOLD", score, "Score paper debajo del umbral versionado", features
         # Contexto BCRA/macro: persistido sólo para candidatos BUY y sin
         # autoridad sobre la decisión. La fuente se actualiza fuera de rueda.

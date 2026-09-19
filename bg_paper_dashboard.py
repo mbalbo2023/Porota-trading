@@ -22,6 +22,7 @@ from cb_caucion_audit import allocation_history
 from ch_empirical_learning import empirical_expectancy
 from ci_operational_context import breadth_observation, sector_observation
 import rc6_counterfactual_learning as counterfactual_learning
+import rc6_decision_evidence_view as decision_evidence_view
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
 from bt_caucion_paper import validate_position, pending_proceeds
@@ -1508,6 +1509,67 @@ def _candle_archive_panel():
         (''.join(items) or "<tr><td colspan='7'>Todavía no hay barras cerradas del archivo nuevo.</td></tr>")+"</table></div>")
 
 
+
+def _decision_evidence_status(value):
+    value = str(value or "").upper()
+    css = ("s-verde" if value == "VERIFIED" else
+           "s-amarillo" if value in {"PENDING", "INSUFFICIENT_EVIDENCE"} else "s-gris")
+    return f"<span class='paper-status {css}'>{_e(value or 'INSUFFICIENT_EVIDENCE')}</span>"
+
+
+def _decision_evidence_panel():
+    """Standard dashboard only: one read-only published decision-evidence view."""
+    evidence = decision_evidence_view.read()
+    counts = evidence["counts"]
+    cards = "".join((
+        _card("Decisiones con evidencia", evidence["total_decisions"],
+              "Se muestran las últimas 10; el writer no pertenece al dashboard",
+              "green" if evidence["available"] else "gray"),
+        _card("Verificadas", counts["VERIFIED"],
+              "Inputs contemporáneos y resultado comparable", "green" if counts["VERIFIED"] else "gray"),
+        _card("En espera", counts["PENDING"],
+              "Esperar outcome no es un error ni autoriza completar datos", "yellow" if counts["PENDING"] else "gray"),
+        _card("Evidencia insuficiente", counts["INSUFFICIENT_EVIDENCE"],
+              "Se preserva el límite; nunca se reconstruye con hindsight",
+              "yellow" if counts["INSUFFICIENT_EVIDENCE"] else "green"),
+    ))
+    decision_rows = []
+    for row in evidence["rows"]:
+        profiles = "<br>".join(
+            f"<b>{_e(item['name'])}</b>: {_e(item['decision'])} · {_decision_evidence_status(item['state'])}"
+            for item in row["profiles"]
+        )
+        decision_rows.append(
+            f"<tr><td><code>{_e(row['decision_key'])}</code></td><td><b>{_e(row['symbol'])}</b></td>"
+            f"<td>{_decision_evidence_status(row['state'])}</td>"
+            f"<td>{_e(row['factual_decision'])}<br><span class='paper-muted'>{_e(row['reason'])}</span></td>"
+            f"<td>{profiles}</td><td>{_e(row['sources'])}</td><td>{_local_time(row['at'])}</td></tr>"
+        )
+    rows_html = "".join(decision_rows) or (
+        "<tr><td colspan='7'>Aún no hay evidencia por decisión publicada. Esto indica que el pipeline está en "
+        "preparación o no registró decisiones; no equivale a una decisión negativa del motor.</td></tr>"
+    )
+    aggregate = evidence["aggregate"]
+    aggregate_rows = "".join(
+        f"<tr><td>{_e(key)}</td><td>{_e(value)}</td></tr>"
+        for key, value in list(aggregate.items())[:12]
+    ) or "<tr><td colspan='2'>Sin evidencia acumulada publicada todavía.</td></tr>"
+    return (
+        "<div class='paper-card'><h2>Evidencia por decisión y perfiles SHADOW</h2>"
+        "<div class='paper-grid'>" + cards + "</div>"
+        "<div class='paper-notice'><b>Lectura solamente.</b> La decisión factual PAPER no se modifica. "
+        "Los perfiles BASELINE_CONSERVATIVE_V1, SHADOW_BALANCED_V1 y SHADOW_AGGRESSIVE_V1 se comparan sobre "
+        "los inputs publicados. <b>PENDING</b> e <b>INSUFFICIENT_EVIDENCE</b> son límites explícitos de "
+        "evidencia, no errores ni datos completados retrospectivamente.</div>"
+        "<table class='paper-table'><tr><th>Decisión</th><th>Instrumento</th><th>Evidencia</th>"
+        "<th>Factual PAPER</th><th>Perfiles</th><th>Fuentes consumidas</th><th>Momento</th></tr>" +
+        rows_html + "</table>"
+        "<h3>Aprendizaje acumulado publicado</h3><table class='paper-table'><tr><th>Métrica</th><th>Valor</th></tr>" +
+        aggregate_rows + "</table>"
+        f"<p class='paper-muted'>Fuente: {_e(evidence['source'])} · publicado: {_local_time(evidence['generated_at'])} · "
+        f"política: {_e(evidence['policy'])}</p></div>"
+    )
+
 def learning_page():
     data=snapshot(); _pnl,wins,wr=_trade_metrics(data["closed"])
     rows="".join(f"<tr class='{'card-green' if _num(p.get('net_pnl'))>0 else 'card-red' if _num(p.get('net_pnl'))<0 else 'card-gray'}'><td>{_local_time(p.get('opened_at'))}</td><td><b>{_e(p['symbol'])}</b></td><td>{_status('WIN' if _num(p.get('net_pnl'))>0 else 'LOSS' if _num(p.get('net_pnl'))<0 else p.get('status'))}</td><td class='{'positive' if _num(p.get('net_pnl'))>0 else 'negative' if _num(p.get('net_pnl'))<0 else 'neutral'}'>{_money(p.get('net_pnl'))} {_e(p.get('currency','ARS'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in data["closed"][:100]) or "<tr><td colspan='5'>Sin muestras cerradas.</td></tr>"
@@ -1568,7 +1630,7 @@ def learning_page():
     body=(f"<h1>Aprendizaje del sistema</h1><div class='paper-grid'>{cards}</div>"
           "<div class='paper-notice'><b>Aprendizaje event-driven.</b> Cada compra simulada conserva señal, economía, riesgo, liquidez, resultado y lección. "
           "Sólo un nuevo cierre PAPER produce una nueva etiqueta; por eso una etiqueta antigua sin cierres posteriores no significa pipeline detenido. "
-          "La expectativa mostrada es descriptiva y neta sobre fills PAPER cerrados; no prueba ventaja futura, no bloquea operaciones y no cambia parámetros automáticamente.</div>" + counterfactual_panel
+          "La expectativa mostrada es descriptiva y neta sobre fills PAPER cerrados; no prueba ventaja futura, no bloquea operaciones y no cambia parámetros automáticamente.</div>" + _decision_evidence_panel() + counterfactual_panel
           + "<div class='paper-card'><h2>Expectativa empírica por moneda — últimas 100 cerradas</h2>"
           "<table class='paper-table'><tr><th>Moneda</th><th>Muestras</th><th>Win rate</th><th>Ganancia media</th>"
           "<th>Pérdida media</th><th>Expectativa por operación</th><th>Profit factor</th><th>Estado muestral</th></tr>"
