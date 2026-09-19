@@ -209,6 +209,49 @@ Luego, post-cierre:
 
 Mientras esto no exista para un caso, el Site debe mostrar `INSUFFICIENT_EVIDENCE` y nunca inventar la respuesta.
 
+## Segunda opinión obligatoria antes de implementar contrafácticos
+La propuesta anterior es una **sugerencia técnica**, no una orden de implementación y no debe darse por aprobada todavía.
+
+Existe otro workstream/chat con desarrollos propios sobre Porota. Antes de crear cualquier collector, ledger, tabla, writer, scheduler, ID adicional o integración contrafáctica, se debe pedir a ese otro workstream una **segunda opinión técnica independiente** y compararla contra lo que ya está construyendo.
+
+La revisión del otro workstream debe responder, como mínimo:
+- qué componentes equivalentes ya existen;
+- qué partes de esta propuesta ya están cubiertas total o parcialmente;
+- qué podría duplicar collectors, writers, tablas, IDs, timers/schedulers o pipelines;
+- qué podría generar conflictos de concurrencia o doble escritura;
+- qué puede reutilizarse de desarrollos existentes;
+- qué conviene integrar sobre estructuras actuales en vez de crear otro subsistema;
+- qué partes simplificaría, descartaría o reformularía;
+- qué riesgos de calidad de evidencia, trazabilidad o contaminación retrospectiva observa;
+- qué arquitectura recomienda después de comparar ambas líneas de trabajo.
+
+### Restricción absoluta para esa segunda opinión
+El otro workstream **NO debe tocar, modificar, redeployar ni alterar el Site privado 8766 ni su interfaz**.
+
+El Site privado, Decision Cockpit, sus tabs, render, UX y acceso localhost/SSH continúan siendo responsabilidad de ESTE workstream.
+
+El otro chat puede:
+- leer el checkpoint;
+- revisar la propuesta de evidencia contrafáctica;
+- compararla contra sus propios desarrollos;
+- proponer cómo integrarla o reutilizar componentes.
+
+El otro chat NO debe:
+- modificar `rc6_private_site_8766.py`;
+- modificar `porota-private-snapshot.service`;
+- cambiar el puerto 8766;
+- cambiar la interfaz del Site;
+- desplegar cambios de Site;
+- implementar todavía la propuesta contrafáctica sin reconciliación entre ambos workstreams.
+
+### Estado de decisión
+Hasta recibir y revisar esa segunda opinión:
+- ledger contrafáctico nuevo: PENDIENTE / NO APROBADO;
+- nuevos writers/tablas/timers para contrafácticos: NO CREAR;
+- Site 8766: NO TOCAR DESDE EL OTRO WORKSTREAM;
+- propuesta conceptual: conservar para evaluación;
+- siguiente paso: comparar arquitecturas y decidir qué se suma a lo que YA existe sin duplicar ni romper desarrollos paralelos.
+
 ## Archivos del PR
 - `rc6_live_decision_cockpit.py`
 - `rc6_private_site_8766.py`
@@ -231,4 +274,5 @@ Mientras esto no exista para un caso, el Site debe mostrar `INSUFFICIENT_EVIDENC
 🟢 NO interferencia con runtime canónico: verificada
 🟡 LIVE fresco: no aplica fuera de rueda; se validará automáticamente en la próxima rueda
 🟡 preopen 18/09: no recuperable; no inventar
-🟡 CONTRAFÁCTICOS: infraestructura visual existente, pero faltan ledger + captura de evidencia en tiempo de decisión + replay determinístico para pasar de INSUFFICIENT_EVIDENCE a VERIFIED
+🟡 CONTRAFÁCTICOS: propuesta conceptual registrada; implementación suspendida hasta segunda opinión cross-workstream
+🟡 SEGUNDA OPINIÓN: pendiente; debe revisar solapamientos/reutilización sin tocar el Site
