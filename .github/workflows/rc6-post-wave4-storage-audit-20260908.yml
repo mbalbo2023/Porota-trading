@@ -71,15 +71,16 @@ jobs:
           echo '=== RAW_EVIDENCE ==='
           sudo -n docker exec porota_production_observer sh -lc 'for p in /app/data/evidence /app/data/paper_v17/evidence; do if [ -e "$p" ]; then B=$(du -sb "$p" | awk "{print \$1}"); N=$(find "$p" -type f 2>/dev/null | wc -l); echo "EVIDENCE_PATH=$p|BYTES=$B|FILES=$N"; fi; done'
           echo '=== BACKUPS ==='
+          sudo -n docker exec porota_production_observer sh -lc 'find /app/data/backups /app/data/paper_v17/artifacts/observer_v17.db/backups -maxdepth 2 -type f -printf "%s|%TY-%Tm-%TdT%TH:%TM:%TS|%p\\n" 2>/dev/null | sort -nr | head -n 100' || true
           sudo -n docker exec porota_production_observer sh -lc 'find /app/data -type d -iname "*backup*" -print 2>/dev/null | while read p; do B=$(du -sb "$p" 2>/dev/null | awk "{print \$1}"); N=$(find "$p" -type f 2>/dev/null | wc -l); echo "BACKUP_PATH=$p|BYTES=${B:-0}|FILES=$N"; done'
           echo '=== TOP_DATA_DIRS ==='
           sudo -n docker exec porota_production_observer sh -lc 'du -x -B1 -d 2 /app/data 2>/dev/null | sort -nr | head -n 15 | sed "s#^[[:space:]]*#DATA_DIR=#"'
           echo '=== HOST_LAYOUT ==='
-          sudo -n du -x -B1 -d 1 / 2>/dev/null | sort -nr | head -n 20 | sed 's#^[[:space:]]*#HOST_DIR=#'
+          sudo -n du -x -B1 -d 1 / 2>/dev/null | sort -nr | head -n 20 | sed 's#^[[:space:]]*#HOST_DIR=#' || true
           echo '=== HOST_BACKUP_FILES ==='
           for root in /opt/porota-trading /var/backups /root /srv; do
             if [ -e "$root" ]; then
-              sudo -n find "$root" -xdev -type f \( -iname '*backup*' -o -iname '*bak*' -o -iname '*.tar' -o -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.zip' -o -iname '*.dump' \) -printf 'BACKUP_FILE=%s|%TY-%Tm-%TdT%TH:%TM:%TS|%p\\n' 2>/dev/null | sort -nr | head -n 100
+              sudo -n find "$root" -xdev -type f \( -iname '*backup*' -o -iname '*bak*' -o -iname '*.tar' -o -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.zip' -o -iname '*.dump' \) -printf 'BACKUP_FILE=%s|%TY-%Tm-%TdT%TH:%TM:%TS|%p\n' 2>/dev/null | sort -nr | head -n 100 || true
             fi
           done
           echo '=== CONTAINER_MOUNTS ==='
