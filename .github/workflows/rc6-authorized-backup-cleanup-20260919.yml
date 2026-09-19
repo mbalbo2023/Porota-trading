@@ -40,7 +40,7 @@ jobs:
           test "$(sudo -n docker inspect -f '{{.State.Running}}' porota_production_dashboard)" = true
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
-          p='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          p='/app/data/paper_v17/observer_v17.db'
           c=sqlite3.connect('file:'+p+'?mode=ro',uri=True)
           c.execute('pragma query_only=on')
           assert c.execute('pragma quick_check').fetchone()[0]=='ok'
@@ -137,7 +137,7 @@ jobs:
           PY
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
-          p='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          p='/app/data/paper_v17/observer_v17.db'
           c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
           assert c.execute('pragma quick_check').fetchone()[0]=='ok'
           mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
