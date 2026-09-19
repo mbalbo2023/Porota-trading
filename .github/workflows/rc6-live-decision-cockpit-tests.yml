@@ -1,6 +1,16 @@
 name: RC6 live Decision Cockpit tests
 
 on:
+  push:
+    branches:
+      - "feat/rc6-live-decision-cockpit-20260919"
+    paths:
+      - "rc6_live_decision_cockpit.py"
+      - "rc6_private_site_8766.py"
+      - "systemd/porota-live-decision-cockpit-rc6.service"
+      - "systemd/porota-live-decision-cockpit-rc6.timer"
+      - "tests/test_rc6_live_decision_cockpit.py"
+      - ".github/workflows/rc6-live-decision-cockpit-tests.yml"
   pull_request:
     paths:
       - "rc6_live_decision_cockpit.py"
