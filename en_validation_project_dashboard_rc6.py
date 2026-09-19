@@ -32,21 +32,24 @@ def _claim(value):
 def _milestone_card(milestone, current):
     current = dict(current or {})
     pct = current.get("compliance_pct")
-    implementation = {"IMPLEMENTED": "IMPLEMENTADO", "NOT_IMPLEMENTED": "NO IMPLEMENTADO", "UNKNOWN": "IMPLEMENTACIÓN SIN AUDITAR"}.get(str(current.get("implementation_status")).upper(), "IMPLEMENTACIÓN SIN AUDITAR")
+    implementation = {"IMPLEMENTED": "IMPLEMENTADO", "IN_PROGRESS": "EN PROGRESO", "NOT_IMPLEMENTED": "NO IMPLEMENTADO", "UNKNOWN": "IMPLEMENTACIÓN SIN AUDITAR"}.get(str(current.get("implementation_status")).upper(), "IMPLEMENTACIÓN SIN AUDITAR")
+    work_status = {"COMPLETED": "CUMPLIDO", "IN_PROGRESS": "EN PROGRESO", "PENDING": "PENDIENTE", "BLOCKED": "BLOQUEADO", "UNKNOWN": "SIN CLASIFICAR"}.get(str(current.get("work_status")).upper(), "SIN CLASIFICAR")
+    evidence_status = {"CURRENT": "ACTUAL", "HISTORICAL": "HISTÓRICA", "STALE": "VENCIDA", "PENDING": "PENDIENTE", "UNAVAILABLE": "NO DISPONIBLE", "POLICY_BLOCKED": "BLOQUEADA POR POLÍTICA", "UNKNOWN": "SIN CLASIFICAR"}.get(str(current.get("evidence_status")).upper(), "SIN CLASIFICAR")
     criteria = "".join(f"<li>{bg._e(item)}</li>" for item in milestone.exit_criteria)
     return (
         "<details class='paper-trade'><summary>"
         f"{bg._e(milestone.code)} · {bg._e(milestone.name)} · {_claim(current.get('claim_status'))} · {_state(current.get('state'))} · {'s/d' if pct is None else f'{int(pct)}%'}"
         "</summary><div class='trade-body'>"
-        f"<p><b>Estado de implementación:</b> {bg._e(implementation)}</p>"
-        f"<p><b>Estado de evidencia:</b> {_claim(current.get('claim_status'))}</p>"
+        f"<p><b>Estado de implementación:</b> {bg._e(implementation)} · <b>Trabajo:</b> {bg._e(work_status)}</p>"
+        f"<p><b>Estado de evidencia:</b> {_claim(current.get('claim_status'))} · {bg._e(evidence_status)}</p>"
         f"<p><b>Objetivo:</b> {bg._e(current.get('objective') or milestone.goal)}</p>"
         f"<p><b>Evidencia esperada:</b> {bg._e(current.get('expected_evidence') or ', '.join(milestone.exit_criteria))}</p>"
         f"<p><b>Evidencia observada:</b> {bg._e(current.get('observed_evidence') or 'Sin proyección disponible todavía.')}</p>"
         f"<p><b>Brecha:</b> {bg._e(current.get('deviation') or 'Sin dato')}</p>"
         f"<p><b>Blocker:</b> {bg._e(current.get('blocker') or 'Sin dato')}</p>"
         f"<p><b>Próxima acción:</b> {bg._e(current.get('next_action') or 'Esperar evaluación del worker')}</p>"
-        f"<p class='paper-muted'>Evaluado: {bg._e(current.get('evaluated_at') or 'pendiente')}</p>"
+        f"<p><b>Responsable:</b> {bg._e(current.get('owner') or 'POROTA')} · <b>Referencia:</b> {bg._e(current.get('evidence_ref') or 'pendiente')}</p>"
+        f"<p class='paper-muted'>Evidencia: {bg._e(current.get('evidence_at') or current.get('evaluated_at') or 'pendiente')} · Evaluado: {bg._e(current.get('evaluated_at') or 'pendiente')}</p>"
         "<h3>Criterios de salida</h3><ul>" + criteria + "</ul></div></details>"
     )
 
