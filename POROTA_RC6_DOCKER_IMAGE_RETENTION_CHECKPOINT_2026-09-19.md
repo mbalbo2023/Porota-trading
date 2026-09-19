@@ -61,22 +61,17 @@ PPI Watch no fue modificado ni reiniciado. El Cockpit privado/puerto 8766 no fue
 
 Se creó `porota-docker-image-retention` en `.agents/skills/porota-docker-image-retention/SKILL.md` y se guardó una copia persistente en Library como `SKILL.md`.
 
-- **PR documental:** [#113](https://github.com/mbalbo2023/Porota-trading/pull/113), rama `docs/porota-docker-image-retention-skill-20260919`, destino `main`; es exclusivamente documental y no dispara el deploy canónico.
-- La primera attestation falló porque faltaban los campos obligatorios del checkpoint en el cuerpo de la PR. Se debe completar el cuerpo con los datos de este checkpoint, verificar el run de attestation y después integrar la PR para que el skill quede en `main`.
+- **PR documental:** [#113](https://github.com/mbalbo2023/Porota-trading/pull/113), integrada en `main` mediante el commit `656fe0dc778b4ece098accbd01dafa483908ba9c`; es exclusivamente documental y no dispara el deploy canónico.
+- CI documental [35464661918](https://github.com/mbalbo2023/Porota-trading/actions/runs/35464661918) y attestation final [35464692299](https://github.com/mbalbo2023/Porota-trading/actions/runs/35464692299): **SUCCESS**. Los intentos previos de attestation fallaron por campos faltantes; se completó la attestation y la ejecución final aprobó.
 - SHA del commit con el skill antes de añadir este checkpoint: `7d82615497a8b46f55b384a0e332f7fbe91164bc`.
 
 ## Pendientes exactos
 
 - 🟢 Workflow canónico actualizado e integrado.
 - 🟢 Limpieza ejecutada y verificada; imagen estable y seguridad PAPER comprobadas.
-- 🟡 Integrar PR documental #113 después de corregir su attestation con:
-  - `Checkpoint ID: POROTA-RC6-DOCKER-RETENTION-20260919-01`
-  - `Continuity checkpoint path: POROTA_RC6_DOCKER_IMAGE_RETENTION_CHECKPOINT_2026-09-19.md`
-  - `Checkpoint commit SHA: <SHA del commit que agrega este archivo>`
-  - `RC6 baseline SHA: 21ad724a403e412d5774e574e33bdee01fcac348`
-  - `Safety invariants: PRODUCTION_PAPER, REAL_ORDERS_SENT=0, CASH_SWEEP_ORDER_ROUTING_ALLOWED=False, fail-closed`
+- 🟢 PR documental #113 integrada; skill y checkpoint ya están en `main`. Attestation final y CI documental aprobaron.
 - ⚪ Obtener `df -PB1` posterior en la siguiente auditoría read-only para fijar bytes exactos; no es un stopper y no repetir limpieza Docker para obtenerlo.
 
 ## Instrucción para retomar
 
-Leer este checkpoint y el skill `porota-docker-image-retention`. Verificar el estado actual de la PR #113 y los runs posteriores. No repetir la limpieza completada. Mantener las imágenes de contenedores en uso y seguir usando exclusivamente el workflow canónico para futuros deploys RC6.
+Leer este checkpoint y el skill `.agents/skills/porota-docker-image-retention/SKILL.md`. La PR #113 está integrada. No repetir la limpieza completada. Mantener las imágenes de contenedores en uso y seguir usando exclusivamente el workflow canónico para futuros deploys RC6.
