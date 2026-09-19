@@ -2256,7 +2256,7 @@ def _trading_motor_summary():
         f"<p><b>{open_count}</b> abiertas · <b>{closed_count}</b> cerradas hoy. Sólo acciones y CEDEARs.</p>"
         "<table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Familia</th>"
         "<th>Estado</th><th>Salida</th><th>PnL</th></tr>" + position_rows + "</table>" + more_positions
-        "<h3>Decisiones de hoy</h3><table class='paper-table'><tr><th>Hora</th>"
+        + "<h3>Decisiones de hoy</h3><table class='paper-table'><tr><th>Hora</th>"
         "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>" + more_gates + gdelt_html + macro_html +
         "<p class='paper-muted'>El detalle forense completo sigue disponible en Motor de trading; "
         "esta tabla evita cargar masivamente operaciones, fills o históricos al abrir Trading.</p></div>"
