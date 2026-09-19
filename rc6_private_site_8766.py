@@ -184,6 +184,7 @@ def render() -> str:
 
     top = live.get("top_opportunities") if isinstance(live.get("top_opportunities"), list) else []
     why = live.get("why_not_traded") if isinstance(live.get("why_not_traded"), list) else []
+    trace = live.get("traceability") if isinstance(live.get("traceability"), list) else []
     iol = live.get("iol") if isinstance(live.get("iol"), dict) else {}
     risk = live.get("risk") if isinstance(live.get("risk"), dict) else {}
     changes = live.get("changes_from_preopen") if isinstance(live.get("changes_from_preopen"), dict) else {}
@@ -254,8 +255,9 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 {stat("POSICIONES ABIERTAS",risk.get("open_positions","N/D"),"PAPER")}
 {stat("RÉGIMEN",live.get("market_regime","N/D"),"Sólo si lo declara runtime")}
 </div>
-<div class="card section"><h2>Top oportunidades actuales</h2><div class="tablewrap"><table><thead><tr><th>Símbolo</th><th>Acción</th><th>Score motor</th><th>Motivo</th><th>Hora</th></tr></thead><tbody>{opportunity_rows(top)}</tbody></table></div></div>
+<div class="card section"><h2>Top oportunidades actuales</h2><div class="tablewrap"><table><thead><tr><th>Símbolo</th><th>Acción</th><th>Score motor</th><th>Motivo</th><th>Hora</th></tr></thead><tbody>{opportunity_rows(top)}</tbody></table></div><p class="muted">El score es el que publica el motor. Si el runtime no expone componentes internos, no se fabrica una descomposición.</p></div>
 <div class="card section"><h2>Por qué NO operó</h2><div class="tablewrap"><table><thead><tr><th>Símbolo</th><th>Acción</th><th>Gate/motivo</th><th>Hora</th></tr></thead><tbody>{why_rows(why)}</tbody></table></div></div>
+<div class="card section"><h2>Trazabilidad · últimas 10 decisiones</h2><div class="tablewrap"><table><thead><tr><th>Símbolo</th><th>Acción</th><th>Score motor</th><th>Motivo</th><th>Hora</th></tr></thead><tbody>{opportunity_rows(trace)}</tbody></table></div></div>
 <div class="grid section">
 {stat("IOL OBSERVADO",iol.get("universe_observed","N/D"),"universo cacheado")}
 {stat("IOL FRESCO READY",iol.get("fresh_ready","N/D"),"TTL live")}
@@ -263,6 +265,7 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 {stat("INFLUENCIA IOL",iol.get("influence_on_live_decision","N/D"),iol.get("decision_effect","OBSERVE_ONLY"))}
 </div>
 <div class="card section"><h2>Qué cambió desde pre-rueda</h2><ul>{change_html}</ul></div>
+<div class="card section"><h2>Contrafáctico LIVE</h2><div class="notice warnbox"><b>INSUFFICIENT_EVIDENCE</b><br>Durante la rueda no se reinterpreta una decisión como si hubiese usado otra fuente o regla. El contrafáctico se publica post-cierre sólo con evidencia comparable.</div></div>
 <div class="grid section">
 {stat("NOTIONAL EST.",money(risk.get("estimated_notional_ars")),"N/D si faltan precio/cantidad")}
 {stat("PNL NO REALIZADO",money(risk.get("unrealized_pnl_ars")),"N/D si runtime no lo publica")}
@@ -285,6 +288,8 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 <section id="evi" class="panel"><div class="grid">
 {stat("PREOPEN",fmt_dt(pre.get("generated_at")),"preservado" if pre else "no disponible")}
 {stat("LIVE",fmt_dt(live.get("generated_at")),"fresco" if b["live_fresh"] else "no fresco / fuera de rueda")}
+{stat("IOL CACHE",fmt_dt(iol.get("refreshed_at")),"SHADOW / OBSERVE_ONLY")}
+{stat("VALIDACIÓN",fmt_dt((live.get("validation") or {}).get("generated_at") if isinstance(live.get("validation"),dict) else None),"read-only")}
 {stat("POSTCLOSE",fmt_dt(post.get("generated_at")),"preservado" if post else "no disponible")}
 {stat("SERVICIO","GREEN","127.0.0.1:8766")}
 </div><div class="card section"><h2>Fuentes</h2>
