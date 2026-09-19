@@ -252,12 +252,14 @@ jobs:
           set -e
           echo "$SNAPSHOT_OUTPUT"
           test "$SNAPSHOT_RC" -eq 0 -o "$SNAPSHOT_RC" -eq 2
-          grep -Eq '"status": "(VERIFIED|INSUFFICIENT_EVIDENCE)"' <<< "$SNAPSHOT_OUTPUT"
+          # Fuera de la ventana postcierre, NOT_DUE prueba que el guard de horario
+          # está activo. No se fuerza ni inventa un snapshot postcierre.
+          grep -Eq '"status": "(VERIFIED|INSUFFICIENT_EVIDENCE|NOT_DUE)"' <<< "$SNAPSHOT_OUTPUT"
           REVIEW_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 15 python /app/rc6_postclose_review.py 2>&1)"
           REVIEW_RC=$?
           echo "$REVIEW_OUTPUT"
           test "$REVIEW_RC" -eq 0 -o "$REVIEW_RC" -eq 2
-          grep -Eq '"status": "(VERIFIED|INSUFFICIENT_EVIDENCE)"' <<< "$REVIEW_OUTPUT"
+          grep -Eq '"status": "(VERIFIED|INSUFFICIENT_EVIDENCE|NOT_DUE)"' <<< "$REVIEW_OUTPUT"
           for unit in porota-snapshot-preopen-rc6.timer porota-snapshot-postclose-rc6.timer; do
             test "$(systemctl is-enabled "$unit")" = enabled
             test "$(systemctl is-active "$unit")" = active
