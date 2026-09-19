@@ -32,7 +32,7 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def _operational_universe() -> tuple[list[str], str]:
+def _operational_universe_with_source() -> tuple[list[str], str]:
     configured = os.getenv("POROTA_IOL_SHADOW_UNIVERSE", "").strip()
     if configured:
         values = sorted({item.strip().upper() for item in configured.split(",") if item.strip()})
@@ -53,6 +53,11 @@ def _operational_universe() -> tuple[list[str], str]:
     except sqlite3.Error:
         pass
     return list(DEFAULT_UNIVERSE), "EMERGENCY_FALLBACK_8"
+
+
+def _operational_universe() -> list[str]:
+    """Compatibility API: callers needing provenance use the explicit helper."""
+    return _operational_universe_with_source()[0]
 
 
 def _fingerprint(universe: list[str]) -> str:
@@ -147,7 +152,7 @@ def main() -> int:
     if not is_operational_market_window():
         print("IOL_SHADOW_COLLECTION=NOT_DUE_OUTSIDE_MARKET")
         return 0
-    universe, universe_source = _operational_universe()
+    universe, universe_source = _operational_universe_with_source()
     fingerprint = _fingerprint(universe)
     batch, rotation_start, prior_cycle = _rotation(universe, fingerprint)
     primary, primary_contract = _primary_snapshot()
