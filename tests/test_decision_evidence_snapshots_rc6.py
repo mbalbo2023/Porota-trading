@@ -2,6 +2,7 @@ import json
 from decimal import Decimal
 
 from be_paper_engine import PaperStore, Quote
+import iol_shadow_decision_input_rc6 as iol_adapter
 
 
 def quote():
@@ -15,7 +16,11 @@ def quote():
     )
 
 
-def test_gate_evidence_is_contemporaneous_redacted_and_immutable(tmp_path):
+def test_gate_evidence_is_contemporaneous_redacted_and_immutable(tmp_path, monkeypatch):
+    monkeypatch.setattr(iol_adapter, "read_for_decision", lambda symbol: {
+        "source": "IOL_MCP", "symbol": symbol, "state": "READY",
+        "freshness": "FRESH", "decision_effect": "NO_FACTUAL_BINDING",
+    })
     store = PaperStore(str(tmp_path / "paper.db"))
     first = {
         "score": "0.70",
@@ -37,6 +42,8 @@ def test_gate_evidence_is_contemporaneous_redacted_and_immutable(tmp_path):
     assert len(row["payload_sha256"]) == 64
     assert payload["quote_used"]["ask"] == "101"
     assert payload["inputs_used"]["api_token"] == "[REDACTED]"
+    assert payload["inputs_used"]["iol"]["state"] == "READY"
+    assert payload["inputs_used"]["iol"]["decision_effect"] == "NO_FACTUAL_BINDING"
     assert payload["runtime"]["real_money_authorized"] is False
 
     # The mutable gate projection may be refreshed on retry, but its first
@@ -61,3 +68,23 @@ def test_evidence_snapshot_does_not_need_a_paper_position(tmp_path):
     with store.connect() as c:
         count = c.execute("SELECT COUNT(*) FROM decision_evidence_snapshots").fetchone()[0]
     assert count == 1
+
+
+
+def test_iol_adapter_failure_is_captured_as_unavailable(tmp_path, monkeypatch):
+    def unavailable(_symbol):
+        raise OSError("cache unreadable")
+
+    monkeypatch.setattr(iol_adapter, "read_for_decision", unavailable)
+    store = PaperStore(str(tmp_path / "paper.db"))
+    store.record_gates(
+        quote(), "decision-iol-failure", "APPROVE", "NOT_USED", "NOT_EVALUATED",
+        "BLOCKED", "fixture", detail={"samples": 8},
+    )
+    with store.connect() as c:
+        payload = json.loads(c.execute(
+            "SELECT payload_json FROM decision_evidence_snapshots "
+            "WHERE decision_key='decision-iol-failure'"
+        ).fetchone()["payload_json"])
+    assert payload["inputs_used"]["iol"]["state"] == "UNAVAILABLE"
+    assert payload["inputs_used"]["iol"]["reason"] == "DECISION_INPUT_UNAVAILABLE:OSError"
