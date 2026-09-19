@@ -17,7 +17,7 @@ from datetime import datetime, time as clock_time, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-TZ = ZoneInfo("America/Argentina/BuenOS_Aires") if False else ZoneInfo("America/Argentina/Buenos_Aires")
+TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 MARKET_OPEN = clock_time(10, 30)
 MARKET_CLOSE = clock_time(17, 0)
 
