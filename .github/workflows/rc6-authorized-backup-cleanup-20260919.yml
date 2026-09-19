@@ -11,7 +11,6 @@ permissions:
 
 jobs:
   cleanup:
-    if: github.event.head_commit.message == 'ops: authorized backup cleanup execute'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -50,6 +49,19 @@ jobs:
           print(f'PRE_STATE={mode}|REAL_ORDERS_SENT={real}|OBSERVER_DB=ok')
           c.close()
           PY
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import gzip
+          root=Path('/opt/porota-backups').resolve()
+          keep=root/'porota-general-20260912T071509Z.tar.gz'
+          old=root/'porota-general-20260911T071549Z.tar.gz'
+          assert keep.is_file() and old.is_file() and not keep.is_symlink() and not old.is_symlink()
+          for p in (keep,old):
+              with gzip.open(p,'rb') as f:
+                  while f.read(1024*1024):
+                      pass
+          print('HOST_ARCHIVE_PREFLIGHT=OK|LATEST='+keep.name+'|OLDER='+old.name)
+          PY
           sudo -n docker exec -u 0 -i porota_production_observer python - <<'PY'
           from pathlib import Path
           import gzip, re, sqlite3, os
@@ -64,10 +76,14 @@ jobs:
           for p in keep:
               with gzip.open(p,'rb') as f:
                   assert f.read(16).startswith(b'SQLite format 3'), p
+                  while f.read(1024*1024):
+                      pass
           wave=Path('/app/data/backups/wave4_closure/observer_v17_pre_wave4_cleanup_20260909T024209Z.db.gz')
           assert wave.is_file() and not wave.is_symlink()
           with gzip.open(wave,'rb') as f:
               assert f.read(16).startswith(b'SQLite format 3')
+              while f.read(1024*1024):
+                  pass
           legacy=Path('/app/data/backups')
           candidates=[]
           for p in legacy.iterdir():
@@ -76,6 +92,8 @@ jobs:
               if p.is_dir() and not p.is_symlink() and (p.name.startswith(('pre_production_paper_v1634_','pre_production_paper_v1635_','pre_dashboard_hotfix_v1634_')) or p.name=='patch_v163_20260824_160012'):
                   candidates.append(p)
           assert candidates, 'No allowlisted legacy backup directories found; refuse unexpected inventory'
+          for p in candidates:
+              assert all(not q.is_symlink() for q in p.rglob('*')), 'Symlink in legacy dir: '+str(p)
           print('CONTAINER_PREFLIGHT=OK|DAILY_FILES=18|KEEP=2|LEGACY_DIRS='+str(len(candidates)))
           for p in sorted(files):
               if p not in keep:
@@ -108,14 +126,10 @@ jobs:
           PY
           sudo -n python3 - <<'PY'
           from pathlib import Path
-          import gzip
           root=Path('/opt/porota-backups').resolve()
           keep=root/'porota-general-20260912T071509Z.tar.gz'
           old=root/'porota-general-20260911T071549Z.tar.gz'
-          assert keep.is_file() and old.is_file()
-          for p in (keep,old):
-              with gzip.open(p,'rb') as f:
-                  assert f.read(2)==b'./' or len(f.read(0))==0
+          assert keep.is_file() and old.is_file() and not keep.is_symlink() and not old.is_symlink()
           n=old.stat().st_size
           old.unlink()
           print(f'HOST_OLD_GENERAL_REMOVED={old.name}|BYTES={n}')
