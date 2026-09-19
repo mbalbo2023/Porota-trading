@@ -58,8 +58,13 @@ def _progress(data: dict[str, Any]) -> dict[str, Any]:
     if scheduled_n <= 0:
         return {"state": INSUFFICIENT_EVIDENCE, "label": "Universo objetivo inválido"}
     pct = min(100, max(0, round(completed_n * 100 / scheduled_n)))
-    return {"state": "COMPLETE" if completed_n >= scheduled_n else "IN_PROGRESS",
-            "label": f"{completed_n}/{scheduled_n} instrumentos · {pct}%"}
+    source = _text(value.get("universe_source"), UNKNOWN)
+    fallback = source == "EMERGENCY_FALLBACK_8"
+    state = "DEGRADED" if fallback else ("COMPLETE" if completed_n >= scheduled_n else "IN_PROGRESS")
+    label = f"{completed_n}/{scheduled_n} instrumentos · {pct}% · fuente: {source}"
+    if fallback:
+        label += " · cobertura degradada: fallback de 8"
+    return {"state": state, "label": label}
 
 
 def _row_quality(row: dict[str, Any]) -> tuple[str, str]:
@@ -125,10 +130,12 @@ def render() -> str:
         else ("Collector pendiente: métricas MCP aún no publicadas." if not rows
               else f"Último lote: {_number(_metric(data, 'last_batch_size') or _metric(data, 'batch_symbols'))} · cache: {len(rows)} instrumentos")
     )
+    primary_contract = data.get("primary_comparison_contract") if isinstance(data.get("primary_comparison_contract"), dict) else {}
+    primary_state = _text(primary_contract.get("state"), UNKNOWN).upper()
     cache_note = (
         "No hay cache IOL válida. La ausencia de IOL no bloquea ni degrada PAPER."
         if state in {"UNAVAILABLE", UNKNOWN} else
-        "Lectura local cacheada: esta página no consulta IOL ni PPI."
+        "Lectura local cacheada: esta página no consulta IOL ni PPI. La cobertura corresponde al ciclo activo."
     )
     cards = "".join((
         bg._card("Estado IOL", state, cache_note, _card_state(state)),
@@ -146,8 +153,8 @@ def render() -> str:
                  "IOL amplía el contexto del universo ACCIONES/CEDEARs; no crea ni descarta señales.", _card_state(progress["state"])),
         bg._card("Datos frescos IOL", f"{fresh_rows}/{len(rows)}",
                  "Últimos precios utilizables como contraste informativo, según su timestamp cacheado.", "green" if fresh_rows else "yellow"),
-        bg._card("Contraste con fuente primaria", f"{aligned} coinciden · {divergent} difieren",
-                 "Una divergencia se muestra para revisión; jamás cambia la decisión PAPER.", "yellow" if divergent or incomplete else "green"),
+        bg._card("Contraste con fuente primaria", f"{aligned} coinciden · {divergent} difieren · contrato {primary_state}",
+                 "Sólo se compara con un cache primario con fuente, mercado y timestamp verificables. Una divergencia jamás cambia PAPER.", "yellow" if divergent or incomplete or primary_state != "READY" else "green"),
         bg._card("Efecto en el motor", "INFORMATIVO",
                  "Aporta contexto, calidad y alertas de revisión. Autoridad decisoria: PPI/PAPER.", "green"),
     ))
@@ -190,7 +197,7 @@ def render() -> str:
         "<th>Especie</th><th>Mercado</th><th>Estado</th><th>Último IOL</th>"
         "<th>Freshness</th><th>Calidad</th><th>PPI/IOL</th><th>Qué habría pasado</th>"
         "</tr></thead><tbody>" + rows_html + "</tbody></table></div>"
-        f"<p class='paper-muted'>Se muestran los 10 instrumentos más recientes de un cache acumulado de {len(rows)}. “Qué habría pasado” sólo se muestra como VERIFIED cuando existe el candidato, "
+        f"<p class='paper-muted'>Se muestran los 10 instrumentos más recientes de un cache de {len(rows)} filas; la cobertura se calcula sobre el ciclo activo, no sobre filas antiguas. “Qué habría pasado” sólo se muestra como VERIFIED cuando existe el candidato, "
         "la decisión PAPER original y evidencia temporal comparable. En cualquier otro caso figura "
         "INSUFFICIENT_EVIDENCE. Es explicación posterior; jamás reescribe la decisión histórica ni ejecuta acciones.</p>"
         "</section>"
