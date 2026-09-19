@@ -49,6 +49,16 @@ def _latched_rows(previous):
 
 
 def _freshness_pulse() -> dict:
+    """Prefer the explicit pre-open evidence snapshot; never trigger ingestion."""
+    root = Path(os.getenv("POROTA_VALIDATION_ROOT", "/app/data/validation"))
+    try:
+        audit = json.loads((root / "preopen_freshness_rc6.json").read_text(encoding="utf-8"))
+        metrics = audit.get("metrics") if isinstance(audit.get("metrics"), dict) else {}
+        if audit.get("state") and metrics:
+            return dict(metrics, available=bool(metrics.get("available")), preopen_state=audit.get("state"),
+                        expected_session_date=audit.get("expected_session_date"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        pass
     db_path = os.getenv("POROTA_PAPER_DB", "/app/data/paper_v17/observer_v17.db")
     try:
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
@@ -90,7 +100,7 @@ def _apply_daily_operational_audit(rows: dict[str, dict]) -> dict[str, dict]:
             "compliance_pct": min(100, pct), "claim_status": "VERIFIED_CURRENT",
             "implementation_status": "IMPLEMENTED", "work_status": "IN_PROGRESS",
             "evidence_status": "CURRENT",
-            "observed_evidence": f"Pulso de freshness de sólo lectura: {fresh}/{target} instrumentos frescos; stale >=90 barras: {stale}; fecha base store={freshness.get('store_latest_date') or 'UNKNOWN'}.",
+            "observed_evidence": f"Pulso de freshness de sólo lectura: {fresh}/{target} instrumentos frescos; stale >=90 barras: {stale}; sesión esperada={freshness.get('expected_session_date') or freshness.get('store_latest_date') or 'UNKNOWN'}.",
             "deviation": "La frescura se mide por instrumento y no se infiere como cobertura faltante.",
             "blocker": "Ninguno" if fresh == target and target else "Publicar auditoría pre-rueda contra la última sesión esperada.",
             "next_action": "Auditoría pre-rueda de freshness, sin catch-up automático ni escrituras históricas.",
