@@ -1,0 +1,140 @@
+name: RC6 Authorized Backup Retention Cleanup 2026-09-19
+
+on:
+  push:
+    branches: [audit/rc6-post-wave4-storage-20260908]
+    paths:
+      - '.github/workflows/rc6-authorized-backup-cleanup-20260919.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    if: github.event.head_commit.message == 'ops: authorized backup cleanup execute'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\\n' "$SSH_KEY" > "$HOME/.ssh/porota_cleanup"
+          chmod 600 "$HOME/.ssh/porota_cleanup"
+          printf '%s\\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Validate, delete allowlisted old backups, and verify
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_cleanup" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "CLEANUP_UTC=$(date -u +%FT%TZ)"
+          test "$(sudo -n docker inspect -f '{{.State.Running}}' porota_production_observer)" = true
+          test "$(sudo -n docker inspect -f '{{.State.Running}}' porota_production_dashboard)" = true
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True)
+          c.execute('pragma query_only=on')
+          assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          assert mode=='PRODUCTION_PAPER' and real==0, (mode,real)
+          print(f'PRE_STATE={mode}|REAL_ORDERS_SENT={real}|OBSERVER_DB=ok')
+          c.close()
+          PY
+          sudo -n docker exec -u 0 -i porota_production_observer python - <<'PY'
+          from pathlib import Path
+          import gzip, re, sqlite3, os
+          daily=Path('/app/data/paper_v17/artifacts/observer_v17.db/backups')
+          expected_dates=[f'2026-09-{d:02d}' for d in range(11,20)]
+          files=sorted(daily.glob('*/*.db.gz'))
+          names={p.name for p in files}
+          expected={f'{stem}_{day}.db.gz' for day in expected_dates for stem in ('observer','market_history')}
+          assert len(files)==18 and names==expected, (len(files), sorted(names))
+          keep=[daily/'paper/observer_2026-09-18.db.gz', daily/'history/market_history_2026-09-18.db.gz']
+          assert all(p.is_file() and not p.is_symlink() for p in keep)
+          for p in keep:
+              with gzip.open(p,'rb') as f:
+                  assert f.read(16).startswith(b'SQLite format 3'), p
+          wave=Path('/app/data/backups/wave4_closure/observer_v17_pre_wave4_cleanup_20260909T024209Z.db.gz')
+          assert wave.is_file() and not wave.is_symlink()
+          with gzip.open(wave,'rb') as f:
+              assert f.read(16).startswith(b'SQLite format 3')
+          legacy=Path('/app/data/backups')
+          candidates=[]
+          for p in legacy.iterdir():
+              if p.name=='wave4_closure':
+                  continue
+              if p.is_dir() and not p.is_symlink() and (p.name.startswith(('pre_production_paper_v1634_','pre_production_paper_v1635_','pre_dashboard_hotfix_v1634_')) or p.name=='patch_v163_20260824_160012'):
+                  candidates.append(p)
+          assert candidates, 'No allowlisted legacy backup directories found; refuse unexpected inventory'
+          print('CONTAINER_PREFLIGHT=OK|DAILY_FILES=18|KEEP=2|LEGACY_DIRS='+str(len(candidates)))
+          for p in sorted(files):
+              if p not in keep:
+                  print(f'REMOVE_DAILY={p}|BYTES={p.stat().st_size}')
+          for p in sorted(candidates):
+              size=sum(q.stat().st_size for q in p.rglob('*') if q.is_file() and not q.is_symlink())
+              print(f'REMOVE_LEGACY={p}|BYTES={size}')
+          removed=0
+          for p in files:
+              if p not in keep:
+                  n=p.stat().st_size
+                  p.unlink()
+                  removed+=n
+          for p in candidates:
+              for q in sorted(p.rglob('*'), reverse=True):
+                  if q.is_symlink():
+                      raise RuntimeError('Symlink found in allowlisted legacy backup directory: '+str(q))
+                  if q.is_file():
+                      removed+=q.stat().st_size
+                      q.unlink()
+                  elif q.is_dir():
+                      q.rmdir()
+              p.rmdir()
+          remaining=sorted(daily.glob('*/*.db.gz'))
+          assert remaining==sorted(keep), [str(p) for p in remaining]
+          assert wave.is_file()
+          print(f'CONTAINER_REMOVED_BYTES={removed}')
+          print('DAILY_RETAINED='+','.join(str(p) for p in keep))
+          print('WAVE4_RETAINED='+str(wave))
+          PY
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import gzip
+          root=Path('/opt/porota-backups').resolve()
+          keep=root/'porota-general-20260912T071509Z.tar.gz'
+          old=root/'porota-general-20260911T071549Z.tar.gz'
+          assert keep.is_file() and old.is_file()
+          for p in (keep,old):
+              with gzip.open(p,'rb') as f:
+                  assert f.read(2)==b'./' or len(f.read(0))==0
+          n=old.stat().st_size
+          old.unlink()
+          print(f'HOST_OLD_GENERAL_REMOVED={old.name}|BYTES={n}')
+          print(f'HOST_LATEST_GENERAL_RETAINED={keep.name}|BYTES={keep.stat().st_size}')
+          PY
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.execute('pragma query_only=on')
+          assert c.execute('pragma quick_check').fetchone()[0]=='ok'
+          mode,real=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          assert mode=='PRODUCTION_PAPER' and real==0, (mode,real)
+          print(f'POST_STATE={mode}|REAL_ORDERS_SENT={real}|OBSERVER_DB=ok')
+          c.close()
+          PY
+          df -PB1 /opt/porota-trading | awk 'NR==2{print "POST_FS_SIZE_BYTES="$2" POST_FS_USED_BYTES="$3" POST_FS_FREE_BYTES="$4" POST_FS_USE_PCT="$5}'
+          echo 'DOCKER_PRUNE=NO'
+          echo 'DB_DELETE=NO'
+          echo 'VACUUM=NO'
+          echo 'PPI_WATCH_TOUCHED=NO'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
