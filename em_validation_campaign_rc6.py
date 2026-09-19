@@ -23,6 +23,9 @@ TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 DEFAULT_ROOT = Path(os.getenv("POROTA_VALIDATION_ROOT", "/app/data/validation"))
 LEDGER_NAME = "validation_campaign_rc6.jsonl"
 VALID_STATES = {"GREEN", "YELLOW", "RED", "GRAY"}
+IMPLEMENTATION_STATES = {"IMPLEMENTED", "IN_PROGRESS", "NOT_IMPLEMENTED", "UNKNOWN"}
+WORK_STATES = {"COMPLETED", "IN_PROGRESS", "PENDING", "BLOCKED", "UNKNOWN"}
+EVIDENCE_STATES = {"CURRENT", "HISTORICAL", "STALE", "PENDING", "UNAVAILABLE", "POLICY_BLOCKED", "UNKNOWN"}
 
 
 @dataclass(frozen=True)
@@ -128,6 +131,15 @@ def append_record(payload: dict[str, Any], root: Path | str | None = None) -> di
     pct = int(payload.get("compliance_pct", 0))
     if not 0 <= pct <= 100:
         raise ValueError("VALIDATION_PERCENT_INVALID")
+    implementation = str(payload.get("implementation_status") or "UNKNOWN").upper().strip()
+    work_status = str(payload.get("work_status") or "UNKNOWN").upper().strip()
+    evidence_status = str(payload.get("evidence_status") or "UNKNOWN").upper().strip()
+    if implementation not in IMPLEMENTATION_STATES:
+        raise ValueError("VALIDATION_IMPLEMENTATION_STATUS_INVALID")
+    if work_status not in WORK_STATES:
+        raise ValueError("VALIDATION_WORK_STATUS_INVALID")
+    if evidence_status not in EVIDENCE_STATES:
+        raise ValueError("VALIDATION_EVIDENCE_STATUS_INVALID")
 
     path = ledger_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,7 +155,7 @@ def append_record(payload: dict[str, Any], root: Path | str | None = None) -> di
             seq = int(last.get("seq") or len(lines)) + 1
         now = datetime.now(TZ).isoformat(timespec="seconds")
         body = {
-            "schema_version": 1,
+            "schema_version": 2,
             "seq": seq,
             "recorded_at": now,
             "date_ar": str(payload.get("date_ar") or datetime.now(TZ).date().isoformat()),
@@ -153,6 +165,10 @@ def append_record(payload: dict[str, Any], root: Path | str | None = None) -> di
             "observed_evidence": str(payload.get("observed_evidence") or ""),
             "compliance_pct": pct,
             "state": state,
+            "implementation_status": implementation,
+            "work_status": work_status,
+            "evidence_status": evidence_status,
+            "evidence_at": str(payload.get("evidence_at") or now),
             "expected": str(payload.get("expected") or ""),
             "observed": str(payload.get("observed") or ""),
             "deviation": str(payload.get("deviation") or ""),
