@@ -41,8 +41,8 @@ def test_profiles_use_only_explicit_hypothesis_parameters():
     result = evaluate_profiles(snapshot())["profiles"]
 
     assert result[SHADOW_BALANCED_V1]["state"] == "EVALUATED"
-    assert result[SHADOW_BALANCED_V1]["action"] == "OPEN_SIMULATED"
-    assert result[SHADOW_AGGRESSIVE_V1]["action"] == "OPEN_SIMULATED"
+    assert result[SHADOW_BALANCED_V1]["action"] == "CANDIDATE_OPEN"
+    assert result[SHADOW_AGGRESSIVE_V1]["action"] == "CANDIDATE_OPEN"
     assert result[SHADOW_AGGRESSIVE_V1]["can_affect_factual"] is False
 
 
