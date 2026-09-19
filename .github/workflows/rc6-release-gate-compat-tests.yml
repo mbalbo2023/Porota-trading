@@ -1,0 +1,48 @@
+name: RC6 release gate compatibility tests
+
+on:
+  push:
+    branches:
+      - fix/rc6-release-suite-compat-20260919
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: release gate only (no deploy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install --disable-pip-version-check "pytest>=8.3.0,<9" requests fastapi
+      - name: Compile release modules
+        run: >-
+          python -m py_compile
+          _version.py bf_production_paper_observer.py bg_paper_dashboard.py
+          be_paper_engine.py az_maintenance_job.py az_maintenance_scheduler.py
+          rc6_validation_projection.py scripts/rc6_iol_shadow_collect.py
+          iol_shadow_decision_input_rc6.py rc6_decision_evidence_report.py
+          rc6_decision_evidence_view.py rc6_shadow_profiles.py
+      - name: Run canonical release tests
+        run: >-
+          python -m pytest -q
+          tests/test_rc6_report_retention.py tests/test_rc6_action4_audit.py
+          tests/test_rc6_macro_risk_shadow.py tests/test_rc6_operational_scope.py
+          tests/test_rc6_data912_operational_scope.py tests/test_rc6_validation_projection.py
+          tests/test_rc6_gdelt_shadow.py tests/test_fk_gdelt_shadow_feed_rc6.py
+          tests/test_rc6_gdelt_event_risk_job.py tests/test_rc6_risk_gdelt_dashboard.py
+          tests/test_rc6_legacy_history_scope.py tests/test_rc6_deploy_readiness_contract.py
+          tests/test_rc6_validation_dynamic_evidence.py tests/test_rc6_live_scope_gate_fallback.py
+          tests/test_rc6_history_operational_scope.py tests/test_rc6_introspection_scope.py
+          tests/test_rc6_scheduler_operational_scope.py tests/test_rc6_internal_history_scheduler_guard.py
+          tests/test_rc6_take_profit_regression.py tests/test_rc6_cedear_underlying_calendar.py
+          tests/test_iol_shadow_observation_rc6.py tests/test_iol_shadow_collector_rc6.py
+          tests/test_rc6_iol_shadow_runtime.py tests/test_iol_shadow_validation_view_rc6.py
+          tests/test_rc6_counterfactual_learning.py tests/test_rc6_validation_truth.py
+          tests/test_rc6_candle_inmarket_evidence.py tests/test_rc6_postclose_history_quarantine.py
+          tests/test_rc6_postclose_review.py tests/test_rc6_postclose_review_dashboard.py
+          tests/test_rc6_snapshot.py tests/test_decision_evidence_snapshots_rc6.py
+          tests/test_iol_shadow_decision_input_rc6.py tests/test_rc6_decision_evidence_report.py
+          tests/test_rc6_decision_evidence_view.py tests/test_rc6_shadow_profiles.py
