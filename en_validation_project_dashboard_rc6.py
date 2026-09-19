@@ -93,7 +93,7 @@ def _operational_daily_section(limit_days=10):
                     f"<td>{bg._e(row.get('realized_net_pnl') or '0')}</td>"
                     f"<td>{bg._e(events or '—')}</td></tr>")
     return ("<section class='paper-card'><h2>Actividad PAPER por jornada</h2>"
-            "<p class='paper-muted'>Evidencia read-only: describe la rueda y no modifica ni promociona M0–M11.</p>"
+            "<p class='paper-muted'>Evidencia read-only: describe la rueda. No modifica ni promociona M0–M11.</p>"
             "<div class='paper-table-wrap'><table><thead><tr><th>Fecha AR</th><th>Decisiones</th><th>Fills</th>"
             "<th>Abiertas/Cerradas</th><th>PnL realizado</th><th>Eventos</th></tr></thead><tbody>"
             + ("".join(body) or "<tr><td colspan='6'>Sin filas verificables.</td></tr>")
