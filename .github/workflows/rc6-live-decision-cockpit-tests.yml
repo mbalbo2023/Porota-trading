@@ -9,6 +9,9 @@ on:
       - "rc6_private_site_8766.py"
       - "systemd/porota-live-decision-cockpit-rc6.service"
       - "systemd/porota-live-decision-cockpit-rc6.timer"
+      - "systemd/porota-private-snapshot.service"
+      - "systemd/dropins/**"
+      - "ops/porota-private-snapshot-archive"
       - "tests/test_rc6_live_decision_cockpit.py"
       - ".github/workflows/rc6-live-decision-cockpit-tests.yml"
   pull_request:
@@ -17,6 +20,9 @@ on:
       - "rc6_private_site_8766.py"
       - "systemd/porota-live-decision-cockpit-rc6.service"
       - "systemd/porota-live-decision-cockpit-rc6.timer"
+      - "systemd/porota-private-snapshot.service"
+      - "systemd/dropins/**"
+      - "ops/porota-private-snapshot-archive"
       - "tests/test_rc6_live_decision_cockpit.py"
       - ".github/workflows/rc6-live-decision-cockpit-tests.yml"
   workflow_dispatch:
@@ -36,6 +42,7 @@ jobs:
       - run: python -m pip install --disable-pip-version-check "pytest>=8.3.0,<9"
       - run: python -m py_compile rc6_live_decision_cockpit.py rc6_private_site_8766.py
       - run: python -m pytest -q tests/test_rc6_live_decision_cockpit.py
+      - run: bash -n ops/porota-private-snapshot-archive
       - name: Safety assertions
         run: |
           set -Eeuo pipefail
@@ -43,3 +50,6 @@ jobs:
           grep -Fq '"decision_authority": "OBSERVE_ONLY"' rc6_live_decision_cockpit.py
           grep -Fq '"real_orders_authorized": False' rc6_live_decision_cockpit.py
           ! grep -Eqi 'place_order|send_order|submit_order|cancel_order|budget' rc6_live_decision_cockpit.py
+          grep -Fq 'Environment=POROTA_PRIVATE_SITE_PORT=8766' systemd/porota-private-snapshot.service
+          grep -Fq 'ExecStartPost=-/opt/porota-private-snapshot/archive_snapshot.sh preopen' systemd/dropins/porota-snapshot-preopen-rc6.service.d/90-private-site-archive.conf
+          grep -Fq -- '--capture-preopen-baseline' systemd/dropins/porota-snapshot-preopen-rc6.service.d/95-private-site-baseline.conf
