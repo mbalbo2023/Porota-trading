@@ -1593,6 +1593,10 @@ en_validation_project_dashboard_rc6.install(app, _check_auth)
 import rc6_snapshot_dashboard
 rc6_snapshot_dashboard.install(app, _check_auth)
 
+# RC6 post-close evidence review: read-only human-review surface.
+import rc6_postclose_review_dashboard
+rc6_postclose_review_dashboard.install(app, _check_auth)
+
 
 
 if __name__ == "__main__":

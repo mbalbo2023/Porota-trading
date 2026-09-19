@@ -28,6 +28,7 @@ TOP_NAV = (
     NavItem("/historicos", "Históricos"),
     NavItem("/aprendizaje", "Aprendizaje"),
     NavItem("/reportes", "Reportes"),
+    NavItem("/postcierre", "Cierre"),
     NavItem("/sistema", "Sistema"),
 )
 
