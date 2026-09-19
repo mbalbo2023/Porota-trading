@@ -21,11 +21,18 @@ def test_deploy_bootstraps_compact_daily_views_once_without_reenabling_real_orde
     assert "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED" in body
 
 
-def test_deploy_storage_audit_is_explicitly_read_only():
+def test_deploy_storage_audit_and_allowlisted_image_retention_are_safe():
     body = WORKFLOW.read_text(encoding="utf-8")
     assert "STORAGE_AUDIT=READ_ONLY" in body
-    assert "STORAGE_CLEANUP=NOT_EXECUTED" in body
+    assert "STORAGE_CLEANUP=ALLOWLISTED_RC6_CANDIDATE_ROLLBACK_TAGS_ONLY" in body
+    assert "trap cleanup_rc6_image_tags EXIT" in body
+    assert r"porota-trading-bot:17\.0\.0-rc6-(candidate|rollback)-[0-9a-f]{40}" in body
+    assert '[ "$ref" = "$CANDIDATE_IMAGE" ]' in body
+    assert 'grep -Fxq "$image_id" <<< "$container_image_ids"' in body
+    assert 'sudo -n docker image rm "$ref"' in body
+    assert 'sudo -n docker tag "$TARGET_IMAGE" "$PREV_IMAGE_TAG"' not in body
     assert "docker system prune" not in body
+    assert "docker image prune" not in body
 
 
 def test_release_gate_installs_test_dependencies_and_covers_deterministic_paper_exits():
