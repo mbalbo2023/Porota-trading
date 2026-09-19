@@ -14,7 +14,7 @@ def test_live_payload_is_read_only_and_bounded():
         "state": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0, "regime": "MIXED"},
         "decisions": [
             {"decided_at": now.isoformat(), "symbol": "GGAL", "action": "BUY", "score": 0.82, "reason": "signal"},
-            {"decided_at": now.isoformat(), "symbol": "YPFD", "action": "HOLD", "score": 0.60, "reason": "spread"},
+            {"decided_at": now.isoformat(), "symbol": "YPFD", "action": "HOLD", "score": 0.99, "reason": "spread"},
         ],
         "open": [{"symbol": "GGAL", "quantity": 2, "entry_price": 100}],
         "closed": [],
@@ -88,3 +88,22 @@ def test_private_site_renders_live_and_limits_rows(monkeypatch, tmp_path):
     assert "NONE_OBSERVE_ONLY" in rendered
     assert rendered.count("<td><b>S") == site.MAX_ROWS
     assert "sin controles de ejecución" in rendered
+
+
+def test_preopen_baseline_is_bounded_and_read_only(tmp_path):
+    path = tmp_path / "preopen_latest.json"
+    path.write_text(json.dumps({"phase": "preopen", "status": "VERIFIED"}), encoding="utf-8")
+    now = datetime(2026, 9, 18, 10, 10, tzinfo=TZ)
+    observer = {
+        "decisions": [
+            {"decided_at": now.isoformat(), "symbol": f"S{i}", "action": "HOLD", "score": i, "reason": "baseline"}
+            for i in range(15)
+        ]
+    }
+
+    result = live.capture_preopen_baseline(observer, now, path)
+    stored = json.loads(path.read_text(encoding="utf-8"))
+
+    assert result == {"status": "VERIFIED", "decision_sample": live.MAX_ROWS}
+    assert stored["decision_sample_read_only"] is True
+    assert len(stored["decision_sample"]) == live.MAX_ROWS
