@@ -44,7 +44,9 @@ def _latched_rows(previous):
     but it must not erase implementation/progress fields that were already
     observed.  Live claims are still recomputed by dynamic.evaluate().
     """
-    if not previous or not isinstance(previous.get("milestones"), dict):
+    if (not previous or previous.get("schema_version") != SCHEMA_VERSION
+            or previous.get("ledger_status") != "FULLY_VERIFIED"
+            or not isinstance(previous.get("milestones"), dict)):
         return []
     return [{"milestone": code, **dict(row)} for code, row in previous["milestones"].items() if isinstance(row, dict)]
 
