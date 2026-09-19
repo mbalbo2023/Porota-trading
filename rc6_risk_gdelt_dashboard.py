@@ -36,6 +36,7 @@ def _status_payload() -> dict:
 def render_section() -> str:
     status = _status_payload()
     state = str(status.get("state") or "NOT_RUN")
+    state_label = {"NOT_RUN": "Sin corrida registrada", "STALE": "Evidencia vencida", "GREEN": "Con datos vigentes", "READ_ERROR": "Error de lectura", "AMARILLO_PARTIAL": "Parcial"}.get(state, state)
     good = state == "GREEN"
     partial = state in {"AMARILLO_PARTIAL", "NOT_RUN"}
     css = "s-verde" if good else ("s-amarillo" if partial else "s-rojo")
@@ -43,10 +44,9 @@ def render_section() -> str:
     return f"""
     <section class='paper-card' id='rc6-gdelt-event-risk-status'>
       <h2>Event Risk estructurado — GDELT</h2>
-      <p class='paper-muted'><b>Feed general de noticias: OFF intencional.</b>
-      GDELT se usa únicamente como evidencia estructurada SHADOW; nunca habilita una orden.</p>
+      <p class='paper-muted'><b>Feed general de noticias: OFF intencional.</b> GDELT se usa únicamente como evidencia estructurada SHADOW/OBSERVE_ONLY; nunca habilita una orden. <b>Sin corrida registrada</b> indica que no hay run persistido y no confirma que el scheduler esté activo.</p>
       <div class='paper-grid'>
-        <div class='paper-card'><h3>Estado</h3><span class='paper-status {css}'>{_e(state)}</span></div>
+        <div class='paper-card'><h3>Estado</h3><span class='paper-status {css}'>{_e(state_label)}</span></div>
         <div class='paper-card'><h3>Autoridad</h3><b class='metric'>{_e(status.get('authority') or 'SHADOW_ONLY')}</b></div>
         <div class='paper-card'><h3>Eventos persistidos</h3><b class='metric'>{_e(status.get('events_total', 0))}</b></div>
         <div class='paper-card'><h3>Frescura</h3><b class='metric'>{_e(status.get('freshness'))}</b><div class='paper-muted'>{_e(status.get('freshness_seconds'))} s</div></div>
