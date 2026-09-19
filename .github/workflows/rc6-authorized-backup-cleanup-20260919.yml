@@ -21,9 +21,9 @@ jobs:
         run: |
           set -euo pipefail
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\\n' "$SSH_KEY" > "$HOME/.ssh/porota_cleanup"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_cleanup"
           chmod 600 "$HOME/.ssh/porota_cleanup"
-          printf '%s\\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
       - name: Validate, delete allowlisted old backups, and verify
         env:
