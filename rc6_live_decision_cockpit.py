@@ -7,6 +7,7 @@ the already-running dashboard container; IOL is consumed cache-only.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -16,7 +17,7 @@ from datetime import datetime, time as clock_time, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+TZ = ZoneInfo("America/Argentina/BuenOS_Aires") if False else ZoneInfo("America/Argentina/Buenos_Aires")
 MARKET_OPEN = clock_time(10, 30)
 MARKET_CLOSE = clock_time(17, 0)
 
@@ -139,6 +140,7 @@ def _decision_views(decisions: list[dict]) -> tuple[list[dict], list[dict], list
     opportunities = list(latest_by_symbol.values())
     opportunities.sort(
         key=lambda row: (
+            "BUY" in str(row.get("action") or "").upper(),
             row.get("score") is not None,
             row.get("score") if row.get("score") is not None else -1e18,
         ),
@@ -235,6 +237,20 @@ def _risk_summary(opened: list[dict]) -> dict:
     }
 
 
+def capture_preopen_baseline(observer: dict, now: datetime, path: Path = PREOPEN) -> dict:
+    """Attach a bounded read-only decision sample to the preserved preopen file."""
+    preopen = _read_json(path)
+    if preopen.get("phase") != "preopen":
+        return {"status": "NOT_APPLICABLE", "reason": "PREOPEN_SNAPSHOT_NOT_AVAILABLE"}
+    decisions = observer.get("decisions") if isinstance(observer.get("decisions"), list) else []
+    sample = [_compact_decision(row) for row in decisions if isinstance(row, dict)][:MAX_ROWS]
+    preopen["decision_sample"] = sample
+    preopen["decision_sample_captured_at"] = now.astimezone(TZ).isoformat(timespec="seconds")
+    preopen["decision_sample_read_only"] = True
+    _atomic_json(path, preopen)
+    return {"status": "VERIFIED", "decision_sample": len(sample)}
+
+
 def build_payload(observer: dict, iol: dict, validation: dict, preopen: dict, postclose: dict, now: datetime) -> dict:
     state = observer.get("state") if isinstance(observer.get("state"), dict) else {}
     decisions = observer.get("decisions") if isinstance(observer.get("decisions"), list) else []
@@ -298,7 +314,20 @@ def build_payload(observer: dict, iol: dict, validation: dict, preopen: dict, po
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--capture-preopen-baseline", action="store_true")
+    args = parser.parse_args()
     now = datetime.now(TZ)
+
+    if args.capture_preopen_baseline:
+        try:
+            result = capture_preopen_baseline(_observer_state_via_container(), now)
+            print(json.dumps({**result, "read_only": True, "phase": "preopen-baseline"}, sort_keys=True))
+            return 0 if result.get("status") in {"VERIFIED", "NOT_APPLICABLE"} else 2
+        except Exception as exc:
+            print(json.dumps({"status": "ERROR", "phase": "preopen-baseline", "read_only": True, "error": type(exc).__name__}, sort_keys=True))
+            return 2
+
     if not is_operational_market_window(now):
         print(json.dumps({"status": "NOT_DUE", "phase": "live", "read_only": True}, sort_keys=True))
         return 0
