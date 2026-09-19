@@ -1,12 +1,18 @@
 """RC6 compact validation dashboard: code status is not evidence status."""
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
 import bg_paper_dashboard as bg
 import ez_iol_shadow_validation_view_rc6 as iol_shadow_view
 import rc6_validation_projection as projection
+import rc6_validation_operational_daily as operational_daily
+import rc6_action4_audit as action4_audit
+from cg_paper_workspace import artifact_root, database_path
 from em_validation_campaign_rc6 import MILESTONES
 
 _installed = False
@@ -54,6 +60,69 @@ def _milestone_card(milestone, current):
     )
 
 
+
+def _campaign_daily_history(records, limit_days=10):
+    """Campaign evidence remains separate from operational activity."""
+    if not records:
+        return ("<p class='paper-muted'>El ledger de campaña RC6 todavía no tiene observaciones; "
+                "esto no significa que no haya habido actividad PAPER.</p>")
+    return f"<p class='paper-muted'>Registros de campaña visibles: {min(len(records), limit_days)}.</p>"
+
+
+def _operational_daily_section(limit_days=10):
+    """Bounded, read-only activity evidence; it never promotes M0–M11."""
+    try:
+        evidence = operational_daily.collect(limit_days=limit_days)
+        days = evidence.get("days") if isinstance(evidence.get("days"), list) else []
+    except Exception:
+        return ("<section class='paper-card'><h2>Actividad PAPER por jornada</h2>"
+                "<p class='paper-warning'>Evidencia operacional no disponible. No se inventan jornadas.</p></section>")
+    if not days:
+        return ("<section class='paper-card'><h2>Actividad PAPER por jornada</h2>"
+                "<p class='paper-muted'>No hay jornadas PAPER verificables en esta lectura. No modifica ni promociona M0–M11.</p></section>")
+    body = []
+    for row in days[:max(1, min(int(limit_days), 30))]:
+        if not isinstance(row, dict):
+            continue
+        events = ", ".join(f"{key}={value}" for key, value in sorted((row.get("event_types") or {}).items()))
+        body.append("<tr>"
+                    f"<td>{bg._e(row.get('date_ar') or '—')}</td>"
+                    f"<td>{bg._e(row.get('decisions', 0))}</td>"
+                    f"<td>{bg._e(row.get('fills', 0))}</td>"
+                    f"<td>{bg._e(row.get('opened', 0))}/{bg._e(row.get('closed', 0))}</td>"
+                    f"<td>{bg._e(row.get('realized_net_pnl') or '0')}</td>"
+                    f"<td>{bg._e(events or '—')}</td></tr>")
+    return ("<section class='paper-card'><h2>Actividad PAPER por jornada</h2>"
+            "<p class='paper-muted'>Evidencia read-only: describe la rueda y no modifica ni promociona M0–M11.</p>"
+            "<div class='paper-table-wrap'><table><thead><tr><th>Fecha AR</th><th>Decisiones</th><th>Fills</th>"
+            "<th>Abiertas/Cerradas</th><th>PnL realizado</th><th>Eventos</th></tr></thead><tbody>"
+            + ("".join(body) or "<tr><td colspan='6'>Sin filas verificables.</td></tr>")
+            + "</tbody></table></div></section>")
+
+
+def _action4_section():
+    """Render the published Action 4 artifact only; HTTP never runs the audit."""
+    try:
+        target = Path(artifact_root(database_path())).resolve() / "reports" / action4_audit.FILENAME
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return ("<section class='paper-card'><h2>Action 4 — auditoría diaria de la rueda</h2>"
+                "<p class='paper-warning'>Aún no hay una auditoría Action 4 publicada. Se mostrará al finalizar la próxima corrida diaria; no se completan datos con supuestos.</p></section>")
+    report = payload.get("dashboard_daily_report") if isinstance(payload.get("dashboard_daily_report"), dict) else {}
+    separation = payload.get("separation") if isinstance(payload.get("separation"), dict) else {}
+    safety = payload.get("safety") if isinstance(payload.get("safety"), dict) else {}
+    lessons = report.get("lessons") if isinstance(report.get("lessons"), list) else []
+    cards = (
+        bg._card("Período", report.get("periodo") or "—", "Auditoría diaria publicada", "green")
+        + bg._card("Cierres simulados", separation.get("executed_closed", 0), "Sin órdenes reales", "green")
+        + bg._card("Aperturas simuladas", separation.get("opened_simulated", 0), "Sólo PAPER", "green")
+        + bg._card("Seguridad", "READ_ONLY · 0 reales" if safety.get("real_orders_sent") == 0 else "EVIDENCIA INCOMPLETA", "No consulta broker ni ejecuta órdenes", "green" if safety.get("real_orders_sent") == 0 else "yellow")
+    )
+    lesson_html = "".join(f"<li>{bg._e(item)}</li>" for item in lessons[:10]) or "<li>Sin lecciones publicadas.</li>"
+    return ("<section class='paper-card'><h2>Action 4 — auditoría diaria de la rueda</h2>"
+            "<p class='paper-muted'>Resumen publicado por el scheduler; lectura exclusivamente informativa.</p>"
+            f"<div class='paper-grid'>{cards}</div><h3>Lecciones y hallazgos</h3><ul>{lesson_html}</ul></section>")
+
 def page():
     snapshot = projection.read()
     if snapshot is None:
@@ -74,7 +143,8 @@ def page():
     roadmap = "".join(_milestone_card(m, rows.get(m.code)) for m in MILESTONES)
     body = ("<h1>Validación — Camino a Producción</h1>" + source +
             "<div class='paper-warning'><b>Regla de verdad:</b> implementación, evidencia histórica y verificación actual son capas distintas. Ninguna habilita dinero real.</div>" +
-            f"<div class='paper-grid'>{cards}</div>" + iol_shadow_view.render() + "<section class='paper-card'><h2>Objetivo, evidencia y brecha por hito</h2>" + roadmap + "</section>")
+            f"<div class='paper-grid'>{cards}</div>" + _action4_section() + _operational_daily_section() +
+            iol_shadow_view.render() + "<section class='paper-card'><h2>Objetivo, evidencia y brecha por hito</h2>" + roadmap + "</section>")
     return bg._document("Validación — Camino a Producción", body, refresh=60)
 
 
