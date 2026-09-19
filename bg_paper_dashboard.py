@@ -428,12 +428,12 @@ def _daily_risk_panel():
             soft_state = ("ALCANZADO — sin nuevas aperturas"
                           if r['daily_pnl'] is not None and Decimal(r['daily_pnl']) <= -soft_budget
                           else "DISPONIBLE")
-            soft_text = f"{soft_budget} ({soft_pct}%) · {soft_state}"
+            soft_text = f"{_locale_number(soft_budget)} ({_locale_number(soft_pct)}%) · {soft_state}"
         except (InvalidOperation, TypeError, ValueError):
             soft_text = f"Sin base ({soft_pct}%)"
         items.append(f"<tr><td>{_e(r['currency'])}</td><td>{_e(state)}</td>"
-            f"<td>{_e(r['baseline_equity'] or 'Sin base')}</td><td>{_e(r['daily_pnl'] or 'Sin valuación')}</td>"
-            f"<td>{_e(soft_text)}</td><td>{_e(r['loss_budget'] or '—')} ({_e(r['limit_pct'])}%)</td>"
+            f"<td>{_amount(r['baseline_equity'], r['currency']) if r['baseline_equity'] is not None else 'Sin base'}</td><td>{_amount(r['daily_pnl'], r['currency']) if r['daily_pnl'] is not None else 'Sin valuación'}</td>"
+            f"<td>{_e(soft_text)}</td><td>{_amount(r['loss_budget'], r['currency']) if r['loss_budget'] is not None else '—'} ({_e(_locale_number(r['limit_pct']) if r['limit_pct'] is not None else 's/d')}%)</td>"
             f"<td>{_e(r['detail'])}</td></tr>")
     return ("<div class='paper-card'><h2>Corte diario por moneda</h2>"
             "<p>El freno blando suspende aperturas sin liquidar; el límite duro crea salidas y sobrevive reinicios. No mezcla monedas ni libera cauciones antes del vencimiento. "
@@ -623,10 +623,10 @@ def _balances_panel():
                                             + Decimal(str(position.get("net_pnl") or "0")))
         except (InvalidOperation, ValueError, TypeError):
             continue
-    rows = "".join(f"<tr><td>{_e(r['currency'])}</td><td>{_e(r['cash'])}</td>"
-                   f"<td>{_e(r['pending_proceeds'])}</td><td>{_e(r['caucion_principal'])}</td>"
-                   f"<td>{_e(realized_today.get(r['currency'],0))}</td>"
-                   f"<td>{_e(r['realized_pnl'])}</td><td>{_e(r['equity'])}</td>"
+    rows = "".join(f"<tr><td>{_e(r['currency'])}</td><td>{_amount(r['cash'], r['currency'])}</td>"
+                   f"<td>{_amount(r['pending_proceeds'], r['currency'])}</td><td>{_amount(r['caucion_principal'], r['currency'])}</td>"
+                   f"<td>{_amount(realized_today.get(r['currency'],0), r['currency'])}</td>"
+                   f"<td>{_amount(r['realized_pnl'], r['currency'])}</td><td>{_amount(r['equity'], r['currency'])}</td>"
                    f"<td>{_e(quality.get(r['currency'],{}).get('state','UNKNOWN'))} · "
                    f"{_local_time(quality.get(r['currency'],{}).get('measured_at'))}</td></tr>" for r in balances)
     rows = rows or "<tr><td colspan='8'>Pendiente de la primera valuación por moneda.</td></tr>"
@@ -838,10 +838,10 @@ def _daily_results_panel():
         uri="file:"+str(Path(DB_PATH).resolve())+"?mode=ro"
         with closing(sqlite3.connect(uri,uri=True,timeout=5)) as c:
             c.row_factory=sqlite3.Row
-            days=daily_operation_summaries(c,limit_days=7)
+            days=daily_operation_summaries(c,limit_days=5)
         return daily_results_html(days)
     except (sqlite3.Error,ValueError,TypeError,ArithmeticError):
-        return ("<section class='paper-card'><h2>Resultado de las últimas jornadas</h2>"
+        return ("<section class='paper-card'><h2>Resultado de las últimas cinco ruedas BYMA</h2>"
                 "<div class='paper-warning'>Resumen diario no conciliable; no se inventa un resultado.</div></section>")
 
 def home_page():
@@ -1331,7 +1331,7 @@ def health_page():
                "NUNCA_EJECUTADO: falta primera evidencia. NO_APLICA: fuera de alcance; no es una falla.")
     body = (f"<h1>Salud de APIs y fuentes</h1><div class='paper-notice'><b>Resumen:</b> "
             f"{red} en rojo, {pending} pendientes/requieren atención y {informational} informativas entre fuentes aplicables. {_e(summary)}</div>"
-            "<p class='paper-muted'>Abrir esta pantalla no consume APIs. Cada amarillo explica causa, edad y acción.</p>"
+            "<p class='paper-muted'>Este panel muestra reportes persistidos y no ejecuta una prueba en vivo al abrirse. Un estado degradado antiguo no confirma una caída actual; verificá la edad y la próxima comprobación.</p>"
             "<div class='paper-card'><table class='paper-table'><tr><th>API / fuente</th><th>Estado</th><th>Diagnóstico</th>"
             "<th>Detalle</th><th>Último reporte / chequeo</th><th>Último éxito</th><th>Próximo chequeo</th>"
             f"<th>Modo</th><th>Uso</th></tr>{''.join(rows)}</table></div>")
@@ -1437,7 +1437,7 @@ def history_page():
         "Para CEDEAR cada día faltante exige rueda BYMA y rueda del subyacente US. "
         "CLOSE_ONLY se informa por separado y nunca habilita ATR, VWAP, precio de ejecución ni READY PAPER.</div>"
     )
-    body=f"<h1>Históricos y universo operativo</h1><div class='paper-warning'><b>Alcance actual:</b> esta vista y el motor usan acciones y CEDEARs. Los datos de otras familias se conservan sólo como legado/auditoría y no disparan ingesta ni decisiones.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
+    body=f"<h1>Históricos y universo operativo</h1><div class='paper-notice'><b>Ingesta full histórica PPI: cerrada y en cuarentena.</b> Esta pantalla no la ejecuta. El estado del Archivo incremental de velas corresponde a otro proceso y no significa que la ingesta full esté corriendo.</div><div class='paper-warning'><b>Alcance actual:</b> esta vista y el motor usan acciones y CEDEARs. Los datos de otras familias se conservan sólo como legado/auditoría y no disparan ingesta ni decisiones.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
     return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
 
 
@@ -1497,8 +1497,8 @@ def _candle_archive_panel():
     rejected=(_rows('SELECT COUNT(*) n FROM candle_rejections') or [{'n':0}])[0]['n'] if _table('candle_rejections') else 0
     attempts=_rows('SELECT * FROM production_history_attempts ORDER BY attempted_at DESC LIMIT 20') if _table('production_history_attempts') else []
     failed=sum(r['state']!='VALID_PAYLOAD' for r in attempts)
-    return ("<div class='paper-card'><h2>Archivo versionado de barras</h2>"
-        f"<p>Proceso: <b>{_e(state)}</b> · cursor {_e(worker.get('cursor','—'))} · {_e(worker.get('detail',''))}</p>"
+    return ("<div class='paper-card'><h2>Archivo incremental de velas</h2>"
+        f"<p>Estado del worker incremental: <b>{_e(state)}</b> · cursor {_e(worker.get('cursor','—'))} · {_e(worker.get('detail',''))}. No representa la ingesta full histórica PPI.</p>"
         f"<p>Raw conservados: {raw}. Lecturas excluidas: {rejected}. Descargas no completas entre las últimas {len(attempts)}: {failed}.</p>"
         "<p>TRADE_SAMPLES son muestras del último negocio, no todos los negocios. Su volumen, número de operaciones y VWAP son desconocidos. "
         "No se rellenan huecos y el número de muestras no equivale a series validadas. "
@@ -1557,7 +1557,7 @@ def _decision_evidence_panel():
     return (
         "<div class='paper-card'><h2>Evidencia por decisión y perfiles SHADOW</h2>"
         "<div class='paper-grid'>" + cards + "</div>"
-        "<div class='paper-notice'><b>Lectura solamente.</b> La decisión factual PAPER no se modifica. "
+        "<div class='paper-notice'><b>Perfiles evaluados en modo SHADOW, sólo para análisis.</b> Conservador = referencia factual congelada. Balanceado = umbral de score 90%, spread máximo 110% y una confirmación menos. Agresivo = umbral 80%, spread máximo 125% y una confirmación menos. Los perfiles SHADOW requieren evidencia de seguridad; ninguno puede alterar ni autorizar órdenes. La decisión factual PAPER no se modifica. "
         "Los perfiles BASELINE_CONSERVATIVE_V1, SHADOW_BALANCED_V1 y SHADOW_AGGRESSIVE_V1 se comparan sobre "
         "los inputs publicados. <b>PENDING</b> e <b>INSUFFICIENT_EVIDENCE</b> son límites explícitos de "
         "evidencia, no errores ni datos completados retrospectivamente.</div>"
@@ -1572,7 +1572,6 @@ def _decision_evidence_panel():
 
 def learning_page():
     data=snapshot(); _pnl,wins,wr=_trade_metrics(data["closed"])
-    rows="".join(f"<tr class='{'card-green' if _num(p.get('net_pnl'))>0 else 'card-red' if _num(p.get('net_pnl'))<0 else 'card-gray'}'><td>{_local_time(p.get('opened_at'))}</td><td><b>{_e(p['symbol'])}</b></td><td>{_status('WIN' if _num(p.get('net_pnl'))>0 else 'LOSS' if _num(p.get('net_pnl'))<0 else p.get('status'))}</td><td class='{'positive' if _num(p.get('net_pnl'))>0 else 'negative' if _num(p.get('net_pnl'))<0 else 'neutral'}'>{_money(p.get('net_pnl'))} {_e(p.get('currency','ARS'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in data["closed"][:100]) or "<tr><td colspan='5'>Sin muestras cerradas.</td></tr>"
     sample, per_currency = [], {}
     for position in data["closed"]:
         currency = str(position.get("currency") or "ARS").upper()
@@ -1582,8 +1581,8 @@ def learning_page():
     expectancy = empirical_expectancy(sample, minimum_sample=30)
     expectancy_rows = "".join(
         f"<tr><td>{_e(item['currency'])}</td><td>{item['samples']}</td><td>{_e(item['win_rate_pct'])}%</td>"
-        f"<td>{_money(item['average_win'])}</td><td>{_money(item['average_loss'])}</td>"
-        f"<td>{_money(item['empirical_expectancy'])}</td><td>{_e(item['profit_factor'] or 's/d')}</td>"
+        f"<td>{_amount(item['average_win'], item['currency'])}</td><td>{_amount(item['average_loss'], item['currency'])}</td>"
+        f"<td>{_amount(item['empirical_expectancy'], item['currency'])}</td><td>{_e(item['profit_factor'] or 's/d')}</td>"
         f"<td>{_status(item['sample_state'])}</td></tr>" for item in expectancy
     ) or "<tr><td colspan='8'>Sin operaciones cerradas para calcular resultados empíricos.</td></tr>"
     latest_label=(_rows("SELECT MAX(label_timestamp) latest FROM paper_learning_samples") or [{}])[0].get('latest') if _table('paper_learning_samples') else None
@@ -1595,7 +1594,7 @@ def learning_page():
         _card("Último cierre PAPER",_local_time(latest_close),"Fuente que habilita una nueva etiqueta","gray"),
         _card("Última etiqueta",_local_time(latest_label),"Puede permanecer sin cambios si no hubo cierres nuevos","gray"),
         _card("Win rate","s/d" if wr is None else f"{wr:.1f}%",f"{wins}/{len(data['closed'])}","green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),
-        *(_card(f"Resultado {item['currency']}", _money(item["net_total"]),
+        *(_card(f"Resultado {item['currency']}", _amount(item["net_total"], item['currency']),
                 "Neto de costos y slippage PAPER en su propia moneda",
                 "green" if Decimal(item["net_total"])>0 else "red" if Decimal(item["net_total"])<0 else "gray")
           for item in expectancy),
@@ -1635,7 +1634,7 @@ def learning_page():
           "<table class='paper-table'><tr><th>Moneda</th><th>Muestras</th><th>Win rate</th><th>Ganancia media</th>"
           "<th>Pérdida media</th><th>Expectativa por operación</th><th>Profit factor</th><th>Estado muestral</th></tr>"
           f"{expectancy_rows}</table><p class='paper-muted'>Menos de 30 muestras se marca como insuficiente; aun con 30 o más permanece observacional hasta validación fuera de muestra.</p></div>"
-          f"<div class='paper-card'><table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Etiqueta</th><th>PnL neto</th><th>Motivo</th></tr>{rows}</table></div>")
+          )
     return _document("Aprendizaje",_spot_warning(data["spot_state"])+body)
 
 
@@ -1906,12 +1905,12 @@ def live_page(*, offset=0, limit=20):
         open_details.append(
             f"<details class='paper-trade'><summary data-trade-id='{_e(pos.get('paper_id'))}'>"
             f"{_e(pos.get('symbol'))} · {_e(pos.get('currency'))} · "
-            f"<span class='{cls}'>{verdict} · P&amp;L {_money(pnl)} {_e(pos.get('currency'))}</span> · "
+            f"<span class='{cls}'>{verdict} · P&amp;L {_amount(pnl, pos.get('currency'))}</span> · "
             f"actualizado {_local_time(mark.get('book_at') or mark.get('observed_at'))} · {_status(freshness)}</summary>"
             "<div class='trade-body'>"
-            f"<p><b>Entrada:</b> {_e(pos.get('entry_price'))} · <b>Mark:</b> {_e(mark.get('bid') or mark.get('last') or 's/d')} · "
+            f"<p><b>Entrada:</b> {_amount(pos.get('entry_price'), pos.get('currency'))} · <b>Mark:</b> {_amount(mark.get('bid') or mark.get('last'), pos.get('currency'))} · "
             f"<b>Fuente mark:</b> {_e(mark.get('mark_source','s/d'))} · <b>Edad:</b> {_e(age_text)}.</p>"
-            f"<p><b>Valuación:</b> {_e(kind)} · <b>Stop:</b> {_e(pos.get('stop_price'))} · <b>Target:</b> {_e(pos.get('target_price'))}.</p>"
+            f"<p><b>Valuación:</b> {_e(kind)} · <b>Stop:</b> {_amount(pos.get('stop_price'), pos.get('currency'))} · <b>Target:</b> {_amount(pos.get('target_price'), pos.get('currency'))}.</p>"
             f"<p><b>Supervisión de salida:</b> {_status(intent.get('state','SIN_SUPERVISION'))} · {_local_time(intent.get('supervised_at'))}.</p>"
             "<h3>Por qué fue aceptada</h3>"
             "<table class='paper-table'><tr><th>Técnico</th><th>Patrimonial/liquidez</th><th>Resultado</th><th>Motivo</th></tr>"
@@ -1929,8 +1928,8 @@ def live_page(*, offset=0, limit=20):
         gate=gate_by_paper.get(pos.get('paper_id')) or gate_by_symbol.get(pos.get('symbol'),{})
         closed_rows.append(
             f"<details class='paper-trade'><summary>{_e(pos.get('symbol'))} · {_local_time(pos.get('closed_at'))} · "
-            f"<span class='{cls}'>{_money(pnl)} {_e(pos.get('currency'))}</span> · {_e(pos.get('close_reason'))}</summary>"
-            f"<div class='trade-body'><p><b>Entrada:</b> {_e(pos.get('entry_price'))} · <b>Salida:</b> {_e(pos.get('exit_price'))}. "
+            f"<span class='{cls}'>{_amount(pnl, pos.get('currency'))}</span> · {_e(pos.get('close_reason'))}</summary>"
+            f"<div class='trade-body'><p><b>Entrada:</b> {_amount(pos.get('entry_price'), pos.get('currency'))} · <b>Salida:</b> {_amount(pos.get('exit_price'), pos.get('currency'))}. "
             f"<b>Aceptación original:</b> {_e(gate.get('reason','sin gate persistido'))}</p>"
             f"<h3>Lección aprendida</h3><p class='{cls}'>{_e(_trade_lesson(pos))}</p></div></details>"
         )
@@ -2067,12 +2066,7 @@ def live_page(*, offset=0, limit=20):
           "<tr><th>Hora</th><th>Instrumento</th><th>Decisión</th><th>Técnico</th><th>Patrimonial</th><th>Explicación</th></tr>"+
           (''.join(decision_rows) or "<tr><td colspan='6'>Sin decisiones de hoy.</td></tr>")+"</table>"+
           decision_pager+"<a class='paper-action' href='/en-vivo'>Actualizar ahora</a></div>"
-          "<div class='paper-card'><h2>4. Scalping</h2>"
-          f"<p>Estado: {_status(scalp_worker.get('state','NOT_STARTED'))} · candidatos última hora: {_e(scalp_recent)} · fills/posiciones visibles: {_e(scalp_fills)}.</p>"
-          "<a class='paper-action' href='/scalping'>Abrir Scalping detallado</a></div>"
-          "<div class='paper-card'><h2>5. Motores / workers</h2><p class='paper-muted'>Información técnica al final, después de las operaciones.</p>"
-          "<table class='paper-table'><tr><th>Motor</th><th>Estado</th><th>Pulso</th><th>Antigüedad</th><th>Detalle</th></tr>"+
-          ''.join(workers)+"</table></div>")
+          )
     return _document("En vivo",body,refresh=0)
 
 
@@ -2155,23 +2149,26 @@ def _family_ux_table(families):
 
 
 
+def _local_day_for_dashboard(value):
+    try:
+        return aware_datetime(value).astimezone(TZ).date()
+    except (ValueError, TypeError):
+        return None
+
+
 def _trading_motor_summary():
-    """Resumen liviano para unir Trading y Motor sin cargar el ledger completo."""
-    positions = (
-        _rows("SELECT * FROM paper_positions ORDER BY COALESCE(closed_at, opened_at) DESC LIMIT 24")
-        if _table("paper_positions") else []
-    )
-    positions = [
-        row for row in positions
+    """Resumen liviano de hoy para unir Trading y Motor."""
+    now = datetime.now(TZ)
+    positions = _rows("SELECT * FROM paper_positions ORDER BY COALESCE(closed_at, opened_at) DESC LIMIT 1000") if _table("paper_positions") else []
+    positions = [row for row in positions
         if str(row.get("asset_class") or "").upper() in {"ACCIONES", "ACCION", "CEDEARS", "CEDEAR"}
-    ]
+        and any(_local_day_for_dashboard(row.get(field)) == now.date() for field in ("opened_at", "closed_at"))]
     open_count = sum(str(row.get("status")) == "OPEN" for row in positions)
     closed_count = sum(str(row.get("status")) == "CLOSED" for row in positions)
     position_rows = "".join(
         f"<tr><td>{_local_time(row.get('opened_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
         f"<td>{_e(row.get('asset_class'))}</td><td>{_status(row.get('status'))}</td>"
-        f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_e(row.get('net_pnl') or '—')} "
-        f"{_e(row.get('currency') or '')}</td></tr>"
+        f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_amount(row.get('net_pnl'), row.get('currency')) if row.get('net_pnl') is not None else '—'}</td></tr>"
         for row in positions
     ) or "<tr><td colspan='6'>Sin operaciones PAPER de acciones o CEDEARs registradas.</td></tr>"
     if _table("trade_gate_evaluations") and _table("financial_instrument_catalog"):
@@ -2183,7 +2180,7 @@ def _trading_motor_summary():
                    WHERE f.ticker=g.symbol AND f.status='AVAILABLE'
                      AND UPPER(f.instrument_type) IN ('ACCIONES','CEDEARS')
                )
-               ORDER BY g.evaluated_at DESC LIMIT 16"""
+               ORDER BY g.evaluated_at DESC LIMIT 500"""
         )
     elif _table("trade_gate_evaluations") and _table("candidate_universe"):
         gates = _rows(
@@ -2194,28 +2191,44 @@ def _trading_motor_summary():
                    WHERE u.ticker=g.symbol AND u.can_simulate=1
                      AND UPPER(u.instrument_type) IN ('ACCIONES','CEDEARS')
                )
-               ORDER BY g.evaluated_at DESC LIMIT 16"""
+               ORDER BY g.evaluated_at DESC LIMIT 500"""
         )
     else:
         gates = []
-    gate_rows = "".join(
+    gates = live_policy.rows_for_today(gates, "evaluated_at", now=now)
+    gate_row_list = [
         f"<tr><td>{_local_time(row.get('evaluated_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
         f"<td>{_status(row.get('final_result'))}</td><td>{_e(row.get('reason'))}</td></tr>"
         for row in gates
-    ) or "<tr><td colspan='4'>Sin decisiones persistidas todavía.</td></tr>"
+    ]
+    gate_rows = "".join(gate_row_list[:10]) or "<tr><td colspan='4'>Sin decisiones de hoy.</td></tr>"
+    position_row_list = [
+        f"<tr><td>{_local_time(row.get('opened_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+        f"<td>{_e(row.get('asset_class'))}</td><td>{_status(row.get('status'))}</td>"
+        f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_amount(row.get('net_pnl'), row.get('currency')) if row.get('net_pnl') is not None else '—'}</td></tr>"
+        for row in positions
+    ]
+    position_rows = "".join(position_row_list[:10]) or "<tr><td colspan='6'>Sin operaciones PAPER de hoy.</td></tr>"
+    more_positions = (f"<details><summary class='paper-action'>Más ({len(position_row_list)-10}) operaciones</summary>"
+        "<table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Familia</th><th>Estado</th><th>Salida</th><th>PnL</th></tr>"
+        + "".join(position_row_list[10:]) + "</table></details>" if len(position_row_list)>10 else "")
+    more_gates = (f"<details><summary class='paper-action'>Más ({len(gate_row_list)-10}) decisiones</summary>"
+        "<table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>"
+        + "".join(gate_row_list[10:]) + "</table></details>" if len(gate_row_list)>10 else "")
     try:
         import rc6_gdelt_shadow
         gdelt = rc6_gdelt_shadow.collect()
     except Exception as exc:
         gdelt = {"state": "UNAVAILABLE", "reason": type(exc).__name__,
                  "decision_effect": "OBSERVE_ONLY", "articles_count": 0}
+    gdelt_state = str(gdelt.get('state', 'UNAVAILABLE')).upper()
+    gdelt_labels = {'NOT_RUN': 'Sin corrida registrada', 'STALE': 'Evidencia vencida', 'GREEN': 'Con datos vigentes', 'READ_ERROR': 'Error de lectura', 'UNAVAILABLE': 'No disponible'}
     gdelt_html = (
-        "<div class='paper-card'><h3>Noticias GDELT — SHADOW</h3>"
-        f"<p><b>Estado:</b> {_e(gdelt.get('state', 'UNAVAILABLE'))} · "
+        "<div class='paper-card'><h3>Event Risk GDELT — SHADOW</h3>"
+        f"<p><b>Estado:</b> {_e(gdelt_labels.get(gdelt_state, gdelt_state))} · "
         f"<b>Observaciones:</b> {_e(gdelt.get('articles_count', 0))} · "
         f"<b>Actualizado:</b> {_e(gdelt.get('refreshed_at', 'sin caché'))}</p>"
-        "<p class='paper-muted'>Consulta acotada y caché local. Sólo contexto: "
-        "no bloquea, no cambia el tamaño y no autoriza órdenes.</p></div>"
+        "<p class='paper-muted'>Sin corrida registrada significa que no hay un run persistido; por sí solo no confirma si el scheduler está activo. El feed general permanece OFF intencionalmente. La evidencia estructurada es sólo contexto SHADOW/OBSERVE_ONLY: no bloquea, no cambia el tamaño y no autoriza órdenes.</p></div>"
     )
     try:
         import rc6_macro_risk_shadow
@@ -2239,13 +2252,12 @@ def _trading_motor_summary():
         "no bloquea, no cambia tamaño y no habilita órdenes.</p></div>"
     )
     return (
-        "<div class='paper-card'><h2>Motor de trading — actual e histórico reciente</h2>"
-        f"<p><b>{open_count}</b> abiertas simuladas · <b>{closed_count}</b> cerradas recientes. "
-        "Sólo acciones y CEDEARs.</p>"
+        "<div class='paper-card'><h2>Motor de trading — actividad de hoy</h2>"
+        f"<p><b>{open_count}</b> abiertas · <b>{closed_count}</b> cerradas hoy. Sólo acciones y CEDEARs.</p>"
         "<table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Familia</th>"
-        "<th>Estado</th><th>Salida</th><th>PnL</th></tr>" + position_rows + "</table>"
-        "<h3>Decisiones recientes</h3><table class='paper-table'><tr><th>Hora</th>"
-        "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>" + gdelt_html + macro_html +
+        "<th>Estado</th><th>Salida</th><th>PnL</th></tr>" + position_rows + "</table>" + more_positions
+        "<h3>Decisiones de hoy</h3><table class='paper-table'><tr><th>Hora</th>"
+        "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>" + more_gates + gdelt_html + macro_html +
         "<p class='paper-muted'>El detalle forense completo sigue disponible en Motor de trading; "
         "esta tabla evita cargar masivamente operaciones, fills o históricos al abrir Trading.</p></div>"
     )
