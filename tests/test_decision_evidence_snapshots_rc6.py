@@ -88,3 +88,24 @@ def test_iol_adapter_failure_is_captured_as_unavailable(tmp_path, monkeypatch):
         ).fetchone()["payload_json"])
     assert payload["inputs_used"]["iol"]["state"] == "UNAVAILABLE"
     assert payload["inputs_used"]["iol"]["reason"] == "DECISION_INPUT_UNAVAILABLE:OSError"
+
+
+def test_hold_snapshot_captures_cached_iol_without_changing_factual_action(tmp_path, monkeypatch):
+    monkeypatch.setattr(iol_adapter, "read_for_decision", lambda symbol: {
+        "source": "IOL_MCP", "symbol": symbol, "state": "READY",
+        "freshness": "FRESH", "decision_effect": "NO_FACTUAL_BINDING",
+    })
+    store = PaperStore(str(tmp_path / "paper.db"))
+    assert store.record_decision(
+        "decision-hold", quote(), "HOLD", Decimal("0.12"), "no candidate",
+        {"score": "0.12"},
+    )
+    with store.connect() as c:
+        payload = json.loads(c.execute(
+            "SELECT payload_json FROM decision_evidence_snapshots "
+            "WHERE decision_key='decision-hold'"
+        ).fetchone()["payload_json"])
+    assert payload["decision"]["action"] == "HOLD"
+    assert payload["decision"]["final_result"] == "HOLD"
+    assert payload["inputs_used"]["iol"]["state"] == "READY"
+    assert payload["inputs_used"]["iol"]["decision_effect"] == "NO_FACTUAL_BINDING"
