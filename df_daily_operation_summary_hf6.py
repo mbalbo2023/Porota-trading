@@ -21,6 +21,7 @@ from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime
+from ak_byma_calendar import es_dia_habil_operativo
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
@@ -84,6 +85,11 @@ def _load_risk(connection, limit_days: int) -> tuple[list[str], dict[str, dict[s
     for row in rows:
         day = str(row.get("day") or "")
         if not day:
+            continue
+        try:
+            if not es_dia_habil_operativo(datetime.fromisoformat(day).date()):
+                continue
+        except ValueError:
             continue
         if day not in by_day:
             days.append(day)
