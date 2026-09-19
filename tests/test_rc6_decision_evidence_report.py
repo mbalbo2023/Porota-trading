@@ -10,7 +10,18 @@ def _payload():
         "captured_at": "2026-09-19T14:00:00+00:00",
         "decision": {"symbol": "GGAL", "final_result": "OPENED_SIMULATED", "reason": "ok", "paper_id": "PAPER-1"},
         "quote_used": {"symbol": "GGAL", "last": "100"},
-        "runtime": {"real_money_authorized": False}, "inputs_used": {},
+        "runtime": {"real_money_authorized": False},
+        "inputs_used": {
+            "candidate": {
+                "action": "BUY", "score": "0.70", "score_threshold": "0.62",
+                "spread_bps": "90", "max_spread_bps": "200",
+                "confirmation_count": 8, "required_confirmations": 8,
+            },
+            "hard_safety": {
+                "operational_scope": True, "quote_identity": True,
+                "market_admission": True, "real_orders_blocked": True,
+            },
+        },
     }
 
 
@@ -31,6 +42,8 @@ def test_report_verifies_hash_and_writes_bounded_projection(tmp_path):
     assert result["decisions"][0]["state"] == "VERIFIED"
     assert result["decisions"][0]["outcome"] == "CLOSED:12.5"
     assert result["decisions"][0]["profiles"][0]["name"] == "BASELINE_CONSERVATIVE_V1"
+    assert result["decisions"][0]["profiles"][1]["state"] == "VERIFIED"
+    assert result["decisions"][0]["profiles"][1]["action"] == "CANDIDATE_OPEN"
     target = report.write(result, root=tmp_path)
     assert json.loads(target.read_text(encoding="utf-8"))["decisions"][0]["decision_key"] == "d-1"
 
