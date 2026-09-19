@@ -98,16 +98,9 @@ def _decision(raw: Any) -> dict[str, Any]:
     }
 
 
-def _counts(rows: list[dict[str, Any]], raw: Any) -> dict[str, int]:
+def _counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Derive counts from normalised decisions, never trust publisher totals."""
     result = {state: 0 for state in EVIDENCE_STATES}
-    if isinstance(raw, dict):
-        for key in result:
-            try:
-                result[key] = max(0, int(raw.get(key, 0)))
-            except (TypeError, ValueError):
-                pass
-        if any(result.values()):
-            return result
     for row in rows:
         result[row["state"]] += 1
     return result
@@ -129,7 +122,7 @@ def read(root: Path | str | None = None) -> dict[str, Any]:
         "source": _text(raw.get("source"), "SIN_PUBLICACION"),
         "rows": rows[:MAX_DASHBOARD_DECISIONS],
         "total_decisions": len(rows),
-        "counts": _counts(rows, raw.get("counts")),
+        "counts": _counts(rows),
         "aggregate": raw.get("aggregate") if isinstance(raw.get("aggregate"), dict) else {},
         "policy": "READ_ONLY_DASHBOARD_NO_DECISION_OR_ORDER_CHANGE",
     }
