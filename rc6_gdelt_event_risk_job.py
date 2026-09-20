@@ -18,6 +18,15 @@ from fk_gdelt_shadow_feed_rc6 import QUERY_PACKS, GDELTShadowError, collect_shad
 DEFAULT_DB = os.environ.get("POROTA_GDELT_EVENT_DB", "/app/data/event_risk/gdelt_shadow_rc6.db")
 DEFAULT_SAFETY_DB = os.environ.get("POROTA_PAPER_DB", "/app/data/paper_v17/observer_v17.db")
 DEFAULT_MAX_AGE_SECONDS = max(60, int(os.environ.get("POROTA_GDELT_MAX_AGE_SECONDS", "5400")))
+DEFAULT_EVENT_TYPES = (
+    "CENTRAL_BANK", "FX_INTERVENTION", "DEFAULT_RESTRUCTURING", "SANCTIONS",
+    "OIL_SUPPLY_SHOCK", "SHIPPING_DISRUPTION", "ENERGY_INFRA_ATTACK",
+    "WAR_ESCALATION", "MARKET_HALT", "POLITICAL_SHOCK",
+)
+DEFAULT_MAXRECORDS = 5
+MAX_EVENT_TYPES_PER_RUN = 10
+MAX_STORED_EVENTS_FOR_DASHBOARD = 100
+EVENT_RETENTION_DAYS = 30
 
 
 class GDELTEventRiskJobError(RuntimeError):
@@ -71,6 +80,8 @@ def _connect_store(path: str):
           source_tier TEXT NOT NULL,
           provenance_url TEXT NOT NULL,
           payload_hash TEXT NOT NULL,
+          title TEXT NOT NULL DEFAULT '',
+          source_domain TEXT NOT NULL DEFAULT '',
           region TEXT NOT NULL,
           confirmed_at TEXT,
           retracted_at TEXT,
@@ -83,22 +94,29 @@ def _connect_store(path: str):
           ON gdelt_event_risk_events(event_type,available_to_engine_at);
         """
     )
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(gdelt_event_risk_events)")}
+    if "title" not in columns:
+        conn.execute("ALTER TABLE gdelt_event_risk_events ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+    if "source_domain" not in columns:
+        conn.execute("ALTER TABLE gdelt_event_risk_events ADD COLUMN source_domain TEXT NOT NULL DEFAULT ''")
     return conn
 
 
 def run_once(*, db_path: str = DEFAULT_DB, safety_db_path: str = DEFAULT_SAFETY_DB,
-             event_types=None, timespan: str = "6h", maxrecords: int = 25,
+             event_types=None, timespan: str = "6h", maxrecords: int = DEFAULT_MAXRECORDS,
              session=None) -> dict:
     """Fetch bounded structured evidence and persist it with SHADOW_ONLY authority."""
     assert_paper_safety(safety_db_path)
-    selected = list(event_types or sorted(QUERY_PACKS))
+    selected = list(DEFAULT_EVENT_TYPES if event_types is None else event_types)
     unknown = [x for x in selected if x not in QUERY_PACKS]
     if unknown:
         raise GDELTEventRiskJobError("UNKNOWN_EVENT_TYPES:" + ",".join(unknown))
     if not selected:
         raise GDELTEventRiskJobError("NO_EVENT_TYPES")
+    if len(selected) > MAX_EVENT_TYPES_PER_RUN:
+        raise GDELTEventRiskJobError("EVENT_TYPES_PER_RUN_OUT_OF_RANGE")
     maxrecords = int(maxrecords)
-    if not 1 <= maxrecords <= 75:
+    if not 1 <= maxrecords <= 10:
         raise GDELTEventRiskJobError("MAXRECORDS_OUT_OF_RANGE")
 
     run_id = "GDELT-RC6-" + uuid.uuid4().hex[:20]
@@ -125,9 +143,9 @@ def run_once(*, db_path: str = DEFAULT_DB, safety_db_path: str = DEFAULT_SAFETY_
                         """
                         INSERT INTO gdelt_event_risk_events(
                           event_id,event_type,first_seen_at,published_at,available_to_engine_at,
-                          source,source_tier,provenance_url,payload_hash,region,confirmed_at,
+                          source,source_tier,provenance_url,payload_hash,title,source_domain,region,confirmed_at,
                           retracted_at,entities_json,exposures_json,first_recorded_at,last_recorded_at,authority)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'SHADOW_ONLY')
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'SHADOW_ONLY')
                         ON CONFLICT(event_id) DO UPDATE SET
                           last_recorded_at=excluded.last_recorded_at,
                           confirmed_at=COALESCE(excluded.confirmed_at,gdelt_event_risk_events.confirmed_at),
@@ -136,7 +154,8 @@ def run_once(*, db_path: str = DEFAULT_DB, safety_db_path: str = DEFAULT_SAFETY_
                         (
                             event_id, item["event_type"], item["first_seen_at"], item["published_at"],
                             item["available_to_engine_at"], item["source"], item["source_tier"],
-                            item["provenance_url"], item["payload_hash"], item.get("region") or "GLOBAL",
+                            item["provenance_url"], item["payload_hash"], str(item.get("title") or "")[:500],
+                            str(item.get("source_domain") or "")[:255], item.get("region") or "GLOBAL",
                             item.get("confirmed_at"), item.get("retracted_at"),
                             json.dumps(item.get("entities") or [], ensure_ascii=False, sort_keys=True),
                             json.dumps(item.get("exposures") or [], ensure_ascii=False, sort_keys=True),
@@ -154,6 +173,9 @@ def run_once(*, db_path: str = DEFAULT_DB, safety_db_path: str = DEFAULT_SAFETY_
             state = "AMARILLO_PARTIAL"
         else:
             state = "RED_NO_SOURCE_DATA"
+        retention_cutoff = datetime.now(timezone.utc).timestamp() - EVENT_RETENTION_DAYS * 86400
+        retention_iso = datetime.fromtimestamp(retention_cutoff, timezone.utc).isoformat().replace("+00:00", "Z")
+        conn.execute("DELETE FROM gdelt_event_risk_events WHERE available_to_engine_at < ?", (retention_iso,))
         finished = _now()
         conn.execute(
             """UPDATE gdelt_event_risk_runs SET finished_at=?,state=?,successful_event_types=?,
@@ -229,6 +251,28 @@ def latest_status(db_path: str = DEFAULT_DB, *, now: datetime | None = None) -> 
     out["authority"] = "SHADOW_ONLY"
     out["decision_effect"] = "OBSERVE_ONLY"
     return out
+
+def latest_events(db_path: str = DEFAULT_DB, *, limit: int = MAX_STORED_EVENTS_FOR_DASHBOARD) -> list[dict]:
+    """Read a bounded newest-first list for the dashboard; never performs network I/O."""
+    limit = int(limit)
+    if not 1 <= limit <= MAX_STORED_EVENTS_FOR_DASHBOARD:
+        raise GDELTEventRiskJobError("EVENT_LIST_LIMIT_OUT_OF_RANGE")
+    if not os.path.exists(db_path):
+        return []
+    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA query_only=ON")
+        rows = conn.execute(
+            """SELECT event_id,event_type,published_at,title,source_domain,provenance_url,
+                      available_to_engine_at,authority
+               FROM gdelt_event_risk_events
+               WHERE title <> ''
+               ORDER BY published_at DESC, first_recorded_at DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
 
 def main() -> int:
     try:
