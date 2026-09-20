@@ -1,0 +1,103 @@
+name: RC6 observer restart event analysis read only v3 2026-09-20
+
+on:
+  push:
+    branches:
+      - audit/rc6-observer-restart-diagnostic-v3-20260920
+    paths:
+      - '.github/workflows/rc6-observer-restart-diagnostic-readonly-v3-20260920.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+      - name: Classify pre restart logs and events
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          set +o pipefail
+          echo 'DIAGNOSTIC_MODE=READ_ONLY'
+          date -u '+NOW_UTC=%Y-%m-%dT%H:%M:%SZ'
+          sudo -n docker inspect porota_production_observer | python3 -c 'import json,sys; x=json.load(sys.stdin)[0]; s=x["State"]; print("OBSERVER_ID="+x["Id"]); print("OBSERVER_STARTED="+s["StartedAt"]); print("OBSERVER_RESTARTS="+str(x["RestartCount"])); print("OBSERVER_CURRENT_STATE="+str(s["Running"])+"|OOM="+str(s["OOMKilled"])+"|EXIT="+str(s["ExitCode"]))'
+          echo 'RECENT_CONTAINER_RESTART_EVENTS_BEGIN'
+          sudo -n docker events --since 4h --until "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --filter container=porota_production_observer --format '{{json .}}' 2>/dev/null | python3 -c 'import json,sys; keep={"die","start","restart","kill","oom","destroy"}
+for line in sys.stdin:
+ try: x=json.loads(line)
+ except Exception: continue
+ a=x.get("Action","")
+ if a in keep:
+  attrs=x.get("Actor",{}).get("Attributes",{})
+  print("CONTAINER_EVENT="+str(x.get("timeNano",""))+"|"+a+"|EXIT="+str(attrs.get("exitCode",""))+"|SIGNAL="+str(attrs.get("signal",""))+"|OOM="+str(attrs.get("oom","")))'
+          echo 'RECENT_CONTAINER_RESTART_EVENTS_END'
+          echo 'PRE_RESTART_LOG_CLASSIFICATION_BEGIN'
+          sudo -n docker logs --timestamps --since '2026-09-20T15:00:00Z' --until '2026-09-20T15:19:24Z' porota_production_observer 2>&1 | python3 -c 'import re,sys
+rows=[]; counts={}
+for raw in sys.stdin:
+ s=raw.rstrip(); ts=s[:30]
+ u=s.upper()
+ if any(k in u for k in ("TRACEBACK","EXCEPTION","FATAL","ERROR")): kind="ERROR"
+ elif any(k in u for k in ("SHUTDOWN","STOPPING","SIGNAL","EXITING","TERMINAT")): kind="SHUTDOWN"
+ elif "WARNING" in u or "WARN" in u: kind="WARNING"
+ elif any(k in u for k in ("SCHEDULER","JOB","CANDLE","HEARTBEAT","OBSERVER")): kind="OPERATION"
+ else: kind="OTHER"
+ counts[kind]=counts.get(kind,0)+1
+ rows.append((ts,kind))
+print("PRE_RESTART_LOG_LINES="+str(len(rows)))
+print("PRE_RESTART_LOG_COUNTS="+"|".join(k+"="+str(counts.get(k,0)) for k in ("ERROR","SHUTDOWN","WARNING","OPERATION","OTHER")))
+for ts,kind in rows[-30:]: print("PRE_RESTART_LOG_TAIL="+ts+"|"+kind)'
+          echo 'PRE_RESTART_LOG_CLASSIFICATION_END'
+          echo 'KERNEL_MEMORY_PRESSURE_BEGIN'
+          sudo -n journalctl -k --since '2026-09-20T15:00:00Z' --no-pager 2>/dev/null | python3 -c 'import sys
+rows=[x.rstrip() for x in sys.stdin if any(k in x.lower() for k in ("out of memory","oom-kill","killed process","memory cgroup out of memory"))]
+print("KERNEL_MEMORY_EVENT_COUNT="+str(len(rows)))
+for x in rows[-15:]: print("KERNEL_MEMORY_EVENT="+x[:220])'
+          echo 'KERNEL_MEMORY_PRESSURE_END'
+          echo 'RELEVANT_TIMERS_BEGIN'
+          systemctl list-timers --all --no-pager | awk 'tolower($0) ~ /candle|introspection|scheduler/ {print "TIMER=" $1 "|" $2 "|" $3 "|" $4 "|" $5 "|" $6}'
+          echo 'RELEVANT_TIMERS_END'
+          echo 'CURRENT_PAPER_STATE_BEGIN'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=5)
+          c.execute("PRAGMA query_only=ON")
+          row=c.execute("SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print("OBSERVER_STATE="+"|".join(map(str,row)))
+          PY
+          echo 'CURRENT_PAPER_STATE_END'
+          echo 'SWAP_BEGIN'
+          sudo -n swapon --show --bytes
+          echo 'SWAP_END'
+          REMOTE
+      - name: Delete isolated diagnostic branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gh api --method DELETE "repos/$REPOSITORY/git/refs/heads/audit/rc6-observer-restart-diagnostic-v3-20260920" || true
