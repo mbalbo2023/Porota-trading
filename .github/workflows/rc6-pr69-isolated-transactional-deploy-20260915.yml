@@ -136,7 +136,7 @@ jobs:
                   :
                 elif [[ "$ref" =~ ^porota-trading-bot:17\.0\.0-rc6-(pr69|strategy|eod-only|p0-eod|f01|eod-ui)-[0-9a-f]{12}$ ]] || \
                      [[ "$ref" =~ ^porota-trading-bot:17\.0\.0-rc6-scalping-[0-9a-f]{7}$ ]] || \
-                     [ "$ref" = "porota-trading-bot:17.0.0-rc6-candidate-e47eeffc" ] || \\
+                     [ "$ref" = "porota-trading-bot:17.0.0-rc6-candidate-e47eeffc" ] || \
                      [ "$ref" = "porota-trading-bot:17.0.0-rc4-test-ready1" ]; then
                   :
                 else
@@ -233,7 +233,7 @@ jobs:
           # now resolves to a different immutable image. Its database and
           # credentials remain bind-mounted; the health probe is issues-only.
           COMPOSE_IMAGES="$(sudo -n env POROTA_IMAGE="$TARGET_IMAGE" docker compose -f "$REPO/docker-compose.yml" config --images)"
-          printf '%s\\n' "$COMPOSE_IMAGES"
+          printf '%s\n' "$COMPOSE_IMAGES"
           test "$(grep -Fxc "$TARGET_IMAGE" <<< "$COMPOSE_IMAGES")" -eq 2
           ! grep -Fq 'rc4-test-ready1' <<< "$COMPOSE_IMAGES"
           if sudo -n systemctl is-active --quiet porota-critical-approval-rc6.service; then
