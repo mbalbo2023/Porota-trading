@@ -27,7 +27,10 @@ def test_deploy_storage_audit_and_allowlisted_image_retention_are_safe():
     assert "STORAGE_CLEANUP=ALLOWLISTED_RC6_CANDIDATE_ROLLBACK_AND_UNUSED_RC4_TEST_TAGS_ONLY" in body
     assert '[ "$ref" = "porota-trading-bot:17.0.0-rc4-test-ready1" ]' in body
     assert 'install -m 0644 "$STAGE/docker-compose.yml" "$REPO/docker-compose.yml"' in body
-    assert "LEGACY_COMPOSE_IMAGE_DEFAULT=REMOVED" in body
+    assert "LEGACY_COMPOSE_IMAGE_DEFAULT=RC6_STABLE" in body
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    assert "porota-trading-bot:17.0.0-rc6" in compose
+    assert "rc4-test-ready1" not in compose
     assert "RC6_APPROVAL_IMAGE_RECONCILE=GREEN" in body
     assert "RC6_APPROVAL_ISSUES_ONLY=GREEN" in body
     assert "RC6_APPROVAL_PAPER_SECRET_GUARD=GREEN" in body
