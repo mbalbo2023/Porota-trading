@@ -181,7 +181,7 @@ def stop_engines(include_dashboard=True):
         if not include_dashboard and name in {"porota_production_dashboard", "porota_dashboard_preview"}:
             continue
         run("docker", "rm", "-f", name, check=False, capture=True)
-    run("docker", "compose", "stop", "-t", "20", "bot", "sre_vectordb",
+    run("docker", "compose", "stop", "-t", "20", "bot",
         check=False, capture=True)
 
 
@@ -278,7 +278,6 @@ def sandbox():
                {"PPI_SANDBOX": "MARKET_DATA_AND_SANDBOX_ORDERS", "TELEGRAM": "ACTIVE"},
                detail="Iniciando Sandbox")
     start_dashboard("SANDBOX")
-    run("docker", "compose", "up", "-d", "sre_vectordb")
     run("docker", "compose", "run", "-d", "--name", "porota_sandbox_engine",
         "--no-deps", "bot")
     status = notify("🧪 POROTA — MODO SANDBOX\nLas órdenes se envían únicamente al entorno de pruebas de PPI. Dinero real: NINGUNO.")
