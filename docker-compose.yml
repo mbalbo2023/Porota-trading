@@ -133,8 +133,5 @@ services:
       - FOWNER
 
 networks:
-      - porota_bot_net
-
-networks:
   porota_bot_net:
     driver: bridge
