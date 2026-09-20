@@ -56,9 +56,12 @@ jobs:
           status=g.latest_status()
           keys=('state','last_run_state','freshness','freshness_seconds','started_at','finished_at','requested_event_types','successful_event_types','events_total','latest_event_available_at','authority','decision_effect')
           print('GDELT_STATUS='+json.dumps({k:status.get(k) for k in keys},ensure_ascii=False,sort_keys=True))
-          events=g.latest_events(limit=100)
-          print('GDELT_TITLED_EVENTS='+str(len(events)))
-          for e in events[:10]: print('GDELT_HEADLINE='+json.dumps({k:e.get(k) for k in ('published_at','event_type','title','source_domain','provenance_url')},ensure_ascii=False))
+          try:
+              events=g.latest_events(limit=100)
+              print('GDELT_TITLED_EVENTS='+str(len(events)))
+              for e in events[:10]: print('GDELT_HEADLINE='+json.dumps({k:e.get(k) for k in ('published_at','event_type','title','source_domain','provenance_url')},ensure_ascii=False))
+          except Exception as e:
+              print('GDELT_EVENTS_READ_ERROR='+type(e).__name__+':'+str(e))
           PY
           echo RISK_PANEL_RENDER
           sudo -n docker exec -i -w /app porota_production_dashboard python - <<'PY'
