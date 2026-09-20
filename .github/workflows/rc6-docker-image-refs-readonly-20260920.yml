@@ -24,9 +24,9 @@ jobs:
         run: |
           set -Eeuo pipefail
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\\n' "$SSH_KEY" > "$HOME/.ssh/porota-audit"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota-audit"
           chmod 600 "$HOME/.ssh/porota-audit"
-          printf '%s\\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
       - name: Inspect live container and image references (read-only)
         shell: bash
