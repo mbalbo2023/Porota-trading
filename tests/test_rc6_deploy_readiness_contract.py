@@ -24,7 +24,13 @@ def test_deploy_bootstraps_compact_daily_views_once_without_reenabling_real_orde
 def test_deploy_storage_audit_and_allowlisted_image_retention_are_safe():
     body = WORKFLOW.read_text(encoding="utf-8")
     assert "STORAGE_AUDIT=READ_ONLY" in body
-    assert "STORAGE_CLEANUP=ALLOWLISTED_RC6_CANDIDATE_ROLLBACK_TAGS_ONLY" in body
+    assert "STORAGE_CLEANUP=ALLOWLISTED_RC6_CANDIDATE_ROLLBACK_AND_UNUSED_RC4_TEST_TAGS_ONLY" in body
+    assert '[ "$ref" = "porota-trading-bot:17.0.0-rc4-test-ready1" ]' in body
+    assert 'install -m 0644 "$STAGE/docker-compose.yml" "$REPO/docker-compose.yml"' in body
+    assert "LEGACY_COMPOSE_IMAGE_DEFAULT=REMOVED" in body
+    assert "RC6_APPROVAL_IMAGE_RECONCILE=GREEN" in body
+    assert "RC6_APPROVAL_ISSUES_ONLY=GREEN" in body
+    assert "RC6_APPROVAL_PAPER_SECRET_GUARD=GREEN" in body
     assert "trap cleanup_rc6_image_tags EXIT" in body
     assert r"porota-trading-bot:17\.0\.0-rc6-(candidate|rollback)-[0-9a-f]{40}" in body
     assert '[ "$ref" = "$CANDIDATE_IMAGE" ]' in body
