@@ -1,0 +1,77 @@
+name: RC6 GDELT runtime read-only 2026-09-20
+
+on:
+  push:
+    branches:
+      - audit/rc6-gdelt-runtime-readonly-20260920
+    paths:
+      - '.github/workflows/rc6-gdelt-runtime-readonly-20260920.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  readonly-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Read production state only
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/rc6-readonly.txt
+          set -euo pipefail
+          echo READONLY_BEGIN
+          for c in porota_production_observer porota_production_dashboard; do
+            printf '%s=' "$c"
+            sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{index .Config.Labels "porota.commit"}}' "$c" 2>/dev/null || echo INSPECT_UNAVAILABLE
+          done
+          echo PAPER_AND_GDELT_STATUS
+          sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
+          import json, sqlite3
+          import rc6_gdelt_event_risk_job as g
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=5)
+          c.execute('PRAGMA query_only=ON')
+          print('OBSERVER_QC='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+          row=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at FROM observer_state WHERE id=1').fetchone()
+          print('OBSERVER_STATE='+json.dumps(row,ensure_ascii=False))
+          c.close()
+          status=g.latest_status()
+          keys=('state','last_run_state','freshness','freshness_seconds','started_at','finished_at','requested_event_types','successful_event_types','events_total','latest_event_available_at','authority','decision_effect')
+          print('GDELT_STATUS='+json.dumps({k:status.get(k) for k in keys},ensure_ascii=False,sort_keys=True))
+          events=g.latest_events(limit=100)
+          print('GDELT_TITLED_EVENTS='+str(len(events)))
+          for e in events[:10]: print('GDELT_HEADLINE='+json.dumps({k:e.get(k) for k in ('published_at','event_type','title','source_domain','provenance_url')},ensure_ascii=False))
+          PY
+          echo RISK_PANEL_RENDER
+          sudo -n docker exec -i -w /app porota_production_dashboard python - <<'PY'
+          import re
+          import rc6_risk_gdelt_dashboard as d
+          html=d.render_section()
+          print('RISK_TABLE_PRESENT='+str('rc6-gdelt-news-table' in html))
+          print('SHOW_MORE_PRESENT='+str('Mostrar más' in html))
+          print('INITIAL_VISIBLE_ROWS='+str(len(re.findall(r'<tr(?![^>]*gdelt-more-row)[^>]*>',html))))
+          print('TABLE_ROWS='+str(len(re.findall(r'<tr[^>]*>',html))))
+          PY
+          echo HOST_TIMERS
+          sudo -n systemctl list-timers --all --no-pager --no-legend | grep -Ei 'porota.*(gdelt|snapshot|preopen|introspe|scheduler|candle|inmarket|iol)' || true
+          echo READONLY_END
+          REMOTE
+          { echo 'RC6 runtime check (read-only)'; sed -n '1,220p' /tmp/rc6-readonly.txt; } >> "$GITHUB_STEP_SUMMARY"
