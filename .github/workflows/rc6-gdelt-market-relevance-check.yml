@@ -6,7 +6,12 @@ on:
     paths:
       - .github/workflows/rc6-gdelt-market-relevance-check.yml
       - fk_gdelt_shadow_feed_rc6.py
-      - tests/test_fk_gdelt_shadow_feed_rc6.py\n      - rc6_gdelt_event_risk_job.py\n      - rc6_risk_gdelt_dashboard.py\n      - fi_event_risk_shadow_rc6.py\n      - tests/test_rc6_gdelt_event_risk_job.py\n      - tests/test_rc6_risk_gdelt_dashboard.py
+      - tests/test_fk_gdelt_shadow_feed_rc6.py
+      - rc6_gdelt_event_risk_job.py
+      - rc6_risk_gdelt_dashboard.py
+      - fi_event_risk_shadow_rc6.py
+      - tests/test_rc6_gdelt_event_risk_job.py
+      - tests/test_rc6_risk_gdelt_dashboard.py
 permissions:
   contents: read
 jobs:
