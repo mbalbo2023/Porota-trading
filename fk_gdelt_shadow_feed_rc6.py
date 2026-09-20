@@ -23,7 +23,7 @@ QUERY_PACKS={
 "NATURAL_DISASTER":'(earthquake OR hurricane OR flood OR wildfire)',
 "CYBER_INCIDENT":'(cyberattack OR ransomware OR "major cyber incident")',
 "MARKET_HALT":'("market halt" OR "trading halt" OR "exchange suspension" OR "stock trading suspension")',
-"POLITICAL_SHOCK":'("state of emergency" OR "government collapse" OR coup OR "political crisis")'
+"POLITICAL_SHOCK":'("state of emergency" OR "government collaps\w*" OR coup OR "political crisis")'
 }
 
 # API queries search article text, not only headlines. Fail closed on unrelated
