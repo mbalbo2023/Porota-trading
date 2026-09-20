@@ -38,24 +38,6 @@ jobs:
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/rc6-readonly.txt
           set -euo pipefail
           echo READONLY_BEGIN
-          echo DROPLET_GDELT_API_PROBE_SINGLE_GET
-          sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
-          import json
-          from fk_gdelt_shadow_feed_rc6 import fetch_articles
-          try:
-              articles, retrieved_at = fetch_articles(event_type="CENTRAL_BANK", timespan="24h", maxrecords=1)
-              print("DROPLET_GDELT_HTTP=200")
-              print("DROPLET_GDELT_RETRIEVED_AT="+retrieved_at)
-              print("DROPLET_GDELT_ARTICLES="+str(len(articles)))
-              if articles:
-                  print("DROPLET_GDELT_SAMPLE="+json.dumps({k:articles[0].get(k) for k in ("title","domain","seendate")},ensure_ascii=False))
-          except Exception as e:
-              print("DROPLET_GDELT_ERROR="+type(e).__name__+":"+str(e)[:300])
-          PY
-          for c in porota_production_observer porota_production_dashboard; do
-            printf '%s=' "$c"
-            sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{index .Config.Labels "porota.commit"}}' "$c" 2>/dev/null || echo INSPECT_UNAVAILABLE
-          done
           echo PAPER_AND_GDELT_STATUS
           sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
           import json, sqlite3
@@ -87,8 +69,14 @@ jobs:
           print('INITIAL_VISIBLE_ROWS='+str(len(re.findall(r'<tr(?![^>]*gdelt-more-row)[^>]*>',html))))
           print('TABLE_ROWS='+str(len(re.findall(r'<tr[^>]*>',html))))
           PY
-          echo HOST_TIMERS
-          sudo -n systemctl list-timers --all --no-pager --no-legend | grep -Ei 'porota.*(gdelt|snapshot|preopen|introspe|scheduler|candle|inmarket|iol)' || true
+          echo TIMER_UNIT_FILES
+          sudo -n systemctl list-unit-files --type=timer --no-pager | grep -i porota || true
+          echo ALL_TIMER_STATUS
+          sudo -n systemctl list-timers --all --no-pager
+          echo TARGET_TIMER_STATES
+          for u in porota-preopen-rc6.timer porota-snapshot-preopen-rc6.timer porota-iol-shadow-collector-rc6.timer porota-snapshot-postclose-rc6.timer porota-introspection-rc6.timer porota-introspection-publish-rc6.timer porota-scheduler-export-rc6.timer porota-candle-integrity-rc6.timer porota-rc6-candle-inmarket-verify.timer porota-introspeccion-hf5.timer porota-introspection-publish.timer porota-scheduler-export-hf6.timer porota-gdelt-rc6.timer; do
+            echo "$u|enabled=$(sudo -n systemctl is-enabled "$u" 2>/dev/null || true)|active=$(sudo -n systemctl is-active "$u" 2>/dev/null || true)"
+          done
           echo READONLY_END
           REMOTE
           { echo 'RC6 runtime check (read-only)'; sed -n '1,220p' /tmp/rc6-readonly.txt; } >> "$GITHUB_STEP_SUMMARY"
