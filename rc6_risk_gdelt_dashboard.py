@@ -52,7 +52,7 @@ def _news_rows(events: list[dict]) -> str:
             link = _e(item.get("title") or "—")
         else:
             link = f"<a href='{_e(url)}' target='_blank' rel='noopener noreferrer'>{_e(item.get('title') or '—')}</a>"
-        hidden = " class='gdelt-more-row' hidden" if index >= 10 else ""
+        hidden = " class='gdelt-more-row' hidden style='display:none!important'" if index >= 10 else ""
         rows.append(
             f"<tr{hidden}><td>{_e(item.get('published_at'))}</td>"
             f"<td>{_e(item.get('event_type'))}</td><td data-wrap='true'>{link}</td>"
@@ -109,7 +109,7 @@ def render_section() -> str:
         if(!table||!button)return;
         button.addEventListener('click',function(){{
           const hidden=Array.from(table.querySelectorAll('tr.gdelt-more-row[hidden]')).slice(0,10);
-          hidden.forEach(row=>row.removeAttribute('hidden'));
+          hidden.forEach(row=>{{row.removeAttribute('hidden');row.style.removeProperty('display');}});
           button.setAttribute('aria-expanded','true');
           if(!table.querySelector('tr.gdelt-more-row[hidden]'))button.hidden=true;
         }});
