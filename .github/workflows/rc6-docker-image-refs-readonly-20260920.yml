@@ -52,7 +52,7 @@ jobs:
           echo '=== IMAGE IDS, POROTA LABELS AND ROOTFS LAYER COUNT ==='
           image_ids="$(sudo -n docker image ls -aq --no-trunc | sort -u)"
           if [ -n "$image_ids" ]; then
-            sudo -n docker image inspect --format 'IMAGE={{.Id}}|TAGS={{json .RepoTags}}|CREATED={{.Created}}|BYTES={{.Size}}|POROTA_COMMIT={{index .Config.Labels "porota.commit"}}|POROTA_VERSION={{index .Config.Labels "porota.version"}}|ROOTFS_LAYERS={{len .RootFS.Layers}}' $image_ids
+            sudo -n docker image inspect --format 'IMAGE={{.Id}}|TAGS={{json .RepoTags}}|CREATED={{.Created}}|BYTES={{.Size}}|POROTA_COMMIT={{if .Config.Labels}}{{index .Config.Labels "porota.commit"}}{{else}}<none>{{end}}|POROTA_VERSION={{if .Config.Labels}}{{index .Config.Labels "porota.version"}}{{else}}<none>{{end}}|ROOTFS_LAYERS={{len .RootFS.Layers}}' $image_ids
           fi
           echo '=== STORAGE SUMMARY ==='
           sudo -n docker system df
