@@ -24,7 +24,7 @@ def test_persists_structured_shadow_evidence_only(tmp_path,monkeypatch):
             'source':'GDELT_DOC:example.com',
             'source_tier':'TIER_C_SINGLE_SOURCE',
             'provenance_url':'https://example.com/event',
-            'payload_hash':'abc123',
+            'payload_hash':'abc123',\n            'title':'Russia sanctions drive oil prices higher',\n            'source_domain':'example.com',
             'region':'GLOBAL',
             'confirmed_at':None,
             'retracted_at':None,
@@ -38,8 +38,23 @@ def test_persists_structured_shadow_evidence_only(tmp_path,monkeypatch):
     assert out['generic_news_feed']=='INTENTIONALLY_OFF_UNTOUCHED'
     c=sqlite3.connect(store)
     assert c.execute('select count(*) from gdelt_event_risk_events').fetchone()[0]==1
-    assert c.execute('select authority from gdelt_event_risk_events').fetchone()[0]=='SHADOW_ONLY'
+    assert c.execute('select authority from gdelt_event_risk_events').fetchone()[0]=='SHADOW_ONLY'\n    assert c.execute('select title,source_domain from gdelt_event_risk_events').fetchone()==('Russia sanctions drive oil prices higher','example.com')\n    headlines=m.latest_events(str(store),limit=10)\n    assert headlines[0]['title']=='Russia sanctions drive oil prices higher'\n    assert headlines[0]['authority']=='SHADOW_ONLY'
     c.close()
+
+
+def test_default_ingestion_is_bounded():
+    assert len(m.DEFAULT_EVENT_TYPES) <= m.MAX_EVENT_TYPES_PER_RUN
+    assert m.DEFAULT_MAXRECORDS == 5
+    assert len(m.DEFAULT_EVENT_TYPES) * m.DEFAULT_MAXRECORDS <= 50
+
+
+def test_dashboard_event_limit_is_bounded(tmp_path):
+    try:
+        m.latest_events(str(tmp_path / "missing.db"), limit=101)
+    except m.GDELTEventRiskJobError as exc:
+        assert "EVENT_LIST_LIMIT_OUT_OF_RANGE" in str(exc)
+    else:
+        raise AssertionError("expected dashboard list limit guard")
 
 
 def test_fails_closed_on_real_orders(tmp_path):
