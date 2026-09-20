@@ -5,6 +5,8 @@ on:
       - fix/rc6-gdelt-market-relevance-20260920
     paths:
       - .github/workflows/rc6-gdelt-market-relevance-check.yml
+      - fk_gdelt_shadow_feed_rc6.py
+      - tests/test_fk_gdelt_shadow_feed_rc6.py
 permissions:
   contents: read
 jobs:
