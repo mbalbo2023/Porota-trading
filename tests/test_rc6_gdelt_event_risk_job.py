@@ -24,7 +24,9 @@ def test_persists_structured_shadow_evidence_only(tmp_path,monkeypatch):
             'source':'GDELT_DOC:example.com',
             'source_tier':'TIER_C_SINGLE_SOURCE',
             'provenance_url':'https://example.com/event',
-            'payload_hash':'abc123',\n            'title':'Russia sanctions drive oil prices higher',\n            'source_domain':'example.com',
+            'payload_hash':'abc123',
+            'title':'Russia sanctions drive oil prices higher',
+            'source_domain':'example.com',
             'region':'GLOBAL',
             'confirmed_at':None,
             'retracted_at':None,
@@ -38,7 +40,11 @@ def test_persists_structured_shadow_evidence_only(tmp_path,monkeypatch):
     assert out['generic_news_feed']=='INTENTIONALLY_OFF_UNTOUCHED'
     c=sqlite3.connect(store)
     assert c.execute('select count(*) from gdelt_event_risk_events').fetchone()[0]==1
-    assert c.execute('select authority from gdelt_event_risk_events').fetchone()[0]=='SHADOW_ONLY'\n    assert c.execute('select title,source_domain from gdelt_event_risk_events').fetchone()==('Russia sanctions drive oil prices higher','example.com')\n    headlines=m.latest_events(str(store),limit=10)\n    assert headlines[0]['title']=='Russia sanctions drive oil prices higher'\n    assert headlines[0]['authority']=='SHADOW_ONLY'
+    assert c.execute('select authority from gdelt_event_risk_events').fetchone()[0]=='SHADOW_ONLY'
+    assert c.execute('select title,source_domain from gdelt_event_risk_events').fetchone()==('Russia sanctions drive oil prices higher','example.com')
+    headlines=m.latest_events(str(store),limit=10)
+    assert headlines[0]['title']=='Russia sanctions drive oil prices higher'
+    assert headlines[0]['authority']=='SHADOW_ONLY'
     c.close()
 
 
