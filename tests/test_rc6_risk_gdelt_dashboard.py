@@ -56,7 +56,8 @@ def test_news_table_starts_with_ten_rows_and_reveals_more_in_batches(monkeypatch
     ])
     rendered = panel.render_section()
     assert rendered.count("class='gdelt-more-row' hidden style='display:none!important'") == 15
-    assert rendered.count("<tr") == 26  # one header plus 25 candidate rows
+    news_table = rendered.split("id='rc6-gdelt-news-table'", 1)[1].split("</table>", 1)[0]
+    assert news_table.count("<tr") == 26  # one header plus 25 candidate rows
     assert "Mostrar más" in rendered
     assert "slice(0,10)" in rendered
     assert "row.style.removeProperty('display')" in rendered
