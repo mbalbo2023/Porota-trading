@@ -53,6 +53,18 @@ _SYSTEMIC_GEO_PATTERN = re.compile(
     r"\b(united states|u\.s\.|usa|china|russia|ukraine|iran|israel|taiwan|north korea|south korea|european union|eu\b|nato|opec|strait of hormuz|red sea|south china sea|black sea|estados unidos|rusia|ucrania|union europea|mar rojo|mar negro|etats unis|chine|russie|ukraine|union europeenne|vereinigte staaten|russland|stati uniti|ucraina|unione europea)\b",
     re.IGNORECASE,
 )
+_SANCTIONS_IMPACT_PATTERN = re.compile(
+    r"\\b(financial|finance|market|stock|bond|yield|currency|forex|exchange rate|econom\\w*|trade|tariff\\w*|oil|crude|petroleum|gas|energy|commodit\\w*|export\\w*|import\\w*|company|bank\\w*|debt|credit|supply|mercado\\w*|financier\\w*|econom\\w*|comercio|arancel\\w*|petrole\\w*|energia|exportacion\\w*|importacion\\w*|deuda|bono\\w*|finance\\w*|economie\\w*|commerce|approvisionnement|dette|wirtschaft\\w*|handel|debito|mercato finanziario)\\b",
+    re.IGNORECASE,
+)
+_OIL_SUPPLY_IMPACT_PATTERN = re.compile(
+    r"\\b(price\\w*|market\\w*|supply|disrupt\\w*|shock|production|output|export\\w*|import\\w*|shortage|opec|precio\\w*|mercado\\w*|suministro|disrupcion|produccion|exportacion\\w*|prix|marche\\w*|approvisionnement|produktion|markt\\w*)\\b",
+    re.IGNORECASE,
+)
+_SHIPPING_IMPACT_PATTERN = re.compile(
+    r"\\b(trade|cargo|freight|supply|oil|crude|gas|energy|export\\w*|import\\w*|price\\w*|market\\w*|comercio|carga|flete|suministro|petrole\\w*|energia|exportacion\\w*|importacion\\w*|prix|commerce|approvisionnement|fracht|handel)\\b",
+    re.IGNORECASE,
+)
 _DIRECT_FINANCIAL_TYPES = frozenset({
     "CENTRAL_BANK", "FX_INTERVENTION", "REGULATORY",
     "DEFAULT_RESTRUCTURING", "MARKET_HALT",
@@ -70,6 +82,15 @@ def is_market_relevant_title(event_type: str, title: str) -> bool:
         return False
     if event_type in _DIRECT_FINANCIAL_TYPES:
         return True
+    if event_type == "SANCTIONS":
+        return bool(_SANCTIONS_IMPACT_PATTERN.search(text) or _SYSTEMIC_GEO_PATTERN.search(text))
+    if event_type == "OIL_SUPPLY_SHOCK":
+        return bool(_OIL_SUPPLY_IMPACT_PATTERN.search(text))
+    if event_type == "SHIPPING_DISRUPTION":
+        return bool(
+            _SHIPPING_IMPACT_PATTERN.search(text)
+            or _SYSTEMIC_GEO_PATTERN.search(text)
+        )
     if _MARKET_IMPACT_PATTERN.search(text):
         return True
     return event_type in {
