@@ -28,57 +28,6 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Probe GDELT API once (read-only, maxrecords=1)
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          from urllib.error import HTTPError, URLError
-          from urllib.parse import urlencode
-          from urllib.request import Request, build_opener, HTTPRedirectHandler
-
-          class NoRedirect(HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  return None
-
-          base = "https://api.gdeltproject.org/api/v2/doc/doc"
-          params = {
-              "query": '("central bank rate decision" OR "emergency rate decision" OR "monetary policy decision" OR "interest rate decision")',
-              "mode": "artlist", "format": "json", "sort": "datedesc",
-              "timespan": "24h", "maxrecords": "1",
-          }
-          req = Request(base + "?" + urlencode(params), headers={
-              "Accept": "application/json",
-              "User-Agent": "porota-rc6-gdelt-shadow/1.0",
-          })
-          try:
-              with build_opener(NoRedirect).open(req, timeout=15) as response:
-                  body = response.read(200000)
-                  print("GDELT_API_HTTP_STATUS=" + str(response.status))
-                  for key in ("Date", "Retry-After", "Content-Type", "Server", "Via"):
-                      value = response.headers.get(key)
-                      if value: print("GDELT_API_HEADER_" + key.upper().replace("-", "_") + "=" + value[:200])
-                  payload = json.loads(body.decode("utf-8"))
-                  articles = payload.get("articles") if isinstance(payload, dict) else None
-                  print("GDELT_API_ARTICLES_COUNT=" + str(len(articles) if isinstance(articles, list) else "INVALID_SHAPE"))
-                  if isinstance(articles, list) and articles:
-                      article = articles[0]
-                      print("GDELT_API_SAMPLE=" + json.dumps({
-                          "title": article.get("title"),
-                          "domain": article.get("domain"),
-                          "seendate": article.get("seendate"),
-                      }, ensure_ascii=False))
-          except HTTPError as exc:
-              print("GDELT_API_HTTP_STATUS=" + str(exc.code))
-              for key in ("Date", "Retry-After", "Content-Type", "Server", "Via"):
-                  value = exc.headers.get(key)
-                  if value: print("GDELT_API_HEADER_" + key.upper().replace("-", "_") + "=" + value[:200])
-              print("GDELT_API_ERROR_BODY=" + exc.read(300).decode("utf-8", "replace").replace("\\n", " ")[:300])
-          except Exception as exc:
-              print("GDELT_API_TRANSPORT_ERROR=" + type(exc).__name__ + ":" + str(exc)[:300])
-          PY
-
       - name: Read production state only
         shell: bash
         env:
@@ -89,6 +38,20 @@ jobs:
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/rc6-readonly.txt
           set -euo pipefail
           echo READONLY_BEGIN
+          echo DROPLET_GDELT_API_PROBE_SINGLE_GET
+          sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
+          import json
+          from fk_gdelt_shadow_feed_rc6 import fetch_articles
+          try:
+              articles, retrieved_at = fetch_articles(event_type="CENTRAL_BANK", timespan="24h", maxrecords=1)
+              print("DROPLET_GDELT_HTTP=200")
+              print("DROPLET_GDELT_RETRIEVED_AT="+retrieved_at)
+              print("DROPLET_GDELT_ARTICLES="+str(len(articles)))
+              if articles:
+                  print("DROPLET_GDELT_SAMPLE="+json.dumps({k:articles[0].get(k) for k in ("title","domain","seendate")},ensure_ascii=False))
+          except Exception as e:
+              print("DROPLET_GDELT_ERROR="+type(e).__name__+":"+str(e)[:300])
+          PY
           for c in porota_production_observer porota_production_dashboard; do
             printf '%s=' "$c"
             sudo -n docker inspect -f '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{index .Config.Labels "porota.commit"}}' "$c" 2>/dev/null || echo INSPECT_UNAVAILABLE
