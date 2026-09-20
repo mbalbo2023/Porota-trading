@@ -7,6 +7,10 @@ antes de promover. Las excepciones no se convierten en fills.
 """
 from __future__ import annotations
 
+# Capture native fatal-signal traceback in the container PID 1 runtime.
+import faulthandler
+faulthandler.enable(all_threads=True)
+
 import fcntl
 import os
 import signal
