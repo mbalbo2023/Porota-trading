@@ -1,0 +1,93 @@
+name: RC6 Docker storage forensics 2026-09-20
+
+on:
+  push:
+    branches:
+      - audit/rc6-storage-forensics-v3-20260920
+    paths:
+      - .github/workflows/rc6-docker-storage-forensics-v3-20260920.yml
+
+permissions:
+  contents: read
+
+jobs:
+  live-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota-audit"
+          chmod 600 "$HOME/.ssh/porota-audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect actual Docker and filesystem allocation (read-only)
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota-audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo '=== Filesystem exact blocks and inodes ==='
+          df -PB1 / /var/lib/docker /opt
+          df -i / /var/lib/docker /opt
+          echo '=== Docker storage driver and root ==='
+          sudo -n docker info --format 'DOCKER_ROOT={{.DockerRootDir}}|DRIVER={{.Driver}}|CONTAINERD={{.ContainerdCommit.ID}}'
+          echo '=== Docker detailed accounting ==='
+          sudo -n docker system df -v
+          echo '=== Docker image references (same immutable ID means aliases) ==='
+          sudo -n docker image ls --no-trunc --digests --format 'REF={{.Repository}}:{{.Tag}}|ID={{.ID}}|SIZE={{.Size}}'
+          echo '=== Per-image stored byte size and layer count ==='
+          image_ids="$(sudo -n docker image ls -aq --no-trunc | sort -u)"
+          if [ -n "$image_ids" ]; then
+            sudo -n docker image inspect --format 'IMAGE={{.Id}}|TAGS={{json .RepoTags}}|BYTES={{.Size}}|LAYERS={{len .RootFS.Layers}}' $image_ids
+          fi
+          echo '=== Allocated bytes versus apparent bytes under Docker root ==='
+          docker_root="$(sudo -n docker info --format '{{.DockerRootDir}}')"
+          sudo -n du -x -B1 --max-depth=1 "$docker_root" 2>/dev/null | sort -n
+          sudo -n du -x --apparent-size -B1 --max-depth=1 "$docker_root" 2>/dev/null | sort -n
+          echo '=== Docker subdirectory allocation (if present) ==='
+          for path in "$docker_root/overlay2" "$docker_root/buildkit" "$docker_root/containers" "$docker_root/image" "$docker_root/volumes" "$docker_root/containerd"; do
+            if sudo -n test -d "$path"; then
+              sudo -n du -x -B1 --max-depth=1 "$path" 2>/dev/null | sort -n
+            fi
+          done
+          echo '=== Host storage paths, including containerd overlayfs snapshotter ==='
+          for path in /var/lib /var/lib/containerd /var/lib/buildkit /var/cache /var/log /opt /root/.cache; do
+            if sudo -n test -e "$path"; then
+              sudo -n du -x -B1 --max-depth=1 "$path" 2>/dev/null | sort -n
+              sudo -n du -x --apparent-size -B1 -s "$path" 2>/dev/null
+            fi
+          done
+          if sudo -n test -d /var/lib/containerd; then
+            for path in /var/lib/containerd/io.containerd.content.v1.content /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs /var/lib/containerd/io.containerd.snapshotter.v1.native; do
+              if sudo -n test -d "$path"; then sudo -n du -x -B1 --max-depth=1 "$path" 2>/dev/null | sort -n; fi
+            done
+          fi
+          echo '=== Docker builder cache reclaimability detail (read-only) ==='
+          sudo -n docker builder du --verbose || true
+          echo '=== Relevant persistent application data sizes ==='
+          for path in /opt/porota-trading/data /opt/porota-trading/sre_vector_db /opt/porota-trading/model_cache /opt/porota-control-plane-rc6/data /var/log; do
+            if sudo -n test -e "$path"; then sudo -n du -x -B1 -s "$path"; fi
+          done
+          echo '=== Unlinked open files, when lsof is available ==='
+          if command -v lsof >/dev/null 2>&1; then
+            sudo -n lsof -nP +L1 2>/dev/null | awk 'NR==1 || /dockerd|containerd|journald/' | head -50 || true
+          else
+            echo 'LSOF=NOT_INSTALLED'
+          fi
+          echo 'MUTATIONS=NONE'
+          echo 'CONTAINERS_OR_DATA_DELETED=NO'
+          echo 'PRUNE=NOT_RUN'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          REMOTE
