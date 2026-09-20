@@ -54,15 +54,15 @@ _SYSTEMIC_GEO_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _SANCTIONS_IMPACT_PATTERN = re.compile(
-    r"\\b(financial|finance|market|stock|bond|yield|currency|forex|exchange rate|econom\\w*|trade|tariff\\w*|oil|crude|petroleum|gas|energy|commodit\\w*|export\\w*|import\\w*|company|bank\\w*|debt|credit|supply|mercado\\w*|financier\\w*|econom\\w*|comercio|arancel\\w*|petrole\\w*|energia|exportacion\\w*|importacion\\w*|deuda|bono\\w*|finance\\w*|economie\\w*|commerce|approvisionnement|dette|wirtschaft\\w*|handel|debito|mercato finanziario)\\b",
+    r"\b(financial|finance|market|stock|bond|yield|currency|forex|exchange rate|econom\w*|trade|tariff\w*|oil|crude|petroleum|gas|energy|commodit\w*|export\w*|import\w*|company|bank\w*|debt|credit|supply|mercado\w*|financier\w*|econom\w*|comercio|arancel\w*|petrole\w*|energia|exportacion\w*|importacion\w*|deuda|bono\w*|finance\w*|economie\w*|commerce|approvisionnement|dette|wirtschaft\w*|handel|debito|mercato finanziario)\b",
     re.IGNORECASE,
 )
 _OIL_SUPPLY_IMPACT_PATTERN = re.compile(
-    r"\\b(price\\w*|market\\w*|supply|disrupt\\w*|shock|production|output|export\\w*|import\\w*|shortage|opec|precio\\w*|mercado\\w*|suministro|disrupcion|produccion|exportacion\\w*|prix|marche\\w*|approvisionnement|produktion|markt\\w*)\\b",
+    r"\b(price\w*|market\w*|supply|disrupt\w*|shock|production|output|export\w*|import\w*|shortage|opec|precio\w*|mercado\w*|suministro|disrupcion|produccion|exportacion\w*|prix|marche\w*|approvisionnement|produktion|markt\w*)\b",
     re.IGNORECASE,
 )
 _SHIPPING_IMPACT_PATTERN = re.compile(
-    r"\\b(trade|cargo|freight|supply|oil|crude|gas|energy|export\\w*|import\\w*|price\\w*|market\\w*|comercio|carga|flete|suministro|petrole\\w*|energia|exportacion\\w*|importacion\\w*|prix|commerce|approvisionnement|fracht|handel)\\b",
+    r"\b(trade|cargo|freight|supply|oil|crude|gas|energy|export\w*|import\w*|price\w*|market\w*|comercio|carga|flete|suministro|petrole\w*|energia|exportacion\w*|importacion\w*|prix|commerce|approvisionnement|fracht|handel)\b",
     re.IGNORECASE,
 )
 _DIRECT_FINANCIAL_TYPES = frozenset({
