@@ -35,6 +35,8 @@ class EventEvidence:
     retracted_at:str|None=None
     entities:tuple[str,...]=()
     exposures:tuple[str,...]=()
+    title:str=''
+    source_domain:str=''
 
     def validate(self):
         if not self.event_id or self.event_type not in EVENT_TYPES: raise EventRiskError('EVENT_ID_OR_TYPE_INVALID')
