@@ -1,14 +1,13 @@
 # ============================================================================
-# docker-compose.yml - Porota Trading v17.0.0-rc4-test-ready1
+# docker-compose.yml - Legacy monolithic stack (stable RC6 default)
 # ============================================================================
-# IMPORTANTE RC4:
-# Este compose conserva el stack monolítico/legacy para SANDBOX, tooling y
-# compatibilidad. NO es el contrato canónico de PRODUCTION_PAPER.
-# PRODUCTION_PAPER usa el runtime split versionado en porota_mode_manager.py:
+# Uso limitado a SANDBOX y tooling de compatibilidad. Este compose no es el
+# contrato canónico de PRODUCTION_PAPER.
+# PRODUCTION_PAPER usa el runtime split de porota_mode_manager.py:
 #   porota_production_observer  -> bv_paper_runtime.py (read-only)
 #   porota_production_dashboard -> o_dashboard.py (sin credenciales PPI)
-# El contrato de release se documenta en RC4_DEPLOY_CONTRACT.md y se valida
-# con rc4_release_preflight.py. No ejecutar ambos caminos simultáneamente.
+# Por defecto usa la imagen estable RC6; POROTA_IMAGE permite un override
+# explícito y acotado para tooling. No ejecutar ambos caminos simultáneamente.
 #
 # La configuracion NO se inyecta con `env_file:`. El proceso la lee con
 # load_dotenv() desde /app/.env, que se monta como volumen desde el host: asi
@@ -22,7 +21,7 @@ services:
     build: .
     # Nombre explicito: permite auditar y promover exactamente la misma
     # imagen en CI, Sandbox y produccion, sin depender del nombre del directorio.
-    image: ${POROTA_IMAGE:-porota-trading-bot:17.0.0-rc4-test-ready1}
+    image: ${POROTA_IMAGE:-porota-trading-bot:17.0.0-rc6}
     container_name: porota_trading_bot
     restart: unless-stopped
     # Todo el sistema de archivos de la imagen queda inmutable. Solo los
@@ -101,7 +100,7 @@ services:
 
   init_permissions:
     # Reutiliza la misma imagen: no agrega software ni una version paralela.
-    image: ${POROTA_IMAGE:-porota-trading-bot:17.0.0-rc4-test-ready1}
+    image: ${POROTA_IMAGE:-porota-trading-bot:17.0.0-rc6}
     user: "0:0"
     restart: "no"
     command:
