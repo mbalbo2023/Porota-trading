@@ -142,7 +142,27 @@ jobs:
                 else
                   continue
                 fi
-                [ "$ref" = "$CANDIDATE_IMAGE" ] && { echo "RC6_IMAGE_TAG_KEPT=$ref|CURRENT_CANDIDATE"; continue; }
+                if [ "$ref" = "$CANDIDATE_IMAGE" ]; then
+                  stable_image_id="$(sudo -n docker image inspect --format '{{.Id}}' "$TARGET_IMAGE" 2>/dev/null)"
+                  if [ "$stable_image_id" = "$image_id" ]; then
+                    if sudo -n docker image rm "$ref" >/dev/null; then
+                      echo "RC6_IMAGE_TAG_REMOVED=$ref|STABLE_DIGEST_VERIFIED"
+                    else
+                      echo "RC6_IMAGE_TAG_REMOVE_FAILED=$ref"
+                      cleanup_failed=1
+                    fi
+                  elif ! grep -Fxq "$image_id" <<< "$container_image_ids"; then
+                    if sudo -n docker image rm "$ref" >/dev/null; then
+                      echo "RC6_IMAGE_TAG_REMOVED=$ref|UNREFERENCED_CANDIDATE"
+                    else
+                      echo "RC6_IMAGE_TAG_REMOVE_FAILED=$ref"
+                      cleanup_failed=1
+                    fi
+                  else
+                    echo "RC6_IMAGE_TAG_KEPT=$ref|ACTIVE_IMAGE_WITHOUT_STABLE_ALIAS"
+                  fi
+                  continue
+                fi
                 if grep -Fxq "$image_id" <<< "$container_image_ids"; then
                   echo "RC6_IMAGE_TAG_KEPT=$ref|CONTAINER_REFERENCED"
                   continue
