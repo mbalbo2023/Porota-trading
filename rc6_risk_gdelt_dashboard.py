@@ -7,6 +7,7 @@ page.  The retired generic news feed remains intentionally OFF.
 from __future__ import annotations
 
 import html
+from urllib.parse import urlsplit
 
 import rc6_gdelt_event_risk_job as gdelt
 import zz_wave8_dashboard_live_rc6 as live
@@ -33,8 +34,36 @@ def _status_payload() -> dict:
         }
 
 
+def _events_payload() -> tuple[list[dict], str]:
+    try:
+        return list(gdelt.latest_events(limit=100) or []), ""
+    except Exception as exc:
+        return [], f"{type(exc).__name__}:{exc}"
+
+
+def _news_rows(events: list[dict]) -> str:
+    if not events:
+        return "<tr><td colspan='4'>Sin titulares guardados todavía.</td></tr>"
+    rows = []
+    for index, item in enumerate(events):
+        url = str(item.get("provenance_url") or "")
+        parsed = urlsplit(url)
+        if parsed.scheme.lower() not in {"https", "http"} or not parsed.hostname:
+            link = _e(item.get("title") or "—")
+        else:
+            link = f"<a href='{_e(url)}' target='_blank' rel='noopener noreferrer'>{_e(item.get('title') or '—')}</a>"
+        hidden = " class='gdelt-more-row' hidden" if index >= 10 else ""
+        rows.append(
+            f"<tr{hidden}><td>{_e(item.get('published_at'))}</td>"
+            f"<td>{_e(item.get('event_type'))}</td><td data-wrap='true'>{link}</td>"
+            f"<td>{_e(item.get('source_domain'))}</td></tr>"
+        )
+    return "".join(rows)
+
+
 def render_section() -> str:
     status = _status_payload()
+    events, events_error = _events_payload()
     state = str(status.get("state") or "NOT_RUN")
     state_label = {"NOT_RUN": "Sin corrida registrada", "STALE": "Evidencia vencida", "GREEN": "Con datos vigentes", "READ_ERROR": "Error de lectura", "AMARILLO_PARTIAL": "Parcial"}.get(state, state)
     good = state == "GREEN"
@@ -65,6 +94,27 @@ def render_section() -> str:
           <td data-wrap='true'>{_e(errors)}</td>
         </tr></tbody>
       </table>
+      <h3>Noticias financieras y geopolíticas relevantes</h3>
+      <p class='paper-muted'>Últimos {_e(len(events))} titulares guardados; límite de consulta de esta pantalla: 100. La ingesta está acotada en el job. SHADOW / OBSERVE_ONLY.</p>
+      <table class='paper-table classic-responsive-table' id='rc6-gdelt-news-table'>
+        <thead><tr><th>Publicado</th><th>Tipo</th><th>Titular</th><th>Fuente</th></tr></thead>
+        <tbody>{_news_rows(events)}</tbody>
+      </table>
+      <p class='paper-muted' id='rc6-gdelt-news-read-error'>{_e(events_error)}</p>
+      <button type='button' id='rc6-gdelt-show-more' aria-expanded='false' {'hidden' if len(events) <= 10 else ''}>Mostrar más</button>
+      <script>
+      (function(){{
+        const table=document.getElementById('rc6-gdelt-news-table');
+        const button=document.getElementById('rc6-gdelt-show-more');
+        if(!table||!button)return;
+        button.addEventListener('click',function(){{
+          const hidden=Array.from(table.querySelectorAll('tr.gdelt-more-row[hidden]')).slice(0,10);
+          hidden.forEach(row=>row.removeAttribute('hidden'));
+          button.setAttribute('aria-expanded','true');
+          if(!table.querySelector('tr.gdelt-more-row[hidden]'))button.hidden=true;
+        }});
+      }})();
+      </script>
       <p class='paper-muted'>Lectura local solamente. FRESH exige una corrida dentro del TTL configurado; STALE, NOT_RUN o READ_ERROR no se interpretan como datos válidos. Esta pantalla no dispara HTTP, scraping, broker ni BUY/SELL.</p>
     </section>"""
 
