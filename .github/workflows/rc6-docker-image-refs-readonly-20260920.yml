@@ -61,6 +61,24 @@ jobs:
           echo '=== APPROVAL SOURCE MOUNT REVISION ==='
           printf 'CONTROL_PLANE_CURRENT=%s\\n' "$(readlink -f /opt/porota-control-plane-rc6/current)"
           sha256sum /opt/porota-control-plane-rc6/current/fg_critical_approval_gateway_rc6.py /opt/porota-control-plane-rc6/current/fm_critical_approval_unix_runtime_rc6.py /opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py
+          echo '=== COMPOSE IMAGE OVERRIDE IN HOST ENV (redacted category only) ==='
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          matches=[]
+          for line in Path('/opt/porota-trading/.env').read_text(encoding='utf-8').splitlines():
+              if line.strip() and not line.lstrip().startswith('#') and line.split('=',1)[0].strip()=='POROTA_IMAGE':
+                  matches.append(line.split('=',1)[1].strip().strip('"').strip("'"))
+          if not matches:
+              print('POROTA_IMAGE_OVERRIDE=UNSET')
+          elif any(v=='porota-trading-bot:17.0.0-rc4-test-ready1' for v in matches):
+              print(f'POROTA_IMAGE_OVERRIDE=LEGACY_RC4|DUPLICATE_KEYS={len(matches)}')
+          elif all(v=='porota-trading-bot:17.0.0-rc6' for v in matches):
+              print(f'POROTA_IMAGE_OVERRIDE=RC6_STABLE|DUPLICATE_KEYS={len(matches)}')
+          elif all(not v for v in matches):
+              print(f'POROTA_IMAGE_OVERRIDE=EMPTY|DUPLICATE_KEYS={len(matches)}')
+          else:
+              print(f'POROTA_IMAGE_OVERRIDE=OTHER_DEFINED|DUPLICATE_KEYS={len(matches)}')
+          PY
           echo '=== COMPOSE IMAGE REFERENCES (resolved names only) ==='
           cd /opt/porota-trading
           sudo -n docker compose -f docker-compose.yml config --images
