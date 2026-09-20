@@ -43,6 +43,16 @@ def test_accepts_financial_or_market_relevant_headlines(event_type, title):
     assert is_market_relevant_title(event_type, title)
 
 
+@pytest.mark.parametrize("event_type,title", [
+    ("SANCTIONS", "School sanctions student after disciplinary hearing"),
+    ("OIL_SUPPLY_SHOCK", "Oil company opens new customer service office"),
+    ("SHIPPING_DISRUPTION", "Tanker crew rescued after routine engine failure"),
+])
+def test_rejects_topic_word_without_market_or_systemic_impact(event_type, title):
+    from fk_gdelt_shadow_feed_rc6 import is_market_relevant_title
+    assert not is_market_relevant_title(event_type, title)
+
+
 def test_normalize_articles_drops_irrelevant_search_matches():
     from fk_gdelt_shadow_feed_rc6 import normalize_articles
     articles = [
