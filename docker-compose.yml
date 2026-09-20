@@ -61,15 +61,6 @@ services:
         # Los bind mounts nacen como root:root en un host nuevo. Este init
         # termina antes de arrancar el bot y cede solo los directorios de datos.
         condition: service_completed_successfully
-      sre_vectordb:
-        # CORREGIDO EN v16.2 - antes era `service_healthy`. El bot, que es el
-        # componente critico, no arrancaba si el healthcheck del indice
-        # vectorial no pasaba, y ese healthcheck usaba `curl`, que la imagen
-        # oficial de Chroma no garantiza tener. Resultado: una dependencia dura
-        # de un componente critico sobre uno accesorio -el motor SRE no
-        # participa de ninguna decision de inversion-, en la direccion
-        # equivocada. El motor SRE ya tolera un indice ausente.
-        condition: service_started
     networks:
       - porota_bot_net
     # Endurecimiento del contenedor (v16.2).
@@ -115,9 +106,7 @@ services:
         test ! -L /app/data/paper_v17/observer_v17.db &&
         { test ! -e /app/data/paper_v17/observer_v17.db ||
         test -f /app/data/paper_v17/observer_v17.db; } &&
-        touch /app/data/chroma.log &&
-        chown 1000:1000 /app/data /app/data/paper_v17
-        /app/data/chroma.log &&
+        chown 1000:1000 /app/data /app/data/paper_v17 &&
         chown -R 1000:1000 /app/data/logs /app/data/backups
         /app/data/proposals &&
         for f in /app/data/dashboard_sessions.json /app/data/trading_system.db
@@ -128,7 +117,6 @@ services:
         chmod 750 /app/data/paper_v17 &&
         chown -R 1000:1000 /app/sre_vector_db /home/botuser/.cache &&
         chown 1000:1000 /app/.env &&
-        chmod 640 /app/data/chroma.log &&
         chmod 600 /app/.env
     volumes:
       - ./data:/app/data
@@ -143,50 +131,6 @@ services:
       - CHOWN
       - DAC_OVERRIDE
       - FOWNER
-
-  sre_vectordb:
-    # Version fija, nunca `latest`: un tag movil en un servicio de base de
-    # datos es un cambio de version no anunciado esperando a ocurrir.
-    image: chromadb/chroma:0.5.23
-    container_name: porota_sre_chromadb
-    restart: unless-stopped
-    # La imagen queda inmutable. El índice y el log son los únicos datos
-    # persistentes; caché y temporales viven en memoria y desaparecen al salir.
-    read_only: true
-    environment:
-      PYTHONDONTWRITEBYTECODE: "1"
-      ANONYMIZED_TELEMETRY: "FALSE"
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=64m
-      - /root/.cache:rw,noexec,nosuid,size=16m
-    volumes:
-      - ./sre_vector_db:/chroma/chroma
-      - ./data/chroma.log:/chroma/chroma.log
-    depends_on:
-      init_permissions:
-        condition: service_completed_successfully
-    healthcheck:
-      # CORREGIDO EN v16.2 - antes usaba `curl`, que las imagenes minimas de
-      # Chroma no siempre incluyen. Si el binario no esta, el healthcheck nunca
-      # pasa a healthy. Ahora usa el interprete de Python de la propia imagen.
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat', timeout=4).status==200 else 1)\""]
-      interval: 15s
-      timeout: 6s
-      retries: 5
-      start_period: 40s
-    security_opt:
-      - no-new-privileges:true
-    deploy:
-      resources:
-        limits:
-          memory: 1024M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - porota_bot_net
 
 networks:
   porota_bot_net:
