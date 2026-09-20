@@ -23,7 +23,7 @@ QUERY_PACKS={
 "NATURAL_DISASTER":'(earthquake OR hurricane OR flood OR wildfire)',
 "CYBER_INCIDENT":'(cyberattack OR ransomware OR "major cyber incident")',
 "MARKET_HALT":'("market halt" OR "trading halt" OR "exchange suspension" OR "stock trading suspension")',
-"POLITICAL_SHOCK":'("state of emergency" OR "government collaps\w*" OR coup OR "political crisis")'
+"POLITICAL_SHOCK":'("state of emergency" OR "government collapse" OR coup OR "political crisis")'
 }
 
 # API queries search article text, not only headlines. Fail closed on unrelated
@@ -43,7 +43,7 @@ _EVENT_PATTERNS = {
     "NATURAL_DISASTER": r"\b(earthquake|hurricane|flood|wildfire|huracan|inundacion|incendio forestal|seisme|inondation|waldbrand|terremoto|alluvione)\b",
     "CYBER_INCIDENT": r"\b(cyberattack|cyber attack|ransomware|cyber incident|ciberataque|ataque informatico|ataque cibernetico|cyberattaque|cyberangriff|attacco informatico)\b",
     "MARKET_HALT": r"\b(market halt|trading halt|exchange suspension|stock trading suspension|halted trading|suspension de cotation|handelsaussetzung|sospensione delle contrattazioni)\b",
-    "POLITICAL_SHOCK": r"\b(state of emergency|government collapse|coup|political crisis|early election|snap election|estado de emergencia|caida del gobierno|golpe de estado|crisis politica|etat d.urgence|chute du gouvernement|staatskrise|regierungskrise|colpo di stato|crisi politica)\b",
+    "POLITICAL_SHOCK": r"\b(state of emergency|government collaps(?:e|es|ed)|coup|political crisis|early election|snap election|estado de emergencia|caida del gobierno|golpe de estado|crisis politica|etat d.urgence|chute du gouvernement|staatskrise|regierungskrise|colpo di stato|crisi politica)\b",
 }
 _MARKET_IMPACT_PATTERN = re.compile(
     r"\b(financial|finance|market|markets|stock|stocks|shares|bond|bonds|yield|yields|investor\w*|currency|currencies|forex|exchange rate|inflation|interest rate\w*|central bank|econom\w*|trade|tariff\w*|sanction\w*|oil|crude|petroleum|gas|energy|commodit\w*|supply|shipping|tanker|port|pipeline|refinery|export\w*|import\w*|debt|credit|bank\w*|securit\w*|mercado\w*|financier\w*|econom\w*|comercio|arancel\w*|sancion\w*|petrole\w*|energia|materias primas|suministro|puerto|oleoducto|gasoducto|exportacion\w*|importacion\w*|deuda|bono\w*|inflacion|interes\w*|finance\w*|economie\w*|commerce|sanction\w*|approvisionnement|dette|obligation\w*|zins\w*|anleihe\w*|schuld\w*|wirtschaft\w*|handel|sanktion\w*|ol\b|versorgung|markt\w*|finanz\w*|commercio|dazi|petrolio|debito|obbligazion\w*|inflazion\w*|tassi)\b",
