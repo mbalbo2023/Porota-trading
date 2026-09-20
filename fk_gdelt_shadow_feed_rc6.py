@@ -127,7 +127,7 @@ def normalize_article(article,*,event_type,retrieved_at):
     seen=_parse_gdelt_date(article.get("seendate"),fallback=retrieved_dt)
     canonical={"event_type":event_type,"url":url,"title":title,"domain":domain,"seendate":seen,"language":str(article.get("language") or ""),"sourcecountry":str(article.get("sourcecountry") or "")}
     raw=json.dumps(canonical,ensure_ascii=False,sort_keys=True,separators=(",",":")); digest=hashlib.sha256(raw.encode()).hexdigest()
-    e=EventEvidence(event_id="gdelt:"+digest[:24],event_type=event_type,first_seen_at=retrieved_at,published_at=seen,available_to_engine_at=retrieved_at,source=("GDELT_DOC:"+domain) if domain else "GDELT_DOC",source_tier="TIER_C_SINGLE_SOURCE",provenance_url=url,payload_hash=digest,region=str(article.get("sourcecountry") or "GLOBAL") or "GLOBAL")
+    e=EventEvidence(event_id="gdelt:"+digest[:24],event_type=event_type,first_seen_at=retrieved_at,published_at=seen,available_to_engine_at=retrieved_at,source=("GDELT_DOC:"+domain) if domain else "GDELT_DOC",source_tier="TIER_C_SINGLE_SOURCE",provenance_url=url,payload_hash=digest,region=str(article.get("sourcecountry") or "GLOBAL") or "GLOBAL",title=title,source_domain=domain)
     e.validate(); return e
 def normalize_articles(articles:Iterable[dict],*,event_type,retrieved_at):
     out=[]; seen=set()
