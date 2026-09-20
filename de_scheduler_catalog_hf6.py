@@ -1,4 +1,4 @@
-"""Scheduler catalog/model for HF6 v2 dashboard.
+"""RC6 scheduler catalog consumed by the read-only dashboard.
 
 This module is read-only. It explains what each job does and derives due times
 from persisted execution evidence. Host systemd state is consumed from a
@@ -106,12 +106,12 @@ def active_internal_jobs() -> tuple[InternalJob, ...]:
 
 
 SYSTEMD_DESCRIPTIONS = {
-    "porota-introspeccion-hf5.timer": "Genera snapshot horario de introspección funcional. El nombre HF5 es legado; el contenido se usa también en HF6.",
-    "porota-introspection-publish.timer": "Publica a GitHub una copia sanitizada de observabilidad; GitHub nunca controla el runtime.",
+    "porota-introspection-rc6.timer": "Genera la introspección funcional RC6 cada hora, al minuto 15.",
+    "porota-introspection-publish-rc6.timer": "Publica la copia sanitizada RC6 al minuto 20; GitHub nunca controla el runtime.",
+    "porota-scheduler-export-rc6.timer": "Actualiza cada minuto el inventario systemd sanitizado del dashboard.",
     "porota-contract-evidence-hf6.timer": "Actualiza Contract Evidence HF6 read-only y conserva historial/versiones de cambios.",
     "porota-log-export-hf6.timer": "Exporta snapshots sanitizados y acotados de logs del observer/dashboard para la UI.",
-    "porota-scheduler-export-hf6.timer": "Actualiza esta misma vista de scheduler con estado systemd sanitizado y read-only.",
-    "porota-preopen.timer": "LEGACY: pre-open monolítico. HF6 v2 propone retirarlo y reemplazarlo por readiness continuo y sesiones por familia.",
+    "porota-preopen.timer": "LEGACY: pre-open monolítico fuera del flujo operativo RC6.",
     "porota-history-postclose-hf6.timer": "Ejecuta reconciliación histórica post-cierre cuando la sesión/calendario lo permiten.",
     "porota-a3-cem-history-hf6.timer": "Actualiza referencia/históricos públicos A3 CEM fuera del hot path.",
     "porota-caucion-cash-sweep-hf6.timer": "Evalúa el cash sweep PAPER al final de rueda. Sin evidencia contractual/sesión/obligaciones completa debe registrar HOLD y no colocar.",
@@ -200,11 +200,18 @@ def describe_systemd_timer(unit: str) -> str:
     return SYSTEMD_DESCRIPTIONS.get(str(unit), "Timer systemd Porota descubierto en el host.")
 
 
+RC6_SYSTEMD_REQUIRED_TIMERS = (
+    "porota-introspection-rc6.timer",
+    "porota-introspection-publish-rc6.timer",
+    "porota-scheduler-export-rc6.timer",
+)
+
+
 def assert_scheduler_invariants() -> None:
     keys=[j.key for j in INTERNAL_JOBS]
     if len(keys)!=len(set(keys)):
         raise AssertionError("duplicate internal scheduler job")
     if any(not _is_active_scope_job(key) for key in [j.key for j in active_internal_jobs()]):
         raise AssertionError("disabled scope jobs must not be listed as internal active work")
-    if "porota-preopen.timer" not in SYSTEMD_DESCRIPTIONS:
-        raise AssertionError("legacy preopen timer must remain visible until retirement is verified")
+    if not set(RC6_SYSTEMD_REQUIRED_TIMERS).issubset(SYSTEMD_DESCRIPTIONS):
+        raise AssertionError("all required RC6 introspection and dashboard timers must be catalogued")

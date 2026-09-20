@@ -38,8 +38,9 @@ from ei_dashboard_table_accessibility_rc5 import TABLE_A11Y_CSS, TABLE_A11Y_SCRI
 import eb_dashboard_live_policy_hf2 as live_policy
 from da_dashboard_ux_hf6 import (TOP_NAV, TRADING_NAV, FAMILY_GROUPS, FAMILY_LABELS, top_nav_html, trading_nav_html, families_for_group)
 from db_dashboard_logs_hf6 import discover_sources, primary_source, source_by_id, tail_lines
-from de_scheduler_catalog_hf6 import internal_rows, load_systemd_snapshot, describe_systemd_timer
-# HF6_V2_SCHEDULER_DASHBOARD_PATCH
+from de_scheduler_catalog_hf6 import (internal_rows, load_systemd_snapshot, describe_systemd_timer,
+                                      RC6_SYSTEMD_REQUIRED_TIMERS)
+# RC6_SCHEDULER_DASHBOARD_TIMERS
 
 # HF6_V2_DASHBOARD_UX_LOGS_PATCH
 
@@ -2399,11 +2400,71 @@ def _latest_publication_status():
         return None
 
 
+def _rc6_introspection_timer_panel():
+    """Muestra timers RC6 y frescura del inventario systemd sanitizado."""
+    snapshot = load_systemd_snapshot()
+    recorded_at = snapshot.get("recorded_at") if isinstance(snapshot, dict) else None
+    age_seconds = None
+    try:
+        age_seconds = max(0, (datetime.now(TZ) - aware_datetime(recorded_at).astimezone(TZ)).total_seconds())
+    except (ValueError, TypeError):
+        pass
+    inventory_fresh = snapshot.get("state") == "OK" and age_seconds is not None and age_seconds <= 180
+    by_unit = {
+        str(row.get("unit")): row
+        for row in (snapshot.get("timers", []) if isinstance(snapshot, dict) else [])
+        if isinstance(row, dict)
+    }
+    rows = []
+    for unit in RC6_SYSTEMD_REQUIRED_TIMERS:
+        timer = by_unit.get(unit)
+        if timer is None:
+            state = "ROJO" if inventory_fresh else "AMARILLO"
+            actual = "no aparece en inventario" if inventory_fresh else "sin evidencia vigente"
+            last = next_run = result = "—"
+        else:
+            enabled = str(timer.get("enabled_state") or "unknown")
+            active = str(timer.get("active_state") or "unknown")
+            result = str(timer.get("last_result") or "unknown")
+            state = ("VERDE" if active == "active" and enabled not in {"disabled", "masked"}
+                     else "ROJO" if enabled in {"disabled", "masked"} or active == "failed"
+                     else "AMARILLO")
+            if result not in {"success", "unknown", ""}:
+                state = "ROJO"
+            if not inventory_fresh:
+                state = "AMARILLO"
+            actual = f"activo={active} · habilitado={enabled}"
+            last = timer.get("last_trigger") or timer.get("service_inactive_exit") or "—"
+            next_run = timer.get("next_elapse") or "—"
+        rows.append(
+            f"<tr><td><b>{_e(unit)}</b></td><td>{_status(state)}<br>{_e(actual)}</td>"
+            f"<td>{_e(last)}</td><td>{_e(result)}</td><td>{_e(next_run)}</td></tr>"
+        )
+    age_text = "s/d" if age_seconds is None else f"{age_seconds:.0f} s"
+    inventory_status = "VIGENTE" if inventory_fresh else (
+        "VENCIDO" if age_seconds is not None else str(snapshot.get("state", "NO DISPONIBLE"))
+    )
+    notice = "" if inventory_fresh else (
+        "<div class='paper-warning'><b>Estado de timers no confirmado:</b> "
+        f"inventario {_e(inventory_status)}, edad {_e(age_text)}. "
+        "El dashboard no presenta datos antiguos como estado vivo.</div>"
+    )
+    return (
+        "<div class='paper-card'><h2>Timers RC6 de introspección y dashboard</h2>"
+        f"<p>Inventario systemd: {_e(inventory_status)} · {_e(age_text)} · {_local_time(recorded_at)}</p>"
+        f"{notice}<table class='paper-table'><tr><th>Timer</th><th>Estado</th>"
+        "<th>Última ejecución</th><th>Último resultado</th><th>Próxima ejecución</th></tr>"
+        + "".join(rows) + "</table></div>"
+    )
+
+
 def introspection_content():
+    timer_panel = _rc6_introspection_timer_panel()
     report = _latest_introspection()
     if not report:
-        return ("<h1>Introspección funcional</h1><div class='paper-warning'>"
-                "Todavía no existe un snapshot de introspección legible. El dashboard no lo interpreta como estado sano.</div>")
+        return ("<h1>Introspección funcional</h1>" + timer_panel +
+                "<div class='paper-warning'>Todavía no existe un snapshot de introspección legible. "
+                "El dashboard no lo interpreta como estado sano.</div>")
     trading = report.get("trading", {})
     observer = report.get("observer", {})
     live_state=(snapshot().get("state") or {})
@@ -2492,6 +2553,7 @@ def introspection_content():
     return (f"<h1>Introspección funcional</h1><p class='paper-muted'>Snapshot local generado por el control periódico; "
             "GitHub recibe únicamente una copia sanitizada y nunca es dependencia del runtime.</p>"
             f"{freshness_note}"
+            f"{timer_panel}"
             f"<div class='paper-grid'>{cards}</div>"
             f"<div class='paper-card'><h2>Advertencias</h2><ul>{warning_rows}</ul><h2>Anomalías</h2><ul>{anomaly_rows}</ul></div>"
             "<div class='paper-card'><h2>Workers</h2><table class='paper-table'><tr><th>Worker</th><th>Estado</th><th>Pulso</th><th>Edad (s)</th><th>Detalle</th></tr>"
@@ -2547,6 +2609,13 @@ def scheduler_content():
     internal=internal_rows(db_jobs,source_sync_rows=source_sync,api_health_rows=api_health,contract_run_rows=contract_runs)
     systemd=load_systemd_snapshot()
     timers=systemd.get('timers',[]) if isinstance(systemd,dict) else []
+    recorded_at=systemd.get('recorded_at') if isinstance(systemd,dict) else None
+    snapshot_age=None
+    try:
+        snapshot_age=max(0,(datetime.now(TZ)-aware_datetime(recorded_at).astimezone(TZ)).total_seconds())
+    except (ValueError,TypeError):
+        pass
+    snapshot_fresh=systemd.get('state')=="OK" and snapshot_age is not None and snapshot_age<=180
 
     internal_html=[]
     for row in internal:
@@ -2574,6 +2643,8 @@ def scheduler_content():
         timer_state='VERDE' if active=='active' and enabled not in {'disabled','masked'} else 'AMARILLO'
         if result not in {'success','unknown',''}:
             timer_state='ROJO'
+        if not snapshot_fresh:
+            timer_state='AMARILLO'
         timer_html.append(
             f"<tr><td><b>{_e(unit)}</b></td><td>{_e(describe_systemd_timer(unit))}</td>"
             f"<td>{_status(timer_state)}<br><span class='paper-muted'>active={_e(active)} · enabled={_e(enabled)}</span></td>"
@@ -2581,16 +2652,31 @@ def scheduler_content():
             f"<td>{_e(result)} / status {_e(timer.get('exec_main_status') or '—')}</td>"
             f"<td>{_e(timer.get('next_elapse') or '—')}</td></tr>")
 
+    seen_units={str(timer.get('unit') or '') for timer in timers}
+    for unit in RC6_SYSTEMD_REQUIRED_TIMERS:
+        if unit in seen_units:
+            continue
+        missing_state='ROJO' if snapshot_fresh else 'AMARILLO'
+        missing_detail='No instalado o no registrado por systemd' if snapshot_fresh else 'Sin evidencia systemd vigente'
+        timer_html.append(
+            f"<tr><td><b>{_e(unit)}</b></td><td>{_e(describe_systemd_timer(unit))}</td>"
+            f"<td>{_status(missing_state)}<br><span class='paper-muted'>{_e(missing_detail)}</span></td>"
+            "<td>—</td><td>—</td><td>—</td></tr>"
+        )
+
     error_internal=sum(1 for r in internal if str(r.get('state') or '').upper() in {'ROJO','ERROR','FAILED'})
     error_timers=sum(1 for r in timers if str(r.get('last_result') or '').lower() not in {'success','unknown',''})
+    snapshot_label='VIGENTE' if snapshot_fresh else ('VENCIDO' if snapshot_age is not None else str(systemd.get('state','NO DISPONIBLE')))
+    snapshot_detail=f"{snapshot_label} · edad {'s/d' if snapshot_age is None else f'{snapshot_age:.0f} s'}"
     cards=''.join((
         _card('Jobs internos',len(internal),f'{error_internal} con error persistido','red' if error_internal else 'green'),
-        _card('Timers systemd',len(timers),f"snapshot {_e(systemd.get('state','UNKNOWN'))}",'red' if systemd.get('state')=='ERROR' else 'green' if timers else 'yellow'),
-        _card('Snapshot scheduler',_local_time(systemd.get('recorded_at')), 'Actualizado por timer host read-only','green' if timers else 'yellow'),
+        _card('Timers systemd',len(timers),f"snapshot {snapshot_label}",'green' if snapshot_fresh else 'yellow'),
+        _card('Snapshot scheduler',_local_time(systemd.get('recorded_at')), snapshot_detail,'green' if snapshot_fresh else 'yellow'),
     ))
     return ("<h1>Scheduler</h1>"
             "<p class='paper-muted'>Inventario consolidado de trabajos planificados. La pantalla es sólo lectura y no puede iniciar/detener jobs.</p>"
             f"{legacy_warning}<div class='paper-grid'>{cards}</div>"
+            f"{_rc6_introspection_timer_panel()}"
             "<div class='paper-card'><h2>Jobs internos del observer</h2>"
             "<p>El próximo horario calculado por TTL es una estimación; si existe una condición de sesión/mercado también debe cumplirse.</p>"
             "<table class='paper-table'><tr><th>Trabajo</th><th>Qué hace</th><th>Último resultado</th><th>Periodicidad</th>"

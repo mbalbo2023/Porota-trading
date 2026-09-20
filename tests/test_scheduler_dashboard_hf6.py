@@ -11,7 +11,7 @@ def test_scheduler_catalog_invariants():
     keys=[job.key for job in scheduler.INTERNAL_JOBS]
     assert len(keys) == len(set(keys))
     assert "porota-preopen.timer" in scheduler.SYSTEMD_DESCRIPTIONS
-    assert "porota-scheduler-export-hf6.timer" in scheduler.SYSTEMD_DESCRIPTIONS
+    assert "porota-scheduler-export-rc6.timer" in scheduler.SYSTEMD_DESCRIPTIONS
 
 
 def test_internal_job_next_due_is_derived_from_persisted_last_run():
