@@ -1,0 +1,92 @@
+name: RC6 GDELT one-shot shadow probe 2026-09-20
+on:
+  push:
+    branches:
+      - ops/rc6-gdelt-force-probe-20260920
+    paths:
+      - .github/workflows/rc6-gdelt-live-probe-20260920.yml
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_probe"
+          chmod 600 "$HOME/.ssh/porota_rc6_probe"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Run bounded GDELT collector in shadow mode
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_probe" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo 'GDELT_PROBE=START'
+          docker_running="$(sudo -n docker inspect -f '{{.State.Running}}' porota_production_observer)"
+          test "$docker_running" = true
+          echo 'OBSERVER_CONTAINER_RUNNING=yes'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          import requests
+          import rc6_gdelt_event_risk_job as job
+          import fk_gdelt_shadow_feed_rc6 as feed
+
+          job.assert_paper_safety()
+          print('PAPER_SAFETY_BEFORE=PRODUCTION_PAPER|REAL_ORDERS_SENT=0')
+          before = job.latest_status()
+          print('GDELT_STATUS_BEFORE=' + json.dumps({k: before.get(k) for k in ('state','last_run_state','finished_at','fetched_events','stored_events','freshness','freshness_seconds','authority')}, sort_keys=True))
+
+          session = requests.Session()
+          original_get = session.get
+          current = {'event_type': None}
+          articles = []
+          original_collect = job.collect_shadow
+          def collect_with_capture(*, event_type, timespan='24h', maxrecords=75, session=None):
+              current['event_type'] = event_type
+              return original_collect(event_type=event_type, timespan=timespan, maxrecords=maxrecords, session=session)
+          def capture_get(url, *args, **kwargs):
+              response = original_get(url, *args, **kwargs)
+              if response.status_code == 200 and 'api.gdeltproject.org' in response.url:
+                  try:
+                      payload = response.json()
+                      rows = payload.get('articles', []) if isinstance(payload, dict) else []
+                      for item in rows:
+                          if isinstance(item, dict):
+                              articles.append({'event_type': current['event_type'], 'title': str(item.get('title') or ''), 'domain': str(item.get('domain') or ''), 'published': str(item.get('seendate') or ''), 'source_country': str(item.get('sourcecountry') or ''), 'url': str(item.get('url') or '')})
+                  except (ValueError, json.JSONDecodeError):
+                      pass
+              return response
+          session.get = capture_get
+          job.collect_shadow = collect_with_capture
+          try:
+              result = job.run_once(timespan='6h', maxrecords=10, session=session)
+          finally:
+              session.close()
+          print('GDELT_RUN_RESULT=' + json.dumps(result, ensure_ascii=False, sort_keys=True))
+          print('GDELT_ARTICLES_CAPTURED=' + str(len(articles)))
+          print('GDELT_ARTICLES=' + json.dumps(articles[:40], ensure_ascii=False, sort_keys=True))
+          after = job.latest_status()
+          print('GDELT_STATUS_AFTER=' + json.dumps({k: after.get(k) for k in ('state','last_run_state','finished_at','fetched_events','stored_events','error_count','errors_json','freshness','freshness_seconds','authority')}, ensure_ascii=False, sort_keys=True))
+          job.assert_paper_safety()
+          with sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro', uri=True, timeout=10) as conn:
+              conn.execute('PRAGMA query_only=ON')
+              safety = conn.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('PAPER_SAFETY_AFTER=' + '|'.join(map(str, safety)))
+          assert safety == ('PRODUCTION_PAPER', 0), 'PAPER_SAFETY_INVARIANT_FAILED_AFTER_GDELT'
+          print('REAL_ORDER_ROUTES=NOT_PRESENT_IN_GDELT_COLLECTOR')
+          print('GDELT_PROBE=END')
+          PY
+          REMOTE
