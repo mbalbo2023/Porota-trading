@@ -47,6 +47,15 @@ El checkpoint vigente al 2026-09-14 registra cerradas las corridas masivas `PPI-
 
 El aislamiento del workstream `pipeline ppi watch` sigue vigente cuando su responsable indique una ejecución activa. Un checkpoint explícito del usuario puede autorizar una inspección GitHub de solo lectura de runs, código o artefactos nombrados para una tarea distinta; eso no autoriza leer o cambiar la DB o el host, reiniciar servicios, importar evidencia ni habilitar POST.
 
+
+## Esfuerzo y uso del contexto
+
+Usa la menor cantidad de razonamiento, llamadas y tokens que complete el trabajo con evidencia suficiente; escala la profundidad con el riesgo, ambigüedad e impacto. No reduzcas el esfuerzo por debajo de las lecturas, pruebas o verificaciones exigidas. Agrupa consultas independientes y paraleliza sólo alcances aislados. Resume el ledger con fuente/SHA, decisión, pendientes y primer paso. No repitas tareas cerradas. Si se piden los últimos chats y no existe acceso a sus transcripciones, dilo claramente; no inventes lo que contenían.
+
+## Paridad PAPER y readiness de apertura
+
+Para familias con órdenes PPI simulables, `READY_PAPER_SPOT` es elegibilidad de datos/diagnóstico, no permiso de apertura. Toda nueva apertura/fill `OPENED_SIMULATED` requiere `READY_PAPER_PPI` y los mismos gates obligatorios de identidad, contrato PPI explícito, dinámica/frescura, settlement/calendario, costos y riesgo. `SHADOW` puede registrar evaluación/would-block pero no habilitar la apertura. No afirmar que PAPER reproduce producción mientras este gate no esté integrado y verificado. Esta regla no habilita ni modifica runtime por sí misma; requiere cambios de código aislados, pruebas y aprobación de integración.
+
 ## Límites de lo que GitHub puede exigir
 
 `AGENTS.md` es el punto de entrada para agentes que cargan instrucciones del repositorio; el README, este protocolo y el archivo de inicio lo hacen visible para las demás herramientas. Ningún archivo dentro de un repositorio puede obligar técnicamente a un chat externo que no esté conectado a leerlo. Si el entorno no carga automáticamente estas reglas, usa el prompt de `POROTA_TRADING_CHAT_START_HERE.md` y verifica manualmente la lectura antes de continuar.
