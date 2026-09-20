@@ -54,6 +54,21 @@ jobs:
           if [ -n "$image_ids" ]; then
             sudo -n docker image inspect --format 'IMAGE={{.Id}}|TAGS={{json .RepoTags}}|CREATED={{.Created}}|BYTES={{.Size}}|ROOTFS_LAYERS={{len .RootFS.Layers}}' $image_ids
           fi
+          echo '=== APPROVAL SERVICE UNIT (properties only; no secret values) ==='
+          sudo -n systemctl show porota-critical-approval-rc6.service --property=Id,LoadState,ActiveState,SubState,FragmentPath,ExecStartPre,ExecStart,EnvironmentFiles
+          echo '=== RUNNING APPROVAL CONTAINER EXECUTION CONFIG ==='
+          sudo -n docker inspect --format 'GATEWAY_RUNTIME=IMAGE_ID={{.Image}}|CONFIG_REF={{.Config.Image}}|ENTRYPOINT={{json .Config.Entrypoint}}|CMD={{json .Config.Cmd}}|USER={{.Config.User}}|WORKDIR={{.Config.WorkingDir}}|RESTART={{.HostConfig.RestartPolicy.Name}}|HEALTH={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' porota_critical_approval_rc6
+          echo '=== APPROVAL SOURCE MOUNT REVISION ==='
+          printf 'CONTROL_PLANE_CURRENT=%s\\n' "$(readlink -f /opt/porota-control-plane-rc6/current)"
+          sha256sum /opt/porota-control-plane-rc6/current/fg_critical_approval_gateway_rc6.py /opt/porota-control-plane-rc6/current/fm_critical_approval_unix_runtime_rc6.py /opt/porota-control-plane-rc6/current/fn_critical_github_proxy_rc6.py
+          echo '=== COMPOSE IMAGE REFERENCES (resolved names only) ==='
+          cd /opt/porota-trading
+          sudo -n docker compose -f docker-compose.yml config --images
+          echo '=== ROOTFS LAYER IDS BY IMAGE ==='
+          image_ids="$(sudo -n docker image ls -aq --no-trunc | sort -u)"
+          if [ -n "$image_ids" ]; then
+            sudo -n docker image inspect --format 'ROOTFS={{.Id}}|TAGS={{json .RepoTags}}|LAYERS={{range .RootFS.Layers}}{{.}};{{end}}' $image_ids
+          fi
           echo '=== STORAGE SUMMARY ==='
           sudo -n docker system df
           echo 'MUTATIONS=NONE'
