@@ -8,6 +8,7 @@ on:
       - fk_gdelt_shadow_feed_rc6.py
       - tests/test_fk_gdelt_shadow_feed_rc6.py
       - rc6_gdelt_event_risk_job.py
+      - az_maintenance_job.py
       - rc6_risk_gdelt_dashboard.py
       - fi_event_risk_shadow_rc6.py
       - tests/test_rc6_gdelt_event_risk_job.py
@@ -25,6 +26,6 @@ jobs:
       - name: Install focused test dependencies
         run: python -m pip install --disable-pip-version-check 'pytest>=8.3,<9' requests fastapi
       - name: Compile GDELT feed
-        run: python -m py_compile fk_gdelt_shadow_feed_rc6.py
+        run: python -m py_compile az_maintenance_job.py fk_gdelt_shadow_feed_rc6.py
       - name: Run focused GDELT tests
         run: python -m pytest -q tests/test_fk_gdelt_shadow_feed_rc6.py tests/test_rc6_gdelt_event_risk_job.py tests/test_rc6_gdelt_shadow.py tests/test_rc6_risk_gdelt_dashboard.py
