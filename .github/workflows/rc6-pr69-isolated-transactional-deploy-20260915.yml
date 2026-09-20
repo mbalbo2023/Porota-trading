@@ -74,7 +74,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          tar -czf /tmp/porota-rc6-candidate.tgz ak_byma_calendar.py df_daily_operation_summary_hf6.py bf_production_paper_observer.py bg_paper_dashboard.py o_dashboard.py dd_history_metrics_hf6.py ek_history_freshness_metrics_rc5.py de_scheduler_catalog_hf6.py be_paper_engine.py bh_universe_dashboard_hf6.py da_dashboard_ux_hf6.py ck_contract_evidence_runner_hf6.py cl_contract_evidence_dashboard_hf6.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py historical_candle_shadow_rc6.py al_historical_ingest.py ba_data912_history.py rc6_cost_settlement_takeprofit_shadow.py rc6_report_retention.py rc6_action4_audit.py rc6_macro_risk_shadow.py fi_event_risk_shadow_rc6.py fk_gdelt_shadow_feed_rc6.py rc6_gdelt_event_risk_job.py rc6_risk_gdelt_dashboard.py rc6_gdelt_shadow.py rc6_validation_dynamic.py rc6_validation_operational_daily.py rc6_validation_projection.py en_validation_project_dashboard_rc6.py az_maintenance_job.py az_maintenance_scheduler.py am_us_equity_calendar_rc6.py iol_shadow_observation_rc6.py iol_shadow_collector_rc6.py iol_mcp_readonly_adapter_rc6.py ez_iol_shadow_validation_view_rc6.py rc6_counterfactual_learning.py rc6_validation_truth.py scripts/rc6_iol_shadow_collect.py scripts/rc6_candle_inmarket_evidence.py ops/porota-rc6-candle-inmarket-verify ops/systemd/porota-rc6-candle-inmarket-verify.service ops/systemd/porota-rc6-candle-inmarket-verify.timer systemd/porota-iol-shadow-collector-rc6.service systemd/porota-iol-shadow-collector-rc6.timer systemd/porota-snapshot-preopen-rc6.service systemd/porota-snapshot-preopen-rc6.timer systemd/porota-snapshot-postclose-rc6.service systemd/porota-snapshot-postclose-rc6.timer rc6_postclose_review.py rc6_postclose_review_dashboard.py rc6_snapshot.py rc6_snapshot_dashboard.py rc6_decision_evidence_report.py rc6_decision_evidence_view.py rc6_shadow_profiles.py iol_shadow_decision_input_rc6.py ops_introspection_rc6.py ops_publish_introspection_rc6.py scripts/porota_introspection_rc6_host.sh scripts/porota_publish_introspection_github_rc6.sh scripts/porota_export_scheduler_state_rc6.sh systemd/porota-introspection-rc6.service systemd/porota-introspection-rc6.timer systemd/porota-introspection-publish-rc6.service systemd/porota-introspection-publish-rc6.timer systemd/porota-scheduler-export-rc6.service systemd/porota-scheduler-export-rc6.timer
+          tar -czf /tmp/porota-rc6-candidate.tgz docker-compose.yml ak_byma_calendar.py df_daily_operation_summary_hf6.py bf_production_paper_observer.py bg_paper_dashboard.py o_dashboard.py dd_history_metrics_hf6.py ek_history_freshness_metrics_rc5.py de_scheduler_catalog_hf6.py be_paper_engine.py bh_universe_dashboard_hf6.py da_dashboard_ux_hf6.py ck_contract_evidence_runner_hf6.py cl_contract_evidence_dashboard_hf6.py bm_exit_supervisor.py bv_paper_runtime.py porota_mode_manager.py historical_candle_shadow_rc6.py al_historical_ingest.py ba_data912_history.py rc6_cost_settlement_takeprofit_shadow.py rc6_report_retention.py rc6_action4_audit.py rc6_macro_risk_shadow.py fi_event_risk_shadow_rc6.py fk_gdelt_shadow_feed_rc6.py rc6_gdelt_event_risk_job.py rc6_risk_gdelt_dashboard.py rc6_gdelt_shadow.py rc6_validation_dynamic.py rc6_validation_operational_daily.py rc6_validation_projection.py en_validation_project_dashboard_rc6.py az_maintenance_job.py az_maintenance_scheduler.py am_us_equity_calendar_rc6.py iol_shadow_observation_rc6.py iol_shadow_collector_rc6.py iol_mcp_readonly_adapter_rc6.py ez_iol_shadow_validation_view_rc6.py rc6_counterfactual_learning.py rc6_validation_truth.py scripts/rc6_iol_shadow_collect.py scripts/rc6_candle_inmarket_evidence.py ops/porota-rc6-candle-inmarket-verify ops/systemd/porota-rc6-candle-inmarket-verify.service ops/systemd/porota-rc6-candle-inmarket-verify.timer systemd/porota-iol-shadow-collector-rc6.service systemd/porota-iol-shadow-collector-rc6.timer systemd/porota-snapshot-preopen-rc6.service systemd/porota-snapshot-preopen-rc6.timer systemd/porota-snapshot-postclose-rc6.service systemd/porota-snapshot-postclose-rc6.timer rc6_postclose_review.py rc6_postclose_review_dashboard.py rc6_snapshot.py rc6_snapshot_dashboard.py rc6_decision_evidence_report.py rc6_decision_evidence_view.py rc6_shadow_profiles.py iol_shadow_decision_input_rc6.py ops_introspection_rc6.py ops_publish_introspection_rc6.py scripts/porota_introspection_rc6_host.sh scripts/porota_publish_introspection_github_rc6.sh scripts/porota_export_scheduler_state_rc6.sh systemd/porota-introspection-rc6.service systemd/porota-introspection-rc6.timer systemd/porota-introspection-publish-rc6.service systemd/porota-introspection-publish-rc6.timer systemd/porota-scheduler-export-rc6.service systemd/porota-scheduler-export-rc6.timer
       - name: Deploy exact candidate to Droplet and verify
         id: deploy_stage
         shell: bash
@@ -136,7 +136,8 @@ jobs:
                   :
                 elif [[ "$ref" =~ ^porota-trading-bot:17\.0\.0-rc6-(pr69|strategy|eod-only|p0-eod|f01|eod-ui)-[0-9a-f]{12}$ ]] || \
                      [[ "$ref" =~ ^porota-trading-bot:17\.0\.0-rc6-scalping-[0-9a-f]{7}$ ]] || \
-                     [ "$ref" = "porota-trading-bot:17.0.0-rc6-candidate-e47eeffc" ]; then
+                     [ "$ref" = "porota-trading-bot:17.0.0-rc6-candidate-e47eeffc" ] || \\
+                     [ "$ref" = "porota-trading-bot:17.0.0-rc4-test-ready1" ]; then
                   :
                 else
                   continue
@@ -181,6 +182,9 @@ jobs:
           sudo -n rm -rf "$STAGE"
           sudo -n mkdir -p "$STAGE"
           sudo -n tar -xzf "$REMOTE_TGZ" -C "$STAGE"
+          sudo -n install -m 0644 "$STAGE/docker-compose.yml" "$REPO/docker-compose.yml"
+          ! grep -Eq 'rc4-test-ready1|candidate-e47eeffc' "$REPO/docker-compose.yml"
+          echo 'LEGACY_COMPOSE_IMAGE_DEFAULT=REMOVED'
           BACKUP="/tmp/porota-rc6-backup-$TARGET_SHA"
           sudo -n rm -rf "$BACKUP"
           sudo -n mkdir -p "$BACKUP"
@@ -225,6 +229,45 @@ jobs:
             exit 1
           fi
           sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
+          # Recreate the isolated approval gateway only when the stable RC6 tag
+          # now resolves to a different immutable image. Its database and
+          # credentials remain bind-mounted; the health probe is issues-only.
+          COMPOSE_IMAGES="$(sudo -n env POROTA_IMAGE="$TARGET_IMAGE" docker compose -f "$REPO/docker-compose.yml" config --images)"
+          printf '%s\\n' "$COMPOSE_IMAGES"
+          test "$(grep -Fxc "$TARGET_IMAGE" <<< "$COMPOSE_IMAGES")" -eq 2
+          ! grep -Fq 'rc4-test-ready1' <<< "$COMPOSE_IMAGES"
+          if sudo -n systemctl is-active --quiet porota-critical-approval-rc6.service; then
+            UNIT_EXEC_START="$(sudo -n systemctl show porota-critical-approval-rc6.service --property=ExecStart --value)"
+            [[ "$UNIT_EXEC_START" == *"$TARGET_IMAGE"* ]]
+            TARGET_IMAGE_ID="$(sudo -n docker image inspect -f '{{.Id}}' "$TARGET_IMAGE")"
+            TARGET_IMAGE_COMMIT="$(sudo -n docker image inspect -f '{{index .Config.Labels "porota.commit"}}' "$TARGET_IMAGE")"
+            test "$TARGET_IMAGE_COMMIT" = "$TARGET_SHA"
+            CURRENT_GATEWAY_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_critical_approval_rc6)"
+            if [ "$CURRENT_GATEWAY_IMAGE_ID" != "$TARGET_IMAGE_ID" ]; then
+              echo 'RC6_APPROVAL_IMAGE_RECONCILE=START'
+              sudo -n systemctl restart porota-critical-approval-rc6.service
+              GATEWAY_READY=NO
+              for _ in $(seq 1 30); do
+                if sudo -n systemctl is-active --quiet porota-critical-approval-rc6.service; then
+                  CURRENT_GATEWAY_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_critical_approval_rc6 2>/dev/null || true)"
+                  GATEWAY_HEALTH="$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' porota_critical_approval_rc6 2>/dev/null || true)"
+                  if [ "$CURRENT_GATEWAY_IMAGE_ID" = "$TARGET_IMAGE_ID" ] && [ "$GATEWAY_HEALTH" = healthy ]; then
+                    GATEWAY_READY=YES
+                    break
+                  fi
+                fi
+                sleep 2
+              done
+              test "$GATEWAY_READY" = YES
+              sudo -n docker exec porota_critical_approval_rc6 python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get("status")=="ok" and h.get("capability")=="issues_only"; print("RC6_APPROVAL_ISSUES_ONLY=GREEN")'
+              sudo -n docker inspect porota_critical_approval_rc6 | python3 -c 'import json,sys; o=json.load(sys.stdin)[0]; e=dict(x.split("=",1) for x in o["Config"].get("Env",[])); assert e.get("POROTA_RUNTIME_MODE")=="PRODUCTION_PAPER"; forbidden={"PPI_API_KEY","PPI_API_SECRET","PPI_API_KEY_PROD","PPI_API_SECRET_PROD","PPI_ACCOUNT_NUMBER","GITHUB_TOKEN","GH_TOKEN","TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID"}; assert not (forbidden & set(e)); print("RC6_APPROVAL_PAPER_SECRET_GUARD=GREEN")'
+              echo "RC6_APPROVAL_IMAGE_RECONCILE=GREEN|$TARGET_IMAGE_ID|$TARGET_SHA"
+            else
+              echo "RC6_APPROVAL_IMAGE_RECONCILE=ALREADY_CURRENT|$TARGET_IMAGE_ID|$TARGET_SHA"
+            fi
+          else
+            echo 'RC6_APPROVAL_IMAGE_RECONCILE=SKIPPED_SERVICE_NOT_ACTIVE'
+          fi
           # A remote wrapper can return 124 after the manager completed.
           # Continue only after its explicit success marker; all health and safety
           # checks below remain mandatory.
@@ -494,6 +537,6 @@ jobs:
           df -PB1 /
           sudo -n docker system df
           sudo -n du -sh /opt/porota-trading/data /opt/porota-trading 2>/dev/null || true
-          echo 'STORAGE_CLEANUP=ALLOWLISTED_RC6_CANDIDATE_ROLLBACK_TAGS_ONLY'
-          echo 'STORAGE_CLEANUP_SCOPE=FULL_SHA_CANDIDATE_ROLLBACK_PLUS_EXPLICIT_UNUSED_LEGACY_RC6_TAGS'
+          echo 'STORAGE_CLEANUP=ALLOWLISTED_RC6_CANDIDATE_ROLLBACK_AND_UNUSED_RC4_TEST_TAGS_ONLY'
+          echo 'STORAGE_CLEANUP_SCOPE=FULL_SHA_TAGS_PLUS_EXPLICIT_RC4_TEST_TAG; CONTAINER_REFERENCED_IMAGE_IDS_PROTECTED'
           AUDIT
