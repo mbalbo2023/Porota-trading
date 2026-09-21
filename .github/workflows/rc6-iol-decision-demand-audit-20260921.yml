@@ -20,10 +20,10 @@ jobs:
       - name: Prepare strict SSH
         shell: bash
         env:
-          DO_HOST: \${{ secrets.DO_HOST }}
-          DO_USER: \${{ secrets.DO_USER }}
-          SSH_KEY: \${{ secrets.DO_SSH_KEY }}
-          KNOWN_HOSTS: \${{ secrets.DO_KNOWN_HOSTS }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
@@ -35,8 +35,8 @@ jobs:
       - name: Read-only decision demand and IOL evidence
         shell: bash
         env:
-          DO_HOST: \${{ secrets.DO_HOST }}
-          DO_USER: \${{ secrets.DO_USER }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_iol_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
