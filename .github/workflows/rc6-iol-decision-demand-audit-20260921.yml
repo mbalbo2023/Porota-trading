@@ -198,7 +198,7 @@ jobs:
           print(f'ROLLING_120S_UNIQUE_CANDIDATE_SYMBOLS_MAX={max(rolling_candidates,default=0)}')
           print(f'ROLLING_120S_UNIQUE_CANDIDATE_SYMBOLS_P95={percentile(rolling_candidates,.95)}')
 
-          cache='/opt/porota-trading/data/market/iol_shadow_latest.json'
+          cache='/app/data/market/iol_shadow_latest.json'
           try:
               p=json.load(open(cache,encoding='utf-8'))
               tel=p.get('telemetry') if isinstance(p.get('telemetry'),dict) else {}
