@@ -1,0 +1,175 @@
+name: RC6 IOL decision demand readonly audit 2026-09-21
+
+on:
+  push:
+    branches:
+      - audit/rc6-iol-decision-demand-20260921
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-iol-decision-demand-readonly
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: \${{ secrets.DO_HOST }}
+          DO_USER: \${{ secrets.DO_USER }}
+          SSH_KEY: \${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: \${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_iol_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_iol_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only decision demand and IOL evidence
+        shell: bash
+        env:
+          DO_HOST: \${{ secrets.DO_HOST }}
+          DO_USER: \${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_iol_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          echo "IOL_DECISION_AUDIT_UTC=$(date -u +%FT%TZ)"
+          echo "MUTATIONS=NONE"
+          echo "REAL_ORDER_ROUTES=NOT_CALLED"
+          echo "HOST_SHA=$(sudo -n git -C /opt/porota-trading rev-parse HEAD 2>/dev/null || echo UNKNOWN)"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from collections import Counter
+          from datetime import datetime, timedelta, timezone
+
+          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(db,uri=True,timeout=10)
+          c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          state=c.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone()
+          if not state:
+              print('PAPER_STATE=UNAVAILABLE')
+              raise SystemExit(0)
+          print('PAPER_STATE='+ '|'.join(str(state[k]) for k in ('mode','real_orders_sent','process_state','session_state')))
+
+          end=datetime.now(timezone.utc)
+          start=end-timedelta(minutes=390)
+          start_s=start.isoformat()
+          decisions=c.execute("""SELECT decision_key,decided_at,symbol,action
+              FROM paper_decisions
+              WHERE source='PRODUCTION_PAPER' AND julianday(decided_at)>=julianday(?)
+              ORDER BY julianday(decided_at),id""",(start_s,)).fetchall()
+          evidence=c.execute("""SELECT decision_key,captured_at,payload_json
+              FROM decision_evidence_snapshots
+              WHERE julianday(captured_at)>=julianday(?)
+              ORDER BY julianday(captured_at),decision_key""",(start_s,)).fetchall()
+
+          actions=Counter()
+          symbols=Counter()
+          candidate_symbols=Counter()
+          candidate_actions={'BUY','OPEN','OPEN_SIMULATED','ENTER'}
+          by_minute={}
+          fresh=Counter()
+          quality=Counter()
+          covered=0
+          candidate_events=0
+          candidate_evidence=0
+          event_times=[]
+          for d in decisions:
+              action=str(d['action'] or 'UNKNOWN').upper()
+              symbol=str(d['symbol'] or 'UNKNOWN').upper()
+              actions[action]+=1
+              symbols[symbol]+=1
+              is_candidate=action in candidate_actions
+              if is_candidate:
+                  candidate_events+=1
+                  candidate_symbols[symbol]+=1
+              try:
+                  ts=datetime.fromisoformat(str(d['decided_at']).replace('Z','+00:00'))
+                  if ts.tzinfo is None: ts=ts.replace(tzinfo=timezone.utc)
+                  event_times.append((ts,symbol,is_candidate))
+                  bucket=ts.astimezone(timezone.utc).replace(second=0,microsecond=0)
+                  by_minute.setdefault(bucket,set()).add(symbol)
+              except Exception:
+                  pass
+
+          evidence_by_key={}
+          for row in evidence:
+              try:
+                  payload=json.loads(row['payload_json'])
+                  decision=payload.get('decision') if isinstance(payload.get('decision'),dict) else {}
+                  inputs=payload.get('inputs_used') if isinstance(payload.get('inputs_used'),dict) else {}
+                  iol=inputs.get('iol') if isinstance(inputs.get('iol'),dict) else {}
+                  key=str(row['decision_key'])
+                  evidence_by_key[key]=iol
+                  state_iol=str(iol.get('state') or 'UNKNOWN').upper()
+                  freshness_iol=str(iol.get('freshness') or 'UNKNOWN').upper()
+                  quality_iol=str(iol.get('quality') or 'UNKNOWN').upper()
+                  fresh[state_iol+'|'+freshness_iol]+=1
+                  quality[quality_iol]+=1
+                  covered+=1
+                  action=str(decision.get('action') or '').upper()
+                  final=str(decision.get('final_result') or '').upper()
+                  if action in candidate_actions or final in {'OPENED_SIMULATED','OPENED'}:
+                      candidate_evidence+=1
+              except Exception:
+                  fresh['INVALID_EVIDENCE']+=1
+
+          rolling_all=[]
+          rolling_candidates=[]
+          for ts,_,_ in event_times:
+              lower=ts-timedelta(seconds=120)
+              syms={sym for t,sym,_ in event_times if lower<t<=ts}
+              cands={sym for t,sym,is_cand in event_times if is_cand and lower<t<=ts}
+              rolling_all.append(len(syms))
+              rolling_candidates.append(len(cands))
+          def percentile(values,p):
+              if not values:return 0
+              v=sorted(values)
+              return v[min(len(v)-1,int((len(v)-1)*p))]
+          print(f'DECISION_WINDOW_MINUTES=390')
+          print(f'DECISIONS_TOTAL={len(decisions)}')
+          print(f'DECISION_SYMBOLS_UNIQUE={len(symbols)}')
+          print(f'DECISION_CANDIDATE_EVENTS={candidate_events}')
+          print(f'DECISION_CANDIDATE_SYMBOLS_UNIQUE={len(candidate_symbols)}')
+          print(f'EVIDENCE_ROWS_WINDOW={len(evidence)}')
+          print(f'EVIDENCE_ROWS_MATCHED={covered}')
+          print(f'CANDIDATE_EVIDENCE_ROWS={candidate_evidence}')
+          print('ACTION_COUNTS='+','.join(f'{k}:{v}' for k,v in sorted(actions.items())))
+          print('IOL_STATE_FRESHNESS_COUNTS='+','.join(f'{k}:{v}' for k,v in sorted(fresh.items())))
+          print('IOL_QUALITY_COUNTS='+','.join(f'{k}:{v}' for k,v in sorted(quality.items())))
+          print('TOP_DECISION_SYMBOLS='+','.join(f'{k}:{v}' for k,v in symbols.most_common(20)))
+          print('TOP_CANDIDATE_SYMBOLS='+','.join(f'{k}:{v}' for k,v in candidate_symbols.most_common(20)))
+          print(f'ROLLING_120S_UNIQUE_SYMBOLS_ALL_MAX={max(rolling_all,default=0)}')
+          print(f'ROLLING_120S_UNIQUE_SYMBOLS_ALL_P95={percentile(rolling_all,.95)}')
+          print(f'ROLLING_120S_UNIQUE_CANDIDATE_SYMBOLS_MAX={max(rolling_candidates,default=0)}')
+          print(f'ROLLING_120S_UNIQUE_CANDIDATE_SYMBOLS_P95={percentile(rolling_candidates,.95)}')
+
+          cache='/opt/porota-trading/data/market/iol_shadow_latest.json'
+          try:
+              p=json.load(open(cache,encoding='utf-8'))
+              tel=p.get('telemetry') if isinstance(p.get('telemetry'),dict) else {}
+              progress=p.get('progress') if isinstance(p.get('progress'),dict) else {}
+              print('IOL_CACHE_TELEMETRY='+'|'.join(f'{k}={tel.get(k)}' for k in ('batch_symbols','ready_in_batch','unavailable_in_batch','calls_total','calls_429','errors_total')))
+              print('IOL_CACHE_PROGRESS='+'|'.join(f'{k}={progress.get(k)}' for k in ('scheduled','completed','ready','unavailable','fresh','freshness_max_age_seconds','cycle_id','cycle_complete','universe_source')))
+              print('IOL_CACHE_REFRESHED_AT='+str(p.get('refreshed_at')))
+              print('IOL_CACHE_ROWS='+str(len(p.get('symbols') or [])))
+          except Exception as exc:
+              print('IOL_CACHE_SUMMARY_ERROR='+type(exc).__name__)
+
+          try:
+              statuses=c.execute("SELECT upper(status),count(*) FROM paper_positions WHERE source='PRODUCTION_PAPER' GROUP BY upper(status)").fetchall()
+              print('PAPER_POSITION_STATUS_COUNTS='+','.join(f'{r[0]}:{r[1]}' for r in statuses))
+          except Exception as exc:
+              print('PAPER_POSITION_STATUS_COUNTS=UNAVAILABLE:'+type(exc).__name__)
+          c.close()
+          PY
+          HOST
