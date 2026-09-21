@@ -103,3 +103,11 @@ Conclusión de piloto actualizada: **GAP CUBRIBLE EN PRINCIPIO, PENDIENTE DE DEM
 ### Detalle de compatibilidad del Bond Calculator PPI
 
 La documentación Python de PPI muestra `marketdata.estimate_bonds(EstimateBonds(ticker, date, quantityType, quantity, price))` y su respuesta rica en flujos/analítica. Sin embargo, la documentación REST para `GET /MarketData/Bonds/Estimate` lista además `AmountOfMoney`, `ExchangeRate`, `EquityRate`, `ExchangeRateAmortization` y `RateAdjustmentAmortization` como parámetros requeridos. Antes de añadir el wrapper en Porota debe verificarse la firma instalada de ppi-client 1.3.0 y una respuesta sandbox/read-only para YMCID, sin adivinar esos campos. Esto es otra brecha de integración, no evidencia de imposibilidad del proveedor.
+
+
+## Implementación del piloto PPI + IOL
+
+- `c_ppi_client.py` ahora incluye `get_bond_estimate` (commit `14f94e64f784d906ed985d47a2c69d026e3cd60d`): wrapper de solo lectura para el calculador de bonos PPI. Si el SDK instalado no acepta la firma o faltan campos, devuelve `None` y no habilita nada.
+- `rc6_on_validation.py` (commit `5161eeaa04a87de56052d4e4682341bc9a7e6729`) compara payloads ya capturados de PPI e IOL: identidad, plaza, moneda, liquidación y unidades. Cualquier ausencia o contradicción produce `BLOCKED`; solo la evidencia alineada produce `READY_SHADOW`. El módulo no hace llamadas ni órdenes.
+- Falta una corrida autenticada en el entorno del bot para YMCID que obtenga PPI SearchInstrument/current/book/history/estimate y los cruce con IOL. No se ejecutó desde aquí porque no hay cliente PPI autenticado expuesto en esta sesión y se mantiene el alcance read-only.
+- La producción no debe activarse solo porque el wrapper compile: se requiere resultado `READY_SHADOW`, concordancia de flujos y convención clean/dirty, histórico total-return y gates/executor de renta fija.
