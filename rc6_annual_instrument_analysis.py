@@ -202,7 +202,10 @@ def _render_report(identity, bars, year):
     high_text = _price(max(highs)) if highs else "—"
     low_text = _price(min(lows)) if lows else "—"
     metrics = [
-        _metric(f"Performance {year}", _pct(annual_return), f"Base: {base_label}; último cierre: {end_date}"),
+        _metric((f"Variación de precio {year} (sin flujos)" if family == "OBLIGACIONES"
+                 else f"Performance {year}"), _pct(annual_return),
+                f"Base: {base_label}; último cierre: {end_date}"
+                + ("; excluye cupones, amortizaciones e interés corrido" if family == "OBLIGACIONES" else "")),
         _metric("Máxima caída del año", _pct(max_drawdown), "Drawdown calculado con cierres diarios desde el máximo acumulado."),
         _metric("Volatilidad realizada anualizada", _pct(volatility), "Desviación de retornos diarios × √252; requiere al menos 2 retornos."),
         _metric("RSI (14)", "—" if _rsi(analysis_closes) is None else f"{_rsi(analysis_closes):.1f}", "Promedio simple de ganancias y pérdidas de las últimas 14 ruedas; contextual, no calibrado como gatillo."),
@@ -236,6 +239,10 @@ def _render_report(identity, bars, year):
         + f"<b>Ajuste:</b> {_e(adjustment)} · <b>Fuentes:</b> {_e(', '.join(sources))}</p>"
         + "<p class='paper-muted'>Se muestra la serie canónica v2; conserva identidad completa y procedencia. "
         "No se mezclan mercado ni liquidación. El ajuste depende del indicador guardado por la fuente.</p></div>"
+        + ("<div class='paper-warning'><b>Para ON, esta variación de precio no es rendimiento total.</b> "
+           "No incorpora cupones cobrados, amortizaciones, interés corrido, ni reinversión de flujos; "
+           "la performance económica requiere reconstruir el flujo real del bono y normalizar precio limpio/sucio.</div>"
+           if family == "OBLIGACIONES" else "")
         + ("<div class='paper-card'><h2>Validación de Obligaciones Negociables</h2>"
            "<p>La coincidencia de precio entre PPI e IOL sirve para detectar discrepancias, pero no basta para habilitar operatoria. "
            "Antes hacen falta identidad exacta (símbolo, mercado, moneda y liquidación), nominal/unidad de cotización, "
