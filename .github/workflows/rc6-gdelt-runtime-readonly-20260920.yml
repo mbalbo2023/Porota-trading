@@ -60,6 +60,38 @@ jobs:
           except Exception as e:
               print('GDELT_EVENTS_READ_ERROR='+type(e).__name__+':'+str(e))
           PY
+          echo DECISION_RISK_POSITION_LEARNING_READONLY
+          sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
+          import json, sqlite3
+          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(db,uri=True,timeout=5); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          def rows(sql,args=()): return [dict(r) for r in c.execute(sql,args).fetchall()]
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          for table,sql in {
+            'paper_decisions': "SELECT decided_at,symbol,action,score,reason FROM paper_decisions ORDER BY id DESC LIMIT 12",
+            'trade_gate_evaluations': "SELECT evaluated_at,symbol,technical_gate,ai_gate,patrimonial_gate,final_result,reason FROM trade_gate_evaluations WHERE date(evaluated_at,'-3 hours')=date('now','-3 hours') ORDER BY id DESC LIMIT 20",
+            'paper_daily_risk': "SELECT day,currency,state,evaluated_at,daily_pnl,detail FROM paper_daily_risk ORDER BY evaluated_at DESC LIMIT 8",
+            'open_positions': "SELECT paper_id,symbol,status,quantity,opened_at FROM paper_positions WHERE status='OPEN' ORDER BY opened_at DESC LIMIT 20",
+            'learning_samples': "SELECT COUNT(*) total,SUM(CASE WHEN label_timestamp IS NOT NULL THEN 1 ELSE 0 END) labeled,MAX(feature_timestamp) latest_sample,MAX(label_timestamp) latest_label FROM paper_learning_samples"
+          }.items():
+            try: print('AUDIT_'+table.upper()+'='+json.dumps(rows(sql) if table!='learning_samples' else (rows(sql)[0] if rows(sql) else {}),ensure_ascii=False,default=str))
+            except Exception as e: print('AUDIT_'+table.upper()+'_ERROR='+type(e).__name__+':'+str(e))
+          if 'paper_events' in tables:
+            print('AUDIT_RECENT_RISK_EVENTS='+json.dumps(rows("SELECT event_at,event_type,detail FROM paper_events WHERE upper(event_type) LIKE '%RISK%' OR upper(detail) LIKE '%CLOCK%' ORDER BY id DESC LIMIT 20"),ensure_ascii=False,default=str))
+          c.close()
+          PY
+          sudo -n docker exec -i -w /app porota_production_dashboard python - <<'PY'
+          import json, sqlite3
+          import cr_pending_settlement_diagnostics_hf6 as d
+          class Store:
+              def connect(self):
+                  c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
+                  c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON'); return c
+          try:
+              x=d.snapshot(Store())
+              print('AUDIT_SETTLEMENT='+json.dumps({k:x.get(k) for k in ('state','diagnosis','counts','totals','snapshot_pending','live_pending','rows','as_of')},ensure_ascii=False,default=str))
+          except Exception as e: print('AUDIT_SETTLEMENT_ERROR='+type(e).__name__+':'+str(e))
+          PY
           echo RISK_PANEL_RENDER
           sudo -n docker exec -i -w /app porota_production_dashboard python - <<'PY'
           import re
