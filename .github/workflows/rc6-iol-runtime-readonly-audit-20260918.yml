@@ -1,9 +1,9 @@
-name: RC6 IOL runtime readonly audit 2026-09-18
+name: RC6 IOL cache freshness readonly audit 2026-09-21
 
 on:
   push:
     branches:
-      - audit/rc6-iol-runtime-readonly-20260918
+      - audit/rc6-iol-cache-freshness-20260921
   workflow_dispatch:
 
 permissions:
@@ -112,6 +112,31 @@ jobs:
                   'states='+','.join(f'{k}:{v}' for k,v in sorted(states.items())),
                   'reasons='+','.join(f'{k}:{v}' for k,v in sorted(reasons.items())),
               ]))
+              from datetime import datetime,timezone
+              progress=p.get('progress') if isinstance(p.get('progress'),dict) else {}
+              print('IOL_CYCLE_PROGRESS='+'|'.join(f'{k}={progress.get(k)}' for k in ('scheduled','completed','ready','unavailable','fresh','freshness_max_age_seconds','cycle_id','cycle_complete','universe_source')))
+              now=datetime.now(timezone.utc)
+              buckets={'FRESH_READY':0,'STALE_READY':0,'UNKNOWN_AGE_READY':0,'UNAVAILABLE':0}
+              for row in sorted(rows if isinstance(rows,list) else [],key=lambda x:str(x.get('symbol') or '')):
+                  if not isinstance(row,dict): continue
+                  symbol=str(row.get('symbol') or 'UNKNOWN')
+                  state=str(row.get('state') or 'UNKNOWN').upper()
+                  captured=str(row.get('captured_at') or '')
+                  try:
+                      dt=datetime.fromisoformat(captured.replace('Z','+00:00'))
+                      if dt.tzinfo is None: raise ValueError('timezone_missing')
+                      age=(now-dt.astimezone(timezone.utc)).total_seconds()
+                      age_text=f'{age:.1f}'
+                      fresh=0 <= age <= 120
+                  except Exception:
+                      age_text='UNKNOWN'
+                      fresh=False
+                  if state=='READY':
+                      key='FRESH_READY' if fresh else ('UNKNOWN_AGE_READY' if age_text=='UNKNOWN' else 'STALE_READY')
+                  else: key='UNAVAILABLE'
+                  buckets[key]+=1
+                  print('IOL_SYMBOL_FRESHNESS='+symbol+'|'+state+'|AGE_SECONDS='+age_text+'|FRESH_LE_120S='+str(fresh))
+              print('IOL_FRESHNESS_SUMMARY='+'|'.join(f'{k}={v}' for k,v in buckets.items())+'|threshold_seconds=120')
           except Exception as exc:
               print('IOL_CACHE_PARSE_ERROR='+type(exc).__name__)
           PY
