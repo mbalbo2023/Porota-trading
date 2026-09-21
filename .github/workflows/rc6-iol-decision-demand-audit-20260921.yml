@@ -83,6 +83,7 @@ jobs:
           candidate_events=0
           candidate_evidence=0
           event_times=[]
+          decision_event_rows=[]
           for d in decisions:
               action=str(d['action'] or 'UNKNOWN').upper()
               symbol=str(d['symbol'] or 'UNKNOWN').upper()
@@ -96,6 +97,7 @@ jobs:
                   ts=datetime.fromisoformat(str(d['decided_at']).replace('Z','+00:00'))
                   if ts.tzinfo is None: ts=ts.replace(tzinfo=timezone.utc)
                   event_times.append((ts,symbol,is_candidate))
+                  decision_event_rows.append((ts,symbol,is_candidate,str(d['decision_key']),action))
                   bucket=ts.astimezone(timezone.utc).replace(second=0,microsecond=0)
                   by_minute.setdefault(bucket,set()).add(symbol)
               except Exception:
@@ -116,12 +118,49 @@ jobs:
                   fresh[state_iol+'|'+freshness_iol]+=1
                   quality[quality_iol]+=1
                   covered+=1
-                  action=str(decision.get('action') or '').upper()
-                  final=str(decision.get('final_result') or '').upper()
-                  if action in candidate_actions or final in {'OPENED_SIMULATED','OPENED'}:
-                      candidate_evidence+=1
               except Exception:
                   fresh['INVALID_EVIDENCE']+=1
+
+          candidate_iol=Counter()
+          candidate_evidence=0
+          for _,_,is_candidate,key,action in decision_event_rows:
+              if not is_candidate:
+                  continue
+              iol=evidence_by_key.get(key)
+              if iol is None:
+                  candidate_iol['NO_EVIDENCE']+=1
+                  continue
+              candidate_evidence+=1
+              candidate_iol[str(iol.get('state') or 'UNKNOWN').upper()+'|'+str(iol.get('freshness') or 'UNKNOWN').upper()]+=1
+
+          position_rows=c.execute("""SELECT symbol,opened_at,closed_at,status FROM paper_positions
+              WHERE source='PRODUCTION_PAPER'
+                AND (julianday(opened_at)>=julianday(?) OR closed_at IS NULL OR julianday(closed_at)>=julianday(?))""",(start_s,start_s)).fetchall()
+          positions=[]
+          for row in position_rows:
+              try:
+                  opened=datetime.fromisoformat(str(row['opened_at']).replace('Z','+00:00'))
+                  if opened.tzinfo is None: opened=opened.replace(tzinfo=timezone.utc)
+                  closed=None
+                  if row['closed_at']:
+                      closed=datetime.fromisoformat(str(row['closed_at']).replace('Z','+00:00'))
+                      if closed.tzinfo is None: closed=closed.replace(tzinfo=timezone.utc)
+                  positions.append((str(row['symbol'] or 'UNKNOWN').upper(),opened,closed,str(row['status'] or 'UNKNOWN').upper()))
+              except Exception:
+                  pass
+          def active_positions(at):
+              return {sym for sym,opened,closed,_ in positions if opened<=at and (closed is None or closed>at)}
+          current_positions=active_positions(end)
+          position_samples=[]
+          sample=start
+          while sample<=end:
+              position_samples.append(len(active_positions(sample)))
+              sample+=timedelta(seconds=60)
+          rolling_priority=[]
+          for ts,_,is_candidate,_,_ in decision_event_rows:
+              lower=ts-timedelta(seconds=120)
+              recent_candidates={sym for t,sym,cand,_,_ in decision_event_rows if cand and lower<t<=ts}
+              rolling_priority.append(len(recent_candidates | active_positions(ts)))
 
           rolling_all=[]
           rolling_candidates=[]
@@ -143,6 +182,12 @@ jobs:
           print(f'EVIDENCE_ROWS_WINDOW={len(evidence)}')
           print(f'EVIDENCE_ROWS_MATCHED={covered}')
           print(f'CANDIDATE_EVIDENCE_ROWS={candidate_evidence}')
+          print('CANDIDATE_IOL_STATE_FRESHNESS='+','.join(f'{k}:{v}' for k,v in sorted(candidate_iol.items())))
+          print(f'OPEN_POSITIONS_CURRENT={len(current_positions)}')
+          print(f'OPEN_POSITIONS_MAX_SESSION={max(position_samples,default=0)}')
+          print(f'OPEN_POSITION_SYMBOLS_SESSION={len({p[0] for p in positions})}')
+          print(f'ROLLING_120S_PRIORITY_MAX_CANDIDATE_PLUS_OPEN={max(rolling_priority,default=0)}')
+          print(f'ROLLING_120S_PRIORITY_P95_CANDIDATE_PLUS_OPEN={percentile(rolling_priority,.95)}')
           print('ACTION_COUNTS='+','.join(f'{k}:{v}' for k,v in sorted(actions.items())))
           print('IOL_STATE_FRESHNESS_COUNTS='+','.join(f'{k}:{v}' for k,v in sorted(fresh.items())))
           print('IOL_QUALITY_COUNTS='+','.join(f'{k}:{v}' for k,v in sorted(quality.items())))
