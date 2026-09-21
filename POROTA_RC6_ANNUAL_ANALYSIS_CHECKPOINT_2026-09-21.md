@@ -43,9 +43,9 @@ El selector muestra únicamente identidades con barras canónicas y luego permit
 ## Estado de entrega
 
 - Código añadido en rama separada: sí.
-- Inspección de source, diff y prueba funcional automatizada: pendiente.
-- Tests ejecutados: no.
-- PR: no creado.
+- Revisión estática de source e integración/diff: realizada; enlace de comparación incluido en el handoff.
+- Pruebas funcionales automatizadas y runtime: pendientes; no ejecuté tests.
+- PR: no creado, para no iniciar CI/verificaciones automatizadas sin pedido del usuario.
 - Integración en rama canónica / deploy / validación runtime: no realizados.
 - SHA inicial de cambio del módulo: `d0b2d4d641c858c9d1ba41132bb17fc7afa8d896`.
 - SHA del ajuste de identidad y cierre de conexiones read-only: `e217f0bb12922f62e92652a35d00a5b0fffbd743`.
