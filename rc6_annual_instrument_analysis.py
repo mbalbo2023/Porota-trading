@@ -86,6 +86,22 @@ def _sma(values, count):
     return sum(subset) / count if len(subset) == count else None
 
 
+def _period_return(values, sessions):
+    if len(values) <= sessions or values[-sessions - 1] <= 0:
+        return None
+    return values[-1] / values[-sessions - 1] - 1
+
+
+def _ema(values, period):
+    if len(values) < period:
+        return None
+    result = sum(values[:period]) / period
+    alpha = 2 / (period + 1)
+    for value in values[period:]:
+        result = alpha * value + (1 - alpha) * result
+    return result
+
+
 def _rsi(values, period=14):
     if len(values) <= period:
         return None
@@ -148,7 +164,27 @@ def _render_report(identity, bars, year):
         peak = max(peak, close)
         if peak > 0:
             max_drawdown = min(max_drawdown, close / peak - 1)
-    sma_values = {period: _sma(closes[:last_i + 1], period) for period in (20, 50, 200)}
+    analysis_closes = closes[:last_i + 1]
+    sma_values = {period: _sma(analysis_closes, period) for period in (20, 50, 200)}
+    momentum_values = {sessions: _period_return(analysis_closes, sessions)
+                       for sessions in (20, 60, 120, 252)}
+    ema12, ema26 = _ema(analysis_closes, 12), _ema(analysis_closes, 26)
+    macd = ema12 - ema26 if ema12 is not None and ema26 is not None else None
+    is_spot_equity = family in {"ACCIONES", "CEDEARS"}
+    latest_close = analysis_closes[-1]
+    if is_spot_equity and sma_values[20] is not None and sma_values[50] is not None:
+        trend_state = ("Tendencia técnica favorable" if latest_close > sma_values[20] > sma_values[50]
+                       else "Tendencia técnica débil" if latest_close < sma_values[20] < sma_values[50]
+                       else "Tendencia mixta")
+        signal_state = ("No se emite compra/venta: la regla anual aún no tiene validación walk-forward. "
+                        "Usar como contexto, no como instrucción operativa.")
+    elif is_spot_equity:
+        trend_state = "Sin señal de tendencia: faltan barras para medias 20/50"
+        signal_state = "Sin sugerencia: cobertura insuficiente para evaluar la tendencia."
+    else:
+        trend_state = "No aplicable sin valoración propia de la familia"
+        signal_state = ("No se emite compra/venta: precio aislado no modela cupón, amortización, "
+                        "vencimiento, moneda, crédito ni rendimiento.")
     recent = rows[max(0, last_i - 251):last_i + 1]
     highs = [_number(row.get("high")) for row in recent]
     lows = [_number(row.get("low")) for row in recent]
@@ -169,7 +205,16 @@ def _render_report(identity, bars, year):
         _metric(f"Performance {year}", _pct(annual_return), f"Base: {base_label}; último cierre: {end_date}"),
         _metric("Máxima caída del año", _pct(max_drawdown), "Drawdown calculado con cierres diarios desde el máximo acumulado."),
         _metric("Volatilidad realizada anualizada", _pct(volatility), "Desviación de retornos diarios × √252; requiere al menos 2 retornos."),
-        _metric("RSI (14)", "—" if _rsi(closes[:last_i + 1]) is None else f"{_rsi(closes[:last_i + 1]):.1f}", "Calculado sobre cierres diarios disponibles."),
+        _metric("RSI (14)", "—" if _rsi(analysis_closes) is None else f"{_rsi(analysis_closes):.1f}", "Promedio simple de ganancias y pérdidas de las últimas 14 ruedas; contextual, no calibrado como gatillo."),
+        _metric("Momentum 20 / 60 / 120 / 252 ruedas",
+                " / ".join(_pct(momentum_values[n]) for n in (20, 60, 120, 252)),
+                "Retorno del cierre actual frente al cierre de N ruedas atrás; si falta historial se muestra —."),
+        _metric("MACD (12,26)", _price(macd),
+                "Diferencia EMA12−EMA26 sobre cierres diarios; no es señal de compra/venta calibrada."),
+        _metric("Lectura de tendencia", trend_state,
+                "Regla descriptiva sobre cierre y SMA20/SMA50; no altera el motor operativo."),
+        _metric("Sugerencia compra/venta", "No emitida",
+                signal_state),
         _metric("ATR (14)", _price(_atr(rows[:last_i + 1])), "Solo se calcula si hay 14 rangos verdaderos con OHLC válido."),
         _metric("Media móvil 20 ruedas", _price(sma_values[20])),
         _metric("Media móvil 50 ruedas", _price(sma_values[50])),
@@ -191,6 +236,15 @@ def _render_report(identity, bars, year):
         + f"<b>Ajuste:</b> {_e(adjustment)} · <b>Fuentes:</b> {_e(', '.join(sources))}</p>"
         + "<p class='paper-muted'>Se muestra la serie canónica v2; conserva identidad completa y procedencia. "
         "No se mezclan mercado ni liquidación. El ajuste depende del indicador guardado por la fuente.</p></div>"
+        + ("<div class='paper-card'><h2>Validación de Obligaciones Negociables</h2>"
+           "<p>La coincidencia de precio entre PPI e IOL sirve para detectar discrepancias, pero no basta para habilitar operatoria. "
+           "Antes hacen falta identidad exacta (símbolo, mercado, moneda y liquidación), nominal/unidad de cotización, "
+           "valor residual, cupón, calendario de pagos, amortización, vencimiento, convención de rendimiento, "
+           "precio limpio/sucio y datos de crédito cuando se calcule rendimiento a vencimiento.</p>"
+           "<p class='paper-muted'>La serie de precios de este informe no contiene necesariamente esos términos. "
+           "Si falta un dato contractual esencial, el rendimiento/riesgo y la señal se abstienen; se requiere "
+           "además un ejecutor especializado y gates de riesgo antes de cualquier operación.</p></div>"
+           if family in {"OBLIGACIONES", "OBLIGACIONES_NEGOCIABLES", "ON"} else "")
         + "<div class='paper-notice'>Informe histórico informativo. No habilita operatoria, no altera READY/HOLD, "
         "señales, tamaño, gates ni órdenes. Si faltan datos, el indicador se marca como no disponible.</div>"
     )
