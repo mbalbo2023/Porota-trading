@@ -53,14 +53,14 @@ def _operational_universe_with_source() -> tuple[list[str], str]:
     configured = sorted({item.strip().upper() for item in
                          os.getenv("POROTA_IOL_SHADOW_UNIVERSE", "").split(",") if item.strip()})
     catalog = _read_operational_catalog()
-    allowed = set(catalog) if catalog else set(DEFAULT_UNIVERSE)
+    allowed = set(catalog) if catalog is not None else set(DEFAULT_UNIVERSE)
     if configured:
         selected = sorted(set(configured) & allowed)
         if selected:
-            return selected, "CONFIGURED_OPERATIONAL_SUBSET" if catalog else "CONFIGURED_FALLBACK_SUBSET"
+            return selected, "CONFIGURED_OPERATIONAL_SUBSET" if catalog is not None else "CONFIGURED_FALLBACK_SUBSET"
         return [], "CONFIGURED_UNIVERSE_REJECTED_BY_SCOPE"
-    if catalog:
-        return catalog, "OBSERVER_OPERATIONAL_CATALOG"
+    if catalog is not None:
+        return (catalog, "OBSERVER_OPERATIONAL_CATALOG") if catalog else ([], "OPERATIONAL_CATALOG_EMPTY")
     return list(DEFAULT_UNIVERSE), "EMERGENCY_FALLBACK_8"
 def _operational_universe() -> list[str]:
     """Compatibility API: callers needing provenance use the explicit helper."""
