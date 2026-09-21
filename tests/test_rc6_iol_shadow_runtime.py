@@ -93,3 +93,17 @@ def test_cycle_progress_counts_only_ready_rows_fresh_for_shadow_decisions(monkey
     assert payload["progress"]["completed"] == 2
     assert payload["progress"]["fresh"] == 1
     assert payload["progress"]["freshness_max_age_seconds"] == 120
+
+
+def test_empty_operational_catalog_blocks_configured_fallback_symbols(monkeypatch, tmp_path):
+    import sqlite3
+    db = tmp_path / "observer.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE financial_instrument_catalog (ticker TEXT, status TEXT, instrument_type TEXT)")
+    monkeypatch.setattr(runtime, "DEFAULT_DB", str(db))
+    monkeypatch.setenv("POROTA_IOL_SHADOW_UNIVERSE", "GGAL")
+    assert runtime._operational_universe_with_source() == (
+        [], "CONFIGURED_UNIVERSE_REJECTED_BY_SCOPE"
+    )
+    monkeypatch.delenv("POROTA_IOL_SHADOW_UNIVERSE")
+    assert runtime._operational_universe_with_source() == ([], "OPERATIONAL_CATALOG_EMPTY")
