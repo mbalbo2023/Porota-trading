@@ -58,3 +58,12 @@ El selector muestra únicamente identidades con barras canónicas y luego permit
 3. Después de revisión/CI, abrir PR en borrador hacia la rama canónica si no hay conflicto de concurrencia. Merge y deploy requieren autorización explícita.
 4. En un pase runtime separado, medir cobertura histórica actual por familia, rango de fechas, fuente, adjusted/raw y barras válidas; no repetir ingestas masivas.
 5. Mantener cualquier propuesta de ampliar familias en Shadow/read-only hasta demostrar contrato completo, cobertura histórica y gates por familia. No cambiar la operatoria dentro de este workstream.
+
+
+## Aclaración de alcance del usuario — señales y validación ON (21-Sep-2026)
+
+- El usuario pide un dashboard más amplio (momentum y sugerencias compra/venta desde análisis propio) y una validación para Obligaciones Negociables comparando PPI e IOL. La tarea de caché de IOL queda explícitamente fuera de este workstream.
+- Ampliación en `rc6_annual_instrument_analysis.py` (commit `4dc2aa32bf2831b2933270bb268e3f0416bb4a31`): retornos de momentum a 20/60/120/252 ruedas, MACD 12/26, lectura descriptiva de tendencia y estado de sugerencia.
+- El informe no emite compra/venta para datos diarios porque la regla de momentum del motor RC6 usa muestras intradiarias y spread; no hay validación walk-forward demostrada para trasladar sus umbrales a frecuencia anual. Muestra explícitamente abstención y por qué. La lectura de tendencia es contextual y no modifica el motor.
+- Para familias ON, el informe explica que cotejar cotizaciones PPI/IOL no es suficiente y enumera los términos contractuales requeridos para rendimiento/riesgo; sin contrato íntegro o ejecutor/gates especializados no se puede concluir aptitud operativa. La página no valida un ticker individual ni activa trading.
+- No se ejecutaron pruebas ni consultas runtime; se debe revisar diff y, con autorización del usuario, hacer verificación focalizada. No PR, merge ni deploy.
