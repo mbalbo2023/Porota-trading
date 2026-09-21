@@ -111,3 +111,33 @@ La documentación Python de PPI muestra `marketdata.estimate_bonds(EstimateBonds
 - `rc6_on_validation.py` (commit `5161eeaa04a87de56052d4e4682341bc9a7e6729`) compara payloads ya capturados de PPI e IOL: identidad, plaza, moneda, liquidación y unidades. Cualquier ausencia o contradicción produce `BLOCKED`; solo la evidencia alineada produce `READY_SHADOW`. El módulo no hace llamadas ni órdenes.
 - Falta una corrida autenticada en el entorno del bot para YMCID que obtenga PPI SearchInstrument/current/book/history/estimate y los cruce con IOL. No se ejecutó desde aquí porque no hay cliente PPI autenticado expuesto en esta sesión y se mantiene el alcance read-only.
 - La producción no debe activarse solo porque el wrapper compile: se requiere resultado `READY_SHADOW`, concordancia de flujos y convención clean/dirty, histórico total-return y gates/executor de renta fija.
+
+
+## Comparación concreta PPI vs IOL para YMCID (21-Sep-2026)
+
+### Qué ofrece cada fuente
+
+| Campo | PPI documentado | IOL observado | Resultado |
+|---|---|---|---|
+| Tipo de instrumento | Configuración incluye ON | Obligaciones Negociables | Compatible |
+| Identidad | SearchInstrument: ticker, descripción, moneda, tipo, mercado | YMCID, YPF Clase XVII, BCBA, USD | Falta cotejo live PPI |
+| Unidad | Calculator recibe quantity/price; la respuesta incluye quantityTitles/minimalSheet | units_per_lot=100 | Falta confirmar misma convención |
+| Current/Book | Current y Book documentados | Último, bid/ask, volumen | Cubre el dato |
+| Histórico | Search histórico OHLCV | 245 barras diarias IOL | Cubre el dato; falta comparar series |
+| Flujos | Bonds Estimate: flows, residual, rent, amortization, total | Seis flujos IOL | Cubre el dato; falta cotejo |
+| TIR/duración | Bonds Estimate: tir y md | TIR 2,3656%, MD 1,41596 | Cubre el dato; falta tolerancia |
+| Identidad contractual | Response incluye issuer, currencies, issue/expiration, law, ISIN | IOL analytics expone fechas, residual y flujos | PPI debe confirmar ISIN/contrato |
+| Total return | Requiere sumar flujos a precio/fecha | No viene listo en OHLC | Debe calcularlo Porota |
+
+PPI documenta ON como instrument type y el endpoint `GET /MarketData/Bonds/Estimate` con Ticker, Date, QuantityType, Quantity, AmountOfMoney, Price, ExchangeRate, EquityRate, ExchangeRateAmortization y RateAdjustmentAmortization; su respuesta incluye flujos, sensibilidad, TIR, MD, interés corrido, residual, amortización, emisor, moneda, fechas, ley, lámina mínima e ISIN. No se debe asumir que los parámetros opcionales tienen valores neutros: hay que probar la firma real del SDK en sandbox/read-only.
+
+### Valores IOL del piloto
+
+- Cotización: lot price USD 94,37; mejor bid 94,00 x 361; mejor ask 94,37 x 2.313; volumen nominal 115.035; volumen efectivo USD 108.330,34.
+- Analytics de renta fija: dirty 95,90; clean 94,14274; accrued 1,75726; residual 85,72; current yield 8,0446%; TIR 2,3656%; MD 1,41596; seis flujos hasta 2029.
+- La cotización y el trade_price analítico difieren USD 1,53, equivalente a 1,62% sobre la cotización. Clean vs lot price difiere aproximadamente 0,24%. Es una discrepancia de convención/instante que debe explicarse y registrarse, no una señal.
+- Los flujos IOL suman aproximadamente 99,2254 por el residual informado. El informe anual sigue rotulando el cambio de precio como variación sin flujos; no lo trata como retorno total.
+
+### Veredicto de comparación
+
+**Datos: AMARILLO — gap potencialmente cubrible.** PPI e IOL ofrecen, según sus contratos/documentación, los campos necesarios para construir una ficha de ON. **Evidencia de esta especie: AMARILLO — no cerrada**, porque falta la respuesta autenticada PPI de YMCID y la conciliación de precios/fechas/unidades. **Operatoria: ROJO — no habilitar**, hasta obtener PPI live, igualar la convención de precio, validar flujos/ISIN y pasar los gates específicos.
