@@ -188,6 +188,62 @@ jobs:
           for u in porota-preopen-rc6.timer porota-snapshot-preopen-rc6.timer porota-iol-shadow-collector-rc6.timer porota-snapshot-postclose-rc6.timer porota-introspection-rc6.timer porota-introspection-publish-rc6.timer porota-scheduler-export-rc6.timer porota-candle-integrity-rc6.timer porota-rc6-candle-inmarket-verify.timer porota-introspeccion-hf5.timer porota-introspection-publish.timer porota-scheduler-export-hf6.timer porota-gdelt-rc6.timer; do
             echo "$u|enabled=$(sudo -n systemctl is-enabled "$u" 2>/dev/null || true)|active=$(sudo -n systemctl is-active "$u" 2>/dev/null || true)"
           done
+          echo SCREEN_SCOPE_BUY_SETTLEMENT_OBSERVER_READONLY
+          sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
+          import json, os, sqlite3
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(db,uri=True,timeout=5); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          print('SCREEN_RELEVANT_TABLES='+json.dumps(sorted(t for t in tables if any(k in t for k in ('decision','fill','position','universe','instrument','equity','settlement','receivable','sale')))))
+          for t in ('paper_decisions','paper_positions','trade_gate_evaluations','paper_fills','paper_trade_fills','candidate_universe','financial_instrument_catalog','paper_equity_by_currency','paper_sale_receivables','paper_spot_sales'):
+              if t in tables:
+                  print('SCREEN_SCHEMA_'+t.upper()+'='+json.dumps([dict(r) for r in c.execute('PRAGMA table_info("'+t+'")')]))
+          if 'financial_instrument_catalog' in tables and 'paper_decisions' in tables:
+              q="""SELECT upper(i.instrument_type) family, upper(d.action) action, COUNT(*) n,
+                MIN(d.decided_at) first_seen, MAX(d.decided_at) last_seen
+                FROM paper_decisions d JOIN financial_instrument_catalog i ON i.ticker=d.symbol
+                WHERE i.status='AVAILABLE' GROUP BY upper(i.instrument_type),upper(d.action) ORDER BY 1,2"""
+              try: print('SCREEN_ALL_DECISIONS_BY_CATALOG_FAMILY='+json.dumps([dict(r) for r in c.execute(q)],ensure_ascii=False,default=str))
+              except Exception as e: print('SCREEN_DECISIONS_GROUP_ERROR='+type(e).__name__+':'+str(e))
+              try:
+                  q="""SELECT d.id,d.decided_at,d.symbol,d.action,d.reason,d.decision_key,d.strategy_version,
+                    i.instrument_type FROM paper_decisions d JOIN financial_instrument_catalog i ON i.ticker=d.symbol
+                    WHERE i.status='AVAILABLE' AND upper(d.action) LIKE '%BUY%' ORDER BY d.id DESC LIMIT 30"""
+                  print('SCREEN_BUY_DECISIONS='+json.dumps([dict(r) for r in c.execute(q)],ensure_ascii=False,default=str))
+              except Exception as e: print('SCREEN_BUY_ROWS_ERROR='+type(e).__name__+':'+str(e))
+          if 'paper_positions' in tables:
+              for col in ('status',):
+                  pass
+              try: print('SCREEN_OPEN_POSITIONS='+json.dumps([dict(r) for r in c.execute("SELECT * FROM paper_positions WHERE upper(status)='OPEN' ORDER BY opened_at DESC LIMIT 30")],ensure_ascii=False,default=str))
+              except Exception as e: print('SCREEN_OPEN_POSITIONS_ERROR='+type(e).__name__+':'+str(e))
+          for t in ('paper_fills','paper_trade_fills'):
+              if t in tables:
+                  try: print('SCREEN_RECENT_'+t.upper()+'='+json.dumps([dict(r) for r in c.execute('SELECT * FROM "'+t+'" ORDER BY rowid DESC LIMIT 30')],ensure_ascii=False,default=str))
+                  except Exception as e: print('SCREEN_FILLS_ERROR_'+t.upper()+'='+type(e).__name__+':'+str(e))
+          c.close()
+          print('OBSERVER_SETTLEMENT_ENV='+json.dumps({'PAPER_T1_FULL_DATE_RELEASE':os.getenv('PAPER_T1_FULL_DATE_RELEASE','<unset/default false>')}))
+          try:
+              import cr_pending_settlement_diagnostics_hf6 as diag
+              from bt_caucion_paper import pending_proceeds
+              from decimal import Decimal
+              class Store:
+                  def connect(self):
+                      x=sqlite3.connect(db,uri=True,timeout=5); x.row_factory=sqlite3.Row; x.execute('PRAGMA query_only=ON'); return x
+              store=Store(); now=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+              snap=diag.snapshot(store,now.isoformat())
+              print('OBSERVER_SETTLEMENT_DIAG='+json.dumps({k:snap.get(k) for k in ('as_of','state','diagnosis','snapshot_pending','live_pending','counts','totals','latest_equity_snapshots')},ensure_ascii=False,default=str))
+              rows=[]
+              for r in snap.get('latest_equity_snapshots') or []:
+                  item={k:r.get(k) for k in ('id','measured_at','currency','pending_proceeds','equity','cash')}
+                  for key,at in [('recompute_at_snapshot',r.get('measured_at')),('engine_pending_now',now.isoformat())]:
+                      try: item[key]=str(pending_proceeds(store,at,r.get('currency')))
+                      except Exception as e: item[key]=type(e).__name__+':'+str(e)
+                  rows.append(item)
+              print('OBSERVER_SETTLEMENT_RECOMPUTE='+json.dumps(rows,ensure_ascii=False,default=str))
+          except Exception as e: print('OBSERVER_SETTLEMENT_ERROR='+type(e).__name__+':'+str(e))
+          PY
           echo READONLY_END
           REMOTE
           { echo 'RC6 runtime check (read-only)'; sed -n '1,220p' /tmp/rc6-readonly.txt; } >> "$GITHUB_STEP_SUMMARY"
