@@ -81,6 +81,9 @@ def _rotation(universe: list[str], fingerprint: str) -> tuple[list[str], int, di
         state = {"schema_version": 2, "cycle_id": 1, "next_index": 0, "seen": []}
     seen = {str(x).upper() for x in state.get("seen", []) if str(x).strip() in set(universe)}
     if len(seen) >= len(universe):
+        # Start a genuinely empty cycle. Keep this local set in sync with the
+        # reset state or every later invocation will restart at index zero.
+        seen = set()
         state = {"schema_version": 2, "cycle_id": int(state.get("cycle_id") or 0) + 1, "next_index": 0, "seen": []}
     start = int(state.get("next_index") or 0) % max(1, len(universe))
     selected = [universe[(start + offset) % len(universe)] for offset in range(min(BATCH_SIZE, len(universe)))]
