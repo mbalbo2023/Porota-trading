@@ -29,6 +29,7 @@ from bt_caucion_paper import validate_position, pending_proceeds
 from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
 from _version import VERSION
 from dd_history_metrics_hf6 import observer_history_metrics, v2_store_metrics, effective_store_metrics
+import rc6_annual_instrument_analysis as annual_instrument_analysis
 from ek_history_freshness_metrics_rc5 import freshness_qualified_metrics
 # HF6_V2_HISTORY_DASHBOARD_PATCH
 from df_daily_operation_summary_hf6 import summarize as daily_operation_summaries
@@ -2862,6 +2863,12 @@ def install(app,check_auth):
     if _installed or _effective_mode() not in MODE_INFO: return
     _installed=True
     def auth(request,token,authorization): _authorize(check_auth,request,token,authorization)
+    @app.get("/analisis",response_class=HTMLResponse)
+    def annual_analysis(request:Request,family:str=Query(default=""),instrument:str=Query(default=""),
+                       token:str=Query(default=""),authorization:str|None=Header(default=None)):
+        auth(request,token,authorization)
+        body=annual_instrument_analysis.render_page(family=family,instrument=instrument)
+        return HTMLResponse(_document("Análisis anual",body,refresh=0))
     @app.get("/observacion",response_class=HTMLResponse)
     def observacion(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(paper_page(True))
     @app.get("/motor-trading",response_class=HTMLResponse)
