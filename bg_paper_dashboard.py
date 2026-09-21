@@ -1,4 +1,4 @@
-"""Dashboard 24x7 v17 RC3, independiente y sin credenciales PPI."""
+"""Dashboard 24x7 v17 RC6, independiente y sin credenciales PPI."""
 
 from __future__ import annotations
 
@@ -1589,8 +1589,8 @@ def learning_page():
     latest_label=(_rows("SELECT MAX(label_timestamp) latest FROM paper_learning_samples") or [{}])[0].get('latest') if _table('paper_learning_samples') else None
     latest_close=(data["closed"][0].get('closed_at') if data["closed"] else None)
     cards="".join((
-        _card("Aprendizaje EVENT-DRIVEN","ACTIVO",
-              "Sólo crea nuevas etiquetas cuando existen nuevos cierres PAPER; ausencia de cierres no es staleness","gray"),
+        _card("Etiquetado de cierres PAPER","EVENT-DRIVEN",
+              "Una etiqueta nueva requiere un cierre; no ajusta estrategia ni parámetros automáticamente","gray"),
         _card("Muestras cerradas",len(data["closed"]),"Etiquetas para aprendizaje","green" if data["closed"] else "gray"),
         _card("Último cierre PAPER",_local_time(latest_close),"Fuente que habilita una nueva etiqueta","gray"),
         _card("Última etiqueta",_local_time(latest_label),"Puede permanecer sin cambios si no hubo cierres nuevos","gray"),
@@ -2010,6 +2010,7 @@ def live_page(*, offset=0, limit=20):
             items.append(
                 f"<tr><td>{_e(item.get('ticker'))}</td><td>{_e(item.get('currency'))}</td>"
                 f"<td>{_e(item.get('settlement'))}</td><td>{_status(item.get('state'))}</td>"
+                f"<td>{_e(item.get('origin') or '—')}</td><td>{_e(item.get('reference') or '—')}</td>"
                 f"<td>{_e(item.get('expected_business_date') or '—')}</td>"
                 f"<td>{_e(item.get('available_at') or 'PENDIENTE')}</td>"
                 f"<td>{_e(item.get('net_proceeds'))}</td></tr>")
@@ -2024,8 +2025,8 @@ def live_page(*, offset=0, limit=20):
             "calendario siguiente deja de contarse como pendiente por la frontera conservadora; no se "
             "inventa una hora intradía del broker.</p>"
             "<table class='paper-table'><tr><th>Ticker</th><th>Moneda</th><th>Plazo</th><th>Estado</th>"
-            "<th>Fecha hábil esperada</th><th>Disponible desde</th><th>Neto</th></tr>"+
-            (''.join(items) or "<tr><td colspan='7'>Sin liquidaciones pendientes.</td></tr>")+"</table></div>")
+            "<th>Origen</th><th>Referencia</th><th>Fecha hábil esperada</th><th>Disponible desde</th><th>Neto</th></tr>"+
+            (''.join(items) or "<tr><td colspan='9'>Sin liquidaciones pendientes.</td></tr>")+"</table></div>")
     except Exception as exc:
         settlement_diag_html=("<div class='paper-card'><h2>Liquidaciones pendientes</h2>"
                               f"<div class='paper-warning'>{_e(type(exc).__name__+': '+str(exc))}</div></div>")
@@ -2957,7 +2958,7 @@ def install(app,check_auth):
         if request.url.path in legacy_json and response.status_code < 400:
             return JSONResponse({
                 "error":"LEGACY_DATASET_NOT_AVAILABLE_IN_PRODUCTION_PAPER",
-                "detail":"Este endpoint pertenece al motor legacy y no describe HF4. Usar /api/observer/state.",
+                "detail":"Este endpoint pertenece al motor legacy y no describe el estado operativo RC6. Usar /api/observer/state.",
                 "mode":_effective_mode(),
             },status_code=409)
         if "text/html" not in ctype or response.status_code>=400: return response

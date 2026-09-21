@@ -125,7 +125,11 @@ def portfolio_capacity(broker, currency, at, *, candidate_risk=ZERO,
     at = aware_datetime(at)
     risk_row = broker.daily_risk.evaluate(at, connection=c, quotes=quotes)[currency]
     if risk_row.get("state") != "READY":
-        raise ConcurrentRiskGateError("DAILY_RISK_" + str(risk_row.get("state") or "UNKNOWN"))
+        reason = "DAILY_RISK_" + str(risk_row.get("state") or "UNKNOWN")
+        if risk_row.get("state") == "CLOCK_ROLLBACK":
+            reason += (f" input_at={risk_row.get('input_at')} "
+                       f"latest_evaluated_at={risk_row.get('latest_evaluated_at')}")
+        raise ConcurrentRiskGateError(reason)
     baseline = risk_row.get("baseline_equity")
     if baseline in (None, ""):
         raise ConcurrentRiskGateError("CONCURRENT_RISK_BASELINE_UNAVAILABLE")
