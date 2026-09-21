@@ -81,3 +81,20 @@ Validación de datos de consulta realizada el 21-Sep-2026; no se enviaron órden
 - Resultado: **VALIDACIÓN PARCIAL / NO HABILITAR OPERATORIA**. Falta cotejo PPI en la misma plaza, especie, liquidación y unidad; confirmar contrato/tamaño nominal por unidad, base clean/dirty y fecha de liquidación; validar analytic cashflows contra términos oficiales vigentes; capturar histórico total-return con cupones/amortizaciones; y crear/revisar ejecutor/riesgo especializado para renta fija. Un quote IOL e identidad de ticker no alcanzan.
 - El informe anual del feature branch fue ajustado para llamar la cifra ON “Variación de precio (sin flujos)” y advertir que no incluye cupón, amortización, interés corrido ni reinversión. Commit: 24520060a43c5948d3ab3f1dbca9e8ddd18350ac.
 - Evidencia de consulta live PPI: NOT AVAILABLE IN THIS SESSION. No se usó una orden, simulación de orden, endpoint de cuenta ni caché.
+
+
+## Complemento del análisis: el endpoint de bonos PPI sí documenta analytics
+
+La primera conclusión sobre PPI debe precisarse. La documentación oficial de la librería Python incluye `marketdata.estimate_bonds(EstimateBonds(...))`. Su respuesta documenta flujos con residual/renta/amortización/total, sensibilidad con TIR/precio/paridad/variación, TIR, duración modificada, interés corrido, valor residual, total de renta y amortización, moneda, cantidad/títulos, cupón actual, emisor, moneda de emisión/pago, amortización, intereses, fecha de emisión/vencimiento, ley, lámina mínima e ISIN. La configuración oficial enumera ON como tipo y BYMA/settlements como catálogos disponibles. Referencias: documentación pública oficial PPI, secciones Instrument Types, Market Data y Bonds Calculator: https://itatppi.github.io/ppi-official-api-docs/api/documentacionPython/
+
+Eso hace **plausible cubrir en combinación** el gap contractual/analítico que PPI quotes alone no cubrían: PPI puede ser fuente de precio/libro/estimación y IOL puede aportar precio/libro, histórico y fixed-income analytics/cashflows independientes. Es complementariedad potencial, todavía no conformidad confirmada para YMCID.
+
+Estado real del gap:
+- En Porota, `c_ppi_client.py` implementa current/book/historical search, pero no contiene una llamada `estimate_bonds`; hay que integrar el endpoint con schema validado y solo lectura.
+- La documentación muestra ejemplo del calculator con CUAP, no evidencia de respuesta exitosa para el ticker corporativo YMCID ni de soporte exacto por settlement; falta consulta PPI read-only real.
+- La ruta IOL collector de Porota hoy permite `get_asset_info` y `get_asset_quote` solamente; analytics/history de fixed income retornados por el conector actual todavía deben integrarse al pipeline y persistirse como evidencia con source/timestamp.
+- El piloto YMCID necesita cotejar por misma fecha de cálculo y liquidación: ticker/ISIN, moneda, lote y nominal, precio clean vs dirty, accrued, residual balance, flows, TIR/convención, duration, book, costos y monto. Un mismatch provoca abstención.
+- Una serie de OHLC histórica de cualquiera de los brokers no es retorno total de la ON; debe incorporarse cashflow ledger de cupones y amortizaciones.
+- La operación de RC6 no se activa por añadir un ticker: la allowlist del motor continúa ACCIONES/CEDEARS; falta ledger/event handling de renta fija y gates de crédito, liquidez, concentración y cash settlement. La condición `NEEDS_NOMINAL_UNITS` permanece hasta formalizar el contrato del símbolo.
+
+Conclusión de piloto actualizada: **GAP CUBRIBLE EN PRINCIPIO, PENDIENTE DE DEMOSTRAR PARA YMCID**. No habilitar ON productiva aún. La evidencia que falta es una llamada real PPI de lectura/estimate para YMCID y su comparación con IOL. No hay herramienta PPI autenticada accesible en esta sesión y no se hizo cambio operativo ni orden. Si esa corrida coincide y los gates de renta fija pasan, el paso siguiente es integrar primero Shadow, medir y luego habilitar explícitamente la familia en RC6; el presente feature branch no ha sido desplegado.
