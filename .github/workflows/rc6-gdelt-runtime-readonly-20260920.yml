@@ -244,6 +244,53 @@ jobs:
               print('OBSERVER_SETTLEMENT_RECOMPUTE='+json.dumps(rows,ensure_ascii=False,default=str))
           except Exception as e: print('OBSERVER_SETTLEMENT_ERROR='+type(e).__name__+':'+str(e))
           PY
+          echo SCREEN_RENDER_AND_UNFILTERED_FAMILY_AUDIT_READONLY
+          sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
+          import json, sqlite3
+          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(db,uri=True,timeout=5); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          q="""SELECT COALESCE(i.instrument_type,'NO_CATALOG_MATCH') family, upper(d.action) action,
+            COUNT(*) n, MIN(d.decided_at) first_seen, MAX(d.decided_at) last_seen
+            FROM paper_decisions d LEFT JOIN financial_instrument_catalog i ON i.ticker=d.symbol
+            GROUP BY COALESCE(i.instrument_type,'NO_CATALOG_MATCH'),upper(d.action) ORDER BY 1,2"""
+          print('ALL_DECISIONS_BY_FAMILY_UNFILTERED='+json.dumps([dict(r) for r in c.execute(q)],ensure_ascii=False,default=str))
+          q="""SELECT d.id,d.decided_at,d.symbol,d.action,d.reason,d.decision_key,
+            i.instrument_type,i.status,i.capability
+            FROM paper_decisions d LEFT JOIN financial_instrument_catalog i ON i.ticker=d.symbol
+            WHERE date(d.decided_at,'-3 hours')='2026-09-21'
+            AND (upper(COALESCE(i.instrument_type,'')) NOT IN ('ACCIONES','CEDEARS') OR i.ticker IS NULL)
+            ORDER BY d.id DESC LIMIT 100"""
+          print('TODAY_NON_OPERATIONAL_OR_UNMAPPED_DECISIONS='+json.dumps([dict(r) for r in c.execute(q)],ensure_ascii=False,default=str))
+          try:
+              q="""SELECT d.decided_at,d.symbol,d.action,d.decision_key,g.id gate_id,g.final_result,
+                g.technical_gate,g.patrimonial_gate,g.reason gate_reason
+                FROM paper_decisions d LEFT JOIN trade_gate_evaluations g ON g.decision_key=d.decision_key
+                WHERE date(d.decided_at,'-3 hours')='2026-09-21' AND upper(d.action)='BUY'
+                ORDER BY d.decided_at"""
+              print('TODAY_BUY_GATE_CORRELATION='+json.dumps([dict(r) for r in c.execute(q)],ensure_ascii=False,default=str))
+          except Exception as e: print('TODAY_BUY_GATE_ERROR='+type(e).__name__+':'+str(e))
+          c.close()
+          PY
+          sudo -n docker exec -i -w /app porota_production_dashboard python - <<'PY'
+          import hashlib, inspect, json
+          import _version, bg_paper_dashboard as bg
+          print('DASHBOARD_RUNTIME_VERSION='+json.dumps({'version':_version.VERSION,'image':getattr(_version,'IMAGE',None),'module_file':bg.__file__}))
+          try:
+              html=bg.motor_page()
+              print('DASHBOARD_MOTOR_RENDER='+json.dumps({k:(v in html) for k,v in {
+                'READY PAPER':'READY PAPER','available_total':'AVAILABLE/Total','can_simulate':'can_simulate',
+                'decisions':'Decisiones','buy':'BUY','hold':'HOLD','principal_blocker':'Blocker principal',
+                'observed':'Símbolos observados'}.items()}))
+              print('DASHBOARD_MOTOR_HTML_SHA='+hashlib.sha256(html.encode()).hexdigest())
+          except Exception as e: print('DASHBOARD_MOTOR_RENDER_ERROR='+type(e).__name__+':'+str(e))
+          try:
+              import bh_universe_dashboard_hf6 as uni
+              html=uni._page()
+              print('DASHBOARD_UNIVERSE_RENDER='+json.dumps({'module_file':uni.__file__,'sha':hashlib.sha256(html.encode()).hexdigest(),
+                'available_total':'AVAILABLE/Total' in html,'can_simulate':'can_simulate' in html,
+                'principal_blocker':'Blocker principal' in html,'screenshot_family_headers':all(x in html for x in ('Símbolos observados','BUY','HOLD'))}))
+          except Exception as e: print('DASHBOARD_UNIVERSE_RENDER_ERROR='+type(e).__name__+':'+str(e))
+          PY
           echo READONLY_END
           REMOTE
           { echo 'RC6 runtime check (read-only)'; sed -n '1,220p' /tmp/rc6-readonly.txt; } >> "$GITHUB_STEP_SUMMARY"
