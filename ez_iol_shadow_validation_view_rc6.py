@@ -14,6 +14,7 @@ import bg_paper_dashboard as bg
 import iol_shadow_observation_rc6 as observation
 
 MAX_ROWS = 10
+DECISION_FRESHNESS_SECONDS = 120
 UNKNOWN = "UNKNOWN"
 INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
 
@@ -59,22 +60,29 @@ def _progress(data: dict[str, Any]) -> dict[str, Any]:
         return {"state": INSUFFICIENT_EVIDENCE, "label": "Universo objetivo inválido"}
     pct = min(100, max(0, round(completed_n * 100 / scheduled_n)))
     source = _text(value.get("universe_source"), UNKNOWN)
-    fallback = source == "EMERGENCY_FALLBACK_8"
+    fresh = value.get("fresh")
+    fresh_label = ""
+    if fresh is not None:
+        try:
+            fresh_label = f" · frescos para decisión: {max(0, int(fresh))}/{completed_n}"
+        except (TypeError, ValueError):
+            fresh_label = " · frescura de ciclo no verificable"
+    fallback = source in {"EMERGENCY_FALLBACK_8", "CONFIGURED_FALLBACK_SUBSET"}
     state = "DEGRADED" if fallback else ("COMPLETE" if completed_n >= scheduled_n else "IN_PROGRESS")
-    label = f"{completed_n}/{scheduled_n} instrumentos · {pct}% · fuente: {source}"
+    label = f"{completed_n}/{scheduled_n} instrumentos · {pct}% · fuente: {source}{fresh_label}"
     if fallback:
-        label += " · cobertura degradada: fallback de 8"
+        label += " · cobertura de catálogo degradada"
     return {"state": state, "label": label}
-
-
 def _row_quality(row: dict[str, Any]) -> tuple[str, str]:
     """Derive truthfully from the collector timestamp; never manufacture MCP fields."""
     freshness = _text(row.get("freshness_state") or row.get("freshness"), "").upper()
     if not freshness:
         try:
             captured = datetime.fromisoformat(str(row.get("captured_at") or "").replace("Z", "+00:00"))
-            age = max(0.0, (datetime.now(timezone.utc) - captured.astimezone(timezone.utc)).total_seconds())
-            freshness = "FRESH" if age <= 180 else "AGING" if age <= 900 else "STALE"
+            age = (datetime.now(timezone.utc) - captured.astimezone(timezone.utc)).total_seconds()
+            freshness = ("FRESH" if 0 <= age <= DECISION_FRESHNESS_SECONDS else
+                         "AGING" if DECISION_FRESHNESS_SECONDS < age <= 900 else
+                         "STALE" if age > 900 else UNKNOWN)
         except (TypeError, ValueError):
             freshness = UNKNOWN
     quality = _text(row.get("data_quality") or row.get("quality"), "").upper()
@@ -94,6 +102,24 @@ def _counterfactual(row: dict[str, Any]) -> tuple[str, str]:
         return (INSUFFICIENT_EVIDENCE,
                 "Sin candidato, decisión PAPER original y evidencia temporal verificable; no se infiere un resultado.")
     return (outcome, f"Candidato {candidate}; PAPER original: {original}. {_text(rationale, 'Sin detalle adicional.')}")
+
+
+def _field_counts(row: dict[str, Any]) -> tuple[int, int]:
+    quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
+    fields = {
+        "quote.last": quote.get("last"),
+        "quote.bid": quote.get("bid"),
+        "quote.ask": quote.get("ask"),
+        "quote.spread_pct": quote.get("spread_pct"),
+        "quote.variation_pct": quote.get("variation_pct"),
+        "quote.cash_volume": quote.get("cash_volume"),
+        "asset_type": row.get("asset_type"),
+        "currency": row.get("currency"),
+        "units_per_lot": row.get("units_per_lot"),
+    }
+    present = sum(value is not None and (not isinstance(value, str) or bool(value.strip()))
+                  for value in fields.values())
+    return present, len(fields)
 
 
 def _comparison(row: dict[str, Any]) -> tuple[str, Any]:
@@ -152,11 +178,11 @@ def render() -> str:
         bg._card("Cobertura para análisis", progress["label"],
                  "IOL amplía el contexto del universo ACCIONES/CEDEARs; no crea ni descarta señales.", _card_state(progress["state"])),
         bg._card("Datos frescos IOL", f"{fresh_rows}/{len(rows)}",
-                 "Últimos precios utilizables como contraste informativo, según su timestamp cacheado.", "green" if fresh_rows else "yellow"),
+                 "Cotización IOL disponible para revisión SHADOW sólo si la fila está fresca (≤120 s); no altera la acción PAPER.", "green" if fresh_rows else "yellow"),
         bg._card("Contraste con fuente primaria", f"{aligned} coinciden · {divergent} difieren · contrato {primary_state}",
                  "Sólo se compara con un cache primario con fuente, mercado y timestamp verificables. Una divergencia jamás cambia PAPER.", "yellow" if divergent or incomplete or primary_state != "READY" else "green"),
         bg._card("Efecto en el motor", "INFORMATIVO",
-                 "Aporta contexto, calidad y alertas de revisión. Autoridad decisoria: PPI/PAPER.", "green"),
+                 "Expone cotización, liquidez observada e identidad del instrumento para revisión SHADOW. No altera señales ni gates PAPER.", "green"),
     ))
     rendered_rows = []
     for row in rows[:MAX_ROWS]:
@@ -165,20 +191,26 @@ def render() -> str:
         comparison, difference = _comparison(row)
         what_if, what_if_detail = _counterfactual(row)
         reason = _text(row.get("reason"), "")
+        present_fields, total_fields = _field_counts(row)
+        identity = f"{_text(row.get('asset_type'), UNKNOWN)} · {_text(row.get('currency'), UNKNOWN)} · lote {_number(row.get('units_per_lot'))}"
+        quote_summary = f"Último {_number(quote.get('last'))}<br>Bid {_number(quote.get('bid'))} · Ask {_number(quote.get('ask'))}"
+        extra_quote = (f"Spread {_number(quote.get('spread_pct'), '%')} · Var. {_number(quote.get('variation_pct'), '%')}<br>"
+                       f"Vol. dinero {_number(quote.get('cash_volume'))}")
         rendered_rows.append(
             "<tr>"
             f"<td><b>{escape(_text(row.get('symbol')))}</b></td>"
             f"<td>{escape(_text(row.get('market')))}</td>"
+            f"<td>{escape(identity)}<br><span class='paper-muted'>{present_fields}/{total_fields} campos IOL</span></td>"
             f"<td>{escape(_text(row.get('state'), UNKNOWN))}</td>"
-            f"<td>{_number(quote.get('last'))}</td>"
-            f"<td>{escape(freshness)}</td>"
-            f"<td>{escape(quality)}</td>"
+            f"<td>{quote_summary}</td>"
+            f"<td>{extra_quote}</td>"
+            f"<td>{escape(freshness)} · {escape(quality)}</td>"
             f"<td>{escape(comparison)} · {_number(difference, '%')}</td>"
             f"<td>{escape(what_if)}<br><span class='paper-muted'>{escape(what_if_detail)} {escape(reason)}</span></td>"
             "</tr>"
         )
     rows_html = "".join(rendered_rows) or (
-        "<tr><td colspan='8' class='paper-muted'>Aún no hay evidencia IOL cacheada. "
+        "<tr><td colspan='9' class='paper-muted'>Aún no hay evidencia IOL cacheada. "
         "Se mostrará progreso, calidad y reconciliación cuando el collector publique datos.</td></tr>"
     )
     return (
@@ -194,8 +226,8 @@ def render() -> str:
         "<h3>Aporte de IOL al análisis del motor</h3>"
         f"<div class='paper-grid'>{contribution}</div>"
         "<div class='paper-table-wrap'><table><thead><tr>"
-        "<th>Especie</th><th>Mercado</th><th>Estado</th><th>Último IOL</th>"
-        "<th>Freshness</th><th>Calidad</th><th>PPI/IOL</th><th>Qué habría pasado</th>"
+        "<th>Especie</th><th>Mercado</th><th>Tipo · moneda · lote</th><th>Estado</th><th>Último · bid · ask</th>"
+        "<th>Spread · variación · volumen</th><th>Freshness · calidad</th><th>PPI/IOL</th><th>Qué habría pasado</th>"
         "</tr></thead><tbody>" + rows_html + "</tbody></table></div>"
         f"<p class='paper-muted'>Se muestran los 10 instrumentos más recientes de un cache de {len(rows)} filas; la cobertura se calcula sobre el ciclo activo, no sobre filas antiguas. “Qué habría pasado” sólo se muestra como VERIFIED cuando existe el candidato, "
         "la decisión PAPER original y evidencia temporal comparable. En cualquier otro caso figura "

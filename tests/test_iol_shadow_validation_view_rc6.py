@@ -56,3 +56,26 @@ def test_view_never_uses_refresh_or_trading_authority(monkeypatch):
 
     assert "OBSERVE_ONLY" in html
     assert "órdenes" in html
+
+
+def test_view_exposes_iol_decision_context_and_per_symbol_field_coverage(monkeypatch):
+    from datetime import datetime, timezone
+    captured = datetime.now(timezone.utc).isoformat()
+    monkeypatch.setattr(view.observation, "collect", lambda: {
+        "source": "IOL_MCP", "mode": "SHADOW", "state": "READY",
+        "decision_effect": "OBSERVE_ONLY", "refreshed_at": captured,
+        "progress": {"scheduled": 1, "completed": 1, "fresh": 1, "universe_source": "OBSERVER_OPERATIONAL_CATALOG"},
+        "symbols": [{
+            "symbol": "GGAL", "market": "BCBA", "state": "READY", "captured_at": captured,
+            "asset_type": "ACCIONES", "currency": "ARS", "units_per_lot": 1,
+            "quote": {"last": 100, "bid": 99, "ask": 101, "spread_pct": 2.02,
+                      "variation_pct": 1.5, "cash_volume": 250000},
+        }],
+    })
+    html = view.render()
+    assert "ACCIONES · ARS · lote 1.00" in html
+    assert "Último 100.00" in html and "Bid 99.00 · Ask 101.00" in html
+    assert "Spread 2.02% · Var. 1.50%" in html and "Vol. dinero 250,000.00" in html
+    assert "9/9 campos IOL" in html
+    assert "frescos para decisión: 1/1" in html
+    assert "no altera señales ni gates PAPER" in html

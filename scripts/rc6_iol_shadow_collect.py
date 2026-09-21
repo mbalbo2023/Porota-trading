@@ -32,12 +32,8 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def _operational_universe_with_source() -> tuple[list[str], str]:
-    configured = os.getenv("POROTA_IOL_SHADOW_UNIVERSE", "").strip()
-    if configured:
-        values = sorted({item.strip().upper() for item in configured.split(",") if item.strip()})
-        if values:
-            return values, "CONFIGURED_OPERATIONAL_UNIVERSE"
+def _read_operational_catalog() -> list[str] | None:
+    """Read only currently AVAILABLE ACCIONES/CEDEARS; None means catalog unavailable."""
     try:
         conn = sqlite3.connect(f"file:{DEFAULT_DB}?mode=ro", uri=True, timeout=10)
         conn.execute("PRAGMA query_only=ON")
@@ -47,14 +43,25 @@ def _operational_universe_with_source() -> tuple[list[str], str]:
             "AND trim(ticker)<>'' ORDER BY ticker"
         ).fetchall()
         conn.close()
-        values = sorted({str(row[0]).strip().upper() for row in rows if row and row[0]})
-        if values:
-            return values, "OBSERVER_OPERATIONAL_CATALOG"
+        return sorted({str(row[0]).strip().upper() for row in rows if row and row[0]})
     except sqlite3.Error:
-        pass
+        return None
+
+
+def _operational_universe_with_source() -> tuple[list[str], str]:
+    """Configured symbols may narrow the allowed universe, never widen it."""
+    configured = sorted({item.strip().upper() for item in
+                         os.getenv("POROTA_IOL_SHADOW_UNIVERSE", "").split(",") if item.strip()})
+    catalog = _read_operational_catalog()
+    allowed = set(catalog) if catalog is not None else set(DEFAULT_UNIVERSE)
+    if configured:
+        selected = sorted(set(configured) & allowed)
+        if selected:
+            return selected, "CONFIGURED_OPERATIONAL_SUBSET" if catalog is not None else "CONFIGURED_FALLBACK_SUBSET"
+        return [], "CONFIGURED_UNIVERSE_REJECTED_BY_SCOPE"
+    if catalog is not None:
+        return (catalog, "OBSERVER_OPERATIONAL_CATALOG") if catalog else ([], "OPERATIONAL_CATALOG_EMPTY")
     return list(DEFAULT_UNIVERSE), "EMERGENCY_FALLBACK_8"
-
-
 def _operational_universe() -> list[str]:
     """Compatibility API: callers needing provenance use the explicit helper."""
     return _operational_universe_with_source()[0]
@@ -133,9 +140,18 @@ def _publish_progress(total: int, batch: list[str], source: str, fingerprint: st
     ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in observed)
     unavailable = len(observed) - ready
     cycle_complete = len(observed) == total and total > 0
+    now = datetime.now(timezone.utc)
+    fresh = 0
+    for symbol in observed:
+        row = by_symbol[symbol]
+        captured_at = _parse_time(row.get("captured_at"))
+        age = (now - captured_at.astimezone(timezone.utc)).total_seconds() if captured_at else None
+        if str(row.get("state") or "").upper() == "READY" and age is not None and 0 <= age <= 120:
+            fresh += 1
     telemetry = payload.get("telemetry") if isinstance(payload.get("telemetry"), dict) else {}
     payload["progress"] = {
         "scheduled": total, "completed": len(observed), "ready": ready, "unavailable": unavailable,
+        "fresh": fresh, "freshness_max_age_seconds": 120,
         "batch_size": len(batch), "cycle_id": cycle.get("cycle_id"), "cycle_complete": cycle_complete,
         "universe_fingerprint": fingerprint, "universe_source": source,
     }
@@ -153,6 +169,9 @@ def main() -> int:
         print("IOL_SHADOW_COLLECTION=NOT_DUE_OUTSIDE_MARKET")
         return 0
     universe, universe_source = _operational_universe_with_source()
+    if not universe:
+        print("IOL_SHADOW_COLLECTION=BLOCKED_EMPTY_OPERATIONAL_UNIVERSE")
+        return 0
     fingerprint = _fingerprint(universe)
     batch, rotation_start, prior_cycle = _rotation(universe, fingerprint)
     primary, primary_contract = _primary_snapshot()

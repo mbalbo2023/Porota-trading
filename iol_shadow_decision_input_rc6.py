@@ -55,19 +55,24 @@ def _unavailable(symbol: str, reason: str, coverage: dict[str, Any] | None = Non
 
 def read_for_decision(symbol: str, *, root: Path | str | None = None,
                       now: datetime | None = None, max_age_seconds: float = 120.0) -> dict[str, Any]:
-    """Read a single existing cache row; never calls IOL or writes any file."""
+    """Read one existing cache row for a SHADOW decision; never calls IOL or writes files."""
     normalized = str(symbol or "").upper().strip()
-    if not normalized: return _unavailable("", "SYMBOL_MISSING")
-    if max_age_seconds < 0: raise ValueError("max_age_seconds must be non-negative")
+    if not normalized:
+        return _unavailable("", "SYMBOL_MISSING")
+    if max_age_seconds < 0:
+        raise ValueError("max_age_seconds must be non-negative")
     path = Path(root) / "iol_shadow_latest.json" if root is not None else cache_path()
     payload = _read_cache(path)
     if payload.get("schema_version") not in CACHE_SCHEMA_VERSIONS:
         return _unavailable(normalized, "CACHE_MISSING_OR_INVALID")
     coverage = _coverage(payload)
     rows = payload.get("symbols")
-    if not isinstance(rows, list): return _unavailable(normalized, "CACHE_ROWS_MISSING", coverage)
-    row = next((item for item in rows if isinstance(item, dict) and str(item.get("symbol") or "").upper().strip() == normalized), None)
-    if row is None: return _unavailable(normalized, "SYMBOL_NOT_COVERED", coverage)
+    if not isinstance(rows, list):
+        return _unavailable(normalized, "CACHE_ROWS_MISSING", coverage)
+    row = next((item for item in rows if isinstance(item, dict) and
+                str(item.get("symbol") or "").upper().strip() == normalized), None)
+    if row is None:
+        return _unavailable(normalized, "SYMBOL_NOT_COVERED", coverage)
     captured_at = _as_utc(row.get("captured_at"))
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     age = (reference - captured_at).total_seconds() if captured_at else None
@@ -77,8 +82,40 @@ def read_for_decision(symbol: str, *, root: Path | str | None = None,
     has_last = quote.get("last") is not None
     quality = "GOOD" if state == "READY" and has_last and freshness == "FRESH" else ("DEGRADED" if state == "READY" and has_last else "UNKNOWN")
     comparison = row.get("primary_comparison") if isinstance(row.get("primary_comparison"), dict) else {"state": "BACKGROUND_COMPARISON_INCOMPLETE"}
-    return {"source": SOURCE, "mode": MODE, "decision_effect": DECISION_EFFECT, "symbol": normalized,
-            "market": row.get("market"), "term": row.get("term"), "state": state, "quality": quality,
-            "freshness": freshness, "captured_at": captured_at.isoformat() if captured_at else None,
-            "age_seconds": age, "quote": {key: quote.get(key) for key in ("last", "bid", "ask", "spread_pct", "variation_pct", "cash_volume")},
-            "comparison": comparison, "coverage": coverage, "reason": row.get("reason")}
+    quote_fields = {key: quote.get(key) for key in ("last", "bid", "ask", "spread_pct", "variation_pct", "cash_volume")}
+    metadata = {
+        "asset_type": row.get("asset_type") or None,
+        "currency": row.get("currency") or None,
+        "units_per_lot": row.get("units_per_lot"),
+    }
+    field_values = {
+        **{f"quote.{key}": value for key, value in quote_fields.items()},
+        **metadata,
+    }
+    present = sorted(name for name, value in field_values.items()
+                     if value is not None and (not isinstance(value, str) or value.strip()))
+    missing = sorted(set(field_values) - set(present))
+    return {
+        "source": SOURCE,
+        "mode": MODE,
+        "decision_effect": DECISION_EFFECT,
+        "symbol": normalized,
+        "market": row.get("market"),
+        "term": row.get("term"),
+        "state": state,
+        "quality": quality,
+        "freshness": freshness,
+        "captured_at": captured_at.isoformat() if captured_at else None,
+        "age_seconds": age,
+        "quote": quote_fields,
+        "metadata": metadata,
+        "field_coverage": {
+            "present": present,
+            "missing": missing,
+            "present_count": len(present),
+            "expected_count": len(field_values),
+        },
+        "comparison": comparison,
+        "coverage": coverage,
+        "reason": row.get("reason"),
+    }

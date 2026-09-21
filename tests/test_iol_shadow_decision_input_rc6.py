@@ -29,3 +29,25 @@ def test_coverage_never_infers_completed_cycle(tmp_path):
     got=adapter.read_for_decision("YPF",root=tmp_path,now=datetime(2026,9,19,13,tzinfo=timezone.utc))
     assert got["coverage"]["cycle_status"] == "UNKNOWN"
     assert got["coverage"]["expected"] is None
+
+
+def test_shadow_decision_input_carries_quote_and_asset_metadata_with_field_coverage(tmp_path):
+    cache(tmp_path, {
+        "schema_version": 3,
+        "symbols": [{
+            "symbol": "GGAL", "market": "BCBA", "term": "t1", "state": "READY",
+            "captured_at": "2026-09-19T13:00:00+00:00",
+            "asset_type": "ACCIONES", "currency": "ARS", "units_per_lot": 1,
+            "quote": {"last": 100, "bid": 99, "ask": 101, "spread_pct": 2.02,
+                      "variation_pct": 1.5, "cash_volume": 250000},
+        }],
+    })
+    got = adapter.read_for_decision(
+        "GGAL", root=tmp_path, now=datetime(2026, 9, 19, 13, 1, tzinfo=timezone.utc)
+    )
+    assert got["decision_effect"] == "NO_FACTUAL_BINDING"
+    assert got["metadata"] == {"asset_type": "ACCIONES", "currency": "ARS", "units_per_lot": 1}
+    assert got["quote"]["bid"] == 99
+    assert got["quote"]["cash_volume"] == 250000
+    assert got["field_coverage"]["present_count"] == got["field_coverage"]["expected_count"]
+    assert got["field_coverage"]["missing"] == []
