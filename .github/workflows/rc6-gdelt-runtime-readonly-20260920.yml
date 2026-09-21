@@ -92,6 +92,18 @@ jobs:
               print('AUDIT_SETTLEMENT='+json.dumps({k:x.get(k) for k in ('state','diagnosis','counts','totals','snapshot_pending','live_pending','rows','as_of')},ensure_ascii=False,default=str))
           except Exception as e: print('AUDIT_SETTLEMENT_ERROR='+type(e).__name__+':'+str(e))
           PY
+          echo TARGET_SCREEN_DECISIONS_JOINED_READONLY
+          sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
+          import json, sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          sql="""SELECT d.decided_at,d.symbol,d.action,d.score,d.reason,d.decision_key,
+            g.evaluated_at,g.final_result,g.technical_gate,g.patrimonial_gate,g.reason AS gate_reason
+            FROM paper_decisions d LEFT JOIN trade_gate_evaluations g ON g.decision_key=d.decision_key
+            WHERE d.symbol IN ('SUPV','PAMP','BBAR') AND date(d.decided_at,'-3 hours')=date('now','-3 hours')
+            ORDER BY d.decided_at DESC LIMIT 40"""
+          print('AUDIT_TARGET_DECISION_GATE_JOIN='+json.dumps([dict(r) for r in c.execute(sql).fetchall()],ensure_ascii=False,default=str))
+          c.close()
+          PY
           echo RISK_PANEL_RENDER
           sudo -n docker exec -i -w /app porota_production_dashboard python - <<'PY'
           import re
