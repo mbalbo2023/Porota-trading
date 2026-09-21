@@ -107,3 +107,36 @@ def test_empty_operational_catalog_blocks_configured_fallback_symbols(monkeypatc
     )
     monkeypatch.delenv("POROTA_IOL_SHADOW_UNIVERSE")
     assert runtime._operational_universe_with_source() == ([], "OPERATIONAL_CATALOG_EMPTY")
+
+
+def test_rotation_cycle_resets_seen_and_advances_cursor(monkeypatch, tmp_path):
+    import json
+    monkeypatch.setattr(runtime, "DEFAULT_ROOT", tmp_path)
+    monkeypatch.setattr(runtime, "BATCH_SIZE", 2)
+    universe = ["A", "B", "C", "D"]
+    fingerprint = runtime._fingerprint(universe)
+    (tmp_path / "iol_shadow_rotation.json").write_text(json.dumps({
+        "schema_version": 2,
+        "universe_size": len(universe),
+        "universe_fingerprint": fingerprint,
+        "cycle_id": 7,
+        "next_index": 2,
+        "seen": universe,
+    }), encoding="utf-8")
+
+    first, start, state = runtime._rotation(universe, fingerprint)
+    assert first == ["A", "B"]
+    assert start == 0
+    assert state["cycle_id"] == 8
+    assert state["seen"] == []
+    committed = runtime._commit_rotation(universe, fingerprint, start, first, state)
+    assert committed["next_index"] == 2
+    assert committed["seen"] == ["A", "B"]
+
+    second, start, state = runtime._rotation(universe, fingerprint)
+    assert second == ["C", "D"]
+    assert start == 2
+    assert state["cycle_id"] == 8
+    committed = runtime._commit_rotation(universe, fingerprint, start, second, state)
+    assert committed["next_index"] == 0
+    assert committed["seen"] == universe
