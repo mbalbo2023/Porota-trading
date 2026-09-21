@@ -116,6 +116,7 @@ def _evidence_fallback(root: Path | str | None = None) -> dict[str, Any]:
                 "symbol": decision.get("symbol"),
                 "original_decision": factual,
                 "outcome": outcome,
+                "comparable": True,
                 "reason": reason,
                 "evidence_at": evidence_at,
                 "compared_at": payload.get("generated_at") or evidence_at,
