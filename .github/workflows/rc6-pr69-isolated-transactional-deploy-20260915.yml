@@ -367,6 +367,7 @@ jobs:
           # Prueba que el proceso en ejecución contiene el observer del candidato
           # recién desplegado. Evita repetir una omisión de copia en el workflow.
           STAGED_OBSERVER="/tmp/porota-rc6-candidate-$TARGET_SHA/bf_production_paper_observer.py"
+          CANDIDATE_ROOT="/tmp/porota-rc6-candidate-$TARGET_SHA"
           test -f "$STAGED_OBSERVER"
           EXPECTED_OBSERVER_SHA="$(sha256sum "$STAGED_OBSERVER" | awk '{print $1}')"
           RUNNING_OBSERVER_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/bf_production_paper_observer.py | awk '{print $1}')"
@@ -374,13 +375,13 @@ jobs:
           echo "OBSERVER_CANDIDATE_SHA=GREEN"
           # Prove the exact modules corrected by PR #125 reached each live container.
           for f in be_paper_engine.py bw_daily_risk.py dh_paper_dynamic_risk_gate_hf6.py; do
-            EXPECTED_SOURCE_SHA="$(sha256sum "$STAGED_OBSERVER/$f" | awk '{print $1}')"
+            EXPECTED_SOURCE_SHA="$(sha256sum "$CANDIDATE_ROOT/$f" | awk '{print $1}')"
             RUNNING_SOURCE_SHA="$(sudo -n docker exec porota_production_observer sha256sum "/app/$f" | awk '{print $1}')"
             test "$RUNNING_SOURCE_SHA" = "$EXPECTED_SOURCE_SHA"
             echo "RUNNING_SOURCE_SHA=GREEN|observer|$f"
           done
           for f in bg_paper_dashboard.py cr_pending_settlement_diagnostics_hf6.py; do
-            EXPECTED_SOURCE_SHA="$(sha256sum "$STAGED_OBSERVER/$f" | awk '{print $1}')"
+            EXPECTED_SOURCE_SHA="$(sha256sum "$CANDIDATE_ROOT/$f" | awk '{print $1}')"
             RUNNING_SOURCE_SHA="$(sudo -n docker exec porota_production_dashboard sha256sum "/app/$f" | awk '{print $1}')"
             test "$RUNNING_SOURCE_SHA" = "$EXPECTED_SOURCE_SHA"
             echo "RUNNING_SOURCE_SHA=GREEN|dashboard|$f"
