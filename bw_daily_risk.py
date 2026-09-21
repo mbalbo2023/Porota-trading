@@ -84,10 +84,20 @@ class DailyRisk:
         for currency, capital in sorted(self.broker.initial_balances.items()):
             previous = c.execute('SELECT * FROM paper_daily_risk WHERE day=? AND currency=?',
                                  (day,currency)).fetchone()
-            latest = c.execute('SELECT MAX(julianday(evaluated_at)) FROM paper_daily_risk WHERE currency=?',
-                               (currency,)).fetchone()[0]
-            if latest and latest > c.execute('SELECT julianday(?)',(at.isoformat(),)).fetchone()[0]:
-                results[currency] = {'state':'CLOCK_ROLLBACK','latched_at':previous['latched_at'] if previous else None}
+            latest_row = c.execute("""SELECT evaluated_at FROM paper_daily_risk
+                WHERE currency=? ORDER BY julianday(evaluated_at) DESC LIMIT 1""",
+                (currency,)).fetchone()
+            latest_at = latest_row['evaluated_at'] if latest_row else None
+            input_at = at.isoformat()
+            rollback = bool(latest_at and c.execute(
+                'SELECT julianday(?) > julianday(?)',(latest_at,input_at)).fetchone()[0])
+            if rollback:
+                results[currency] = {
+                    'state':'CLOCK_ROLLBACK',
+                    'latched_at':previous['latched_at'] if previous else None,
+                    'input_at':input_at,
+                    'latest_evaluated_at':latest_at,
+                }
                 continue
             c.execute('INSERT OR IGNORE INTO paper_risk_capital VALUES(?,?)',(currency,str(capital)))
             saved_capital = Decimal(c.execute('SELECT initial_capital FROM paper_risk_capital WHERE currency=?',
@@ -196,7 +206,11 @@ class DailyRisk:
     def admission_error(self, currency, at, *, connection=None, quotes=None):
         row = self.evaluate(at,connection=connection,quotes=quotes)[cash_currency(currency)]
         if row['state'] != 'READY':
-            return 'DAILY_RISK_' + row['state']
+            code = 'DAILY_RISK_' + row['state']
+            if row['state'] == 'CLOCK_ROLLBACK':
+                return (f"{code} input_at={row.get('input_at')} "
+                        f"latest_evaluated_at={row.get('latest_evaluated_at')}")
+            return code
         return 'DAILY_RISK_SOFT_STOP' if self.soft_stop_crossed(row) else ''
 
     def projected_admission_error(self, currency, at, committed_cost, *, connection=None):
