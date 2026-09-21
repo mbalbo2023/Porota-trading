@@ -141,3 +141,16 @@ PPI documenta ON como instrument type y el endpoint `GET /MarketData/Bonds/Estim
 ### Veredicto de comparación
 
 **Datos: AMARILLO — gap potencialmente cubrible.** PPI e IOL ofrecen, según sus contratos/documentación, los campos necesarios para construir una ficha de ON. **Evidencia de esta especie: AMARILLO — no cerrada**, porque falta la respuesta autenticada PPI de YMCID y la conciliación de precios/fechas/unidades. **Operatoria: ROJO — no habilitar**, hasta obtener PPI live, igualar la convención de precio, validar flujos/ISIN y pasar los gates específicos.
+
+
+### Simulación IOL con precio de mercado — 100 nominales YMCID
+
+Consulta read-only realizada el 21-Sep-2026 a las 19:16 UTC aproximadamente mediante la herramienta de simulación de renta fija. No crea orden ni mueve fondos.
+
+- Precio de mercado utilizado: dirty USD 94,37 por 100 nominales; clean USD 92,61274; interés corrido USD 1,75726.
+- Fecha de liquidación: 22-Sep-2026; vencimiento: 2-Jul-2029.
+- Nominales: 100; residual: 85,72; total a cobrar: USD 99,2254; interés total: USD 13,5054; amortización total: USD 85,72; ganancia estimada: USD 4,8554 (5,145% sobre inversión).
+- TIR: 3,5109%; TEM: 0,2840%; tasa nominal anual: 3,4806%; current yield: 8,1751%; duración modificada: 1,39247.
+- Los seis cashflows coinciden con los del analytics IOL anterior. La diferencia de TIR frente al analytics anterior (2,3656%) se explica por el precio de entrada de cálculo anterior (dirty 95,90) frente a dirty 94,37 en la simulación; debe registrarse el precio y timestamp junto al cálculo.
+- Este resultado demuestra que IOL puede transformar cotización + contrato + flujos en un análisis de rendimiento total para YMCID. Falta repetir el mismo cálculo desde PPI Bond Estimate a igual precio, cantidad, fecha y parámetros, y verificar tolerancias.
+- **Estado actualizado:** IOL para YMCID = VERDE en disponibilidad de datos; conciliación PPI/IOL = AMARILLO hasta evidencia PPI live; operabilidad RC6 = ROJO hasta integrar contrato, ledger de flujos, gates y ejecutor de renta fija.
