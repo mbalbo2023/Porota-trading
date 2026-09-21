@@ -5,6 +5,7 @@ import html
 import math
 import os
 import sqlite3
+from contextlib import closing
 from datetime import date, datetime
 from pathlib import Path
 from statistics import pstdev
@@ -32,7 +33,7 @@ def _connect():
 
 
 def _catalog():
-    with _connect() as connection:
+    with closing(_connect()) as connection:
         tables = {row[0] for row in connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         if TABLE not in tables:
@@ -218,7 +219,7 @@ def render_page(family="", instrument=""):
         f"<option value='{_e(value)}'{' selected' if value == family else ''}>{_e(value)}</option>"
         for value in families)
     instrument_options = "".join(
-        f"<option value='{_e(family + '|' + market + '|' + settlement)}' "
+        f"<option value='{_e(family + '|' + symbol + '|' + market + '|' + settlement)}' "
         f"{'selected' if wanted == (family, symbol, market, settlement) else ''}>"
         f"{_e(symbol)} · {_e(market)} · {_e(settlement)}</option>"
         for symbol, market, settlement in identities)
