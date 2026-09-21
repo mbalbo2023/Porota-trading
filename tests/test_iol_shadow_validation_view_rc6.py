@@ -78,4 +78,4 @@ def test_view_exposes_iol_decision_context_and_per_symbol_field_coverage(monkeyp
     assert "Spread 2.02% · Var. 1.50%" in html and "Vol. dinero 250,000.00" in html
     assert "9/9 campos IOL" in html
     assert "frescos para decisión: 1/1" in html
-    assert "no altera señales ni gates PAPER" in html
+    assert "No altera señales ni gates PAPER" in html
