@@ -17,6 +17,7 @@ from decimal import Decimal, ROUND_DOWN
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from _version import VERSION
 from bs_instrument_contracts import (CASH_CURRENCIES, InstrumentContract, SPOT_FAMILIES,
                                      aware_datetime, cash_currency, decimal_value, family_name)
 from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
@@ -35,7 +36,7 @@ def _family_operable(family: str) -> bool:
 
 
 SOURCE = "PRODUCTION_PAPER"
-STRATEGY_VERSION = "paper-momentum-v17.0-rc3-hf4"
+STRATEGY_VERSION = f"paper-momentum-v{VERSION}"
 # Snapshot contemporáneo de evidencia por decisión. No es un replay, no consulta
 # fuentes externas y no tiene autoridad para modificar la acción PAPER.
 DECISION_EVIDENCE_SCHEMA = "rc6.decision-inputs.v1"
