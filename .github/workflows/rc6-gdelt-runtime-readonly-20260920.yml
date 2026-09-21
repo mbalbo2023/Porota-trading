@@ -291,6 +291,54 @@ jobs:
                 'principal_blocker':'Blocker principal' in html,'screenshot_family_headers':all(x in html for x in ('Símbolos observados','BUY','HOLD'))}))
           except Exception as e: print('DASHBOARD_UNIVERSE_RENDER_ERROR='+type(e).__name__+':'+str(e))
           PY
+          echo SETTLEMENT_PARTIAL_SALE_SOURCE_READONLY
+          sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from decimal import Decimal
+          from bs_instrument_contracts import aware_datetime
+          from cf_sale_settlement import validated_sale_settlement
+          import cd_spot_ledger as ledger
+          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(db,uri=True,timeout=5); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          now=aware_datetime(datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat())
+          by_status={}
+          rows=[]
+          q="""SELECT s.*,p.symbol,p.currency,p.settlement,p.status position_status,
+            f.quantity,f.price,f.costs,f.filled_at,f.side
+            FROM paper_spot_sales s JOIN paper_positions p USING(paper_id)
+            JOIN paper_fills f ON f.id=s.fill_id
+            WHERE p.currency='ARS' ORDER BY f.filled_at"""
+          for r in c.execute(q):
+              x=dict(r); available=validated_sale_settlement(x['settlement'],x['filled_at'],x['available_at'],x['basis'])
+              proceeds=Decimal(str(x['net_proceeds']))
+              if proceeds>0 and (available is None or available>now):
+                  key=x['position_status']
+                  by_status[key]=by_status.get(key,Decimal('0'))+proceeds
+                  rows.append({'paper_id':x['paper_id'],'symbol':x['symbol'],'position_status':key,
+                    'filled_at':x['filled_at'],'quantity':x['quantity'],'net_proceeds':str(proceeds),
+                    'available_at':x['available_at'],'basis':x['basis'],'validated_available':str(available) if available else None})
+          print('PARTIAL_LEDGER_PENDING_BY_POSITION_STATUS='+json.dumps({k:str(v) for k,v in by_status.items()}))
+          print('PARTIAL_LEDGER_PENDING_ROWS='+json.dumps(rows,ensure_ascii=False,default=str))
+          print('SPOT_LEDGER_PENDING_TOTAL='+str(ledger.pending(c,now,'ARS')))
+          c.close()
+          PY
+          sudo -n docker exec -i -w /app porota_production_dashboard python - <<'PY'
+          import json, hashlib
+          import bg_paper_dashboard as bg
+          try:
+              html=bg.trading_page()
+              print('TRADING_ROUTE_RENDER='+json.dumps({'route':'/trading','module_file':bg.__file__,
+                'screenshot_AVAILABLE_Total':'AVAILABLE/Total' in html,
+                'screenshot_can_simulate':'can_simulate' in html,
+                'screenshot_Symbols_observed':'Símbolos observados' in html,
+                'screenshot_Blocker_principal':'Blocker principal' in html,
+                'screenshot_BUY_HOLD_headers':('>BUY<' in html and '>HOLD<' in html),
+                'operational_scope_notice':'acciones y CEDEARs' in html,
+                'hash':hashlib.sha256(html.encode()).hexdigest()}))
+          except Exception as e: print('TRADING_ROUTE_RENDER_ERROR='+type(e).__name__+':'+str(e))
+          PY
           echo READONLY_END
           REMOTE
           { echo 'RC6 runtime check (read-only)'; sed -n '1,220p' /tmp/rc6-readonly.txt; } >> "$GITHUB_STEP_SUMMARY"
