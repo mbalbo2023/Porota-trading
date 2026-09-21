@@ -104,6 +104,72 @@ jobs:
           print('AUDIT_TARGET_DECISION_GATE_JOIN='+json.dumps([dict(r) for r in c.execute(sql).fetchall()],ensure_ascii=False,default=str))
           c.close()
           PY
+          echo ORIGIN_RISK_SETTLEMENT_VERSION_READONLY
+          sudo -n docker exec -i -w /app porota_production_observer python - <<'PY'
+          import json, sqlite3
+          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(db,uri=True,timeout=5); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          print('ORIGIN_RISK_SCHEMA='+json.dumps(c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='paper_daily_risk'").fetchone()[0]))
+          print('ORIGIN_RISK_ROWS='+json.dumps([dict(r) for r in c.execute("SELECT day,currency,state,evaluated_at,detail FROM paper_daily_risk WHERE currency='ARS' ORDER BY evaluated_at DESC LIMIT 5")],ensure_ascii=False))
+          gates=[dict(r) for r in c.execute("""SELECT g.id,g.evaluated_at,g.symbol,g.decision_key,g.reason,d.action,d.decided_at,d.strategy_version
+            FROM trade_gate_evaluations g LEFT JOIN paper_decisions d ON d.decision_key=g.decision_key
+            WHERE g.symbol IN ('SUPV','PAMP','BBAR') AND date(g.evaluated_at,'-3 hours')='2026-09-21'
+            ORDER BY g.id DESC LIMIT 12""")]
+          print('ORIGIN_SCREEN_GATES='+json.dumps(gates,ensure_ascii=False,default=str))
+          evidence=[]
+          for g in gates:
+              row=c.execute("SELECT payload_json FROM decision_evidence_snapshots WHERE decision_key=?",(g['decision_key'],)).fetchone()
+              if row:
+                  p=json.loads(row[0]); q=p.get('quote_used') or {}
+                  evidence.append({'decision_key':g['decision_key'],'captured_at':p.get('captured_at'),
+                    'strategy_version':(p.get('runtime') or {}).get('strategy_version'),
+                    'action':(p.get('decision') or {}).get('action'),
+                    'quote':{k:q.get(k) for k in ('observed_at','book_at','trade_at','last_kind','metadata_source')}})
+          print('ORIGIN_GATE_EVIDENCE='+json.dumps(evidence,ensure_ascii=False,default=str))
+          try:
+              import _version, be_paper_engine
+              print('ORIGIN_RUNTIME_IDS='+json.dumps({'release_version':_version.VERSION,'image':_version.IMAGE,
+                'engine_strategy_version':be_paper_engine.STRATEGY_VERSION}))
+          except Exception as e: print('ORIGIN_RUNTIME_IDS_ERROR='+type(e).__name__+':'+str(e))
+          for table in ('paper_decisions','paper_positions','paper_learning_samples'):
+              try:
+                  print('ORIGIN_STRATEGY_COUNTS_'+table.upper()+'='+json.dumps([dict(r) for r in c.execute(
+                    f"SELECT strategy_version,COUNT(*) AS rows,MIN(COALESCE(decided_at,opened_at,feature_timestamp)) AS first_seen,MAX(COALESCE(decided_at,opened_at,feature_timestamp)) AS last_seen FROM {table} GROUP BY strategy_version ORDER BY last_seen DESC")],default=str))
+              except Exception as e: print('ORIGIN_STRATEGY_COUNTS_'+table.upper()+'_ERROR='+type(e).__name__+':'+str(e))
+          try:
+              print('ORIGIN_RISK_EVENTS='+json.dumps([dict(r) for r in c.execute("""SELECT id,event_at,event_type,paper_id,detail FROM paper_events
+                WHERE date(event_at,'-3 hours')='2026-09-21' AND event_at BETWEEN '2026-09-21T13:55:00+00:00' AND '2026-09-21T14:25:00+00:00'
+                ORDER BY id LIMIT 100""")],ensure_ascii=False,default=str))
+          except Exception as e: print('ORIGIN_RISK_EVENTS_ERROR='+type(e).__name__+':'+str(e))
+          c.close()
+          PY
+          sudo -n docker exec -i -w /app porota_production_dashboard python - <<'PY'
+          import json, os, sqlite3
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from decimal import Decimal
+          import cr_pending_settlement_diagnostics_hf6 as d
+          from bt_caucion_paper import pending_proceeds
+          class Store:
+              def connect(self):
+                  c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
+                  c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON'); return c
+          store=Store(); now=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+          x=d.snapshot(store,now.isoformat())
+          snaps=x.get('latest_equity_snapshots') or []
+          print('ORIGIN_SETTLEMENT_CONFIG='+json.dumps({'PAPER_T1_FULL_DATE_RELEASE':os.getenv('PAPER_T1_FULL_DATE_RELEASE','<unset/default false>'),
+            'diagnostic_as_of':x.get('as_of'),'snapshot_pending':x.get('snapshot_pending'),'diagnostic_live_pending':x.get('live_pending'),
+            'counts':x.get('counts'),'totals':x.get('totals')},ensure_ascii=False,default=str))
+          snapshot_rows=[]
+          for r in snaps:
+              item={k:r.get(k) for k in ('id','measured_at','currency','pending_proceeds','equity','cash')}
+              try: item['recomputed_pending_at_snapshot']=str(pending_proceeds(store,r.get('measured_at'),r.get('currency')))
+              except Exception as e: item['recompute_error']=type(e).__name__+':'+str(e)
+              try: item['engine_pending_now']=str(pending_proceeds(store,now.isoformat(),r.get('currency')))
+              except Exception as e: item['engine_pending_error']=type(e).__name__+':'+str(e)
+              snapshot_rows.append(item)
+          print('ORIGIN_EQUITY_SNAPSHOTS='+json.dumps(snapshot_rows,ensure_ascii=False,default=str))
+          PY
           echo RISK_PANEL_RENDER
           sudo -n docker exec -i -w /app porota_production_dashboard python - <<'PY'
           import re
