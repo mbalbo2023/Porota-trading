@@ -34,3 +34,22 @@ def test_keeps_verified_counterfactual_observational(tmp_path: Path):
     view = counterfactual.read(tmp_path)
     assert view["counts"]["WOULD_WARN"] == 1
     assert view["policy"] == "READ_ONLY_NO_DECISION_OR_PARAMETER_CHANGE"
+
+
+def test_falls_back_to_verified_decision_evidence_publication(tmp_path: Path):
+    (tmp_path / "decision_evidence_latest.json").write_text(json.dumps({
+        "source": "decision_evidence_snapshots/read-only",
+        "generated_at": "2026-09-21T20:00:00+00:00",
+        "decisions": [{
+            "decision_key": "d-1", "symbol": "SUPV", "state": "VERIFIED",
+            "factual_decision": "HOLD", "evidence_at": "2026-09-21T19:59:00+00:00",
+            "profiles": [{
+                "name": "SHADOW_BALANCED_V1", "state": "EVALUATED",
+                "action": "CANDIDATE_OPEN", "reason": "PROFILE_ENTRY_CRITERIA_MET"
+            }]
+        }]
+    }), encoding="utf-8")
+    view = counterfactual.read(tmp_path)
+    assert view["available"] is True
+    assert view["counts"]["WOULD_CONFIRM"] == 1
+    assert "decision_evidence_snapshots/read-only" in view["source"]
