@@ -71,6 +71,56 @@ def _fingerprint(universe: list[str]) -> str:
     return sha256(",".join(universe).encode("utf-8")).hexdigest()[:16]
 
 
+
+
+def _priority_symbols(universe: list[str]) -> list[str]:
+    """Return observed hot/candidate/position symbols without widening scope."""
+    allowed = set(universe)
+    counts: dict[str, int] = {}
+    candidates: list[str] = []
+    positions: list[str] = []
+    try:
+        conn = sqlite3.connect(f"file:{DEFAULT_DB}?mode=ro", uri=True, timeout=3)
+        conn.execute("PRAGMA query_only=ON")
+        tables = {str(row[0]) for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if "decision_evidence_snapshots" in tables:
+            rows = conn.execute(
+                "SELECT payload_json FROM decision_evidence_snapshots "
+                "WHERE captured_at >= datetime('now','-390 minutes') "
+                "ORDER BY captured_at DESC LIMIT 3000").fetchall()
+            for (raw,) in rows:
+                try:
+                    payload = json.loads(raw or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                decision = payload.get("decision") if isinstance(payload, dict) else {}
+                symbol = str(decision.get("symbol") or "").strip().upper()
+                if symbol not in allowed:
+                    continue
+                counts[symbol] = counts.get(symbol, 0) + 1
+                action = str(decision.get("final_result") or decision.get("action") or "").upper()
+                if action in {"BUY", "OPEN", "OPENED_SIMULATED", "ENTER"}:
+                    candidates.append(symbol)
+        if "paper_positions" in tables:
+            for (symbol,) in conn.execute(
+                "SELECT DISTINCT symbol FROM paper_positions "
+                "WHERE upper(COALESCE(status,'')) IN ('OPEN','ACTIVE','OPENED','OPENED_SIMULATED')"):
+                symbol = str(symbol or "").strip().upper()
+                if symbol in allowed:
+                    positions.append(symbol)
+        conn.close()
+    except (sqlite3.Error, OSError):
+        return []
+    ordered: list[str] = []
+    for symbol in positions + candidates + [
+        symbol for symbol, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]:
+        if symbol in allowed and symbol not in ordered:
+            ordered.append(symbol)
+    return ordered[:BATCH_SIZE]
+
+
 def _rotation(universe: list[str], fingerprint: str) -> tuple[list[str], int, dict[str, Any]]:
     state_path = DEFAULT_ROOT / "iol_shadow_rotation.json"
     try:
@@ -78,29 +128,42 @@ def _rotation(universe: list[str], fingerprint: str) -> tuple[list[str], int, di
     except (OSError, json.JSONDecodeError):
         state = {}
     if state.get("universe_fingerprint") != fingerprint or int(state.get("universe_size") or 0) != len(universe):
-        state = {"schema_version": 2, "cycle_id": 1, "next_index": 0, "seen": []}
-    seen = {str(x).upper() for x in state.get("seen", []) if str(x).strip() in set(universe)}
+        state = {"schema_version": 3, "cycle_id": 1, "next_index": 0, "seen": []}
+    universe_set = set(universe)
+    seen = {str(x).upper() for x in state.get("seen", []) if str(x).upper() in universe_set}
     if len(seen) >= len(universe):
-        # Start a genuinely empty cycle. Keep this local set in sync with the
-        # reset state or every later invocation will restart at index zero.
         seen = set()
-        state = {"schema_version": 2, "cycle_id": int(state.get("cycle_id") or 0) + 1, "next_index": 0, "seen": []}
+        state = {"schema_version": 3, "cycle_id": int(state.get("cycle_id") or 0) + 1, "next_index": 0, "seen": []}
     start = int(state.get("next_index") or 0) % max(1, len(universe))
-    selected = [universe[(start + offset) % len(universe)] for offset in range(min(BATCH_SIZE, len(universe)))]
+    priority = _priority_symbols(universe)
+    selected_priority = priority[:BATCH_SIZE]
+    background = [
+        universe[(start + offset) % len(universe)]
+        for offset in range(len(universe))
+        if universe[(start + offset) % len(universe)] not in selected_priority
+        and universe[(start + offset) % len(universe)] not in seen
+    ][:max(0, BATCH_SIZE - len(selected_priority))]
+    selected = selected_priority + background
     state["seen"] = sorted(seen)
+    state["background_count"] = len(background)
+    state["priority_count"] = len(selected_priority)
     return selected, start, state
 
 
 def _commit_rotation(universe: list[str], fingerprint: str, start: int, selected: list[str], state: dict[str, Any]) -> dict[str, Any]:
     seen = {str(x).upper() for x in state.get("seen", [])}
-    seen.update(selected)
+    background_count = int(state.get("background_count") or 0)
+    background = selected[-background_count:] if background_count else []
+    seen.update(background)
     committed = {
-        "schema_version": 2,
+        "schema_version": 3,
         "universe_size": len(universe),
         "universe_fingerprint": fingerprint,
         "cycle_id": int(state.get("cycle_id") or 1),
-        "next_index": (start + len(selected)) % len(universe),
+        "next_index": (start + background_count) % len(universe),
         "seen": sorted(seen),
+        "priority_count": int(state.get("priority_count") or 0),
+        "background_count": background_count,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     _atomic_json(DEFAULT_ROOT / "iol_shadow_rotation.json", committed)
