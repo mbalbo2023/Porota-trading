@@ -46,6 +46,8 @@ def classify_receivable(row, as_of=None):
         "basis": basis,
         "state": state,
         "expected_business_date": expected_date,
+        "origin": row.get("origin") or "PAPER_SALE_RECEIVABLE",
+        "reference": row.get("reference"),
     }
 
 
@@ -55,21 +57,49 @@ def snapshot(store, as_of=None):
     with store.connect() as c:
         tables = {r[0] for r in c.execute(
             "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "paper_sale_receivables" not in tables:
-            return {"state": "MISSING_TABLE", "as_of": at.isoformat(), "rows": []}
+        rows = []
+        if "paper_sale_receivables" in tables:
+            partial_ids = ("AND NOT EXISTS (SELECT 1 FROM paper_spot_sales s "
+                           "WHERE s.paper_id=p.paper_id)" if "paper_spot_sales" in tables else "")
+            sql = """SELECT p.paper_id,p.symbol AS ticker,p.currency,p.settlement,p.closed_at,
+                     r.net_proceeds,r.available_at,r.basis
+                     FROM paper_positions p JOIN paper_sale_receivables r USING(paper_id)
+                     WHERE p.status='CLOSED' """ + partial_ids + " ORDER BY datetime(p.closed_at) DESC"
+            for raw in c.execute(sql):
+                row = dict(raw)
+                row["origin"] = "PAPER_SALE_RECEIVABLE"
+                row["reference"] = "PAPER_ID:" + str(row.get("paper_id") or "")
+                if row.get("closed_at") and aware_datetime(row["closed_at"]) <= at:
+                    rows.append(row)
 
-        rows = [dict(r) for r in c.execute("""SELECT p.paper_id,p.symbol AS ticker,p.currency,
-          p.settlement,p.closed_at,r.net_proceeds,r.available_at,r.basis
-          FROM paper_positions p JOIN paper_sale_receivables r USING(paper_id)
-          WHERE p.status='CLOSED' ORDER BY datetime(p.closed_at) DESC""")]
+        # Partial sale proceeds live in paper_spot_sales, one amount per SELL fill.
+        # Include them separately, including sales on a position that later closed.
+        if "paper_spot_sales" in tables and "paper_fills" in tables:
+            sql = """SELECT s.paper_id,p.symbol AS ticker,p.currency,p.settlement,
+                     f.filled_at AS closed_at,s.net_proceeds,s.available_at,s.basis,
+                     s.fill_id
+                     FROM paper_spot_sales s
+                     JOIN paper_positions p ON p.paper_id=s.paper_id
+                     JOIN paper_fills f ON f.id=s.fill_id
+                     WHERE f.side='SELL_SIMULATED'
+                     ORDER BY julianday(f.filled_at) DESC,s.fill_id DESC"""
+            for raw in c.execute(sql):
+                row = dict(raw)
+                if aware_datetime(row["closed_at"]) > at:
+                    continue
+                row["origin"] = "PAPER_SPOT_SALES"
+                row["reference"] = "FILL:" + str(row.get("fill_id"))
+                rows.append(row)
+
         classified = [classify_receivable(r, at.isoformat()) for r in rows]
 
         latest=[]
         if "paper_equity_by_currency" in tables:
             latest=[dict(r) for r in c.execute("""SELECT e.*
               FROM paper_equity_by_currency e JOIN
-              (SELECT currency,MAX(id) id FROM paper_equity_by_currency GROUP BY currency) x
-              ON x.id=e.id ORDER BY e.currency""")]
+              (SELECT currency,MAX(id) id FROM paper_equity_by_currency
+                 WHERE julianday(measured_at)<=julianday(?) GROUP BY currency) x
+              ON x.id=e.id ORDER BY e.currency""",(at.isoformat(),))]
 
     totals={"PENDING_EXPECTED": ZERO,
             "PENDING_CONFIRMATION": ZERO,
