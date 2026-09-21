@@ -1065,6 +1065,43 @@ class ResilientPPIClient:
             f"get_historical_series({ticker})",
         )
 
+    def get_bond_estimate(
+        self, ticker: str, quantity: float = 100.0, price: float | None = None,
+        settlement_date=None,
+    ) -> Optional[dict]:
+        """Analytics de renta fija de PPI, solo lectura.
+
+        Se mantiene separado de la cotización: PPI calcula flujos, TIR,
+        duración, interés corrido, residual y metadatos del instrumento.
+        Si la firma instalada exige parámetros adicionales, la llamada falla
+        cerrada y devuelve None; no se inventan valores para habilitar una
+        orden.
+        """
+        try:
+            from datetime import datetime as _datetime
+            from ppi_client.models.estimate_bonds import EstimateBonds
+
+            valuation_date = settlement_date or _datetime.now()
+            kwargs = {
+                "ticker": ticker,
+                "date": valuation_date,
+                "quantityType": "PAPELES",
+                "quantity": quantity,
+                "price": price,
+            }
+            # El SDK documentado usa este modelo posicional; se mantiene
+            # price opcional para permitir que el proveedor use la cotización.
+            if price is None:
+                kwargs.pop("price")
+            request = EstimateBonds(**kwargs)
+            result = self.client.marketdata.estimate_bonds(request)
+            return result if isinstance(result, dict) else (
+                result[0] if isinstance(result, list) and len(result) == 1
+                and isinstance(result[0], dict) else None)
+        except (ImportError, TypeError, ValueError, AttributeError):
+            logger.exception("PPI bond estimate unavailable for %s", ticker)
+            return None
+
     def get_available_balance(self) -> Optional[list]:
         if not self.account_number:
             logger.warning("PPI_ACCOUNT_NUMBER no configurado; no se puede consultar saldo.")
