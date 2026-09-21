@@ -98,3 +98,8 @@ Estado real del gap:
 - La operación de RC6 no se activa por añadir un ticker: la allowlist del motor continúa ACCIONES/CEDEARS; falta ledger/event handling de renta fija y gates de crédito, liquidez, concentración y cash settlement. La condición `NEEDS_NOMINAL_UNITS` permanece hasta formalizar el contrato del símbolo.
 
 Conclusión de piloto actualizada: **GAP CUBRIBLE EN PRINCIPIO, PENDIENTE DE DEMOSTRAR PARA YMCID**. No habilitar ON productiva aún. La evidencia que falta es una llamada real PPI de lectura/estimate para YMCID y su comparación con IOL. No hay herramienta PPI autenticada accesible en esta sesión y no se hizo cambio operativo ni orden. Si esa corrida coincide y los gates de renta fija pasan, el paso siguiente es integrar primero Shadow, medir y luego habilitar explícitamente la familia en RC6; el presente feature branch no ha sido desplegado.
+
+
+### Detalle de compatibilidad del Bond Calculator PPI
+
+La documentación Python de PPI muestra `marketdata.estimate_bonds(EstimateBonds(ticker, date, quantityType, quantity, price))` y su respuesta rica en flujos/analítica. Sin embargo, la documentación REST para `GET /MarketData/Bonds/Estimate` lista además `AmountOfMoney`, `ExchangeRate`, `EquityRate`, `ExchangeRateAmortization` y `RateAdjustmentAmortization` como parámetros requeridos. Antes de añadir el wrapper en Porota debe verificarse la firma instalada de ppi-client 1.3.0 y una respuesta sandbox/read-only para YMCID, sin adivinar esos campos. Esto es otra brecha de integración, no evidencia de imposibilidad del proveedor.
