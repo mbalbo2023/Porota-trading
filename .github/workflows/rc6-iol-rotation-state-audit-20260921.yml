@@ -240,3 +240,5 @@ jobs:
 # Re-run to identify dashboard component cache-schema compatibility.
 
 # Re-run after dashboard cache permission deployment.
+
+# Post-fix verification trigger after canonical RC6 deployment.
