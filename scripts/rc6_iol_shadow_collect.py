@@ -197,15 +197,16 @@ def _primary_snapshot() -> tuple[dict[str, float], dict[str, Any]]:
     return {}, {"state": "UNAVAILABLE", "reason": "PRIMARY_CACHE_NOT_FOUND"}
 
 
-def _publish_progress(universe: list[str], batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:
+def _publish_progress(universe: list[str] | int, batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:
     path = DEFAULT_ROOT / "iol_shadow_latest.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     rows = payload.get("symbols") if isinstance(payload.get("symbols"), list) else []
     by_symbol = {str(row.get("symbol") or "").upper(): row for row in rows if isinstance(row, dict)}
+    scope = universe if isinstance(universe, list) else list(cycle.get("seen", []))
     cycle_seen = [symbol for symbol in cycle.get("seen", []) if symbol in by_symbol]
     ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in cycle_seen)
     unavailable = len(cycle_seen) - ready
-    total = len(universe)
+    total = universe if isinstance(universe, int) else len(universe)
     cycle_complete = len(cycle_seen) == total and total > 0
     now = datetime.now(timezone.utc)
 
@@ -227,7 +228,7 @@ def _publish_progress(universe: list[str], batch: list[str], source: str, finger
         return (str(row.get("state") or "").upper() == "READY"
                 and age is not None and 0 <= age <= 120)
 
-    cache_seen = [symbol for symbol in universe if symbol in by_symbol]
+    cache_seen = [symbol for symbol in scope if symbol in by_symbol]
     cache_ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in cache_seen)
     source_fresh = sum(provider_fresh(by_symbol[symbol]) for symbol in cache_seen)
     capture_fresh = sum(capture_recent(by_symbol[symbol]) for symbol in cache_seen)
@@ -240,7 +241,7 @@ def _publish_progress(universe: list[str], batch: list[str], source: str, finger
         "completed": len(cycle_seen),
         "ready": ready,
         "unavailable": unavailable,
-        "fresh": source_fresh,
+        "fresh": capture_fresh,
         "provider_fresh": source_fresh,
         "provider_timestamped": source_timestamped,
         "capture_recent": capture_fresh,
