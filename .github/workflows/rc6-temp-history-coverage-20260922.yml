@@ -1,0 +1,93 @@
+name: RC6 read-only history coverage audit
+on:
+  push:
+    branches: [audit/rc6-iol-decision-demand-20260921]
+    paths:
+      - .github/workflows/rc6-temp-history-coverage-20260922.yml
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare strict SSH
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts"
+      - name: Read operational history coverage from the Droplet
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$RUNNER_TEMP/ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python3 -' <<'PY'
+          import gzip, json, sqlite3
+          from pathlib import Path
+
+          cutoff = "2026-09-21"
+          db_path = "file:/app/data/market_history.db?mode=ro"
+          obs_path = "file:/app/data/paper_v17/observer_v17.db?mode=ro"
+          obs = sqlite3.connect(obs_path, uri=True, timeout=10)
+          obs.execute("PRAGMA query_only=ON")
+          cols = {r[1] for r in obs.execute("PRAGMA table_info(financial_instrument_catalog)")}
+          print("CATALOG_COLUMNS=" + ",".join(sorted(cols)))
+          sym_col = "ticker" if "ticker" in cols else "symbol"
+          typ_col = "instrument_type"
+          status_clause = " AND status='AVAILABLE'" if "status" in cols else ""
+          market_col = "market" if "market" in cols else "NULL"
+          settle_col = "settlement" if "settlement" in cols else "NULL"
+          sql = f"SELECT DISTINCT {sym_col},{typ_col},{market_col},{settle_col} FROM financial_instrument_catalog WHERE upper({typ_col}) IN ('ACCIONES','CEDEARS'){status_clause} AND trim(coalesce({sym_col},''))<>''"
+          universe_rows = obs.execute(sql).fetchall()
+          universe = {(str(r[1]).upper(), str(r[0]).upper()) for r in universe_rows if r[0] and r[1]}
+          obs.close()
+
+          live = sqlite3.connect(db_path, uri=True, timeout=10)
+          live.execute("PRAGMA query_only=ON")
+          hist = {(str(t).upper(),str(s).upper()):str(d)[:10]
+                  for s,t,d in live.execute("SELECT symbol,instrument_type,MAX(date) FROM history_canonical_v2 GROUP BY symbol,instrument_type")}
+          live.close()
+
+          root=Path("/app/data/evidence/ppi_history_exact_v1")
+          c=sqlite3.connect("file:"+str(root/"manifest_exact_v1.db")+"?mode=ro",uri=True,timeout=10)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          rows=c.execute("SELECT inner_sha256,wrapper_json FROM exact_attempts_v1 WHERE origin='PPI_HISTORY' AND quality='VALID_PAYLOAD' AND inner_sha256 IS NOT NULL").fetchall()
+          archive={}
+          for r in rows:
+              try: w=json.loads(r["wrapper_json"] or "{}")
+              except (TypeError,ValueError): continue
+              m=w.get("metadata") if isinstance(w.get("metadata"),dict) else {}
+              sym=w.get("symbol") or m.get("symbol")
+              typ=w.get("instrument_type") or m.get("instrument_type") or w.get("asset_class") or m.get("asset_class")
+              if not sym or not typ: continue
+              h=str(r["inner_sha256"])
+              p=root/"objects"/"sha256"/h[:2]/(h+".json.gz")
+              try:
+                  with gzip.open(p,"rt",encoding="utf-8") as fh: bars=json.load(fh)
+                  dates=[str(x.get("date",""))[:10] for x in bars if isinstance(x,dict) and x.get("date")]
+              except (OSError,ValueError,TypeError):
+                  continue
+              key=(str(typ).upper(),str(sym).upper())
+              if dates and (key not in archive or max(dates)>archive[key]): archive[key]=max(dates)
+          c.close()
+          missing=[(t,s) for t,s in sorted(universe) if hist.get((t,s),"")<cutoff]
+          arch_cut=[(t,s) for t,s in missing if archive.get((t,s),"")>=cutoff]
+          live_cut=len(universe)-len(missing)
+          print("HISTORY_COVERAGE="+json.dumps({
+              "cutoff":cutoff,"operational_symbols":len(universe),"canonical_through_cutoff":live_cut,
+              "canonical_needing_gap":len(missing),"archive_with_bars_through_cutoff":len(arch_cut),
+              "archive_operational_symbols":sum(1 for k in universe if k in archive),
+              "needing_ppi_query_or_verified_gap_source":len(missing)-len(arch_cut),
+              "missing_sample":[f"{t}:{s}" for t,s in missing[:30]],
+              "archive_gap_sample":[f"{t}:{s}" for t,s in arch_cut[:30]]
+          },sort_keys=True))
+          
