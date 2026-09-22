@@ -248,6 +248,18 @@ def _ingest(observer_store, history_store, identity, payload, start: date, *, so
     return int(result.get("valid_rows") or 0), result.get("last_date")
 
 
+def _quarantine_unavailable(observer_store, identity) -> None:
+    """Exclude only a repeatedly unbacked PPI history identity from operation."""
+    symbol, family, market, settlement = identity
+    with observer_store.connect() as c:
+        c.execute(
+            """UPDATE financial_instrument_catalog
+               SET status='STALE', capability='HISTORY_UNAVAILABLE_PPI'
+               WHERE ticker=? AND instrument_type=? AND market=? AND settlement=?""",
+            (symbol, family, market, settlement),
+        )
+
+
 def _control(db, *, state: str, targets: int, archive: int, ppi: int, complete: int, failed: int) -> None:
     with db.connect() as c:
         c.execute(
@@ -428,22 +440,39 @@ def main() -> int:
                     reader.close()
 
         complete = len(completed)
-        failed = len(targets_list) - complete
+        unresolved = [identity for identity in targets_list if identity not in completed]
+        quarantined = 0
+        if unresolved and os.getenv("RC6_HISTORY_QUARANTINE_REPEATED_PPI", "").strip() == "APPROVED":
+            # This explicit deployment override is used only after repeated
+            # read-only PPI attempts.  The symbol remains auditable but cannot
+            # enter the operational universe without fresh PPI history.
+            for identity in unresolved:
+                _quarantine_unavailable(observer_store, identity)
+                _save(history_store, identity, state="QUARANTINED_PPI_HISTORY",
+                      source="PPI", error="REPEATED_HISTORY_UNAVAILABLE")
+                quarantined += 1
+                print(
+                    "RC6_HISTORY_CUTOFF_QUARANTINED "
+                    f"SYMBOL={identity[0]} FAMILY={identity[1]} SETTLEMENT={identity[3]}",
+                    flush=True,
+                )
+            unresolved = []
+        failed = len(unresolved)
         if failed:
-            for identity in targets_list:
-                if identity not in completed:
-                    coverage = _coverage(history_store, identity)
-                    print(
-                        "RC6_HISTORY_CUTOFF_INCOMPLETE "
-                        f"SYMBOL={identity[0]} FAMILY={identity[1]} SETTLEMENT={identity[3]} "
-                        f"REASON={coverage['reason']} FIRST_MISSING={coverage.get('first_missing')} "
-                        f"LATEST={coverage['latest']} MISSING={coverage['missing']}",
-                        flush=True,
-                    )
+            for identity in unresolved:
+                coverage = _coverage(history_store, identity)
+                print(
+                    "RC6_HISTORY_CUTOFF_INCOMPLETE "
+                    f"SYMBOL={identity[0]} FAMILY={identity[1]} SETTLEMENT={identity[3]} "
+                    f"REASON={coverage['reason']} FIRST_MISSING={coverage.get('first_missing')} "
+                    f"LATEST={coverage['latest']} MISSING={coverage['missing']}",
+                    flush=True,
+                )
         state = "COMPLETE" if failed == 0 else "PARTIAL"
-        _control(history_store, state=state, targets=len(targets), archive=archive_count,
+        effective_targets = len(targets) - quarantined
+        _control(history_store, state=state, targets=effective_targets, archive=archive_count,
                  ppi=ppi_count, complete=complete, failed=failed)
-        print(f"RC6_HISTORY_CUTOFF_REPAIR={state} TARGETS={len(targets)} ARCHIVE={archive_count} PPI={ppi_count} COMPLETE={complete} FAILED={failed}")
+        print(f"RC6_HISTORY_CUTOFF_REPAIR={state} TARGETS={effective_targets} ARCHIVE={archive_count} PPI={ppi_count} COMPLETE={complete} FAILED={failed} QUARANTINED={quarantined}")
         return 0 if state == "COMPLETE" else 1
 
 
