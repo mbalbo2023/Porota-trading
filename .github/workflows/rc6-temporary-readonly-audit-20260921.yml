@@ -14,10 +14,10 @@ jobs:
     steps:
       - name: Read runtime through droplet
         env:
-          DO_HOST: \${{ secrets.DO_HOST }}
-          DO_USER: \${{ secrets.DO_USER }}
-          DO_SSH_KEY: \${{ secrets.DO_SSH_KEY }}
-          DO_KNOWN_HOSTS: \${{ secrets.DO_KNOWN_HOSTS }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
           set -Eeuo pipefail
           install -m 700 -d "$RUNNER_TEMP/ssh"
