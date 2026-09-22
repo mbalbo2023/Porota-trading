@@ -93,27 +93,28 @@ jobs:
               db.close()
           PY
           sudo -n docker exec -i porota_production_observer python3 - <<'PY'
-          import json
-          from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
-          client=OAuthStoreReadOnlyMCP()
-          allowed={"symbol","market","currency","type","asset_type","units_per_lot","lot_size",
-                   "last","price","bid","ask","best_bid","best_ask","variation","variation_pct",
-                   "volume","date","datetime","timestamp","observed_at","last_updated","maturity","isin"}
-          for tool,args in (
-              ("get_asset_info",{"symbol":"YMCID","market":"BCBA"}),
-              ("get_asset_quote",{"symbol":"YMCID","market":"BCBA","term":"t1"}),
-          ):
-              try:
-                  value=client.call(tool,args)
-                  records=value if isinstance(value,list) else [value]
-                  safe=[]
-                  for record in records:
-                      if isinstance(record,dict):
-                          safe.append({k:v for k,v in record.items() if k in allowed and isinstance(v,(str,int,float,bool,type(None)))})
-                  print("IOL_"+tool.upper()+"="+json.dumps({"record_count":len(records),"fields":safe},ensure_ascii=False,sort_keys=True))
-              except Exception as exc:
-                  status=getattr(exc,"status_code",None)
-                  print("IOL_"+tool.upper()+"=ERROR|"+type(exc).__name__+("|"+str(status) if status is not None else ""))
+          import json, sqlite3
+          from pathlib import Path
+          p=Path('/app/data/evidence/ppi_history_exact_v1/manifest_exact_v1.db')
+          if not p.exists():
+              print('ARCHIVE_MANIFEST=ABSENT')
+          else:
+              db=sqlite3.connect('file:'+str(p)+'?mode=ro',uri=True,timeout=10)
+              db.row_factory=sqlite3.Row
+              db.execute('PRAGMA query_only=ON')
+              rows=db.execute('SELECT row_key,quality,recorded_at,wrapper_json FROM exact_attempts_v1 ORDER BY inserted_at DESC LIMIT 8').fetchall()
+              for row in rows:
+                  try: w=json.loads(row['wrapper_json'] or '{}')
+                  except (TypeError,ValueError): w={}
+                  m=w.get('metadata') if isinstance(w.get('metadata'),dict) else {}
+                  safe={k:v for k,v in {**m,**w}.items()
+                        if k in {'symbol','asset_class','instrument_type','market','exchange','settlement','date_from','date_to','currency'}
+                        and isinstance(v,(str,int,float,bool,type(None)))}
+                  try: payload=json.loads(w.get('payload_json') or '[]')
+                  except (TypeError,ValueError): payload=[]
+                  keys=sorted(payload[0].keys()) if isinstance(payload,list) and payload and isinstance(payload[0],dict) else []
+                  print('ARCHIVE_SAMPLE='+json.dumps({'quality':row['quality'],'recorded_at':row['recorded_at'],'identity':safe,'rows':len(payload) if isinstance(payload,list) else None,'row_fields':keys},sort_keys=True))
+              db.close()
           PY
           echo "MUTATIONS=NONE"
           HOST
