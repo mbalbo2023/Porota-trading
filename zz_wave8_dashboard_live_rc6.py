@@ -18,50 +18,28 @@ import fi_event_risk_shadow_rc6 as event_contract
 _installed=False
 CLASSIC_CSS="""
 <style id='porota-rc6-classic-responsive'>
-/* Canonical tablet rule: never crush table columns. Horizontal scrolling is
-   preferable to unreadable character-by-character wrapping. */
-.paper-card,.tarjeta{max-width:100%;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch}
-.paper-table,.classic-responsive-table{display:table!important;width:max-content!important;min-width:100%!important;max-width:none!important;table-layout:auto!important;border-collapse:collapse!important}
+/* Tablet contract: preserve real tables, fit the viewport, and expose long
+   values through ellipsis/title instead of forcing horizontal page scroll. */
+.paper-card,.tarjeta{max-width:100%;min-width:0;overflow:hidden!important;box-sizing:border-box}
+.paper-table,.classic-responsive-table{display:table!important;width:100%!important;min-width:0!important;max-width:100%!important;table-layout:fixed!important;border-collapse:collapse!important}
 .paper-table thead,.classic-responsive-table thead{display:table-header-group!important}
 .paper-table tbody,.classic-responsive-table tbody{display:table-row-group!important}
 .paper-table tr,.classic-responsive-table tr{display:table-row!important}
-.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{display:table-cell!important;white-space:nowrap!important;overflow-wrap:normal!important;word-break:keep-all!important;min-width:max-content!important;max-width:none!important;vertical-align:middle!important}
-.paper-table td[data-wrap='true'],.classic-responsive-table td[data-wrap='true']{white-space:normal!important;min-width:16rem!important;max-width:32rem!important;overflow-wrap:break-word!important;word-break:normal!important}
-.porota-cell-label{display:none!important}
-
-/* RC5 compact-table CSS hid the header row on tablet. RC6 intentionally keeps
-   real column headers visible and uses horizontal scrolling instead. */
-.paper-table tr.porota-table-header,.classic-responsive-table tr.porota-table-header{position:static!important;width:auto!important;height:auto!important;padding:0!important;margin:0!important;overflow:visible!important;clip:auto!important;clip-path:none!important;white-space:normal!important;border:0!important;display:table-row!important}
+.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{display:table-cell!important;min-width:0!important;max-width:0!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;overflow-wrap:normal!important;word-break:normal!important;vertical-align:middle!important}
+.paper-table th,.paper-table td{padding:7px 8px!important}
+.paper-table td[data-wrap='true'],.classic-responsive-table td[data-wrap='true'],.paper-table td[data-porota-expanded='1'],.classic-responsive-table td[data-porota-expanded='1']{white-space:normal!important;max-width:none!important;overflow:visible!important;overflow-wrap:anywhere!important;word-break:break-word!important;background:#fff!important}
+.paper-table tr.porota-table-header,.classic-responsive-table tr.porota-table-header{display:table-row!important;position:static!important;visibility:visible!important}
 .paper-table tr.porota-table-header th,.classic-responsive-table tr.porota-table-header th{display:table-cell!important;visibility:visible!important;white-space:nowrap!important}
-
-/* RC6 accessibility/navigation closure: secondary navigation belongs above
-   content, never in a left rail that loses alignment while scrolling. */
 .system-layout{display:block!important;grid-template-columns:none!important}
 .system-nav,.subnav{position:sticky!important;top:49px!important;z-index:45!important;display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:7px!important;max-width:100%!important;overflow-x:auto!important;overflow-y:hidden!important;-webkit-overflow-scrolling:touch;background:var(--panel,#111827)!important;padding:8px!important;border-radius:10px!important;margin:0 0 10px!important}
 .system-nav a,.subnav a{display:inline-flex!important;flex:0 0 auto!important;white-space:nowrap!important;align-items:center!important}
 .system-content{min-width:0!important;width:100%!important}
-
-/* Per-page index is only injected when the page has no domain-specific
-   secondary navigation. */
 .porota-page-index{position:sticky;top:96px;z-index:40;display:flex;align-items:center;gap:7px;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:7px 9px;margin:8px 0 12px;border:1px solid var(--border,#334155);border-radius:10px;background:var(--panel,#111827)}
-.porota-page-index strong{flex:0 0 auto;white-space:nowrap}
-.porota-page-index a{flex:0 0 auto;white-space:nowrap;text-decoration:none;padding:5px 8px;border:1px solid var(--border,#334155);border-radius:8px}
-h2[id],h3[id]{scroll-margin-top:150px}
-
-/* Any legacy generated captions remain visually valid, but RC6 no longer
-   generates a caption duplicating the section heading. */
-.paper-table caption,.classic-responsive-table caption,.porota-table-title{display:table-caption!important;caption-side:top!important;text-align:left!important;font-weight:750!important;font-size:.98rem!important;line-height:1.25!important;white-space:normal!important;padding:8px 6px!important;color:inherit!important;background:transparent!important}
-
-/* Keep the canonical top menu visible while scrolling long dashboards. */
+.porota-page-index strong,.porota-page-index a{flex:0 0 auto;white-space:nowrap}
 #porota-canonical-nav{position:sticky!important;top:0!important;z-index:60!important;overflow-x:auto!important;flex-wrap:nowrap!important;-webkit-overflow-scrolling:touch}
 #porota-canonical-nav a{flex:0 0 auto!important;white-space:nowrap!important}
-
-@media(max-width:980px){
-  .paper-table tr.porota-table-header,.classic-responsive-table tr.porota-table-header{position:static!important;width:auto!important;height:auto!important;padding:0!important;margin:0!important;overflow:visible!important;clip:auto!important;clip-path:none!important;white-space:normal!important;display:table-row!important}
-  .paper-table tr.porota-table-header th,.classic-responsive-table tr.porota-table-header th{display:table-cell!important;visibility:visible!important}
-}
-@media(max-width:900px){.paper-table,.classic-responsive-table{font-size:.82rem!important}.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{padding:6px 8px!important}.porota-page-index{top:92px}}
-@media(max-width:620px){.paper-table,.classic-responsive-table{font-size:.78rem!important}.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{padding:5px 7px!important}.system-nav,.subnav{top:46px!important}.porota-page-index{top:88px!important}}
+@media(max-width:900px){.paper-table,.classic-responsive-table{font-size:.82rem!important}.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{padding:6px 5px!important}}
+@media(max-width:620px){.paper-table,.classic-responsive-table{font-size:.78rem!important}.paper-table th,.paper-table td,.classic-responsive-table th,.classic-responsive-table td{padding:5px 4px!important}.system-nav,.subnav{top:46px!important}.porota-page-index{top:88px!important}}
 </style>
 """
 
@@ -262,47 +240,77 @@ def _risk_html():
 def _strategy_overview():
     subnav=bg.trading_nav_html()
     links=(
-      ('/trading/acciones-cedears','Acciones y CEDEAR','Evaluación spot y elegibilidad por familia.'),
-      ('/trading/renta-fija','Renta fija','Bonos, Letras y ON.'),
-      ('/trading/cauciones','Cauciones','Evaluación PAPER, términos, costos y gates.'),
-      ('/trading/opciones','Opciones','Contratos y readiness de opciones.'),
-      ('/trading/futuros','Futuros','Contratos, calendario y márgenes/readiness.'),
-      ('/trading/fci','FCI','Fondos locales y exterior cuando haya evidencia.'),
-      ('/trading/licitaciones','Licitaciones','Licitaciones y canjes.'),
+      ('/trading/acciones-cedears','Acciones y CEDEAR','Readiness spot, PPI primario e IOL complementario.'),
+      ('/trading/bonos','Bonos','Identidad, nominales, liquidación y evidencia.'),
+      ('/trading/on','Obligaciones negociables','Nominal, flujo, vencimiento, costos y contrato.'),
+      ('/trading/cauciones','Cauciones','Términos, tasa, garantía y liquidación.'),
+      ('/trading/letras','Letras','Nominales, vencimiento y contrato PPI.'),
+      ('/trading/etf','ETF','Catálogo, identidad y datos de mercado.'),
+      ('/trading/indices','Índices','Tipo de instrumento y fuente contractual.'),
+      ('/trading/futuros','Futuros','Contrato, margen, vencimiento y riesgo.'),
+      ('/trading/opciones','Opciones','Contrato, strike, vencimiento y prima.'),
+      ('/scalping','Scalping','Evidencia intradiaria, scanner y PAPER/SHADOW.'),
     )
     cards=''.join(f"<a class='paper-card' href='{href}' style='text-decoration:none'><h3>{label}</h3><p class='paper-muted'>{desc}</p></a>" for href,label,desc in links)
-    body=("<h1>Trading — Estrategias y evaluadores</h1>"+subnav+
-          "<div class='paper-notice'><b>Scalping no se duplica en esta pantalla.</b> Tiene su destino principal propio en el menú superior. Aquí se muestran los evaluadores PAPER y criterios por familia.</div>"+
-          "<section><h2>Evaluadores por familia</h2><div class='paper-grid'>"+cards+"</div></section>")
-    return bg._document('Trading — Estrategias y evaluadores',body,refresh=30)
+    body=("<h1>Trading — Estrategias y readiness</h1>"+subnav+
+          "<div class='paper-notice'><b>Readiness por familia:</b> cada pantalla muestra objetivo, evidencia observada, brechas y siguiente acción. Una familia visible no equivale a permiso operativo.</div>"+
+          "<section><h2>Familias y evaluadores</h2><div class='paper-grid'>"+cards+"</div></section>")
+    return bg._document('Trading — Estrategias y readiness',body,refresh=30)
 
 
 def _family_activity_section(section=''):
-    families=tuple(bg.families_for_group(str(section or '').strip().lower())) if str(section or '').strip() else ()
-    params=()
-    where=''
-    if families:
-        marks=','.join('?' for _ in families); where=f' WHERE upper(instrument_type) IN ({marks})'; params=tuple(x.upper() for x in families)
-    universe=bg._rows(f"SELECT upper(instrument_type) family,COUNT(*) total,SUM(CASE WHEN upper(status)='AVAILABLE' THEN 1 ELSE 0 END) available,SUM(CASE WHEN can_simulate=1 THEN 1 ELSE 0 END) can_simulate FROM candidate_universe{where} GROUP BY upper(instrument_type) ORDER BY family",params)
-    if not universe:
-        return ''
-    decision_rows=bg._rows("""WITH u AS (SELECT DISTINCT ticker,upper(instrument_type) family FROM candidate_universe)
+    requested=tuple(bg.families_for_group(str(section or '').strip().lower())) if str(section or '').strip() else ()
+    families=requested or ('ACCIONES','CEDEARS','BONOS','ON','CAUCIONES','LETRAS','ETF','FUTUROS','OPCIONES','INDICES')
+    universe=bg._rows("SELECT upper(instrument_type) family,COUNT(*) total,SUM(CASE WHEN upper(status)='AVAILABLE' THEN 1 ELSE 0 END) available,SUM(CASE WHEN can_simulate=1 THEN 1 ELSE 0 END) can_simulate FROM candidate_universe GROUP BY upper(instrument_type)")
+    by_family={str(row.get('family') or '').upper():row for row in universe}
+    decisions=bg._rows("""WITH u AS (SELECT DISTINCT ticker,upper(instrument_type) family FROM candidate_universe)
       SELECT u.family,COUNT(*) decisions,SUM(CASE WHEN d.action='BUY' THEN 1 ELSE 0 END) buys,SUM(CASE WHEN d.action='HOLD' THEN 1 ELSE 0 END) holds,MAX(d.decided_at) last_decision
       FROM paper_decisions d JOIN u ON u.ticker=d.symbol
       WHERE substr(d.decided_at,1,10)=strftime('%Y-%m-%d','now') GROUP BY u.family""")
-    decisions={str(r.get('family') or '').upper():r for r in decision_rows}
-    snapshot_rows=bg._rows("""SELECT upper(asset_class) family,COUNT(*) snapshots,COUNT(DISTINCT symbol) symbols,MAX(observed_at) last_snapshot
-      FROM market_snapshots WHERE substr(observed_at,1,10)=strftime('%Y-%m-%d','now') GROUP BY upper(asset_class)""")
-    snaps={str(r.get('family') or '').upper():r for r in snapshot_rows}
-    blockers=bg._rows(f"SELECT upper(instrument_type) family,detail,COUNT(*) n FROM candidate_universe{where} GROUP BY upper(instrument_type),detail ORDER BY family,n DESC",params)
-    blocker_map={}
-    for r in blockers:
-        blocker_map.setdefault(str(r.get('family') or '').upper(),str(r.get('detail') or '—'))
+    decision_map={str(row.get('family') or '').upper():row for row in decisions}
+    objectives={
+      'ACCIONES':'PPI/IOL spot fresco + contrato PPI',
+      'CEDEARS':'PPI spot + ratio/moneda + validación IOL',
+      'BONOS':'Nominal, moneda, liquidación y contrato',
+      'ON':'Nominal, flujo, vencimiento, costos y contrato',
+      'CAUCIONES':'Términos, tasa, garantía y liquidación',
+      'LETRAS':'Nominal, vencimiento y contrato',
+      'ETF':'Identidad, mercado y datos de cotización',
+      'FUTUROS':'Contrato, margen, vencimiento y riesgo',
+      'OPCIONES':'Contrato, strike, vencimiento y prima',
+      'INDICES':'Tipo de instrumento y fuente contractual',
+    }
+    gaps={
+      'ACCIONES':'Conciliación PPI/IOL completa y fresca; IOL sigue SHADOW',
+      'CEDEARS':'Comparación PPI/IOL completa; ratio/moneda faltante donde aplique',
+      'BONOS':'Unidades nominales y contrato PPI',
+      'ON':'Unidades nominales, flujo y contrato PPI',
+      'CAUCIONES':'Términos de caución, tasa y garantía',
+      'LETRAS':'Unidades nominales y contrato PPI',
+      'ETF':'Identidad/catálogo y mercado',
+      'FUTUROS':'Contrato, margen y vencimiento',
+      'OPCIONES':'Contrato, strike, vencimiento y prima',
+      'INDICES':'Tipo de instrumento y contrato',
+    }
     rows=[]
-    for u in universe:
-        fam=str(u.get('family') or '').upper(); d=decisions.get(fam,{}); s=snaps.get(fam,{})
-        rows.append('<tr>'+f"<td><b>{_esc(fam)}</b></td><td>{_esc(u.get('available'))}/{_esc(u.get('total'))}</td><td>{_esc(u.get('can_simulate'))}</td>"+f"<td>{_esc(s.get('symbols',0))}</td><td>{_esc(d.get('decisions',0))}</td><td>{_esc(d.get('buys',0))}</td><td>{_esc(d.get('holds',0))}</td><td>{_esc(blocker_map.get(fam,'—'))}</td><td>{_esc(bg._local_time(d.get('last_decision')))}</td></tr>")
-    return """<section class='paper-card' id='rc6-family-live-activity'><h2>Actividad real de análisis por familia — hoy</h2><p class='paper-muted'>Esto muestra observación y decisiones PAPER aunque una familia siga bloqueada para abrir posiciones. AVAILABLE no equivale a can_simulate.</p><table class='paper-table classic-responsive-table'><thead><tr><th>Familia</th><th>AVAILABLE/Total</th><th>can_simulate</th><th>Símbolos observados</th><th>Decisiones</th><th>BUY</th><th>HOLD</th><th>Blocker principal</th><th>Última decisión</th></tr></thead><tbody>"""+''.join(rows)+"</tbody></table></section>"
+    for fam in families:
+      row=by_family.get(fam,{})
+      total=int(row.get('total') or 0); available=int(row.get('available') or 0); simulated=int(row.get('can_simulate') or 0)
+      d=decision_map.get(fam,{})
+      operational=fam in {'ACCIONES','CEDEARS'}
+      if operational and total and available==total and simulated:
+        state='READY_PAPER'
+        state_css='s-verde'
+      elif available:
+        state='PARTIAL'
+        state_css='s-amarillo'
+      else:
+        state='PENDING'
+        state_css='s-amarillo'
+      evidence=f"{available}/{total} disponibles · {simulated} simulables · {int(d.get('decisions') or 0)} decisiones"
+      next_action='Mantener PAPER; completar conciliación PPI/IOL antes de cambiar de nivel.' if state=='READY_PAPER' else gaps.get(fam,'Publicar evidencia PPI/IOL comparable.')
+      rows.append(f"<tr><td><b>{_esc(fam)}</b></td><td><span class='paper-status {state_css}'>{_esc(state)}</span></td><td title='{_esc(objectives.get(fam,''))}'>{_esc(objectives.get(fam,''))}</td><td title='{_esc(evidence)}'>{_esc(evidence)}</td><td title='{_esc(next_action)}'>{_esc(next_action)}</td></tr>")
+    return """<section class='paper-card' id='rc6-family-readiness'><h2>Readiness y evidencia por familia</h2><p class='paper-muted'>PPI es primario; IOL sólo complementa/valida en modo read-only. La tabla muestra progreso y brecha exacta; no habilita dinero real.</p><table class='paper-table classic-responsive-table'><thead><tr><th>Familia</th><th>Estado</th><th>Objetivo</th><th>Evidencia/progreso</th><th>Falta / siguiente acción</th></tr></thead><tbody>"""+''.join(rows)+"</tbody></table></section>"
 
 
 def _append_before_main_end(page, fragment):
