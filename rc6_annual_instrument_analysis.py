@@ -13,6 +13,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import iol_shadow_observation_rc6 as iol_shadow_observation
+import rc6_family_readiness as family_readiness
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 TABLE = "history_canonical_v2"
@@ -357,6 +358,75 @@ def _render_reconciliation_evidence():
         "con ACCIONES/CEDEARs ni con las decisiones del motor.</p></section>"
     )
 
+
+def _family_tone(state):
+    return {"READY": "green", "PARTIAL": "yellow", "PENDING": "yellow",
+            "BLOCKED": "red"}.get(str(state or "PENDING").upper(), "gray")
+
+
+def _render_family_readiness(catalog):
+    """Show family readiness and exact gaps from cache-only evidence."""
+    try:
+        cache = iol_shadow_observation.collect()
+        rows = [row for row in (cache.get("symbols") or []) if isinstance(row, dict)]
+        report = family_readiness.evaluate(catalog, rows)
+    except Exception as exc:
+        return (
+            "<section class='paper-card'><h2>Readiness integral por familia</h2>"
+            "<div class='paper-warning'><b>No se pudo construir la proyección.</b> "
+            + _e(f"{type(exc).__name__}: {str(exc)[:160]}")
+            + "</div></section>"
+        )
+    families = report.get("families") or []
+    instruments = report.get("instruments") or []
+    if not families:
+        return (
+            "<section class='paper-card'><h2>Readiness integral por familia</h2>"
+            "<div class='paper-warning'><b>Sin universo PPI publicado.</b> "
+            "No se habilita nada automáticamente hasta tener identidades verificables.</div></section>"
+        )
+    family_rows = []
+    for item in families:
+        state = str(item.get("state") or "PENDING").upper()
+        gaps = ", ".join(str(value) for value in (item.get("gaps") or [])[:4]) or "Sin brechas publicadas."
+        family_rows.append(
+            "<tr>"
+            f"<td><b>{_e(item.get('family'))}</b></td>"
+            f"<td><span class='paper-status {_family_tone(state)}'>{_e(state)}</span></td>"
+            f"<td>{_e(item.get('paper_auto_enabled', 0))}/{_e(item.get('instrument_count', 0))}</td>"
+            f"<td>{_e(item.get('blocked', 0))} bloqueados · {_e(item.get('pending', 0))} pendientes</td>"
+            f"<td>{_e(item.get('next_action'))}<br><span class='paper-muted'>{_e(gaps)}</span></td>"
+            "</tr>"
+        )
+    detail_rows = []
+    for item in instruments[:80]:
+        state = str(item.get("contract_state") or "INSUFFICIENT_EVIDENCE").upper()
+        tone = _evidence_tone(state)
+        reasons = ", ".join(str(value) for value in (item.get("reasons") or [])[:3])
+        detail_rows.append(
+            "<tr>"
+            f"<td>{_e(item.get('family'))}</td><td><b>{_e(item.get('symbol'))}</b></td>"
+            f"<td><span class='paper-status {tone}'>{_e(_evidence_label(state))}</span></td>"
+            f"<td>{'PAPER AUTO: ON' if item.get('paper_auto_enabled') else 'PAPER AUTO: OFF'}</td>"
+            f"<td>{_e(reasons or 'Sin brecha')}</td>"
+            "</tr>"
+        )
+    return (
+        "<section class='paper-card'><h2>Readiness integral por familia e instrumento</h2>"
+        "<p class='paper-muted'>Cruza el catálogo PPI con la evidencia PPI/IOL publicada. "
+        "Cada instrumento se promociona individualmente a PAPER/SHADOW cuando cumple; "
+        "una familia incompleta no bloquea otra. IOL complementa y PPI sigue mandando.</p>"
+        "<div class='paper-table-wrap'><table><thead><tr>"
+        "<th>Familia</th><th>Semáforo</th><th>PAPER listo</th><th>Brecha</th><th>Qué falta / próxima acción</th>"
+        "</tr></thead><tbody>" + "".join(family_rows) + "</tbody></table></div>"
+        "<h3>Detalle por instrumento</h3>"
+        "<div class='paper-table-wrap'><table><thead><tr>"
+        "<th>Familia</th><th>Instrumento</th><th>Estado</th><th>Promoción</th><th>Razón</th>"
+        "</tr></thead><tbody>" + "".join(detail_rows) + "</tbody></table></div>"
+        "<p class='paper-notice'><b>Regla de seguridad:</b> PAPER AUTO: ON habilita el circuito simulado/shadow "
+        "de ese instrumento. No autoriza órdenes reales ni modifica PPI Watch.</p></section>"
+    )
+
 def render_page(family="", instrument=""):
     year = datetime.now(TZ).year
     try:
@@ -409,5 +479,5 @@ def render_page(family="", instrument=""):
     return (
         "<h1>Análisis</h1><p class='paper-muted'>Performance del año calendario "
         + str(year) + " por instrumento, usando histórico canónico v2.</p>"
-        + form + _render_reconciliation_evidence() + report
+        + form + _render_family_readiness(catalog) + _render_reconciliation_evidence() + report
     )
