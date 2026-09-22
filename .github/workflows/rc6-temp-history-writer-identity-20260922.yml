@@ -99,26 +99,28 @@ jobs:
           db=sqlite3.connect('file:'+str(root/'manifest_exact_v1.db')+'?mode=ro',uri=True,timeout=10)
           db.row_factory=sqlite3.Row
           db.execute('PRAGMA query_only=ON')
-          row=db.execute("SELECT inner_sha256,quality FROM exact_attempts_v1 WHERE quality='VALID_PAYLOAD' ORDER BY inserted_at DESC LIMIT 1").fetchone()
+          row=db.execute("SELECT origin,quality,inner_sha256,wrapper_json FROM exact_attempts_v1 WHERE quality='VALID_PAYLOAD' ORDER BY inserted_at DESC LIMIT 1").fetchone()
           if not row:
               print('ARCHIVE_OBJECT=NONE')
           else:
+              try: wrapper=json.loads(row['wrapper_json'] or '{}')
+              except (TypeError,ValueError): wrapper={}
+              metadata=wrapper.get('metadata') if isinstance(wrapper.get('metadata'),dict) else {}
+              identity={k:v for k,v in {**metadata,**wrapper}.items()
+                        if k in {'symbol','asset_class','instrument_type','market','exchange','settlement','date_from','date_to','currency'}
+                        and isinstance(v,(str,int,float,bool,type(None)))}
               h=row['inner_sha256']
               p=root/'objects'/'sha256'/h[:2]/(h+'.json.gz')
-              print('ARCHIVE_OBJECT_EXISTS='+str(p.exists()))
               if p.exists():
                   with gzip.open(p,'rt',encoding='utf-8') as stream: obj=json.load(stream)
-                  print('ARCHIVE_OBJECT_KEYS='+','.join(sorted(obj.keys())) if isinstance(obj,dict) else 'ARCHIVE_OBJECT_TYPE='+type(obj).__name__)
-                  if isinstance(obj,dict):
-                      safe={k:v for k,v in obj.items() if k in {'symbol','asset_class','instrument_type','market','settlement','date_from','date_to','quality'} and isinstance(v,(str,int,float,bool,type(None)))}
-                      print('ARCHIVE_OBJECT_IDENTITY='+json.dumps(safe,sort_keys=True))
-                      for key,value in obj.items():
-                          if isinstance(value,list):
-                              first=value[0] if value and isinstance(value[0],dict) else {}
-                              print('ARCHIVE_PAYLOAD_SHAPE='+json.dumps({'field':key,'rows':len(value),'first_row_fields':sorted(first.keys())},sort_keys=True))
-                              break
-                          if isinstance(value,dict):
-                              print('ARCHIVE_NESTED_KEYS='+json.dumps({'field':key,'keys':sorted(value.keys())},sort_keys=True))
+                  if isinstance(obj,list):
+                      dates=[str(x.get('date',''))[:10] for x in obj if isinstance(x,dict) and x.get('date')]
+                      first=obj[0] if obj and isinstance(obj[0],dict) else {}
+                      print('ARCHIVE_OBJECT='+json.dumps({'origin':row['origin'],'quality':row['quality'],'identity':identity,'rows':len(obj),'first_row_fields':sorted(first.keys()),'first_date':min(dates) if dates else None,'last_date':max(dates) if dates else None},sort_keys=True))
+                  else:
+                      print('ARCHIVE_OBJECT_TYPE='+type(obj).__name__)
+              else:
+                  print('ARCHIVE_OBJECT_FILE=MISSING')
           db.close()
           PY
           sudo -n python3 - <<'PY'
@@ -127,15 +129,13 @@ jobs:
           sys.path.insert(0, '/opt/porota-trading')
           store=Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
           print('IOL_OAUTH_STORE_EXISTS='+str(store.exists()))
-          if store.exists():
-              st=store.stat()
-              print('IOL_OAUTH_STORE_MODE='+oct(st.st_mode & 0o777))
           try:
               from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP, IOLMCPError
               client=OAuthStoreReadOnlyMCP()
               allow={'symbol','market','currency','type','asset_type','units_per_lot','lot_size',
-                     'last','price','bid','ask','best_bid','best_ask','variation','variation_pct',
-                     'volume','date','datetime','timestamp','observed_at','last_updated','maturity','isin'}
+                     'last','last_price','unit_price','price','bid','ask','best_bid','best_ask',
+                     'variation','variation_pct','volume','date','datetime','timestamp',
+                     'observed_at','last_updated','maturity','isin'}
               for tool,args in (
                   ('get_asset_info',{'symbol':'YMCID','market':'BCBA'}),
                   ('get_asset_quote',{'symbol':'YMCID','market':'BCBA','term':'t1'}),
@@ -143,9 +143,10 @@ jobs:
                   try:
                       value=client.call(tool,args)
                       records=value if isinstance(value,list) else [value]
-                      safe=[{k:v for k,v in r.items() if k in allow and isinstance(v,(str,int,float,bool,type(None)))}
+                      safe=[{'keys':sorted(r.keys()),
+                             'values':{k:v for k,v in r.items() if k in allow and isinstance(v,(str,int,float,bool,type(None)))}}
                             for r in records if isinstance(r,dict)]
-                      print('IOL_'+tool.upper()+'='+json.dumps({'record_count':len(records),'fields':safe},sort_keys=True))
+                      print('IOL_'+tool.upper()+'='+json.dumps({'record_count':len(records),'records':safe},sort_keys=True))
                   except IOLMCPError as exc:
                       print('IOL_'+tool.upper()+'=ERROR|'+str(exc))
                   except Exception as exc:
