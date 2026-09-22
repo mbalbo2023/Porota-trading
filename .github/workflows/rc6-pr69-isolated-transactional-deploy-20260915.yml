@@ -86,8 +86,8 @@ jobs:
           SSH_KEY: ${{ secrets.DO_SSH_KEY }}
         run: |
           set -Eeuo pipefail
-          scp -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" /tmp/porota-rc6-candidate.tgz "$DO_USER@$DO_HOST:/tmp/porota-rc6-candidate-$TARGET_SHA.tgz"
-          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          scp -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" /tmp/porota-rc6-candidate.tgz "$DO_USER@$DO_HOST:/tmp/porota-rc6-candidate-$TARGET_SHA.tgz"
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           cd "$REPO"
@@ -404,7 +404,7 @@ jobs:
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
-          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'VERIFY'
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'VERIFY'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           H="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health)"
@@ -628,7 +628,7 @@ jobs:
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -Eeuo pipefail
-          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "bash -s" <<'AUDIT'
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "bash -s" <<'AUDIT'
           set -Eeuo pipefail
           echo 'STORAGE_AUDIT=READ_ONLY'
           df -h / /opt /var/lib/docker 2>/dev/null || df -h /
