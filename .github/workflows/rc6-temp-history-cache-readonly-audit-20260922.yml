@@ -105,6 +105,12 @@ jobs:
               except Exception as e: print('DB_READONLY_OPEN='+str(q)+'|ERROR='+type(e).__name__)
           PY
           sudo -n docker exec porota_production_observer id
+          echo "--- storage and inode audit (read-only) ---"
+          df -hT / /opt /var/lib/docker 2>/dev/null || df -hT /
+          df -i / /opt /var/lib/docker 2>/dev/null || df -i /
+          sudo -n docker system df
+          sudo -n du -x -h -d1 /opt/porota-trading/data /var/lib/docker 2>/dev/null | sort -h | tail -20 || true
+          sudo -n du -sh /opt/porota-trading/data/evidence/ppi_history_exact_v1 /opt/porota-trading/data/market_history.db 2>/dev/null || true
           echo "--- owned candle state and exact PPI archive coverage ---"
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import os,sqlite3,json
