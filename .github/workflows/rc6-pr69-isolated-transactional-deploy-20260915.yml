@@ -356,7 +356,7 @@ jobs:
           import sqlite3
           c=sqlite3.connect("file:/app/data/market_history.db?mode=ro", uri=True, timeout=20)
           c.execute("PRAGMA query_only=ON")
-          rows=c.execute("SELECT symbol, instrument_type, market, settlement, COALESCE(error_class,'UNKNOWN') FROM rc6_history_cutoff_repair WHERE cutoff='2026-09-21' AND state='FAILED' ORDER BY symbol, settlement").fetchall()
+          rows=c.execute("SELECT symbol, instrument_type, market, settlement, COALESCE(error_class,'UNKNOWN') FROM rc6_history_cutoff_repair WHERE cutoff='2026-09-21' AND state NOT IN ('ALREADY_COVERED','COMPLETE') ORDER BY symbol, settlement").fetchall()
           c.close()
           print("HISTORY_REPAIR_FAILURES=" + repr(rows))
           PY
