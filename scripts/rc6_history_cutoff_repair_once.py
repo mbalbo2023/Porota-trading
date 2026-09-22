@@ -335,25 +335,20 @@ def main() -> int:
                 except Exception as exc:
                     _save(history_store, identity, state="ARCHIVE_REJECTED", source="PPI_ARCHIVE",
                           requested_from=start.isoformat(), error=type(exc).__name__)
+        reader = None
+        live_gap_repair = os.getenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", "").strip() == "APPROVED"
+        if len(completed) < len(targets_list) and live_gap_repair:
             try:
                 key, secret = observer._secret()
                 reader = ProductionMarketReader(key, secret)
                 reader.login_once()
-                break
             except Exception as exc:
-                _save(history_store, identity, state="PPI_AUTH_FAILED", source="PPI",
-                      requested_from=start.isoformat(), error=type(exc).__name__)
-                failed += len(targets_list) - len(completed)
                 _control(history_store, state="PARTIAL", targets=len(targets), archive=archive_count,
-                         ppi=ppi_count, complete=len(completed), failed=failed)
-                print(f"RC6_HISTORY_CUTOFF_REPAIR=PARTIAL TARGETS={len(targets)} COMPLETE={len(completed)} AUTH=FAILED")
+                         ppi=ppi_count, complete=len(completed), failed=len(targets_list) - len(completed))
+                print(f"RC6_HISTORY_CUTOFF_REPAIR=PARTIAL TARGETS={len(targets)} COMPLETE={len(completed)} AUTH={type(exc).__name__}")
                 return 1
-            break
-        else:
-            reader = None
 
-        if (len(completed) < len(targets_list) and reader is not None
-                and os.getenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", "").strip() == "APPROVED"):
+        if len(completed) < len(targets_list) and reader is not None:
             try:
                 for index, identity in enumerate(targets_list, 1):
                     if identity in completed:
