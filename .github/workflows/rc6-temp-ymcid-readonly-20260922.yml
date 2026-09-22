@@ -41,7 +41,7 @@ jobs:
           import json
           from datetime import date
           import bf_production_paper_observer as observer
-          from bd_ppi_readonly_guard import ProductionMarketReader
+          from bd_ppi_readonly_guard import ProductionMarketReader, classify_read_error
 
           def data(x):
               if isinstance(x, dict): return x
@@ -108,13 +108,13 @@ jobs:
                   try:
                       x=fn()
                       print("PPI_"+label+"="+json.dumps(pick(x,("ticker","symbol","type","market","currency","settlement","date","timestamp","price","last","bid","ask","bids","offers","asks","quantity","size","volume")),ensure_ascii=False,default=str))
-                  except Exception as e: print("PPI_"+label+"_ERROR="+type(e).__name__)
+                  except Exception as e: print("PPI_"+label+"_ERROR="+classify_read_error(e))
               try:
                   x=reader.history("YMCID",kind,str(settlement),date(2025,9,22),date(2026,9,21))
                   rows=x if isinstance(x,list) else []
                   last=rows[-1] if rows else {}
                   print("PPI_HISTORY="+json.dumps({"rows":len(rows),"last_date":pick(last,("date","timestamp")),"last_bar":pick(last,("openingprice","open","max","high","min","low","price","close","volume"))},ensure_ascii=False,default=str))
-              except Exception as e: print("PPI_HISTORY_ERROR="+type(e).__name__)
+              except Exception as e: print("PPI_HISTORY_ERROR="+classify_read_error(e))
               print("PPI_BOND_ESTIMATE=BLOCKED_MISSING_VERIFIED_RATE_INPUTS")
           finally:
               if reader is not None: reader.close()
