@@ -43,6 +43,10 @@ jobs:
               print("PPI_SDK_VERSION="+md.version("ppi-client"))
               from ppi_client.ppi import PPI
               print("PPI_CONSTRUCTOR_SIGNATURE="+str(inspect.signature(PPI)))
+              md_client=PPI(sandbox=False).marketdata
+              for method in ("search_instrument","current","book","search","estimate_bonds"):
+                  try: print("PPI_"+method.upper()+"_SIGNATURE="+str(inspect.signature(getattr(type(md_client),method))))
+                  except Exception as e: print("PPI_"+method.upper()+"_INSPECTION="+type(e).__name__)
               try:
                   from ppi_client.models.estimate_bonds import EstimateBonds
                   print("ESTIMATE_BONDS_SIGNATURE="+str(inspect.signature(EstimateBonds)))
