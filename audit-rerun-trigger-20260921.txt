@@ -1,1 +1,1 @@
-Trigger one scoped read-only continuity audit, retry corrected expressions.
+Trigger one scoped read-only continuity audit, include PPI method signatures.
