@@ -352,6 +352,16 @@ jobs:
           set -e
           echo "$HISTORY_REPAIR_OUTPUT"
           echo "HISTORY_REPAIR_EXIT=$HISTORY_REPAIR_RC"
+          HISTORY_FAILURES="$(sudo -n docker exec -i --user 1000:1000 porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect("file:/app/data/market_history.db?mode=ro", uri=True, timeout=20)
+          c.execute("PRAGMA query_only=ON")
+          rows=c.execute("SELECT symbol, instrument_type, market, settlement, COALESCE(error_class,'UNKNOWN') FROM rc6_history_cutoff_repair WHERE cutoff='2026-09-21' AND state='FAILED' ORDER BY symbol, settlement").fetchall()
+          c.close()
+          print("HISTORY_REPAIR_FAILURES=" + repr(rows))
+          PY
+          )"
+          echo "$HISTORY_FAILURES"
           test "$HISTORY_REPAIR_RC" -eq 0
           grep -Eq '^RC6_HISTORY_CUTOFF_REPAIR=COMPLETE ' <<< "$HISTORY_REPAIR_OUTPUT"
           HISTORY_REPAIR_STATE="$(sudo -n docker exec -i --user 1000:1000 porota_production_observer python - <<'PY'
