@@ -92,5 +92,28 @@ jobs:
                   print('ARCHIVE_COLUMNS_'+name+'='+','.join(cols))
               db.close()
           PY
+          sudo -n docker exec -i porota_production_observer python3 - <<'PY'
+          import json
+          from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
+          client=OAuthStoreReadOnlyMCP()
+          allowed={"symbol","market","currency","type","asset_type","units_per_lot","lot_size",
+                   "last","price","bid","ask","best_bid","best_ask","variation","variation_pct",
+                   "volume","date","datetime","timestamp","observed_at","last_updated","maturity","isin"}
+          for tool,args in (
+              ("get_asset_info",{"symbol":"YMCID","market":"BCBA"}),
+              ("get_asset_quote",{"symbol":"YMCID","market":"BCBA","term":"t1"}),
+          ):
+              try:
+                  value=client.call(tool,args)
+                  records=value if isinstance(value,list) else [value]
+                  safe=[]
+                  for record in records:
+                      if isinstance(record,dict):
+                          safe.append({k:v for k,v in record.items() if k in allowed and isinstance(v,(str,int,float,bool,type(None)))})
+                  print("IOL_"+tool.upper()+"="+json.dumps({"record_count":len(records),"fields":safe},ensure_ascii=False,sort_keys=True))
+              except Exception as exc:
+                  status=getattr(exc,"status_code",None)
+                  print("IOL_"+tool.upper()+"=ERROR|"+type(exc).__name__+("|"+str(status) if status is not None else ""))
+          PY
           echo "MUTATIONS=NONE"
           HOST
