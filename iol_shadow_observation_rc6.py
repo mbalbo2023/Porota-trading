@@ -43,18 +43,29 @@ def _first_number(*values: Any) -> float | None:
     return None
 
 def _quote_summary(payload: dict) -> dict:
-    """Normalize observed IOL payloads without retaining opaque raw broker data."""
+    """Normalize IOL market data and preserve its provider trade timestamp."""
     if not isinstance(payload,dict): return {}
     trade=payload.get("trade") if isinstance(payload.get("trade"),dict) else {}
     bid=_first_number(payload.get("bid"),payload.get("best_bid"),payload.get("buy_price"),trade.get("bid"))
     ask=_first_number(payload.get("ask"),payload.get("best_ask"),payload.get("sell_price"),trade.get("ask"))
     last=_first_number(payload.get("last"),payload.get("last_price"),payload.get("price"),
-                       payload.get("unit_price"),trade.get("last"),trade.get("price"),trade.get("unit_price"),
-                       trade.get("lot_price"))
+                       payload.get("unit_price"),trade.get("last"),trade.get("price"),
+                       trade.get("unit_price"),trade.get("lot_price"))
+    provider_observed_at=None
+    for raw_time in (payload.get("timestamp"),payload.get("observed_at"),payload.get("date"),
+                     trade.get("timestamp"),trade.get("observed_at"),trade.get("date")):
+        try:
+            parsed=datetime.fromisoformat(str(raw_time).replace("Z","+00:00"))
+            if parsed.tzinfo is not None:
+                provider_observed_at=parsed.isoformat()
+                break
+        except (TypeError,ValueError):
+            continue
     spread=(ask-bid)/bid*100.0 if bid is not None and ask is not None and bid>0 and ask>=bid else None
     return {"last":last,"bid":bid,"ask":ask,"spread_pct":spread,
             "variation_pct":_first_number(payload.get("variation"),payload.get("variation_pct"),trade.get("variation")),
-            "cash_volume":_first_number(payload.get("cash_volume"),payload.get("volume_amount"),trade.get("cash_volume"))}
+            "cash_volume":_first_number(payload.get("cash_volume"),payload.get("volume_amount"),trade.get("cash_volume")),
+            "provider_observed_at":provider_observed_at}
 
 def refresh(symbols: Iterable[str], call_tool: Callable[[str,dict],dict], *, root: Path | str | None=None,
             market: str=DEFAULT_MARKET, primary_last_by_symbol: dict[str,float] | None=None,

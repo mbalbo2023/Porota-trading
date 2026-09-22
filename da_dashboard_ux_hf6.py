@@ -26,6 +26,7 @@ TOP_NAV = (
     NavItem("/instrumentos", "Instrumentos y contratos"),
     NavItem("/riesgo", "Riesgo"),
     NavItem("/historicos", "Históricos"),
+    NavItem("/analisis", "Análisis"),
     NavItem("/aprendizaje", "Aprendizaje"),
     NavItem("/reportes", "Reportes"),
     NavItem("/postcierre", "Cierre"),

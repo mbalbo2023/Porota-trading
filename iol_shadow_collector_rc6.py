@@ -234,10 +234,13 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
     for symbol in universe:
         if symbol in completed:
             continue
-        captured_at = now().isoformat()
+        capture_started_at = now().isoformat()
         try:
             quote = _quote_summary(_safe_call(client, "get_asset_quote",
                 {"symbol": symbol, "market": market, "term": term}, rate_governor, policy))
+            # Capture completion records when the response became available.
+            # It is intentionally separate from IOL's provider timestamp.
+            captured_at = now().isoformat()
             key, cached = _metadata_key(symbol, market), metadata_entries.get(_metadata_key(symbol, market), {})
             expires_at = cached.get("expires_at", "")
             if not cached or expires_at <= captured_at:
@@ -246,14 +249,16 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
                           "expires_at": datetime.fromtimestamp(now().timestamp() + policy.metadata_ttl_seconds, timezone.utc).isoformat()}
                 metadata_entries[key] = cached
             completed[symbol] = {"symbol": symbol, "market": market, "term": term,
-                "state": "READY" if quote.get("last") is not None else "UNAVAILABLE", "captured_at": captured_at,
+                "state": "READY" if quote.get("last") is not None else "UNAVAILABLE",
+                "capture_started_at": capture_started_at, "captured_at": captured_at,
                 "quote": quote, **_metadata_from(cached),
                 "primary_comparison": _comparison(primary.get(symbol), quote.get("last"), policy.tolerance_pct),
                 "decision_effect": DECISION_EFFECT}
         except Exception as exc:
             errors_total += 1
             completed[symbol] = {"symbol": symbol, "market": market, "term": term, "state": "UNAVAILABLE",
-                "captured_at": captured_at, "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
+                "capture_started_at": capture_started_at, "captured_at": now().isoformat(),
+                "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
                 "decision_effect": DECISION_EFFECT}
         state["completed"], state["status"] = completed, "RUNNING"
         _atomic_json(checkpoint_file, state)
@@ -273,7 +278,7 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
     payload = {"schema_version": CACHE_SCHEMA_VERSION, "source": SOURCE, "mode": MODE,
         "decision_effect": DECISION_EFFECT, "live_decision_authority": False, "real_money_authorized": False,
         "run_id": active_run_id, "market": market, "term": term, "refreshed_at": state["completed_at"],
-        "telemetry": {"batch_symbols": len(universe), "ready_in_batch": sum(
+        "telemetry": {"batch_symbols": len(universe), "attempted_in_batch": len(universe), "ready_in_batch": sum(
             1 for symbol in universe if completed.get(symbol, {}).get("state") == "READY"),
             "unavailable_in_batch": sum(1 for symbol in universe if completed.get(symbol, {}).get("state") != "READY"),
             "calls_total": rate_governor.calls_total, "calls_429": rate_governor.calls_429,

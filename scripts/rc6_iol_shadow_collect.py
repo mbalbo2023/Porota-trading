@@ -136,7 +136,7 @@ def _rotation(universe: list[str], fingerprint: str) -> tuple[list[str], int, di
         state = {"schema_version": 3, "cycle_id": int(state.get("cycle_id") or 0) + 1, "next_index": 0, "seen": []}
     start = int(state.get("next_index") or 0) % max(1, len(universe))
     priority = _priority_symbols(universe)
-    selected_priority = priority[:BATCH_SIZE]
+    selected_priority = [symbol for symbol in priority if symbol not in seen][:BATCH_SIZE]
     background = [
         universe[(start + offset) % len(universe)]
         for offset in range(len(universe))
@@ -153,14 +153,15 @@ def _rotation(universe: list[str], fingerprint: str) -> tuple[list[str], int, di
 def _commit_rotation(universe: list[str], fingerprint: str, start: int, selected: list[str], state: dict[str, Any]) -> dict[str, Any]:
     seen = {str(x).upper() for x in state.get("seen", [])}
     background_count = int(state.get("background_count") or 0)
-    background = selected[-background_count:] if background_count else []
-    seen.update(background)
+    # run_batch records an outcome for every selected symbol before returning;
+    # READY and UNAVAILABLE both count as attempted cycle coverage.
+    seen.update(str(symbol).upper() for symbol in selected)
     committed = {
         "schema_version": 3,
         "universe_size": len(universe),
         "universe_fingerprint": fingerprint,
         "cycle_id": int(state.get("cycle_id") or 1),
-        "next_index": (start + background_count) % len(universe),
+        "next_index": (start + background_count) % len(universe) if background_count else start,
         "seen": sorted(seen),
         "priority_count": int(state.get("priority_count") or 0),
         "background_count": background_count,
@@ -168,7 +169,6 @@ def _commit_rotation(universe: list[str], fingerprint: str, start: int, selected
     }
     _atomic_json(DEFAULT_ROOT / "iol_shadow_rotation.json", committed)
     return committed
-
 
 def _parse_time(value: Any) -> datetime | None:
     try:
@@ -197,35 +197,70 @@ def _primary_snapshot() -> tuple[dict[str, float], dict[str, Any]]:
     return {}, {"state": "UNAVAILABLE", "reason": "PRIMARY_CACHE_NOT_FOUND"}
 
 
-def _publish_progress(total: int, batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:
+def _publish_progress(universe: list[str], batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:
     path = DEFAULT_ROOT / "iol_shadow_latest.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     rows = payload.get("symbols") if isinstance(payload.get("symbols"), list) else []
     by_symbol = {str(row.get("symbol") or "").upper(): row for row in rows if isinstance(row, dict)}
-    observed = [symbol for symbol in cycle.get("seen", []) if symbol in by_symbol]
-    ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in observed)
-    unavailable = len(observed) - ready
-    cycle_complete = len(observed) == total and total > 0
+    cycle_seen = [symbol for symbol in cycle.get("seen", []) if symbol in by_symbol]
+    ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in cycle_seen)
+    unavailable = len(cycle_seen) - ready
+    total = len(universe)
+    cycle_complete = len(cycle_seen) == total and total > 0
     now = datetime.now(timezone.utc)
-    fresh = 0
-    for symbol in observed:
-        row = by_symbol[symbol]
-        captured_at = _parse_time(row.get("captured_at"))
-        age = (now - captured_at.astimezone(timezone.utc)).total_seconds() if captured_at else None
-        if str(row.get("state") or "").upper() == "READY" and age is not None and 0 <= age <= 120:
-            fresh += 1
+
+    def age_seconds(value):
+        parsed = _parse_time(value)
+        return (now - parsed.astimezone(timezone.utc)).total_seconds() if parsed else None
+
+    def provider_time(row):
+        quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
+        return _parse_time(quote.get("provider_observed_at"))
+
+    def provider_fresh(row):
+        age = age_seconds((provider_time(row).isoformat() if provider_time(row) else None))
+        return (str(row.get("state") or "").upper() == "READY"
+                and age is not None and 0 <= age <= 120)
+
+    def capture_recent(row):
+        age = age_seconds(row.get("captured_at"))
+        return (str(row.get("state") or "").upper() == "READY"
+                and age is not None and 0 <= age <= 120)
+
+    cache_seen = [symbol for symbol in universe if symbol in by_symbol]
+    cache_ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in cache_seen)
+    source_fresh = sum(provider_fresh(by_symbol[symbol]) for symbol in cache_seen)
+    capture_fresh = sum(capture_recent(by_symbol[symbol]) for symbol in cache_seen)
+    source_timestamped = sum(provider_time(by_symbol[symbol]) is not None for symbol in cache_seen)
+    cycle_source_fresh = sum(provider_fresh(by_symbol[symbol]) for symbol in cycle_seen)
+    cycle_capture_fresh = sum(capture_recent(by_symbol[symbol]) for symbol in cycle_seen)
     telemetry = payload.get("telemetry") if isinstance(payload.get("telemetry"), dict) else {}
     payload["progress"] = {
-        "scheduled": total, "completed": len(observed), "ready": ready, "unavailable": unavailable,
-        "fresh": fresh, "freshness_max_age_seconds": 120,
-        "batch_size": len(batch), "cycle_id": cycle.get("cycle_id"), "cycle_complete": cycle_complete,
-        "universe_fingerprint": fingerprint, "universe_source": source,
+        "scheduled": total,
+        "completed": len(cycle_seen),
+        "ready": ready,
+        "unavailable": unavailable,
+        "fresh": source_fresh,
+        "provider_fresh": source_fresh,
+        "provider_timestamped": source_timestamped,
+        "capture_recent": capture_fresh,
+        "cycle_fresh": cycle_source_fresh,
+        "cycle_capture_recent": cycle_capture_fresh,
+        "cache_ready": cache_ready,
+        "cache_symbols": len(cache_seen),
+        "cache_stale_or_unavailable": len(cache_seen) - source_fresh,
+        "freshness_basis": "IOL_PROVIDER_TRADE_TIMESTAMP",
+        "freshness_max_age_seconds": 120,
+        "batch_size": len(batch),
+        "cycle_id": cycle.get("cycle_id"),
+        "cycle_complete": cycle_complete,
+        "universe_fingerprint": fingerprint,
+        "universe_source": source,
     }
     payload["primary_comparison_contract"] = primary_contract
     payload["telemetry"] = {**telemetry, "ready_total": ready, "last_batch_size": len(batch)}
     _atomic_json(path, payload)
     return payload
-
 
 def main() -> int:
     if os.getenv("POROTA_IOL_SHADOW_MODE", "OBSERVE_ONLY").strip() != "OBSERVE_ONLY":
@@ -244,7 +279,7 @@ def main() -> int:
     run_batch(batch, OAuthStoreReadOnlyMCP(), root=DEFAULT_ROOT, primary_last_by_symbol=primary,
               policy=CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40))
     cycle = _commit_rotation(universe, fingerprint, rotation_start, batch, prior_cycle)
-    payload = _publish_progress(len(universe), batch, universe_source, fingerprint, cycle, primary_contract)
+    payload = _publish_progress(universe, batch, universe_source, fingerprint, cycle, primary_contract)
     progress = payload.get("progress", {})
     print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source}")
     return 0

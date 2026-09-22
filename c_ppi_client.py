@@ -1065,6 +1065,29 @@ class ResilientPPIClient:
             f"get_historical_series({ticker})",
         )
 
+    def get_bond_estimate(self, parameters) -> Optional[dict]:
+        """Read-only PPI estimate; requires the complete installed SDK model."""
+        try:
+            import inspect
+            from ppi_client.models.estimate_bonds import EstimateBonds
+
+            method = self.client.marketdata.estimate_bonds
+            if not isinstance(parameters, EstimateBonds):
+                logger.warning("PPI bond estimate blocked: complete EstimateBonds model required.")
+                return None
+            if list(inspect.signature(method).parameters) != ["parameters"]:
+                logger.error("PPI bond estimate blocked: installed SDK signature mismatch.")
+                return None
+            result = self._call_with_retry(
+                lambda: method(parameters), "get_bond_estimate"
+            )
+            return result if isinstance(result, dict) else (
+                result[0] if isinstance(result, list) and len(result) == 1
+                and isinstance(result[0], dict) else None)
+        except (ImportError, AttributeError, TypeError, ValueError) as exc:
+            logger.warning("PPI bond estimate unavailable: %s", type(exc).__name__)
+            return None
+
     def get_available_balance(self) -> Optional[list]:
         if not self.account_number:
             logger.warning("PPI_ACCOUNT_NUMBER no configurado; no se puede consultar saldo.")
