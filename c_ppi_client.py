@@ -1084,8 +1084,8 @@ class ResilientPPIClient:
             return result if isinstance(result, dict) else (
                 result[0] if isinstance(result, list) and len(result) == 1
                 and isinstance(result[0], dict) else None)
-        except (ImportError, AttributeError, TypeError, ValueError):
-            logger.exception("PPI bond estimate unavailable for %s", getattr(parameters, "ticker", "unknown"))
+        except (ImportError, AttributeError, TypeError, ValueError) as exc:
+            logger.warning("PPI bond estimate unavailable: %s", type(exc).__name__)
             return None
 
     def get_available_balance(self) -> Optional[list]:
