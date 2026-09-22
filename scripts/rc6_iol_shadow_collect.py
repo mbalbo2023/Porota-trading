@@ -209,27 +209,47 @@ def _publish_progress(universe: list[str], batch: list[str], source: str, finger
     cycle_complete = len(cycle_seen) == total and total > 0
     now = datetime.now(timezone.utc)
 
-    def is_fresh(row):
-        captured_at = _parse_time(row.get("captured_at"))
-        age = (now - captured_at.astimezone(timezone.utc)).total_seconds() if captured_at else None
+    def age_seconds(value):
+        parsed = _parse_time(value)
+        return (now - parsed.astimezone(timezone.utc)).total_seconds() if parsed else None
+
+    def provider_time(row):
+        quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
+        return _parse_time(quote.get("provider_observed_at"))
+
+    def provider_fresh(row):
+        age = age_seconds((provider_time(row).isoformat() if provider_time(row) else None))
+        return (str(row.get("state") or "").upper() == "READY"
+                and age is not None and 0 <= age <= 120)
+
+    def capture_recent(row):
+        age = age_seconds(row.get("captured_at"))
         return (str(row.get("state") or "").upper() == "READY"
                 and age is not None and 0 <= age <= 120)
 
     cache_seen = [symbol for symbol in universe if symbol in by_symbol]
     cache_ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in cache_seen)
-    cache_fresh = sum(is_fresh(by_symbol[symbol]) for symbol in cache_seen)
-    cycle_fresh = sum(is_fresh(by_symbol[symbol]) for symbol in cycle_seen)
+    source_fresh = sum(provider_fresh(by_symbol[symbol]) for symbol in cache_seen)
+    capture_fresh = sum(capture_recent(by_symbol[symbol]) for symbol in cache_seen)
+    source_timestamped = sum(provider_time(by_symbol[symbol]) is not None for symbol in cache_seen)
+    cycle_source_fresh = sum(provider_fresh(by_symbol[symbol]) for symbol in cycle_seen)
+    cycle_capture_fresh = sum(capture_recent(by_symbol[symbol]) for symbol in cycle_seen)
     telemetry = payload.get("telemetry") if isinstance(payload.get("telemetry"), dict) else {}
     payload["progress"] = {
         "scheduled": total,
         "completed": len(cycle_seen),
         "ready": ready,
         "unavailable": unavailable,
-        "fresh": cache_fresh,
-        "cycle_fresh": cycle_fresh,
+        "fresh": source_fresh,
+        "provider_fresh": source_fresh,
+        "provider_timestamped": source_timestamped,
+        "capture_recent": capture_fresh,
+        "cycle_fresh": cycle_source_fresh,
+        "cycle_capture_recent": cycle_capture_fresh,
         "cache_ready": cache_ready,
         "cache_symbols": len(cache_seen),
-        "cache_stale_or_unavailable": len(cache_seen) - cache_fresh,
+        "cache_stale_or_unavailable": len(cache_seen) - source_fresh,
+        "freshness_basis": "IOL_PROVIDER_TRADE_TIMESTAMP",
         "freshness_max_age_seconds": 120,
         "batch_size": len(batch),
         "cycle_id": cycle.get("cycle_id"),
