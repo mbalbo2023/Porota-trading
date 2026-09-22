@@ -163,6 +163,7 @@ def render() -> str:
     state = _text(data.get("state"), UNKNOWN).upper()
     aligned, divergent, incomplete, unavailable = _summary(rows)
     fresh_rows = sum(_row_quality(row)[0] == "SOURCE_FRESH" for row in rows)
+    capture_recent_rows = sum(_row_quality(row)[0] == "CAPTURE_RECENT_SOURCE_TIME_UNKNOWN" for row in rows)
     progress = _progress(data)
     call_count = _metric(data, "calls_total")
     rate_limited = _metric(data, "calls_429")
@@ -197,7 +198,7 @@ def render() -> str:
         bg._card("Cobertura para análisis", progress["label"],
                  "IOL amplía el contexto del universo ACCIONES/CEDEARs; no crea ni descarta señales.", _card_state(progress["state"])),
         bg._card("Cotizaciones IOL con timestamp reciente", f"{fresh_rows}/{len(rows)} filas visibles",
-                 "Se basa en el timestamp de operación de IOL (≤120 s). Las capturas sin timestamp de proveedor se identifican como no verificadas.", "green" if fresh_rows else "yellow"),
+                 f"Frescos para decisión: {capture_recent_rows + fresh_rows}/{len(rows)} según captura local; timestamp de proveedor fresco: {fresh_rows}/{len(rows)} (≤120 s). Las capturas sin timestamp de proveedor no se presentan como fuente verificada.", "green" if fresh_rows else "yellow"),
         bg._card("Contraste con fuente primaria", f"{aligned} coinciden · {divergent} difieren · contrato {primary_state}",
                  "Sólo se compara con un cache primario con fuente, mercado y timestamp verificables. Una divergencia jamás cambia PAPER.", "yellow" if divergent or incomplete or primary_state != "READY" else "green"),
         bg._card("Efecto en el motor", "INFORMATIVO",
