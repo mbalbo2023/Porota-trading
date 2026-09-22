@@ -34,8 +34,13 @@ jobs:
           ssh -i "$RUNNER_TEMP/ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
           set -Eeuo pipefail
           echo "IDENTITY_AUDIT_ART=$(TZ=America/Argentina/Buenos_Aires date -Is)"
-          sudo -n stat -c 'DB_MODE=%a OWNER=%U:%G UID=%u GID=%g SIZE=%s MTIME=%y PATH=%n' /app/data/market_history.db
-          sudo -n namei -l /app/data/market_history.db | tail -5
+          echo 'CONTAINERS (names/status only):'
+          sudo -n docker ps --format '{{.Names}} {{.Status}}'
+          if sudo -n docker inspect -f '{{.State.Running}}' porota_trading_bot 2>/dev/null | grep -qx true; then
+            sudo -n docker exec porota_trading_bot stat -c 'DB_MODE=%a OWNER=%U:%G UID=%u GID=%g SIZE=%s MTIME=%y PATH=%n' /app/data/market_history.db
+          else
+            echo 'porota_trading_bot=NOT_RUNNING'
+          fi
           sudo -n python3 - <<'PY'
           from pathlib import Path
           import re, subprocess
