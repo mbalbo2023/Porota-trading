@@ -1,0 +1,70 @@
+name: RC6 read-only exact history identity coverage
+on:
+  push:
+    branches: [audit/rc6-iol-decision-demand-20260921]
+    paths:
+      - .github/workflows/rc6-temp-history-identity-20260922.yml
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare strict SSH
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts"
+      - name: Read exact history identities
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$RUNNER_TEMP/ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python3 -' <<'PY'
+          import gzip,json,sqlite3
+          from pathlib import Path
+          cutoff="2026-09-21"
+          c=sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=10); c.execute("PRAGMA query_only=ON")
+          rows=c.execute("SELECT DISTINCT ticker,instrument_type,market,settlement FROM financial_instrument_catalog WHERE status='AVAILABLE' AND upper(instrument_type) IN ('ACCIONES','CEDEARS') AND trim(coalesce(ticker,''))<>''").fetchall(); c.close()
+          universe={(str(t).upper(),str(s).upper(),str(m or '').upper(),str(z or '').upper()) for s,t,m,z in rows}
+          h=sqlite3.connect("file:/app/data/market_history.db?mode=ro",uri=True,timeout=10); h.execute("PRAGMA query_only=ON")
+          latest={(str(t).upper(),str(s).upper(),str(m or '').upper(),str(z or '').upper()):str(d)[:10] for s,t,m,z,d in h.execute("SELECT symbol,instrument_type,market,settlement,MAX(date) FROM history_canonical_v2 GROUP BY symbol,instrument_type,market,settlement")}
+          h.close()
+          root=Path("/app/data/evidence/ppi_history_exact_v1"); db=sqlite3.connect("file:"+str(root/"manifest_exact_v1.db")+"?mode=ro",uri=True,timeout=10); db.row_factory=sqlite3.Row; db.execute("PRAGMA query_only=ON")
+          ars={}
+          for r in db.execute("SELECT inner_sha256,wrapper_json FROM exact_attempts_v1 WHERE origin='PPI_HISTORY' AND quality='VALID_PAYLOAD' AND inner_sha256 IS NOT NULL"):
+              try: w=json.loads(r["wrapper_json"] or "{}")
+              except (ValueError,TypeError): continue
+              m=w.get("metadata") if isinstance(w.get("metadata"),dict) else {}
+              sym=w.get("symbol") or m.get("symbol"); typ=w.get("instrument_type") or m.get("instrument_type") or w.get("asset_class") or m.get("asset_class")
+              market=w.get("market") or m.get("market") or m.get("exchange"); settlement=w.get("settlement") or m.get("settlement")
+              if not sym or not typ or not market or not settlement: continue
+              k=(str(typ).upper(),str(sym).upper(),str(market).upper(),str(settlement).upper())
+              digest=str(r["inner_sha256"]); p=root/"objects"/"sha256"/digest[:2]/(digest+".json.gz")
+              try:
+                  raw=gzip.open(p,"rb").read(); import hashlib
+                  if hashlib.sha256(raw).hexdigest()!=digest: continue
+                  bars=json.loads(raw.decode("utf-8","surrogatepass")); days=[str(b.get("date",""))[:10] for b in bars if isinstance(b,dict) and b.get("date")]
+              except (OSError,ValueError,TypeError): continue
+              if days and (k not in ars or max(days)>ars[k]): ars[k]=max(days)
+          db.close()
+          gap=[k for k in sorted(universe) if latest.get(k,"")<cutoff]
+          archive_gap=[k for k in gap if ars.get(k,"")>=cutoff]
+          print("EXACT_HISTORY_IDENTITY_COVERAGE="+json.dumps({
+              "operational_identities":len(universe),"canonical_through_cutoff":sum(1 for k in universe if latest.get(k,"")>=cutoff),
+              "canonical_gap_identities":len(gap),"archive_through_cutoff_exact_identity":len(archive_gap),
+              "needs_ppi_query_or_verified_correction":len(gap)-len(archive_gap),
+              "existing_latest_dates_by_day":{d:sum(1 for k in universe if latest.get(k,"")==d) for d in sorted({latest.get(k,"") for k in universe if latest.get(k,"")})},
+              "gap_sample":[{"identity":list(k),"latest":latest.get(k),"archive_latest":ars.get(k)} for k in gap[:25]],
+              "archive_identity_sample":[{"identity":list(k),"latest":ars.get(k)} for k in sorted(ars) if k in universe][:12]
+          },sort_keys=True))
+          
