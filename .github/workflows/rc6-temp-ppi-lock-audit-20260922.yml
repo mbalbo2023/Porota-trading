@@ -1,0 +1,64 @@
+name: TEMP RC6 PPI lock inventory (read only)
+
+on:
+  push:
+    branches:
+      - audit/rc6-iol-decision-demand-20260921
+    paths:
+      - .github/workflows/rc6-temp-ppi-lock-audit-20260922.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Strict SSH setup
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota" "$HOME/.ssh/known_hosts"
+      - name: Inspect PPI and history owners without changing state
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n bash -s" <<'SH'
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import re
+          import subprocess
+
+          units=subprocess.run(["systemctl","list-units","--all","--no-legend","--no-pager"],check=True,text=True,capture_output=True).stdout.splitlines()
+          names=[]
+          for line in units:
+              cols=line.split()
+              if cols and re.search(r"ppi|history|historical",cols[0],re.I):
+                  names.append("|".join(cols[:4]))
+          print("PPI_HISTORY_SYSTEMD_UNITS="+(";".join(names) if names else "NONE"))
+
+          containers=subprocess.run(["docker","ps","-a","--format","{{.Names}}"],check=True,text=True,capture_output=True).stdout.splitlines()
+          relevant=[x for x in containers if re.search(r"ppi|watch|history",x,re.I)]
+          print("PPI_HISTORY_CONTAINERS="+(",".join(relevant) if relevant else "NONE"))
+
+          try:
+              locks=subprocess.run(["lslocks","-n","-o","COMMAND,PATH"],check=True,text=True,capture_output=True).stdout.splitlines()
+          except (FileNotFoundError,subprocess.CalledProcessError):
+              locks=[]
+          relevant_locks=[x for x in locks if re.search(r"ppi|watch|history",x,re.I)]
+          print("PPI_HISTORY_LOCKS="+(";".join(relevant_locks) if relevant_locks else "NONE_MATCHING_NAMES"))
+          PY
+          SH
