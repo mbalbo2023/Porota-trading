@@ -24,7 +24,7 @@ from bd_ppi_readonly_guard import ProductionMarketReader
 
 DB = os.getenv("POROTA_CONTRACT_EVIDENCE_DB", "/app/data/paper_v17/observer_v17.db")
 SECRET = os.getenv("PPI_PRODUCTION_SECRET_FILE", "/run/secrets/ppi_production.json")
-CONTRACT_EVIDENCE_MODE = os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "DISABLED_SOURCE_UNAVAILABLE").upper()
+CONTRACT_EVIDENCE_MODE = os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED").upper()
 
 
 class Store:
