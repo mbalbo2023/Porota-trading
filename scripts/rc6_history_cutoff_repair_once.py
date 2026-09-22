@@ -17,6 +17,12 @@ import sys
 import time
 from typing import Any
 
+# The one-shot runner is invoked by absolute path from the container.  Keep the
+# repository modules importable without depending on Docker's working directory.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
 import ak_byma_calendar as byma
 
 CUTOFF = date(2026, 9, 21)
