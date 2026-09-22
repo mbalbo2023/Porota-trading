@@ -256,13 +256,30 @@ def main() -> int:
                       source="PPI_CANONICAL", latest=latest)
                 completed.add(identity)
                 continue
-            start = (date.fromisoformat(latest) + timedelta(days=1)) if latest else CUTOFF - timedelta(days=365)
+            archived = archives.get(identity)
+            if latest:
+                start = date.fromisoformat(latest) + timedelta(days=1)
+            elif archived:
+                archive_rows = _filtered(archived[0], date.min)
+                archive_days = []
+                for row in archive_rows:
+                    try:
+                        archive_days.append(date.fromisoformat(str(row.get("date") or "")[:10]))
+                    except ValueError:
+                        continue
+                start = min(archive_days) if archive_days else None
+            else:
+                start = None
+            if start is None:
+                _save(history_store, identity, state="BLOCKED_NO_CANONICAL_BASELINE",
+                      source="PPI_ARCHIVE_OR_CANONICAL")
+                failed += 1
+                continue
             if start > CUTOFF:
                 _save(history_store, identity, state="ALREADY_COVERED",
                       source="PPI_CANONICAL", latest=latest)
                 completed.add(identity)
                 continue
-            archived = archives.get(identity)
             if archived:
                 payload, recorded_at = archived
                 try:
@@ -300,7 +317,12 @@ def main() -> int:
                     if identity in completed:
                         continue
                     latest = _latest(history_store, identity)
-                    start = (date.fromisoformat(latest) + timedelta(days=1)) if latest else CUTOFF - timedelta(days=365)
+                    if not latest:
+                        _save(history_store, identity, state="BLOCKED_NO_CANONICAL_BASELINE",
+                              source="PPI", error="refusing an unbounded first-history request")
+                        failed += 1
+                        continue
+                    start = date.fromisoformat(latest) + timedelta(days=1)
                     if start > CUTOFF:
                         _save(history_store, identity, state="ALREADY_COVERED",
                               source="PPI_CANONICAL", latest=latest)
