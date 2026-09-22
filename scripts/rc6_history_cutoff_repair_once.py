@@ -119,6 +119,7 @@ def _coverage(db, identity) -> dict[str, Any]:
     return {"complete": complete, "start": start, "latest": latest,
             "expected": len(expected_days), "present": len(days),
             "missing": len(missing),
+            "first_missing": min(missing).isoformat() if missing else None,
             "reason": "COVERAGE_COMPLETE" if complete else
                       ("CUTOFF_NOT_REACHED" if latest < CUTOFF else "MISSING_BYMA_SESSIONS")}
 
@@ -301,7 +302,11 @@ def main() -> int:
                 continue
             archived = archives.get(identity)
             if latest:
-                start = date.fromisoformat(latest) + timedelta(days=1)
+                # Resume from the earliest missing BYMA session, not only after
+                # the last candle: a prior partial response can leave interior gaps.
+                start = (date.fromisoformat(coverage["first_missing"])
+                         if coverage.get("first_missing")
+                         else date.fromisoformat(latest) + timedelta(days=1))
             elif archived:
                 archive_rows = _filtered(archived[0], date.min)
                 archive_days = []
