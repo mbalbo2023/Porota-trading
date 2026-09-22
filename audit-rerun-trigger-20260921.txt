@@ -1,1 +1,1 @@
-Trigger one scoped read-only continuity audit, include PPI method signatures.
+Trigger one scoped read-only continuity audit, PPI YMCID reads.
