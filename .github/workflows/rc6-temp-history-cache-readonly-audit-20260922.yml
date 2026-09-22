@@ -30,8 +30,8 @@ jobs:
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$RUNNER_TEMP/ssh"
-          printf '%s\\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/key"
-          printf '%s\\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
           chmod 600 "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts"
       - name: Read history, scheduler, PPI and IOL cache state on Droplet
         shell: bash
