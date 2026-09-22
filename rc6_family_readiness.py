@@ -34,8 +34,9 @@ def normalize_family(value: Any) -> str:
     text = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
     return FAMILY_ALIASES.get(text, text or "UNKNOWN")
 
-def _text(value: Any) -> str:
-    return str(value or "").strip()
+def _text(value: Any, fallback: str = "") -> str:
+    text = str(value or "").strip()
+    return text or fallback
 
 def _row_family(row: Mapping[str, Any], catalog_family: Any = None) -> str:
     value = catalog_family or row.get("family") or row.get("asset_type") or row.get("instrument_type")
