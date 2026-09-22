@@ -1,9 +1,9 @@
-"""One-time, resumable PPI history gap repair through the 2026-09-21 cutoff.
+"""One-time, resumable archive repair through the 2026-09-21 cutoff.
 
-Imports exact PPI archive objects where identity matches; queries PPI History
-only for remaining operational gaps. It never touches orders, IOL, or other
-instrument families. Re-running is safe: exact identity/date dedupe and a
-durable per-identity checkpoint make the operation idempotent.
+The normal path imports only exact PPI history objects already archived for the
+matching identity. It never touches orders, IOL, or other instrument families.
+Live PPI gap reads are disabled by default and require a deliberate runtime
+override after a counted review. Re-running is idempotent.
 """
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ import sqlite3
 import sys
 import time
 from typing import Any
+
+import ak_byma_calendar as byma
 
 CUTOFF = date(2026, 9, 21)
 FAMILIES = {"ACCIONES", "CEDEARS"}
@@ -79,6 +81,40 @@ def _latest(db, identity) -> str | None:
             identity,
         ).fetchone()
     return str(row[0])[:10] if row and row[0] else None
+
+
+def _coverage(db, identity) -> dict[str, Any]:
+    """Prove continuous BYMA-session coverage from the stored baseline to cutoff."""
+    with db.connect() as c:
+        rows = c.execute(
+            """SELECT DISTINCT substr(date,1,10) FROM history_canonical_v2
+               WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
+                 AND date<=? ORDER BY date""",
+            (*identity, CUTOFF.isoformat()),
+        ).fetchall()
+    days = set()
+    for row in rows:
+        try:
+            days.add(date.fromisoformat(str(row[0])[:10]))
+        except (TypeError, ValueError):
+            continue
+    if not days:
+        return {"complete": False, "start": None, "latest": None, "expected": 0,
+                "present": 0, "missing": 0, "reason": "NO_VALID_HISTORY"}
+    start, latest = min(days), max(days)
+    expected_days = []
+    current = start
+    while current <= CUTOFF:
+        if byma.es_dia_habil_operativo(current):
+            expected_days.append(current)
+        current += timedelta(days=1)
+    missing = [day for day in expected_days if day not in days]
+    complete = latest >= CUTOFF and not missing
+    return {"complete": complete, "start": start, "latest": latest,
+            "expected": len(expected_days), "present": len(days),
+            "missing": len(missing),
+            "reason": "COVERAGE_COMPLETE" if complete else
+                      ("CUTOFF_NOT_REACHED" if latest < CUTOFF else "MISSING_BYMA_SESSIONS")}
 
 
 def _save(db, identity, *, state: str, source: str = "", requested_from: str = "",
@@ -228,7 +264,6 @@ def main() -> int:
         print("RC6_HISTORY_CUTOFF_REPAIR=BLOCKED_EMPTY_OR_INVALID_OPERATIONAL_CATALOG")
         return 2
     targets = set(targets_list)
-    _init_state(history_store)
     lock_path = LOCK_PATH
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+", encoding="utf-8") as lock:
@@ -237,6 +272,7 @@ def main() -> int:
         except BlockingIOError:
             print("RC6_HISTORY_CUTOFF_REPAIR=BLOCKED_LOCK_HELD")
             return 3
+        _init_state(history_store)
 
         with history_store.connect() as c:
             c.execute(
@@ -251,9 +287,10 @@ def main() -> int:
         archive_count = ppi_count = failed = 0
         for identity in targets_list:
             latest = _latest(history_store, identity)
-            if latest and latest >= CUTOFF.isoformat():
+            coverage = _coverage(history_store, identity)
+            if coverage["complete"]:
                 _save(history_store, identity, state="ALREADY_COVERED",
-                      source="PPI_CANONICAL", latest=latest)
+                      source="PPI_CANONICAL", rows=coverage["present"], latest=latest)
                 completed.add(identity)
                 continue
             archived = archives.get(identity)
@@ -286,11 +323,15 @@ def main() -> int:
                     rows, last = _ingest(observer_store, history_store, identity, payload, start,
                                          source="PPI_ARCHIVE", observed_at=recorded_at)
                     latest = _latest(history_store, identity)
-                    if rows and latest and latest >= CUTOFF.isoformat():
+                    coverage = _coverage(history_store, identity)
+                    if rows and coverage["complete"]:
                         _save(history_store, identity, state="COMPLETE", source="PPI_ARCHIVE",
-                              requested_from=start.isoformat(), rows=rows, latest=latest)
+                              requested_from=start.isoformat(), rows=coverage["present"], latest=latest)
                         completed.add(identity); archive_count += 1
                         continue
+                    _save(history_store, identity, state="ARCHIVE_PARTIAL_COVERAGE",
+                          source="PPI_ARCHIVE", requested_from=start.isoformat(),
+                          rows=coverage["present"], latest=latest, error=coverage["reason"])
                 except Exception as exc:
                     _save(history_store, identity, state="ARCHIVE_REJECTED", source="PPI_ARCHIVE",
                           requested_from=start.isoformat(), error=type(exc).__name__)
@@ -311,7 +352,8 @@ def main() -> int:
         else:
             reader = None
 
-        if len(completed) < len(targets_list) and reader is not None:
+        if len(completed) < len(targets_list) and reader is not None
+                and os.getenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", "").strip() == "APPROVED":
             try:
                 for index, identity in enumerate(targets_list, 1):
                     if identity in completed:
