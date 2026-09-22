@@ -27,6 +27,10 @@ jobs:
           ssh -i "$RUNNER_TEMP/ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
           set -Eeuo pipefail
           echo 'AUDIT=runtime_readonly'
+          sudo -n docker ps --format 'CONTAINER={{.Names}}'
+          while IFS= read -r container; do
+            sudo -n docker exec "$container" python -c 'import os,importlib.metadata as m; print("CONTAINER_ENV_NAMES="+",".join(sorted(k for k in os.environ if k.startswith("PPI_")))); print("CONTAINER_PPI_SDK="+(m.version("ppi-client") if any(d.metadata.get("Name","").lower()=="ppi-client" for d in m.distributions()) else "not-installed"))' 2>/dev/null || true
+          done < <(sudo -n docker ps --format '{{.Names}}')
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import json, sqlite3, os, pathlib, datetime
           print("SAFETY=observer_container_readonly")
@@ -38,6 +42,30 @@ jobs:
               print("IOL_CACHE_PROGRESS="+json.dumps(d.get("progress",{}),sort_keys=True))
               print("IOL_CACHE_TELEMETRY="+json.dumps(d.get("telemetry",{}),sort_keys=True))
           else: print("IOL_CACHE=missing")
+          if p.exists():
+              for row in d.get("symbols",[]):
+                  if isinstance(row,dict) and str(row.get("symbol",row.get("ticker",""))).upper()=="YMCID":
+                      allowed=("symbol","ticker","state","freshness","price","date","as_of","source","currency","market","settlement","clean_price","dirty_price","residual","isin")
+                      print("IOL_YMCID="+json.dumps({k:row[k] for k in allowed if k in row},sort_keys=True,default=str))
+                      print("IOL_YMCID_FIELDS="+",".join(sorted(row.keys())))
+          db=sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=10)
+          db.execute("PRAGMA query_only=ON")
+          from datetime import timedelta
+          start=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=390)).isoformat()
+          decisions=db.execute("SELECT decision_key,action,decided_at FROM paper_decisions WHERE source='PRODUCTION_PAPER' AND julianday(decided_at)>=julianday(?)",(start,)).fetchall()
+          snaps=db.execute("SELECT decision_key,payload_json FROM decision_evidence_snapshots WHERE julianday(captured_at)>=julianday(?)",(start,)).fetchall()
+          from collections import Counter
+          snap_by_key={}
+          for key,payload in snaps:
+              try:
+                  obj=json.loads(payload); inputs=obj.get("inputs_used") or {}; iol=inputs.get("iol") or {}
+                  snap_by_key[str(key)]=(str(iol.get("state") or "UNKNOWN").upper(),str(iol.get("freshness") or "UNKNOWN").upper())
+              except Exception: pass
+          kinds=Counter(snap_by_key.values())
+          matches=sum(1 for row in decisions if str(row[0]) in snap_by_key)
+          candidates=sum(1 for row in decisions if str(row[1] or "").upper() in {"BUY","OPEN","OPEN_SIMULATED","ENTER"})
+          print("EVIDENCE_WINDOW_390M=decisions:%d,snapshots:%d,matched:%d,candidates:%d,iol:%s"%(len(decisions),len(snaps),matches,candidates,",".join(f"{a}|{b}:{n}" for (a,b),n in sorted(kinds.items()))))
+          db.close()
           try:
               import importlib.metadata as md, inspect
               print("PPI_SDK_VERSION="+md.version("ppi-client"))
