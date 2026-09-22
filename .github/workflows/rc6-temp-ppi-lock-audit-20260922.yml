@@ -54,6 +54,22 @@ jobs:
           relevant=[x for x in containers if re.search(r"ppi|watch|history",x,re.I)]
           print("PPI_HISTORY_CONTAINERS="+(",".join(relevant) if relevant else "NONE"))
 
+          unitfiles=subprocess.run(["systemctl","list-unit-files","--no-legend","--no-pager"],check=True,text=True,capture_output=True).stdout.splitlines()
+          relevant_units=[]
+          for line in unitfiles:
+              cols=line.split()
+              if cols and re.search(r"ppi|watch|history|porota-a3",cols[0],re.I):
+                  relevant_units.append("|".join(cols[:2]))
+          print("PPI_HISTORY_UNIT_FILES="+(";".join(relevant_units) if relevant_units else "NONE"))
+
+          timers=subprocess.run(["systemctl","list-timers","--all","--no-legend","--no-pager"],check=True,text=True,capture_output=True).stdout.splitlines()
+          relevant_timers=[]
+          for line in timers:
+              cols=line.split()
+              if cols and re.search(r"ppi|watch|history|porota-a3",cols[-1],re.I):
+                  relevant_timers.append(cols[-1])
+          print("PPI_HISTORY_TIMERS="+(",".join(relevant_timers) if relevant_timers else "NONE"))
+
           try:
               locks=subprocess.run(["lslocks","-n","-o","COMMAND,PATH"],check=True,text=True,capture_output=True).stdout.splitlines()
           except (FileNotFoundError,subprocess.CalledProcessError):
