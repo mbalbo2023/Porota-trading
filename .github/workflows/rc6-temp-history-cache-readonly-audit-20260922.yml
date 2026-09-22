@@ -105,6 +105,45 @@ jobs:
               except Exception as e: print('DB_READONLY_OPEN='+str(q)+'|ERROR='+type(e).__name__)
           PY
           sudo -n docker exec porota_production_observer id
+          echo "--- owned candle state and exact PPI archive coverage ---"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import os,sqlite3,json
+          from pathlib import Path
+          obs=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          obs.row_factory=sqlite3.Row; obs.execute('PRAGMA query_only=ON')
+          tables={r[0] for r in obs.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          for t in ('candle_worker_state','candle_series','candle_versions','candle_dirty'):
+              if t not in tables: print('CANDLE_TABLE='+t+'|MISSING'); continue
+              cols=[r[1] for r in obs.execute(f'PRAGMA table_info("{t}")')]
+              print('CANDLE_TABLE='+t+'|COLS='+','.join(cols))
+              if t=='candle_worker_state':
+                  for r in obs.execute('SELECT * FROM candle_worker_state'): print('CANDLE_WORKER='+json.dumps(dict(r),sort_keys=True,default=str))
+              elif t in ('candle_series','candle_versions','candle_dirty'):
+                  print('CANDLE_ROWS='+t+'|'+str(obs.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]))
+                  if t=='candle_versions' and {'bar_start','bar_end'}.issubset(cols):
+                      print('CANDLE_RANGE='+json.dumps(dict(zip(('first_bar','last_bar'),obs.execute('SELECT MIN(bar_end),MAX(bar_end) FROM candle_versions').fetchone())),default=str))
+          obs.close()
+          root=Path(os.getenv('PPI_HISTORY_EVIDENCE_ROOT','data/evidence/ppi_history_exact_v1')).expanduser()
+          mp=root/'manifest_exact_v1.db'
+          print('PPI_EXACT_ROOT='+str(root)+'|MANIFEST='+str(mp.exists()))
+          if mp.exists():
+              c=sqlite3.connect('file:'+str(mp)+'?mode=ro',uri=True,timeout=10); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+              for r in c.execute("""SELECT json_extract(wrapper_json,'$.asset_class') family,quality,COUNT(*) attempts,
+                  COUNT(DISTINCT json_extract(wrapper_json,'$.symbol')) symbols,MAX(recorded_at) latest
+                  FROM exact_attempts_v1 WHERE origin='PPI_HISTORY'
+                  AND json_extract(wrapper_json,'$.asset_class') IN ('ACCIONES','CEDEARS')
+                  GROUP BY family,quality ORDER BY family,quality"""):
+                  print('PPI_EXACT_AGG='+json.dumps(dict(r),sort_keys=True,default=str))
+              for r in c.execute("""SELECT json_extract(wrapper_json,'$.asset_class') family,
+                  COUNT(*) attempts,COUNT(DISTINCT json_extract(wrapper_json,'$.symbol')) symbols,
+                  MIN(recorded_at) first_attempt,MAX(recorded_at) latest
+                  FROM exact_attempts_v1 WHERE origin='PPI_HISTORY'
+                  AND json_extract(wrapper_json,'$.asset_class') IN ('ACCIONES','CEDEARS')
+                  AND recorded_at >= '2026-09-11T00:00:00'
+                  GROUP BY family ORDER BY family"""):
+                  print('PPI_EXACT_RECENT='+json.dumps(dict(r),sort_keys=True,default=str))
+              c.close()
+          PY
           echo "--- canonical history DB coverage ---"
           sudo -n docker exec -i porota_production_dashboard python - <<'PY'
           import os, sqlite3, json
