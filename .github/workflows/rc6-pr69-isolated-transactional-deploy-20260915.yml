@@ -240,6 +240,7 @@ jobs:
           if [ ! -f "$BACKUP/ops_publish_introspection_rc6.py" ]; then sudo -n rm -f "$REPO/ops_publish_introspection_rc6.py"; fi
           if [ ! -f "$BACKUP/scripts/porota_introspection_rc6_host.sh" ]; then sudo -n rm -f "$REPO/scripts/porota_introspection_rc6_host.sh"; fi
           if [ ! -f "$BACKUP/scripts/porota_publish_introspection_github_rc6.sh" ]; then sudo -n rm -f "$REPO/scripts/porota_publish_introspection_github_rc6.sh"; fi
+          if [ ! -f "$BACKUP/scripts/rc6_history_cutoff_repair_once.py" ]; then sudo -n rm -f "$REPO/scripts/rc6_history_cutoff_repair_once.py"; fi
           if [ ! -f "$BACKUP/scripts/porota_export_scheduler_state_rc6.sh" ]; then sudo -n rm -f "$REPO/scripts/porota_export_scheduler_state_rc6.sh"; fi
           if [ ! -f "$BACKUP/systemd/porota-introspection-rc6.service" ]; then sudo -n rm -f "$REPO/systemd/porota-introspection-rc6.service"; fi
           if [ ! -f "$BACKUP/systemd/porota-introspection-rc6.timer" ]; then sudo -n rm -f "$REPO/systemd/porota-introspection-rc6.timer"; fi
@@ -318,6 +319,43 @@ jobs:
             sleep 2
           done
           test "$OK" = YES
+          # Restore only the historical SQLite files to owner-writable mode after
+          # the candidate observer is running. It is gated from history writes
+          # until the one-time cutoff repair records COMPLETE.
+          HIST_DATA=/opt/porota-trading/data
+          test "$(sudo -n stat -c '%u:%a' "$HIST_DATA")" = "1000:755"
+          for hist_file in "$HIST_DATA/market_history.db" "$HIST_DATA/market_history.db-wal" "$HIST_DATA/market_history.db-shm"; do
+            if sudo -n test -e "$hist_file"; then
+              test "$(sudo -n stat -c '%u' "$hist_file")" = "1000"
+              sudo -n chmod 0640 "$hist_file"
+            fi
+          done
+          HISTORY_WRITE_GATE="$(sudo -n docker exec porota_production_observer python - <<'PY'
+          import os
+          from pathlib import Path
+          assert os.geteuid() == 1000
+          p=Path("/app/data/market_history.db")
+          assert p.is_file() and os.access(p, os.W_OK)
+          print("HISTORY_DB_OWNER_WRITE=GREEN")
+          PY
+          )"
+          echo "$HISTORY_WRITE_GATE"
+          grep -Fqx "HISTORY_DB_OWNER_WRITE=GREEN" <<< "$HISTORY_WRITE_GATE"
+          HISTORY_REPAIR_OUTPUT="$(sudo -n docker exec porota_production_observer timeout 3600 python /app/scripts/rc6_history_cutoff_repair_once.py 2>&1)"
+          echo "$HISTORY_REPAIR_OUTPUT"
+          grep -Eq '^RC6_HISTORY_CUTOFF_REPAIR=COMPLETE ' <<< "$HISTORY_REPAIR_OUTPUT"
+          HISTORY_REPAIR_STATE="$(sudo -n docker exec porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect("file:/app/data/market_history.db?mode=ro",uri=True,timeout=20)
+          c.execute("PRAGMA query_only=ON")
+          row=c.execute("SELECT state,targets,complete,failed FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'").fetchone()
+          c.close()
+          assert row and row[0]=="COMPLETE" and row[1]==row[2] and row[3]==0
+          print("HISTORY_CUTOFF_REPAIR_STATE=COMPLETE|%s|%s|%s" % row[1:])
+          PY
+          )"
+          echo "$HISTORY_REPAIR_STATE"
+          grep -Fq "HISTORY_CUTOFF_REPAIR_STATE=COMPLETE|" <<< "$HISTORY_REPAIR_STATE"
           # Disable only superseded timer names to avoid parallel legacy and RC6 schedules.
           for legacy_unit in porota-introspeccion-hf5.timer porota-introspection-publish.timer porota-scheduler-export-hf6.timer; do
             if systemctl list-unit-files --type=timer --no-legend | awk -v unit="$legacy_unit" '$1 == unit { found=1 } END { exit !found }'; then
