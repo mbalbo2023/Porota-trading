@@ -12,10 +12,10 @@ jobs:
     steps:
       - name: Prepare strict SSH
         env:
-          DO_HOST: \${{ secrets.DO_HOST }}
-          DO_USER: \${{ secrets.DO_USER }}
-          SSH_KEY: \${{ secrets.DO_SSH_KEY }}
-          KNOWN_HOSTS: \${{ secrets.DO_KNOWN_HOSTS }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
@@ -25,10 +25,10 @@ jobs:
           chmod 600 "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts"
       - name: Identify history database reader without changing runtime
         env:
-          DO_HOST: \${{ secrets.DO_HOST }}
-          DO_USER: \${{ secrets.DO_USER }}
-          SSH_KEY: \${{ secrets.DO_SSH_KEY }}
-          KNOWN_HOSTS: \${{ secrets.DO_KNOWN_HOSTS }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
           set -Eeuo pipefail
           ssh -i "$RUNNER_TEMP/ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
