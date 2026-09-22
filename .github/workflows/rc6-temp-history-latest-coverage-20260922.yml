@@ -1,0 +1,74 @@
+name: RC6 inspect latest archived history coverage
+on:
+  push:
+    branches:
+      - audit/rc6-iol-decision-demand-20260921
+    paths:
+      - .github/workflows/rc6-temp-history-latest-coverage-20260922.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-history-preflight
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts"
+      - name: Inspect recent bar cutoffs from exact PPI archive (read-only)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$RUNNER_TEMP/ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,gzip,hashlib,os
+          from pathlib import Path
+          root=Path(os.getenv('PPI_HISTORY_EVIDENCE_ROOT','/app/data/evidence/ppi_history_exact_v1'))
+          c=sqlite3.connect(f'file:{root/"manifest_exact_v1.db"}?mode=ro',uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          latest={}
+          for r in c.execute("SELECT recorded_at,quality,inner_sha256,wrapper_json FROM exact_attempts_v1 WHERE origin='PPI_HISTORY' ORDER BY recorded_at DESC"):
+              try: w=json.loads(r['wrapper_json'])
+              except Exception: continue
+              fam=str(w.get('asset_class') or '').upper(); sym=str(w.get('symbol') or '').upper()
+              if fam not in ('ACCIONES','CEDEARS') or not sym or sym in latest: continue
+              if int(w.get('valid_rows') or 0)<=0: continue
+              latest[sym]=(fam,r,w)
+          dates={}; inspected=0; invalid=0; output=[]
+          for sym,(fam,r,w) in latest.items():
+              p=root/'objects'/'sha256'/r['inner_sha256'][:2]/(r['inner_sha256']+'.json.gz')
+              try:
+                  raw=gzip.open(p,'rb').read()
+                  if hashlib.sha256(raw).hexdigest()!=r['inner_sha256']: raise ValueError('HASH')
+                  payload=json.loads(raw)
+                  if isinstance(payload,str): payload=json.loads(payload)
+                  rows=payload if isinstance(payload,list) else []
+                  rowdates=[str(x.get('date',''))[:10] for x in rows if isinstance(x,dict) and x.get('date')]
+                  last=max(rowdates) if rowdates else 'NONE'
+                  dates.setdefault((fam,last),0); dates[(fam,last)]+=1
+                  inspected+=1
+                  if len(output)<25:
+                      output.append({'family':fam,'symbol':sym,'quality':r['quality'],'recorded_at':r['recorded_at'],'date_from':w.get('date_from'),'date_to':w.get('date_to'),'valid_rows':w.get('valid_rows'),'bars':len(rows),'first':min(rowdates) if rowdates else None,'last':last,'market':w.get('market'),'settlement':w.get('settlement')})
+              except Exception: invalid+=1
+          print('LATEST_USABLE_ATTEMPTS='+str(len(latest)))
+          print('LATEST_VALID_OBJECTS='+json.dumps({'checked':inspected,'bad_hash_or_payload':invalid},sort_keys=True))
+          print('LATEST_BAR_CUTOFFS='+json.dumps([{'family':a,'last_bar':b,'symbols':n} for (a,b),n in sorted(dates.items())],sort_keys=True))
+          for x in output: print('LATEST_SAMPLE='+json.dumps(x,sort_keys=True))
+          c.close()
+          PY
+          echo "MUTATIONS=NONE"
+          HOST
