@@ -33,6 +33,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # entorno, la base de datos o el indice vectorial dentro de la imagen.
 COPY . .
 
+# Reassert RC6 dashboard modules explicitly after the broad copy. This makes their
+# provenance part of the image build and prevents an older runtime module from
+# surviving a staged deployment.
+COPY rc6_annual_instrument_analysis.py /app/rc6_annual_instrument_analysis.py
+COPY rc6_family_readiness.py /app/rc6_family_readiness.py
+
 # El bot corre como usuario sin privilegios. Los directorios persistentes se
 # crean y se ceden ANTES de cambiar de usuario: si se montan volumenes sobre
 # ellos, el UID 1000 ya es el duenio y puede escribir.
