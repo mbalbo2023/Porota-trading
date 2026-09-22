@@ -1,8 +1,0 @@
-[Unit]
-Description=Porota RC6 post-close history eligibility poll (QUARANTINED)
-
-[Timer]
-OnBootSec=15min
-OnUnitActiveSec=15min
-AccuracySec=2min
-Unit=porota-history-postclose-rc6.service

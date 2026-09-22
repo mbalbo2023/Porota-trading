@@ -1,7 +1,0 @@
-# Dependencias AISLADAS del sidecar A3/Primary.
-# NO instalar dentro del entorno principal de Porota/PPI.
-#
-# El primer estadio implementa REST read-only con requests.
-# WebSocket live se incorpora en este mismo sidecar después de validar
-# conectividad/protocolo contra A3, sin alterar websocket-client del PPI.
-requests>=2.32.0,<3.0.0

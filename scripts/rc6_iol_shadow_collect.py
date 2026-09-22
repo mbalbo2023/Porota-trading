@@ -62,11 +62,29 @@ def _read_auditable_catalog() -> list[str] | None:
             "SELECT DISTINCT ticker FROM financial_instrument_catalog "
             "WHERE status='AVAILABLE' AND upper(instrument_type) IN ("
             + ",".join("?" for _ in AUDIT_FAMILIES)
-            + ") AND trim(ticker)<>'' ORDER BY ticker",
+            + ") AND trim(ticker)<>''",
+            tuple(sorted(AUDIT_FAMILIES)),
+        ).fetchall()
+        # Contract evidence can contain families not yet admitted to the
+        # operational catalog. Include those identifiers for IOL observation,
+        # while keeping them fail-closed for trading.
+        evidence_rows = conn.execute(
+            "SELECT DISTINCT ticker FROM contract_evidence "
+            "WHERE trim(ticker)<>'' AND ticker<>'*'"
+        ).fetchall()
+        candidate_rows = conn.execute(
+            "SELECT DISTINCT ticker FROM candidate_universe "
+            "WHERE trim(ticker)<>'' AND upper(instrument_type) IN ("
+            + ",".join("?" for _ in AUDIT_FAMILIES)
+            + ")",
             tuple(sorted(AUDIT_FAMILIES)),
         ).fetchall()
         conn.close()
-        return sorted({str(row[0]).strip().upper() for row in rows if row and row[0]})
+        return sorted({
+            str(row[0]).strip().upper()
+            for row in [*rows, *evidence_rows, *candidate_rows]
+            if row and row[0]
+        })
     except sqlite3.Error:
         return None
 
