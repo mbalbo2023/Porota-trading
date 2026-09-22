@@ -411,6 +411,10 @@ jobs:
           RUNNING_OBSERVER_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/bf_production_paper_observer.py | awk '{print $1}')"
           test "$RUNNING_OBSERVER_SHA" = "$EXPECTED_OBSERVER_SHA"
           echo "OBSERVER_CANDIDATE_SHA=GREEN"
+          EXPECTED_HISTORY_REPAIR_SHA="$(sha256sum "$CANDIDATE_ROOT/scripts/rc6_history_cutoff_repair_once.py" | awk '{print $1}')"
+          RUNNING_HISTORY_REPAIR_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/scripts/rc6_history_cutoff_repair_once.py | awk '{print $1}')"
+          test "$RUNNING_HISTORY_REPAIR_SHA" = "$EXPECTED_HISTORY_REPAIR_SHA"
+          echo "HISTORY_REPAIR_CANDIDATE_SHA=GREEN"
           # Prove the exact modules corrected by PR #125 reached each live container.
           for f in be_paper_engine.py bw_daily_risk.py dh_paper_dynamic_risk_gate_hf6.py; do
             EXPECTED_SOURCE_SHA="$(sha256sum "$CANDIDATE_ROOT/$f" | awk '{print $1}')"
