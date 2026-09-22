@@ -1,0 +1,43 @@
+name: Porota RC6 temporary read-only deployed analysis route check
+on:
+  push:
+    branches:
+      - audit/rc6-iol-decision-demand-20260921
+    paths:
+      - 'analysis-route-trigger-20260921.txt'
+permissions:
+  contents: read
+jobs:
+  route-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Read deployed dashboard route through droplet
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/audit_key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/audit_key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/audit_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os, re, urllib.request, urllib.error
+          token=os.environ["DASHBOARD_ACCESS_TOKEN"]
+          def get(path):
+              req=urllib.request.Request("http://127.0.0.1:8000"+path,headers={"Authorization":"Bearer "+token})
+              try:
+                  with urllib.request.urlopen(req,timeout=10) as r: return r.status,r.read().decode("utf-8","replace")
+              except urllib.error.HTTPError as e: return e.code,""
+          status,body=get("/")
+          print("DEPLOYED_DASHBOARD_ROOT_HTTP="+str(status))
+          print("DEPLOYED_ANALYSIS_NAV="+("present" if re.search(r"""href=['"]?/analisis(?:['"?/]|$)""",body) else "absent"))
+          status,_=get("/analisis")
+          print("DEPLOYED_ANALYSIS_ROUTE_HTTP="+str(status))
+          PY
+          HOST
