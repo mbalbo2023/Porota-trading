@@ -112,12 +112,11 @@ def validate_on_evidence(ppi: dict | None, iol: dict | None, *,
             if difference_pct > tolerance:
                 mismatches.append(f"VALUE_MISMATCH_{key.upper()}")
 
+    # Contract terms are complementary IOL evidence; PPI remains authoritative
+    # for executable identity, quote, book and settlement.
     iol_maturity = str(iol.get("maturity") or "").strip()[:10]
-    ppi_maturity = str(ppi.get("maturity") or "").strip()[:10]
-    if not ppi_maturity:
-        mismatches.append("MISSING_PPI_MATURITY")
-    elif iol_maturity and iol_maturity != ppi_maturity:
-        mismatches.append("MATURITY_MISMATCH")
+    if not iol_maturity:
+        mismatches.append("MISSING_IOL_MATURITY")
 
     flows = iol.get("cash_flows")
     if not isinstance(flows, (list, tuple)) or not flows:
