@@ -1,1 +1,1 @@
-Trigger one scoped read-only continuity audit, PPI YMCID reads.
+Trigger one scoped read-only continuity audit, inventory runtime PPI env names.
