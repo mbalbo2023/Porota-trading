@@ -60,27 +60,33 @@ def _progress(data: dict[str, Any]) -> dict[str, Any]:
         return {"state": INSUFFICIENT_EVIDENCE, "label": "Universo objetivo inválido"}
     pct = min(100, max(0, round(completed_n * 100 / scheduled_n)))
     source = _text(value.get("universe_source"), UNKNOWN)
-    fresh = value.get("fresh")
-    fresh_label = ""
-    if fresh is not None:
+    recent = value.get("fresh")
+    cached = value.get("cache_symbols", value.get("cache_ready"))
+    recent_label = ""
+    if recent is not None:
         try:
-            fresh_label = f" · frescos para decisión: {max(0, int(fresh))}/{completed_n}"
+            denominator = int(cached) if cached is not None else scheduled_n
+            recent_label = (f" · capturas ≤120s: {max(0, int(recent))}/{max(0, denominator)}"
+                            " (hora de consulta; sin timestamp del precio IOL)")
         except (TypeError, ValueError):
-            fresh_label = " · frescura de ciclo no verificable"
+            recent_label = " · frescura de captura no verificable"
     fallback = source in {"EMERGENCY_FALLBACK_8", "CONFIGURED_FALLBACK_SUBSET"}
     state = "DEGRADED" if fallback else ("COMPLETE" if completed_n >= scheduled_n else "IN_PROGRESS")
-    label = f"{completed_n}/{scheduled_n} instrumentos · {pct}% · fuente: {source}{fresh_label}"
+    label = f"{completed_n}/{scheduled_n} instrumentos · {pct}% · fuente: {source}{recent_label}"
     if fallback:
         label += " · cobertura de catálogo degradada"
     return {"state": state, "label": label}
+
 def _row_quality(row: dict[str, Any]) -> tuple[str, str]:
-    """Derive truthfully from the collector timestamp; never manufacture MCP fields."""
+    """Show collector recency without implying the provider timestamp is known."""
     freshness = _text(row.get("freshness_state") or row.get("freshness"), "").upper()
+    if freshness == "FRESH":
+        freshness = "CAPTURE_RECENT"
     if not freshness:
         try:
             captured = datetime.fromisoformat(str(row.get("captured_at") or "").replace("Z", "+00:00"))
             age = (datetime.now(timezone.utc) - captured.astimezone(timezone.utc)).total_seconds()
-            freshness = ("FRESH" if 0 <= age <= DECISION_FRESHNESS_SECONDS else
+            freshness = ("CAPTURE_RECENT" if 0 <= age <= DECISION_FRESHNESS_SECONDS else
                          "AGING" if DECISION_FRESHNESS_SECONDS < age <= 900 else
                          "STALE" if age > 900 else UNKNOWN)
         except (TypeError, ValueError):
@@ -89,7 +95,6 @@ def _row_quality(row: dict[str, Any]) -> tuple[str, str]:
     if not quality:
         quality = "VALID" if _text(row.get("state"), UNKNOWN).upper() == "READY" and isinstance(row.get("quote"), dict) and row["quote"].get("last") is not None else UNKNOWN
     return freshness, quality
-
 
 def _counterfactual(row: dict[str, Any]) -> tuple[str, str]:
     value = row.get("counterfactual") if isinstance(row.get("counterfactual"), dict) else {}
@@ -143,7 +148,7 @@ def render() -> str:
     rows = [row for row in (data.get("symbols") or []) if isinstance(row, dict)]
     state = _text(data.get("state"), UNKNOWN).upper()
     aligned, divergent, incomplete, unavailable = _summary(rows)
-    fresh_rows = sum(_row_quality(row)[0] == "FRESH" for row in rows)
+    fresh_rows = sum(_row_quality(row)[0] in {"CAPTURE_RECENT", "FRESH"} for row in rows)
     progress = _progress(data)
     call_count = _metric(data, "calls_total")
     rate_limited = _metric(data, "calls_429")
@@ -177,8 +182,8 @@ def render() -> str:
     contribution = "".join((
         bg._card("Cobertura para análisis", progress["label"],
                  "IOL amplía el contexto del universo ACCIONES/CEDEARs; no crea ni descarta señales.", _card_state(progress["state"])),
-        bg._card("Datos frescos IOL", f"{fresh_rows}/{len(rows)}",
-                 "Cotización IOL disponible para revisión SHADOW sólo si la fila está fresca (≤120 s); no altera la acción PAPER.", "green" if fresh_rows else "yellow"),
+        bg._card("Capturas recientes IOL", f"{fresh_rows}/{len(rows)} filas visibles",
+                 "≤120 s desde la consulta. IOL no expone aquí la hora del último precio; esto mide la captura, no garantiza actualización de cotización. Sólo tiene sentido en rueda.", "green" if fresh_rows else "yellow"),
         bg._card("Contraste con fuente primaria", f"{aligned} coinciden · {divergent} difieren · contrato {primary_state}",
                  "Sólo se compara con un cache primario con fuente, mercado y timestamp verificables. Una divergencia jamás cambia PAPER.", "yellow" if divergent or incomplete or primary_state != "READY" else "green"),
         bg._card("Efecto en el motor", "INFORMATIVO",
@@ -227,7 +232,7 @@ def render() -> str:
         f"<div class='paper-grid'>{contribution}</div>"
         "<div class='paper-table-wrap'><table><thead><tr>"
         "<th>Especie</th><th>Mercado</th><th>Tipo · moneda · lote</th><th>Estado</th><th>Último · bid · ask</th>"
-        "<th>Spread · variación · volumen</th><th>Freshness · calidad</th><th>PPI/IOL</th><th>Qué habría pasado</th>"
+        "<th>Spread · variación · volumen</th><th>Captura · calidad</th><th>PPI/IOL</th><th>Qué habría pasado</th>"
         "</tr></thead><tbody>" + rows_html + "</tbody></table></div>"
         f"<p class='paper-muted'>Se muestran los 10 instrumentos más recientes de un cache de {len(rows)} filas; la cobertura se calcula sobre el ciclo activo, no sobre filas antiguas. “Qué habría pasado” sólo se muestra como VERIFIED cuando existe el candidato, "
         "la decisión PAPER original y evidencia temporal comparable. En cualquier otro caso figura "
