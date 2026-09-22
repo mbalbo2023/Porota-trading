@@ -371,7 +371,10 @@ def main() -> int:
                               source="PPI", error="refusing an unbounded first-history request")
                         failed += 1
                         continue
-                    start = date.fromisoformat(latest) + timedelta(days=1)
+                    coverage = _coverage(history_store, identity)
+                    start = (date.fromisoformat(coverage["first_missing"])
+                             if coverage.get("first_missing")
+                             else date.fromisoformat(latest) + timedelta(days=1))
                     if start > CUTOFF:
                         coverage = _coverage(history_store, identity)
                         if coverage["complete"]:
