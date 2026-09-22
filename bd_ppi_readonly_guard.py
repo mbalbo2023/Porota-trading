@@ -40,6 +40,7 @@ _GET_PATHS = {
     "/api/1.0/marketdata/current",
     "/api/1.0/marketdata/book",
     "/api/1.0/marketdata/intraday",
+    "/api/1.0/marketdata/bonds/estimate",
 }
 
 # PPI confirmó oficialmente que cauciones se buscan por cantidad de días y
@@ -289,6 +290,14 @@ class ProductionMarketReader:
 
     def book(self, ticker: str, instrument_type: str, settlement: str):
         return self._market().book(ticker, instrument_type, settlement)
+
+    def estimate_bonds(self, parameters):
+        """Read-only PPI bond valuation; caller must supply every model field."""
+        from ppi_client.models.estimate_bonds import EstimateBonds
+
+        if not isinstance(parameters, EstimateBonds):
+            raise TypeError("PPI_ESTIMATE_PARAMETERS_REQUIRED")
+        return self._market().estimate_bonds(parameters)
 
     def market_configuration(self):
         """Enums públicos documentados; misma sesión y ninguna cuenta/orden."""
