@@ -23,6 +23,7 @@ from uuid import uuid4
 from iol_shadow_observation_rc6 import (
     DECISION_EFFECT, DEFAULT_MARKET, MODE, SOURCE, _number, _quote_summary, cache_path,
 )
+from rc6_ppi_iol_reconciliation_rc6 import reconcile
 
 ALLOWED_TOOLS = frozenset({"get_asset_info", "get_asset_quote"})
 MAX_BATCH_SIZE = 50
@@ -186,12 +187,10 @@ def _safe_call(client: ReadOnlyMCP, tool_name: str, arguments: dict[str, Any],
 
 
 def _comparison(primary_last: Any, shadow_last: Any, tolerance_pct: float) -> dict[str, Any]:
-    primary, shadow = _number(primary_last), _number(shadow_last)
-    if primary is None or shadow is None:
-        return {"state": "BACKGROUND_COMPARISON_INCOMPLETE"}
-    difference = abs(primary - shadow) / primary * 100.0 if primary else None
-    return {"state": "MATCH" if difference is not None and difference <= tolerance_pct else "PRICE_DIVERGENCE",
-            "difference_pct": difference}
+    # PPI is primary; IOL is complementary. The contract keeps legacy price
+    # state for the existing dashboard and adds field-level reconciliation.
+    result = reconcile(primary_last, shadow_last, tolerance_pct=tolerance_pct)
+    return result
 
 
 def _metadata_from(info: dict[str, Any]) -> dict[str, Any]:

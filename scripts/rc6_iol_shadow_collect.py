@@ -186,7 +186,9 @@ def _primary_snapshot() -> tuple[dict[str, float], dict[str, Any]]:
             payload: Any = json.loads(Path(candidate).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        values = payload.get("last_by_symbol") if isinstance(payload, dict) else {}
+        values = (payload.get("quotes_by_symbol") or payload.get("last_by_symbol")) if isinstance(payload, dict) else {}
+        if isinstance(values, dict):
+            values = {str(symbol).upper(): (quote if isinstance(quote, dict) else {"last": quote}) for symbol, quote in values.items()}
         timestamp = _parse_time(payload.get("observed_at") or payload.get("refreshed_at") or payload.get("captured_at")) if isinstance(payload, dict) else None
         source = str(payload.get("source") or "").upper() if isinstance(payload, dict) else ""
         market = str(payload.get("market") or "").upper() if isinstance(payload, dict) else ""
