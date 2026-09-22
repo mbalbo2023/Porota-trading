@@ -346,8 +346,13 @@ jobs:
           )"
           echo "$HISTORY_WRITE_GATE"
           grep -Fqx "HISTORY_DB_OWNER_WRITE=GREEN" <<< "$HISTORY_WRITE_GATE"
+          set +e
           HISTORY_REPAIR_OUTPUT="$(sudo -n docker exec --user 1000:1000 porota_production_observer timeout 3600 python /app/scripts/rc6_history_cutoff_repair_once.py 2>&1)"
+          HISTORY_REPAIR_RC=$?
+          set -e
           echo "$HISTORY_REPAIR_OUTPUT"
+          echo "HISTORY_REPAIR_EXIT=$HISTORY_REPAIR_RC"
+          test "$HISTORY_REPAIR_RC" -eq 0
           grep -Eq '^RC6_HISTORY_CUTOFF_REPAIR=COMPLETE ' <<< "$HISTORY_REPAIR_OUTPUT"
           HISTORY_REPAIR_STATE="$(sudo -n docker exec -i --user 1000:1000 porota_production_observer python - <<'PY'
           import sqlite3
