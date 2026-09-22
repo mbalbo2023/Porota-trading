@@ -53,6 +53,56 @@ jobs:
               except Exception as e: print("ESTIMATE_BONDS_INSPECTION="+type(e).__name__)
           except Exception as e: print("PPI_SDK_INSPECTION="+type(e).__name__)
           PY
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import os, json, inspect
+          from datetime import datetime, timedelta
+          from decimal import Decimal
+          from ppi_client.ppi import PPI
+          from ppi_client.models.estimate_bonds import EstimateBonds
+          ALLOWED={"ticker","symbol","instrumentType","type","market","currency","settlement","settlementType","description","isin","price","cleanPrice","dirtyPrice","accruedInterest","residual","residualValue","tir","yield","duration","modifiedDuration","date","Date","quantity","quantityType","currencyCode"}
+          def rows(value):
+              if isinstance(value,list): return value
+              return [value] if value is not None else []
+          def safe(value):
+              if isinstance(value,dict): return {k:value[k] for k in value if k in ALLOWED}
+              return {k:getattr(value,k) for k in ALLOWED if hasattr(value,k)}
+          print("PPI_READONLY_BEGIN=YMCID")
+          try:
+              client=PPI(sandbox=False)
+              client.account.login_api(os.environ["PPI_API_KEY"],os.environ["PPI_API_SECRET"])
+              md=client.marketdata
+              calls=[
+                  ("SEARCH_INSTRUMENT",lambda:md.search_instrument("YMCID","","BYMA","ON")),
+                  ("CURRENT",lambda:md.current("YMCID","ON","A-24HS")),
+                  ("BOOK",lambda:md.book("YMCID","ON","A-24HS")),
+              ]
+              for name,fn in calls:
+                  try:
+                      value=fn(); data=rows(value)
+                      print("PPI_"+name+"_COUNT="+str(len(data)))
+                      if data: print("PPI_"+name+"_SAMPLE="+json.dumps(safe(data[0]),default=str,sort_keys=True))
+                  except Exception as e: print("PPI_"+name+"_ERROR="+type(e).__name__)
+              now=datetime(2026,9,22)
+              try:
+                  hist=md.search("YMCID","ON","A-24HS",now-timedelta(days=365),now)
+                  data=rows(hist)
+                  print("PPI_HISTORY_COUNT="+str(len(data)))
+                  if data:
+                      sample=safe(data[0]); last=safe(data[-1])
+                      print("PPI_HISTORY_FIRST="+json.dumps(sample,default=str,sort_keys=True))
+                      print("PPI_HISTORY_LAST="+json.dumps(last,default=str,sort_keys=True))
+              except Exception as e: print("PPI_HISTORY_ERROR="+type(e).__name__)
+              try:
+                  estimate=EstimateBonds(ticker="YMCID",date=now,quantityType="PAPELES",price=Decimal("94.37"),quantity=Decimal("100"))
+                  value=md.estimate_bonds(estimate)
+                  data=rows(value)
+                  print("PPI_ESTIMATE_INPUT=YMCID|A-24HS|2026-09-22|PAPELES|100|94.37; optional FX/adjustment inputs omitted")
+                  print("PPI_ESTIMATE_COUNT="+str(len(data)))
+                  if data: print("PPI_ESTIMATE_SAMPLE="+json.dumps(safe(data[0]),default=str,sort_keys=True))
+              except Exception as e: print("PPI_ESTIMATE_ERROR="+type(e).__name__)
+          except Exception as e: print("PPI_LOGIN_OR_CLIENT_ERROR="+type(e).__name__)
+          print("PPI_READONLY_END=YMCID")
+          PY
           sudo -n docker exec -i porota_production_dashboard python - <<'PY'
           import os, sqlite3, pathlib, json, datetime, urllib.request, re, html
           db=pathlib.Path(os.getenv("HIST_DB_PATH","data/market_history.db")).expanduser()
