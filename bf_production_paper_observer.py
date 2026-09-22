@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import faulthandler
+import fcntl
 faulthandler.enable()
 # Debe instalarse antes de importar módulos internos: si uno queda esperando
 # I/O local, el volcado permite identificarlo sin exponer secretos.
@@ -892,25 +893,109 @@ def _historical_targets(store):
     return list(CORE_SYMBOLS)
 
 
+def _history_cutoff_repair_complete() -> bool:
+    try:
+        from cv_history_store_adapter_hf6 import default_history_store
+        with default_history_store().connect() as c:
+            exists = c.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rc6_history_cutoff_repair_runs'"
+            ).fetchone()
+            if not exists:
+                return False
+            row = c.execute(
+                "SELECT state FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'"
+            ).fetchone()
+            return bool(row and str(row[0]).upper() == "COMPLETE")
+    except (sqlite3.Error, OSError):
+        return False
+
+
+def _history_end_date(now=None):
+    now = now or datetime.now(TZ)
+    close_minute = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
+    if now.hour * 60 + now.minute < close_minute:
+        return None
+    day = now.date()
+    while day.year == BYMA_CALENDAR_AUDITED_YEAR and not _business_day(day):
+        day -= timedelta(days=1)
+    return day if day.year == BYMA_CALENDAR_AUDITED_YEAR else None
+
+
+def _history_repair_lock_path(history_store):
+    return Path(history_store.path).parent / ".rc6-history-cutoff-repair.lock"
+
+
 def _download_histories(reader, store):
-    end = datetime.now(TZ).date()
-    start = end - timedelta(days=365)
+    # The one-time cutoff repair must finish before scheduled PPI history writes.
+    # This prevents startup/manual sync from repeating an annual request or racing
+    # the resumable importer.
+    if not _history_cutoff_repair_complete():
+        return 0
+    from cv_history_store_adapter_hf6 import default_history_store
+    history_store = default_history_store()
+    lock_path = _history_repair_lock_path(history_store)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            store.event("HISTORY_V2_LOCKED", "La reparación histórica RC6 está activa; no se duplica la consulta.")
+            return 0
+        try:
+            return _download_histories_locked(reader, store, history_store)
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _download_histories_locked(reader, store, history_store):
+    end = _history_end_date()
+    if end is None:
+        return 0
     total = 0
     batch_statuses = []
     all_symbols = _historical_targets(store)
-    symbols = all_symbols[:HISTORY_BATCH_LIMIT]
-    for symbol, instrument_type, settlement in symbols:
+    targets = []
+    for symbol, instrument_type, settlement in all_symbols:
+        metadata = financial_catalog.lookup(store, symbol, instrument_type, settlement)
+        market = str((metadata or {}).get("market") or "").strip().upper()
+        if not market or market == "UNKNOWN":
+            batch_statuses.append("ERROR")
+            store.event("HISTORY_V2_ERROR", f"{symbol}: HISTORY_MARKET_IDENTITY_MISSING")
+            continue
+        with history_store.connect() as c:
+            row = c.execute(
+                """SELECT MAX(date) FROM history_canonical_v2
+                   WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?""",
+                (symbol, instrument_type, market, settlement),
+            ).fetchone()
+        latest = str(row[0])[:10] if row and row[0] else None
+        start = (date.fromisoformat(latest) + timedelta(days=1)
+                 if latest else end - timedelta(days=365))
+        if start <= end:
+            targets.append((symbol, instrument_type, settlement, market, start, metadata))
+    symbols = targets[:HISTORY_BATCH_LIMIT]
+    if not symbols:
+        detail = f"Sin fechas históricas nuevas hasta {end.isoformat()}; no se repite descarga anual."
+        _sync_state(store, "PPI_PRODUCTION_HISTORY", "VERDE", 0, detail, success=True)
+        _health(store, "PPI_PRODUCTION_HISTORY", "VERDE", detail, "PPI Producción", success=True)
+        return 0
+
+    from bl_candle_engine import canonical
+    from fb_raw_evidence_exact_v1 import enabled as exact_evidence_enabled, archive_wrapper as archive_exact_wrapper
+    for symbol, instrument_type, settlement, market, start, metadata in symbols:
         attempted = now_iso()
         try:
             payload = reader.history(symbol, instrument_type, settlement, start, end)
             attempted = now_iso()
-            count = _history_count(payload,as_of=attempted,date_from=start,date_to=end)
-            from bl_candle_engine import canonical
-            from fb_raw_evidence_exact_v1 import enabled as exact_evidence_enabled, archive_wrapper as archive_exact_wrapper
-            metadata = financial_catalog.lookup(store,symbol,instrument_type,settlement)
-            expected = len(payload) if isinstance(payload,list) else 0
-            status = 'VALID_PAYLOAD' if count and count==expected else 'PARTIAL' if count else 'EMPTY_OR_INVALID'
-            row_key = canonical([symbol,instrument_type,settlement,attempted])
+            bounded_payload = [
+                row for row in payload
+                if isinstance(row, dict) and start.isoformat() <= str(row.get("date", ""))[:10] <= end.isoformat()
+            ] if isinstance(payload, list) else payload
+            count = _history_count(bounded_payload, as_of=attempted,
+                                   date_from=start, date_to=end)
+            expected = len(bounded_payload) if isinstance(bounded_payload, list) else 0
+            status = 'VALID_PAYLOAD' if count and count == expected else 'PARTIAL' if count else 'EMPTY_OR_INVALID'
+            row_key = canonical([symbol, instrument_type, settlement, attempted])
             history_wrapper = {'symbol':symbol,'asset_class':instrument_type,'settlement':settlement,
                         'date_from':start.isoformat(),'date_to':end.isoformat(),'metadata':metadata,
                         'valid_rows':count,'payload_json':json.dumps(payload,ensure_ascii=False,default=str)}
@@ -926,32 +1011,24 @@ def _download_histories(reader, store):
                                 recorded_at=attempted,quality=status)
                 c.execute('INSERT OR REPLACE INTO production_history_attempts VALUES(?,?,?,?,?,?,?)',
                           (symbol,instrument_type,settlement,attempted,status,count,
-                           'Sólo estructura OHLC; ajuste, unidad de volumen y publicación pendientes de confirmar'))
-                # Vacío o parcial NO reemplaza la última descarga completa.
+                           'PPI incremental desde el último cierre canónico; OHLC y fuente registrados'))
                 if status=='VALID_PAYLOAD':
                     c.execute("INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)",
                               (symbol, instrument_type, settlement, start.isoformat(), end.isoformat(),
                                attempted, count, json.dumps(payload, ensure_ascii=False, default=str)))
 
-            # RC4 History Store v2 reuses the already downloaded PPI payload.
-            # It performs no second broker request and never changes PAPER readiness.
             try:
-                market = str((metadata or {}).get("market") or "").strip().upper()
-                if not market:
-                    raise ValueError("HISTORY_V2_MARKET_IDENTITY_MISSING")
                 import ct_ppi_history_salvage_hf6 as history_salvage
                 v2_result = history_salvage.ingest_ppi_payload(
                     store, symbol=symbol, instrument_type=instrument_type,
-                    market=market, settlement=settlement, payload=payload,
-                    requested_from=start, requested_to=end, attempted_at=attempted)
+                    market=market, settlement=settlement, payload=bounded_payload,
+                    requested_from=start, requested_to=end, attempted_at=attempted,
+                    history_store=history_store)
                 store.event("HISTORY_V2_INGEST",
                             f"{symbol}: valid={v2_result.get('valid_rows',0)}; "
                             f"versions={v2_result.get('versions_appended',0)}")
             except Exception as exc:
-                # Legacy evidence remains available; v2 failure is explicit and
-                # must never be disguised as zero coverage.
-                store.event("HISTORY_V2_ERROR",
-                            f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
+                store.event("HISTORY_V2_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
             total += count
             batch_statuses.append(status)
         except Exception as exc:
@@ -964,17 +1041,15 @@ def _download_histories(reader, store):
     state = semantics["state"]
     with store.connect() as c:
         covered = c.execute("SELECT COUNT(*) FROM production_history WHERE row_count>0").fetchone()[0]
-    detail = (f"Lote histórico completos={semantics['full_valid']}/{len(symbols)}; "
+    detail = (f"Lote histórico incremental={semantics['full_valid']}/{len(symbols)}; "
               f"parciales usables={semantics['partial_with_valid_evidence']}; "
               f"fallas duras={semantics['hard_failures']} "
               f"(vacío/inválido={semantics['empty_invalid']}, errores={semantics['errors']}); "
-              f"cobertura completa acumulada {covered}/{len(all_symbols)} instrumentos; "
-              f"{total} filas válidas en este lote. La descarga completa es incremental para no saturar PPI.")
+              f"cobertura acumulada {covered}/{len(all_symbols)} instrumentos; "
+              f"{total} filas válidas desde el último cierre hasta {end.isoformat()}.")
     usable = bool(semantics["usable"])
-    _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail,
-                success=usable)
-    _health(store, "PPI_PRODUCTION_HISTORY", state, detail, "PPI Producción",
-            success=usable)
+    _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail, success=usable)
+    _health(store, "PPI_PRODUCTION_HISTORY", state, detail, "PPI Producción", success=usable)
     return total
 
 
