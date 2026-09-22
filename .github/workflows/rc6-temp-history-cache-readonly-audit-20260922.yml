@@ -81,6 +81,30 @@ jobs:
                               print('HISTORY_EVENT='+json.dumps(d,sort_keys=True,default=str))
           c.close()
           PY
+          echo "--- history writer path and volume modes ---"
+          for container in porota_production_observer porota_production_dashboard; do
+            sudo -n docker inspect --format "{{.Name}}{{range .Mounts}}{{printf \"|%s|RW=%t|SRC=%s\" .Destination .RW .Source}}{{end}}" "$container" | sed -E 's#(/[^|]*/data/[^|]*)#<data-path>#g'
+          done
+          sudo -n docker exec porota_production_observer python - <<'PY'
+          import os,stat,sqlite3
+          from pathlib import Path
+          p=Path(os.getenv('HIST_DB_PATH','/app/data/market_history.db'))
+          print('OBSERVER_HIST_DB_ENV='+repr(os.getenv('HIST_DB_PATH','<unset>')))
+          print('OBSERVER_UID='+str(os.geteuid())+'|GID='+str(os.getegid()))
+          for q in (p,Path('/app/data/market_history.db'),Path('/app/data')):
+              try:
+                  s=q.stat()
+                  print('PATH_STAT='+str(q)+'|MODE='+oct(stat.S_IMODE(s.st_mode))+'|UID='+str(s.st_uid)+'|GID='+str(s.st_gid)+'|W_ACCESS='+str(os.access(q,os.W_OK)))
+              except OSError as e: print('PATH_STAT='+str(q)+'|ERROR='+type(e).__name__)
+          for q in (p,Path('/app/data/market_history.db')):
+              try:
+                  con=sqlite3.connect('file:'+str(q)+'?mode=ro',uri=True,timeout=3)
+                  print('DB_READONLY_OPEN='+str(q)+'|OK='+str(con.execute('SELECT 1').fetchone()[0]))
+                  print('DB_JOURNAL='+str(con.execute('PRAGMA journal_mode').fetchone()[0]))
+                  con.close()
+              except Exception as e: print('DB_READONLY_OPEN='+str(q)+'|ERROR='+type(e).__name__)
+          PY
+          sudo -n docker exec porota_production_observer id
           echo "--- canonical history DB coverage ---"
           sudo -n docker exec -i porota_production_dashboard python - <<'PY'
           import os, sqlite3, json
