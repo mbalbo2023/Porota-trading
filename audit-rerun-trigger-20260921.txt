@@ -1,0 +1,1 @@
+Trigger one scoped read-only continuity audit.
