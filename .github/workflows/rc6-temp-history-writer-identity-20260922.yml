@@ -36,10 +36,10 @@ jobs:
           echo "IDENTITY_AUDIT_ART=$(TZ=America/Argentina/Buenos_Aires date -Is)"
           echo 'CONTAINERS (names/status only):'
           sudo -n docker ps --format '{{.Names}} {{.Status}}'
-          if sudo -n docker inspect -f '{{.State.Running}}' porota_trading_bot 2>/dev/null | grep -qx true; then
-            sudo -n docker exec porota_trading_bot stat -c 'DB_MODE=%a OWNER=%U:%G UID=%u GID=%g SIZE=%s MTIME=%y PATH=%n' /app/data/market_history.db
+          if sudo -n docker inspect -f '{{.State.Running}}' porota_production_observer 2>/dev/null | grep -qx true; then
+            sudo -n docker exec porota_production_observer stat -c 'DB_MODE=%a OWNER=%U:%G UID=%u GID=%g SIZE=%s MTIME=%y PATH=%n' /app/data/market_history.db
           else
-            echo 'porota_trading_bot=NOT_RUNNING'
+            echo 'porota_production_observer=NOT_RUNNING'
           fi
           sudo -n python3 - <<'PY'
           from pathlib import Path
@@ -66,7 +66,7 @@ jobs:
               except OSError:
                   print("DB_LOCK_PID=" + pid + " STATE=EXITED_DURING_READ")
           PY
-          sudo -n python3 - <<'PY'
+          sudo -n docker exec -i porota_production_observer python3 - <<'PY'
           import sqlite3
           p="file:/app/data/market_history.db?mode=ro"
           c=sqlite3.connect(p,uri=True,timeout=3)
@@ -75,5 +75,6 @@ jobs:
           print("DB_SCHEMA_VERSION="+str(c.execute("PRAGMA schema_version").fetchone()[0]))
           c.close()
           PY
+          sudo -n docker exec porota_production_observer ps -eo pid,ppid,comm | head -30
           echo "MUTATIONS=NONE"
           HOST
