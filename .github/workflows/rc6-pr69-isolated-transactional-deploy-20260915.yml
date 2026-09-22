@@ -335,7 +335,7 @@ jobs:
           test "$(sudo -n stat -c '%u:%g:%a' "$HIST_DATA")" = "1000:1000:750"
           test "$(sudo -n stat -c '%u:%g:%a' "$HIST_DATA/market_history.db")" = "1000:1000:640"
           echo "HISTORY_DB_PERMISSIONS=OWNER_WRITE_READY"
-          HISTORY_WRITE_GATE="$(sudo -n docker exec --user 1000:1000 porota_production_observer python - <<'PY'
+          HISTORY_WRITE_GATE="$(sudo -n docker exec -i --user 1000:1000 porota_production_observer python - <<'PY'
           import os
           from pathlib import Path
           assert os.geteuid() == 1000
@@ -349,7 +349,7 @@ jobs:
           HISTORY_REPAIR_OUTPUT="$(sudo -n docker exec --user 1000:1000 porota_production_observer timeout 3600 python /app/scripts/rc6_history_cutoff_repair_once.py 2>&1)"
           echo "$HISTORY_REPAIR_OUTPUT"
           grep -Eq '^RC6_HISTORY_CUTOFF_REPAIR=COMPLETE ' <<< "$HISTORY_REPAIR_OUTPUT"
-          HISTORY_REPAIR_STATE="$(sudo -n docker exec --user 1000:1000 porota_production_observer python - <<'PY'
+          HISTORY_REPAIR_STATE="$(sudo -n docker exec -i --user 1000:1000 porota_production_observer python - <<'PY'
           import sqlite3
           c=sqlite3.connect("file:/app/data/market_history.db?mode=ro",uri=True,timeout=20)
           c.execute("PRAGMA query_only=ON")
