@@ -390,7 +390,18 @@ def main() -> int:
                         continue
                     attempted_at = observer.now_iso()
                     try:
-                        payload = reader.history(identity[0], identity[1], identity[3], start, CUTOFF)
+                        payload = None
+                        # PPI can transiently return a non-JSON gateway body. Retry
+                        # only that transport symptom, bounded and without writing
+                        # evidence until a valid response is obtained.
+                        for json_attempt in range(3):
+                            try:
+                                payload = reader.history(identity[0], identity[1], identity[3], start, CUTOFF)
+                                break
+                            except json.JSONDecodeError:
+                                if json_attempt == 2:
+                                    raise
+                                time.sleep(2 ** json_attempt)
                         _record_exact(observer_store, identity, payload, start, attempted_at)
                         rows, last = _ingest(observer_store, history_store, identity, payload, start,
                                              source="PPI", observed_at=attempted_at)
@@ -411,7 +422,7 @@ def main() -> int:
                         _control(history_store, state="RUNNING", targets=len(targets), archive=archive_count,
                                  ppi=ppi_count, complete=len(completed), failed=failed)
                         print(f"RC6_HISTORY_CUTOFF_PROGRESS={index}/{len(targets_list)} COMPLETE={len(completed)} FAILED={failed}", flush=True)
-                    time.sleep(max(0.0, float(os.getenv("RC6_HISTORY_REQUEST_PAUSE_SECONDS", "0.4"))))
+                    time.sleep(max(0.0, float(os.getenv("RC6_HISTORY_REQUEST_PAUSE_SECONDS", "1.0"))))
             finally:
                 if reader is not None:
                     reader.close()
