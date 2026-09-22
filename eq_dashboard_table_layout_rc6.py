@@ -7,6 +7,7 @@ fallback.  No database/network/trading behavior.
 from __future__ import annotations
 
 import bg_paper_dashboard as bg
+import rc6_dashboard_responsive_ux as responsive_ux
 from er_dashboard_table_semantics_rc6 import should_force_compact
 
 _installed = False
@@ -96,6 +97,7 @@ def install() -> None:
     if _installed:
         return
     _installed = True
+    responsive_ux.install()
     if "porota-rc6-force-compact-tables" not in bg.TABLE_A11Y_CSS:
         bg.TABLE_A11Y_CSS += FORCE_COMPACT_CSS
     if "porota-rc6-force-compact-script" not in bg.TABLE_A11Y_SCRIPT:
