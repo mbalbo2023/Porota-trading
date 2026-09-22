@@ -80,7 +80,9 @@ def reconcile(primary: Any, secondary: Any, *, now: datetime | None = None,
             "decision_effect": "OBSERVE_ONLY", "live_decision_authority": False,
             "real_money_authorized": False}
 
-\n\ndef summarize_rows(symbols: list[str], rows: dict[str, Any], primary_contract: dict[str, Any] | None = None) -> dict[str, Any]:
+
+
+def summarize_rows(symbols: list[str], rows: dict[str, Any], primary_contract: dict[str, Any] | None = None) -> dict[str, Any]:
     """Publish auditable aggregate status without treating cache size as coverage."""
     selected = [rows.get(symbol) for symbol in symbols if isinstance(rows.get(symbol), dict)]
     comparisons = [row.get("primary_comparison") or {} for row in selected]
