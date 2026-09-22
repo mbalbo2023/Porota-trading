@@ -1,0 +1,36 @@
+import rc6_family_readiness as readiness
+
+
+def test_ready_instrument_promotes_only_paper():
+    report = readiness.evaluate(
+        [{"family": "ACCIONES", "symbol": "YPFD", "market": "BYMA", "settlement": "A-24HS"}],
+        [{"symbol": "YPFD", "asset_type": "ACCIONES",
+          "primary_comparison": {"contract_state": "READY_SHADOW"}}],
+    )
+    item = report["instruments"][0]
+    assert item["paper_auto_enabled"] is True
+    assert item["real_money_authorized"] is False
+    assert report["families"][0]["state"] == "READY"
+
+
+def test_missing_iol_is_explicit_pending_gap():
+    report = readiness.evaluate(
+        [{"family": "CEDEARS", "symbol": "AAPL", "market": "BYMA", "settlement": "A-24HS"}],
+        [],
+    )
+    item = report["instruments"][0]
+    assert item["paper_auto_enabled"] is False
+    assert "PPI_IOL_COMPARISON_NOT_PUBLISHED" in item["reasons"]
+    assert report["families"][0]["state"] == "PENDING"
+
+
+def test_one_family_does_not_block_another():
+    report = readiness.evaluate(
+        [{"family": "ACCIONES", "symbol": "YPFD"},
+         {"family": "BONOS", "symbol": "AL30"}],
+        [{"symbol": "YPFD", "asset_type": "ACCIONES",
+          "primary_comparison": {"contract_state": "READY_SHADOW"}}],
+    )
+    states = {item["family"]: item["state"] for item in report["families"]}
+    assert states["ACCIONES"] == "READY"
+    assert states["BONOS"] == "PENDING"
