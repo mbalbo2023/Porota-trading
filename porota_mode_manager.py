@@ -260,6 +260,15 @@ def start_dashboard(mode):
         "--security-opt", "no-new-privileges:true", "-p", "127.0.0.1:8000:8000",
         "--env-file", str(env_path), "-v", f"{DATA}:/app/data", *source_mounts,
         "--entrypoint", "python", IMAGE, "o_dashboard.py")
+    # Defensive source synchronization for the live container. The image is
+    # checked separately by the deploy workflow; this second guard prevents a
+    # stale /app copy from surviving container recreation. Files remain
+    # read-only at the container's effective runtime user and only dashboard
+    # modules are touched.
+    for filename in runtime_sources:
+        source = ROOT / filename
+        run("docker", "cp", str(source),
+            f"porota_production_dashboard:/app/{filename}")
 
 
 def simulation():
