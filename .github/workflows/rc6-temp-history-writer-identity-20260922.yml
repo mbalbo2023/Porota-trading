@@ -146,7 +146,7 @@ jobs:
                       safe=[]
                       for r in records:
                           if not isinstance(r,dict): continue
-                          item={'keys':sorted(r.keys()),'values':{k:v for k,v in r.items() if k in allow and isinstance(v,(str,int,float,bool,type(None)))}}
+                          item={'keys':sorted(r.keys()),'values':{k:(str(v) if type(v).__name__=='Decimal' else v) for k,v in r.items() if k in allow and (isinstance(v,(str,int,float,bool,type(None))) or type(v).__name__=='Decimal')}}
                           trade=r.get('trade')
                           if isinstance(trade,dict): item['trade']={'keys':sorted(trade.keys()),'values':{k:v for k,v in trade.items() if k in allow and isinstance(v,(str,int,float,bool,type(None)))}}
                           for side in ('bids','asks'):
