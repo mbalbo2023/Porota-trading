@@ -313,9 +313,10 @@ def main() -> int:
                 failed += 1
                 continue
             if start > CUTOFF:
-                _save(history_store, identity, state="ALREADY_COVERED",
-                      source="PPI_CANONICAL", latest=latest)
-                completed.add(identity)
+                _save(history_store, identity, state="COVERAGE_GAPS_BLOCKED",
+                      source="PPI_CANONICAL", rows=coverage["present"], latest=latest,
+                      error=coverage["reason"])
+                failed += 1
                 continue
             if archived:
                 payload, recorded_at = archived
@@ -361,9 +362,15 @@ def main() -> int:
                         continue
                     start = date.fromisoformat(latest) + timedelta(days=1)
                     if start > CUTOFF:
-                        _save(history_store, identity, state="ALREADY_COVERED",
-                              source="PPI_CANONICAL", latest=latest)
-                        completed.add(identity)
+                        coverage = _coverage(history_store, identity)
+                        if coverage["complete"]:
+                            _save(history_store, identity, state="ALREADY_COVERED",
+                                  source="PPI_CANONICAL", rows=coverage["present"], latest=latest)
+                            completed.add(identity)
+                        else:
+                            _save(history_store, identity, state="COVERAGE_GAPS_BLOCKED",
+                                  source="PPI_CANONICAL", rows=coverage["present"], latest=latest,
+                                  error=coverage["reason"])
                         continue
                     attempted_at = observer.now_iso()
                     try:
