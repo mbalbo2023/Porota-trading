@@ -1,1 +1,0 @@
-Trigger one read-only deployed route check through the droplet.
