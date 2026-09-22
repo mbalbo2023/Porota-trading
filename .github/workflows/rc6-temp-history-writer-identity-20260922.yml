@@ -84,11 +84,10 @@ jobs:
           if p.exists():
               db=sqlite3.connect('file:'+str(p)+'?mode=ro',uri=True,timeout=10)
               db.execute('PRAGMA query_only=ON')
-              names=[r[0] for r in db.execute(\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\")]
+              names=[r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
               print('ARCHIVE_TABLES='+','.join(names))
               for name in names:
-                  safe=name.replace('\\\"','')
-                  cols=[r[1] for r in db.execute('PRAGMA table_info(\"'+safe+'\")')]
+                  cols=[r[1] for r in db.execute("PRAGMA table_info(" + name + ")")]
                   print('ARCHIVE_COLUMNS_'+name+'='+','.join(cols))
               db.close()
           PY
