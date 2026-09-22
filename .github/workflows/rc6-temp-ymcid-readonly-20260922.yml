@@ -70,12 +70,19 @@ jobs:
                   print("YMCID=BLOCKED_NO_PPI_BOND_TYPE")
                   raise SystemExit(0)
               kind=next((x for x in kinds if "OBLIG" in x.upper() or "NEGOC" in x.upper()),kinds[0])
-              result=reader.search_instruments("YMCID",kind,name="YMCID",market="BYMA")
-              rows=result if isinstance(result,list) else [result]
-              print("PPI_SEARCH_COUNT="+str(len(rows)))
               fields=("ticker","type","instrument_type","market","currency","settlement","term","isin","description","nominal_value","unit")
-              for row in rows[:5]: print("PPI_SEARCH="+json.dumps(pick(row,fields),ensure_ascii=False,default=str))
-              match=next((x for x in rows if str(pick(x,("ticker",)).get("ticker","")).upper()=="YMCID"),None)
+              match=None
+              for query_ticker,query_name in (("YMCID","YMCID"),("YMCID","YPF"),("YMCID","YPF Clase XVII"),("YMCID","Obligaciones Negociables"),("YMCI","YPF")):
+                  try:
+                      result=reader.search_instruments(query_ticker,kind,name=query_name,market="BYMA")
+                      found=result if isinstance(result,list) else [result]
+                      exact=[x for x in found if str(pick(x,("ticker",)).get("ticker","")).upper()=="YMCID"]
+                      print("PPI_SEARCH_VARIANT="+json.dumps({"ticker_query":query_ticker,"name_query":query_name,"rows":len(found),"exact_matches":[pick(x,fields) for x in exact[:2]]},ensure_ascii=False,default=str))
+                      if exact:
+                          match=exact[0]
+                          break
+                  except Exception as e:
+                      print("PPI_SEARCH_VARIANT_ERROR="+json.dumps({"ticker_query":query_ticker,"name_query":query_name,"error":type(e).__name__},ensure_ascii=False))
               if match is None:
                   print("YMCID=BLOCKED_SEARCH_NOT_FOUND")
                   raise SystemExit(0)
