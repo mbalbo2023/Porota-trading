@@ -85,7 +85,7 @@ jobs:
           for container in porota_production_observer porota_production_dashboard; do
             sudo -n docker inspect --format "{{.Name}}{{range .Mounts}}{{printf \"|%s|RW=%t|SRC=%s\" .Destination .RW .Source}}{{end}}" "$container" | sed -E 's#(/[^|]*/data/[^|]*)#<data-path>#g'
           done
-          sudo -n docker exec porota_production_observer python - <<'PY'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
           import os,stat,sqlite3
           from pathlib import Path
           p=Path(os.getenv('HIST_DB_PATH','/app/data/market_history.db'))
