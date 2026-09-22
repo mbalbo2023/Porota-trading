@@ -1104,8 +1104,8 @@ def _background_ingest_due(store, now=None):
         return True
 
 def _background_ingest(reader, store, *, force=False):
-    """Completa históricos por lotes fuera de rueda, sin current ni book."""
-    if not force and not _background_ingest_due(store):
+    """Completa históricos una vez por rueda después del cierre; force no salta el límite."""
+    if not _background_ingest_due(store):
         return None
     try:
         rows = _download_histories(reader, store)
