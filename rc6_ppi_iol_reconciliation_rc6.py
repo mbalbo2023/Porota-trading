@@ -12,6 +12,7 @@ SCHEMA_VERSION = 2
 FIELDS = ("last", "bid", "ask", "bid_size", "ask_size", "spread_pct",
           "variation_pct", "cash_volume")
 CRITICAL_FIELDS = frozenset(("last", "bid", "ask"))
+OPTIONAL_FIELDS = frozenset(("variation_pct", "cash_volume"))
 METADATA_FIELDS = ("market", "settlement", "currency", "units_per_lot", "asset_type")
 DEFAULT_TOLERANCE_PCT = 2.0
 MAX_AGE_SECONDS = 120.0
@@ -54,6 +55,8 @@ def reconcile(primary: Any, secondary: Any, *, now: datetime | None = None,
         if pv is None or sv is None:
             if pv is None and sv is None:
                 state = "NOT_AVAILABLE_BOTH_SIDES"
+                if field not in OPTIONAL_FIELDS:
+                    missing += 1
             elif pv is None and sv is not None and field not in CRITICAL_FIELDS:
                 state = "COMPLEMENTED_SECONDARY"
                 complemented += 1
