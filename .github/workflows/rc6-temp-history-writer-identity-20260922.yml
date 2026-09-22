@@ -1,0 +1,74 @@
+name: RC6 read-only history writer identity audit
+on:
+  push:
+    branches: [audit/rc6-iol-decision-demand-20260921]
+    paths:
+      - .github/workflows/rc6-temp-history-writer-identity-20260922.yml
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare strict SSH
+        env:
+          DO_HOST: \${{ secrets.DO_HOST }}
+          DO_USER: \${{ secrets.DO_USER }}
+          SSH_KEY: \${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: \${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts"
+      - name: Identify history database reader without changing runtime
+        env:
+          DO_HOST: \${{ secrets.DO_HOST }}
+          DO_USER: \${{ secrets.DO_USER }}
+          SSH_KEY: \${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: \${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$RUNNER_TEMP/ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          echo "IDENTITY_AUDIT_ART=$(TZ=America/Argentina/Buenos_Aires date -Is)"
+          sudo -n stat -c 'DB_MODE=%a OWNER=%U:%G UID=%u GID=%g SIZE=%s MTIME=%y PATH=%n' /app/data/market_history.db
+          sudo -n namei -l /app/data/market_history.db | tail -5
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          rows = subprocess.run(
+              ["lslocks", "-n", "-o", "COMMAND,PID,TYPE,MODE,PATH"],
+              check=True, capture_output=True, text=True
+          ).stdout.splitlines()
+          pids = sorted({line.split()[1] for line in rows
+                         if "/app/data/market_history.db" in line and len(line.split()) >= 5
+                         and line.split()[1].isdigit()})
+          print("DB_LOCK_HOLDER_COUNT=" + str(len(pids)))
+          for pid in pids:
+              proc = Path("/proc") / pid
+              try:
+                  comm = (proc / "comm").read_text().strip()
+                  status = (proc / "status").read_text()
+                  parent = re.search(r"^PPid:\s+(\d+)", status, re.M)
+                  ppid = parent.group(1) if parent else "?"
+                  pcomm = (Path("/proc") / ppid / "comm").read_text().strip() if ppid.isdigit() else "?"
+                  groups = (proc / "cgroup").read_text().strip().replace("\n", ";")
+                  print(f"DB_LOCK_PID={pid} COMM={comm} PPID={ppid} PARENT_COMM={pcomm}")
+                  print("DB_LOCK_CGROUP=" + groups[:400])
+              except OSError:
+                  print("DB_LOCK_PID=" + pid + " STATE=EXITED_DURING_READ")
+          PY
+          sudo -n python3 - <<'PY'
+          import sqlite3
+          p="file:/app/data/market_history.db?mode=ro"
+          c=sqlite3.connect(p,uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          print("DB_JOURNAL_MODE="+str(c.execute("PRAGMA journal_mode").fetchone()[0]))
+          print("DB_SCHEMA_VERSION="+str(c.execute("PRAGMA schema_version").fetchone()[0]))
+          c.close()
+          PY
+          echo "MUTATIONS=NONE"
+          HOST
