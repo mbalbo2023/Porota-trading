@@ -76,7 +76,8 @@ jobs:
           print("DB_SCHEMA_VERSION="+str(c.execute("PRAGMA schema_version").fetchone()[0]))
           c.close()
           PY
-          sudo -n docker exec porota_production_observer python3 - <<'PY'
+          sudo -n grep -RIn --include='*.py' --include='*.sh' --include='*.yml' --include='*.service' -E 'chmod .*444|market_history\.db.*chmod|chmod .*market_history' /opt/porota-trading /etc/systemd/system 2>/dev/null | head -40 || true
+          sudo -n docker exec -i porota_production_observer python3 - <<'PY'
           import sqlite3
           from pathlib import Path
           p=Path('/app/data/evidence/ppi_history_exact_v1/manifest_exact_v1.db')
