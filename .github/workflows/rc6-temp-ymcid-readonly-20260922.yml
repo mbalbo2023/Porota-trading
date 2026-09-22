@@ -82,7 +82,7 @@ jobs:
                           match=exact[0]
                           break
                   except Exception as e:
-                      print("PPI_SEARCH_VARIANT_ERROR="+json.dumps({"ticker_query":query_ticker,"name_query":query_name,"error":type(e).__name__},ensure_ascii=False))
+                      print("PPI_SEARCH_VARIANT_ERROR="+json.dumps({"ticker_query":query_ticker,"name_query":query_name,"error":classify_read_error(e)},ensure_ascii=False))
               if match is None:
                   print("YMCID=BLOCKED_SEARCH_NOT_FOUND")
                   settles=[str(x) for x in cfg.get("settlements",[]) if any(t in str(x).upper() for t in ("24","CI","CONTADO"))][:4]
@@ -94,7 +94,7 @@ jobs:
                               value=fn()
                               print("PPI_"+label+"_BY_ENUM="+json.dumps({"settlement":term,"data":pick(value,("ticker","symbol","type","market","currency","settlement","date","timestamp","price","last","bid","ask","bids","offers","asks","quantity","size","volume"))},ensure_ascii=False,default=str))
                           except Exception as e:
-                              print("PPI_"+label+"_BY_ENUM_ERROR="+json.dumps({"settlement":term,"error":type(e).__name__},ensure_ascii=False))
+                              print("PPI_"+label+"_BY_ENUM_ERROR="+json.dumps({"settlement":term,"error":classify_read_error(e)},ensure_ascii=False))
                   print("YMCID=BLOCKED_SEARCH_IDENTITY_UNRESOLVED")
                   raise SystemExit(0)
               identity=pick(match,fields)
