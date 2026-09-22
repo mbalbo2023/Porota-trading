@@ -217,7 +217,7 @@ def observer_runtime_env():
         "TELEGRAM_CHAT_ID": env.get("TELEGRAM_CHAT_ID", "").strip(),
     }
     values.update(paper_settings(env))
-    # RC6 settlement hotfix: autoridad explícita sólo en el observer PAPER.
+    # Contract Evidence recolecta PPI read-only para todas las familias auditables.\n    # Nunca habilita decisiones ni órdenes; las familias fuera de alcance siguen fail-closed.\n    values["POROTA_CONTRACT_EVIDENCE_MODE"] = env.get("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED").strip().upper() or "ENABLED"\n    # RC6 settlement hotfix: autoridad explícita sólo en el observer PAPER.
     # El módulo de settlement permanece fail-closed fuera de este runtime.
     values["PAPER_T1_FULL_DATE_RELEASE"] = "true"
     values[DB_ENV] = CONTAINER_DB
