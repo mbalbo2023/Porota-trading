@@ -26,6 +26,8 @@ if str(REPOSITORY_ROOT) not in sys.path:
 import ak_byma_calendar as byma
 
 CUTOFF = date(2026, 9, 21)
+# First-history repair is explicitly bounded: it is never an unbounded query.
+BOOTSTRAP_START = CUTOFF - timedelta(days=365)
 FAMILIES = {"ACCIONES", "CEDEARS"}
 LOCK_PATH = Path(os.getenv("HIST_DB_PATH", "/app/data/market_history.db")).parent / ".rc6-history-cutoff-repair.lock"
 STATE_TABLE = "rc6_history_cutoff_repair"
@@ -367,14 +369,14 @@ def main() -> int:
                         continue
                     latest = _latest(history_store, identity)
                     if not latest:
-                        _save(history_store, identity, state="BLOCKED_NO_CANONICAL_BASELINE",
-                              source="PPI", error="refusing an unbounded first-history request")
-                        failed += 1
-                        continue
-                    coverage = _coverage(history_store, identity)
-                    start = (date.fromisoformat(coverage["first_missing"])
-                             if coverage.get("first_missing")
-                             else date.fromisoformat(latest) + timedelta(days=1))
+                        # The caller explicitly approved this one-time, bounded
+                        # bootstrap through the cutoff; it cannot expand beyond 365 days.
+                        start = BOOTSTRAP_START
+                    else:
+                        coverage = _coverage(history_store, identity)
+                        start = (date.fromisoformat(coverage["first_missing"])
+                                 if coverage.get("first_missing")
+                                 else date.fromisoformat(latest) + timedelta(days=1))
                     if start > CUTOFF:
                         coverage = _coverage(history_store, identity)
                         if coverage["complete"]:
