@@ -1079,8 +1079,16 @@ def _daily_sync(reader, store):
 
 
 def _background_ingest_due(store, now=None):
-    """TTL por intento: protege a PPI incluso si una respuesta falla."""
+    """Como máximo un intento histórico por rueda, después del cierre."""
     now = now or datetime.now(TZ)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=TZ)
+    local_now = now.astimezone(TZ)
+    if not _business_day(local_now.date()):
+        return False
+    close_minute = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
+    if local_now.hour * 60 + local_now.minute < close_minute:
+        return False
     with store.connect() as connection:
         row = connection.execute("""SELECT last_attempt_at FROM source_sync
           WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
@@ -1090,10 +1098,10 @@ def _background_ingest_due(store, now=None):
         last = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
         if last.tzinfo is None:
             last = last.replace(tzinfo=TZ)
-        return (now - last.astimezone(TZ)).total_seconds() >= BACKGROUND_INGEST_SECONDS
+        local_last = last.astimezone(TZ)
+        return local_last.date() < local_now.date()
     except (TypeError, ValueError):
         return True
-
 
 def _background_ingest(reader, store, *, force=False):
     """Completa históricos por lotes fuera de rueda, sin current ni book."""
