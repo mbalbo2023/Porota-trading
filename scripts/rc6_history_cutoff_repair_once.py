@@ -172,7 +172,7 @@ def _record_exact(observer_store, identity, payload, start: date, attempted_at: 
     import cp_history_ingest_policy_hf6 as policy
 
     symbol, family, _market, settlement = identity
-    metadata = financial_catalog.lookup(observer_store, symbol, family, settlement)
+    metadata = observer.financial_catalog.lookup(observer_store, symbol, family, settlement)
     valid = policy.validate_provider_history(
         _filtered(payload, start), as_of=datetime.fromisoformat(attempted_at.replace("Z", "+00:00")),
         date_from=start, date_to=CUTOFF,
