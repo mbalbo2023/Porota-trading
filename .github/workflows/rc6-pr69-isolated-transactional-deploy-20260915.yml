@@ -347,7 +347,7 @@ jobs:
           echo "$HISTORY_WRITE_GATE"
           grep -Fqx "HISTORY_DB_OWNER_WRITE=GREEN" <<< "$HISTORY_WRITE_GATE"
           set +e
-          HISTORY_REPAIR_OUTPUT="$(sudo -n docker exec --user 1000:1000 -e RC6_HISTORY_ALLOW_PPI_GAP_REPAIR=APPROVED porota_production_observer timeout 3600 python /app/scripts/rc6_history_cutoff_repair_once.py 2>&1)"
+          HISTORY_REPAIR_OUTPUT="$(sudo -n docker exec --user 1000:1000 -e RC6_HISTORY_ALLOW_PPI_GAP_REPAIR=APPROVED -e RC6_HISTORY_QUARANTINE_REPEATED_PPI=APPROVED porota_production_observer timeout 3600 python /app/scripts/rc6_history_cutoff_repair_once.py 2>&1)"
           HISTORY_REPAIR_RC=$?
           set -e
           echo "$HISTORY_REPAIR_OUTPUT"
@@ -356,7 +356,7 @@ jobs:
           import sqlite3
           c=sqlite3.connect("file:/app/data/market_history.db?mode=ro", uri=True, timeout=20)
           c.execute("PRAGMA query_only=ON")
-          rows=c.execute("SELECT symbol, instrument_type, market, settlement, COALESCE(error_class,'UNKNOWN') FROM rc6_history_cutoff_repair WHERE cutoff='2026-09-21' AND state NOT IN ('ALREADY_COVERED','COMPLETE') ORDER BY symbol, settlement").fetchall()
+          rows=c.execute("SELECT symbol, instrument_type, market, settlement, COALESCE(error_class,'UNKNOWN') FROM rc6_history_cutoff_repair WHERE cutoff='2026-09-21' AND state NOT IN ('ALREADY_COVERED','COMPLETE','QUARANTINED_PPI_HISTORY') ORDER BY symbol, settlement").fetchall()
           c.close()
           print("HISTORY_REPAIR_FAILURES=" + repr(rows))
           PY
