@@ -1,0 +1,50 @@
+name: RC6 read-only shared history lock audit
+on:
+  push:
+    branches:
+      - audit/rc6-iol-decision-demand-20260921
+    paths:
+      - .github/workflows/rc6-temp-history-lock-audit-20260922.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-history-preflight
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts"
+      - name: Inspect existing shared lock ownership only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$RUNNER_TEMP/ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          echo "LOCK_AUDIT_ART=$(TZ=America/Argentina/Buenos_Aires date -Is)"
+          echo "--- PPI named systemd units ---"
+          sudo -n systemctl list-units --all --type=service --no-legend --no-pager | awk 'tolower($1) ~ /ppi|watch/ {print $1,$3,$4}' | head -40
+          echo "--- PPI named containers ---"
+          sudo -n docker ps --format '{{.Names}} {{.Status}}' | awk 'tolower($1) ~ /ppi|watch/ {print}'
+          echo "--- currently held lock files ---"
+          sudo -n lslocks -n -o COMMAND,PID,TYPE,MODE,PATH 2>/dev/null | awk 'tolower($0) ~ /ppi|history|candle/ {print substr($0,1,300)}' | head -80
+          echo "--- lock file names on host ---"
+          for d in /run/lock /var/lock /opt; do
+            if test -d "$d"; then sudo -n find "$d" -xdev -maxdepth 5 -type f \( -iname '*ppi*lock*' -o -iname '*history*lock*' -o -iname '*candle*lock*' \) -printf '%p %m %u:%g\n' 2>/dev/null | head -100; fi
+          done
+          echo "MUTATIONS=NONE"
+          HOST
