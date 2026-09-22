@@ -1,0 +1,128 @@
+name: RC6 temporary history and cache read-only audit
+
+on:
+  push:
+    branches:
+      - audit/rc6-iol-decision-demand-20260921
+    paths:
+      - .github/workflows/rc6-temp-history-cache-readonly-audit-20260922.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-temp-history-cache-readonly-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/key"
+          printf '%s\\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts"
+      - name: Read history, scheduler, PPI and IOL cache state on Droplet
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$RUNNER_TEMP/ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          echo "AUDIT_ART=$(TZ=America/Argentina/Buenos_Aires date -Is)"
+          echo "AUDIT_UTC=$(date -u -Is)"
+          echo "RUNTIME_COMMIT=$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo "MUTATIONS=NONE"
+          echo "--- relevant timer states ---"
+          sudo -n systemctl list-timers --all --no-pager | grep -Ei 'porota.*(history|candle|iol-shadow)' || true
+          for u in porota-iol-shadow-collector-rc6.timer porota-iol-shadow-collector-rc6.service porota-rc6-candle-inmarket-verify.timer porota-rc6-candle-inmarket-verify.service porota-a3-history-daily-rc6.timer porota-a3-history-rc6@DAILY_INCREMENTAL.service porota-a3-history-reconcile-rc6.timer porota-history-postclose-rc6.timer; do
+            sudo -n systemctl show "$u" -p LoadState -p ActiveState -p SubState -p UnitFileState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp --no-pager 2>/dev/null | sed "s/^/$u|/" || true
+          done
+          echo "--- current runtime state ---"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import os, sqlite3, json
+          from pathlib import Path
+          from datetime import datetime, timezone
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True,timeout=10); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+          print('SAFETY='+json.dumps(dict(c.execute('SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at,heartbeat_at FROM observer_state WHERE id=1').fetchone()),sort_keys=True,default=str))
+          print('PPI_TIMING='+json.dumps({k:v for k,v in os.environ.items() if k.startswith('PPI_') and k not in {'PPI_PRODUCTION_SECRET_FILE','PPI_HISTORY_EVIDENCE_ROOT'}},sort_keys=True))
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          for t in ('source_sync','production_history_attempts','paper_events','event_log'):
+              if t in tables:
+                  cols=[r[1] for r in c.execute(f'PRAGMA table_info("{t}")')]
+                  print('TABLE='+t+'|COLS='+','.join(cols))
+                  if t=='source_sync':
+                      for r in c.execute("SELECT * FROM source_sync WHERE source LIKE '%HISTORY%' OR source LIKE '%CATALOG%' ORDER BY source"):
+                          d=dict(r); detail=str(d.get('detail','')); d['detail']='[omitted]' if detail else ''
+                          print('SOURCE_SYNC='+json.dumps(d,sort_keys=True,default=str))
+                  elif t=='production_history_attempts':
+                      for r in c.execute("SELECT status,COUNT(*) n,SUM(valid_rows) valid,MAX(attempted_at) latest FROM production_history_attempts GROUP BY status"):
+                          print('PPI_ATTEMPT_AGG='+json.dumps(dict(r),sort_keys=True,default=str))
+                      for r in c.execute("SELECT symbol,instrument_type,settlement,attempted_at,status,valid_rows,error FROM production_history_attempts ORDER BY attempted_at DESC LIMIT 12"):
+                          d=dict(r); d['error']=str(d.get('error') or '')[:100]
+                          print('PPI_ATTEMPT_RECENT='+json.dumps(d,sort_keys=True,default=str))
+                  elif t=='paper_events':
+                      for r in c.execute("SELECT * FROM paper_events ORDER BY rowid DESC LIMIT 100"):
+                          d=dict(r); typ=str(d.get('event_type') or d.get('kind') or d.get('event') or '').upper()
+                          if 'HISTORY' in typ or 'INGEST' in typ:
+                              for k,v in list(d.items()):
+                                  if k in {'detail','message','payload','body'}: d[k]=str(v or '')[:160]
+                              print('HISTORY_EVENT='+json.dumps(d,sort_keys=True,default=str))
+          c.close()
+          PY
+          echo "--- canonical history DB coverage ---"
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import os, sqlite3, json
+          from pathlib import Path
+          from datetime import datetime, timezone
+          raw=os.getenv('HIST_DB_PATH','data/market_history.db'); p=Path(raw).expanduser()
+          if not p.is_absolute(): p=Path.cwd()/p
+          print('HIST_DB_PATH='+str(p)+'|EXISTS='+str(p.exists()))
+          if p.exists():
+              c=sqlite3.connect('file:'+str(p)+'?mode=ro',uri=True,timeout=10); c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+              tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              if 'history_canonical_v2' in tables:
+                  print('CANONICAL_TOTAL='+json.dumps(dict(zip(('rows','symbols','date_min','date_max'),c.execute('SELECT COUNT(*),COUNT(DISTINCT symbol),MIN(date),MAX(date) FROM history_canonical_v2').fetchone())),default=str))
+                  cols={r[1] for r in c.execute('PRAGMA table_info(history_canonical_v2)')}
+                  fam='instrument_type' if 'instrument_type' in cols else ('family' if 'family' in cols else None)
+                  if fam:
+                      for r in c.execute(f'SELECT {fam} family,COUNT(*) rows,COUNT(DISTINCT symbol) symbols,MAX(date) latest FROM history_canonical_v2 GROUP BY {fam} ORDER BY {fam}'):
+                          print('CANONICAL_FAMILY='+json.dumps(dict(r),default=str))
+              c.close()
+          PY
+          echo "--- IOL publication ---"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json
+          from pathlib import Path
+          from datetime import datetime,timezone
+          root=Path('/app/data/market')
+          for name in ('iol_shadow_latest.json','iol_shadow_rotation.json','iol_shadow_metadata.json','iol_shadow_checkpoint.json'):
+              p=root/name
+              if not p.exists(): print('IOL_FILE='+name+'|MISSING'); continue
+              age=(datetime.now(timezone.utc)-datetime.fromtimestamp(p.stat().st_mtime,timezone.utc)).total_seconds()
+              print('IOL_FILE='+name+'|MTIME='+datetime.fromtimestamp(p.stat().st_mtime,timezone.utc).isoformat()+'|AGE_S='+str(round(age,1)))
+              try:
+                  d=json.loads(p.read_text())
+                  if name=='iol_shadow_latest.json':
+                      print('IOL_CACHE='+json.dumps({'refreshed_at':d.get('refreshed_at'),'run_id':d.get('run_id'),'progress':d.get('progress'),'telemetry':d.get('telemetry')},sort_keys=True))
+                  elif name=='iol_shadow_rotation.json':
+                      print('IOL_ROTATION='+json.dumps({k:d.get(k) for k in ('cycle_id','universe_size','next_index','updated_at','priority_count','background_count')},sort_keys=True))
+                  elif name=='iol_shadow_checkpoint.json':
+                      print('IOL_CHECKPOINT='+json.dumps({k:d.get(k) for k in ('status','completed_at','run_id','market','term')},sort_keys=True))
+              except Exception as e: print('IOL_PARSE='+type(e).__name__)
+          PY
+          echo "--- observer recent history-only log summaries ---"
+          sudo -n docker logs --since 24h porota_production_observer 2>&1 | grep -E 'PPI_PRODUCTION_HISTORY|PPI_BACKGROUND_INGEST|BACKGROUND_READONLY_INGEST|HISTORY_V2_ERROR|HISTORY_ERROR|DAILY_READONLY_SYNC_ERROR' | tail -80 | sed -E 's/(api[_-]?key|api[_-]?secret|token|authorization)[^[:space:]]*/[REDACTED]/Ig' || true
+          echo "REAL_ORDERS_SENT=$(sudo -n docker exec -i porota_production_observer python -c "import sqlite3; c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('PRAGMA query_only=ON'); print(c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()[0]); c.close()")"
+          HOST
