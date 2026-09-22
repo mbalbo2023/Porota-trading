@@ -429,6 +429,17 @@ def main() -> int:
 
         complete = len(completed)
         failed = len(targets_list) - complete
+        if failed:
+            for identity in targets_list:
+                if identity not in completed:
+                    coverage = _coverage(history_store, identity)
+                    print(
+                        "RC6_HISTORY_CUTOFF_INCOMPLETE "
+                        f"SYMBOL={identity[0]} FAMILY={identity[1]} SETTLEMENT={identity[3]} "
+                        f"REASON={coverage['reason']} FIRST_MISSING={coverage.get('first_missing')} "
+                        f"LATEST={coverage['latest']} MISSING={coverage['missing']}",
+                        flush=True,
+                    )
         state = "COMPLETE" if failed == 0 else "PARTIAL"
         _control(history_store, state=state, targets=len(targets), archive=archive_count,
                  ppi=ppi_count, complete=complete, failed=failed)
