@@ -133,7 +133,7 @@ jobs:
               from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP, IOLMCPError
               client=OAuthStoreReadOnlyMCP()
               allow={'symbol','market','currency','type','asset_type','description','units_per_lot','lot_size',
-                     'last','last_price','unit_price','price','bid','ask','best_bid','best_ask',
+                     'last','last_price','unit_price','lot_price','price','bid','ask','best_bid','best_ask',
                      'variation','variation_pct','volume','date','datetime','timestamp',
                      'observed_at','last_updated','maturity','isin'}
               for tool,args in (
@@ -176,9 +176,12 @@ jobs:
               annotation=getattr(value,'annotation',value)
               model.append({'name':name,'required':required,'type':getattr(annotation,'__name__',str(annotation))})
           source=inspect.getsource(method).splitlines()
+          module=inspect.getmodule(type(client.marketdata))
+          route=getattr(module,'ESTIMATE_BONDS',None) if module else None
           relevant=[line.strip() for line in source if any(x in line.lower() for x in ('post','url','estimate','endpoint','request','json'))]
           print('PPI_SDK_VERSION=1.3.0')
           print('PPI_ESTIMATE_SIGNATURE='+str(inspect.signature(method)))
+          print('PPI_ESTIMATE_ROUTE='+str(route))
           print('PPI_ESTIMATE_MODEL='+json.dumps(model,sort_keys=True))
           print('PPI_ESTIMATE_HTTP='+json.dumps(relevant[:24]))
           print('PPI_SDK_INSPECT=NO_NETWORK')
