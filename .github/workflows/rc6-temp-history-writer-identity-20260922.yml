@@ -39,6 +39,43 @@ jobs:
           sudo -n docker inspect -f 'CONTAINER={{.Id}} NAME={{.Name}} MOUNTS={{range .Mounts}}{{.Source}}->{{.Destination}}:RW={{.RW}};{{end}}' porota_production_observer
           if sudo -n docker inspect -f '{{.State.Running}}' porota_production_observer 2>/dev/null | grep -qx true; then
             sudo -n docker exec porota_production_observer stat -c 'DB_MODE=%a OWNER=%U:%G UID=%u GID=%g SIZE=%s MTIME=%y PATH=%n' /app/data/market_history.db
+          sudo -n stat -c 'HOST_PATH=%n MODE=%a OWNER=%U:%G UID=%u GID=%g SIZE=%s' /opt/porota-trading/data /opt/porota-trading/data/market_history.db /opt/porota-trading/data/market_history.db-wal /opt/porota-trading/data/market_history.db-shm 2>/dev/null || true
+          sudo -n docker exec porota_production_observer sh -c 'id; stat -c "CONTAINER_PATH=%n MODE=%a OWNER=%U:%G UID=%u GID=%g SIZE=%s" /app/data /app/data/market_history.db /app/data/market_history.db-wal /app/data/market_history.db-shm 2>/dev/null || true'
+          sudo -n docker exec -i porota_production_observer python3 - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          live=sqlite3.connect('file:/app/data/market_history.db?mode=ro',uri=True,timeout=10)
+          live.execute('PRAGMA query_only=ON')
+          tables=[r[0] for r in live.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+          print('HISTORY_TABLES='+','.join(tables))
+          for name in tables:
+              if 'history' in name.lower() or 'candle' in name.lower():
+                  cols=[r[1] for r in live.execute('PRAGMA table_info("'+name.replace('"','')+'")')]
+                  print('HISTORY_COLUMNS_'+name+'='+','.join(cols))
+          live.close()
+          root=Path('/app/data/evidence/ppi_history_exact_v1')
+          p=root/'manifest_exact_v1.db'
+          if p.exists():
+              c=sqlite3.connect('file:'+str(p)+'?mode=ro',uri=True,timeout=10)
+              c.row_factory=sqlite3.Row; c.execute('PRAGMA query_only=ON')
+              rows=c.execute("SELECT origin,quality,inner_sha256,wrapper_json FROM exact_attempts_v1 WHERE origin='PPI_HISTORY' AND quality='VALID_PAYLOAD'").fetchall()
+              ids={}; missing_market=0
+              for r in rows:
+                  try: w=json.loads(r['wrapper_json'] or '{}')
+                  except (TypeError,ValueError): continue
+                  m=w.get('metadata') if isinstance(w.get('metadata'),dict) else {}
+                  symbol=w.get('symbol') or m.get('symbol')
+                  typ=w.get('instrument_type') or m.get('instrument_type') or w.get('asset_class') or m.get('asset_class')
+                  market=w.get('market') or m.get('market') or w.get('exchange') or m.get('exchange')
+                  if not market: missing_market+=1
+                  if symbol and typ:
+                      key=(str(typ).upper(),str(symbol).upper())
+                      ids[key]=(market,r['inner_sha256'])
+              counts={}
+              for typ,sym in ids: counts[typ]=counts.get(typ,0)+1
+              print('ARCHIVE_COVERAGE='+json.dumps({'valid_attempts':len(rows),'distinct_type_symbol':len(ids),'by_type':counts,'missing_market_attempts':missing_market},sort_keys=True))
+              c.close()
+          PY
           else
             echo 'porota_production_observer=NOT_RUNNING'
           fi
