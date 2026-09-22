@@ -39,7 +39,7 @@
   "changes": [
     "trading.closed_today: 0 -> 3",
     "trading.net_pnl_today: 0 -> -1658.87",
-    "ingestion.rows: 15624 -> 250610"
+    "ingestion.rows: 15624 -> 250659"
   ],
   "coherence": {
     "closed_without_sell": 0,
@@ -78,7 +78,7 @@
           "count": 55
         }
       ],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -89,7 +89,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -100,7 +100,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -111,7 +111,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -127,7 +127,7 @@
           "count": 182
         }
       ],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -138,7 +138,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -149,7 +149,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -160,7 +160,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -171,7 +171,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -182,7 +182,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -193,7 +193,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -204,7 +204,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -215,7 +215,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -226,7 +226,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -237,7 +237,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -248,7 +248,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-21T02:59:37.797340+00:00",
+      "checked_at": "2026-09-22T00:15:10.444215+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -262,18 +262,18 @@
     "branch": "runtime-observability",
     "day": "2026-09-21",
     "detail": null,
-    "recorded_at": "2026-09-21T22:20:18.108391+00:00",
+    "recorded_at": "2026-09-21T23:20:26.201468+00:00",
     "retention_days": 90,
-    "status": "UNCHANGED"
+    "status": "PUBLISHED"
   },
   "ingestion": {
     "candle_versions": 69273,
     "instruments": 1106,
-    "last_download": "2026-09-21T22:03:56.975348+00:00",
+    "last_download": "2026-09-22T00:16:07.238342+00:00",
     "last_market_date": "2026-09-21",
     "latest_candle_known_at": "2026-09-21T20:00:01.231367+00:00",
     "raw": 0,
-    "rows": 250610
+    "rows": 250659
   },
   "learning_expectancy": [
     {
@@ -321,7 +321,7 @@
     "unchanged": 33
   },
   "observer": {
-    "heartbeat_at": "2026-09-21T23:16:12.062538+00:00",
+    "heartbeat_at": "2026-09-22T00:15:05.372227+00:00",
     "http_allowed": 164,
     "http_blocked": 0,
     "last_market_data_at": "2026-09-21T19:59:46.532550+00:00",
@@ -351,18 +351,18 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 731607040,
-    "filesystem_free": 7650316288,
+    "database_bytes": 731848704,
+    "filesystem_free": 7648419840,
     "filesystem_total": 24883167232,
-    "filesystem_used": 17216073728,
-    "filesystem_used_pct": 69.19,
+    "filesystem_used": 17217970176,
+    "filesystem_used_pct": 69.2,
     "wal_bytes": 19570032
   },
   "telegram": {
     "SENT": 255,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-09-21T20:15:25-03:00",
+  "timestamp": "2026-09-21T21:15:15-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 3,
@@ -378,28 +378,28 @@
   ],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": -47.250707,
-      "heartbeat_at": "2026-09-21T23:16:12.325659+00:00",
+      "heartbeat_age_seconds": -53.31566,
+      "heartbeat_at": "2026-09-22T00:16:09.196959+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": -44.389853,
-      "heartbeat_at": "2026-09-21T23:16:09.464805+00:00",
+      "heartbeat_age_seconds": -51.576241,
+      "heartbeat_at": "2026-09-22T00:16:07.457540+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": 524860.095524,
+      "heartbeat_age_seconds": 528450.901871,
       "heartbeat_at": "2026-09-15T21:27:44.979428+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
-      "heartbeat_age_seconds": -45.975543,
-      "heartbeat_at": "2026-09-21T23:16:11.050495+00:00",
+      "heartbeat_age_seconds": -52.987415,
+      "heartbeat_at": "2026-09-22T00:16:08.868714+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": -48.820513,
-      "heartbeat_at": "2026-09-21T23:16:13.895465+00:00",
+      "heartbeat_age_seconds": -54.402195,
+      "heartbeat_at": "2026-09-22T00:16:10.283494+00:00",
       "state": "RUNNING"
     }
   }
