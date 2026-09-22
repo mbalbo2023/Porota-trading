@@ -52,6 +52,12 @@ def _identity(value):
     return tuple(part.strip() for part in parts)
 
 
+def _is_on_family(value):
+    return str(value or "").strip().upper() in {
+        "ON", "OBLIGACIONES", "OBLIGACIONES_NEGOCIABLES",
+    }
+
+
 def _bars(identity, cutoff):
     family, symbol, market, settlement = identity
     with _connect() as connection:
@@ -202,10 +208,10 @@ def _render_report(identity, bars, year):
     high_text = _price(max(highs)) if highs else "—"
     low_text = _price(min(lows)) if lows else "—"
     metrics = [
-        _metric((f"Variación de precio {year} (sin flujos)" if family == "OBLIGACIONES"
+        _metric((f"Variación de precio {year} (sin flujos)" if _is_on_family(family)
                  else f"Performance {year}"), _pct(annual_return),
                 f"Base: {base_label}; último cierre: {end_date}"
-                + ("; excluye cupones, amortizaciones e interés corrido" if family == "OBLIGACIONES" else "")),
+                + ("; excluye cupones, amortizaciones e interés corrido" if _is_on_family(family) else "")),
         _metric("Máxima caída del año", _pct(max_drawdown), "Drawdown calculado con cierres diarios desde el máximo acumulado."),
         _metric("Volatilidad realizada anualizada", _pct(volatility), "Desviación de retornos diarios × √252; requiere al menos 2 retornos."),
         _metric("RSI (14)", "—" if _rsi(analysis_closes) is None else f"{_rsi(analysis_closes):.1f}", "Promedio simple de ganancias y pérdidas de las últimas 14 ruedas; contextual, no calibrado como gatillo."),
@@ -242,7 +248,7 @@ def _render_report(identity, bars, year):
         + ("<div class='paper-warning'><b>Para ON, esta variación de precio no es rendimiento total.</b> "
            "No incorpora cupones cobrados, amortizaciones, interés corrido, ni reinversión de flujos; "
            "la performance económica requiere reconstruir el flujo real del bono y normalizar precio limpio/sucio.</div>"
-           if family == "OBLIGACIONES" else "")
+           if _is_on_family(family) else "")
         + ("<div class='paper-card'><h2>Validación de Obligaciones Negociables</h2>"
            "<p>La coincidencia de precio entre PPI e IOL sirve para detectar discrepancias, pero no basta para habilitar operatoria. "
            "Antes hacen falta identidad exacta (símbolo, mercado, moneda y liquidación), nominal/unidad de cotización, "
@@ -251,7 +257,7 @@ def _render_report(identity, bars, year):
            "<p class='paper-muted'>La serie de precios de este informe no contiene necesariamente esos términos. "
            "Si falta un dato contractual esencial, el rendimiento/riesgo y la señal se abstienen; se requiere "
            "además un ejecutor especializado y gates de riesgo antes de cualquier operación.</p></div>"
-           if family in {"OBLIGACIONES", "OBLIGACIONES_NEGOCIABLES", "ON"} else "")
+           if _is_on_family(family) else "")
         + "<div class='paper-notice'>Informe histórico informativo. No habilita operatoria, no altera READY/HOLD, "
         "señales, tamaño, gates ni órdenes. Si faltan datos, el indicador se marca como no disponible.</div>"
     )
