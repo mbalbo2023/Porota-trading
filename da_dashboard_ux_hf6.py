@@ -37,6 +37,14 @@ TRADING_NAV = (
     NavItem("/trading", "Resumen y motor"),
     NavItem("/trading/estrategias", "Estrategias"),
     NavItem("/trading/acciones-cedears", "Acciones y CEDEAR"),
+    NavItem("/trading/bonos", "Bonos"),
+    NavItem("/trading/on", "ON"),
+    NavItem("/trading/cauciones", "Cauciones"),
+    NavItem("/trading/letras", "Letras"),
+    NavItem("/trading/etf", "ETF"),
+    NavItem("/trading/indices", "Índices"),
+    NavItem("/trading/futuros", "Futuros"),
+    NavItem("/trading/opciones", "Opciones"),
 )
 
 # El alcance operativo de RC6 es explícito: no se exploran ni procesan otras
@@ -56,6 +64,11 @@ FAMILY_GROUPS = {
     "opciones": ("OPCIONES",),
     "futuros": ("FUTUROS",),
     "fci": ("FCI", "FCI_LOCAL", "FCI_EXTERIOR"),
+    "etf": ("ETF",),
+    "indices": ("INDICES",),
+    "bonos": ("BONOS",),
+    "on": ("ON",),
+    "letras": ("LETRAS",),
     "licitaciones": ("LICITACIONES", "CANJES"),
 }
 
@@ -96,8 +109,8 @@ def trading_nav_html() -> str:
 
 
 def families_for_group(group: str) -> tuple[str, ...]:
-    families = FAMILY_GROUPS.get(str(group or "").lower(), ())
-    return tuple(family for family in families if family in OPERATIONAL_FAMILIES)
+    """Return visible/auditable families; operational permission stays separate."""
+    return tuple(FAMILY_GROUPS.get(str(group or "").lower(), ()))
 
 
 def assert_ux_invariants() -> None:
@@ -112,5 +125,7 @@ def assert_ux_invariants() -> None:
         raise AssertionError("canonical Trading/Instrumentos destinations missing")
     if families_for_group("acciones-cedears") != ("ACCIONES", "CEDEARS"):
         raise AssertionError("operational actions/CEDEAR scope missing")
-    if families_for_group("futuros"):
-        raise AssertionError("non-operational families must not enter Trading navigation")
+    if families_for_group("futuros") != ("FUTUROS",):
+        raise AssertionError("Futuros readiness submenu must remain visible")
+    if not OPERATIONAL_FAMILIES.issubset({"ACCIONES", "CEDEARS"}):
+        raise AssertionError("operational scope changed unexpectedly")

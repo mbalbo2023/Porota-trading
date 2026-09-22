@@ -67,6 +67,23 @@ def _reason(row: Mapping[str, Any], contract: str) -> list[str]:
         reasons.append("NO_OPEN_READINESS_GAP")
     return reasons
 
+
+def _effective_contract(comparison: Mapping[str, Any]) -> str:
+    """Never expose READY when freshness or comparison evidence is incomplete."""
+    state = _text(comparison.get("contract_state"), "INSUFFICIENT_EVIDENCE").upper()
+    freshness = comparison.get("freshness") or {}
+    if state in READY_STATES:
+        if not comparison:
+            return "INSUFFICIENT_EVIDENCE"
+        if any(str(item.get("state", "")).upper() in {"STALE", "UNKNOWN"}
+               for item in freshness.values() if isinstance(item, Mapping)):
+            return "INSUFFICIENT_EVIDENCE"
+        if comparison.get("background_comparison_complete") is False:
+            return "INSUFFICIENT_EVIDENCE"
+        if comparison.get("comparison_complete") is False:
+            return "INSUFFICIENT_EVIDENCE"
+    return state
+
 def _key(family: str, symbol: Any, market: Any = "", settlement: Any = "") -> tuple[str, str, str, str]:
     return (normalize_family(family), _text(symbol).upper(), _text(market).upper(), _text(settlement).upper())
 
@@ -107,7 +124,7 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         else:
             source_row = row
             comparison = _comparison(row)
-            contract = _text(comparison.get("contract_state"), "INSUFFICIENT_EVIDENCE").upper()
+            contract = _effective_contract(comparison)
         paper_enabled = contract in READY_STATES
         instruments.append({
             "family": family,
