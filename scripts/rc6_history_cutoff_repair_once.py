@@ -168,6 +168,7 @@ def _filtered(payload: Any, start: date) -> list[dict]:
 
 def _record_exact(observer_store, identity, payload, start: date, attempted_at: str) -> None:
     import bl_candle_engine as canonical_json
+    import bf_production_paper_observer as observer
     import fb_raw_evidence_exact_v1 as exact
     import cp_history_ingest_policy_hf6 as policy
 
