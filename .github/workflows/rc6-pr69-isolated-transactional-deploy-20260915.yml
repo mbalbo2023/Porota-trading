@@ -453,6 +453,10 @@ jobs:
           STAGED_OBSERVER="/tmp/porota-rc6-candidate-$TARGET_SHA/bf_production_paper_observer.py"
           CANDIDATE_ROOT="/tmp/porota-rc6-candidate-$TARGET_SHA"
           test -f "$STAGED_OBSERVER"
+          for f in rc6_annual_instrument_analysis.py rc6_family_readiness.py rc6_dashboard_responsive_ux.py rc6_ppi_iol_reconciliation_rc6.py rc6_cauciones_shadow_evidence.py eq_dashboard_table_layout_rc6.py er_dashboard_table_semantics_rc6.py iol_shadow_observation_rc6.py iol_shadow_collector_rc6.py iol_mcp_readonly_adapter_rc6.py; do
+            sudo -n docker cp "$CANDIDATE_ROOT/$f" "porota_production_dashboard:/app/$f"
+          done
+          echo "RC6_DASHBOARD_CANDIDATE_SOURCES=SYNCED"
           EXPECTED_OBSERVER_SHA="$(sha256sum "$STAGED_OBSERVER" | awk '{print $1}')"
           RUNNING_OBSERVER_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/bf_production_paper_observer.py | awk '{print $1}')"
           test "$RUNNING_OBSERVER_SHA" = "$EXPECTED_OBSERVER_SHA"
