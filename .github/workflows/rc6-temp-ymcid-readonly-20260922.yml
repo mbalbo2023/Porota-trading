@@ -85,6 +85,17 @@ jobs:
                       print("PPI_SEARCH_VARIANT_ERROR="+json.dumps({"ticker_query":query_ticker,"name_query":query_name,"error":type(e).__name__},ensure_ascii=False))
               if match is None:
                   print("YMCID=BLOCKED_SEARCH_NOT_FOUND")
+                  settles=[str(x) for x in cfg.get("settlements",[]) if any(t in str(x).upper() for t in ("24","CI","CONTADO"))][:4]
+                  print("PPI_SETTLEMENT_ENUMS="+json.dumps(settles,ensure_ascii=False))
+                  for term in settles:
+                      for label,fn in (("CURRENT",lambda:reader.current("YMCID",kind,term)),
+                                       ("BOOK",lambda:reader.book("YMCID",kind,term))):
+                          try:
+                              value=fn()
+                              print("PPI_"+label+"_BY_ENUM="+json.dumps({"settlement":term,"data":pick(value,("ticker","symbol","type","market","currency","settlement","date","timestamp","price","last","bid","ask","bids","offers","asks","quantity","size","volume"))},ensure_ascii=False,default=str))
+                          except Exception as e:
+                              print("PPI_"+label+"_BY_ENUM_ERROR="+json.dumps({"settlement":term,"error":type(e).__name__},ensure_ascii=False))
+                  print("YMCID=BLOCKED_SEARCH_IDENTITY_UNRESOLVED")
                   raise SystemExit(0)
               identity=pick(match,fields)
               settlement=identity.get("settlement") or identity.get("term")
