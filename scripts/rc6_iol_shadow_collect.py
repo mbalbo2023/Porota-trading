@@ -71,6 +71,56 @@ def _fingerprint(universe: list[str]) -> str:
     return sha256(",".join(universe).encode("utf-8")).hexdigest()[:16]
 
 
+
+
+def _priority_symbols(universe: list[str]) -> list[str]:
+    """Return observed hot/candidate/position symbols without widening scope."""
+    allowed = set(universe)
+    counts: dict[str, int] = {}
+    candidates: list[str] = []
+    positions: list[str] = []
+    try:
+        conn = sqlite3.connect(f"file:{DEFAULT_DB}?mode=ro", uri=True, timeout=3)
+        conn.execute("PRAGMA query_only=ON")
+        tables = {str(row[0]) for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if "decision_evidence_snapshots" in tables:
+            rows = conn.execute(
+                "SELECT payload_json FROM decision_evidence_snapshots "
+                "WHERE captured_at >= datetime('now','-390 minutes') "
+                "ORDER BY captured_at DESC LIMIT 3000").fetchall()
+            for (raw,) in rows:
+                try:
+                    payload = json.loads(raw or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                decision = payload.get("decision") if isinstance(payload, dict) else {}
+                symbol = str(decision.get("symbol") or "").strip().upper()
+                if symbol not in allowed:
+                    continue
+                counts[symbol] = counts.get(symbol, 0) + 1
+                action = str(decision.get("final_result") or decision.get("action") or "").upper()
+                if action in {"BUY", "OPEN", "OPENED_SIMULATED", "ENTER"}:
+                    candidates.append(symbol)
+        if "paper_positions" in tables:
+            for (symbol,) in conn.execute(
+                "SELECT DISTINCT symbol FROM paper_positions "
+                "WHERE upper(COALESCE(status,'')) IN ('OPEN','ACTIVE','OPENED','OPENED_SIMULATED')"):
+                symbol = str(symbol or "").strip().upper()
+                if symbol in allowed:
+                    positions.append(symbol)
+        conn.close()
+    except (sqlite3.Error, OSError):
+        return []
+    ordered: list[str] = []
+    for symbol in positions + candidates + [
+        symbol for symbol, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]:
+        if symbol in allowed and symbol not in ordered:
+            ordered.append(symbol)
+    return ordered[:BATCH_SIZE]
+
+
 def _rotation(universe: list[str], fingerprint: str) -> tuple[list[str], int, dict[str, Any]]:
     state_path = DEFAULT_ROOT / "iol_shadow_rotation.json"
     try:
@@ -78,34 +128,47 @@ def _rotation(universe: list[str], fingerprint: str) -> tuple[list[str], int, di
     except (OSError, json.JSONDecodeError):
         state = {}
     if state.get("universe_fingerprint") != fingerprint or int(state.get("universe_size") or 0) != len(universe):
-        state = {"schema_version": 2, "cycle_id": 1, "next_index": 0, "seen": []}
-    seen = {str(x).upper() for x in state.get("seen", []) if str(x).strip() in set(universe)}
+        state = {"schema_version": 3, "cycle_id": 1, "next_index": 0, "seen": []}
+    universe_set = set(universe)
+    seen = {str(x).upper() for x in state.get("seen", []) if str(x).upper() in universe_set}
     if len(seen) >= len(universe):
-        # Start a genuinely empty cycle. Keep this local set in sync with the
-        # reset state or every later invocation will restart at index zero.
         seen = set()
-        state = {"schema_version": 2, "cycle_id": int(state.get("cycle_id") or 0) + 1, "next_index": 0, "seen": []}
+        state = {"schema_version": 3, "cycle_id": int(state.get("cycle_id") or 0) + 1, "next_index": 0, "seen": []}
     start = int(state.get("next_index") or 0) % max(1, len(universe))
-    selected = [universe[(start + offset) % len(universe)] for offset in range(min(BATCH_SIZE, len(universe)))]
+    priority = _priority_symbols(universe)
+    selected_priority = [symbol for symbol in priority if symbol not in seen][:BATCH_SIZE]
+    background = [
+        universe[(start + offset) % len(universe)]
+        for offset in range(len(universe))
+        if universe[(start + offset) % len(universe)] not in selected_priority
+        and universe[(start + offset) % len(universe)] not in seen
+    ][:max(0, BATCH_SIZE - len(selected_priority))]
+    selected = selected_priority + background
     state["seen"] = sorted(seen)
+    state["background_count"] = len(background)
+    state["priority_count"] = len(selected_priority)
     return selected, start, state
 
 
 def _commit_rotation(universe: list[str], fingerprint: str, start: int, selected: list[str], state: dict[str, Any]) -> dict[str, Any]:
     seen = {str(x).upper() for x in state.get("seen", [])}
-    seen.update(selected)
+    background_count = int(state.get("background_count") or 0)
+    # run_batch records an outcome for every selected symbol before returning;
+    # READY and UNAVAILABLE both count as attempted cycle coverage.
+    seen.update(str(symbol).upper() for symbol in selected)
     committed = {
-        "schema_version": 2,
+        "schema_version": 3,
         "universe_size": len(universe),
         "universe_fingerprint": fingerprint,
         "cycle_id": int(state.get("cycle_id") or 1),
-        "next_index": (start + len(selected)) % len(universe),
+        "next_index": (start + background_count) % len(universe) if background_count else start,
         "seen": sorted(seen),
+        "priority_count": int(state.get("priority_count") or 0),
+        "background_count": background_count,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     _atomic_json(DEFAULT_ROOT / "iol_shadow_rotation.json", committed)
     return committed
-
 
 def _parse_time(value: Any) -> datetime | None:
     try:
@@ -134,35 +197,50 @@ def _primary_snapshot() -> tuple[dict[str, float], dict[str, Any]]:
     return {}, {"state": "UNAVAILABLE", "reason": "PRIMARY_CACHE_NOT_FOUND"}
 
 
-def _publish_progress(total: int, batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:
+def _publish_progress(universe: list[str], batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:
     path = DEFAULT_ROOT / "iol_shadow_latest.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     rows = payload.get("symbols") if isinstance(payload.get("symbols"), list) else []
     by_symbol = {str(row.get("symbol") or "").upper(): row for row in rows if isinstance(row, dict)}
-    observed = [symbol for symbol in cycle.get("seen", []) if symbol in by_symbol]
-    ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in observed)
-    unavailable = len(observed) - ready
-    cycle_complete = len(observed) == total and total > 0
+    cycle_seen = [symbol for symbol in cycle.get("seen", []) if symbol in by_symbol]
+    ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in cycle_seen)
+    unavailable = len(cycle_seen) - ready
+    total = len(universe)
+    cycle_complete = len(cycle_seen) == total and total > 0
     now = datetime.now(timezone.utc)
-    fresh = 0
-    for symbol in observed:
-        row = by_symbol[symbol]
+
+    def is_fresh(row):
         captured_at = _parse_time(row.get("captured_at"))
         age = (now - captured_at.astimezone(timezone.utc)).total_seconds() if captured_at else None
-        if str(row.get("state") or "").upper() == "READY" and age is not None and 0 <= age <= 120:
-            fresh += 1
+        return (str(row.get("state") or "").upper() == "READY"
+                and age is not None and 0 <= age <= 120)
+
+    cache_seen = [symbol for symbol in universe if symbol in by_symbol]
+    cache_ready = sum(str(by_symbol[symbol].get("state") or "").upper() == "READY" for symbol in cache_seen)
+    cache_fresh = sum(is_fresh(by_symbol[symbol]) for symbol in cache_seen)
+    cycle_fresh = sum(is_fresh(by_symbol[symbol]) for symbol in cycle_seen)
     telemetry = payload.get("telemetry") if isinstance(payload.get("telemetry"), dict) else {}
     payload["progress"] = {
-        "scheduled": total, "completed": len(observed), "ready": ready, "unavailable": unavailable,
-        "fresh": fresh, "freshness_max_age_seconds": 120,
-        "batch_size": len(batch), "cycle_id": cycle.get("cycle_id"), "cycle_complete": cycle_complete,
-        "universe_fingerprint": fingerprint, "universe_source": source,
+        "scheduled": total,
+        "completed": len(cycle_seen),
+        "ready": ready,
+        "unavailable": unavailable,
+        "fresh": cache_fresh,
+        "cycle_fresh": cycle_fresh,
+        "cache_ready": cache_ready,
+        "cache_symbols": len(cache_seen),
+        "cache_stale_or_unavailable": len(cache_seen) - cache_fresh,
+        "freshness_max_age_seconds": 120,
+        "batch_size": len(batch),
+        "cycle_id": cycle.get("cycle_id"),
+        "cycle_complete": cycle_complete,
+        "universe_fingerprint": fingerprint,
+        "universe_source": source,
     }
     payload["primary_comparison_contract"] = primary_contract
     payload["telemetry"] = {**telemetry, "ready_total": ready, "last_batch_size": len(batch)}
     _atomic_json(path, payload)
     return payload
-
 
 def main() -> int:
     if os.getenv("POROTA_IOL_SHADOW_MODE", "OBSERVE_ONLY").strip() != "OBSERVE_ONLY":
@@ -181,7 +259,7 @@ def main() -> int:
     run_batch(batch, OAuthStoreReadOnlyMCP(), root=DEFAULT_ROOT, primary_last_by_symbol=primary,
               policy=CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40))
     cycle = _commit_rotation(universe, fingerprint, rotation_start, batch, prior_cycle)
-    payload = _publish_progress(len(universe), batch, universe_source, fingerprint, cycle, primary_contract)
+    payload = _publish_progress(universe, batch, universe_source, fingerprint, cycle, primary_contract)
     progress = payload.get("progress", {})
     print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source}")
     return 0
