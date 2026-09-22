@@ -352,8 +352,8 @@ def main() -> int:
         else:
             reader = None
 
-        if len(completed) < len(targets_list) and reader is not None
-                and os.getenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", "").strip() == "APPROVED":
+        if (len(completed) < len(targets_list) and reader is not None
+                and os.getenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", "").strip() == "APPROVED"):
             try:
                 for index, identity in enumerate(targets_list, 1):
                     if identity in completed:
