@@ -323,13 +323,18 @@ jobs:
           # the candidate observer is running. It is gated from history writes
           # until the one-time cutoff repair records COMPLETE.
           HIST_DATA=/opt/porota-trading/data
-          test "$(sudo -n stat -c '%u:%a' "$HIST_DATA")" = "1000:755"
+          # Repair only the canonical historical-store ownership and permissions.
+          # The observer runs as uid/gid 1000 and SQLite also needs its WAL peers writable.
+          sudo -n install -d -o 1000 -g 1000 -m 0750 "$HIST_DATA"
           for hist_file in "$HIST_DATA/market_history.db" "$HIST_DATA/market_history.db-wal" "$HIST_DATA/market_history.db-shm"; do
             if sudo -n test -e "$hist_file"; then
-              test "$(sudo -n stat -c '%u' "$hist_file")" = "1000"
+              sudo -n chown 1000:1000 "$hist_file"
               sudo -n chmod 0640 "$hist_file"
             fi
           done
+          test "$(sudo -n stat -c '%u:%g:%a' "$HIST_DATA")" = "1000:1000:750"
+          test "$(sudo -n stat -c '%u:%g:%a' "$HIST_DATA/market_history.db")" = "1000:1000:640"
+          echo "HISTORY_DB_PERMISSIONS=OWNER_WRITE_READY"
           HISTORY_WRITE_GATE="$(sudo -n docker exec porota_production_observer python - <<'PY'
           import os
           from pathlib import Path
