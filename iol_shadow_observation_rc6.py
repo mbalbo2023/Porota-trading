@@ -48,6 +48,8 @@ def _quote_summary(payload: dict) -> dict:
     trade=payload.get("trade") if isinstance(payload.get("trade"),dict) else {}
     bid=_first_number(payload.get("bid"),payload.get("best_bid"),payload.get("buy_price"),trade.get("bid"))
     ask=_first_number(payload.get("ask"),payload.get("best_ask"),payload.get("sell_price"),trade.get("ask"))
+    bid_size=_first_number(payload.get("bid_size"),payload.get("best_bid_size"),payload.get("buy_quantity"),trade.get("bid_size"))
+    ask_size=_first_number(payload.get("ask_size"),payload.get("best_ask_size"),payload.get("sell_quantity"),trade.get("ask_size"))
     last=_first_number(payload.get("last"),payload.get("last_price"),payload.get("price"),
                        payload.get("unit_price"),trade.get("last"),trade.get("price"),
                        trade.get("unit_price"),trade.get("lot_price"))
@@ -62,7 +64,7 @@ def _quote_summary(payload: dict) -> dict:
         except (TypeError,ValueError):
             continue
     spread=(ask-bid)/bid*100.0 if bid is not None and ask is not None and bid>0 and ask>=bid else None
-    return {"last":last,"bid":bid,"ask":ask,"spread_pct":spread,
+    return {"last":last,"bid":bid,"ask":ask,"bid_size":bid_size,"ask_size":ask_size,"spread_pct":spread,
             "variation_pct":_first_number(payload.get("variation"),payload.get("variation_pct"),trade.get("variation")),
             "cash_volume":_first_number(payload.get("cash_volume"),payload.get("volume_amount"),trade.get("cash_volume")),
             "provider_observed_at":provider_observed_at}

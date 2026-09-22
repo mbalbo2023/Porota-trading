@@ -52,7 +52,9 @@ def reconcile(primary: Any, secondary: Any, *, now: datetime | None = None,
     for field in FIELDS:
         pv, sv = _num(p.get(field)), _num(s.get(field))
         if pv is None or sv is None:
-            if pv is None and sv is not None and field not in CRITICAL_FIELDS:
+            if pv is None and sv is None:
+                state = "NOT_AVAILABLE_BOTH_SIDES"
+            elif pv is None and sv is not None and field not in CRITICAL_FIELDS:
                 state = "COMPLEMENTED_SECONDARY"
                 complemented += 1
             else:

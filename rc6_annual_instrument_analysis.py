@@ -12,6 +12,8 @@ from statistics import pstdev
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+import iol_shadow_observation_rc6 as iol_shadow_observation
+
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 TABLE = "history_canonical_v2"
 
@@ -263,6 +265,98 @@ def _render_report(identity, bars, year):
     )
 
 
+
+def _evidence_tone(state):
+    state = str(state or "UNKNOWN").upper()
+    if state == "READY_SHADOW":
+        return "green"
+    if state in {"READY_SHADOW_COMPLEMENTED", "READY_SHADOW_PARTIAL", "INSUFFICIENT_EVIDENCE"}:
+        return "yellow"
+    if state.startswith("BLOCKED"):
+        return "red"
+    return "gray"
+
+
+def _evidence_label(state):
+    return {
+        "READY_SHADOW": "LISTO EN SHADOW",
+        "READY_SHADOW_COMPLEMENTED": "SHADOW + COMPLEMENTO IOL",
+        "READY_SHADOW_PARTIAL": "SHADOW PARCIAL",
+        "BLOCKED_STALE": "BLOQUEADO · DATOS VENCIDOS",
+        "BLOCKED_CONFLICT": "BLOQUEADO · CONFLICTO",
+        "INSUFFICIENT_EVIDENCE": "EVIDENCIA INSUFICIENTE",
+        "UNKNOWN": "SIN EVIDENCIA",
+    }.get(str(state or "UNKNOWN").upper(), str(state or "SIN EVIDENCIA").upper())
+
+
+def _render_reconciliation_evidence():
+    """Render only the latest isolated IOL cache; never refreshes or authorizes."""
+    try:
+        data = iol_shadow_observation.collect()
+    except Exception:
+        data = {"state": "UNAVAILABLE", "symbols": []}
+    rows = [row for row in (data.get("symbols") or []) if isinstance(row, dict)]
+    state = str(data.get("state") or "UNKNOWN").upper()
+    ready = blocked = partial = 0
+    rendered = []
+    for row in rows[:40]:
+        comparison = row.get("primary_comparison") if isinstance(row.get("primary_comparison"), dict) else {}
+        contract = str(comparison.get("contract_state") or "INSUFFICIENT_EVIDENCE").upper()
+        tone = _evidence_tone(contract)
+        ready += contract.startswith("READY_SHADOW")
+        blocked += contract.startswith("BLOCKED")
+        partial += contract in {"READY_SHADOW_PARTIAL", "INSUFFICIENT_EVIDENCE"}
+        quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
+        freshness = comparison.get("freshness") if isinstance(comparison.get("freshness"), dict) else {}
+        ppi_fresh = freshness.get("PPI", "UNKNOWN")
+        iol_fresh = freshness.get("IOL", "UNKNOWN")
+        detail = (
+            f"Último {_price(quote.get('last'))} · Bid {_price(quote.get('bid'))} · "
+            f"Ask {_price(quote.get('ask'))} · PPI {ppi_fresh} · IOL {iol_fresh} · "
+            f"matches {comparison.get('matches', 0)} · conflictos {comparison.get('divergences', 0)} · "
+            f"complementos {comparison.get('complemented', 0)}"
+        )
+        rendered.append(
+            "<tr>"
+            f"<td><b>{_e(row.get('symbol') or '—')}</b></td>"
+            f"<td>{_e(row.get('asset_type') or 'ACCIONES/CEDEARs')}</td>"
+            f"<td><span class='paper-status {tone}'>{_e(_evidence_label(contract))}</span></td>"
+            f"<td>{_e(detail)}</td>"
+            "</tr>"
+        )
+    if not rows:
+        body = (
+            "<div class='paper-warning'><b>Sin evidencia IOL publicada todavía.</b> "
+            "Esta pantalla no consulta IOL; esperará al ciclo read-only del collector.</div>"
+        )
+    else:
+        body = (
+            "<div class='paper-grid'>"
+            + _metric("Estado del cache", state, "Lectura local; no inicia consultas.")
+            + _metric("Listos en SHADOW", str(ready), "No habilita dinero real.")
+            + _metric("Bloqueados", str(blocked), "Conflictos y vencimientos quedan visibles.")
+            + _metric("Parciales / insuficientes", str(partial), "Requieren más evidencia o cobertura.")
+            + "</div>"
+            "<div class='paper-table-wrap'><table><thead><tr>"
+            "<th>Instrumento</th><th>Familia</th><th>Semáforo</th><th>Detalle</th>"
+            "</tr></thead><tbody>"
+            + "".join(rendered)
+            + "</tbody></table></div>"
+        )
+    return (
+        "<section class='paper-card'><h2>Evidencia PPI / IOL · ACCIONES y CEDEARs</h2>"
+        "<p class='paper-muted'>PPI manda; IOL complementa en modo read-only. "
+        "El estado se calcula por identidad, campos comparables, frescura ≤120 s y conflictos. "
+        "Ningún estado habilita dinero real.</p>"
+        + body
+        + "<h3>Piloto cauciones</h3>"
+        "<p><span class='paper-status yellow'>SHADOW ONLY · FUERA DEL UNIVERSO OPERATIVO</span> "
+        "Para evaluar cauciones deben completarse identidad, mercado, moneda, liquidación, plazo, tasa, "
+        "monto, garantía, fecha de liquidación y timestamps PPI/IOL; además, capturas sincronizadas, "
+        "frescura, ausencia de conflictos y varias ruedas de evidencia. Hasta entonces no se mezclan "
+        "con ACCIONES/CEDEARs ni con las decisiones del motor.</p></section>"
+    )
+
 def render_page(family="", instrument=""):
     year = datetime.now(TZ).year
     try:
@@ -315,5 +409,5 @@ def render_page(family="", instrument=""):
     return (
         "<h1>Análisis</h1><p class='paper-muted'>Performance del año calendario "
         + str(year) + " por instrumento, usando histórico canónico v2.</p>"
-        + form + report
+        + form + _render_reconciliation_evidence() + report
     )
