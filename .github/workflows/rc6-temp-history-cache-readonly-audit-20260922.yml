@@ -67,10 +67,10 @@ jobs:
                           d=dict(r); detail=str(d.get('detail','')); d['detail']='[omitted]' if detail else ''
                           print('SOURCE_SYNC='+json.dumps(d,sort_keys=True,default=str))
                   elif t=='production_history_attempts':
-                      for r in c.execute("SELECT status,COUNT(*) n,SUM(valid_rows) valid,MAX(attempted_at) latest FROM production_history_attempts GROUP BY status"):
+                      for r in c.execute("SELECT state,COUNT(*) n,SUM(valid_rows) valid,MAX(attempted_at) latest FROM production_history_attempts GROUP BY state"):
                           print('PPI_ATTEMPT_AGG='+json.dumps(dict(r),sort_keys=True,default=str))
-                      for r in c.execute("SELECT symbol,instrument_type,settlement,attempted_at,status,valid_rows,error FROM production_history_attempts ORDER BY attempted_at DESC LIMIT 12"):
-                          d=dict(r); d['error']=str(d.get('error') or '')[:100]
+                      for r in c.execute("SELECT symbol,instrument_type,settlement,attempted_at,state,valid_rows,detail FROM production_history_attempts ORDER BY attempted_at DESC LIMIT 12"):
+                          d=dict(r); d['detail']=str(d.get('detail') or '').split(':',1)[0][:100]
                           print('PPI_ATTEMPT_RECENT='+json.dumps(d,sort_keys=True,default=str))
                   elif t=='paper_events':
                       for r in c.execute("SELECT * FROM paper_events ORDER BY rowid DESC LIMIT 100"):
