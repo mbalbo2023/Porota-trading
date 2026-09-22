@@ -11,6 +11,9 @@ import re
 import unicodedata
 from fastapi import Header, Query, Request
 from fastapi.responses import HTMLResponse
+import json
+import os
+from pathlib import Path
 import bg_paper_dashboard as bg
 import et_shadow_learning_rc6 as shadow_learning
 import fi_event_risk_shadow_rc6 as event_contract
@@ -313,6 +316,118 @@ def _family_activity_section(section=''):
     return """<section class='paper-card' id='rc6-family-readiness'><h2>Readiness y evidencia por familia</h2><p class='paper-muted'>PPI es primario; IOL sólo complementa/valida en modo read-only. La tabla muestra progreso y brecha exacta; no habilita dinero real.</p><table class='paper-table classic-responsive-table'><thead><tr><th>Familia</th><th>Estado</th><th>Objetivo</th><th>Evidencia/progreso</th><th>Falta / siguiente acción</th></tr></thead><tbody>"""+''.join(rows)+"</tbody></table></section>"
 
 
+def _evidence_detail_section():
+    """Render persisted PPI/IOL evidence for every auditable family."""
+    records = bg._rows(
+        """SELECT instrument_type,ticker,market,status,owner,source,
+                  checked_at,missing_fields_json,detail
+           FROM contract_evidence
+           ORDER BY instrument_type,ticker,market"""
+    ) if bg._table("contract_evidence") else []
+    latest = bg._rows(
+        """SELECT total,verified,blocked_porota,blocked_provider,finished_at
+           FROM contract_evidence_runs ORDER BY finished_at DESC LIMIT 1"""
+    ) if bg._table("contract_evidence_runs") else []
+    cache_rows = []
+    cache_path = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
+    try:
+        payload = json.loads((cache_path / "iol_shadow_latest.json").read_text(encoding="utf-8"))
+        cache_rows = [row for row in (payload.get("symbols") or []) if isinstance(row, dict)]
+    except (OSError, ValueError, TypeError):
+        cache_rows = []
+    iol_by_symbol = {str(row.get("symbol") or "").upper(): row for row in cache_rows}
+    if not records:
+        return (
+            "<section class='paper-card' id='rc6-evidence-progress'>"
+            "<h2>Progreso de evidencia PPI / IOL</h2>"
+            "<div class='paper-warning'><b>Sin registros persistidos todavía.</b> "
+            "El colector está preparado, pero aún no publicó una corrida utilizable.</div>"
+            "</section>"
+        )
+    groups = {}
+    for row in records:
+        family = str(row.get("instrument_type") or "UNKNOWN").upper()
+        item = groups.setdefault(family, {"total": 0, "green": 0, "yellow": 0, "red": 0, "missing": set()})
+        item["total"] += 1
+        status = str(row.get("status") or "").upper()
+        if status.startswith("VERIFIED"):
+            item["green"] += 1
+        elif "CONFLICT" in status or status.startswith("BLOCKED"):
+            item["red"] += 1
+        else:
+            item["yellow"] += 1
+        try:
+            missing = json.loads(row.get("missing_fields_json") or "[]")
+        except (TypeError, ValueError):
+            missing = ["INVALID_MISSING_FIELDS"]
+        item["missing"].update(str(value) for value in missing if value)
+    family_rows = []
+    for family in sorted(groups):
+        item = groups[family]
+        state = "READY_PAPER" if item["green"] == item["total"] else "BLOCKED" if item["red"] else "PENDING"
+        css = "s-verde" if state == "READY_PAPER" else "s-rojo" if state == "BLOCKED" else "s-amarillo"
+        missing = ", ".join(sorted(item["missing"])[:4]) or "Sin campos faltantes publicados"
+        family_rows.append(
+            "<tr>"
+            f"<td><b>{bg._e(family)}</b></td>"
+            f"<td><span class='paper-status {css}'>{state}</span></td>"
+            f"<td>{item['green']}/{item['total']}</td>"
+            f"<td>{item['yellow']}</td><td>{item['red']}</td>"
+            f"<td title='{bg._e(missing)}'>{bg._e(missing)}</td>"
+            "</tr>"
+        )
+    detail_rows = []
+    for row in records[:200]:
+        status = str(row.get("status") or "PENDING").upper()
+        css = "s-verde" if status.startswith("VERIFIED") else "s-rojo" if "CONFLICT" in status or status.startswith("BLOCKED") else "s-amarillo"
+        ticker = str(row.get("ticker") or "*").upper()
+        iol = iol_by_symbol.get(ticker, {})
+        comparison = iol.get("primary_comparison") if isinstance(iol.get("primary_comparison"), dict) else {}
+        iol_state = str(comparison.get("contract_state") or "SIN_EVIDENCIA").upper()
+        try:
+            missing = json.loads(row.get("missing_fields_json") or "[]")
+        except (TypeError, ValueError):
+            missing = ["INVALID_MISSING_FIELDS"]
+        missing_text = ", ".join(str(value) for value in missing) or "ninguno"
+        detail = str(row.get("detail") or "")
+        detail_rows.append(
+            "<tr>"
+            f"<td><b>{bg._e(row.get('instrument_type'))}</b></td>"
+            f"<td>{bg._e(ticker)}</td><td>{bg._e(row.get('market'))}</td>"
+            f"<td><span class='paper-status {css}'>{bg._e(status)}</span></td>"
+            f"<td>{bg._e(row.get('owner'))}</td>"
+            f"<td title='{bg._e(missing_text)}'>{bg._e(missing_text)}</td>"
+            f"<td title='{bg._e(detail)}'>{bg._e(detail)}</td>"
+            f"<td>{bg._e(iol_state)}</td><td>{bg._local_time(row.get('checked_at'))}</td>"
+            "</tr>"
+        )
+    run = latest[0] if latest else {}
+    cards = "".join((
+        bg._card("Registros", run.get("total", len(records)), "Instrumentos/familias evaluados", "green" if records else "yellow"),
+        bg._card("Verificados", run.get("verified", 0), "Evidencia contractual aceptada", "green" if int(run.get("verified") or 0) else "yellow"),
+        bg._card("Pendiente Porota", run.get("blocked_porota", 0), "Falta adaptador o discovery", "yellow"),
+        bg._card("Pendiente proveedor", run.get("blocked_provider", 0), "Falta campo/semántica PPI u oficial", "yellow"),
+        bg._card("IOL observado", len(cache_rows), "Cache read-only complementario", "green" if cache_rows else "yellow"),
+    ))
+    return (
+        "<section class='paper-card' id='rc6-evidence-progress'>"
+        "<h2>Progreso de evidencia PPI / IOL por familia</h2>"
+        "<p class='paper-muted'>PPI es la autoridad. IOL se muestra como complemento read-only. "
+        "El estado se calcula con evidencia persistida; no se infieren campos y ningún estado autoriza dinero real.</p>"
+        f"<div class='paper-grid'>{cards}</div>"
+        "<table class='paper-table classic-responsive-table'><thead><tr>"
+        "<th>Familia</th><th>Estado</th><th>Verificados</th><th>Pendientes</th><th>Bloqueados</th><th>Falta principal</th>"
+        "</tr></thead><tbody>" + "".join(family_rows) + "</tbody></table>"
+        "<h3>Detalle por instrumento / registro</h3>"
+        "<div class='paper-table-wrap'><table class='paper-table classic-responsive-table'><thead><tr>"
+        "<th>Familia</th><th>Instrumento</th><th>Mercado</th><th>Estado PPI</th><th>Responsable</th>"
+        "<th>Campos faltantes</th><th>Diagnóstico</th><th>Estado IOL</th><th>Última evidencia</th>"
+        "</tr></thead><tbody>" + "".join(detail_rows) + "</tbody></table></div>"
+        "<p class='paper-notice'>La promoción automática solo puede producir un estado PAPER/SHADOW por instrumento. "
+        "Las familias fuera del alcance operativo continúan bloqueadas hasta cerrar sus gates contractuales y de riesgo.</p>"
+        "</section>"
+    )
+
 def _append_before_main_end(page, fragment):
     marker='</main>'
     return page.replace(marker,fragment+marker,1) if marker in page else page+fragment
@@ -336,7 +451,7 @@ def install(app, check_auth):
     def trading_page_live(section=''):
         section=str(section or '').strip().lower()
         page=_strategy_overview() if section=='estrategias' else old_trading(section)
-        return _append_before_main_end(page,_family_activity_section(section))
+        return _append_before_main_end(page,_family_activity_section(section)+_evidence_detail_section())
     bg.learning_page=learning_page_live; bg.validation_page=validation_page_live; bg.trading_page=trading_page_live
 
     @app.get('/riesgo',response_class=HTMLResponse)
