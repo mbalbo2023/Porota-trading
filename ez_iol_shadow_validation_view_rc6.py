@@ -198,7 +198,7 @@ def render() -> str:
         bg._card("Cobertura para análisis", progress["label"],
                  "IOL amplía el contexto del universo ACCIONES/CEDEARs; no crea ni descarta señales.", _card_state(progress["state"])),
         bg._card("Cotizaciones IOL con timestamp reciente", f"{fresh_rows}/{len(rows)} filas visibles",
-                 f"Frescos para decisión: {capture_recent_rows + fresh_rows}/{len(rows)} según captura local; timestamp de proveedor fresco: {fresh_rows}/{len(rows)} (≤120 s). Las capturas sin timestamp de proveedor no se presentan como fuente verificada.", "green" if fresh_rows else "yellow"),
+                 f"frescos para decisión: {capture_recent_rows + fresh_rows}/{len(rows)} según captura local; timestamp de proveedor fresco: {fresh_rows}/{len(rows)} (≤120 s). Las capturas sin timestamp de proveedor no se presentan como fuente verificada.", "green" if fresh_rows else "yellow"),
         bg._card("Contraste con fuente primaria", f"{aligned} coinciden · {divergent} difieren · contrato {primary_state}",
                  "Sólo se compara con un cache primario con fuente, mercado y timestamp verificables. Una divergencia jamás cambia PAPER.", "yellow" if divergent or incomplete or primary_state != "READY" else "green"),
         bg._card("Efecto en el motor", "INFORMATIVO",
