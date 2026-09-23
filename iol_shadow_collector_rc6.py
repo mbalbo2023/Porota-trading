@@ -204,7 +204,7 @@ def _metadata_from(info: dict[str, Any]) -> dict[str, Any]:
 
 def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str | None = None,
               market: str = DEFAULT_MARKET, term: str = DEFAULT_TERM,
-              primary_last_by_symbol: dict[str, float] | None = None,
+              primary_last_by_symbol: dict[str, Any] | None = None,
               policy: CollectionPolicy = CollectionPolicy(), run_id: str | None = None,
               resume: bool = False, governor: RateGovernor | None = None,
               now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> dict:
@@ -251,7 +251,7 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
                 "state": "READY" if quote.get("last") is not None else "UNAVAILABLE",
                 "capture_started_at": capture_started_at, "captured_at": captured_at,
                 "quote": quote, **_metadata_from(cached),
-                "primary_comparison": _comparison(primary.get(symbol), quote.get("last"), policy.tolerance_pct),
+                "primary_comparison": _comparison(primary.get(symbol), quote, policy.tolerance_pct),
                 "decision_effect": DECISION_EFFECT}
         except Exception as exc:
             errors_total += 1
