@@ -271,6 +271,7 @@ jobs:
           fi
           echo "RC6_POSTBUILD_CACHE_REMEDIATION=START"
           sudo -n docker builder prune -af
+          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
           echo "RC6_POSTBUILD_CACHE_REMEDIATION=GREEN"
           sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
           EXPECTED_ANNUAL_SHA="$(sha256sum "$STAGE/rc6_annual_instrument_analysis.py" | awk '{print $1}')"
