@@ -544,6 +544,8 @@ jobs:
           # Post-close full contract reconciliation. The runner is PPI
           # read-only and fails closed unless mode is PRODUCTION_PAPER,
           # session is MARKET_CLOSED and real_orders_sent is zero.
+          # This verify SSH session is independent from deploy_stage.
+          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA"
           set +e
           # Run from the exact candidate image.  The live observer may still
           # be on its previous immutable image at this point, so docker exec
