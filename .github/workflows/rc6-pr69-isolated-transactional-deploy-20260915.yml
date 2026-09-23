@@ -581,6 +581,8 @@ jobs:
           test "$RUNNING_SESSION_SHA" = "$EXPECTED_SESSION_SHA"
           echo "SCALPING_WORKER_SOURCE_SHA=GREEN"
           echo "SCALPING_SESSION_SOURCE_SHA=GREEN"
+          SCALPING_ENV_CHECK="$(sudo -n docker exec porota_production_observer python -c 'import os; print("SCALPING_MODE=" + str(os.getenv("PAPER_SCALPING_MODE"))); print("SCALPING_SCAN_SECONDS=" + str(os.getenv("PAPER_INTRADAY_SCAN_SECONDS")))')"
+          echo "$SCALPING_ENV_CHECK"
           SCALPING_RUNTIME="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           import time
