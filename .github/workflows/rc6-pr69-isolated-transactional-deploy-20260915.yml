@@ -573,10 +573,14 @@ jobs:
           # child module explicitly as a second provenance guard before restart.
           sudo -n docker restart porota_production_observer
           sleep 3
-          EXPECTED_SCALPING_SHA="$(sha256sum "$CANDIDATE_ROOT/cf_intraday_scalping.py co_market_sessions_hf6.py" | awk '{print $1}')"
-          RUNNING_SCALPING_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/cf_intraday_scalping.py co_market_sessions_hf6.py | awk '{print $1}')"
+          EXPECTED_SCALPING_SHA="$(sha256sum "$CANDIDATE_ROOT/cf_intraday_scalping.py" | awk '{print $1}')"
+          RUNNING_SCALPING_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/cf_intraday_scalping.py | awk '{print $1}')"
           test "$RUNNING_SCALPING_SHA" = "$EXPECTED_SCALPING_SHA"
+          EXPECTED_SESSION_SHA="$(sha256sum "$CANDIDATE_ROOT/co_market_sessions_hf6.py" | awk '{print $1}')"
+          RUNNING_SESSION_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/co_market_sessions_hf6.py | awk '{print $1}')"
+          test "$RUNNING_SESSION_SHA" = "$EXPECTED_SESSION_SHA"
           echo "SCALPING_WORKER_SOURCE_SHA=GREEN"
+          echo "SCALPING_SESSION_SOURCE_SHA=GREEN"
           SCALPING_RUNTIME="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           from datetime import datetime, timezone
