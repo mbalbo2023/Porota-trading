@@ -15,7 +15,7 @@ import sqlite3
 from typing import Any
 
 from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
-from iol_shadow_collector_rc6 import CollectionPolicy, is_operational_market_window, run_batch
+from iol_shadow_collector_rc6 import CollectionPolicy, is_operational_market_window, run_batch\nfrom rc6_source_consolidation import consolidate
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
@@ -338,6 +338,20 @@ def main() -> int:
               policy=CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40))
     cycle = _commit_rotation(universe, fingerprint, rotation_start, batch, prior_cycle)
     payload = _publish_progress(universe, batch, universe_source, fingerprint, cycle, primary_contract)
+    ppi_rows = []
+    for symbol, quote in primary.items():
+        row = dict(quote) if isinstance(quote, dict) else {"last": quote}
+        row.update({"family": "", "symbol": symbol, "market": "BCBA", "term": "T1"})
+        ppi_rows.append(row)
+    iol_rows = []
+    for row in payload.get("symbols", []):
+        if not isinstance(row, dict):
+            continue
+        quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
+        merged = {**quote, **{key: row.get(key) for key in ("family", "symbol", "market", "term", "asset_type", "currency", "units_per_lot")}}
+        iol_rows.append(merged)
+    consolidated = consolidate(ppi_rows, iol_rows)
+    _atomic_json(DEFAULT_ROOT / "rc6_consolidated_ppi_iol_latest.json", consolidated)
     progress = payload.get("progress", {})
     print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source}")
     return 0
