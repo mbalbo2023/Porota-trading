@@ -777,6 +777,35 @@ jobs:
           echo "RC6_UNIFIED_PAPER_DEPLOY=GREEN"
           VERIFY
 
+      - name: Probe technical API contract with concrete instrument (read-only)
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'PROBE'
+          set -Eeuo pipefail
+          STAGE="/tmp/porota-rc6-candidate-$TARGET_SHA"
+          sudo -n env RC6_STAGE="$STAGE" python3 - <<'PY'
+          import json, os, sys
+          sys.path.insert(0, os.environ["RC6_STAGE"])
+          import rc6_official_source_adapters as adapters
+          result = adapters.probe_technical_endpoint(
+              "A3_MAE",
+              "https://marketdata.mae.com.ar/swagger/api-documentacion.html",
+              "AL30",
+              ("last", "bid", "ask", "timestamp"),
+          )
+          print("TECHNICAL_API_PROBE=" + json.dumps(result, ensure_ascii=False, sort_keys=True))
+          assert result["http_status"] is not None
+          assert result["status"] == "HTTP_200_NON_DATA_DOCUMENT"
+          assert result["usable"] is False
+          print("TECHNICAL_API_PROBE_CONTRACT=GREEN|HTTP_200_IS_NOT_FUNCTIONAL_DATA")
+          PY
+          PROBE
+
       - name: Execute live official-source evidence adapters (read-only)
         shell: bash
         env:
