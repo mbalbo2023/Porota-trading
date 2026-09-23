@@ -2059,10 +2059,10 @@ def live_page(*, offset=0, limit=50):
         for item in active_pending[:20]:
             items.append(
                 f"<tr><td>{_e(item.get('ticker'))}</td><td>{_e(item.get('currency'))}</td>"
-                f"<td>{_e(item.get('settlement'))}</td><td>{_status(item.get('state'))}</td>"
-                f"<td>{_e(item.get('origin') or '—')}</td><td>{_e(item.get('reference') or '—')}</td>"
-                f"<td>{_e(item.get('expected_business_date') or '—')}</td>"
-                f"<td>{_e(item.get('available_at') or 'PENDIENTE')}</td>"
+                f"<td>{_e(item.get('settlement'))}</td><td data-wrap='true'>{_status(item.get('state'))}</td>"
+                f"<td data-wrap='true'>{_e(item.get('origin') or '—')}</td><td data-wrap='true'>{_e(item.get('reference') or '—')}</td>"
+                f"<td data-wrap='true'>{_e(item.get('expected_business_date') or '—')}</td>"
+                f"<td data-wrap='true'>{_e(item.get('available_at') or 'PENDIENTE')}</td>"
                 f"<td>{_e(item.get('net_proceeds'))}</td></tr>")
         settlement_diag_html=(
             "<div class='paper-card'><h2>Liquidaciones pendientes</h2>"
@@ -2573,7 +2573,7 @@ def introspection_content():
     warning_rows = "".join(f"<li>{_e(item)}</li>" for item in warnings) or "<li>Sin advertencias.</li>"
     anomaly_rows = "".join(f"<li>{_e(item)}</li>" for item in anomalies) or "<li>Sin anomalías de coherencia.</li>"
     worker_rows = "".join(
-        f"<tr><td>{_e(name)}</td><td>{_status(item.get('state'))}</td>"
+        f"<tr><td>{_e(name)}</td><td data-wrap='true'>{_status(item.get('state'))}</td>"
         f"<td>{_local_time(item.get('heartbeat_at'))}</td>"
         f"<td>{_e(item.get('heartbeat_age_seconds'))}</td><td>{_e(item.get('detail'))}</td></tr>"
         for name,item in report.get("workers",{}).items()) or "<tr><td colspan='5'>Sin workers informados.</td></tr>"
