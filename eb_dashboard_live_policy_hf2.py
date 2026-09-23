@@ -41,7 +41,7 @@ def decisions_for_live(rows, *, now: datetime | None = None) -> list[dict]:
 
 
 def page_for_tablet(rows, *, offset=0, limit=DEFAULT_PAGE_SIZE) -> Page:
-    """Reutiliza el paginador canónico: 20 por defecto, máximo 50."""
+    """Reutiliza el paginador canónico: diez filas por defecto, máximo 50."""
     return paginate(rows,offset=offset,limit=limit)
 
 
