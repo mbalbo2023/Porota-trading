@@ -230,7 +230,7 @@ def _parse_time(value: Any) -> datetime | None:
         return None
 
 
-def _primary_snapshot() -> tuple[dict[str, float], dict[str, Any]]:
+def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     for candidate in (os.getenv("POROTA_PRIMARY_LAST_CACHE_PATH", "").strip(), str(DEFAULT_ROOT / "primary_last.json"), "/app/data/market/primary_last.json"):
         if not candidate:
             continue
@@ -248,7 +248,76 @@ def _primary_snapshot() -> tuple[dict[str, float], dict[str, Any]]:
         valid = isinstance(values, dict) and bool(values) and timestamp is not None and age is not None and 0 <= age <= PRIMARY_MAX_AGE_SECONDS and source.startswith("PPI") and market == "BCBA"
         contract = {"state": "READY" if valid else "UNAVAILABLE", "source": source or "UNKNOWN", "market": market or "UNKNOWN", "observed_at": timestamp.isoformat() if timestamp else None, "age_seconds": round(age, 1) if age is not None else None, "reason": "OK" if valid else "PRIMARY_CACHE_CONTRACT_INVALID_OR_STALE"}
         return (values if valid else {}), contract
-    return {}, {"state": "UNAVAILABLE", "reason": "PRIMARY_CACHE_NOT_FOUND"}
+    # The dashboard's authoritative PPI quote path is market_snapshots. Read it
+    # in SQLite read-only mode when the legacy cache is absent; never write here.
+    for database in (os.getenv("POROTA_OBSERVER_DB", "").strip(), DEFAULT_DB,
+                     "/opt/porota-trading/data/paper_v17/observer_v17.db",
+                     "/app/data/paper_v17/observer_v17.db"):
+        if not database:
+            continue
+        try:
+            conn = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=10)
+            conn.execute("PRAGMA query_only=ON")
+            tables = {str(row[0]) for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            if "market_snapshots" not in tables:
+                conn.close()
+                continue
+            columns = {str(row[1]) for row in conn.execute(
+                "PRAGMA table_info(market_snapshots)")}
+            if not {"symbol", "last"}.issubset(columns):
+                conn.close()
+                continue
+            selected = [name for name in (
+                "id", "symbol", "asset_class", "settlement", "currency", "market",
+                "observed_at", "book_at", "bid", "ask", "bid_size", "ask_size", "last"
+            ) if name in columns]
+            clauses = []
+            if "market" in columns:
+                clauses.append("upper(COALESCE(market,''))='BCBA'")
+            if "asset_class" in columns:
+                clauses.append("upper(COALESCE(asset_class,'')) IN ('ACCIONES','CEDEARS')")
+            where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+            order = "id DESC" if "id" in columns else "rowid DESC"
+            rows = conn.execute(
+                f"SELECT {', '.join(selected)} FROM market_snapshots{where} ORDER BY {order}"
+            ).fetchall()
+            conn.close()
+            index = {name: position for position, name in enumerate(selected)}
+            values: dict[str, dict[str, Any]] = {}
+            for raw in rows:
+                symbol = str(raw[index["symbol"]] or "").strip().upper()
+                if not symbol or symbol in values:
+                    continue
+                timestamp = (
+                    raw[index["observed_at"]] if "observed_at" in index else None
+                ) or (raw[index["book_at"]] if "book_at" in index else None)
+                if not timestamp:
+                    continue
+                values[symbol] = {
+                    key: raw[index[key]] for key in index
+                    if key not in {"id", "symbol"} and raw[index[key]] is not None
+                }
+                values[symbol]["symbol"] = symbol
+                values[symbol]["provider_observed_at"] = timestamp
+                values[symbol]["market"] = values[symbol].get("market") or "BCBA"
+            timestamps = [_parse_time(row.get("provider_observed_at")) for row in values.values()]
+            timestamps = [value for value in timestamps if value is not None]
+            latest = max(timestamps) if timestamps else None
+            age = ((datetime.now(timezone.utc) - latest.astimezone(timezone.utc)).total_seconds()
+                   if latest else None)
+            valid = bool(values) and latest is not None and age is not None and 0 <= age <= PRIMARY_MAX_AGE_SECONDS
+            contract = {
+                "state": "READY" if valid else "UNAVAILABLE",
+                "source": "PPI_SQLITE_MARKET_SNAPSHOTS", "market": "BCBA",
+                "observed_at": latest.isoformat() if latest else None,
+                "age_seconds": round(age, 1) if age is not None else None,
+                "reason": "OK" if valid else "PRIMARY_SQLITE_CONTRACT_INVALID_OR_STALE",
+            }
+            return (values if valid else {}), contract
+        except (sqlite3.Error, OSError):
+            continue
+    return {}, {"state": "UNAVAILABLE", "reason": "PRIMARY_CACHE_AND_SQLITE_NOT_FOUND"}
 
 
 def _publish_progress(universe: list[str] | int, batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:
