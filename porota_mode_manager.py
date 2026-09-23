@@ -317,19 +317,14 @@ def simulation():
     if not secret.exists():
         raise RuntimeError("Falta el secreto productivo de solo lectura.")
     runtime_env = observer_runtime_env()
-    # RC6 worker provenance: remove any previous observer and recreate it
-    # with the exact candidate worker/session files mounted read-only. The
-    # live hashes are checked before the runtime is accepted.
+    # RC6 worker provenance: the candidate image is verified by the deploy
+    # workflow before this manager is invoked. Remove any previous observer and
+    # run only that immutable image; then fail closed if PID 1 exits immediately.
     run("docker", "rm", "-f", "porota_production_observer", check=False, capture=True)
-    scalping_sources = (
-        "--mount", f"type=bind,source={ROOT / 'cf_intraday_scalping.py'},target=/app/cf_intraday_scalping.py,readonly",
-        "--mount", f"type=bind,source={ROOT / 'co_market_sessions_hf6.py'},target=/app/co_market_sessions_hf6.py,readonly",
-    )
     run("docker", "run", "-d", "--name", "porota_production_observer",
         "--pull", "never", "--restart", "unless-stopped", "--no-healthcheck",
         "--user", "botuser", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
-        *scalping_sources,
         "-e", "PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json",
         "-e", f"{DB_ENV}={CONTAINER_DB}",
         "-e", "MARKET_OPEN_HOUR=10",
@@ -342,11 +337,15 @@ def simulation():
         "-e", "DATA_DIR=/app/data",
         "-e", "SERVER_TIMEZONE=America/Argentina/Buenos_Aires",
         "--env-file", str(runtime_env),
-        # RC6 scalping is PAPER observe-only; pin the child-launch switch in the
-        # container command so a stale/malformed env file cannot disable it.
         "-e", "PAPER_SCALPING_MODE=ACTIVE_OBSERVE",
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
         "--entrypoint", "python", IMAGE, "bv_paper_runtime.py")
+    state = run("docker", "inspect", "-f", "{{.State.Status}}",
+                 "porota_production_observer", capture=True).stdout.strip()
+    if state != "running":
+        logs = run("docker", "logs", "--tail", "80", "porota_production_observer",
+                   check=False, capture=True).stdout.strip()
+        raise RuntimeError(f"RC6_OBSERVER_EXITED:{state}:{logs[-4000:]}")
     for filename in ("cf_intraday_scalping.py", "co_market_sessions_hf6.py"):
         expected = hashlib.sha256((ROOT / filename).read_bytes()).hexdigest()
         actual = run("docker", "exec", "porota_production_observer",
