@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import fcntl
 import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -175,17 +176,38 @@ def notify(message):
             payload = json.loads(raw)
             result = payload.get("result") or {}
             message_id = result.get("message_id")
-            delivered = response.status == 200 and payload.get("ok") is True and message_id is not None
-            DATA.mkdir(parents=True, exist_ok=True)
-            delivery = {
-                "status": "ENTREGADO" if delivered else f"HTTP_{response.status}",
-                "message_id": message_id,
-                "sent_at": datetime.now(TZ).isoformat(timespec="seconds"),
-            }
-            tmp = DATA / "telegram_last_delivery.json.tmp"
-            tmp.write_text(json.dumps(delivery, ensure_ascii=False, indent=2), encoding="utf-8")
-            os.replace(tmp, DATA / "telegram_last_delivery.json")
-            return delivery["status"]
+            sent_ok = response.status == 200 and payload.get("ok") is True and message_id is not None
+
+        # Telegram's sendMessage response proves API acceptance, not that the
+        # configured destination is the chat the operator is actually watching.
+        # Verify the same destination without logging the token or chat id.
+        chat_req = Request(
+            f"https://api.telegram.org/bot{token}/getChat?{urlencode({'chat_id': chat})}",
+            method="GET",
+        )
+        with urlopen(chat_req, timeout=8) as chat_response:
+            chat_raw = chat_response.read().decode("utf-8", errors="replace")
+            chat_payload = json.loads(chat_raw)
+            chat_result = chat_payload.get("result") or {}
+            chat_ok = chat_response.status == 200 and chat_payload.get("ok") is True
+            chat_type = chat_result.get("type")
+        fingerprint = hashlib.sha256(str(chat).encode("utf-8")).hexdigest()[:12]
+        delivered = sent_ok and chat_ok
+        DATA.mkdir(parents=True, exist_ok=True)
+        delivery = {
+            "status": "ENTREGADO" if delivered else (
+                "API_ACEPTADO_CHAT_NO_VERIFICADO" if sent_ok else f"HTTP_{response.status}"
+            ),
+            "message_id": message_id,
+            "chat_verified": bool(chat_ok),
+            "chat_type": chat_type if chat_ok else None,
+            "chat_fingerprint": fingerprint,
+            "sent_at": datetime.now(TZ).isoformat(timespec="seconds"),
+        }
+        tmp = DATA / "telegram_last_delivery.json.tmp"
+        tmp.write_text(json.dumps(delivery, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, DATA / "telegram_last_delivery.json")
+        return delivery["status"]
     except Exception as exc:
         return "FALLO_" + type(exc).__name__
 
