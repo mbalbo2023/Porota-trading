@@ -60,7 +60,7 @@
           "count": 55
         }
       ],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -71,7 +71,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -82,7 +82,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -93,7 +93,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -106,21 +106,21 @@
       "capabilities": [
         {
           "capability": "READY_PAPER_SPOT",
-          "count": 182
+          "count": 176
         }
       ],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
-      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "CEDEARS",
-      "observed_count": 182,
+      "observed_count": 176,
       "queries": 34,
-      "ready_paper_count": 182
+      "ready_paper_count": 176
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -131,7 +131,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -142,7 +142,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -153,7 +153,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -164,7 +164,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -175,7 +175,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -186,7 +186,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -197,7 +197,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -208,7 +208,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -219,7 +219,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -230,7 +230,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T10:13:38.597356+00:00",
+      "checked_at": "2026-09-23T11:15:14.300712+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -244,7 +244,7 @@
     "branch": "runtime-observability",
     "day": "2026-09-23",
     "detail": null,
-    "recorded_at": "2026-09-23T09:20:46.344154+00:00",
+    "recorded_at": "2026-09-23T10:20:27.153772+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -303,7 +303,7 @@
     "unchanged": 0
   },
   "observer": {
-    "heartbeat_at": "2026-09-23T10:14:32.597980+00:00",
+    "heartbeat_at": "2026-09-23T11:16:02.445604+00:00",
     "http_allowed": 453,
     "http_blocked": 0,
     "last_market_data_at": "2026-09-22T19:59:11.550908+00:00",
@@ -333,18 +333,18 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 785424384,
-    "filesystem_free": 5483028480,
+    "database_bytes": 786423808,
+    "filesystem_free": 5472915456,
     "filesystem_total": 24883167232,
-    "filesystem_used": 19383361536,
-    "filesystem_used_pct": 77.9,
+    "filesystem_used": 19393474560,
+    "filesystem_used_pct": 77.94,
     "wal_bytes": 19570032
   },
   "telegram": {
     "SENT": 277,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-09-23T07:15:04-03:00",
+  "timestamp": "2026-09-23T08:15:12-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
@@ -360,28 +360,28 @@
   ],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": -49.963603,
-      "heartbeat_at": "2026-09-23T10:15:54.884178+00:00",
+      "heartbeat_age_seconds": -63.853759,
+      "heartbeat_at": "2026-09-23T11:16:16.050436+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": -48.709424,
-      "heartbeat_at": "2026-09-23T10:15:53.629999+00:00",
+      "heartbeat_age_seconds": -63.161497,
+      "heartbeat_at": "2026-09-23T11:16:15.358174+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": 650839.941147,
+      "heartbeat_age_seconds": 654447.217249,
       "heartbeat_at": "2026-09-15T21:27:44.979428+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
-      "heartbeat_age_seconds": -49.69823,
-      "heartbeat_at": "2026-09-23T10:15:54.618805+00:00",
+      "heartbeat_age_seconds": -64.388097,
+      "heartbeat_at": "2026-09-23T11:16:16.584774+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": -51.30289,
-      "heartbeat_at": "2026-09-23T10:15:56.223465+00:00",
+      "heartbeat_age_seconds": -64.616566,
+      "heartbeat_at": "2026-09-23T11:16:16.813243+00:00",
       "state": "RUNNING"
     }
   }
