@@ -304,17 +304,24 @@ def _family_activity_section(section=''):
       total=int(row.get('total') or 0); available=int(row.get('available') or 0); simulated=int(row.get('can_simulate') or 0)
       d=decision_map.get(fam,{})
       operational=fam in {'ACCIONES','CEDEARS'}
-      if operational and total and available==total and simulated:
+      # Catalog availability is not PAPER readiness.  Only the strict
+      # PPI/IOL evidence projection may publish READY_PAPER.
+      paper_ready=min(total, max(0, int(row.get('ready_paper_count') or 0)))
+      if total and paper_ready==total:
         state='READY_PAPER'
         state_css='s-verde'
       elif available:
-        state='PARTIAL'
+        state='PPI_CATALOG_AVAILABLE'
         state_css='s-amarillo'
       else:
         state='PENDING'
         state_css='s-amarillo'
-      evidence=f"{available}/{total} disponibles · {simulated} simulables · {int(d.get('decisions') or 0)} decisiones"
-      next_action='Mantener PAPER; completar conciliación PPI/IOL antes de cambiar de nivel.' if state=='READY_PAPER' else gaps.get(fam,'Publicar evidencia PPI/IOL comparable.')
+      evidence=f"{paper_ready}/{total} PAPER ready · {available}/{total} catálogo disponible · {simulated} simulables · {int(d.get('decisions') or 0)} decisiones"
+      next_action=('Mantener PAPER; evidencia PPI/IOL completa y fresca.'
+                   if state=='READY_PAPER' else
+                   'Identidad/catálogo disponible; falta evidencia PPI/IOL comparable y fresca.'
+                   if state=='PPI_CATALOG_AVAILABLE' else
+                   gaps.get(fam,'Publicar evidencia PPI/IOL comparable.'))
       rows.append(f"<tr><td><b>{_esc(fam)}</b></td><td><span class='paper-status {state_css}'>{_esc(state)}</span></td><td title='{_esc(objectives.get(fam,''))}'>{_esc(objectives.get(fam,''))}</td><td title='{_esc(evidence)}'>{_esc(evidence)}</td><td title='{_esc(next_action)}'>{_esc(next_action)}</td></tr>")
     return """<section class='paper-card' id='rc6-family-readiness'><h2>Readiness y evidencia por familia</h2><p class='paper-muted'>PPI es primario; IOL sólo complementa/valida en modo read-only. La tabla muestra progreso y brecha exacta; no habilita dinero real.</p><table class='paper-table classic-responsive-table'><thead><tr><th>Familia</th><th>Estado</th><th>Objetivo</th><th>Evidencia/progreso</th><th>Falta / siguiente acción</th></tr></thead><tbody>"""+''.join(rows)+"</tbody></table></section>"
 
