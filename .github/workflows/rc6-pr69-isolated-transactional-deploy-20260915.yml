@@ -240,6 +240,7 @@ jobs:
           # PPI Watch, or referenced image IDs.
           echo "RC6_STORAGE_REMEDIATION=START"
           sudo -n docker image prune -f
+          sudo -n docker builder prune -f --filter until=24h
           sudo -n docker builder prune -af --filter until=24h
           sudo -n docker system df
           AVAILABLE_BYTES="$(df -PB1 / | awk 'NR==2 {print $4}')"
