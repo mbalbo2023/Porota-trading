@@ -96,44 +96,71 @@ PAGINATE_SCRIPT = r"""
 <script id='porota-rc6-ten-row-pagination'>
 (function(){
   const PAGE_SIZE=10;
-  function mount(table){
-    if(table.dataset.porotaPagination==='1') return;
-    const rows=Array.from(table.rows||[]).filter(row=>!row.querySelector('th'));
-    if(!rows.length) return;
-    /* Legacy/server pagers and this responsive pager must never coexist. */
-    [table.previousElementSibling, table.nextElementSibling].forEach(node=>{
-      if(node?.classList?.contains('compact-pager')) node.remove();
+  function tables(){ return Array.from(document.querySelectorAll('table')); }
+  function isBefore(table,node){
+    return Boolean(table.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }
+  function ownerOfPager(pager){
+    const candidates=tables().filter(table=>isBefore(table,pager));
+    return candidates.length ? candidates[candidates.length-1] : null;
+  }
+  function removeLegacyPagers(table){
+    document.querySelectorAll('.compact-pager').forEach(node=>{
+      if(node.dataset.porotaTablePager==='1') return;
+      if(ownerOfPager(node)===table) node.remove();
     });
-    if(rows.length<=PAGE_SIZE) return;
-    table.dataset.porotaPagination='1';
+  }
+  function mount(table){
+    const rows=Array.from(table.rows||[]).filter(row=>!row.querySelector('th'));
+    removeLegacyPagers(table);
+    const existing=table.__porotaPager;
+    if(rows.length<=PAGE_SIZE){
+      if(existing) existing.remove();
+      table.__porotaPager=null;
+      table.dataset.porotaPagination='0';
+      rows.forEach(row=>{row.hidden=false;row.removeAttribute('aria-hidden');});
+      return;
+    }
+    if(existing){
+      existing.__porotaRows=rows;
+      existing.__porotaRender();
+      return;
+    }
     let visible=PAGE_SIZE;
     const nav=document.createElement('div');
     nav.className='compact-pager porota-table-pager';
+    nav.dataset.porotaTablePager='1';
     nav.setAttribute('aria-label','Paginación de tabla');
     const status=document.createElement('span');
     status.className='paper-muted';
     const more=document.createElement('button');
     more.type='button';
     more.className='paper-action';
-    more.textContent='Más';
+    more.textContent='Mostrar más';
     more.setAttribute('aria-label','Mostrar diez filas más');
     nav.append(status,more);
     table.insertAdjacentElement('afterend',nav);
     function render(){
-      rows.forEach((row,index)=>{ row.hidden=index>=visible; });
-      const shown=Math.min(visible,rows.length);
-      status.textContent='Mostrando '+shown+' de '+rows.length;
-      more.hidden=shown>=rows.length;
+      const current=nav.__porotaRows||rows;
+      current.forEach((row,index)=>{
+        row.hidden=index>=visible;
+        row.setAttribute('aria-hidden',index>=visible?'true':'false');
+      });
+      const shown=Math.min(visible,current.length);
+      status.textContent='Mostrando '+shown+' de '+current.length;
+      more.hidden=shown>=current.length;
     }
+    nav.__porotaRows=rows;
+    nav.__porotaRender=render;
+    table.__porotaPager=nav;
+    table.dataset.porotaPagination='1';
     more.addEventListener('click',function(){
-      visible=Math.min(visible+PAGE_SIZE,rows.length);
+      visible=Math.min(visible+PAGE_SIZE,(nav.__porotaRows||rows).length);
       render();
     });
     render();
   }
-  function mountAll(){
-    document.querySelectorAll('table').forEach(mount);
-  }
+  function mountAll(){ tables().forEach(mount); }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mountAll,{once:true});
   else mountAll();
   new MutationObserver(mountAll).observe(document.documentElement,{childList:true,subtree:true});
