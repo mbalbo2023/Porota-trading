@@ -130,6 +130,7 @@ PAGINATE_SCRIPT = r"""
     const nav=document.createElement('div');
     nav.className='compact-pager porota-table-pager';
     nav.dataset.porotaTablePager='1';
+    nav.setAttribute('data-porota-table-pager','1');
     nav.setAttribute('aria-label','Paginación de tabla');
     const status=document.createElement('span');
     status.className='paper-muted';
