@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import html
 from decimal import Decimal, InvalidOperation
+from datetime import date
+
+from ak_byma_calendar import es_dia_habil_operativo
 
 
 STATE_LABELS = {
@@ -44,7 +47,17 @@ def _currency_result(row: dict) -> str:
     return f"<li><b>{currency}</b>: <span class='{cls}'>{_number(pnl)}{pct_text}</span></li>"
 
 
+def _is_operational_day(value) -> bool:
+    try:
+        return es_dia_habil_operativo(date.fromisoformat(str(value)[:10]))
+    except (TypeError, ValueError):
+        return False
+
+
 def daily_results_html(days: list[dict], *, max_symbols: int = 6) -> str:
+    # Defense in depth: summaries already filter the calendar, but the renderer
+    # must never publish a Saturday/Sunday/holiday card if an old cache leaks in.
+    days = [item for item in days if _is_operational_day(item.get("day"))]
     if not days:
         return ("<section class='paper-card'><h2>Resultado de las últimas cinco ruedas BYMA</h2>"
                 "<p class='paper-muted'>Aún no existe cierre diario conciliado.</p></section>")
