@@ -545,7 +545,23 @@ jobs:
           # read-only and fails closed unless mode is PRODUCTION_PAPER,
           # session is MARKET_CLOSED and real_orders_sent is zero.
           set +e
-          CONTRACT_OUTPUT="$(sudo -n docker exec porota_production_observer timeout 1200 python ck_contract_evidence_runner_hf6.py 2>&1)"
+          # Run from the exact candidate image.  The live observer may still
+          # be on its previous immutable image at this point, so docker exec
+          # would make the evidence result depend on stale source provenance.
+          # This one-shot container shares only the PAPER data and read-only
+          # PPI secret, has no order capability, and exits after reconciliation.
+          CONTRACT_OUTPUT="$(sudo -n docker run --rm --pull never \
+            --user botuser --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -e PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json \
+            -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
+            -e DATA_DIR=/app/data \
+            -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
+            --env-file /opt/porota-trading/data/diagnosticos/observer_runtime_v17.env \
+            -v /opt/porota-trading/data:/app/data \
+            -v /opt/porota-trading/.secrets/ppi_production.json:/run/secrets/ppi_production.json:ro \
+            --entrypoint timeout "$CANDIDATE_IMAGE" 1200 python ck_contract_evidence_runner_hf6.py 2>&1)"
           CONTRACT_RC=$?
           set -e
           # The runner does not print credentials. Preserve its bounded,
