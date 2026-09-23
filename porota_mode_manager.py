@@ -171,7 +171,21 @@ def notify(message):
         req = Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body,
                       method="POST")
         with urlopen(req, timeout=8) as response:
-            return "ENTREGADO" if response.status == 200 else f"HTTP_{response.status}"
+            raw = response.read().decode("utf-8", errors="replace")
+            payload = json.loads(raw)
+            result = payload.get("result") or {}
+            message_id = result.get("message_id")
+            delivered = response.status == 200 and payload.get("ok") is True and message_id is not None
+            DATA.mkdir(parents=True, exist_ok=True)
+            delivery = {
+                "status": "ENTREGADO" if delivered else f"HTTP_{response.status}",
+                "message_id": message_id,
+                "sent_at": datetime.now(TZ).isoformat(timespec="seconds"),
+            }
+            tmp = DATA / "telegram_last_delivery.json.tmp"
+            tmp.write_text(json.dumps(delivery, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp, DATA / "telegram_last_delivery.json")
+            return delivery["status"]
     except Exception as exc:
         return "FALLO_" + type(exc).__name__
 
