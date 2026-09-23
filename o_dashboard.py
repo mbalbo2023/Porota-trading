@@ -153,6 +153,11 @@ async def token_inicial_a_sesion(request: Request, call_next):
             samesite="lax",
             path="/",
         )
+    # El dashboard es un monitor operativo y no debe servir HTML viejo desde
+    # la caché del navegador después de un deploy o de un refresh de evidencia.
+    respuesta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    respuesta.headers["Pragma"] = "no-cache"
+    respuesta.headers["Expires"] = "0"
     return respuesta
 
 
