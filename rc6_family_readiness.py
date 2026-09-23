@@ -58,8 +58,21 @@ def _reason(row: Mapping[str, Any], contract: str) -> list[str]:
     if contract in {"INSUFFICIENT_EVIDENCE", "UNKNOWN"}:
         reasons.append("CRITICAL_FIELDS_OR_TIMESTAMP_MISSING")
     missing = comparison.get("missing")
-    if missing:
+    if isinstance(missing, (int, float)):
+        if missing:
+            reasons.append(f"MISSING_COMPARABLE_FIELDS:{int(missing)}")
+    elif missing:
         reasons.extend(f"MISSING_COMPARABLE_FIELD:{field}" for field in missing)
+    fields = comparison.get("fields") or {}
+    if isinstance(fields, Mapping):
+        missing_fields = [field for field, detail in fields.items()
+                          if isinstance(detail, Mapping)
+                          and str(detail.get("state", "")).upper() in {
+                              "MISSING_COMPARABLE_FIELD", "NOT_AVAILABLE_BOTH_SIDES"}]
+        for field in missing_fields:
+            reason = f"MISSING_COMPARABLE_FIELD:{field}"
+            if reason not in reasons:
+                reasons.append(reason)
     complemented = comparison.get("complemented")
     if complemented:
         reasons.append(f"IOL_COMPLEMENTS_NONCRITICAL_FIELDS:{complemented}")
@@ -75,8 +88,11 @@ def _effective_contract(comparison: Mapping[str, Any]) -> str:
     if state in READY_STATES:
         if not comparison:
             return "INSUFFICIENT_EVIDENCE"
-        if any(str(item.get("state", "")).upper() in {"STALE", "UNKNOWN"}
-               for item in freshness.values() if isinstance(item, Mapping)):
+        if any(
+            (str(item.get("state", "").upper()) if isinstance(item, Mapping) else str(item).upper())
+            in {"STALE", "UNKNOWN"}
+            for item in freshness.values()
+        ):
             return "INSUFFICIENT_EVIDENCE"
         if comparison.get("background_comparison_complete") is False:
             return "INSUFFICIENT_EVIDENCE"
