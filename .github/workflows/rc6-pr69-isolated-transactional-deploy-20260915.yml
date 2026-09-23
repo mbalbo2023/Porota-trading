@@ -620,7 +620,7 @@ jobs:
             sudo -n docker logs --tail 120 porota_production_observer || true
             exit 1
           fi
-          EXPECTED_OBSERVER_SHA="$(sha256sum "$STAGED_OBSERVER" | awk '{print $1}')"
+          EXPECTED_OBSERVER_SHA="$(sha256sum "$CANDIDATE_ROOT/bf_production_paper_observer.py" | awk '{print $1}')"
           RUNNING_OBSERVER_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/bf_production_paper_observer.py | awk '{print $1}')"
           test "$RUNNING_OBSERVER_SHA" = "$EXPECTED_OBSERVER_SHA"
           echo "OBSERVER_CANDIDATE_SHA=GREEN"
