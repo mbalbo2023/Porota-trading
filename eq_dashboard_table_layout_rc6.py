@@ -48,8 +48,8 @@ table.paper-table[data-porota-force-compact='1'] td{
   text-overflow:ellipsis!important;overflow-wrap:normal!important;word-break:normal!important;vertical-align:top!important
 }
 table.paper-table[data-porota-force-compact='1'] td[data-wrap='true']{
-  white-space:normal!important;max-width:none!important;overflow:visible!important;
-  overflow-wrap:anywhere!important;word-break:break-word!important
+  display:table-cell!important;white-space:normal!important;max-width:none!important;overflow:visible!important;
+  overflow-wrap:anywhere!important;word-break:break-word!important;line-height:1.25!important
 }
 table.paper-table[data-porota-force-compact='1'] .porota-cell-label{display:none!important}
 @media(max-width:700px){
@@ -97,18 +97,8 @@ PAGINATE_SCRIPT = r"""
 (function(){
   const PAGE_SIZE=10;
   function tables(){ return Array.from(document.querySelectorAll('table')); }
-  function isBefore(table,node){
-    return Boolean(table.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
-  }
-  function ownerOfPager(pager){
-    const candidates=tables().filter(table=>isBefore(table,pager));
-    return candidates.length ? candidates[candidates.length-1] : null;
-  }
-  function removeLegacyPagers(table){
-    document.querySelectorAll('.compact-pager').forEach(node=>{
-      if(node.dataset.porotaTablePager==='1') return;
-      if(ownerOfPager(node)===table) node.remove();
-    });
+  function removeLegacyPagers(){
+    document.querySelectorAll('.compact-pager:not([data-porota-table-pager="1"])').forEach(node=>node.remove());
   }
   function mount(table){
     const rows=Array.from(table.rows||[]).filter(row=>!row.querySelector('th'));
@@ -161,7 +151,7 @@ PAGINATE_SCRIPT = r"""
     });
     render();
   }
-  function mountAll(){ tables().forEach(mount); }
+  function mountAll(){ removeLegacyPagers(); tables().forEach(mount); }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mountAll,{once:true});
   else mountAll();
   new MutationObserver(mountAll).observe(document.documentElement,{childList:true,subtree:true});
