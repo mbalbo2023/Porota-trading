@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 
 
-DEFAULT_PAGE_SIZE = 20
+DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 50
 
 
