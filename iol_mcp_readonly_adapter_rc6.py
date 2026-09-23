@@ -232,6 +232,21 @@ class OAuthStoreReadOnlyMCP:
             assert self._headers is not None
             self._headers["Mcp-Session-Id"] = session_id
 
+    def list_tools(self) -> dict[str, Any]:
+        """Discover server capabilities without invoking any tool."""
+        for attempt in range(2):
+            try:
+                if self._headers is None:
+                    self._initialize()
+                result, _ = self._rpc("tools/list", {})
+                return result if isinstance(result, dict) else {}
+            except IOLMCPError as exc:
+                if attempt == 0 and exc.status_code == 401:
+                    self._refresh_after_401(exc.response_headers)
+                    continue
+                raise
+        raise AssertionError("unreachable")
+
     def call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if tool_name not in ALLOWED_TOOLS:
             raise PermissionError("IOL_SHADOW_TOOL_DENIED:" + tool_name)
