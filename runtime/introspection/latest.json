@@ -57,21 +57,21 @@
       "capabilities": [
         {
           "capability": "READY_PAPER_SPOT",
-          "count": 55
+          "count": 54
         }
       ],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
-      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "ACCIONES",
-      "observed_count": 55,
+      "observed_count": 54,
       "queries": 24,
-      "ready_paper_count": 55
+      "ready_paper_count": 54
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -82,7 +82,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -93,7 +93,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -106,21 +106,21 @@
       "capabilities": [
         {
           "capability": "READY_PAPER_SPOT",
-          "count": 175
+          "count": 182
         }
       ],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
-      "discovery_status": "OBSERVED_WITH_ERRORS",
+      "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "CEDEARS",
-      "observed_count": 175,
+      "observed_count": 182,
       "queries": 34,
-      "ready_paper_count": 175
+      "ready_paper_count": 182
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -131,7 +131,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -142,7 +142,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -153,7 +153,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -164,7 +164,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -175,7 +175,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -186,7 +186,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -197,7 +197,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -208,7 +208,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -219,7 +219,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -230,7 +230,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-23T03:14:52.558051+00:00",
+      "checked_at": "2026-09-23T04:15:06.274756+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -242,9 +242,9 @@
   ],
   "github_publication": {
     "branch": "runtime-observability",
-    "day": "2026-09-22",
+    "day": "2026-09-23",
     "detail": null,
-    "recorded_at": "2026-09-23T02:20:32.135883+00:00",
+    "recorded_at": "2026-09-23T03:20:25.536254+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -303,7 +303,7 @@
     "unchanged": 0
   },
   "observer": {
-    "heartbeat_at": "2026-09-23T03:15:43.328078+00:00",
+    "heartbeat_at": "2026-09-23T04:15:54.852128+00:00",
     "http_allowed": 453,
     "http_blocked": 0,
     "last_market_data_at": "2026-09-22T19:59:11.550908+00:00",
@@ -333,18 +333,18 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 778629120,
-    "filesystem_free": 5519261696,
+    "database_bytes": 779640832,
+    "filesystem_free": 5514604544,
     "filesystem_total": 24883167232,
-    "filesystem_used": 19347128320,
-    "filesystem_used_pct": 77.75,
+    "filesystem_used": 19351785472,
+    "filesystem_used_pct": 77.77,
     "wal_bytes": 19570032
   },
   "telegram": {
     "SENT": 277,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-09-23T00:15:01-03:00",
+  "timestamp": "2026-09-23T01:15:05-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
@@ -360,28 +360,28 @@
   ],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": -58.598861,
-      "heartbeat_at": "2026-09-23T03:16:00.554753+00:00",
+      "heartbeat_age_seconds": -78.88136,
+      "heartbeat_at": "2026-09-23T04:16:24.515053+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": -56.185244,
-      "heartbeat_at": "2026-09-23T03:15:58.141136+00:00",
+      "heartbeat_age_seconds": -77.821812,
+      "heartbeat_at": "2026-09-23T04:16:23.455505+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": 625636.976464,
+      "heartbeat_age_seconds": 629240.654265,
       "heartbeat_at": "2026-09-15T21:27:44.979428+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
-      "heartbeat_age_seconds": -57.41645,
-      "heartbeat_at": "2026-09-23T03:15:59.372342+00:00",
+      "heartbeat_age_seconds": -77.766308,
+      "heartbeat_at": "2026-09-23T04:16:23.400001+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": -59.706629,
-      "heartbeat_at": "2026-09-23T03:16:01.662521+00:00",
+      "heartbeat_age_seconds": -79.48576,
+      "heartbeat_at": "2026-09-23T04:16:25.119453+00:00",
       "state": "RUNNING"
     }
   }
