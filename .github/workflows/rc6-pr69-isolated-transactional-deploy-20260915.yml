@@ -569,15 +569,6 @@ jobs:
           RUNNING_OBSERVER_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/bf_production_paper_observer.py | awk '{print $1}')"
           test "$RUNNING_OBSERVER_SHA" = "$EXPECTED_OBSERVER_SHA"
           echo "OBSERVER_CANDIDATE_SHA=GREEN"
-          # Repair the live observer from the staged candidate while stopped.
-          # This is an explicit last-mile guard: the final hash check must cover
-          # the bytes actually used by the running container, not just the image.
-          sudo -n docker stop porota_production_observer
-          for f in cf_intraday_scalping.py co_market_sessions_hf6.py; do
-            sudo -n docker cp "$CANDIDATE_ROOT/$f" "porota_production_observer:/app/$f"
-          done
-          sudo -n docker start porota_production_observer
-          echo "RC6_OBSERVER_CANDIDATE_FILES_SYNCED=GREEN"
           # The observer is launched from the exact image, but synchronize this
           # child module explicitly as a second provenance guard before restart.
           # El stage de deploy ya recreó el observer desde la imagen candidata;
