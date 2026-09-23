@@ -478,9 +478,9 @@ jobs:
       - name: Discover IOL MCP capabilities and diagnose Telegram (read-only)
         shell: bash
         env:
-          DO_HOST: \${{ secrets.DO_HOST }}
-          DO_USER: \${{ secrets.DO_USER }}
-          TARGET_SHA: \${{ github.sha }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          TARGET_SHA: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'LIVE'
