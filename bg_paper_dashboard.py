@@ -25,6 +25,7 @@ import rc6_counterfactual_learning as counterfactual_learning
 import rc6_decision_evidence_view as decision_evidence_view
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
+from ak_byma_calendar import es_dia_habil_operativo
 from bt_caucion_paper import validate_position, pending_proceeds
 from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
 from _version import VERSION
@@ -786,6 +787,8 @@ def _daily_summary_panel(data=None):
         return ("<div class='paper-card'><h2>Resumen simulado del día</h2>"
                 + _spot_warning(data["spot_state"]) + _caucion_warning(data["caucion_state"]) + "</div>")
     today = datetime.now(TZ).date()
+    if not es_dia_habil_operativo(today):
+        return ""
     currencies = ("ARS", "USD", "USD_MEP", "USD_CCL")
     totals = {currency: {"buys": 0, "sells": 0, "realized": 0.0, "open": 0,
                          "unrealized": 0.0} for currency in currencies}
@@ -2271,9 +2274,9 @@ def trading_page(section=''):
     if section=='estrategias':
         if PAPER_SCALPING_MODE=="OFF":
             body=("<h1>Trading — Estrategias</h1>"+subnav+
-                  "<div class='paper-warning'><b>Scalping desactivado por alcance operativo.</b> "
-                  "El universo actual de acciones y CEDEARs no cuenta todavía con una "
-                  "validación intradiaria suficiente. No se producen candidatos ni fills.</div>"
+                  "<div class='paper-warning'><b>Scalping PAPER/SHADOW en observación.</b> "
+                  "La ruta está disponible y muestra el estado del scanner; mientras la evidencia "
+                  "intradiaria esté STALE o incompleta no se habilitan candidatos ni fills operativos.</div>"
                   "<div class='paper-card'><h2>Estrategia activa</h2>"
                   "<p>El motor PAPER evalúa posiciones de acciones y CEDEARs. Las velas e "
                   "históricos generan señales en <b>SHADOW</b>; Riesgo, costos, liquidación, "
