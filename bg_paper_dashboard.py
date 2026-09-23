@@ -1900,11 +1900,11 @@ def telegram_page():
     return _document("Telegram",body,refresh=60)
 
 
-def live_page(*, offset=0, limit=20):
+def live_page(*, offset=0, limit=50):
     data=snapshot(); state=data['state']; now=datetime.now(TZ)
     positions=data.get('open',[])
     closed_today=live_policy.closed_for_live(data.get('closed',[]),now=now)
-    closed_page=live_policy.page_for_tablet(closed_today,offset=0,limit=20)
+    closed_page=live_policy.page_for_tablet(closed_today,offset=offset,limit=limit)
     closed=list(closed_page.items)
     intents={r.get('paper_id'):r for r in data.get('exit_intents',[])}
 
@@ -2919,7 +2919,7 @@ def install(app,check_auth):
     @app.get("/motor-trading",response_class=HTMLResponse)
     def motor(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(motor_page())
     @app.get("/en-vivo",response_class=HTMLResponse)
-    def en_vivo(request:Request,offset:int=Query(default=0,ge=0),limit:int=Query(default=20,ge=1,le=50),token:str=Query(default=""),authorization:str|None=Header(default=None)):
+    def en_vivo(request:Request,offset:int=Query(default=0,ge=0),limit:int=Query(default=50,ge=1,le=50),token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
         return HTMLResponse(live_page(offset=offset,limit=limit))
     @app.get("/trading",response_class=HTMLResponse)
