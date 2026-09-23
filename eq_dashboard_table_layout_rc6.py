@@ -1,8 +1,8 @@
 """RC6 table layout fix for Samsung/Voice Access.
 
-Presentation only.  Wide tables remain real tables with horizontal scrolling;
-column headers stay visible instead of being hidden by the former compact-card
-fallback.  No database/network/trading behavior.
+Presentation only. Wide tables remain real tables that fit the viewport;
+long cells use ellipsis and can be expanded by the responsive accessibility layer.
+No database/network/trading behavior.
 """
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ _installed = False
 
 FORCE_COMPACT_CSS = r"""
 <style id='porota-rc6-force-compact-tables'>
-/* RC6 operator rule: a table must never lose its semantic column headers.
-   Overflow is handled horizontally; it is not converted into anonymous cards. */
-.paper-card,.tarjeta{max-width:100%;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch}
+/* RC6 operator rule: semantic headers remain, while every table fits the
+   tablet viewport. Long values are truncated and expanded on tap. */
+.paper-card,.tarjeta{max-width:100%;min-width:0;overflow:hidden!important;box-sizing:border-box}
 .paper-table thead,.classic-responsive-table thead{display:table-header-group!important}
 .paper-table thead th,.classic-responsive-table thead th{
   position:sticky!important;top:50px!important;z-index:35!important;
@@ -24,8 +24,8 @@ FORCE_COMPACT_CSS = r"""
   box-shadow:0 1px 0 #c9d4e3!important
 }
 table.paper-table[data-porota-force-compact='1']{
-  display:table!important;width:max-content!important;min-width:100%!important;max-width:none!important;
-  border-collapse:collapse!important;table-layout:auto!important;font-size:.86rem!important;overflow:visible!important
+  display:table!important;width:100%!important;min-width:0!important;max-width:100%!important;
+  border-collapse:collapse!important;table-layout:fixed!important;font-size:.86rem!important;overflow:hidden!important
 }
 table.paper-table[data-porota-force-compact='1'] thead{display:table-header-group!important}
 table.paper-table[data-porota-force-compact='1'] tbody{display:table-row-group!important}
@@ -43,13 +43,13 @@ table.paper-table[data-porota-force-compact='1'] tr.porota-record-row{
 }
 table.paper-table[data-porota-force-compact='1'] tr.porota-record-row[hidden]{display:none!important}
 table.paper-table[data-porota-force-compact='1'] td{
-  display:table-cell!important;width:auto!important;max-width:none!important;padding:8px!important;
-  border-bottom:1px solid var(--line)!important;white-space:nowrap!important;overflow-wrap:normal!important;
-  word-break:keep-all!important;vertical-align:top!important
+  display:table-cell!important;min-width:0!important;max-width:0!important;padding:8px!important;
+  border-bottom:1px solid var(--line)!important;white-space:nowrap!important;overflow:hidden!important;
+  text-overflow:ellipsis!important;overflow-wrap:normal!important;word-break:normal!important;vertical-align:top!important
 }
 table.paper-table[data-porota-force-compact='1'] td[data-wrap='true']{
-  white-space:normal!important;min-width:16rem!important;max-width:32rem!important;
-  overflow-wrap:break-word!important;word-break:normal!important
+  white-space:normal!important;max-width:none!important;overflow:visible!important;
+  overflow-wrap:anywhere!important;word-break:break-word!important
 }
 table.paper-table[data-porota-force-compact='1'] .porota-cell-label{display:none!important}
 @media(max-width:700px){
