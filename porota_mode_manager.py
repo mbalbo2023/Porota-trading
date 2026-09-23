@@ -320,8 +320,10 @@ def simulation():
     # RC6 worker provenance: the candidate image is verified by the deploy
     # workflow before this manager is invoked. Remove any previous observer and
     # run only that immutable image; then fail closed if PID 1 exits immediately.
-    run("docker", "rm", "-f", "porota_production_observer", check=False, capture=True)
-    run("docker", "run", "-d", "--name", "porota_production_observer",
+    removed = run("docker", "rm", "-f", "porota_production_observer", check=False, capture=True)
+    print("RC6_OBSERVER_REMOVE=" + removed.stdout.strip())
+    created = run("docker", "run", "-d", "--name", "porota_production_observer", capture=True)
+
         "--pull", "never", "--restart", "unless-stopped", "--no-healthcheck",
         "--user", "botuser", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
@@ -339,7 +341,8 @@ def simulation():
         "--env-file", str(runtime_env),
         "-e", "PAPER_SCALPING_MODE=ACTIVE_OBSERVE",
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
-        "--entrypoint", "python", IMAGE, "bv_paper_runtime.py")
+        "--entrypoint", "python", IMAGE, "bv_paper_runtime.py", capture=True)
+    print("RC6_OBSERVER_CREATED_ID=" + created.stdout.strip())
     state = run("docker", "inspect", "-f", "{{.State.Status}}",
                  "porota_production_observer", capture=True).stdout.strip()
     if state != "running":
