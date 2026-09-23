@@ -1901,7 +1901,7 @@ def telegram_page():
     return _document("Telegram",body,refresh=60)
 
 
-def live_page(*, offset=0, limit=50):
+def live_page(*, offset=0, limit=10):
     data=snapshot(); state=data['state']; now=datetime.now(TZ)
     positions=data.get('open',[])
     closed_today=live_policy.closed_for_live(data.get('closed',[]),now=now)
@@ -2395,18 +2395,115 @@ def trading_page(section=''):
     return _document('Trading',body,refresh=30)
 
 
+
+def _instrument_readiness_matrix():
+    """Matriz factual por instrumento; solo usa catálogo y evidencia persistida."""
+    try:
+        import rc6_family_readiness as readiness
+        import iol_shadow_observation_rc6 as iol_observation
+    except Exception as exc:
+        return (
+            "<div class='paper-warning'>Matriz no disponible: "
+            f"{_e(type(exc).__name__)}</div>"
+        )
+    if not _table("financial_instrument_catalog"):
+        return "<div class='paper-warning'>No existe el catálogo financiero verificable.</div>"
+    catalog_raw = _rows(
+        """SELECT * FROM financial_instrument_catalog
+           WHERE status='AVAILABLE'
+             AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS')
+           ORDER BY ticker LIMIT 1000"""
+    )
+    catalog = []
+    for row in catalog_raw:
+        catalog.append({
+            "symbol": row.get("ticker") or row.get("symbol"),
+            "family": row.get("instrument_type"),
+            "market": row.get("market"),
+            "settlement": row.get("settlement") or row.get("term"),
+            "currency": row.get("currency"),
+            "catalog_status": row.get("status"),
+            "capability": row.get("capability"),
+        })
+    try:
+        observed_payload = iol_observation.collect()
+        observed = observed_payload.get("symbols", []) if isinstance(observed_payload, dict) else observed_payload
+    except Exception as exc:
+        observed = []
+        observation_error = type(exc).__name__
+    else:
+        observation_error = ""
+    observed = [dict(row) for row in observed if isinstance(row, dict)]
+    evaluated = readiness.evaluate(catalog, observed)
+    by_symbol = {str(row.get("symbol") or "").upper(): row
+                 for row in evaluated.get("instruments", [])}
+    iol_by_symbol = {str(row.get("symbol") or "").upper(): row for row in observed}
+    rows = []
+    for item in catalog:
+        symbol = str(item.get("symbol") or "").upper()
+        decision = by_symbol.get(symbol, {})
+        source = iol_by_symbol.get(symbol, {})
+        comparison = decision.get("comparison") if isinstance(decision.get("comparison"), dict) else {}
+        fields = comparison.get("fields") if isinstance(comparison.get("fields"), dict) else {}
+        def field_state(name):
+            detail = fields.get(name)
+            if not isinstance(detail, dict):
+                return "SIN_EVIDENCIA"
+            return str(detail.get("state") or "SIN_EVIDENCIA")
+        checked = ", ".join(
+            f"{name}={field_state(name)}" for name in ("last", "bid", "ask", "variation_pct", "cash_volume")
+        )
+        reasons = decision.get("reasons") or ["SIN_EVIDENCIA_DE_RECONCILIACION"]
+        gaps = " · ".join(str(reason) for reason in reasons)
+        quote = source.get("quote") if isinstance(source.get("quote"), dict) else source
+        observed_at = (quote or {}).get("provider_observed_at") or (quote or {}).get("observed_at")
+        ready = decision.get("contract_state") or "INSUFFICIENT_EVIDENCE"
+        rows.append(
+            "<tr>"
+            f"<td><b>{_e(symbol)}</b></td>"
+            f"<td>{_e(item.get('family'))}</td>"
+            f"<td>{_e(item.get('market') or 'SIN_DATO')} · {_e(item.get('settlement') or 'SIN_DATO')} · {_e(item.get('currency') or 'SIN_DATO')}</td>"
+            f"<td>{_e(item.get('catalog_status') or 'SIN_DATO')} · {_e(item.get('capability') or 'SIN_DATO')}</td>"
+            f"<td>{_e(ready)}</td>"
+            f"<td data-wrap='true'>{_e(checked)}</td>"
+            f"<td data-wrap='true'>{_e(gaps)}</td>"
+            f"<td data-wrap='true'>{_e(observed_at or 'SIN_TIMESTAMP')}</td>"
+            "</tr>"
+        )
+    if not rows:
+        return "<div class='paper-warning'>El catálogo no contiene instrumentos operativos verificables.</div>"
+    note = (
+        "READY aquí significa promoción PAPER/SHADOW; las órdenes reales siguen bloqueadas."
+        " Los faltantes son los motivos publicados por la reconciliación PPI primaria/IOL complementaria."
+    )
+    if observation_error:
+        note += f" Error al leer la observación IOL: {observation_error}."
+    return (
+        "<div class='paper-card'>"
+        "<h2>Matriz por instrumento: contrato y faltantes para READY</h2>"
+        f"<p class='paper-muted'>{_e(note)}</p>"
+        "<table class='paper-table' data-porota-force-compact='1'>"
+        "<tr><th>Instrumento</th><th>Familia</th><th>Mercado · plazo · moneda</th>"
+        "<th>Catálogo PPI</th><th>Readiness</th><th>Campos comparados</th>"
+        "<th>Faltantes/bloqueos</th><th>Timestamp evidencia</th></tr>"
+        + "".join(rows) + "</table></div>"
+    )
+
+
 def instruments_page():
     families=families_for_group("acciones-cedears")
     table=_family_ux_table(families)
-    body=("<h1>Instrumentos operativos</h1>"
+    matrix=_instrument_readiness_matrix()
+    body=("<h1>Instrumentos y contratos</h1>"
           "<div class='paper-notice'><b>Alcance actual: acciones y CEDEARs.</b> "
-          "La cobertura contractual heredada de bonos, cauciones, opciones, futuros, FCI y "
-          "licitaciones está desactivada: no hay scraping, ingestión ni decisión PAPER para esas familias.</div>"
-          "<div class='paper-card'><table class='paper-table'><tr><th>Familia</th><th>Readiness</th>"
+          "PPI es la fuente primaria; IOL solo complementa y valida en modo read-only. "
+          "La matriz no autoriza dinero real.</div>"
+          "<div class='paper-card'><table class='paper-table' data-porota-force-compact='1'><tr><th>Familia</th><th>Readiness</th>"
           "<th>Observadas</th><th>Evidencias</th><th>Verificadas</th><th>READY PAPER</th>"
           "<th>Bloqueadas/pendientes</th><th>Cambios v2</th><th>Principales bloqueos</th>"
-          f"<th>Interpretación</th></tr>{table}</table></div>")
-    return _document('Instrumentos operativos',body,refresh=60)
+          "<th>Interpretación</th></tr>"+table+"</table></div>"
+          +matrix)
+    return _document('Instrumentos y contratos',body,refresh=60)
 
 
 SYSTEM_SECTIONS = (
@@ -3022,9 +3119,25 @@ def install(app,check_auth):
         # /vivo es el nombre histórico de la actividad en tiempo real. En
         # simulación productiva debe ser un alias real del panel consolidado,
         # no una vista heredada meramente retocada por _canonicalize().
+        # Las rutas RC6 ya devuelven el documento canónico. Re-renderizarlas aquí
+        # duplicaba snapshot()/SQLite y hacía colapsar /en-vivo.
+        if "id='porota-canonical-nav'" in content and "paper-page" in content:
+            headers=dict(response.headers); headers.pop("content-length",None)
+            return HTMLResponse(_dedupe_refresh(content),status_code=response.status_code,headers=headers)
         replacements={"/":home_page,"/vivo":live_page,"/en-vivo":live_page,"/testing":lambda:paper_page(True),"/salud":health_page,"/scalping":scalping_page,"/validacion":validation_page,"/historicos":history_page,"/aprendizaje":learning_page,"/telegram":telegram_page,"/dashboard/logs":logs_page,"/config":config_page}
         if request.url.path=="/sre": content=sre_page(request.query_params.get("section","overview"))
-        elif request.url.path in replacements: content=replacements[request.url.path]()
+        elif request.url.path in replacements:
+            try:
+                offset=max(0,int(request.query_params.get("offset","0")))
+            except (TypeError,ValueError):
+                offset=0
+            try:
+                limit=min(10,max(1,int(request.query_params.get("limit","10"))))
+            except (TypeError,ValueError):
+                limit=10
+            content=(live_page(offset=offset,limit=limit)
+                     if request.url.path in {"/vivo","/en-vivo"}
+                     else replacements[request.url.path]())
         else: content=_canonicalize(content,request.url.path)
         headers=dict(response.headers); headers.pop("content-length",None)
         return HTMLResponse(_dedupe_refresh(content),status_code=response.status_code,headers=headers)
