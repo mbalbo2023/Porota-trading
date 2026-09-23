@@ -582,8 +582,13 @@ jobs:
           test "$RUNNING_SESSION_SHA" = "$EXPECTED_SESSION_SHA"
           echo "SCALPING_WORKER_SOURCE_SHA=GREEN"
           echo "SCALPING_SESSION_SOURCE_SHA=GREEN"
-          SCALPING_ENV_CHECK="$(sudo -n docker exec porota_production_observer python -c 'import os; print("SCALPING_MODE=" + str(os.getenv("PAPER_SCALPING_MODE"))); print("SCALPING_SCAN_SECONDS=" + str(os.getenv("PAPER_INTRADAY_SCAN_SECONDS")))')"
+          SCALPING_ENV_RC=0
+          SCALPING_ENV_CHECK="$(sudo -n docker exec porota_production_observer python -c 'import os; print("SCALPING_MODE=" + str(os.getenv("PAPER_SCALPING_MODE"))); print("SCALPING_SCAN_SECONDS=" + str(os.getenv("PAPER_INTRADAY_SCAN_SECONDS")))' 2>&1)" || SCALPING_ENV_RC=$?
+          echo "SCALPING_ENV_RC=$SCALPING_ENV_RC"
           echo "$SCALPING_ENV_CHECK"
+          sudo -n docker inspect porota_production_observer --format 'SCALPING_CONTAINER_STATE={{.State.Status}} EXIT={{.State.ExitCode}} ERROR={{.State.Error}} STARTED={{.State.StartedAt}} FINISHED={{.State.FinishedAt}}' || true
+          sudo -n docker logs --tail 120 porota_production_observer || true
+          test "$SCALPING_ENV_RC" -eq 0
           SCALPING_RUNTIME="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           import time
