@@ -2919,7 +2919,7 @@ def install(app,check_auth):
     @app.get("/motor-trading",response_class=HTMLResponse)
     def motor(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(motor_page())
     @app.get("/en-vivo",response_class=HTMLResponse)
-    def en_vivo(request:Request,offset:int=Query(default=0,ge=0),limit:int=Query(default=50,ge=1,le=50),token:str=Query(default=""),authorization:str|None=Header(default=None)):
+    def en_vivo(request:Request,offset:int=Query(default=0,ge=0),limit:int=Query(default=20,ge=1,le=50),token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
         return HTMLResponse(live_page(offset=offset,limit=limit))
     @app.get("/trading",response_class=HTMLResponse)
