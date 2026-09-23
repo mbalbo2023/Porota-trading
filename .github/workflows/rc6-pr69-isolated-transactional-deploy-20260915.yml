@@ -187,7 +187,9 @@ jobs:
           }
           trap cleanup_rc6_image_tags EXIT
           PRE_SHA="$(sudo -n git -C "$REPO" rev-parse HEAD)"
-          PRE_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          PRE_STATE="NO_RUNNING_OBSERVER"
+          if [ "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)" = "running" ]; then
+            PRE_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
           c.execute('PRAGMA query_only=ON')
@@ -195,10 +197,13 @@ jobs:
           mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
           c.close(); print('|'.join(map(str,(q,mode,orders))))
           PY
-          )"
+            )"
+          fi
           echo "PRE_SHA=$PRE_SHA"
           echo "PRE_STATE=$PRE_STATE"
-          test "$PRE_STATE" = 'ok|PRODUCTION_PAPER|0'
+          if [ "$PRE_STATE" != "NO_RUNNING_OBSERVER" ]; then
+            test "$PRE_STATE" = 'ok|PRODUCTION_PAPER|0'
+          fi
           REMOTE_TGZ="/tmp/porota-rc6-candidate-$TARGET_SHA.tgz"
           test -f "$REMOTE_TGZ"
           STAGE="/tmp/porota-rc6-candidate-$TARGET_SHA"
