@@ -101,7 +101,7 @@ PAGINATE_SCRIPT = r"""
     document.querySelectorAll('.compact-pager:not([data-porota-table-pager="1"])').forEach(node=>node.remove());
   }
   function mount(table){
-    const rows=Array.from(table.rows||[]).filter(row=>!row.querySelector('th'));
+    const rows=Array.from(table.rows||[]).filter(row=>row.closest('table')===table && !row.querySelector('th'));
     removeLegacyPagers(table);
     const existing=table.__porotaPager;
     if(rows.length<=PAGE_SIZE){
