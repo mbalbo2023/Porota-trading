@@ -670,11 +670,13 @@ jobs:
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'LIVE'
           set -Eeuo pipefail
-          sudo -n python3 - <<'PY'
+          STAGE="/tmp/porota-rc6-candidate-$TARGET_SHA"
+          sudo -n env "RC6_STAGE=$STAGE" python3 - <<'PY'
           import json
+          import os
           import sqlite3
           import sys
-          sys.path.insert(0, "/tmp/porota-rc6-candidate-" + "$" + "{TARGET_SHA}")
+          sys.path.insert(0, os.environ["RC6_STAGE"])
           import rc6_official_source_adapters as official_sources
 
           class Store:
