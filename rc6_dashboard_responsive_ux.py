@@ -20,6 +20,8 @@ html,body{overflow-x:hidden!important}
 .paper-table-wrap th,.paper-table-wrap td,.paper-card table th,.paper-card table td,
 .classic-responsive-table th,.classic-responsive-table td{display:table-cell;min-width:0!important;max-width:0!important;overflow:hidden!important;text-overflow:ellipsis;white-space:nowrap;vertical-align:top}
 .paper-table-wrap th,.paper-table-wrap td,.paper-card table th,.paper-card table td{padding:7px 6px}
+.paper-table-wrap td[data-wrap="true"],.paper-card table td[data-wrap="true"],
+.classic-responsive-table td[data-wrap="true"]{max-width:none!important;overflow:visible!important;white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
 .paper-table-wrap td[data-porota-expanded="1"],.paper-card table td[data-porota-expanded="1"],
 .classic-responsive-table td[data-porota-expanded="1"]{max-width:none!important;overflow:visible!important;white-space:normal!important;overflow-wrap:anywhere;word-break:break-word;position:relative;z-index:4;background:#fff}
 .porota-expandable{cursor:pointer;text-decoration:underline dotted;text-decoration-color:#8797aa}
