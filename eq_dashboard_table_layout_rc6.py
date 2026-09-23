@@ -98,7 +98,7 @@ PAGINATE_SCRIPT = r"""
   const PAGE_SIZE=10;
   function tables(){ return Array.from(document.querySelectorAll('table')); }
   // Conservado por compatibilidad con el test RC5; la eliminación ya no depende de ownership.\n  function ownerOfPager(){ return null; }\n  function removeLegacyPagers(){
-    document.querySelectorAll('.compact-pager:not([data-porota-table-pager="1"])').forEach(node=>node.remove());
+    document.querySelectorAll('.compact-pager:not([data-porota-table-pager="1"]), .pagination, .table-pagination, .pagination-controls').forEach(node=>node.remove());
   }
   function mount(table){
     const rows=Array.from(table.rows||[]).filter(row=>row.closest('table')===table && !row.querySelector('th'));
