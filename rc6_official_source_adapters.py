@@ -59,10 +59,15 @@ def _safe_url(url: str) -> str:
 def _fetch(url: str, opener: Callable[..., Any] = urlopen) -> tuple[int, str, bytes]:
     safe = _safe_url(url)
     request = Request(safe, headers={"User-Agent": "Porota-RC6-read-only-evidence/1.0", "Accept": "application/json,text/html;q=0.9"})
-    with opener(request, timeout=TIMEOUT_SECONDS) as response:
+    response = opener(request, timeout=TIMEOUT_SECONDS)
+    try:
         status = int(getattr(response, "status", 200))
         content_type = str(response.headers.get("Content-Type", ""))[:160]
         body = response.read(MAX_BYTES + 1)
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
     if len(body) > MAX_BYTES:
         raise ValueError("OFFICIAL_SOURCE_RESPONSE_TOO_LARGE")
     return status, content_type, body
