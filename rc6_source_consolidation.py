@@ -16,10 +16,13 @@ from urllib.request import Request, urlopen
 
 SCHEMA = "rc6-consolidated-source-evidence-v1"
 MAX_BYTES = 2_000_000
+# These are references only until a documented technical endpoint with
+# credentials returns structured records. A3/MAE is separate from MATBA-ROFEX.
 SOURCE_URLS = {
-    "BYMA": os.getenv("POROTA_BYMA_PUBLIC_DATA_URL", "https://open.bymadata.com.ar/"),
+    "BYMA": os.getenv("POROTA_BYMA_PUBLIC_DATA_URL", "https://apiportal.byma.com.ar/"),
     "CNV": os.getenv("POROTA_CNV_PUBLIC_DATA_URL", "https://www.cnv.gov.ar/SitioWeb/HechosRelevantes"),
-    "A3_MATBA_ROFEX": os.getenv("POROTA_A3_PUBLIC_DATA_URL", "https://cem.matbarofex.com.ar/"),
+    "MATBA_ROFEX": os.getenv("POROTA_MATBA_ROFEX_PUBLIC_DATA_URL", "https://matbarofex.com.ar/Indices-mtr/documentacion"),
+    "A3_MAE": os.getenv("POROTA_A3_MAE_PUBLIC_DATA_URL", "https://marketdata.mae.com.ar/swagger/api-documentacion.html"),
 }
 
 def _now() -> str:
