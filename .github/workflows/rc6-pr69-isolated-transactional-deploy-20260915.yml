@@ -670,15 +670,16 @@ jobs:
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'LIVE'
           set -Eeuo pipefail
-          sudo -n docker cp /tmp/porota-rc6-candidate-$TARGET_SHA/rc6_official_source_adapters.py porota_production_observer:/app/rc6_official_source_adapters.py
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          sudo -n python3 - <<'PY'
           import json
           import sqlite3
+          import sys
+          sys.path.insert(0, "/tmp/porota-rc6-candidate-" + "$" + "{TARGET_SHA}")
           import rc6_official_source_adapters as official_sources
 
           class Store:
               def connect(self):
-                  c = sqlite3.connect("/app/data/paper_v17/observer_v17.db", timeout=20)
+                  c = sqlite3.connect("/opt/porota-trading/data/paper_v17/observer_v17.db", timeout=20)
                   c.row_factory = sqlite3.Row
                   return c
 
