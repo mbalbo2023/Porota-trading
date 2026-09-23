@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+from collections import Counter
 import json
 import os
 import re
