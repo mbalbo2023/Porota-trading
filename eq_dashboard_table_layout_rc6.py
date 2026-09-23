@@ -101,7 +101,9 @@ PAGINATE_SCRIPT = r"""
     const rows=Array.from(table.rows||[]).filter(row=>!row.querySelector('th'));
     if(!rows.length) return;
     /* Legacy/server pagers and this responsive pager must never coexist. */
-    table.parentElement?.querySelectorAll(':scope > .compact-pager').forEach(node=>node.remove());
+    [table.previousElementSibling, table.nextElementSibling].forEach(node=>{
+      if(node?.classList?.contains('compact-pager')) node.remove();
+    });
     if(rows.length<=PAGE_SIZE) return;
     table.dataset.porotaPagination='1';
     let visible=PAGE_SIZE;
