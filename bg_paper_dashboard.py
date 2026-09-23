@@ -25,6 +25,7 @@ import rc6_counterfactual_learning as counterfactual_learning
 import rc6_decision_evidence_view as decision_evidence_view
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
+from ak_byma_calendar import es_dia_habil_operativo
 from bt_caucion_paper import validate_position, pending_proceeds
 from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
 from _version import VERSION
@@ -786,6 +787,8 @@ def _daily_summary_panel(data=None):
         return ("<div class='paper-card'><h2>Resumen simulado del día</h2>"
                 + _spot_warning(data["spot_state"]) + _caucion_warning(data["caucion_state"]) + "</div>")
     today = datetime.now(TZ).date()
+    if not es_dia_habil_operativo(today):
+        return ""
     currencies = ("ARS", "USD", "USD_MEP", "USD_CCL")
     totals = {currency: {"buys": 0, "sells": 0, "realized": 0.0, "open": 0,
                          "unrealized": 0.0} for currency in currencies}
@@ -834,6 +837,41 @@ def _daily_summary_panel(data=None):
             "<th>PnL no realizado actual</th></tr>" + rows + "</table></div>")
 
 
+
+def _official_source_evidence_panel():
+    if not _table("official_source_evidence"):
+        return "<section class='paper-card'><h2>Fuentes oficiales — evidencia</h2><p class='paper-warning'>Todavía no hay una corrida persistida del adaptador oficial.</p></section>"
+    current = _rows("""SELECT source,status,http_status,record_count,url,observed_at
+                       FROM official_source_evidence
+                       WHERE rowid IN (SELECT MAX(rowid) FROM official_source_evidence GROUP BY source)
+                       ORDER BY source""")
+    historical = _rows("""SELECT source,status,requested_date,record_count,observed_at
+                          FROM official_source_historical_evidence
+                          WHERE rowid IN (SELECT MAX(rowid) FROM official_source_historical_evidence GROUP BY source,requested_date)
+                          ORDER BY source,requested_date DESC""") if _table("official_source_historical_evidence") else []
+    by_source = {}
+    for row in current:
+        by_source.setdefault(str(row.get("source") or ""), {})["current"] = row
+    for row in historical:
+        by_source.setdefault(str(row.get("source") or ""), {}).setdefault("historical", []).append(row)
+    cards = []
+    for source in ("BYMA", "CNV", "MATBA_ROFEX"):
+        item = by_source.get(source, {})
+        live = item.get("current", {})
+        dates = item.get("historical", [])
+        hist_status = "NOT_CONFIGURED" if not dates else (
+            "REACHABLE_STRUCTURED" if dates and all(
+                str(x.get("status")) == "REACHABLE_STRUCTURED" and int(x.get("record_count") or 0) > 0
+                for x in dates
+            ) else str(dates[0].get("status") or "UNKNOWN")
+        )
+        green = str(live.get("status")) == "REACHABLE_STRUCTURED" and hist_status == "REACHABLE_STRUCTURED"
+        state = "green" if green else "yellow" if str(live.get("status")) in {"REFERENCE_ONLY", "REACHABLE_STRUCTURED"} else "red"
+        detail = f"Actual: {live.get('status', 'SIN_CORRIDA')} · Histórico cerrado: {hist_status}"
+        cards.append(_card(source, "VERIFICADO" if green else hist_status, detail, state))
+    return ("<section class='paper-card'><h2>Fuentes oficiales — evidencia fechada</h2>"
+            "<p class='paper-muted'>HTTP 200 o una página de referencia no equivale a datos normalizados. Verde exige registros estructurados actuales y para todas las fechas configuradas; NOT_CONFIGURED significa que falta el endpoint oficial fechado.</p>"
+            f"<div class='paper-grid'>{''.join(cards)}</div></section>")
 
 def _daily_results_panel():
     try:
@@ -899,7 +937,7 @@ def home_page():
             f"<div class='paper-grid'>{cards}</div>")
     return _document("Porota Trading", _spot_warning(data["spot_state"])
         + _caucion_warning(data["caucion_state"]) + body
-        + _daily_results_panel() + _daily_summary_panel(data) + _balances_panel())
+        + _official_source_evidence_panel() + _daily_results_panel() + _daily_summary_panel(data) + _balances_panel())
 
 def paper_page(compact=False):
     data=snapshot(); state=data["state"]
@@ -1936,6 +1974,13 @@ def live_page(*, offset=0, limit=20):
             f"<h3>Lección aprendida</h3><p class='{cls}'>{_e(_trade_lesson(pos))}</p></div></details>"
         )
 
+    close_counts = Counter(str(row.get("close_reason") or "SIN_MOTIVO") for row in closed)
+    close_reason_html = (
+        "<div class='paper-card'><h3>Causas de cierre persistidas</h3>"
+        "<p class='paper-muted'>Se muestra la causa guardada por el motor; esta vista no convierte STOP/TARGET en EOD ni completa motivos faltantes.</p>"
+        f"<p>{_e(' · '.join(f'{key}: {value}' for key, value in sorted(close_counts.items())) if close_counts else 'Sin cierres hoy.')}</p></div>"
+    )
+
     # paper_decisions es el stream vivo. trade_gate_evaluations es event-driven:
     # sólo existe después de una decisión BUY que alcanzó los gates. Un gate viejo
     # nunca debe ocultar HOLD/abstenciones nuevas del motor.
@@ -2062,7 +2107,7 @@ def live_page(*, offset=0, limit=20):
           (''.join(open_details) or "<p>Sin posiciones abiertas.</p>")+"</div>"
           "<div class='paper-card'><h2>2. Operaciones cerradas hoy</h2>"+
           (''.join(closed_rows) or "<p>Sin operaciones cerradas hoy.</p>")+"</div>"+
-          settlement_diag_html+
+          close_reason_html+settlement_diag_html+
           "<div class='paper-card'><h2>3. Decisiones en vivo — BUY / HOLD / abstenciones</h2>"
           "<p class='paper-muted'>Fuente primaria: paper_decisions. Los gates técnico/patrimonial son event-driven y sólo aparecen cuando una señal BUY alcanza esa etapa; un gate antiguo no significa que el motor esté detenido.</p>"
           "<table class='paper-table'>"
@@ -2271,9 +2316,9 @@ def trading_page(section=''):
     if section=='estrategias':
         if PAPER_SCALPING_MODE=="OFF":
             body=("<h1>Trading — Estrategias</h1>"+subnav+
-                  "<div class='paper-warning'><b>Scalping desactivado por alcance operativo.</b> "
-                  "El universo actual de acciones y CEDEARs no cuenta todavía con una "
-                  "validación intradiaria suficiente. No se producen candidatos ni fills.</div>"
+                  "<div class='paper-warning'><b>Scalping PAPER/SHADOW en observación.</b> "
+                  "La ruta está disponible y muestra el estado del scanner; mientras la evidencia "
+                  "intradiaria esté STALE o incompleta no se habilitan candidatos ni fills operativos.</div>"
                   "<div class='paper-card'><h2>Estrategia activa</h2>"
                   "<p>El motor PAPER evalúa posiciones de acciones y CEDEARs. Las velas e "
                   "históricos generan señales en <b>SHADOW</b>; Riesgo, costos, liquidación, "

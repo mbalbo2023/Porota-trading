@@ -25,6 +25,19 @@ OFFICIAL_SOURCE_URLS = {
     "CNV": os.getenv("POROTA_CNV_OFFICIAL_URL", "https://www.cnv.gov.ar/sitioweb/empresas?seccion=buscador"),
     "MATBA_ROFEX": os.getenv("POROTA_MATBA_ROFEX_OFFICIAL_URL", "https://cem.matbarofex.com.ar/"),
 }
+# Historical probes are opt-in because official providers expose different
+# authenticated/download contracts. An unset template is explicitly reported
+# as NOT_CONFIGURED; it is never treated as historical evidence.
+HISTORICAL_SOURCE_URL_TEMPLATES = {
+    "BYMA": os.getenv("POROTA_BYMA_HISTORICAL_URL", ""),
+    "CNV": os.getenv("POROTA_CNV_HISTORICAL_URL", ""),
+    "MATBA_ROFEX": os.getenv("POROTA_MATBA_ROFEX_HISTORICAL_URL", ""),
+}
+HISTORICAL_DATES = tuple(
+    item.strip() for item in os.getenv(
+        "POROTA_OFFICIAL_HISTORICAL_DATES", "2026-09-22,2026-09-15,2026-09-01"
+    ).split(",") if item.strip()
+)
 FIELD_ALIASES = {
     "ticker": ("ticker", "symbol", "simbolo", "codigo", "code"),
     "isin": ("isin",),
@@ -133,10 +146,59 @@ def init_schema(store: Any) -> None:
           status TEXT NOT NULL, http_status INTEGER, content_type TEXT NOT NULL,
           digest TEXT NOT NULL, evidence_json TEXT NOT NULL, error TEXT NOT NULL,
           PRIMARY KEY(source,url,observed_at))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS official_source_historical_evidence(
+          source TEXT NOT NULL, requested_date TEXT NOT NULL, url TEXT NOT NULL,
+          observed_at TEXT NOT NULL, status TEXT NOT NULL, http_status INTEGER,
+          content_type TEXT NOT NULL, digest TEXT NOT NULL, evidence_json TEXT NOT NULL,
+          error TEXT NOT NULL, PRIMARY KEY(source,requested_date,url,observed_at))""")
 
-def collect(store: Any, *, opener: Callable[..., Any] = urlopen, urls: dict[str, str] | None = None) -> dict[str, Any]:
+def _historical_checks(
+    store: Any,
+    source: str,
+    template: str,
+    dates: tuple[str, ...],
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    if not template:
+        return {"status": "NOT_CONFIGURED", "dates": [
+            {"date": date, "status": "NOT_CONFIGURED", "record_count": 0} for date in dates
+        ]}
+    checks = []
+    for requested_date in dates:
+        url = template.replace("{date}", requested_date)
+        observed_at = _now()
+        content_type = ""
+        try:
+            status, content_type, body = _fetch(url, opener)
+            result = parse_payload(source, url, status, content_type, body, observed_at=observed_at)
+            item = {"date": requested_date, "status": result.status, "http_status": result.http_status,
+                    "record_count": result.evidence.get("record_count", 0), "url": url}
+            error = result.error
+            digest = result.digest
+            evidence = result.evidence
+        except Exception as exc:
+            item = {"date": requested_date, "status": "UNAVAILABLE", "http_status": None,
+                    "record_count": 0, "url": url}
+            error = f"{type(exc).__name__}:{str(exc)[:240]}"
+            digest = ""
+            evidence = {}
+        with store.connect() as c:
+            c.execute("""INSERT INTO official_source_historical_evidence
+              (source,requested_date,url,observed_at,status,http_status,content_type,digest,evidence_json,error)
+              VALUES(?,?,?,?,?,?,?,?,?,?)""", (source,requested_date,url,observed_at,item["status"],
+              item["http_status"],content_type if "content_type" in locals() else "",digest,
+              json.dumps(evidence,ensure_ascii=False,sort_keys=True),error))
+        checks.append(item)
+    states = {str(item["status"]) for item in checks}
+    overall = "REACHABLE_STRUCTURED" if checks and all(item["status"] == "REACHABLE_STRUCTURED" and item["record_count"] > 0 for item in checks) else "REFERENCE_ONLY" if checks and any(item["status"] == "REFERENCE_ONLY" for item in checks) else "UNAVAILABLE"
+    return {"status": overall, "dates": checks}
+
+def collect(store: Any, *, opener: Callable[..., Any] = urlopen, urls: dict[str, str] | None = None,
+            historical_urls: dict[str, str] | None = None,
+            historical_dates: tuple[str, ...] | None = None) -> dict[str, Any]:
     init_schema(store)
     results = []
+    historical = {}
     for source, raw_url in (urls or OFFICIAL_SOURCE_URLS).items():
         url, observed_at = str(raw_url or "").strip(), _now()
         try:
@@ -152,7 +214,10 @@ def collect(store: Any, *, opener: Callable[..., Any] = urlopen, urls: dict[str,
         results.append({"source": result.source, "status": result.status, "http_status": result.http_status,
                         "record_count": result.evidence.get("record_count", 0), "error": result.error,
                         "url": result.url, "observed_at": result.observed_at})
-    return {"schema": SCHEMA, "sources": results, "collected_at": _now()}
+        templates = historical_urls or HISTORICAL_SOURCE_URL_TEMPLATES
+        historical[source] = _historical_checks(store, source, str(templates.get(source) or ""),
+                                                tuple(historical_dates or HISTORICAL_DATES), opener)
+    return {"schema": SCHEMA, "sources": results, "historical": historical, "collected_at": _now()}
 
 def assert_read_only_invariants() -> None:
     assert all(urlparse(url).scheme in {"http", "https"} for url in OFFICIAL_SOURCE_URLS.values())

@@ -12,14 +12,16 @@ _installed = False
 
 CSS = r"""
 <style id="porota-rc6-responsive-tablet">
+html,body,main,.paper-page,.paper-card,.paper-grid,.paper-table-wrap,.system-content,.legacy-shell{min-width:0!important;max-width:100vw!important;box-sizing:border-box}
+html,body{overflow-x:hidden!important}
 .paper-card,.paper-table-wrap,.analysis-grid{max-width:100%;box-sizing:border-box}
-.paper-table-wrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.paper-table-wrap table,.paper-card table,.classic-responsive-table{width:100%;max-width:100%;table-layout:fixed}
+.paper-table-wrap{width:100%;overflow:visible!important}
+.paper-table-wrap table,.paper-card table,.classic-responsive-table{display:table!important;width:100%!important;min-width:0!important;max-width:100%!important;table-layout:fixed!important;border-collapse:collapse!important}
 .paper-table-wrap th,.paper-table-wrap td,.paper-card table th,.paper-card table td,
-.classic-responsive-table th,.classic-responsive-table td{max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top}
-.paper-table-wrap th,.paper-table-wrap td,.paper-card table th,.paper-card table td{padding:7px 8px}
+.classic-responsive-table th,.classic-responsive-table td{display:table-cell;min-width:0!important;max-width:0!important;overflow:hidden!important;text-overflow:ellipsis;white-space:nowrap;vertical-align:top}
+.paper-table-wrap th,.paper-table-wrap td,.paper-card table th,.paper-card table td{padding:7px 6px}
 .paper-table-wrap td[data-porota-expanded="1"],.paper-card table td[data-porota-expanded="1"],
-.classic-responsive-table td[data-porota-expanded="1"]{max-width:none;overflow:visible;white-space:normal;overflow-wrap:anywhere;word-break:break-word;position:relative;z-index:4;background:#fff}
+.classic-responsive-table td[data-porota-expanded="1"]{max-width:none!important;overflow:visible!important;white-space:normal!important;overflow-wrap:anywhere;word-break:break-word;position:relative;z-index:4;background:#fff}
 .porota-expandable{cursor:pointer;text-decoration:underline dotted;text-decoration-color:#8797aa}
 .porota-expandable::after{content:" …";color:#62748a;font-weight:700}
 .analysis-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:10px;align-items:stretch}
@@ -28,6 +30,8 @@ CSS = r"""
 .analysis-grid>.paper-card .analysis-value{font-size:1.02rem;font-weight:700;line-height:1.25;margin:0;overflow-wrap:anywhere}
 .porota-semaphore{position:absolute;right:12px;top:14px;width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 2px #fff}
 .porota-semaphore.green{background:#168544}.porota-semaphore.yellow{background:#b47a00}.porota-semaphore.red{background:#ba2937}.porota-semaphore.gray{background:#7b8794}
+#porota-scroll-rail{position:fixed;right:3px;top:112px;bottom:12px;width:9px;background:#dbe4ef;border:1px solid #aebdd0;border-radius:99px;z-index:9999;box-shadow:0 1px 4px #14213d33}
+#porota-scroll-thumb{position:absolute;left:1px;right:1px;top:0;min-height:28px;background:#1769aa;border-radius:99px;cursor:pointer}
 @media(max-width:700px){
   .paper-table-wrap th,.paper-table-wrap td,.paper-card table th,.paper-card table td,.classic-responsive-table th,.classic-responsive-table td{padding:6px 5px;font-size:.78rem}
   .paper-card table th,.paper-card table td{line-height:1.2}
@@ -50,7 +54,34 @@ SCRIPT = r"""
     if(/GREEN|READY|VERIFIED|FAVORABLE|COMPLETA|OK/.test(text)) return "green";
     return "gray";
   }
+  function installScrollRail(){
+    if(document.getElementById("porota-scroll-rail")) return;
+    const rail=document.createElement("div");
+    rail.id="porota-scroll-rail";
+    rail.setAttribute("aria-label","Progreso de la página; tocar para desplazarse");
+    const thumb=document.createElement("span");
+    thumb.id="porota-scroll-thumb";
+    rail.appendChild(thumb);
+    document.body.appendChild(rail);
+    function sync(){
+      const max=Math.max(1,document.documentElement.scrollHeight-window.innerHeight);
+      const ratio=Math.min(1,Math.max(0,window.scrollY/max));
+      const visible=Math.min(1,window.innerHeight/Math.max(window.innerHeight,document.documentElement.scrollHeight));
+      thumb.style.height=Math.max(28,Math.round(rail.clientHeight*visible))+"px";
+      thumb.style.top=Math.round((rail.clientHeight-thumb.offsetHeight)*ratio)+"px";
+    }
+    rail.addEventListener("click",function(event){
+      if(event.target===thumb) return;
+      const rect=rail.getBoundingClientRect();
+      const ratio=Math.min(1,Math.max(0,(event.clientY-rect.top)/rect.height));
+      window.scrollTo({top:ratio*Math.max(0,document.documentElement.scrollHeight-window.innerHeight),behavior:"smooth"});
+    });
+    window.addEventListener("scroll",sync,{passive:true});
+    window.addEventListener("resize",sync);
+    sync();
+  }
   function decorate(){
+    installScrollRail();
     document.querySelectorAll("table").forEach(function(table){
       table.querySelectorAll("td").forEach(function(cell){
         const raw=(cell.innerText||"").replace(/\s+/g," ").trim();
