@@ -15,7 +15,8 @@ import sqlite3
 from typing import Any
 
 from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
-from iol_shadow_collector_rc6 import CollectionPolicy, is_operational_market_window, run_batch\nfrom rc6_source_consolidation import consolidate
+from iol_shadow_collector_rc6 import CollectionPolicy, is_operational_market_window, run_batch
+from rc6_source_consolidation import consolidate
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
