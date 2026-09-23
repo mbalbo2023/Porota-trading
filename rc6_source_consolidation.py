@@ -162,14 +162,14 @@ def _normalize_public_records(source: str, records: list[dict[str, Any]]) -> lis
     aliases={
         "symbol": ("especie","símbolo","simbolo","ticker","symbol","code"),
         "currency": ("moneda","currency"),
-        "bid": ("p. cpra.","p compra","compra","bid"),
-        "ask": ("p. vta.","p venta","venta","ask"),
-        "last": ("último","ultimo","last"),
-        "variation_pct": ("var.","variación","variacion","variation"),
-        "volume": ("volumen","volume"),
-        "cash_volume": ("vol. monto","vol monto","cash volume"),
+        "bid": ("p. cpra.","p compra","compra","bid","bidprice","bid_price","buyprice"),
+        "ask": ("p. vta.","p venta","venta","ask","offerprice","offer_price","sellprice"),
+        "last": ("último","ultimo","last","lastprice","last_price","tradeprice","trade_price","price"),
+        "variation_pct": ("var.","variación","variacion","variation","variationpercent","variation_pct","changepercent"),
+        "volume": ("volumen","volume","tradevolume","trade_volume","quantity"),
+        "cash_volume": ("vol. monto","vol monto","cash volume","cashvolume","cash_volume","tradedamount"),
         "vwap": ("vwap",),
-        "timestamp": ("hora","timestamp","fecha","date"),
+        "timestamp": ("hora","timestamp","fecha","date","tradedate","trade_date","marketdatadate","market_data_date"),
         "maturity": ("vto.","vto","vencimiento","maturity"),
         "adjustment": ("ajuste","adjustment"),
         "open_interest": ("interés abierto","interes abierto","open interest"),
@@ -186,43 +186,118 @@ def _normalize_public_records(source: str, records: list[dict[str, Any]]) -> lis
             out.append(normalized)
     return out
 
+def _json_records(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)][:500]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("items", "data", "records", "results", "content"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)][:500]
+        if isinstance(value, dict):
+            nested = _json_records(value)
+            if nested:
+                return nested
+    return []
+
 def parse_public_payload(source: str, url: str, body: bytes, http_status: int = 200) -> dict[str, Any]:
     digest = hashlib.sha256(body).hexdigest()
     text = body.decode("utf-8", errors="replace")
-    records: list[dict[str, Any]] = []
-    structured = False
     try:
         payload = json.loads(text)
-        structured = True
-        values = payload if isinstance(payload, list) else payload.get("items", []) if isinstance(payload, dict) else []
-        if isinstance(values, list):
-            records = [item for item in values if isinstance(item, dict)][:500]
     except json.JSONDecodeError:
-        raw_records=_parse_html_tables(text)
-        records=_normalize_public_records(source, raw_records)
-        structured=bool(records)
+        raw_records = _parse_html_tables(text)
+        records = _normalize_public_records(source, raw_records)
         title = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
         return {
             "source": source, "url": url,
             "status": "SCRAPED_HTML_DATA" if http_status < 400 and records else "REFERENCE_ONLY",
-            "http_status": http_status, "record_count": len(records), "structured": structured,
-            "records": records, "page_title": html.unescape(title.group(1)).strip() if title else "",
-            "digest": digest, "observed_at": _now(),
-            "scrape_method": "html_table",
+            "http_status": http_status, "record_count": len(records),
+            "structured": bool(records), "records": records,
+            "page_title": html.unescape(title.group(1)).strip() if title else "",
+            "digest": digest, "observed_at": _now(), "scrape_method": "html_table",
         }
+    raw_records = _json_records(payload)
+    records = _normalize_public_records(source, raw_records)
     return {
         "source": source, "url": url,
-        "status": "REACHABLE_STRUCTURED" if http_status < 400 and records else "REFERENCE_ONLY",
-        "http_status": http_status, "record_count": len(records), "structured": structured,
-        "records": records, "digest": digest, "observed_at": _now(),
-        "scrape_method": "json",
+        "status": "REACHABLE_STRUCTURED_DATA" if http_status < 400 and records else "REFERENCE_ONLY",
+        "http_status": http_status, "record_count": len(records),
+        "structured": bool(records), "records": records, "digest": digest,
+        "observed_at": _now(), "scrape_method": "json",
     }
+
+def _byma_post(url: str, endpoint: str) -> dict[str, Any]:
+    target = url.rstrip("/") + "/vanoms-be-core/rest/api/bymadata/free/" + endpoint
+    body = json.dumps({
+        "excludeZeroPxAndQty": True, "T1": True, "T0": False,
+        "Content-Type": "application/json, text/plain",
+    }).encode("utf-8")
+    request = Request(target, data=body, method="POST", headers={
+        "User-Agent": "Porota-RC6-read-only/1.0",
+        "Accept": "application/json", "Content-Type": "application/json",
+    })
+    with urlopen(request, timeout=float(os.getenv("POROTA_PUBLIC_SOURCE_TIMEOUT", "15"))) as response:
+        payload = response.read(MAX_BYTES + 1)
+        status = int(getattr(response, "status", 200))
+    if len(payload) > MAX_BYTES:
+        raise ValueError("PUBLIC_SOURCE_RESPONSE_TOO_LARGE")
+    result = parse_public_payload("BYMA", target, payload, status)
+    result["scrape_method"] = "bymadata_public_post"
+    result["endpoint"] = endpoint
+    return result
+
+
+def _collect_byma_public(base_url: str) -> dict[str, Any]:
+    merged: list[dict[str, Any]] = []
+    endpoint_results = []
+    errors = []
+    for endpoint in ("leading-equity", "cedears"):
+        try:
+            result = _byma_post(base_url, endpoint)
+            endpoint_results.append(result)
+            merged.extend(result.get("records", []))
+        except Exception as exc:
+            errors.append(f"{endpoint}:{type(exc).__name__}:{str(exc)[:120]}")
+    # Preserve one row per symbol/settlement/currency; CEDEARs can overlap only
+    # when the public panel returns duplicated pagination fragments.
+    unique = {}
+    for row in merged:
+        key = tuple(str(row.get(k) or "") for k in ("symbol", "currency", "maturity"))
+        unique[key] = row
+    records = list(unique.values())
+    return {
+        "source": "BYMA", "url": base_url,
+        "status": "SCRAPED_PUBLIC_DATA" if records else "REFERENCE_ONLY",
+        "http_status": 200 if endpoint_results else None,
+        "record_count": len(records), "structured": bool(records),
+        "records": records, "scrape_method": "bymadata_public_post",
+        "endpoints": [{"endpoint": item.get("endpoint"), "status": item.get("status"),
+                       "record_count": item.get("record_count", 0),
+                       "http_status": item.get("http_status")} for item in endpoint_results],
+        "errors": errors, "observed_at": _now(),
+    }
+
 
 def collect_public_sources(urls: dict[str, str] | None = None) -> dict[str, Any]:
     results = []
-    for source, url in (urls or SOURCE_URLS).items():
+    selected = urls or SOURCE_URLS
+    for source, url in selected.items():
+        if source == "BYMA" and "open.bymadata.com.ar" in url:
+            try:
+                results.append(_collect_byma_public(url))
+            except Exception as exc:
+                results.append({"source": source, "url": url, "status": "UNAVAILABLE",
+                                "http_status": None, "record_count": 0,
+                                "error": f"{type(exc).__name__}:{str(exc)[:160]}",
+                                "observed_at": _now()})
+            continue
         try:
-            request = Request(url, headers={"User-Agent": "Porota-RC6-read-only/1.0", "Accept": "application/json,text/html;q=0.9"})
+            request = Request(url, headers={
+                "User-Agent": "Porota-RC6-read-only/1.0",
+                "Accept": "application/json,text/html;q=0.9",
+            })
             with urlopen(request, timeout=float(os.getenv("POROTA_PUBLIC_SOURCE_TIMEOUT", "15"))) as response:
                 body = response.read(MAX_BYTES + 1)
                 status = int(getattr(response, "status", 200))
