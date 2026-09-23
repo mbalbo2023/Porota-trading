@@ -322,8 +322,7 @@ def simulation():
     # run only that immutable image; then fail closed if PID 1 exits immediately.
     removed = run("docker", "rm", "-f", "porota_production_observer", check=False, capture=True)
     print("RC6_OBSERVER_REMOVE=" + removed.stdout.strip())
-    created = run("docker", "run", "-d", "--name", "porota_production_observer", capture=True)
-
+    created = run("docker", "run", "-d", "--name", "porota_production_observer",
         "--pull", "never", "--restart", "unless-stopped", "--no-healthcheck",
         "--user", "botuser", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
