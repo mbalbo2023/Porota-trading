@@ -597,7 +597,7 @@ jobs:
             -e PAPER_SCALPING_MODE=ACTIVE_OBSERVE \
             -v /opt/porota-trading/data:/app/data \
             -v /opt/porota-trading/.secrets/ppi_production.json:/run/secrets/ppi_production.json:ro \
-            --entrypoint python porota-trading-bot:17.0.0-rc6 bv_paper_runtime.py
+            --entrypoint python porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA bv_paper_runtime.py
           sleep 3
           OBSERVER_STATE="$(sudo -n docker inspect porota_production_observer --format '{{.State.Status}}|{{.Id}}')"
           echo "RC6_VERIFY_OBSERVER_STATE=$OBSERVER_STATE"
