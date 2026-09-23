@@ -234,9 +234,21 @@ jobs:
           sudo -n rm -f /etc/systemd/system/porota-public-snapshot-rc6.service "$REPO/rc6_public_snapshot_server.py"
           sudo -n systemctl daemon-reload
           CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA"
+          # Controlled disk remediation authorized for RC6 deploys:
+          # only dangling images and builder cache older than 24h are removed.
+          # Never touch volumes, databases, bind-mounted data, active containers,
+          # PPI Watch, or referenced image IDs.
+          echo "RC6_STORAGE_REMEDIATION=START"
+          sudo -n docker image prune -f
+          sudo -n docker builder prune -f --filter until=24h
+          sudo -n docker system df
+          AVAILABLE_BYTES="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "RC6_STORAGE_AVAILABLE_BYTES=$AVAILABLE_BYTES"
+          test "$AVAILABLE_BYTES" -ge 1073741824
+          echo "RC6_STORAGE_REMEDIATION=GREEN"
           # Free only unreferenced RC6 candidate/rollback tags before the build.
-          # This is allowlisted retention cleanup; it never prunes build cache, volumes,
-          # databases, containers, PPI Watch data, or any non-RC6 image.
+          # This is allowlisted image-tag retention cleanup; it never touches volumes,
+          # databases, containers, PPI Watch data, or referenced image IDs.
           echo "RC6_PREBUILD_RETENTION_CLEANUP=START"
           cleanup_rc6_image_tags
           echo "RC6_PREBUILD_RETENTION_CLEANUP=END"
@@ -319,12 +331,30 @@ jobs:
           # A remote wrapper can return 124 after the manager completed.
           # Continue only after its explicit success marker; all health and safety
           # checks below remain mandatory.
+          PRE_DASHBOARD_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard 2>/dev/null || true)"
+          PRE_OBSERVER_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer 2>/dev/null || true)"
+          test -n "$PRE_DASHBOARD_ID" && test -n "$PRE_OBSERVER_ID"
           set +e
           MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
           MODE_RC=$?
           set -e
           echo "$MODE_OUTPUT"
           grep -Fqx "POROTA_MODE=OK" <<< "$MODE_OUTPUT"
+          POST_DASHBOARD_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)"
+          POST_OBSERVER_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)"
+          test "$PRE_DASHBOARD_ID" != "$POST_DASHBOARD_ID"
+          test "$PRE_OBSERVER_ID" != "$POST_OBSERVER_ID"
+          echo "RC6_RUNTIME_RECREATION=GREEN|dashboard=$POST_DASHBOARD_ID|observer=$POST_OBSERVER_ID"
+          TELEGRAM_NOTIFICATION="$(sudo -n python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("/opt/porota-trading/data/operation_mode.json")
+          payload = json.loads(p.read_text(encoding="utf-8"))
+          print(payload.get("telegram_notification", "MISSING"))
+          PY
+          )"
+          echo "TELEGRAM_NOTIFICATION=$TELEGRAM_NOTIFICATION"
+          test "$TELEGRAM_NOTIFICATION" = "ENTREGADO"
           if [ "$MODE_RC" -ne 0 ] && [ "$MODE_RC" -ne 124 ]; then
             echo "MODE_MANAGER_EXIT=$MODE_RC"
             exit "$MODE_RC"
