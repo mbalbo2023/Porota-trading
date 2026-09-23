@@ -578,6 +578,33 @@ jobs:
           test "$DASHBOARD_RESTART_READY" = YES
           echo "RC6_DASHBOARD_RESTART=GREEN"
           echo "RC6_DASHBOARD_CANDIDATE_SOURCES=SYNCED"
+          # Recreate the observer explicitly in this verification step. The
+          # previous failed attempt left a stopped container under the same name;
+          # do not allow that stale container to satisfy any later check.
+          sudo -n docker rm -f porota_production_observer >/dev/null 2>&1 || true
+          sudo -n docker run -d --name porota_production_observer \
+            --pull never --restart unless-stopped --no-healthcheck \
+            --user botuser --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -e PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json \
+            -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
+            -e MARKET_OPEN_HOUR=10 -e MARKET_OPEN_MINUTE=30 \
+            -e MARKET_CLOSE_HOUR=17 -e MARKET_CLOSE_MINUTE=0 \
+            -e PAPER_PREOPEN_MINUTES=15 -e PPI_LOGIN_COOLDOWN_SECONDS=900 \
+            -e PPI_HISTORY_BATCH_LIMIT=40 -e DATA_DIR=/app/data \
+            -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
+            --env-file /opt/porota-trading/data/diagnosticos/observer_runtime_v17.env \
+            -e PAPER_SCALPING_MODE=ACTIVE_OBSERVE \
+            -v /opt/porota-trading/data:/app/data \
+            -v /opt/porota-trading/.secrets/ppi_production.json:/run/secrets/ppi_production.json:ro \
+            --entrypoint python porota-trading-bot:17.0.0-rc6 bv_paper_runtime.py
+          sleep 3
+          OBSERVER_STATE="$(sudo -n docker inspect porota_production_observer --format '{{.State.Status}}|{{.Id}}')"
+          echo "RC6_VERIFY_OBSERVER_STATE=$OBSERVER_STATE"
+          if [[ "$OBSERVER_STATE" != running\|* ]]; then
+            sudo -n docker logs --tail 120 porota_production_observer || true
+            exit 1
+          fi
           EXPECTED_OBSERVER_SHA="$(sha256sum "$STAGED_OBSERVER" | awk '{print $1}')"
           RUNNING_OBSERVER_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/bf_production_paper_observer.py | awk '{print $1}')"
           test "$RUNNING_OBSERVER_SHA" = "$EXPECTED_OBSERVER_SHA"
