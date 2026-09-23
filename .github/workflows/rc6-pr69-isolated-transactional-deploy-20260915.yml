@@ -544,8 +544,15 @@ jobs:
           # Post-close full contract reconciliation. The runner is PPI
           # read-only and fails closed unless mode is PRODUCTION_PAPER,
           # session is MARKET_CLOSED and real_orders_sent is zero.
+          set +e
           CONTRACT_OUTPUT="$(sudo -n docker exec porota_production_observer timeout 1200 python ck_contract_evidence_runner_hf6.py 2>&1)"
+          CONTRACT_RC=$?
+          set -e
+          # The runner does not print credentials. Preserve its bounded,
+          # read-only diagnosis before failing the deploy check.
+          echo "RC6_FULL_CONTRACT_RECONCILIATION_EXIT=$CONTRACT_RC"
           echo "$CONTRACT_OUTPUT"
+          test "$CONTRACT_RC" -eq 0
           grep -Fq "STATUS=OK" <<< "$CONTRACT_OUTPUT"
           grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
           echo "RC6_FULL_CONTRACT_RECONCILIATION=GREEN"
