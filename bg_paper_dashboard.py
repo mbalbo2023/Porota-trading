@@ -2038,7 +2038,10 @@ def live_page(*, offset=0, limit=50):
                 f"<td>{_status(label)}</td><td>{_status(row.get('technical_gate'))}</td>"
                 f"<td>{_status(row.get('patrimonial_gate'))}</td><td>{_e(row.get('reason'))}</td></tr>"
             )
-    decision_pager=pager_html('/en-vivo',decision_page)
+    # La paginación de /en-vivo la monta el layout responsive RC6 en un único
+    # control de diez filas. No agregar aquí el paginador backend: produciría
+    # dos controles contradictorios en la misma tabla.
+    decision_pager=""
 
     settlement_diag_html=""
     try:
