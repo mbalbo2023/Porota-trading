@@ -2056,7 +2056,7 @@ def live_page(*, offset=0, limit=10):
         released_count=(int(counts.get('AVAILABLE_NOW',0) or 0)+
                         int(counts.get('AVAILABLE_AFTER_FULL_SETTLEMENT_DATE',0) or 0))
         items=[]
-        for item in active_pending[:20]:
+        for item in active_pending[:10]:
             items.append(
                 f"<tr><td>{_e(item.get('ticker'))}</td><td>{_e(item.get('currency'))}</td>"
                 f"<td>{_e(item.get('settlement'))}</td><td data-wrap='true'>{_status(item.get('state'))}</td>"
