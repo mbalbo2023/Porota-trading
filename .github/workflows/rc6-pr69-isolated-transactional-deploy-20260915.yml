@@ -583,21 +583,32 @@ jobs:
           echo "SCALPING_SESSION_SOURCE_SHA=GREEN"
           SCALPING_RUNTIME="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
+          import time
           from datetime import datetime, timezone
           from zoneinfo import ZoneInfo
 
           db = "file:/app/data/paper_v17/observer_v17.db?mode=ro"
-          with sqlite3.connect(db, uri=True, timeout=20) as c:
-              c.execute("PRAGMA query_only=ON")
-              row = c.execute(
-                  "SELECT heartbeat_at,state,cursor,selected,successful,failed,points_inserted,"
-                  "confirmed_identities,candidates,real_orders_sent,detail "
-                  "FROM intraday_scalping_worker_state WHERE id=1"
-              ).fetchone()
-              mode, orders = c.execute(
-                  "SELECT mode,real_orders_sent FROM observer_state WHERE id=1"
-              ).fetchone()
-          assert row is not None, "SCALPING_WORKER_STATE_MISSING"
+          deadline = time.monotonic() + 90
+          row = None
+          mode = orders = None
+          while time.monotonic() < deadline:
+              try:
+                  with sqlite3.connect(db, uri=True, timeout=20) as c:
+                      c.execute("PRAGMA query_only=ON")
+                      row = c.execute(
+                          "SELECT heartbeat_at,state,cursor,selected,successful,failed,points_inserted,"
+                          "confirmed_identities,candidates,real_orders_sent,detail "
+                          "FROM intraday_scalping_worker_state WHERE id=1"
+                      ).fetchone()
+                      mode, orders = c.execute(
+                          "SELECT mode,real_orders_sent FROM observer_state WHERE id=1"
+                      ).fetchone()
+                  if row is not None:
+                      break
+              except sqlite3.Error:
+                  pass
+              time.sleep(5)
+          assert row is not None, "SCALPING_WORKER_STATE_MISSING_AFTER_STARTUP_GRACE"
           heartbeat = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
           if heartbeat.tzinfo is None:
               heartbeat = heartbeat.replace(tzinfo=timezone.utc)
