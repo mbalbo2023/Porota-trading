@@ -565,7 +565,7 @@ jobs:
             c="$(curl -sS -o /tmp/porota-dashboard-check -w '%{http_code}' --max-time 5 "http://127.0.0.1:8000$p")"
             case "$c" in 200|401) ;; *) echo "DASHBOARD_ROUTE_FAILED=$p HTTP=$c"; exit 1 ;; esac
           done
-          DASHBOARD_HEADERS="$(curl -fsSI --max-time 5 http://127.0.0.1:8000/health)"
+          DASHBOARD_HEADERS="$(curl -fsS -D - -o /dev/null --max-time 5 http://127.0.0.1:8000/health)"
           grep -Fqi "cache-control: no-store" <<< "$DASHBOARD_HEADERS"
           echo "DASHBOARD_NO_STORE_HEADERS=GREEN"
           sudo -n docker exec porota_production_dashboard timeout 15 python -c "import bg_paper_dashboard as bg; bg.validation_page(); print('BG_VALIDATION_RENDER=GREEN')"
