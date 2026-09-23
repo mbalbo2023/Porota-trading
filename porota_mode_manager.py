@@ -317,18 +317,15 @@ def simulation():
     if not secret.exists():
         raise RuntimeError("Falta el secreto productivo de solo lectura.")
     runtime_env = observer_runtime_env()
-    # RC6 worker provenance: these two files are the active scalping runtime
-    # and its session policy. Bind them read-only from the canonical candidate
-    # so a stale Docker layer can never launch an older worker.
-    scalping_sources = (
-        "--mount", f"type=bind,source={ROOT / 'cf_intraday_scalping.py'},target=/app/cf_intraday_scalping.py,readonly",
-        "--mount", f"type=bind,source={ROOT / 'co_market_sessions_hf6.py'},target=/app/co_market_sessions_hf6.py,readonly",
-    )
-    run("docker", "run", "-d", "--name", "porota_production_observer",
+    # RC6 worker provenance: create the observer from the candidate image, then
+    # copy the exact candidate worker/session files into the stopped container
+    # before starting it. This avoids trusting a stale bind mount or an old
+    # container filesystem and makes provenance fail-closed at the source.
+    observer_create = (
+        "docker", "create", "--name", "porota_production_observer",
         "--pull", "never", "--restart", "unless-stopped", "--no-healthcheck",
         "--user", "botuser", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
-        *scalping_sources,
         "-e", "PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json",
         "-e", f"{DB_ENV}={CONTAINER_DB}",
         "-e", "MARKET_OPEN_HOUR=10",
@@ -346,6 +343,20 @@ def simulation():
         "-e", "PAPER_SCALPING_MODE=ACTIVE_OBSERVE",
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
         "--entrypoint", "python", IMAGE, "bv_paper_runtime.py")
+    run(*observer_create)
+    for filename in ("cf_intraday_scalping.py", "co_market_sessions_hf6.py"):
+        source = ROOT / filename
+        run("docker", "cp", str(source), f"porota_production_observer:/app/{filename}")
+    run("docker", "start", "porota_production_observer")
+    # Verify the running files immediately. A successful docker/API response is
+    # not sufficient: the bytes in the live container must equal this candidate.
+    for filename in ("cf_intraday_scalping.py", "co_market_sessions_hf6.py"):
+        expected = hashlib.sha256((ROOT / filename).read_bytes()).hexdigest()
+        actual = run("docker", "exec", "porota_production_observer",
+                     "sha256sum", f"/app/{filename}", capture=True).stdout.strip().split()[0]
+        if actual != expected:
+            run("docker", "rm", "-f", "porota_production_observer", check=False, capture=True)
+            raise RuntimeError(f"RC6_RUNTIME_SOURCE_MISMATCH:{filename}:expected={expected}:running={actual}")
     status = notify("✅ POROTA TRADING — SISTEMA ACTIVO NUEVAMENTE\n🟣 Modo simulación productiva. Datos reales de PPI Producción; decisiones intradiarias determinísticas en Python; IA desactivada. Compras y ventas 100% simuladas. Órdenes reales: NINGUNA.\nHistorial PAPER v17 independiente; sin traslado de saldos, posiciones ni aprendizaje anteriores.")
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
