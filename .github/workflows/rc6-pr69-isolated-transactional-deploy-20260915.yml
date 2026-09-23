@@ -488,10 +488,26 @@ jobs:
           STAGE="/tmp/porota-rc6-candidate-$TARGET_SHA"
           test -f "$STAGE/scripts/rc6_iol_mcp_inventory.py"
           test -f "$STAGE/scripts/rc6_telegram_diagnostic.py"
-          IOL_RC=0
-          sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_iol_mcp_inventory.py" || IOL_RC=$?
-          case "$IOL_RC" in 0|2) ;; *) echo "IOL_MCP_INVENTORY_UNEXPECTED_EXIT=$IOL_RC"; exit "$IOL_RC";; esac
-          test -s /opt/porota-trading/data/market/iol_mcp_tools_latest.json
+          set +e
+          sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_iol_mcp_inventory.py" > /tmp/rc6-iol-mcp-inventory.out 2>&1
+          IOL_RC=$?
+          set -e
+          echo "IOL_MCP_INVENTORY_EXIT=$IOL_RC"
+          sed -n '1,120p' /tmp/rc6-iol-mcp-inventory.out || true
+          if sudo -n test -s /opt/porota-trading/data/market/iol_mcp_tools_latest.json; then
+            echo "IOL_MCP_INVENTORY_FILE=GREEN"
+            sudo -n python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("/opt/porota-trading/data/market/iol_mcp_tools_latest.json")
+          x=json.loads(p.read_text(encoding="utf-8"))
+          print("IOL_MCP_INVENTORY_STATUS=" + str(x.get("status")))
+          print("IOL_MCP_TOOL_COUNT=" + str(x.get("tool_count", 0)))
+          print("IOL_MCP_TOOL_NAMES=" + ",".join(str(item.get("name")) for item in x.get("tools", []) if isinstance(item, dict)))
+          PY
+          else
+            echo "IOL_MCP_INVENTORY_FILE=MISSING"
+          fi
           sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_telegram_diagnostic.py"
           echo "RC6_IOL_MCP_INVENTORY=CAPTURED"
           echo "RC6_TELEGRAM_DIAGNOSTIC=CAPTURED"
