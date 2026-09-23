@@ -567,6 +567,12 @@ jobs:
           # Recreate the observer explicitly in this verification step. The
           # previous failed attempt left a stopped container under the same name;
           # do not allow that stale container to satisfy any later check.
+          VERIFY_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA"
+          sudo -n docker build --no-cache --pull=false -t "$VERIFY_IMAGE" "$REPO"
+          VERIFY_SCALPING_SHA="$(sudo -n docker run --rm --pull never --entrypoint sha256sum "$VERIFY_IMAGE" /app/cf_intraday_scalping.py | awk '{print $1}')"
+          EXPECTED_VERIFY_SCALPING_SHA="$(sha256sum "$CANDIDATE_ROOT/cf_intraday_scalping.py" | awk '{print $1}')"
+          test "$VERIFY_SCALPING_SHA" = "$EXPECTED_VERIFY_SCALPING_SHA"
+          echo "RC6_VERIFY_IMAGE_SCALPING_SHA=GREEN|$VERIFY_SCALPING_SHA"
           sudo -n docker rm -f porota_production_observer >/dev/null 2>&1 || true
           sudo -n docker run -d --name porota_production_observer \
             --pull never --restart unless-stopped --no-healthcheck \
@@ -583,7 +589,7 @@ jobs:
             -e PAPER_SCALPING_MODE=ACTIVE_OBSERVE \
             -v /opt/porota-trading/data:/app/data \
             -v /opt/porota-trading/.secrets/ppi_production.json:/run/secrets/ppi_production.json:ro \
-            --entrypoint python porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA bv_paper_runtime.py
+            --entrypoint python "$VERIFY_IMAGE" bv_paper_runtime.py
           sleep 3
           OBSERVER_STATE="$(sudo -n docker inspect porota_production_observer --format '{{.State.Status}}|{{.Id}}')"
           echo "RC6_VERIFY_OBSERVER_STATE=$OBSERVER_STATE"
