@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+from html.parser import HTMLParser
 import os
 import re
 from datetime import datetime, timezone
@@ -19,7 +20,7 @@ MAX_BYTES = 2_000_000
 # These are references only until a documented technical endpoint with
 # credentials returns structured records. A3/MAE is separate from MATBA-ROFEX.
 SOURCE_URLS = {
-    "BYMA": os.getenv("POROTA_BYMA_PUBLIC_DATA_URL", "https://apiportal.byma.com.ar/"),
+    "BYMA": os.getenv("POROTA_BYMA_PUBLIC_DATA_URL", "https://open.bymadata.com.ar/"),
     "CNV": os.getenv("POROTA_CNV_PUBLIC_DATA_URL", "https://www.cnv.gov.ar/SitioWeb/HechosRelevantes"),
     "MATBA_ROFEX": os.getenv("POROTA_MATBA_ROFEX_PUBLIC_DATA_URL", "https://matbarofex.com.ar/Indices-mtr/documentacion"),
     "A3_MAE": os.getenv("POROTA_A3_MAE_PUBLIC_DATA_URL", "https://marketdata.mae.com.ar/swagger/api-documentacion.html"),
@@ -113,6 +114,78 @@ def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
         "real_money_authorized": False,
     }
 
+
+class _TableParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tables=[]; self._table=None; self._row=None; self._cell=None
+    def handle_starttag(self, tag, attrs):
+        tag=tag.lower()
+        if tag=="table" and self._table is None:
+            self._table={"rows":[]}; self._row=None; self._cell=None
+        elif self._table is not None and tag=="tr":
+            self._row=[]; self._table["rows"].append(self._row)
+        elif self._table is not None and tag in {"th","td"} and self._row is not None:
+            self._cell={"tag":tag,"text":""}; self._row.append(self._cell)
+    def handle_data(self, data):
+        if self._cell is not None:
+            self._cell["text"] += data
+    def handle_endtag(self, tag):
+        tag=tag.lower()
+        if tag in {"th","td"}: self._cell=None
+        elif tag=="tr": self._row=None
+        elif tag=="table" and self._table is not None:
+            self.tables.append(self._table); self._table=None; self._row=None; self._cell=None
+
+def _clean_text(value: Any) -> str:
+    return re.sub(r"\\s+", " ", str(value or "")).strip()
+
+def _parse_html_tables(text: str) -> list[dict[str, Any]]:
+    parser = _TableParser()
+    parser.feed(text)
+    records=[]
+    for table in parser.tables:
+        rows=[[ _clean_text(cell["text"]) for cell in row if _clean_text(cell["text"]) ] for row in table["rows"]]
+        rows=[row for row in rows if row]
+        if len(rows)<2: continue
+        header=rows[0]
+        if len(header)<2: continue
+        normalized_header=[_clean_text(x).lower() for x in header]
+        for values in rows[1:]:
+            if len(values)<2: continue
+            item={normalized_header[i]: values[i] for i in range(min(len(normalized_header),len(values)))}
+            if any(item.values()):
+                records.append(item)
+    return records[:500]
+
+def _normalize_public_records(source: str, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    aliases={
+        "symbol": ("especie","símbolo","simbolo","ticker","symbol","code"),
+        "currency": ("moneda","currency"),
+        "bid": ("p. cpra.","p compra","compra","bid"),
+        "ask": ("p. vta.","p venta","venta","ask"),
+        "last": ("último","ultimo","last"),
+        "variation_pct": ("var.","variación","variacion","variation"),
+        "volume": ("volumen","volume"),
+        "cash_volume": ("vol. monto","vol monto","cash volume"),
+        "vwap": ("vwap",),
+        "timestamp": ("hora","timestamp","fecha","date"),
+        "maturity": ("vto.","vto","vencimiento","maturity"),
+        "adjustment": ("ajuste","adjustment"),
+        "open_interest": ("interés abierto","interes abierto","open interest"),
+    }
+    out=[]
+    for raw in records:
+        normalized={"source":source}
+        lowered={_clean_text(k).lower():v for k,v in raw.items()}
+        for field,names in aliases.items():
+            for name in names:
+                if name in lowered and lowered[name] not in ("", "-", "—"):
+                    normalized[field]=lowered[name]; break
+        if normalized.get("symbol"):
+            out.append(normalized)
+    return out
+
 def parse_public_payload(source: str, url: str, body: bytes, http_status: int = 200) -> dict[str, Any]:
     digest = hashlib.sha256(body).hexdigest()
     text = body.decode("utf-8", errors="replace")
@@ -125,18 +198,24 @@ def parse_public_payload(source: str, url: str, body: bytes, http_status: int = 
         if isinstance(values, list):
             records = [item for item in values if isinstance(item, dict)][:500]
     except json.JSONDecodeError:
+        raw_records=_parse_html_tables(text)
+        records=_normalize_public_records(source, raw_records)
+        structured=bool(records)
         title = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
         return {
-            "source": source, "url": url, "status": "REFERENCE_ONLY" if http_status < 400 else "UNAVAILABLE_HTTP",
-            "http_status": http_status, "record_count": 0, "structured": False,
-            "page_title": html.unescape(title.group(1)).strip() if title else "",
+            "source": source, "url": url,
+            "status": "SCRAPED_HTML_DATA" if http_status < 400 and records else "REFERENCE_ONLY",
+            "http_status": http_status, "record_count": len(records), "structured": structured,
+            "records": records, "page_title": html.unescape(title.group(1)).strip() if title else "",
             "digest": digest, "observed_at": _now(),
+            "scrape_method": "html_table",
         }
     return {
         "source": source, "url": url,
         "status": "REACHABLE_STRUCTURED" if http_status < 400 and records else "REFERENCE_ONLY",
         "http_status": http_status, "record_count": len(records), "structured": structured,
         "records": records, "digest": digest, "observed_at": _now(),
+        "scrape_method": "json",
     }
 
 def collect_public_sources(urls: dict[str, str] | None = None) -> dict[str, Any]:
