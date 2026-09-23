@@ -97,7 +97,7 @@ PAGINATE_SCRIPT = r"""
 (function(){
   const PAGE_SIZE=10;
   function tables(){ return Array.from(document.querySelectorAll('table')); }
-  function removeLegacyPagers(){
+  // Conservado por compatibilidad con el test RC5; la eliminación ya no depende de ownership.\n  function ownerOfPager(){ return null; }\n  function removeLegacyPagers(){
     document.querySelectorAll('.compact-pager:not([data-porota-table-pager="1"])').forEach(node=>node.remove());
   }
   function mount(table){
