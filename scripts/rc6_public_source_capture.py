@@ -40,6 +40,19 @@ def main() -> int:
         "decision_effect": "OBSERVE_ONLY",
         "real_money_authorized": False,
     }, ensure_ascii=False, sort_keys=True))
+    for item in result.get("sources", []):
+        if item.get("source") != "BYMA":
+            continue
+        case = next((row for row in item.get("records", []) if str(row.get("symbol", "")).upper() == "AAPL"), None)
+        if case:
+            print("PUBLIC_SOURCE_CASE=" + json.dumps({
+                "source": "BYMA", "symbol": "AAPL",
+                "fields": {key: case.get(key) for key in (
+                    "currency", "bid", "ask", "last", "variation_pct",
+                    "volume", "cash_volume", "vwap", "timestamp") if case.get(key) is not None},
+                "status": item.get("status"), "observed_at": item.get("observed_at"),
+                "decision_effect": "OBSERVE_ONLY",
+            }, ensure_ascii=False, sort_keys=True))
     return 0
 
 if __name__ == "__main__":

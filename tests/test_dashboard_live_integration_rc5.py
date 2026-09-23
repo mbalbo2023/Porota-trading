@@ -19,3 +19,10 @@ def test_live_route_exposes_bounded_pagination():
     assert "offset:int=Query(default=0,ge=0)" in s
     assert "limit:int=Query(default=10,ge=1,le=50)" in s
     assert "live_page(offset=offset,limit=limit)" in s
+
+
+def test_table_layout_installs_single_ten_row_pager():
+    s=Path("eq_dashboard_table_layout_rc6.py").read_text(encoding="utf-8")
+    assert "ownerOfPager" in s
+    assert "data-porota-table-pager" in s
+    assert "Mostrar más" in s
