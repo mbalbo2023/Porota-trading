@@ -660,6 +660,38 @@ jobs:
           echo "RC6_UNIFIED_PAPER_DEPLOY=GREEN"
           VERIFY
 
+      - name: Execute live official-source evidence adapters (read-only)
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "bash -s" <<'LIVE'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json
+          import sqlite3
+          import rc6_official_source_adapters as official_sources
+
+          class Store:
+              def connect(self):
+                  c = sqlite3.connect("/app/data/paper_v17/observer_v17.db", timeout=20)
+                  c.row_factory = sqlite3.Row
+                  return c
+
+          with Store().connect() as c:
+              mode, orders = c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          assert mode == "PRODUCTION_PAPER" and int(orders or 0) == 0
+          official_sources.assert_read_only_invariants()
+          result = official_sources.collect(Store())
+          print("OFFICIAL_SOURCE_LIVE_RESULT=" + json.dumps(result, ensure_ascii=False, sort_keys=True))
+          with Store().connect() as c:
+              assert c.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+          print("OFFICIAL_SOURCE_LIVE_PERSISTENCE=GREEN")
+          PY
+          LIVE
+
       - name: Audit deployed storage footprint (read-only)
         shell: bash
         env:
