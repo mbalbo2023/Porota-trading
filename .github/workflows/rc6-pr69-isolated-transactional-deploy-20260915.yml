@@ -297,6 +297,14 @@ jobs:
           test "$IMAGE_ANNUAL_SHA" = "$EXPECTED_ANNUAL_SHA"
           test "$IMAGE_FAMILY_SHA" = "$EXPECTED_FAMILY_SHA"
           echo "RC6_IMAGE_SOURCE_SHA=GREEN|annual=$IMAGE_ANNUAL_SHA|family=$IMAGE_FAMILY_SHA"
+          EXPECTED_SCALPING_SHA="$(sha256sum "$STAGE/cf_intraday_scalping.py" | awk '{print $1}')"
+          IMAGE_SCALPING_SHA="$(sudo -n docker run --rm --pull never --entrypoint sha256sum "$CANDIDATE_IMAGE" /app/cf_intraday_scalping.py | awk '{print $1}')"
+          EXPECTED_SESSION_SHA="$(sha256sum "$STAGE/co_market_sessions_hf6.py" | awk '{print $1}')"
+          IMAGE_SESSION_SHA="$(sudo -n docker run --rm --pull never --entrypoint sha256sum "$CANDIDATE_IMAGE" /app/co_market_sessions_hf6.py | awk '{print $1}')"
+          test "$IMAGE_SCALPING_SHA" = "$EXPECTED_SCALPING_SHA"
+          test "$IMAGE_SESSION_SHA" = "$EXPECTED_SESSION_SHA"
+          echo "RC6_IMAGE_SCALPING_SOURCE_SHA=GREEN|$IMAGE_SCALPING_SHA"
+          echo "RC6_IMAGE_SESSION_SOURCE_SHA=GREEN|$IMAGE_SESSION_SHA"
           # Recreate the isolated approval gateway only when the stable RC6 tag
           # now resolves to a different immutable image. Its database and
           # credentials remain bind-mounted; the health probe is issues-only.
