@@ -25,7 +25,16 @@ from iol_shadow_observation_rc6 import (
 )
 from rc6_ppi_iol_reconciliation_rc6 import reconcile
 
-ALLOWED_TOOLS = frozenset({"get_asset_info", "get_asset_quote"})
+# The collector may use only instrument/reference tools.  Account,
+# order, validation, subscription and redemption tools remain excluded.
+ALLOWED_TOOLS = frozenset({
+    "get_asset_info", "get_asset_quote", "get_price_history",
+    "get_intraday_prices", "get_fixed_income_analytics",
+    "simulate_fixed_income_by_amount", "simulate_fixed_income_by_nominals",
+    "get_options_chain", "get_caucion_rates", "get_caucion_rate",
+    "get_caucion_guarantee_assets", "get_fci_funds",
+    "get_next_corporate_events",
+})
 MAX_BATCH_SIZE = 50
 DEFAULT_TERM = "t1"
 METADATA_TTL_SECONDS = 24 * 60 * 60

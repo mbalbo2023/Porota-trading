@@ -18,16 +18,22 @@ from typing import Any
 
 # These tools are market-data/reference reads only. They cannot access account state
 # or execute, validate, cancel, or schedule any transaction.
+# These are the only MCP capabilities that can enrich instrument evidence
+# without reading account state or invoking an order/validation route.  The
+# remaining discovered tools stay inventoried but are deliberately denied.
 READ_ONLY_MARKET_TOOLS = frozenset({
     "get_asset_info",
     "get_asset_quote",
     "get_price_history",
     "get_intraday_prices",
     "get_fixed_income_analytics",
+    "simulate_fixed_income_by_amount",
+    "simulate_fixed_income_by_nominals",
     "get_options_chain",
     "get_caucion_rates",
     "get_caucion_rate",
     "get_caucion_guarantee_assets",
+    "get_fci_funds",
     "get_next_corporate_events",
 })
 FORBIDDEN_ACCOUNT_OR_EXECUTION_TOOLS = frozenset({
