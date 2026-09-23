@@ -784,6 +784,7 @@ jobs:
           test -f "$STAGE/scripts/rc6_public_source_capture.py"
           sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_public_source_capture.py"
           test -s /opt/porota-trading/data/market/rc6_public_sources_latest.json
+          echo "RC6_DROPLET_PUBLIC_CAPTURE=GREEN|TARGET_SHA=$TARGET_SHA"
           PUBLIC
       - name: Audit deployed storage footprint (read-only)
         shell: bash
