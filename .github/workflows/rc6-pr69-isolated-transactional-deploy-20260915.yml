@@ -501,6 +501,20 @@ jobs:
           for f in rc6_annual_instrument_analysis.py rc6_family_readiness.py rc6_dashboard_responsive_ux.py rc6_ppi_iol_reconciliation_rc6.py rc6_cauciones_shadow_evidence.py eq_dashboard_table_layout_rc6.py er_dashboard_table_semantics_rc6.py iol_shadow_observation_rc6.py iol_shadow_collector_rc6.py iol_mcp_readonly_adapter_rc6.py bg_paper_dashboard.py da_dashboard_ux_hf6.py zz_wave8_dashboard_live_rc6.py o_dashboard.py; do
             sudo -n docker cp "$CANDIDATE_ROOT/$f" "porota_production_dashboard:/app/$f"
           done
+          # Las fuentes se sincronizan dentro del contenedor ya iniciado. Reiniciar
+          # sólo el dashboard hace que uvicorn cargue efectivamente el candidato;
+          # el observer y PPI Watch no se tocan.
+          sudo -n docker restart porota_production_dashboard
+          DASHBOARD_RESTART_READY=NO
+          for _ in $(seq 1 30); do
+            if curl -fsS --max-time 3 http://127.0.0.1:8000/health >/dev/null; then
+              DASHBOARD_RESTART_READY=YES
+              break
+            fi
+            sleep 2
+          done
+          test "$DASHBOARD_RESTART_READY" = YES
+          echo "RC6_DASHBOARD_RESTART=GREEN"
           echo "RC6_DASHBOARD_CANDIDATE_SOURCES=SYNCED"
           EXPECTED_OBSERVER_SHA="$(sha256sum "$STAGED_OBSERVER" | awk '{print $1}')"
           RUNNING_OBSERVER_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/bf_production_paper_observer.py | awk '{print $1}')"
