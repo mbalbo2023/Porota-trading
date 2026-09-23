@@ -221,3 +221,93 @@ def collect(store: Any, *, opener: Callable[..., Any] = urlopen, urls: dict[str,
 
 def assert_read_only_invariants() -> None:
     assert all(urlparse(url).scheme in {"http", "https"} for url in OFFICIAL_SOURCE_URLS.values())
+
+
+def probe_technical_endpoint(source: str, url: str, expected_symbol: str,
+                             required_fields: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Probe a documented technical endpoint without treating HTTP 200 as success.
+
+    A usable result must be a non-HTML structured payload, contain at least one
+    record, match the requested instrument, expose the requested fields, and
+    carry a provider timestamp. Missing authentication or an undocumented
+    endpoint remains an explicit non-success state.
+    """
+    result: dict[str, Any] = {
+        "source": str(source),
+        "url": str(url),
+        "expected_symbol": str(expected_symbol),
+        "status": "NOT_CONFIGURED" if not str(url or "").strip() else "UNAVAILABLE",
+        "http_status": None,
+        "content_type": "",
+        "record_count": 0,
+        "symbol_match": False,
+        "required_fields": list(required_fields),
+        "present_fields": [],
+        "provider_timestamp": None,
+        "usable": False,
+        "error": "",
+        "observed_at": _now(),
+    }
+    if not str(url or "").strip():
+        result["error"] = "TECHNICAL_ENDPOINT_NOT_CONFIGURED"
+        return result
+    try:
+        endpoint = _safe_url(url)
+        request = Request(endpoint, headers={
+            "User-Agent": "Porota-RC6-technical-probe/1.0",
+            "Accept": "application/json",
+        })
+        with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            body = response.read(MAX_BYTES + 1)
+            result["http_status"] = int(getattr(response, "status", 200))
+            result["content_type"] = str(response.headers.get("Content-Type", ""))
+        if len(body) > MAX_BYTES:
+            result["status"] = "INVALID_PAYLOAD"
+            result["error"] = "TECHNICAL_RESPONSE_TOO_LARGE"
+            return result
+        if "json" not in result["content_type"].lower():
+            result["status"] = "HTTP_200_NON_DATA_DOCUMENT" if result["http_status"] < 400 else "UNAVAILABLE_HTTP"
+            result["error"] = "CONTENT_TYPE_NOT_JSON"
+            return result
+        try:
+            payload = json.loads(body.decode("utf-8", errors="strict"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            result["status"] = "INVALID_PAYLOAD"
+            result["error"] = f"JSON_PARSE_ERROR:{type(exc).__name__}"
+            return result
+        values = payload if isinstance(payload, list) else (
+            payload.get("items", payload.get("data", payload.get("results", [])))
+            if isinstance(payload, dict) else []
+        )
+        records = [item for item in values if isinstance(item, dict)] if isinstance(values, list) else []
+        result["record_count"] = len(records)
+        if not records:
+            result["status"] = "EMPTY_STRUCTURED_RESPONSE"
+            result["error"] = "NO_RECORDS"
+            return result
+        expected = str(expected_symbol or "").strip().upper()
+        for item in records:
+            normalized = {str(k).strip().lower(): v for k, v in item.items()}
+            symbol = next((str(normalized.get(k, "")).strip().upper()
+                           for k in ("ticker", "symbol", "simbolo", "code", "instrument")
+                           if normalized.get(k) not in (None, "")), "")
+            if symbol == expected:
+                result["symbol_match"] = True
+                result["present_fields"] = sorted(str(k) for k, v in item.items()
+                                                  if v not in (None, ""))
+                result["provider_timestamp"] = next((item.get(k) for k in (
+                    "timestamp", "observed_at", "updated_at", "fecha", "time"
+                ) if item.get(k) not in (None, "")), None)
+                break
+        missing = [field for field in required_fields
+                   if str(field).lower() not in {x.lower() for x in result["present_fields"]}]
+        result["usable"] = bool(result["symbol_match"] and result["provider_timestamp"] and not missing)
+        result["status"] = "USABLE_STRUCTURED" if result["usable"] else "STRUCTURED_NOT_USABLE"
+        result["error"] = "" if result["usable"] else (
+            "SYMBOL_TIMESTAMP_OR_FIELDS_MISSING:" + ",".join(missing)
+        )
+        return result
+    except Exception as exc:
+        result["status"] = "UNAVAILABLE"
+        result["error"] = f"{type(exc).__name__}:{str(exc)[:240]}"
+        return result
