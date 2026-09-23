@@ -574,12 +574,33 @@ jobs:
           # El stage de deploy ya recreó el observer desde la imagen candidata;
           # aquí sólo se observa su proceso y su estado persistido.
           sleep 3
+          # Capture both provenance checks without set -e hiding whether the
+          # candidate file or the live observer is the failing side.
+          set +e
           EXPECTED_SCALPING_SHA="$(sha256sum "$CANDIDATE_ROOT/cf_intraday_scalping.py" | awk '{print $1}')"
-          RUNNING_SCALPING_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/cf_intraday_scalping.py | awk '{print $1}')"
-          test "$RUNNING_SCALPING_SHA" = "$EXPECTED_SCALPING_SHA"
+          EXPECTED_SCALPING_RC=$?
+          RUNNING_SCALPING_RAW="$(sudo -n timeout 15 docker exec porota_production_observer sha256sum /app/cf_intraday_scalping.py 2>&1)"
+          RUNNING_SCALPING_RC=$?
           EXPECTED_SESSION_SHA="$(sha256sum "$CANDIDATE_ROOT/co_market_sessions_hf6.py" | awk '{print $1}')"
-          RUNNING_SESSION_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/co_market_sessions_hf6.py | awk '{print $1}')"
-          test "$RUNNING_SESSION_SHA" = "$EXPECTED_SESSION_SHA"
+          EXPECTED_SESSION_RC=$?
+          RUNNING_SESSION_RAW="$(sudo -n timeout 15 docker exec porota_production_observer sha256sum /app/co_market_sessions_hf6.py 2>&1)"
+          RUNNING_SESSION_RC=$?
+          echo "SCALPING_EXPECTED_RC=$EXPECTED_SCALPING_RC|value=$EXPECTED_SCALPING_SHA"
+          echo "SCALPING_RUNNING_RC=$RUNNING_SCALPING_RC|value=$RUNNING_SCALPING_RAW"
+          echo "SESSION_EXPECTED_RC=$EXPECTED_SESSION_RC|value=$EXPECTED_SESSION_SHA"
+          echo "SESSION_RUNNING_RC=$RUNNING_SESSION_RC|value=$RUNNING_SESSION_RAW"
+          echo "SCALPING_CONTAINER_STATE_BEFORE_ENV:"
+          sudo -n docker inspect porota_production_observer --format 'STATE={{.State.Status}} EXIT={{.State.ExitCode}} ERROR={{.State.Error}} STARTED={{.State.StartedAt}} FINISHED={{.State.FinishedAt}}' || true
+          sudo -n docker ps -a --filter name=porota_production_observer --no-trunc || true
+          echo "OBSERVER_LOG_TAIL_BEFORE_ENV:"
+          sudo -n docker logs --tail 160 porota_production_observer || true
+          set -e
+          test "$EXPECTED_SCALPING_RC" -eq 0
+          test "$RUNNING_SCALPING_RC" -eq 0
+          test "$RUNNING_SCALPING_RAW" = "$EXPECTED_SCALPING_SHA  /app/cf_intraday_scalping.py"
+          test "$EXPECTED_SESSION_RC" -eq 0
+          test "$RUNNING_SESSION_RC" -eq 0
+          test "$RUNNING_SESSION_RAW" = "$EXPECTED_SESSION_SHA  /app/co_market_sessions_hf6.py"
           echo "SCALPING_WORKER_SOURCE_SHA=GREEN"
           echo "SCALPING_SESSION_SOURCE_SHA=GREEN"
           # Diagnose the child launch without letting a transient observer restart
