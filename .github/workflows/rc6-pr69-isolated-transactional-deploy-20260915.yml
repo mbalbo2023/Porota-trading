@@ -544,12 +544,12 @@ jobs:
           # Post-close full contract reconciliation. The runner is PPI
           # read-only and fails closed unless mode is PRODUCTION_PAPER,
           # session is MARKET_CLOSED and real_orders_sent is zero.
-          # This verify SSH session is independent from deploy_stage. The deploy
-          # may retag the exact image, so select it by immutable commit label
-          # rather than assuming its transient candidate tag is still present.
-          CANDIDATE_IMAGE="$(sudo -n docker image ls --filter "label=porota.commit=$TARGET_SHA" --format '{{.ID}}' | head -n 1)"
-          test -n "$CANDIDATE_IMAGE"
-          echo "RC6_CONTRACT_RUNNER_IMAGE_ID=$CANDIDATE_IMAGE"
+          # This verify SSH session builds its exact image from the deployed
+          # stage. This removes any dependency on transient tags or labels that
+          # the transactional deploy intentionally retags during promotion.
+          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA"
+          sudo -n docker build --no-cache --pull=false -t "$CANDIDATE_IMAGE" "$REPO"
+          echo "RC6_CONTRACT_RUNNER_IMAGE=$CANDIDATE_IMAGE"
           set +e
           # Run from the exact candidate image.  The live observer may still
           # be on its previous immutable image at this point, so docker exec
@@ -588,8 +588,8 @@ jobs:
           # Recreate the observer explicitly in this verification step. The
           # previous failed attempt left a stopped container under the same name;
           # do not allow that stale container to satisfy any later check.
-          VERIFY_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA"
-          sudo -n docker build --no-cache --pull=false -t "$VERIFY_IMAGE" "$REPO"
+          VERIFY_IMAGE="$CANDIDATE_IMAGE"
+          echo "RC6_VERIFY_IMAGE_REUSED=$VERIFY_IMAGE"
           VERIFY_SCALPING_SHA="$(sudo -n docker run --rm --pull never --entrypoint sha256sum "$VERIFY_IMAGE" /app/cf_intraday_scalping.py | awk '{print $1}')"
           EXPECTED_VERIFY_SCALPING_SHA="$(sha256sum "$CANDIDATE_ROOT/cf_intraday_scalping.py" | awk '{print $1}')"
           test "$VERIFY_SCALPING_SHA" = "$EXPECTED_VERIFY_SCALPING_SHA"
