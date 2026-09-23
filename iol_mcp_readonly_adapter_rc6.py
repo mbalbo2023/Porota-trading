@@ -16,7 +16,28 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-ALLOWED_TOOLS = frozenset({"get_asset_info", "get_asset_quote"})
+# These tools are market-data/reference reads only. They cannot access account state
+# or execute, validate, cancel, or schedule any transaction.
+READ_ONLY_MARKET_TOOLS = frozenset({
+    "get_asset_info",
+    "get_asset_quote",
+    "get_price_history",
+    "get_intraday_prices",
+    "get_fixed_income_analytics",
+    "get_options_chain",
+    "get_caucion_rates",
+    "get_caucion_rate",
+    "get_caucion_guarantee_assets",
+    "get_next_corporate_events",
+})
+FORBIDDEN_ACCOUNT_OR_EXECUTION_TOOLS = frozenset({
+    "get_portfolio", "get_balance", "get_ddjj", "get_order_status",
+    "get_activities", "validate_order", "buy_ggal_at_50_cents",
+    "get_stop_loss_and_take_profit", "validate_caucion",
+    "get_fci_funds", "validate_fci_subscription", "validate_fci_redemption",
+    "simulate_fixed_income_by_amount", "simulate_fixed_income_by_nominals",
+})
+ALLOWED_TOOLS = READ_ONLY_MARKET_TOOLS
 DEFAULT_STORE = Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json")
 
 
