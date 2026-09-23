@@ -40,8 +40,12 @@ def test_deploy_storage_audit_and_allowlisted_image_retention_are_safe():
     assert 'grep -Fxq "$image_id" <<< "$container_image_ids"' in body
     assert 'sudo -n docker image rm "$ref"' in body
     assert 'sudo -n docker tag "$TARGET_IMAGE" "$PREV_IMAGE_TAG"' not in body
+    assert "RC6_STORAGE_REMEDIATION=GREEN" in body
+    assert "sudo -n docker image prune -f" in body
+    assert "sudo -n docker builder prune -f --filter until=24h" in body
     assert "docker system prune" not in body
-    assert "docker image prune" not in body
+    assert "docker volume prune" not in body
+    assert "docker container prune" not in body
 
 
 def test_release_gate_installs_test_dependencies_and_covers_deterministic_paper_exits():
