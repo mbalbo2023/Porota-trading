@@ -38,6 +38,8 @@ COPY . .
 # surviving a staged deployment.
 COPY rc6_annual_instrument_analysis.py /app/rc6_annual_instrument_analysis.py
 COPY rc6_family_readiness.py /app/rc6_family_readiness.py
+# Reassert the intraday worker explicitly; the observer imports it as a child process.
+COPY cf_intraday_scalping.py /app/cf_intraday_scalping.py
 
 # El bot corre como usuario sin privilegios. Los directorios persistentes se
 # crean y se ceden ANTES de cambiar de usuario: si se montan volumenes sobre
