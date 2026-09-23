@@ -475,6 +475,28 @@ jobs:
           echo "RC6_DEPLOY_STAGE_ONE=GREEN"
           REMOTE
 
+      - name: Discover IOL MCP capabilities and diagnose Telegram (read-only)
+        shell: bash
+        env:
+          DO_HOST: \${{ secrets.DO_HOST }}
+          DO_USER: \${{ secrets.DO_USER }}
+          TARGET_SHA: \${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'LIVE'
+          set -Eeuo pipefail
+          STAGE="/tmp/porota-rc6-candidate-$TARGET_SHA"
+          test -f "$STAGE/scripts/rc6_iol_mcp_inventory.py"
+          test -f "$STAGE/scripts/rc6_telegram_diagnostic.py"
+          IOL_RC=0
+          sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_iol_mcp_inventory.py" || IOL_RC=$?
+          case "$IOL_RC" in 0|2) ;; *) echo "IOL_MCP_INVENTORY_UNEXPECTED_EXIT=$IOL_RC"; exit "$IOL_RC";; esac
+          test -s /opt/porota-trading/data/market/iol_mcp_tools_latest.json
+          sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_telegram_diagnostic.py"
+          echo "RC6_IOL_MCP_INVENTORY=CAPTURED"
+          echo "RC6_TELEGRAM_DIAGNOSTIC=CAPTURED"
+          LIVE
+
       - name: Verify deployed candidate and Paper safety
         shell: bash
         env:
@@ -733,28 +755,6 @@ jobs:
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
           echo "RC6_UNIFIED_PAPER_DEPLOY=GREEN"
           VERIFY
-
-      - name: Discover IOL MCP capabilities and diagnose Telegram (read-only)
-        shell: bash
-        env:
-          DO_HOST: \${{ secrets.DO_HOST }}
-          DO_USER: \${{ secrets.DO_USER }}
-          TARGET_SHA: \${{ github.sha }}
-        run: |
-          set -Eeuo pipefail
-          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'LIVE'
-          set -Eeuo pipefail
-          STAGE="/tmp/porota-rc6-candidate-$TARGET_SHA"
-          test -f "$STAGE/scripts/rc6_iol_mcp_inventory.py"
-          test -f "$STAGE/scripts/rc6_telegram_diagnostic.py"
-          IOL_RC=0
-          sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_iol_mcp_inventory.py" || IOL_RC=$?
-          case "$IOL_RC" in 0|2) ;; *) echo "IOL_MCP_INVENTORY_UNEXPECTED_EXIT=$IOL_RC"; exit "$IOL_RC";; esac
-          test -s /opt/porota-trading/data/market/iol_mcp_tools_latest.json
-          sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_telegram_diagnostic.py"
-          echo "RC6_IOL_MCP_INVENTORY=CAPTURED"
-          echo "RC6_TELEGRAM_DIAGNOSTIC=CAPTURED"
-          LIVE
 
       - name: Execute live official-source evidence adapters (read-only)
         shell: bash
