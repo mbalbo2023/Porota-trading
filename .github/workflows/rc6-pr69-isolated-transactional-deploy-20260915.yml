@@ -544,8 +544,12 @@ jobs:
           # Post-close full contract reconciliation. The runner is PPI
           # read-only and fails closed unless mode is PRODUCTION_PAPER,
           # session is MARKET_CLOSED and real_orders_sent is zero.
-          # This verify SSH session is independent from deploy_stage.
-          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA"
+          # This verify SSH session is independent from deploy_stage. The deploy
+          # may retag the exact image, so select it by immutable commit label
+          # rather than assuming its transient candidate tag is still present.
+          CANDIDATE_IMAGE="$(sudo -n docker image ls --filter "label=porota.commit=$TARGET_SHA" --format '{{.ID}}' | head -n 1)"
+          test -n "$CANDIDATE_IMAGE"
+          echo "RC6_CONTRACT_RUNNER_IMAGE_ID=$CANDIDATE_IMAGE"
           set +e
           # Run from the exact candidate image.  The live observer may still
           # be on its previous immutable image at this point, so docker exec
