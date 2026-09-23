@@ -6,7 +6,8 @@ def test_live_page_is_day_only_paginated_and_manual_refresh():
     assert "live_policy.decisions_for_live" in s
     assert "live_policy.closed_for_live" in s
     assert "live_policy.page_for_tablet" in s
-    assert "decision_pager=pager_html('/en-vivo',decision_page)" in s
+    assert "decision_pager=\"\"" in s
+    assert "dos controles contradictorios" in s
     assert "return _document(\"En vivo\",body,refresh=0)" in s
     assert "return _document(\"En vivo\",body,refresh=15)" not in s
     assert "overflow:auto}.paper-card" not in s
