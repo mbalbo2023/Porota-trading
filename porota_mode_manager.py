@@ -317,10 +317,18 @@ def simulation():
     if not secret.exists():
         raise RuntimeError("Falta el secreto productivo de solo lectura.")
     runtime_env = observer_runtime_env()
+    # RC6 worker provenance: these two files are the active scalping runtime
+    # and its session policy. Bind them read-only from the canonical candidate
+    # so a stale Docker layer can never launch an older worker.
+    scalping_sources = (
+        "--mount", f"type=bind,source={ROOT / 'cf_intraday_scalping.py'},target=/app/cf_intraday_scalping.py,readonly",
+        "--mount", f"type=bind,source={ROOT / 'co_market_sessions_hf6.py'},target=/app/co_market_sessions_hf6.py,readonly",
+    )
     run("docker", "run", "-d", "--name", "porota_production_observer",
         "--pull", "never", "--restart", "unless-stopped", "--no-healthcheck",
         "--user", "botuser", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
+        *scalping_sources,
         "-e", "PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json",
         "-e", f"{DB_ENV}={CONTAINER_DB}",
         "-e", "MARKET_OPEN_HOUR=10",
