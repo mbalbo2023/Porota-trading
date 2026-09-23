@@ -498,7 +498,7 @@ jobs:
           STAGED_OBSERVER="/tmp/porota-rc6-candidate-$TARGET_SHA/bf_production_paper_observer.py"
           CANDIDATE_ROOT="/tmp/porota-rc6-candidate-$TARGET_SHA"
           test -f "$STAGED_OBSERVER"
-          for f in rc6_annual_instrument_analysis.py rc6_family_readiness.py rc6_dashboard_responsive_ux.py rc6_ppi_iol_reconciliation_rc6.py rc6_cauciones_shadow_evidence.py eq_dashboard_table_layout_rc6.py er_dashboard_table_semantics_rc6.py iol_shadow_observation_rc6.py iol_shadow_collector_rc6.py iol_mcp_readonly_adapter_rc6.py bg_paper_dashboard.py da_dashboard_ux_hf6.py zz_wave8_dashboard_live_rc6.py; do
+          for f in rc6_annual_instrument_analysis.py rc6_family_readiness.py rc6_dashboard_responsive_ux.py rc6_ppi_iol_reconciliation_rc6.py rc6_cauciones_shadow_evidence.py eq_dashboard_table_layout_rc6.py er_dashboard_table_semantics_rc6.py iol_shadow_observation_rc6.py iol_shadow_collector_rc6.py iol_mcp_readonly_adapter_rc6.py bg_paper_dashboard.py da_dashboard_ux_hf6.py zz_wave8_dashboard_live_rc6.py o_dashboard.py; do
             sudo -n docker cp "$CANDIDATE_ROOT/$f" "porota_production_dashboard:/app/$f"
           done
           echo "RC6_DASHBOARD_CANDIDATE_SOURCES=SYNCED"
@@ -517,7 +517,7 @@ jobs:
             test "$RUNNING_SOURCE_SHA" = "$EXPECTED_SOURCE_SHA"
             echo "RUNNING_SOURCE_SHA=GREEN|observer|$f"
           done
-          for f in bg_paper_dashboard.py zz_wave8_dashboard_live_rc6.py da_dashboard_ux_hf6.py rc6_annual_instrument_analysis.py rc6_on_validation.py bd_ppi_readonly_guard.py c_ppi_client.py cr_pending_settlement_diagnostics_hf6.py eq_dashboard_table_layout_rc6.py rc6_dashboard_responsive_ux.py rc6_family_readiness.py; do
+          for f in bg_paper_dashboard.py zz_wave8_dashboard_live_rc6.py da_dashboard_ux_hf6.py rc6_annual_instrument_analysis.py rc6_on_validation.py bd_ppi_readonly_guard.py c_ppi_client.py cr_pending_settlement_diagnostics_hf6.py eq_dashboard_table_layout_rc6.py rc6_dashboard_responsive_ux.py rc6_family_readiness.py o_dashboard.py; do
             EXPECTED_SOURCE_SHA="$(sha256sum "$CANDIDATE_ROOT/$f" | awk '{print $1}')"
             if ! RUNNING_SOURCE_SHA="$(sudo -n docker exec porota_production_dashboard sha256sum "/app/$f" | awk '{print $1}')"; then
               echo "RUNNING_SOURCE_SHA_ERROR=dashboard|$f"
