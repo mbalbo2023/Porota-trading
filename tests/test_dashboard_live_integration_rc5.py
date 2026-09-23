@@ -17,5 +17,5 @@ def test_live_page_is_day_only_paginated_and_manual_refresh():
 def test_live_route_exposes_bounded_pagination():
     s=Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
     assert "offset:int=Query(default=0,ge=0)" in s
-    assert "limit:int=Query(default=20,ge=1,le=50)" in s
+    assert "limit:int=Query(default=10,ge=1,le=50)" in s
     assert "live_page(offset=offset,limit=limit)" in s
