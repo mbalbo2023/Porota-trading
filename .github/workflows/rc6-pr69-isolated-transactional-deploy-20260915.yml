@@ -571,7 +571,8 @@ jobs:
           echo "OBSERVER_CANDIDATE_SHA=GREEN"
           # The observer is launched from the exact image, but synchronize this
           # child module explicitly as a second provenance guard before restart.
-          sudo -n docker restart porota_production_observer
+          # El stage de deploy ya recreó el observer desde la imagen candidata;
+          # aquí sólo se observa su proceso y su estado persistido.
           sleep 3
           EXPECTED_SCALPING_SHA="$(sha256sum "$CANDIDATE_ROOT/cf_intraday_scalping.py" | awk '{print $1}')"
           RUNNING_SCALPING_SHA="$(sudo -n docker exec porota_production_observer sha256sum /app/cf_intraday_scalping.py | awk '{print $1}')"
