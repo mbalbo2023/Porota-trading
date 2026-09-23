@@ -138,7 +138,7 @@ class _TableParser(HTMLParser):
             self.tables.append(self._table); self._table=None; self._row=None; self._cell=None
 
 def _clean_text(value: Any) -> str:
-    return re.sub(r"\\s+", " ", str(value or "")).strip()
+    return re.sub(r"\s+", " ", str(value or "")).strip()
 
 def _parse_html_tables(text: str) -> list[dict[str, Any]]:
     parser = _TableParser()
