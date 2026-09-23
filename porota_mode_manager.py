@@ -333,6 +333,9 @@ def simulation():
         "-e", "DATA_DIR=/app/data",
         "-e", "SERVER_TIMEZONE=America/Argentina/Buenos_Aires",
         "--env-file", str(runtime_env),
+        # RC6 scalping is PAPER observe-only; pin the child-launch switch in the
+        # container command so a stale/malformed env file cannot disable it.
+        "-e", "PAPER_SCALPING_MODE=ACTIVE_OBSERVE",
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
         "--entrypoint", "python", IMAGE, "bv_paper_runtime.py")
     status = notify("✅ POROTA TRADING — SISTEMA ACTIVO NUEVAMENTE\n🟣 Modo simulación productiva. Datos reales de PPI Producción; decisiones intradiarias determinísticas en Python; IA desactivada. Compras y ventas 100% simuladas. Órdenes reales: NINGUNA.\nHistorial PAPER v17 independiente; sin traslado de saldos, posiciones ni aprendizaje anteriores.")
