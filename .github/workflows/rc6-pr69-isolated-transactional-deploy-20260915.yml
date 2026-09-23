@@ -669,6 +669,7 @@ jobs:
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "bash -s" <<'LIVE'
           set -Eeuo pipefail
+          sudo -n docker cp /tmp/porota-rc6-candidate-$TARGET_SHA/rc6_official_source_adapters.py porota_production_observer:/app/rc6_official_source_adapters.py
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import json
           import sqlite3
