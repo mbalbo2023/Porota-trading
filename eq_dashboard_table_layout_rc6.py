@@ -99,6 +99,9 @@ PAGINATE_SCRIPT = r"""
   function mount(table){
     if(table.dataset.porotaPagination==='1') return;
     const rows=Array.from(table.rows||[]).filter(row=>!row.querySelector('th'));
+    if(!rows.length) return;
+    /* Legacy/server pagers and this responsive pager must never coexist. */
+    table.parentElement?.querySelectorAll(':scope > .compact-pager').forEach(node=>node.remove());
     if(rows.length<=PAGE_SIZE) return;
     table.dataset.porotaPagination='1';
     let visible=PAGE_SIZE;
@@ -127,7 +130,7 @@ PAGINATE_SCRIPT = r"""
     render();
   }
   function mountAll(){
-    document.querySelectorAll('main.paper-page table, #porota-legacy-shell table').forEach(mount);
+    document.querySelectorAll('table').forEach(mount);
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mountAll,{once:true});
   else mountAll();
