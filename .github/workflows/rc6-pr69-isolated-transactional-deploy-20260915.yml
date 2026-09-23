@@ -269,6 +269,9 @@ jobs:
           if [ ! -f "$BACKUP/systemd/porota-scheduler-export-rc6.timer" ]; then sudo -n rm -f "$REPO/systemd/porota-scheduler-export-rc6.timer"; fi
             exit 1
           fi
+          echo "RC6_POSTBUILD_CACHE_REMEDIATION=START"
+          sudo -n docker builder prune -af
+          echo "RC6_POSTBUILD_CACHE_REMEDIATION=GREEN"
           sudo -n docker tag "$CANDIDATE_IMAGE" "$TARGET_IMAGE"
           EXPECTED_ANNUAL_SHA="$(sha256sum "$STAGE/rc6_annual_instrument_analysis.py" | awk '{print $1}')"
           EXPECTED_FAMILY_SHA="$(sha256sum "$STAGE/rc6_family_readiness.py" | awk '{print $1}')"
@@ -364,10 +367,11 @@ jobs:
           payload = json.loads(p.read_text(encoding="utf-8"))
           assert payload.get("status") == "ENTREGADO"
           assert isinstance(payload.get("message_id"), int) and payload["message_id"] > 0
+          assert payload.get("chat_verified") is True
           sent = datetime.fromisoformat(payload["sent_at"].replace("Z", "+00:00"))
           age = (datetime.now(timezone.utc) - sent.astimezone(timezone.utc)).total_seconds()
           assert 0 <= age <= 180
-          print(f"status={payload['status']}|message_id={payload['message_id']}")
+          print(f"status={payload['status']}|message_id={payload['message_id']}|chat_verified={payload.get('chat_verified')}")
           PY
           )"
           echo "TELEGRAM_DELIVERY_PROOF=GREEN|$TELEGRAM_DELIVERY_PROOF"
