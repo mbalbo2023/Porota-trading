@@ -19,7 +19,7 @@ def test_html_public_page_is_reference_only():
 
 def test_structured_public_payload_is_persistable_evidence():
     result = m.parse_public_payload("A3_MATBA_ROFEX", "https://example.test/data", b'{"items":[{"symbol":"DO","maturity":"2026-10-01"}]}')
-    assert result["status"] == "REACHABLE_STRUCTURED"
+    assert result["status"] == "REACHABLE_STRUCTURED_DATA"
     assert result["record_count"] == 1
 
 
@@ -35,3 +35,40 @@ def test_html_table_scrape_extracts_instrument_fields():
     assert row["ask"] == "27500"
     assert row["last"] == "27160"
     assert row["volume"] == "146796"
+
+
+def test_bymadata_json_payload_normalizes_live_fields():
+    payload = b'{"data":[{"symbol":"AAPL","bidPrice":26900,"offerPrice":27500,"tradePrice":27160,"tradeVolume":146796,"vwap":27272.378,"tradeDate":"2026-09-23T19:00:00Z"}]}'
+    result = m.parse_public_payload("BYMA", "https://open.bymadata.com.ar/vanoms-be-core/rest/api/bymadata/free/cedears", payload)
+    assert result["status"] == "REACHABLE_STRUCTURED_DATA"
+    assert result["scrape_method"] == "json"
+    assert result["record_count"] == 1
+    row = result["records"][0]
+    assert row["symbol"] == "AAPL"
+    assert row["bid"] == 26900
+    assert row["ask"] == 27500
+    assert row["last"] == 27160
+    assert row["volume"] == 146796
+    assert row["vwap"] == 27272.378
+    assert row["timestamp"] == "2026-09-23T19:00:00Z"
+
+
+def test_bymadata_public_collection_merges_read_only_panels(monkeypatch):
+    def fake_post(_base_url, endpoint):
+        symbol = "AAPL" if endpoint == "cedears" else "BBAR"
+        return {
+            "source": "BYMA",
+            "endpoint": endpoint,
+            "status": "REACHABLE_STRUCTURED_DATA",
+            "http_status": 200,
+            "record_count": 1,
+            "records": [{"source": "BYMA", "symbol": symbol, "currency": "ARS", "last": "27160"}],
+        }
+
+    monkeypatch.setattr(m, "_byma_post", fake_post)
+    result = m._collect_byma_public("https://open.bymadata.com.ar/")
+    assert result["status"] == "SCRAPED_PUBLIC_DATA"
+    assert result["scrape_method"] == "bymadata_public_post"
+    assert result["record_count"] == 2
+    assert {item["endpoint"] for item in result["endpoints"]} == {"leading-equity", "cedears"}
+    assert result["errors"] == []
