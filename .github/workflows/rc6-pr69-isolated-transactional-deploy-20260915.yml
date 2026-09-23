@@ -247,8 +247,8 @@ jobs:
           test "$AVAILABLE_BYTES" -ge 1073741824
           echo "RC6_STORAGE_REMEDIATION=GREEN"
           # Free only unreferenced RC6 candidate/rollback tags before the build.
-          # This is allowlisted retention cleanup; it never prunes build cache, volumes,
-          # databases, containers, PPI Watch data, or any non-RC6 image.
+          # This is allowlisted image-tag retention cleanup; it never touches volumes,
+          # databases, containers, PPI Watch data, or referenced image IDs.
           echo "RC6_PREBUILD_RETENTION_CLEANUP=START"
           cleanup_rc6_image_tags
           echo "RC6_PREBUILD_RETENTION_CLEANUP=END"
@@ -331,7 +331,6 @@ jobs:
           # A remote wrapper can return 124 after the manager completed.
           # Continue only after its explicit success marker; all health and safety
           # checks below remain mandatory.
-          set +e
           PRE_DASHBOARD_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard 2>/dev/null || true)"
           PRE_OBSERVER_ID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer 2>/dev/null || true)"
           test -n "$PRE_DASHBOARD_ID" && test -n "$PRE_OBSERVER_ID"
