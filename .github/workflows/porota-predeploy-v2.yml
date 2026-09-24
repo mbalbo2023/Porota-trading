@@ -1,0 +1,149 @@
+name: Porota Predeploy V2
+
+on:
+  push:
+    branches:
+      - 'governance/**'
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+
+permissions:
+  contents: read
+
+concurrency:
+  group: porota-predeploy-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  artifact-gate:
+    name: Exact artifact predeploy gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      IMAGE: porota-predeploy-v2:${{ github.sha }}
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+
+      - name: Policy invariants
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -Fq 'required_mode: PRODUCTION_PAPER' ops/policy/porota-policy.yaml
+          grep -Fq 'real_trading_allowed: false' ops/policy/porota-policy.yaml
+          grep -Fq 'rollback_allowed: false' ops/policy/porota-policy.yaml
+          grep -Fq 'build_once_required: true' ops/policy/porota-policy.yaml
+          grep -Fq 'manual_partial_runtime_file_lists_allowed: false' ops/policy/porota-policy.yaml
+          echo 'POROTA_POLICY_GATE=GREEN'
+
+      - name: Python syntax gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m compileall -q             -x '(^|/)(\.git|\.venv|venv|tests|docs)/' .
+          echo 'POROTA_COMPILE_GATE=GREEN'
+
+      - name: Validator regression tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check 'pytest>=8.3,<10'
+          python -m pytest -q tests/test_porota_validate_deploy_artifact.py
+          echo 'POROTA_VALIDATOR_TESTS=GREEN'
+
+      - name: Build candidate exactly once
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker build             --label "porota.commit=${GITHUB_SHA}"             --label "porota.predeploy=v2"             -t "$IMAGE" .
+          docker image inspect "$IMAGE" >/dev/null
+          echo "POROTA_BUILD_ONCE=GREEN|IMAGE=$IMAGE"
+
+      - name: Extract exact image application filesystem
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf /tmp/porota-predeploy-app
+          mkdir -p /tmp/porota-predeploy-app
+          cid="$(docker create "$IMAGE")"
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          docker cp "$cid:/app/." /tmp/porota-predeploy-app/
+          docker rm "$cid" >/dev/null
+          trap - EXIT
+          test -f /tmp/porota-predeploy-app/Dockerfile
+          echo 'POROTA_EXACT_ARTIFACT_EXTRACT=GREEN'
+
+      - name: Artifact completeness and import closure
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/porota_validate_deploy_artifact.py             --repo-root .             --artifact-root /tmp/porota-predeploy-app             --manifest-out /tmp/porota-artifact-manifest.json
+          python - <<'PY'
+          import json
+          p='/tmp/porota-artifact-manifest.json'
+          x=json.load(open(p,encoding='utf-8'))
+          assert x['status']=='GREEN'
+          print('POROTA_ARTIFACT_FILES=' + str(x['artifact_runtime_files']))
+          print('POROTA_ARTIFACT_MISSING=' + str(len(x['missing_runtime_files'])))
+          print('POROTA_IMPORT_CLOSURE_MISSING=' + str(len(x['missing_local_imports'])))
+          PY
+
+      - name: Exact image import smoke
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --rm --pull never --entrypoint python "$IMAGE" - <<'PY'
+          import bg_paper_dashboard
+          import bf_production_paper_observer
+          import bv_paper_runtime
+          import bl_candle_engine
+          import be_paper_engine
+          import bw_daily_risk
+          import dh_paper_dynamic_risk_gate_hf6
+          print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
+          PY
+
+      - name: PAPER safety source gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          policy=Path('ops/policy/porota-policy.yaml').read_text(encoding='utf-8')
+          assert 'required_mode: PRODUCTION_PAPER' in policy
+          assert 'real_trading_allowed: false' in policy
+          assert 'real_orders_sent_required: 0' in policy
+          print('POROTA_PAPER_SAFETY_SOURCE_GATE=GREEN')
+          PY
+
+      - name: Predeploy summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo '### Porota Predeploy V2'
+            echo "- SHA: \`${GITHUB_SHA}\`"
+            echo '- Policy: GREEN'
+            echo '- Compile: GREEN'
+            echo '- Validator regression: GREEN'
+            echo '- Build: ONCE'
+            echo '- Exact artifact integrity: GREEN'
+            echo '- Import closure: GREEN'
+            echo '- Runtime import smoke: GREEN'
+            echo '- PAPER safety source gate: GREEN'
+            echo '- Droplet touched: NO'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo 'POROTA_PREDEPLOY_V2=GREEN'
+          echo 'DROPLET_TOUCHED=NO'
+
+      - name: Local cleanup
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker ps -aq --filter "ancestor=$IMAGE" | xargs -r docker rm -f
+          docker image rm "$IMAGE" >/dev/null 2>&1 || true
+          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json
+          echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'
