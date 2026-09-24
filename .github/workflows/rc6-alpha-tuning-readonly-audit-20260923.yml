@@ -6,7 +6,9 @@ on:
       - audit/rc6-alpha-tuning-analysis-20260923
     paths:
       - rc6_trade_master_audit.py
+      - rc6_trade_cohort_analysis.py
       - tests/test_rc6_trade_master_audit.py
+      - tests/test_rc6_trade_cohort_analysis.py
       - rc6_alpha_tuning_analysis.py
       - tests/test_rc6_alpha_tuning_analysis.py
       - .github/workflows/rc6-alpha-tuning-readonly-audit-20260923.yml
@@ -119,6 +121,25 @@ jobs:
           print('GROSS_POSITIVE_NET_NEGATIVE='+str(p['friction']['gross_positive_net_negative']))
           PY
 
+      - name: Analyze cohorts and signal discrimination
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python rc6_trade_cohort_analysis.py rc6_trade_master.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('rc6_trade_cohort_analysis.json').read_text(encoding='utf-8'))
+          a=r['ars']; m=r['by_currency']['ARS']
+          print('ARS_GROSS_PNL='+str(m['gross_pnl']))
+          print('ARS_COSTS='+str(m['costs']))
+          print('ARS_NET_PNL='+str(m['net_pnl']))
+          print('GROSS_POSITIVE_BUT_NET_NEGATIVE='+str(a['gross_positive_but_net_negative']))
+          print('TARGET_5PCT_REACHED_BY_MFE='+str(a['target_5pct_reached_by_mfe']))
+          print('ECONOMIC_GATE_WOULD_FAIL='+str(a['economic_gate_would_fail_count']))
+          print('SCORE_NET_CORRELATION='+str(a['score_net_pnl_correlation']))
+          PY
+
       - name: Verify live PAPER safety after audit
         shell: bash
         env:
@@ -141,6 +162,8 @@ jobs:
             rc6_trade_master.json
             rc6_trade_master.csv
             rc6_trade_audit_summary.json
+            rc6_trade_cohort_analysis.json
+            rc6_trade_cohort_analysis.md
             rc6_alpha_tuning_findings.json
             rc6_alpha_tuning_findings.md
           if-no-files-found: error
