@@ -62,9 +62,13 @@ MARKET_OPEN_MINUTE = int(os.getenv("MARKET_OPEN_MINUTE", "30"))
 MARKET_CLOSE_HOUR = int(os.getenv("MARKET_CLOSE_HOUR", "17"))
 MARKET_CLOSE_MINUTE = int(os.getenv("MARKET_CLOSE_MINUTE", "0"))
 PREOPEN_MINUTES = max(5, int(os.getenv("PAPER_PREOPEN_MINUTES", "15")))
-# Alcance operativo estricto RC6: contado argentino y CEDEARs únicamente.
-# No se recorren ni se persisten familias fuera de este conjunto.
-OPERATIONAL_FAMILIES = frozenset({"ACCIONES", "CEDEARS"})
+# Universo PAPER/SHADOW ampliado. PPI sigue siendo primario; IOL y BYMA
+# complementan. Las familias sin contrato completo permanecen en HOLD/SHADOW
+# y nunca habilitan dinero real.
+OPERATIONAL_FAMILIES = frozenset({
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+})
 CORE_SYMBOLS = (
     ("GGAL", "ACCIONES", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
@@ -190,7 +194,11 @@ def _candidate_universe():
             kind = str(block.get("instrument_type") or asset_class).upper()
             if kind not in OPERATIONAL_FAMILIES:
                 continue
-            settlement = str(block.get("settlement") or SETTLEMENT_BY_TYPE[kind])
+            settlement = str(block.get("settlement") or SETTLEMENT_BY_TYPE.get(kind) or "").strip()
+            # No inventar plazo: una identidad sin settlement contractual queda
+            # fuera del ciclo hasta que PPI/IOL/BYMA lo publique.
+            if not settlement:
+                continue
             for ticker in block.get("tickers", []):
                 if str(ticker).strip():
                     rows.add((str(ticker).strip().upper(), kind, settlement, "BYMA", True))
