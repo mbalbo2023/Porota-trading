@@ -54,7 +54,7 @@ The failures inspected so far do **not** establish a production-runtime regressi
 | test_rc6_byma_calendar_failclosed.py | 2 | TEST_HARNESS_OBSOLETE | Test AST-extracts `_business_day` without its required constants and injects an old `ak_byma_calendar` module no longer used by the embedded audited calendar. |
 | test_rc6_table_headers_visible_sticky.py | 1 | SUPERSEDED_RESPONSIVE_LAYOUT | Test requires `width:max-content`; current tablet policy deliberately uses fixed/100% width to prevent horizontal overflow. |
 | test_rc6_validation_dynamic.py | 2 | SUPERSEDED_POLICY_SEMANTICS | M11 is now POLICY_BLOCKED/GRAY rather than a runtime RED failure; summary intentionally excludes policy-blocked rows from critical runtime reds. |
-| test_single_close_ledger_v17.py | 3 | SUPERSEDED_INSTRUMENT_SCOPE | Tests require BONOS/LETRAS/ON opening behavior outside the current ACCIONES/CEDEARS operational universe. |
+| test_single_close_ledger_v17.py | 3 | TEST_IMPLEMENTATION_BUG | Current motor already rejects families outside ACCIONES/CEDEARS. The updated regression test called `_open()` correctly in intent but unpacked 2 values while the current contract returns 3 `(opened, reason, paper_id)`. Fix preserves the safety assertion and adds `paper_id is None`. |
 
 Total failing cases represented above: **51**.
 
@@ -76,3 +76,20 @@ Manual focused test lists created two problems:
 - old tests could remain stale indefinitely because nothing forced reconciliation.
 
 Deploy V2 therefore keeps automatic discovery as a permanent principle. Test classification must be explicit and auditable; discovery itself must never depend on someone remembering a filename.
+
+
+## Progress update — exact-image full suite
+
+Latest complete Predeploy V2 run on `e376160c5ae24b9d8c09d9b806d899501433b3fa`:
+- discovered/executed: **1,984 tests**
+- failures: **37**
+- errors: **0**
+- skipped: **0**
+- artifact integrity before tests: GREEN
+- runtime files verified: 371
+- missing runtime files: 0
+- missing local imports: 0
+- droplet touched: NO
+- local runner cleanup: GREEN
+
+The previous full-suite run exposed 51 failures. Current triage/test-contract corrections reduced this to 37, a reduction of 14 failures without deleting or silently excluding tests.
