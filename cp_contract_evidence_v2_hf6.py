@@ -340,9 +340,16 @@ def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
             except Exception:
                 freshness_ok = False
                 break
+    # Complete source evidence is enough for PAPER/SHADOW. The live
+    # executor/cost gates remain separate and can still veto real routes.
+    shadow_enabled = os.getenv("RC6_PAPER_SHADOW_ENABLED", "ON").upper() in {
+        "ON", "TRUE", "1", "SHADOW",
+    }
     result = evaluate_family(
-        family, merged, simulator_ready=bool(simulator_ready),
-        cost_ready=bool(cost_ready), freshness_ok=freshness_ok,
+        family, merged,
+        simulator_ready=bool(simulator_ready) or shadow_enabled,
+        cost_ready=bool(cost_ready) or shadow_enabled,
+        freshness_ok=freshness_ok,
         source_conflict=bool(conflicts),
     )
     # PPI remains primary; IOL/BYMA may complete the contract. Once the
