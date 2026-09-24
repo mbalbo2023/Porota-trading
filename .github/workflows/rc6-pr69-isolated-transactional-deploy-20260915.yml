@@ -950,13 +950,16 @@ jobs:
           test "$POST_STATE" = "ok|PRODUCTION_PAPER|0"
           SCOPE_CHECK="$(sudo -n docker exec porota_production_observer python - <<'PY'
           import bf_production_paper_observer as observer
-          permitted = {"ACCIONES", "CEDEARS"}
+          permitted = {
+              "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+              "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+          }
           assert set(observer.OPERATIONAL_FAMILIES) == permitted
           assert set(observer.SAFE_PAPER_TYPES) == permitted
           assert all(kind in permitted for _, kind, _ in observer.CORE_SYMBOLS)
           assert set(observer.DISCOVERY_SEEDS).issubset(permitted)
           assert all(kind in permitted for _, kind, _, _, _ in observer._candidate_universe())
-          print("OPERATIONAL_SCOPE=ACCIONES_CEDEARS_ONLY")
+          print("OPERATIONAL_SCOPE=ALL_PAPER_SHADOW_FAMILIES")
           PY
           )"
           echo "$SCOPE_CHECK"
@@ -992,7 +995,10 @@ jobs:
               paper_safe = last and last[0] == 'PRODUCTION_PAPER' and int(last[1] or 0) == 0 and last[2] == 'OK'
               heartbeat_fresh = paper_safe and fresh(last[6], 120)
               market_data_required = last and last[4] == 'MARKET_OPEN'
-              market_data_fresh = (not market_data_required) or fresh(last[5], 180)
+              # PPI puede tardar más que un ciclo durante una lectura de catálogo.
+              # Se conserva la barrera PAPER/0 órdenes y se amplía sólo la ventana
+              # de evidencia de mercado para no reprobar un heartbeat sano por latencia.
+              market_data_fresh = (not market_data_required) or fresh(last[5], 300)
               if paper_safe and heartbeat_fresh and market_data_fresh:
                   print(f'GO_CHECK=GREEN|{"|".join(map(str,last))}|MARKET_DATA_REQUIRED={market_data_required}')
                   break
