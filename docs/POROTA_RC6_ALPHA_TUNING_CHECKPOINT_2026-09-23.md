@@ -141,16 +141,24 @@ Conclusión: no promover momentum/EMA/RSI simples como BINDING. El alpha factual
 - tests correspondientes.
 - Se eliminó el analizador de velas duplicado/superseded y se consolidó el workflow.
 
-## Estudios EN CURSO al momento del handoff
-1. `rc6_entry_context_audit.py`
-   - book imbalance point-in-time
-   - breadth point-in-time
-   - asset day return
-   - combinaciones sin look-ahead
-   - run #21 id `35946098360`: al último chequeo seguía IN_PROGRESS en el step “Audit entry book and breadth context”.
-   - NO usar resultados hasta que termine SUCCESS + POST_SAFETY GREEN.
+## Entry context CONFIRMADO
+Run #21 id `35946098360` terminó SUCCESS.
+- PRE_SAFETY = PRODUCTION_PAPER|0.
+- POST_SAFETY = PRODUCTION_PAPER|0.
+- RC6_ALPHA_TUNING_READONLY_AUDIT = GREEN.
+- coverage = 82/82 para fresh_book_120s, book_imbalance, breadth y asset_day_return.
 
-2. `rc6_entry_breadth_audit.py`
+Filtros evaluados sobre trades factual-opened:
+- BOOK_IMBALANCE_POS: kept 27, 3 wins, 24 losses; ARS kept net -19936.1986.
+- BREADTH_POS: kept 43, 3 wins, 40 losses; ARS kept net -32040.6780.
+- BREADTH_NONNEG: kept 44, 4 wins, 40 losses; ARS kept net -31471.1322.
+- ASSET_DAY_RETURN_POS: kept 51, 4 wins, 47 losses; ARS kept net -38551.7219.
+- BREADTH_POS_AND_ASSET_POS: kept 39, 3 wins, 36 losses; ARS kept net -30929.2279.
+
+Conclusión: book imbalance positivo, breadth positiva y retorno intradiario positivo NO rescatan el alpha; tampoco deben promoverse a BINDING.
+
+## Estudios EN CURSO / PENDIENTES al momento del handoff
+1. `rc6_entry_breadth_audit.py`
    - first-vs-last observed trade breadth, no es un índice.
    - threshold bearish de referencia 70%, ALERT_ONLY.
    - requiere run exitoso completo antes de conclusiones.
@@ -161,11 +169,9 @@ Conclusión: no promover momentum/EMA/RSI simples como BINDING. El alpha factual
    - Si hace falta, re-ejecutar después de que no haya otro workflow en curso, siempre read-only.
 
 ## Próximo paso exacto
-A. Esperar/verificar finalización del run #21. Si SUCCESS:
-- extraer ENTRY_CONTEXT_COVERAGE y cada ENTRY_CONTEXT_*.
-- verificar POST_SAFETY=PRODUCTION_PAPER|0 y GREEN.
+A. El run #21 ya está cerrado SUCCESS + GREEN. No repetirlo.
 
-B. Ejecutar una única corrida consolidada de HEAD actual sólo si hace falta cubrir breadth + cost-aware targets que no tengan run exitoso.
+B. Ejecutar una única corrida consolidada de HEAD actual sólo si hace falta cubrir breadth + cost-aware targets que todavía no tengan run exitoso.
 - No disparar múltiples runs en paralelo.
 - No hacer deploy.
 - No modificar strategy/env.
