@@ -7,6 +7,8 @@ on:
     paths:
       - rc6_decision_net_opportunity_labels.py
       - tests/test_rc6_decision_net_opportunity_labels.py
+      - rc6_decision_label_analysis.py
+      - tests/test_rc6_decision_label_analysis.py
       - .github/workflows/rc6-decision-net-opportunity-labels-readonly-20260923.yml
   workflow_dispatch:
 
@@ -30,9 +32,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m py_compile rc6_decision_net_opportunity_labels.py
+          python -m py_compile rc6_decision_net_opportunity_labels.py rc6_decision_label_analysis.py
           python -m pip install -q pytest
-          python -m pytest -q tests/test_rc6_decision_net_opportunity_labels.py
+          python -m pytest -q tests/test_rc6_decision_net_opportunity_labels.py tests/test_rc6_decision_label_analysis.py
           grep -q 'mode=ro' rc6_decision_net_opportunity_labels.py
           grep -q 'PRAGMA query_only=ON' rc6_decision_net_opportunity_labels.py
           ! grep -Eq 'requests\.|urllib|httpx|subprocess|os\.system' rc6_decision_net_opportunity_labels.py
@@ -80,6 +82,23 @@ jobs:
           print('LABEL_BY_DAY='+json.dumps(r['by_day'],sort_keys=True))
           PY
 
+      - name: Analyze decision opportunity labels
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python rc6_decision_label_analysis.py rc6_decision_net_opportunity_labels.json --out rc6_decision_label_analysis.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('rc6_decision_label_analysis.json').read_text(encoding='utf-8'))
+          print('DECISION_LABEL_ANALYSIS_ROWS='+str(r['rows']))
+          for key,x in r['targets'].items():
+              print('DECISION_LABEL_TARGET_'+key+'='+json.dumps({
+                'all':x['all'],'by_action':x['by_action'],'uplift':x['buy_vs_hold_uplift_pct_points'],
+                'auc':x['auc'],'score_bands':x['score_bands'],'by_day':x['by_day']
+              },sort_keys=True))
+          PY
+
       - name: Verify PAPER safety after labels
         shell: bash
         env:
@@ -97,6 +116,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rc6-decision-net-opportunity-labels-${{ github.run_id }}
-          path: rc6_decision_net_opportunity_labels.json
+          path: |
+            rc6_decision_net_opportunity_labels.json
+            rc6_decision_label_analysis.json
           if-no-files-found: error
           retention-days: 30
