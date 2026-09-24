@@ -271,12 +271,20 @@ def start_dashboard(mode):
     # modules read-only so a stale /app copy can never mask the exact candidate.
     # The observer and PPI Watch remain separate owners and are not mounted here.
     runtime_sources = (
+        "bg_paper_dashboard.py",
+        "zz_wave8_dashboard_live_rc6.py",
+        "da_dashboard_ux_hf6.py",
         "rc6_annual_instrument_analysis.py",
-        "rc6_family_readiness.py",
+        "rc6_on_validation.py",
+        "bd_ppi_readonly_guard.py",
+        "c_ppi_client.py",
+        "cr_pending_settlement_diagnostics_hf6.py",
+        "eq_dashboard_table_layout_rc6.py",
         "rc6_dashboard_responsive_ux.py",
+        "rc6_family_readiness.py",
+        "o_dashboard.py",
         "rc6_ppi_iol_reconciliation_rc6.py",
         "rc6_cauciones_shadow_evidence.py",
-        "eq_dashboard_table_layout_rc6.py",
         "er_dashboard_table_semantics_rc6.py",
         "iol_shadow_observation_rc6.py",
         "iol_shadow_collector_rc6.py",
@@ -296,15 +304,9 @@ def start_dashboard(mode):
         "--security-opt", "no-new-privileges:true", "-p", "127.0.0.1:8000:8000",
         "--env-file", str(env_path), "-v", f"{DATA}:/app/data", *source_mounts,
         "--entrypoint", "python", IMAGE, "o_dashboard.py")
-    # Defensive source synchronization for the live container. The image is
-    # checked separately by the deploy workflow; this second guard prevents a
-    # stale /app copy from surviving container recreation. Files remain
-    # read-only at the container's effective runtime user and only dashboard
-    # modules are touched.
-    for filename in runtime_sources:
-        source = ROOT / filename
-        run("docker", "cp", str(source),
-            f"porota_production_dashboard:/app/{filename}")
+    # Todas las fuentes de dashboard se montan read-only desde el stage
+    # canónico. No se usa docker cp sobre un contenedor read-only: así no puede
+    # sobrevivir una copia interna antigua al recrear el servicio.
 
 
 def simulation():
