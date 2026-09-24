@@ -9,10 +9,14 @@ on:
       - rc6_trade_cohort_analysis.py
       - rc6_baseline_replay_audit.py
       - rc6_exit_target_counterfactual.py
+      - rc6_candle_entry_diagnostic.py
+      - rc6_candle_entry_diagnostic.py
       - tests/test_rc6_trade_master_audit.py
       - tests/test_rc6_trade_cohort_analysis.py
       - tests/test_rc6_baseline_replay_audit.py
-      - tests/test_rc6_exit_target_counterfactual.py
+      - tests/test_rc6_exit_target_counterfactual.py tests/test_rc6_candle_entry_diagnostic.py
+      - tests/test_rc6_candle_entry_diagnostic.py
+      - tests/test_rc6_candle_entry_diagnostic.py
       - rc6_alpha_tuning_analysis.py
       - rc6_exit_grid_replay.py
       - rc6_point_in_time_entry_features.py
@@ -42,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m py_compile rc6_trade_master_audit.py rc6_alpha_tuning_analysis.py rc6_trade_cohort_analysis.py rc6_baseline_replay_audit.py rc6_exit_target_counterfactual.py rc6_exit_grid_replay.py rc6_baseline_replay_audit.py rc6_trade_cohort_analysis.py
+          python -m py_compile rc6_trade_master_audit.py rc6_alpha_tuning_analysis.py rc6_trade_cohort_analysis.py rc6_baseline_replay_audit.py rc6_exit_target_counterfactual.py rc6_candle_entry_diagnostic.py rc6_exit_grid_replay.py rc6_baseline_replay_audit.py rc6_trade_cohort_analysis.py
           python -m pip install -q pytest
           python -m pytest -q tests/test_rc6_trade_master_audit.py tests/test_rc6_alpha_tuning_analysis.py tests/test_rc6_trade_cohort_analysis.py tests/test_rc6_baseline_replay_audit.py tests/test_rc6_exit_target_counterfactual.py tests/test_rc6_exit_grid_replay.py tests/test_rc6_baseline_replay_audit.py tests/test_rc6_trade_cohort_analysis.py
           grep -q 'mode=ro' rc6_trade_master_audit.py
@@ -156,6 +160,27 @@ jobs:
               print('TARGET='+key+'|CHANGED='+str(x['changed_trades'])+'|DELTA='+json.dumps(x['delta_by_currency'],sort_keys=True)+'|NET='+json.dumps(x['candidate_net_by_currency'],sort_keys=True)+'|UNMODELED='+str(x['unmodeled']))
           PY
 
+      - name: Run point-in-time candle entry diagnostics
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n docker exec -i porota_production_observer sh -lc 'cd /app && python - --db /app/data/paper_v17/observer_v17.db'" \
+            < rc6_candle_entry_diagnostic.py > rc6_candle_entry_diagnostic.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('rc6_candle_entry_diagnostic.json').read_text(encoding='utf-8'))
+          assert r['read_only'] and not r['network_calls_performed'] and not r['broker_calls_performed']
+          assert r['safety']=={'mode':'PRODUCTION_PAPER','real_orders_sent':0}
+          print('CANDLE_COVERAGE='+json.dumps(r['coverage'],sort_keys=True))
+          print('CANDLE_BY_CURRENCY='+json.dumps(r['by_currency'],sort_keys=True))
+          print('CANDLE_PROFILES='+json.dumps(r['profiles'],sort_keys=True))
+          PY
+
       - name: Analyze cohorts deterministically
         shell: bash
         run: |
@@ -262,6 +287,7 @@ jobs:
             rc6_trade_audit_summary.json
             rc6_baseline_replay_audit.json
             rc6_exit_target_counterfactual.json
+            rc6_candle_entry_diagnostic.json
             rc6_exit_grid_replay.json
             rc6_point_in_time_entry_features.json
             rc6_trade_cohort_analysis.json
