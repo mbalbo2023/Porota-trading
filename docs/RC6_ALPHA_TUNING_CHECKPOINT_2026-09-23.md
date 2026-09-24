@@ -253,3 +253,26 @@ SHADOW diagnostics already observed:
 - Do not repeat already-completed work.
 - Keep user updated with concrete evidence.
 - If UI says “system checks/comprobaciones”, explain that these are GitHub audit checks, not real trading, and continue from the last successful run.
+
+
+## Addendum — opportunity-label / robustness phase
+
+After run 25, the audit branch added:
+- `rc6_alpha_profile_comparison.py`: predefined candidate profiles with a fixed chronological train/validation split and a fail-closed robustness gate.
+- `rc6_entry_opportunity_analysis.py`: relates point-in-time entry features to rigorous cost-aware executable net-opportunity labels.
+- tests for both modules.
+- opportunity labels are UNKNOWN/fail-closed when the exit counterfactual could not model the trade; UNKNOWN rows are excluded rather than silently labeled negative.
+- the profile gate requires, for ARS: minimum sample sizes plus positive train/validation net and profit factor >1 in both halves.
+
+Latest audit-code SHA awaiting full workflow validation:
+`12707843f48943f02a8c0c24062aed8bc5acaaac`
+
+Workflow state at this addendum:
+- run 28 / 35946748781 was still in progress on an earlier robustness SHA.
+- run 33 / 35946996653 was pending on SHA `12707843...`.
+- **Do not use run 33 conclusions until it is SUCCESS and POST_SAFETY=PRODUCTION_PAPER|0.**
+
+First action for the next continuation:
+1. check run 33;
+2. if successful, capture `PROFILE_COMPARISON_CONCLUSION`, `PROFILE_COMPARISON_PASSED`, opportunity coverage/AUC/profile outputs, and post-safety;
+3. if no profile passes the predefined gate, freeze the conclusion that the old alpha family has no supported tuning path and move to design of a new SHADOW alpha/data-collection contract rather than more parameter search.
