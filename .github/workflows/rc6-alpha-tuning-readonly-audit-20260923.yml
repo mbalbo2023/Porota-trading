@@ -15,6 +15,8 @@ on:
       - tests/test_rc6_exit_target_counterfactual.py
       - rc6_alpha_tuning_analysis.py
       - rc6_exit_grid_replay.py
+      - rc6_point_in_time_entry_features.py
+      - tests/test_rc6_point_in_time_entry_features.py
       - tests/test_rc6_exit_grid_replay.py
       - tests/test_rc6_alpha_tuning_analysis.py
       - .github/workflows/rc6-alpha-tuning-readonly-audit-20260923.yml
@@ -215,6 +217,27 @@ jobs:
                   print('EXIT_GRID_'+key+'='+json.dumps(r['grid'][key]['ARS'],sort_keys=True))
           PY
 
+      - name: Audit point-in-time entry features
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n docker exec -i porota_production_observer sh -lc 'cd /app && python - --db /app/data/paper_v17/observer_v17.db'" \
+            < rc6_point_in_time_entry_features.py > rc6_point_in_time_entry_features.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('rc6_point_in_time_entry_features.json').read_text(encoding='utf-8'))
+          assert r['read_only'] is True and r['network_calls_performed'] is False and r['broker_calls_performed'] is False
+          assert r['safety']=={'mode':'PRODUCTION_PAPER','real_orders_sent':0}
+          print('ENTRY_FEATURE_COVERAGE='+json.dumps(r['coverage'],sort_keys=True))
+          for x in r['assessments']:
+              print('ENTRY_FILTER_'+x['name']+'='+json.dumps({k:x[k] for k in ('coverage','kept','blocked','winners_blocked','losers_blocked','first_half','second_half')},sort_keys=True))
+          PY
+
       - name: Verify live PAPER safety after audit
         shell: bash
         env:
@@ -240,6 +263,7 @@ jobs:
             rc6_baseline_replay_audit.json
             rc6_exit_target_counterfactual.json
             rc6_exit_grid_replay.json
+            rc6_point_in_time_entry_features.json
             rc6_trade_cohort_analysis.json
             rc6_trade_cohort_analysis.md
             rc6_alpha_tuning_findings.json
