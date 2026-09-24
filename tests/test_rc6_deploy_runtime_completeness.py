@@ -72,3 +72,11 @@ def test_late_verification_uses_retained_stable_image_tag():
     assert 'VERIFY_IMAGE="$TARGET_IMAGE"' in verify
     assert 'docker image inspect "$VERIFY_IMAGE"' in verify
     assert 'docker image inspect "$CANDIDATE_IMAGE"' not in verify
+
+
+def test_contract_runner_uses_host_timeout_and_python_entrypoint():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    verify = source[source.index("- name: Verify deployed candidate and Paper safety"):]
+    assert 'sudo -n timeout 1200 sudo -n docker run' in verify
+    assert '--entrypoint python "$VERIFY_IMAGE" ck_contract_evidence_runner_hf6.py' in verify
+    assert '--entrypoint timeout "$VERIFY_IMAGE" 1200 python ck_contract_evidence_runner_hf6.py' not in verify
