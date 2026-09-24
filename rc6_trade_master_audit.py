@@ -83,6 +83,56 @@ def mfe_mae(c,p):
       "source_set":sorted({str(r.get("source")) for _,r in usable}),
     }
 
+def post_exit_recovery(c,p):
+    """Executable BID path after close, bounded to 120 minutes; observation only."""
+    needed={"symbol","asset_class","settlement","currency","market","closed_at","entry_price"}
+    if any(p.get(k) in (None,"") for k in needed):
+        return {"status":"NO_MEDIDO","reason":"TRADE_IDENTITY_INCOMPLETE"}
+    entry=d(p.get("entry_price"))
+    if not entry or entry<=0 or not exists(c,"market_snapshots"):
+        return {"status":"NO_MEDIDO","reason":"ENTRY_OR_SNAPSHOTS_UNAVAILABLE"}
+    sc=cols(c,"market_snapshots")
+    required={"symbol","asset_class","settlement","currency","market","observed_at","bid","source"}
+    if not required.issubset(sc):
+        return {"status":"NO_MEDIDO","reason":"SNAPSHOT_SCHEMA_INCOMPLETE"}
+    q="""SELECT source,observed_at,book_at,bid FROM market_snapshots
+         WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
+           AND julianday(observed_at)>julianday(?)
+           AND julianday(observed_at)<=julianday(?) + (120.0/1440.0)
+           AND CAST(bid AS REAL)>0 ORDER BY julianday(observed_at),id"""
+    obs=rows(c,q,(p["symbol"],p["asset_class"],p["settlement"],p["currency"],p["market"],p["closed_at"],p["closed_at"]))
+    if not obs:
+        return {"status":"NO_MEDIDO","reason":"NO_POST_EXIT_EXECUTABLE_BID","observations_used":0}
+    try:
+        closed=datetime.fromisoformat(str(p["closed_at"]).replace("Z","+00:00"))
+    except ValueError:
+        return {"status":"NO_MEDIDO","reason":"CLOSED_AT_INVALID"}
+    usable=[]
+    for r in obs:
+        price=d(r.get("bid"))
+        try: at=datetime.fromisoformat(str(r.get("observed_at")).replace("Z","+00:00"))
+        except (TypeError,ValueError): continue
+        if price and price>0 and r.get("source") and at.tzinfo and closed.tzinfo:
+            minutes=(at-closed).total_seconds()/60.0
+            if 0 < minutes <= 120.0001:
+                usable.append((minutes,(price-entry)/entry,r))
+    if not usable:
+        return {"status":"NO_MEDIDO","reason":"NO_POST_EXIT_EXECUTABLE_BID","observations_used":0}
+    result={"status":"MEDIDO","observations_used":len(usable),
+            "source_set":sorted({str(r.get("source")) for _,_,r in usable})}
+    for window in (30,60,120):
+        xs=[x for x in usable if x[0]<=window]
+        if not xs:
+            result[f"max_return_{window}m"]=None
+            result[f"max_bid_{window}m"]=None
+            result[f"max_at_{window}m"]=None
+            continue
+        best=max(xs,key=lambda x:x[1])
+        result[f"max_return_{window}m"]=str(best[1])
+        result[f"max_bid_{window}m"]=str(best[2]["bid"])
+        result[f"max_at_{window}m"]=best[2]["observed_at"]
+    return result
+
 def build(db_path):
     path=Path(db_path)
     c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=20)
@@ -174,6 +224,7 @@ def build(db_path):
               "fill_count":len(fs),"buy_fill_count":len(buys),"sell_fill_count":len(sells),
               "fills":fs,"exit_intent":intents.get(pid),
               "mfe_mae":mfe_mae(c,p),
+              "post_exit_recovery":post_exit_recovery(c,p),
               "exceptions":ex,
             }
             output.append(record)
