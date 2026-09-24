@@ -30,3 +30,11 @@ def test_dashboard_bootstrap_dependencies_and_storage_cleanup_are_deploy_guards(
     assert "RC6_HOST_RUNTIME_BOOTSTRAP=GREEN" in source
     assert "RC6_POSTDEPLOY_STORAGE_CLEANUP=START" in source
     assert "RC6_POSTDEPLOY_STORAGE_CLEANUP=GREEN" in source
+
+
+def test_dashboard_is_recreated_directly_from_verified_candidate():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert "RC6_VERIFY_DASHBOARD_SOURCE_SHA=GREEN" in source
+    assert "RC6_VERIFY_DASHBOARD_IMAGE=GREEN" in source
+    assert 'RUNNING_DASHBOARD_IMAGE_ID="$(sudo -n docker inspect' in source
+    assert 'test "$RUNNING_DASHBOARD_IMAGE_ID" = "$EXPECTED_DASHBOARD_IMAGE_ID"' in source
