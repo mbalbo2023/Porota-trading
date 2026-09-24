@@ -1,7 +1,7 @@
-"""Consolidated read-only evidence for PPI, IOL and public official sources.
+"""Evidencia consolidada PPI -> IOL -> fuentes públicas para RC6.
 
-PPI remains authoritative. IOL and public-source captures are complementary
-and can never change a decision or authorize an order.
+Los valores conservan su procedencia. IOL y BYMA sólo rellenan ausencias de la
+fuente anterior y la salida queda limitada a PAPER/SHADOW, sin rutas reales.
 """
 from __future__ import annotations
 
@@ -50,6 +50,22 @@ def _age_status(value: Any, now: datetime | None = None, max_age: int = 120) -> 
     except (TypeError, ValueError):
         return "UNKNOWN"
 
+CASCADE_FIELDS = ("last", "bid", "ask", "bid_size", "ask_size", "variation_pct",
+                  "cash_volume", "volume", "vwap")
+
+
+def _cascade_fields(primary: dict[str, Any], iol: dict[str, Any], official: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Completa por prioridad sin ocultar la fuente de cada valor."""
+    result = {}
+    for field in CASCADE_FIELDS:
+        candidates = (("PPI", _num(primary.get(field))), ("IOL", _num(iol.get(field))),
+                      ("BYMA", _num(official.get(field))))
+        source, value = next(((name, value) for name, value in candidates if value is not None), (None, None))
+        result[field] = {"value": value, "source": source,
+                         "ppi": candidates[0][1], "iol": candidates[1][1], "byma": candidates[2][1]}
+    return result
+
+
 def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
                 official_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Merge by identity; never fill a primary field with secondary data."""
@@ -77,7 +93,7 @@ def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
             "units_per_lot": iol.get("units_per_lot"),
         }
         compared = {}
-        for field in ("last", "bid", "ask", "bid_size", "ask_size", "variation_pct", "cash_volume"):
+        for field in CASCADE_FIELDS:
             pv, sv = _num(primary.get(field)), complement.get(field)
             compared[field] = {
                 "primary": pv, "secondary": sv,
@@ -90,12 +106,13 @@ def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
             "ppi_primary": primary,
             "iol_complement": complement,
             "official_complement": ext,
+            "effective_fields": _cascade_fields(primary, complement, ext),
             "comparison": compared,
             "freshness": {
                 "PPI": _age_status(primary.get("provider_observed_at") or primary.get("observed_at")),
                 "IOL": _age_status(complement.get("provider_observed_at")),
             },
-            "decision_effect": "OBSERVE_ONLY",
+            "decision_effect": "SHADOW_ONLY",
             "live_decision_authority": False,
             "real_money_authorized": False,
         })
