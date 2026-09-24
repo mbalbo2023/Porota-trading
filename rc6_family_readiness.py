@@ -9,7 +9,11 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Iterable, Mapping
 
-READY_STATES = frozenset({"READY_SHADOW", "READY_SHADOW_COMPLEMENTED"})
+# All of these states are simulation-ready. They never authorize real money.
+READY_STATES = frozenset({
+    "READY_PAPER", "READY_PAPER_SHADOW",
+    "READY_SHADOW", "READY_SHADOW_COMPLEMENTED",
+})
 # Ambos estados son simulables en modo PAPER; ninguno autoriza dinero real.
 PAPER_SIMULATABLE_STATES = frozenset({
     "READY_PAPER", "READY_PAPER_SHADOW",
