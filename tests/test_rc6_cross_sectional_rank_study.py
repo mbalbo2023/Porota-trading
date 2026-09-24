@@ -16,4 +16,5 @@ def test_low_trend_ranks_first_without_using_label():
     x=r["profiles"]["0.0025"]["TREND50_LOW_TOP1"]
     assert x["train"]["rate_pct"]=="100"
     assert x["validation"]["rate_pct"]=="100"
-    assert x["gate"]["passes_rank_gate"] is True
+    assert x["gate"]["min_validation_n"] is False
+    assert x["gate"]["passes_rank_gate"] is False
