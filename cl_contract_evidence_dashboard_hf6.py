@@ -80,11 +80,13 @@ def _contract_section():
     run = latest[0] if latest else {}
 
     rows = []
+    observed_families = set()
     caucion_state = "SIN_EVIDENCIA"
     caucion_detail = "Todavía no existe evaluación contractual de cauciones."
 
     for row in groups:
         family = row.get("instrument_type")
+        observed_families.add(str(family or ""))
         status = row.get("status")
         owner = row.get("owner")
         try:
@@ -107,6 +109,24 @@ def _contract_section():
             f"<td>{bg._e(row.get('detail'))}</td>"
             f"<td>{bg._local_time(row.get('checked_at'))}</td>"
             "</tr>"
+        )
+
+    # Mantener el tablero total: una familia sin evidencia queda visible y
+    # atribuida a la cascada PPI -> IOL -> BYMA public scrape, nunca a un HOLD
+    # sin responsable ni a una promoción implícita.
+    for family in ("ACCIONES", "CEDEARS", "BONOS", "ON", "CAUCIONES", "LETRAS",
+                   "ETF", "FCI", "FUTUROS", "OPCIONES", "LEBAC", "NOBAC",
+                   "LICITACIONES"):
+        if family in observed_families:
+            continue
+        rows.append(
+            "<tr>"
+            f"<td><b>{bg._e(family)}</b></td><td>0</td>"
+            "<td>" + _status_badge("PENDING_EVIDENCE") + "<br>PENDING_EVIDENCE</td>"
+            "<td>PPI_PRIMARY</td><td>PPI -> IOL -> BYMA_PUBLIC_SCRAPE</td>"
+            "<td>captura contractual por instrumento</td><td>NO DETERMINADO</td>"
+            "<td>Sin evidencia publicada para esta familia; no se infiere ni se promueve.</td>"
+            "<td>—</td></tr>"
         )
 
     cash_sweep_status = (

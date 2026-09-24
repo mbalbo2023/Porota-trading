@@ -79,3 +79,12 @@ def test_view_exposes_iol_decision_context_and_per_symbol_field_coverage(monkeyp
     assert "9/9 campos IOL" in html
     assert "frescos para decisión: 1/1" in html
     assert "No altera señales ni gates PAPER" in html
+
+
+def test_view_labels_all_catalog_families_as_iol_context(monkeypatch):
+    monkeypatch.setattr(view.observation, "collect", lambda: {
+        "source": "IOL_MCP", "mode": "SHADOW", "state": "READY",
+        "symbols": [],
+    })
+    html = view.render()
+    assert "universo completo del catálogo" in html

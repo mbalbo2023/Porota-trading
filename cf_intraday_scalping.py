@@ -229,7 +229,7 @@ def persist_payload(store, record, points, *, received_at):
 
 SCALPING_PAPER_CAPABILITIES = frozenset({
     "READY_PAPER_SPOT", "READY_PAPER", "READY_PAPER_SHADOW",
-    "READY_SHADOW", "READY_SHADOW_COMPLEMENTED",
+    "READY_SHADOW", "READY_SHADOW_COMPLEMENTED", "READY_SHADOW_PARTIAL",
 })
 
 
