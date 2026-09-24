@@ -47,7 +47,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           python -m pip install --disable-pip-version-check 'pytest>=8.3,<10'
-          python -m pytest -q tests/test_porota_validate_deploy_artifact.py tests/test_porota_secret_scan.py
+          python -m pytest -q tests/test_porota_*.py
           echo 'POROTA_VALIDATOR_TESTS=GREEN'
 
       - name: Secret scan of tracked source
@@ -129,8 +129,9 @@ jobs:
             -e GEMINI_API_KEY=ci-not-real \
             -v "$EVIDENCE_DIR:/evidence" \
             --entrypoint python "$IMAGE" \
-            -m pytest -q /app/tests --junitxml=/evidence/porota-predeploy-tests.xml
-          TEST_RC=$?
+            -m pytest -q /app/tests --junitxml=/evidence/porota-predeploy-tests.xml \
+            2>&1 | tee "$EVIDENCE_DIR/pytest.log"
+          TEST_RC=${PIPESTATUS[0]}
           set -e
           python - <<'PY'
           import xml.etree.ElementTree as ET
@@ -147,6 +148,11 @@ jobs:
           assert tests > 0
           print(f"POROTA_FULL_TEST_DISCOVERY_RESULT|tests={tests}|failures={failures}|errors={errors}|skipped={skipped}")
           PY
+          python scripts/porota_classify_pytest_failures.py \
+            --log "$EVIDENCE_DIR/pytest.log" \
+            --registry ops/policy/predeploy-test-triage.json \
+            --pytest-exit-code "$TEST_RC" \
+            --json-out "$EVIDENCE_DIR/pytest-triage.json"
           exit "$TEST_RC"
 
       - name: PAPER safety source gate
