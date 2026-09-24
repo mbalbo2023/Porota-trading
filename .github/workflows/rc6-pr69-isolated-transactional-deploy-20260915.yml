@@ -609,6 +609,33 @@ jobs:
           # do not allow that stale container to satisfy any later check.
           VERIFY_IMAGE="$CANDIDATE_IMAGE"
           echo "RC6_VERIFY_IMAGE_REUSED=$VERIFY_IMAGE"
+          # El dashboard debe provenir del mismo candidato inmutable que se
+          # verifica; no se delega su promoción al gestor de modo.
+          EXPECTED_DASHBOARD_SHA="$(sha256sum "$CANDIDATE_ROOT/bg_paper_dashboard.py" | awk '{print $1}')"
+          VERIFY_DASHBOARD_SHA="$(sudo -n docker run --rm --pull never --entrypoint sha256sum "$VERIFY_IMAGE" /app/bg_paper_dashboard.py | awk '{print $1}')"
+          test "$VERIFY_DASHBOARD_SHA" = "$EXPECTED_DASHBOARD_SHA"
+          echo "RC6_VERIFY_DASHBOARD_SOURCE_SHA=GREEN|$VERIFY_DASHBOARD_SHA"
+          DASHBOARD_ENV="$REPO/data/diagnosticos/dashboard_mode_v17.env"
+          test -f "$DASHBOARD_ENV"
+          sudo -n docker rm -f porota_production_dashboard >/dev/null 2>&1 || true
+          sudo -n docker run -d --name porota_production_dashboard \
+            --pull never --restart unless-stopped --user botuser --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -p 127.0.0.1:8000:8000 --env-file "$DASHBOARD_ENV" \
+            -v "$REPO/data:/app/data" --entrypoint python "$VERIFY_IMAGE" o_dashboard.py
+          DASHBOARD_READY=NO
+          for _ in $(seq 1 15); do
+            if curl -fsS --max-time 3 http://127.0.0.1:8000/health >/dev/null 2>&1; then
+              DASHBOARD_READY=YES
+              break
+            fi
+            sleep 2
+          done
+          test "$DASHBOARD_READY" = YES
+          EXPECTED_DASHBOARD_IMAGE_ID="$(sudo -n docker image inspect -f '{{.Id}}' "$VERIFY_IMAGE")"
+          RUNNING_DASHBOARD_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          test "$RUNNING_DASHBOARD_IMAGE_ID" = "$EXPECTED_DASHBOARD_IMAGE_ID"
+          echo "RC6_VERIFY_DASHBOARD_IMAGE=GREEN|$RUNNING_DASHBOARD_IMAGE_ID"
           VERIFY_SCALPING_SHA="$(sudo -n docker run --rm --pull never --entrypoint sha256sum "$VERIFY_IMAGE" /app/cf_intraday_scalping.py | awk '{print $1}')"
           EXPECTED_VERIFY_SCALPING_SHA="$(sha256sum "$CANDIDATE_ROOT/cf_intraday_scalping.py" | awk '{print $1}')"
           test "$VERIFY_SCALPING_SHA" = "$EXPECTED_VERIFY_SCALPING_SHA"
