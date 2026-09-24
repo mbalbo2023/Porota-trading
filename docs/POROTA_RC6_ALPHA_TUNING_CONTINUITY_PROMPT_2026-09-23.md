@@ -28,9 +28,17 @@ ESTADO VALIDADO QUE DEBES TOMAR COMO PUNTO DE PARTIDA:
 - Lower target +0.75% fue el mejor aislamiento probado: mejora ARS +6136.2173, pero sigue neto -45999.0454. NO implementar todavía.
 - Filtros simples momentum/EMA/RSI point-in-time siguen negativos; no promoverlos.
 
+CONFIRMADO ADICIONAL:
+- Run #21 id 35946098360 terminó SUCCESS + GREEN, PRE/POST safety PRODUCTION_PAPER|0.
+- Entry context coverage 82/82.
+- BOOK_IMBALANCE_POS: kept 27, 3 wins, 24 losses.
+- BREADTH_POS: kept 43, 3 wins, 40 losses.
+- ASSET_DAY_RETURN_POS: kept 51, 4 wins, 47 losses.
+- BREADTH_POS_AND_ASSET_POS: kept 39, 3 wins, 36 losses.
+- Ninguno de estos filtros vuelve positiva la estrategia.
+
 EN CURSO:
-- Revisar run #21 id 35946098360 del entry context. Sólo aceptar resultados si termina SUCCESS y POST_SAFETY=PRODUCTION_PAPER|0 + GREEN.
-- Breadth audit y cost-aware net-target fueron agregados después; cualquier run CANCELLED no cuenta.
+- Breadth audit separado y cost-aware net-target fueron agregados después; cualquier run CANCELLED no cuenta.
 - Si hace falta una nueva ejecución, hacer UNA sola corrida consolidada del HEAD, no varias.
 
 PRÓXIMO ANÁLISIS:
