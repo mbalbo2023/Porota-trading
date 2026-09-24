@@ -48,9 +48,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m py_compile rc6_trade_master_audit.py rc6_trade_cohort_analysis.py rc6_baseline_replay_audit.py rc6_exit_target_counterfactual.py rc6_alpha_tuning_analysis.py rc6_exit_grid_replay.py rc6_point_in_time_entry_features.py rc6_entry_breadth_audit.py rc6_entry_context_audit.py rc6_entry_context_audit.py rc6_alpha_profile_comparison.py
+          python -m py_compile rc6_trade_master_audit.py rc6_trade_cohort_analysis.py rc6_baseline_replay_audit.py rc6_exit_target_counterfactual.py rc6_alpha_tuning_analysis.py rc6_exit_grid_replay.py rc6_point_in_time_entry_features.py rc6_entry_breadth_audit.py rc6_entry_context_audit.py rc6_alpha_profile_comparison.py
           python -m pip install -q pytest
-          python -m pytest -q tests/test_rc6_trade_master_audit.py tests/test_rc6_trade_cohort_analysis.py tests/test_rc6_baseline_replay_audit.py tests/test_rc6_exit_target_counterfactual.py tests/test_rc6_alpha_tuning_analysis.py tests/test_rc6_exit_grid_replay.py tests/test_rc6_point_in_time_entry_features.py tests/test_rc6_entry_breadth_audit.py tests/test_rc6_entry_context_audit.py tests/test_rc6_entry_context_audit.py tests/test_rc6_alpha_profile_comparison.py
+          python -m pytest -q tests/test_rc6_trade_master_audit.py tests/test_rc6_trade_cohort_analysis.py tests/test_rc6_baseline_replay_audit.py tests/test_rc6_exit_target_counterfactual.py tests/test_rc6_alpha_tuning_analysis.py tests/test_rc6_exit_grid_replay.py tests/test_rc6_point_in_time_entry_features.py tests/test_rc6_entry_breadth_audit.py tests/test_rc6_entry_context_audit.py tests/test_rc6_alpha_profile_comparison.py
           grep -q 'mode=ro' rc6_trade_master_audit.py
           grep -q 'PRAGMA query_only=ON' rc6_trade_master_audit.py
           ! grep -Eq 'requests\.|urllib|httpx|subprocess|os\.system' rc6_trade_master_audit.py
