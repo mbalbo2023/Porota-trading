@@ -11,7 +11,7 @@ def test_equity_complement_is_explicit_and_non_authoritative():
         now=now,
     )
     assert result["contract_state"] == "READY_SHADOW_COMPLEMENTED"
-    assert result["fields"]["cash_volume"]["state"] == "COMPLEMENTED_SECONDARY"
+    assert result["fields"]["cash_volume"]["state"] == "COMPLEMENTED_IOL"
     assert result["real_money_authorized"] is False
 
 def test_equity_sizes_and_spread_match():
@@ -19,7 +19,7 @@ def test_equity_sizes_and_spread_match():
     quote = {"last": 100, "bid": 99, "ask": 101, "bid_size": 10, "ask_size": 12,
              "provider_observed_at": now.isoformat()}
     result = recon.reconcile(quote, quote, now=now)
-    assert result["contract_state"] == "READY_SHADOW"
+    assert result["contract_state"] == "READY_SHADOW_PARTIAL"
     assert result["fields"]["spread_pct"]["state"] == "MATCH"
 
 def test_cauciones_require_contract_and_freshness():
