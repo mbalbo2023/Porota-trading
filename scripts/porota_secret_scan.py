@@ -20,7 +20,7 @@ TOKEN_PATTERNS = (
     ("AWS_ACCESS_KEY", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("GOOGLE_API_KEY", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
     ("SLACK_TOKEN", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b")),
-    ("TELEGRAM_BOT_TOKEN", re.compile(r"\b\d{8,12}:[A-Za-z0-9_-]{30,}\b")),
+    ("TELEGRAM_BOT_TOKEN", re.compile(r"\b\d{8,12}:[A-Za-z0-9_-]{35}\b")),
 )
 
 SENSITIVE_ASSIGNMENT = re.compile(
@@ -36,10 +36,37 @@ SENSITIVE_ASSIGNMENT = re.compile(
 PLACEHOLDER_MARKERS = (
     "ci-not-real", "not-real", "placeholder", "example", "dummy",
     "changeme", "change_me", "replace_me", "replace-me", "your_", "your-",
+    "la-clave", "tu-clave", "que-generaste",
     "<", "${", "{{", "...",
 )
 
 MAX_TEXT_BYTES = 2 * 1024 * 1024
+
+COLON_ASSIGNMENT_SUFFIXES = {
+    ".env", ".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf",
+}
+
+
+def _looks_like_code_expression(value: str) -> bool:
+    """Reject variable/function references that are not literal credential values."""
+    value = value.strip()
+    return (
+        "(" in value
+        or value.startswith(("os.", "sys.", "Path(", "_"))
+        or value in {"None", "True", "False"}
+    )
+
+
+def _token_false_positive(kind: str, line: str, start: int, end: int) -> bool:
+    if kind != "TELEGRAM_BOT_TOKEN":
+        return False
+    before = line[:start]
+    after = line[end:]
+    # Git ref syntax such as 20260907:module_name.py can resemble a bot token.
+    return bool(
+        ("git show" in before or "origin/" in before)
+        and re.match(r"\.(?:py|yml|yaml|json|md|sh)\b", after)
+    )
 
 
 def is_placeholder(value: str) -> bool:
@@ -53,19 +80,31 @@ def is_placeholder(value: str) -> bool:
 
 def scan_text(path: str, text: str) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
+    suffix = Path(path).suffix.lower()
     for line_no, line in enumerate(text.splitlines(), 1):
         for kind, pattern in TOKEN_PATTERNS:
-            if pattern.search(line):
+            for token_match in pattern.finditer(line):
+                if _token_false_positive(
+                    kind, line, token_match.start(), token_match.end()
+                ):
+                    continue
                 findings.append({"path": path, "line": line_no, "kind": kind})
         for match in SENSITIVE_ASSIGNMENT.finditer(line):
             variable, value = match.group(1), match.group(2)
-            if not is_placeholder(value):
-                findings.append({
-                    "path": path,
-                    "line": line_no,
-                    "kind": "SENSITIVE_ASSIGNMENT",
-                    "variable": variable.upper(),
-                })
+            matched_text = match.group(0)
+            # Colon-style assignments are meaningful in config formats, not
+            # arbitrary prose/code such as "Sin GEMINI_API_KEY: ...".
+            if ":" in matched_text and "=" not in matched_text:
+                if suffix not in COLON_ASSIGNMENT_SUFFIXES:
+                    continue
+            if is_placeholder(value) or _looks_like_code_expression(value):
+                continue
+            findings.append({
+                "path": path,
+                "line": line_no,
+                "kind": "SENSITIVE_ASSIGNMENT",
+                "variable": variable.upper(),
+            })
     return findings
 
 
