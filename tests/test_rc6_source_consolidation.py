@@ -23,7 +23,7 @@ def test_consolidate_records_cascade_provenance():
     assert fields["last"]["source"] == "PPI"
     assert fields["bid"] == {"value": 99.0, "source": "IOL", "ppi": None, "iol": 99.0, "byma": None}
     assert fields["vwap"]["source"] == "BYMA"
-    assert result["rows"][0]["decision_effect"] == "SHADOW_ONLY"
+    assert result["rows"][0]["decision_effect"] == "OBSERVE_ONLY"\n    assert result["rows"][0]["shadow_promotion"] is True
 
 def test_html_public_page_is_reference_only():
     result = m.parse_public_payload("BYMA", "https://example.test", b"<title>BYMA</title>")
