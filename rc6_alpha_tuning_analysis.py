@@ -42,7 +42,7 @@ def bin_score(v):
 def local_hour(iso):
     from datetime import datetime
     try:
-        dt=datetime.fromisoformat(str(iso).replace("Z","+00:00")).astimezone()
+        dt=datetime.fromisoformat(str(iso).replace("Z","+00:00")).astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
         return dt.hour+dt.minute/60
     except Exception:return -1
 def time_bin(r):
