@@ -15,5 +15,7 @@ def test_profile_gate_does_not_promote_negative_validation():
     ]}
     nt={k:{"changed":[],"unmodeled_rows":[]} for k in ("0.0025","0.005","0.0075","0.01")}
     r=build(master,pt,ctx,{"net_targets":nt})
+    assert r["temporal_split"]["train_days"]==["2026-09-01"]
+    assert r["temporal_split"]["validation_days"]==["2026-09-20"]
     assert r["conclusion"]=="NO_PROFILE_PASSES_PREDEFINED_ROBUSTNESS_GATE"
     assert r["candidate_gate_passed"]==[]
