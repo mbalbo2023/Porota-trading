@@ -65,3 +65,7 @@ def test_prior_day_rejection_does_not_poison_new_session(tmp_path):
     with s.connect() as c: state=dict(c.execute('SELECT * FROM ppi_intraday_contract_state').fetchone())
     assert state['observations']==1 and state['changed_closed_points']==0
     assert out['state']=='PENDING_LIVE_CONFIRMATION'
+
+
+def test_partial_shadow_capability_is_observable_only():
+    assert "READY_SHADOW_PARTIAL" in scalping.SCALPING_PAPER_CAPABILITIES
