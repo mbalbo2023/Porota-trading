@@ -17,7 +17,7 @@ READY_STATES = frozenset({
 # Ambos estados son simulables en modo PAPER; ninguno autoriza dinero real.
 PAPER_SIMULATABLE_STATES = frozenset({
     "READY_PAPER", "READY_PAPER_SHADOW",
-    "READY_SHADOW", "READY_SHADOW_COMPLEMENTED",
+    "READY_SHADOW", "READY_SHADOW_COMPLEMENTED", "READY_SHADOW_PARTIAL",
 })
 BLOCKED_PREFIX = "BLOCKED"
 

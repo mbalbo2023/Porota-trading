@@ -55,3 +55,17 @@ def test_complemented_source_state_does_not_authorize_real_money():
     item = report["instruments"][0]
     assert item["paper_auto_enabled"] is True
     assert item["real_money_authorized"] is False
+
+
+def test_partial_shadow_is_simulatable_without_real_authority():
+    report = readiness.evaluate(
+        [{"family": "CAUCIONES", "symbol": "CAUCION-1", "market": "BYMA"}],
+        [{"symbol": "CAUCION-1", "asset_type": "CAUCIONES",
+          "primary_comparison": {
+              "contract_state": "READY_SHADOW_PARTIAL",
+              "comparison_complete": True,
+          }}],
+    )
+    item = report["instruments"][0]
+    assert item["paper_auto_enabled"] is True
+    assert item["real_money_authorized"] is False

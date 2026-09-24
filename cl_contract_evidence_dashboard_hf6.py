@@ -45,7 +45,7 @@ def _time_answer(status):
 
 
 def _contract_section():
-    mode = os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "DISABLED_SOURCE_UNAVAILABLE").upper()
+    mode = os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED").upper()
     if mode != "ENABLED":
         return (
             "<div class='paper-card'><h2>Evidencia contractual</h2>"
