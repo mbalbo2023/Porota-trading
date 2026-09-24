@@ -345,5 +345,18 @@ def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
         cost_ready=bool(cost_ready), freshness_ok=freshness_ok,
         source_conflict=bool(conflicts),
     )
+    # PPI remains primary; IOL/BYMA may complete the contract. Once the
+    # merged evidence is complete, fresh and conflict-free, it is available
+    # for PAPER/SHADOW even when a live-money executor is not involved.
+    if result.get("status") == "READY_PAPER_CANDIDATE":
+        result = {
+            **result,
+            "status": "READY_PAPER_SHADOW",
+            "paper_simulatable": True,
+            "paper_execution_mode": "SHADOW",
+        }
     return {**result, "evidence": merged, "conflicts": conflicts,
-            "auto_activation_allowed": False}
+            "paper_auto_enabled": result.get("status") in {
+                "READY_PAPER_CANDIDATE", "READY_PAPER_SHADOW"},
+            "auto_activation_allowed": False,
+            "real_money_authorized": False}
