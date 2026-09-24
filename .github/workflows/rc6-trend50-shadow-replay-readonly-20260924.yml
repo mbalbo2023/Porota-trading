@@ -1,0 +1,105 @@
+name: RC6 TREND50 Shadow Replay Readonly
+
+on:
+  push:
+    branches:
+      - audit/rc6-alpha-tuning-analysis-20260923
+    paths:
+      - rc6_shadow_rank_trade_replay.py
+      - tests/test_rc6_shadow_rank_trade_replay.py
+      - .github/workflows/rc6-trend50-shadow-replay-readonly-20260924.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-trend50-shadow-replay-readonly
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Static safety and focused test
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_shadow_rank_trade_replay.py
+          python -m pip install -q pytest
+          python -m pytest -q tests/test_rc6_shadow_rank_trade_replay.py
+          grep -q 'mode=ro' rc6_shadow_rank_trade_replay.py
+          grep -q 'PRAGMA query_only=ON' rc6_shadow_rank_trade_replay.py
+          ! grep -Eq 'requests\.|urllib|httpx|subprocess|os\.system' rc6_shadow_rank_trade_replay.py
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Verify PAPER safety before replay
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          STATE="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer python -c \"import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('PRAGMA query_only=ON');r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone();print('|'.join(map(str,r)));c.close()\"")"
+          echo "PRE_SAFETY=$STATE"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+
+      - name: Run TREND50 sequential shadow replay
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer sh -lc 'cd /app && python - --db /app/data/paper_v17/observer_v17.db'"             < rc6_shadow_rank_trade_replay.py > rc6_shadow_rank_trade_replay.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('rc6_shadow_rank_trade_replay.json').read_text(encoding='utf-8'))
+          assert r['read_only'] and not r['network_calls_performed'] and not r['broker_calls_performed']
+          assert r['factual_writes'] is False
+          assert r['safety']=={'mode':'PRODUCTION_PAPER','real_orders_sent':0}
+          print('SHADOW_REPLAY_DAYS='+json.dumps(r['days']))
+          print('SHADOW_REPLAY_EXCLUDED='+json.dumps(r['excluded'],sort_keys=True))
+          for key,x in sorted(r['results'].items()):
+              print('SHADOW_REPLAY_'+key+'='+json.dumps({
+                'all':x['all'],'train':x['train'],'validation':x['validation'],'gate':x['gate']
+              },sort_keys=True))
+          PY
+
+      - name: Verify PAPER safety after replay
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          STATE="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer python -c \"import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('PRAGMA query_only=ON');r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone();print('|'.join(map(str,r)));c.close()\"")"
+          echo "POST_SAFETY=$STATE"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+          echo "FACTUAL_WRITES=FALSE"
+          echo "RC6_TREND50_SHADOW_REPLAY=GREEN"
+
+      - name: Upload replay artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-trend50-shadow-replay-${{ github.run_id }}
+          path: rc6_shadow_rank_trade_replay.json
+          if-no-files-found: error
+          retention-days: 30
