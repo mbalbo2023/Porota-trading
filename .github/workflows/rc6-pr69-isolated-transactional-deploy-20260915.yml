@@ -193,10 +193,10 @@ jobs:
           REMOTE_TGZ="/tmp/porota-rc6-candidate-$TARGET_SHA.tgz"
           test -f "$REMOTE_TGZ"
           STAGE="/tmp/porota-rc6-candidate-$TARGET_SHA"
-          test -f "$STAGE/rc6_source_consolidation.py"
           sudo -n rm -rf "$STAGE"
           sudo -n mkdir -p "$STAGE"
           sudo -n tar -xzf "$REMOTE_TGZ" -C "$STAGE"
+          test -f "$STAGE/rc6_source_consolidation.py"
           sudo -n install -m 0644 "$STAGE/docker-compose.yml" "$REPO/docker-compose.yml"
           ! grep -Eq 'rc4-test-ready1|candidate-e47eeffc' "$REPO/docker-compose.yml"
           echo 'LEGACY_COMPOSE_IMAGE_DEFAULT=RC6_STABLE'
