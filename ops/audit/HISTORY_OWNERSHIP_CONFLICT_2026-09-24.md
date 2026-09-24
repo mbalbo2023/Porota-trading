@@ -58,3 +58,16 @@ same machine-readable policy.
 - No real orders are involved.
 - Fix-forward only.
 - No runtime rollback.
+
+
+## Root-cause history confirmed from Git commits
+
+The observer behavior was deliberately migrated on **2026-09-22**:
+
+- `a2916036da0401c4688486f1cec6b3419587e0b6` — made PPI history capture incremental, introduced the one-time cutoff completion guard, and added a writer lock.
+- `f59f0d6e860e22f91c88687b07e5fcf07457c0bf` — replaced the old TTL-based eligibility with **at most one attempt per business date after market close**.
+- `69c75ba74d54cae89f641693e4e2b0be6f9c8d3d` — made `force=True` respect the same daily close guard.
+
+Therefore the daily post-close gate is intentional current behavior. The migration debt is that comments, dashboard/catalog cadence descriptions, and configuration defaults were not all updated consistently.
+
+A final test-fixture issue was also isolated: a synthetic candle stamped `2026-09-24T17:00:00-03:00` was actually `20:00 UTC`, later than the CI execution instant, so the production validator correctly rejected it as future data. The fixture is moved to an already-observed timestamp; production validation logic remains unchanged.

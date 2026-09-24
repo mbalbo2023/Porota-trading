@@ -148,7 +148,7 @@ def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypat
     class Reader:
         def history(self, symbol, kind, settlement, start, end):
             calls.append(("history", symbol, kind, settlement))
-            return [{"date": "2026-09-24T17:00:00-03:00",
+            return [{"date": "2026-09-24T13:00:00-03:00",
                      "openingPrice": 100, "max": 101, "min": 99,
                      "price": 100, "volume": 1000}]
 
