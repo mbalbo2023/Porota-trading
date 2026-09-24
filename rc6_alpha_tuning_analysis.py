@@ -8,6 +8,11 @@ from pathlib import Path
 
 D=lambda x: Decimal(str(x))
 def avg(xs): return sum(xs,D(0))/D(len(xs)) if xs else D(0)
+def median(xs):
+    xs=sorted(xs)
+    if not xs:return None
+    n=len(xs); m=n//2
+    return xs[m] if n%2 else (xs[m-1]+xs[m])/D(2)
 def group(rows,key):
     out=defaultdict(list)
     for r in rows: out[str(key(r))].append(r)
@@ -64,7 +69,7 @@ def build(master):
                 "gross_total":str(sum((D(r["gross_pnl"]) for r in g),D(0))),
                 "cost_total":str(sum((cost(r) for r in g),D(0))),
                 "average_win":str(aw),"average_loss":str(al),
-                "profit_factor":str(sum(wins,D(0))/sum(losses,D(1))) if losses else None,
+                "profit_factor":str(sum(wins,D(0))/sum(losses,D(0))) if losses else None,
                 "breakeven_win_rate_pct":str(al/(aw+al)*100) if aw+al else None}
     gross_pos_net_neg=sum(D(r["gross_pnl"])>0 and D(r["net_pnl"])<0 for r in rows)
     costs=[x for r in rows if (x:=cost_pct(r)) is not None]
@@ -96,8 +101,8 @@ def build(master):
                 "score_ge_070":stats(high)},
       "excursions":{"mfe_ge_5pct":five,"mfe_ge_2pct":two,"mfe_ge_2pct_winners":two_wins,
                     "mae_le_minus_2pct":stop20,
-                    "winners_median_mfe_pct":str(sorted(mfe(r) for r in rows if r["outcome"]=="WIN")[4]),
-                    "losers_median_mfe_pct":str(sorted(mfe(r) for r in rows if r["outcome"]=="LOSS")[len([r for r in rows if r["outcome"]=="LOSS"])//2])},
+                    "winners_median_mfe_pct":str(median([mfe(r) for r in rows if r["outcome"]=="WIN"])),
+                    "losers_median_mfe_pct":str(median([mfe(r) for r in rows if r["outcome"]=="LOSS"]))},
       "by_close_reason":reason_groups,"by_version":version_groups,"by_entry_time":time_groups,
       "historical_candle_shadow":shadow_groups,"iol_observed":iol_groups,
       "headline_findings":[
