@@ -14,10 +14,13 @@ def test_lower_target_precedes_factual_close_only_with_depth(tmp_path,monkeypatc
     c.execute("INSERT INTO paper_positions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",("p","GGAL","ACCIONES","T1","ARS","BYMA","CLOSED","10","100","7.865","2026-09-23T14:00:00+00:00","2026-09-23T15:00:00+00:00","98","0.6","-28.465","STOP_PAPER",f))
     c.execute("INSERT INTO paper_exit_intents VALUES(?,?)",("p","2026-09-23T15:00:00+00:00"))
     c.execute("INSERT INTO market_snapshots VALUES(?,?,?,?,?,?,?,?,?,?)",(1,"PPI","2026-09-23T14:30:00+00:00","GGAL","ACCIONES","T1","ARS","BYMA","101","200"))
+    c.execute("INSERT INTO market_snapshots VALUES(?,?,?,?,?,?,?,?,?,?)",(2,"PPI","2026-09-23T14:40:00+00:00","GGAL","ACCIONES","T1","ARS","BYMA","102","200"))
     c.commit();c.close()
     import rc6_exit_target_counterfactual as m
     monkeypatch.setattr(m,"fee_rates",lambda asset:(m.D("0.007865"),m.D("0.000605")))
     r=build(p)
     assert r["targets"]["0.005"]["changed_trades"]==1
     assert r["targets"]["0.05"]["changed_trades"]==0
+    assert r["net_targets"]["0.005"]["changed_trades"]==1
+    assert float(r["net_targets"]["0.005"]["changed"][0]["net_return"]) >= 0.005
     assert r["read_only"] is True
