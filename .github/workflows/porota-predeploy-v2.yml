@@ -47,8 +47,14 @@ jobs:
         run: |
           set -Eeuo pipefail
           python -m pip install --disable-pip-version-check 'pytest>=8.3,<10'
-          python -m pytest -q tests/test_porota_validate_deploy_artifact.py
+          python -m pytest -q tests/test_porota_validate_deploy_artifact.py tests/test_porota_secret_scan.py
           echo 'POROTA_VALIDATOR_TESTS=GREEN'
+
+      - name: Secret scan of tracked source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/porota_secret_scan.py --repo-root .
 
       - name: Build candidate exactly once
         shell: bash
@@ -166,6 +172,7 @@ jobs:
             echo '- Policy: GREEN'
             echo '- Compile: GREEN'
             echo '- Validator regression: GREEN'
+            echo '- Secret scan: GREEN'
             echo '- Build: ONCE'
             echo '- Exact artifact integrity: GREEN'
             echo '- Import closure: GREEN'
