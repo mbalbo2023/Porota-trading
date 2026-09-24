@@ -12,6 +12,19 @@ def test_consolidate_keeps_ppi_primary_and_compares_iol():
     assert row["decision_effect"] == "OBSERVE_ONLY"
     assert row["real_money_authorized"] is False
 
+
+def test_consolidate_records_cascade_provenance():
+    result = m.consolidate(
+        [{"family":"ACCIONES","symbol":"YPFD","market":"BCBA","term":"T1","last":100}],
+        [{"family":"ACCIONES","symbol":"YPFD","market":"BCBA","term":"T1","bid":99,"ask":101}],
+        [{"family":"ACCIONES","symbol":"YPFD","market":"BCBA","term":"T1","vwap":100.5}],
+    )
+    fields = result["rows"][0]["effective_fields"]
+    assert fields["last"]["source"] == "PPI"
+    assert fields["bid"] == {"value": 99.0, "source": "IOL", "ppi": None, "iol": 99.0, "byma": None}
+    assert fields["vwap"]["source"] == "BYMA"
+    assert result["rows"][0]["decision_effect"] == "SHADOW_ONLY"
+
 def test_html_public_page_is_reference_only():
     result = m.parse_public_payload("BYMA", "https://example.test", b"<title>BYMA</title>")
     assert result["status"] == "REFERENCE_ONLY"

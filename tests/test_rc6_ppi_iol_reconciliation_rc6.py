@@ -21,3 +21,18 @@ def test_stale_source_blocks_contract():
                              {"last": 100, "provider_observed_at": now.isoformat()},
                              now=now)
     assert result["contract_state"] == "BLOCKED_STALE"
+
+
+def test_iol_can_complete_missing_ppi_prices_for_shadow():
+    now = datetime(2026, 9, 22, 14, 0, tzinfo=timezone.utc)
+    result = recon.reconcile({}, {"last": 100, "bid": 99, "ask": 101}, now=now)
+    assert result["contract_state"] == "READY_SHADOW_COMPLEMENTED"
+    assert result["effective_fields"]["last"] == {"value": 100.0, "source": "IOL"}
+    assert result["decision_effect"] == "SHADOW_ONLY"
+
+
+def test_byma_completes_only_the_remaining_public_field():
+    now = datetime(2026, 9, 22, 14, 0, tzinfo=timezone.utc)
+    result = recon.reconcile({"last": 100, "bid": 99, "ask": 101}, {}, {"vwap": 100.5}, now=now)
+    assert result["effective_fields"]["last"]["source"] == "PPI"
+    assert result["effective_fields"]["vwap"] == {"value": 100.5, "source": "BYMA"}

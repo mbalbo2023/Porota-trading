@@ -31,6 +31,7 @@ import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
 from _version import VERSION
 from am_us_equity_calendar_rc6 import cedear_opening_gate
+from rc6_source_consolidation import collect_public_sources
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -41,6 +42,8 @@ SECRET_PATH = os.getenv("PPI_PRODUCTION_SECRET_FILE", "/run/secrets/ppi_producti
 INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
 COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
 PUBLIC_CHECK_SECONDS = max(900, int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")))
+PUBLIC_STRUCTURED_CAPTURE_SECONDS = max(900, int(os.getenv("PUBLIC_STRUCTURED_CAPTURE_SECONDS", "900")))
+PUBLIC_CAPTURE_PATH = Path(os.getenv("POROTA_PUBLIC_SOURCE_CAPTURE_PATH", "/opt/porota-trading/data/market/rc6_public_sources_latest.json"))
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
 BACKGROUND_INGEST_SECONDS = max(
     3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
@@ -333,7 +336,7 @@ def _sync_state(store, source, status, items, detail, success=False):
           (source, status, attempted, last_success, int(items), str(detail)[:1000]))
 
 
-def _public_probe(store):
+def _public_probe(store, *, structured=False):
     sources = (
         ("BYMA_OPEN_DATA", "https://open.bymadata.com.ar/"),
         ("BYMA_WEB", "https://www.byma.com.ar/"),
@@ -362,6 +365,25 @@ def _public_probe(store):
     _health(store, "BYMA_CALENDAR", "VERDE",
             f"Calendario operativo auditado; fase actual {_market_phase()}.",
             "ak_byma_calendar", success=True)
+    if not structured:
+        return
+    try:
+        result = collect_public_sources()
+        PUBLIC_CAPTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = PUBLIC_CAPTURE_PATH.with_suffix(PUBLIC_CAPTURE_PATH.suffix + ".tmp")
+        temporary.write_text(json.dumps(result, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+        os.chmod(temporary, 0o644)
+        temporary.replace(PUBLIC_CAPTURE_PATH)
+        byma = next((item for item in result.get("sources", []) if item.get("source") == "BYMA"), {})
+        count = int(byma.get("record_count") or 0)
+        ok = byma.get("status") == "SCRAPED_PUBLIC_DATA"
+        _health(store, "BYMA_STRUCTURED_CAPTURE", "VERDE" if ok else "AMARILLO",
+                f"Captura pública estructurada: {count} instrumentos; SHADOW_ONLY.", "BYMA Open Data", success=ok)
+        _sync_state(store, "BYMA_STRUCTURED_CAPTURE", "VERDE" if ok else "AMARILLO", count,
+                    f"Captura estructurada persistida; SHADOW_ONLY.", success=ok)
+    except Exception as exc:
+        _health(store, "BYMA_STRUCTURED_CAPTURE", "ROJO", f"{type(exc).__name__}: {str(exc)[:180]}", "BYMA Open Data")
+        _sync_state(store, "BYMA_STRUCTURED_CAPTURE", "ROJO", 0, f"{type(exc).__name__}: {str(exc)[:180]}")
 
 
 def _claim_command(store):
@@ -1245,6 +1267,7 @@ def run():
     reader = None
     quotes = {}
     last_public_check = 0.0
+    last_structured_capture = 0.0
     last_readiness_check = 0.0
     next_login_at = 0.0
     last_phase = None  # Publicar BOOT_* antes de resolver el calendario.
@@ -1270,8 +1293,9 @@ def run():
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="Arranque: verificando calendario operativo.")
             phase = _market_phase()
+            previous_phase = last_phase
             if phase != last_phase:
-                _announce_phase(store, last_phase, phase)
+                _announce_phase(store, previous_phase, phase)
                 last_phase = phase
             # Autenticación, catálogo e históricos son útiles también durante
             # noches, fines de semana y feriados. Sólo current/book y la
@@ -1322,6 +1346,11 @@ def run():
             if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:
                 _public_probe(store)
                 last_public_check = time.time()
+            should_capture = phase == "OPEN" and time.time() - last_structured_capture >= PUBLIC_STRUCTURED_CAPTURE_SECONDS
+            closing_snapshot = previous_phase == "OPEN" and phase == "CLOSED"
+            if should_capture or closing_snapshot:
+                _public_probe(store, structured=True)
+                last_structured_capture = time.time()
             if phase == "CLOSED":
                 # El catálogo se renueva una vez por fecha local. Los históricos
                 # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.
