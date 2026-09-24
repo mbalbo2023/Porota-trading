@@ -35,7 +35,7 @@ SENSITIVE_ASSIGNMENT = re.compile(
 
 PLACEHOLDER_MARKERS = (
     "ci-not-real", "not-real", "placeholder", "example", "dummy",
-    "changeme", "replace_me", "replace-me", "your_", "your-",
+    "changeme", "change_me", "replace_me", "replace-me", "your_", "your-",
     "<", "${", "{{", "...",
 )
 
