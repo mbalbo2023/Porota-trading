@@ -56,3 +56,10 @@ def test_all_verified_dashboard_modules_are_explicit_image_inputs():
     )
     for module in modules:
         assert f"COPY {module} /app/{module}" in source
+
+
+def test_contract_reconciliation_reuses_the_immutable_candidate_image():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    verify = source[source.index("- name: Verify deployed candidate and Paper safety"):]
+    assert 'sudo -n docker image inspect "$CANDIDATE_IMAGE" >/dev/null' in verify
+    assert 'docker build --no-cache --pull=false -t "$CANDIDATE_IMAGE" "$REPO"' not in verify
