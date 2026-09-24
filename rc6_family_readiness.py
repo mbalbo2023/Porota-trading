@@ -10,6 +10,11 @@ from collections import defaultdict
 from typing import Any, Iterable, Mapping
 
 READY_STATES = frozenset({"READY_SHADOW", "READY_SHADOW_COMPLEMENTED"})
+# Ambos estados son simulables en modo PAPER; ninguno autoriza dinero real.
+PAPER_SIMULATABLE_STATES = frozenset({
+    "READY_PAPER", "READY_PAPER_SHADOW",
+    "READY_SHADOW", "READY_SHADOW_COMPLEMENTED",
+})
 BLOCKED_PREFIX = "BLOCKED"
 
 FAMILY_ALIASES = {
@@ -76,7 +81,7 @@ def _reason(row: Mapping[str, Any], contract: str) -> list[str]:
     complemented = comparison.get("complemented")
     if complemented:
         reasons.append(f"IOL_COMPLEMENTS_NONCRITICAL_FIELDS:{complemented}")
-    if not reasons and contract in READY_STATES:
+    if not reasons and contract in PAPER_SIMULATABLE_STATES:
         reasons.append("NO_OPEN_READINESS_GAP")
     return reasons
 
@@ -141,7 +146,7 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
             source_row = row
             comparison = _comparison(row)
             contract = _effective_contract(comparison)
-        paper_enabled = contract in READY_STATES
+        paper_enabled = contract in PAPER_SIMULATABLE_STATES
         instruments.append({
             "family": family,
             "symbol": symbol,
@@ -167,7 +172,7 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         instruments.append({
             "family": family, "symbol": symbol, "market": _text(row.get("market")),
             "settlement": _text(row.get("term") or row.get("settlement")),
-            "contract_state": contract, "paper_auto_enabled": contract in READY_STATES,
+            "contract_state": contract, "paper_auto_enabled": contract in PAPER_SIMULATABLE_STATES,
             "real_money_authorized": False, "reasons": _reason(row, contract),
             "comparison": comparison,
         })
@@ -207,6 +212,7 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         "schema_version": 1,
         "source_order": "PPI_PRIMARY_IOL_COMPLEMENTARY",
         "paper_auto_promotion": True,
+        "paper_simulatable_states": sorted(PAPER_SIMULATABLE_STATES),
         "real_money_authorized": False,
         "families": families,
         "instruments": sorted(instruments, key=lambda item: (item["family"], item["symbol"])),
