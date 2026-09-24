@@ -21,8 +21,8 @@ No test has been deleted, skipped, xfailed or hidden as a result of this triage.
 | Class | Cases | Meaning |
 |---|---:|---|
 | CURRENT-CONTRACT / RECONCILIATION_REQUIRED | **12** | The test exposes a real disagreement between desired/current product contract and the deployed baseline. Do not dismiss as legacy. |
-| ENVIRONMENT-HARNESS / FIXTURE | **6** | Failure is caused by the test/harness not representing the current runtime preconditions or module context. |
-| LEGACY-REGRESSION / STALE EXPECTATION | **33** | Historical/textual/UI/architecture expectation has been superseded or must be explicitly reconciled with RC6. |
+| ENVIRONMENT-HARNESS / FIXTURE | **4** | Failure is caused by the test/harness not representing the current runtime preconditions or module context. |
+| LEGACY-REGRESSION / STALE EXPECTATION | **35** | Historical/textual/UI/architecture expectation has been superseded or must be explicitly reconciled with RC6. |
 
 These labels are provisional governance labels, not permission to delete tests.
 
@@ -61,14 +61,7 @@ These failures must be reconciled with the current instrument-readiness work. Th
 
 ---
 
-## ENVIRONMENT-HARNESS / FIXTURE — 6 cases
-
-### BYMA calendar AST isolation — 2
-
-- `tests/test_rc6_byma_calendar_failclosed.py::TestBymaCalendarFailClosed::test_calendar_exception_closes_business_day`
-- `tests/test_rc6_byma_calendar_failclosed.py::TestBymaCalendarFailClosed::test_calendar_true_is_preserved`
-
-The test extracts only `_business_day` from the module AST and executes it in an empty namespace. The current function legitimately references module constants `BYMA_CALENDAR_AUDITED_YEAR` and `BYMA_NON_OPERATIVE_DAYS`, both present in the real module. The observed `NameError` is therefore a test-isolation defect, not proof of a runtime NameError.
+## ENVIRONMENT-HARNESS / FIXTURE — 4 cases
 
 ### Dashboard test missing its own import — 1
 
@@ -86,7 +79,7 @@ Current `_download_histories()` returns before querying when the one-time cutoff
 
 ---
 
-## LEGACY-REGRESSION / STALE EXPECTATION — 33 cases
+## LEGACY-REGRESSION / STALE EXPECTATION — 35 cases
 
 This group is not discarded. It contains valuable history, but each assertion currently tests an expectation that is older than or textually coupled to the deployed RC6 contract.
 
@@ -101,8 +94,9 @@ This group is not discarded. It contains valuable history, but each assertion cu
 - `test_dashboard_decision_evidence_rc6.py` fails on literal wording (`Lectura solamente`) although the current panel still declares SHADOW/read-only policy semantically.
 - RC3/RC4/RC5/HF tests contain assertions over old menu labels, old deploy wording, old scheduler behavior and older provenance conventions.
 
-The remaining 33 cases are in these files:
+The remaining 35 cases are in these files:
 
+- `tests/test_rc6_byma_calendar_failclosed.py` — 2 tests for the retired deferred-calendar architecture. The current runtime deliberately embeds the audited BYMA calendar and no longer calls `ak_byma_calendar`; the AST-only test harness also omits the module constants, which is why the observed symptom is a `NameError`.
 - `tests/test_candle_archive_v17.py` — 1 textual/dashboard expectation
 - `tests/test_container_rootfs.py` — 2 legacy compose/Chroma layout expectations
 - `tests/test_dashboard_daily_responsive_hf6.py` — excluding the one harness bug above
