@@ -108,6 +108,36 @@ jobs:
           print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
           PY
 
+      - name: Isolation probes for ambiguous current-contract tests
+        shell: bash
+        run: |
+          set +e
+          COMMON_ENV=(
+            -e ENVIRONMENT=SANDBOX
+            -e ORDER_EXECUTION_MODE=SIMULATED
+            -e STARTUP_REQUIRE_AUTH=false
+            -e DB_PATH=/tmp/test_porota.db
+            -e TELEGRAM_CHAT_ID=0
+            -e TELEGRAM_BOT_TOKEN=ci-not-real
+            -e PPI_API_KEY=ci-not-real
+            -e PPI_API_SECRET=ci-not-real
+            -e GEMINI_API_KEY=ci-not-real
+          )
+          docker run --rm --pull never "${COMMON_ENV[@]}" --entrypoint python "$IMAGE" \
+            -m pytest -q \
+              '/app/tests/test_single_close_ledger_v17.py::test_renta_fija_fuera_de_alcance_no_abre_en_paper_rc6[BONOS]' \
+              '/app/tests/test_single_close_ledger_v17.py::test_renta_fija_fuera_de_alcance_no_abre_en_paper_rc6[LETRAS]' \
+              '/app/tests/test_single_close_ledger_v17.py::test_renta_fija_fuera_de_alcance_no_abre_en_paper_rc6[ON]'
+          RF_RC=$?
+          docker run --rm --pull never "${COMMON_ENV[@]}" --entrypoint python "$IMAGE" \
+            -m pytest -q \
+              '/app/tests/test_rc4_acceptance.py::test_family_readiness_never_auto_activates_even_when_complete'
+          READY_RC=$?
+          set -e
+          echo "POROTA_ISOLATION_PROBE=FIXED_INCOME:$RF_RC|FAMILY_READINESS:$READY_RC"
+          # Diagnostic only: full-suite result remains the gate while triage is provisional.
+          exit 0
+
       - name: Full automatic test discovery in exact image
         shell: bash
         run: |
