@@ -127,8 +127,8 @@ def reconcile(primary: Any, secondary: Any, public: Any | None = None, *, now: d
             "secondary_source": secondary_source, "public_source": public_source, "matches": matches,
             "divergences": divergences, "missing": missing,
             "complemented": complemented, "freshness": freshness,
-            "fields": compared, "effective_fields": effective, "decision_effect": "SHADOW_ONLY",
-            "live_decision_authority": False, "real_money_authorized": False}
+            "fields": compared, "effective_fields": effective, "decision_effect": "OBSERVE_ONLY",
+            "shadow_promotion": contract_state.startswith("READY_SHADOW"), "live_decision_authority": False, "real_money_authorized": False}
 
 def summarize_rows(symbols: list[str], rows: dict[str, Any],
                    primary_contract: dict[str, Any] | None = None) -> dict[str, Any]:
