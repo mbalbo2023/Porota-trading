@@ -1,8 +1,9 @@
-"""PPI-primary / IOL-complementary reconciliation contract for RC6.
+"""Cascada PPI -> IOL -> BYMA para evidencia y promoción SHADOW RC6.
 
-Read-only and deterministic. PPI remains authoritative. IOL may confirm or
-complete non-critical fields; it never replaces a valid PPI critical field,
-changes a signal, or authorizes an order.
+La prioridad conserva la trazabilidad: PPI aporta primero, IOL completa sólo
+ausencias y BYMA completa el remanente público. Una coincidencia consistente
+puede habilitar PAPER/SHADOW aun si PPI no entregó un campo. Nunca autoriza una
+orden real ni cambia rutas de broker.
 """
 from __future__ import annotations
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from typing import Any
 
 SCHEMA_VERSION = 2
 FIELDS = ("last", "bid", "ask", "bid_size", "ask_size", "spread_pct",
-          "variation_pct", "cash_volume")
+          "variation_pct", "cash_volume", "volume", "vwap")
 CRITICAL_FIELDS = frozenset(("last", "bid", "ask"))
 OPTIONAL_FIELDS = frozenset(("variation_pct", "cash_volume"))
 METADATA_FIELDS = ("market", "settlement", "currency", "units_per_lot", "asset_type")
@@ -44,32 +45,45 @@ def _with_derived_quote(value: Any) -> dict[str, Any]:
         quote["spread_pct"] = (ask - bid) / bid * 100.0
     return quote
 
-def reconcile(primary: Any, secondary: Any, *, now: datetime | None = None,
+def reconcile(primary: Any, secondary: Any, public: Any | None = None, *, now: datetime | None = None,
               tolerance_pct: float = DEFAULT_TOLERANCE_PCT,
-              primary_source: str = "PPI", secondary_source: str = "IOL") -> dict[str, Any]:
+              primary_source: str = "PPI", secondary_source: str = "IOL",
+              public_source: str = "BYMA") -> dict[str, Any]:
     p, s = _with_derived_quote(primary), _with_derived_quote(secondary)
+    b = _with_derived_quote(public or {})
     compared: dict[str, Any] = {}
+    effective: dict[str, Any] = {}
     matches = divergences = missing = complemented = 0
     for field in FIELDS:
-        pv, sv = _num(p.get(field)), _num(s.get(field))
-        if pv is None or sv is None:
-            if pv is None and sv is None:
-                state = "NOT_AVAILABLE_BOTH_SIDES"
-                if field not in OPTIONAL_FIELDS:
-                    missing += 1
-            elif pv is None and sv is not None and field not in CRITICAL_FIELDS:
-                state = "COMPLEMENTED_SECONDARY"
-                complemented += 1
-            else:
-                state = "MISSING_COMPARABLE_FIELD"
+        values = [(primary_source, _num(p.get(field))), (secondary_source, _num(s.get(field))),
+                  (public_source, _num(b.get(field)))]
+        present = [(source, value) for source, value in values if value is not None]
+        chosen_source, chosen_value = present[0] if present else (None, None)
+        effective[field] = {"value": chosen_value, "source": chosen_source}
+        disagreements = []
+        for index, (left_source, left_value) in enumerate(present):
+            for right_source, right_value in present[index + 1:]:
+                diff = abs(left_value - right_value) / abs(left_value) * 100 if left_value else (0.0 if right_value == 0 else None)
+                if diff is not None and diff > tolerance_pct:
+                    disagreements.append({"left": left_source, "right": right_source, "difference_pct": diff})
+        if not present:
+            state = "MISSING_ALL_SOURCES"
+            if field not in OPTIONAL_FIELDS:
                 missing += 1
-            compared[field] = {"state": state, "primary": pv, "secondary": sv}
-            continue
-        diff = abs(pv - sv) / abs(pv) * 100 if pv else (0.0 if sv == 0 else None)
-        state = "MATCH" if diff is not None and diff <= tolerance_pct else "DIVERGENCE"
-        matches += state == "MATCH"
-        divergences += state == "DIVERGENCE"
-        compared[field] = {"state": state, "primary": pv, "secondary": sv, "difference_pct": diff}
+        elif disagreements:
+            state = "DIVERGENCE"
+            divergences += 1
+        elif chosen_source != primary_source:
+            state = "COMPLEMENTED_" + chosen_source
+            complemented += 1
+        elif len(present) > 1:
+            state = "MATCH"
+            matches += 1
+        else:
+            state = "PPI_ONLY"
+        compared[field] = {"state": state, "primary": values[0][1], "secondary": values[1][1],
+                           "public": values[2][1], "effective": chosen_value,
+                           "effective_source": chosen_source, "disagreements": disagreements}
     for field in METADATA_FIELDS:
         pv, sv = p.get(field), s.get(field)
         if pv in (None, "") or sv in (None, ""):
@@ -87,7 +101,12 @@ def reconcile(primary: Any, secondary: Any, *, now: datetime | None = None,
     freshness = {name: ("FRESH" if age is not None and 0 <= age <= MAX_AGE_SECONDS
                         else "STALE" if age is not None else "UNKNOWN")
                  for name, age in ages.items()}
-    if freshness[primary_source] == "STALE" or freshness[secondary_source] == "STALE":
+    btime = _utc(b.get("provider_observed_at") or b.get("observed_at") or b.get("timestamp"))
+    ages[public_source] = (ref - btime).total_seconds() if btime else None
+    freshness[public_source] = ("FRESH" if ages[public_source] is not None and 0 <= ages[public_source] <= MAX_AGE_SECONDS
+                                else "STALE" if ages[public_source] is not None else "UNKNOWN")
+    active_sources = {item["source"] for item in effective.values() if item["source"]}
+    if any(freshness[source] == "STALE" for source in active_sources):
         contract_state = "BLOCKED_STALE"
     elif divergences:
         contract_state = "BLOCKED_CONFLICT"
@@ -100,15 +119,15 @@ def reconcile(primary: Any, secondary: Any, *, now: datetime | None = None,
     else:
         contract_state = "READY_SHADOW"
     last_state = compared.get("last", {}).get("state")
-    state = "MATCH" if last_state == "MATCH" else (
+    state = "MATCH" if last_state in {"MATCH", "PPI_ONLY", "COMPLEMENTED_IOL", "COMPLEMENTED_BYMA"} else (
         "PRICE_DIVERGENCE" if last_state == "DIVERGENCE"
         else "BACKGROUND_COMPARISON_INCOMPLETE")
     return {"schema_version": SCHEMA_VERSION, "state": state,
             "contract_state": contract_state, "primary_source": primary_source,
-            "secondary_source": secondary_source, "matches": matches,
+            "secondary_source": secondary_source, "public_source": public_source, "matches": matches,
             "divergences": divergences, "missing": missing,
             "complemented": complemented, "freshness": freshness,
-            "fields": compared, "decision_effect": "OBSERVE_ONLY",
+            "fields": compared, "effective_fields": effective, "decision_effect": "SHADOW_ONLY",
             "live_decision_authority": False, "real_money_authorized": False}
 
 def summarize_rows(symbols: list[str], rows: dict[str, Any],
