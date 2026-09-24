@@ -80,3 +80,11 @@ def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     assert 'sudo -n timeout 1200 sudo -n docker run' in verify
     assert '--entrypoint python "$VERIFY_IMAGE" ck_contract_evidence_runner_hf6.py' in verify
     assert '--entrypoint timeout "$VERIFY_IMAGE" 1200 python ck_contract_evidence_runner_hf6.py' not in verify
+
+
+def test_binding_runtime_static_assets_are_packaged_restored_and_verified():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    for asset in ("n_instrument_watchlist.json", "POROTA_SECTOR_MAP_V1.csv"):
+        assert source.count(asset) >= 5
+    assert "RC6_STATIC_RUNTIME_ASSETS_STAGE=GREEN" in source
+    assert "RC6_IMAGE_STATIC_ASSET_SHA=GREEN|$asset|$IMAGE_ASSET_SHA" in source
