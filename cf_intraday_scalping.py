@@ -227,6 +227,12 @@ def persist_payload(store, record, points, *, received_at):
             "changed": changed, "refreshed": refreshed, "down_steps": down_steps}
 
 
+SCALPING_PAPER_CAPABILITIES = frozenset({
+    "READY_PAPER_SPOT", "READY_PAPER", "READY_PAPER_SHADOW",
+    "READY_SHADOW", "READY_SHADOW_COMPLEMENTED",
+})
+
+
 def evaluate_candidate(store, record, *, at):
     identity = _identity(record)
     contract = _state(store, identity) or {}
@@ -246,8 +252,8 @@ def evaluate_candidate(store, record, *, at):
           (record["ticker"],record["instrument_type"],record["settlement"],
            record["currency"],record["market"])).fetchone()
     points = list(reversed(points))
-    if record.get("capability") != "READY_PAPER_SPOT":
-        reason = record.get("capability") or "CONTRACT_NOT_EXECUTABLE"
+    if record.get("capability") not in SCALPING_PAPER_CAPABILITIES:
+        reason = record.get("capability") or "CONTRACT_NOT_SIMULATABLE"
     elif contract.get("state") != "CONFIRMED_INTERVAL_VOLUME":
         reason = contract.get("state") or "PENDING_LIVE_CONFIRMATION"
     elif len(points) < 15:
