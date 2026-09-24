@@ -2122,6 +2122,30 @@ def live_page(*, offset=0, limit=10):
     return _document("En vivo",body,refresh=0)
 
 
+def _paper_history_by_family(normalize_family):
+    """Historial PAPER separado de la readiness contractual actual."""
+    history = {}
+    if not _table("paper_positions"):
+        return history
+    rows = _rows(
+        """SELECT asset_class,COUNT(*) AS positions,
+                  MIN(opened_at) AS first_opened,MAX(COALESCE(closed_at,opened_at)) AS last_seen
+           FROM paper_positions
+           GROUP BY asset_class"""
+    )
+    for row in rows:
+        family = normalize_family(row.get("asset_class"))
+        item = history.setdefault(family, {"positions": 0, "first_opened": None, "last_seen": None})
+        item["positions"] += int(row.get("positions") or 0)
+        item["first_opened"] = min(
+            value for value in (item["first_opened"], row.get("first_opened")) if value
+        ) if (item["first_opened"] or row.get("first_opened")) else None
+        item["last_seen"] = max(
+            value for value in (item["last_seen"], row.get("last_seen")) if value
+        ) if (item["last_seen"] or row.get("last_seen")) else None
+    return history
+
+
 def _family_ux_snapshot(families):
     from cp_contract_evidence_v2_hf6 import normalize_family
     families=tuple(normalize_family(str(x).upper()) for x in families)
@@ -2130,6 +2154,7 @@ def _family_ux_snapshot(families):
     coverage={normalize_family(r.get('instrument_type')):r for r in (_rows(
         'SELECT * FROM catalog_family_coverage ORDER BY instrument_type')
         if _table('catalog_family_coverage') else [])}
+    paper_history = _paper_history_by_family(normalize_family)
 
     v2_counts={}
     changed_counts={}
@@ -2163,6 +2188,7 @@ def _family_ux_snapshot(families):
         v2=v2_counts.get(family,{})
         old=legacy.get(family,{'total':0,'verified':0,'blocked':0,'statuses':{}})
         changes=changed_counts.get(family,0)
+        historical=paper_history.get(family,{})
         state='READY_PAPER' if explicit_ready>0 else 'HOLD'
         blockers=sorted(old.get('statuses',{}).items(),key=lambda kv:(-kv[1],kv[0]))
         blockers=[(k,v) for k,v in blockers if k!='VERIFIED_EXISTING_PAPER_CONTRACT'][:3]
@@ -2180,6 +2206,7 @@ def _family_ux_snapshot(families):
             'evidence_at':v2.get('observed_at') or old.get('checked_at'),
             'changed':changes,
             'blockers':blockers,
+            'paper_history':historical,
         })
     return result
 
@@ -2188,6 +2215,10 @@ def _family_ux_table(families):
     rows=[]
     for item in _family_ux_snapshot(families):
         blocker_text=' · '.join(f'{k}={v}' for k,v in item.get('blockers',[])) or ('Sin bloqueos legacy' if item['verified'] else 'Sin clasificación suficiente')
+        history=item.get('paper_history') or {}
+        history_label=(f"{history.get('positions',0)} posiciones históricas · "
+                       f"última {_local_time(history.get('last_seen'))}"
+                       if history.get('positions') else 'Sin historial PAPER')
         detail=('READY_PAPER explícito en catálogo/runtime' if item['ready'] else
                 'Visible/observada; HOLD hasta contrato + costo + sizing + simulador + tests + evidencia fresca')
         evidence_label=f"legacy {item['evidence_legacy']} · v2 {item['evidence_v2']}"
@@ -2195,9 +2226,9 @@ def _family_ux_table(families):
             f"<tr><td><b>{_e(item['label'])}</b></td><td>{_status(item['state'])}</td>"
             f"<td>{_e(item['observed'])}</td><td>{_e(evidence_label)}</td>"
             f"<td>{_e(item['verified'])}</td><td>{_e(item['ready'])}</td>"
-            f"<td>{_e(item['blocked'])}</td><td>{_e(item['changed'])}</td>"
+            f"<td>{_e(history_label)}</td><td>{_e(item['blocked'])}</td><td>{_e(item['changed'])}</td>"
             f"<td>{_e(blocker_text)}</td><td>{_e(detail)}</td></tr>")
-    return ''.join(rows) or "<tr><td colspan='10'>Sin evidencia para este grupo.</td></tr>"
+    return ''.join(rows) or "<tr><td colspan='11'>Sin evidencia para este grupo.</td></tr>"
 
 
 
@@ -2340,10 +2371,10 @@ def trading_page(section=''):
         table=_family_ux_table(families)
         body=(f"<h1>Trading — {_e(title)}</h1>{subnav}"
               "<div class='paper-notice'>Una familia visible puede seguir HOLD. Descubrimiento, histórico y evidencia contractual "
-              "no equivalen a permiso PAPER.</div>"
+              "no equivalen por sí solos a READY PAPER. Historial PAPER y readiness actual se muestran separados. Cadena: PPI primario → IOL read-only → BYMA scraping; A3/ROFEX API para derivados.</div>"
               "<div class='paper-card'><table class='paper-table'><tr><th>Familia</th><th>Readiness</th>"
               "<th>Observadas</th><th>Evidencias</th><th>Verificadas</th><th>READY PAPER</th>"
-              "<th>Bloqueadas/pendientes</th><th>Cambios v2</th><th>Principales bloqueos</th>"
+              "<th>Historial PAPER</th><th>Bloqueadas/pendientes</th><th>Cambios v2</th><th>Principales bloqueos</th>"
               f"<th>Interpretación</th></tr>{table}</table></div>")
         return _document('Trading — '+title,body,refresh=30)
 
@@ -2495,12 +2526,12 @@ def instruments_page():
     table=_family_ux_table(families)
     matrix=_instrument_readiness_matrix()
     body=("<h1>Instrumentos y contratos</h1>"
-          "<div class='paper-notice'><b>Alcance actual: acciones y CEDEARs.</b> "
+          "<div class='paper-notice'><b>Lectura corregida: readiness contractual actual separada del historial PAPER.</b> "
           "PPI es la fuente primaria; IOL solo complementa y valida en modo read-only. "
           "La matriz no autoriza dinero real.</div>"
           "<div class='paper-card'><table class='paper-table' data-porota-force-compact='1'><tr><th>Familia</th><th>Readiness</th>"
           "<th>Observadas</th><th>Evidencias</th><th>Verificadas</th><th>READY PAPER</th>"
-          "<th>Bloqueadas/pendientes</th><th>Cambios v2</th><th>Principales bloqueos</th>"
+          "<th>Historial PAPER</th><th>Bloqueadas/pendientes</th><th>Cambios v2</th><th>Principales bloqueos</th>"
           "<th>Interpretación</th></tr>"+table+"</table></div>"
           +matrix)
     return _document('Instrumentos y contratos',body,refresh=60)
