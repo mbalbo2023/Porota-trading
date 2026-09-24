@@ -13,3 +13,9 @@ def test_findings_detect_score_and_target_signals():
     assert r["signal"]["score_ge_070"]["wins"]==0
     assert r["excursions"]["mfe_ge_5pct"]==0
     assert r["friction"]["gross_positive_net_negative"]==1
+
+
+def test_time_bin_uses_buenos_aires():
+    from rc6_alpha_tuning_analysis import time_bin
+    assert time_bin({"opened_at":"2026-09-23T14:30:00+00:00"}) == "<12"
+    assert time_bin({"opened_at":"2026-09-23T18:30:00+00:00"}) == "15-16"
