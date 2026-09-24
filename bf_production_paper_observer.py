@@ -531,32 +531,47 @@ def _download_catalog(reader, store):
 
 
 def _eligible_symbols(store):
-    """Universo operativo estricto: sólo acciones y CEDEARs disponibles."""
+    """Devuelve el universo completo de familias en rotación PAPER/SHADOW.
+
+    El catálogo puede contener más familias que el lote activo. La selección
+    posterior mantiene una ventana limitada y un cursor persistente; aquí no
+    se descartan familias por pertenecer a renta fija, cauciones o derivados.
+    """
     core = list(CORE_SYMBOLS)
+    family_order = (
+        "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+        "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+    )
+    allowed_sql = ",".join(f"'{family}'" for family in family_order)
     try:
         with store.connect() as c:
-            normalized_count = c.execute("SELECT COUNT(*) FROM financial_instrument_catalog").fetchone()[0]
+            normalized_count = c.execute(
+                "SELECT COUNT(*) FROM financial_instrument_catalog"
+            ).fetchone()[0]
             if normalized_count:
-                rows = c.execute("""SELECT DISTINCT ticker,instrument_type,settlement
+                rows = c.execute(f"""SELECT DISTINCT ticker,instrument_type,settlement
                   FROM financial_instrument_catalog
                   WHERE status='AVAILABLE'
-                    AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS','ETFS','BONOS','LETRAS','OBLIGACIONES','OPCIONES','FUTUROS','CAUCIONES','FCI')
+                    AND UPPER(instrument_type) IN ({allowed_sql})
                   ORDER BY instrument_type,ticker,settlement""").fetchall()
             else:
-                rows = c.execute("""SELECT ticker,instrument_type,settlement FROM candidate_universe
+                rows = c.execute(f"""SELECT ticker,instrument_type,settlement
+                  FROM candidate_universe
                   WHERE can_simulate=1 AND status='AVAILABLE'
-                    AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS','ETFS','BONOS','LETRAS','OBLIGACIONES','OPCIONES','FUTUROS','CAUCIONES','FCI')
+                    AND UPPER(instrument_type) IN ({allowed_sql})
                   ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
                   instrument_type,ticker""").fetchall()
         seen = set(core)
-        groups = {kind: [] for kind in ("ACCIONES", "CEDEARS")}
+        groups = {kind: [] for kind in family_order}
         for ticker, kind, settlement in rows:
-            kind = str(kind).upper()
-            value = (ticker, kind, settlement)
+            kind = str(kind or "").upper()
+            value = (str(ticker).strip().upper(), kind, settlement)
             if value not in seen and kind in groups:
                 groups[kind].append(value)
+        # Round-robin por familia: evita que acciones/CEDEARs consuman todo
+        # el lote y garantiza que las familias nuevas entren en la rotación.
         while any(groups.values()):
-            for kind in ("ACCIONES", "CEDEARS"):
+            for kind in family_order:
                 if groups[kind]:
                     value = groups[kind].pop(0)
                     if value not in seen:
