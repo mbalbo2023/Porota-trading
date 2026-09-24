@@ -158,6 +158,9 @@ jobs:
           for key in ('0.005','0.0075','0.01','0.0125','0.015','0.02','0.025','0.03','0.035','0.05'):
               x=r['targets'][key]
               print('TARGET='+key+'|CHANGED='+str(x['changed_trades'])+'|DELTA='+json.dumps(x['delta_by_currency'],sort_keys=True)+'|NET='+json.dumps(x['candidate_net_by_currency'],sort_keys=True)+'|UNMODELED='+str(x['unmodeled']))
+          for key in ('0.0025','0.005','0.0075','0.01'):
+              x=r['net_targets'][key]
+              print('NET_TARGET='+key+'|CHANGED='+str(x['changed_trades'])+'|DELTA='+json.dumps(x['delta_by_currency'],sort_keys=True)+'|NET='+json.dumps(x['candidate_net_by_currency'],sort_keys=True)+'|UNMODELED='+str(x['unmodeled']))
           PY
 
       - name: Analyze cohorts deterministically
