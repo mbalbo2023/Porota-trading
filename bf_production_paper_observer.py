@@ -540,12 +540,12 @@ def _eligible_symbols(store):
                 rows = c.execute("""SELECT DISTINCT ticker,instrument_type,settlement
                   FROM financial_instrument_catalog
                   WHERE status='AVAILABLE'
-                    AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS')
+                    AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS','ETFS','BONOS','LETRAS','OBLIGACIONES','OPCIONES','FUTUROS','CAUCIONES','FCI')
                   ORDER BY instrument_type,ticker,settlement""").fetchall()
             else:
                 rows = c.execute("""SELECT ticker,instrument_type,settlement FROM candidate_universe
                   WHERE can_simulate=1 AND status='AVAILABLE'
-                    AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS')
+                    AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS','ETFS','BONOS','LETRAS','OBLIGACIONES','OPCIONES','FUTUROS','CAUCIONES','FCI')
                   ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
                   instrument_type,ticker""").fetchall()
         seen = set(core)
