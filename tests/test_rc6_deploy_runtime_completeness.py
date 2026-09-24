@@ -12,3 +12,11 @@ def test_runtime_dependency_is_packaged_installed_rolled_back_and_verified():
     assert 'test -f "$REPO/rc6_source_consolidation.py"' in source
     assert "RC6_DEPLOY_IMPORT=GREEN|rc6_source_consolidation" in source
     assert "RUNNING_SOURCE_SHA=GREEN|observer|$f" in source
+
+
+def test_postclose_reconciliation_is_only_required_when_it_can_run():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert 'STATUS=SKIPPED_MARKET_NOT_CLOSED' in source
+    assert 'RC6_FULL_CONTRACT_RECONCILIATION=SKIPPED_MARKET_OPEN' in source
+    assert 'grep -Fq "STATUS=OK" <<< "$CONTRACT_OUTPUT"' in source
+    assert 'grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"' in source

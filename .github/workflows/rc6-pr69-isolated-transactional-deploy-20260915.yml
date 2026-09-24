@@ -579,10 +579,18 @@ jobs:
           # read-only diagnosis before failing the deploy check.
           echo "RC6_FULL_CONTRACT_RECONCILIATION_EXIT=$CONTRACT_RC"
           echo "$CONTRACT_OUTPUT"
-          test "$CONTRACT_RC" -eq 0
-          grep -Fq "STATUS=OK" <<< "$CONTRACT_OUTPUT"
-          grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
-          echo "RC6_FULL_CONTRACT_RECONCILIATION=GREEN"
+          # La conciliación completa es una prueba post-cierre. Fuera de esa
+          # ventana el runner responde con un skip explícito y exitoso; no se
+          # degrada el deploy ni se omite ninguna verificación de PAPER.
+          if grep -Fq "STATUS=SKIPPED_MARKET_NOT_CLOSED" <<< "$CONTRACT_OUTPUT"; then
+            test "$CONTRACT_RC" -eq 0
+            echo "RC6_FULL_CONTRACT_RECONCILIATION=SKIPPED_MARKET_OPEN"
+          else
+            test "$CONTRACT_RC" -eq 0
+            grep -Fq "STATUS=OK" <<< "$CONTRACT_OUTPUT"
+            grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
+            echo "RC6_FULL_CONTRACT_RECONCILIATION=GREEN"
+          fi
           # The candidate image is the only runtime source of truth.  Do not
           # docker-cp into a running/read-only container and do not restart a
           # dashboard solely to copy sources: both caused stale-provenance
