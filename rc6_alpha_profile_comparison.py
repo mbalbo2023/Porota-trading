@@ -66,19 +66,23 @@ def time_minute(t):
 def profile_pred(name,t,e):
     score=dec(t.get("decision_score")); minute=time_minute(t)
     if name=="FACTUAL_ALL": return True
-    if name=="ACTIONS_ONLY": return str(t.get("asset_class") or "").upper()=="ACCIONES"
-    if name=="SCORE_CAP_067": return score is not None and score<D("0.67")
-    if name=="NO_FIRST_90M": return minute is not None and minute>=12*60
+    if name=="ACTIONS_ONLY":
+        asset=str(t.get("asset_class") or "").upper()
+        return None if not asset else asset=="ACCIONES"
+    if name=="SCORE_CAP_067":
+        return None if score is None else score<D("0.67")
+    if name=="NO_FIRST_90M":
+        return None if minute is None else minute>=12*60
     if name=="ASSET_DAY_NONPOS":
-        return e.get("asset_day_return") is not None and e["asset_day_return"]<=0
+        x=e.get("asset_day_return"); return None if x is None else x<=0
     if name=="CANDLE_MOM_NONPOS":
-        return e.get("candle_momentum") is not None and e["candle_momentum"]<=0
+        x=e.get("candle_momentum"); return None if x is None else x<=0
     if name=="ANTI_CHASE_CORE":
-        return (e.get("asset_day_return") is not None and e["asset_day_return"]<=0
-                and e.get("candle_momentum") is not None and e["candle_momentum"]<=0
-                and score is not None and score<D("0.67"))
+        a=e.get("asset_day_return"); m=e.get("candle_momentum")
+        if a is None or m is None or score is None: return None
+        return a<=0 and m<=0 and score<D("0.67")
     return None
-def evaluate(trades,entry,name,exit_changed=None,exit_unknown=None):
+def evaluate(trades,entry,name,split_days,exit_changed=None,exit_unknown=None):
     exit_changed=exit_changed or {}; exit_unknown=exit_unknown or set()
     rows=[]; blocked=[]; insufficient=[]
     for t in trades:
@@ -96,8 +100,7 @@ def evaluate(trades,entry,name,exit_changed=None,exit_unknown=None):
             insufficient.append(pid); continue
         rows.append({"paper_id":pid,"currency":str(t.get("currency") or "UNKNOWN"),
                      "day":day_of(t),"profile_net":str(pnl),"factual_net":str(factual) if factual is not None else None})
-    days=sorted({r["day"] for r in rows if r["day"]})
-    cut=max(1,len(days)//2); first=set(days[:cut]); second=set(days[cut:])
+    first,second=split_days
     first_rows=[r for r in rows if r["day"] in first]; second_rows=[r for r in rows if r["day"] in second]
     # ARS is the only currency with enough observations to use for a candidate gate.
     ars_all=[r for r in rows if r["currency"]=="ARS"]
@@ -123,17 +126,21 @@ def evaluate(trades,entry,name,exit_changed=None,exit_unknown=None):
 def build(master,pt,ctx,exit_cf):
     trades=[t for t in master.get("trades",[]) if isinstance(t,dict)]
     entry=extract_entry(pt,ctx)
+    days=sorted({day_of(t) for t in trades if day_of(t)})
+    cut=max(1,len(days)//2)
+    split_days=(set(days[:cut]),set(days[cut:]))
     profiles={}
     entry_names=("FACTUAL_ALL","ACTIONS_ONLY","SCORE_CAP_067","NO_FIRST_90M",
                  "ASSET_DAY_NONPOS","CANDLE_MOM_NONPOS","ANTI_CHASE_CORE")
     for name in entry_names:
-        profiles[name+"__FACTUAL_EXIT"]=evaluate(trades,entry,name)
+        profiles[name+"__FACTUAL_EXIT"]=evaluate(trades,entry,name,split_days)
     for key in ("0.0025","0.005","0.0075","0.01"):
         changed,unknown=counterfactual_map(exit_cf,"net_targets",key)
-        profiles["FACTUAL_ALL__NET_TARGET_"+key]=evaluate(trades,entry,"FACTUAL_ALL",changed,unknown)
-        profiles["ANTI_CHASE_CORE__NET_TARGET_"+key]=evaluate(trades,entry,"ANTI_CHASE_CORE",changed,unknown)
+        profiles["FACTUAL_ALL__NET_TARGET_"+key]=evaluate(trades,entry,"FACTUAL_ALL",split_days,changed,unknown)
+        profiles["ANTI_CHASE_CORE__NET_TARGET_"+key]=evaluate(trades,entry,"ANTI_CHASE_CORE",split_days,changed,unknown)
     passed=[k for k,v in profiles.items() if v["ars_candidate_gate"]["passes_candidate_gate"]]
     return {"schema":"POROTA_RC6_ALPHA_PROFILE_COMPARISON_V1","mode":"READ_ONLY_SHADOW_ANALYSIS",
+      "temporal_split":{"train_days":days[:cut],"validation_days":days[cut:]},
       "profiles":profiles,"candidate_gate_passed":passed,
       "conclusion":"CANDIDATE_EXISTS" if passed else "NO_PROFILE_PASSES_PREDEFINED_ROBUSTNESS_GATE",
       "limitations":[
