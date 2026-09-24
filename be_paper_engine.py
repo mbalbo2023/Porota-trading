@@ -25,10 +25,14 @@ from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
 import cc_spot_liquidity as spot_liquidity
 import cd_spot_ledger as spot_ledger
 
-# RC6 operational scope: candidates outside shares/CEDEARs are observed only.
+# PAPER/SHADOW scope covers every known family. Specialized families
+# still fail closed in decide/_open unless their own contract and simulator
+# requirements are satisfied. This flag never authorizes real money.
 OPERATIONAL_FAMILIES = frozenset(
-    part.strip().upper() for part in os.getenv("POROTA_OPERATIONAL_FAMILIES", "ACCIONES,CEDEARS").split(",")
-    if part.strip()
+    part.strip().upper() for part in os.getenv(
+        "POROTA_OPERATIONAL_FAMILIES",
+        "ACCIONES,CEDEARS,ETFS,BONOS,LETRAS,OBLIGACIONES,OPCIONES,FUTUROS,CAUCIONES,FCI",
+    ).split(",") if part.strip()
 )
 
 def _family_operable(family: str) -> bool:
@@ -829,7 +833,7 @@ class PaperBroker:
                     {"samples": 0, "family": family})
         if not _family_operable(family):
             return ("HOLD", ZERO,
-                    f"{family}: fuera del alcance operativo RC6 (sólo acciones y CEDEARs)",
+                    f"{family}: fuera del alcance PAPER/SHADOW RC6",
                     {"samples": 0, "family": family, "operational_scope": "DISABLED_BY_SCOPE"})
         if q.opening_block_reason:
             return "HOLD", ZERO, q.opening_block_reason, {"samples": 0}
