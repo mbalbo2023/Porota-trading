@@ -814,6 +814,15 @@ jobs:
             test "$(systemctl is-active "$unit")" = active
           done
           echo "RC6_SNAPSHOT_TIMERS=GREEN"
+          IOL_TIMER=porota-iol-shadow-collector-rc6.timer
+          IOL_SERVICE=porota-iol-shadow-collector-rc6.service
+          test "$(systemctl is-enabled "$IOL_TIMER")" = enabled
+          test "$(systemctl is-active "$IOL_TIMER")" = active
+          sudo -n test -r /root/.config/porota/iol_mcp_oauth_bootstrap.json
+          echo "IOL_TIMER_AUDIT=enabled|active|oauth_bootstrap=present"
+          systemctl show "$IOL_TIMER" --property=NextElapseUSecRealtime --property=LastTriggerUSec --no-pager
+          systemctl show "$IOL_SERVICE" --property=Result --property=ExecMainStatus --property=ActiveState --no-pager
+          sudo -n journalctl -u "$IOL_SERVICE" --since today --no-pager -n 80
           for unit in porota-introspection-rc6.timer porota-introspection-publish-rc6.timer porota-scheduler-export-rc6.timer; do
             test "$(systemctl is-enabled "$unit")" = enabled
             test "$(systemctl is-active "$unit")" = active
