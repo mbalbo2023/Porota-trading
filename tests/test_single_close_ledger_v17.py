@@ -139,18 +139,16 @@ def test_recibo_pendiente_sin_confirmacion_no_inventa_fecha(closed):
 
 
 @pytest.mark.parametrize('family',['BONOS','LETRAS','ON'])
-def test_cierre_unico_respeta_nominal_por_cien(tmp_path,family):
+def test_renta_fija_fuera_de_alcance_no_abre_en_paper_rc6(tmp_path,family):
     from bs_instrument_contracts import InstrumentContract
     b=PaperBroker(PaperStore(str(tmp_path/'nominal.db')),initial_cash='10000',slippage_bps='0')
     q=replace(quote(at=AT,ask_size='100'),asset_class=family,settlement='INMEDIATA',ask=D(100))
     contract=InstrumentContract(q.symbol,family,'ARS','BYMA','INMEDIATA',D('.01'),D(2),'TEST_FIXTURE')
     q=replace(q,contract=contract)
-    assert b._open(q,D('.8'),{})[0]
-    p=b.store.open_positions()[0]
-    assert b._close(p,replace(q,bid=D(110),ask=D(111),observed_at=CLOSE,book_at=CLOSE),'TEST')
-    row=b.store.recent_closed()[0]
-    assert D(row['gross_pnl'])==D(1)
-    assert b._cash(LATER)==10000+D(row['net_pnl'])
+    opened, reason = b._open(q,D('.8'),{})
+    assert opened is False
+    assert reason
+    assert b.store.open_positions() == []
 
 
 def test_cierre_inconsistente_no_detiene_stop_de_otra_posicion(closed):

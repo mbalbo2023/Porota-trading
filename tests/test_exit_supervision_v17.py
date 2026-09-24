@@ -213,7 +213,7 @@ def test_reloj_avanza_mientras_cuatro_procesos_hijos_estan_bloqueados(position,m
     broker,p,_ = position
     monkeypatch.setenv("PAPER_MAX_HOLD_MINUTES","180")
     command = [sys.executable,"-c","import time; time.sleep(60)"]
-    children = ChildProcesses({"scanner":command,"reader":command,"notifications":command,"candles":command})
+    children = ChildProcesses({"scanner":command,"reader":command,"notifications":command,"candles":command}, startup_grace_seconds=0)
     stop = threading.Event()
     thread = threading.Thread(target=run_clock,args=(broker.store,children,stop),
         kwargs={"clock_fn":lambda:"2026-08-28T14:01:00-03:00","interval":0.02})

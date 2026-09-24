@@ -61,7 +61,7 @@ def test_bot_usa_rootfs_de_solo_lectura_y_escrituras_explicitadas():
 
 def test_init_prepara_la_cache_para_el_usuario_sin_privilegios():
     fuente = _compose()
-    init = _bloque(fuente, "  init_permissions:\n", "\n  sre_vectordb:\n")
+    init = _bloque(fuente, "  init_permissions:\n", "\nnetworks:\n")
 
     assert "./model_cache:/home/botuser/.cache" in init
     assert "chown -R 1000:1000 /app/data /app/sre_vector_db" not in init
@@ -70,8 +70,7 @@ def test_init_prepara_la_cache_para_el_usuario_sin_privilegios():
     assert "/app/data/observer" not in init
     assert "chmod 750 /app/data/paper_v17" in init
     assert "chown -R 1000:1000 /app/sre_vector_db /home/botuser/.cache" in init
-    assert "touch /app/data/chroma.log" in init
-    assert "chmod 640 /app/data/chroma.log" in init
+    assert "touch /app/data/chroma.log" not in init
 
 
 def test_dockerfile_no_escribe_bytecode_y_dirige_la_cache_al_volumen():
@@ -82,15 +81,7 @@ def test_dockerfile_no_escribe_bytecode_y_dirige_la_cache_al_volumen():
     assert "MPLCONFIGDIR=/tmp/matplotlib" in fuente
 
 
-def test_chroma_usa_rootfs_de_solo_lectura_con_escrituras_aisladas():
+def test_legacy_compose_no_arranca_chroma_en_paralelo():
     fuente = _compose()
-    chroma = _bloque(fuente, "  sre_vectordb:\n", "\nnetworks:\n")
-
-    assert "    read_only: true\n" in chroma
-    assert "PYTHONDONTWRITEBYTECODE: \"1\"" in chroma
-    assert "ANONYMIZED_TELEMETRY: \"FALSE\"" in chroma
-    assert "      - /tmp:rw,noexec,nosuid,size=64m\n" in chroma
-    assert "      - /root/.cache:rw,noexec,nosuid,size=16m\n" in chroma
-    assert "      - ./sre_vector_db:/chroma/chroma\n" in chroma
-    assert "      - ./data/chroma.log:/chroma/chroma.log\n" in chroma
-    assert "condition: service_completed_successfully" in chroma
+    assert "\n  sre_vectordb:\n" not in fuente
+    assert "PRODUCTION_PAPER usa el runtime split" in fuente
