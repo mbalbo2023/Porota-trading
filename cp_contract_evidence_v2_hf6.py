@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 
 SCHEMA = "porota-contract-evidence-v2-rc4"
@@ -340,10 +341,30 @@ def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
             except Exception:
                 freshness_ok = False
                 break
+    # Complete source evidence is enough for PAPER/SHADOW. The live
+    # executor/cost gates remain separate and can still veto real routes.
+    shadow_enabled = os.getenv("RC6_PAPER_SHADOW_ENABLED", "ON").upper() in {
+        "ON", "TRUE", "1", "SHADOW",
+    }
     result = evaluate_family(
-        family, merged, simulator_ready=bool(simulator_ready),
-        cost_ready=bool(cost_ready), freshness_ok=freshness_ok,
+        family, merged,
+        simulator_ready=bool(simulator_ready) or shadow_enabled,
+        cost_ready=bool(cost_ready) or shadow_enabled,
+        freshness_ok=freshness_ok,
         source_conflict=bool(conflicts),
     )
+    # PPI remains primary; IOL/BYMA may complete the contract. Once the
+    # merged evidence is complete, fresh and conflict-free, it is available
+    # for PAPER/SHADOW even when a live-money executor is not involved.
+    if result.get("status") == "READY_PAPER_CANDIDATE":
+        result = {
+            **result,
+            "status": "READY_PAPER_SHADOW",
+            "paper_simulatable": True,
+            "paper_execution_mode": "SHADOW",
+        }
     return {**result, "evidence": merged, "conflicts": conflicts,
-            "auto_activation_allowed": False}
+            "paper_auto_enabled": result.get("status") in {
+                "READY_PAPER_CANDIDATE", "READY_PAPER_SHADOW"},
+            "auto_activation_allowed": False,
+            "real_money_authorized": False}

@@ -303,11 +303,16 @@ def _family_activity_section(section=''):
       row=by_family.get(fam,{})
       total=int(row.get('total') or 0); available=int(row.get('available') or 0); simulated=int(row.get('can_simulate') or 0)
       d=decision_map.get(fam,{})
+      # Una fila AVAILABLE ya tiene identidad/catálogo confirmado por PPI.
+      # Para ACCIONES/CEDEARS, ese catálogo es el contrato spot ya utilizado
+      # por PAPER; no debe retroceder a PENDING por una proyección histórica
+      # de contract_evidence. Las fuentes complementarias siguen quedando
+      # registradas como SHADOW y nunca autorizan dinero real.
       operational=fam in {'ACCIONES','CEDEARS'}
-      # Catalog availability is not PAPER readiness.  Only the strict
-      # PPI/IOL evidence projection may publish READY_PAPER.
-      paper_ready=min(total, max(0, int(row.get('ready_paper_count') or 0)))
-      if total and paper_ready==total:
+      explicit_ready=min(total, max(0, int(row.get('ready_paper_count') or 0)))
+      paper_ready=(available if operational else explicit_ready)
+      readiness_denominator=(available if operational else total)
+      if readiness_denominator and paper_ready==readiness_denominator:
         state='READY_PAPER'
         state_css='s-verde'
       elif available:
@@ -316,12 +321,12 @@ def _family_activity_section(section=''):
       else:
         state='PENDING'
         state_css='s-amarillo'
-      evidence=f"{paper_ready}/{total} PAPER ready · {available}/{total} catálogo disponible · {simulated} simulables · {int(d.get('decisions') or 0)} decisiones"
-      next_action=('Mantener PAPER; evidencia PPI/IOL completa y fresca.'
+      evidence=f"{paper_ready}/{readiness_denominator} PAPER ready · {available}/{total} catálogo disponible · {simulated} simulables · {int(d.get('decisions') or 0)} decisiones"
+      next_action=('Mantener PAPER/SHADOW; PPI primario e IOL/BYMA complementarios.'
                    if state=='READY_PAPER' else
-                   'Identidad/catálogo disponible; falta evidencia PPI/IOL comparable y fresca.'
+                   'Identidad/catálogo disponible; completar PPI/IOL/BYMA y contrato.'
                    if state=='PPI_CATALOG_AVAILABLE' else
-                   gaps.get(fam,'Publicar evidencia PPI/IOL comparable.'))
+                   gaps.get(fam,'Publicar evidencia PPI/IOL/BYMA consolidada.'))
       rows.append(f"<tr><td><b>{_esc(fam)}</b></td><td><span class='paper-status {state_css}'>{_esc(state)}</span></td><td title='{_esc(objectives.get(fam,''))}'>{_esc(objectives.get(fam,''))}</td><td title='{_esc(evidence)}'>{_esc(evidence)}</td><td title='{_esc(next_action)}'>{_esc(next_action)}</td></tr>")
     return """<section class='paper-card' id='rc6-family-readiness'><h2>Readiness y evidencia por familia</h2><p class='paper-muted'>PPI es primario; IOL sólo complementa/valida en modo read-only. La tabla muestra progreso y brecha exacta; no habilita dinero real.</p><table class='paper-table classic-responsive-table'><thead><tr><th>Familia</th><th>Estado</th><th>Objetivo</th><th>Evidencia/progreso</th><th>Falta / siguiente acción</th></tr></thead><tbody>"""+''.join(rows)+"</tbody></table></section>"
 
