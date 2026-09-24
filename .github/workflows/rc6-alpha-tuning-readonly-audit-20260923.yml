@@ -1,0 +1,124 @@
+name: RC6 Alpha Tuning Readonly Trade Audit
+
+on:
+  push:
+    branches:
+      - audit/rc6-alpha-tuning-analysis-20260923
+    paths:
+      - rc6_trade_master_audit.py
+      - tests/test_rc6_trade_master_audit.py
+      - .github/workflows/rc6-alpha-tuning-readonly-audit-20260923.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-alpha-tuning-readonly-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Static safety and focused tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_trade_master_audit.py
+          python -m pip install -q pytest
+          python -m pytest -q tests/test_rc6_trade_master_audit.py
+          grep -q 'mode=ro' rc6_trade_master_audit.py
+          grep -q 'PRAGMA query_only=ON' rc6_trade_master_audit.py
+          ! grep -Eq 'requests\.|urllib|httpx|subprocess|os\.system' rc6_trade_master_audit.py
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Verify live PAPER safety before audit
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          STATE="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer python -c \"import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('PRAGMA query_only=ON');r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone();print('|'.join(map(str,r)));c.close()\"")"
+          echo "PRE_SAFETY=$STATE"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+
+      - name: Extract complete closed-trade ledger read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer sh -lc 'cd /app && python - --db /app/data/paper_v17/observer_v17.db'"             < rc6_trade_master_audit.py > rc6_trade_master.json
+          python - <<'PY'
+          import csv,json
+          from pathlib import Path
+          p=json.loads(Path('rc6_trade_master.json').read_text(encoding='utf-8'))
+          assert p['read_only'] is True
+          assert p['network_calls_performed'] is False
+          assert p['broker_calls_performed'] is False
+          assert p['safety']=={'mode':'PRODUCTION_PAPER','real_orders_sent':0}
+          integ=p['integrity']
+          assert integ['closed_total'] == integ['unique_paper_ids']
+          assert integ['duplicate_paper_ids'] == 0
+          Path('rc6_trade_audit_summary.json').write_text(json.dumps({
+            'schema':p['schema'],'generated_at':p['generated_at'],'safety':p['safety'],
+            'integrity':integ,'exceptions':p['exceptions']
+          },ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          fields=['paper_id','strategy_version','symbol','asset_class','market','settlement','currency',
+                  'opened_at','closed_at','quantity','entry_price','entry_cost','stop_price','target_price',
+                  'exit_price','exit_cost','gross_pnl','net_pnl','outcome','close_reason','duration_minutes',
+                  'net_return_pct','decision_score','paper_threshold','momentum','spread','samples',
+                  'signal_window_minutes','gate_final_result','evidence_hash_valid','fill_count',
+                  'buy_fill_count','sell_fill_count']
+          with open('rc6_trade_master.csv','w',newline='',encoding='utf-8') as f:
+              w=csv.DictWriter(f,fieldnames=fields); w.writeheader()
+              for t in p['trades']: w.writerow({k:t.get(k) for k in fields})
+          print('CLOSED_TOTAL='+str(integ['closed_total']))
+          print('BY_CURRENCY='+json.dumps(integ['by_currency'],sort_keys=True))
+          print('EXCEPTIONS_TOTAL='+str(integ['exceptions_total']))
+          print('MFE_MAE='+str(integ['mfe_mae_measured'])+'/'+str(integ['closed_total']))
+          PY
+
+      - name: Verify live PAPER safety after audit
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          STATE="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer python -c \"import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('PRAGMA query_only=ON');r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone();print('|'.join(map(str,r)));c.close()\"")"
+          echo "POST_SAFETY=$STATE"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+          echo "MUTATIONS=NONE"
+          echo "REAL_ORDER_ROUTES=NOT_CALLED"
+          echo "RC6_ALPHA_TUNING_READONLY_AUDIT=GREEN"
+
+      - name: Upload sanitized audit artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-alpha-tuning-trade-audit-${{ github.run_id }}
+          path: |
+            rc6_trade_master.json
+            rc6_trade_master.csv
+            rc6_trade_audit_summary.json
+          if-no-files-found: error
+          retention-days: 30
