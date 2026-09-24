@@ -45,13 +45,13 @@ def build_snapshot_index(c):
         key=tuple(str(r[k]) for k in IDENTITY)
         bid=dec(r["bid"]); size=dec(r["bid_size"])
         idx[key].append((at,bid is not None and bid>0,size is not None and size>0))
-    return idx
+    return {key:([x[0] for x in series],series) for key,series in idx.items()}
 
 def future_path_count(idx,q,at,minutes=120):
     key=tuple(str(q[k]) for k in IDENTITY)
-    series=idx.get(key,[])
-    if not series:return (0,0,0)
-    times=[x[0] for x in series]
+    pair=idx.get(key)
+    if not pair:return (0,0,0)
+    times,series=pair
     lo=bisect.bisect_right(times,at)
     hi=bisect.bisect_right(times,at+timedelta(minutes=minutes))
     window=series[lo:hi]
@@ -69,7 +69,7 @@ def build(db):
             for r in c.execute("SELECT * FROM decision_evidence_snapshots"):
                 d=dict(r); p=safe(d.get("payload_json"))
                 ev[str(d["decision_key"])]={"payload":p,"hash_valid":bool(p) and sha(p)==str(d.get("payload_sha256") or "")}
-        reasons=Counter(); actions=Counter(); stages=Counter(); by_day=defaultdict(lambda:Counter())
+        reasons=Counter(); actions=Counter(); ready_actions=Counter(); stages=Counter(); by_day=defaultdict(lambda:Counter())
         state_examples=defaultdict(list)
         snapshot_index=build_snapshot_index(c)
         for d in decisions:
@@ -103,27 +103,21 @@ def build(db):
                             elif depth_n<=0:
                                 state="NO_FUTURE_BID_DEPTH";reasons[state]+=1
                             else:
-                                state="LABEL_PATH_READY";stages[state]+=1
+                                state="LABEL_PATH_READY";stages[state]+=1;ready_actions[action]+=1
             by_day[day][state]+=1
             if len(state_examples[state])<20:
                 state_examples[state].append({"decision_key":d.get("decision_key"),"decided_at":d.get("decided_at"),
                   "symbol":d.get("symbol"),"action":action,"score":d.get("score"),
                   "future_snapshots_120m":path_n,"future_bid_120m":bid_n,"future_bid_depth_120m":depth_n})
         ready_count=sum(v.get("LABEL_PATH_READY",0) for v in by_day.values())
-        ready_actions=Counter()
-        for day_counts in by_day.values():
-            pass
-        # Action-specific ready counts are derived from the bounded examples only below;
-        # authoritative action totals are accumulated inline in the next revision.
-        ready_actions=Counter(x["action"] for x in state_examples.get("LABEL_PATH_READY",[]))
         return {"schema":"POROTA_RC6_DECISION_OPPORTUNITY_COVERAGE_V1","read_only":True,
           "network_calls_performed":False,"broker_calls_performed":False,
           "labels_created":False,"synthetic_fills_created":False,
           "safety":{"mode":mode,"real_orders_sent":int(orders or 0)},
           "coverage":{"decisions_total":len(decisions),"evidence_snapshots":len(ev),
             "label_path_ready":ready_count,"label_path_ready_pct":(ready_count*100/len(decisions) if decisions else 0),
-            "actions_all":dict(actions),
-            "failure_reasons":dict(reasons)},
+            "actions_all":dict(actions),"actions_ready":dict(ready_actions),
+            "stages":dict(stages),"failure_reasons":dict(reasons)},
           "by_day":{k:dict(v) for k,v in sorted(by_day.items())},
           "state_examples":{k:v for k,v in sorted(state_examples.items())},
           "limitations":[
