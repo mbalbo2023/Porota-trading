@@ -1,9 +1,6 @@
 name: Porota Predeploy V2
 
 on:
-  push:
-    branches:
-      - 'governance/**'
   pull_request:
     branches:
       - deploy/rc6-pr69-isolated-20260915
@@ -105,6 +102,40 @@ jobs:
           print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
           PY
 
+      - name: Full automatic test discovery in exact image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "${RUNNER_TEMP}/porota-predeploy-tests.xml"
+          docker run --rm --pull never \
+            -e ENVIRONMENT=SANDBOX \
+            -e ORDER_EXECUTION_MODE=SIMULATED \
+            -e STARTUP_REQUIRE_AUTH=false \
+            -e DB_PATH=/tmp/test_porota.db \
+            -e TELEGRAM_CHAT_ID=0 \
+            -e TELEGRAM_BOT_TOKEN=ci-not-real \
+            -e PPI_API_KEY=ci-not-real \
+            -e PPI_API_SECRET=ci-not-real \
+            -e GEMINI_API_KEY=ci-not-real \
+            -v "${RUNNER_TEMP}:/evidence" \
+            --entrypoint python "$IMAGE" \
+            -m pytest -q /app/tests --junitxml=/evidence/porota-predeploy-tests.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          p=Path.home()
+          import os
+          xml=Path(os.environ["RUNNER_TEMP"]) / "porota-predeploy-tests.xml"
+          root=ET.parse(xml).getroot()
+          tests=int(root.get("tests", 0))
+          failures=int(root.get("failures", 0))
+          errors=int(root.get("errors", 0))
+          skipped=int(root.get("skipped", 0))
+          assert tests > 0
+          assert failures == 0 and errors == 0
+          print(f"POROTA_FULL_TEST_DISCOVERY=GREEN|tests={tests}|skipped={skipped}")
+          PY
+
       - name: PAPER safety source gate
         shell: bash
         run: |
@@ -132,6 +163,7 @@ jobs:
             echo '- Exact artifact integrity: GREEN'
             echo '- Import closure: GREEN'
             echo '- Runtime import smoke: GREEN'
+            echo '- Full automatic test discovery: GREEN'
             echo '- PAPER safety source gate: GREEN'
             echo '- Droplet touched: NO'
           } >> "$GITHUB_STEP_SUMMARY"
