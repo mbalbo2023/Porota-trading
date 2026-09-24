@@ -86,3 +86,31 @@ def test_bymadata_public_collection_merges_read_only_panels(monkeypatch):
     assert result["record_count"] == 2
     assert {item["endpoint"] for item in result["endpoints"]} == {"leading-equity", "cedears"}
     assert result["errors"] == []
+
+
+def test_complete_multi_source_contract_is_paper_shadow_ready():
+    import cp_contract_evidence_v2_hf6 as evidence
+
+    fields = {
+        "instrument_id": "YPFD",
+        "ticker": "YPFD",
+        "market": "BYMA",
+        "currency": "ARS",
+        "settlement": "T1",
+        "quantity_min": 1,
+        "quantity_step": 1,
+        "price_precision": 2,
+        "cost_model": "PAPER",
+    }
+    result = evidence.family_readiness_state(
+        [{"source_class": "PPI_STRUCTURED_API", "observed_at": "2026-09-24T12:00:00+00:00",
+          "evidence": fields},
+         {"source_class": "PPI_AUTHENTICATED_WEB", "observed_at": "2026-09-24T12:00:01+00:00",
+          "evidence": {"bid": 100, "ask": 101}}],
+        family="ACCIONES",
+        max_age_seconds=3600,
+        now=__import__("datetime").datetime.fromisoformat("2026-09-24T12:01:00+00:00"),
+    )
+    assert result["status"] == "READY_PAPER_SHADOW"
+    assert result["paper_auto_enabled"] is True
+    assert result["real_money_authorized"] is False
