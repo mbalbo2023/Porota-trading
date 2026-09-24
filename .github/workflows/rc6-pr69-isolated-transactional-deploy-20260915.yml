@@ -570,6 +570,10 @@ jobs:
           TARGET_IMAGE="porota-trading-bot:17.0.0-rc6"
           VERIFY_IMAGE="$TARGET_IMAGE"
           sudo -n docker image inspect "$VERIFY_IMAGE" >/dev/null
+          VERIFY_IMAGE_ID="$(sudo -n docker image inspect -f '{{.Id}}' "$VERIFY_IMAGE")"
+          VERIFY_IMAGE_COMMIT="$(sudo -n docker image inspect -f '{{index .Config.Labels "porota.commit"}}' "$VERIFY_IMAGE" 2>/dev/null || true)"
+          echo "RC6_VERIFY_IMAGE_ID=$VERIFY_IMAGE_ID"
+          echo "RC6_VERIFY_IMAGE_COMMIT=$VERIFY_IMAGE_COMMIT"
           echo "RC6_CONTRACT_RUNNER_IMAGE=$VERIFY_IMAGE"
           sudo -n docker run --rm --pull never --entrypoint test "$VERIFY_IMAGE" -f /app/rc6_official_source_adapters.py
           echo "RC6_CONTRACT_RUNNER_MODULE=GREEN"
@@ -579,7 +583,7 @@ jobs:
           # would make the evidence result depend on stale source provenance.
           # This one-shot container shares only the PAPER data and read-only
           # PPI secret, has no order capability, and exits after reconciliation.
-          CONTRACT_OUTPUT="$(sudo -n docker run --rm --pull never \
+          CONTRACT_OUTPUT="$(sudo -n timeout 1200 sudo -n docker run --rm --pull never \
             --user botuser --read-only --cap-drop ALL \
             --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,size=32m \
@@ -590,7 +594,7 @@ jobs:
             --env-file /opt/porota-trading/data/diagnosticos/observer_runtime_v17.env \
             -v /opt/porota-trading/data:/app/data \
             -v /opt/porota-trading/.secrets/ppi_production.json:/run/secrets/ppi_production.json:ro \
-            --entrypoint timeout "$VERIFY_IMAGE" 1200 python ck_contract_evidence_runner_hf6.py 2>&1)"
+            --entrypoint python "$VERIFY_IMAGE" ck_contract_evidence_runner_hf6.py 2>&1)"
           CONTRACT_RC=$?
           set -e
           # The runner does not print credentials. Preserve its bounded,
