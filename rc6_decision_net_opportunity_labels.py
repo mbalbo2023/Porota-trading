@@ -112,6 +112,9 @@ def build(db):
             if not e or not e["hash_valid"]:
                 continue
             p=e["payload"];q=p.get("quote_used") if isinstance(p.get("quote_used"),dict) else {}
+            inputs=p.get("inputs_used") if isinstance(p.get("inputs_used"),dict) else {}
+            iol=inputs.get("iol") if isinstance(inputs.get("iol"),dict) else {}
+            iol_quote=iol.get("quote") if isinstance(iol.get("quote"),dict) else {}
             missing=[k for k in IDENTITY if q.get(k) in (None,"","UNKNOWN")]
             at=aware(q.get("observed_at") or d.get("decided_at"))
             ask=dec(q.get("ask"));ask_size=dec(q.get("ask_size"))
@@ -145,6 +148,12 @@ def build(db):
                  "day":at.astimezone(TZ).date().isoformat(),"symbol":d["symbol"],"action":action,
                  "stored_score":d.get("score"),"stored_reason":d.get("reason"),
                  "asset_class":q["asset_class"],"settlement":q["settlement"],"currency":q["currency"],"market":q["market"],
+                 "ppi_last":q.get("last"),"ppi_bid":q.get("bid"),"ppi_ask":q.get("ask"),
+                 "iol_state":iol.get("state"),"iol_quality":iol.get("quality"),"iol_freshness":iol.get("freshness"),
+                 "iol_age_seconds":iol.get("age_seconds"),"iol_currency":(iol.get("metadata") or {}).get("currency") if isinstance(iol.get("metadata"),dict) else None,
+                 "iol_last":iol_quote.get("last"),"iol_bid":iol_quote.get("bid"),"iol_ask":iol_quote.get("ask"),
+                 "iol_spread_pct":iol_quote.get("spread_pct"),"iol_variation_pct":iol_quote.get("variation_pct"),
+                 "iol_cash_volume":iol_quote.get("cash_volume"),
                  "entry_ask":str(ask),"entry_fill":str(entry_fill),"entry_ask_size":str(ask_size),
                  "cutoff":cutoff.isoformat(),"future_valid_points":valid_points,
                  "max_net_return":str(best["net_return"]),"max_net_at":best["at"],
