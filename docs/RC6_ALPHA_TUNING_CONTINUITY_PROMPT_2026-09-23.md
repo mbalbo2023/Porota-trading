@@ -46,16 +46,22 @@ EVIDENCIA YA CONFIRMADA:
 ESTADO DE WORKFLOWS AL CHECKPOINT:
 - run 20 35945917444 SUCCESS GREEN.
 - run 21 35946098360 SUCCESS GREEN.
-- run 25 35946456546 estaba ejecutándose desde SHA 26b42510d4993fccec99461a1dfe41ce7242f9e3.
-Primera acción: consultar run 25. Sólo usar sus resultados si termina SUCCESS y POST_SAFETY=PRODUCTION_PAPER|0.
+- run 25 35946456546 SUCCESS GREEN desde 26b42510d4993fccec99461a1dfe41ce7242f9e3.
+- PRE y POST safety = PRODUCTION_PAPER|0.
+- net-target +0.25% fue el mejor de los net targets probados: mejora ~3884 ARS pero deja ~-48251 ARS.
+- breadth point-in-time 82/82: ARS AUC rising_fraction ~0.3552; no es discriminador positivo.
+- simple no-chase/mean-reversion también fue probado sobre el artefacto GREEN: todos los perfiles siguieron con PnL y PF negativos y mostraron degradación temporal.
+- conclusión: NO seguir tuneando/invirtiendo SMA3/SMA8. Hace falta un alpha SHADOW nuevo.
 
 SIGUIENTE PASO EXACTO:
-1. recoger resultados cost-aware NET_TARGET +0.25%, +0.50%, +0.75%, +1.00%.
-2. recoger resultado point-in-time de market breadth.
-3. después estudiar explícitamente hipótesis “avoid chase / mean reversion” usando sólo features point-in-time y con split temporal/walk-forward.
-4. después combinar candidato de entrada + salida en SHADOW, sin portfolio look-ahead.
-5. NO proponer implementación factual hasta encontrar una mejora positiva y estable fuera de muestra.
-6. si ningún perfil logra edge, decirlo claramente y diseñar nueva señal desde cero en SHADOW en lugar de tunear parámetros viejos.
+1. Mejorar la captura point-in-time para que cada decisión BUY y HOLD conserve IOL, velas, contexto, régimen, microestructura, costos, SHA/config y feature vector exacto.
+2. Construir outcomes para HOLD/candidatos, no sólo para trades que abrieron, para eliminar selection bias.
+3. Diseñar un nuevo alpha SHADOW cost-aware, preferentemente ranking/probabilidad de retorno neto esperado en vez de un score manual absoluto.
+4. Features candidatas: estructura de retornos multi-timeframe, ATR/volatilidad, spread/depth/imbalance, régimen/sector, hora, breadth e IOL sólo cuando existan contemporáneamente.
+5. Validar con walk-forward por jornadas. Exigir expectancy out-of-sample positiva, profit factor >1 y muestra suficiente.
+6. No tocar motor factual hasta que un candidato cumpla esos gates.
+7. Economic gate: muestra inicial prometedora (6 would-fail, 0 winners, ~-10028 ARS), pero insuficiente para promoción; seguir observando.
+8. Cualquier implementación posterior debe ser otra rama/PR y primero SHADOW.
 
 HIGIENE:
 - revisar HEAD real antes de escribir.
