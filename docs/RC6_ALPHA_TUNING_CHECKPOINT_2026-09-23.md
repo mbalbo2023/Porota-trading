@@ -188,25 +188,60 @@ Important successful runs:
 
 Some intermediate runs were cancelled because later commits superseded them or the user stopped the UI. Do not treat cancelled runs as final evidence.
 
-At checkpoint creation:
-- run 25 / 35946456546 was running from audit SHA `26b42510...`
-- purpose: cost-aware **net-return** target grid plus rerun of the full consolidated audit
-- use its results only if it finishes SUCCESS and post-safety remains `PRODUCTION_PAPER|0`.
+Run 25 / 35946456546 completed SUCCESS and GREEN from audit SHA `26b42510d4993fccec99461a1dfe41ce7242f9e3`.
+- PRE_SAFETY=`PRODUCTION_PAPER|0`
+- POST_SAFETY=`PRODUCTION_PAPER|0`
+- cost-aware NET target replay:
+  - +0.25% net: changed 20 trades; ARS delta +3884.1776; candidate ARS net -48251.0851
+  - +0.50% net: changed 15; ARS delta +1911.7547; candidate ARS net -50223.5080
+  - +0.75% net: changed 13; ARS delta +1907.5655; candidate ARS net -50227.6972
+  - +1.00% net: changed 9; ARS delta +1200.8280; candidate ARS net -50934.4347
+- Best cost-aware net target tested is +0.25%, but strategy remains deeply negative.
+- point-in-time breadth coverage 82/82:
+  - bearish breadth: 2 trades, 0 wins, -1286.4985
+  - mixed/positive: 80 trades, 9 wins, -50853.5711
+  - ARS AUC rising_fraction = 0.3552188552
+- breadth positivity is not a useful positive discriminator in this sample.
+
+Exploratory no-chase / mean-reversion cross-check using the same SUCCESS run-25 artifact:
+- score<0.64: 37 trades, 6 wins, net -24189.7201; second temporal half 15 trades, 1 win, net -11633.0306.
+- candle momentum<=0: 40 trades, 6 wins, net -25211.2742.
+- same-day return<=0: 31 trades, 5 wins, net -13583.6706.
+- candle momentum<=0 AND same-day return<=0: 24 trades, 5 wins, net -9618.9212; second half 11 trades, 2 wins, net -5266.7952.
+- adding breadth<=0: 23 trades, 5 wins, net -9453.5912.
+- low-score<0.64 AND same-day return<=0: 16 trades, 4 wins, net -6269.3458; second half 6 trades, 1 win, net -4117.1388.
+- combining these cohorts with cost-aware net targets still leaves every tested cohort negative.
+Conclusion: a simple inversion of the momentum logic is not a viable alpha either.
+
+Coverage limitations that matter:
+- immutable decision evidence: 13/82 trades
+- IOL point-in-time snapshot: 13/82
+- historical candle shadow persisted in trade features: 24/82
+- daily history >=20 bars at entry: only 9/82
+- MFE/MAE: 82/82
+
+SHADOW diagnostics already observed:
+- economic gate would-fail: 6 ARS trades, 0 winners, combined factual net -10028.1105 ARS. This is promising but sample is small; do not promote from six observations.
+- historical candle shadow HOLD: 6 ARS trades, including 2 winners, combined factual net -2404.528 ARS. Not clean enough to bind.
 
 ## Current next step
 
-1. Check run 25 status first.
-2. If SUCCESS:
-   - capture NET_TARGET results for +0.25%, +0.50%, +0.75%, +1.00% **net after modeled costs**
-   - capture separate point-in-time breadth result
-   - verify POST_SAFETY=PRODUCTION_PAPER|0
-3. Do not yet implement any tuning.
-4. Next analytical question:
-   - test whether avoiding chase / mean-reversion-style entry conditions distinguish winners better than current momentum score
-   - evaluate joint entry + exit profiles only as SHADOW/read-only
-   - preserve time split / walk-forward; no optimization on the full sample alone
-5. Only after a candidate is positive and stable out-of-sample, write a proposal for a new SHADOW alpha profile.
-6. Any future implementation must be a separate branch/PR and must not overwrite the canonical deployment until explicitly approved.
+1. Do NOT tune the old SMA3/SMA8 score further; both higher-score momentum and simple reversed/mean-reversion variants failed.
+2. Build the next candidate as a genuinely new SHADOW alpha model, not a threshold tweak.
+3. Before modeling, improve point-in-time feature coverage:
+   - persist IOL/context evidence for every decision, not only 13/82 historical trades;
+   - ensure versioned 5m candles and longer-history context are available at every decision;
+   - capture market/sector regime, spread/depth and costs contemporaneously;
+   - retain exact feature vector + config/SHA for every BUY and HOLD.
+4. Generate outcomes not only for factual BUY trades but also for historical HOLD/candidate opportunities, otherwise selection-bias remains.
+5. Use walk-forward by day. Do not select a profile on the same 82 trades and call it validated.
+6. Candidate-model families for SHADOW study should include:
+   - cost-aware expected move / probability model rather than hand-set score;
+   - ranking across the contemporaneous universe instead of independent absolute threshold only;
+   - features from return structure, volatility/ATR, book/spread/depth, regime, sector, time-of-day, and IOL where contemporaneously available;
+   - calibrated net-return target / expected value after costs.
+7. First success criterion: positive out-of-sample expectancy and profit factor >1 with adequate sample, not merely higher win rate.
+8. Only after a robust SHADOW candidate exists, prepare a separate implementation branch/PR. No factual binding yet.
 
 ## User requirements / lessons
 
