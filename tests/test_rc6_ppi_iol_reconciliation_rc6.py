@@ -28,7 +28,8 @@ def test_iol_can_complete_missing_ppi_prices_for_shadow():
     result = recon.reconcile({}, {"last": 100, "bid": 99, "ask": 101}, now=now)
     assert result["contract_state"] == "READY_SHADOW_COMPLEMENTED"
     assert result["effective_fields"]["last"] == {"value": 100.0, "source": "IOL"}
-    assert result["decision_effect"] == "OBSERVE_ONLY"\n    assert result["shadow_promotion"] is True
+    assert result["decision_effect"] == "OBSERVE_ONLY"
+    assert result["shadow_promotion"] is True
 
 
 def test_byma_completes_only_the_remaining_public_field():
