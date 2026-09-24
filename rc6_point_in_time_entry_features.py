@@ -62,8 +62,13 @@ def rsi(vals,period=14):
         series.append(value(ag,al))
     return (series[-1],series[-2] if len(series)>1 else None)
 
-def candles(c,p):
-    q="""SELECT v.body_json,v.known_at,v.bar_start,v.bar_end
+def candles(c,p,as_of):
+    q="""WITH ranked AS (
+      SELECT v.body_json,v.known_at,v.bar_start,v.bar_end,
+             ROW_NUMBER() OVER (
+               PARTITION BY v.series_id,v.bar_start
+               ORDER BY julianday(v.known_at) DESC,v.body_json DESC
+             ) rn
       FROM candle_versions v JOIN candle_series s ON s.series_id=v.series_id
       WHERE json_extract(s.identity_json,'$.symbol')=?
         AND json_extract(s.identity_json,'$.asset_class')=?
@@ -72,8 +77,10 @@ def candles(c,p):
         AND json_extract(s.identity_json,'$.settlement')=?
         AND json_extract(s.identity_json,'$.resolution')='5m'
         AND julianday(v.bar_end)<=julianday(?) AND julianday(v.known_at)<=julianday(?)
-      ORDER BY julianday(v.bar_start) DESC LIMIT 80"""
-    rows=list(c.execute(q,(p["symbol"],p["asset_class"],p["market"],p["currency"],p["settlement"],p["opened_at"],p["opened_at"])))
+    )
+    SELECT body_json,known_at,bar_start,bar_end FROM ranked WHERE rn=1
+    ORDER BY julianday(bar_start) DESC LIMIT 80"""
+    rows=list(c.execute(q,(p["symbol"],p["asset_class"],p["market"],p["currency"],p["settlement"],as_of,as_of)))
     bars=[]
     for r in reversed(rows):
         b=js(r["body_json"])
@@ -94,12 +101,12 @@ def candles(c,p):
       "avg_range":sum((b["high"]/b["low"]-D(1) for b in bars[-20:]),D(0))/D(min(20,len(bars))) if bars else None,
       "volume_sum20":sum((b["volume"] or D(0) for b in bars[-20:]),D(0)) if bars else None}
 
-def daily(c,p):
+def daily(c,p,as_of):
     row=c.execute("""SELECT payload_json,downloaded_at FROM production_history
       WHERE symbol=? AND instrument_type=? AND settlement=?
         AND julianday(downloaded_at)<=julianday(?)
       ORDER BY julianday(downloaded_at) DESC LIMIT 1""",
-      (p["symbol"],p["asset_class"],p["settlement"],p["opened_at"])).fetchone()
+      (p["symbol"],p["asset_class"],p["settlement"],as_of)).fetchone()
     if not row:return {"state":"UNAVAILABLE","n":0}
     raw=js(row["payload_json"])
     payload=raw if isinstance(raw,list) else None
@@ -107,7 +114,7 @@ def daily(c,p):
         try:
             x=json.loads(row["payload_json"] or "[]");payload=x if isinstance(x,list) else []
         except Exception:payload=[]
-    opened=dt(p["opened_at"]).date()
+    opened=dt(as_of).date()
     vals=[]
     for x in payload:
         if not isinstance(x,dict):continue
@@ -148,13 +155,16 @@ def build(db):
     try:
         mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
         if mode!="PRODUCTION_PAPER" or int(orders or 0)!=0:raise RuntimeError("SAFETY_STATE_INVALID")
-        ps=[dict(r) for r in c.execute("SELECT * FROM paper_positions WHERE status='CLOSED' ORDER BY julianday(opened_at),paper_id")]
+        ps=[dict(r) for r in c.execute("""SELECT p.*,l.feature_timestamp
+          FROM paper_positions p LEFT JOIN paper_learning_samples l USING(paper_id)
+          WHERE p.status='CLOSED' ORDER BY julianday(p.opened_at),p.paper_id""")]
         rows=[]
         for p in ps:
             net=dec(p.get("net_pnl"));out="WIN" if net and net>0 else "LOSS" if net and net<0 else "FLAT"
-            cf=candles(c,p);df=daily(c,p)
+            as_of=p.get("feature_timestamp") or p.get("opened_at")
+            cf=candles(c,p,as_of);df=daily(c,p,as_of)
             row={"paper_id":p["paper_id"],"symbol":p["symbol"],"asset_class":p["asset_class"],"currency":p["currency"],
-              "opened_at":p["opened_at"],"day":dt(p["opened_at"]).date().isoformat(),"net_pnl":p.get("net_pnl"),"outcome":out,
+              "opened_at":p["opened_at"],"as_of":as_of,"day":dt(as_of).date().isoformat(),"net_pnl":p.get("net_pnl"),"outcome":out,
               "candle":{k:(str(v) if isinstance(v,D) else v) for k,v in cf.items()},
               "daily":{k:(str(v) if isinstance(v,D) else v) for k,v in df.items()}}
             rows.append(row)
@@ -176,7 +186,7 @@ def build(db):
           "network_calls_performed":False,"broker_calls_performed":False,"safety":{"mode":mode,"real_orders_sent":int(orders or 0)},
           "coverage":{"closed_total":len(rows),"candle21":sum(int(r["candle"]["n"])>=21 for r in rows),
                       "daily20":sum(int(r["daily"]["n"])>=20 for r in rows),"daily50":sum(int(r["daily"]["n"])>=50 for r in rows)},
-          "lookahead_protection":["candle.bar_end<=opened_at","candle.known_at<=opened_at","production_history.downloaded_at<=opened_at","daily_bar_date<=opened_local_date"],
+          "lookahead_protection":["as_of=paper_learning_samples.feature_timestamp fallback opened_at","one latest candle version per series/bar_start","candle.bar_end<=as_of","candle.known_at<=as_of","production_history.downloaded_at<=as_of","daily_bar_date<=as_of_local_date"],
           "assessments":assessments,"rows":rows}
     finally:c.close()
 
