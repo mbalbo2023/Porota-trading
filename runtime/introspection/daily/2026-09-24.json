@@ -3493,6 +3493,394 @@
           "state": "RUNNING"
         }
       }
+    },
+    {
+      "anomalies": [],
+      "caucion_readiness": {
+        "complete_offers": 0,
+        "declared": 1,
+        "missing_offer_requirements": [
+          "instrument_id",
+          "currency",
+          "annual_rate_fraction",
+          "start_date",
+          "maturity_at",
+          "quoted_at",
+          "available_principal",
+          "minimum_principal",
+          "principal_step",
+          "day_count_basis",
+          "fee_payment",
+          "metadata_source"
+        ],
+        "missing_policy_requirements": [
+          "frozen_at",
+          "reserve_cash",
+          "maximum_cash_fraction",
+          "maximum_principal",
+          "liquidity_deadline",
+          "maximum_quote_age_seconds",
+          "participation",
+          "minimum_net_profit",
+          "ranking",
+          "session_open_at",
+          "session_close_at",
+          "session_source"
+        ],
+        "observed_contracts": 0,
+        "placed_today": 0,
+        "queries": 0,
+        "state": "DECLARED_NO_QUERY"
+      },
+      "changes": [
+        "ingestion.rows: 15624 -> 248823"
+      ],
+      "coherence": {
+        "closed_without_sell": 0,
+        "open_over_max_hold": 0,
+        "open_without_buy": 0,
+        "open_without_exit_intent": 0,
+        "orphan_fills": 0
+      },
+      "currency_funnel": [],
+      "economics": {
+        "blocked_1h": 0,
+        "evaluated_1h": 0,
+        "opened_1h": 0
+      },
+      "family_readiness": [
+        {
+          "capabilities": [
+            {
+              "capability": "READY_PAPER_SPOT",
+              "count": 43
+            }
+          ],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "OBSERVED_WITH_ERRORS",
+          "excluded_by_default": false,
+          "instrument_type": "ACCIONES",
+          "observed_count": 43,
+          "queries": 24,
+          "ready_paper_count": 43
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "ACCIONES-USA",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "BONOS",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "CAUCIONES",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [
+            {
+              "capability": "READY_PAPER_SPOT",
+              "count": 182
+            }
+          ],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "INSTRUMENTS_OBSERVED",
+          "excluded_by_default": false,
+          "instrument_type": "CEDEARS",
+          "observed_count": 182,
+          "queries": 34,
+          "ready_paper_count": 182
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "ETF",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "FCI",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "FCI-EXTERIOR",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "FUTUROS",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 0,
+          "discovery_status": "NOT_ENUMERATED",
+          "excluded_by_default": false,
+          "instrument_type": "INDICES",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "LEBAC",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "LETRAS",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "LICITACIONES",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "NOBAC",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "ON",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        },
+        {
+          "capabilities": [],
+          "checked_at": "2026-09-24T12:15:32.514902+00:00",
+          "declared": 1,
+          "discovery_status": "DECLARED_NO_QUERY",
+          "excluded_by_default": false,
+          "instrument_type": "OPCIONES",
+          "observed_count": 0,
+          "queries": 0,
+          "ready_paper_count": 0
+        }
+      ],
+      "github_publication": {
+        "branch": "runtime-observability",
+        "day": "2026-09-24",
+        "detail": null,
+        "recorded_at": "2026-09-24T11:20:28.942781+00:00",
+        "retention_days": 90,
+        "status": "PUBLISHED"
+      },
+      "ingestion": {
+        "candle_versions": 78432,
+        "instruments": 1125,
+        "last_download": "2026-09-23T20:04:19.085874+00:00",
+        "last_market_date": "2026-09-23",
+        "latest_candle_known_at": "2026-09-23T20:05:01.590664+00:00",
+        "raw": 0,
+        "rows": 248823
+      },
+      "learning_expectancy": [
+        {
+          "average_loss": "846.3654",
+          "average_win": "413.8728",
+          "binding": false,
+          "currency": "ARS",
+          "empirical_expectancy": "-695.1368",
+          "losses": 66,
+          "minimum_sample": 30,
+          "net_total": "-52135.2627",
+          "profit_factor": "0.0667",
+          "sample_state": "OBSERVATIONAL",
+          "samples": 75,
+          "win_rate_pct": "12.0000",
+          "wins": 9,
+          "zeros": 0
+        },
+        {
+          "average_loss": "0.6867",
+          "average_win": "0.0000",
+          "binding": false,
+          "currency": "USD_MEP",
+          "empirical_expectancy": "-0.6867",
+          "losses": 7,
+          "minimum_sample": 30,
+          "net_total": "-4.8069",
+          "profit_factor": "0.0000",
+          "sample_state": "INSUFFICIENT_SAMPLE",
+          "samples": 7,
+          "win_rate_pct": "0.0000",
+          "wins": 0,
+          "zeros": 0
+        }
+      ],
+      "market_regime_observation": {
+        "binding": false,
+        "falling": 0,
+        "method": "FIRST_LAST_TRADE_SAMPLE_BREADTH_NOT_AN_INDEX",
+        "minimum_symbols": 4,
+        "policy": "ALERT_ONLY",
+        "rising": 0,
+        "state": "INSUFFICIENT_SAMPLE",
+        "symbols": 0,
+        "unchanged": 0
+      },
+      "observer": {
+        "heartbeat_at": "2026-09-24T12:16:21.127709+00:00",
+        "http_allowed": 1132,
+        "http_blocked": 0,
+        "last_market_data_at": "2026-09-23T20:01:31.216834+00:00",
+        "mode": "PRODUCTION_PAPER",
+        "ppi_auth": "OK",
+        "process_state": "WAITING_MARKET",
+        "real_orders_sent": 0,
+        "session_state": "MARKET_CLOSED"
+      },
+      "ppi_errors_1h": [],
+      "quick_check": "ok",
+      "scalping": {
+        "approved_1h": 0,
+        "evaluated_1h": 0,
+        "paper_positions_today": 0,
+        "rejected_1h": 0
+      },
+      "schema": "porota-introspection-public-v1",
+      "sector_concentration": {
+        "binding": false,
+        "groups": [],
+        "limit": null,
+        "mapped_positions": 0,
+        "maximum_observed_concentration": 0,
+        "policy": "OBSERVATION_ONLY",
+        "state": "MAP_UNAVAILABLE",
+        "unmapped_positions": 0
+      },
+      "storage": {
+        "database_bytes": 819462144,
+        "filesystem_free": 3828838400,
+        "filesystem_total": 24883167232,
+        "filesystem_used": 21037551616,
+        "filesystem_used_pct": 84.55,
+        "wal_bytes": 6995792
+      },
+      "telegram": {
+        "SENT": 301,
+        "SUPPRESSED_WEEKEND": 3
+      },
+      "timestamp": "2026-09-24T09:15:05-03:00",
+      "trading": {
+        "buys_1h": 0,
+        "closed_today": 0,
+        "decisions_1h": 0,
+        "net_pnl_today": 0,
+        "open": 0,
+        "sells_1h": 0
+      },
+      "verdict": "WARN",
+      "version": "17.0.0-rc6",
+      "warnings": [
+        "no_usd_operations_today"
+      ],
+      "workers": {
+        "candles": {
+          "heartbeat_age_seconds": -80.037894,
+          "heartbeat_at": "2026-09-24T12:16:25.574725+00:00",
+          "state": "RUNNING"
+        },
+        "exit_reader": {
+          "heartbeat_age_seconds": -77.322722,
+          "heartbeat_at": "2026-09-24T12:16:22.859553+00:00",
+          "state": "WAITING_MARKET"
+        },
+        "scalping": {
+          "heartbeat_age_seconds": -80.829641,
+          "heartbeat_at": "2026-09-24T12:16:26.366472+00:00",
+          "state": "WAITING_MARKET"
+        },
+        "supervisor": {
+          "heartbeat_age_seconds": -77.321248,
+          "heartbeat_at": "2026-09-24T12:16:22.858079+00:00",
+          "state": "RUNNING"
+        },
+        "telegram": {
+          "heartbeat_age_seconds": -81.030194,
+          "heartbeat_at": "2026-09-24T12:16:26.567025+00:00",
+          "state": "RUNNING"
+        }
+      }
     }
   ]
 }
