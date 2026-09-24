@@ -28,6 +28,8 @@ RUNTIME_EXACT = {
 
 def is_runtime_relevant(path: str) -> bool:
     p = Path(path)
+    if p.parts and p.parts[0] in {"tests", "docs", ".github", ".agents"}:
+        return False
     if path in RUNTIME_EXACT:
         return True
     if p.suffix in RUNTIME_SUFFIXES:
