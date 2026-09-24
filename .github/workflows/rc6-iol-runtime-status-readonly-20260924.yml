@@ -53,6 +53,16 @@ jobs:
           echo "IOL_DEPLOYED_SERVICE_BEGIN"
           sudo -n systemctl cat porota-iol-shadow-collector-rc6.service --no-pager || true
           echo "IOL_DEPLOYED_SERVICE_END"
+          echo "IOL_SERVICE_STATE_BEGIN"
+          sudo -n systemctl show porota-iol-shadow-collector-rc6.service \
+            -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainCode \
+            -p ConditionResult -p Conditions -p ActiveEnterTimestamp -p InactiveEnterTimestamp || true
+          if sudo -n test -f /root/.config/porota/iol_mcp_oauth_bootstrap.json; then
+            echo "IOL_OAUTH_BOOTSTRAP_EXISTS=TRUE"
+          else
+            echo "IOL_OAUTH_BOOTSTRAP_EXISTS=FALSE"
+          fi
+          echo "IOL_SERVICE_STATE_END"
           echo "IOL_CACHE_STATUS_BEGIN"
           sudo -n python3 - <<'PY'
           import json
@@ -81,7 +91,7 @@ jobs:
           PY
           echo "IOL_CACHE_STATUS_END"
           echo "IOL_SEP23_JOURNAL_BEGIN"
-          sudo -n journalctl -u porota-iol-shadow-collector-rc6.service             --since "2026-09-23 09:30:00" --until "2026-09-23 18:00:00" --no-pager 2>/dev/null |             grep -E 'IOL_SHADOW_COLLECTION=|Started|Finished|Failed|429|RATE|error|Error' | tail -n 500 || true
+          sudo -n journalctl -u porota-iol-shadow-collector-rc6.service             --since "2026-09-23 09:30:00" --until "2026-09-23 18:00:00" --no-pager 2>/dev/null |             grep -E 'IOL_SHADOW_COLLECTION=|Started|Finished|Failed|Condition|condition|skipped|Skipped|429|RATE|error|Error' | tail -n 500 || true
           echo "IOL_SEP23_JOURNAL_END"
           REMOTE
 
