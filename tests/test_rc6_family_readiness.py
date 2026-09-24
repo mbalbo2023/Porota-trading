@@ -69,3 +69,10 @@ def test_partial_shadow_is_simulatable_without_real_authority():
     item = report["instruments"][0]
     assert item["paper_auto_enabled"] is True
     assert item["real_money_authorized"] is False
+
+
+def test_audit_keeps_all_families_visible_when_capture_is_empty():
+    report = readiness.evaluate([], [])
+    families = {item["family"] for item in report["families"]}
+    assert {"BONOS", "ON", "CAUCIONES", "LETRAS", "FCI", "FUTUROS", "OPCIONES"} <= families
+    assert all(item["state"] == "PENDING" for item in report["families"])

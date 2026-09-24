@@ -44,7 +44,8 @@ def evaluate(e:NominalEvidence)->dict:
     except NominalContractError as exc: return {'status':'INVALID_NOMINAL_CONTRACT','reason':str(exc),'contract':None,'paper_execution_authorized':False}
     if minimum % step: return {'status':'INVALID_NOMINAL_CONTRACT','reason':'MINIMUM_NOT_MULTIPLE_OF_STEP','contract':None,'paper_execution_authorized':False}
     c=NominalContract(identity[0],family,identity[1],identity[2],identity[3],basis,step,minimum,str(e.metadata_source),str(e.observed_at),str(e.source_reference or ''))
-    return {'status':c.status,'contract':c,'paper_execution_authorized':False}
+    return {'status':c.status,'contract':c,'paper_execution_authorized':False,
+            'paper_simulation_enabled':True,'real_money_authorized':False}
 def evidence_from_iol_asset(*,symbol,family,market,currency,settlement,units_per_lot,observed_at,source_reference=''):
     return NominalEvidence(symbol,family,market,currency,settlement,None,units_per_lot,None,'IOL_ASSET_INFO',observed_at,source_reference)
 def assert_shadow_only():

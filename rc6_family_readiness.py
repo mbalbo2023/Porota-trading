@@ -37,7 +37,18 @@ FAMILY_ALIASES = {
     "ETFS": "ETFS",
     "ETF": "ETFS",
     "FCI": "FCI",
+    "LETRAS": "LETRAS",
+    "LEBAC": "LEBAC",
+    "NOBAC": "NOBAC",
+    "LICITACIONES": "LICITACIONES",
+    "FONDOS_COMUNES": "FCI",
 }
+
+# Familias que deben aparecer siempre en la auditoría, aunque su captura sea cero.
+READINESS_FAMILIES = frozenset({
+    "ACCIONES", "CEDEARS", "BONOS", "ON", "CAUCIONES", "LETRAS",
+    "ETF", "FCI", "FUTUROS", "OPCIONES", "LEBAC", "NOBAC", "LICITACIONES",
+})
 
 def normalize_family(value: Any) -> str:
     text = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
@@ -182,6 +193,10 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         })
 
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    # La ausencia de captura no elimina una familia del tablero: queda PENDING
+    # con el motivo exacto, sin habilitar PAPER por defecto.
+    for family in READINESS_FAMILIES:
+        grouped[family]
     for item in instruments:
         grouped[item["family"]].append(item)
     families: list[dict[str, Any]] = []

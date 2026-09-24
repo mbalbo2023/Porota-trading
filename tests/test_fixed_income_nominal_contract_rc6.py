@@ -25,3 +25,10 @@ def test_offline_no_db_network_orders():
         if isinstance(n,ast.Import): imports.extend(a.name for a in n.names)
         elif isinstance(n,ast.ImportFrom) and n.module: imports.append(n.module)
     assert not any(x in {'sqlite3','requests','httpx'} or 'order' in x.lower() for x in imports)
+
+
+def test_verified_nominal_contract_is_simulation_ready_but_not_real_authorized():
+    result = m.evaluate(ev())
+    assert result["paper_simulation_enabled"] is True
+    assert result["paper_execution_authorized"] is False
+    assert result["real_money_authorized"] is False
