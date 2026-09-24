@@ -402,8 +402,13 @@ jobs:
             echo "MODE_MANAGER_WRAPPER_EXIT=124_CONFIRMED_BY_MARKER"
           fi
           OK=NO
-          for _ in $(seq 1 8); do
+          DASHBOARD_HEALTH_LAST=""
+          # Dashboard startup can lag container recreation while the observer is
+          # already healthy. Allow a bounded 90-second readiness window and retain
+          # the last response for diagnosis if it still fails.
+          for _ in $(seq 1 30); do
             H="$(curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null || true)"
+            DASHBOARD_HEALTH_LAST="$H"
             if python3 - "$H" <<'PY'
           import json,sys
           try:
@@ -411,8 +416,9 @@ jobs:
           except Exception: raise SystemExit(1)
           PY
             then OK=YES; break; fi
-            sleep 2
+            sleep 3
           done
+          echo "RC6_DASHBOARD_HEALTH_LAST=$DASHBOARD_HEALTH_LAST"
           test "$OK" = YES
           # Restore only the historical SQLite files to owner-writable mode after
           # the candidate observer is running. It is gated from history writes
