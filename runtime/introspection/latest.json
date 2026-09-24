@@ -60,7 +60,7 @@
           "count": 55
         }
       ],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -71,7 +71,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -82,7 +82,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -93,7 +93,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -109,7 +109,7 @@
           "count": 182
         }
       ],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -120,7 +120,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -131,7 +131,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -142,7 +142,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -153,7 +153,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -164,7 +164,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -175,7 +175,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -186,7 +186,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -197,7 +197,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -208,7 +208,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -219,7 +219,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -230,7 +230,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T05:14:17.868210+00:00",
+      "checked_at": "2026-09-24T06:15:26.312851+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -244,7 +244,7 @@
     "branch": "runtime-observability",
     "day": "2026-09-24",
     "detail": null,
-    "recorded_at": "2026-09-24T04:20:29.323155+00:00",
+    "recorded_at": "2026-09-24T05:20:36.169772+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -303,7 +303,7 @@
     "unchanged": 0
   },
   "observer": {
-    "heartbeat_at": "2026-09-24T05:15:05.125753+00:00",
+    "heartbeat_at": "2026-09-24T06:16:16.040481+00:00",
     "http_allowed": 1132,
     "http_blocked": 0,
     "last_market_data_at": "2026-09-23T20:01:31.216834+00:00",
@@ -333,18 +333,18 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 813051904,
-    "filesystem_free": 4051705856,
+    "database_bytes": 813981696,
+    "filesystem_free": 4050018304,
     "filesystem_total": 24883167232,
-    "filesystem_used": 20814684160,
-    "filesystem_used_pct": 83.65,
+    "filesystem_used": 20816371712,
+    "filesystem_used_pct": 83.66,
     "wal_bytes": 6995792
   },
   "telegram": {
     "SENT": 301,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-09-24T02:15:17-03:00",
+  "timestamp": "2026-09-24T03:15:11-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
@@ -360,28 +360,28 @@
   ],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": -76.552282,
-      "heartbeat_at": "2026-09-24T05:16:33.891845+00:00",
+      "heartbeat_age_seconds": -79.798629,
+      "heartbeat_at": "2026-09-24T06:16:31.448661+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": -77.635112,
-      "heartbeat_at": "2026-09-24T05:16:34.974675+00:00",
+      "heartbeat_age_seconds": -79.669177,
+      "heartbeat_at": "2026-09-24T06:16:31.319209+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": -66.903742,
-      "heartbeat_at": "2026-09-24T05:16:24.243305+00:00",
+      "heartbeat_age_seconds": -78.342277,
+      "heartbeat_at": "2026-09-24T06:16:29.992309+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
-      "heartbeat_age_seconds": -76.277992,
-      "heartbeat_at": "2026-09-24T05:16:33.617555+00:00",
+      "heartbeat_age_seconds": -75.947466,
+      "heartbeat_at": "2026-09-24T06:16:27.597498+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": -79.332153,
-      "heartbeat_at": "2026-09-24T05:16:36.671716+00:00",
+      "heartbeat_age_seconds": -80.62744,
+      "heartbeat_at": "2026-09-24T06:16:32.277472+00:00",
       "state": "RUNNING"
     }
   }
