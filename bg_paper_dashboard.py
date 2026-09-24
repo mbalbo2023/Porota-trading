@@ -938,7 +938,7 @@ def home_page():
             f"<div class='paper-grid'>{cards}</div>")
     return _document("Porota Trading", _spot_warning(data["spot_state"])
         + _caucion_warning(data["caucion_state"]) + body
-        + _official_source_evidence_panel() + _daily_results_panel() + _daily_summary_panel(data) + _balances_panel())
+        + _daily_results_panel() + _daily_summary_panel(data) + _balances_panel())
 
 def paper_page(compact=False):
     data=snapshot(); state=data["state"]
