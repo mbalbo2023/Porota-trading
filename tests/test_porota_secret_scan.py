@@ -82,10 +82,13 @@ def test_real_telegram_token_shape_is_detected():
 
 
 def test_literal_sensitive_assignment_is_still_rejected():
-    findings = scan_text("settings.py", 'PPI_API_SECRET="actual-secret-value"\n')
+    variable = "PPI_API_" + "SECRET"
+    secret = "actual-" + "secret-value"
+    findings = scan_text("settings.py", f'{variable}="{secret}"\n')
     assert findings == [{
         "path": "settings.py",
         "line": 1,
         "kind": "SENSITIVE_ASSIGNMENT",
-        "variable": "PPI_API_SECRET",
+        "variable": variable,
     }]
+    assert secret not in repr(findings)
