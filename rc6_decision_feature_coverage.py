@@ -42,7 +42,7 @@ def build(db):
             for r in c.execute("SELECT decision_key,detail_json FROM trade_gate_evaluations ORDER BY julianday(evaluated_at),id"):
                 gates[str(r["decision_key"])]=safe(r["detail_json"])
         counts=defaultdict(Counter); totals=defaultdict(Counter)
-        rows=[dict(r) for r in c.execute("SELECT decision_key,decided_at,action,features_json FROM paper_decisions ORDER BY julianday(decided_at),id")]
+        rows=[dict(r) for r in c.execute("SELECT decision_key,decided_at,action,features_json FROM paper_decisions ORDER BY julianday(decided_at),decision_key")]
         for d in rows:
             day=str(d.get("decided_at") or "")[:10];action=str(d.get("action") or "UNKNOWN").upper()
             keys=((day,"ALL"),(day,action),("ALL","ALL"),("ALL",action))
