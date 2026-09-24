@@ -7,8 +7,10 @@ on:
     paths:
       - rc6_trade_master_audit.py
       - rc6_trade_cohort_analysis.py
+      - rc6_baseline_replay_audit.py
       - tests/test_rc6_trade_master_audit.py
       - tests/test_rc6_trade_cohort_analysis.py
+      - tests/test_rc6_baseline_replay_audit.py
       - rc6_alpha_tuning_analysis.py
       - tests/test_rc6_alpha_tuning_analysis.py
       - .github/workflows/rc6-alpha-tuning-readonly-audit-20260923.yml
@@ -34,9 +36,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m py_compile rc6_trade_master_audit.py rc6_alpha_tuning_analysis.py rc6_trade_cohort_analysis.py rc6_trade_cohort_analysis.py
+          python -m py_compile rc6_trade_master_audit.py rc6_alpha_tuning_analysis.py rc6_trade_cohort_analysis.py rc6_baseline_replay_audit.py rc6_trade_cohort_analysis.py
           python -m pip install -q pytest
-          python -m pytest -q tests/test_rc6_trade_master_audit.py tests/test_rc6_alpha_tuning_analysis.py tests/test_rc6_trade_cohort_analysis.py tests/test_rc6_trade_cohort_analysis.py
+          python -m pytest -q tests/test_rc6_trade_master_audit.py tests/test_rc6_alpha_tuning_analysis.py tests/test_rc6_trade_cohort_analysis.py tests/test_rc6_baseline_replay_audit.py tests/test_rc6_trade_cohort_analysis.py
           grep -q 'mode=ro' rc6_trade_master_audit.py
           grep -q 'PRAGMA query_only=ON' rc6_trade_master_audit.py
           ! grep -Eq 'requests\.|urllib|httpx|subprocess|os\.system' rc6_trade_master_audit.py
@@ -102,6 +104,30 @@ jobs:
           print('MFE_MAE='+str(integ['mfe_mae_measured'])+'/'+str(integ['closed_total']))
           PY
 
+      - name: Replay factual baseline decisions read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n docker exec -i porota_production_observer sh -lc 'cd /app && python - --db /app/data/paper_v17/observer_v17.db'" \
+            < rc6_baseline_replay_audit.py > rc6_baseline_replay_audit.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('rc6_baseline_replay_audit.json').read_text(encoding='utf-8'))
+          assert r['read_only'] is True and r['network_calls_performed'] is False and r['broker_calls_performed'] is False
+          assert r['safety']=={'mode':'PRODUCTION_PAPER','real_orders_sent':0}
+          print('DECISIONS_TOTAL='+str(r['decisions_total']))
+          print('REPLAYABLE='+str(r['replayable']))
+          print('ACTION_MATCH_RATE='+str(r['action_match_rate']))
+          print('SCORE_MATCH_RATE='+str(r['score_match_rate']))
+          print('MISMATCHES='+str(len(r['mismatches'])))
+          print('THRESHOLD_COUNTS='+json.dumps(r['threshold_candidate_counts'],sort_keys=True))
+          PY
+
       - name: Analyze cohorts deterministically
         shell: bash
         run: |
@@ -163,6 +189,7 @@ jobs:
             rc6_trade_master.json
             rc6_trade_master.csv
             rc6_trade_audit_summary.json
+            rc6_baseline_replay_audit.json
             rc6_trade_cohort_analysis.json
             rc6_trade_cohort_analysis.md
             rc6_alpha_tuning_findings.json
