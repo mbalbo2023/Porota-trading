@@ -1,0 +1,96 @@
+name: RC6 Decision Feature Coverage Readonly
+
+on:
+  push:
+    branches:
+      - audit/rc6-alpha-tuning-analysis-20260923
+    paths:
+      - rc6_decision_feature_coverage.py
+      - tests/test_rc6_decision_feature_coverage.py
+      - .github/workflows/rc6-decision-feature-coverage-readonly-20260924.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Static safety and focused test
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_decision_feature_coverage.py
+          python -m pip install -q pytest
+          python -m pytest -q tests/test_rc6_decision_feature_coverage.py
+          grep -q 'mode=ro' rc6_decision_feature_coverage.py
+          grep -q 'PRAGMA query_only=ON' rc6_decision_feature_coverage.py
+          ! grep -Eq 'requests\.|urllib|httpx|subprocess|os\.system' rc6_decision_feature_coverage.py
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Verify PAPER safety before coverage
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          STATE="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer python -c \"import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('PRAGMA query_only=ON');r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone();print('|'.join(map(str,r)));c.close()\"")"
+          echo "PRE_SAFETY=$STATE"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+
+      - name: Measure frozen feature coverage
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer sh -lc 'cd /app && python - --db /app/data/paper_v17/observer_v17.db'"             < rc6_decision_feature_coverage.py > rc6_decision_feature_coverage.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('rc6_decision_feature_coverage.json').read_text(encoding='utf-8'))
+          assert r['read_only'] and not r['network_calls_performed'] and not r['broker_calls_performed']
+          assert r['safety']=={'mode':'PRODUCTION_PAPER','real_orders_sent':0}
+          print('FEATURE_COVERAGE_TOTAL='+str(r['decisions_total']))
+          for day in ('2026-09-21','2026-09-22','2026-09-23'):
+              if day in r['by_day']:
+                  print('FEATURE_COVERAGE_'+day+'='+json.dumps(r['by_day'][day],sort_keys=True))
+          PY
+
+      - name: Verify PAPER safety after coverage
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          STATE="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer python -c \"import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('PRAGMA query_only=ON');r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone();print('|'.join(map(str,r)));c.close()\"")"
+          echo "POST_SAFETY=$STATE"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+          echo "RC6_DECISION_FEATURE_COVERAGE=GREEN"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc6-decision-feature-coverage-${{ github.run_id }}
+          path: rc6_decision_feature_coverage.json
+          if-no-files-found: error
+          retention-days: 30
