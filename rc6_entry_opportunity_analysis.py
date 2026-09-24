@@ -36,11 +36,12 @@ def metric(rows,label):
     return {"n":n,"opportunities":y,"opportunity_rate_pct":str(D(y)*100/D(n) if n else D(0)),
             "factual_net_total":str(pnl)}
 
-def profile(rows,label,name,pred):
-    covered=[r for r in rows if pred(r) is not None]
+def profile(rows,label,name,pred,split_days):
+    labeled=[r for r in rows if r.get(label) in (0,1)]
+    covered=[r for r in labeled if pred(r) is not None]
     kept=[r for r in covered if pred(r) is True]
     blocked=[r for r in covered if pred(r) is False]
-    days=sorted({r["day"] for r in covered}); cut=max(1,len(days)//2); first=set(days[:cut]); second=set(days[cut:])
+    first,second=split_days
     positives=sum(int(r.get(label,0)) for r in covered)
     kept_pos=sum(int(r.get(label,0)) for r in kept)
     return {"name":name,"coverage":len(covered),"kept":metric(kept,label),"blocked":metric(blocked,label),
@@ -54,9 +55,11 @@ def load(path):
 def build(features_path,context_path,exit_path):
     f=load(features_path); c=load(context_path); e=load(exit_path)
     cx={str(r["paper_id"]):r for r in c.get("rows",[])}
-    labels={}
+    labels={}; unknown={}
     for key in NET_KEYS:
-        labels[key]={str(r["paper_id"]) for r in e.get("net_targets",{}).get(key,{}).get("changed",[])}
+        root=e.get("net_targets",{}).get(key,{})
+        labels[key]={str(r["paper_id"]) for r in root.get("changed",[])}
+        unknown[key]={str(r.get("paper_id")) for r in root.get("unmodeled_rows",[]) if r.get("paper_id")}
     rows=[]
     for r in f.get("rows",[]):
         pid=str(r["paper_id"]); candle=r.get("candle") or {}; ctx=cx.get(pid,{})
@@ -74,7 +77,8 @@ def build(features_path,context_path,exit_path):
              "book_imbalance":book.get("book_imbalance"),
              "breadth_score":breadth.get("breadth_score"),
              "asset_day_return":ctx.get("asset_day_return")}
-        for key in NET_KEYS: row["opp_"+key]=1 if pid in labels[key] else 0
+        for key in NET_KEYS:
+            row["opp_"+key]=None if pid in unknown[key] else (1 if pid in labels[key] else 0)
         rows.append(row)
 
     def v(r,k):return dec(r.get(k))
@@ -89,19 +93,24 @@ def build(features_path,context_path,exit_path):
       ("ASSET_BREADTH_MOM_NONPOS",lambda r:None if any(v(r,k) is None for k in ("asset_day_return","breadth_score","momentum_3v15")) else v(r,"asset_day_return")<=0 and v(r,"breadth_score")<=0 and v(r,"momentum_3v15")<=0),
     ]
     feats=("momentum_3v15","ema_gap","rsi14","rsi_delta","avg_range","book_imbalance","breadth_score","asset_day_return")
-    result={"schema":"POROTA_RC6_ENTRY_OPPORTUNITY_ANALYSIS_V1","read_only":True,
+    days=sorted({r["day"] for r in rows if r.get("day")})
+    cut=max(1,len(days)//2); split_days=(set(days[:cut]),set(days[cut:]))
+    result={"schema":"POROTA_RC6_ENTRY_OPPORTUNITY_ANALYSIS_V2","read_only":True,
       "label_definition":"full-depth cost-aware NET target reached before factual exit-intent due_at",
-      "coverage":{"rows":len(rows),"features_source":f.get("schema"),"context_source":c.get("schema"),"exit_source":e.get("schema")},
+      "coverage":{"rows":len(rows),"features_source":f.get("schema"),"context_source":c.get("schema"),"exit_source":e.get("schema"),
+                  "unknown_labels":{k:len(unknown[k]) for k in NET_KEYS}},
+      "temporal_split":{"train_days":days[:cut],"validation_days":days[cut:]},
       "targets":{},"rows":rows,
       "limitations":["Factual opened trades only; this does not label historical HOLD decisions.",
                      "Profiles are diagnostics, not production recommendations.",
                      "Feature direction is evaluated out-of-time by reporting first and second half separately."]}
     for key in NET_KEYS:
         lab="opp_"+key
-        allm=metric(rows,lab)
+        labeled=[r for r in rows if r.get(lab) in (0,1)]
+        allm=metric(labeled,lab)
         result["targets"][key]={"all":allm,
-          "auc_higher_is_opportunity":{feat:auc(rows,feat,lab) for feat in feats},
-          "profiles":[profile(rows,lab,n,p) for n,p in predicates]}
+          "auc_higher_is_opportunity":{feat:auc(labeled,feat,lab) for feat in feats},
+          "profiles":[profile(rows,lab,n,p,split_days) for n,p in predicates]}
     return result
 
 def main():
