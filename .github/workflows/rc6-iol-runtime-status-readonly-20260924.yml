@@ -1,0 +1,93 @@
+name: RC6 IOL Runtime Status Readonly
+
+on:
+  push:
+    branches:
+      - audit/rc6-alpha-tuning-analysis-20260923
+    paths:
+      - .github/workflows/rc6-iol-runtime-status-readonly-20260924.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Read IOL timer service cache and Sep23 journal
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "IOL_TIMER_ENABLED=$(systemctl is-enabled porota-iol-shadow-collector-rc6.timer 2>/dev/null || true)"
+          echo "IOL_TIMER_ACTIVE=$(systemctl is-active porota-iol-shadow-collector-rc6.timer 2>/dev/null || true)"
+          sudo -n systemctl show porota-iol-shadow-collector-rc6.timer             -p LastTriggerUSec -p NextElapseUSecRealtime -p Result -p UnitFileState || true
+          echo "IOL_TIMER_LIST_BEGIN"
+          sudo -n systemctl list-timers --all --no-pager porota-iol-shadow-collector-rc6.timer || true
+          echo "IOL_TIMER_LIST_END"
+          echo "IOL_DEPLOYED_TIMER_BEGIN"
+          sudo -n systemctl cat porota-iol-shadow-collector-rc6.timer --no-pager || true
+          echo "IOL_DEPLOYED_TIMER_END"
+          echo "IOL_DEPLOYED_SERVICE_BEGIN"
+          sudo -n systemctl cat porota-iol-shadow-collector-rc6.service --no-pager || true
+          echo "IOL_DEPLOYED_SERVICE_END"
+          echo "IOL_CACHE_STATUS_BEGIN"
+          sudo -n python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for name in ("iol_shadow_latest.json","iol_shadow_rotation.json","iol_shadow_checkpoint.json"):
+              p=Path("/opt/porota-trading/data/market")/name
+              print("FILE",name,"EXISTS",p.exists(),"MTIME",p.stat().st_mtime if p.exists() else None)
+              if not p.exists(): continue
+              try: x=json.loads(p.read_text())
+              except Exception as e:
+                  print("PARSE_ERROR",name,type(e).__name__);continue
+              if name=="iol_shadow_latest.json":
+                  rows=x.get("symbols") if isinstance(x.get("symbols"),list) else []
+                  captures=sorted(str(r.get("captured_at") or "") for r in rows if isinstance(r,dict) and r.get("captured_at"))
+                  print("LATEST_RUN_ID",x.get("run_id"))
+                  print("LATEST_REFRESHED_AT",x.get("refreshed_at"))
+                  print("LATEST_SYMBOLS",len(rows))
+                  print("LATEST_PROGRESS",json.dumps(x.get("progress") or {},sort_keys=True))
+                  print("CAPTURE_MIN",captures[0] if captures else None)
+                  print("CAPTURE_MAX",captures[-1] if captures else None)
+              elif name=="iol_shadow_rotation.json":
+                  print("ROTATION",json.dumps({k:x.get(k) for k in ("universe_size","cycle_id","next_index","priority_count","background_count","updated_at")},sort_keys=True))
+                  print("ROTATION_SEEN",len(x.get("seen") or []))
+              else:
+                  print("CHECKPOINT",json.dumps({k:x.get(k) for k in ("run_id","status","completed_at")},sort_keys=True))
+          PY
+          echo "IOL_CACHE_STATUS_END"
+          echo "IOL_SEP23_JOURNAL_BEGIN"
+          sudo -n journalctl -u porota-iol-shadow-collector-rc6.service             --since "2026-09-23 09:30:00" --until "2026-09-23 18:00:00" --no-pager 2>/dev/null |             grep -E 'IOL_SHADOW_COLLECTION=|Started|Finished|Failed|429|RATE|error|Error' | tail -n 500 || true
+          echo "IOL_SEP23_JOURNAL_END"
+          REMOTE
+
+      - name: Safety statement
+        run: |
+          echo "READ_ONLY_STATUS_AUDIT=GREEN"
+          echo "NO_SERVICE_RESTART=TRUE"
+          echo "NO_TIMER_CHANGE=TRUE"
+          echo "NO_CACHE_WRITE=TRUE"
