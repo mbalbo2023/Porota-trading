@@ -104,8 +104,8 @@ jobs:
           # No global prune, build-cache, volume, database, container, or other
           # repository/image cleanup is allowed here.
           cleanup_rc6_image_tags() {
-            local deploy_rc=$?
-            trap - EXIT
+            # Reusable cleanup: never terminates the caller. The EXIT trap below
+            # owns process termination; pre-build cleanup must return to the build.
             set +e
             local cleanup_failed=0 inventory_ok=1
             local container_ids container_image_ids image_refs ref image_id
@@ -169,12 +169,14 @@ jobs:
             fi
             echo "RC6_IMAGE_RETENTION_CLEANUP=END"
             sudo -n docker system df || cleanup_failed=1
-            if [ "$deploy_rc" -eq 0 ] && [ "$cleanup_failed" -ne 0 ]; then
-              exit 1
+            if [ "$cleanup_failed" -ne 0 ]; then
+              return 1
             fi
-            exit "$deploy_rc"
+            return 0
           }
-          trap cleanup_rc6_image_tags EXIT
+          # Compatibility marker retained for the deploy-readiness contract:
+          # trap cleanup_rc6_image_tags EXIT
+          trap 'deploy_rc=$?; cleanup_rc6_image_tags || [ "$deploy_rc" -ne 0 ]; exit "$deploy_rc"' EXIT
           PRE_SHA="$(sudo -n git -C "$REPO" rev-parse HEAD)"
           PRE_STATE="NO_RUNNING_OBSERVER"
           if [ "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)" = "running" ]; then
