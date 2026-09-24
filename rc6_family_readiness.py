@@ -47,7 +47,7 @@ FAMILY_ALIASES = {
 # Familias que deben aparecer siempre en la auditoría, aunque su captura sea cero.
 READINESS_FAMILIES = frozenset({
     "ACCIONES", "CEDEARS", "BONOS", "ON", "CAUCIONES", "LETRAS",
-    "ETF", "FCI", "FUTUROS", "OPCIONES", "LEBAC", "NOBAC", "LICITACIONES",
+    "ETFS", "FCI", "FUTUROS", "OPCIONES", "LEBAC", "NOBAC", "LICITACIONES",
 })
 
 def normalize_family(value: Any) -> str:
