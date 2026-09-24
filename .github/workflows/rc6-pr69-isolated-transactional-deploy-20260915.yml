@@ -355,7 +355,7 @@ jobs:
           # de arranque recibieron el candidato antes de recrear dashboard.
           HOST_RUNTIME_IMAGE="$(sudo -n bash -c "cd '$REPO' && python3 -c 'from _version import IMAGE; print(IMAGE)'")"
           test "$HOST_RUNTIME_IMAGE" = "$TARGET_IMAGE"
-          sudo -n bash -c "cd '$REPO' && python3 -c 'import cg_paper_workspace; print("RC6_HOST_RUNTIME_BOOTSTRAP=GREEN")'"
+          sudo -n bash -c "cd '$REPO' && python3 -c \"import cg_paper_workspace; print('RC6_HOST_RUNTIME_BOOTSTRAP=GREEN')\""
           echo "RC6_HOST_RUNTIME_IMAGE=GREEN|$HOST_RUNTIME_IMAGE"
           set +e
           MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
