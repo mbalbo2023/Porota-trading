@@ -33,11 +33,21 @@ RUN pip install --no-cache-dir -r requirements.txt
 # entorno, la base de datos o el indice vectorial dentro de la imagen.
 COPY . .
 
-# Reassert RC6 dashboard modules explicitly after the broad copy. This makes their
-# provenance part of the image build and prevents an older runtime module from
-# surviving a staged deployment.
+# Reassert every dashboard module verified by the RC6 deploy.  `COPY . .` is a
+# convenience layer, never the provenance authority for the live dashboard.
+# Each of these sources is copied from the immutable candidate context.
+COPY bg_paper_dashboard.py /app/bg_paper_dashboard.py
+COPY zz_wave8_dashboard_live_rc6.py /app/zz_wave8_dashboard_live_rc6.py
+COPY da_dashboard_ux_hf6.py /app/da_dashboard_ux_hf6.py
 COPY rc6_annual_instrument_analysis.py /app/rc6_annual_instrument_analysis.py
+COPY rc6_on_validation.py /app/rc6_on_validation.py
+COPY bd_ppi_readonly_guard.py /app/bd_ppi_readonly_guard.py
+COPY c_ppi_client.py /app/c_ppi_client.py
+COPY cr_pending_settlement_diagnostics_hf6.py /app/cr_pending_settlement_diagnostics_hf6.py
+COPY eq_dashboard_table_layout_rc6.py /app/eq_dashboard_table_layout_rc6.py
+COPY rc6_dashboard_responsive_ux.py /app/rc6_dashboard_responsive_ux.py
 COPY rc6_family_readiness.py /app/rc6_family_readiness.py
+COPY o_dashboard.py /app/o_dashboard.py
 # Reassert the intraday worker explicitly; the observer imports it as a child process.
 COPY cf_intraday_scalping.py /app/cf_intraday_scalping.py
 
