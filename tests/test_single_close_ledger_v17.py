@@ -145,9 +145,10 @@ def test_renta_fija_fuera_de_alcance_no_abre_en_paper_rc6(tmp_path,family):
     q=replace(quote(at=AT,ask_size='100'),asset_class=family,settlement='INMEDIATA',ask=D(100))
     contract=InstrumentContract(q.symbol,family,'ARS','BYMA','INMEDIATA',D('.01'),D(2),'TEST_FIXTURE')
     q=replace(q,contract=contract)
-    opened, reason = b._open(q,D('.8'),{})
+    opened, reason, paper_id = b._open(q,D('.8'),{})
     assert opened is False
     assert reason
+    assert paper_id is None
     assert b.store.open_positions() == []
 
 

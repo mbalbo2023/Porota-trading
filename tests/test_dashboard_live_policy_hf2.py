@@ -24,9 +24,9 @@ def test_closed_positions_only_current_argentina_day():
     assert [r["id"] for r in live.closed_for_live(rows,now=NOW)]==[1]
 
 
-def test_tablet_page_defaults_to_twenty_and_caps_at_fifty():
+def test_tablet_page_defaults_to_ten_and_caps_at_fifty():
     rows=list(range(200))
-    assert len(live.page_for_tablet(rows).items)==20
+    assert len(live.page_for_tablet(rows).items)==10
     assert len(live.page_for_tablet(rows,limit=999).items)==50
 
 
