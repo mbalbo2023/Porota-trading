@@ -559,11 +559,12 @@ jobs:
           # Post-close full contract reconciliation. The runner is PPI
           # read-only and fails closed unless mode is PRODUCTION_PAPER,
           # session is MARKET_CLOSED and real_orders_sent is zero.
-          # This verify SSH session builds its exact image from the deployed
-          # stage. This removes any dependency on transient tags or labels that
-          # the transactional deploy intentionally retags during promotion.
+          # The transactional stage already built and labelled this exact
+          # immutable candidate from $STAGE. Never rebuild this tag from the
+          # host checkout: it may contain stale files and would overwrite the
+          # candidate immediately before provenance verification.
           CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA"
-          sudo -n docker build --no-cache --pull=false -t "$CANDIDATE_IMAGE" "$REPO"
+          sudo -n docker image inspect "$CANDIDATE_IMAGE" >/dev/null
           echo "RC6_CONTRACT_RUNNER_IMAGE=$CANDIDATE_IMAGE"
           sudo -n docker run --rm --pull never --entrypoint test "$CANDIDATE_IMAGE" -f /app/rc6_official_source_adapters.py
           echo "RC6_CONTRACT_RUNNER_MODULE=GREEN"
