@@ -34,3 +34,24 @@ def test_one_family_does_not_block_another():
     states = {item["family"]: item["state"] for item in report["families"]}
     assert states["ACCIONES"] == "READY"
     assert states["BONOS"] == "PENDING"
+
+
+def test_ready_paper_and_ready_shadow_are_both_simulatable():
+    assert "READY_PAPER" in readiness.PAPER_SIMULATABLE_STATES
+    assert "READY_PAPER_SHADOW" in readiness.PAPER_SIMULATABLE_STATES
+    assert "READY_SHADOW" in readiness.PAPER_SIMULATABLE_STATES
+
+
+def test_complemented_source_state_does_not_authorize_real_money():
+    report = readiness.evaluate(
+        [{"family": "BONOS", "symbol": "GD30", "market": "BYMA"}],
+        [{"symbol": "GD30", "asset_type": "BONOS",
+          "primary_comparison": {
+              "contract_state": "READY_PAPER_SHADOW",
+              "complemented": ["tir", "duration"],
+              "comparison_complete": True,
+          }}],
+    )
+    item = report["instruments"][0]
+    assert item["paper_auto_enabled"] is True
+    assert item["real_money_authorized"] is False
