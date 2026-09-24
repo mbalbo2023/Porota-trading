@@ -9,11 +9,15 @@ def test_opportunity_labels_use_cost_aware_changed_rows(tmp_path):
     c={"schema":"C","rows":[
       {"paper_id":"a","book":{"book_imbalance":"-0.2"},"breadth":{"breadth_score":"-0.1"},"asset_day_return":"-0.01"},
       {"paper_id":"b","book":{"book_imbalance":"0.2"},"breadth":{"breadth_score":"0.1"},"asset_day_return":"0.01"}]}
-    e={"schema":"E","net_targets":{k:{"changed":[{"paper_id":"a"}] if k=="0.0025" else []} for k in ("0.0025","0.005","0.0075","0.01")}}
+    e={"schema":"E","net_targets":{k:{"changed":[{"paper_id":"a"}] if k=="0.0025" else [],
+        "unmodeled_rows":[{"paper_id":"b","reason":"TEST_UNKNOWN"}] if k=="0.005" else []}
+        for k in ("0.0025","0.005","0.0075","0.01")}}
     paths=[]
     for name,obj in (("f",f),("c",c),("e",e)):
         p=tmp_path/(name+".json");p.write_text(json.dumps(obj));paths.append(p)
     r=build(*paths)
     assert r["targets"]["0.0025"]["all"]["opportunities"]==1
+    assert r["coverage"]["unknown_labels"]["0.005"]==1
+    assert r["targets"]["0.005"]["all"]["n"]==1
     p=next(x for x in r["targets"]["0.0025"]["profiles"] if x["name"]=="ASSET_AND_MOM_NONPOS")
     assert p["kept"]["n"]==1 and p["kept"]["opportunities"]==1
