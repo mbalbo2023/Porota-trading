@@ -1,6 +1,7 @@
 from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml")
+DOCKERFILE = Path("Dockerfile")
 
 
 def test_runtime_dependency_is_packaged_installed_rolled_back_and_verified():
@@ -39,5 +40,19 @@ def test_dashboard_is_recreated_directly_from_verified_candidate():
     assert '"$STAGE"; then' in source
     assert "RC6_IMAGE_SOURCE_SHA=GREEN|dashboard|$f" in source
     assert "requirements.txt docker-compose.yml Dockerfile" in source
+    assert ".dockerignore requirements.txt docker-compose.yml Dockerfile" in source
+    assert "RC6_IMAGE_SOURCE_SHA_MISMATCH=dashboard|$f" in source
     assert 'RUNNING_DASHBOARD_IMAGE_ID="$(sudo -n docker inspect' in source
     assert 'test "$RUNNING_DASHBOARD_IMAGE_ID" = "$EXPECTED_DASHBOARD_IMAGE_ID"' in source
+
+
+def test_all_verified_dashboard_modules_are_explicit_image_inputs():
+    source = DOCKERFILE.read_text(encoding="utf-8")
+    modules = (
+        "bg_paper_dashboard.py", "zz_wave8_dashboard_live_rc6.py", "da_dashboard_ux_hf6.py",
+        "rc6_annual_instrument_analysis.py", "rc6_on_validation.py", "bd_ppi_readonly_guard.py",
+        "c_ppi_client.py", "cr_pending_settlement_diagnostics_hf6.py", "eq_dashboard_table_layout_rc6.py",
+        "rc6_dashboard_responsive_ux.py", "rc6_family_readiness.py", "o_dashboard.py",
+    )
+    for module in modules:
+        assert f"COPY {module} /app/{module}" in source
