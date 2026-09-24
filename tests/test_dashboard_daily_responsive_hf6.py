@@ -25,6 +25,22 @@ def test_daily_result_keeps_currencies_separate():
     assert "1000" in html and "-5" in html
 
 
+def test_daily_results_exclude_non_operational_days():
+    html=daily_results_html([
+        {"day":"2026-09-21","state":"NEUTRO","currencies":[],"actions":{},"symbols":[],"families":[]},
+        {"day":"2026-09-20","state":"NEUTRO","currencies":[],"actions":{},"symbols":[],"families":[]},
+    ])
+    assert "2026-09-21" in html
+    assert "2026-09-20" not in html
+
+
+def test_home_page_does_not_render_official_source_status_panel():
+    source=Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    home=source[source.index("def home_page():"):source.index("def paper_page(")]
+    assert "_official_source_evidence_panel()" not in home
+    assert "_daily_results_panel()" in home
+
+
 def test_report_registry_is_cards_not_wide_table():
     html=report_cards_html([{
         "id":1,"period_type":"DIARIO","period_key":"2026-09-02",
