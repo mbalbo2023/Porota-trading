@@ -1,4 +1,4 @@
-name: RC6 Decision Opportunity Coverage Readonly
+name: RC6 Decision Opportunity Study Readonly
 
 on:
   push:
@@ -7,6 +7,8 @@ on:
     paths:
       - rc6_decision_opportunity_coverage.py
       - tests/test_rc6_decision_opportunity_coverage.py
+      - rc6_decision_unit_opportunity.py
+      - tests/test_rc6_decision_unit_opportunity.py
       - .github/workflows/rc6-decision-opportunity-coverage-readonly-20260923.yml
   workflow_dispatch:
 
@@ -30,9 +32,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m py_compile rc6_decision_opportunity_coverage.py
+          python -m py_compile rc6_decision_opportunity_coverage.py rc6_decision_unit_opportunity.py
           python -m pip install -q pytest
-          python -m pytest -q tests/test_rc6_decision_opportunity_coverage.py
+          python -m pytest -q tests/test_rc6_decision_opportunity_coverage.py tests/test_rc6_decision_unit_opportunity.py
           grep -q 'mode=ro' rc6_decision_opportunity_coverage.py
           grep -q 'PRAGMA query_only=ON' rc6_decision_opportunity_coverage.py
           ! grep -Eq 'requests\.|urllib|httpx|subprocess|os\.system' rc6_decision_opportunity_coverage.py
@@ -82,6 +84,35 @@ jobs:
           print('DECISION_COVERAGE_BY_DAY='+json.dumps(r['by_day'],sort_keys=True))
           PY
 
+      - name: Build decision-level unit opportunity labels
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n docker exec -i porota_production_observer sh -lc 'cd /app && python - --db /app/data/paper_v17/observer_v17.db'" \
+            < rc6_decision_unit_opportunity.py > rc6_decision_unit_opportunity.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('rc6_decision_unit_opportunity.json').read_text(encoding='utf-8'))
+          assert r['read_only'] is True
+          assert r['hypothetical_portfolio_trades'] is False
+          assert r['unit_opportunity_labels'] is True
+          assert r['network_calls_performed'] is False
+          assert r['broker_calls_performed'] is False
+          assert r['safety']=={'mode':'PRODUCTION_PAPER','real_orders_sent':0}
+          print('UNIT_OPPORTUNITY_COVERAGE='+json.dumps(r['coverage'],sort_keys=True))
+          print('UNIT_OPPORTUNITY_SPLIT='+json.dumps(r['temporal_split'],sort_keys=True))
+          for key,x in sorted(r['analysis'].items()):
+              print('UNIT_OPPORTUNITY_TARGET_'+key+'='+json.dumps({
+                'all':x['all'],'train':x['train'],'validation':x['validation'],
+                'auc_train':x['auc_train'],'auc_validation':x['auc_validation'],
+                'by_action':x['by_action']},sort_keys=True))
+          PY
+
       - name: Verify PAPER safety after coverage audit
         shell: bash
         env:
@@ -100,6 +131,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rc6-decision-opportunity-coverage-${{ github.run_id }}
-          path: rc6_decision_opportunity_coverage.json
+          path: |
+            rc6_decision_opportunity_coverage.json
+            rc6_decision_unit_opportunity.json
           if-no-files-found: error
           retention-days: 30
