@@ -37,6 +37,8 @@ def enrich(t):
     q=num(t.get("quantity")); e=num(t.get("entry_price")); m=num(t.get("contract_cash_multiplier")) or 1
     x["_notional"]=q*e*m if q is not None and e is not None else None
     x["_cost_rate"]=x["_cost"]/x["_notional"] if x["_notional"] else None
+    post=t.get("post_exit_recovery") if isinstance(t.get("post_exit_recovery"),dict) else {}
+    x["_post30"]=num(post.get("max_return_30m")); x["_post60"]=num(post.get("max_return_60m")); x["_post120"]=num(post.get("max_return_120m"))
     try:
         from datetime import datetime, timezone, timedelta
         dt=datetime.fromisoformat(str(t.get("opened_at")).replace("Z","+00:00")).astimezone(timezone(timedelta(hours=-3)))
@@ -88,6 +90,8 @@ def build(master):
     no_target=sum(t["_mfe"] is not None and t["_mfe"]<0.05 for t in ars)
     econ_false=[t for t in ars if isinstance(t.get("economics"),dict) and t["economics"].get("passed") is False]
     shadow_hold=[t for t in ars if t.get("decision_shadow")=="HOLD"]
+    stopped=[t for t in ars if t.get("close_reason")=="STOP_PAPER"]
+    stopped_post=[t for t in stopped if t.get("_post120") is not None]
     summary={
       "closed_total":len(trades),
       "by_currency":by_currency,
@@ -112,6 +116,17 @@ def build(master):
         "historical_shadow_hold_count":len(shadow_hold),
         "historical_shadow_hold_wins":sum((t["_net"] or 0)>0 for t in shadow_hold),
         "historical_shadow_hold_net_pnl":sum(t["_net"] or 0 for t in shadow_hold),
+        "stop_recovery": {
+          "stop_trades":len(stopped),
+          "post_120m_measured":len(stopped_post),
+          "recovered_to_entry_30m":sum(t.get("_post30") is not None and t["_post30"]>=0 for t in stopped),
+          "recovered_to_entry_60m":sum(t.get("_post60") is not None and t["_post60"]>=0 for t in stopped),
+          "recovered_to_entry_120m":sum(t.get("_post120") is not None and t["_post120"]>=0 for t in stopped),
+          "recovered_net_breakeven_120m":sum(t.get("_post120") is not None and t.get("_cost_rate") is not None and t["_post120"]>=t["_cost_rate"] for t in stopped),
+          "reached_plus_1pct_120m":sum(t.get("_post120") is not None and t["_post120"]>=0.01 for t in stopped),
+          "reached_plus_2pct_120m":sum(t.get("_post120") is not None and t["_post120"]>=0.02 for t in stopped),
+          "median_max_return_120m":med([t.get("_post120") for t in stopped_post]),
+        },
       },
       "cohorts": {
         "close_reason": grouped(ars,lambda t:t.get("close_reason")),
