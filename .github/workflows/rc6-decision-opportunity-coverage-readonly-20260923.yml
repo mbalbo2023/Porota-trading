@@ -9,6 +9,8 @@ on:
       - tests/test_rc6_decision_opportunity_coverage.py
       - rc6_decision_unit_opportunity.py
       - tests/test_rc6_decision_unit_opportunity.py
+      - rc6_cross_sectional_rank_study.py
+      - tests/test_rc6_cross_sectional_rank_study.py
       - .github/workflows/rc6-decision-opportunity-coverage-readonly-20260923.yml
   workflow_dispatch:
 
@@ -32,9 +34,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m py_compile rc6_decision_opportunity_coverage.py rc6_decision_unit_opportunity.py
+          python -m py_compile rc6_decision_opportunity_coverage.py rc6_decision_unit_opportunity.py rc6_cross_sectional_rank_study.py
           python -m pip install -q pytest
-          python -m pytest -q tests/test_rc6_decision_opportunity_coverage.py tests/test_rc6_decision_unit_opportunity.py
+          python -m pytest -q tests/test_rc6_decision_opportunity_coverage.py tests/test_rc6_decision_unit_opportunity.py tests/test_rc6_cross_sectional_rank_study.py
           grep -q 'mode=ro' rc6_decision_opportunity_coverage.py
           grep -q 'PRAGMA query_only=ON' rc6_decision_opportunity_coverage.py
           ! grep -Eq 'requests\.|urllib|httpx|subprocess|os\.system' rc6_decision_opportunity_coverage.py
@@ -113,6 +115,22 @@ jobs:
                 'by_action':x['by_action']},sort_keys=True))
           PY
 
+      - name: Evaluate cross-sectional ranking
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python rc6_cross_sectional_rank_study.py rc6_decision_unit_opportunity.json --out rc6_cross_sectional_rank_study.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('rc6_cross_sectional_rank_study.json').read_text(encoding='utf-8'))
+          print('RANK_PASSED='+json.dumps(r['passed'],sort_keys=True))
+          for target,profiles in sorted(r['profiles'].items()):
+              for name,x in sorted(profiles.items()):
+                  if name!='BASE':
+                      print('RANK_'+target+'_'+name+'='+json.dumps(x,sort_keys=True))
+          PY
+
       - name: Verify PAPER safety after coverage audit
         shell: bash
         env:
@@ -134,5 +152,6 @@ jobs:
           path: |
             rc6_decision_opportunity_coverage.json
             rc6_decision_unit_opportunity.json
+            rc6_cross_sectional_rank_study.json
           if-no-files-found: error
           retention-days: 30
