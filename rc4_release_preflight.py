@@ -30,7 +30,11 @@ check('ppi_secret_read_only', 'ppi_production.json:ro' in mode, 'secret mount :r
 check('orders_blocked_declared', '"PPI_ORDERS": "BLOCKED"' in mode, 'PPI_ORDERS BLOCKED')
 
 compose=(ROOT/'docker-compose.yml').read_text(encoding='utf-8')
-check('compose_not_claimed_canonical_paper', 'NO es el contrato canónico de PRODUCTION_PAPER' in compose, 'legacy compose labelled')
+check('compose_not_claimed_canonical_paper',
+      'Legacy monolithic stack (stable RC6 default)' in compose
+      and 'contrato canónico de PRODUCTION_PAPER' in compose
+      and 'PRODUCTION_PAPER usa el runtime split de porota_mode_manager.py' in compose,
+      'legacy compose labelled; split runtime declared')
 check('no_runtime_artifact_memory_ses', not (ROOT/':memory:.ses').exists(), ':memory:.ses absent')
 rc4_contract_service=(ROOT/'systemd/porota-contract-evidence-rc4.service').read_text(encoding='utf-8')
 rc4_contract_script=(ROOT/'scripts/porota_contract_evidence_trusted_rc4.sh').read_text(encoding='utf-8')
