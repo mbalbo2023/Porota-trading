@@ -7,6 +7,8 @@ on:
     paths:
       - rc6_trade_master_audit.py
       - tests/test_rc6_trade_master_audit.py
+      - rc6_alpha_tuning_analysis.py
+      - tests/test_rc6_alpha_tuning_analysis.py
       - .github/workflows/rc6-alpha-tuning-readonly-audit-20260923.yml
   workflow_dispatch:
 
@@ -30,9 +32,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m py_compile rc6_trade_master_audit.py
+          python -m py_compile rc6_trade_master_audit.py rc6_alpha_tuning_analysis.py
           python -m pip install -q pytest
-          python -m pytest -q tests/test_rc6_trade_master_audit.py
+          python -m pytest -q tests/test_rc6_trade_master_audit.py tests/test_rc6_alpha_tuning_analysis.py
           grep -q 'mode=ro' rc6_trade_master_audit.py
           grep -q 'PRAGMA query_only=ON' rc6_trade_master_audit.py
           ! grep -Eq 'requests\.|urllib|httpx|subprocess|os\.system' rc6_trade_master_audit.py
@@ -98,6 +100,25 @@ jobs:
           print('MFE_MAE='+str(integ['mfe_mae_measured'])+'/'+str(integ['closed_total']))
           PY
 
+      - name: Analyze cohorts deterministically
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python rc6_alpha_tuning_analysis.py rc6_trade_master.json \
+            --json-out rc6_alpha_tuning_findings.json \
+            --md-out rc6_alpha_tuning_findings.md > /tmp/rc6-alpha-findings.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('rc6_alpha_tuning_findings.json').read_text(encoding='utf-8'))
+          print('ALPHA_TOTAL='+str(p['totals']['n']))
+          print('ALPHA_WIN_RATE_PCT='+str(p['totals']['win_rate_pct']))
+          print('SCORE_AUC='+str(p['signal']['score_auc_higher_is_better']))
+          print('SCORE_GE_070='+json.dumps(p['signal']['score_ge_070'],sort_keys=True))
+          print('MFE_GE_5PCT='+str(p['excursions']['mfe_ge_5pct']))
+          print('GROSS_POSITIVE_NET_NEGATIVE='+str(p['friction']['gross_positive_net_negative']))
+          PY
+
       - name: Verify live PAPER safety after audit
         shell: bash
         env:
@@ -120,5 +141,7 @@ jobs:
             rc6_trade_master.json
             rc6_trade_master.csv
             rc6_trade_audit_summary.json
+            rc6_alpha_tuning_findings.json
+            rc6_alpha_tuning_findings.md
           if-no-files-found: error
           retention-days: 30
