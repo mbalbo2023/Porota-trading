@@ -563,10 +563,15 @@ jobs:
           # immutable candidate from $STAGE. Never rebuild this tag from the
           # host checkout: it may contain stale files and would overwrite the
           # candidate immediately before provenance verification.
-          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$TARGET_SHA"
-          sudo -n docker image inspect "$CANDIDATE_IMAGE" >/dev/null
-          echo "RC6_CONTRACT_RUNNER_IMAGE=$CANDIDATE_IMAGE"
-          sudo -n docker run --rm --pull never --entrypoint test "$CANDIDATE_IMAGE" -f /app/rc6_official_source_adapters.py
+          # The retention trap at the end of the transactional SSH session
+          # intentionally removes the candidate tag after promoting the exact
+          # image to the stable RC6 tag. Reuse that retained immutable tag in
+          # this later SSH session; never depend on the removed candidate tag.
+          TARGET_IMAGE="porota-trading-bot:17.0.0-rc6"
+          VERIFY_IMAGE="$TARGET_IMAGE"
+          sudo -n docker image inspect "$VERIFY_IMAGE" >/dev/null
+          echo "RC6_CONTRACT_RUNNER_IMAGE=$VERIFY_IMAGE"
+          sudo -n docker run --rm --pull never --entrypoint test "$VERIFY_IMAGE" -f /app/rc6_official_source_adapters.py
           echo "RC6_CONTRACT_RUNNER_MODULE=GREEN"
           set +e
           # Run from the exact candidate image.  The live observer may still
@@ -585,7 +590,7 @@ jobs:
             --env-file /opt/porota-trading/data/diagnosticos/observer_runtime_v17.env \
             -v /opt/porota-trading/data:/app/data \
             -v /opt/porota-trading/.secrets/ppi_production.json:/run/secrets/ppi_production.json:ro \
-            --entrypoint timeout "$CANDIDATE_IMAGE" 1200 python ck_contract_evidence_runner_hf6.py 2>&1)"
+            --entrypoint timeout "$VERIFY_IMAGE" 1200 python ck_contract_evidence_runner_hf6.py 2>&1)"
           CONTRACT_RC=$?
           set -e
           # The runner does not print credentials. Preserve its bounded,
@@ -614,7 +619,6 @@ jobs:
           # Recreate the observer explicitly in this verification step. The
           # previous failed attempt left a stopped container under the same name;
           # do not allow that stale container to satisfy any later check.
-          VERIFY_IMAGE="$CANDIDATE_IMAGE"
           echo "RC6_VERIFY_IMAGE_REUSED=$VERIFY_IMAGE"
           # Prove every dashboard module in the candidate image against the immutable
           # staging tree before stopping or recreating any live container.
