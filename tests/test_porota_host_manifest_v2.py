@@ -3,18 +3,9 @@ from pathlib import Path
 from scripts.porota_host_manifest_v2 import build_manifest
 
 
-def _git(repo: Path, *args):
-    import subprocess
-    subprocess.check_call(["git", "-C", str(repo), *args])
-
-
 def test_host_manifest_records_hash_target_and_unmanaged_units(tmp_path):
     repo = tmp_path / "repo"
-    repo.mkdir()
-    _git(repo, "init", "-q")
-    _git(repo, "config", "user.email", "ci@example.invalid")
-    _git(repo, "config", "user.name", "CI")
-    (repo / "systemd").mkdir()
+    (repo / "systemd").mkdir(parents=True)
     (repo / ".github/workflows").mkdir(parents=True)
     managed = repo / "systemd/porota-demo-rc6.timer"
     unmanaged = repo / "systemd/porota-old-rc6.service"
@@ -26,9 +17,12 @@ def test_host_manifest_records_hash_target_and_unmanaged_units(tmp_path):
         "sudo systemctl enable --now porota-demo-rc6.timer\n",
         encoding="utf-8",
     )
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-qm", "fixture")
-    result = build_manifest(repo, workflow, "abc123")
+    modes = {
+        "systemd/porota-demo-rc6.timer": "100644",
+        "systemd/porota-old-rc6.service": "100644",
+        ".github/workflows/deploy.yml": "100644",
+    }
+    result = build_manifest(repo, workflow, "abc123", modes=modes)
     assert result["status"] == "GREEN"
     assert result["counts"] == {
         "tracked_rc6_units": 2,
@@ -47,18 +41,13 @@ def test_host_manifest_records_hash_target_and_unmanaged_units(tmp_path):
 
 def test_host_manifest_fails_on_untracked_workflow_input(tmp_path):
     repo = tmp_path / "repo"
-    repo.mkdir()
-    _git(repo, "init", "-q")
-    _git(repo, "config", "user.email", "ci@example.invalid")
-    _git(repo, "config", "user.name", "CI")
     (repo / ".github/workflows").mkdir(parents=True)
     workflow = repo / ".github/workflows/deploy.yml"
     workflow.write_text(
         "systemd/porota-missing-rc6.service\n",
         encoding="utf-8",
     )
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-qm", "fixture")
-    result = build_manifest(repo, workflow, "abc123")
+    modes = {".github/workflows/deploy.yml": "100644"}
+    result = build_manifest(repo, workflow, "abc123", modes=modes)
     assert result["status"] == "FAILED_UNTRACKED_WORKFLOW_INPUT"
     assert result["referenced_untracked"] == ["porota-missing-rc6.service"]
