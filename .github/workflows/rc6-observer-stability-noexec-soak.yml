@@ -1,0 +1,53 @@
+name: RC6 observer stability no-exec soak
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-observer-stability-noexec-soak
+  cancel-in-progress: true
+
+jobs:
+  soak:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Observe restart counter without entering observer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          before="$("${SSH[@]}" "$DO_USER@$DO_HOST" "sudo -n docker inspect -f '{{.RestartCount}}|{{.State.StartedAt}}|{{.State.Running}}|{{.State.OOMKilled}}' porota_production_observer")"
+          echo "SOAK_BEFORE=$before"
+          sleep 600
+          after="$("${SSH[@]}" "$DO_USER@$DO_HOST" "sudo -n docker inspect -f '{{.RestartCount}}|{{.State.StartedAt}}|{{.State.Running}}|{{.State.OOMKilled}}' porota_production_observer")"
+          echo "SOAK_AFTER=$after"
+          bcount="${before%%|*}"
+          acount="${after%%|*}"
+          test "$acount" = "$bcount"
+          case "$after" in *"|true|false") ;; *) exit 3 ;; esac
+          echo "OBSERVER_NOEXEC_SOAK=GREEN|minutes=10|restart_count=$acount"
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
