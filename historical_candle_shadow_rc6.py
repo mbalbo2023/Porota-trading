@@ -144,18 +144,10 @@ def _candle_features(store, q, at):
 
 def collect(store, q, at):
     """Collect point-in-time historical/candle features for SHADOW only."""
-    asset_class = str(getattr(q, "asset_class", "") or "").upper()
-    if asset_class not in {"ACCIONES", "ACCION", "CEDEARS", "CEDEAR"}:
-        return {
-            "mode": "SHADOW",
-            "state": "OUT_OF_SCOPE",
-            "identity": [getattr(q, "symbol", None), getattr(q, "asset_class", None),
-                         getattr(q, "market", None), getattr(q, "currency", None),
-                         getattr(q, "settlement", None)],
-            "decision_effect": "OBSERVE_ONLY",
-            "reason": "Sólo acciones y CEDEARs usan históricos/velas en RC6",
-            "feature_version": "rc6-historical-candle-shadow-v1",
-        }
+    # RC6 vigente es multifamilia. Esta capa no habilita por familia: intenta
+    # leer evidencia para la identidad exacta y, si no existe, devuelve
+    # INSUFFICIENT_DATA/HISTORY_UNAVAILABLE sin fabricar datos ni bloquear
+    # otras fuentes.
     if not isinstance(at, datetime):
         at = _dt(at)
     history = _history_features(store, q, at)

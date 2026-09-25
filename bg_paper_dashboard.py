@@ -39,7 +39,7 @@ from dg_dashboard_daily_result_ux_hf6 import daily_results_html, report_cards_ht
 from dh_dashboard_compact_lists_hf6 import COMPACT_CSS, pager_html
 from ei_dashboard_table_accessibility_rc5 import TABLE_A11Y_CSS, TABLE_A11Y_SCRIPT
 import eb_dashboard_live_policy_hf2 as live_policy
-from da_dashboard_ux_hf6 import (TOP_NAV, TRADING_NAV, FAMILY_GROUPS, FAMILY_LABELS, top_nav_html, trading_nav_html, families_for_group)
+from da_dashboard_ux_hf6 import (TOP_NAV, TRADING_NAV, FAMILY_GROUPS, FAMILY_LABELS, OPERATIONAL_FAMILIES, top_nav_html, trading_nav_html, families_for_group)
 from db_dashboard_logs_hf6 import discover_sources, primary_source, source_by_id, tail_lines
 from de_scheduler_catalog_hf6 import (internal_rows, load_systemd_snapshot, describe_systemd_timer,
                                       RC6_SYSTEMD_REQUIRED_TIMERS)
@@ -1192,7 +1192,7 @@ def _universe_execution_panel():
     usd_positions=(_rows("""SELECT COUNT(*) n FROM paper_positions
       WHERE date(opened_at,'-3 hours')=date('now','-3 hours') AND currency IN ('USD','USD_MEP','USD_CCL')""") or [{'n':0}])[0]['n']
     return ("<div class='paper-card'><h2>Universo por familia y moneda</h2>"
-            f"<div class='paper-notice'><b>Universo operativo actual:</b> solo Acciones y CEDEARs ({sum(int(r['total']) for r in rows if r['capability']=='READY_PAPER_SPOT')} instrumentos READY). "
+            f"<div class='paper-notice'><b>Universo PAPER/SHADOW vigente:</b> multifamilia ({sum(int(r['total']) for r in rows if str(r['capability']).startswith('READY'))} instrumentos con capacidad READY observada). "
             f"Familias no disponibles y excluidas del motor: {unavailable_text}.</div>"
             f"<div class='paper-notice'>Contratos spot USD listos: {usd_ready}; operaciones USD hoy: {usd_positions}. "
             "Saldo intacto significa que ninguna señal USD atravesó todos los portones; nunca se fabrican transacciones para mover caja.</div>"
@@ -1379,11 +1379,11 @@ def health_page():
     return _document("Salud de APIs", body, refresh=60)
 
 def history_page():
-    operational_families=("ACCIONES","CEDEARS")
+    operational_families=None
     catalog=(_rows("SELECT COUNT(*) n FROM instrument_catalog") or [{"n":0}])[0]["n"] if _table("instrument_catalog") else 0
-    eligible=(_rows("SELECT COUNT(*) n FROM candidate_universe WHERE can_simulate=1 AND status='AVAILABLE' AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS')") or [{"n":0}])[0]["n"] if _table("candidate_universe") else 0
-    history=(_rows("SELECT COUNT(*) instruments,SUM(row_count) rows,MAX(downloaded_at) latest FROM production_history WHERE UPPER(instrument_type) IN ('ACCIONES','CEDEARS')") or [{}])[0] if _table("production_history") else {}
-    last_market=(_rows("SELECT MAX(date_to) latest FROM production_history WHERE UPPER(instrument_type) IN ('ACCIONES','CEDEARS')") or [{}])[0].get("latest") if _table("production_history") else None
+    eligible=(_rows("SELECT COUNT(*) n FROM candidate_universe WHERE can_simulate=1 AND status='AVAILABLE'") or [{"n":0}])[0]["n"] if _table("candidate_universe") else 0
+    history=(_rows("SELECT COUNT(*) instruments,SUM(row_count) rows,MAX(downloaded_at) latest FROM production_history") or [{}])[0] if _table("production_history") else {}
+    last_market=(_rows("SELECT MAX(date_to) latest FROM production_history") or [{}])[0].get("latest") if _table("production_history") else None
     sync=(_rows("""SELECT source,status,last_attempt_at,last_success_at,items,detail
       FROM source_sync WHERE source LIKE 'PPI_%' ORDER BY last_attempt_at DESC""")
       if _table("source_sync") else [])
@@ -1439,7 +1439,7 @@ def history_page():
               "FULL_OHLC profundo y fresco; no es precio de ejecución ni autorización PAPER",
               "green" if fresh_v5.get('available') else "yellow"),
         _card("Historia efectiva",f"{store_v2.get('canonical_rows',0)} filas",
-              f"capa {store_v2.get('layer','V2')} · sólo acciones/CEDEARs · coverage no equivale a fresh",
+              f"capa {store_v2.get('layer','V2')} · multifamilia por fuente disponible · coverage no equivale a fresh",
               "green" if store_v2.get('available') else "yellow"),
         _card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,"Ventana rotativa del motor; no limita la cola histórica","green"),
         _card("Última fecha PPI legacy",_e(last_market),"Dato de production_history; History Store v2 puede contener otras fuentes","gray"),
@@ -1458,7 +1458,6 @@ def history_page():
     caps=dynamic.get('source_capabilities',{}) if isinstance(dynamic,dict) else {}
     all_families=sorted(
         family for family in (set(targets)|set(by_family)|set(caps))
-        if str(family or "").upper() in operational_families
     )
     for family in all_families:
         current=by_family.get(family,{})
@@ -1478,7 +1477,7 @@ def history_page():
         "Para CEDEAR cada día faltante exige rueda BYMA y rueda del subyacente US. "
         "CLOSE_ONLY se informa por separado y nunca habilita ATR, VWAP, precio de ejecución ni READY PAPER.</div>"
     )
-    body=f"<h1>Históricos y universo operativo</h1><div class='paper-notice'><b>Ingesta full histórica PPI: cerrada y en cuarentena.</b> Esta pantalla no la ejecuta. El estado del Archivo incremental de velas corresponde a otro proceso y no significa que la ingesta full esté corriendo.</div><div class='paper-warning'><b>Alcance actual:</b> esta vista y el motor usan acciones y CEDEARs. Los datos de otras familias se conservan sólo como legado/auditoría y no disparan ingesta ni decisiones.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
+    body=f"<h1>Históricos y universo operativo</h1><div class='paper-notice'><b>Ingesta full histórica PPI: cerrada y en cuarentena.</b> Esta pantalla no la ejecuta. El estado del Archivo incremental de velas corresponde a otro proceso y no significa que la ingesta full esté corriendo.</div><div class='paper-notice'><b>Alcance vigente:</b> PAPER/SHADOW multifamilia. La cobertura histórica es source-specific: una familia puede estar habilitada en PAPER/SHADOW y seguir pendiente de un proveedor histórico concreto.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
     return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
 
 
@@ -1995,7 +1994,6 @@ def live_page(*, offset=0, limit=10):
                WHERE EXISTS (
                    SELECT 1 FROM financial_instrument_catalog f
                    WHERE f.ticker=d.symbol AND f.status='AVAILABLE'
-                     AND UPPER(f.instrument_type) IN ('ACCIONES','CEDEARS')
                )
                ORDER BY d.decided_at DESC LIMIT 500"""
         )
@@ -2006,7 +2004,6 @@ def live_page(*, offset=0, limit=10):
                WHERE EXISTS (
                    SELECT 1 FROM candidate_universe u
                    WHERE u.ticker=d.symbol AND u.can_simulate=1
-                     AND UPPER(u.instrument_type) IN ('ACCIONES','CEDEARS')
                )
                ORDER BY d.decided_at DESC LIMIT 500"""
         )
@@ -2253,7 +2250,7 @@ def _trading_motor_summary():
         f"<td>{_e(row.get('asset_class'))}</td><td>{_status(row.get('status'))}</td>"
         f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_amount(row.get('net_pnl'), row.get('currency')) if row.get('net_pnl') is not None else '—'}</td></tr>"
         for row in positions
-    ) or "<tr><td colspan='6'>Sin operaciones PAPER de acciones o CEDEARs registradas.</td></tr>"
+    ) or "<tr><td colspan='6'>Sin operaciones PAPER registradas.</td></tr>"
     if _table("trade_gate_evaluations") and _table("financial_instrument_catalog"):
         gates = _rows(
             """SELECT g.evaluated_at,g.symbol,g.final_result,g.reason
@@ -2336,7 +2333,7 @@ def _trading_motor_summary():
     )
     return (
         "<div class='paper-card'><h2>Motor de trading — actividad de hoy</h2>"
-        f"<p><b>{open_count}</b> abiertas · <b>{closed_count}</b> cerradas hoy. Sólo acciones y CEDEARs.</p>"
+        f"<p><b>{open_count}</b> abiertas · <b>{closed_count}</b> cerradas hoy. Universo PAPER/SHADOW multifamilia.</p>"
         "<table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Familia</th>"
         "<th>Estado</th><th>Salida</th><th>PnL</th></tr>" + position_rows + "</table>" + more_positions
         + "<h3>Decisiones de hoy</h3><table class='paper-table'><tr><th>Hora</th>"
@@ -2355,7 +2352,7 @@ def trading_page(section=''):
                   "La ruta está disponible y muestra el estado del scanner; mientras la evidencia "
                   "intradiaria esté STALE o incompleta no se habilitan candidatos ni fills operativos.</div>"
                   "<div class='paper-card'><h2>Estrategia activa</h2>"
-                  "<p>El motor PAPER evalúa posiciones de acciones y CEDEARs. Las velas e "
+                  "<p>El motor PAPER evalúa el universo multifamilia sujeto a readiness por instrumento. Las velas e "
                   "históricos generan señales en <b>SHADOW</b>; Riesgo, costos, liquidación, "
                   "take-profit, End of Day y Max Hold quedan registrados como portones explicables."
                   "</p></div>")
@@ -2379,10 +2376,10 @@ def trading_page(section=''):
         return _document('Trading — '+title,body,refresh=30)
 
     if section:
-        body=("<h1>Trading — familia no operativa</h1>"+subnav+
-              "<div class='paper-warning'><b>DESACTIVADO POR ALCANCE:</b> "
-              "por ahora el motor sólo analiza y opera PAPER sobre acciones y CEDEARs. "
-              "La ruta se conserva para enlaces anteriores, sin ejecutar ingestión ni decisiones.</div>")
+        body=("<h1>Trading — familia no reconocida</h1>"+subnav+
+              "<div class='paper-warning'><b>RUTA SIN FAMILIA CANÓNICA:</b> "
+              "el universo vigente es multifamilia, pero cada instrumento requiere catálogo y readiness verificables. "
+              "Esta URL no corresponde a un grupo registrado.</div>")
         return _document('Trading — fuera de alcance',body,refresh=60)
 
     cards=[]
@@ -2442,8 +2439,7 @@ def _instrument_readiness_matrix():
     catalog_raw = _rows(
         """SELECT * FROM financial_instrument_catalog
            WHERE status='AVAILABLE'
-             AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS')
-           ORDER BY ticker LIMIT 1000"""
+           ORDER BY instrument_type,ticker LIMIT 5000"""
     )
     catalog = []
     for row in catalog_raw:
@@ -2688,8 +2684,8 @@ def introspection_content():
         _card("GitHub observabilidad", publication.get("status", "SIN_REGISTRO"),
               f"Última confirmación {_local_time(publication.get('recorded_at'))} · retención {publication.get('retention_days',90)} días",
               "green" if publication.get("status") in {"PUBLISHED", "UNCHANGED"} else "red"),
-        _card("Alcance operativo", "ACCIONES Y CEDEARs",
-              "Bonos, cauciones, opciones, futuros, FCI y licitaciones están desactivados; no consumen ciclo del motor.",
+        _card("Alcance operativo", "PAPER/SHADOW MULTIFAMILIA",
+              "El catálogo completo entra en evidencia/rotación; cada instrumento sigue fail-closed hasta cumplir su readiness.",
               "green"),
         _card("Régimen observado", regime.get("state", "SIN_DATOS"),
               f"Suben {regime.get('rising',0)} · bajan {regime.get('falling',0)} · política ALERT_ONLY",

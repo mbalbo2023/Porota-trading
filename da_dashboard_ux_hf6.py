@@ -47,9 +47,13 @@ TRADING_NAV = (
     NavItem("/trading/opciones", "Opciones"),
 )
 
-# El alcance operativo de RC6 es explícito: no se exploran ni procesan otras
-# familias hasta que haya una decisión de producto que las re-habilite.
-OPERATIONAL_FAMILIES = frozenset(("ACCIONES", "CEDEARS"))
+# RC6 vigente rota un universo PAPER/SHADOW multifamilia. La pertenencia a
+# este conjunto no implica READY: cada instrumento sigue fail-closed por
+# contrato, freshness, sizing/costos y evidencia.
+OPERATIONAL_FAMILIES = frozenset((
+    "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "ON", "CAUCIONES",
+    "OPCIONES", "FUTUROS", "FCI", "ETF",
+))
 
 # Legacy routes are kept intentionally so bookmarks and old links do not break.
 LEGACY_ROUTE_REDIRECTS = {
@@ -127,5 +131,7 @@ def assert_ux_invariants() -> None:
         raise AssertionError("operational actions/CEDEAR scope missing")
     if families_for_group("futuros") != ("FUTUROS",):
         raise AssertionError("Futuros readiness submenu must remain visible")
-    if not OPERATIONAL_FAMILIES.issubset({"ACCIONES", "CEDEARS"}):
-        raise AssertionError("operational scope changed unexpectedly")
+    required = {"ACCIONES", "CEDEARS", "BONOS", "LETRAS", "ON",
+                "CAUCIONES", "OPCIONES", "FUTUROS", "FCI", "ETF"}
+    if not required.issubset(OPERATIONAL_FAMILIES):
+        raise AssertionError("current all-family PAPER/SHADOW scope is incomplete")
