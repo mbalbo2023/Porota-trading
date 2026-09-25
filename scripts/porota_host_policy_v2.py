@@ -37,7 +37,12 @@ def validate_policy(manifest: dict, policy: dict) -> dict:
             if not (row.get("install") is True and row.get("enabled") is True and row.get("active") is True):
                 invalid.append({"path": path, "reason": "ACTIVE_TIMER_CONTRACT"})
         elif role == "QUARANTINED_TIMER":
-            if not (row.get("install") is True and row.get("enabled") is False and row.get("active") is False):
+            if not (
+                row.get("install") is False
+                and row.get("enabled") is False
+                and row.get("active") is False
+                and row.get("masked") is True
+            ):
                 invalid.append({"path": path, "reason": "QUARANTINED_TIMER_CONTRACT"})
         elif role == "RETIRED_TIMER":
             if not (row.get("install") is False and row.get("enabled") is False and row.get("active") is False and row.get("remove_on_deploy") is True):

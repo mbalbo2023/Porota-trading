@@ -27,9 +27,9 @@ def test_active_and_quarantined_timer_contracts_are_explicit():
             "reason": "required",
         },
         "systemd/q.timer": {
-            "role": "QUARANTINED_TIMER", "install": True,
-            "enabled": False, "active": False, "remove_on_deploy": False,
-            "reason": "quarantine",
+            "role": "QUARANTINED_TIMER", "install": False,
+            "enabled": False, "active": False, "masked": True,
+            "remove_on_deploy": False, "reason": "quarantine",
         },
     }}
     r = validate_policy(m, p)

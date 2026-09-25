@@ -114,11 +114,12 @@
     },
     "systemd/porota-history-postclose-rc6.timer": {
       "role": "QUARANTINED_TIMER",
-      "install": true,
+      "install": false,
       "enabled": false,
       "active": false,
+      "masked": true,
       "remove_on_deploy": false,
-      "reason": "Explicitly required disabled/inactive by RC6 history quarantine"
+      "reason": "Explicitly quarantined: host timer must be masked/inactive; source remains versioned for an explicitly authorized recovery project"
     },
     "systemd/porota-host-general-backup-rc6.service": {
       "role": "ACTIVE_SERVICE",
