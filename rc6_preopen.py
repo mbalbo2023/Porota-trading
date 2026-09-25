@@ -49,10 +49,21 @@ def container(name, require_readonly=False):
     rc, out, err = cmd(['docker','inspect','-f',
         '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}', name])
     parts = out.split('|') if rc == 0 else []
-    ok = len(parts) == 4 and parts[0] == 'true' and parts[1] == EXPECTED_IMAGE and parts[2] == '0'
+    # RestartCount is cumulative for the lifetime of the container and can stay
+    # non-zero after an intentional/recovered restart. Treat it as evidence, not
+    # as a permanent readiness veto. Current running/image/read-only state plus
+    # observer heartbeat/DB invariants determine readiness.
+    ok = len(parts) == 4 and parts[0] == 'true' and parts[1] == EXPECTED_IMAGE
     if require_readonly:
         ok = ok and parts[3] == 'true'
-    return {'state':'GREEN' if ok else 'RED','raw':out,'error':err}
+    restart_count = None
+    if len(parts) == 4:
+        try:
+            restart_count = int(parts[2])
+        except (TypeError, ValueError):
+            restart_count = None
+    return {'state':'GREEN' if ok else 'RED','raw':out,'error':err,
+            'restart_count':restart_count,'restart_count_policy':'INFORMATIONAL'}
 
 
 def observer_db():
