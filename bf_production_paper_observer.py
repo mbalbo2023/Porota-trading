@@ -487,6 +487,19 @@ def _download_catalog(reader, store):
         c.execute("""UPDATE candidate_universe SET status='STALE',can_simulate=0
           WHERE julianday(last_checked_at) < julianday(?, '-14 days')""", (downloaded,))
         for record in found.values():
+            discovery_source = str((record.get("raw") or {}).get("_discovery_source") or "PPI_PRIMARY")
+            existing = c.execute("""SELECT metadata_json,last_seen_at FROM financial_instrument_catalog
+              WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?""",
+              (record["ticker"],record["instrument_type"],record["market"],record["currency"],record["settlement"])).fetchone()
+            if discovery_source != "PPI_PRIMARY" and existing:
+                try:
+                    prior_meta=json.loads(existing[0] or "{}")
+                except (TypeError,ValueError,json.JSONDecodeError):
+                    prior_meta={}
+                if str(prior_meta.get("_discovery_source") or "").upper()=="PPI_PRIMARY":
+                    # Complementary evidence may widen/fill elsewhere, but cannot
+                    # replace a still-retained primary catalog identity.
+                    continue
             financial_catalog.persist(c, record)
             c.execute("INSERT OR REPLACE INTO instrument_catalog VALUES(?,?,?,?,?,?,?)",
                       (record["instrument_type"], record["ticker"], record["description"],
