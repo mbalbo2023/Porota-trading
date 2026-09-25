@@ -61,7 +61,8 @@ jobs:
                   print(f"CORE_UNIT={name}|STATE=MISSING|EXPECTED={expected}")
                   continue
               actual=hashlib.sha256(p.read_bytes()).hexdigest()
-              print(f"CORE_UNIT={name}|STATE={'MATCH' if actual==expected else 'DIFF'}|EXPECTED={expected}|ACTUAL={actual}")
+              state="MATCH" if actual==expected else "DIFF"
+              print(f"CORE_UNIT={name}|STATE={state}|EXPECTED={expected}|ACTUAL={actual}")
           '"'"''
           "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -u
@@ -135,7 +136,10 @@ jobs:
           echo "---A3_RECENT_JOURNAL---"
           sudo -n journalctl --since '2026-09-12 00:00:00' --no-pager 2>/dev/null | grep -E 'porota-a3-history-rc6@|A3_HISTORY|DAILY_INCREMENTAL|WEEKEND_DEEP|RECONCILE' | tail -n 300 || true
           echo "---HISTORY_OUTPUT_MTIMES---"
-          find /opt/porota-trading/data -maxdepth 4 -type f \( -iname '*history*' -o -iname '*a3*' -o -iname '*candle*' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ|%s|%p\n' 2>/dev/null | sort | tail -n 100 || true
+          for dir in /opt/porota-trading/data/market /opt/porota-trading/data/history /opt/porota-trading/data/candles; do
+            [ -d "$dir" ] || continue
+            find "$dir" -maxdepth 2 -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ|%s|%p\n' 2>/dev/null | sort | tail -n 40
+          done
           echo "===LIVE_A3_EVIDENCE_END==="
           REMOTE
       - if: always()
