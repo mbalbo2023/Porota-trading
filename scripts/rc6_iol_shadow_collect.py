@@ -36,8 +36,8 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
 
 
 AUDIT_FAMILIES = frozenset({
-    "ACCIONES", "CEDEARS", "BONOS", "ON", "LETRAS", "CAUCIONES",
-    "ETF", "FUTUROS", "OPCIONES", "INDICES", "FCI", "LICITACIONES",
+    "ACCIONES", "CEDEARS", "BONOS", "ON", "OBLIGACIONES", "LETRAS", "CAUCIONES",
+    "ETF", "ETFS", "FUTUROS", "OPCIONES", "INDICES", "FCI", "LICITACIONES",
 })
 
 def _read_operational_catalog() -> list[str] | None:
