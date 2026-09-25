@@ -94,7 +94,8 @@ def persist_family_coverage(c, configuration, query_results, records, run_id, ob
     Mantiene familias retiradas y las conocidas si falla la configuración.
     """
     records = list(records)
-    declared = set(configuration['instrument_types']) if configuration is not None else None
+    declared = ({canonical_family(value) for value in configuration['instrument_types']}
+                if configuration is not None else None)
     families = {r[0] for r in c.execute('SELECT instrument_type FROM catalog_family_coverage')}
     families.update(declared or ())
     families.update(q[3] for q in query_results)
