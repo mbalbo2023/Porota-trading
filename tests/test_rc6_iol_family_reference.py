@@ -1,3 +1,5 @@
+import json
+import sqlite3
 from decimal import Decimal
 import rc6_iol_family_reference as m
 
@@ -80,3 +82,59 @@ def test_option_contract_stays_incomplete_when_underlying_family_is_unknown():
     row=m._option_records(chain,info,"2026-09-25T18:00:00+00:00",
                           underlying_info={"type":"UNKNOWN"})[0]
     assert row["financial_contract_v17"] is None
+
+
+def test_collect_builds_fixed_option_fci_and_caucion_evidence_together(tmp_path):
+    db=tmp_path/"catalog.db"
+    con=sqlite3.connect(db)
+    con.execute("""CREATE TABLE financial_instrument_catalog(
+        ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,status TEXT)""")
+    con.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?)",[
+        ("GD30","BONOS","BYMA","ARS","A-24HS","AVAILABLE"),
+        ("GGAL","ACCIONES","BYMA","ARS","A-24HS","AVAILABLE"),
+    ])
+    con.commit(); con.close()
+    (tmp_path/"iol_shadow_latest.json").write_text(json.dumps({
+        "symbols":[{
+            "symbol":"GFGC7000OC","market":"BCBA","term":"t1","state":"READY",
+            "asset_type":"OPCIONES","currency":"ARS","units_per_lot":1,
+            "quote":{"last":88,"provider_observed_at":"2026-09-25T16:59:00-03:00"},
+        }]
+    }),encoding="utf-8")
+
+    class Fake:
+        def call(self,name,args):
+            if name=="get_asset_info" and args["symbol"]=="GD30":
+                return {"symbol":"GD30","type":"TIT. PUBLICOS","currency":"ARS",
+                        "market":"BCBA","term":"T1","units_per_lot":100}
+            if name=="get_fixed_income_analytics":
+                return {"calculation_inputs":{"maturity_date":"2030-07-09T00:00:00"},
+                        "prices":{"dirty_price":56.4}}
+            if name=="simulate_fixed_income_by_nominals":
+                return {"nominals":1,"dirty_price_per100":56.4,
+                        "amount_invested":0.584,"amount_invested_ars":874.1,
+                        "maturity_date":"2030-07-09T00:00:00"}
+            if name=="get_asset_quote":
+                return {"unit_price":874.1,"trade":{"lot_price":{"value":87410}}}
+            if name=="get_options_chain":
+                return {"underlying":"GGAL","options":[{
+                    "symbol":"GFGC7000OC","option_type":"C","strike_price":7000,
+                    "expiration":"2026-10-16T15:30:00-03:00","bid_price":87,
+                    "ask_price":88,"volume":10,"is_stale":False}]}
+            if name=="get_asset_info" and args["symbol"]=="GGAL":
+                return {"symbol":"GGAL","type":"ACCIONES","currency":"ARS",
+                        "market":"BCBA","term":"T1","units_per_lot":1}
+            if name=="get_fci_funds":
+                return {"result":[{"asset":"FUND1","currency":"ARS","operable":True}]}
+            if name=="get_caucion_rates":
+                return {"result":[{"days":3,"rate":18.0,"min_amount":100000}]}
+            raise AssertionError((name,args))
+
+    result=m.collect(Fake(),root=tmp_path,db_path=str(db))
+    keyed={(r["instrument_type"],r["ticker"]):r for r in result["records"]}
+    assert keyed[("BONOS","GD30")]["financial_contract_v17"]["cash_multiplier"]=="0.01"
+    assert keyed[("OPCIONES","GFGC7000OC")]["financial_contract_v17"]["cash_multiplier"]=="100"
+    assert result["fci"][0]["asset"]=="FUND1"
+    assert result["cauciones"]["ARS"][0]["days"]==3
+    assert result["cauciones"]["USD"][0]["days"]==3
+    assert result["errors"]==[]
