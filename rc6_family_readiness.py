@@ -11,13 +11,13 @@ from typing import Any, Iterable, Mapping
 
 # All of these states are simulation-ready. They never authorize real money.
 READY_STATES = frozenset({
-    "READY_PAPER", "READY_PAPER_SHADOW",
+    "READY_PAPER", "READY_PAPER_SHADOW", "READY_PAPER_PARTIAL_SOURCE",
     "READY_SHADOW", "READY_SHADOW_COMPLEMENTED", "READY_SHADOW_PARTIAL",
 })
-# Ambos estados son simulables en modo PAPER; ninguno autoriza dinero real.
+# SHADOW readiness is evidence readiness, not execution readiness.  PAPER
+# promotion requires an explicit PAPER state and a family executor/contract.
 PAPER_SIMULATABLE_STATES = frozenset({
-    "READY_PAPER", "READY_PAPER_SHADOW",
-    "READY_SHADOW", "READY_SHADOW_COMPLEMENTED", "READY_SHADOW_PARTIAL",
+    "READY_PAPER", "READY_PAPER_SHADOW", "READY_PAPER_PARTIAL_SOURCE",
 })
 BLOCKED_PREFIX = "BLOCKED"
 
@@ -229,7 +229,7 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         })
     return {
         "schema_version": 1,
-        "source_order": "PPI_PRIMARY_IOL_COMPLEMENTARY",
+        "source_order": "PPI_PRIMARY_IOL_COMPLEMENTARY_BYMA_PUBLIC_COMPLEMENTARY",
         "paper_auto_promotion": True,
         "paper_simulatable_states": sorted(PAPER_SIMULATABLE_STATES),
         "real_money_authorized": False,
