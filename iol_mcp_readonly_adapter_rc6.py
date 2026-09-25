@@ -38,10 +38,12 @@ READ_ONLY_MARKET_TOOLS = frozenset({
 })
 FORBIDDEN_ACCOUNT_OR_EXECUTION_TOOLS = frozenset({
     "get_portfolio", "get_balance", "get_ddjj", "get_order_status",
-    "get_activities", "validate_order", "buy_ggal_at_50_cents",
-    "get_stop_loss_and_take_profit", "validate_caucion",
-    "get_fci_funds", "validate_fci_subscription", "validate_fci_redemption",
-    "simulate_fixed_income_by_amount", "simulate_fixed_income_by_nominals",
+    "get_activities", "validate_order", "place_order", "cancel_order",
+    "buy_ggal_at_50_cents", "get_stop_loss_and_take_profit",
+    "create_stop_loss_or_take_profit", "delete_stop_loss_or_take_profit",
+    "validate_caucion", "place_caucion",
+    "validate_fci_subscription", "subscribe_fci",
+    "validate_fci_redemption", "redeem_fci",
 })
 ALLOWED_TOOLS = READ_ONLY_MARKET_TOOLS
 DEFAULT_STORE = Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json")
@@ -80,6 +82,16 @@ def _json_from_mcp_body(body: str) -> dict[str, Any]:
                 raise IOLMCPError("IOL_MCP_RPC_ERROR:" + str(value["error"].get("code", "unknown")))
             result = value.get("result", value)
             if isinstance(result, dict):
+                # MCP servers may expose typed tool output through
+                # `structuredContent` instead of duplicating JSON in a text block.
+                # Returning the outer tool-result envelope made perfectly valid
+                # read-only calls (notably FCI and cauciones) look empty to the
+                # family collector. Prefer the typed payload when present.
+                if result.get("isError") is True:
+                    raise IOLMCPError("IOL_MCP_TOOL_ERROR")
+                structured = result.get("structuredContent")
+                if isinstance(structured, dict):
+                    return structured
                 for item in result.get("content") or []:
                     if isinstance(item, dict) and isinstance(item.get("text"), str):
                         try:
