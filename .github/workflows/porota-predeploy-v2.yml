@@ -56,6 +56,14 @@ jobs:
           set -Eeuo pipefail
           python scripts/porota_secret_scan.py --repo-root .
 
+      - name: Host control-plane provenance gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/porota_host_control_plane_inventory.py \
+            --repo-root . \
+            --json-out /tmp/porota-host-control-plane.json
+
       - name: Build candidate exactly once
         shell: bash
         run: |
@@ -171,6 +179,7 @@ jobs:
           retention-days: 7
           path: |
             /tmp/porota-artifact-manifest.json
+            /tmp/porota-host-control-plane.json
             ${{ runner.temp }}/porota-predeploy-evidence/
 
       - name: PAPER safety source gate
@@ -197,6 +206,7 @@ jobs:
             echo '- Compile: GREEN'
             echo '- Validator regression: GREEN'
             echo '- Secret scan: GREEN'
+            echo '- Host control-plane provenance: GREEN'
             echo '- Build: ONCE'
             echo '- Exact artifact integrity: GREEN'
             echo '- Import closure: GREEN'
