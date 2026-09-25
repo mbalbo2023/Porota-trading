@@ -1,0 +1,57 @@
+name: RC6 read-only PPI option book probe 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-availability-readonly-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Prepare SSH
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+      - name: Probe PPI option current and book read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json
+          from bd_ppi_readonly_guard import ProductionMarketReader
+          from bf_production_paper_observer import _secret
+          def safe(value):
+              if isinstance(value,dict):
+                  return {k:safe(v) for k,v in value.items() if not any(x in str(k).lower() for x in ('secret','token','key','auth','cookie'))}
+              if isinstance(value,list): return [safe(v) for v in value[:20]]
+              return value
+          key,secret=_secret()
+          reader=ProductionMarketReader(key,secret,audit=lambda *args,**kwargs:None)
+          try:
+              reader.login_once()
+              symbol='GFGC7000OC'
+              current=reader.current(symbol,'OPCIONES','INMEDIATA')
+              book=reader.book(symbol,'OPCIONES','INMEDIATA')
+              print('PPI_OPTION_CURRENT='+json.dumps(safe(current),ensure_ascii=False,sort_keys=True,default=str))
+              print('PPI_OPTION_BOOK='+json.dumps(safe(book),ensure_ascii=False,sort_keys=True,default=str))
+          finally:
+              reader.close()
+          PY
+          REMOTE
