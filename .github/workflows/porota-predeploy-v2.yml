@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -18,11 +19,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      IMAGE: porota-predeploy-v2:${{ github.sha }}
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+      IMAGE: porota-predeploy-v2:${{ github.event.pull_request.head.sha }}
 
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
 
       - name: Policy invariants
         shell: bash
@@ -79,7 +84,7 @@ jobs:
           set -Eeuo pipefail
           python scripts/porota_host_manifest_v2.py \
             --repo-root . \
-            --source-sha "$GITHUB_SHA" \
+            --source-sha "$CANDIDATE_SHA" \
             --json-out /tmp/porota-host-manifest-v2.json
 
       - name: Host control-plane reconciliation policy
@@ -95,7 +100,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker build             --label "porota.commit=${GITHUB_SHA}"             --label "porota.predeploy=v2"             -t "$IMAGE" .
+          docker build             --label "porota.commit=${CANDIDATE_SHA}"             --label "porota.predeploy=v2"             -t "$IMAGE" .
           docker image inspect "$IMAGE" >/dev/null
           echo "POROTA_BUILD_ONCE=GREEN|IMAGE=$IMAGE"
 
@@ -197,11 +202,42 @@ jobs:
             --json-out "$EVIDENCE_DIR/pytest-triage.json"
           exit "$TEST_RC"
 
+      - name: Export frozen candidate artifacts
+        if: success() && github.event.pull_request.draft == false
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/porota_build_deploy_bundle_v2.py \
+            --repo-root . \
+            --output /tmp/porota-deploy-bundle-v2.tgz \
+            --manifest-out /tmp/porota-deploy-bundle-v2-manifest.json
+          docker save "$IMAGE" | gzip -1 > /tmp/porota-predeploy-image.tar.gz
+          IMAGE_TAR_SHA="$(sha256sum /tmp/porota-predeploy-image.tar.gz | awk '{print $1}')"
+          IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
+          TREE_SHA="$(git rev-parse HEAD^{tree})"
+          python - "$CANDIDATE_SHA" "$TREE_SHA" "$IMAGE_ID" "$IMAGE_TAR_SHA" <<'PY'
+          import json,sys
+          candidate,tree,image_id,image_tar_sha=sys.argv[1:]
+          payload={
+            "schema_version":1,
+            "candidate_sha":candidate,
+            "candidate_tree_sha":tree,
+            "image_id":image_id,
+            "image_tar_sha256":image_tar_sha,
+            "paper_mode_required":"PRODUCTION_PAPER",
+            "real_orders_sent_required":0,
+            "build_once":True,
+          }
+          open("/tmp/porota-frozen-candidate.json","w",encoding="utf-8").write(
+              json.dumps(payload,indent=2,sort_keys=True)+"\n")
+          print("POROTA_FROZEN_CANDIDATE=GREEN|"+candidate+"|"+tree+"|"+image_id)
+          PY
+
       - name: Upload predeploy evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: porota-predeploy-v2-${{ github.sha }}
+          name: porota-predeploy-v2-${{ env.CANDIDATE_SHA }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
@@ -210,6 +246,10 @@ jobs:
             /tmp/porota-dependency-repro.json
             /tmp/porota-host-manifest-v2.json
             /tmp/porota-host-policy-v2.json
+            /tmp/porota-deploy-bundle-v2.tgz
+            /tmp/porota-deploy-bundle-v2-manifest.json
+            /tmp/porota-predeploy-image.tar.gz
+            /tmp/porota-frozen-candidate.json
             ${{ runner.temp }}/porota-predeploy-evidence/
 
       - name: PAPER safety source gate
@@ -231,7 +271,7 @@ jobs:
         run: |
           {
             echo '### Porota Predeploy V2'
-            echo "- SHA: \`${GITHUB_SHA}\`"
+            echo "- Candidate SHA: \`${CANDIDATE_SHA}\`"
             echo '- Policy: GREEN'
             echo '- Compile: GREEN'
             echo '- Validator regression: GREEN'
@@ -258,5 +298,5 @@ jobs:
           set +e
           docker ps -aq --filter "ancestor=$IMAGE" | xargs -r docker rm -f
           docker image rm "$IMAGE" >/dev/null 2>&1 || true
-          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json "${RUNNER_TEMP}/porota-predeploy-evidence"
+          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json "${RUNNER_TEMP}/porota-predeploy-evidence"
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'
