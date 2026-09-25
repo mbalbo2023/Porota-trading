@@ -215,7 +215,7 @@ jobs:
             sudo -n cp "$STAGE/$f" "$REPO/$f"
           done
           test -f "$REPO/rc6_source_consolidation.py"
-          sudo -n python3 -c "import sys; sys.path.insert(0, '/opt/porota-trading'); import rc6_source_consolidation, rc6_full_universe_evidence; print('RC6_DEPLOY_IMPORT=GREEN|rc6_source_consolidation|rc6_full_universe_evidence')"
+          sudo -n python3 -c "import sys; sys.path.insert(0, '/opt/porota-trading'); import rc6_source_consolidation; from scripts import rc6_full_universe_evidence; print('RC6_DEPLOY_IMPORT=GREEN|rc6_source_consolidation|scripts.rc6_full_universe_evidence')"
           # Only bounded observation evidence is installed. PPI Watch and PPI history units are untouched.
           sudo -n install -m 755 "$REPO/ops/porota-rc6-candle-inmarket-verify" /usr/local/sbin/porota-rc6-candle-inmarket-verify
           sudo -n install -m 644 "$REPO/ops/systemd/porota-rc6-candle-inmarket-verify.service" /etc/systemd/system/porota-rc6-candle-inmarket-verify.service
