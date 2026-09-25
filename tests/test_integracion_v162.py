@@ -527,13 +527,16 @@ class TestHigiene:
         contenido = di.read_text(encoding="utf-8")
         assert ".env" in contenido and "data/" in contenido
 
-    def test_el_dockerfile_no_instala_nada_por_fuera_de_requirements(self):
+    def test_el_dockerfile_instala_solo_desde_el_lock_reproducible(self):
         df = _sin_comentarios("Dockerfile")
-        instalaciones = [l for l in df.splitlines()
-                         if "pip install" in l and "requirements.txt" not in l]
-        assert not instalaciones, (
-            f"Instalaciones sueltas en el Dockerfile: {instalaciones}. Dos "
-            f"builds en semanas distintas producirían sistemas distintos.")
+        instalaciones = [l for l in df.splitlines() if "pip install" in l]
+        assert instalaciones == [
+            "RUN pip install --no-cache-dir -r requirements.lock.txt"
+        ], (
+            f"El runtime debe instalar exclusivamente el lock reproducible; "
+            f"instalaciones encontradas: {instalaciones}"
+        )
+        assert "COPY requirements.txt requirements.lock.txt ./" in df
 
     def test_no_quedan_restos_de_codespaces(self):
         assert not (RAIZ / ".devcontainer").exists()

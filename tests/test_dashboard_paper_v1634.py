@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
+
 def test_v17_dashboard_separa_plazos_y_muestra_caucion_real_del_simulador(tmp_path, monkeypatch):
     from dataclasses import replace
     from be_paper_engine import D, PaperBroker, PaperStore, Quote
@@ -29,12 +30,15 @@ def test_v17_dashboard_separa_plazos_y_muestra_caucion_real_del_simulador(tmp_pa
     snapshot = dashboard.snapshot()
     assert {row["settlement"] for row in snapshot["quotes"]} == {"INMEDIATA", "A-24HS"}
     assert snapshot["cauciones"][0]["principal"] == "1000"
-    page = dashboard.motor_page()
-    assert "CONTRATO-PRUEBA" in page
-    assert "Cauciones colocadoras" in page
-    assert "Capital inmovilizado hasta el vencimiento" in page
-    assert "no confirman movimientos en PPI" in page
-
+    audit_panel = dashboard._cauciones_panel()
+    assert "CONTRATO-PRUEBA" in audit_panel
+    assert "Cauciones colocadoras" in audit_panel
+    assert "Capital inmovilizado hasta el vencimiento" in audit_panel
+    assert "no confirman movimientos en PPI" in audit_panel
+    motor = dashboard.motor_page()
+    assert "CONTRATO-PRUEBA" not in motor
+    assert "PAPER/SHADOW multifamilia" in motor
+    assert "fail-closed" in motor
 
 def test_dashboard_no_suma_dolares_como_pesos_y_muestra_cajas(tmp_path, monkeypatch):
     import bg_paper_dashboard as dashboard
@@ -103,9 +107,8 @@ def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     assert "OPENBYMADATA" in health
 
 
+
 def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
-    # Ejecuta la aplicación real, incluidos los middleware y la autenticación;
-    # encontrar el nombre de una ruta en el fuente no valida su respuesta.
     from fastapi.testclient import TestClient
     import ay_dashboard_auth as auth
     import o_dashboard as dashboard
@@ -143,7 +146,7 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
         assert "Operaciones abiertas ahora" in vivo.text
         assert "Operaciones cerradas hoy" in vivo.text
         assert "Scalping" in vivo.text
-        assert "Motores / workers" in vivo.text
+        assert "3. Decisiones en vivo" in vivo.text
         assert vivo.text.count("id='porota-canonical-nav'") == 1
         assert vivo.text.count("id='porota-paper-mode'") == 1
         assert "MODO SIMULACIÓN PRODUCTIVA" in vivo.text
@@ -171,7 +174,6 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
         response = cliente.get('/api/paper/caucion-allocations')
         assert response.status_code == 200
         assert response.json()['records'][0]['decision'] == original
-        assert 'Colocación simulada registrada' in cliente.get('/motor-trading').text
         with broker.store.connect() as c:
             c.execute('DROP TABLE paper_caucion_allocations')
             c.execute('CREATE TABLE paper_caucion_allocations(x)')
@@ -180,7 +182,6 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
     assert consultas
     assert all(sql.lstrip().upper().startswith("SELECT") for sql in consultas)
     assert any("FROM signals" in sql and "__SISTEMA__" in sql for sql in consultas)
-
 
 def test_inyeccion_del_banner_es_idempotente(monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
@@ -400,6 +401,7 @@ def test_historial_concilia_importes_moneda_y_costos(allocation_case, currency, 
     assert 'Mayor retorno neto por día sobre el débito inicial' in page
 
 
+
 def test_historial_hold_no_inventa_colocacion_y_no_reintenta(allocation_case):
     from cb_caucion_audit import allocation_history
     import bg_paper_dashboard as dashboard
@@ -409,11 +411,11 @@ def test_historial_hold_no_inventa_colocacion_y_no_reintenta(allocation_case):
     for _ in range(2):
         record = allocation_history(broker.store.path)['records'][0]
         assert record['decision'] == original and record['placement'] is None
-        page = dashboard.motor_page()
+        page = dashboard._caucion_allocations_panel()
         assert 'Abstención' in page and 'Sin inversión' in page
         assert 'Excede la fracción disponible después de la reserva' in page
+        assert 'Decisiones de caución' not in dashboard.motor_page()
     assert broker.cauciones.positions() == []
-
 
 @pytest.mark.parametrize('fee_payment', ['UPFRONT','MATURITY'])
 def test_panel_muestra_costos_redondeados_del_simulador(allocation_case, fee_payment):
@@ -424,6 +426,7 @@ def test_panel_muestra_costos_redondeados_del_simulador(allocation_case, fee_pay
     page = dashboard._caucion_allocations_panel()
     assert '1.23 · '+fee_payment in page
     assert '1.234 · '+fee_payment not in page
+
 
 
 def test_historial_oferta_no_canonica_no_rompe_el_panel(allocation_case):
@@ -440,8 +443,8 @@ def test_historial_oferta_no_canonica_no_rompe_el_panel(allocation_case):
     report = allocation_history(broker.store.path)
     assert report['state'] == 'PARTIAL'
     assert report['records'][0]['issue'] == 'NON_CANONICAL_OFFER'
-    assert 'Registro inconsistente' in dashboard.motor_page()
-
+    assert 'Registro inconsistente' in dashboard._caucion_allocations_panel()
+    assert 'Decisiones de caución' not in dashboard.motor_page()
 
 def test_historial_maduro_no_confunde_decision_con_saldo_actual(allocation_case):
     from cb_caucion_audit import allocation_history
@@ -530,6 +533,7 @@ def test_historial_pagina_por_instante_y_conserva_registros_validos(allocation_c
     assert allocation_history(broker.store.path, offset=3)['state'] == 'EMPTY_PAGE'
 
 
+
 def test_historial_distingue_faltantes_vacio_y_error_sin_crear_base(tmp_path, monkeypatch):
     from cb_caucion_audit import allocation_history
     from be_paper_engine import PaperBroker, PaperStore
@@ -537,7 +541,8 @@ def test_historial_distingue_faltantes_vacio_y_error_sin_crear_base(tmp_path, mo
     path = tmp_path/'sin-base.db'
     monkeypatch.setattr(dashboard,'DB_PATH',str(path))
     assert allocation_history(path)['state'] == 'MISSING_DATABASE'
-    assert 'Base no disponible' in dashboard.motor_page()
+    assert 'Base no disponible' in dashboard._caucion_allocations_panel()
+    assert 'Decisiones de caución' not in dashboard.motor_page()
     assert not path.exists()
     with sqlite3.connect(path):
         pass
@@ -561,13 +566,13 @@ def test_historial_y_panel_son_solo_lectura(allocation_case):
     path = Path(broker.store.path)
     before = path.read_bytes()
     assert allocation_history(path)['state'] == 'READABLE'
-    assert 'Decisiones de caución' in dashboard.motor_page()
+    assert 'Decisiones de caución' in dashboard._caucion_allocations_panel()
+    assert 'Decisiones de caución' not in dashboard.motor_page()
     with dashboard._conn() as c:
         with pytest.raises(sqlite3.OperationalError,match='readonly'):
             c.execute('DELETE FROM paper_cauciones')
     c.close()
     assert path.read_bytes() == before
-
 
 def test_historial_usa_una_fotografia_aunque_acrediten_durante_lectura(allocation_case, monkeypatch):
     import cb_caucion_audit as audit

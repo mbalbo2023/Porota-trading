@@ -97,32 +97,58 @@ def test_economia_shadow_cuenta_apertura_con_fallo(tmp_path):
                       "opened_with_failure": 1, "blocked_with_failure": 0}
 
 
+
 def test_ingesta_background_respeta_ttl_por_intento(tmp_path, monkeypatch):
     store = engine.PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
-    now = datetime.now(observer.TZ)
+    monkeypatch.setattr(observer, "_business_day", lambda _day: True)
+    close = datetime(
+        2026, 9, 24, observer.MARKET_CLOSE_HOUR, observer.MARKET_CLOSE_MINUTE,
+        tzinfo=observer.TZ,
+    )
     with store.connect() as connection:
         connection.execute("INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
-                           ("PPI_PRODUCTION_HISTORY", "ROJO", now.isoformat(),
+                           ("PPI_PRODUCTION_HISTORY", "ROJO", close.isoformat(),
                             None, 0, "falló"))
-    assert observer._background_ingest_due(store, now=now + timedelta(minutes=30)) is False
-    assert observer._background_ingest_due(
-        store, now=now + timedelta(seconds=observer.BACKGROUND_INGEST_SECONDS + 1)
-    ) is True
+    # RC6 actual: no TTL intradía. Como máximo un intento histórico por fecha,
+    # siempre después del cierre de una rueda hábil.
+    assert observer._background_ingest_due(store, now=close + timedelta(hours=12)) is False
+    next_close = close + timedelta(days=1)
+    assert observer._background_ingest_due(store, now=next_close - timedelta(minutes=1)) is False
+    assert observer._background_ingest_due(store, now=next_close + timedelta(minutes=1)) is True
 
 
 def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypatch):
+    import cu_history_store_v2_hf6 as history_v2
+    from cv_history_store_adapter_hf6 import default_history_store
+    import scripts.rc6_history_cutoff_repair_once as cutoff_repair
+
     store = engine.PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
+    monkeypatch.setenv("HIST_DB_PATH", str(tmp_path / "history-v2.db"))
+    history_store = default_history_store()
+    history_v2.init_schema(history_store)
+    cutoff_repair._init_state(history_store)
+    with history_store.connect() as connection:
+        connection.execute("""INSERT OR REPLACE INTO rc6_history_cutoff_repair_runs
+          (cutoff,state,targets,archive_imports,ppi_queries,complete,failed,updated_at)
+          VALUES(?,?,?,?,?,?,?,?)""",
+          ("2026-09-21","COMPLETE",0,0,0,0,0,"2026-09-24T18:00:00-03:00"))
+
+    monkeypatch.setattr(observer, "_background_ingest_due", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(observer, "_historical_targets",
                         lambda _store: [("GGAL", "ACCIONES", "A-24HS")])
     monkeypatch.setattr(observer, "HISTORY_BATCH_LIMIT", 1)
+    monkeypatch.setattr(observer, "_history_end_date",
+                        lambda now=None: datetime(2026,9,24,tzinfo=timezone.utc).date())
+    monkeypatch.setattr(observer.financial_catalog, "lookup",
+                        lambda *_args, **_kwargs: {"market":"BYMA"})
     calls = []
 
     class Reader:
         def history(self, symbol, kind, settlement, start, end):
             calls.append(("history", symbol, kind, settlement))
-            return [{"date": datetime.now(timezone.utc).isoformat(),
+            return [{"date": "2026-09-24T13:00:00-03:00",
                      "openingPrice": 100, "max": 101, "min": 99,
                      "price": 100, "volume": 1000}]
 
@@ -134,7 +160,6 @@ def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypat
 
     assert observer._background_ingest(Reader(), store, force=True) == 1
     assert calls == [("history", "GGAL", "ACCIONES", "A-24HS")]
-
 
 def test_dashboard_expone_binding_y_guardas_hf3(tmp_path, monkeypatch):
     store = engine.PaperStore(str(tmp_path / "paper.db"))

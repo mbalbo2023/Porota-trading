@@ -16,11 +16,12 @@ import os
 import sqlite3
 
 
-OPERATIONAL_HISTORY_FAMILIES = {"ACCIONES", "CEDEARS"}
-# Existing PPI and batch history paths are proven only for the current
-# operational scope. Legacy rows can be displayed as audit evidence but are
-# never considered an enabled collection source.
-PPI_PROVEN_HISTORY_FAMILIES = OPERATIONAL_HISTORY_FAMILIES
+# Source-specific historical capabilities. These sets do NOT define the RC6
+# PAPER/SHADOW universe. The current universe is catalog-wide; a family may be
+# enabled for PAPER/SHADOW while one particular historical provider is absent.
+PPI_PROVEN_HISTORY_FAMILIES = {"ACCIONES", "CEDEARS"}
+DATA912_HISTORY_FAMILIES = {"ACCIONES", "CEDEARS"}
+A3_HISTORY_FAMILIES = {"FUTUROS", "OPCIONES"}
 
 
 def _family_scope(families) -> set[str] | None:
@@ -60,8 +61,10 @@ def source_capabilities(family: str) -> tuple[str, ...]:
     out=[]
     if family in PPI_PROVEN_HISTORY_FAMILIES:
         out.append("PPI_HISTORY")
-    if family in OPERATIONAL_HISTORY_FAMILIES:
+    if family in DATA912_HISTORY_FAMILIES:
         out.append("DATA912_BATCH")
+    if family in A3_HISTORY_FAMILIES:
+        out.append("A3_CEM_HISTORY")
     return tuple(out) if out else ("PROBE_REQUIRED",)
 
 
@@ -180,5 +183,5 @@ def effective_store_metrics(observer_connection,path=None,families=None):
 def assert_history_metric_invariants() -> None:
     if "PROBE_REQUIRED" not in source_capabilities("ON"):
         raise AssertionError("Unproven history family must not be marked supported")
-    if source_capabilities("FUTUROS") != ("PROBE_REQUIRED",):
-        raise AssertionError("Out-of-scope futures must remain probe-required")
+    if "A3_CEM_HISTORY" not in source_capabilities("FUTUROS"):
+        raise AssertionError("FUTUROS must retain the active A3 historical source")

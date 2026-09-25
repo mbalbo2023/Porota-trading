@@ -34,19 +34,22 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
 
 
 AUDIT_FAMILIES = frozenset({
-    "ACCIONES", "CEDEARS", "BONOS", "ON", "LETRAS", "CAUCIONES",
-    "ETF", "FUTUROS", "OPCIONES", "INDICES", "FCI", "LICITACIONES",
+    "ACCIONES", "CEDEARS", "BONOS", "ON", "OBLIGACIONES", "LETRAS",
+    "CAUCIONES", "ETF", "ETFS", "FUTUROS", "OPCIONES", "INDICES",
+    "FCI", "LICITACIONES",
 })
 
 def _read_operational_catalog() -> list[str] | None:
-    """Read only currently AVAILABLE ACCIONES/CEDEARS; None means catalog unavailable."""
+    """Read the current AVAILABLE multifamily PAPER/SHADOW catalog."""
     try:
         conn = sqlite3.connect(f"file:{DEFAULT_DB}?mode=ro", uri=True, timeout=10)
         conn.execute("PRAGMA query_only=ON")
         rows = conn.execute(
             "SELECT DISTINCT ticker FROM financial_instrument_catalog "
-            "WHERE status='AVAILABLE' AND upper(instrument_type) IN ('ACCIONES','CEDEARS') "
-            "AND trim(ticker)<>'' ORDER BY ticker"
+            "WHERE status='AVAILABLE' AND upper(instrument_type) IN ("
+            + ",".join("?" for _ in AUDIT_FAMILIES)
+            + ") AND trim(ticker)<>'' ORDER BY ticker",
+            tuple(sorted(AUDIT_FAMILIES)),
         ).fetchall()
         conn.close()
         return sorted({str(row[0]).strip().upper() for row in rows if row and row[0]})
@@ -393,7 +396,7 @@ def main() -> int:
     if not is_operational_market_window():
         print("IOL_SHADOW_COLLECTION=NOT_DUE_OUTSIDE_MARKET")
         return 0
-    scope = os.getenv("POROTA_IOL_SHADOW_SCOPE", "OPERATIONAL").strip().upper()
+    scope = os.getenv("POROTA_IOL_SHADOW_SCOPE", "AUDIT_ALL").strip().upper()
     if scope == "AUDIT_ALL":
         universe, universe_source = _evidence_universe_with_source()
     else:

@@ -89,7 +89,9 @@ def test_scheduler_uses_multiple_evidence_sources_and_news_off(monkeypatch):
     rows=sched.internal_rows([],source_sync_rows=[{'source':'PPI_PRODUCTION_HISTORY','last_attempt_at':'2026-09-03T10:00:00+00:00','last_success_at':'2026-09-03T10:00:00+00:00','status':'OK'}],contract_run_rows=[{'job_key':'CONTRACT_EVIDENCE_CAUCIONES','started_at':'2026-09-03T10:00:00+00:00','finished_at':'2026-09-03T10:00:01+00:00','state':'OK'}])
     by={r['key']:r for r in rows}
     assert by['PPI_PRODUCTION_HISTORY']['evidence_table']=='source_sync'
-    assert by['CONTRACT_EVIDENCE_CAUCIONES']['evidence_table']=='contract_evidence_runs'
+    assert 'CONTRACT_EVIDENCE_CAUCIONES' not in by
+    assert any(job.key=='CONTRACT_EVIDENCE_CAUCIONES' for job in sched.INTERNAL_JOBS)
+    assert not any(job.key=='CONTRACT_EVIDENCE_CAUCIONES' for job in sched.active_internal_jobs())
 
 def test_ppi_normalizer_drops_account_quantity_and_does_not_infer_steps():
     p={'payload':[{'ticker':'AAA','cantidadDisponible':999,'cantidadDecimales':0,'cantidadDecimalesPrecio':3,'instrumentosDerivados':[{'private':'x'}]}]}
@@ -123,7 +125,8 @@ def test_navigation_and_system_sections_and_vivo_contract():
     live=dash[start:end]
     assert '_rejection_funnel()' not in live
     assert 'Operaciones abiertas' in live and 'Lección aprendida' in live and 'Scalping' in live
-    assert live.index('1. Operaciones abiertas ahora') < live.index('4. Scalping')
+    assert '4. Scalping' not in live
+    assert live.index('1. Operaciones abiertas ahora') < live.index('3. Decisiones en vivo')
 
 def test_trusted_browser_wrapper_has_no_credential_login():
     root=Path(__file__).parents[1]
@@ -146,7 +149,7 @@ def test_contract_scheduler_cadence_has_one_canonical_source():
         assert csched.cadence_seconds(job) == cpolicy.ttl_seconds(cadence)
 
 
-def test_family_readiness_never_auto_activates_even_when_complete(tmp_path):
+def test_family_readiness_complete_evidence_enables_paper_shadow_only(tmp_path):
     s=Store(tmp_path/'family.db')
     ev={'instrument_id':1,'ticker':'AAA','market':'BYMA','currency':'ARS',
         'settlement':'A-24HS','quantity_min':1,'quantity_step':1,
@@ -156,8 +159,11 @@ def test_family_readiness_never_auto_activates_even_when_complete(tmp_path):
     rows=ce.current_records(s,family='ACCIONES',ticker='AAA')
     r=ce.family_readiness_state(rows,family='ACCIONES',max_age_seconds=3600,
         simulator_ready=True,cost_ready=True)
-    assert r['status']=='READY_PAPER_CANDIDATE'
+    assert r['status']=='READY_PAPER_SHADOW'
+    assert r['paper_simulatable'] is True
+    assert r['paper_auto_enabled'] is True
     assert r['auto_activation_allowed'] is False
+    assert r['real_money_authorized'] is False
 
 
 def test_blocked_auth_capture_is_persisted_as_run_not_contract(tmp_path):
@@ -347,7 +353,9 @@ def test_scraping_dashboard_exposes_run_evidence_without_promoting_ready(tmp_pat
 def test_deploy_contract_is_split_and_preflight_green():
     import subprocess,sys
     compose=Path('docker-compose.yml').read_text(encoding='utf-8')
-    assert 'NO es el contrato canónico de PRODUCTION_PAPER' in compose
+    assert 'Legacy monolithic stack (stable RC6 default)' in compose
+    assert 'contrato canónico de PRODUCTION_PAPER' in compose
+    assert 'PRODUCTION_PAPER usa el runtime split de porota_mode_manager.py' in compose
     contract=Path('RC4_DEPLOY_CONTRACT.md').read_text(encoding='utf-8')
     assert 'porota_production_observer' in contract
     assert 'porota_production_dashboard' in contract

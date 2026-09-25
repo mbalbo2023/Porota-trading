@@ -14,7 +14,7 @@ def test_freshness_metric_contract():
 def test_dashboard_separates_any_depth_and_freshness():
     s=Path('bg_paper_dashboard.py').read_text(encoding='utf-8')
     assert 'freshness_qualified_metrics' in s
-    assert 'Cobertura histórica ANY' in s
+    assert 'Cobertura histórica operativa' in s
     assert 'Historia fresca ≥30' in s
     assert 'Historia fresca ≥90' in s
     assert 'Historia fresca ≥180' in s

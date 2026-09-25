@@ -1,8 +1,10 @@
 """HF6 Contract/Data v2: policy for progressive historical ingestion.
 
-Historical collection and PAPER readiness are deliberately independent. In RC6,
-collection is restricted to the current operational families (ACCIONES and
-CEDEARS); legacy history is preserved for audit but never refreshed.
+Historical collection and PAPER readiness are deliberately independent. RC6
+itself is catalog-wide in PAPER/SHADOW. This module governs only the legacy
+PPI/Data912 FULL_OHLC path, whose proven provider support remains ACCIONES and
+CEDEARS. Other families can be covered by their own read-only sources (for
+example A3 for FUTUROS/OPCIONES) and by the full-universe evidence cycle.
 
 Policy proven from the 02-Sep-2026 HF6 audit:
 - 169 PPI payloads were PARTIAL but contained 31,654 valid daily bars;
@@ -22,14 +24,15 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
-OPERATIONAL_HISTORY_FAMILIES = frozenset({"ACCIONES", "CEDEARS"})
-# Retained only to explain why legacy instruments are not scheduled for new
-# collection. They are not an ingest permission in RC6.
+LEGACY_PPI_DATA912_FAMILIES = frozenset({"ACCIONES", "CEDEARS"})
+# Compatibility alias for older callers. This is a provider scope, not the
+# global RC6 PAPER/SHADOW scope.
+OPERATIONAL_HISTORY_FAMILIES = LEGACY_PPI_DATA912_FAMILIES
 LEGACY_HISTORY_FAMILIES = frozenset({
     "BONOS", "LETRAS", "ON", "OBLIGACIONES", "OPCIONES", "FUTUROS",
     "ETF", "ETFS", "INDICES", "CAUCIONES", "FCI", "FCIS", "LICITACIONES",
 })
-DATA912_FALLBACK_FAMILIES = OPERATIONAL_HISTORY_FAMILIES
+DATA912_FALLBACK_FAMILIES = LEGACY_PPI_DATA912_FAMILIES
 
 MIN_CONTEXT_BARS = 30
 PREFERRED_CONTEXT_BARS = 90

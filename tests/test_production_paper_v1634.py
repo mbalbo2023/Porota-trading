@@ -410,6 +410,7 @@ def test_diagnostico_real_no_convierte_bono_denominado_usd_en_caja_usd(real_cata
     assert catalog.quote_terms(future)["contract"] is None  # No parsea vencimiento desde descripción.
 
 
+
 def test_catalogo_real_preserva_clase_moneda_y_no_duplica_resultados(tmp_path, monkeypatch, real_catalog):
     store = PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
@@ -1412,7 +1413,7 @@ def test_fases_de_mercado_impiden_operar_fuera_de_rueda(monkeypatch):
     assert observer._market_phase(after) == "CLOSED"
 
 
-def test_universo_ampliado_mantiene_derivados_solo_contexto(monkeypatch, tmp_path):
+def test_universo_ampliado_incluye_derivados_en_paper_shadow(monkeypatch, tmp_path):
     watchlist = tmp_path / "watchlist.json"
     watchlist.write_text(json.dumps({
         "ACCIONES": {"instrument_type": "ACCIONES", "settlement": "A-24HS",
@@ -1423,7 +1424,10 @@ def test_universo_ampliado_mantiene_derivados_solo_contexto(monkeypatch, tmp_pat
     monkeypatch.setattr(observer, "WATCHLIST_PATH", watchlist)
     candidates = observer._candidate_universe()
     assert any(row[0] == "YPFD" and row[4] for row in candidates)
-    assert any(row[1] == "FUTUROS" and not row[4] for row in candidates)
+    # RC6 current scope allows expanded families to enter PAPER/SHADOW.
+    # Contract/readiness gates still decide whether an instrument can actually
+    # simulate; this flag never authorizes real-money execution.
+    assert any(row[1] == "FUTUROS" and row[4] for row in candidates)
 
 
 def test_rc6_ia_intradia_esta_retirada_del_porton_operativo():
@@ -1487,6 +1491,7 @@ def test_catalogo_incorpora_cada_instrumento_devuelto(monkeypatch, tmp_path):
     assert {"GGAL", "YPFD"}.issubset(values)
 
 
+
 def test_lote_por_ciclo_rota_sobre_todo_el_universo(tmp_path, monkeypatch):
     store = PaperStore(str(tmp_path / "observer.db"))
     observer._support_schema(store)
@@ -1509,14 +1514,31 @@ def test_lote_por_ciclo_rota_sobre_todo_el_universo(tmp_path, monkeypatch):
 
 
 def test_historicos_usan_universo_completo_no_lote_activo(tmp_path, monkeypatch):
+    import cu_history_store_v2_hf6 as history_v2
+    from cv_history_store_adapter_hf6 import default_history_store
+    import scripts.rc6_history_cutoff_repair_once as cutoff_repair
+
     store = PaperStore(str(tmp_path / "observer.db"))
     observer._support_schema(store)
+    monkeypatch.setenv("HIST_DB_PATH", str(tmp_path / "history-v2.db"))
+    history_store=default_history_store()
+    history_v2.init_schema(history_store)
+    cutoff_repair._init_state(history_store)
+    with history_store.connect() as connection:
+        connection.execute("""INSERT OR REPLACE INTO rc6_history_cutoff_repair_runs
+          (cutoff,state,targets,archive_imports,ppi_queries,complete,failed,updated_at)
+          VALUES(?,?,?,?,?,?,?,?)""",
+          ("2026-09-21","COMPLETE",0,0,0,0,0,"2026-08-26T18:00:00-03:00"))
     with store.connect() as connection:
         for ticker in ("GGAL", "YPFD", "PAMP", "BMA"):
             connection.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
                                (ticker, "ACCIONES", "A-24HS", "BYMA", 1, "AVAILABLE", "ok", "2026-08-26"))
     monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 2)
     monkeypatch.setattr(observer, "HISTORY_BATCH_LIMIT", 100)
+    monkeypatch.setattr(observer, "_history_end_date",
+                        lambda now=None: datetime(2026,8,25,tzinfo=timezone.utc).date())
+    monkeypatch.setattr(observer.financial_catalog, "lookup",
+                        lambda *_args, **_kwargs: {"market":"BYMA"})
     class Reader:
         def history(self, symbol, *_args):
             return [{"date":"2026-08-25T17:00:00-03:00","price":1,
@@ -1524,4 +1546,4 @@ def test_historicos_usan_universo_completo_no_lote_activo(tmp_path, monkeypatch)
     observer._download_histories(Reader(), store)
     with store.connect() as connection:
         covered = connection.execute("SELECT COUNT(*) FROM production_history").fetchone()[0]
-    assert covered >= 4
+    assert covered == 4
