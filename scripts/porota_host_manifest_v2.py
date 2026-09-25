@@ -32,8 +32,8 @@ def tracked_modes(repo_root: Path) -> dict[str, str]:
     return result
 
 
-def build_manifest(repo_root: Path, workflow_path: Path, source_sha: str) -> dict:
-    modes = tracked_modes(repo_root)
+def build_manifest(repo_root: Path, workflow_path: Path, source_sha: str, *, modes: dict[str, str] | None = None) -> dict:
+    modes = tracked_modes(repo_root) if modes is None else dict(modes)
     tracked = sorted(
         p for p in modes
         if (p.startswith("systemd/") or p.startswith("ops/systemd/"))
