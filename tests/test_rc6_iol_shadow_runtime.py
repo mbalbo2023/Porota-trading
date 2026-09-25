@@ -23,7 +23,7 @@ def test_configured_operational_universe_is_unique(monkeypatch):
     universe=runtime._operational_universe()
     assert universe == ["AAPL", "GGAL"]
 
-def test_operational_catalog_includes_actions_and_cedears(monkeypatch, tmp_path):
+def test_operational_catalog_includes_every_available_family(monkeypatch, tmp_path):
     db = tmp_path / "observer.db"
     import sqlite3
     with sqlite3.connect(db) as conn:
@@ -33,7 +33,7 @@ def test_operational_catalog_includes_actions_and_cedears(monkeypatch, tmp_path)
             ("BAD", "DISABLED", "ACCIONES"), ("BONO", "AVAILABLE", "BONOS")])
     monkeypatch.delenv("POROTA_IOL_SHADOW_UNIVERSE", raising=False)
     monkeypatch.setattr(runtime, "DEFAULT_DB", str(db))
-    assert runtime._operational_universe() == ["AAPL", "GGAL"]
+    assert runtime._operational_universe() == ["AAPL", "BONO", "GGAL"]
 
 
 def test_systemd_collector_exposes_repository_root_to_python():
@@ -56,11 +56,11 @@ def test_configured_universe_is_intersected_with_available_operational_families(
     monkeypatch.setattr(runtime, "DEFAULT_DB", str(db))
     monkeypatch.setenv("POROTA_IOL_SHADOW_UNIVERSE", "aapl,ggal,BONO,SPY,AAPL")
     assert runtime._operational_universe_with_source() == (
-        ["AAPL", "GGAL"], "CONFIGURED_OPERATIONAL_SUBSET"
+        ["AAPL", "BONO", "GGAL"], "CONFIGURED_OPERATIONAL_SUBSET"
     )
 
 
-def test_configured_universe_with_no_allowed_symbols_fails_closed(monkeypatch, tmp_path):
+def test_configured_universe_accepts_non_equity_available_family(monkeypatch, tmp_path):
     import sqlite3
     db = tmp_path / "observer.db"
     with sqlite3.connect(db) as conn:
@@ -69,7 +69,7 @@ def test_configured_universe_with_no_allowed_symbols_fails_closed(monkeypatch, t
     monkeypatch.setattr(runtime, "DEFAULT_DB", str(db))
     monkeypatch.setenv("POROTA_IOL_SHADOW_UNIVERSE", "BONO,SPY")
     assert runtime._operational_universe_with_source() == (
-        [], "CONFIGURED_UNIVERSE_REJECTED_BY_SCOPE"
+        ["BONO"], "CONFIGURED_OPERATIONAL_SUBSET"
     )
 
 
