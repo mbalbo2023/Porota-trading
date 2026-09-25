@@ -37,7 +37,8 @@ def recent_rows(c,t,time_col,cols_needed=None):
     if not cs or time_col not in cs: return []
     use=[x for x in (cols_needed or sorted(cs)) if x in cs]
     if not use: return []
-    sql=f'SELECT {",".join([f""""{x}"""" for x in use])} FROM "{t}" WHERE julianday("{time_col}")>=julianday(?) ORDER BY julianday("{time_col}")'
+    quoted=",".join(f'"{x}"' for x in use)
+    sql=f'SELECT {quoted} FROM "{t}" WHERE julianday("{time_col}")>=julianday(?) ORDER BY julianday("{time_col}")'
     try: return rows(c,sql,("2026-09-24T03:00:00+00:00",))
     except sqlite3.Error: return []
 
