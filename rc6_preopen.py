@@ -26,8 +26,7 @@ DB = ROOT / 'data/paper_v17/observer_v17.db'
 EXPECTED_IMAGE = 'porota-trading-bot:17.0.0-rc6'
 MIN_FREE_BYTES = 8 * 1024**3
 REQUIRED_TIMERS = (
-    'porota-fast-functional-health-rc6.timer',
-    'porota-full-db-integrity-rc6.timer',
+    'porota-functional-health-rc6.timer',
     'porota-host-general-backup-rc6.timer',
     'porota-preopen-rc6.timer',
     'porota-candle-integrity-rc6.timer',

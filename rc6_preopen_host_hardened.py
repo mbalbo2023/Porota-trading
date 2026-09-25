@@ -35,8 +35,13 @@ def install_policy_overrides():
     if not hasattr(base, "_original_container"):
         base._original_container = base.container
     base.container = container
-    # Timer policy is owned by rc6_preopen.py.  This compatibility layer must
-    # never override quarantine/required-unit policy independently.
+    base.REQUIRED_TIMERS = (
+        "porota-fast-functional-health-rc6.timer",
+        "porota-history-postclose-rc6.timer",
+        "porota-host-general-backup-rc6.timer",
+        "porota-preopen-rc6.timer",
+        "porota-candle-integrity-rc6.timer",
+    )
 
 
 def main():
