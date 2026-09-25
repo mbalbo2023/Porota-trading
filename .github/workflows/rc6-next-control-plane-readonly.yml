@@ -46,9 +46,9 @@ jobs:
           echo "---KERNEL_MEMORY_TAIL---"
           sudo -n journalctl -k --since '2026-09-25 04:15:00' --no-pager 2>/dev/null | grep -Ei 'out of memory|oom|killed process|memory cgroup' | tail -n 80 || true
           echo "---OBSERVER_LIGHT_STATE---"
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          sudo -n python3 - <<'PY'
           import sqlite3,json
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
           c.execute('PRAGMA query_only=ON')
           row=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
           c.close()
