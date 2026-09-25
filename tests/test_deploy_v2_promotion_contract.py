@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 PROMOTE=Path(".github/workflows/porota-deploy-v2-promote.yml").read_text(encoding="utf-8")
-LEGACY=Path(".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml").read_text(encoding="utf-8")
+LEGACY_PATH=Path(".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml")
 
 
 def test_deploy_v2_promotes_frozen_artifact_without_droplet_build():
@@ -12,12 +12,10 @@ def test_deploy_v2_promotes_frozen_artifact_without_droplet_build():
     assert "POROTA_BUILD_ONCE_PROMOTION=GREEN" in PROMOTE
 
 
-def test_deploy_v2_is_push_path_and_legacy_push_is_disabled():
+def test_deploy_v2_is_the_only_rc6_production_push_path():
     assert "push:" in PROMOTE
     assert "deploy/rc6-pr69-isolated-20260915" in PROMOTE
-    trigger=LEGACY.split("permissions:",1)[0]
-    assert "push:" not in trigger
-    assert "workflow_dispatch:" in trigger
+    assert not LEGACY_PATH.exists()
 
 
 def test_deploy_v2_requires_merge_tree_identity_and_successful_predeploy():
