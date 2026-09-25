@@ -80,3 +80,27 @@ def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     assert 'sudo -n timeout 1200 sudo -n docker run' in verify
     assert '--entrypoint python "$VERIFY_IMAGE" ck_contract_evidence_runner_hf6.py' in verify
     assert '--entrypoint timeout "$VERIFY_IMAGE" 1200 python ck_contract_evidence_runner_hf6.py' not in verify
+
+
+def test_sector_map_and_multisource_helpers_are_immutable_deploy_inputs():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    for artifact in ("POROTA_SECTOR_MAP_V1.csv", "rc6_multisource_discovery.py", "rc6_iol_family_reference.py"):
+        assert artifact in source
+    assert 'test -f "$STAGE/POROTA_SECTOR_MAP_V1.csv"' in source
+    assert 'test -f "$STAGE/rc6_multisource_discovery.py"' in source
+    assert 'test -f "$STAGE/rc6_iol_family_reference.py"' in source
+    assert "SECTOR_MAP_RUNTIME=GREEN" in source
+    assert "SECTOR_MAP_EMPTY" in source
+
+def test_deploy_scope_rejects_watchlist_as_universe_authority():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert "DISCOVERY=DYNAMIC_MULTISOURCE" in source
+    assert 'assert observer.DISCOVERY_SEEDS == {}' in source
+    assert 'assert "WATCHLIST_PATH.read_text" not in source' in source
+
+def test_live_safety_checks_do_not_use_heavy_quick_check():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    verify = source[source.index("- name: Verify deployed candidate and Paper safety"):]
+    assert "PRAGMA quick_check" not in verify
+    assert "POST_STATE=" in verify
+    assert "PRODUCTION_PAPER|0" in verify
