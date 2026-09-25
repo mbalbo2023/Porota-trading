@@ -70,8 +70,15 @@ def _value(payload, names):
     return None
 
 def canonical_fields(payload):
-    return {field:value for field,names in FIELD_ALIASES.items()
-            if (value:=_value(payload,names)) not in (None,"",[],{})}
+    result={}
+    for field,names in FIELD_ALIASES.items():
+        value=_value(payload,names)
+        if value in (None,"",[],{}):
+            continue
+        if field!="fee_schedule" and isinstance(value,(dict,list,tuple,set)):
+            continue
+        result[field]=value
+    return result
 
 def _decimal(value):
     try:
