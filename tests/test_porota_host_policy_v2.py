@@ -2,15 +2,10 @@ from scripts.porota_host_policy_v2 import validate_policy
 
 
 def manifest(paths):
-    return {
-        "units": [
-            {"source_path": p, "managed_by_canonical_deploy": False}
-            for p in paths
-        ]
-    }
+    return {"units": [{"source_path": p} for p in paths]}
 
 
-def test_policy_requires_exact_coverage_of_unmanaged_units():
+def test_policy_requires_exact_coverage_of_all_tracked_units():
     m = manifest(["systemd/a.timer"])
     p = {"units": {}}
     r = validate_policy(m, p)
@@ -34,7 +29,7 @@ def test_active_and_quarantined_timer_contracts_are_explicit():
     }}
     r = validate_policy(m, p)
     assert r["status"] == "GREEN"
-    assert r["tracked_unmanaged_units"] == 2
+    assert r["tracked_rc6_units"] == 2
 
 
 def test_retired_timer_must_be_removed_and_disabled():
@@ -67,3 +62,17 @@ def test_current_all_family_policy_keeps_a3_history_active():
     svc=units["systemd/porota-a3-history-rc6@.service"]
     assert svc["role"]=="ACTIVE_SERVICE"
     assert svc["install"] is True
+
+
+def test_repository_policy_covers_every_tracked_rc6_unit():
+    import json
+    import subprocess
+    from pathlib import Path
+    tracked = {
+        p for p in subprocess.check_output(["git","ls-files"], text=True).splitlines()
+        if (p.startswith("systemd/") or p.startswith("ops/systemd/"))
+        and p.endswith((".service",".timer"))
+        and "rc6" in Path(p).name.lower()
+    }
+    policy=json.loads(Path("ops/policy/host-control-plane-reconciliation-v2.json").read_text())
+    assert set(policy["units"]) == tracked
