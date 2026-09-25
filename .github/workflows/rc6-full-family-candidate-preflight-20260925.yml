@@ -1,5 +1,5 @@
 name: RC6 full-family candidate preflight 2026-09-25
-# candidate-refresh: 89427a22a4730ea81c4ec73d8fad656a58891e3d
+# candidate-refresh: 2f3df14af2ec6eab5d44a62f1d875ee96265016b
 
 on:
   push:
@@ -12,18 +12,41 @@ permissions:
 jobs:
   preflight:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
           ref: fix/rc6-full-family-paper-promotion-20260925
           fetch-depth: 0
+
+      - name: Pin exact candidate SHA
+        run: |
+          set -Eeuo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          EXPECTED="2f3df14af2ec6eab5d44a62f1d875ee96265016b"
+          echo "CANDIDATE_SHA=$ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
       - name: Compile changed promotion paths
         run: |
           set -Eeuo pipefail
-          python -m py_compile             iol_mcp_readonly_adapter_rc6.py             iol_shadow_observation_rc6.py             rc6_iol_family_reference.py             scripts/rc6_iol_shadow_collect.py             bu_instrument_catalog.py             bf_production_paper_observer.py
+          python -m py_compile \
+            iol_mcp_readonly_adapter_rc6.py \
+            iol_shadow_observation_rc6.py \
+            rc6_iol_family_reference.py \
+            scripts/rc6_iol_shadow_collect.py \
+            bu_instrument_catalog.py \
+            bf_production_paper_observer.py \
+            be_paper_engine.py \
+            bq_exit_policy.py \
+            dh_paper_dynamic_risk_gate_hf6.py \
+            rc6_source_consolidation.py \
+            ak_byma_calendar.py \
+            co_market_sessions_hf6.py
+
       - name: Install deterministic runner
         run: python -m pip install --disable-pip-version-check "pytest>=8.3.0,<9" requests
+
       - name: Run focused promotion and safety tests
         run: |
           set -Eeuo pipefail
@@ -36,7 +59,20 @@ jobs:
             tests/test_rc6_multisource_discovery.py \
             tests/test_rc6_family_readiness.py \
             tests/test_fixed_income_nominal_contract_rc6.py \
-            tests/test_rc6_cauciones_contract.py
+            tests/test_rc6_cauciones_contract.py \
+            tests/test_rc6_option_paper_execution.py
+
+      - name: Run BYMA contract calendar and session regressions
+        run: |
+          set -Eeuo pipefail
+          python -m pytest -q \
+            tests/test_byma_calendar.py \
+            tests/test_byma_schedule_rc5.py \
+            tests/test_rc6_byma_calendar_failclosed.py \
+            tests/test_rc6_option_paper_execution.py \
+            tests/test_exit_supervision_v17.py \
+            tests/test_rc6_t1_settlement_hotfix.py
+
       - name: Run canonical release regression slice
         run: |
           set -Eeuo pipefail
@@ -45,8 +81,12 @@ jobs:
             tests/test_rc6_deploy_readiness_contract.py \
             tests/test_rc6_live_scope_gate_fallback.py \
             tests/test_rc6_take_profit_regression.py \
-            tests/test_exit_supervision_v17.py
-      - name: Static real-order and one-shot deploy guards
+            tests/test_exit_supervision_v17.py \
+            tests/test_derivatives_and_gate.py \
+            tests/test_catalog_v17.py \
+            tests/test_paper_engine_v17.py
+
+      - name: Static BYMA and real-order guards
         run: |
           set -Eeuo pipefail
           python - <<'PY'
@@ -55,18 +95,37 @@ jobs:
               "iol_mcp_readonly_adapter_rc6.py","iol_shadow_observation_rc6.py",
               "rc6_iol_family_reference.py","scripts/rc6_iol_shadow_collect.py",
               "bu_instrument_catalog.py","bf_production_paper_observer.py",
+              "be_paper_engine.py","bq_exit_policy.py","dh_paper_dynamic_risk_gate_hf6.py",
           ]
           forbidden = (
               "place_order(", "cancel_order(", "subscribe_fci(",
               "redeem_fci(", "place_caucion(",
           )
           for name in changed:
-              text=Path(name).read_text(encoding="utf-8")
+              source=Path(name).read_text(encoding="utf-8")
               for marker in forbidden:
-                  if marker in text:
+                  if marker in source:
                       raise SystemExit(f"FORBIDDEN_REAL_ROUTE:{name}:{marker}")
+
+          source=Path("rc6_source_consolidation.py").read_text(encoding="utf-8")
+          capture=Path("scripts/rc6_public_source_capture.py").read_text(encoding="utf-8")
+          calendar=Path("ak_byma_calendar.py").read_text(encoding="utf-8")
+          sessions=Path("co_market_sessions_hf6.py").read_text(encoding="utf-8")
+          policy=Path("bq_exit_policy.py").read_text(encoding="utf-8")
+          assert '"BYMA"' in source and "open.bymadata.com.ar" in source
+          assert 'item.get("source") != "BYMA"' in capture
+          assert "ANIOS_AUDITADOS" in calendar and "fail" in calendar.lower()
+          assert "BYMA_HOURS_COMMUNICATION" in sessions and "19016" in sessions
+          assert "OPTION_EXPIRY_TRADING_CUTOFF" in policy
+          assert '"OPCIONES"' in policy and '"BYMA"' in policy
+
           workflow=Path(".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml").read_text(encoding="utf-8")
           if "python /app/scripts/rc6_history_cutoff_repair_once.py" in workflow:
               raise SystemExit("ONE_SHOT_HISTORY_REPAIR_REENTERED_DEPLOY")
-          print("STATIC_PAPER_SAFETY=GREEN")
+          print("STATIC_BYMA_AND_PAPER_SAFETY=GREEN")
           PY
+
+      - name: Run complete repository test suite
+        run: |
+          set -Eeuo pipefail
+          python -m pytest -q
