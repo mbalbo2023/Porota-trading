@@ -1,5 +1,5 @@
 [Unit]
-Description=Porota RC6 IOL MCP observation-only collection
+Description=Porota RC6 IOL plus BYMA public scrape and full evidence cycle
 Wants=network-online.target
 After=network-online.target
 ConditionPathExists=/root/.config/porota/iol_mcp_oauth_bootstrap.json
@@ -11,6 +11,6 @@ Environment=POROTA_IOL_SHADOW_MODE=OBSERVE_ONLY
 Environment=POROTA_IOL_SHADOW_SCOPE=AUDIT_ALL
 Environment=POROTA_IOL_SHADOW_ROOT=/opt/porota-trading/data/market
 Environment=PYTHONPATH=/opt/porota-trading
-ExecStart=/bin/bash -c '/usr/bin/python3 /opt/porota-trading/scripts/rc6_iol_shadow_collect.py && /bin/chmod 0644 /opt/porota-trading/data/market/iol_shadow_latest.json'
+ExecStart=/bin/bash -c 'set -Eeuo pipefail; /usr/bin/flock -n /var/lock/porota-rc6-source-cycle.lock /usr/bin/python3 /opt/porota-trading/scripts/rc6_iol_shadow_collect.py; /usr/bin/python3 /opt/porota-trading/scripts/rc6_public_source_capture.py; /usr/bin/python3 /opt/porota-trading/scripts/rc6_full_universe_evidence.py; /bin/chmod 0644 /opt/porota-trading/data/market/iol_shadow_latest.json /opt/porota-trading/data/market/rc6_public_sources_latest.json /opt/porota-trading/data/market/rc6_instrument_evidence_latest.json'
 NoNewPrivileges=true
 PrivateTmp=true
