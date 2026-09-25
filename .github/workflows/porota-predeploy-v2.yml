@@ -202,6 +202,19 @@ jobs:
             --json-out "$EVIDENCE_DIR/pytest-triage.json"
           exit "$TEST_RC"
 
+      - name: PAPER safety source gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          policy=Path('ops/policy/porota-policy.yaml').read_text(encoding='utf-8')
+          assert 'required_mode: PRODUCTION_PAPER' in policy
+          assert 'real_trading_allowed: false' in policy
+          assert 'real_orders_sent_required: 0' in policy
+          print('POROTA_PAPER_SAFETY_SOURCE_GATE=GREEN')
+          PY
+
       - name: Export frozen candidate artifacts
         if: success() && github.event.pull_request.draft == false
         shell: bash
@@ -251,19 +264,6 @@ jobs:
             /tmp/porota-predeploy-image.tar.gz
             /tmp/porota-frozen-candidate.json
             ${{ runner.temp }}/porota-predeploy-evidence/
-
-      - name: PAPER safety source gate
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          policy=Path('ops/policy/porota-policy.yaml').read_text(encoding='utf-8')
-          assert 'required_mode: PRODUCTION_PAPER' in policy
-          assert 'real_trading_allowed: false' in policy
-          assert 'real_orders_sent_required: 0' in policy
-          print('POROTA_PAPER_SAFETY_SOURCE_GATE=GREEN')
-          PY
 
       - name: Predeploy summary
         if: success()
