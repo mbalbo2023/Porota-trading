@@ -15,7 +15,9 @@ import sqlite3
 from typing import Any
 
 from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
-from iol_shadow_collector_rc6 import CollectionPolicy, is_operational_market_window, run_batch
+from iol_shadow_collector_rc6 import (CollectionPolicy, RateGovernor, _safe_call,
+                                      is_operational_market_window, run_batch)
+import rc6_iol_family_reference as family_reference
 from rc6_source_consolidation import consolidate
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
@@ -39,14 +41,16 @@ AUDIT_FAMILIES = frozenset({
 })
 
 def _read_operational_catalog() -> list[str] | None:
-    """Read only currently AVAILABLE ACCIONES/CEDEARS; None means catalog unavailable."""
+    """Read every catalog identity admitted for PAPER/SHADOW observation."""
     try:
         conn = sqlite3.connect(f"file:{DEFAULT_DB}?mode=ro", uri=True, timeout=10)
         conn.execute("PRAGMA query_only=ON")
         rows = conn.execute(
             "SELECT DISTINCT ticker FROM financial_instrument_catalog "
-            "WHERE status='AVAILABLE' AND upper(instrument_type) IN ('ACCIONES','CEDEARS') "
-            "AND trim(ticker)<>'' ORDER BY ticker"
+            "WHERE status='AVAILABLE' AND upper(instrument_type) IN ("
+            + ",".join("?" for _ in AUDIT_FAMILIES)
+            + ") AND trim(ticker)<>'' ORDER BY ticker",
+            tuple(sorted(AUDIT_FAMILIES)),
         ).fetchall()
         conn.close()
         return sorted({str(row[0]).strip().upper() for row in rows if row and row[0]})
@@ -402,8 +406,24 @@ def main() -> int:
     fingerprint = _fingerprint(universe)
     batch, rotation_start, prior_cycle = _rotation(universe, fingerprint)
     primary, primary_contract = _primary_snapshot()
-    run_batch(batch, OAuthStoreReadOnlyMCP(), root=DEFAULT_ROOT, primary_last_by_symbol=primary,
-              policy=CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40))
+    client = OAuthStoreReadOnlyMCP()
+    policy = CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40)
+    governor = RateGovernor(policy)
+    run_batch(batch, client, root=DEFAULT_ROOT, primary_last_by_symbol=primary,
+              policy=policy, governor=governor)
+    # Family enrichment shares the exact same rate governor.  Metadata-heavy
+    # quote batches can consume the whole minute; in that case enrichment is
+    # skipped rather than creating a second independent call budget.
+    family_reference_state = "SKIPPED_CALL_BUDGET"
+    if governor.calls_total <= 26:
+        class GovernedClient:
+            def call(self, tool_name, arguments):
+                return _safe_call(client, tool_name, arguments, governor, policy)
+        try:
+            family_reference.collect(GovernedClient(), root=DEFAULT_ROOT, db_path=DEFAULT_DB)
+            family_reference_state = "UPDATED"
+        except Exception as exc:
+            family_reference_state = "ERROR:" + type(exc).__name__
     cycle = _commit_rotation(universe, fingerprint, rotation_start, batch, prior_cycle)
     payload = _publish_progress(universe, batch, universe_source, fingerprint, cycle, primary_contract)
     ppi_rows = []
@@ -441,7 +461,7 @@ def main() -> int:
     consolidated = consolidate(ppi_rows, iol_rows, official_rows)
     _atomic_json(DEFAULT_ROOT / "rc6_consolidated_ppi_iol_latest.json", consolidated)
     progress = payload.get("progress", {})
-    print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source}")
+    print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source} FAMILY_REFERENCE={family_reference_state} CALLS={governor.calls_total}")
     return 0
 
 
