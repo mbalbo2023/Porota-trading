@@ -131,7 +131,7 @@ def normalize_record(raw, settlement_hint, observed_at, run_id):
         currency = cash_currency(raw.get("currency"))
     except ValueError:
         currency = "UNKNOWN"
-    settlement = str(raw.get("settlement") or settlement_hint)
+    settlement = str(raw.get("settlement") or settlement_hint or "UNKNOWN").strip().upper()
     value = dict(ticker=ticker, instrument_type=kind, market=market, currency=currency,
                  settlement=settlement, settlement_source="PPI_FIELD" if raw.get("settlement") else "REQUEST_CANDIDATE",
                  description=str(raw.get("description") or ""), last_seen_at=observed_at,
@@ -143,6 +143,8 @@ def normalize_record(raw, settlement_hint, observed_at, run_id):
 def contract_for(record):
     if record["currency"] == "UNKNOWN" or record["market"] == "UNKNOWN":
         raise ValueError("MISSING_CURRENCY_OR_MARKET")
+    if str(record.get("settlement") or "").strip().upper() in {"", "UNKNOWN", "NONE"}:
+        raise ValueError("NEEDS_SETTLEMENT")
     family = family_name(record["instrument_type"])
     raw = record.get("raw", {})
     if raw.get("financial_contract_v17"):
