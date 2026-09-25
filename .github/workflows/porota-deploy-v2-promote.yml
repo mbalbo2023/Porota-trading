@@ -1,0 +1,322 @@
+name: RC6 Deploy V2 promote frozen candidate
+
+on:
+  push:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    paths-ignore:
+      - 'docs/**'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout production promotion commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Resolve exact frozen candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -t PARTS < <(git rev-list --parents -n 1 HEAD | tr ' ' '\n')
+          test "${#PARTS[@]}" -eq 3
+          CANDIDATE_SHA="${PARTS[2]}"
+          DEPLOY_SHA="${PARTS[0]}"
+          CANDIDATE_TREE="$(git rev-parse "$CANDIDATE_SHA^{tree}")"
+          DEPLOY_TREE="$(git rev-parse "$DEPLOY_SHA^{tree}")"
+          test "$CANDIDATE_TREE" = "$DEPLOY_TREE"
+          {
+            echo "CANDIDATE_SHA=$CANDIDATE_SHA"
+            echo "CANDIDATE_TREE=$CANDIDATE_TREE"
+            echo "DEPLOY_SHA=$DEPLOY_SHA"
+          } >> "$GITHUB_ENV"
+          echo "POROTA_DEPLOY_V2_TREE_IDENTITY=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|tree=$DEPLOY_TREE"
+
+      - name: Locate successful Predeploy V2 artifact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          repo=os.environ["GITHUB_REPOSITORY"]
+          candidate=os.environ["CANDIDATE_SHA"]
+          token=os.environ["GH_TOKEN"]
+          name=f"porota-predeploy-v2-{candidate}"
+          headers={"Authorization":f"Bearer {token}","Accept":"application/vnd.github+json",
+                   "X-GitHub-Api-Version":"2022-11-28"}
+          def get(url):
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=30) as r:
+                  return json.load(r)
+          q=urllib.parse.quote(name,safe="")
+          data=get(f"https://api.github.com/repos/{repo}/actions/artifacts?name={q}&per_page=100")
+          candidates=[]
+          for artifact in data.get("artifacts",[]):
+              if artifact.get("expired") or artifact.get("name") != name:
+                  continue
+              run_id=(artifact.get("workflow_run") or {}).get("id")
+              if not run_id:
+                  continue
+              run=get(f"https://api.github.com/repos/{repo}/actions/runs/{run_id}")
+              if run.get("name")!="Porota Predeploy V2" or run.get("conclusion")!="success":
+                  continue
+              candidates.append((artifact.get("created_at") or "",artifact,run))
+          if not candidates:
+              raise SystemExit("NO_SUCCESSFUL_FROZEN_PREDEPLOY_ARTIFACT")
+          _,artifact,run=max(candidates,key=lambda x:x[0])
+          out=os.environ["GITHUB_ENV"]
+          with open(out,"a",encoding="utf-8") as f:
+              f.write(f"PREDEPLOY_ARTIFACT_ID={artifact['id']}\n")
+              f.write(f"PREDEPLOY_RUN_ID={run['id']}\n")
+          print(f"POROTA_FROZEN_PREDEPLOY_FOUND=GREEN|run={run['id']}|artifact={artifact['id']}|name={name}")
+          PY
+
+      - name: Download and verify frozen artifact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf /tmp/porota-frozen-v2
+          mkdir -p /tmp/porota-frozen-v2
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$PREDEPLOY_ARTIFACT_ID/zip" \
+            -o /tmp/porota-frozen-v2.zip
+          unzip -q /tmp/porota-frozen-v2.zip -d /tmp/porota-frozen-v2
+          for name in porota-frozen-candidate.json porota-predeploy-image.tar.gz porota-deploy-bundle-v2.tgz porota-deploy-bundle-v2-manifest.json porota-host-manifest-v2.json porota-host-policy-v2.json; do
+            src="$(find /tmp/porota-frozen-v2 -type f -name "$name" -print -quit)"
+            test -n "$src"
+            cp "$src" "/tmp/$name"
+          done
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          frozen=json.loads(Path("/tmp/porota-frozen-candidate.json").read_text())
+          manifest=json.loads(Path("/tmp/porota-deploy-bundle-v2-manifest.json").read_text())
+          assert frozen["candidate_sha"]==os.environ["CANDIDATE_SHA"]
+          assert frozen["candidate_tree_sha"]==os.environ["CANDIDATE_TREE"]
+          assert frozen["paper_mode_required"]=="PRODUCTION_PAPER"
+          assert int(frozen["real_orders_sent_required"])==0
+          assert frozen["build_once"] is True
+          def sha(path):
+              h=hashlib.sha256()
+              with open(path,"rb") as f:
+                  for chunk in iter(lambda:f.read(1024*1024),b""): h.update(chunk)
+              return h.hexdigest()
+          assert sha("/tmp/porota-predeploy-image.tar.gz")==frozen["image_tar_sha256"]
+          assert sha("/tmp/porota-deploy-bundle-v2.tgz")==manifest["bundle_sha256"]
+          print("POROTA_FROZEN_ARTIFACT_VERIFY=GREEN")
+          PY
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
+
+      - name: Transfer frozen artifact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          SCP=(scp -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "rm -rf '$REMOTE_DIR' && mkdir -p '$REMOTE_DIR'"
+          "${SCP[@]}" /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json "$DO_USER@$DO_HOST:$REMOTE_DIR/"
+
+      - name: Promote exact frozen candidate and verify
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
+          STAGE="$REMOTE_DIR/stage"
+          STABLE_IMAGE="porota-trading-bot:17.0.0-rc6"
+          FROZEN_IMAGE="porota-predeploy-v2:$CANDIDATE_SHA"
+          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$CANDIDATE_SHA"
+
+          echo "RC6_DEPLOY_V2=START|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA"
+          DISK_BEFORE="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "DISK_BEFORE=$DISK_BEFORE"
+          test "$DISK_BEFORE" -ge 1073741824
+
+          PRE_STATE="NO_RUNNING_OBSERVER"
+          if [ "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)" = running ]; then
+            PRE_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print(f"{q}|{mode}|{orders}")
+          PY
+            )"
+          fi
+          echo "PRE_STATE=$PRE_STATE"
+          if [ "$PRE_STATE" != NO_RUNNING_OBSERVER ]; then test "$PRE_STATE" = "ok|PRODUCTION_PAPER|0"; fi
+
+          PPI_WATCH_BEFORE="$(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1 "|" $2}' | sort || true)"
+          printf 'PPI_WATCH_BEFORE=%s\n' "$PPI_WATCH_BEFORE"
+
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          tar -xzf "$REMOTE_DIR/porota-deploy-bundle-v2.tgz" -C "$STAGE"
+
+          sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
+          import hashlib,json,os,shutil,sys
+          from pathlib import Path
+          stage,repo,manifest=map(Path,sys.argv[1:])
+          data=json.loads(manifest.read_text())
+          assert data.get("status")=="GREEN" and data.get("files")
+          def sha(p):
+              h=hashlib.sha256()
+              with p.open("rb") as f:
+                  for chunk in iter(lambda:f.read(1024*1024),b""): h.update(chunk)
+              return h.hexdigest()
+          for row in data["files"]:
+              rel=Path(row["path"])
+              src=stage/rel
+              assert src.is_file() and sha(src)==row["sha256"], rel
+              dst=repo/rel
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copy2(src,dst)
+              assert sha(dst)==row["sha256"], rel
+          print(f"POROTA_BUNDLE_INSTALL=GREEN|files={len(data['files'])}")
+          PY
+
+          EXPECTED_IMAGE_ID="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_id"])')"
+          gunzip -c "$REMOTE_DIR/porota-predeploy-image.tar.gz" | sudo -n docker load
+          LOADED_IMAGE_ID="$(sudo -n docker image inspect -f '{{.Id}}' "$FROZEN_IMAGE")"
+          test "$LOADED_IMAGE_ID" = "$EXPECTED_IMAGE_ID"
+          sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
+          sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
+          echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|image=$EXPECTED_IMAGE_ID"
+
+          sudo -n python3 "$REPO/scripts/porota_apply_host_control_plane_v2.py" \
+            --root "$REPO" \
+            --policy ops/policy/host-control-plane-reconciliation-v2.json \
+            --json-out "$REMOTE_DIR/host-control-plane-applied.json"
+
+          MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
+          echo "$MODE_OUTPUT"
+          grep -q 'POROTA_MODE=OK' <<< "$MODE_OUTPUT"
+
+          OBSERVER_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          DASHBOARD_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          test "$OBSERVER_IMAGE_ID" = "$EXPECTED_IMAGE_ID"
+          test "$DASHBOARD_IMAGE_ID" = "$EXPECTED_IMAGE_ID"
+
+          POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print(f"{q}|{mode}|{orders}")
+          PY
+          )"
+          echo "POST_STATE=$POST_STATE"
+          test "$POST_STATE" = "ok|PRODUCTION_PAPER|0"
+
+          sudo -n docker exec porota_production_observer python - <<'PY'
+          from bs_instrument_contracts import FAMILIES
+          import bf_production_paper_observer as observer
+          assert observer.OPERATIONAL_FAMILIES == FAMILIES
+          assert observer.SAFE_PAPER_TYPES == set(FAMILIES)
+          print("OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES")
+          PY
+
+          DASHBOARD_HTTP="$(curl -sS -o /tmp/porota-v2-health -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/health)"
+          test "$DASHBOARD_HTTP" = 200
+          echo "DASHBOARD_HEALTH_HTTP=200"
+
+          PPI_WATCH_AFTER="$(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1 "|" $2}' | sort || true)"
+          test "$PPI_WATCH_AFTER" = "$PPI_WATCH_BEFORE"
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+
+          sudo -n mkdir -p "$REPO/data/deploy"
+          sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$EXPECTED_IMAGE_ID" "$POST_STATE" <<'PY'
+          import json,sys
+          from datetime import datetime,timezone
+          path,candidate,deploy,image_id,post=sys.argv[1:]
+          payload={
+            "schema_version":2,
+            "recorded_at":datetime.now(timezone.utc).isoformat(),
+            "candidate_sha":candidate,
+            "deploy_sha":deploy,
+            "image_id":image_id,
+            "mode":"PRODUCTION_PAPER",
+            "real_orders_sent":0,
+            "observer_state":post,
+            "dashboard_health_http":200,
+            "ppi_watch_untouched":True,
+            "deployment_strategy":"FIX_FORWARD_ONLY",
+            "build_once":True,
+          }
+          open(path,"w",encoding="utf-8").write(json.dumps(payload,indent=2,sort_keys=True)+"\n")
+          print("CURRENT_STATE_V2=GREEN")
+          PY
+
+          sudo -n docker image rm "$FROZEN_IMAGE" >/dev/null 2>&1 || true
+          sudo -n docker image prune -f
+          sudo -n docker builder prune -af
+          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
+          rm -rf "$REMOTE_DIR"
+          DISK_AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "DISK_AFTER=$DISK_AFTER"
+          echo "SPACE_RECOVERED=$((DISK_AFTER-DISK_BEFORE))"
+          test "$DISK_AFTER" -ge 1073741824
+          echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
+          echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$EXPECTED_IMAGE_ID"
+          REMOTE
+
+      - name: Deployment summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo '### POROTA RC6 Deploy V2'
+            echo "- Deploy commit: `$DEPLOY_SHA`"
+            echo "- Frozen candidate: `$CANDIDATE_SHA`"
+            echo "- Predeploy run: `$PREDEPLOY_RUN_ID`"
+            echo '- BUILD ONCE promotion: GREEN'
+            echo '- PRODUCTION_PAPER: required'
+            echo '- real_orders_sent: 0 required'
+            echo '- PPI Watch: untouched'
+            echo '- Strategy: FIX-FORWARD ONLY'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Runner cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -rf /tmp/porota-frozen-v2 /tmp/porota-frozen-v2.zip /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json
+          rm -f "$HOME/.ssh/porota_rc6_deploy"
+          echo "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"

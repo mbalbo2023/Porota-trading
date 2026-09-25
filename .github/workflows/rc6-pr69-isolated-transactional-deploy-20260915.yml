@@ -1,11 +1,6 @@
-name: RC6 unified Paper deploy 2026-09-15
+name: RC6 legacy Paper deploy 2026-09-15 — manual fallback only
 
 on:
-  push:
-    branches:
-      - deploy/rc6-pr69-isolated-20260915
-    paths-ignore:
-      - 'docs/**'
   workflow_dispatch:
 
 permissions:
