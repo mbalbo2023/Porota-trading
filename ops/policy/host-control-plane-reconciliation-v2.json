@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "scope": "tracked RC6 systemd units not yet managed by the canonical deploy workflow",
+  "decision_basis": [
+    "rc6_preopen.py is the current fail-closed readiness contract and now requires the fast/full health split",
+    "tests/test_rc6_postclose_history_quarantine.py requires postclose history to remain disabled",
+    "cp_history_ingest_policy_hf6.py restricts new RC6 historical collection to ACCIONES and CEDEARS; A3 history targets FUTUROS/OPCIONES",
+    "the Sept-09 SRE split separates frequent fast health from lower-frequency full DB integrity"
+  ],
+  "units": {
+    "systemd/porota-a3-history-daily-rc6.timer": {
+      "role": "RETIRED_TIMER",
+      "install": false,
+      "enabled": false,
+      "active": false,
+      "remove_on_deploy": true,
+      "reason": "A3 targets FUTUROS/OPCIONES; current RC6 history policy excludes those families from new collection"
+    },
+    "systemd/porota-a3-history-rc6@.service": {
+      "role": "RETIRED_SERVICE",
+      "install": false,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": true,
+      "reason": "Template belongs only to retired A3 FUTUROS/OPCIONES background history"
+    },
+    "systemd/porota-a3-history-reconcile-rc6.timer": {
+      "role": "RETIRED_TIMER",
+      "install": false,
+      "enabled": false,
+      "active": false,
+      "remove_on_deploy": true,
+      "reason": "A3 FUTUROS/OPCIONES reconciliation is outside current RC6 history collection scope"
+    },
+    "systemd/porota-a3-history-weekend-rc6.timer": {
+      "role": "RETIRED_TIMER",
+      "install": false,
+      "enabled": false,
+      "active": false,
+      "remove_on_deploy": true,
+      "reason": "A3 FUTUROS/OPCIONES weekend backfill is outside current RC6 history collection scope"
+    },
+    "systemd/porota-candle-integrity-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Required by current preopen readiness through its timer"
+    },
+    "systemd/porota-candle-integrity-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Required by current preopen readiness"
+    },
+    "systemd/porota-fast-functional-health-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Frequent read-only health probe after SRE fast/full split"
+    },
+    "systemd/porota-fast-functional-health-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Frequent read-only health timer after SRE fast/full split"
+    },
+    "systemd/porota-full-db-integrity-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Lower-frequency full SQLite quick_check after SRE split"
+    },
+    "systemd/porota-full-db-integrity-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Postclose lower-frequency full DB integrity schedule"
+    },
+    "systemd/porota-functional-health-rc6.service": {
+      "role": "RETIRED_SERVICE",
+      "install": false,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": true,
+      "reason": "Superseded by fast-functional plus full-db-integrity split"
+    },
+    "systemd/porota-functional-health-rc6.timer": {
+      "role": "RETIRED_TIMER",
+      "install": false,
+      "enabled": false,
+      "active": false,
+      "remove_on_deploy": true,
+      "reason": "Superseded by fast-functional plus full-db-integrity split"
+    },
+    "systemd/porota-history-postclose-rc6.service": {
+      "role": "QUARANTINED_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Explicit recovery only; policy quarantine remains fail-closed"
+    },
+    "systemd/porota-history-postclose-rc6.timer": {
+      "role": "QUARANTINED_TIMER",
+      "install": true,
+      "enabled": false,
+      "active": false,
+      "remove_on_deploy": false,
+      "reason": "Explicitly required disabled/inactive by RC6 history quarantine"
+    },
+    "systemd/porota-host-general-backup-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Required by current preopen readiness through its timer"
+    },
+    "systemd/porota-host-general-backup-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Required by current preopen readiness"
+    },
+    "systemd/porota-preopen-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Current fail-closed preopen readiness gate"
+    },
+    "systemd/porota-preopen-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Current fail-closed preopen schedule"
+    }
+  }
+}
