@@ -73,3 +73,17 @@ def test_rotating_batches_preserve_prior_symbols_in_latest_cache(tmp_path):
     result=collector.run_batch(["GGAL"], client, root=tmp_path, policy=policy())
     assert [row["symbol"] for row in result["symbols"]] == ["AAPL", "GGAL"]
     assert result["telemetry"]["calls_total"] >= 1
+
+
+def test_observation_parser_preserves_fixed_income_price_bases():
+    parsed = observation._quote_summary({
+        "unit_price": 841.3,
+        "trade": {
+            "lot_price": {"currency": "ARS", "value": 84130},
+            "timestamp": "2026-09-25T17:00:20-03:00",
+        },
+    })
+    assert parsed["last"] == 841.3
+    assert parsed["unit_price"] == 841.3
+    assert parsed["lot_price"] == 84130
+    assert parsed["provider_observed_at"] == "2026-09-25T17:00:20-03:00"
