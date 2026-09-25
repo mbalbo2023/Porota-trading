@@ -10,6 +10,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import InstrumentContract, cash_currency, family_name, contract_from_metadata
+from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 US_MARKET_WIDE_CEDEAR_HOLIDAYS = {
@@ -123,15 +124,19 @@ def normalize_record(raw, settlement_hint, observed_at, run_id):
     if not isinstance(raw, dict):
         raise ValueError("El registro de instrumento debe ser un objeto")
     ticker = str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
-    kind = str(raw.get("type") or raw.get("instrumentType") or "").strip().upper()
+    provider_kind = str(raw.get("type") or raw.get("instrumentType") or "").strip().upper()
+    kind = canonical_family(provider_kind)
     if not ticker or not kind:
         raise ValueError("Registro sin ticker o clase real del instrumento")
-    market = str(raw.get("market") or "UNKNOWN").strip().upper()
+    market = canonical_market(raw.get("market") or "UNKNOWN")
     try:
         currency = cash_currency(raw.get("currency"))
     except ValueError:
         currency = "UNKNOWN"
-    settlement = str(raw.get("settlement") or settlement_hint)
+    settlement = canonical_settlement(raw.get("settlement") or settlement_hint, kind)
+    raw = dict(raw)
+    raw.setdefault("_provider_instrument_type", provider_kind)
+    raw.setdefault("_discovery_source", "PPI_PRIMARY")
     value = dict(ticker=ticker, instrument_type=kind, market=market, currency=currency,
                  settlement=settlement, settlement_source="PPI_FIELD" if raw.get("settlement") else "REQUEST_CANDIDATE",
                  description=str(raw.get("description") or ""), last_seen_at=observed_at,
@@ -139,6 +144,31 @@ def normalize_record(raw, settlement_hint, observed_at, run_id):
     value["capability"] = capability(value)
     return value
 
+
+def normalize_complementary_record(raw, observed_at, run_id):
+    """Persist IOL/BYMA discovery without inventing missing PPI metadata."""
+    if not isinstance(raw, dict):
+        raise ValueError("Complementary record must be a dict")
+    ticker=str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
+    kind=canonical_family(raw.get("instrument_type") or raw.get("asset_type") or raw.get("family"))
+    market=canonical_market(raw.get("market") or "UNKNOWN")
+    settlement=canonical_settlement(raw.get("settlement") or raw.get("term"),kind) or "UNKNOWN"
+    if not ticker or not kind:
+        raise ValueError("Complementary record without identity")
+    try: currency=cash_currency(raw.get("currency"))
+    except ValueError: currency="UNKNOWN"
+    source=str(raw.get("source") or "COMPLEMENTARY").strip().upper()
+    metadata=dict(raw.get("raw") if isinstance(raw.get("raw"),dict) else raw)
+    metadata["_discovery_source"]=source
+    if raw.get("units_per_lot") not in (None,""): metadata["_iol_units_per_lot"]=raw.get("units_per_lot")
+    status="AVAILABLE" if currency!="UNKNOWN" and market!="UNKNOWN" and settlement!="UNKNOWN" else "OBSERVED_SHADOW"
+    value=dict(ticker=ticker,instrument_type=kind,market=market,currency=currency,settlement=settlement,
+               settlement_source=source,description=str(raw.get("description") or ""),last_seen_at=observed_at,
+               run_id=run_id,status=status,capability="",raw=metadata)
+    value["capability"]=capability(value)
+    if status!="AVAILABLE" and str(value["capability"]).startswith("READY_PAPER_"):
+        value["capability"]="DISCOVERED_COMPLEMENTARY_METADATA_INCOMPLETE"
+    return value
 
 def contract_for(record):
     if record["currency"] == "UNKNOWN" or record["market"] == "UNKNOWN":
@@ -167,10 +197,14 @@ def capability(record):
         spec = contract_for(record)
     except ValueError as exc:
         return str(exc)
+    if spec.family == "FUTUROS":
+        return "READY_PAPER_FUTURES" if spec.market in {"A3","ROFEX"} else "NEEDS_MARKET_EXECUTOR"
     if spec.market != "BYMA":
         return "NEEDS_MARKET_EXECUTOR"
     if spec.family in {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES"}:
         return "READY_PAPER_SPOT"
+    if spec.family == "OPCIONES":
+        return "READY_PAPER_OPTIONS"
     return "NEEDS_SPECIALIZED_EXECUTOR"
 
 
@@ -221,7 +255,7 @@ def quote_terms(record):
         spec = contract_for(record)
     except ValueError:
         pass
-    reason = "" if record["capability"] == "READY_PAPER_SPOT" else record["capability"]
+    reason = "" if str(record["capability"]).startswith("READY_PAPER_") else record["capability"]
     if record["status"] != "AVAILABLE":
         reason = "Catálogo no confirmado en la última actualización"
     holiday_reason = rc6_underlying_opening_block(record["ticker"], record["instrument_type"])
