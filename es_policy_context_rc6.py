@@ -121,6 +121,29 @@ def _reviewed_sector_mapping(sector_map: dict[tuple, dict], key: tuple) -> dict 
     return resolved
 
 
+def _reviewed_underlying_sector_mapping(sector_map: dict[tuple, dict], underlying: str,
+                                        market: str = "BYMA") -> dict | None:
+    """Resolve an option's sector from its reviewed underlying identity.
+
+    The option ticker itself is not an issuer and therefore should not require
+    a duplicate sector-map row.  We inherit only when all reviewed rows for
+    the exact underlying/market agree on one sector; ambiguity remains blocked.
+    """
+    symbol=str(underlying or "").upper().strip()
+    market=str(market or "").upper().strip()
+    if not symbol:
+        return None
+    matches=[row for key,row in sector_map.items()
+             if str(key[0]).upper()==symbol and str(key[2]).upper()==market]
+    sectors={str(row.get("sector") or "").strip() for row in matches
+             if str(row.get("sector") or "").strip()}
+    if len(sectors) != 1:
+        return None
+    resolved=dict(matches[0])
+    resolved["resolution"]="REVIEWED_UNDERLYING_SECTOR"
+    return resolved
+
+
 def collect(store, *, at=None, candidate=None) -> dict:
     """Return read-only observations; missing evidence stays explicit."""
     day_start = _local_day_start(at)
@@ -133,7 +156,7 @@ def collect(store, *, at=None, candidate=None) -> dict:
         positions = []
         if "paper_positions" in tables:
             for row in c.execute(
-                """SELECT paper_id,symbol,asset_class,market,currency,settlement
+                """SELECT paper_id,symbol,asset_class,market,currency,settlement,features_json
                    FROM paper_positions WHERE status='OPEN' ORDER BY opened_at"""
             ):
                 item = dict(row)
@@ -145,6 +168,15 @@ def collect(store, *, at=None, candidate=None) -> dict:
                     str(item.get("settlement") or "").upper(),
                 )
                 mapped = _reviewed_sector_mapping(sector_map, key)
+                if not mapped and str(item.get("asset_class") or "").upper() == "OPCIONES":
+                    try:
+                        import json
+                        features=json.loads(item.get("features_json") or "{}")
+                        underlying=(features.get("financial_contract") or {}).get("underlying")
+                    except (TypeError,ValueError,json.JSONDecodeError):
+                        underlying=None
+                    mapped=_reviewed_underlying_sector_mapping(
+                        sector_map, underlying, item.get("market") or "BYMA")
                 item["sector"] = mapped.get("sector") if mapped else None
                 item["sector_source"] = mapped.get("source") if mapped else None
                 positions.append(item)
@@ -160,6 +192,9 @@ def collect(store, *, at=None, candidate=None) -> dict:
             str(candidate.get("settlement") or "").upper(),
         )
         mapped = _reviewed_sector_mapping(sector_map, key)
+        if not mapped and str(candidate.get("family") or candidate.get("asset_class") or "").upper() == "OPCIONES":
+            mapped = _reviewed_underlying_sector_mapping(
+                sector_map, candidate.get("underlying"), candidate.get("market") or "BYMA")
         candidate_sector = mapped.get("sector") if mapped else None
     return {
         "expectancy_samples": expectancy,
