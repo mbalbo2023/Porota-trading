@@ -67,22 +67,51 @@ def container(name, require_readonly=False):
 
 
 def observer_db():
+    """Lightweight live-state probe; full SQLite scans are delegated postclose."""
     try:
-        c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=20)
+        c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=5)
         c.row_factory = sqlite3.Row
         c.execute('PRAGMA query_only=ON')
-        qc = c.execute('PRAGMA quick_check').fetchone()[0]
         row = c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
         c.close()
         state = dict(row) if row else {}
         auth = str(state.get('ppi_auth') or '').upper()
         phase = str(state.get('session_state') or '').upper()
         auth_ok = auth in {'OK','AUTHENTICATED'} or (phase == 'MARKET_CLOSED' and auth == 'NOT_ATTEMPTED')
-        ok = (qc == 'ok' and state.get('mode') == 'PRODUCTION_PAPER' and
+        ok = (state.get('mode') == 'PRODUCTION_PAPER' and
               int(state.get('real_orders_sent') or 0) == 0 and auth_ok)
-        return {'state':'GREEN' if ok else 'RED','quick_check':qc,'observer_state':state}
+        return {
+            'state':'GREEN' if ok else 'RED',
+            'observer_state':state,
+            'integrity_scan':'DELEGATED_TO_porota-full-db-integrity-rc6.service',
+        }
     except Exception as exc:
         return {'state':'RED','detail':f'{type(exc).__name__}:{exc}'}
+
+
+def full_db_integrity_evidence():
+    """Require a completed successful run without performing a live full DB scan."""
+    rc1, result, err1 = cmd([
+        'systemctl','show','porota-full-db-integrity-rc6.service','-p','Result','--value'
+    ])
+    rc2, status, err2 = cmd([
+        'systemctl','show','porota-full-db-integrity-rc6.service','-p','ExecMainStatus','--value'
+    ])
+    rc3, last_exit, err3 = cmd([
+        'systemctl','show','porota-full-db-integrity-rc6.service','-p','ExecMainExitTimestamp','--value'
+    ])
+    ok = (
+        rc1 == 0 and rc2 == 0 and rc3 == 0 and
+        result == 'success' and status == '0' and bool(last_exit.strip())
+    )
+    return {
+        'state':'GREEN' if ok else 'RED',
+        'result':result,
+        'exec_main_status':status,
+        'last_exit':last_exit,
+        'error':' | '.join(x for x in (err1,err2,err3) if x),
+        'policy':'FULL_SCAN_POSTCLOSE_ONLY',
+    }
 
 
 BLOCKED_HISTORY_TIMERS = (
@@ -169,6 +198,7 @@ def main():
         'observer_container': container('porota_production_observer', True),
         'dashboard_container': container('porota_production_dashboard', False),
         'observer_db': observer_db(),
+        'full_db_integrity': full_db_integrity_evidence(),
         'disk': {'state':'GREEN' if free >= MIN_FREE_BYTES else 'RED','free':free,'minimum':MIN_FREE_BYTES},
         'required_rc6_timers': required_timers(),
         'history_quarantine': blocked_history_timers(),
