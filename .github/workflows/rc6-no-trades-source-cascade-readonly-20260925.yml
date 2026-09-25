@@ -1,0 +1,127 @@
+name: RC6 No Trades Source Cascade Audit Readonly
+
+on:
+  push:
+    branches:
+      - audit/rc6-no-trades-source-cascade-20260925
+    paths:
+      - rc6_no_trades_source_cascade_audit.py
+      - .github/workflows/rc6-no-trades-source-cascade-readonly-20260925.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-no-trades-source-cascade-readonly
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Static safety
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_no_trades_source_cascade_audit.py
+          grep -q 'mode=ro' rc6_no_trades_source_cascade_audit.py
+          grep -q 'PRAGMA query_only=ON' rc6_no_trades_source_cascade_audit.py
+          ! grep -Eq 'requests\.|urllib|httpx|subprocess|os\.system' rc6_no_trades_source_cascade_audit.py
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Verify PAPER safety before audit
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          STATE="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer python -c \"import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('PRAGMA query_only=ON');r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone();print('|'.join(map(str,r)));c.close()\"")"
+          echo "PRE_SAFETY=$STATE"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+
+      - name: Run no-trades and source-cascade audit
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n python3 - --db /opt/porota-trading/data/paper_v17/observer_v17.db --market-root /opt/porota-trading/data/market"             < rc6_no_trades_source_cascade_audit.py > rc6_no_trades_source_cascade_audit.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('rc6_no_trades_source_cascade_audit.json').read_text(encoding='utf-8'))
+          assert r['read_only'] is True
+          db=r['db']
+          state=db.get('observer_state') or {}
+          print('AUDIT_OBSERVER_STATE='+json.dumps(state,sort_keys=True))
+          print('AUDIT_POSITIONS='+json.dumps(db.get('positions',{}),sort_keys=True))
+          print('AUDIT_DECISIONS='+json.dumps(db.get('decisions',{}),sort_keys=True))
+          print('AUDIT_GATES='+json.dumps(db.get('gates',{}),sort_keys=True))
+          print('AUDIT_FILLS='+json.dumps(db.get('fills',{}),sort_keys=True))
+          print('AUDIT_EVENTS='+json.dumps(db.get('events',{}),sort_keys=True))
+          print('AUDIT_MARKET_SNAPSHOTS='+json.dumps(db.get('market_snapshots',{}),sort_keys=True))
+          print('AUDIT_SOURCE_SYNC='+json.dumps(db.get('source_sync',[]),sort_keys=True))
+          print('AUDIT_HEALTH_TABLES='+json.dumps(db.get('health_tables',[]),sort_keys=True))
+          print('AUDIT_HEALTH_SAMPLES='+json.dumps(db.get('health_samples',{}),sort_keys=True))
+          print('AUDIT_CACHES='+json.dumps(r.get('caches',{}),sort_keys=True))
+          PY
+
+      - name: Inspect source services and timers read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "SOURCE_TIMERS_BEGIN"
+          systemctl list-timers --all --no-pager | grep -Ei 'porota|iol|byma|source|evidence' || true
+          echo "SOURCE_TIMERS_END"
+          for u in porota-iol-shadow-collector-rc6.timer porota-iol-shadow-collector-rc6.service; do
+            echo "UNIT=$u"
+            sudo -n systemctl show "$u" -p ActiveState -p SubState -p Result -p ExecMainStatus -p LastTriggerUSec -p NextElapseUSecRealtime -p UnitFileState --no-pager || true
+          done
+          echo "IOL_JOURNAL_TODAY_BEGIN"
+          sudo -n journalctl -u porota-iol-shadow-collector-rc6.service --since today --no-pager -n 120 2>/dev/null | tail -n 120 || true
+          echo "IOL_JOURNAL_TODAY_END"
+          REMOTE
+
+      - name: Verify PAPER safety after audit
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          STATE="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST"             "sudo -n docker exec -i porota_production_observer python -c \"import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('PRAGMA query_only=ON');r=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone();print('|'.join(map(str,r)));c.close()\"")"
+          echo "POST_SAFETY=$STATE"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+          echo "NO_MUTATIONS=TRUE"
+          echo "RC6_NO_TRADES_SOURCE_CASCADE_AUDIT=GREEN"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc6-no-trades-source-cascade-${{ github.run_id }}
+          path: rc6_no_trades_source_cascade_audit.json
+          if-no-files-found: error
+          retention-days: 30
