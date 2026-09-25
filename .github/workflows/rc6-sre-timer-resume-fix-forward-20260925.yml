@@ -88,7 +88,9 @@ jobs:
           echo "FAST_SERVICE_RESULT=$(systemctl show -p Result --value porota-fast-functional-health-rc6.service 2>/dev/null || true)"
           echo "FAST_SERVICE_STATUS=$(systemctl show -p ExecMainStatus --value porota-fast-functional-health-rc6.service 2>/dev/null || true)"
           systemctl status porota-fast-functional-health-rc6.service --no-pager -l 2>/dev/null || true
-          journalctl -u porota-fast-functional-health-rc6.service -n 80 --no-pager 2>/dev/null || true
+          sudo -n journalctl -u porota-fast-functional-health-rc6.service -n 80 --no-pager 2>/dev/null || true
+          echo "===FAST_HEALTH_DIRECT_READONLY_PROBE==="
+          sudo -n env PYTHONPATH=/opt/porota-trading PAPER_V17_DB_PATH=/opt/porota-trading/data/paper_v17/observer_v17.db /usr/bin/python3 /usr/local/lib/porota-sre-rc6/rc6_fast_functional_health.py || true
           echo "ROOT_CAUSE=TEMPORARY_INGESTION_ISOLATION_34702034967_FAILED_AFTER_DISABLE"
           echo "PREFLIGHT_MUTATION=NONE"
           REMOTE
