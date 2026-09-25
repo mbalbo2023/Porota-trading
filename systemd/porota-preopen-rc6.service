@@ -6,5 +6,6 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/porota-trading
-ExecStart=/usr/bin/python3 /opt/porota-trading/rc6_preopen.py
+Environment=PYTHONPATH=/opt/porota-trading
+ExecStart=/usr/bin/python3 /usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py
 TimeoutStartSec=5min
