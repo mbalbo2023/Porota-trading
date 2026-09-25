@@ -1,0 +1,37 @@
+name: RC6 Multisource PAPER Promotion CI
+
+on:
+  push:
+    branches:
+      - fix/rc6-multisource-paper-promotion-20260925
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check "pytest>=8.3,<9" requests fastapi python-dotenv
+      - name: Compile corrected modules
+        run: |
+          python -m py_compile rc6_dynamic_discovery.py rc6_multisource_contracts.py             bu_instrument_catalog.py bf_production_paper_observer.py be_paper_engine.py ck_policy_gate_hf6.py
+      - name: Run focused regression suite
+        run: |
+          python -m pytest -q             tests/test_rc6_dynamic_discovery.py             tests/test_rc6_multisource_contracts.py             tests/test_rc6_operational_scope.py             tests/test_rc6_deploy_runtime_completeness.py             tests/test_ppi_documented_contract_v17.py             tests/test_production_paper_v1634.py
+      - name: Assert real-order invariant in changed modules
+        run: |
+          python - <<'PY'
+          import rc6_multisource_contracts as c
+          assert all(not c.readiness(f, [])["real_money_authorized"] for f in c.PAPER_REQUIRED)
+          print("RC6_MULTISOURCE_REAL_MONEY=BLOCKED")
+          PY
