@@ -1412,7 +1412,7 @@ def test_fases_de_mercado_impiden_operar_fuera_de_rueda(monkeypatch):
     assert observer._market_phase(after) == "CLOSED"
 
 
-def test_universo_ampliado_mantiene_derivados_solo_contexto(monkeypatch, tmp_path):
+def test_universo_ampliado_incluye_derivados_en_paper_shadow(monkeypatch, tmp_path):
     watchlist = tmp_path / "watchlist.json"
     watchlist.write_text(json.dumps({
         "ACCIONES": {"instrument_type": "ACCIONES", "settlement": "A-24HS",
@@ -1423,7 +1423,10 @@ def test_universo_ampliado_mantiene_derivados_solo_contexto(monkeypatch, tmp_pat
     monkeypatch.setattr(observer, "WATCHLIST_PATH", watchlist)
     candidates = observer._candidate_universe()
     assert any(row[0] == "YPFD" and row[4] for row in candidates)
-    assert any(row[1] == "FUTUROS" and not row[4] for row in candidates)
+    # RC6 current scope allows expanded families to enter PAPER/SHADOW.
+    # Contract/readiness gates still decide whether an instrument can actually
+    # simulate; this flag never authorizes real-money execution.
+    assert any(row[1] == "FUTUROS" and row[4] for row in candidates)
 
 
 def test_rc6_ia_intradia_esta_retirada_del_porton_operativo():
