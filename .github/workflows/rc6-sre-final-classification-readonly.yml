@@ -222,20 +222,18 @@ jobs:
           echo "---OBSERVER_SAFETY---"
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           import json,sqlite3
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
           c.execute('PRAGMA query_only=ON')
-          quick=c.execute('PRAGMA quick_check').fetchone()[0]
           cols=[r[1] for r in c.execute('PRAGMA table_info(observer_state)')]
           wanted=[x for x in ('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at') if x in cols]
           row=c.execute('SELECT '+','.join(wanted)+' FROM observer_state WHERE id=1').fetchone()
           c.close()
           state=dict(zip(wanted,row or []))
-          print('DB_QUICK_CHECK='+str(quick))
           print('OBSERVER_STATE='+json.dumps(state,sort_keys=True,default=str))
-          assert quick=='ok'
           assert state.get('mode')=='PRODUCTION_PAPER'
           assert int(state.get('real_orders_sent') or 0)==0
           PY
+          echo "FULL_DB_SCAN=SKIPPED_IN_LIVE_AUDIT|reason=dedicated_postclose_integrity_only"
           echo "===OPERATIONAL_EVIDENCE_END==="
           REMOTE
 
