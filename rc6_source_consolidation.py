@@ -29,8 +29,38 @@ SOURCE_URLS = {
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+_FAMILY_ALIASES = {
+    "ACCION": "ACCIONES", "ACCIONES": "ACCIONES", "CEDEAR": "CEDEARS", "CEDEARS": "CEDEARS",
+    "ETF": "ETFS", "ETFS": "ETFS", "BONO": "BONOS", "BONOS": "BONOS",
+    "LETRA": "LETRAS", "LETRAS": "LETRAS", "ON": "OBLIGACIONES",
+    "OBLIGACION": "OBLIGACIONES", "OBLIGACIONES": "OBLIGACIONES",
+    "OPCION": "OPCIONES", "OPCIONES": "OPCIONES", "FUTURO": "FUTUROS",
+    "FUTUROS": "FUTUROS", "CAUCION": "CAUCIONES", "CAUCIONES": "CAUCIONES",
+    "FCI": "FCI",
+}
+_MARKET_ALIASES = {"BCBA": "BYMA", "BYMA": "BYMA", "ROFEX": "A3", "A3": "A3"}
+_TERM_ALIASES = {"T1": "A-24HS", "24HS": "A-24HS", "A-24HS": "A-24HS",
+                 "T0": "INMEDIATA", "CI": "INMEDIATA", "INMEDIATA": "INMEDIATA"}
+
+def _canonical_family(value: Any) -> str:
+    raw = str(value or "").strip().upper().replace("_", "").replace("-", "").replace(" ", "")
+    return _FAMILY_ALIASES.get(raw, str(value or "").strip().upper())
+
+def _canonical_market(value: Any) -> str:
+    raw = str(value or "").strip().upper()
+    return _MARKET_ALIASES.get(raw, raw)
+
+def _canonical_term(value: Any) -> str:
+    raw = str(value or "").strip().upper()
+    return _TERM_ALIASES.get(raw, raw)
+
 def _key(row: dict[str, Any]) -> tuple[str, str, str, str]:
-    return tuple(str(row.get(k) or "").strip().upper() for k in ("family", "symbol", "market", "term"))
+    return (
+        _canonical_family(row.get("family") or row.get("asset_type") or row.get("asset_class")),
+        str(row.get("symbol") or row.get("ticker") or "").strip().upper(),
+        _canonical_market(row.get("market")),
+        _canonical_term(row.get("term") or row.get("settlement")),
+    )
 
 def _num(value: Any) -> float | None:
     try:
@@ -68,17 +98,19 @@ def _cascade_fields(primary: dict[str, Any], iol: dict[str, Any], official: dict
 
 def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
                 official_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """Merge by identity; never fill a primary field with secondary data."""
-    secondary = {_key(row): row for row in iol_rows if isinstance(row, dict)}
-    official = {_key(row): row for row in (official_rows or []) if isinstance(row, dict)}
+    """Union de identidades con prioridad de campos PPI -> IOL -> BYMA.
+
+    Una fuente complementaria puede descubrir una identidad ausente de PPI,
+    pero nunca reemplaza un valor PPI presente. La procedencia queda explícita.
+    """
+    primary_map = {_key(row): row for row in ppi_rows if isinstance(row, dict) and _key(row)[1]}
+    secondary = {_key(row): row for row in iol_rows if isinstance(row, dict) and _key(row)[1]}
+    official = {_key(row): row for row in (official_rows or []) if isinstance(row, dict) and _key(row)[1]}
     rows = []
-    for ppi in ppi_rows:
-        if not isinstance(ppi, dict):
-            continue
-        key = _key(ppi)
+    for key in sorted(set(primary_map) | set(secondary) | set(official)):
+        primary = dict(primary_map.get(key, {}))
         iol = secondary.get(key, {})
         ext = official.get(key, {})
-        primary = dict(ppi)
         complement = {
             "last": _num(iol.get("last")),
             "bid": _num(iol.get("bid")),
@@ -111,6 +143,7 @@ def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
             "freshness": {
                 "PPI": _age_status(primary.get("provider_observed_at") or primary.get("observed_at")),
                 "IOL": _age_status(complement.get("provider_observed_at")),
+                "BYMA": _age_status(ext.get("provider_observed_at") or ext.get("observed_at")),
             },
             "decision_effect": "OBSERVE_ONLY",
             "shadow_promotion": True,
@@ -119,7 +152,7 @@ def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
         })
     return {
         "schema": SCHEMA,
-        "source_order": "PPI_PRIMARY_IOL_COMPLEMENTARY_OFFICIAL_REFERENCE",
+        "source_order": "PPI_PRIMARY_IOL_COMPLEMENTARY_BYMA_PUBLIC_COMPLEMENTARY",
         "collected_at": _now(),
         "rows": rows,
         "counts": {
@@ -176,7 +209,7 @@ def _parse_html_tables(text: str) -> list[dict[str, Any]]:
                 records.append(item)
     return records[:500]
 
-def _normalize_public_records(source: str, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _normalize_public_records(source: str, records: list[dict[str, Any]], *, family: str = "") -> list[dict[str, Any]]:
     aliases={
         "symbol": ("especie","símbolo","simbolo","ticker","symbol","code"),
         "currency": ("moneda","currency"),
@@ -194,7 +227,7 @@ def _normalize_public_records(source: str, records: list[dict[str, Any]]) -> lis
     }
     out=[]
     for raw in records:
-        normalized={"source":source}
+        normalized={"source":source, "family": _canonical_family(family), "market": "BYMA"}
         lowered={_clean_text(k).lower():v for k,v in raw.items()}
         for field,names in aliases.items():
             for name in names:
@@ -246,7 +279,7 @@ def parse_public_payload(source: str, url: str, body: bytes, http_status: int = 
         "observed_at": _now(), "scrape_method": "json",
     }
 
-def _byma_post(url: str, endpoint: str) -> dict[str, Any]:
+def _byma_post(url: str, endpoint: str, family: str) -> dict[str, Any]:
     target = url.rstrip("/") + "/vanoms-be-core/rest/api/bymadata/free/" + endpoint
     body = json.dumps({
         "excludeZeroPxAndQty": True, "T1": True, "T0": False,
@@ -262,8 +295,13 @@ def _byma_post(url: str, endpoint: str) -> dict[str, Any]:
     if len(payload) > MAX_BYTES:
         raise ValueError("PUBLIC_SOURCE_RESPONSE_TOO_LARGE")
     result = parse_public_payload("BYMA", target, payload, status)
+    result["records"] = _normalize_public_records("BYMA", _json_records(json.loads(payload.decode("utf-8", errors="replace"))), family=family)
+    result["record_count"] = len(result["records"])
+    result["structured"] = bool(result["records"])
+    result["status"] = "SCRAPED_PUBLIC_DATA" if result["records"] else "REFERENCE_ONLY"
     result["scrape_method"] = "bymadata_public_post"
     result["endpoint"] = endpoint
+    result["family"] = _canonical_family(family)
     return result
 
 
@@ -271,9 +309,17 @@ def _collect_byma_public(base_url: str) -> dict[str, Any]:
     merged: list[dict[str, Any]] = []
     endpoint_results = []
     errors = []
-    for endpoint in ("leading-equity", "cedears"):
+    endpoint_families = (
+        ("leading-equity", "ACCIONES"),
+        ("cedears", "CEDEARS"),
+        ("public-bonds", "BONOS"),
+        ("negociable-obligations", "OBLIGACIONES"),
+        ("cauciones", "CAUCIONES"),
+        ("options", "OPCIONES"),
+    )
+    for endpoint, family in endpoint_families:
         try:
-            result = _byma_post(base_url, endpoint)
+            result = _byma_post(base_url, endpoint, family)
             endpoint_results.append(result)
             merged.extend(result.get("records", []))
         except Exception as exc:
@@ -282,7 +328,8 @@ def _collect_byma_public(base_url: str) -> dict[str, Any]:
     # when the public panel returns duplicated pagination fragments.
     unique = {}
     for row in merged:
-        key = tuple(str(row.get(k) or "") for k in ("symbol", "currency", "maturity"))
+        key = (_canonical_family(row.get("family")), str(row.get("symbol") or "").upper(),
+               str(row.get("currency") or "").upper(), str(row.get("maturity") or ""))
         unique[key] = row
     records = list(unique.values())
     return {

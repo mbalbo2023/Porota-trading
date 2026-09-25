@@ -5,7 +5,7 @@ def test_ready_instrument_promotes_only_paper():
     report = readiness.evaluate(
         [{"family": "ACCIONES", "symbol": "YPFD", "market": "BYMA", "settlement": "A-24HS"}],
         [{"symbol": "YPFD", "asset_type": "ACCIONES",
-          "primary_comparison": {"contract_state": "READY_SHADOW"}}],
+          "primary_comparison": {"contract_state": "READY_PAPER_SHADOW"}}],
     )
     item = report["instruments"][0]
     assert item["paper_auto_enabled"] is True
@@ -29,17 +29,18 @@ def test_one_family_does_not_block_another():
         [{"family": "ACCIONES", "symbol": "YPFD"},
          {"family": "BONOS", "symbol": "AL30"}],
         [{"symbol": "YPFD", "asset_type": "ACCIONES",
-          "primary_comparison": {"contract_state": "READY_SHADOW"}}],
+          "primary_comparison": {"contract_state": "READY_PAPER_SHADOW"}}],
     )
     states = {item["family"]: item["state"] for item in report["families"]}
     assert states["ACCIONES"] == "READY"
     assert states["BONOS"] == "PENDING"
 
 
-def test_ready_paper_and_ready_shadow_are_both_simulatable():
+def test_only_explicit_paper_states_are_simulatable():
     assert "READY_PAPER" in readiness.PAPER_SIMULATABLE_STATES
     assert "READY_PAPER_SHADOW" in readiness.PAPER_SIMULATABLE_STATES
-    assert "READY_SHADOW" in readiness.PAPER_SIMULATABLE_STATES
+    assert "READY_SHADOW" not in readiness.PAPER_SIMULATABLE_STATES
+    assert "READY_SHADOW_PARTIAL" not in readiness.PAPER_SIMULATABLE_STATES
 
 
 def test_complemented_source_state_does_not_authorize_real_money():
@@ -57,7 +58,7 @@ def test_complemented_source_state_does_not_authorize_real_money():
     assert item["real_money_authorized"] is False
 
 
-def test_partial_shadow_is_simulatable_without_real_authority():
+def test_partial_shadow_is_observable_but_not_paper_simulatable():
     report = readiness.evaluate(
         [{"family": "CAUCIONES", "symbol": "CAUCION-1", "market": "BYMA"}],
         [{"symbol": "CAUCION-1", "asset_type": "CAUCIONES",
@@ -67,7 +68,7 @@ def test_partial_shadow_is_simulatable_without_real_authority():
           }}],
     )
     item = report["instruments"][0]
-    assert item["paper_auto_enabled"] is True
+    assert item["paper_auto_enabled"] is False
     assert item["real_money_authorized"] is False
 
 

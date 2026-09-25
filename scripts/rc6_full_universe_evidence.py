@@ -91,7 +91,7 @@ def catalog_rows() -> list[dict[str, Any]]:
         family = "instrument_type" if "instrument_type" in columns else "family" if "family" in columns else None
         if not ticker:
             return []
-        selected = [ticker] + [name for name in ("id", family, "market", "settlement", "term", "status")
+        selected = [ticker] + [name for name in ("id", family, "market", "settlement", "term", "status", "capability")
                                if name and name in columns and name != ticker]
         status_clause = " WHERE upper(COALESCE(status,'')) IN ('AVAILABLE','ACTIVE','READY')" if "status" in columns else ""
         raw_rows = conn.execute(
@@ -103,7 +103,7 @@ def catalog_rows() -> list[dict[str, Any]]:
             if not symbol:
                 continue
             item = {"symbol": symbol, "family": normalize_family(raw[positions[family]]) if family else "UNKNOWN"}
-            for name in ("market", "settlement", "term", "id"):
+            for name in ("market", "settlement", "term", "id", "capability", "status"):
                 if name in positions and raw[positions[name]] is not None:
                     item[name] = raw[positions[name]]
             rows.append(item)
@@ -259,20 +259,26 @@ def build() -> dict[str, Any]:
         fresh = [name for name, detail in sources.items()
                  if detail["freshness"]["state"] == "FRESH"]
         attempted = bool(available or any(detail["present"] for detail in sources.values()))
-        if "PPI" in fresh and len(available) >= 2:
+        capability = str(item.get("capability") or "UNKNOWN")
+        contract_ready = capability.startswith("READY_PAPER_")
+        if contract_ready and "PPI" in fresh and len(available) >= 2:
             status, paper_enabled = "READY_PAPER_SHADOW", True
-            reason = "PPI_PRIMARY_PLUS_COMPLEMENTARY_SOURCE"
+            reason = "CONTRACT_READY_PPI_PRIMARY_PLUS_COMPLEMENTARY_SOURCE"
+        elif contract_ready and fresh:
+            status, paper_enabled = "READY_PAPER_PARTIAL_SOURCE", True
+            reason = "CONTRACT_READY_WITH_FRESH_SOURCE"
         elif fresh:
-            status, paper_enabled = "READY_SHADOW_PARTIAL", True
-            reason = "OBSERVATION_SOURCE_AVAILABLE_WITH_EXPLICIT_PARTIAL_EVIDENCE"
+            status, paper_enabled = "READY_SHADOW_PARTIAL", False
+            reason = "SOURCE_READY_BUT_CONTRACT_OR_EXECUTOR_NOT_READY:" + capability
         else:
             status, paper_enabled = "PENDING_EVIDENCE", False
-            reason = "NO_FRESH_STRUCTURED_SOURCE"
+            reason = "NO_FRESH_STRUCTURED_SOURCE:" + capability
         rows.append({
             "family": item["family"], "symbol": symbol,
             "market": item.get("market") or "BCBA",
             "settlement": item.get("settlement") or item.get("term") or "",
             "status": status, "paper_auto_enabled": paper_enabled,
+            "contract_capability": capability,
             "real_money_authorized": False,
             "sources": sources,
             "ingestion": {
@@ -305,6 +311,7 @@ def build() -> dict[str, Any]:
             "paper_shadow_ready": sum(row["paper_auto_enabled"] for row in rows),
             "ready_paper_shadow": sum(row["status"] == "READY_PAPER_SHADOW" for row in rows),
             "ready_shadow_partial": sum(row["status"] == "READY_SHADOW_PARTIAL" for row in rows),
+            "ready_paper_partial_source": sum(row["status"] == "READY_PAPER_PARTIAL_SOURCE" for row in rows),
             "pending_evidence": sum(row["status"] == "PENDING_EVIDENCE" for row in rows),
             "blocked": sum(row["status"].startswith("BLOCKED") for row in rows),
             "ingestion_attempted": sum(row["ingestion"]["any_source_attempted"] for row in rows),

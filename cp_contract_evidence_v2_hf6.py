@@ -341,30 +341,20 @@ def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
             except Exception:
                 freshness_ok = False
                 break
-    # Complete source evidence is enough for PAPER/SHADOW. The live
-    # executor/cost gates remain separate and can still veto real routes.
-    shadow_enabled = os.getenv("RC6_PAPER_SHADOW_ENABLED", "ON").upper() in {
-        "ON", "TRUE", "1", "SHADOW",
-    }
+    # Evidence completeness is distinct from execution readiness.
+    # SHADOW observation can remain enabled, but it cannot fabricate a PAPER
+    # simulator or a certified cost model for a family.
     result = evaluate_family(
         family, merged,
-        simulator_ready=bool(simulator_ready) or shadow_enabled,
-        cost_ready=bool(cost_ready) or shadow_enabled,
+        simulator_ready=bool(simulator_ready),
+        cost_ready=bool(cost_ready),
         freshness_ok=freshness_ok,
         source_conflict=bool(conflicts),
     )
-    # PPI remains primary; IOL/BYMA may complete the contract. Once the
-    # merged evidence is complete, fresh and conflict-free, it is available
-    # for PAPER/SHADOW even when a live-money executor is not involved.
-    if result.get("status") == "READY_PAPER_CANDIDATE":
-        result = {
-            **result,
-            "status": "READY_PAPER_SHADOW",
-            "paper_simulatable": True,
-            "paper_execution_mode": "SHADOW",
-        }
+    paper_ready = result.get("status") == "READY_PAPER_CANDIDATE"
     return {**result, "evidence": merged, "conflicts": conflicts,
-            "paper_auto_enabled": result.get("status") in {
-                "READY_PAPER_CANDIDATE", "READY_PAPER_SHADOW"},
+            "paper_simulatable": paper_ready,
+            "paper_execution_mode": "PAPER" if paper_ready else "SHADOW_OBSERVE_ONLY",
+            "paper_auto_enabled": paper_ready,
             "auto_activation_allowed": False,
             "real_money_authorized": False}

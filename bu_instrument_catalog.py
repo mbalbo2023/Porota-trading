@@ -10,6 +10,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import InstrumentContract, cash_currency, family_name, contract_from_metadata
+from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 US_MARKET_WIDE_CEDEAR_HOLIDAYS = {
@@ -93,7 +94,8 @@ def persist_family_coverage(c, configuration, query_results, records, run_id, ob
     Mantiene familias retiradas y las conocidas si falla la configuración.
     """
     records = list(records)
-    declared = set(configuration['instrument_types']) if configuration is not None else None
+    declared = ({canonical_family(value) for value in configuration['instrument_types']}
+                if configuration is not None else None)
     families = {r[0] for r in c.execute('SELECT instrument_type FROM catalog_family_coverage')}
     families.update(declared or ())
     families.update(q[3] for q in query_results)
@@ -116,22 +118,26 @@ def persist_family_coverage(c, configuration, query_results, records, run_id, ob
             state = 'DECLARED_NO_QUERY' if listed == 1 else 'CONFIGURATION_UNAVAILABLE'
         c.execute('INSERT OR REPLACE INTO catalog_family_coverage VALUES(?,?,?,?,?,?,?,?)',
             (kind, run_id, listed, len(queries), len(observed),
-             sum(r['capability'] == 'READY_PAPER_SPOT' for r in observed), state, observed_at))
+             sum(str(r['capability']).startswith('READY_PAPER_') for r in observed), state, observed_at))
 
 
 def normalize_record(raw, settlement_hint, observed_at, run_id):
     if not isinstance(raw, dict):
         raise ValueError("El registro de instrumento debe ser un objeto")
     ticker = str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
-    kind = str(raw.get("type") or raw.get("instrumentType") or "").strip().upper()
+    provider_kind = str(raw.get("type") or raw.get("instrumentType") or "").strip().upper()
+    kind = canonical_family(provider_kind)
     if not ticker or not kind:
         raise ValueError("Registro sin ticker o clase real del instrumento")
-    market = str(raw.get("market") or "UNKNOWN").strip().upper()
+    market = canonical_market(raw.get("market") or "UNKNOWN")
     try:
         currency = cash_currency(raw.get("currency"))
     except ValueError:
         currency = "UNKNOWN"
-    settlement = str(raw.get("settlement") or settlement_hint)
+    settlement = canonical_settlement(raw.get("settlement") or settlement_hint, kind)
+    raw = dict(raw)
+    raw.setdefault("_provider_instrument_type", provider_kind)
+    raw.setdefault("_discovery_source", "PPI_PRIMARY")
     value = dict(ticker=ticker, instrument_type=kind, market=market, currency=currency,
                  settlement=settlement, settlement_source="PPI_FIELD" if raw.get("settlement") else "REQUEST_CANDIDATE",
                  description=str(raw.get("description") or ""), last_seen_at=observed_at,
@@ -139,6 +145,36 @@ def normalize_record(raw, settlement_hint, observed_at, run_id):
     value["capability"] = capability(value)
     return value
 
+
+def normalize_complementary_record(raw, observed_at, run_id):
+    """Persist IOL/BYMA discovery without inventing missing PPI metadata."""
+    if not isinstance(raw, dict):
+        raise ValueError("Complementary record must be a dict")
+    ticker=str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
+    kind=canonical_family(raw.get("instrument_type") or raw.get("asset_type") or raw.get("family"))
+    market=canonical_market(raw.get("market") or "UNKNOWN")
+    settlement=canonical_settlement(raw.get("settlement") or raw.get("term"),kind) or "UNKNOWN"
+    if not ticker or not kind:
+        raise ValueError("Complementary record without identity")
+    try: currency=cash_currency(raw.get("currency"))
+    except ValueError: currency="UNKNOWN"
+    source=str(raw.get("source") or "COMPLEMENTARY").strip().upper()
+    metadata=dict(raw.get("raw") if isinstance(raw.get("raw"),dict) else {})
+    # Preserve normalized complementary contract evidence at top level. It is
+    # considered only when no PPI-primary identity already exists.
+    for key,value in raw.items():
+        if key not in {"raw"} and value not in (None,""):
+            metadata[key]=value
+    metadata["_discovery_source"]=source
+    if raw.get("units_per_lot") not in (None,""): metadata["_iol_units_per_lot"]=raw.get("units_per_lot")
+    status="AVAILABLE" if currency!="UNKNOWN" and market!="UNKNOWN" and settlement!="UNKNOWN" else "OBSERVED_SHADOW"
+    value=dict(ticker=ticker,instrument_type=kind,market=market,currency=currency,settlement=settlement,
+               settlement_source=source,description=str(raw.get("description") or ""),last_seen_at=observed_at,
+               run_id=run_id,status=status,capability="",raw=metadata)
+    value["capability"]=capability(value)
+    if status!="AVAILABLE" and str(value["capability"]).startswith("READY_PAPER_"):
+        value["capability"]="DISCOVERED_COMPLEMENTARY_METADATA_INCOMPLETE"
+    return value
 
 def contract_for(record):
     if record["currency"] == "UNKNOWN" or record["market"] == "UNKNOWN":
@@ -167,12 +203,48 @@ def capability(record):
         spec = contract_for(record)
     except ValueError as exc:
         return str(exc)
+    if spec.family == "FUTUROS":
+        return "READY_CONTRACT_FUTURES_NEEDS_EXECUTOR" if spec.market in {"A3","ROFEX"} else "NEEDS_MARKET_EXECUTOR"
     if spec.market != "BYMA":
         return "NEEDS_MARKET_EXECUTOR"
     if spec.family in {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES"}:
         return "READY_PAPER_SPOT"
+    if spec.family == "OPCIONES":
+        return "READY_CONTRACT_OPTIONS_NEEDS_EXECUTOR"
     return "NEEDS_SPECIALIZED_EXECUTOR"
 
+
+def complete_with_complement(record, complementary):
+    """Return a copy completed only with non-conflicting contract evidence.
+
+    Identity/currency/market/settlement from the primary record are immutable.
+    Complementary evidence may add a missing financial_contract_v17 only when
+    the complementary identity is exactly equivalent after normalization.
+    """
+    if record is None or not isinstance(complementary, dict):
+        return record
+    primary=dict(record)
+    raw=dict(primary.get("raw") or {})
+    if raw.get("financial_contract_v17"):
+        return primary
+    family=canonical_family(complementary.get("instrument_type") or complementary.get("family"))
+    ticker=str(complementary.get("ticker") or complementary.get("symbol") or "").strip().upper()
+    market=canonical_market(complementary.get("market"))
+    settlement=canonical_settlement(complementary.get("settlement") or complementary.get("term"),family)
+    currency=str(complementary.get("currency") or "").strip().upper()
+    expected=(primary["ticker"],canonical_family(primary["instrument_type"]),canonical_market(primary["market"]),
+              canonical_settlement(primary["settlement"],primary["instrument_type"]),str(primary["currency"]).upper())
+    observed=(ticker,family,market,settlement,currency)
+    if observed != expected:
+        return primary
+    contract=complementary.get("financial_contract_v17")
+    if not isinstance(contract,dict) or not contract:
+        return primary
+    raw["financial_contract_v17"]=contract
+    raw["_contract_complement_source"]=str(complementary.get("source") or "COMPLEMENTARY")
+    primary["raw"]=raw
+    primary["capability"]=capability(primary)
+    return primary
 
 def persist(c, record):
     c.execute("""INSERT OR REPLACE INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -221,7 +293,7 @@ def quote_terms(record):
         spec = contract_for(record)
     except ValueError:
         pass
-    reason = "" if record["capability"] == "READY_PAPER_SPOT" else record["capability"]
+    reason = "" if str(record["capability"]).startswith("READY_PAPER_") else record["capability"]
     if record["status"] != "AVAILABLE":
         reason = "Catálogo no confirmado en la última actualización"
     holiday_reason = rc6_underlying_opening_block(record["ticker"], record["instrument_type"])
