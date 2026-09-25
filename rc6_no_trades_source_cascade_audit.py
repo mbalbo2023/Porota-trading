@@ -219,6 +219,14 @@ def read_json(path):
     elif p.name=="iol_shadow_rotation.json":
         out["rotation"]={k:x.get(k) for k in ("universe_size","cycle_id","next_index","priority_count","background_count","updated_at")}
         out["seen_count"]=len(x.get("seen") or [])
+    elif p.name=="rc6_instrument_evidence_latest.json":
+        out["generated_at"]=x.get("generated_at")
+        out["source_order"]=x.get("source_order")
+        out["universe"]=x.get("universe")
+        out["counts"]=x.get("counts")
+        out["families"]=x.get("families")
+        out["decision_effect"]=x.get("decision_effect")
+        out["paper_shadow_only"]=x.get("paper_shadow_only")
     return out
 
 def main():
@@ -239,6 +247,7 @@ def main():
           "iol_shadow_rotation.json",
           "rc6_consolidated_ppi_iol_latest.json",
           "rc6_public_sources_latest.json",
+          "rc6_instrument_evidence_latest.json",
           "primary_last.json",
         )
       }
