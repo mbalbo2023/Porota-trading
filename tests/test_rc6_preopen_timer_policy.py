@@ -43,3 +43,21 @@ def test_host_wrapper_does_not_override_timer_policy():
                     and target.attr in {"REQUIRED_TIMERS", "BLOCKED_HISTORY_TIMERS"}
                 ):
                     raise AssertionError(f"wrapper overrides base.{target.attr}")
+
+
+def test_restart_count_is_informational(monkeypatch):
+    import rc6_preopen as preopen
+
+    monkeypatch.setattr(
+        preopen,
+        "cmd",
+        lambda args, timeout=20: (
+            0,
+            "true|porota-trading-bot:17.0.0-rc6|3|true",
+            "",
+        ),
+    )
+    result = preopen.container("porota_production_observer", require_readonly=True)
+    assert result["state"] == "GREEN"
+    assert result["restart_count"] == 3
+    assert result["restart_count_policy"] == "INFORMATIONAL"
