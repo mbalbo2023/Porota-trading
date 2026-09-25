@@ -226,7 +226,6 @@ jobs:
           sudo -n install -m 644 "$REPO/systemd/porota-snapshot-preopen-rc6.timer" /etc/systemd/system/porota-snapshot-preopen-rc6.timer
           sudo -n install -m 644 "$REPO/systemd/porota-snapshot-postclose-rc6.service" /etc/systemd/system/porota-snapshot-postclose-rc6.service
           sudo -n install -m 644 "$REPO/systemd/porota-snapshot-postclose-rc6.timer" /etc/systemd/system/porota-snapshot-postclose-rc6.timer
-          sudo -n install -m 644 "$REPO/systemd/porota-public-snapshot-rc6.service" /etc/systemd/system/porota-public-snapshot-rc6.service
           sudo -n install -d -m 755 /var/lib/porota
           printf "%s\n" "118740" | sudo -n tee /var/lib/porota/rc6-candle-inmarket-baseline-20260917 >/dev/null
           sudo -n systemctl daemon-reload
