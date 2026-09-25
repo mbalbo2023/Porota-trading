@@ -68,7 +68,7 @@ def test_bymadata_json_payload_normalizes_live_fields():
 
 
 def test_bymadata_public_collection_merges_read_only_panels(monkeypatch):
-    def fake_post(_base_url, endpoint):
+    def fake_post(_base_url, endpoint, family):
         symbol = "AAPL" if endpoint == "cedears" else "BBAR"
         return {
             "source": "BYMA",
@@ -76,15 +76,17 @@ def test_bymadata_public_collection_merges_read_only_panels(monkeypatch):
             "status": "REACHABLE_STRUCTURED_DATA",
             "http_status": 200,
             "record_count": 1,
-            "records": [{"source": "BYMA", "symbol": symbol, "currency": "ARS", "last": "27160"}],
+            "records": [{"source": "BYMA", "family": family, "market": "BYMA", "symbol": symbol, "currency": "ARS", "last": "27160"}],
         }
 
     monkeypatch.setattr(m, "_byma_post", fake_post)
     result = m._collect_byma_public("https://open.bymadata.com.ar/")
     assert result["status"] == "SCRAPED_PUBLIC_DATA"
     assert result["scrape_method"] == "bymadata_public_post"
-    assert result["record_count"] == 2
-    assert {item["endpoint"] for item in result["endpoints"]} == {"leading-equity", "cedears"}
+    assert result["record_count"] == 6
+    assert {item["endpoint"] for item in result["endpoints"]} == {
+        "leading-equity", "cedears", "public-bonds", "negociable-obligations", "cauciones", "options"
+    }
     assert result["errors"] == []
 
 
@@ -114,3 +116,19 @@ def test_complete_multi_source_contract_is_paper_shadow_ready():
     assert result["status"] == "READY_PAPER_SHADOW"
     assert result["paper_auto_enabled"] is True
     assert result["real_money_authorized"] is False
+
+
+def test_consolidate_unions_complementary_identity_and_canonicalizes_bcba_t1():
+    result = m.consolidate(
+        [],
+        [{"asset_type":"BONOS","symbol":"GD30","market":"BCBA","term":"T1",
+          "last":87530,"provider_observed_at":"2026-09-25T15:00:00+00:00"}],
+        [{"family":"BONOS","symbol":"GD30","market":"BYMA","term":"A-24HS",
+          "vwap":87400,"provider_observed_at":"2026-09-25T15:00:00+00:00"}],
+    )
+    assert len(result["rows"]) == 1
+    row=result["rows"][0]
+    assert row["identity"] == {"family":"BONOS","symbol":"GD30","market":"BYMA","term":"A-24HS"}
+    assert row["effective_fields"]["last"]["source"] == "IOL"
+    assert row["effective_fields"]["vwap"]["source"] == "BYMA"
+    assert result["source_order"] == "PPI_PRIMARY_IOL_COMPLEMENTARY_BYMA_PUBLIC_COMPLEMENTARY"
