@@ -23,6 +23,7 @@ RUNTIME_EXACT = {
     "Dockerfile",
     "docker-compose.yml",
     "requirements.txt",
+    "requirements.lock.txt",
     "n_instrument_watchlist.json",
     "POROTA_SECTOR_MAP_V1.csv",
 }

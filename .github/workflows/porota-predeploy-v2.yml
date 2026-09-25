@@ -64,6 +64,15 @@ jobs:
             --repo-root . \
             --json-out /tmp/porota-host-control-plane.json
 
+      - name: Dependency reproducibility gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/porota_dependency_repro_audit.py \
+            --repo-root . \
+            --json-out /tmp/porota-dependency-repro.json \
+            --fail-on-gap
+
       - name: Build candidate exactly once
         shell: bash
         run: |
@@ -180,6 +189,7 @@ jobs:
           path: |
             /tmp/porota-artifact-manifest.json
             /tmp/porota-host-control-plane.json
+            /tmp/porota-dependency-repro.json
             ${{ runner.temp }}/porota-predeploy-evidence/
 
       - name: PAPER safety source gate
@@ -207,6 +217,7 @@ jobs:
             echo '- Validator regression: GREEN'
             echo '- Secret scan: GREEN'
             echo '- Host control-plane provenance: GREEN'
+            echo '- Dependency reproducibility: GREEN'
             echo '- Build: ONCE'
             echo '- Exact artifact integrity: GREEN'
             echo '- Import closure: GREEN'
@@ -225,5 +236,5 @@ jobs:
           set +e
           docker ps -aq --filter "ancestor=$IMAGE" | xargs -r docker rm -f
           docker image rm "$IMAGE" >/dev/null 2>&1 || true
-          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json "${RUNNER_TEMP}/porota-predeploy-evidence"
+          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json "${RUNNER_TEMP}/porota-predeploy-evidence"
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'
