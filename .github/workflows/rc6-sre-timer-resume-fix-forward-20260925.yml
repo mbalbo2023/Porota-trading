@@ -84,6 +84,11 @@ jobs:
           assert int(state.get('real_orders_sent') or 0)==0, state
           print('PREFLIGHT_OBSERVER='+json.dumps(state,sort_keys=True,default=str))
           PY
+          echo "===FAST_HEALTH_DIAGNOSTIC==="
+          echo "FAST_SERVICE_RESULT=$(systemctl show -p Result --value porota-fast-functional-health-rc6.service 2>/dev/null || true)"
+          echo "FAST_SERVICE_STATUS=$(systemctl show -p ExecMainStatus --value porota-fast-functional-health-rc6.service 2>/dev/null || true)"
+          systemctl status porota-fast-functional-health-rc6.service --no-pager -l 2>/dev/null || true
+          journalctl -u porota-fast-functional-health-rc6.service -n 80 --no-pager 2>/dev/null || true
           echo "ROOT_CAUSE=TEMPORARY_INGESTION_ISOLATION_34702034967_FAILED_AFTER_DISABLE"
           echo "PREFLIGHT_MUTATION=NONE"
           REMOTE
@@ -93,6 +98,7 @@ jobs:
         run: rm -f "$HOME/.ssh/key"
 
   apply-surgical-resume:
+    if: ${{ false }}
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 30
