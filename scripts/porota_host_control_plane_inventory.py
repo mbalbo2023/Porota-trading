@@ -1,22 +1,11 @@
 #!/usr/bin/env python3
-"""Inventory Porota RC6 host control-plane provenance.
-
-This is PREDEPLOY/read-only tooling. It compares Git-tracked RC6 systemd units
-with every systemd unit referenced by the canonical production workflow.
-A workflow reference to a non-tracked unit is a provenance failure: the deploy
-must not depend on residual host files.
-"""
+"""Verify RC6 host-control-plane provenance from Git + complete lifecycle policy."""
 from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 from pathlib import Path
-
-UNIT_RE = re.compile(
-    r"(?:ops/)?systemd/porota-[A-Za-z0-9_.@-]+\.(?:service|timer)"
-)
 
 
 def is_rc6_unit(path: str) -> bool:
@@ -27,70 +16,48 @@ def is_rc6_unit(path: str) -> bool:
     )
 
 
-def build_inventory(tracked_paths: list[str], workflow_text: str) -> dict:
-    tracked = set(tracked_paths)
-    tracked_units = sorted(p for p in tracked if is_rc6_unit(p))
-    referenced_units = sorted(set(UNIT_RE.findall(workflow_text)))
-    referenced_tracked = sorted(p for p in referenced_units if p in tracked)
-    untracked_workflow_inputs = sorted(p for p in referenced_units if p not in tracked)
-    tracked_not_referenced = sorted(p for p in tracked_units if p not in referenced_units)
-
+def build_inventory(tracked_paths: list[str], policy_paths: list[str] | set[str]) -> dict:
+    tracked_units=sorted(p for p in set(tracked_paths) if is_rc6_unit(p))
+    policy_units=sorted(set(policy_paths))
+    missing=sorted(set(tracked_units)-set(policy_units))
+    extra=sorted(set(policy_units)-set(tracked_units))
     return {
-        "schema_version": 1,
-        "status": "GREEN" if not untracked_workflow_inputs else "FAILED_UNTRACKED_WORKFLOW_INPUT",
-        "tracked_rc6_units": tracked_units,
-        "workflow_referenced_units": referenced_units,
-        "workflow_referenced_tracked_units": referenced_tracked,
-        "untracked_workflow_inputs": untracked_workflow_inputs,
-        "tracked_rc6_units_not_referenced_by_canonical_deploy": tracked_not_referenced,
-        "counts": {
-            "tracked_rc6_units": len(tracked_units),
-            "workflow_referenced_units": len(referenced_units),
-            "workflow_referenced_tracked_units": len(referenced_tracked),
-            "untracked_workflow_inputs": len(untracked_workflow_inputs),
-            "tracked_rc6_units_not_referenced_by_canonical_deploy": len(tracked_not_referenced),
+        "schema_version":2,
+        "status":"GREEN" if not missing and not extra else "FAILED_POLICY_PROVENANCE",
+        "tracked_rc6_units":tracked_units,
+        "policy_rc6_units":policy_units,
+        "missing_policy_units":missing,
+        "extra_policy_units":extra,
+        "counts":{
+            "tracked_rc6_units":len(tracked_units),
+            "policy_rc6_units":len(policy_units),
+            "missing_policy_units":len(missing),
+            "extra_policy_units":len(extra),
         },
     }
 
 
 def git_tracked(repo_root: Path) -> list[str]:
-    out = subprocess.check_output(
-        ["git", "-C", str(repo_root), "ls-files", "-z"], text=False
-    )
+    out=subprocess.check_output(["git","-C",str(repo_root),"ls-files","-z"],text=False)
     return sorted(x.decode("utf-8") for x in out.split(b"\0") if x)
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--repo-root", default=".")
-    ap.add_argument(
-        "--workflow",
-        default=".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml",
-    )
+    ap=argparse.ArgumentParser()
+    ap.add_argument("--repo-root",default=".")
+    ap.add_argument("--policy",default="ops/policy/host-control-plane-reconciliation-v2.json")
     ap.add_argument("--json-out")
-    args = ap.parse_args()
-
-    root = Path(args.repo_root).resolve()
-    workflow_path = root / args.workflow
-    result = build_inventory(
-        git_tracked(root),
-        workflow_path.read_text(encoding="utf-8"),
-    )
-    payload = json.dumps(result, indent=2, sort_keys=True)
+    args=ap.parse_args()
+    root=Path(args.repo_root).resolve()
+    policy=json.loads((root/args.policy).read_text(encoding="utf-8"))
+    result=build_inventory(git_tracked(root),list(policy.get("units",{})))
+    payload=json.dumps(result,indent=2,sort_keys=True)
     print(payload)
     if args.json_out:
-        Path(args.json_out).write_text(payload + "\n", encoding="utf-8")
-
-    if result["status"] == "GREEN":
-        print("POROTA_HOST_CONTROL_PLANE_PROVENANCE=GREEN")
-        return 0
-
-    print(
-        "POROTA_HOST_CONTROL_PLANE_PROVENANCE=FAILED_UNTRACKED_WORKFLOW_INPUT",
-        flush=True,
-    )
-    return 1
+        Path(args.json_out).write_text(payload+"\n",encoding="utf-8")
+    print("POROTA_HOST_CONTROL_PLANE_PROVENANCE="+result["status"])
+    return 0 if result["status"]=="GREEN" else 1
 
 
-if __name__ == "__main__":
+if __name__=="__main__":
     raise SystemExit(main())
