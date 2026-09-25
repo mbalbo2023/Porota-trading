@@ -265,7 +265,12 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
     if underlying:
         try:
             chain=client.call("get_options_chain",{"symbol":underlying})
+            chain_underlying=str(chain.get("underlying") or "").strip().upper()
+            if chain_underlying != str(underlying).strip().upper():
+                raise ValueError("IOL_OPTION_CHAIN_UNDERLYING_MISMATCH")
             underlying_info=client.call("get_asset_info",{"symbol":underlying,"market":"BCBA"})
+            if str(underlying_info.get("symbol") or underlying).strip().upper() != chain_underlying:
+                raise ValueError("IOL_OPTION_UNDERLYING_INFO_MISMATCH")
             candidates=[r for r in chain.get("options",[]) if isinstance(r,dict) and r.get("symbol")]
             candidates.sort(key=lambda r:(bool(r.get("is_stale")), -(float(r.get("volume") or 0))))
             infos={}
