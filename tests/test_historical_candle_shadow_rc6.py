@@ -26,22 +26,22 @@ def test_collect_is_shadow_only_when_store_is_unavailable():
     assert result["shadow_score_delta"] == "0"
 
 
-def test_tax_is_unknown_without_explicit_rate(monkeypatch):
+def test_personal_tax_is_out_of_scope_without_explicit_rate(monkeypatch):
     monkeypatch.delenv("PAPER_GAIN_TAX_RATE", raising=False)
-    result = costs.tax_diagnostic(Decimal("100"))
-    assert result["state"] == "UNKNOWN"
-    assert result["effect"] == "NO_BINDING_TAX_ASSUMPTION"
+    result = costs.published_cost_diagnostic(Decimal("100"))
+    assert result["state"] == "NOT_APPLICABLE"
+    assert result["effect"] == "PERSONAL_TAXES_OUT_OF_SCOPE"
 
 
-def test_configured_tax_is_shadow_only(monkeypatch):
+def test_personal_tax_environment_cannot_become_binding(monkeypatch):
     monkeypatch.setenv("PAPER_GAIN_TAX_RATE", "0.35")
-    result = costs.tax_diagnostic(Decimal("100"))
-    assert result["state"] == "CONFIGURED"
-    assert result["amount"] == "35.00"
-    assert result["effect"] == "SHADOW_ONLY"
+    result = costs.published_cost_diagnostic(Decimal("100"))
+    assert result["state"] == "NOT_APPLICABLE"
+    assert result["amount"] == "0"
+    assert result["effect"] == "PERSONAL_TAXES_OUT_OF_SCOPE"
 
 
 def test_take_profit_diagnostic_does_not_change_execution():
     result = costs.net_take_profit("100", "105", "10", "1", "1", "1")
     assert result["effect"] == "SHADOW_ONLY"
-    assert Decimal(result["net_pnl_known"]) == Decimal("48")
+    assert Decimal(result["net_pnl_after_published_costs"]) == Decimal("48")

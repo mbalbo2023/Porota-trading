@@ -76,12 +76,14 @@ def test_empty_data912_history_is_not_counted_as_success(tmp_path, monkeypatch):
     assert run == (0, 1)
 
 
-def test_scheduler_contains_catchup_and_postclose_historical_refresh():
+def test_scheduler_keeps_internal_historical_writes_disabled():
     import az_maintenance_scheduler
 
     scheduler = az_maintenance_scheduler.build_scheduler()
-    jobs = {job.id: str(job.trigger) for job in scheduler.get_jobs()}
-    assert "day_of_week='mon-fri', hour='10', minute='15'" in jobs[
-        "maintenance_historical_catchup"]
-    assert "day_of_week='mon-fri', hour='19', minute='20'" in jobs[
-        "maintenance_historical_refresh"]
+    ids = {job.id for job in scheduler.get_jobs()}
+    assert "maintenance_historical_catchup" not in ids
+    assert "maintenance_historical_refresh" not in ids
+    assert "maintenance_historical_startup_catchup" not in ids
+    assert az_maintenance_scheduler.INTERNAL_HISTORICAL_WRITE_JOBS == frozenset({
+        "historical_refresh", "historical_refresh_if_needed",
+    })

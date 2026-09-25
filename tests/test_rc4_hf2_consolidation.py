@@ -44,7 +44,8 @@ def test_live_page_keeps_current_round_and_history_semantics_clean():
     assert "Todas las operaciones de esta página son simuladas." in src
     assert "Nunca representan una orden enviada a PPI." in src
     assert "Fuente que habilita una nueva etiqueta" in src
-    assert "Aprendizaje EVENT-DRIVEN" in src
+    assert "Aprendizaje event-driven" in src
+    assert '"EVENT-DRIVEN"' in src
 
 
 def test_formalized_browser_runner_keeps_fail_closed_guards():
