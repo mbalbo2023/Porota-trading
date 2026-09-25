@@ -181,7 +181,11 @@ jobs:
           echo "PRE_STATE=$PRE_STATE"
           if [ "$PRE_STATE" != NO_RUNNING_OBSERVER ]; then test "$PRE_STATE" = "ok|PRODUCTION_PAPER|0"; fi
 
-          PPI_WATCH_BEFORE="$(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1 "|" $2}' | sort || true)"
+          PPI_WATCH_BEFORE="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
           printf 'PPI_WATCH_BEFORE=%s\n' "$PPI_WATCH_BEFORE"
 
           rm -rf "$STAGE"
@@ -201,6 +205,7 @@ jobs:
               return h.hexdigest()
           for row in data["files"]:
               rel=Path(row["path"])
+              assert not rel.is_absolute() and ".." not in rel.parts, rel
               src=stage/rel
               assert src.is_file() and sha(src)==row["sha256"], rel
               dst=repo/rel
@@ -245,7 +250,7 @@ jobs:
           echo "POST_STATE=$POST_STATE"
           test "$POST_STATE" = "ok|PRODUCTION_PAPER|0"
 
-          sudo -n docker exec porota_production_observer python - <<'PY'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
           from bs_instrument_contracts import FAMILIES
           import bf_production_paper_observer as observer
           assert observer.OPERATIONAL_FAMILIES == FAMILIES
@@ -253,11 +258,62 @@ jobs:
           print("OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES")
           PY
 
+          RUNTIME_CHECK="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,time
+          from datetime import datetime,timezone
+          deadline=time.monotonic()+90
+          last=None
+          def fresh(value,seconds):
+              try:
+                  observed=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+                  return observed.tzinfo is not None and 0 <= (datetime.now(timezone.utc)-observed.astimezone(timezone.utc)).total_seconds() <= seconds
+              except (TypeError,ValueError):
+                  return False
+          while time.monotonic() < deadline:
+              try:
+                  c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=3)
+                  c.execute('PRAGMA query_only=ON')
+                  last=c.execute(
+                      'SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at,heartbeat_at '
+                      'FROM observer_state WHERE id=1'
+                  ).fetchone()
+                  c.close()
+              except sqlite3.Error:
+                  last=None
+              paper=last and last[0]=='PRODUCTION_PAPER' and int(last[1] or 0)==0 and last[2]=='OK'
+              heartbeat=paper and fresh(last[6],120)
+              market_required=bool(last and last[4]=='MARKET_OPEN')
+              market_fresh=(not market_required) or fresh(last[5],300)
+              if paper and heartbeat and market_fresh:
+                  print('GO_CHECK=GREEN|'+'|'.join(map(str,last))+f'|MARKET_DATA_REQUIRED={market_required}')
+                  break
+              time.sleep(5)
+          else:
+              print(f'GO_CHECK_FAILED_AFTER_STARTUP={last}')
+              raise SystemExit(1)
+          PY
+          )"
+          echo "$RUNTIME_CHECK"
+          grep -q '^GO_CHECK=GREEN' <<< "$RUNTIME_CHECK"
+
           DASHBOARD_HTTP="$(curl -sS -o /tmp/porota-v2-health -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/health)"
           test "$DASHBOARD_HTTP" = 200
           echo "DASHBOARD_HEALTH_HTTP=200"
 
-          PPI_WATCH_AFTER="$(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1 "|" $2}' | sort || true)"
+          # Bootstrap compacto tras un deploy correcto. Cada tarea es diaria y
+          # acotada; no habilita rutas de orden real.
+          for job in validation_projection action4_audit; do
+            JOB_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 60 python az_maintenance_job.py "$job" 2>&1)"
+            echo "$JOB_OUTPUT"
+            grep -Fq "Tarea $job completada." <<< "$JOB_OUTPUT"
+            echo "BOOTSTRAP_$(tr '[:lower:]' '[:upper:]' <<< "$job")=GREEN"
+          done
+
+          PPI_WATCH_AFTER="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
           test "$PPI_WATCH_AFTER" = "$PPI_WATCH_BEFORE"
           echo "PPI_WATCH_UNTOUCHED=GREEN"
 

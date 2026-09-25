@@ -1,71 +1,52 @@
 from pathlib import Path
 
-
-WORKFLOW = Path(".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml")
-
-
-def test_deploy_requires_a_fresh_observer_heartbeat_and_candidate_source():
-    body = WORKFLOW.read_text(encoding="utf-8")
-    assert "heartbeat_at" in body
-    assert "fresh(last[6], 120)" in body
-    assert "MARKET_DATA_REQUIRED" in body
-    assert "OBSERVER_CANDIDATE_SHA=GREEN" in body
-    assert "RUNNING_OBSERVER_SHA" in body
+from scripts.porota_validate_deploy_artifact import is_runtime_relevant
 
 
-def test_deploy_bootstraps_compact_daily_views_once_without_reenabling_real_orders():
-    body = WORKFLOW.read_text(encoding="utf-8")
-    assert "for job in validation_projection action4_audit; do" in body
-    assert 'timeout 60 python az_maintenance_job.py "$job"' in body
-    assert "Cada tarea es diaria y acotada" in body
-    assert "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED" in body
+PROMOTE = Path(".github/workflows/porota-deploy-v2-promote.yml").read_text(encoding="utf-8")
+PREDEPLOY = Path(".github/workflows/porota-predeploy-v2.yml").read_text(encoding="utf-8")
 
 
-def test_deploy_storage_audit_and_allowlisted_image_retention_are_safe():
-    body = WORKFLOW.read_text(encoding="utf-8")
-    assert "STORAGE_AUDIT=READ_ONLY" in body
-    assert "STORAGE_CLEANUP=ALLOWLISTED_RC6_CANDIDATE_ROLLBACK_AND_UNUSED_RC4_TEST_TAGS_ONLY" in body
-    assert '[ "$ref" = "porota-trading-bot:17.0.0-rc4-test-ready1" ]' in body
-    assert 'install -m 0644 "$STAGE/docker-compose.yml" "$REPO/docker-compose.yml"' in body
-    assert "LEGACY_COMPOSE_IMAGE_DEFAULT=RC6_STABLE" in body
-    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
-    assert "porota-trading-bot:17.0.0-rc6" in compose
-    assert "rc4-test-ready1" not in compose
-    assert "RC6_APPROVAL_IMAGE_RECONCILE=GREEN" in body
-    assert "RC6_APPROVAL_ISSUES_ONLY=GREEN" in body
-    assert "RC6_APPROVAL_PAPER_SECRET_GUARD=GREEN" in body
-    assert "trap cleanup_rc6_image_tags EXIT" in body
-    assert r"porota-trading-bot:17\.0\.0-rc6-(candidate|rollback)-[0-9a-f]{40}" in body
-    assert '[ "$ref" = "$CANDIDATE_IMAGE" ]' in body
-    assert 'grep -Fxq "$image_id" <<< "$container_image_ids"' in body
-    assert 'sudo -n docker image rm "$ref"' in body
-    assert 'sudo -n docker tag "$TARGET_IMAGE" "$PREV_IMAGE_TAG"' not in body
-    assert "RC6_STORAGE_REMEDIATION=GREEN" in body
-    assert "sudo -n docker image prune -f" in body
-    assert "sudo -n docker builder prune -f --filter until=24h" in body
-    assert "docker system prune" not in body
-    assert "docker volume prune" not in body
-    assert "docker container prune" not in body
+def test_deploy_requires_fresh_observer_heartbeat_and_exact_candidate_image():
+    assert "heartbeat_at" in PROMOTE
+    assert "fresh(last[6],120)" in PROMOTE
+    assert "MARKET_DATA_REQUIRED" in PROMOTE
+    assert "GO_CHECK=GREEN" in PROMOTE
+    assert "OBSERVER_IMAGE_ID" in PROMOTE
+    assert 'test "$OBSERVER_IMAGE_ID" = "$EXPECTED_IMAGE_ID"' in PROMOTE
+    assert "OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES" in PROMOTE
 
 
-def test_release_gate_installs_test_dependencies_and_covers_deterministic_paper_exits():
-    body = WORKFLOW.read_text(encoding="utf-8")
+def test_deploy_bootstraps_compact_daily_views_without_reenabling_real_orders():
+    assert "for job in validation_projection action4_audit; do" in PROMOTE
+    assert 'timeout 60 python az_maintenance_job.py "$job"' in PROMOTE
+    assert "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED" in PROMOTE
 
-    assert '"pytest>=8.3.0,<9" requests' in body
-    assert "tests/test_rc6_take_profit_regression.py" in body
-    assert "max_hold_sin_datos_persiste_y_se_ejecuta_despues_de_reiniciar" in body
-    assert "1655_sigue_dentro_de_rueda_y_un_stop_puede_cerrar" in body
+
+def test_deploy_storage_cleanup_is_safe_and_fix_forward_only():
+    assert "DISK_BEFORE=" in PROMOTE
+    assert "DISK_AFTER=" in PROMOTE
+    assert "sudo -n docker image prune -f" in PROMOTE
+    assert "sudo -n docker builder prune -af" in PROMOTE
+    assert "docker system prune" not in PROMOTE
+    assert "docker volume prune" not in PROMOTE
+    assert "docker container prune" not in PROMOTE
+    assert "rollback" not in PROMOTE.lower()
+
+
+def test_release_gate_runs_all_tests_in_the_exact_image():
+    assert "Full automatic test discovery in exact image" in PREDEPLOY
+    assert "-m pytest -q /app/tests" in PREDEPLOY
+    assert "POROTA_FULL_TEST_DISCOVERY_RESULT" in PREDEPLOY
+    assert "POROTA_TEST_TRIAGE" in PREDEPLOY
 
 
 def test_new_paper_database_initializes_spot_liquidity_ledger():
     engine = Path("be_paper_engine.py").read_text(encoding="utf-8")
-
     assert "spot_liquidity.init_schema(self)" in engine
 
 
-def test_release_gate_packages_cedear_calendar_without_early_remote_success_exit():
-    body = WORKFLOW.read_text(encoding="utf-8")
-
-    assert "am_us_equity_calendar_rc6.py" in body
-    assert "tests/test_rc6_cedear_underlying_calendar.py" in body
-    assert 'echo "RC6_DEPLOY_STAGE_ONE=GREEN"\n          exit 0' not in body
+def test_runtime_bundle_includes_cedear_calendar_and_all_root_runtime_python():
+    assert is_runtime_relevant("am_us_equity_calendar_rc6.py")
+    assert is_runtime_relevant("bf_production_paper_observer.py")
+    assert "porota-deploy-bundle-v2.tgz" in PREDEPLOY
