@@ -34,6 +34,10 @@ OPERATIONAL_FAMILIES = frozenset(
         "ACCIONES,CEDEARS,ETFS,BONOS,LETRAS,OBLIGACIONES,OPCIONES,FUTUROS,CAUCIONES,FCI",
     ).split(",") if part.strip()
 )
+# Families whose long positions can use the durable price/quantity PAPER ledger.
+# Options are admitted only with an explicit InstrumentContract and are sized
+# against full premium loss. Futures/FCI/cauciones retain specialized lifecycles.
+PAPER_POSITION_FAMILIES = frozenset(set(SPOT_FAMILIES) | {"OPCIONES"})
 
 def _family_operable(family: str) -> bool:
     return str(family or "").upper() in OPERATIONAL_FAMILIES
@@ -709,7 +713,7 @@ class PaperBroker:
         """Costo de una punta; el spread ya vive en bid/ask y no se duplica."""
         import au_fee_schedule
         family = family_name(asset_class)
-        if family not in SPOT_FAMILIES:
+        if family not in PAPER_POSITION_FAMILIES:
             raise ValueError("La familia requiere un cálculo de costos específico")
         rate = D(au_fee_schedule.costo_por_tramo(family), "-1")
         if rate < 0:
@@ -720,7 +724,7 @@ class PaperBroker:
         """Tasa de una punta; la reducida exige elegibilidad intradiaria."""
         import au_fee_schedule
         family = family_name(asset_class)
-        if family not in SPOT_FAMILIES:
+        if family not in PAPER_POSITION_FAMILIES:
             raise ValueError("La familia requiere un cálculo de costos específico")
         if (rebated and self.intraday_fee_rebate
                 and family in au_fee_schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA):
@@ -826,15 +830,19 @@ class PaperBroker:
             family = family_name(q.asset_class)
         except ValueError as exc:
             return "HOLD", ZERO, str(exc), {"samples": 0}
-        if family not in SPOT_FAMILIES:
+        if family not in PAPER_POSITION_FAMILIES:
             return ("HOLD", ZERO,
-                    f"{family}: requiere su ciclo financiero específico; "
-                    "el ejecutor de contado no dimensiona prima ni garantía",
+                    f"{family}: requiere su ciclo financiero específico",
                     {"samples": 0, "family": family})
         if not _family_operable(family):
             return ("HOLD", ZERO,
                     f"{family}: fuera del alcance PAPER/SHADOW RC6",
                     {"samples": 0, "family": family, "operational_scope": "DISABLED_BY_SCOPE"})
+        if family == "OPCIONES":
+            if q.contract is None or q.contract.family != "OPCIONES":
+                return "HOLD", ZERO, "Opción sin contrato financiero explícito", {"samples": 0, "family": family}
+            if q.contract.option_right not in {"CALL","PUT"} or not q.contract.underlying:
+                return "HOLD", ZERO, "Opción sin subyacente/derecho confirmado", {"samples": 0, "family": family}
         if q.opening_block_reason:
             return "HOLD", ZERO, q.opening_block_reason, {"samples": 0}
         at = self.execution_time(q)
@@ -1048,12 +1056,17 @@ class PaperBroker:
             currency, market = q.monetary_identity()
         except ValueError as exc:
             return False, str(exc), None
-        if family not in SPOT_FAMILIES:
-            return False, f"{family} requiere su ciclo financiero específico; no se compra como una acción", None
+        if family not in PAPER_POSITION_FAMILIES:
+            return False, f"{family} requiere su ciclo financiero específico", None
         if not _family_operable(family):
-            return False, f"{family} fuera del alcance operativo RC6 (sólo acciones y CEDEARs)", None
+            return False, f"{family} fuera del alcance operativo RC6", None
         if market != "BYMA":
-            return False, "Ejecutor de contado pendiente para este mercado", None
+            return False, "Ejecutor PAPER pendiente para este mercado", None
+        if family == "OPCIONES":
+            if q.contract is None or q.contract.family != "OPCIONES":
+                return False, "Opción sin contrato financiero explícito", None
+            if q.contract.option_right not in {"CALL","PUT"} or not q.contract.underlying:
+                return False, "Opción sin subyacente/derecho confirmado", None
 
         # RC6: learning policies are evaluated on every candidate. Observation/SHADOW
         # persists a counterfactual only; explicit BINDING grants veto authority
@@ -1145,10 +1158,18 @@ class PaperBroker:
         if concurrent_risk_budget <= 0:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: riesgo concurrente agotado")
             return False, "CONCURRENT_RISK_BUDGET_EXHAUSTED", None
-        by_risk = self._quantity_in_budget(
-            (entry - modeled_stop_fill) * factor, concurrent_risk_budget,
-            lambda qty: self._cost(entry * factor, qty, q.asset_class) +
-                        self._cost(modeled_stop_fill * factor, qty, q.asset_class))
+        if family == "OPCIONES":
+            # A long option may gap to zero before a stop can execute. Size
+            # against the full premium at risk plus entry costs, not the
+            # nominal stop distance used by spot families.
+            by_risk = self._quantity_in_budget(
+                entry * factor, concurrent_risk_budget,
+                lambda qty: self._cost(entry * factor, qty, q.asset_class))
+        else:
+            by_risk = self._quantity_in_budget(
+                (entry - modeled_stop_fill) * factor, concurrent_risk_budget,
+                lambda qty: self._cost(entry * factor, qty, q.asset_class) +
+                            self._cost(modeled_stop_fill * factor, qty, q.asset_class))
         by_cash = self._quantity_in_budget(
             entry * factor, max(ZERO, self._cash(as_of=at, currency=currency)),
             lambda qty: self._cost(entry * factor, qty, q.asset_class))
