@@ -209,46 +209,92 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
     state=dict(prior.get("rotation") or {})
     catalog=_catalog(db)
     shadow=_iol_shadow(root)
-    fixed=[r["ticker"] for r in catalog if canonical_family(r.get("instrument_type")) in {"BONOS","LETRAS","OBLIGACIONES"}]
-    underlyings=[r["ticker"] for r in catalog if canonical_family(r.get("instrument_type"))=="ACCIONES"]
-    fixed_symbol=_rotate(fixed,state,"fixed_index")
+    fixed_rows=[r for r in catalog
+                if canonical_family(r.get("instrument_type")) in {"BONOS","LETRAS","OBLIGACIONES"}]
+    fixed_by_symbol={str(r.get("ticker") or "").upper():r for r in fixed_rows if r.get("ticker")}
+    fixed_symbol=_rotate(list(fixed_by_symbol),state,"fixed_index")
+
+    # Option chains are keyed by their underlying, not by the option ticker.
+    # Rotate provider-confirmed underlyings across every BYMA family for which
+    # BYMA currently lists standardized options.
+    option_underlying_families={"ACCIONES","CEDEARS","BONOS","LETRAS"}
+    underlyings=[r["ticker"] for r in catalog
+                 if canonical_family(r.get("instrument_type")) in option_underlying_families
+                 and canonical_market(r.get("market"))=="BYMA"]
     underlying=_rotate(underlyings,state,"option_underlying_index")
+
     records=[r for r in prior.get("records",[]) if isinstance(r,dict)]
     by_key={(r.get("instrument_type"),r.get("ticker")):r for r in records}
     errors=[]
 
     if fixed_symbol:
+        identity=fixed_by_symbol[fixed_symbol]
         try:
+            family=canonical_family(identity.get("instrument_type"))
+            currency=str(identity.get("currency") or "").upper()
+            settlement=canonical_settlement(identity.get("settlement"),family)
             asset=client.call("get_asset_info",{"symbol":fixed_symbol,"market":"BCBA"})
             analytics=client.call("get_fixed_income_analytics",{"ticker":fixed_symbol})
-            simulation=client.call("simulate_fixed_income_by_nominals",{"ticker":fixed_symbol,"nominals":1,"currency":"ARS"})
-            contract=_fixed_contract(fixed_symbol,asset,analytics,simulation,shadow.get(fixed_symbol,{}))
-            fam=canonical_family(asset.get("type"))
-            row={"ticker":fixed_symbol,"instrument_type":fam,"market":canonical_market(asset.get("market") or "BYMA"),
-                 "currency":str(asset.get("currency") or "").upper(),
-                 "settlement":canonical_settlement(asset.get("term"),fam),
-                 "description":str(asset.get("description") or ""),"source":"IOL_COMPLEMENTARY",
-                 "observed_at":at,"units_per_lot":asset.get("units_per_lot"),
+            simulation=client.call("simulate_fixed_income_by_nominals",{
+                "ticker":fixed_symbol,"nominals":1,"currency":currency})
+            quote=client.call("get_asset_quote",{
+                "symbol":fixed_symbol,"market":"BCBA",
+                "term":"t0" if settlement=="INMEDIATA" else "t1"})
+            contract=_fixed_contract(
+                fixed_symbol,asset,analytics,simulation,quote,
+                identity_family=family,identity_currency=currency,
+                identity_settlement=settlement)
+            row={"ticker":fixed_symbol,"instrument_type":family,
+                 "market":canonical_market(identity.get("market") or asset.get("market") or "BYMA"),
+                 "currency":currency,"settlement":settlement,
+                 "description":str(asset.get("description") or ""),
+                 "source":"IOL_COMPLEMENTARY","observed_at":at,
+                 "units_per_lot":asset.get("units_per_lot"),
                  "financial_contract_v17":contract,
-                 "fixed_income_analytics":{"maturity_date":(analytics.get("calculation_inputs") or {}).get("maturity_date"),
+                 "fixed_income_analytics":{
+                   "maturity_date":(analytics.get("calculation_inputs") or {}).get("maturity_date")
+                       or simulation.get("maturity_date"),
                    "dirty_price":(analytics.get("prices") or {}).get("dirty_price"),
-                   "technical_value":(analytics.get("prices") or {}).get("technical_value")}}
-            by_key[(fam,fixed_symbol)]=row
-        except Exception as exc:errors.append("FIXED:"+type(exc).__name__)
+                   "technical_value":(analytics.get("prices") or {}).get("technical_value"),
+                   "simulation_payment_currency":simulation.get("payment_currency"),
+                 }}
+            by_key[(family,fixed_symbol)]=row
+        except Exception as exc:
+            errors.append("FIXED:"+fixed_symbol+":"+type(exc).__name__)
 
     if underlying:
         try:
             chain=client.call("get_options_chain",{"symbol":underlying})
+            underlying_info=client.call("get_asset_info",{"symbol":underlying,"market":"BCBA"})
             candidates=[r for r in chain.get("options",[]) if isinstance(r,dict) and r.get("symbol")]
             candidates.sort(key=lambda r:(bool(r.get("is_stale")), -(float(r.get("volume") or 0))))
             infos={}
-            for raw in candidates[:MAX_OPTIONS_INFO]:
+            # Reuse already-collected IOL metadata for option identities. This
+            # avoids hundreds of duplicate metadata calls while retaining exact
+            # provider units/currency. T+0 is supplied by the option contract,
+            # not by the generic quote collector's T1 request term.
+            for raw in candidates:
                 symbol=str(raw.get("symbol") or "").upper()
-                try:infos[symbol]=client.call("get_asset_info",{"symbol":symbol,"market":"BCBA"})
-                except Exception as exc:errors.append("OPTION_INFO:"+symbol+":"+type(exc).__name__)
-            for row in _option_records(chain,infos,at):
+                cached=shadow.get(symbol,{})
+                if cached and cached.get("units_per_lot") not in (None,""):
+                    infos[symbol]={
+                        "type":cached.get("asset_type") or "OPCIONES",
+                        "currency":cached.get("currency") or "ARS",
+                        "units_per_lot":cached.get("units_per_lot"),
+                        "market":cached.get("market") or "BCBA",
+                        "term":"T0",
+                    }
+            missing=[r for r in candidates if str(r.get("symbol") or "").upper() not in infos]
+            for raw in missing[:MAX_OPTIONS_INFO]:
+                symbol=str(raw.get("symbol") or "").upper()
+                try:
+                    infos[symbol]=client.call("get_asset_info",{"symbol":symbol,"market":"BCBA"})
+                except Exception as exc:
+                    errors.append("OPTION_INFO:"+symbol+":"+type(exc).__name__)
+            for row in _option_records(chain,infos,at,underlying_info=underlying_info):
                 by_key[("OPCIONES",row["ticker"])]=row
-        except Exception as exc:errors.append("OPTIONS:"+type(exc).__name__)
+        except Exception as exc:
+            errors.append("OPTIONS:"+underlying+":"+type(exc).__name__)
 
     # Broad family discovery/reference calls. They do not authorize execution.
     fci=prior.get("fci",[])
