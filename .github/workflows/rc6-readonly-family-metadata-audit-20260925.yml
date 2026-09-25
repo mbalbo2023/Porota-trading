@@ -1,0 +1,59 @@
+name: RC6 read-only family metadata audit 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-availability-readonly-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Prepare SSH
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+      - name: Inspect exact family metadata read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,re,collections
+          db='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=20); c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          for fam in ('OPCIONES','FUTUROS','CAUCIONES','BONOS','LETRAS','ON'):
+              rows=[dict(r) for r in c.execute("""SELECT ticker,instrument_type,market,currency,settlement,
+                       description,capability,metadata_json
+                       FROM financial_instrument_catalog WHERE upper(instrument_type)=?
+                       ORDER BY ticker LIMIT 80""",(fam,))]
+              print('FAMILY_META='+json.dumps({'family':fam,'count':len(rows)},sort_keys=True))
+              for r in rows[:30]:
+                  try:m=json.loads(r.pop('metadata_json') or '{}')
+                  except Exception:m={}
+                  safe={k:v for k,v in m.items() if not any(x in k.lower() for x in ('secret','token','password','api'))}
+                  # Keep only scalar provider metadata and keys; no credentials can exist in catalog,
+                  # but this avoids dumping large nested payloads.
+                  scalars={k:v for k,v in safe.items() if isinstance(v,(str,int,float,bool)) or v is None}
+                  print('META_ROW='+json.dumps({
+                      **r,'metadata_keys':sorted(m.keys()),'metadata_scalars':scalars
+                  },ensure_ascii=False,sort_keys=True))
+          c.close()
+          PY
+          REMOTE
