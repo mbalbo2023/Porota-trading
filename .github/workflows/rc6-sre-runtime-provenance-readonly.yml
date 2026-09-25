@@ -99,6 +99,18 @@ jobs:
             systemctl cat "$unit" --no-pager 2>/dev/null | grep -E '^(Description|OnCalendar|OnBootSec|OnUnitActiveSec|Persistent|Unit=|WantedBy=)' || true
             echo "UNIT_END=$unit"
           done
+          echo "---INSTALLED_HARDENED_FULL---"
+          sed -n '1,180p' /usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py 2>/dev/null || true
+          echo "---PREOPEN_IMPORT_RESOLUTION---"
+          cd /opt/porota-trading
+          python3 - <<'PY'
+          import importlib.util,sys
+          spec=importlib.util.find_spec("rc6_preopen")
+          print("IMPORT_ORIGIN="+str(getattr(spec,"origin",None)))
+          print("SYS_PATH="+repr(sys.path))
+          PY
+          echo "---SRE_DIRECTORY---"
+          find /usr/local/lib/porota-sre-rc6 -maxdepth 1 -type f -printf '%f|%s|%TY-%Tm-%TdT%TH:%TM:%TSZ\n' 2>/dev/null | sort
           echo "===SRE_INSTALLED_POLICY_END==="
           REMOTE
 
