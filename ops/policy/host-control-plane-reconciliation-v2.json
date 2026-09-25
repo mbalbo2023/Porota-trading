@@ -1,160 +1,166 @@
 {
-  "schema_version": 2,
-  "scope": "all Git-tracked RC6 systemd units; complete lifecycle authority for Deploy V2",
+  "schema_version": 3,
+  "scope": "verified-baseline-preserving RC6 host lifecycle policy for Deploy V2",
   "decision_basis": [
-    "Deploy V2 host lifecycle policy is authoritative for every Git-tracked RC6 service/timer",
-    "No systemd unit may rely on residual host state or the legacy deploy workflow for lifecycle decisions",
-    "Current RC6 PAPER/SHADOW universe is expanded across financial families; source/evidence gaps remain fail-closed per instrument",
-    "scripts/rc6_full_universe_evidence.py covers every AVAILABLE catalog identity and marks missing/stale evidence explicitly",
-    "A3 historical background is a read-only source for FUTUROS/OPCIONES and never participates in real-order routing",
-    "tests/test_rc6_postclose_history_quarantine.py applies to the legacy postclose history timer, not to A3 background history",
-    "the Sept-09 SRE split separates frequent fast health from lower-frequency full DB integrity"
+    "Verified production baseline c81f8d7c089433e89f3d664b57d3a9b915565419 is the runtime behavior authority",
+    "Units synchronized by the verified baseline deploy may be installed/enabled exactly as before",
+    "Git-tracked RC6 units not synchronized by the verified baseline deploy are PRESERVE_EXISTING: Deploy V2 must not install, enable, disable, mask, stop, remove or restart them",
+    "PPI Watch remains out of scope and forbidden",
+    "Source-specific limits must not be promoted into global RC6 scope rules without baseline evidence"
   ],
   "units": {
     "systemd/porota-a3-history-daily-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
+      "enabled": null,
+      "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Current all-family PAPER/SHADOW coverage keeps A3 read-only historical evidence active for FUTUROS/OPCIONES"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-a3-history-rc6@.service": {
-      "role": "ACTIVE_SERVICE",
-      "install": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
       "enabled": null,
       "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Read-only A3 historical template used by active FUTUROS/OPCIONES background timers; no order methods"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-a3-history-reconcile-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
+      "enabled": null,
+      "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Current all-family PAPER/SHADOW coverage keeps A3 read-only historical evidence active for FUTUROS/OPCIONES"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-a3-history-weekend-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
+      "enabled": null,
+      "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Current all-family PAPER/SHADOW coverage keeps A3 read-only historical evidence active for FUTUROS/OPCIONES"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-candle-integrity-rc6.service": {
-      "role": "ACTIVE_SERVICE",
-      "install": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
       "enabled": null,
       "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Required by current preopen readiness through its timer"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-candle-integrity-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
+      "enabled": null,
+      "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Required by current preopen readiness"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-fast-functional-health-rc6.service": {
-      "role": "ACTIVE_SERVICE",
-      "install": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
       "enabled": null,
       "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Frequent read-only health probe after SRE fast/full split"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-fast-functional-health-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
+      "enabled": null,
+      "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Frequent read-only health timer after SRE fast/full split"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-full-db-integrity-rc6.service": {
-      "role": "ACTIVE_SERVICE",
-      "install": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
       "enabled": null,
       "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Lower-frequency full SQLite quick_check after SRE split"
-    },
-    "systemd/porota-full-db-integrity-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
-      "remove_on_deploy": false,
-      "reason": "Postclose lower-frequency full DB integrity schedule"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-functional-health-rc6.service": {
-      "role": "RETIRED_SERVICE",
+      "role": "PRESERVE_EXISTING",
       "install": false,
       "enabled": null,
       "active": null,
-      "remove_on_deploy": true,
-      "reason": "Superseded by fast-functional plus full-db-integrity split"
+      "masked": false,
+      "remove_on_deploy": false,
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-functional-health-rc6.timer": {
-      "role": "RETIRED_TIMER",
+      "role": "PRESERVE_EXISTING",
       "install": false,
-      "enabled": false,
-      "active": false,
-      "remove_on_deploy": true,
-      "reason": "Superseded by fast-functional plus full-db-integrity split"
+      "enabled": null,
+      "active": null,
+      "masked": false,
+      "remove_on_deploy": false,
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-history-postclose-rc6.service": {
-      "role": "QUARANTINED_SERVICE",
-      "install": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
       "enabled": null,
       "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Explicit recovery only; policy quarantine remains fail-closed"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-history-postclose-rc6.timer": {
-      "role": "QUARANTINED_TIMER",
+      "role": "PRESERVE_EXISTING",
       "install": false,
-      "enabled": false,
-      "active": false,
-      "masked": true,
+      "enabled": null,
+      "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Explicitly quarantined: host timer must be masked/inactive; source remains versioned for an explicitly authorized recovery project"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-host-general-backup-rc6.service": {
-      "role": "ACTIVE_SERVICE",
-      "install": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
       "enabled": null,
       "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Required by current preopen readiness through its timer"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-host-general-backup-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
-      "remove_on_deploy": false,
-      "reason": "Required by current preopen readiness"
-    },
-    "systemd/porota-preopen-rc6.service": {
-      "role": "ACTIVE_SERVICE",
-      "install": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
       "enabled": null,
       "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Current fail-closed preopen readiness gate"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
+    },
+    "systemd/porota-preopen-rc6.service": {
+      "role": "PRESERVE_EXISTING",
+      "install": false,
+      "enabled": null,
+      "active": null,
+      "masked": false,
+      "remove_on_deploy": false,
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-preopen-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
+      "role": "PRESERVE_EXISTING",
+      "install": false,
+      "enabled": null,
+      "active": null,
+      "masked": false,
       "remove_on_deploy": false,
-      "reason": "Current fail-closed preopen schedule"
+      "reason": "Tracked in verified production baseline but not synchronized by its canonical deploy; preserve current host state until separately evidenced."
     },
     "systemd/porota-introspection-publish-rc6.service": {
       "role": "ACTIVE_SERVICE",
