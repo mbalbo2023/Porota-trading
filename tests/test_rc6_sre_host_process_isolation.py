@@ -42,3 +42,11 @@ def test_candle_integrity_avoids_intraday_full_db_scan():
     assert "PRAGMA quick_check" not in source
     assert "FULL_SCAN_POSTCLOSE_ONLY" in source
     assert "full_integrity_check_performed" in source
+
+
+def test_operational_sre_telemetry_defers_full_db_scan_to_postclose():
+    source = Path("bi_operational_services.py").read_text(encoding="utf-8")
+    collect = source.split("def collect_sre", 1)[1].split("def create_backup", 1)[0]
+    assert "PRAGMA quick_check" not in collect
+    assert "FULL_SCAN_POSTCLOSE_ONLY" in collect
+    assert "full_integrity_check_performed" in collect
