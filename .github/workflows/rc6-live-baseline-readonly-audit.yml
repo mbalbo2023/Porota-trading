@@ -1,0 +1,217 @@
+name: RC6 live baseline read-only audit
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-live-baseline-readonly-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: github.head_ref == 'audit/rc6-live-baseline-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BASELINE_SHA: c81f8d7c089433e89f3d664b57d3a9b915565419
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout verified production baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          fetch-depth: 0
+
+      - name: Build baseline runtime manifest
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, subprocess
+          root=Path(".")
+          tracked=subprocess.check_output(["git","ls-files","-z"]).split(b"\0")
+          paths=[]
+          for raw in tracked:
+              if not raw:
+                  continue
+              p=raw.decode()
+              pp=Path(p)
+              runtime=(
+                  (len(pp.parts)==1 and pp.suffix in {".py",".json",".csv",".txt",".yml",".yaml"})
+                  or p in {"Dockerfile","docker-compose.yml","requirements.txt","n_instrument_watchlist.json","POROTA_SECTOR_MAP_V1.csv"}
+                  or (p.startswith("scripts/") and pp.suffix in {".py",".sh"})
+                  or ((p.startswith("systemd/") or p.startswith("ops/systemd/")) and pp.suffix in {".service",".timer"})
+              )
+              if runtime and (root/p).is_file():
+                  paths.append(p)
+          with open("/tmp/rc6-baseline-runtime.tsv","w",encoding="utf-8") as out:
+              for p in sorted(set(paths)):
+                  h=hashlib.sha256((root/p).read_bytes()).hexdigest()
+                  out.write(f"{h}\t{p}\n")
+          print(f"BASELINE_RUNTIME_MANIFEST=GREEN|files={len(set(paths))}")
+          PY
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Audit live host state read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_audit" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===RC6_LIVE_AUDIT_BEGIN==="
+          echo "AUDIT_TIME_UTC=$(date -u +%FT%TZ)"
+          echo "HOST=$(hostname)"
+          echo "UPTIME=$(uptime -p 2>/dev/null || true)"
+          df -h /
+          echo "---GIT---"
+          cd /opt/porota-trading 2>/dev/null || exit 21
+          echo "HOST_GIT_SHA=$(git rev-parse HEAD 2>/dev/null || echo NO_GIT)"
+          echo "HOST_GIT_BRANCH=$(git branch --show-current 2>/dev/null || true)"
+          echo "HOST_GIT_STATUS_BEGIN"
+          git status --porcelain=v1 2>/dev/null || true
+          echo "HOST_GIT_STATUS_END"
+
+          echo "---DOCKER---"
+          sudo -n docker ps --format 'CONTAINER={{.Names}}|IMAGE={{.Image}}|ID={{.ID}}|STATUS={{.Status}}' | sort || true
+          for c in porota_production_observer porota_production_dashboard; do
+            if sudo -n docker inspect "$c" >/dev/null 2>&1; then
+              sudo -n docker inspect -f 'CONTAINER_DETAIL={{.Name}}|IMAGE_REF={{.Config.Image}}|IMAGE_ID={{.Image}}|RUNNING={{.State.Running}}|RESTARTS={{.RestartCount}}|READONLY={{.HostConfig.ReadonlyRootfs}}|STARTED={{.State.StartedAt}}' "$c"
+            else
+              echo "CONTAINER_DETAIL=$c|MISSING"
+            fi
+          done
+          sudo -n docker image inspect -f 'STABLE_IMAGE_ID={{.Id}}' porota-trading-bot:17.0.0-rc6 2>/dev/null || echo "STABLE_IMAGE_ID=MISSING"
+
+          echo "---OBSERVER_DB---"
+          if sudo -n docker inspect porota_production_observer >/dev/null 2>&1; then
+            sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, json
+          p='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          c=sqlite3.connect(p,uri=True,timeout=20); c.execute('PRAGMA query_only=ON')
+          print('DB_QUICK_CHECK='+str(c.execute('PRAGMA quick_check').fetchone()[0]))
+          cols=[r[1] for r in c.execute('PRAGMA table_info(observer_state)')]
+          wanted=[x for x in ('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at','last_market_data_at') if x in cols]
+          row=c.execute('SELECT '+','.join(wanted)+' FROM observer_state WHERE id=1').fetchone()
+          print('OBSERVER_STATE='+json.dumps(dict(zip(wanted,row or [])),sort_keys=True,default=str))
+          c.close()
+          from bs_instrument_contracts import FAMILIES
+          import bf_production_paper_observer as o
+          print('CONTRACT_FAMILIES='+','.join(sorted(FAMILIES)))
+          print('OBSERVER_OPERATIONAL_FAMILIES='+','.join(sorted(o.OPERATIONAL_FAMILIES)))
+          print('OBSERVER_SAFE_PAPER_TYPES='+','.join(sorted(o.SAFE_PAPER_TYPES)))
+          PY
+          fi
+
+          echo "---SYSTEMD_RC6---"
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk '$1 ~ /^porota-.*rc6.*\.(service|timer)$/ {print $1}' | sort); do
+            en="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+            ac="$(systemctl is-active "$unit" 2>/dev/null || true)"
+            frag="$(systemctl show -p FragmentPath --value "$unit" 2>/dev/null || true)"
+            sha=""
+            if [ -n "$frag" ] && [ -f "$frag" ]; then sha="$(sha256sum "$frag" | awk '{print $1}')"; fi
+            printf 'UNIT=%s|ENABLED=%s|ACTIVE=%s|FRAGMENT=%s|SHA256=%s\n' "$unit" "$en" "$ac" "$frag" "$sha"
+          done
+
+          echo "---PPI_WATCH_READONLY---"
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+            printf 'PPI_WATCH=%s|ENABLED=%s|ACTIVE=%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+
+          echo "---SELECTED_UNIT_CONTRACTS---"
+          for unit in porota-iol-shadow-collector-rc6.service porota-iol-shadow-collector-rc6.timer porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer porota-history-postclose-rc6.timer porota-preopen-rc6.timer porota-fast-functional-health-rc6.timer porota-functional-health-rc6.timer porota-full-db-integrity-rc6.timer; do
+            echo "UNIT_CONTRACT_BEGIN=$unit"
+            systemctl cat "$unit" 2>/dev/null | grep -E '^(ExecStart|Environment=PYTHONPATH|Environment=POROTA_IOL_SHADOW_SCOPE|OnCalendar|OnUnitActiveSec|Unit=|WantedBy=)' || true
+            echo "UNIT_CONTRACT_END=$unit"
+          done
+          echo "===RC6_LIVE_AUDIT_END==="
+          REMOTE
+
+      - name: Compare baseline source to live host bytes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat /tmp/rc6-baseline-runtime.tsv | ssh -i "$HOME/.ssh/porota_rc6_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'python3 -c '"'"'
+          import sys,hashlib
+          from pathlib import Path
+          root=Path("/opt/porota-trading")
+          same=missing=changed=0
+          changed_rows=[]
+          for line in sys.stdin:
+              expected,rel=line.rstrip("\n").split("\t",1)
+              p=root/rel
+              if not p.is_file():
+                  missing+=1; changed_rows.append(("MISSING",rel,""))
+                  continue
+              h=hashlib.sha256(p.read_bytes()).hexdigest()
+              if h==expected: same+=1
+              else: changed+=1; changed_rows.append(("DIFF",rel,h))
+          print(f"HOST_BASELINE_HASH_SUMMARY|same={same}|changed={changed}|missing={missing}")
+          for state,rel,h in changed_rows:
+              print(f"HOST_BASELINE_{state}|{rel}|{h}")
+          '"'"''
+
+      - name: Compare baseline source to running observer image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat /tmp/rc6-baseline-runtime.tsv | ssh -i "$HOME/.ssh/porota_rc6_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -c '"'"'
+          import sys,hashlib
+          from pathlib import Path
+          root=Path("/app")
+          same=missing=changed=0
+          rows=[]
+          for line in sys.stdin:
+              expected,rel=line.rstrip("\n").split("\t",1)
+              if rel.startswith("systemd/") or rel.startswith("ops/systemd/"):
+                  continue
+              p=root/rel
+              if not p.is_file():
+                  missing+=1; rows.append(("MISSING",rel,""))
+                  continue
+              h=hashlib.sha256(p.read_bytes()).hexdigest()
+              if h==expected: same+=1
+              else: changed+=1; rows.append(("DIFF",rel,h))
+          print(f"CONTAINER_BASELINE_HASH_SUMMARY|same={same}|changed={changed}|missing={missing}")
+          for state,rel,h in rows:
+              print(f"CONTAINER_BASELINE_{state}|{rel}|{h}")
+          '"'"''
+
+      - name: Read-only audit summary
+        shell: bash
+        run: |
+          {
+            echo '### RC6 live baseline audit'
+            echo "- Baseline: `$BASELINE_SHA`"
+            echo '- Host mutation: NONE'
+            echo '- Docker mutation: NONE'
+            echo '- systemd mutation: NONE'
+            echo '- DB mode: read-only'
+            echo '- PPI Watch: inspected only'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "RC6_LIVE_BASELINE_AUDIT=COMPLETE|MUTATION=NONE"
+
+      - name: Runner cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/porota_rc6_audit" /tmp/rc6-baseline-runtime.tsv
