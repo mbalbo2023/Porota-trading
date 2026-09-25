@@ -120,15 +120,57 @@ def _rows(path: Path, source: str):
         return out
     return []
 
+def _family_reference_rows(path: Path):
+    payload=_load(path)
+    out=[]
+    for raw in payload.get("records",[]) if isinstance(payload,dict) else []:
+        if not isinstance(raw,dict): continue
+        family=canonical_family(raw.get("instrument_type") or raw.get("family"))
+        ticker=str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
+        if not family or not ticker: continue
+        row=dict(raw)
+        row["ticker"]=ticker
+        row["instrument_type"]=family
+        row["market"]=canonical_market(raw.get("market") or "BYMA")
+        row["settlement"]=canonical_settlement(raw.get("settlement") or raw.get("term"),family)
+        row["source"]="IOL_COMPLEMENTARY"
+        out.append(row)
+    # FCI inventory is discovery evidence, not a complete trading contract.
+    for raw in payload.get("fci",[]) if isinstance(payload,dict) else []:
+        if not isinstance(raw,dict) or not raw.get("operable"): continue
+        ticker=str(raw.get("asset") or "").strip().upper()
+        if not ticker: continue
+        out.append({
+            "ticker":ticker,"instrument_type":"FCI",
+            "market":canonical_market(raw.get("market") or "BYMA"),
+            "currency":raw.get("currency"),
+            "settlement":canonical_settlement("T0","FCI"),
+            "description":str(raw.get("description") or ""),
+            "source":"IOL_COMPLEMENTARY",
+            "fci_type":raw.get("fciType"),
+            "raw":dict(raw),
+        })
+    return out
+
+def _load(path: Path):
+    try:
+        value=json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value,dict) else {}
+    except (OSError,ValueError,json.JSONDecodeError):
+        return {}
+
 def complementary_discovery(root: Path|str="/app/data/market"):
     root=Path(root)
-    values=_rows(root/"iol_shadow_latest.json","IOL")+_rows(root/"rc6_public_sources_latest.json","BYMA")
+    values=(
+        _rows(root/"iol_shadow_latest.json","IOL")
+        + _family_reference_rows(root/"iol_family_reference_latest.json")
+        + _rows(root/"rc6_public_sources_latest.json","BYMA")
+    )
     unique={}
+    priority={"BYMA_PUBLIC_COMPLEMENTARY":1,"IOL_COMPLEMENTARY":2}
     for row in values:
         key=(row["ticker"],row["instrument_type"],row["market"],row.get("settlement") or "")
         current=unique.get(key)
-        # IOL carries currency/lot metadata and therefore wins only when PPI is
-        # absent; PPI itself is merged by the observer before these rows.
-        if current is None or (row.get("source")=="IOL_COMPLEMENTARY" and current.get("source")!="IOL_COMPLEMENTARY"):
+        if current is None or priority.get(str(row.get("source")),0) > priority.get(str(current.get("source")),0):
             unique[key]=row
     return list(unique.values())
