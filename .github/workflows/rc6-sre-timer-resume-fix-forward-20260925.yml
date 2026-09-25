@@ -57,8 +57,8 @@ jobs:
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
           cd /opt/porota-trading
-          echo "HOST_SHA=$(git rev-parse HEAD)"
-          test "$(git rev-parse HEAD)" = "c81f8d7c089433e89f3d664b57d3a9b915565419"
+          echo "HOST_CONTROL_TREE_SHA=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "a47f3339ec6dfe9d5afde444b1aaddabceb0e94d"
           for unit in             porota-fast-functional-health-rc6.timer             porota-full-db-integrity-rc6.timer             porota-host-general-backup-rc6.timer             porota-preopen-rc6.timer; do
             echo "PRE_TIMER=$unit|ENABLED=$(systemctl is-enabled "$unit" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$unit" 2>/dev/null || true)"
           done
@@ -158,7 +158,7 @@ jobs:
           fi
 
           cd "$ROOT"
-          test "$(git rev-parse HEAD)" = "c81f8d7c089433e89f3d664b57d3a9b915565419"
+          test "$(git rev-parse HEAD)" = "a47f3339ec6dfe9d5afde444b1aaddabceb0e94d"
 
           python3 - <<'PY'
           import sqlite3
