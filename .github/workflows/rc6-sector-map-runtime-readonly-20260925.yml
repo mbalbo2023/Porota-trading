@@ -1,0 +1,66 @@
+name: RC6 Sector Map Runtime Readonly
+
+on:
+  push:
+    branches:
+      - audit/rc6-no-trades-source-cascade-20260925
+    paths:
+      - .github/workflows/rc6-sector-map-runtime-readonly-20260925.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Check deployed sector map
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" '
+            set -Eeuo pipefail
+            echo "SECTOR_MAP_FILE_BEGIN"
+            if sudo -n docker exec porota_production_observer test -f /app/POROTA_SECTOR_MAP_V1.csv; then
+              echo "SECTOR_MAP_EXISTS=TRUE"
+              sudo -n docker exec porota_production_observer wc -l /app/POROTA_SECTOR_MAP_V1.csv
+              sudo -n docker exec porota_production_observer sha256sum /app/POROTA_SECTOR_MAP_V1.csv
+            else
+              echo "SECTOR_MAP_EXISTS=FALSE"
+            fi
+            echo "SECTOR_MAP_FILE_END"
+            sudo -n docker exec porota_production_observer python -c "import es_policy_context_rc6 as p; m=p._explicit_sector_map(); print('"'"'SECTOR_MAP_RUNTIME_ROWS='"'"'+str(len(m))); print('"'"'SECTOR_MAP_RUNTIME_SYMBOLS='"'"'+'"'"','"'"'.join(sorted({k[0] for k in m})))"
+          '
+
+      - name: PAPER safety
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          STATE="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n docker exec porota_production_observer python -c \"import sqlite3;c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True);c.execute('PRAGMA query_only=ON');print('|'.join(map(str,c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone())));c.close()\"")"
+          echo "POST_SAFETY=$STATE"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+          echo "RC6_SECTOR_MAP_RUNTIME_AUDIT=GREEN"
