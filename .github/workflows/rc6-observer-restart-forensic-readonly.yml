@@ -68,10 +68,10 @@ jobs:
           echo "---HOST_PRESSURE---"
           free -m
           df -h /
-          echo "---OBSERVER_DB_LIGHT---"
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          echo "---OBSERVER_DB_LIGHT_HOST---"
+          sudo -n python3 - <<'PY'
           import json,sqlite3
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
           c.execute('PRAGMA query_only=ON')
           row=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at FROM observer_state WHERE id=1').fetchone()
           c.close()
