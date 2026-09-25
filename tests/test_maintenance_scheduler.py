@@ -17,16 +17,19 @@ def test_scheduler_siempre_activo_contiene_todas_las_tareas():
         "maintenance_monthly_autotune",
         "maintenance_data_retention",
         "maintenance_macro_refresh",
-        "maintenance_historical_refresh",
-        "maintenance_historical_catchup",
-        "maintenance_historical_startup_catchup",
         "maintenance_daily_backup",
         "maintenance_model_guardian",
         "maintenance_monthly_report",
         "maintenance_learning_diagnostic",
         "maintenance_weekly_report",
         "maintenance_news_scan",
+        "maintenance_gdelt_shadow",
+        "maintenance_action4_audit",
+        "maintenance_validation_projection",
+        "maintenance_preopen_freshness_audit",
     }
+    assert not {"maintenance_historical_refresh", "maintenance_historical_catchup",
+                "maintenance_historical_startup_catchup"} & ids
 
 
 def test_backup_ocurre_despues_del_refresco_macro():

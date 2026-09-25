@@ -106,9 +106,10 @@ def test_menu_tecnico_consolidado_y_refresh_accesible():
     for old_top_level in (">Salud de APIs<", ">SRE<", ">Telegram<", ">Logs<", ">Configuración<"):
         assert old_top_level not in nav
     keys=[key for key, _ in dashboard.SYSTEM_SECTIONS]
-    for required in ("introspeccion", "salud", "scheduler", "scraping", "backups",
+    for required in ("introspeccion", "salud", "scheduler", "backups",
                      "configuracion", "telegram", "logs"):
         assert required in keys
+    assert "scraping" not in keys
     assert "window.refreshPorota" in dashboard._document("x", "<p>x</p>")
 
 
