@@ -1,0 +1,114 @@
+name: RC6 read-only source coverage audit 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-availability-readonly-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+
+      - name: Summarize runtime source coverage
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json,os
+          from pathlib import Path
+          db='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=20); c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('SAFETY='+json.dumps({'mode':mode,'real_orders_sent':orders},sort_keys=True))
+          q="""SELECT instrument_type,status,capability,COUNT(*) n
+               FROM financial_instrument_catalog
+               GROUP BY instrument_type,status,capability
+               ORDER BY instrument_type,status,capability"""
+          print('CATALOG_GROUPS='+json.dumps([dict(r) for r in c.execute(q)],sort_keys=True))
+          if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_family_coverage'").fetchone():
+              print('FAMILY_COVERAGE='+json.dumps([dict(r) for r in c.execute(
+                "SELECT * FROM catalog_family_coverage ORDER BY instrument_type")],sort_keys=True))
+          rows=[dict(r) for r in c.execute("SELECT metadata_json,instrument_type,status,capability FROM financial_instrument_catalog")]
+          src={}
+          for r in rows:
+              try:m=json.loads(r['metadata_json'] or '{}')
+              except Exception:m={}
+              s=str(m.get('_discovery_source') or 'UNKNOWN').upper()
+              key=(r['instrument_type'],s)
+              src[key]=src.get(key,0)+1
+          print('CATALOG_DISCOVERY_SOURCES='+json.dumps(
+            [{'family':k[0],'source':k[1],'count':v} for k,v in sorted(src.items())],sort_keys=True))
+          c.close()
+
+          root=Path('/app/data/market')
+          def load(name):
+              try:
+                  v=json.loads((root/name).read_text(encoding='utf-8'))
+                  return v if isinstance(v,dict) else {}
+              except Exception:return {}
+          fam=load('iol_family_reference_latest.json')
+          records=[r for r in fam.get('records',[]) if isinstance(r,dict)]
+          by={}
+          contracts={}
+          for r in records:
+              f=str(r.get('instrument_type') or r.get('family') or 'UNKNOWN').upper()
+              by[f]=by.get(f,0)+1
+              if isinstance(r.get('financial_contract_v17'),dict) and r.get('financial_contract_v17'):
+                  contracts[f]=contracts.get(f,0)+1
+          print('IOL_FAMILY_REFERENCE='+json.dumps({
+             'refreshed_at':fam.get('refreshed_at'),'records':len(records),
+             'by_family':by,'contracts_by_family':contracts,
+             'fci_count':len(fam.get('fci',[]) if isinstance(fam.get('fci'),list) else []),
+             'caucion_ars_count':len((fam.get('cauciones') or {}).get('ARS',[]) if isinstance((fam.get('cauciones') or {}).get('ARS',[]),list) else []),
+             'caucion_usd_count':len((fam.get('cauciones') or {}).get('USD',[]) if isinstance((fam.get('cauciones') or {}).get('USD',[]),list) else []),
+             'errors':fam.get('errors',[])
+          },sort_keys=True))
+          shadow=load('iol_shadow_latest.json')
+          symbols=[r for r in shadow.get('symbols',[]) if isinstance(r,dict)]
+          sf={}
+          for r in symbols:
+              f=str(r.get('asset_type') or r.get('family') or 'UNKNOWN').upper()
+              sf[f]=sf.get(f,0)+1
+          print('IOL_SHADOW='+json.dumps({'refreshed_at':shadow.get('refreshed_at'),'count':len(symbols),'by_family':sf,'progress':shadow.get('progress')},sort_keys=True))
+          public=load('rc6_public_sources_latest.json')
+          print('PUBLIC_SOURCES='+json.dumps([
+             {'source':r.get('source'),'status':r.get('status'),'record_count':r.get('record_count'),'observed_at':r.get('observed_at')}
+             for r in public.get('sources',[]) if isinstance(r,dict)],sort_keys=True))
+          print('ROFEX_RUNTIME='+json.dumps({
+             'enabled':os.getenv('ROFEX_ENABLED','').lower()=='true',
+             'environment':os.getenv('ROFEX_ENVIRONMENT',''),
+             'user_present':bool(os.getenv('ROFEX_USER')),
+             'password_present':bool(os.getenv('ROFEX_PASSWORD')),
+             'account_present':bool(os.getenv('ROFEX_ACCOUNT'))
+          },sort_keys=True))
+          try:
+              import pyRofex
+              print('PYROFEX_IMPORT=OK')
+          except Exception as exc:
+              print('PYROFEX_IMPORT='+type(exc).__name__)
+          PY
+          REMOTE
