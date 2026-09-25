@@ -29,6 +29,8 @@ from bd_ppi_readonly_guard import (ProductionMarketReader, ReadOnlyPolicyViolati
 from be_paper_engine import D, PaperBroker, PaperStore, Quote, now_iso
 import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
+import rc6_dynamic_discovery as dynamic_discovery
+from bs_instrument_contracts import family_name
 from _version import VERSION
 from am_us_equity_calendar_rc6 import cedear_opening_gate
 from rc6_source_consolidation import collect_public_sources
@@ -57,6 +59,8 @@ SIGNAL_MIN_SAMPLES = max(3, int(os.getenv("PAPER_SIGNAL_MIN_SAMPLES", "6")))
 SIGNAL_WINDOW_MINUTES = max(15, int(os.getenv("PAPER_SIGNAL_WINDOW_MINUTES", "90")))
 HISTORY_BATCH_LIMIT = max(5, min(int(os.getenv("PPI_HISTORY_BATCH_LIMIT", "40")), 100))
 CATALOG_QUERY_SLEEP_SECONDS = max(0.0, float(os.getenv("PPI_CATALOG_QUERY_SLEEP_SECONDS", "0.05")))
+CATALOG_DISCOVERY_BUDGET = max(4, min(int(os.getenv("PPI_CATALOG_DISCOVERY_BUDGET", "36")), 72))
+CATALOG_STALE_HOURS = max(24, int(os.getenv("PPI_CATALOG_STALE_HOURS", "72")))
 MARKET_OPEN_HOUR = int(os.getenv("MARKET_OPEN_HOUR", "10"))
 MARKET_OPEN_MINUTE = int(os.getenv("MARKET_OPEN_MINUTE", "30"))
 MARKET_CLOSE_HOUR = int(os.getenv("MARKET_CLOSE_HOUR", "17"))
@@ -109,24 +113,13 @@ FOCUS_SYMBOLS = configured_focus()
 FOCUS_MINIMUM_FOR_OPENINGS = max(
     1, min(int(os.getenv("PAPER_FOCUS_MINIMUM_FOR_OPENINGS", "4")), len(FOCUS_SYMBOLS))
 )
-# Semillas amplias; PPI sigue siendo quien confirma existencia, clase y mercado.
-# La lista no habilita por si sola ningun instrumento y una coincidencia devuelta
-# por el broker se persiste individualmente en el universo observable.
-DISCOVERY_SEEDS = {
-    "ACCIONES": ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "TXAR",
-                 "ALUA", "LOMA", "COME", "EDN", "TGSU2", "TGNO4", "TRAN", "BYMA",
-                 "CRES", "HARG", "IRSA", "TECO2", "VALO", "MIRG", "MOLI", "AGRO"),
-    "CEDEARS": ("AAPL", "AAPLD", "AAPLC", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
-                "KO", "MCD", "WMT", "DIS", "NFLX", "AMD", "INTC", "AVGO", "ORCL",
-                "IBM", "CRM", "JPM", "BAC", "V", "MA", "XOM", "CVX", "GOLD", "VALE",
-                "PBR", "BABA", "MELI", "NU"),
-}
+# Legacy symbol lists are deliberately not discovery authority.  The full
+# instrument universe is generated from PPI family/market configuration and
+# API query tokens in rc6_dynamic_discovery.py.  Keep the empty name only for
+# release-contract compatibility with older verification code.
+DISCOVERY_SEEDS = {}
 STOP = False
-
 SAFE_PAPER_TYPES = set(OPERATIONAL_FAMILIES)
-SETTLEMENT_BY_TYPE = {"ACCIONES": "A-24HS", "CEDEARS": "A-24HS"}
-WATCHLIST_PATH = Path(os.getenv("INSTRUMENT_WATCHLIST_PATH", "n_instrument_watchlist.json"))
-
 
 def _stop(*_):
     global STOP
@@ -182,33 +175,18 @@ def _market_open(now=None):
     return _market_phase(now) == "OPEN"
 
 
-def _candidate_universe():
-    """Universo operativo estricto: acciones y CEDEARs, sin barrido residual."""
-    rows = {(ticker, kind, settlement, "BYMA", True)
-            for ticker, kind, settlement in CORE_SYMBOLS}
-    try:
-        data = json.loads(WATCHLIST_PATH.read_text(encoding="utf-8"))
-        for asset_class, block in data.items():
-            if str(asset_class).startswith("_") or not isinstance(block, dict):
-                continue
-            kind = str(block.get("instrument_type") or asset_class).upper()
-            if kind not in OPERATIONAL_FAMILIES:
-                continue
-            settlement = str(block.get("settlement") or SETTLEMENT_BY_TYPE.get(kind) or "").strip()
-            # No inventar plazo: una identidad sin settlement contractual queda
-            # fuera del ciclo hasta que PPI/IOL/BYMA lo publique.
-            if not settlement:
-                continue
-            for ticker in block.get("tickers", []):
-                if str(ticker).strip():
-                    rows.add((str(ticker).strip().upper(), kind, settlement, "BYMA", True))
-    except Exception:
-        pass
-    for kind, tickers in DISCOVERY_SEEDS.items():
-        for ticker in tickers:
-            rows.add((ticker, kind, SETTLEMENT_BY_TYPE[kind], "BYMA", True))
-    return sorted(rows, key=lambda value: (value[1], value[0]))
+def _candidate_universe(configuration=None, *, cursor=0, budget=None):
+    """Compatibility view of the generated API discovery plan.
 
+    These are search filters, not instrument identities. No ticker watchlist or
+    CSV is read here and no returned filter is itself considered operable.
+    """
+    selected, _, _ = dynamic_discovery.batch(
+        configuration, cursor=cursor, budget=budget or CATALOG_DISCOVERY_BUDGET)
+    return tuple(
+        (item["ticker_query"], item["provider_type"], "UNKNOWN", item["market"], True)
+        for item in selected
+    )
 
 def _walk_numbers(value, keys):
     """Encuentra el primer numero bajo cualquiera de las claves, sin asumir SDK."""
@@ -431,10 +409,10 @@ def _catalog_records(value):
 
 
 def _download_catalog(reader, store):
-    """Publica un lote atómico; conserva registros previos como STALE.
+    """Refresh a bounded slice of an API-discovered universe.
 
-    Los filtros de búsqueda y los instrumentos devueltos son entidades
-    diferentes. No se inventa una especie por haber consultado un prefijo.
+    Discovery is resumable and generated by family/market/token. A partial scan
+    never marks untouched records stale. Existing rows expire only by TTL.
     """
     failures = available = 0
     downloaded = now_iso()
@@ -446,141 +424,149 @@ def _download_catalog(reader, store):
             configuration = financial_catalog.validate_configuration(reader.market_configuration())
         except Exception as exc:
             store.event("CATALOG_CONFIGURATION_UNAVAILABLE", type(exc).__name__)
-    for ticker_query, instrument_type, fallback_settlement, market_query, _ in _candidate_universe():
-        status, detail = "EMPTY_FILTER_RESULT", "Este filtro no devolvió coincidencias; no prueba indisponibilidad."
+
+    with store.connect() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS catalog_discovery_state(
+          id INTEGER PRIMARY KEY CHECK(id=1), cursor INTEGER NOT NULL,
+          completed_cycles INTEGER NOT NULL, last_run_at TEXT,
+          last_full_cycle_at TEXT, detail TEXT NOT NULL DEFAULT '')""")
+        row = c.execute("SELECT cursor,completed_cycles FROM catalog_discovery_state WHERE id=1").fetchone()
+        cursor = int(row[0] if row else 0)
+        completed_cycles = int(row[1] if row else 0)
+
+    plan, next_cursor, wrapped = dynamic_discovery.batch(
+        configuration, cursor=cursor, budget=CATALOG_DISCOVERY_BUDGET)
+
+    for item in plan:
+        ticker_query = item["ticker_query"]
+        name_query = item["name_query"]
+        instrument_type = item["provider_type"]
+        market_query = item["market"]
+        status, detail = "EMPTY_FILTER_RESULT", "Filtro API sin coincidencias; no prueba indisponibilidad."
         count = 0
-        name_query = {("OPCIONES", "GFG"): "GALICIA", ("OPCIONES", "YPF"): "YPF",
-                      ("OPCIONES", "PAM"): "PAMPA", ("LETRAS", "S"): "LETRA",
-                      ("LETRAS", "T"): "LETRA", ("ON", "MRC"): "MASTELLONE",
-                      ("ON", "YMC"): "YPF"}.get((instrument_type, ticker_query), ticker_query)
-        if configuration is not None:
-            missing = ('TYPE' if instrument_type not in configuration['instrument_types'] else
-                       'MARKET' if market_query not in configuration['markets'] else None)
-            if missing:
-                query_results.append((run_id, ticker_query, name_query, instrument_type,
-                    market_query, missing + '_NOT_ENUMERATED', 0, 'No se consultó: ausente de la configuración actual.'))
-                continue
         try:
             payload = reader.search_instruments(
                 ticker_query, instrument_type, name=name_query, market=market_query)
             if not isinstance(payload, list) or any(not isinstance(r, dict) for r in payload):
-                raise ValueError('PPI_SEARCH_INVALID_SHAPE')
-            records = payload  # contrato público: lista directa; no extraer de errores anidados
-            for raw in records:
+                raise ValueError("PPI_SEARCH_INVALID_SHAPE")
+            for raw in payload:
                 try:
-                    record = financial_catalog.normalize_record(raw, fallback_settlement, downloaded, run_id)
+                    # SearchInstrument does not publish settlement in the observed
+                    # payload. It remains UNKNOWN until another provider/contract
+                    # source proves it; discovery never invents A-24HS.
+                    record = financial_catalog.normalize_record(raw, None, downloaded, run_id)
                 except (ValueError, TypeError):
                     continue
                 if configuration is not None:
-                    if record['instrument_type'] not in configuration['instrument_types']:
-                        record['capability'] = 'TYPE_NOT_ENUMERATED'
-                    elif record['market'] not in configuration['markets']:
-                        record['capability'] = 'MARKET_NOT_ENUMERATED'
-                key = tuple(record[k] for k in ("ticker", "instrument_type", "market", "currency", "settlement"))
+                    if record["instrument_type"] not in configuration["instrument_types"]:
+                        record["capability"] = "TYPE_NOT_ENUMERATED"
+                    elif record["market"] not in configuration["markets"]:
+                        record["capability"] = "MARKET_NOT_ENUMERATED"
+                key = tuple(record[k] for k in
+                            ("ticker","instrument_type","market","currency","settlement"))
                 found[key] = record
                 count += 1
             if count:
                 status, detail, available = "AVAILABLE", f"{count} coincidencia(s).", available + 1
-            elif records:
-                status, detail = "INVALID_METADATA", "Respuestas sin ticker/clase verificables."
         except Exception as exc:
             failures += 1
             status = "ERROR"
             detail = f"{type(exc).__name__}: {str(exc)[:260]}"
-        query_results.append((run_id, ticker_query, name_query, instrument_type, market_query, status, count, detail))
+        query_results.append((run_id,ticker_query,name_query,instrument_type,
+                              market_query,status,count,detail))
         if CATALOG_QUERY_SLEEP_SECONDS:
             time.sleep(CATALOG_QUERY_SLEEP_SECONDS)
+
     with store.connect() as c:
         c.execute("BEGIN IMMEDIATE")
         if configuration is not None:
-            for name, payload in configuration.items():
+            for name,payload in configuration.items():
                 c.execute("INSERT OR REPLACE INTO broker_market_configuration VALUES(?,?,?)",
-                          (name, downloaded, json.dumps(payload, ensure_ascii=False)))
-        c.execute("UPDATE financial_instrument_catalog SET status='STALE'")
-        c.execute("UPDATE candidate_universe SET status='STALE',can_simulate=0")
+                          (name,downloaded,json.dumps(payload,ensure_ascii=False)))
         for record in found.values():
             financial_catalog.persist(c, record)
             c.execute("INSERT OR REPLACE INTO instrument_catalog VALUES(?,?,?,?,?,?,?)",
-                      (record["instrument_type"], record["ticker"], record["description"],
-                       record["market"], record["settlement"], downloaded,
-                       json.dumps(record["raw"], ensure_ascii=False, default=str)))
-            c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
-                      (record["ticker"], record["instrument_type"], record["settlement"], record["market"],
-                       int(record["capability"] == "READY_PAPER_SPOT"), "AVAILABLE", record["capability"], downloaded))
-        c.executemany("INSERT INTO catalog_query_results VALUES(?,?,?,?,?,?,?,?)", query_results)
-        financial_catalog.persist_family_coverage(c, configuration, query_results,
-                                                  found.values(), run_id, downloaded)
-    total = len(found)
-    rofex_available = sum(r["market"] in {"ROFEX", "A3"} for r in found.values())
-    state = "VERDE" if available and not failures and configuration is not None else "AMARILLO" if available else "ROJO"
-    detail = (f"{available} búsquedas con coincidencias; {total} identidades únicas; "
-              f"{failures} búsquedas fallidas. Ticker y Name siempre no vacíos. "
-              f"Configuración actual: {'verificada' if configuration is not None else 'no disponible'}.")
-    _sync_state(store, "PPI_PRODUCTION_CATALOG", state, total, detail,
-                success=bool(available))
-    _health(store, "PPI_PRODUCTION_CATALOG", state, detail, "PPI Producción",
-            success=bool(available))
-    rofex_state = "AMARILLO" if rofex_available else "GRIS"
-    rofex_detail = (f"{rofex_available} contrato(s) visible(s); contexto únicamente. "
-                    "No se simulan futuros sin multiplicador y margen atribuible."
-                    if rofex_available else
-                    "Sin contrato ROFEX validado. Contexto desactivado; no afecta contado.")
-    _health(store, "ROFEX_MARKETDATA", rofex_state, rofex_detail,
-            "PPI Producción / ROFEX", success=bool(rofex_available))
+                      (record["instrument_type"],record["ticker"],record["description"],
+                       record["market"],record["settlement"],downloaded,
+                       json.dumps(record["raw"],ensure_ascii=False,default=str)))
+            c.execute("""INSERT OR REPLACE INTO candidate_universe
+              VALUES(?,?,?,?,?,?,?,?)""",
+                      (record["ticker"],record["instrument_type"],record["settlement"],
+                       record["market"],int(record["capability"]=="READY_PAPER_SPOT"),
+                       "AVAILABLE",record["capability"],downloaded))
+        # Only TTL can retire rows not touched by this bounded pass.
+        cutoff=(datetime.now(TZ)-timedelta(hours=CATALOG_STALE_HOURS)).isoformat()
+        c.execute("""UPDATE financial_instrument_catalog SET status='STALE'
+          WHERE status='AVAILABLE' AND julianday(last_seen_at)<julianday(?)""",(cutoff,))
+        c.execute("""UPDATE candidate_universe SET status='STALE',can_simulate=0
+          WHERE status='AVAILABLE' AND julianday(last_checked_at)<julianday(?)""",(cutoff,))
+        c.executemany("INSERT INTO catalog_query_results VALUES(?,?,?,?,?,?,?,?)",query_results)
+        financial_catalog.persist_family_coverage(
+            c,configuration,query_results,found.values(),run_id,downloaded)
+        c.execute("""INSERT INTO catalog_discovery_state
+          (id,cursor,completed_cycles,last_run_at,last_full_cycle_at,detail)
+          VALUES(1,?,?,?,?,?)
+          ON CONFLICT(id) DO UPDATE SET cursor=excluded.cursor,
+            completed_cycles=excluded.completed_cycles,last_run_at=excluded.last_run_at,
+            last_full_cycle_at=COALESCE(excluded.last_full_cycle_at,catalog_discovery_state.last_full_cycle_at),
+            detail=excluded.detail""",
+          (next_cursor,completed_cycles+int(wrapped),downloaded,
+           downloaded if wrapped else None,
+           f"budget={len(plan)} found={len(found)} failures={failures} generated_api_plan=1"))
+
+    total=len(found)
+    rofex_available=sum(r["market"] in {"ROFEX","A3"} for r in found.values())
+    state="VERDE" if available and not failures and configuration is not None else "AMARILLO" if available else "ROJO"
+    detail=(f"Discovery API generado: filtros={len(plan)}; {available} con coincidencias; "
+            f"{total} identidades; fallas={failures}; cursor={next_cursor}; "
+            f"ciclo_completo={'SI' if wrapped else 'NO'}. Sin watchlist/CSV como autoridad.")
+    _sync_state(store,"PPI_PRODUCTION_CATALOG",state,total,detail,success=bool(available))
+    _health(store,"PPI_PRODUCTION_CATALOG",state,detail,"PPI Producción",success=bool(available))
+    _health(store,"ROFEX_MARKETDATA","AMARILLO" if rofex_available else "GRIS",
+            (f"{rofex_available} identidad(es) observadas; contrato especializado aún gobierna PAPER."
+             if rofex_available else "Sin identidad ROFEX/A3 en este lote de discovery."),
+            "PPI Producción / mercado",success=bool(rofex_available))
     return total
 
-
 def _eligible_symbols(store):
-    """Devuelve el universo completo de familias en rotación PAPER/SHADOW.
+    """Return only actually PAPER-simulatable identities, round-robin by family.
 
-    El catálogo puede contener más familias que el lote activo. La selección
-    posterior mantiene una ventana limitada y un cursor persistente; aquí no
-    se descartan familias por pertenecer a renta fija, cauciones o derivados.
+    The catalog may be much larger and remains available to evidence collectors.
+    Provider type is preserved for PPI calls (ON/ETF), while grouping uses the
+    canonical Porota family.
     """
-    core = list(CORE_SYMBOLS)
-    family_order = (
-        "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
-        "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+    core=list(CORE_SYMBOLS)
+    family_order=(
+        "ACCIONES","CEDEARS","ETFS","BONOS","LETRAS",
+        "OBLIGACIONES","OPCIONES","FUTUROS","CAUCIONES","FCI",
     )
-    allowed_sql = ",".join(f"'{family}'" for family in family_order)
     try:
         with store.connect() as c:
-            normalized_count = c.execute(
-                "SELECT COUNT(*) FROM financial_instrument_catalog"
-            ).fetchone()[0]
-            if normalized_count:
-                rows = c.execute(f"""SELECT DISTINCT ticker,instrument_type,settlement
-                  FROM financial_instrument_catalog
-                  WHERE status='AVAILABLE'
-                    AND UPPER(instrument_type) IN ({allowed_sql})
-                  ORDER BY instrument_type,ticker,settlement""").fetchall()
-            else:
-                rows = c.execute(f"""SELECT ticker,instrument_type,settlement
-                  FROM candidate_universe
-                  WHERE can_simulate=1 AND status='AVAILABLE'
-                    AND UPPER(instrument_type) IN ({allowed_sql})
-                  ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
-                  instrument_type,ticker""").fetchall()
-        seen = set(core)
-        groups = {kind: [] for kind in family_order}
-        for ticker, kind, settlement in rows:
-            kind = str(kind or "").upper()
-            value = (str(ticker).strip().upper(), kind, settlement)
-            if value not in seen and kind in groups:
-                groups[kind].append(value)
-        # Round-robin por familia: evita que acciones/CEDEARs consuman todo
-        # el lote y garantiza que las familias nuevas entren en la rotación.
+            rows=c.execute("""SELECT ticker,instrument_type,settlement
+              FROM candidate_universe
+              WHERE can_simulate=1 AND status='AVAILABLE'
+                AND trim(settlement)<>'' AND upper(settlement)<>'UNKNOWN'
+              ORDER BY instrument_type,ticker,settlement""").fetchall()
+        seen=set(core)
+        groups={kind:[] for kind in family_order}
+        for ticker,provider_kind,settlement in rows:
+            try:
+                canonical=family_name(provider_kind)
+            except ValueError:
+                continue
+            value=(str(ticker).strip().upper(),str(provider_kind).strip().upper(),
+                   str(settlement).strip().upper())
+            if canonical in groups and value not in seen:
+                groups[canonical].append(value)
         while any(groups.values()):
-            for kind in family_order:
-                if groups[kind]:
-                    value = groups[kind].pop(0)
+            for canonical in family_order:
+                if groups[canonical]:
+                    value=groups[canonical].pop(0)
                     if value not in seen:
-                        core.append(value)
-                        seen.add(value)
+                        core.append(value);seen.add(value)
     except Exception:
         pass
     return tuple(core)
-
 
 def _active_symbols(store):
     """Compatibilidad: devuelve el primer lote, no el universo histórico."""
