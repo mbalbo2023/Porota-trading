@@ -61,3 +61,36 @@ def test_restart_count_is_informational(monkeypatch):
     assert result["state"] == "GREEN"
     assert result["restart_count"] == 3
     assert result["restart_count_policy"] == "INFORMATIONAL"
+
+
+def test_preopen_has_no_inline_full_db_scan():
+    source = Path("rc6_preopen.py").read_text(encoding="utf-8")
+    assert "PRAGMA quick_check" not in source
+    assert "FULL_SCAN_POSTCLOSE_ONLY" in source
+
+
+def test_full_db_integrity_evidence_green_after_success(monkeypatch):
+    import rc6_preopen as preopen
+
+    answers = iter([
+        (0, "success", ""),
+        (0, "0", ""),
+        (0, "Fri 2026-09-25 12:30:00 UTC", ""),
+    ])
+    monkeypatch.setattr(preopen, "cmd", lambda args, timeout=20: next(answers))
+    result = preopen.full_db_integrity_evidence()
+    assert result["state"] == "GREEN"
+    assert result["policy"] == "FULL_SCAN_POSTCLOSE_ONLY"
+
+
+def test_full_db_integrity_evidence_red_without_completed_run(monkeypatch):
+    import rc6_preopen as preopen
+
+    answers = iter([
+        (0, "success", ""),
+        (0, "0", ""),
+        (0, "", ""),
+    ])
+    monkeypatch.setattr(preopen, "cmd", lambda args, timeout=20: next(answers))
+    result = preopen.full_db_integrity_evidence()
+    assert result["state"] == "RED"
