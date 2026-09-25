@@ -196,6 +196,57 @@ jobs:
               print(f"CONTAINER_BASELINE_{state}|{rel}|{h}")
           '"'"''
 
+      - name: Targeted forensic follow-up read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_audit" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          cd /opt/porota-trading || exit 21
+          echo "===RC6_TARGETED_FORENSIC_BEGIN==="
+
+          echo "---MISSING_PATH_PROOF---"
+          for p in             rc6_preopen_freshness_audit.py             scripts/rc6_iol_mcp_inventory.py             scripts/rc6_public_source_capture.py             scripts/rc6_telegram_diagnostic.py; do
+            if [ -f "$p" ]; then
+              printf 'PATH=%s|EXISTS=yes|SHA256=%s\n' "$p" "$(sha256sum "$p" | awk '{print $1}')"
+            else
+              printf 'PATH=%s|EXISTS=no\n' "$p"
+            fi
+          done
+
+          echo "---CURRENT_PREOPEN_CONTRACT_REFERENCES---"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/opt/porota-trading/rc6_preopen.py')
+          if not p.is_file():
+              print('CURRENT_PREOPEN=missing')
+          else:
+              for i,line in enumerate(p.read_text(errors='replace').splitlines(),1):
+                  if any(k in line for k in ('REQUIRED_TIMERS','BLOCKED_HISTORY_TIMERS','porota-','EXPECTED_IMAGE','MIN_FREE_BYTES')):
+                      print(f'PREOPEN_LINE={i}|{line}')
+          PY
+
+          echo "---SELECTED_TIMER_STATE---"
+          for unit in             porota-iol-shadow-collector-rc6.timer             porota-preopen-rc6.timer             porota-functional-health-rc6.timer             porota-fast-functional-health-rc6.timer             porota-host-general-backup-rc6.timer             porota-full-db-integrity-rc6.timer             porota-history-postclose-rc6.timer             porota-a3-history-daily-rc6.timer             porota-a3-history-reconcile-rc6.timer             porota-a3-history-weekend-rc6.timer             porota-snapshot-preopen-rc6.timer             porota-snapshot-postclose-rc6.timer; do
+            printf 'TIMER=%s|ENABLED=%s|ACTIVE=%s|NEXT=%s|LAST=%s\n'               "$unit"               "$(systemctl is-enabled "$unit" 2>/dev/null || true)"               "$(systemctl is-active "$unit" 2>/dev/null || true)"               "$(systemctl show -p NextElapseUSecRealtime --value "$unit" 2>/dev/null || true)"               "$(systemctl show -p LastTriggerUSec --value "$unit" 2>/dev/null || true)"
+          done
+
+          echo "---SELECTED_SERVICE_RESULT---"
+          for unit in             porota-iol-shadow-collector-rc6.service             porota-preopen-rc6.service             porota-snapshot-preopen-rc6.service             porota-functional-health-rc6.service             porota-fast-functional-health-rc6.service             porota-full-db-integrity-rc6.service             porota-history-postclose-rc6.service; do
+            printf 'SERVICE=%s|ACTIVE=%s|RESULT=%s|EXEC_STATUS=%s\n'               "$unit"               "$(systemctl is-active "$unit" 2>/dev/null || true)"               "$(systemctl show -p Result --value "$unit" 2>/dev/null || true)"               "$(systemctl show -p ExecMainStatus --value "$unit" 2>/dev/null || true)"
+          done
+
+          echo "---IOL_JOURNAL_TAIL---"
+          sudo -n journalctl -u porota-iol-shadow-collector-rc6.service --since '2026-09-24 00:00:00' --no-pager -n 120 || true
+          echo "---SNAPSHOT_PREOPEN_JOURNAL_TAIL---"
+          sudo -n journalctl -u porota-snapshot-preopen-rc6.service --since '2026-09-24 00:00:00' --no-pager -n 120 || true
+          echo "---PREOPEN_JOURNAL_TAIL---"
+          sudo -n journalctl -u porota-preopen-rc6.service --since '2026-09-24 00:00:00' --no-pager -n 120 || true
+
+          echo "===RC6_TARGETED_FORENSIC_END==="
+          REMOTE
+
       - name: Read-only audit summary
         shell: bash
         run: |
