@@ -142,3 +142,23 @@ def test_collect_builds_fixed_option_fci_and_caucion_evidence_together(tmp_path)
     assert result["cauciones"]["ARS"][0]["days"]==3
     assert result["cauciones"]["USD"][0]["days"]==3
     assert result["errors"]==[]
+
+
+def test_option_expiry_without_offset_is_bound_to_argentina_time():
+    assert m._option_expiry("2026-10-16T15:30:00") == "2026-10-16T15:30:00-03:00"
+    assert m._option_expiry("2026-10-16T18:30:00+00:00") == "2026-10-16T18:30:00+00:00"
+
+
+def test_option_contract_expiry_is_aware_and_accepted_by_financial_contract():
+    from bs_instrument_contracts import contract_from_metadata
+    chain={"underlying":"GGAL","options":[{
+        "symbol":"GFGC7000OC","option_type":"C","strike_price":7000,
+        "expiration":"2026-10-16T15:30:00","bid_price":87,"ask_price":88,
+        "volume":10,"is_stale":False}]}
+    infos={"GFGC7000OC":{"market":"BCBA","currency":"ARS","units_per_lot":1}}
+    row=m._option_records(
+        chain,infos,"2026-09-25T18:00:00+00:00",
+        underlying_info={"symbol":"GGAL","type":"ACCIONES","currency":"ARS"})[0]
+    spec=contract_from_metadata("GFGC7000OC","OPCIONES",row["financial_contract_v17"])
+    assert spec.expires_at == "2026-10-16T15:30:00-03:00"
+    assert spec.cash_multiplier == Decimal("100")
