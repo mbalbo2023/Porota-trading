@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 full DB integrity once postclose on weekdays
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 17:20:00 America/Argentina/Buenos_Aires
+Persistent=true
+RandomizedDelaySec=120
+Unit=porota-full-db-integrity-rc6.service
+
+[Install]
+WantedBy=timers.target

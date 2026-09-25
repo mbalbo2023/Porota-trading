@@ -1,0 +1,138 @@
+name: RC6 next control-plane read-only
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-next-control-plane-readonly
+  cancel-in-progress: true
+
+jobs:
+  runtime-pressure:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH
+        shell: bash
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Inspect memory and observer restarts only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===RUNTIME_PRESSURE_BEGIN==="
+          free -m
+          df -h /
+          sudo -n docker inspect -f 'OBSERVER|running={{.State.Running}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|started={{.State.StartedAt}}|image={{.Image}}' porota_production_observer
+          sudo -n docker inspect -f 'DASHBOARD|running={{.State.Running}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|started={{.State.StartedAt}}|image={{.Image}}' porota_production_dashboard
+          sudo -n docker stats --no-stream --format 'STATS|{{.Name}}|mem={{.MemUsage}}|cpu={{.CPUPerc}}' porota_production_observer porota_production_dashboard 2>/dev/null || true
+          echo "---KERNEL_MEMORY_TAIL---"
+          sudo -n journalctl -k --since '2026-09-25 04:15:00' --no-pager 2>/dev/null | grep -Ei 'out of memory|oom|killed process|memory cgroup' | tail -n 80 || true
+          echo "---OBSERVER_LIGHT_STATE---"
+          sudo -n python3 - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print('STATE='+json.dumps(dict(zip(('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at'),row or [])),sort_keys=True,default=str))
+          PY
+          echo "===RUNTIME_PRESSURE_END==="
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  preopen-drift:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BASELINE_SHA: c81f8d7c089433e89f3d664b57d3a9b915565419
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          fetch-depth: 0
+      - name: Baseline preopen fingerprints
+        shell: bash
+        run: |
+          sha256sum rc6_preopen.py systemd/porota-preopen-rc6.service systemd/porota-preopen-rc6.timer systemd/porota-functional-health-rc6.service systemd/porota-functional-health-rc6.timer systemd/porota-host-general-backup-rc6.service systemd/porota-host-general-backup-rc6.timer
+      - name: Installed preopen contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===PREOPEN_DRIFT_BEGIN==="
+          for p in /opt/porota-trading/rc6_preopen.py /etc/systemd/system/porota-preopen-rc6.service /etc/systemd/system/porota-preopen-rc6.timer /etc/systemd/system/porota-functional-health-rc6.service /etc/systemd/system/porota-functional-health-rc6.timer /etc/systemd/system/porota-host-general-backup-rc6.service /etc/systemd/system/porota-host-general-backup-rc6.timer; do
+            if [ -f "$p" ]; then echo "FILE=$p|SHA256=$(sha256sum "$p"|awk '{print $1}')"; else echo "FILE=$p|MISSING"; fi
+          done
+          echo "---PREOPEN_SERVICE_CAT---"
+          systemctl cat porota-preopen-rc6.service --no-pager 2>/dev/null || true
+          echo "---PREOPEN_TIMERS---"
+          for unit in porota-functional-health-rc6.timer porota-host-general-backup-rc6.timer porota-preopen-rc6.timer porota-candle-integrity-rc6.timer; do
+            echo "TIMER=$unit|ENABLED=$(systemctl is-enabled "$unit" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          echo "===PREOPEN_DRIFT_END==="
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  a3-readiness:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Inspect A3 current runtime without running it
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===A3_READINESS_BEGIN==="
+          systemctl cat 'porota-a3-history-rc6@.service' --no-pager 2>/dev/null || true
+          for unit in porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer; do
+            echo "TIMER=$unit|ENABLED=$(systemctl is-enabled "$unit" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$unit" 2>/dev/null || true)|NEXT=$(systemctl show -p NextElapseUSecRealtime --value "$unit" 2>/dev/null || true)|LAST=$(systemctl show -p LastTriggerUSec --value "$unit" 2>/dev/null || true)"
+          done
+          sudo -n docker exec porota_production_observer sh -c 'for p in /app/data/rc6_a3_overlay/ex_a3_history_job_rc6.py /app/data/rc6_a3_overlay; do if [ -e "$p" ]; then echo "A3_RUNTIME=$p|present"; else echo "A3_RUNTIME=$p|missing"; fi; done'
+          for mode in DAILY_INCREMENTAL RECONCILE WEEKEND_DEEP; do
+            echo "SERVICE_INSTANCE=$mode|RESULT=$(systemctl show -p Result --value "porota-a3-history-rc6@$mode.service" 2>/dev/null || true)|STATUS=$(systemctl show -p ExecMainStatus --value "porota-a3-history-rc6@$mode.service" 2>/dev/null || true)|LAST_EXIT=$(systemctl show -p ExecMainExitTimestamp --value "porota-a3-history-rc6@$mode.service" 2>/dev/null || true)"
+          done
+          echo "===A3_READINESS_END==="
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"

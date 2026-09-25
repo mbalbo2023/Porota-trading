@@ -1,0 +1,200 @@
+name: RC6 SRE timer resume fix-forward 2026-09-25
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-sre-timer-resume-fix-forward-20260925
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Candidate regression and timer-policy tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check "pytest>=8.3.0,<9" fastapi requests
+          python -m py_compile rc6_preopen.py rc6_preopen_host_hardened.py rc6_fast_functional_health.py rc6_full_db_integrity.py
+          python -m pytest -q tests/test_rc6_preopen_timer_policy.py tests/test_rc6_sre_host_process_isolation.py
+          grep -Fq 'OnCalendar=Mon..Fri *-*-* 17:20:00 America/Argentina/Buenos_Aires' systemd/porota-full-db-integrity-rc6.timer
+          grep -Fq 'Persistent=true' systemd/porota-full-db-integrity-rc6.timer
+          grep -Fq 'OnCalendar=Mon..Fri *-*-* 10:15:00 America/Argentina/Buenos_Aires' systemd/porota-preopen-rc6.timer
+          ! grep -Fq 'Persistent=true' systemd/porota-preopen-rc6.timer
+          grep -Fq 'OnUnitActiveSec=5min' systemd/porota-fast-functional-health-rc6.timer
+
+      - name: Live read-only preflight
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = "a47f3339ec6dfe9d5afde444b1aaddabceb0e94d"
+
+          test "$(systemctl is-enabled porota-fast-functional-health-rc6.timer 2>/dev/null || true)" = enabled
+          test "$(systemctl is-active porota-fast-functional-health-rc6.timer 2>/dev/null || true)" = active
+          test "$(systemctl is-enabled porota-preopen-rc6.timer 2>/dev/null || true)" = enabled
+          test "$(systemctl is-active porota-preopen-rc6.timer 2>/dev/null || true)" = active
+          test "$(systemctl show -p Result --value porota-fast-functional-health-rc6.service 2>/dev/null || true)" = success
+          test "$(systemctl show -p ExecMainStatus --value porota-fast-functional-health-rc6.service 2>/dev/null || true)" = 0
+
+          hist_enabled="$(systemctl is-enabled porota-history-postclose-rc6.timer 2>/dev/null || true)"
+          hist_active="$(systemctl is-active porota-history-postclose-rc6.timer 2>/dev/null || true)"
+          [[ "$hist_enabled" == disabled || "$hist_enabled" == masked ]]
+          [[ "$hist_active" == inactive || "$hist_active" == failed ]]
+
+          test "$(systemctl is-enabled porota-functional-health-rc6.timer 2>/dev/null || true)" = disabled
+          test "$(systemctl is-enabled porota-candle-integrity-rc6.timer 2>/dev/null || true)" = enabled
+          test "$(systemctl is-active porota-candle-integrity-rc6.timer 2>/dev/null || true)" = active
+          test "$(systemctl is-enabled porota-iol-shadow-collector-rc6.timer 2>/dev/null || true)" = enabled
+          test "$(systemctl is-active porota-iol-shadow-collector-rc6.timer 2>/dev/null || true)" = active
+
+          sudo -n env PYTHONPATH=/opt/porota-trading PAPER_V17_DB_PATH=/opt/porota-trading/data/paper_v17/observer_v17.db /usr/bin/python3 /usr/local/lib/porota-sre-rc6/rc6_fast_functional_health.py
+
+          python3 - <<'PY'
+          import json, sqlite3
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          cols=[r[1] for r in c.execute('PRAGMA table_info(observer_state)')]
+          wanted=[x for x in ('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at') if x in cols]
+          row=c.execute('SELECT '+','.join(wanted)+' FROM observer_state WHERE id=1').fetchone()
+          state=dict(zip(wanted,row or []))
+          c.close()
+          assert state.get('mode')=='PRODUCTION_PAPER', state
+          assert int(state.get('real_orders_sent') or 0)==0, state
+          print('PREFLIGHT_OBSERVER='+json.dumps(state,sort_keys=True,default=str))
+          PY
+          echo "ROOT_CAUSE_RUN=34702034967"
+          echo "ROOT_CAUSE=TEMPORARY_INGESTION_ISOLATION_FAILED_AFTER_DISABLE"
+          echo "PREFLIGHT=GREEN|MUTATION=NONE"
+          REMOTE
+
+      - if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"
+
+  schedule-postclose-resume:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Schedule only the two remaining persistent timers after market close
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=30 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          MARKER="$ROOT/data/audit/sre_timer_resume_20260925.txt"
+          cd "$ROOT"
+
+          test "$(git rev-parse HEAD)" = "a47f3339ec6dfe9d5afde444b1aaddabceb0e94d"
+          test "$(date -u +%s)" -lt "$(date -u -d '2026-09-25 20:25:00 UTC' +%s)"
+
+          python3 - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          assert row and row[0]=='PRODUCTION_PAPER' and int(row[1] or 0)==0, row
+          PY
+
+          test "$(systemctl is-enabled porota-fast-functional-health-rc6.timer)" = enabled
+          test "$(systemctl is-active porota-fast-functional-health-rc6.timer)" = active
+          test "$(systemctl is-enabled porota-preopen-rc6.timer)" = enabled
+          test "$(systemctl is-active porota-preopen-rc6.timer)" = active
+          test "$(systemctl show -p Result --value porota-fast-functional-health-rc6.service)" = success
+          test "$(systemctl show -p ExecMainStatus --value porota-fast-functional-health-rc6.service)" = 0
+
+          hist_enabled="$(systemctl is-enabled porota-history-postclose-rc6.timer 2>/dev/null || true)"
+          hist_active="$(systemctl is-active porota-history-postclose-rc6.timer 2>/dev/null || true)"
+          [[ "$hist_enabled" == disabled || "$hist_enabled" == masked ]]
+          [[ "$hist_active" == inactive || "$hist_active" == failed ]]
+          test "$(systemctl is-enabled porota-functional-health-rc6.timer 2>/dev/null || true)" = disabled
+
+          # Do NOT enable/start the Persistent timers during the open session:
+          # their missed events could catch up immediately. Schedule enable+start
+          # for safely after postclose instead.
+          sudo -n systemctl stop porota-sre-resume-full-db-20260925.timer porota-sre-resume-full-db-20260925.service >/dev/null 2>&1 || true
+          sudo -n systemctl reset-failed porota-sre-resume-full-db-20260925.service >/dev/null 2>&1 || true
+          sudo -n systemd-run             --unit=porota-sre-resume-full-db-20260925             --on-calendar='2026-09-25 20:25:00 UTC'             --timer-property=AccuracySec=1s             /bin/systemctl enable --now porota-full-db-integrity-rc6.timer
+
+          sudo -n systemctl stop porota-sre-resume-host-backup-20260925.timer porota-sre-resume-host-backup-20260925.service >/dev/null 2>&1 || true
+          sudo -n systemctl reset-failed porota-sre-resume-host-backup-20260925.service >/dev/null 2>&1 || true
+          sudo -n systemd-run             --unit=porota-sre-resume-host-backup-20260925             --on-calendar='2026-09-25 21:00:00 UTC'             --timer-property=AccuracySec=1s             /bin/systemctl enable --now porota-host-general-backup-rc6.timer
+
+          # A later read-only verifier records that both deferred activations happened.
+          sudo -n systemctl stop porota-sre-resume-verify-20260925.timer porota-sre-resume-verify-20260925.service >/dev/null 2>&1 || true
+          sudo -n systemctl reset-failed porota-sre-resume-verify-20260925.service >/dev/null 2>&1 || true
+          sudo -n systemd-run             --unit=porota-sre-resume-verify-20260925             --on-calendar='2026-09-25 21:30:00 UTC'             --timer-property=AccuracySec=1s             /bin/bash -lc 'set -Eeuo pipefail; out=/opt/porota-trading/data/audit/sre_timer_resume_postclose_20260925.txt; { echo "CHECKED_AT=$(date -u +%FT%TZ)"; for u in porota-fast-functional-health-rc6.timer porota-full-db-integrity-rc6.timer porota-host-general-backup-rc6.timer porota-preopen-rc6.timer; do echo "TIMER=$u|ENABLED=$(systemctl is-enabled "$u" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$u" 2>/dev/null || true)"; test "$(systemctl is-enabled "$u" 2>/dev/null || true)" = enabled; test "$(systemctl is-active "$u" 2>/dev/null || true)" = active; done; echo "HISTORY_POSTCLOSE=ENABLED=$(systemctl is-enabled porota-history-postclose-rc6.timer 2>/dev/null || true)|ACTIVE=$(systemctl is-active porota-history-postclose-rc6.timer 2>/dev/null || true)"; echo POSTCLOSE_PHASE=GREEN; } > "$out"'
+
+          sudo -n mkdir -p "$ROOT/data/audit"
+          {
+            echo "SCHEDULED_PHASE=GREEN"
+            echo "SCHEDULED_AT=$(date -u +%FT%TZ)"
+            echo "SOURCE_PR=315"
+            echo "SOURCE_SHA=$TARGET_SHA"
+            echo "ROOT_CAUSE_RUN=34702034967"
+            echo "ROOT_CAUSE=TEMPORARY_INGESTION_ISOLATION_FAILED_AFTER_DISABLE"
+            echo "FAST_HEALTH=enabled_active_green"
+            echo "PREOPEN=enabled_active"
+            echo "FULL_DB=deferred_enable_start_2026-09-25T20:25:00Z"
+            echo "HOST_BACKUP=deferred_enable_start_2026-09-25T21:00:00Z"
+            echo "VERIFY=scheduled_2026-09-25T21:30:00Z"
+            echo "HISTORY_POSTCLOSE=quarantined"
+            echo "FUNCTIONAL_HEALTH_LEGACY=disabled"
+            echo "DOCKER_RESTART=NONE"
+            echo "DB_MUTATION=NONE"
+            echo "PPI_WATCH_MUTATION=NONE"
+            echo "REAL_ORDER_ROUTE=NOT_CALLED"
+          } | sudo -n tee "$MARKER" >/dev/null
+
+          echo "===DEFERRED_RESUME_TIMERS==="
+          systemctl status porota-sre-resume-full-db-20260925.timer --no-pager -l
+          systemctl status porota-sre-resume-host-backup-20260925.timer --no-pager -l
+          systemctl status porota-sre-resume-verify-20260925.timer --no-pager -l
+          echo "SRE_RESUME=SCHEDULED_GREEN|NO_DOCKER_RESTART|NO_DB_MUTATION|NO_PPI_WATCH_MUTATION|REAL_ORDERS_SENT=0"
+          REMOTE
+
+      - if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"
