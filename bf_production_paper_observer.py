@@ -27,7 +27,6 @@ from zoneinfo import ZoneInfo
 from bd_ppi_readonly_guard import (ProductionMarketReader, ReadOnlyPolicyViolation,
                                    retry_read, session_invalid, classify_read_error)
 from be_paper_engine import D, PaperBroker, PaperStore, Quote, now_iso
-from bs_instrument_contracts import FAMILIES as CONTRACT_FAMILIES
 import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
 from _version import VERSION
@@ -66,10 +65,10 @@ PREOPEN_MINUTES = max(5, int(os.getenv("PAPER_PREOPEN_MINUTES", "15")))
 # Universo PAPER/SHADOW ampliado. PPI sigue siendo primario; IOL y BYMA
 # complementan. Las familias sin contrato completo permanecen en HOLD/SHADOW
 # y nunca habilitan dinero real.
-# Canonical PAPER/SHADOW scope: every family supported by the financial
-# contract model enters observation/rotation. Per-instrument readiness still
-# fails closed and real-money execution remains blocked.
-OPERATIONAL_FAMILIES = CONTRACT_FAMILIES
+OPERATIONAL_FAMILIES = frozenset({
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+})
 CORE_SYMBOLS = (
     ("GGAL", "ACCIONES", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
@@ -184,7 +183,7 @@ def _market_open(now=None):
 
 
 def _candidate_universe():
-    """Universo PAPER/SHADOW de todas las familias contractualmente soportadas."""
+    """Universo operativo estricto: acciones y CEDEARs, sin barrido residual."""
     rows = {(ticker, kind, settlement, "BYMA", True)
             for ticker, kind, settlement in CORE_SYMBOLS}
     try:
@@ -539,7 +538,10 @@ def _eligible_symbols(store):
     se descartan familias por pertenecer a renta fija, cauciones o derivados.
     """
     core = list(CORE_SYMBOLS)
-    family_order = tuple(sorted(OPERATIONAL_FAMILIES))
+    family_order = (
+        "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+        "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+    )
     allowed_sql = ",".join(f"'{family}'" for family in family_order)
     try:
         with store.connect() as c:
