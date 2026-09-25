@@ -1,0 +1,192 @@
+name: RC6 A3 scheduler reactivate
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a3-scheduler-reactivate
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.head_ref == 'fix/rc6-a3-scheduler-reactivate-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only A3 preflight
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "===A3_REACTIVATE_PREFLIGHT_BEGIN==="
+
+          check_sha() {
+            p="$1"
+            expected="$2"
+            test -f "$p"
+            actual="$(sha256sum "$p" | awk '{print $1}')"
+            echo "A3_UNIT=$p|EXPECTED=$expected|ACTUAL=$actual"
+            test "$actual" = "$expected"
+          }
+
+          check_sha /etc/systemd/system/porota-a3-history-rc6@.service 084d60cf5f09c56449837ef771412d20909cc78a43f0b58ca9abbf481302adcc
+          check_sha /etc/systemd/system/porota-a3-history-daily-rc6.timer 1c83871a86050e3be316eec4f8be36170e0b4f2137614a34055a5e4569723141
+          check_sha /etc/systemd/system/porota-a3-history-reconcile-rc6.timer 8879f7d88b3f25da6707cda85a4cf0533ae5e506d82afaee279cd854253ae256
+          check_sha /etc/systemd/system/porota-a3-history-weekend-rc6.timer 0856b3fa6f9e0f93ae0aa515831a9b99e5276472c8f1632573be082935b4db91
+
+          sudo -n docker exec porota_production_observer test -f /app/data/rc6_a3_overlay/ex_a3_history_job_rc6.py
+          test "$(systemctl is-enabled porota-a3-history-daily-rc6.timer 2>/dev/null || true)" = disabled
+          test "$(systemctl is-active porota-a3-history-daily-rc6.timer 2>/dev/null || true)" = inactive
+          test "$(systemctl is-enabled porota-a3-history-reconcile-rc6.timer 2>/dev/null || true)" = disabled
+          test "$(systemctl is-active porota-a3-history-reconcile-rc6.timer 2>/dev/null || true)" = inactive
+          test "$(systemctl is-enabled porota-a3-history-weekend-rc6.timer 2>/dev/null || true)" = disabled
+          test "$(systemctl is-active porota-a3-history-weekend-rc6.timer 2>/dev/null || true)" = inactive
+
+          for mode in DAILY_INCREMENTAL RECONCILE WEEKEND_DEEP; do
+            state="$(systemctl is-active "porota-a3-history-rc6@$mode.service" 2>/dev/null || true)"
+            result="$(systemctl show -p Result --value "porota-a3-history-rc6@$mode.service" 2>/dev/null || true)"
+            status="$(systemctl show -p ExecMainStatus --value "porota-a3-history-rc6@$mode.service" 2>/dev/null || true)"
+            echo "A3_SERVICE=$mode|ACTIVE=$state|RESULT=$result|STATUS=$status"
+            test "$state" != active
+            test "$state" != activating
+            test -z "$result" || test "$result" = success
+            test -z "$status" || test "$status" = 0
+          done
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          state=dict(zip(('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at'),row or []))
+          assert state.get('mode')=='PRODUCTION_PAPER'
+          assert int(state.get('real_orders_sent') or 0)==0
+          print('A3_PREFLIGHT_OBSERVER='+json.dumps(state,sort_keys=True,default=str))
+          PY
+
+          echo "===A3_REACTIVATE_PREFLIGHT_END==="
+          REMOTE
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  reactivate:
+    if: github.head_ref == 'fix/rc6-a3-scheduler-reactivate-20260925' && github.event.action == 'ready_for_review'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Reactivate A3 timers sequentially
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "===A3_REACTIVATE_BEGIN==="
+
+          OBS_BEFORE="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          RESTARTS_BEFORE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+
+          wait_instance() {
+            unit="$1"
+            mode="$2"
+            sleep 2
+            for i in $(seq 1 180); do
+              state="$(systemctl is-active "$unit" 2>/dev/null || true)"
+              if [ "$state" = active ] || [ "$state" = activating ]; then
+                sleep 5
+                continue
+              fi
+              break
+            done
+            state="$(systemctl is-active "$unit" 2>/dev/null || true)"
+            result="$(systemctl show -p Result --value "$unit" 2>/dev/null || true)"
+            status="$(systemctl show -p ExecMainStatus --value "$unit" 2>/dev/null || true)"
+            echo "A3_AFTER_START=$mode|ACTIVE=$state|RESULT=$result|STATUS=$status"
+            test "$state" != active
+            test "$state" != activating
+            test -z "$result" || test "$result" = success
+            test -z "$status" || test "$status" = 0
+          }
+
+          enable_one() {
+            timer="$1"
+            service="$2"
+            mode="$3"
+            sudo -n systemctl enable "$timer"
+            sudo -n systemctl start "$timer"
+            wait_instance "$service" "$mode"
+            test "$(systemctl is-enabled "$timer")" = enabled
+            test "$(systemctl is-active "$timer")" = active
+            echo "A3_TIMER_GREEN=$timer|NEXT=$(systemctl show -p NextElapseUSecRealtime --value "$timer")|LAST=$(systemctl show -p LastTriggerUSec --value "$timer")"
+          }
+
+          enable_one porota-a3-history-daily-rc6.timer porota-a3-history-rc6@DAILY_INCREMENTAL.service DAILY_INCREMENTAL
+          enable_one porota-a3-history-reconcile-rc6.timer porota-a3-history-rc6@RECONCILE.service RECONCILE
+          enable_one porota-a3-history-weekend-rc6.timer porota-a3-history-rc6@WEEKEND_DEEP.service WEEKEND_DEEP
+
+          OBS_AFTER="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          RESTARTS_AFTER="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+          test "$OBS_AFTER" = "$OBS_BEFORE"
+          test "$RESTARTS_AFTER" = "$RESTARTS_BEFORE"
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          state=dict(zip(('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at'),row or []))
+          assert state.get('mode')=='PRODUCTION_PAPER'
+          assert int(state.get('real_orders_sent') or 0)==0
+          print('A3_POST_OBSERVER='+json.dumps(state,sort_keys=True,default=str))
+          PY
+
+          echo "PPI_WATCH_INSPECT_ONLY_BEGIN"
+          systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | while read -r unit; do
+            [ -n "$unit" ] || continue
+            echo "PPI_WATCH=$unit|ENABLED=$(systemctl is-enabled "$unit" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          echo "PPI_WATCH_INSPECT_ONLY_END"
+          echo "A3_SCHEDULER_REACTIVATION=GREEN|ORDER_ROUTING=NONE|DOCKER_IMAGE_CHANGED=no|PPI_WATCH_MUTATION=NONE"
+          echo "===A3_REACTIVATE_END==="
+          REMOTE
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
