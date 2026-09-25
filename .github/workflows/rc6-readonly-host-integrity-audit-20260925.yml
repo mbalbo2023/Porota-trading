@@ -1,0 +1,46 @@
+name: RC6 read-only host integrity audit 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-availability-readonly-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Prepare SSH
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+      - name: Inspect installed host sources
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          P=/opt/porota-trading/scripts/rc6_iol_shadow_collect.py
+          U=/etc/systemd/system/porota-iol-shadow-collector-rc6.service
+          echo "HOST_IOL_SCRIPT_SHA=$(sha256sum "$P" | awk '{print $1}')"
+          echo "HOST_IOL_SCRIPT_MTIME=$(stat -c %y "$P")"
+          grep -n "FAMILY_REFERENCE" "$P" | tail -5 || true
+          grep -n "family_reference.collect" "$P" || true
+          echo "HOST_UNIT_SHA=$(sha256sum "$U" | awk '{print $1}')"
+          systemctl cat porota-iol-shadow-collector-rc6.service --no-pager
+          systemctl show porota-iol-shadow-collector-rc6.timer --property=ActiveState --property=UnitFileState --property=LastTriggerUSec --property=NextElapseUSecRealtime --no-pager
+          journalctl -u porota-iol-shadow-collector-rc6.service --since '2026-09-25 19:20:00' --no-pager | grep 'IOL_SHADOW_COLLECTION=COMPLETE' | tail -12 || true
+          REMOTE
