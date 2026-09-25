@@ -54,7 +54,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m pytest -q tests/test_rc6_iol_mcp_inventory.py tests/test_rc6_official_source_adapters.py tests/test_rc6_source_consolidation.py tests/test_rc6_deploy_runtime_completeness.py tests/test_rc6_ppi_iol_reconciliation_rc6.py tests/test_rc6_cauciones_shadow_evidence.py tests/test_rc6_family_readiness.py tests/test_rc6_report_retention.py tests/test_rc6_action4_audit.py tests/test_rc6_macro_risk_shadow.py tests/test_rc6_operational_scope.py tests/test_rc6_data912_operational_scope.py tests/test_rc6_validation_projection.py tests/test_rc6_gdelt_shadow.py tests/test_fk_gdelt_shadow_feed_rc6.py tests/test_rc6_gdelt_event_risk_job.py tests/test_rc6_risk_gdelt_dashboard.py tests/test_rc6_legacy_history_scope.py tests/test_rc6_deploy_readiness_contract.py tests/test_rc6_validation_dynamic_evidence.py tests/test_rc6_live_scope_gate_fallback.py tests/test_rc6_history_operational_scope.py tests/test_rc6_introspection_scope.py tests/test_rc6_scheduler_operational_scope.py tests/test_rc6_internal_history_scheduler_guard.py tests/test_rc6_take_profit_regression.py tests/test_rc6_cedear_underlying_calendar.py tests/test_iol_shadow_observation_rc6.py tests/test_iol_shadow_collector_rc6.py tests/test_rc6_iol_shadow_runtime.py tests/test_iol_shadow_validation_view_rc6.py tests/test_rc6_counterfactual_learning.py tests/test_rc6_validation_truth.py tests/test_rc6_candle_inmarket_evidence.py tests/test_rc6_postclose_history_quarantine.py tests/test_rc6_postclose_review.py tests/test_rc6_postclose_review_dashboard.py tests/test_rc6_snapshot.py tests/test_decision_evidence_snapshots_rc6.py tests/test_iol_shadow_decision_input_rc6.py tests/test_rc6_decision_evidence_report.py tests/test_rc6_decision_evidence_view.py tests/test_rc6_shadow_profiles.py
+          python -m pytest -q tests/test_rc6_iol_mcp_inventory.py tests/test_rc6_official_source_adapters.py tests/test_rc6_source_consolidation.py tests/test_rc6_complementary_catalog_merge.py tests/test_rc6_deploy_runtime_completeness.py tests/test_rc6_ppi_iol_reconciliation_rc6.py tests/test_rc6_cauciones_shadow_evidence.py tests/test_rc6_family_readiness.py tests/test_rc6_report_retention.py tests/test_rc6_action4_audit.py tests/test_rc6_macro_risk_shadow.py tests/test_rc6_operational_scope.py tests/test_rc6_data912_operational_scope.py tests/test_rc6_validation_projection.py tests/test_rc6_gdelt_shadow.py tests/test_fk_gdelt_shadow_feed_rc6.py tests/test_rc6_gdelt_event_risk_job.py tests/test_rc6_risk_gdelt_dashboard.py tests/test_rc6_legacy_history_scope.py tests/test_rc6_deploy_readiness_contract.py tests/test_rc6_validation_dynamic_evidence.py tests/test_rc6_live_scope_gate_fallback.py tests/test_rc6_history_operational_scope.py tests/test_rc6_introspection_scope.py tests/test_rc6_scheduler_operational_scope.py tests/test_rc6_internal_history_scheduler_guard.py tests/test_rc6_take_profit_regression.py tests/test_rc6_cedear_underlying_calendar.py tests/test_iol_shadow_observation_rc6.py tests/test_iol_shadow_collector_rc6.py tests/test_rc6_iol_shadow_runtime.py tests/test_iol_shadow_validation_view_rc6.py tests/test_rc6_counterfactual_learning.py tests/test_rc6_validation_truth.py tests/test_rc6_candle_inmarket_evidence.py tests/test_rc6_postclose_history_quarantine.py tests/test_rc6_postclose_review.py tests/test_rc6_postclose_review_dashboard.py tests/test_rc6_snapshot.py tests/test_decision_evidence_snapshots_rc6.py tests/test_iol_shadow_decision_input_rc6.py tests/test_rc6_decision_evidence_report.py tests/test_rc6_decision_evidence_view.py tests/test_rc6_shadow_profiles.py
           python -m pytest -q tests/test_exit_supervision_v17.py -k "max_hold_sin_datos_persiste_y_se_ejecuta_despues_de_reiniciar or 1655_sigue_dentro_de_rueda_y_un_stop_puede_cerrar or eod_no_aplica_a_cauciones_o_derivados_y_frena_entradas"
           python -m pytest -q tests/test_rc6_t1_settlement_hotfix.py tests/test_daily_risk_outbox_v17.py tests/test_dynamic_risk_and_caucion_sweep_hf6.py tests/test_dashboard_live_integration_rc5.py
 
@@ -967,6 +967,33 @@ jobs:
           )"
           echo "POST_STATE=$POST_STATE"
           test "$POST_STATE" = "ok|PRODUCTION_PAPER|0"
+          CATALOG_RECONCILIATION="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          import bf_production_paper_observer as observer
+          from be_paper_engine import PaperStore
+          db='/app/data/paper_v17/observer_v17.db'
+          store=PaperStore(db)
+          promoted=observer._reconcile_complementary_catalog(store)
+          c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          ghost=c.execute("""SELECT COUNT(*) FROM candidate_universe u
+            WHERE u.can_simulate=1 AND NOT EXISTS (
+              SELECT 1 FROM financial_instrument_catalog f
+              WHERE f.ticker=u.ticker AND upper(f.instrument_type)=upper(u.instrument_type)
+                AND upper(f.market)=upper(u.market) AND f.settlement=u.settlement
+                AND f.status='AVAILABLE' AND f.capability LIKE 'READY_PAPER_%')""").fetchone()[0]
+          ready=c.execute("""SELECT COUNT(*) FROM financial_instrument_catalog
+            WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER_%'""").fetchone()[0]
+          candidates=c.execute("SELECT COUNT(*) FROM candidate_universe WHERE can_simulate=1 AND status='AVAILABLE'").fetchone()[0]
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          assert mode=='PRODUCTION_PAPER' and int(orders or 0)==0
+          assert ghost==0
+          print(f'CATALOG_CANDIDATE_RECONCILIATION=GREEN|promoted={promoted}|catalog_ready={ready}|candidate_ready={candidates}|ghosts={ghost}')
+          PY
+          )"
+          echo "$CATALOG_RECONCILIATION"
+          grep -Fq "CATALOG_CANDIDATE_RECONCILIATION=GREEN" <<< "$CATALOG_RECONCILIATION"
           SCOPE_CHECK="$(sudo -n docker exec porota_production_observer python - <<'PY'
           import bf_production_paper_observer as observer
           permitted = {
