@@ -36,9 +36,15 @@ def _sha256(path: Path) -> str:
 def build_plan(policy: dict) -> list[dict]:
     result=[]
     for source_path,row in sorted(policy.get("units", {}).items()):
-        name=Path(source_path).name
-        if not UNIT_RE.fullmatch(name):
-            raise ValueError(f"UNSAFE_UNIT_NAME:{name}")
+        source=Path(source_path)
+        name=source.name
+        if (
+            source.is_absolute()
+            or ".." in source.parts
+            or not (source_path.startswith("systemd/") or source_path.startswith("ops/systemd/"))
+            or not UNIT_RE.fullmatch(name)
+        ):
+            raise ValueError(f"UNSAFE_UNIT_SOURCE:{source_path}")
         if "ppi" in name.lower() and "watch" in name.lower():
             raise ValueError("PPI_WATCH_FORBIDDEN")
         role=str(row.get("role") or "")
