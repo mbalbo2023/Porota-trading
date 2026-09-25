@@ -231,16 +231,27 @@ def test_parcial_informes_panel_y_caja_historica_concuerdan(partial_spot,monkeyp
 
 
 @pytest.mark.parametrize('family',['BONOS','LETRAS','ON'])
-
 def test_parcial_renta_fija_conserva_nominal_lote_y_ganancia(tmp_path,family):
     b=PaperBroker(PaperStore(str(tmp_path/'nominal.db')),initial_cash='10000',slippage_bps='0')
     q=replace(quote(ask_size='100'),asset_class=family,settlement='INMEDIATA',ask=D(100))
     spec=InstrumentContract(q.symbol,family,'ARS','BYMA','INMEDIATA',D('.01'),D(2),'TEST_FIXTURE')
-    opened,reason,paper_id=b._open(replace(q,contract=spec),D('.8'),{})
-    assert opened is False
-    assert 'alcance operativo RC6' in reason
-    assert paper_id is None
-    assert b.store.open_positions()==[]
+    q=replace(q,contract=spec)
+    assert b._open(q,D('.8'),{})[0]
+    p=b.store.open_positions()[0]
+    assert D(p['quantity'])==10
+    first=replace(q,bid=D(110),ask=D(111),bid_size=D(30),
+                  observed_at=quote(minute=1).observed_at,book_at=quote(minute=1).book_at)
+    assert not b._close(p,replace(first,contract=replace(spec,quantity_step=D(1))),'TEST')
+    assert b._close(p,first,'TEST')
+    remaining=b.store.open_positions()[0]
+    assert D(remaining['quantity'])==8
+    final=replace(first,bid=D(120),ask=D(121),bid_size=D(100),
+                  observed_at=quote(minute=2).observed_at,book_at=quote(minute=2).book_at)
+    assert b._close(remaining,final,'TEST')
+    closed=b.store.recent_closed()[0]
+    assert D(closed['gross_pnl'])==D('1.80')
+    assert b._cash(as_of=final.observed_at)==10000+D(closed['net_pnl'])
+
 
 def test_parcial_cada_venta_conserva_su_fecha_de_liquidacion(partial_spot):
     import cd_spot_ledger as ledger
@@ -418,8 +429,8 @@ def test_catalogo_real_preserva_clase_moneda_y_no_duplica_resultados(tmp_path, m
         assert not c.execute("SELECT 1 FROM candidate_universe WHERE ticker LIKE 'FILTRO-%'").fetchone()
     assert catalog.lookup(store, "ALUAC", "ACCIONES", "A-24HS")["currency"] == "USD_CCL"
     assert catalog.lookup(store, "AAPLD", "CEDEARS", "A-24HS")["currency"] == "USD_MEP"
-    assert catalog.lookup(store, "DLR/AGO26", "FUTUROS", "A-24HS")["instrument_type"] == "FUTUROS"
-    assert ("DLR/AGO26", "FUTUROS", "A-24HS") not in observer._eligible_symbols(store)
+    assert ("DLR/AGO26", "FUTUROS", "A-24HS") in observer._eligible_symbols(store)
+
 
 def test_actualizacion_fallida_no_borra_catalogo_ni_habilita_registros_viejos(tmp_path, monkeypatch, real_catalog):
     store = PaperStore(str(tmp_path / "paper.db"))
@@ -1037,21 +1048,33 @@ def test_v17_no_ejecuta_familias_especiales_como_acciones(tmp_path, family):
 
 
 @pytest.mark.parametrize("family", ["BONOS", "LETRAS", "ON"])
-
 def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, family):
-    broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash="10000",
-                         risk_pct="1", daily_loss_pct="100",
+    path = str(tmp_path / "paper.db")
+    broker = PaperBroker(PaperStore(path), initial_cash="10000", risk_pct="1", daily_loss_pct="100",
                          max_position_pct="1", max_total_exposure_pct="1", slippage_bps="0")
     q = replace(quote(ask_size="1000000", bid_size="1000000"), asset_class=family,
                 ask=D("100"), settlement="INMEDIATA")
-    assert broker._open(q, D("0.8"), {})[0] is False
+    assert broker._open(q, D("0.8"), {})[0] is False  # No inventa el factor VN.
     spec = InstrumentContract(q.symbol, family, "ARS", "BYMA", "INMEDIATA",
                               D("0.01"), D("100"), "TEST_NOT_BROKER")
-    opened,reason,paper_id = broker._open(replace(q,contract=spec), D("0.8"), {})
-    assert opened is False
-    assert 'alcance operativo RC6' in reason
-    assert paper_id is None
-    assert broker.store.open_positions() == []
+    q = replace(q, contract=spec)
+    assert broker._open(q, D("0.8"), {})[0]
+    position = broker.store.open_positions()[0]
+    assert D(position["quantity"]) == 9900
+    assert broker._cash() == 10000 - 9900 - D(position["entry_cost"])
+    broker = PaperBroker(PaperStore(path), initial_cash="10000", risk_pct="1", slippage_bps="0")
+    broker.mark_equity({q.symbol: q}, as_of=q.observed_at)
+    with broker.store.connect() as c:
+        assert D(c.execute("SELECT exposure FROM paper_equity ORDER BY id DESC LIMIT 1").fetchone()[0]) == q.bid * 99
+    closing = replace(q, bid=D("110"), ask=D("111"), observed_at='2026-08-25T14:01:00+00:00', book_at='2026-08-25T14:01:00+00:00')
+    assert broker._close(position, replace(closing, contract=replace(spec, cash_multiplier=D("1"))), "TEST") is False
+    assert broker._close(position, closing, "TEST")
+    closed = broker.store.recent_closed()[0]
+    assert D(closed["gross_pnl"]) == 990
+    assert D(closed["entry_cost"]) == broker._cost(D("1"), D("9900"), family)
+    assert D(closed["exit_cost"]) == broker._cost(D("1.1"), D("9900"), family)
+    assert broker._cash(as_of=closing.observed_at) == 10000 + D(closed["net_pnl"])
+
 
 def test_v17_no_cauciona_el_producido_de_una_venta_t1(tmp_path):
     broker = PaperBroker(PaperStore(str(tmp_path / "paper.db")), initial_cash="1100",
@@ -1486,8 +1509,7 @@ def test_lote_por_ciclo_rota_sobre_todo_el_universo(tmp_path, monkeypatch):
           VALUES('a','b',?,?,?,?,?,?,?,?,?)""",
           (total, len(first), len(first), 0, 1.0, before, after, 3, "test"))
     second, total2, _, _ = observer._cycle_symbols(store)
-    assert total2 == total == 5
-    assert "AL30" not in {x[0] for x in first} | {x[0] for x in second}
+    assert total2 == total >= 6
     assert {x[0] for x in first} != {x[0] for x in second}
 
 
