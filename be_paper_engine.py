@@ -1045,17 +1045,22 @@ class PaperBroker:
                 paper_id=paper_id, detail=features)
 
     def _open(self, q: Quote, score: Decimal, features: dict):
+        try:
+            family = family_name(q.asset_class)
+            currency, market = q.monetary_identity()
+        except ValueError as exc:
+            return False, str(exc), None
+        # Contract completeness is an identity prerequisite. Check it before
+        # session admission so a missing option contract cannot masquerade as
+        # an expiry/session problem.
+        if family == "OPCIONES" and q.contract is None:
+            return False, "Opción sin contrato financiero explícito", None
         at = self.execution_time(q)
         error = self.admission_error(q, at)
         if error:
             return False, error, None
         if q.opening_block_reason:
             return False, q.opening_block_reason, None
-        try:
-            family = family_name(q.asset_class)
-            currency, market = q.monetary_identity()
-        except ValueError as exc:
-            return False, str(exc), None
         if family not in PAPER_POSITION_FAMILIES:
             return False, f"{family} requiere su ciclo financiero específico", None
         if not _family_operable(family):
@@ -1078,6 +1083,7 @@ class PaperBroker:
                 self.store, at=at, candidate={
                     "symbol": q.symbol, "family": family, "market": market,
                     "currency": currency, "settlement": q.settlement,
+                    "underlying": q.contract.underlying if q.contract else None,
                 })
             policy_evaluation = policy_gate.evaluate(
                 expectancy_samples=policy_context.get("expectancy_samples"),
