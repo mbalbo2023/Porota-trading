@@ -109,3 +109,11 @@ def test_live_safety_checks_do_not_use_heavy_quick_check():
 def test_sector_map_runtime_verifier_keeps_stdin_attached():
     source = WORKFLOW.read_text(encoding="utf-8")
     assert "SECTOR_MAP_CHECK=\"$(sudo -n docker exec -i porota_production_observer python - <<'PY'" in source
+
+
+def test_history_cutoff_repair_is_decoupled_from_code_deploy():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert "HISTORY_CUTOFF_REPAIR_EXECUTION=DECOUPLED_FROM_DEPLOY" in source
+    assert "deploy_nonblocking=true" in source
+    assert "RC6_HISTORY_ALLOW_PPI_GAP_REPAIR=APPROVED" not in source
+    assert "timeout 3600 python /app/scripts/rc6_history_cutoff_repair_once.py" not in source

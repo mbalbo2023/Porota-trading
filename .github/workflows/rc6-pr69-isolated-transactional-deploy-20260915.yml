@@ -426,8 +426,8 @@ jobs:
           echo "RC6_DASHBOARD_HEALTH_LAST=$DASHBOARD_HEALTH_LAST"
           test "$OK" = YES
           # Restore only the historical SQLite files to owner-writable mode after
-          # the candidate observer is running. It is gated from history writes
-          # until the one-time cutoff repair records COMPLETE.
+          # the candidate observer is running. The one-time cutoff repair is
+          # independently resumable and is never executed as part of a code deploy.
           HIST_DATA=/opt/porota-trading/data
           # Repair only the canonical historical-store ownership and permissions.
           # The observer runs as uid/gid 1000 and SQLite also needs its WAL peers writable.
@@ -452,36 +452,28 @@ jobs:
           )"
           echo "$HISTORY_WRITE_GATE"
           grep -Fqx "HISTORY_DB_OWNER_WRITE=GREEN" <<< "$HISTORY_WRITE_GATE"
-          set +e
-          HISTORY_REPAIR_OUTPUT="$(sudo -n docker exec --user 1000:1000 -e RC6_HISTORY_ALLOW_PPI_GAP_REPAIR=APPROVED -e RC6_HISTORY_QUARANTINE_REPEATED_PPI=APPROVED porota_production_observer timeout 3600 python /app/scripts/rc6_history_cutoff_repair_once.py 2>&1)"
-          HISTORY_REPAIR_RC=$?
-          set -e
-          echo "$HISTORY_REPAIR_OUTPUT"
-          echo "HISTORY_REPAIR_EXIT=$HISTORY_REPAIR_RC"
-          HISTORY_FAILURES="$(sudo -n docker exec -i --user 1000:1000 porota_production_observer python - <<'PY'
-          import sqlite3
-          c=sqlite3.connect("file:/app/data/market_history.db?mode=ro", uri=True, timeout=20)
-          c.execute("PRAGMA query_only=ON")
-          rows=c.execute("SELECT symbol, instrument_type, market, settlement, COALESCE(error_class,'UNKNOWN') FROM rc6_history_cutoff_repair WHERE cutoff='2026-09-21' AND state NOT IN ('ALREADY_COVERED','COMPLETE','QUARANTINED_PPI_HISTORY') ORDER BY symbol, settlement").fetchall()
-          c.close()
-          print("HISTORY_REPAIR_FAILURES=" + repr(rows))
-          PY
-          )"
-          echo "$HISTORY_FAILURES"
-          test "$HISTORY_REPAIR_RC" -eq 0
-          grep -Eq '^RC6_HISTORY_CUTOFF_REPAIR=COMPLETE ' <<< "$HISTORY_REPAIR_OUTPUT"
+          # The cutoff repair is a one-time resumable data-maintenance job.
+          # Deploy must never re-run 221 bounded PPI history repairs or fail a
+          # code release because that independent repair is incomplete/interrupted.
           HISTORY_REPAIR_STATE="$(sudo -n docker exec -i --user 1000:1000 porota_production_observer python - <<'PY'
           import sqlite3
           c=sqlite3.connect("file:/app/data/market_history.db?mode=ro",uri=True,timeout=20)
           c.execute("PRAGMA query_only=ON")
-          row=c.execute("SELECT state,targets,complete,failed FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'").fetchone()
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          if "rc6_history_cutoff_repair_runs" not in tables:
+              print("HISTORY_CUTOFF_REPAIR_STATE=NOT_INITIALIZED|deploy_nonblocking=true")
+          else:
+              row=c.execute("SELECT state,targets,complete,failed,updated_at FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'").fetchone()
+              if row:
+                  print("HISTORY_CUTOFF_REPAIR_STATE=%s|targets=%s|complete=%s|failed=%s|updated_at=%s|deploy_nonblocking=true" % row)
+              else:
+                  print("HISTORY_CUTOFF_REPAIR_STATE=NO_RUN|deploy_nonblocking=true")
           c.close()
-          assert row and row[0]=="COMPLETE" and row[1]==row[2] and row[3]==0
-          print("HISTORY_CUTOFF_REPAIR_STATE=COMPLETE|%s|%s|%s" % row[1:])
           PY
           )"
           echo "$HISTORY_REPAIR_STATE"
-          grep -Fq "HISTORY_CUTOFF_REPAIR_STATE=COMPLETE|" <<< "$HISTORY_REPAIR_STATE"
+          grep -Fq "deploy_nonblocking=true" <<< "$HISTORY_REPAIR_STATE"
+          echo "HISTORY_CUTOFF_REPAIR_EXECUTION=DECOUPLED_FROM_DEPLOY"
           # Disable only superseded timer names to avoid parallel legacy and RC6 schedules.
           for legacy_unit in porota-introspeccion-hf5.timer porota-introspection-publish.timer porota-scheduler-export-hf6.timer; do
             if systemctl list-unit-files --type=timer --no-legend | awk -v unit="$legacy_unit" '$1 == unit { found=1 } END { exit !found }'; then
