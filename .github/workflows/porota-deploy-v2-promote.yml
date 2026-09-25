@@ -250,6 +250,36 @@ jobs:
           echo "POST_STATE=$POST_STATE"
           test "$POST_STATE" = "ok|PRODUCTION_PAPER|0"
 
+          # Full contract evidence reconciliation remains read-only at the broker
+          # boundary. It runs from the exact frozen image; during market hours
+          # an explicit SKIPPED_MARKET_NOT_CLOSED is the expected safe result.
+          set +e
+          CONTRACT_OUTPUT="$(sudo -n timeout 1200 sudo -n docker run --rm --pull never \
+            --user botuser --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -e PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json \
+            -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
+            -e DATA_DIR=/app/data \
+            -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
+            --env-file /opt/porota-trading/data/diagnosticos/observer_runtime_v17.env \
+            -v /opt/porota-trading/data:/app/data \
+            -v /opt/porota-trading/.secrets/ppi_production.json:/run/secrets/ppi_production.json:ro \
+            --entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py 2>&1)"
+          CONTRACT_RC=$?
+          set -e
+          echo "RC6_FULL_CONTRACT_RECONCILIATION_EXIT=$CONTRACT_RC"
+          echo "$CONTRACT_OUTPUT"
+          if grep -Fq "STATUS=SKIPPED_MARKET_NOT_CLOSED" <<< "$CONTRACT_OUTPUT"; then
+            test "$CONTRACT_RC" -eq 0
+            echo "RC6_FULL_CONTRACT_RECONCILIATION=SKIPPED_MARKET_OPEN"
+          else
+            test "$CONTRACT_RC" -eq 0
+            grep -Fq "STATUS=OK" <<< "$CONTRACT_OUTPUT"
+            grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
+            echo "RC6_FULL_CONTRACT_RECONCILIATION=GREEN"
+          fi
+
           sudo -n docker exec -i porota_production_observer python - <<'PY'
           from bs_instrument_contracts import FAMILIES
           import bf_production_paper_observer as observer
