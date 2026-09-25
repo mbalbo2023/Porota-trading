@@ -52,7 +52,7 @@ jobs:
           ssh -i "$HOME/.ssh/porota_rc6_probe" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
           TMP="$(mktemp -d /tmp/rc6-family-candidate.XXXXXX)"
-          trap 'rm -rf "$TMP" /tmp/rc6-family-probe.tgz' EXIT
+          trap 'sudo -n rm -rf "$TMP" /tmp/rc6-family-probe.tgz' EXIT
           tar -xzf /tmp/rc6-family-probe.tgz -C "$TMP"
           mkdir -p "$TMP/data"
           cp /opt/porota-trading/data/market/iol_shadow_latest.json "$TMP/data/iol_shadow_latest.json"
@@ -68,6 +68,28 @@ jobs:
 
           root=Path(os.environ["PROBE_ROOT"])
           db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          # Force a deterministic live-source option probe through GGAL while
+          # leaving the real persisted rotation untouched. The candidate still
+          # reads the live catalog and real OAuth source, but writes only to TMP.
+          live_seed=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=20)
+          option_underlyings=sorted({
+              str(r[0]).strip().upper()
+              for r in live_seed.execute("""SELECT ticker FROM financial_instrument_catalog
+                WHERE upper(instrument_type) IN ('ACCIONES','CEDEARS','BONOS','LETRAS')
+                  AND upper(market)='BYMA' AND trim(ticker)<>''""")
+              if r and r[0]
+          })
+          live_seed.close()
+          prior={}
+          prior_path=root/"iol_family_reference_latest.json"
+          if prior_path.exists():
+              try: prior=json.loads(prior_path.read_text(encoding="utf-8"))
+              except Exception: prior={}
+          rotation=dict(prior.get("rotation") or {})
+          if "GGAL" in option_underlyings:
+              rotation["option_underlying_index"]=option_underlyings.index("GGAL")
+          prior["rotation"]=rotation
+          prior_path.write_text(json.dumps(prior,ensure_ascii=False,sort_keys=True),encoding="utf-8")
           result=family.collect(OAuthStoreReadOnlyMCP(),root=root,db_path=db)
           records=[r for r in result.get("records",[]) if isinstance(r,dict)]
           contracts=[r for r in records if isinstance(r.get("financial_contract_v17"),dict) and r.get("financial_contract_v17")]
