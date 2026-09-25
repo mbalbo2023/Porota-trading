@@ -46,23 +46,7 @@
     "open_without_exit_intent": 0,
     "orphan_fills": 0
   },
-  "currency_funnel": [
-    {
-      "currency": "ARS",
-      "last_observed_at": "2026-09-24T20:01:12.798205+00:00",
-      "observed_symbols": 92
-    },
-    {
-      "currency": "USD_CCL",
-      "last_observed_at": "2026-09-24T20:01:19.863696+00:00",
-      "observed_symbols": 66
-    },
-    {
-      "currency": "USD_MEP",
-      "last_observed_at": "2026-09-24T20:01:21.711184+00:00",
-      "observed_symbols": 73
-    }
-  ],
+  "currency_funnel": [],
   "economics": {
     "blocked_1h": 0,
     "evaluated_1h": 0,
@@ -73,10 +57,10 @@
       "capabilities": [
         {
           "capability": "READY_PAPER_SPOT",
-          "count": 53
+          "count": 55
         }
       ],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -87,7 +71,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -98,7 +82,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -109,7 +93,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -122,10 +106,10 @@
       "capabilities": [
         {
           "capability": "READY_PAPER_SPOT",
-          "count": 168
+          "count": 176
         }
       ],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -136,7 +120,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -147,7 +131,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -158,7 +142,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -169,7 +153,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -180,7 +164,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -191,7 +175,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -202,7 +186,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -213,7 +197,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -224,7 +208,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -235,7 +219,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -246,7 +230,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-24T20:02:52.670582+00:00",
+      "checked_at": "2026-09-25T03:15:42.155330+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -260,7 +244,7 @@
     "branch": "runtime-observability",
     "day": "2026-09-24",
     "detail": null,
-    "recorded_at": "2026-09-25T01:20:35.516960+00:00",
+    "recorded_at": "2026-09-25T02:20:49.618616+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -309,17 +293,17 @@
   ],
   "market_regime_observation": {
     "binding": false,
-    "falling": 70,
+    "falling": 0,
     "method": "FIRST_LAST_TRADE_SAMPLE_BREADTH_NOT_AN_INDEX",
     "minimum_symbols": 4,
     "policy": "ALERT_ONLY",
-    "rising": 93,
-    "state": "MIXED_OR_POSITIVE",
-    "symbols": 194,
-    "unchanged": 31
+    "rising": 0,
+    "state": "INSUFFICIENT_SAMPLE",
+    "symbols": 0,
+    "unchanged": 0
   },
   "observer": {
-    "heartbeat_at": "2026-09-25T02:16:28.459560+00:00",
+    "heartbeat_at": "2026-09-25T03:15:37.114028+00:00",
     "http_allowed": 1112,
     "http_blocked": 0,
     "last_market_data_at": "2026-09-24T20:01:21.711184+00:00",
@@ -349,18 +333,18 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 865816576,
-    "filesystem_free": 10129620992,
+    "database_bytes": 866099200,
+    "filesystem_free": 10128683008,
     "filesystem_total": 24883167232,
-    "filesystem_used": 14736769024,
-    "filesystem_used_pct": 59.22,
+    "filesystem_used": 14737707008,
+    "filesystem_used_pct": 59.23,
     "wal_bytes": 12137552
   },
   "telegram": {
     "SENT": 303,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-09-24T23:15:23-03:00",
+  "timestamp": "2026-09-25T00:15:12-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
@@ -376,28 +360,28 @@
   ],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": -70.375689,
-      "heartbeat_at": "2026-09-25T02:16:33.760245+00:00",
+      "heartbeat_age_seconds": -77.416327,
+      "heartbeat_at": "2026-09-25T03:16:29.794813+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": -70.107749,
-      "heartbeat_at": "2026-09-25T02:16:33.492305+00:00",
+      "heartbeat_age_seconds": -73.003949,
+      "heartbeat_at": "2026-09-25T03:16:25.382435+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": -54.199655,
-      "heartbeat_at": "2026-09-25T02:16:17.584211+00:00",
+      "heartbeat_age_seconds": -73.586715,
+      "heartbeat_at": "2026-09-25T03:16:25.965201+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
-      "heartbeat_age_seconds": -70.045624,
-      "heartbeat_at": "2026-09-25T02:16:33.430180+00:00",
+      "heartbeat_age_seconds": -76.779985,
+      "heartbeat_at": "2026-09-25T03:16:29.158471+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": -71.345879,
-      "heartbeat_at": "2026-09-25T02:16:34.730435+00:00",
+      "heartbeat_age_seconds": -76.881947,
+      "heartbeat_at": "2026-09-25T03:16:29.260433+00:00",
       "state": "RUNNING"
     }
   }
