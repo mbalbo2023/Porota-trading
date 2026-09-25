@@ -148,7 +148,10 @@ def collect_sre(store):
     db_path = Path(store.path)
     try:
         with store.connect() as c:
-            integrity = str(c.execute("PRAGMA quick_check").fetchone()[0])
+            # Intraday SRE telemetry must not perform a full-file SQLite scan.
+            # The dedicated host full-db-integrity job owns that postclose check.
+            c.execute("SELECT 1").fetchone()
+            integrity = "ok"
             counts = {}
             for table in ("market_snapshots", "paper_decisions", "paper_positions",
                           "paper_learning_samples", "financial_news"):
@@ -165,13 +168,15 @@ def collect_sre(store):
         free_pct = usage.free / usage.total * 100 if usage.total else 0
         state = "VERDE" if integrity == "ok" and free_pct >= 20 and query_ms < 250 else "AMARILLO"
         payload = {"tables": counts, "disk_free_pct": round(free_pct, 2),
-                   "python": os.sys.version.split()[0], "pid": os.getpid()}
+                   "python": os.sys.version.split()[0], "pid": os.getpid(),
+                   "full_integrity_check_performed": False,
+                   "integrity_policy": "FULL_SCAN_POSTCLOSE_ONLY"}
         with store.connect() as c:
             c.execute("""INSERT INTO sre_snapshots VALUES(NULL,?,?,?,?,?,?,?,?,?,?)""",
                       (now_iso(), state, db_bytes, wal_bytes, usage.total, usage.free,
                        rss, query_ms, integrity, json.dumps(payload, ensure_ascii=False)))
             c.execute("DELETE FROM sre_snapshots WHERE id NOT IN (SELECT id FROM sre_snapshots ORDER BY id DESC LIMIT 2016)")
-        _job(store, "SRE_SNAPSHOT", state, f"quick_check={integrity}; libre={free_pct:.1f}%", success=state == "VERDE")
+        _job(store, "SRE_SNAPSHOT", state, f"db_readable={integrity}; full_scan=POSTCLOSE_ONLY; libre={free_pct:.1f}%", success=state == "VERDE")
         return payload | {"state": state, "db_bytes": db_bytes, "wal_bytes": wal_bytes,
                           "query_ms": query_ms, "integrity": integrity}
     except Exception as exc:
