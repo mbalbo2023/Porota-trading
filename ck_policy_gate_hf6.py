@@ -54,7 +54,10 @@ def regime_verdict(obs):
             "would_block":blocked}
 
 
-def sector_verdict(obs, candidate_sector=None, *, limit=None):
+def sector_verdict(obs, candidate_sector=None, *, limit=None, applicable=True):
+    if not applicable:
+        return {"state":"PASS","reason":"SECTOR_POLICY_NOT_APPLICABLE_TO_FAMILY",
+                "would_block":False,"not_applicable":True}
     sector = str(candidate_sector or "").strip()
     if not isinstance(obs, dict) or not sector:
         return {"state":"INSUFFICIENT_EVIDENCE",
@@ -84,13 +87,14 @@ def _authorized_gate(verdict, authority):
 
 
 def evaluate(*, expectancy_samples=None, breadth=None, sectors=None,
-             candidate_sector=None, sector_limit=None):
+             candidate_sector=None, sector_limit=None, sector_applicable=True):
     gates = {
         "expectancy": _authorized_gate(expectancy_verdict(expectancy_samples),
                                        _mode(EXPECTANCY_ENV, "OBSERVATION_ONLY")),
         "regime": _authorized_gate(regime_verdict(breadth),
                                    _mode(REGIME_ENV, "ALERT_ONLY")),
-        "sector": _authorized_gate(sector_verdict(sectors, candidate_sector, limit=sector_limit),
+        "sector": _authorized_gate(sector_verdict(sectors, candidate_sector, limit=sector_limit,
+                                                   applicable=sector_applicable),
                                    _mode(SECTOR_ENV, "BINDING")),
     }
     reason = next((g["execute_reason"] for g in gates.values() if g["execute_block"]), "")
