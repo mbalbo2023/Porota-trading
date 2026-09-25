@@ -26,11 +26,25 @@ jobs:
       - name: Run focused promotion and safety tests
         run: |
           set -Eeuo pipefail
-          python -m pytest -q             tests/test_iol_mcp_readonly_adapter_rc6.py             tests/test_iol_shadow_collector_rc6.py             tests/test_rc6_iol_family_reference.py             tests/test_rc6_complementary_catalog_merge.py             tests/test_rc6_observer_complementary_reconcile.py             tests/test_rc6_multisource_discovery.py             tests/test_rc6_family_readiness.py             tests/test_fixed_income_nominal_contract_rc6.py             tests/test_rc6_cauciones_contract.py             tests/test_catalog_v17.py             tests/test_paper_engine_v17.py
+          python -m pytest -q \
+            tests/test_iol_mcp_readonly_adapter_rc6.py \
+            tests/test_iol_shadow_collector_rc6.py \
+            tests/test_rc6_iol_family_reference.py \
+            tests/test_rc6_complementary_catalog_merge.py \
+            tests/test_rc6_observer_complementary_reconcile.py \
+            tests/test_rc6_multisource_discovery.py \
+            tests/test_rc6_family_readiness.py \
+            tests/test_fixed_income_nominal_contract_rc6.py \
+            tests/test_rc6_cauciones_contract.py
       - name: Run canonical release regression slice
         run: |
           set -Eeuo pipefail
-          python -m pytest -q             tests/test_rc6_operational_scope.py             tests/test_rc6_deploy_readiness_contract.py             tests/test_rc6_live_scope_gate_fallback.py             tests/test_rc6_take_profit_regression.py             tests/test_exit_supervision_v17.py
+          python -m pytest -q \
+            tests/test_rc6_operational_scope.py \
+            tests/test_rc6_deploy_readiness_contract.py \
+            tests/test_rc6_live_scope_gate_fallback.py \
+            tests/test_rc6_take_profit_regression.py \
+            tests/test_exit_supervision_v17.py
       - name: Static real-order and one-shot deploy guards
         run: |
           set -Eeuo pipefail
