@@ -26,3 +26,19 @@ def test_historical_shadow_rejects_non_operational_family_without_database():
 
     assert result["state"] == "OUT_OF_SCOPE"
     assert result["decision_effect"] == "OBSERVE_ONLY"
+
+
+def test_sector_binding_remains_fail_closed_for_unmapped_equity(monkeypatch):
+    import ck_policy_gate_hf6 as gate
+    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "BINDING")
+    result=gate.evaluate(sectors={"groups":[]},candidate_sector=None,sector_applicable=True)
+    assert result["execute_block"] is True
+    assert result["verdict"]=="SECTOR_UNMAPPED_BINDING"
+
+
+def test_sector_binding_is_not_applicable_to_non_equity_family(monkeypatch):
+    import ck_policy_gate_hf6 as gate
+    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "BINDING")
+    result=gate.evaluate(sectors={"groups":[]},candidate_sector=None,sector_applicable=False)
+    assert result["execute_block"] is False
+    assert result["gates"]["sector"]["reason"]=="SECTOR_POLICY_NOT_APPLICABLE_TO_FAMILY"
