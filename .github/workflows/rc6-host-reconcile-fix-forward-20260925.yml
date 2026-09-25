@@ -1,0 +1,210 @@
+name: RC6 host reconcile fix-forward
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-host-reconcile-fix-forward
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Focused regression tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile             scripts/porota_host_dependency_guard.py             scripts/rc6_public_source_capture.py             rc6_postclose_history_job.py
+          python -m pytest -q             tests/test_porota_host_dependency_guard.py             tests/test_rc6_source_consolidation.py             tests/test_rc6_postclose_history_quarantine.py
+          python scripts/porota_host_dependency_guard.py             --root "$PWD"             --unit systemd/porota-iol-shadow-collector-rc6.service             --unit systemd/porota-history-postclose-rc6.service             --unit systemd/porota-preopen-rc6.service
+
+      - name: Read-only live preflight and snapshot endpoint probe
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "===RC6_HOST_RECONCILE_PREFLIGHT_BEGIN==="
+          test -f /opt/porota-trading/scripts/rc6_iol_shadow_collect.py
+          test ! -f /opt/porota-trading/scripts/rc6_public_source_capture.py
+          test "$(systemctl is-enabled porota-iol-shadow-collector-rc6.timer 2>/dev/null || true)" = enabled
+          test "$(systemctl is-active porota-iol-shadow-collector-rc6.timer 2>/dev/null || true)" = active
+          test "$(systemctl is-enabled porota-history-postclose-rc6.timer 2>/dev/null || true)" = disabled
+          test "$(systemctl is-active porota-history-postclose-rc6.timer 2>/dev/null || true)" = inactive
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+          cols=[r[1] for r in c.execute('PRAGMA table_info(observer_state)')]
+          wanted=[x for x in ('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at') if x in cols]
+          row=c.execute('SELECT '+','.join(wanted)+' FROM observer_state WHERE id=1').fetchone()
+          state=dict(zip(wanted,row or []))
+          assert state.get('mode')=='PRODUCTION_PAPER'
+          assert int(state.get('real_orders_sent') or 0)==0
+          print('PREFLIGHT_OBSERVER='+json.dumps(state,sort_keys=True,default=str))
+          PY
+          sudo -n docker exec porota_production_dashboard python - <<'PY'
+          import os, urllib.request
+          token=os.getenv('DASHBOARD_ACCESS_TOKEN','')
+          assert token, 'DASHBOARD_ACCESS_TOKEN_MISSING'
+          req=urllib.request.Request('http://127.0.0.1:8000/api/observer/state',headers={'Authorization':f'Bearer {token}'})
+          with urllib.request.urlopen(req,timeout=20) as r:
+              body=r.read()
+              print(f'SNAPSHOT_ENDPOINT_HTTP={r.status}|bytes={len(body)}')
+              assert r.status==200 and body
+          PY
+          echo "===RC6_HOST_RECONCILE_PREFLIGHT_END==="
+          REMOTE
+
+      - if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"
+
+  deploy-host-fix-forward:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925' && github.event.action == 'ready_for_review'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+
+      - name: Build exact host-only fix-forward payload
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          files=(
+            scripts/rc6_public_source_capture.py
+            scripts/porota_host_dependency_guard.py
+            rc6_postclose_history_job.py
+            systemd/porota-history-postclose-rc6.service
+            systemd/porota-history-postclose-rc6.timer
+          )
+          for f in "${files[@]}"; do test -f "$f"; done
+          tar -czf /tmp/porota-host-reconcile.tgz "${files[@]}"
+          sha256sum /tmp/porota-host-reconcile.tgz
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Transfer exact payload
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts"             /tmp/porota-host-reconcile.tgz "$DO_USER@$DO_HOST:/tmp/porota-host-reconcile-$TARGET_SHA.tgz"
+
+      - name: Apply host-only fix-forward and verify
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          PKG="/tmp/porota-host-reconcile-$TARGET_SHA.tgz"
+          STAGE="/tmp/porota-host-reconcile-$TARGET_SHA"
+          trap 'sudo -n rm -rf "$STAGE" "$PKG" >/dev/null 2>&1 || true' EXIT
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          tar -xzf "$PKG" -C "$STAGE"
+
+          OBS_BEFORE="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          DASH_BEFORE="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          test "$OBS_BEFORE" = "$DASH_BEFORE"
+          test "$(systemctl is-enabled porota-history-postclose-rc6.timer 2>/dev/null || true)" = disabled
+          test "$(systemctl is-active porota-history-postclose-rc6.timer 2>/dev/null || true)" = inactive
+
+          sudo -n install -D -m 0644 "$STAGE/scripts/rc6_public_source_capture.py" "$ROOT/scripts/rc6_public_source_capture.py"
+          sudo -n install -D -m 0644 "$STAGE/scripts/porota_host_dependency_guard.py" "$ROOT/scripts/porota_host_dependency_guard.py"
+          sudo -n install -D -m 0644 "$STAGE/rc6_postclose_history_job.py" "$ROOT/rc6_postclose_history_job.py"
+          sudo -n install -m 0644 "$STAGE/systemd/porota-history-postclose-rc6.service" /etc/systemd/system/porota-history-postclose-rc6.service
+          sudo -n install -m 0644 "$STAGE/systemd/porota-history-postclose-rc6.timer" /etc/systemd/system/porota-history-postclose-rc6.timer
+          sudo -n systemctl daemon-reload
+
+          test "$(systemctl is-enabled porota-history-postclose-rc6.timer 2>/dev/null || true)" = disabled
+          test "$(systemctl is-active porota-history-postclose-rc6.timer 2>/dev/null || true)" = inactive
+
+          python3 -m py_compile             "$ROOT/scripts/rc6_public_source_capture.py"             "$ROOT/scripts/porota_host_dependency_guard.py"             "$ROOT/rc6_postclose_history_job.py"
+
+          python3 "$ROOT/scripts/porota_host_dependency_guard.py"             --root "$ROOT"             --unit /etc/systemd/system/porota-iol-shadow-collector-rc6.service             --unit /etc/systemd/system/porota-history-postclose-rc6.service             --unit /etc/systemd/system/porota-preopen-rc6.service
+
+          OUT="$(python3 "$ROOT/rc6_postclose_history_job.py")"
+          echo "$OUT"
+          grep -q '"status": "BLOCKED_BY_POLICY"' <<<"$OUT"
+          grep -q '"history_writes_started": false' <<<"$OUT"
+
+          TMP_CAPTURE="/tmp/rc6-public-source-probe-$TARGET_SHA.json"
+          PYTHONPATH="$ROOT" python3 "$ROOT/scripts/rc6_public_source_capture.py" --output "$TMP_CAPTURE"
+          test -s "$TMP_CAPTURE"
+          rm -f "$TMP_CAPTURE"
+
+          OBS_AFTER="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          DASH_AFTER="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          test "$OBS_AFTER" = "$OBS_BEFORE"
+          test "$DASH_AFTER" = "$DASH_BEFORE"
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          assert c.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+          cols=[r[1] for r in c.execute('PRAGMA table_info(observer_state)')]
+          wanted=[x for x in ('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at') if x in cols]
+          row=c.execute('SELECT '+','.join(wanted)+' FROM observer_state WHERE id=1').fetchone()
+          state=dict(zip(wanted,row or []))
+          assert state.get('mode')=='PRODUCTION_PAPER'
+          assert int(state.get('real_orders_sent') or 0)==0
+          print('POSTFIX_OBSERVER='+json.dumps(state,sort_keys=True,default=str))
+          PY
+
+          echo "PPI_WATCH_INSPECT_ONLY_BEGIN"
+          systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | while read -r unit; do
+            [ -n "$unit" ] || continue
+            echo "PPI_WATCH=$unit|ENABLED=$(systemctl is-enabled "$unit" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          echo "PPI_WATCH_INSPECT_ONLY_END"
+          echo "HOST_ONLY_FIX_FORWARD=GREEN|DOCKER_MUTATION=NONE|DB_MUTATION=NONE|PPI_WATCH_MUTATION=NONE"
+          REMOTE
+
+      - name: Runner cleanup
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key" /tmp/porota-host-reconcile.tgz
