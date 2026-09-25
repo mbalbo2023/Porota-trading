@@ -59,6 +59,9 @@ jobs:
           echo "===RC6_HOST_RECONCILE_PREFLIGHT_BEGIN==="
           test -f /opt/porota-trading/scripts/rc6_iol_shadow_collect.py
           test ! -f /opt/porota-trading/scripts/rc6_public_source_capture.py
+          test ! -f /opt/porota-trading/scripts/rc6_iol_mcp_inventory.py
+          test ! -f /opt/porota-trading/scripts/rc6_telegram_diagnostic.py
+          test ! -f /opt/porota-trading/rc6_preopen_freshness_audit.py
           test "$(systemctl is-enabled porota-iol-shadow-collector-rc6.timer 2>/dev/null || true)" = enabled
           test "$(systemctl is-active porota-iol-shadow-collector-rc6.timer 2>/dev/null || true)" = active
           test "$(systemctl is-enabled porota-history-postclose-rc6.timer 2>/dev/null || true)" = disabled
@@ -116,10 +119,10 @@ jobs:
           set -Eeuo pipefail
           files=(
             scripts/rc6_public_source_capture.py
+            scripts/rc6_iol_mcp_inventory.py
+            scripts/rc6_telegram_diagnostic.py
+            rc6_preopen_freshness_audit.py
             scripts/porota_host_dependency_guard.py
-            rc6_postclose_history_job.py
-            systemd/porota-history-postclose-rc6.service
-            systemd/porota-history-postclose-rc6.timer
           )
           for f in "${files[@]}"; do test -f "$f"; done
           tar -czf /tmp/porota-host-reconcile.tgz "${files[@]}"
