@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from scripts.porota_validate_deploy_artifact import validate
+from scripts.porota_validate_deploy_artifact import is_runtime_relevant, validate
 
 
 def write(root: Path, rel: str, content: str) -> None:
@@ -59,3 +59,8 @@ def test_literal_dynamic_import_is_checked(tmp_path):
 
     assert result["status"] == "FAILED"
     assert result["missing_local_imports"][0]["module"] == "localmod"
+
+
+def test_static_binding_assets_are_runtime_relevant():
+    assert is_runtime_relevant("n_instrument_watchlist.json")
+    assert is_runtime_relevant("POROTA_SECTOR_MAP_V1.csv")
