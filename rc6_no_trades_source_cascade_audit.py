@@ -145,7 +145,9 @@ def summarize_db(db):
                         if ts and (src not in latest or str(ts)>str(latest[src])): latest[src]=ts
                     result["market_snapshots"][day]={
                         "total":len(rr),"unique_symbols":len({r.get("symbol") for r in rr if r.get("symbol")}),
-                        "by_source":dict(by_source),"latest_by_source":latest
+                        "by_source":dict(by_source),"latest_by_source":latest,
+                        "by_market":dict(Counter(str(r.get("market") or "UNKNOWN") for r in rr)),
+                        "by_asset_class":dict(Counter(str(r.get("asset_class") or "UNKNOWN") for r in rr)),
                     }
 
         # source sync table if present
@@ -188,6 +190,7 @@ def read_json(path):
     if p.name=="iol_shadow_latest.json":
         syms=x.get("symbols") if isinstance(x.get("symbols"),list) else []
         out["progress"]=x.get("progress")
+        out["primary_comparison_contract"]=x.get("primary_comparison_contract")
         out["symbol_count"]=len(syms)
         out["states"]=dict(Counter(str(r.get("state") or "UNKNOWN") for r in syms if isinstance(r,dict)))
         out["quality"]=dict(Counter(str(r.get("quality") or "UNKNOWN") for r in syms if isinstance(r,dict)))
