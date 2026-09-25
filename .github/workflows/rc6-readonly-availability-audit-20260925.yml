@@ -24,7 +24,7 @@ jobs:
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
 
