@@ -25,7 +25,7 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
-      - name: Run family reference against live read-only sources in isolated temp root
+      - name: Probe exact read-only IOL response contracts
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -33,39 +33,43 @@ jobs:
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
-          TMP="$(mktemp -d /tmp/porota-family-probe.XXXXXX)"
-          trap 'rm -rf "$TMP"' EXIT
-          cp /opt/porota-trading/data/market/iol_shadow_latest.json "$TMP/iol_shadow_latest.json"
           cd /opt/porota-trading
-          sudo -n env PYTHONPATH=/opt/porota-trading PROBE_ROOT="$TMP" python3 - <<'PY'
-          import json, os
-          from pathlib import Path
+          sudo -n env PYTHONPATH=/opt/porota-trading python3 - <<'PY'
+          import json
           from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
-          import rc6_iol_family_reference as f
-          root=Path(os.environ["PROBE_ROOT"])
-          result=f.collect(OAuthStoreReadOnlyMCP(),root=root,db_path="/opt/porota-trading/data/paper_v17/observer_v17.db")
-          records=[r for r in result.get("records",[]) if isinstance(r,dict)]
-          contracts=[r for r in records if isinstance(r.get("financial_contract_v17"),dict) and r.get("financial_contract_v17")]
-          def counts(rows):
-              out={}
-              for r in rows:
-                  fam=str(r.get("instrument_type") or r.get("family") or "UNKNOWN")
-                  out[fam]=out.get(fam,0)+1
-              return out
-          print("ISOLATED_FAMILY_REFERENCE="+json.dumps({
-              "refreshed_at":result.get("refreshed_at"),
-              "records":len(records),"by_family":counts(records),
-              "contracts":len(contracts),"contracts_by_family":counts(contracts),
-              "fci_count":len(result.get("fci",[]) if isinstance(result.get("fci"),list) else []),
-              "caucion_ars_count":len((result.get("cauciones") or {}).get("ARS",[]) if isinstance((result.get("cauciones") or {}).get("ARS",[]),list) else []),
-              "caucion_usd_count":len((result.get("cauciones") or {}).get("USD",[]) if isinstance((result.get("cauciones") or {}).get("USD",[]),list) else []),
-              "errors":result.get("errors",[])
-          },ensure_ascii=False,sort_keys=True))
-          for r in contracts[:10]:
-              print("CONTRACT_SAMPLE="+json.dumps({
-                  "ticker":r.get("ticker"),"family":r.get("instrument_type"),
-                  "market":r.get("market"),"currency":r.get("currency"),
-                  "settlement":r.get("settlement"),"contract":r.get("financial_contract_v17")
-              },ensure_ascii=False,sort_keys=True))
+          c=OAuthStoreReadOnlyMCP()
+          def summarize(name,args):
+              try:
+                  r=c.call(name,args)
+                  out={"tool":name,"type":type(r).__name__}
+                  if isinstance(r,dict):
+                      out["keys"]=sorted(r.keys())
+                      if name=="get_asset_info":
+                          out["sample"]={k:r.get(k) for k in ("symbol","description","market","type","currency","units_per_lot","country","term")}
+                      elif name=="get_fixed_income_analytics":
+                          out["sample"]={k:r.get(k) for k in ("ticker","instrument_type","payment_currency","maturity_date")}
+                          out["calculation_inputs_keys"]=sorted((r.get("calculation_inputs") or {}).keys()) if isinstance(r.get("calculation_inputs"),dict) else []
+                      elif name=="simulate_fixed_income_by_nominals":
+                          out["sample"]={k:r.get(k) for k in ("ticker","nominals","dirty_price_per100","amount_invested","amount_invested_ars","maturity_date")}
+                      elif name=="get_options_chain":
+                          opts=r.get("options") if isinstance(r.get("options"),list) else []
+                          out["underlying"]=r.get("underlying"); out["count"]=len(opts)
+                          out["first"]={k:opts[0].get(k) for k in ("symbol","option_type","strike_price","expiration","bid_price","ask_price","volume","is_stale")} if opts else None
+                      elif name=="get_fci_funds":
+                          vals=r.get("result") if isinstance(r.get("result"),list) else r.get("funds") if isinstance(r.get("funds"),list) else []
+                          out["count"]=len(vals); out["first"]={k:vals[0].get(k) for k in ("asset","description","market","currency","operable","fciType")} if vals else None
+                      elif name=="get_caucion_rates":
+                          vals=r.get("result") if isinstance(r.get("result"),list) else r.get("rates") if isinstance(r.get("rates"),list) else []
+                          out["count"]=len(vals); out["first"]=vals[0] if vals else None
+                  print("IOL_TOOL_SHAPE="+json.dumps(out,ensure_ascii=False,sort_keys=True))
+              except Exception as exc:
+                  print("IOL_TOOL_SHAPE="+json.dumps({"tool":name,"error":type(exc).__name__+":"+str(exc)[:160]},sort_keys=True))
+          summarize("get_asset_info",{"symbol":"AL30","market":"BCBA"})
+          summarize("get_fixed_income_analytics",{"ticker":"AL30"})
+          summarize("simulate_fixed_income_by_nominals",{"ticker":"AL30","nominals":1,"currency":"ARS"})
+          summarize("get_options_chain",{"symbol":"GGAL"})
+          summarize("get_fci_funds",{})
+          summarize("get_caucion_rates",{"currency":"ARS","caucion_type":"colocadora"})
+          summarize("get_caucion_rates",{"currency":"USD","caucion_type":"colocadora"})
           PY
           REMOTE
