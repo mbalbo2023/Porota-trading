@@ -25,6 +25,29 @@ def store(tmp_path):
     return PaperStore(str(tmp_path/'paper.db'))
 
 
+def _prepare_current_history_contract(monkeypatch,tmp_path):
+    """Exercise history download only after the RC6 one-time cutoff repair is complete."""
+    import cu_history_store_v2_hf6 as history_v2
+    from cv_history_store_adapter_hf6 import default_history_store
+    import scripts.rc6_history_cutoff_repair_once as cutoff_repair
+
+    monkeypatch.setenv("HIST_DB_PATH",str(tmp_path/'history-v2.db'))
+    history_store=default_history_store()
+    history_v2.init_schema(history_store)
+    cutoff_repair._init_state(history_store)
+    with history_store.connect() as c:
+        c.execute("""INSERT OR REPLACE INTO rc6_history_cutoff_repair_runs
+          (cutoff,state,targets,archive_imports,ppi_queries,complete,failed,updated_at)
+          VALUES(?,?,?,?,?,?,?,?)""",
+          ('2026-09-21','COMPLETE',0,0,0,0,0,AT))
+    monkeypatch.setattr(observer.financial_catalog,'lookup',
+                        lambda *_args,**_kwargs:{'market':'BYMA'})
+    monkeypatch.setattr(observer,'_history_end_date',
+                        lambda now=None: datetime.fromisoformat(AT).date())
+    return history_store
+
+
+
 def series(**changes):
     return Series(**(dict(symbol='GGAL',asset_class='ACCIONES',market='BYMA',currency='ARS',
         settlement='A-24HS',resolution='1m',source='TEST_PROVIDER',adjustment='RAW',
@@ -234,8 +257,9 @@ def history_payload():
     return [{'date':'2026-08-25T17:00:00-03:00','openingPrice':100,'max':105,'min':99,'price':102,'volume':123}]
 
 
-def test_historial_vacio_no_borra_ultimo_valido_y_raw_se_conserva(store,monkeypatch):
+def test_historial_vacio_no_borra_ultimo_valido_y_raw_se_conserva(store,monkeypatch,tmp_path):
     observer._support_schema(store)
+    _prepare_current_history_contract(monkeypatch,tmp_path)
     monkeypatch.setattr(observer,'_historical_targets',lambda _: [('GGAL','ACCIONES','A-24HS')])
     clock=[AT]
     monkeypatch.setattr(observer,'now_iso',lambda:clock[0])
@@ -268,8 +292,9 @@ def test_duplicados_no_inflan_cobertura():
     assert observer._history_count(history_payload()*3,as_of=AT)==1
 
 
-def test_descarga_fallida_rota_en_vez_de_bloquear_universo(store,monkeypatch):
+def test_descarga_fallida_rota_en_vez_de_bloquear_universo(store,monkeypatch,tmp_path):
     observer._support_schema(store)
+    _prepare_current_history_contract(monkeypatch,tmp_path)
     with store.connect() as c:
         for symbol in ('AAA','BBB'):
             c.execute('INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)',
@@ -288,5 +313,5 @@ def test_panel_no_presenta_muestras_como_cobertura_validada(store,monkeypatch):
     SampleMaterializer(store).tick(END)
     monkeypatch.setattr(dashboard,'DB_PATH',store.path)
     page=dashboard.history_page()
-    assert 'Archivo versionado' in page and 'TRADE_SAMPLES' in page
+    assert 'Archivo incremental de velas' in page and 'TRADE_SAMPLES' in page
     assert 'Históricos cubiertos' not in page and 'no equivale a series validadas' in page

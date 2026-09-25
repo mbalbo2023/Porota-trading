@@ -9,9 +9,12 @@ def test_rc6_table_layout_never_hides_header_row():
     assert "position:absolute!important;width:1px" not in css
 
 
-def test_rc6_table_headers_are_sticky_and_wide_tables_scroll_as_tables():
+def test_rc6_table_headers_are_sticky_and_wide_tables_fit_tablet_viewport():
     css = layout.FORCE_COMPACT_CSS
     assert "position:sticky!important" in css
-    assert "width:max-content!important" in css
+    assert "width:100%!important" in css
+    assert "table-layout:fixed!important" in css
+    assert "max-width:100%!important" in css
+    assert "width:max-content!important" not in css
     assert "display:table!important" in css
     assert ".porota-cell-label{display:none!important}" in css

@@ -1,0 +1,107 @@
+schema_version: 1
+project: POROTA_TRADING
+
+repository:
+  public_repository_intentional: true
+  source_code_may_be_public: true
+  secrets_in_repository: false
+  runtime_data_in_repository: false
+  broker_account_data_in_repository: false
+  production_databases_in_repository: false
+
+operating_mode:
+  required_mode: PRODUCTION_PAPER
+  shadow_allowed: true
+  real_trading_allowed: false
+  real_orders_sent_required: 0
+
+accessibility:
+  primary_control_plane:
+    - GITHUB_MCP
+    - GITHUB_ACTIONS
+  interactive_ssh: BREAK_GLASS_ONLY
+  user_terminal_required: false
+  user_copy_paste_commands_required: false
+  codespaces_allowed: false
+
+development:
+  direct_main_changes_allowed: false
+  direct_deploy_branch_development_allowed: false
+  isolated_branch_required: true
+  ppi_watch_must_not_be_modified: true
+  chat_memory_is_runtime_source_of_truth: false
+  runtime_evidence_required: true
+
+deployment:
+  strategy: FIX_FORWARD_ONLY
+  rollback_allowed: false
+  build_once_required: true
+  exact_artifact_promotion_required: true
+  immutable_artifact_identity_required: true
+  exact_sha_required: true
+  artifact_manifest_required: true
+  artifact_hashes_required: true
+  manual_partial_runtime_file_lists_allowed: false
+
+predeploy_gates:
+  required:
+    - POLICY
+    - COMPILE
+    - DEPENDENCY_CLOSURE
+    - ARTIFACT_COMPLETENESS
+    - IMPORT_CLOSURE
+    - UNIT_TESTS
+    - INTEGRATION_TESTS
+    - RUNTIME_SMOKE
+    - PAPER_SAFETY
+    - SECRET_SCAN
+  rule: "Any failure reproducible without the droplet MUST fail before the droplet is modified."
+
+promotion:
+  healthy_runtime_must_remain_untouched_until_candidate_green: true
+  partial_promotion_allowed: false
+  observer_and_dashboard_same_artifact_required: true
+  post_start_health_required: true
+  success_requires_state_manifest: true
+
+failure_learning:
+  failure_signature_required: true
+  root_cause_required: true
+  permanent_regression_guard_required: true
+  repeated_known_failure_class_allowed: false
+  fix_forward_required: true
+
+cleanup:
+  required_after_success: true
+  required_after_failure_when_safe: true
+  maximize_safe_space_recovery: true
+  report_before_after: true
+  allowed_targets:
+    - unreferenced_candidate_images
+    - dangling_images
+    - safe_build_cache
+    - safe_buildkit_cache
+    - deploy_staging_directories
+    - deploy_tarballs
+    - stopped_deploy_containers
+  forbidden_targets:
+    - active_containers
+    - referenced_runtime_images
+    - volumes_with_runtime_data
+    - sqlite_databases
+    - bind_mounted_data
+    - ppi_watch
+
+workflow_governance:
+  prefer_parameterized_control_plane: true
+  one_off_workflows_discouraged: true
+  workflow_creation_requires_reason: true
+  cleanup_of_legacy_workflows_must_be_classified_first: true
+
+baseline:
+  established_utc: "2026-09-24T14:12:18Z"
+  deployed_sha: "30d0a6191fdb0166b14e700786bd3fba194216ea"
+  deploy_run_id: 36008343899
+  deploy_result: SUCCESS
+  required_mode_verified: PRODUCTION_PAPER
+  real_orders_sent_verified: 0

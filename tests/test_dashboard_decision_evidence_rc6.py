@@ -25,7 +25,8 @@ def test_decision_evidence_panel_is_standard_read_only_and_bounded(monkeypatch):
     rendered = dashboard._decision_evidence_panel()
     assert "Evidencia por decisión y perfiles SHADOW" in rendered
     assert "SHADOW_AGGRESSIVE_V1" in rendered
-    assert "Lectura solamente" in rendered
+    assert "READ_ONLY_DASHBOARD_NO_DECISION_OR_ORDER_CHANGE" in rendered
+    assert "ninguno puede alterar ni autorizar órdenes" in rendered
     assert rendered.count("<code>d-") == 10
     assert "12" in rendered
 
