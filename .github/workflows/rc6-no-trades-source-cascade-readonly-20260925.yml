@@ -104,6 +104,23 @@ jobs:
           echo "IOL_JOURNAL_TODAY_BEGIN"
           sudo -n journalctl -u porota-iol-shadow-collector-rc6.service --since today --no-pager -n 120 2>/dev/null | tail -n 120 || true
           echo "IOL_JOURNAL_TODAY_END"
+          echo "SECTOR_MAP_RUNTIME_BEGIN"
+          sudo -n docker exec porota_production_observer sh -lc '
+            if [ -f /app/POROTA_SECTOR_MAP_V1.csv ]; then
+              echo SECTOR_MAP_EXISTS=TRUE
+              wc -l /app/POROTA_SECTOR_MAP_V1.csv
+              sha256sum /app/POROTA_SECTOR_MAP_V1.csv
+            else
+              echo SECTOR_MAP_EXISTS=FALSE
+            fi
+            python - <<"PY"
+import es_policy_context_rc6 as p
+m=p._explicit_sector_map()
+print("SECTOR_MAP_RUNTIME_ROWS="+str(len(m)))
+print("SECTOR_MAP_RUNTIME_KEYS="+",".join(sorted(k[0] for k in m)))
+PY
+          ' || true
+          echo "SECTOR_MAP_RUNTIME_END"
           REMOTE
 
       - name: Verify PAPER safety after audit
