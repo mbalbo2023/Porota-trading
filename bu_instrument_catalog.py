@@ -235,18 +235,21 @@ def complementary_is_fresh(complementary, *, max_age_seconds=86400, now=None):
 
 
 def complete_with_complement(record, complementary):
-    """Return a copy completed only with non-conflicting contract evidence.
+    """Complete or refresh an exact primary identity from a fresh complement.
 
-    Identity/currency/market/settlement from the primary record are immutable.
-    Complementary evidence may add a missing financial_contract_v17 only when
-    the complementary identity is exactly equivalent after normalization.
+    A complementary source may do two different things:
+    1) add an exact financial contract that PPI did not expose; or
+    2) prove that an already-valid spot identity is still alive/fresh.
+
+    In both cases ticker/family/market/settlement/currency must match exactly
+    after canonicalization.  This deliberately separates catalog liveness from
+    historical-data coverage: missing history can block a signal, but it must
+    not turn a currently observed tradable identity into a stale catalog row.
     """
     if record is None or not isinstance(complementary, dict):
         return record
     primary=dict(record)
     raw=dict(primary.get("raw") or {})
-    if raw.get("financial_contract_v17"):
-        return primary
     family=canonical_family(complementary.get("instrument_type") or complementary.get("family"))
     ticker=str(complementary.get("ticker") or complementary.get("symbol") or "").strip().upper()
     market=canonical_market(complementary.get("market"))
@@ -257,23 +260,29 @@ def complete_with_complement(record, complementary):
     observed=(ticker,family,market,settlement,currency)
     if observed != expected:
         return primary
+
     contract=complementary.get("financial_contract_v17")
-    if not isinstance(contract,dict) or not contract:
-        return primary
-    raw["financial_contract_v17"]=contract
-    raw["_contract_complement_source"]=str(complementary.get("source") or "COMPLEMENTARY")
+    if isinstance(contract,dict) and contract and not raw.get("financial_contract_v17"):
+        raw["financial_contract_v17"]=contract
+        raw["_contract_complement_source"]=str(complementary.get("source") or "COMPLEMENTARY")
+
     if primary.get("last_seen_at") and not raw.get("_primary_last_seen_at"):
         raw["_primary_last_seen_at"]=primary.get("last_seen_at")
     observed_at = complementary.get("observed_at") or complementary.get("provider_observed_at")
     if observed_at:
         raw["_complement_observed_at"]=str(observed_at)
         primary["last_seen_at"]=str(observed_at)
+
     primary["raw"]=raw
+    # Recompute from current contract semantics instead of preserving a stale
+    # historical label such as HISTORY_UNAVAILABLE_PPI.
     primary["capability"]=capability(primary)
     if str(primary["capability"]).startswith("READY_PAPER_"):
         primary["status"]="AVAILABLE"
-        raw["_availability_source"]="PPI_IDENTITY_PLUS_" + str(complementary.get("source") or "COMPLEMENTARY").upper()
+        raw["_availability_source"]="PPI_IDENTITY_PLUS_" + str(
+            complementary.get("source") or "COMPLEMENTARY").upper()
     return primary
+
 
 def sync_candidate_universe(connection, checked_at):
     """Project normalized catalog readiness into the legacy candidate table."""
