@@ -39,8 +39,10 @@ def test_dashboard_is_recreated_directly_from_verified_candidate():
     assert "RC6_VERIFY_DASHBOARD_IMAGE=GREEN" in source
     assert '"$STAGE"; then' in source
     assert "RC6_IMAGE_SOURCE_SHA=GREEN|dashboard|$f" in source
-    assert "requirements.txt docker-compose.yml Dockerfile" in source
-    assert ".dockerignore requirements.txt docker-compose.yml Dockerfile" in source
+    assert "git archive --format=tar.gz --output=/tmp/porota-rc6-candidate.tgz HEAD" in source
+    assert "RC6_EXACT_GIT_TREE_PACKAGE=GREEN" in source
+    assert "POROTA_SECTOR_MAP_V1.csv" in source
+    assert "RC6_SECTOR_MAP_PROVENANCE=GREEN" in source
     assert "RC6_IMAGE_SOURCE_SHA_MISMATCH=dashboard|$f" in source
     assert 'RUNNING_DASHBOARD_IMAGE_ID="$(sudo -n docker inspect' in source
     assert 'test "$RUNNING_DASHBOARD_IMAGE_ID" = "$EXPECTED_DASHBOARD_IMAGE_ID"' in source
@@ -80,3 +82,12 @@ def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     assert 'sudo -n timeout 1200 sudo -n docker run' in verify
     assert '--entrypoint python "$VERIFY_IMAGE" ck_contract_evidence_runner_hf6.py' in verify
     assert '--entrypoint timeout "$VERIFY_IMAGE" 1200 python ck_contract_evidence_runner_hf6.py' not in verify
+
+
+def test_exact_git_tree_packaging_prevents_tracked_runtime_file_omissions():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert "$(git ls-files '*.py')" not in source
+    assert "git archive --format=tar.gz" in source
+    assert "grep -Fxq 'POROTA_SECTOR_MAP_V1.csv'" in source
+    assert 'test -f "$STAGE/POROTA_SECTOR_MAP_V1.csv"' in source
+    assert '/app/POROTA_SECTOR_MAP_V1.csv' in source
