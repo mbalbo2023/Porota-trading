@@ -27,13 +27,20 @@ def main() -> int:
         c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=20)
         c.row_factory = sqlite3.Row
         c.execute('PRAGMA query_only=ON')
-        qc = c.execute('PRAGMA quick_check').fetchone()[0]
+        # Frequent intraday integrity must stay cheap and read-only. A full
+        # PRAGMA quick_check can scan the entire observer DB and has caused
+        # the 10-minute probe to overrun its 3-minute systemd timeout during
+        # the market session. Full-file integrity is owned by the dedicated
+        # postclose full-db-integrity job.
+        c.execute('SELECT 1').fetchone()
         tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         required = {'candle_series', 'candle_versions', 'candle_worker_state'}
         missing = sorted(required - tables)
-        result['quick_check'] = qc
+        result['db_readable'] = True
+        result['full_integrity_check_performed'] = False
+        result['integrity_policy'] = 'FULL_SCAN_POSTCLOSE_ONLY'
         result['missing_tables'] = missing
-        if qc != 'ok' or missing:
+        if missing:
             result['status'] = 'RED'
             c.close()
             print(json.dumps(result, ensure_ascii=False, sort_keys=True))
