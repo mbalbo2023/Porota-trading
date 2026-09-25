@@ -94,6 +94,10 @@ def test_collect_builds_fixed_option_fci_and_caucion_evidence_together(tmp_path)
         ("GGAL","ACCIONES","BYMA","ARS","A-24HS","AVAILABLE"),
     ])
     con.commit(); con.close()
+    (tmp_path/"iol_family_reference_latest.json").write_text(json.dumps({
+        "rotation":{"fixed_index":0,"option_underlying_index":1},
+        "records":[],"fci":[],"cauciones":{}
+    }),encoding="utf-8")
     (tmp_path/"iol_shadow_latest.json").write_text(json.dumps({
         "symbols":[{
             "symbol":"GFGC7000OC","market":"BCBA","term":"t1","state":"READY",
