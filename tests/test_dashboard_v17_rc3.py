@@ -79,7 +79,9 @@ def test_release_version_and_image_are_consistent():
     root = Path(__file__).resolve().parents[1]
     compose = (root / "docker-compose.yml").read_text()
     mode = (root / "porota_mode_manager.py").read_text()
-    assert "NO es el contrato canónico de PRODUCTION_PAPER" in compose
+    assert "Legacy monolithic stack (stable RC6 default)" in compose
+    assert "contrato canónico de PRODUCTION_PAPER" in compose
+    assert "PRODUCTION_PAPER usa el runtime split de porota_mode_manager.py" in compose
     assert "from cg_paper_workspace import DB_ENV, CONTAINER_DB, IMAGE" in mode
     assert 'IMAGE, "o_dashboard.py"' in mode
     assert 'IMAGE, "bv_paper_runtime.py"' in mode
