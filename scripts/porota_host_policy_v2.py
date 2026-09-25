@@ -14,6 +14,7 @@ ALLOWED_ROLES = {
     "QUARANTINED_TIMER",
     "RETIRED_SERVICE",
     "RETIRED_TIMER",
+    "PRESERVE_EXISTING",
 }
 
 
@@ -46,6 +47,15 @@ def validate_policy(manifest: dict, policy: dict) -> dict:
         elif role == "RETIRED_SERVICE":
             if not (row.get("install") is False and row.get("remove_on_deploy") is True):
                 invalid.append({"path": path, "reason": "RETIRED_SERVICE_CONTRACT"})
+        elif role == "PRESERVE_EXISTING":
+            if not (
+                row.get("install") is False
+                and row.get("enabled") is None
+                and row.get("active") is None
+                and row.get("masked") in {None, False}
+                and row.get("remove_on_deploy") is False
+            ):
+                invalid.append({"path": path, "reason": "PRESERVE_EXISTING_CONTRACT"})
         elif role in {"ACTIVE_SERVICE", "QUARANTINED_SERVICE"}:
             if row.get("install") is not True:
                 invalid.append({"path": path, "reason": "SERVICE_INSTALL_CONTRACT"})
