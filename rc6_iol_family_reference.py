@@ -16,6 +16,7 @@ SCHEMA="rc6-iol-family-reference-v1"
 DEFAULT_ROOT=Path(os.getenv("POROTA_IOL_SHADOW_ROOT","/opt/porota-trading/data/market"))
 DEFAULT_DB=os.getenv("POROTA_IOL_OPERATIONAL_DB","/opt/porota-trading/data/paper_v17/observer_v17.db")
 MAX_OPTIONS_INFO=6
+OPTION_CONTRACT_LOT_BY_UNDERLYING_FAMILY={"ACCIONES":100,"CEDEARS":10,"BONOS":1000,"LETRAS":1000}
 
 def _atomic(path:Path,value:dict):
     path.parent.mkdir(parents=True,exist_ok=True)
@@ -138,43 +139,66 @@ def _fixed_contract(symbol:str, asset:dict, analytics:dict, simulation:dict, quo
     }
 
 
-def _option_records(chain:dict, infos:dict[str,dict], observed_at:str):
+def _option_records(chain:dict, infos:dict[str,dict], observed_at:str, *,
+                    underlying_info:dict|None=None):
+    """Normalize IOL option-chain rows and attach the current BYMA lot policy.
+
+    IOL's option `units_per_lot` is the order quantity step (normally one
+    contract), not the amount of underlying delivered by that contract.  The
+    latter comes from BYMA's published option lot rule: 100 nominales for local
+    shares, 10 for CEDEARs and 1,000 for public fixed-income securities.
+    Unknown underlyings remain contract-incomplete instead of guessing.
+    """
     underlying=str(chain.get("underlying") or "").upper()
+    underlying_info=underlying_info if isinstance(underlying_info,dict) else {}
+    underlying_family=canonical_family(underlying_info.get("type") or underlying_info.get("asset_type"))
+    contract_lot=OPTION_CONTRACT_LOT_BY_UNDERLYING_FAMILY.get(underlying_family)
     rows=[]
     options=[r for r in chain.get("options",[]) if isinstance(r,dict)]
     options.sort(key=lambda r:(bool(r.get("is_stale")), -(float(r.get("volume") or 0))))
     for raw in options:
         symbol=str(raw.get("symbol") or "").upper()
-        info=infos.get(symbol,{})
+        info=infos.get(symbol,{}) if isinstance(infos,dict) else {}
         try:
-            lot=int(info.get("units_per_lot") or 0)
+            order_step=int(info.get("units_per_lot") or 0)
             strike=float(raw.get("strike_price"))
         except (TypeError,ValueError):
-            lot=0;strike=0
+            order_step=0;strike=0
         expiry=raw.get("expiration")
         right={"C":"CALL","V":"PUT","CALL":"CALL","PUT":"PUT"}.get(str(raw.get("option_type") or "").upper())
+        market=canonical_market(info.get("market") or "BYMA")
+        currency=str(info.get("currency") or underlying_info.get("currency") or "ARS").upper()
+        # BYMA option premium settles T+0 under the current clearing contract.
+        settlement="INMEDIATA"
         contract=None
-        if lot>0 and strike>0 and expiry and underlying and right:
+        if (contract_lot and order_step>0 and strike>0 and expiry and underlying and right
+                and market=="BYMA"):
             contract={
-              "family":"OPCIONES","currency":str(info.get("currency") or "ARS").upper(),
-              "market":canonical_market(info.get("market") or "BYMA"),
-              "settlement":canonical_settlement(info.get("term") or "T0","OPCIONES"),
-              "cash_multiplier":str(lot),"quantity_step":"1",
-              "metadata_source":"IOL_OPTIONS_CHAIN+IOL_ASSET_INFO",
-              "expires_at":expiry,"underlying":underlying,"strike":str(strike),"option_right":right,
+              "family":"OPCIONES","currency":currency,"market":market,
+              "settlement":settlement,
+              "cash_multiplier":str(contract_lot),"quantity_step":str(order_step),
+              "metadata_source":"IOL_OPTIONS_CHAIN+IOL_ASSET_INFO+BYMA_OPTION_LOT_POLICY_2026",
+              "expires_at":expiry,"underlying":underlying,"strike":str(strike),
+              "option_right":right,
             }
         rows.append({
-          "ticker":symbol,"instrument_type":"OPCIONES","market":canonical_market(info.get("market") or "BYMA"),
-          "currency":str(info.get("currency") or "ARS").upper(),
-          "settlement":canonical_settlement(info.get("term") or "T0","OPCIONES"),
+          "ticker":symbol,"instrument_type":"OPCIONES","market":market,
+          "currency":currency,"settlement":settlement,
           "description":str(info.get("description") or ""),
           "source":"IOL_COMPLEMENTARY","observed_at":observed_at,
           "quote":{"bid":raw.get("bid_price"),"ask":raw.get("ask_price"),
                    "volume":raw.get("volume"),"is_stale":raw.get("is_stale")},
           "financial_contract_v17":contract,
-          "option_chain_evidence":{k:raw.get(k) for k in ("option_id","option_type","strike_price","expiration","implied_volatility","delta","gamma","theta","vega","rho")},
+          "option_chain_evidence":{
+              **{k:raw.get(k) for k in ("option_id","option_type","strike_price","expiration",
+                                        "implied_volatility","delta","gamma","theta","vega","rho")},
+              "underlying_family":underlying_family,
+              "contract_lot":contract_lot,
+              "contract_lot_source":"BYMA_OPTION_LOT_POLICY_2026" if contract_lot else None,
+          },
         })
     return rows
+
 
 def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None):
     root=Path(root) if root is not None else DEFAULT_ROOT
