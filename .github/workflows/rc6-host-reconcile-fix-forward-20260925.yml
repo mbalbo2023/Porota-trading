@@ -58,10 +58,9 @@ jobs:
           set -Eeuo pipefail
           echo "===RC6_HOST_RECONCILE_PREFLIGHT_BEGIN==="
           test -f /opt/porota-trading/scripts/rc6_iol_shadow_collect.py
-          test ! -f /opt/porota-trading/scripts/rc6_public_source_capture.py
-          test ! -f /opt/porota-trading/scripts/rc6_iol_mcp_inventory.py
-          test ! -f /opt/porota-trading/scripts/rc6_telegram_diagnostic.py
-          test ! -f /opt/porota-trading/rc6_preopen_freshness_audit.py
+          for p in /opt/porota-trading/scripts/rc6_public_source_capture.py /opt/porota-trading/scripts/rc6_iol_mcp_inventory.py /opt/porota-trading/scripts/rc6_telegram_diagnostic.py /opt/porota-trading/rc6_preopen_freshness_audit.py; do
+            if [ -e "$p" ]; then test -f "$p"; echo "PRECHECK_ASSET=$p|present"; else echo "PRECHECK_ASSET=$p|missing"; fi
+          done
           test "$(systemctl is-enabled porota-iol-shadow-collector-rc6.timer 2>/dev/null || true)" = enabled
           test "$(systemctl is-active porota-iol-shadow-collector-rc6.timer 2>/dev/null || true)" = active
           test "$(systemctl is-enabled porota-history-postclose-rc6.timer 2>/dev/null || true)" = disabled
@@ -177,7 +176,21 @@ jobs:
             sudo -n cmp -s "$STAGE/$rel" "$ROOT/$rel"
           done
 
-          python3 -m py_compile "$ROOT/scripts/rc6_public_source_capture.py" "$ROOT/scripts/rc6_iol_mcp_inventory.py" "$ROOT/scripts/rc6_telegram_diagnostic.py" "$ROOT/rc6_preopen_freshness_audit.py" "$ROOT/scripts/porota_host_dependency_guard.py"
+          ROOT="$ROOT" python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root=Path(os.environ["ROOT"])
+          files=[
+              root/"scripts/rc6_public_source_capture.py",
+              root/"scripts/rc6_iol_mcp_inventory.py",
+              root/"scripts/rc6_telegram_diagnostic.py",
+              root/"rc6_preopen_freshness_audit.py",
+              root/"scripts/porota_host_dependency_guard.py",
+          ]
+          for p in files:
+              compile(p.read_text(encoding="utf-8"), str(p), "exec")
+              print(f"SYNTAX_GREEN={p}")
+          PY
 
           python3 "$ROOT/scripts/porota_host_dependency_guard.py" --root "$ROOT" --unit /etc/systemd/system/porota-iol-shadow-collector-rc6.service --unit /etc/systemd/system/porota-history-postclose-rc6.service --unit /etc/systemd/system/porota-preopen-rc6.service
 
