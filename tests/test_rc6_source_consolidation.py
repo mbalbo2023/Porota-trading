@@ -90,7 +90,7 @@ def test_bymadata_public_collection_merges_read_only_panels(monkeypatch):
     assert result["errors"] == []
 
 
-def test_complete_multi_source_contract_is_paper_shadow_ready():
+def test_complete_multi_source_contract_stays_fail_closed_without_executor_and_cost():
     import cp_contract_evidence_v2_hf6 as evidence
 
     fields = {
@@ -104,18 +104,27 @@ def test_complete_multi_source_contract_is_paper_shadow_ready():
         "price_precision": 2,
         "cost_model": "PAPER",
     }
-    result = evidence.family_readiness_state(
-        [{"source_class": "PPI_STRUCTURED_API", "observed_at": "2026-09-24T12:00:00+00:00",
-          "evidence": fields},
-         {"source_class": "PPI_AUTHENTICATED_WEB", "observed_at": "2026-09-24T12:00:01+00:00",
-          "evidence": {"bid": 100, "ask": 101}}],
-        family="ACCIONES",
-        max_age_seconds=3600,
-        now=__import__("datetime").datetime.fromisoformat("2026-09-24T12:01:00+00:00"),
+    records = [
+        {"source_class": "PPI_STRUCTURED_API", "observed_at": "2026-09-24T12:00:00+00:00",
+         "evidence": fields},
+        {"source_class": "PPI_AUTHENTICATED_WEB", "observed_at": "2026-09-24T12:00:01+00:00",
+         "evidence": {"bid": 100, "ask": 101}},
+    ]
+    now = __import__("datetime").datetime.fromisoformat("2026-09-24T12:01:00+00:00")
+    blocked = evidence.family_readiness_state(
+        records, family="ACCIONES", max_age_seconds=3600, now=now,
     )
-    assert result["status"] == "READY_PAPER_SHADOW"
-    assert result["paper_auto_enabled"] is True
-    assert result["real_money_authorized"] is False
+    assert blocked["status"] == "POROTA_INTEGRATION_REQUIRED"
+    assert blocked["paper_auto_enabled"] is False
+    assert blocked["real_money_authorized"] is False
+
+    ready = evidence.family_readiness_state(
+        records, family="ACCIONES", max_age_seconds=3600, now=now,
+        simulator_ready=True, cost_ready=True,
+    )
+    assert ready["status"] == "READY_PAPER_CANDIDATE"
+    assert ready["paper_auto_enabled"] is True
+    assert ready["real_money_authorized"] is False
 
 
 def test_consolidate_unions_complementary_identity_and_canonicalizes_bcba_t1():
