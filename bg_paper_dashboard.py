@@ -1274,7 +1274,7 @@ def motor_page():
                   "Su Cantidad remanente, realizaciones y resultado permanecen conciliados en Aprendizaje y Reportes.</div>"
                   if previous else "")
     body=f"<h1>Motor de trading — rueda actual</h1><p class='paper-muted'>Trazabilidad técnica → economía matemática → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{history_note}{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas de hoy</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>Economía</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + _economic_shadow_panel() + body + _rejection_funnel() + _universe_execution_panel() + _balances_panel() + "<div class='paper-warning'><b>Alcance operativo:</b> cauciones y demás familias no operativas no se evalúan ni se muestran como estrategia activa.</div>")
+    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + _economic_shadow_panel() + body + _rejection_funnel() + _universe_execution_panel() + _balances_panel() + "<div class='paper-notice'><b>Alcance operativo:</b> PAPER/SHADOW multifamilia; cada instrumento sigue fail-closed hasta cumplir contrato, evidencia, costos, sizing y freshness.</div>")
 
 
 def _next_check(component, checked):
@@ -1914,7 +1914,6 @@ def live_page(*, offset=0, limit=10):
           WHERE EXISTS (
               SELECT 1 FROM financial_instrument_catalog f
               WHERE f.ticker=g.symbol AND f.status='AVAILABLE'
-                AND UPPER(f.instrument_type) IN ('ACCIONES','CEDEARS')
           )
           ORDER BY g.evaluated_at DESC,g.id DESC LIMIT 500"""),'evaluated_at',now=now)
     elif _table('trade_gate_evaluations') and _table('candidate_universe'):
@@ -1922,7 +1921,6 @@ def live_page(*, offset=0, limit=10):
           WHERE EXISTS (
               SELECT 1 FROM candidate_universe u
               WHERE u.ticker=g.symbol AND u.can_simulate=1
-                AND UPPER(u.instrument_type) IN ('ACCIONES','CEDEARS')
           )
           ORDER BY g.evaluated_at DESC,g.id DESC LIMIT 500"""),'evaluated_at',now=now)
     gate_by_paper={r.get('paper_id'):r for r in gates if r.get('paper_id')}
@@ -2241,8 +2239,7 @@ def _trading_motor_summary():
     now = datetime.now(TZ)
     positions = _rows("SELECT * FROM paper_positions ORDER BY COALESCE(closed_at, opened_at) DESC LIMIT 1000") if _table("paper_positions") else []
     positions = [row for row in positions
-        if str(row.get("asset_class") or "").upper() in {"ACCIONES", "ACCION", "CEDEARS", "CEDEAR"}
-        and any(_local_day_for_dashboard(row.get(field)) == now.date() for field in ("opened_at", "closed_at"))]
+        if any(_local_day_for_dashboard(row.get(field)) == now.date() for field in ("opened_at", "closed_at"))]
     open_count = sum(str(row.get("status")) == "OPEN" for row in positions)
     closed_count = sum(str(row.get("status")) == "CLOSED" for row in positions)
     position_rows = "".join(
@@ -2258,7 +2255,6 @@ def _trading_motor_summary():
                WHERE EXISTS (
                    SELECT 1 FROM financial_instrument_catalog f
                    WHERE f.ticker=g.symbol AND f.status='AVAILABLE'
-                     AND UPPER(f.instrument_type) IN ('ACCIONES','CEDEARS')
                )
                ORDER BY g.evaluated_at DESC LIMIT 500"""
         )
@@ -2269,7 +2265,6 @@ def _trading_motor_summary():
                WHERE EXISTS (
                    SELECT 1 FROM candidate_universe u
                    WHERE u.ticker=g.symbol AND u.can_simulate=1
-                     AND UPPER(u.instrument_type) IN ('ACCIONES','CEDEARS')
                )
                ORDER BY g.evaluated_at DESC LIMIT 500"""
         )
@@ -2380,7 +2375,7 @@ def trading_page(section=''):
               "<div class='paper-warning'><b>RUTA SIN FAMILIA CANÓNICA:</b> "
               "el universo vigente es multifamilia, pero cada instrumento requiere catálogo y readiness verificables. "
               "Esta URL no corresponde a un grupo registrado.</div>")
-        return _document('Trading — fuera de alcance',body,refresh=60)
+        return _document('Trading — familia no reconocida',body,refresh=60)
 
     cards=[]
     for group,all_families in FAMILY_GROUPS.items():
@@ -2417,9 +2412,9 @@ def trading_page(section=''):
           "<p>El detalle histórico y actual convive en esta sección; la URL anterior se mantiene "
           "sólo por compatibilidad.</p>"
           "<a class='paper-action' href='/motor-trading'>Abrir detalle y auditoría del motor</a></div>"
-          "<div class='paper-warning'><b>Alcance actual:</b> acciones y CEDEARs. "
-          "Bonos, cauciones, opciones, futuros, FCI y licitaciones no se procesan ni consumen "
-          "ciclo de decisión.</div>")
+          "<div class='paper-notice'><b>Alcance actual:</b> PAPER/SHADOW multifamilia. "
+          "El catálogo completo entra en rotación/evidencia; un faltante contractual o de freshness "
+          "mantiene sólo ese instrumento en HOLD/PENDING.</div>")
     return _document('Trading',body,refresh=30)
 
 
@@ -2774,9 +2769,9 @@ def scheduler_content():
     source_sync=_rows('SELECT * FROM source_sync') if _table('source_sync') else []
     api_health=_rows('SELECT * FROM api_health ORDER BY checked_at DESC') if _table('api_health') else []
     contract_runs=[]
-    # Contract scraping is deliberately out of scope. Historic rows stay in the
-    # database for audit, but do not appear as an active scheduler workload.
-    if os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "DISABLED_SOURCE_UNAVAILABLE").upper() == "ENABLED":
+    # Contract evidence is an active read-only workload when enabled; it never
+    # authorizes real orders and failures remain explicit per source/family.
+    if os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED").upper() == "ENABLED":
         if _table('contract_evidence_v2_runs'):
             contract_runs=_rows('SELECT job_key,started_at,finished_at,state,detail FROM contract_evidence_v2_runs ORDER BY started_at DESC')
         elif _table('contract_evidence_runs'):
@@ -2946,12 +2941,7 @@ def system_page(section="introspeccion"):
     requested_section = section
     if section not in {key for key,_ in SYSTEM_SECTIONS}:
         section = "introspeccion"
-    if requested_section == "scraping":
-        content = ("<h1>Scraping / evidencia contractual</h1>"
-                   "<div class='paper-warning'><b>DESACTIVADO POR ALCANCE.</b> "
-                   "No hay scraping activo ni reintentos contractuales. El perfil Chrome confiable "
-                   "se conserva sin abrirse.</div>")
-    elif section == "introspeccion":
+    if section == "introspeccion":
         content = introspection_content()
     elif section == "salud":
         content = _main_fragment(health_page()) + _main_fragment(sre_page())
