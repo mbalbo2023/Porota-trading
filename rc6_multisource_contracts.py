@@ -118,6 +118,10 @@ def merge(records):
         provenance[field]={k:winner.get(k) for k in ("source","observed_at","source_ref")}
     return {"fields":merged,"provenance":provenance,"conflicts":conflicts}
 
+SIMULATOR_IMPLEMENTED = frozenset({
+    "ACCIONES","CEDEARS","ETFS","BONOS","LETRAS","OBLIGACIONES","CAUCIONES",
+})
+
 PAPER_REQUIRED = {
     "ACCIONES": {"market","currency","settlement","quantity_step"},
     "CEDEARS": {"market","currency","settlement","quantity_step"},
@@ -144,9 +148,15 @@ def readiness(family_name, records):
         return {**combined,"family":fam,"status":"BLOCKED_UNSUPPORTED_FAMILY",
                 "missing":["family_contract"],"paper_simulatable":False,"real_money_authorized":False}
     missing=sorted(required-set(combined["fields"]))
-    return {**combined,"family":fam,
-            "status":"READY_PAPER_CONTRACT" if not missing else "PENDING_CONTRACT_EVIDENCE",
-            "missing":missing,"paper_simulatable":not missing,"real_money_authorized":False}
+    complete=not missing
+    simulator_ready=fam in SIMULATOR_IMPLEMENTED
+    status=("PENDING_CONTRACT_EVIDENCE" if missing else
+            "READY_PAPER_CONTRACT" if simulator_ready else
+            "CONTRACT_READY_SIMULATOR_PENDING")
+    return {**combined,"family":fam,"status":status,"missing":missing,
+            "contract_complete":complete,"simulator_implemented":simulator_ready,
+            "paper_simulatable":complete and simulator_ready,
+            "real_money_authorized":False}
 
 def fixed_income_instrument_contract(symbol, family_name, record):
     """Build PAPER math only after the consolidated fixed-income contract is complete."""
