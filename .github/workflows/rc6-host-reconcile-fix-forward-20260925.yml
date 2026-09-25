@@ -66,9 +66,9 @@ jobs:
           test "$(systemctl is-enabled porota-history-postclose-rc6.timer 2>/dev/null || true)" = disabled
           test "$(systemctl is-active porota-history-postclose-rc6.timer 2>/dev/null || true)" = inactive
 
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          sudo -n python3 - <<'PY'
           import json, sqlite3
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
           c.execute('PRAGMA query_only=ON')
           cols=[r[1] for r in c.execute('PRAGMA table_info(observer_state)')]
           wanted=[x for x in ('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at') if x in cols]
@@ -210,9 +210,9 @@ jobs:
           test "$OBS_AFTER" = "$OBS_BEFORE"
           test "$DASH_AFTER" = "$DASH_BEFORE"
 
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          sudo -n python3 - <<'PY'
           import json, sqlite3
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
           c.execute('PRAGMA query_only=ON')
           cols=[r[1] for r in c.execute('PRAGMA table_info(observer_state)')]
           wanted=[x for x in ('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at') if x in cols]
