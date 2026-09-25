@@ -26,7 +26,10 @@ DB = ROOT / 'data/paper_v17/observer_v17.db'
 EXPECTED_IMAGE = 'porota-trading-bot:17.0.0-rc6'
 MIN_FREE_BYTES = 8 * 1024**3
 REQUIRED_TIMERS = (
-    'porota-functional-health-rc6.timer',
+    # Frequent health was split from the expensive full SQLite scan on 2026-09-07.
+    # Both probes are read-only and are part of the proven RC6 host control-plane.
+    'porota-fast-functional-health-rc6.timer',
+    'porota-full-db-integrity-rc6.timer',
     'porota-host-general-backup-rc6.timer',
     'porota-preopen-rc6.timer',
     'porota-candle-integrity-rc6.timer',
