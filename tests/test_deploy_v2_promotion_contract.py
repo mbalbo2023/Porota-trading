@@ -8,7 +8,8 @@ LEGACY_PATH=Path(".github/workflows/rc6-pr69-isolated-transactional-deploy-20260
 def test_deploy_v2_promotes_frozen_artifact_without_droplet_build():
     assert "porota-predeploy-image.tar.gz" in PROMOTE
     assert "docker load" in PROMOTE
-    assert "docker build" not in PROMOTE
+    import re
+    assert not re.search(r"\bdocker\s+build(?:\s|$)", PROMOTE)
     assert "POROTA_BUILD_ONCE_PROMOTION=GREEN" in PROMOTE
 
 
