@@ -6,6 +6,7 @@ Persists evidence with provenance; missing terms remain missing.
 from __future__ import annotations
 import json, os, sqlite3
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -139,6 +140,25 @@ def _fixed_contract(symbol:str, asset:dict, analytics:dict, simulation:dict, quo
     }
 
 
+def _option_expiry(value):
+    """Normalize IOL's local BYMA expiry timestamp to an aware ISO instant.
+
+    IOL currently returns option expiries without an offset (for example
+    2026-10-16T15:30:00).  BYMA publishes the expiration-day trading cutoff
+    in Argentina local time, so a naive provider value is explicitly bound to
+    America/Argentina/Buenos_Aires rather than silently treated as UTC.
+    """
+    if not value:
+        return None
+    try:
+        parsed=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+    except (TypeError,ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed=parsed.replace(tzinfo=ZoneInfo("America/Argentina/Buenos_Aires"))
+    return parsed.isoformat()
+
+
 def _option_records(chain:dict, infos:dict[str,dict], observed_at:str, *,
                     underlying_info:dict|None=None):
     """Normalize IOL option-chain rows and attach the current BYMA lot policy.
@@ -164,7 +184,7 @@ def _option_records(chain:dict, infos:dict[str,dict], observed_at:str, *,
             strike=float(raw.get("strike_price"))
         except (TypeError,ValueError):
             order_step=0;strike=0
-        expiry=raw.get("expiration")
+        expiry=_option_expiry(raw.get("expiration"))
         right={"C":"CALL","V":"PUT","CALL":"CALL","PUT":"PUT"}.get(str(raw.get("option_type") or "").upper())
         market=canonical_market(info.get("market") or "BYMA")
         currency=str(info.get("currency") or underlying_info.get("currency") or "ARS").upper()
