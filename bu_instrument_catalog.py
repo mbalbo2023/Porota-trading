@@ -210,7 +210,11 @@ def capability(record):
     if spec.family in {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES"}:
         return "READY_PAPER_SPOT"
     if spec.family == "OPCIONES":
-        return "READY_CONTRACT_OPTIONS_NEEDS_EXECUTOR"
+        # Long options now have a dedicated PAPER risk path: explicit contract
+        # lot/expiry/strike/right, full-premium maximum-loss sizing, T+0
+        # settlement and expiry-day session cutoff. This never authorizes a
+        # short option or a real broker order.
+        return "READY_PAPER_OPTION_LONG" if spec.market == "BYMA" else "NEEDS_MARKET_EXECUTOR"
     return "NEEDS_SPECIALIZED_EXECUTOR"
 
 
