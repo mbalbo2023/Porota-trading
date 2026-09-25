@@ -52,6 +52,12 @@ BACKGROUND_INGEST_SECONDS = max(
 READINESS_CHECK_SECONDS = max(
     60, int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"))
 )
+COMPLEMENTARY_RECONCILE_SECONDS = max(
+    60, int(os.getenv("PAPER_COMPLEMENTARY_RECONCILE_SECONDS", "300"))
+)
+COMPLEMENTARY_CONTRACT_TTL_SECONDS = max(
+    300, int(os.getenv("PAPER_COMPLEMENTARY_CONTRACT_TTL_SECONDS", "86400"))
+)
 ACTIVE_SYMBOL_LIMIT = max(3, min(int(os.getenv("PAPER_ACTIVE_SYMBOL_LIMIT", "20")), 60))
 PPI_CALL_BUDGET_SECONDS = max(0.1, float(os.getenv("PAPER_PPI_CALL_BUDGET_SECONDS", "2")))
 SIGNAL_MIN_SAMPLES = max(3, int(os.getenv("PAPER_SIGNAL_MIN_SAMPLES", "6")))
@@ -462,8 +468,9 @@ def _download_catalog(reader, store):
         query_results.append((run_id, ticker_query, name_query, instrument_type, market_query, status, count, detail))
         if CATALOG_QUERY_SLEEP_SECONDS:
             time.sleep(CATALOG_QUERY_SLEEP_SECONDS)
-    # Complementary discovery is allowed to widen the observed universe, never
-    # to overwrite an identity/field already confirmed by PPI.
+    # PPI keeps identity authority.  Fresh complementary evidence may complete
+    # a missing financial contract on that exact identity; otherwise it can only
+    # widen the observed SHADOW universe.
     try:
         for raw in complementary_discovery("/app/data/market"):
             try:
@@ -471,7 +478,13 @@ def _download_catalog(reader, store):
             except (ValueError, TypeError):
                 continue
             key = tuple(record[k] for k in ("ticker","instrument_type","market","currency","settlement"))
-            if key not in found:
+            fresh = financial_catalog.complementary_is_fresh(
+                raw, max_age_seconds=COMPLEMENTARY_CONTRACT_TTL_SECONDS)
+            if key in found and fresh:
+                found[key] = financial_catalog.complete_with_complement(found[key], raw)
+            elif key not in found:
+                if not fresh:
+                    record["status"] = "OBSERVED_SHADOW"
                 found[key] = record
     except Exception as exc:
         store.event("COMPLEMENTARY_DISCOVERY_UNAVAILABLE", type(exc).__name__)
@@ -507,8 +520,10 @@ def _download_catalog(reader, store):
                        json.dumps(record["raw"], ensure_ascii=False, default=str)))
             c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
                       (record["ticker"], record["instrument_type"], record["settlement"], record["market"],
-                       int(str(record["capability"]).startswith("READY_PAPER_")),
+                       int(record["status"] == "AVAILABLE" and
+                           str(record["capability"]).startswith("READY_PAPER_")),
                        record["status"], record["capability"], downloaded))
+        financial_catalog.sync_candidate_universe(c, downloaded)
         c.executemany("INSERT INTO catalog_query_results VALUES(?,?,?,?,?,?,?,?)", query_results)
         financial_catalog.persist_family_coverage(c, configuration, query_results,
                                                   found.values(), run_id, downloaded)
@@ -532,6 +547,64 @@ def _download_catalog(reader, store):
     return total
 
 
+def _reconcile_complementary_catalog(store):
+    """Merge already-persisted IOL/BYMA contract evidence into exact PPI identities."""
+    try:
+        complementary = complementary_discovery("/app/data/market")
+    except Exception as exc:
+        store.event("COMPLEMENTARY_RECONCILIATION_UNAVAILABLE", type(exc).__name__)
+        return 0
+    if not complementary:
+        return 0
+    checked = now_iso()
+    promoted = 0
+    with store.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        for raw in complementary:
+            if not financial_catalog.complementary_is_fresh(
+                    raw, max_age_seconds=COMPLEMENTARY_CONTRACT_TTL_SECONDS):
+                continue
+            try:
+                complement = financial_catalog.normalize_complementary_record(
+                    raw, checked, "COMPLEMENTARY_RECONCILE")
+            except (ValueError, TypeError):
+                continue
+            row = connection.execute("""SELECT * FROM financial_instrument_catalog
+              WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?""",
+              (complement["ticker"], complement["instrument_type"], complement["market"],
+               complement["currency"], complement["settlement"])).fetchone()
+            if not row:
+                continue
+            primary = dict(row)
+            try:
+                primary["raw"] = json.loads(primary.pop("metadata_json"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if str(primary["raw"].get("_discovery_source") or "").upper() != "PPI_PRIMARY":
+                continue
+            before = (primary.get("status"), primary.get("capability"),
+                      json.dumps(primary.get("raw") or {}, sort_keys=True, default=str))
+            merged = financial_catalog.complete_with_complement(primary, raw)
+            after = (merged.get("status"), merged.get("capability"),
+                     json.dumps(merged.get("raw") or {}, sort_keys=True, default=str))
+            if after == before:
+                continue
+            financial_catalog.persist(connection, merged)
+            connection.execute("""INSERT OR REPLACE INTO instrument_catalog
+              VALUES(?,?,?,?,?,?,?)""",
+              (merged["instrument_type"], merged["ticker"], merged["description"],
+               merged["market"], merged["settlement"], checked,
+               json.dumps(merged["raw"], ensure_ascii=False, default=str)))
+            if (str(merged.get("capability") or "").startswith("READY_PAPER_")
+                    and merged.get("status") == "AVAILABLE"):
+                promoted += 1
+        financial_catalog.sync_candidate_universe(connection, checked)
+    if promoted:
+        store.event("COMPLEMENTARY_CATALOG_PROMOTION",
+                    f"{promoted} identidad(es) PPI completadas con evidencia complementaria fresca.")
+    return promoted
+
+
 def _eligible_symbols(store):
     """Devuelve el universo completo de familias en rotación PAPER/SHADOW.
 
@@ -539,7 +612,7 @@ def _eligible_symbols(store):
     posterior mantiene una ventana limitada y un cursor persistente; aquí no
     se descartan familias por pertenecer a renta fija, cauciones o derivados.
     """
-    core = list(CORE_SYMBOLS)
+    core = []
     family_order = (
         "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
         "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
@@ -554,8 +627,10 @@ def _eligible_symbols(store):
                 rows = c.execute(f"""SELECT DISTINCT ticker,instrument_type,settlement
                   FROM financial_instrument_catalog
                   WHERE status='AVAILABLE'
+                    AND capability LIKE 'READY_PAPER_%'
                     AND UPPER(instrument_type) IN ({allowed_sql})
-                  ORDER BY instrument_type,ticker,settlement""").fetchall()
+                  ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
+                           instrument_type,ticker,settlement""").fetchall()
             else:
                 rows = c.execute(f"""SELECT ticker,instrument_type,settlement
                   FROM candidate_universe
@@ -1294,6 +1369,7 @@ def run():
     last_public_check = 0.0
     last_structured_capture = 0.0
     last_readiness_check = 0.0
+    last_complementary_reconcile = 0.0
     next_login_at = 0.0
     last_phase = None  # Publicar BOOT_* antes de resolver el calendario.
     try:
@@ -1376,6 +1452,9 @@ def run():
             if should_capture or closing_snapshot:
                 _public_probe(store, structured=True)
                 last_structured_capture = time.time()
+            if time.time() - last_complementary_reconcile >= COMPLEMENTARY_RECONCILE_SECONDS:
+                _reconcile_complementary_catalog(store)
+                last_complementary_reconcile = time.time()
             if phase == "CLOSED":
                 # El catálogo se renueva una vez por fecha local. Los históricos
                 # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.

@@ -214,6 +214,26 @@ def capability(record):
     return "NEEDS_SPECIALIZED_EXECUTOR"
 
 
+def complementary_is_fresh(complementary, *, max_age_seconds=86400, now=None):
+    """Contract metadata may be slower-moving than quotes, but must be dated."""
+    if not isinstance(complementary, dict):
+        return False
+    stamp = complementary.get("observed_at") or complementary.get("provider_observed_at")
+    if not stamp:
+        return False
+    try:
+        at = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=ZoneInfo("UTC"))
+        ref = now or datetime.now(ZoneInfo("UTC"))
+        if ref.tzinfo is None:
+            ref = ref.replace(tzinfo=ZoneInfo("UTC"))
+        age = (ref.astimezone(ZoneInfo("UTC")) - at.astimezone(ZoneInfo("UTC"))).total_seconds()
+        return 0 <= age <= int(max_age_seconds)
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
 def complete_with_complement(record, complementary):
     """Return a copy completed only with non-conflicting contract evidence.
 
@@ -242,9 +262,39 @@ def complete_with_complement(record, complementary):
         return primary
     raw["financial_contract_v17"]=contract
     raw["_contract_complement_source"]=str(complementary.get("source") or "COMPLEMENTARY")
+    if primary.get("last_seen_at") and not raw.get("_primary_last_seen_at"):
+        raw["_primary_last_seen_at"]=primary.get("last_seen_at")
+    observed_at = complementary.get("observed_at") or complementary.get("provider_observed_at")
+    if observed_at:
+        raw["_complement_observed_at"]=str(observed_at)
+        primary["last_seen_at"]=str(observed_at)
     primary["raw"]=raw
     primary["capability"]=capability(primary)
+    if str(primary["capability"]).startswith("READY_PAPER_"):
+        primary["status"]="AVAILABLE"
+        raw["_availability_source"]="PPI_IDENTITY_PLUS_" + str(complementary.get("source") or "COMPLEMENTARY").upper()
     return primary
+
+def sync_candidate_universe(connection, checked_at):
+    """Project normalized catalog readiness into the legacy candidate table."""
+    rows = connection.execute("""SELECT ticker,instrument_type,market,settlement,status,
+      capability,last_seen_at FROM financial_instrument_catalog
+      ORDER BY ticker,instrument_type,market,settlement,last_seen_at""").fetchall()
+    best = {}
+    for row in rows:
+        ticker, family, market, settlement, status, capability, last_seen = row
+        key = (str(ticker).upper(), str(family).upper(), str(market).upper())
+        ready = status == "AVAILABLE" and str(capability).startswith("READY_PAPER_")
+        rank = (1 if ready else 0, 1 if status == "AVAILABLE" else 0, str(last_seen or ""))
+        if key not in best or rank > best[key][0]:
+            best[key] = (rank, (ticker, family, settlement, market,
+                                int(ready), status, capability, checked_at))
+    connection.execute("""UPDATE candidate_universe
+      SET can_simulate=0,status='STALE',detail='CATALOG_RECONCILIATION_NOT_READY',
+          last_checked_at=?""", (checked_at,))
+    for _, values in best.values():
+        connection.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", values)
+
 
 def persist(c, record):
     c.execute("""INSERT OR REPLACE INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
