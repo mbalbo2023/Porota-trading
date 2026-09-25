@@ -93,6 +93,7 @@ def summarize_db(db):
                     "actions":dict(Counter(str(r.get("action") or "UNKNOWN") for r in rr)),
                     "reasons_top":Counter(str(r.get("reason") or "UNKNOWN") for r in rr).most_common(20),
                     "symbols":len({str(r.get("symbol") or "") for r in rr if r.get("symbol")}),
+                    "buy_symbols":dict(Counter(str(r.get("symbol") or "UNKNOWN") for r in rr if str(r.get("action") or "").upper()=="BUY")),
                     "score_present":sum(r.get("score") not in (None,"") for r in rr),
                 }
 
@@ -108,6 +109,7 @@ def summarize_db(db):
                     "total":len(rr),
                     "final_results":dict(Counter(str(r.get("final_result") or "UNKNOWN") for r in rr)),
                     "reasons_top":Counter(str(r.get("reason") or "UNKNOWN") for r in rr).most_common(20),
+                    "blocked_symbols":dict(Counter(str(r.get("symbol") or "UNKNOWN") for r in rr if str(r.get("final_result") or "").upper()=="BLOCKED")),
                     "paper_ids":sum(bool(r.get("paper_id")) for r in rr),
                 }
 
