@@ -35,3 +35,10 @@ def test_preopen_uses_hardened_host_wrapper():
     text = Path("systemd/porota-preopen-rc6.service").read_text(encoding="utf-8")
     assert "PYTHONPATH=/opt/porota-trading" in text
     assert "/usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py" in text
+
+
+def test_candle_integrity_avoids_intraday_full_db_scan():
+    source = Path("rc6_candle_integrity.py").read_text(encoding="utf-8")
+    assert "PRAGMA quick_check" not in source
+    assert "FULL_SCAN_POSTCLOSE_ONLY" in source
+    assert "full_integrity_check_performed" in source
