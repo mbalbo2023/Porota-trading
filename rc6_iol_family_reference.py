@@ -57,12 +57,14 @@ def _fixed_contract(symbol:str, asset:dict, analytics:dict, simulation:dict, sha
         nominal=float(simulation.get("nominals"))
         dirty=float(simulation.get("dirty_price_per100"))
         amount_ars=float(simulation.get("amount_invested_ars"))
+        units_per_lot=int(asset.get("units_per_lot") or 0)
         quote=((shadow.get("quote") or {}).get("last"))
         quote=float(quote)
         ratio=amount_ars/quote
     except (TypeError,ValueError,ZeroDivisionError):
         return None
-    if nominal!=1 or dirty<=0 or amount_ars<=0 or quote<=0 or not 0.0095<=ratio<=0.0105:
+    if (nominal!=1 or dirty<=0 or amount_ars<=0 or quote<=0 or units_per_lot<=0
+            or not 0.0095<=ratio<=0.0105):
         return None
     family=canonical_family(asset.get("type"))
     if family not in {"BONOS","LETRAS","OBLIGACIONES"}:return None
@@ -72,11 +74,14 @@ def _fixed_contract(symbol:str, asset:dict, analytics:dict, simulation:dict, sha
     maturity=(analytics.get("calculation_inputs") or {}).get("maturity_date") or simulation.get("maturity_date")
     return {
       "family":family,"currency":currency,"market":market,"settlement":settlement,
-      "cash_multiplier":str(ratio),"quantity_step":"1",
+      "cash_multiplier":str(ratio),"quantity_step":str(units_per_lot),
       "metadata_source":"IOL_ASSET_INFO+IOL_FIXED_INCOME_SIMULATION_1_NOMINAL",
       "fixed_income_evidence":{
         "quote_basis":"PER_100_NOMINAL_PROVEN_BY_IOL_SIMULATION",
         "simulated_nominals":simulation.get("nominals"),
+        "quote_basis_nominal":"100",
+        "quantity_step_nominal":str(units_per_lot),
+        "minimum_nominal":str(units_per_lot),
         "dirty_price_per100":simulation.get("dirty_price_per100"),
         "amount_invested_ars":simulation.get("amount_invested_ars"),
         "iol_last":quote,"maturity_date":maturity,
