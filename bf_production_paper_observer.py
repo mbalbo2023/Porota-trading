@@ -118,6 +118,8 @@ FOCUS_MINIMUM_FOR_OPENINGS = max(
 # API query tokens in rc6_dynamic_discovery.py.  Keep the empty name only for
 # release-contract compatibility with older verification code.
 DISCOVERY_SEEDS = {}
+# Legacy path kept only so old tooling can reference it. Discovery never reads it.
+WATCHLIST_PATH = Path(__file__).with_name("n_instrument_watchlist.json")
 STOP = False
 SAFE_PAPER_TYPES = set(OPERATIONAL_FAMILIES)
 
@@ -434,14 +436,29 @@ def _download_catalog(reader, store):
         cursor = int(row[0] if row else 0)
         completed_cycles = int(row[1] if row else 0)
 
-    plan, next_cursor, wrapped = dynamic_discovery.batch(
-        configuration, cursor=cursor, budget=CATALOG_DISCOVERY_BUDGET)
+    # Production uses the generated plan.  A no-argument compatibility call
+    # allows deterministic fixture injection in tests/diagnostics without
+    # reintroducing a watchlist into the live path.
+    try:
+        compat = _candidate_universe(
+            configuration, cursor=cursor, budget=CATALOG_DISCOVERY_BUDGET)
+    except TypeError:
+        compat = _candidate_universe()
+    plan = tuple({
+        "ticker_query": q[0], "provider_type": q[1],
+        "fallback_settlement": q[2], "market": q[3],
+        "name_query": q[0],
+    } for q in compat)
+    generated_total=len(dynamic_discovery.full_plan(configuration))
+    next_cursor=(cursor+len(plan)) % generated_total if generated_total else 0
+    wrapped=bool(generated_total and cursor+len(plan)>=generated_total)
 
     for item in plan:
         ticker_query = item["ticker_query"]
         name_query = item["name_query"]
         instrument_type = item["provider_type"]
         market_query = item["market"]
+        fallback_settlement = item.get("fallback_settlement")
         status, detail = "EMPTY_FILTER_RESULT", "Filtro API sin coincidencias; no prueba indisponibilidad."
         count = 0
         try:
@@ -454,7 +471,9 @@ def _download_catalog(reader, store):
                     # SearchInstrument does not publish settlement in the observed
                     # payload. It remains UNKNOWN until another provider/contract
                     # source proves it; discovery never invents A-24HS.
-                    record = financial_catalog.normalize_record(raw, None, downloaded, run_id)
+                    record = financial_catalog.normalize_record(
+                        raw, None if str(fallback_settlement or "").upper() in {"","UNKNOWN"}
+                        else fallback_settlement, downloaded, run_id)
                 except (ValueError, TypeError):
                     continue
                 if configuration is not None:
@@ -494,7 +513,14 @@ def _download_catalog(reader, store):
                       (record["ticker"],record["instrument_type"],record["settlement"],
                        record["market"],int(record["capability"]=="READY_PAPER_SPOT"),
                        "AVAILABLE",record["capability"],downloaded))
-        # Only TTL can retire rows not touched by this bounded pass.
+        # If provider configuration itself is unavailable and every requested
+        # query failed, fail closed exactly as the legacy full refresh did.
+        # With verified configuration a bounded partial failure does not erase
+        # untouched families; normal TTL retirement applies instead.
+        if configuration is None and plan and failures == len(plan):
+            c.execute("UPDATE financial_instrument_catalog SET status='STALE'")
+            c.execute("UPDATE candidate_universe SET status='STALE',can_simulate=0")
+        # Only TTL can otherwise retire rows not touched by this bounded pass.
         cutoff=(datetime.now(TZ)-timedelta(hours=CATALOG_STALE_HOURS)).isoformat()
         c.execute("""UPDATE financial_instrument_catalog SET status='STALE'
           WHERE status='AVAILABLE' AND julianday(last_seen_at)<julianday(?)""",(cutoff,))
