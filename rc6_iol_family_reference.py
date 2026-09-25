@@ -15,7 +15,7 @@ from rc6_multisource_discovery import canonical_family, canonical_market, canoni
 SCHEMA="rc6-iol-family-reference-v1"
 DEFAULT_ROOT=Path(os.getenv("POROTA_IOL_SHADOW_ROOT","/opt/porota-trading/data/market"))
 DEFAULT_DB=os.getenv("POROTA_IOL_OPERATIONAL_DB","/opt/porota-trading/data/paper_v17/observer_v17.db")
-MAX_OPTIONS_INFO=3
+MAX_OPTIONS_INFO=6
 
 def _atomic(path:Path,value:dict):
     path.parent.mkdir(parents=True,exist_ok=True)
@@ -51,42 +51,92 @@ def _iol_shadow(root:Path):
     p=_load(root/"iol_shadow_latest.json")
     return {str(r.get("symbol") or "").upper():r for r in p.get("symbols",[]) if isinstance(r,dict)}
 
-def _fixed_contract(symbol:str, asset:dict, analytics:dict, simulation:dict, shadow:dict):
-    """Derive only when IOL itself proves one-nominal/per-100 semantics."""
+def _number(value):
+    if isinstance(value, dict):
+        value = value.get("value")
     try:
-        nominal=float(simulation.get("nominals"))
-        dirty=float(simulation.get("dirty_price_per100"))
-        amount_ars=float(simulation.get("amount_invested_ars"))
-        units_per_lot=int(asset.get("units_per_lot") or 0)
-        quote=((shadow.get("quote") or {}).get("last"))
-        quote=float(quote)
-        ratio=amount_ars/quote
-    except (TypeError,ValueError,ZeroDivisionError):
+        return float(value)
+    except (TypeError, ValueError):
         return None
-    if (nominal!=1 or dirty<=0 or amount_ars<=0 or quote<=0 or units_per_lot<=0
-            or not 0.0095<=ratio<=0.0105):
+
+
+def _quote_price_bases(quote: dict):
+    """Return explicit IOL unit and quoted-lot prices without conflating them."""
+    q = quote if isinstance(quote, dict) else {}
+    trade = q.get("trade") if isinstance(q.get("trade"), dict) else {}
+    unit = _number(q.get("unit_price"))
+    if unit is None:
+        unit = _number(trade.get("unit_price"))
+    lot = _number(q.get("lot_price"))
+    if lot is None:
+        lot = _number(trade.get("lot_price"))
+    return unit, lot
+
+
+def _fixed_contract(symbol:str, asset:dict, analytics:dict, simulation:dict, quote:dict,
+                    *, identity_family:str|None=None, identity_currency:str|None=None,
+                    identity_settlement:str|None=None):
+    """Build a fixed-income PAPER contract only from dimensionally proven IOL data.
+
+    IOL exposes two price bases for fixed income: unit_price (cash for one
+    nominal) and lot_price (the quoted per-lot/per-100 market price).  The
+    contract is accepted only when the live quote, one-nominal simulation and
+    units_per_lot agree.  No ticker convention is used as contract evidence.
+    """
+    expected_family = canonical_family(identity_family or asset.get("type"))
+    observed_family = canonical_family(asset.get("type"))
+    if expected_family not in {"BONOS","LETRAS","OBLIGACIONES"}:
         return None
-    family=canonical_family(asset.get("type"))
-    if family not in {"BONOS","LETRAS","OBLIGACIONES"}:return None
-    market=canonical_market(asset.get("market") or "BYMA")
-    settlement=canonical_settlement(asset.get("term"),family)
-    currency=str(asset.get("currency") or "").upper()
+    if observed_family != expected_family:
+        return None
+    currency = str(identity_currency or asset.get("currency") or "").upper()
+    settlement = canonical_settlement(identity_settlement or asset.get("term"), expected_family)
+    try:
+        nominal = float(simulation.get("nominals"))
+        dirty = float(simulation.get("dirty_price_per100"))
+        units_per_lot = int(asset.get("units_per_lot") or 0)
+    except (TypeError, ValueError):
+        return None
+    unit_price, lot_price = _quote_price_bases(quote)
+    if currency == "ARS":
+        simulated_unit = _number(simulation.get("amount_invested_ars"))
+    elif currency in {"USD", "USD_MEP", "USD_CCL"}:
+        simulated_unit = _number(simulation.get("amount_invested"))
+    else:
+        simulated_unit = None
+    if (nominal != 1 or dirty <= 0 or units_per_lot <= 0 or
+            unit_price is None or unit_price <= 0 or
+            lot_price is None or lot_price <= 0 or
+            simulated_unit is None or simulated_unit <= 0):
+        return None
+    # Prove that IOL's two quote bases really differ by the explicit lot size,
+    # and that the simulation of one nominal agrees with the unit quote.
+    lot_ratio = lot_price / unit_price
+    unit_ratio = simulated_unit / unit_price
+    if not (abs(lot_ratio - units_per_lot) <= max(0.01, units_per_lot * 0.005)
+            and 0.98 <= unit_ratio <= 1.02):
+        return None
+    multiplier = 1.0 / units_per_lot
     maturity=(analytics.get("calculation_inputs") or {}).get("maturity_date") or simulation.get("maturity_date")
     return {
-      "family":family,"currency":currency,"market":market,"settlement":settlement,
-      "cash_multiplier":str(ratio),"quantity_step":str(units_per_lot),
-      "metadata_source":"IOL_ASSET_INFO+IOL_FIXED_INCOME_SIMULATION_1_NOMINAL",
+      "family":expected_family,"currency":currency,
+      "market":canonical_market(asset.get("market") or "BYMA"),"settlement":settlement,
+      "cash_multiplier":format(multiplier, ".12g"),"quantity_step":str(units_per_lot),
+      "metadata_source":"IOL_ASSET_INFO+IOL_QUOTE_PRICE_BASES+IOL_FIXED_INCOME_SIMULATION_1_NOMINAL",
       "fixed_income_evidence":{
-        "quote_basis":"PER_100_NOMINAL_PROVEN_BY_IOL_SIMULATION",
+        "quote_basis":"EXPLICIT_IOL_LOT_PRICE_WITH_UNIT_PRICE_CROSSCHECK",
         "simulated_nominals":simulation.get("nominals"),
-        "quote_basis_nominal":"100",
+        "quote_basis_nominal":str(units_per_lot),
         "quantity_step_nominal":str(units_per_lot),
         "minimum_nominal":str(units_per_lot),
         "dirty_price_per100":simulation.get("dirty_price_per100"),
+        "amount_invested":simulation.get("amount_invested"),
         "amount_invested_ars":simulation.get("amount_invested_ars"),
-        "iol_last":quote,"maturity_date":maturity,
+        "iol_unit_price":unit_price,"iol_lot_price":lot_price,
+        "maturity_date":maturity,
       }
     }
+
 
 def _option_records(chain:dict, infos:dict[str,dict], observed_at:str):
     underlying=str(chain.get("underlying") or "").upper()
