@@ -53,6 +53,16 @@ jobs:
           sudo -n docker logs --since '2026-09-25T00:00:00Z' --timestamps porota_production_observer 2>&1 |             grep -Ei 'traceback|exception|error|fatal|segmentation|segfault|killed|signal|core|ppi|auth|heartbeat|starting|shutdown|exit' | tail -n 500 || true
           echo "---OBSERVER_LOG_TAIL---"
           sudo -n docker logs --tail 220 --timestamps porota_production_observer 2>&1 || true
+          echo "---FAULT_HANDLER_SOURCE---"
+          sudo -n docker exec porota_production_observer sh -c "grep -RInE 'dump_traceback_later|faulthandler' /app/*.py 2>/dev/null | head -n 200" || true
+          echo "---LAST_CRASH_WINDOW_1010Z---"
+          sudo -n docker logs --since '2026-09-25T10:00:00Z' --until '2026-09-25T10:08:10Z' --timestamps porota_production_observer 2>&1 | tail -n 500 || true
+          echo "---LAST_CRASH_WINDOW_1049Z---"
+          sudo -n docker logs --since '2026-09-25T10:44:00Z' --until '2026-09-25T10:50:20Z' --timestamps porota_production_observer 2>&1 | tail -n 500 || true
+          echo "---LAST_CRASH_WINDOW_1216Z---"
+          sudo -n docker logs --since '2026-09-25T12:11:00Z' --until '2026-09-25T12:17:00Z' --timestamps porota_production_observer 2>&1 | tail -n 700 || true
+          echo "---CONTAINER_COMMAND---"
+          sudo -n docker inspect -f 'ENTRYPOINT={{json .Config.Entrypoint}}|CMD={{json .Config.Cmd}}|HEALTH={{json .Config.Healthcheck}}' porota_production_observer || true
           echo "---CURRENT_PROCESS_TREE---"
           sudo -n docker top porota_production_observer -eo pid,ppid,etimes,pcpu,pmem,args 2>/dev/null || true
           echo "---HOST_PRESSURE---"
