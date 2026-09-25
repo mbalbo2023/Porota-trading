@@ -168,7 +168,7 @@ def test_1655_sigue_dentro_de_rueda_y_un_stop_puede_cerrar(position):
     assert verdict.cause == "EOD_PAPER"
 
 
-def test_eod_no_aplica_a_cauciones_o_derivados_y_frena_entradas(position):
+def test_eod_no_aplica_a_cauciones_ni_futuros_y_frena_entradas_spot(position):
     broker,p,_ = position
     policy = PaperSessionPolicy()
     at = "2026-08-28T16:30:00-03:00"
@@ -176,6 +176,42 @@ def test_eod_no_aplica_a_cauciones_o_derivados_y_frena_entradas(position):
     assert policy.execution_error(quote(at=at),at) == ""
     assert not policy.exit_due(p | {"asset_class":"CAUCIONES"},at)
     assert not policy.exit_due(p | {"asset_class":"FUTUROS","market":"ROFEX"},at)
+
+
+def test_option_session_is_t0_and_uses_expiry_day_1530_cutoff(position):
+    from bs_instrument_contracts import InstrumentContract
+    from dataclasses import replace
+    policy=PaperSessionPolicy()
+    contract=InstrumentContract(
+        "GFGC7000OC","OPCIONES","ARS","BYMA","INMEDIATA",
+        D("100"),D("1"),"IOL_OPTIONS_CHAIN+BYMA",
+        expires_at="2026-10-16T15:30:00-03:00",
+        underlying="GGAL",strike=D("7000"),option_right="CALL")
+    q=replace(
+        quote(at="2026-10-16T14:59:00-03:00"),
+        symbol="GFGC7000OC",asset_class="OPCIONES",settlement="INMEDIATA",
+        contract=contract)
+    assert policy.execution_error(q,q.observed_at) == ""
+    assert policy.admission_error(q,q.observed_at) == ""
+    at="2026-10-16T15:00:00-03:00"
+    assert policy.admission_error(q,at) == "EOD_NO_NEW_ENTRIES"
+    option_position=position[1] | {
+        "symbol":"GFGC7000OC","asset_class":"OPCIONES","settlement":"INMEDIATA",
+        "features_json":json.dumps({"financial_contract":{
+            "expires_at":"2026-10-16T15:30:00-03:00"}}),
+        "opened_at":"2026-10-16T11:00:00-03:00",
+    }
+    assert policy.exit_due(option_position,"2026-10-16T15:20:00-03:00")
+    assert policy.execution_error(q,"2026-10-16T15:30:00-03:00") == "OPTION_EXPIRED"
+
+
+def test_option_without_aware_expiry_never_enters_session(position):
+    policy=PaperSessionPolicy()
+    p=position[1] | {
+        "asset_class":"OPCIONES","settlement":"INMEDIATA",
+        "features_json":json.dumps({"financial_contract":{"expires_at":"2026-10-16T15:30:00"}}),
+    }
+    assert policy.execution_error(p,"2026-10-16T14:00:00-03:00") == "OPTION_EXPIRY_UNAVAILABLE"
 
 
 def test_supervisor_silencioso_o_posicion_pendiente_bloquea_nuevas_compras(position):
