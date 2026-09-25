@@ -18,15 +18,11 @@ ALLOWED_ROLES = {
 
 
 def validate_policy(manifest: dict, policy: dict) -> dict:
-    unmanaged = {
-        row["source_path"]
-        for row in manifest.get("units", [])
-        if not row.get("managed_by_canonical_deploy")
-    }
+    tracked = {row["source_path"] for row in manifest.get("units", [])}
     entries = policy.get("units", {})
     policy_paths = set(entries)
-    missing = sorted(unmanaged - policy_paths)
-    extra = sorted(policy_paths - unmanaged)
+    missing = sorted(tracked - policy_paths)
+    extra = sorted(policy_paths - tracked)
     invalid = []
     for path, row in sorted(entries.items()):
         role = row.get("role")
@@ -59,7 +55,7 @@ def validate_policy(manifest: dict, policy: dict) -> dict:
     return {
         "schema_version": 1,
         "status": status,
-        "tracked_unmanaged_units": len(unmanaged),
+        "tracked_rc6_units": len(tracked),
         "policy_units": len(entries),
         "missing_policy_units": missing,
         "extra_policy_units": extra,
