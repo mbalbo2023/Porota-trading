@@ -245,7 +245,7 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
         source = str(payload.get("source") or "").upper() if isinstance(payload, dict) else ""
         market = str(payload.get("market") or "").upper() if isinstance(payload, dict) else ""
         age = (datetime.now(timezone.utc) - timestamp.astimezone(timezone.utc)).total_seconds() if timestamp else None
-        valid = isinstance(values, dict) and bool(values) and timestamp is not None and age is not None and 0 <= age <= PRIMARY_MAX_AGE_SECONDS and source.startswith("PPI") and market == "BCBA"
+        valid = isinstance(values, dict) and bool(values) and timestamp is not None and age is not None and 0 <= age <= PRIMARY_MAX_AGE_SECONDS and source.startswith("PPI") and market in {"BYMA", "BCBA"}
         contract = {"state": "READY" if valid else "UNAVAILABLE", "source": source or "UNKNOWN", "market": market or "UNKNOWN", "observed_at": timestamp.isoformat() if timestamp else None, "age_seconds": round(age, 1) if age is not None else None, "reason": "OK" if valid else "PRIMARY_CACHE_CONTRACT_INVALID_OR_STALE"}
         return (values if valid else {}), contract
     # The dashboard's authoritative PPI quote path is market_snapshots. Read it
@@ -274,9 +274,7 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
             ) if name in columns]
             clauses = []
             if "market" in columns:
-                clauses.append("upper(COALESCE(market,''))='BCBA'")
-            if "asset_class" in columns:
-                clauses.append("upper(COALESCE(asset_class,'')) IN ('ACCIONES','CEDEARS')")
+                clauses.append("upper(COALESCE(market,'')) IN ('BYMA','BCBA','A3','ROFEX')")
             where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
             order = "id DESC" if "id" in columns else "rowid DESC"
             rows = conn.execute(
@@ -300,7 +298,7 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
                 }
                 values[symbol]["symbol"] = symbol
                 values[symbol]["provider_observed_at"] = timestamp
-                values[symbol]["market"] = values[symbol].get("market") or "BCBA"
+                values[symbol]["market"] = values[symbol].get("market") or "BYMA"
             timestamps = [_parse_time(row.get("provider_observed_at")) for row in values.values()]
             timestamps = [value for value in timestamps if value is not None]
             latest = max(timestamps) if timestamps else None
@@ -309,7 +307,7 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
             valid = bool(values) and latest is not None and age is not None and 0 <= age <= PRIMARY_MAX_AGE_SECONDS
             contract = {
                 "state": "READY" if valid else "UNAVAILABLE",
-                "source": "PPI_SQLITE_MARKET_SNAPSHOTS", "market": "BCBA",
+                "source": "PPI_SQLITE_MARKET_SNAPSHOTS", "market": "MULTI_MARKET",
                 "observed_at": latest.isoformat() if latest else None,
                 "age_seconds": round(age, 1) if age is not None else None,
                 "reason": "OK" if valid else "PRIMARY_SQLITE_CONTRACT_INVALID_OR_STALE",
@@ -411,7 +409,11 @@ def main() -> int:
     ppi_rows = []
     for symbol, quote in primary.items():
         row = dict(quote) if isinstance(quote, dict) else {"last": quote}
-        row.update({"family": "", "symbol": symbol, "market": "BCBA", "term": "T1"})
+        family = str(row.get("asset_class") or row.get("family") or "").upper()
+        market = str(row.get("market") or "BYMA").upper()
+        settlement = str(row.get("settlement") or row.get("term") or "").upper()
+        row.update({"family": family, "symbol": symbol, "market": market,
+                    "term": settlement})
         ppi_rows.append(row)
     iol_rows = []
     for row in payload.get("symbols", []):
@@ -420,7 +422,23 @@ def main() -> int:
         quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
         merged = {**quote, **{key: row.get(key) for key in ("family", "symbol", "market", "term", "asset_type", "currency", "units_per_lot")}}
         iol_rows.append(merged)
-    consolidated = consolidate(ppi_rows, iol_rows)
+    official_rows = []
+    try:
+        public_payload = json.loads((DEFAULT_ROOT / "rc6_public_sources_latest.json").read_text(encoding="utf-8"))
+        for source in public_payload.get("sources", []) if isinstance(public_payload, dict) else []:
+            if str(source.get("source") or "").upper() != "BYMA":
+                continue
+            observed = source.get("observed_at") or public_payload.get("collected_at")
+            for raw in source.get("records", []) if isinstance(source.get("records"), list) else []:
+                if not isinstance(raw, dict):
+                    continue
+                row = dict(raw)
+                row.setdefault("provider_observed_at", observed)
+                row.setdefault("market", "BYMA")
+                official_rows.append(row)
+    except (OSError, ValueError, json.JSONDecodeError):
+        official_rows = []
+    consolidated = consolidate(ppi_rows, iol_rows, official_rows)
     _atomic_json(DEFAULT_ROOT / "rc6_consolidated_ppi_iol_latest.json", consolidated)
     progress = payload.get("progress", {})
     print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source}")
