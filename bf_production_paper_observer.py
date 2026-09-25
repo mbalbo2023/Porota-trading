@@ -523,7 +523,7 @@ def _download_catalog(reader, store):
                        int(record["status"] == "AVAILABLE" and
                            str(record["capability"]).startswith("READY_PAPER_")),
                        record["status"], record["capability"], downloaded))
-        _sync_candidate_universe_from_catalog(c, downloaded)
+        financial_catalog.sync_candidate_universe(c, downloaded)
         c.executemany("INSERT INTO catalog_query_results VALUES(?,?,?,?,?,?,?,?)", query_results)
         financial_catalog.persist_family_coverage(c, configuration, query_results,
                                                   found.values(), run_id, downloaded)
@@ -545,27 +545,6 @@ def _download_catalog(reader, store):
     _health(store, "ROFEX_MARKETDATA", rofex_state, rofex_detail,
             "PPI Producción / ROFEX", success=bool(rofex_available))
     return total
-
-
-def _sync_candidate_universe_from_catalog(connection, checked_at):
-    """candidate_universe is a projection of the normalized catalog, never an authority."""
-    rows = connection.execute("""SELECT ticker,instrument_type,market,settlement,status,
-      capability,last_seen_at FROM financial_instrument_catalog
-      ORDER BY ticker,instrument_type,market,settlement,last_seen_at""").fetchall()
-    best = {}
-    for row in rows:
-        ticker, family, market, settlement, status, capability, last_seen = row
-        key = (str(ticker).upper(), str(family).upper(), str(market).upper())
-        ready = status == "AVAILABLE" and str(capability).startswith("READY_PAPER_")
-        rank = (1 if ready else 0, 1 if status == "AVAILABLE" else 0, str(last_seen or ""))
-        if key not in best or rank > best[key][0]:
-            best[key] = (rank, (ticker, family, settlement, market,
-                                int(ready), status, capability, checked_at))
-    connection.execute("""UPDATE candidate_universe
-      SET can_simulate=0,status='STALE',detail='CATALOG_RECONCILIATION_NOT_READY',
-          last_checked_at=?""", (checked_at,))
-    for _, values in best.values():
-        connection.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", values)
 
 
 def _reconcile_complementary_catalog(store):
@@ -619,7 +598,7 @@ def _reconcile_complementary_catalog(store):
             if (str(merged.get("capability") or "").startswith("READY_PAPER_")
                     and merged.get("status") == "AVAILABLE"):
                 promoted += 1
-        _sync_candidate_universe_from_catalog(connection, checked)
+        financial_catalog.sync_candidate_universe(connection, checked)
     if promoted:
         store.event("COMPLEMENTARY_CATALOG_PROMOTION",
                     f"{promoted} identidad(es) PPI completadas con evidencia complementaria fresca.")
