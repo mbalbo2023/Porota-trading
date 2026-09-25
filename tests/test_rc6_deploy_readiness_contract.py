@@ -38,7 +38,7 @@ def test_release_gate_runs_all_tests_in_the_exact_image():
     assert "Full automatic test discovery in exact image" in PREDEPLOY
     assert "-m pytest -q /app/tests" in PREDEPLOY
     assert "POROTA_FULL_TEST_DISCOVERY_RESULT" in PREDEPLOY
-    assert "POROTA_TEST_TRIAGE" in PREDEPLOY
+    assert "porota_classify_pytest_failures.py" in PREDEPLOY
 
 
 def test_new_paper_database_initializes_spot_liquidity_ledger():

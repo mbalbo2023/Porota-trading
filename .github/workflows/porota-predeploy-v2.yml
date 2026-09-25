@@ -67,6 +67,7 @@ jobs:
           set -Eeuo pipefail
           python scripts/porota_host_control_plane_inventory.py \
             --repo-root . \
+            --policy ops/policy/host-control-plane-reconciliation-v2.json \
             --json-out /tmp/porota-host-control-plane.json
 
       - name: Dependency reproducibility gate
@@ -84,6 +85,7 @@ jobs:
           set -Eeuo pipefail
           python scripts/porota_host_manifest_v2.py \
             --repo-root . \
+            --policy ops/policy/host-control-plane-reconciliation-v2.json \
             --source-sha "$CANDIDATE_SHA" \
             --json-out /tmp/porota-host-manifest-v2.json
 

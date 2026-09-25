@@ -1,37 +1,23 @@
 from scripts.porota_host_control_plane_inventory import build_inventory
 
 
-def test_detects_untracked_systemd_input_referenced_by_workflow():
-    tracked = [
+def test_complete_policy_matches_every_tracked_rc6_unit():
+    tracked=[
         "systemd/porota-good-rc6.service",
         "systemd/porota-good-rc6.timer",
+        "systemd/porota-old-rc4.timer",
     ]
-    workflow = """
-    sudo install systemd/porota-good-rc6.service /etc/systemd/system/
-    sudo install systemd/porota-residual-rc6.service /etc/systemd/system/
-    """
-    result = build_inventory(tracked, workflow)
-
-    assert result["status"] == "FAILED_UNTRACKED_WORKFLOW_INPUT"
-    assert result["untracked_workflow_inputs"] == [
-        "systemd/porota-residual-rc6.service"
-    ]
+    result=build_inventory(tracked,[
+        "systemd/porota-good-rc6.service",
+        "systemd/porota-good-rc6.timer",
+    ])
+    assert result["status"]=="GREEN"
+    assert result["counts"]["tracked_rc6_units"]==2
 
 
-def test_reports_tracked_rc6_units_not_managed_by_canonical_workflow():
-    tracked = [
-        "systemd/porota-used-rc6.service",
-        "systemd/porota-unused-rc6.timer",
-        "systemd/porota-legacy-rc4.timer",
-    ]
-    workflow = "systemd/porota-used-rc6.service"
-    result = build_inventory(tracked, workflow)
-
-    assert result["status"] == "GREEN"
-    assert result["tracked_rc6_units"] == [
-        "systemd/porota-unused-rc6.timer",
-        "systemd/porota-used-rc6.service",
-    ]
-    assert result["tracked_rc6_units_not_referenced_by_canonical_deploy"] == [
-        "systemd/porota-unused-rc6.timer"
-    ]
+def test_missing_or_extra_policy_unit_fails_provenance():
+    tracked=["systemd/porota-good-rc6.service"]
+    result=build_inventory(tracked,["systemd/porota-extra-rc6.timer"])
+    assert result["status"]=="FAILED_POLICY_PROVENANCE"
+    assert result["missing_policy_units"]==["systemd/porota-good-rc6.service"]
+    assert result["extra_policy_units"]==["systemd/porota-extra-rc6.timer"]
