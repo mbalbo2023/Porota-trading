@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install test dependencies
-        run: python -m pip install --disable-pip-version-check "pytest>=8.3,<9" requests fastapi python-dotenv
+        run: python -m pip install --disable-pip-version-check "pytest>=8.3,<9" requests fastapi python-dotenv "ppi-client==1.2.4"
       - name: Compile corrected modules
         run: |
           python -m py_compile rc6_dynamic_discovery.py rc6_multisource_contracts.py             bu_instrument_catalog.py bf_production_paper_observer.py be_paper_engine.py ck_policy_gate_hf6.py
