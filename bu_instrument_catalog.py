@@ -214,6 +214,38 @@ def capability(record):
     return "NEEDS_SPECIALIZED_EXECUTOR"
 
 
+def complete_with_complement(record, complementary):
+    """Return a copy completed only with non-conflicting contract evidence.
+
+    Identity/currency/market/settlement from the primary record are immutable.
+    Complementary evidence may add a missing financial_contract_v17 only when
+    the complementary identity is exactly equivalent after normalization.
+    """
+    if record is None or not isinstance(complementary, dict):
+        return record
+    primary=dict(record)
+    raw=dict(primary.get("raw") or {})
+    if raw.get("financial_contract_v17"):
+        return primary
+    family=canonical_family(complementary.get("instrument_type") or complementary.get("family"))
+    ticker=str(complementary.get("ticker") or complementary.get("symbol") or "").strip().upper()
+    market=canonical_market(complementary.get("market"))
+    settlement=canonical_settlement(complementary.get("settlement") or complementary.get("term"),family)
+    currency=str(complementary.get("currency") or "").strip().upper()
+    expected=(primary["ticker"],canonical_family(primary["instrument_type"]),canonical_market(primary["market"]),
+              canonical_settlement(primary["settlement"],primary["instrument_type"]),str(primary["currency"]).upper())
+    observed=(ticker,family,market,settlement,currency)
+    if observed != expected:
+        return primary
+    contract=complementary.get("financial_contract_v17")
+    if not isinstance(contract,dict) or not contract:
+        return primary
+    raw["financial_contract_v17"]=contract
+    raw["_contract_complement_source"]=str(complementary.get("source") or "COMPLEMENTARY")
+    primary["raw"]=raw
+    primary["capability"]=capability(primary)
+    return primary
+
 def persist(c, record):
     c.execute("""INSERT OR REPLACE INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
               (record["ticker"], record["instrument_type"], record["market"], record["currency"],
