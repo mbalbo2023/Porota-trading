@@ -93,6 +93,14 @@ jobs:
             if [ -f "$p" ]; then grep -nE 'REQUIRED_TIMERS|BLOCKED_HISTORY_TIMERS|porota-.*timer|override|DASHBOARD_PREFIX' "$p" || true; else echo MISSING; fi
             echo "FILE_END=$p"
           done
+          echo "---FULL_TIMER_CONTENTS---"
+          for unit in porota-fast-functional-health-rc6.timer porota-full-db-integrity-rc6.timer porota-host-general-backup-rc6.timer porota-preopen-rc6.timer; do
+            echo "FULL_UNIT_BEGIN=$unit"
+            systemctl cat "$unit" --no-pager 2>/dev/null || true
+            echo "FULL_UNIT_END=$unit"
+          done
+          echo "---OBSERVER_CONTAINER_RESTART_POLICY---"
+          sudo -n docker inspect -f 'OBSERVER_RESTARTS={{.RestartCount}}|OOM={{.State.OOMKilled}}|RUNNING={{.State.Running}}|IMAGE={{.Image}}|STARTED={{.State.StartedAt}}' porota_production_observer
           echo "---INSTALLED_TIMER_UNITS---"
           for unit in porota-fast-functional-health-rc6.timer porota-full-db-integrity-rc6.timer porota-host-general-backup-rc6.timer porota-preopen-rc6.timer porota-history-postclose-rc6.timer porota-candle-integrity-rc6.timer; do
             echo "UNIT_BEGIN=$unit|ENABLED=$(systemctl is-enabled "$unit" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$unit" 2>/dev/null || true)"
