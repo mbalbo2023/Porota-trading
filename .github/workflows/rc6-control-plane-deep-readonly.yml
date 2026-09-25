@@ -1,0 +1,190 @@
+name: RC6 control-plane deep read-only
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-control-plane-deep-readonly
+  cancel-in-progress: true
+
+jobs:
+  core-timers:
+    if: github.head_ref == 'audit/rc6-live-baseline-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      BASELINE_SHA: c81f8d7c089433e89f3d664b57d3a9b915565419
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          fetch-depth: 0
+      - name: Build expected core unit hashes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          : > /tmp/core-unit-hashes.tsv
+          for f in             systemd/porota-functional-health-rc6.service             systemd/porota-functional-health-rc6.timer             systemd/porota-host-general-backup-rc6.service             systemd/porota-host-general-backup-rc6.timer             systemd/porota-preopen-rc6.service             systemd/porota-preopen-rc6.timer             systemd/porota-candle-integrity-rc6.service             systemd/porota-candle-integrity-rc6.timer; do
+            printf '%s\t%s\n' "$(sha256sum "$f" | awk '{print $1}')" "$(basename "$f")" >> /tmp/core-unit-hashes.tsv
+          done
+          cat /tmp/core-unit-hashes.tsv
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Compare core installed units and evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          cat /tmp/core-unit-hashes.tsv | "${SSH[@]}" "$DO_USER@$DO_HOST" 'python3 -c '"'"'
+          import hashlib,sys
+          from pathlib import Path
+          for line in sys.stdin:
+              expected,name=line.rstrip("\n").split("\t",1)
+              p=Path("/etc/systemd/system")/name
+              if not p.is_file():
+                  print(f"CORE_UNIT={name}|STATE=MISSING|EXPECTED={expected}")
+                  continue
+              actual=hashlib.sha256(p.read_bytes()).hexdigest()
+              print(f"CORE_UNIT={name}|STATE={'MATCH' if actual==expected else 'DIFF'}|EXPECTED={expected}|ACTUAL={actual}")
+          '"'"''
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===CORE_TIMER_LIVE_EVIDENCE_BEGIN==="
+          for unit in             porota-functional-health-rc6.timer             porota-host-general-backup-rc6.timer             porota-preopen-rc6.timer             porota-candle-integrity-rc6.timer; do
+            echo "TIMER=$unit|ENABLED=$(systemctl is-enabled "$unit" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$unit" 2>/dev/null || true)|NEXT=$(systemctl show -p NextElapseUSecRealtime --value "$unit" 2>/dev/null || true)|LAST=$(systemctl show -p LastTriggerUSec --value "$unit" 2>/dev/null || true)"
+          done
+          for unit in             porota-functional-health-rc6.service             porota-host-general-backup-rc6.service             porota-preopen-rc6.service             porota-candle-integrity-rc6.service; do
+            echo "SERVICE=$unit|RESULT=$(systemctl show -p Result --value "$unit" 2>/dev/null || true)|EXEC_STATUS=$(systemctl show -p ExecMainStatus --value "$unit" 2>/dev/null || true)|LAST_ACTIVE=$(systemctl show -p ActiveEnterTimestamp --value "$unit" 2>/dev/null || true)"
+          done
+          echo "OBSERVER_RESTARTS=$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer 2>/dev/null || true)"
+          echo "---CORE_RECENT_JOURNAL---"
+          for unit in porota-functional-health-rc6.service porota-host-general-backup-rc6.service porota-preopen-rc6.service porota-candle-integrity-rc6.service; do
+            echo "JOURNAL_BEGIN=$unit"
+            sudo -n journalctl -u "$unit" --since '2026-09-12 00:00:00' --no-pager -n 60 2>/dev/null || true
+            echo "JOURNAL_END=$unit"
+          done
+          echo "---BACKUP_ARTIFACTS---"
+          find /opt/porota-backups /var/backups/porota /opt/porota-trading/data/backups -maxdepth 2 -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ|%s|%p\n' 2>/dev/null | sort | tail -n 30 || true
+          echo "===CORE_TIMER_LIVE_EVIDENCE_END==="
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/key" /tmp/core-unit-hashes.tsv
+
+  a3-history:
+    if: github.head_ref == 'audit/rc6-live-baseline-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      BASELINE_SHA: c81f8d7c089433e89f3d664b57d3a9b915565419
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          fetch-depth: 0
+      - name: Baseline A3 inventory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "===BASELINE_A3_INVENTORY_BEGIN==="
+          git ls-files | grep -E '(^|/)(a3|A3)|porota-a3-history|a3_history' | sort || true
+          for f in systemd/porota-a3-history-rc6@.service systemd/porota-a3-history-daily-rc6.timer systemd/porota-a3-history-reconcile-rc6.timer systemd/porota-a3-history-weekend-rc6.timer; do
+            if [ -f "$f" ]; then echo "BASELINE_FILE=$f|SHA256=$(sha256sum "$f" | awk '{print $1}')"; cat "$f"; else echo "BASELINE_FILE=$f|MISSING"; fi
+          done
+          echo "===BASELINE_A3_INVENTORY_END==="
+      - name: Live A3 topology and history evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===LIVE_A3_EVIDENCE_BEGIN==="
+          for p in             /etc/systemd/system/porota-a3-history-rc6@.service             /etc/systemd/system/porota-a3-history-daily-rc6.timer             /etc/systemd/system/porota-a3-history-reconcile-rc6.timer             /etc/systemd/system/porota-a3-history-weekend-rc6.timer             /opt/porota-trading/systemd/porota-a3-history-rc6@.service; do
+            if [ -f "$p" ]; then echo "PATH=$p|EXISTS=yes|SHA256=$(sha256sum "$p"|awk '{print $1}')|MTIME=$(stat -c %y "$p")"; else echo "PATH=$p|EXISTS=no"; fi
+          done
+          echo "---A3_TEMPLATE_CAT---"
+          systemctl cat 'porota-a3-history-rc6@.service' --no-pager 2>/dev/null || true
+          echo "---A3_TIMERS---"
+          for unit in porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer; do
+            echo "TIMER=$unit|ENABLED=$(systemctl is-enabled "$unit" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$unit" 2>/dev/null || true)|NEXT=$(systemctl show -p NextElapseUSecRealtime --value "$unit" 2>/dev/null || true)|LAST=$(systemctl show -p LastTriggerUSec --value "$unit" 2>/dev/null || true)"
+            systemctl cat "$unit" --no-pager 2>/dev/null | grep -E '^(OnCalendar|Unit=|Persistent=|WantedBy=)' || true
+          done
+          echo "---A3_RECENT_JOURNAL---"
+          sudo -n journalctl --since '2026-09-12 00:00:00' --no-pager 2>/dev/null | grep -E 'porota-a3-history-rc6@|A3_HISTORY|DAILY_INCREMENTAL|WEEKEND_DEEP|RECONCILE' | tail -n 300 || true
+          echo "---HISTORY_OUTPUT_MTIMES---"
+          find /opt/porota-trading/data -maxdepth 4 -type f \( -iname '*history*' -o -iname '*a3*' -o -iname '*candle*' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ|%s|%p\n' 2>/dev/null | sort | tail -n 100 || true
+          echo "===LIVE_A3_EVIDENCE_END==="
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  auxiliary-health:
+    if: github.head_ref == 'audit/rc6-live-baseline-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      BASELINE_SHA: c81f8d7c089433e89f3d664b57d3a9b915565419
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          fetch-depth: 0
+      - name: Baseline auxiliary intent
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "===BASELINE_AUX_BEGIN==="
+          for p in             rc6_fast_functional_health.py rc6_full_db_integrity.py             systemd/porota-fast-functional-health-rc6.service systemd/porota-fast-functional-health-rc6.timer             systemd/porota-full-db-integrity-rc6.service systemd/porota-full-db-integrity-rc6.timer; do
+            if git ls-files --error-unmatch "$p" >/dev/null 2>&1; then echo "TRACKED=$p|yes"; else echo "TRACKED=$p|no"; fi
+          done
+          grep -RInE 'enable --now.*(fast-functional-health|full-db-integrity)|disable --now.*(fast-functional-health|full-db-integrity)' .github/workflows 2>/dev/null | tail -n 100 || true
+          echo "===BASELINE_AUX_END==="
+      - name: Live auxiliary state
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===LIVE_AUX_BEGIN==="
+          for unit in porota-fast-functional-health-rc6.timer porota-full-db-integrity-rc6.timer; do
+            echo "TIMER=$unit|ENABLED=$(systemctl is-enabled "$unit" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$unit" 2>/dev/null || true)|FRAGMENT=$(systemctl show -p FragmentPath --value "$unit" 2>/dev/null || true)|LAST=$(systemctl show -p LastTriggerUSec --value "$unit" 2>/dev/null || true)"
+          done
+          for unit in porota-fast-functional-health-rc6.service porota-full-db-integrity-rc6.service; do
+            echo "SERVICE=$unit|RESULT=$(systemctl show -p Result --value "$unit" 2>/dev/null || true)|EXEC_STATUS=$(systemctl show -p ExecMainStatus --value "$unit" 2>/dev/null || true)"
+            systemctl cat "$unit" --no-pager 2>/dev/null | grep -E '^(ExecStart|WorkingDirectory|Description)' || true
+          done
+          echo "===LIVE_AUX_END==="
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
