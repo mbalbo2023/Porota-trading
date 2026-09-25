@@ -64,15 +64,17 @@ def test_current_all_family_policy_keeps_a3_history_active():
     assert svc["install"] is True
 
 
-def test_repository_policy_covers_every_tracked_rc6_unit():
+def test_repository_policy_covers_every_packaged_rc6_unit():
     import json
-    import subprocess
     from pathlib import Path
-    tracked = {
-        p for p in subprocess.check_output(["git","ls-files"], text=True).splitlines()
-        if (p.startswith("systemd/") or p.startswith("ops/systemd/"))
-        and p.endswith((".service",".timer"))
-        and "rc6" in Path(p).name.lower()
-    }
+    root=Path(".")
+    packaged=set()
+    for prefix in (Path("systemd"), Path("ops/systemd")):
+        if not prefix.exists():
+            continue
+        for p in prefix.iterdir():
+            rel=p.as_posix()
+            if p.is_file() and p.suffix in {".service",".timer"} and "rc6" in p.name.lower():
+                packaged.add(rel)
     policy=json.loads(Path("ops/policy/host-control-plane-reconciliation-v2.json").read_text())
-    assert set(policy["units"]) == tracked
+    assert set(policy["units"]) == packaged
