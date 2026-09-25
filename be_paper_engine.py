@@ -1071,6 +1071,7 @@ class PaperBroker:
                 breadth=policy_context.get("breadth"),
                 sectors=policy_context.get("sectors"),
                 candidate_sector=policy_context.get("candidate_sector"),
+                sector_applicable=family in {"ACCIONES", "CEDEARS"},
             )
             features["policy_context_source"] = policy_context.get("source")
             features["policy_evaluation"] = policy_evaluation
