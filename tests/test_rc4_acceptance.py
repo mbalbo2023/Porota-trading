@@ -146,7 +146,7 @@ def test_contract_scheduler_cadence_has_one_canonical_source():
         assert csched.cadence_seconds(job) == cpolicy.ttl_seconds(cadence)
 
 
-def test_family_readiness_never_auto_activates_even_when_complete(tmp_path):
+def test_family_readiness_complete_evidence_enables_paper_shadow_only(tmp_path):
     s=Store(tmp_path/'family.db')
     ev={'instrument_id':1,'ticker':'AAA','market':'BYMA','currency':'ARS',
         'settlement':'A-24HS','quantity_min':1,'quantity_step':1,
@@ -156,8 +156,11 @@ def test_family_readiness_never_auto_activates_even_when_complete(tmp_path):
     rows=ce.current_records(s,family='ACCIONES',ticker='AAA')
     r=ce.family_readiness_state(rows,family='ACCIONES',max_age_seconds=3600,
         simulator_ready=True,cost_ready=True)
-    assert r['status']=='READY_PAPER_CANDIDATE'
+    assert r['status']=='READY_PAPER_SHADOW'
+    assert r['paper_simulatable'] is True
+    assert r['paper_auto_enabled'] is True
     assert r['auto_activation_allowed'] is False
+    assert r['real_money_authorized'] is False
 
 
 def test_blocked_auth_capture_is_persisted_as_run_not_contract(tmp_path):
