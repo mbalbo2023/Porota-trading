@@ -1,4 +1,5 @@
 name: RC6 full-family candidate preflight 2026-09-25
+# candidate-refresh: e94879e8128c77813a055169978f1d8216acf165
 
 on:
   push:
