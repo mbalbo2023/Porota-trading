@@ -159,7 +159,12 @@ def normalize_complementary_record(raw, observed_at, run_id):
     try: currency=cash_currency(raw.get("currency"))
     except ValueError: currency="UNKNOWN"
     source=str(raw.get("source") or "COMPLEMENTARY").strip().upper()
-    metadata=dict(raw.get("raw") if isinstance(raw.get("raw"),dict) else raw)
+    metadata=dict(raw.get("raw") if isinstance(raw.get("raw"),dict) else {})
+    # Preserve normalized complementary contract evidence at top level. It is
+    # considered only when no PPI-primary identity already exists.
+    for key,value in raw.items():
+        if key not in {"raw"} and value not in (None,""):
+            metadata[key]=value
     metadata["_discovery_source"]=source
     if raw.get("units_per_lot") not in (None,""): metadata["_iol_units_per_lot"]=raw.get("units_per_lot")
     status="AVAILABLE" if currency!="UNKNOWN" and market!="UNKNOWN" and settlement!="UNKNOWN" else "OBSERVED_SHADOW"
@@ -199,13 +204,13 @@ def capability(record):
     except ValueError as exc:
         return str(exc)
     if spec.family == "FUTUROS":
-        return "READY_PAPER_FUTURES" if spec.market in {"A3","ROFEX"} else "NEEDS_MARKET_EXECUTOR"
+        return "READY_CONTRACT_FUTURES_NEEDS_EXECUTOR" if spec.market in {"A3","ROFEX"} else "NEEDS_MARKET_EXECUTOR"
     if spec.market != "BYMA":
         return "NEEDS_MARKET_EXECUTOR"
     if spec.family in {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES"}:
         return "READY_PAPER_SPOT"
     if spec.family == "OPCIONES":
-        return "READY_PAPER_OPTIONS"
+        return "READY_CONTRACT_OPTIONS_NEEDS_EXECUTOR"
     return "NEEDS_SPECIALIZED_EXECUTOR"
 
 
