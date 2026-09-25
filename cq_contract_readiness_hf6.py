@@ -78,6 +78,9 @@ REQUIREMENTS = {
 
 ALIASES = {
     "FCI": "FCI_LOCAL",
+    "ETFS": "ETF",
+    "OBLIGACIONES": "ON",
+    "ON": "ON",
     "FONDOS": "FCI_LOCAL",
     "FONDOS_LOCAL": "FCI_LOCAL",
     "ACCIONES_EXTERIOR": "ACCIONES_USA",
