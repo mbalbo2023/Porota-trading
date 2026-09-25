@@ -1,0 +1,131 @@
+name: RC6 isolated live candidate source probe 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-availability-readonly-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rc6-full-family-paper-promotion-20260925
+          fetch-depth: 0
+
+      - name: Prepare strict SSH
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_probe"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_probe" "$HOME/.ssh/known_hosts"
+
+      - name: Package only candidate read paths
+        run: |
+          set -Eeuo pipefail
+          tar -czf /tmp/rc6-family-probe.tgz \
+            iol_mcp_readonly_adapter_rc6.py \
+            iol_shadow_observation_rc6.py \
+            rc6_iol_family_reference.py \
+            bu_instrument_catalog.py \
+            rc6_multisource_discovery.py
+
+      - name: Run candidate against live read-only sources in tmp
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          scp -i "$HOME/.ssh/porota_rc6_probe" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            /tmp/rc6-family-probe.tgz "$DO_USER@$DO_HOST:/tmp/rc6-family-probe.tgz"
+          ssh -i "$HOME/.ssh/porota_rc6_probe" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          TMP="$(mktemp -d /tmp/rc6-family-candidate.XXXXXX)"
+          trap 'rm -rf "$TMP" /tmp/rc6-family-probe.tgz' EXIT
+          tar -xzf /tmp/rc6-family-probe.tgz -C "$TMP"
+          mkdir -p "$TMP/data"
+          cp /opt/porota-trading/data/market/iol_shadow_latest.json "$TMP/data/iol_shadow_latest.json"
+          if [ -f /opt/porota-trading/data/market/iol_family_reference_latest.json ]; then
+            cp /opt/porota-trading/data/market/iol_family_reference_latest.json "$TMP/data/iol_family_reference_latest.json"
+          fi
+          sudo -n env PYTHONPATH="$TMP:/opt/porota-trading" PROBE_ROOT="$TMP/data" python3 - <<'PY'
+          import json, os, sqlite3
+          from pathlib import Path
+          from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
+          import rc6_iol_family_reference as family
+          import bu_instrument_catalog as catalog
+
+          root=Path(os.environ["PROBE_ROOT"])
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          result=family.collect(OAuthStoreReadOnlyMCP(),root=root,db_path=db)
+          records=[r for r in result.get("records",[]) if isinstance(r,dict)]
+          contracts=[r for r in records if isinstance(r.get("financial_contract_v17"),dict) and r.get("financial_contract_v17")]
+          def counts(rows):
+              out={}
+              for r in rows:
+                  f=catalog.canonical_family(r.get("instrument_type") or r.get("family"))
+                  out[f]=out.get(f,0)+1
+              return out
+          print("CANDIDATE_FAMILY_REFERENCE="+json.dumps({
+              "records":len(records),"by_family":counts(records),
+              "contracts":len(contracts),"contracts_by_family":counts(contracts),
+              "fci_count":len(result.get("fci",[]) if isinstance(result.get("fci"),list) else []),
+              "caucion_ars_count":len((result.get("cauciones") or {}).get("ARS",[]) if isinstance((result.get("cauciones") or {}).get("ARS",[]),list) else []),
+              "caucion_usd_count":len((result.get("cauciones") or {}).get("USD",[]) if isinstance((result.get("cauciones") or {}).get("USD",[]),list) else []),
+              "errors":result.get("errors",[])
+          },ensure_ascii=False,sort_keys=True))
+          for r in contracts[:20]:
+              spec=r["financial_contract_v17"]
+              print("CANDIDATE_CONTRACT="+json.dumps({
+                  "ticker":r.get("ticker"),"family":r.get("instrument_type"),
+                  "currency":r.get("currency"),"settlement":r.get("settlement"),
+                  "cash_multiplier":spec.get("cash_multiplier"),
+                  "quantity_step":spec.get("quantity_step"),
+                  "metadata_source":spec.get("metadata_source"),
+                  "underlying":spec.get("underlying"),
+              },ensure_ascii=False,sort_keys=True))
+          # Dry-run catalog projection in memory. It proves exact contract
+          # compatibility without changing the live SQLite database.
+          live=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=20)
+          live.row_factory=sqlite3.Row
+          rows=[dict(r) for r in live.execute("SELECT * FROM financial_instrument_catalog")]
+          live.close()
+          by_exact={}
+          for r in rows:
+              raw=json.loads(r.pop("metadata_json") or "{}")
+              r["raw"]=raw
+              key=(r["ticker"],catalog.canonical_family(r["instrument_type"]),
+                   catalog.canonical_market(r["market"]),
+                   catalog.canonical_settlement(r["settlement"],r["instrument_type"]),
+                   str(r["currency"]).upper())
+              by_exact[key]=r
+          promoted=[]
+          for comp in records:
+              key=(str(comp.get("ticker") or "").upper(),
+                   catalog.canonical_family(comp.get("instrument_type")),
+                   catalog.canonical_market(comp.get("market")),
+                   catalog.canonical_settlement(comp.get("settlement"),comp.get("instrument_type")),
+                   str(comp.get("currency") or "").upper())
+              p=by_exact.get(key)
+              if not p: continue
+              m=catalog.complete_with_complement(p,comp)
+              before=p.get("status")=="AVAILABLE" and str(p.get("capability") or "").startswith("READY_PAPER_")
+              after=m.get("status")=="AVAILABLE" and str(m.get("capability") or "").startswith("READY_PAPER_")
+              if after and not before:
+                  promoted.append({"ticker":m["ticker"],"family":m["instrument_type"],"capability":m["capability"]})
+          print("CANDIDATE_DRYRUN_PROMOTIONS="+json.dumps({
+              "count":len(promoted),"by_family":counts(promoted),"sample":promoted[:30]
+          },ensure_ascii=False,sort_keys=True))
+          PY
+          REMOTE
