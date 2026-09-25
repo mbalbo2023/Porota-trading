@@ -817,7 +817,7 @@ jobs:
             test "$RUNNING_SOURCE_SHA" = "$EXPECTED_SOURCE_SHA"
             echo "RUNNING_SOURCE_SHA=GREEN|observer|$f"
           done
-          SECTOR_MAP_CHECK="$(sudo -n docker exec porota_production_observer python - <<'PY'
+          SECTOR_MAP_CHECK="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import hashlib
           from pathlib import Path
           import es_policy_context_rc6 as p

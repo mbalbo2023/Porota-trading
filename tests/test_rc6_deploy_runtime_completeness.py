@@ -104,3 +104,8 @@ def test_live_safety_checks_do_not_use_heavy_quick_check():
     assert "PRAGMA quick_check" not in verify
     assert "POST_STATE=" in verify
     assert "PRODUCTION_PAPER|0" in verify
+
+
+def test_sector_map_runtime_verifier_keeps_stdin_attached():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert "SECTOR_MAP_CHECK=\"$(sudo -n docker exec -i porota_production_observer python - <<'PY'" in source
