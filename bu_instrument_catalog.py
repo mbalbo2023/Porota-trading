@@ -275,6 +275,27 @@ def complete_with_complement(record, complementary):
         raw["_availability_source"]="PPI_IDENTITY_PLUS_" + str(complementary.get("source") or "COMPLEMENTARY").upper()
     return primary
 
+def sync_candidate_universe(connection, checked_at):
+    """Project normalized catalog readiness into the legacy candidate table."""
+    rows = connection.execute("""SELECT ticker,instrument_type,market,settlement,status,
+      capability,last_seen_at FROM financial_instrument_catalog
+      ORDER BY ticker,instrument_type,market,settlement,last_seen_at""").fetchall()
+    best = {}
+    for row in rows:
+        ticker, family, market, settlement, status, capability, last_seen = row
+        key = (str(ticker).upper(), str(family).upper(), str(market).upper())
+        ready = status == "AVAILABLE" and str(capability).startswith("READY_PAPER_")
+        rank = (1 if ready else 0, 1 if status == "AVAILABLE" else 0, str(last_seen or ""))
+        if key not in best or rank > best[key][0]:
+            best[key] = (rank, (ticker, family, settlement, market,
+                                int(ready), status, capability, checked_at))
+    connection.execute("""UPDATE candidate_universe
+      SET can_simulate=0,status='STALE',detail='CATALOG_RECONCILIATION_NOT_READY',
+          last_checked_at=?""", (checked_at,))
+    for _, values in best.values():
+        connection.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", values)
+
+
 def persist(c, record):
     c.execute("""INSERT OR REPLACE INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
               (record["ticker"], record["instrument_type"], record["market"], record["currency"],
