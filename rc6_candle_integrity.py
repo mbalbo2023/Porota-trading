@@ -28,7 +28,7 @@ def main() -> int:
         c.row_factory = sqlite3.Row
         c.execute('PRAGMA query_only=ON')
         # Frequent intraday integrity must stay cheap and read-only. A full
-        # PRAGMA quick_check can scan the entire observer DB and has caused
+        # SQLite integrity scan can traverse the entire observer DB and has caused
         # the 10-minute probe to overrun its 3-minute systemd timeout during
         # the market session. Full-file integrity is owned by the dedicated
         # postclose full-db-integrity job.
