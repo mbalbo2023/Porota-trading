@@ -55,10 +55,10 @@ jobs:
               """)]
           if "candidate_universe" in tables:
               out["candidate_universe"]=[dict(r) for r in c.execute("""
-                SELECT instrument_type family,status,can_simulate,reason,COUNT(*) n
+                SELECT instrument_type family,status,can_simulate,COUNT(*) n
                 FROM candidate_universe
-                GROUP BY instrument_type,status,can_simulate,reason
-                ORDER BY instrument_type,status,can_simulate,reason
+                GROUP BY instrument_type,status,can_simulate
+                ORDER BY instrument_type,status,can_simulate
               """)]
           if "observer_state" in tables:
               out["observer_state"]=dict(c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone())
