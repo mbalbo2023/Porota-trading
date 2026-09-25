@@ -25,20 +25,24 @@ def requirement_rows(text: str) -> list[dict[str, str | bool]]:
     return rows
 
 
-def audit(requirements_text: str, dockerfile_text: str) -> dict:
-    rows = requirement_rows(requirements_text)
-    non_exact = [r["requirement"] for r in rows if not r["exact_pin"]]
+def audit(requirements_text: str, lock_text: str, dockerfile_text: str) -> dict:
+    source_rows = requirement_rows(requirements_text)
+    lock_rows = requirement_rows(lock_text)
+    lock_non_exact = [r["requirement"] for r in lock_rows if not r["exact_pin"]]
     m = FROM_RE.search(dockerfile_text)
     base = m.group(1) if m else ""
     digest_pinned = "@sha256:" in base
+    docker_uses_lock = "-r requirements.lock.txt" in dockerfile_text
     return {
-        "schema_version": 1,
-        "status": "GREEN" if not non_exact and digest_pinned else "REPRODUCIBILITY_GAP",
-        "requirements_total": len(rows),
-        "exact_requirements": sum(bool(r["exact_pin"]) for r in rows),
-        "non_exact_requirements": non_exact,
+        "schema_version": 2,
+        "status": "GREEN" if lock_rows and not lock_non_exact and digest_pinned and docker_uses_lock else "REPRODUCIBILITY_GAP",
+        "source_requirements_total": len(source_rows),
+        "lock_requirements_total": len(lock_rows),
+        "lock_exact_requirements": sum(bool(r["exact_pin"]) for r in lock_rows),
+        "lock_non_exact_requirements": lock_non_exact,
         "base_image": base,
         "base_image_digest_pinned": digest_pinned,
+        "docker_uses_lock": docker_uses_lock,
     }
 
 
@@ -51,6 +55,7 @@ def main() -> int:
     root = Path(args.repo_root).resolve()
     result = audit(
         (root / "requirements.txt").read_text(encoding="utf-8"),
+        (root / "requirements.lock.txt").read_text(encoding="utf-8"),
         (root / "Dockerfile").read_text(encoding="utf-8"),
     )
     payload = json.dumps(result, indent=2, sort_keys=True)
