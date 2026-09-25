@@ -818,16 +818,16 @@ jobs:
             echo "RUNNING_SOURCE_SHA=GREEN|observer|$f"
           done
           SECTOR_MAP_CHECK="$(sudo -n docker exec porota_production_observer python - <<'PY'
-import hashlib
-from pathlib import Path
-import es_policy_context_rc6 as p
-path=Path("/app/POROTA_SECTOR_MAP_V1.csv")
-assert path.is_file()
-mapping=p._explicit_sector_map()
-assert mapping, "SECTOR_MAP_EMPTY"
-print("SECTOR_MAP_RUNTIME=GREEN|rows=%d|sha256=%s" % (
-    len(mapping), hashlib.sha256(path.read_bytes()).hexdigest()))
-PY
+          import hashlib
+          from pathlib import Path
+          import es_policy_context_rc6 as p
+          path=Path("/app/POROTA_SECTOR_MAP_V1.csv")
+          assert path.is_file()
+          mapping=p._explicit_sector_map()
+          assert mapping, "SECTOR_MAP_EMPTY"
+          print("SECTOR_MAP_RUNTIME=GREEN|rows=%d|sha256=%s" % (
+              len(mapping), hashlib.sha256(path.read_bytes()).hexdigest()))
+          PY
           )"
           echo "$SECTOR_MAP_CHECK"
           grep -Fq "SECTOR_MAP_RUNTIME=GREEN" <<< "$SECTOR_MAP_CHECK"
