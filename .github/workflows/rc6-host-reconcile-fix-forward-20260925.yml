@@ -98,7 +98,10 @@ jobs:
         run: rm -f "$HOME/.ssh/key"
 
   deploy-host-fix-forward:
-    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925' && github.event.action == 'ready_for_review'
+    # The missing-assets repair was completed successfully in run 36094829765.
+    # Keep the validator, but prevent a future ready_for_review event from
+    # replaying the already-applied host mutation.
+    if: ${{ false }}
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 30
