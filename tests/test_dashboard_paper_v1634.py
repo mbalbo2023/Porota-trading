@@ -37,7 +37,8 @@ def test_v17_dashboard_separa_plazos_y_muestra_caucion_real_del_simulador(tmp_pa
     assert "no confirman movimientos en PPI" in audit_panel
     motor = dashboard.motor_page()
     assert "CONTRATO-PRUEBA" not in motor
-    assert "cauciones y demás familias no operativas no se evalúan ni se muestran como estrategia activa" in motor
+    assert "PAPER/SHADOW multifamilia" in motor
+    assert "fail-closed" in motor
 
 def test_dashboard_no_suma_dolares_como_pesos_y_muestra_cajas(tmp_path, monkeypatch):
     import bg_paper_dashboard as dashboard

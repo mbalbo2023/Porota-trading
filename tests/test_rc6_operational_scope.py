@@ -28,3 +28,13 @@ def test_historical_shadow_does_not_reject_non_equity_family_by_scope():
     assert result["state"] != "OUT_OF_SCOPE"
     assert result["decision_effect"] == "OBSERVE_ONLY"
     assert result["state"] == "INSUFFICIENT_DATA"
+
+
+def test_observer_family_scope_is_the_canonical_contract_family_set():
+    import bf_production_paper_observer as observer
+    from bs_instrument_contracts import FAMILIES
+    assert observer.OPERATIONAL_FAMILIES == FAMILIES
+    assert {
+        "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+        "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+    } == set(FAMILIES)
