@@ -32,6 +32,7 @@ import bu_instrument_catalog as financial_catalog
 from _version import VERSION
 from am_us_equity_calendar_rc6 import cedear_opening_gate
 from rc6_source_consolidation import collect_public_sources
+from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -109,23 +110,14 @@ FOCUS_SYMBOLS = configured_focus()
 FOCUS_MINIMUM_FOR_OPENINGS = max(
     1, min(int(os.getenv("PAPER_FOCUS_MINIMUM_FOR_OPENINGS", "4")), len(FOCUS_SYMBOLS))
 )
-# Semillas amplias; PPI sigue siendo quien confirma existencia, clase y mercado.
-# La lista no habilita por si sola ningun instrumento y una coincidencia devuelta
-# por el broker se persiste individualmente en el universo observable.
-DISCOVERY_SEEDS = {
-    "ACCIONES": ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "TXAR",
-                 "ALUA", "LOMA", "COME", "EDN", "TGSU2", "TGNO4", "TRAN", "BYMA",
-                 "CRES", "HARG", "IRSA", "TECO2", "VALO", "MIRG", "MOLI", "AGRO"),
-    "CEDEARS": ("AAPL", "AAPLD", "AAPLC", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
-                "KO", "MCD", "WMT", "DIS", "NFLX", "AMD", "INTC", "AVGO", "ORCL",
-                "IBM", "CRM", "JPM", "BAC", "V", "MA", "XOM", "CVX", "GOLD", "VALE",
-                "PBR", "BABA", "MELI", "NU"),
-}
+# Discovery is generated dynamically in rc6_multisource_discovery.py.
+# DEFAULT_FOCUS_SYMBOLS only prioritizes sampling; it never defines the universe.
+DISCOVERY_SEEDS = {}
 STOP = False
 
 SAFE_PAPER_TYPES = set(OPERATIONAL_FAMILIES)
 SETTLEMENT_BY_TYPE = {"ACCIONES": "A-24HS", "CEDEARS": "A-24HS"}
-WATCHLIST_PATH = Path(os.getenv("INSTRUMENT_WATCHLIST_PATH", "n_instrument_watchlist.json"))
+WATCHLIST_PATH = Path(os.getenv("INSTRUMENT_WATCHLIST_PATH", "n_instrument_watchlist.json"))  # legacy, not universe authority
 
 
 def _stop(*_):
@@ -183,31 +175,13 @@ def _market_open(now=None):
 
 
 def _candidate_universe():
-    """Universo operativo estricto: acciones y CEDEARs, sin barrido residual."""
-    rows = {(ticker, kind, settlement, "BYMA", True)
-            for ticker, kind, settlement in CORE_SYMBOLS}
-    try:
-        data = json.loads(WATCHLIST_PATH.read_text(encoding="utf-8"))
-        for asset_class, block in data.items():
-            if str(asset_class).startswith("_") or not isinstance(block, dict):
-                continue
-            kind = str(block.get("instrument_type") or asset_class).upper()
-            if kind not in OPERATIONAL_FAMILIES:
-                continue
-            settlement = str(block.get("settlement") or SETTLEMENT_BY_TYPE.get(kind) or "").strip()
-            # No inventar plazo: una identidad sin settlement contractual queda
-            # fuera del ciclo hasta que PPI/IOL/BYMA lo publique.
-            if not settlement:
-                continue
-            for ticker in block.get("tickers", []):
-                if str(ticker).strip():
-                    rows.add((str(ticker).strip().upper(), kind, settlement, "BYMA", True))
-    except Exception:
-        pass
-    for kind, tickers in DISCOVERY_SEEDS.items():
-        for ticker in tickers:
-            rows.add((ticker, kind, SETTLEMENT_BY_TYPE[kind], "BYMA", True))
-    return sorted(rows, key=lambda value: (value[1], value[0]))
+    """Plan de discovery automático.
+
+    No usa watchlist/tickers versionados como autoridad. Los prefijos se generan
+    por código y rotan; PPI confirma existencia. IOL/BYMA se fusionan después
+    como fuentes complementarias y nunca reemplazan un campo PPI presente.
+    """
+    return ppi_query_plan(day=datetime.now(TZ).date())
 
 
 def _walk_numbers(value, keys):
@@ -446,15 +420,12 @@ def _download_catalog(reader, store):
             configuration = financial_catalog.validate_configuration(reader.market_configuration())
         except Exception as exc:
             store.event("CATALOG_CONFIGURATION_UNAVAILABLE", type(exc).__name__)
-    for ticker_query, instrument_type, fallback_settlement, market_query, _ in _candidate_universe():
+    for ticker_query, provider_type, fallback_settlement, market_query, _, instrument_type in _candidate_universe():
         status, detail = "EMPTY_FILTER_RESULT", "Este filtro no devolvió coincidencias; no prueba indisponibilidad."
         count = 0
-        name_query = {("OPCIONES", "GFG"): "GALICIA", ("OPCIONES", "YPF"): "YPF",
-                      ("OPCIONES", "PAM"): "PAMPA", ("LETRAS", "S"): "LETRA",
-                      ("LETRAS", "T"): "LETRA", ("ON", "MRC"): "MASTELLONE",
-                      ("ON", "YMC"): "YPF"}.get((instrument_type, ticker_query), ticker_query)
+        name_query = ticker_query
         if configuration is not None:
-            missing = ('TYPE' if instrument_type not in configuration['instrument_types'] else
+            missing = ('TYPE' if provider_type not in configuration['instrument_types'] else
                        'MARKET' if market_query not in configuration['markets'] else None)
             if missing:
                 query_results.append((run_id, ticker_query, name_query, instrument_type,
@@ -462,7 +433,7 @@ def _download_catalog(reader, store):
                 continue
         try:
             payload = reader.search_instruments(
-                ticker_query, instrument_type, name=name_query, market=market_query)
+                ticker_query, provider_type, name=name_query, market=market_query)
             if not isinstance(payload, list) or any(not isinstance(r, dict) for r in payload):
                 raise ValueError('PPI_SEARCH_INVALID_SHAPE')
             records = payload  # contrato público: lista directa; no extraer de errores anidados
@@ -472,9 +443,10 @@ def _download_catalog(reader, store):
                 except (ValueError, TypeError):
                     continue
                 if configuration is not None:
-                    if record['instrument_type'] not in configuration['instrument_types']:
+                    declared_families = {canonical_family(value) for value in configuration['instrument_types']}
+                    if record['instrument_type'] not in declared_families:
                         record['capability'] = 'TYPE_NOT_ENUMERATED'
-                    elif record['market'] not in configuration['markets']:
+                    elif market_query not in configuration['markets']:
                         record['capability'] = 'MARKET_NOT_ENUMERATED'
                 key = tuple(record[k] for k in ("ticker", "instrument_type", "market", "currency", "settlement"))
                 found[key] = record
@@ -490,14 +462,30 @@ def _download_catalog(reader, store):
         query_results.append((run_id, ticker_query, name_query, instrument_type, market_query, status, count, detail))
         if CATALOG_QUERY_SLEEP_SECONDS:
             time.sleep(CATALOG_QUERY_SLEEP_SECONDS)
+    # Complementary discovery is allowed to widen the observed universe, never
+    # to overwrite an identity/field already confirmed by PPI.
+    try:
+        for raw in complementary_discovery("/app/data/market"):
+            try:
+                record = financial_catalog.normalize_complementary_record(raw, downloaded, run_id)
+            except (ValueError, TypeError):
+                continue
+            key = tuple(record[k] for k in ("ticker","instrument_type","market","currency","settlement"))
+            if key not in found:
+                found[key] = record
+    except Exception as exc:
+        store.event("COMPLEMENTARY_DISCOVERY_UNAVAILABLE", type(exc).__name__)
+
     with store.connect() as c:
         c.execute("BEGIN IMMEDIATE")
         if configuration is not None:
             for name, payload in configuration.items():
                 c.execute("INSERT OR REPLACE INTO broker_market_configuration VALUES(?,?,?)",
                           (name, downloaded, json.dumps(payload, ensure_ascii=False)))
-        c.execute("UPDATE financial_instrument_catalog SET status='STALE'")
-        c.execute("UPDATE candidate_universe SET status='STALE',can_simulate=0")
+        c.execute("""UPDATE financial_instrument_catalog SET status='STALE'
+          WHERE julianday(last_seen_at) < julianday(?, '-14 days')""", (downloaded,))
+        c.execute("""UPDATE candidate_universe SET status='STALE',can_simulate=0
+          WHERE julianday(last_checked_at) < julianday(?, '-14 days')""", (downloaded,))
         for record in found.values():
             financial_catalog.persist(c, record)
             c.execute("INSERT OR REPLACE INTO instrument_catalog VALUES(?,?,?,?,?,?,?)",
@@ -506,7 +494,8 @@ def _download_catalog(reader, store):
                        json.dumps(record["raw"], ensure_ascii=False, default=str)))
             c.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
                       (record["ticker"], record["instrument_type"], record["settlement"], record["market"],
-                       int(record["capability"] == "READY_PAPER_SPOT"), "AVAILABLE", record["capability"], downloaded))
+                       int(str(record["capability"]).startswith("READY_PAPER_")),
+                       record["status"], record["capability"], downloaded))
         c.executemany("INSERT INTO catalog_query_results VALUES(?,?,?,?,?,?,?,?)", query_results)
         financial_catalog.persist_family_coverage(c, configuration, query_results,
                                                   found.values(), run_id, downloaded)
