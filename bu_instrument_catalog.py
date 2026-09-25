@@ -118,7 +118,7 @@ def persist_family_coverage(c, configuration, query_results, records, run_id, ob
             state = 'DECLARED_NO_QUERY' if listed == 1 else 'CONFIGURATION_UNAVAILABLE'
         c.execute('INSERT OR REPLACE INTO catalog_family_coverage VALUES(?,?,?,?,?,?,?,?)',
             (kind, run_id, listed, len(queries), len(observed),
-             sum(r['capability'] == 'READY_PAPER_SPOT' for r in observed), state, observed_at))
+             sum(str(r['capability']).startswith('READY_PAPER_') for r in observed), state, observed_at))
 
 
 def normalize_record(raw, settlement_hint, observed_at, run_id):
