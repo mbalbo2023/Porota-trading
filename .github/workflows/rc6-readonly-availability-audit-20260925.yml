@@ -1,0 +1,84 @@
+name: RC6 read-only availability audit 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-availability-readonly-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+
+      - name: Audit exact non-ready identities and blockers
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3, json
+          db='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=20)
+          c.execute('PRAGMA query_only=ON')
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          print('MODE='+str(mode)+' REAL_ORDERS_SENT='+str(orders))
+          rows=c.execute("""SELECT ticker,instrument_type,market,currency,settlement,status,capability,last_seen_at
+            FROM financial_instrument_catalog
+            ORDER BY instrument_type,ticker,market,currency,settlement""").fetchall()
+          ready=[r for r in rows if r[5]=='AVAILABLE' and str(r[6] or '').startswith('READY_PAPER_')]
+          nonready=[r for r in rows if not (r[5]=='AVAILABLE' and str(r[6] or '').startswith('READY_PAPER_'))]
+          print('CATALOG_TOTAL='+str(len(rows))+' READY='+str(len(ready))+' NONREADY='+str(len(nonready)))
+          for r in nonready:
+              print('NONREADY='+json.dumps({'ticker':r[0],'family':r[1],'market':r[2],'currency':r[3],'settlement':r[4],'status':r[5],'capability':r[6],'last_seen_at':r[7]},ensure_ascii=False,sort_keys=True))
+          fam={}
+          for r in rows:
+              d=fam.setdefault(str(r[1]),{'total':0,'ready':0,'nonready':0})
+              d['total']+=1
+              ok=r[5]=='AVAILABLE' and str(r[6] or '').startswith('READY_PAPER_')
+              d['ready']+=int(ok); d['nonready']+=int(not ok)
+          print('FAMILY_COUNTS='+json.dumps(fam,ensure_ascii=False,sort_keys=True))
+          if 'contract_evidence' in tables:
+              erows=c.execute("""SELECT instrument_type,ticker,market,status,owner,source,missing_fields_json,detail,checked_at
+                FROM contract_evidence ORDER BY instrument_type,ticker,market""").fetchall()
+              print('CONTRACT_EVIDENCE_COUNT='+str(len(erows)))
+              for r in erows:
+                  if not str(r[3]).startswith('VERIFIED'):
+                      print('BLOCKER='+json.dumps({'family':r[0],'ticker':r[1],'market':r[2],'status':r[3],'owner':r[4],'source':r[5],'missing':json.loads(r[6] or '[]'),'detail':r[7],'checked_at':r[8]},ensure_ascii=False,sort_keys=True))
+          if 'contract_evidence_runs' in tables:
+              latest=c.execute("""SELECT run_id,total,verified,blocked_porota,blocked_provider,finished_at,detail
+                FROM contract_evidence_runs ORDER BY finished_at DESC LIMIT 1""").fetchone()
+              print('LATEST_CONTRACT_RUN='+json.dumps(list(latest) if latest else None,ensure_ascii=False))
+          if 'candidate_universe' in tables:
+              ghost=c.execute("""SELECT COUNT(*) FROM candidate_universe u WHERE u.can_simulate=1 AND NOT EXISTS (
+                SELECT 1 FROM financial_instrument_catalog f WHERE f.ticker=u.ticker
+                AND upper(f.instrument_type)=upper(u.instrument_type) AND upper(f.market)=upper(u.market)
+                AND f.settlement=u.settlement AND f.status='AVAILABLE' AND f.capability LIKE 'READY_PAPER_%')""").fetchone()[0]
+              candidates=c.execute("SELECT COUNT(*) FROM candidate_universe WHERE can_simulate=1 AND status='AVAILABLE'").fetchone()[0]
+              print('CANDIDATE_READY='+str(candidates)+' GHOSTS='+str(ghost))
+          c.close()
+          assert mode=='PRODUCTION_PAPER' and int(orders or 0)==0
+          PY
+          REMOTE
