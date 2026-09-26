@@ -267,6 +267,22 @@
       "active": true,
       "remove_on_deploy": false,
       "reason": "Active pre-open snapshot schedule"
+    },
+    "systemd/porota-byma-morning-watch-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Current read-only BYMA authority watch service"
+    },
+    "systemd/porota-byma-morning-watch-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Current read-only BYMA authority watch at 08:30 ART"
     }
   }
 }
