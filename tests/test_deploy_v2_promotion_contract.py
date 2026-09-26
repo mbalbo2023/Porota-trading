@@ -31,3 +31,11 @@ def test_deploy_v2_preserves_paper_and_ppi_watch_invariants():
     assert "PPI_WATCH_UNTOUCHED=GREEN" in PROMOTE
     assert "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED" in PROMOTE
     assert "rollback" not in PROMOTE.lower()
+
+
+def test_deploy_v2_uses_loaded_runtime_identity_after_docker_normalization():
+    assert 'RUNTIME_IMAGE_ID="$LOADED_IMAGE_ID"' in PROMOTE
+    assert 'test "$OBSERVER_IMAGE_ID" = "$RUNTIME_IMAGE_ID"' in PROMOTE
+    assert 'test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"' in PROMOTE
+    assert 'test "$IMAGE_TAR_SHA" = "$EXPECTED_TAR_SHA"' in PROMOTE
+    assert "POROTA_RUNTIME_IMAGE_ID_VERIFY=observer=" in PROMOTE

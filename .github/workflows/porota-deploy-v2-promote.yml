@@ -242,6 +242,7 @@ jobs:
           EXPECTED_IMAGE_ID="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_id"])')"
           gunzip -c "$REMOTE_DIR/porota-predeploy-image.tar.gz" | sudo -n docker load
           LOADED_IMAGE_ID="$(sudo -n docker image inspect -f '{{.Id}}' "$FROZEN_IMAGE" | tr -d '\r\n')"
+          RUNTIME_IMAGE_ID="$LOADED_IMAGE_ID"
           EXPECTED_IMAGE_ID="$(printf "%s" "$EXPECTED_IMAGE_ID" | tr -d '\r\n')"
           IMAGE_TAR_SHA="$(sha256sum "$REMOTE_DIR/porota-predeploy-image.tar.gz" | awk '{print $1}')"
           EXPECTED_TAR_SHA="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_tar_sha256"])')"
@@ -254,7 +255,7 @@ jobs:
           test "$IMAGE_TAR_SHA" = "$EXPECTED_TAR_SHA"
           sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
           sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
-          echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|image=$EXPECTED_IMAGE_ID"
+          echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
 
           sudo -n python3 "$REPO/scripts/porota_apply_host_control_plane_v2.py" \
             --root "$REPO" \
@@ -267,8 +268,9 @@ jobs:
 
           OBSERVER_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
           DASHBOARD_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
-          test "$OBSERVER_IMAGE_ID" = "$EXPECTED_IMAGE_ID"
-          test "$DASHBOARD_IMAGE_ID" = "$EXPECTED_IMAGE_ID"
+          echo "POROTA_RUNTIME_IMAGE_ID_VERIFY=observer=$OBSERVER_IMAGE_ID|dashboard=$DASHBOARD_IMAGE_ID|loaded=$RUNTIME_IMAGE_ID"
+          test "$OBSERVER_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
+          test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
 
           POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
@@ -381,7 +383,7 @@ jobs:
           echo "PPI_WATCH_UNTOUCHED=GREEN"
 
           sudo -n mkdir -p "$REPO/data/deploy"
-          sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$EXPECTED_IMAGE_ID" "$POST_STATE" <<'PY'
+          sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$RUNTIME_IMAGE_ID" "$POST_STATE" <<'PY'
           import json,sys
           from datetime import datetime,timezone
           path,candidate,deploy,image_id,post=sys.argv[1:]
@@ -413,7 +415,7 @@ jobs:
           echo "SPACE_RECOVERED=$((DISK_AFTER-DISK_BEFORE))"
           test "$DISK_AFTER" -ge 1073741824
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
-          echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$EXPECTED_IMAGE_ID"
+          echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           REMOTE
 
       - name: Deployment summary
