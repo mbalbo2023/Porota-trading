@@ -49,8 +49,8 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          SCP=(scp -i "$HOME/.ssh/porota_rc6_census" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
-          SSH=(ssh -i "$HOME/.ssh/porota_rc6_census" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          SCP=(scp -i "$HOME/.ssh/porota_rc6_census" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes)
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_census" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes)
           "${SCP[@]}" /tmp/rc6-promotion-census.tgz "$DO_USER@$DO_HOST:/tmp/rc6-promotion-census.tgz"
           "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
