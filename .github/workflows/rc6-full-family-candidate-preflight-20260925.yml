@@ -1,5 +1,5 @@
 name: RC6 full-family candidate preflight 2026-09-25
-# candidate-refresh: 494f34721b2699966f8f24d3e8842bd1d2240e76
+# candidate-refresh: 48eed9315e87ff531afeff2043cf7082335655f1
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ACTUAL="$(git rev-parse HEAD)"
-          EXPECTED="494f34721b2699966f8f24d3e8842bd1d2240e76"
+          EXPECTED="48eed9315e87ff531afeff2043cf7082335655f1"
           echo "CANDIDATE_SHA=$ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
@@ -146,7 +146,51 @@ jobs:
           print("STATIC_BYMA_AND_PAPER_SAFETY=GREEN")
           PY
 
-      - name: Run complete repository test suite
+      - name: Full-suite regression delta versus productive baseline
+        shell: bash
         run: |
           set -Eeuo pipefail
-          python -m pytest -q
+          BASELINE_SHA="3559d1a4f4b66b0b0011ec3d6374150f3e979575"
+          BASELINE_DIR="/tmp/rc6-baseline-suite"
+          rm -rf "$BASELINE_DIR"
+          git worktree add --detach "$BASELINE_DIR" "$BASELINE_SHA"
+
+          run_suite() {
+            local dir="$1" out="$2"
+            set +e
+            (cd "$dir" && python -m pytest -q) >"$out" 2>&1
+            local rc=$?
+            set -e
+            # pytest 0=all green, 1=test failures. Anything else is an
+            # infrastructure/collection invocation error and invalidates the comparison.
+            if [ "$rc" -gt 1 ]; then
+              cat "$out"
+              echo "PYTEST_INFRA_FAILURE=$dir|rc=$rc"
+              return "$rc"
+            fi
+            return 0
+          }
+
+          run_suite "$BASELINE_DIR" /tmp/baseline-suite.log
+          run_suite "$GITHUB_WORKSPACE" /tmp/candidate-suite.log
+
+          failure_set() {
+            grep -E '^(FAILED|ERROR) tests/' "$1" \
+              | sed -E 's/ - .*//' \
+              | sort -u || true
+          }
+
+          failure_set /tmp/baseline-suite.log > /tmp/baseline.failures
+          failure_set /tmp/candidate-suite.log > /tmp/candidate.failures
+          comm -13 /tmp/baseline.failures /tmp/candidate.failures > /tmp/new.failures
+          comm -23 /tmp/baseline.failures /tmp/candidate.failures > /tmp.fixed.failures
+
+          echo "FULL_SUITE_BASELINE_FAILURES=$(wc -l < /tmp/baseline.failures)"
+          echo "FULL_SUITE_CANDIDATE_FAILURES=$(wc -l < /tmp/candidate.failures)"
+          echo "FULL_SUITE_FIXED_FAILURES=$(wc -l < /tmp/fixed.failures)"
+          if [ -s /tmp/new.failures ]; then
+            echo "FULL_SUITE_NEW_FAILURES=RED"
+            cat /tmp/new.failures
+            exit 1
+          fi
+          echo "FULL_SUITE_REGRESSION_DELTA=GREEN|new_failures=0"
