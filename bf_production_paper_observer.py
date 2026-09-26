@@ -597,6 +597,22 @@ def _reconcile_complementary_catalog(store):
                 store.event(
                     "COMPLEMENTARY_IDENTITY_AMBIGUOUS",
                     f"{ticker}|{family}|{source}|matches={len(matches)}")
+                # Keep every colliding primary identity in the explicit retry
+                # ledger.  No row is selected or mutated while the provider
+                # evidence cannot distinguish the canonical PPI identity.
+                for candidate in matches:
+                    connection.execute("""INSERT INTO complementary_contract_retry
+                      VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                      ON CONFLICT(ticker,instrument_type,market,currency,settlement,source)
+                      DO UPDATE SET observed_at=excluded.observed_at,state=excluded.state,
+                        reason=excluded.reason,last_attempt_at=excluded.last_attempt_at,
+                        attempts=complementary_contract_retry.attempts+1""",
+                      (candidate["ticker"], candidate["instrument_type"], candidate["market"],
+                       candidate["currency"], candidate["settlement"], source,
+                       raw.get("provider_observed_at") or raw.get("observed_at"),
+                       "PENDING_SPECIAL",
+                       f"COMPLEMENTARY_IDENTITY_AMBIGUOUS:matches={len(matches)}",
+                       checked, 1))
                 continue
 
             if not matches:
