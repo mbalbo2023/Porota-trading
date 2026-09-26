@@ -1,5 +1,5 @@
 name: RC6 full-family candidate preflight 2026-09-25
-# candidate-refresh: d95793cd05e7fa9be3e090a93c68e08bae215894
+# candidate-refresh: c847ba702909a449b0fb80cf6ebbf7ffb5e49e3d
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ACTUAL="$(git rev-parse HEAD)"
-          EXPECTED="d95793cd05e7fa9be3e090a93c68e08bae215894"
+          EXPECTED="c847ba702909a449b0fb80cf6ebbf7ffb5e49e3d"
           echo "CANDIDATE_SHA=$ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
@@ -65,6 +65,7 @@ jobs:
             tests/test_rc6_option_paper_execution.py \
             tests/test_rc6_sector_settlement_fallback.py \
             tests/test_rc6_byma_morning_watch.py \
+            tests/test_rc6_byma_morning_pipeline.py \
             tests/test_rc6_byma_preopen_watch.py
 
       - name: Run BYMA contract calendar and session regressions
@@ -144,6 +145,7 @@ jobs:
           workflow=Path(".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml").read_text(encoding="utf-8")
           for required in (
               "scripts/rc6_byma_morning_watch.py",
+              "scripts/rc6_byma_morning_pipeline.py",
               "systemd/porota-byma-morning-watch-rc6.service",
               "systemd/porota-byma-morning-watch-rc6.timer",
               "rc6_preopen.py",
