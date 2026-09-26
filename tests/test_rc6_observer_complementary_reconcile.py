@@ -98,3 +98,42 @@ def test_complement_only_non_ready_family_is_not_inserted(tmp_path, monkeypatch)
     with store.connect() as c:
         assert c.execute("""SELECT COUNT(*) FROM financial_instrument_catalog
                             WHERE ticker='OPTTEST'""").fetchone()[0] == 0
+
+
+def test_observer_applies_iol_then_byma_without_overwriting_ppi_identity(tmp_path, monkeypatch):
+    store=_store(tmp_path)
+    ppi_last="2026-09-25T18:00:00+00:00"
+    with store.connect() as db:
+        db.execute("""INSERT INTO financial_instrument_catalog
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
+            "AAPL","CEDEARS","BYMA","ARS","A-24HS","PPI_FIELD","Apple PPI",
+            ppi_last,"PPI-RUN","STALE","HISTORY_UNAVAILABLE_PPI",
+            json.dumps({"_discovery_source":"PPI_PRIMARY"}),
+        ))
+    iol={
+        "ticker":"AAPL","instrument_type":"CEDEARS","market":"BYMA","currency":"ARS",
+        "settlement":"A-24HS","source":"IOL_COMPLEMENTARY",
+        "source_channel":"IOL_SHADOW","observed_at":_fresh(),
+        "identity_evidence":{"market_explicit":True,"currency_explicit":True,"settlement_explicit":True},
+    }
+    byma={
+        "ticker":"AAPL","instrument_type":"CEDEARS","market":"BYMA","currency":None,
+        "settlement":"A-24HS","source":"BYMA_PUBLIC_COMPLEMENTARY",
+        "source_channel":"BYMA_PUBLIC","observed_at":_fresh(),
+        "identity_evidence":{"market_explicit":True,"currency_explicit":False,"settlement_explicit":True},
+    }
+    monkeypatch.setattr(observer,"complementary_discovery",lambda _root:[iol,byma])
+    assert observer._reconcile_complementary_catalog(store)==1
+    with store.connect() as db:
+        row=dict(db.execute("""SELECT * FROM financial_instrument_catalog
+                              WHERE ticker='AAPL' AND instrument_type='CEDEARS'""").fetchone())
+    meta=json.loads(row["metadata_json"])
+    assert row["currency"]=="ARS"
+    assert row["settlement"]=="A-24HS"
+    assert row["description"]=="Apple PPI"
+    assert row["last_seen_at"]==ppi_last
+    assert row["run_id"]=="PPI-RUN"
+    assert row["status"]=="AVAILABLE"
+    assert row["capability"]=="READY_PAPER_SPOT"
+    assert meta["_source_precedence"]=="PPI_PRIMARY>IOL_COMPLEMENTARY>BYMA_PUBLIC_COMPLEMENTARY"
+    assert meta["_applied_complement_sources"]==["IOL_COMPLEMENTARY","BYMA_PUBLIC_COMPLEMENTARY"]
