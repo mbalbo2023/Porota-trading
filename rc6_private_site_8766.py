@@ -571,19 +571,19 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 </div>
 
 <div id="menu-principal" class="nav" role="tablist" aria-label="Menú principal del trader">
-<button class="active" role="tab" aria-selected="true" aria-controls="live" onclick="tab('live',this)">Cockpit</button>
-<button role="tab" aria-selected="false" aria-controls="pos" onclick="tab('pos',this)">Posiciones</button>
-<button role="tab" aria-selected="false" aria-controls="mkt" onclick="tab('mkt',this)">Mercado</button>
-<button role="tab" aria-selected="false" aria-controls="ins" onclick="tab('ins',this)">Instrumentos</button>
-<button role="tab" aria-selected="false" aria-controls="exe" onclick="tab('exe',this)">Ejecución</button>
-<button role="tab" aria-selected="false" aria-controls="str" onclick="tab('str',this)">Estrategia</button>
-<button role="tab" aria-selected="false" aria-controls="evt" onclick="tab('evt',this)">Eventos</button>
-<button role="tab" aria-selected="false" aria-controls="pre" onclick="tab('pre',this)">Pre-rueda</button>
-<button role="tab" aria-selected="false" aria-controls="fam" onclick="tab('fam',this)">Familias</button>
-<button role="tab" aria-selected="false" aria-controls="perf" onclick="tab('perf',this)">Performance</button>
-<button role="tab" aria-selected="false" aria-controls="evi" onclick="tab('evi',this)">Evidencia</button>
-<button role="tab" aria-selected="false" aria-controls="cie" onclick="tab('cie',this)">Cierre</button>
-<button role="tab" aria-selected="false" aria-controls="sem" onclick="tab('sem',this)">Semáforo</button>
+<button class="active" role="tab" aria-selected="true" aria-controls="live" aria-label="Decision Cockpit" onclick="tab('live',this)">Cockpit</button>
+<button role="tab" aria-selected="false" aria-controls="pos" aria-label="Posiciones y riesgo" onclick="tab('pos',this)">Posiciones</button>
+<button role="tab" aria-selected="false" aria-controls="mkt" aria-label="Mercado y liquidez" onclick="tab('mkt',this)">Mercado</button>
+<button role="tab" aria-selected="false" aria-controls="ins" aria-label="Instrumentos" onclick="tab('ins',this)">Instrumentos</button>
+<button role="tab" aria-selected="false" aria-controls="exe" aria-label="Ejecución y costos" onclick="tab('exe',this)">Ejecución</button>
+<button role="tab" aria-selected="false" aria-controls="str" aria-label="Estrategia y gates" onclick="tab('str',this)">Estrategia</button>
+<button role="tab" aria-selected="false" aria-controls="evt" aria-label="Eventos y macro" onclick="tab('evt',this)">Eventos</button>
+<button role="tab" aria-selected="false" aria-controls="pre" aria-label="Bloqueos pre-rueda" onclick="tab('pre',this)">Pre-rueda</button>
+<button role="tab" aria-selected="false" aria-controls="fam" aria-label="Explorar familias" onclick="tab('fam',this)">Familias</button>
+<button role="tab" aria-selected="false" aria-controls="perf" aria-label="Performance" onclick="tab('perf',this)">Performance</button>
+<button role="tab" aria-selected="false" aria-controls="evi" aria-label="Evidencia y servicios" onclick="tab('evi',this)">Evidencia</button>
+<button role="tab" aria-selected="false" aria-controls="cie" aria-label="Cierre de rueda" onclick="tab('cie',this)">Cierre</button>
+<button role="tab" aria-selected="false" aria-controls="sem" aria-label="Semáforo ejecutivo" onclick="tab('sem',this)">Semáforo</button>
 </div>
 <div class="voice-hint" aria-live="polite">Control por voz: podés decir el nombre de una opción. Los botones “Menú” y “Arriba” quedan siempre visibles.</div>
 
