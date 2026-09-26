@@ -94,7 +94,7 @@ def _observer_state_via_container() -> dict:
     a second broker/API reader.
     """
     code = r'''
-import json, os, urllib.request
+import json, os, sqlite3, urllib.request
 token=os.getenv("DASHBOARD_ACCESS_TOKEN","")
 if not token:
     raise SystemExit("DASHBOARD_ACCESS_TOKEN_NOT_AVAILABLE")
@@ -106,6 +106,41 @@ with urllib.request.urlopen(req,timeout=20) as r:
     obj=json.loads(r.read().decode("utf-8"))
 if not isinstance(obj,dict):
     raise SystemExit("OBSERVER_STATE_INVALID")
+
+db_path=os.getenv("PAPER_V17_DB_PATH","/app/data/paper_v17/observer_v17.db")
+extra={"gates":[],"fills":[],"family_coverage":[],"catalog_status":[],"api_health":[],"source_sync":[]}
+try:
+    conn=sqlite3.connect("file:"+db_path+"?mode=ro",uri=True,timeout=5)
+    conn.row_factory=sqlite3.Row
+    conn.execute("PRAGMA query_only=ON")
+    def exists(name):
+        return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(name,)).fetchone() is not None
+    def rows(sql):
+        return [dict(r) for r in conn.execute(sql).fetchall()]
+    if exists("trade_gate_evaluations"):
+        extra["gates"]=rows("""SELECT evaluated_at,symbol,technical_gate,ai_gate,patrimonial_gate,
+            final_result,reason,paper_id FROM trade_gate_evaluations ORDER BY id DESC LIMIT 100""")
+    if exists("paper_fills") and exists("paper_positions"):
+        extra["fills"]=rows("""SELECT f.filled_at,f.paper_id,f.side,f.quantity,f.price,f.costs,f.slippage,
+            p.symbol,p.currency,p.asset_class FROM paper_fills f
+            LEFT JOIN paper_positions p ON p.paper_id=f.paper_id ORDER BY f.id DESC LIMIT 100""")
+    if exists("catalog_family_coverage"):
+        extra["family_coverage"]=rows("""SELECT instrument_type,declared,queries,observed_count,ready_paper_count,
+            discovery_status,checked_at FROM catalog_family_coverage ORDER BY instrument_type""")
+    if exists("financial_instrument_catalog"):
+        extra["catalog_status"]=rows("""SELECT instrument_type,status,capability,COUNT(*) total,MAX(last_seen_at) last_seen_at
+            FROM financial_instrument_catalog GROUP BY instrument_type,status,capability
+            ORDER BY instrument_type,status,capability""")
+    if exists("api_health"):
+        extra["api_health"]=rows("""SELECT component,state,detail,checked_at,last_success_at,source
+            FROM api_health ORDER BY component""")
+    if exists("source_sync"):
+        extra["source_sync"]=rows("""SELECT source,status,last_attempt_at,last_success_at,items,detail
+            FROM source_sync ORDER BY source""")
+    conn.close()
+except Exception as exc:
+    extra={"status":"READ_ERROR","error":type(exc).__name__,"gates":[],"fills":[],"family_coverage":[],"catalog_status":[],"api_health":[],"source_sync":[]}
+obj["_cockpit_db"]=extra
 print(json.dumps(obj,ensure_ascii=False,separators=(",",":")))
 '''
     proc = subprocess.run(
@@ -411,6 +446,84 @@ def _copy_rows(value, limit=20) -> list[dict]:
     return [dict(row) for row in value if isinstance(row, dict)][:limit]
 
 
+
+def _execution_summary(rows: list[dict]) -> dict:
+    by_currency: dict[str, dict] = {}
+    recent = []
+    for raw in rows if isinstance(rows, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        currency = str(raw.get("currency") or "N/D")
+        bucket = by_currency.setdefault(currency, {"fills": 0, "slippage_sum": 0.0, "slippage_count": 0, "costs_sum": 0.0, "costs_count": 0})
+        bucket["fills"] += 1
+        slip = _number(raw.get("slippage"))
+        if slip is not None:
+            bucket["slippage_sum"] += slip
+            bucket["slippage_count"] += 1
+        costs = _number(raw.get("costs"))
+        if costs is not None:
+            bucket["costs_sum"] += costs
+            bucket["costs_count"] += 1
+        if len(recent) < 20:
+            recent.append({
+                "filled_at": raw.get("filled_at"), "paper_id": raw.get("paper_id"),
+                "symbol": raw.get("symbol"), "asset_class": raw.get("asset_class"),
+                "currency": currency, "side": raw.get("side"),
+                "quantity": _number(raw.get("quantity")), "price": _number(raw.get("price")),
+                "costs": costs, "slippage": slip,
+            })
+    for bucket in by_currency.values():
+        bucket["avg_slippage"] = round(bucket["slippage_sum"] / bucket["slippage_count"], 6) if bucket["slippage_count"] else None
+        bucket["total_costs"] = round(bucket["costs_sum"], 6) if bucket["costs_count"] else None
+        bucket.pop("slippage_sum", None)
+        bucket.pop("slippage_count", None)
+        bucket.pop("costs_sum", None)
+        bucket.pop("costs_count", None)
+    return {"by_currency": by_currency, "recent": recent, "sample_size": sum(x["fills"] for x in by_currency.values())}
+
+
+def _gate_summary(rows: list[dict]) -> dict:
+    final = Counter()
+    reasons = Counter()
+    technical = Counter()
+    ai = Counter()
+    patrimonial = Counter()
+    recent = []
+    for raw in rows if isinstance(rows, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        final[str(raw.get("final_result") or "N/D")] += 1
+        reasons[str(raw.get("reason") or "NO_REASON")] += 1
+        technical[str(raw.get("technical_gate") or "N/D")] += 1
+        ai[str(raw.get("ai_gate") or "N/D")] += 1
+        patrimonial[str(raw.get("patrimonial_gate") or "N/D")] += 1
+        if len(recent) < 20:
+            recent.append(dict(raw))
+    return {
+        "final_results": dict(final),
+        "top_reasons": dict(reasons.most_common(10)),
+        "technical": dict(technical),
+        "ai": dict(ai),
+        "patrimonial": dict(patrimonial),
+        "recent": recent,
+        "sample_size": sum(final.values()),
+    }
+
+
+def _deep_cockpit_summary(observer: dict) -> dict:
+    raw = observer.get("_cockpit_db") if isinstance(observer.get("_cockpit_db"), dict) else {}
+    return {
+        "status": raw.get("status") or "VERIFIED",
+        "error": raw.get("error"),
+        "execution": _execution_summary(raw.get("fills") if isinstance(raw.get("fills"), list) else []),
+        "gates": _gate_summary(raw.get("gates") if isinstance(raw.get("gates"), list) else []),
+        "family_coverage": _copy_rows(raw.get("family_coverage"), 40),
+        "catalog_status": _copy_rows(raw.get("catalog_status"), 80),
+        "api_health": _copy_rows(raw.get("api_health"), 40),
+        "source_sync": _copy_rows(raw.get("source_sync"), 40),
+    }
+
+
 def capture_preopen_baseline(observer: dict, now: datetime, path: Path = PREOPEN) -> dict:
     """Attach a bounded read-only decision sample to the preserved preopen file."""
     preopen = _read_json(path)
@@ -439,6 +552,7 @@ def build_payload(observer: dict, iol: dict, validation: dict, preopen: dict, po
     performance_summary = _performance_summary(closed)
     decision_funnel = _decision_funnel(decisions)
     family_summary = _family_summary(quotes, decisions, opened, closed)
+    deep = _deep_cockpit_summary(observer)
 
     try:
         real_orders_sent = int(state.get("real_orders_sent"))
@@ -483,6 +597,16 @@ def build_payload(observer: dict, iol: dict, validation: dict, preopen: dict, po
         "performance": performance_summary,
         "decision_funnel": decision_funnel,
         "families": family_summary,
+        "execution": deep["execution"],
+        "gate_matrix": deep["gates"],
+        "family_readiness": deep["family_coverage"],
+        "catalog_status": deep["catalog_status"],
+        "source_health": {
+            "status": deep["status"],
+            "error": deep["error"],
+            "api_health": deep["api_health"],
+            "source_sync": deep["source_sync"],
+        },
         "portfolio": {
             "equity": observer.get("equity") if isinstance(observer.get("equity"), dict) else {},
             "balances_by_currency": _copy_rows(observer.get("balances_by_currency"), 16),
