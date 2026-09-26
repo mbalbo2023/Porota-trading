@@ -1,0 +1,69 @@
+name: RC6 fixed income contract completeness 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-contract-resolution-20260926]
+    paths:
+      - '.github/workflows/rc6-fixed-income-contract-completeness-20260926.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH setup
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Check cache contracts read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' > fixed_income_completeness.json
+          python3 - <<'PY'
+          import json,sqlite3
+          from pathlib import Path
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True); c.row_factory=sqlite3.Row; c.execute("PRAGMA query_only=ON")
+          pending=[dict(r) for r in c.execute("""SELECT ticker,instrument_type,market,currency,settlement
+            FROM financial_instrument_catalog WHERE capability='NEEDS_NOMINAL_UNITS'""")]
+          c.close()
+          p=Path("/opt/porota-trading/data/market/iol_family_reference_latest.json")
+          d=json.loads(p.read_text()) if p.exists() else {}
+          records=[x for x in d.get("records",[]) if isinstance(x,dict)]
+          idx={}
+          for x in records:
+              key=(str(x.get("ticker") or "").upper(),str(x.get("instrument_type") or "").upper())
+              idx.setdefault(key,[]).append(x)
+          matched=[]; full=[]
+          for r in pending:
+              keys=[(r["ticker"].upper(),r["instrument_type"].upper())]
+              if r["instrument_type"].upper()=="ON": keys.append((r["ticker"].upper(),"OBLIGACIONES"))
+              if r["instrument_type"].upper()=="OBLIGACIONES": keys.append((r["ticker"].upper(),"ON"))
+              recs=[]
+              for k in keys: recs.extend(idx.get(k,[]))
+              if recs:
+                  matched.append(r)
+                  for x in recs:
+                      contract=x.get("financial_contract_v17") or x.get("contract")
+                      if isinstance(contract,dict) and contract:
+                          full.append({"pending":r,"source_record":{k:x.get(k) for k in ("ticker","instrument_type","source","observed_at")},"contract":contract})
+                          break
+          print(json.dumps({"pending":len(pending),"family_reference_records":len(records),"matched":len(matched),"full_contract":len(full),"full_rows":full},ensure_ascii=False))
+          PY
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fixed-income-completeness-da79fdf6
+          path: fixed_income_completeness.json
