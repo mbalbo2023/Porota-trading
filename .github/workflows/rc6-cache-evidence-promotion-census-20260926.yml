@@ -1,0 +1,134 @@
+name: RC6 cache-evidence promotion census 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-cache-census-20260926]
+
+permissions:
+  contents: read
+
+jobs:
+  cache-census:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rc6-source-precedence-ppi-iol-byma-20260925
+          fetch-depth: 0
+
+      - name: Pin exact candidate
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "1686da1cc0b4e111b4315e8d86b4577170a145de"
+
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_cache_census"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_cache_census" "$HOME/.ssh/known_hosts"
+
+      - name: Run cache-only census without production writes
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_cache_census" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          sudo -n env PYTHONPATH="/opt/porota-trading" python3 - <<'PY'
+          import hashlib, json, sqlite3
+          from collections import Counter
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import bu_instrument_catalog as catalog
+          import rc6_multisource_discovery as discovery
+
+          ROOT=Path("/opt/porota-trading/data/market")
+          DB="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          NOW=datetime.now(timezone.utc)
+          MAX_AGE=86400
+
+          def ready(row):
+              return row.get("status")=="AVAILABLE" and str(row.get("capability") or "").startswith("READY_PAPER_")
+
+          def provider_cache_evidence(raw):
+              source=str(raw.get("source") or "").upper()
+              stamp=raw.get("provider_observed_at") or raw.get("observed_at")
+              if source == "IOL_COMPLEMENTARY":
+                  quote=(raw.get("raw") or {}).get("quote") if isinstance(raw.get("raw"),dict) else {}
+                  explicit=raw.get("provider_observed_at") or (quote.get("provider_observed_at") if isinstance(quote,dict) else None)
+                  if not explicit:
+                      return False
+              return bool(stamp) and catalog.complementary_is_fresh(raw,max_age_seconds=MAX_AGE,now=NOW)
+
+          conn=sqlite3.connect(f"file:{DB}?mode=ro",uri=True,timeout=30)
+          conn.row_factory=sqlite3.Row
+          conn.execute("PRAGMA query_only=ON")
+          state=[]
+          for row in conn.execute("SELECT * FROM financial_instrument_catalog ORDER BY instrument_type,ticker,currency,settlement"):
+              item=dict(row)
+              try: item["raw"]=json.loads(item.pop("metadata_json"))
+              except Exception: item["raw"]={}
+              state.append(item)
+          conn.close()
+
+          before=[row for row in state if ready(row)]
+          promoted=[]; inserted=[]; blocked=[]; ambiguous=[]
+          applied=Counter()
+          for raw in discovery.complementary_discovery(ROOT):
+              ticker=str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
+              if not provider_cache_evidence(raw):
+                  blocked.append({"ticker":ticker,"source":raw.get("source"),"reason":"CACHE_MISSING_PROVIDER_TIMESTAMP_OR_STALE"})
+                  continue
+              matches=[row for row in state if catalog.complement_matches_primary(row,raw)]
+              if len(matches)>1:
+                  ambiguous.append({"ticker":ticker,"source":raw.get("source"),"matches":len(matches)})
+                  continue
+              if not matches:
+                  try: candidate=catalog.normalize_complementary_record(raw,NOW.isoformat(),"CACHE_CENSUS")
+                  except Exception: continue
+                  if ready(candidate):
+                      state.append(candidate)
+                      inserted.append({"ticker":candidate["ticker"],"family":candidate["instrument_type"],"market":candidate["market"],"currency":candidate["currency"],"settlement":candidate["settlement"],"capability":candidate["capability"],"source":raw.get("source")})
+                      applied[str(raw.get("source"))]+=1
+                  continue
+              primary=matches[0]
+              before_ready=ready(primary)
+              merged=catalog.complete_with_complement(primary,raw)
+              for field in ("ticker","instrument_type","market","currency","settlement","settlement_source","description","last_seen_at","run_id"):
+                  if merged.get(field)!=primary.get(field):
+                      raise SystemExit("CACHE_CENSUS_IDENTITY_MUTATION:"+field+":"+ticker)
+              primary.clear(); primary.update(merged)
+              applied[str(raw.get("source"))]+=1
+              if ready(primary) and not before_ready:
+                  promoted.append({"ticker":primary["ticker"],"family":primary["instrument_type"],"market":primary["market"],"currency":primary["currency"],"settlement":primary["settlement"],"capability":primary["capability"],"source":raw.get("source")})
+
+          def unique(rows):
+              return list({(r["ticker"],r["family"],r["market"],r["currency"],r["settlement"]):r for r in rows}.values())
+          promoted=unique(promoted); inserted=unique(inserted)
+          after=[row for row in state if ready(row)]
+          result={
+              "candidate_sha":"1686da1cc0b4e111b4315e8d86b4577170a145de",
+              "ready_before":len(before),"promoted_existing":len(promoted),"inserted_ready":len(inserted),
+              "ready_after":len(after),"pending_after":len(state)-len(after),
+              "ready_by_family":dict(Counter(row["instrument_type"] for row in after)),
+              "pending_by_family":dict(Counter(row["instrument_type"] for row in state if not ready(row))),
+              "applied_by_source":dict(applied),"blocked_cache_rows":len(blocked),"ambiguous":ambiguous,
+              "promoted":sorted(promoted,key=lambda x:(x["family"],x["ticker"])),
+              "inserted":sorted(inserted,key=lambda x:(x["family"],x["ticker"])),
+          }
+          if result["ready_before"]+result["promoted_existing"]+result["inserted_ready"] != result["ready_after"]:
+              raise SystemExit("CACHE_CENSUS_DELTA_MISMATCH")
+          if ambiguous: raise SystemExit("CACHE_CENSUS_AMBIGUOUS_IDENTITIES")
+          result["fingerprint"]=hashlib.sha256(json.dumps(result,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+          print("CACHE_CENSUS_MANIFEST="+json.dumps(result,ensure_ascii=False,sort_keys=True))
+          print("CACHE_CENSUS_COMPLETE=GREEN|PRODUCTION_WRITES=0|REAL_ORDERS=0")
+          PY
+          REMOTE
