@@ -1,5 +1,5 @@
 name: RC6 full-family candidate preflight 2026-09-25
-# candidate-refresh: 3a54d4f9bb0ab0e38c0ce2838c887ceef63ed8ee
+# candidate-refresh: de8126db4d613390fbab8c568aa39f4b7775ab87
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ACTUAL="$(git rev-parse HEAD)"
-          EXPECTED="3a54d4f9bb0ab0e38c0ce2838c887ceef63ed8ee"
+          EXPECTED="de8126db4d613390fbab8c568aa39f4b7775ab87"
           echo "CANDIDATE_SHA=$ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
@@ -63,7 +63,8 @@ jobs:
             tests/test_fixed_income_nominal_contract_rc6.py \
             tests/test_rc6_cauciones_contract.py \
             tests/test_rc6_option_paper_execution.py \
-            tests/test_rc6_sector_settlement_fallback.py
+            tests/test_rc6_sector_settlement_fallback.py \
+            tests/test_rc6_byma_morning_watch.py
 
       - name: Run BYMA contract calendar and session regressions
         run: |
@@ -119,6 +120,10 @@ jobs:
           assert "ANIOS_AUDITADOS" in calendar and "fail" in calendar.lower()
           assert "BYMA_HOURS_COMMUNICATION" in sessions and "19024" in sessions
           assert "OPTION_EXPIRY_TRADING_CUTOFF" in policy
+          morning=Path("scripts/rc6_byma_morning_watch.py").read_text(encoding="utf-8")
+          timer=Path("systemd/porota-byma-morning-watch-rc6.timer").read_text(encoding="utf-8")
+          assert "OBSERVE_ONLY" in morning and "real_money_authorized" in morning
+          assert "08:30:00 America/Argentina/Buenos_Aires" in timer and "Persistent=true" in timer
           assert '"OPCIONES"' in policy and '"BYMA"' in policy
 
           workflow=Path(".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml").read_text(encoding="utf-8")
