@@ -160,3 +160,42 @@ def test_missing_contract_is_recorded_and_retried_when_no_complement_arrives(tmp
         attempts = c.execute("""SELECT attempts FROM complementary_contract_retry
           WHERE ticker='GD30'""").fetchone()[0]
     assert attempts == 2
+
+
+def test_ambiguous_complement_is_kept_as_special_retry_without_mutation(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    rows = [
+        ("YMCIO", "OBLIGACIONES", "OBSERVED_SHADOW"),
+        ("YMCIO", "ON", "STALE"),
+    ]
+    with store.connect() as c:
+        for ticker, family, status in rows:
+            c.execute("""INSERT INTO financial_instrument_catalog
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                ticker, family, "BYMA", "ARS", "A-24HS", "PPI_FIELD", ticker,
+                "2026-09-25T18:00:00+00:00", "PPI-RUN", status,
+                "NEEDS_NOMINAL_UNITS", json.dumps({"_discovery_source": "PPI_PRIMARY"}),
+            ))
+    comp = {
+        "ticker": "YMCIO", "instrument_type": "OBLIGACIONES", "market": "BYMA",
+        "currency": "ARS", "settlement": "A-24HS", "source": "IOL_COMPLEMENTARY",
+        "observed_at": _fresh(),
+    }
+    monkeypatch.setattr(observer, "complementary_discovery", lambda _root: [comp])
+    assert observer._reconcile_complementary_catalog(store) == 0
+    with store.connect() as c:
+        pending = c.execute("""SELECT instrument_type,state,reason,attempts
+          FROM complementary_contract_retry
+          WHERE ticker='YMCIO' AND source='IOL_COMPLEMENTARY'
+          ORDER BY instrument_type""").fetchall()
+        unchanged = c.execute("""SELECT instrument_type,status,capability
+          FROM financial_instrument_catalog WHERE ticker='YMCIO'
+          ORDER BY instrument_type""").fetchall()
+    assert [tuple(row) for row in pending] == [
+        ("OBLIGACIONES", "PENDING_SPECIAL", "COMPLEMENTARY_IDENTITY_AMBIGUOUS:matches=2", 1),
+        ("ON", "PENDING_SPECIAL", "COMPLEMENTARY_IDENTITY_AMBIGUOUS:matches=2", 1),
+    ]
+    assert [tuple(row) for row in unchanged] == [
+        ("OBLIGACIONES", "OBSERVED_SHADOW", "NEEDS_NOMINAL_UNITS"),
+        ("ON", "STALE", "NEEDS_NOMINAL_UNITS"),
+    ]
