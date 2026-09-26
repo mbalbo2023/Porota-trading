@@ -85,6 +85,10 @@ def test_option_close_uses_contract_multiplier_and_simulated_sell_only(tmp_path)
         book_at="2026-10-15T11:01:00-03:00",
         trade_at="2026-10-15T11:01:00-03:00",
         bid=D("21"),ask=D("22"),last=D("21.5"))
+    # Live runtime owns execution time through its injected clock. Advance the
+    # fixture clock together with the new book instead of asking _close to
+    # trust an as_of that is ahead of the runtime clock.
+    b.clock_fn=lambda: later.observed_at
     assert b._close(p,later,"TEST_OPTION",as_of=later.observed_at)
     closed=b.store.recent_closed()[0]
     assert closed["asset_class"]=="OPCIONES"
