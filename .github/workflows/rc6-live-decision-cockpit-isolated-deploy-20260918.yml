@@ -5,6 +5,14 @@ on:
     branches:
       - "feat/rc6-live-decision-cockpit-20260919"
     paths:
+      - "rc6_live_decision_cockpit.py"
+      - "rc6_private_site_8766.py"
+      - "tests/test_rc6_live_decision_cockpit.py"
+      - "systemd/porota-live-decision-cockpit-rc6.service"
+      - "systemd/porota-live-decision-cockpit-rc6.timer"
+      - "systemd/porota-private-snapshot.service"
+      - "systemd/dropins/**"
+      - "ops/porota-private-snapshot-archive"
       - ".github/workflows/rc6-live-decision-cockpit-isolated-deploy-20260918.yml"
 
 permissions:
