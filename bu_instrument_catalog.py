@@ -13,6 +13,7 @@ from bs_instrument_contracts import InstrumentContract, cash_currency, family_na
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+SOURCE_PRECEDENCE = ("PPI_PRIMARY", "IOL_COMPLEMENTARY", "BYMA_PUBLIC_COMPLEMENTARY")
 US_MARKET_WIDE_CEDEAR_HOLIDAYS = {
     "2026-09-07": "US_LABOR_DAY",
 }
@@ -168,8 +169,9 @@ def normalize_complementary_record(raw, observed_at, run_id):
     metadata["_discovery_source"]=source
     if raw.get("units_per_lot") not in (None,""): metadata["_iol_units_per_lot"]=raw.get("units_per_lot")
     status="AVAILABLE" if currency!="UNKNOWN" and market!="UNKNOWN" and settlement!="UNKNOWN" else "OBSERVED_SHADOW"
+    source_seen = raw.get("observed_at") or raw.get("provider_observed_at") or observed_at
     value=dict(ticker=ticker,instrument_type=kind,market=market,currency=currency,settlement=settlement,
-               settlement_source=source,description=str(raw.get("description") or ""),last_seen_at=observed_at,
+               settlement_source=source,description=str(raw.get("description") or ""),last_seen_at=source_seen,
                run_id=run_id,status=status,capability="",raw=metadata)
     value["capability"]=capability(value)
     if status!="AVAILABLE" and str(value["capability"]).startswith("READY_PAPER_"):
@@ -238,53 +240,120 @@ def complementary_is_fresh(complementary, *, max_age_seconds=86400, now=None):
         return False
 
 
+
+def complement_source(complementary):
+    source=str((complementary or {}).get("source") or "COMPLEMENTARY").strip().upper()
+    return source
+
+
+def complement_matches_primary(primary, complementary):
+    """Match a complement without letting it redefine the PPI identity."""
+    if not isinstance(primary, dict) or not isinstance(complementary, dict):
+        return False
+    family=canonical_family(complementary.get("instrument_type") or
+                            complementary.get("asset_type") or complementary.get("family"))
+    ticker=str(complementary.get("ticker") or complementary.get("symbol") or "").strip().upper()
+    if ticker != str(primary.get("ticker") or "").strip().upper():
+        return False
+    if family != canonical_family(primary.get("instrument_type")):
+        return False
+
+    evidence=complementary.get("identity_evidence")
+    evidence=evidence if isinstance(evidence,dict) else {}
+    market_explicit=evidence.get("market_explicit")
+    currency_explicit=evidence.get("currency_explicit")
+    settlement_explicit=evidence.get("settlement_explicit")
+    if market_explicit is None:
+        market_explicit=bool(complementary.get("market"))
+    if currency_explicit is None:
+        currency_explicit=bool(complementary.get("currency"))
+    if settlement_explicit is None:
+        settlement_explicit=bool(complementary.get("settlement") or complementary.get("term"))
+
+    if market_explicit:
+        if canonical_market(complementary.get("market")) != canonical_market(primary.get("market")):
+            return False
+    if currency_explicit:
+        try:
+            observed_currency=cash_currency(complementary.get("currency"))
+        except ValueError:
+            return False
+        if observed_currency != str(primary.get("currency") or "").upper():
+            return False
+    if settlement_explicit:
+        observed_settlement=canonical_settlement(
+            complementary.get("settlement") or complementary.get("term"), family)
+        expected_settlement=canonical_settlement(
+            primary.get("settlement"), primary.get("instrument_type"))
+        if observed_settlement != expected_settlement:
+            return False
+    return True
+
+
+def _source_timestamp(complementary):
+    return ((complementary or {}).get("observed_at")
+            or (complementary or {}).get("provider_observed_at"))
+
+
+def _max_timestamp(*values):
+    parsed=[]
+    for value in values:
+        if not value:
+            continue
+        try:
+            item=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+            if item.tzinfo is None:
+                item=item.replace(tzinfo=ZoneInfo("UTC"))
+            parsed.append((item.astimezone(ZoneInfo("UTC")),str(value)))
+        except (TypeError,ValueError,OverflowError):
+            continue
+    return max(parsed)[1] if parsed else None
+
+
 def complete_with_complement(record, complementary):
-    """Complete or refresh an exact primary identity from a fresh complement.
-
-    A complementary source may do two different things:
-    1) add an exact financial contract that PPI did not expose; or
-    2) prove that an already-valid spot identity is still alive/fresh.
-
-    In both cases ticker/family/market/settlement/currency must match exactly
-    after canonicalization.  This deliberately separates catalog liveness from
-    historical-data coverage: missing history can block a signal, but it must
-    not turn a currently observed tradable identity into a stale catalog row.
-    """
+    """Apply complements strictly as PPI -> IOL -> BYMA gap filling."""
     if record is None or not isinstance(complementary, dict):
         return record
     primary=dict(record)
     raw=dict(primary.get("raw") or {})
-    family=canonical_family(complementary.get("instrument_type") or complementary.get("family"))
-    ticker=str(complementary.get("ticker") or complementary.get("symbol") or "").strip().upper()
-    market=canonical_market(complementary.get("market"))
-    settlement=canonical_settlement(complementary.get("settlement") or complementary.get("term"),family)
-    currency=str(complementary.get("currency") or "").strip().upper()
-    expected=(primary["ticker"],canonical_family(primary["instrument_type"]),canonical_market(primary["market"]),
-              canonical_settlement(primary["settlement"],primary["instrument_type"]),str(primary["currency"]).upper())
-    observed=(ticker,family,market,settlement,currency)
-    if observed != expected:
+    if not complement_matches_primary(primary, complementary):
         return primary
 
+    source=complement_source(complementary)
     contract=complementary.get("financial_contract_v17")
-    if isinstance(contract,dict) and contract and not raw.get("financial_contract_v17"):
+    existing_contract=raw.get("financial_contract_v17")
+    if isinstance(contract,dict) and contract and not existing_contract:
         raw["financial_contract_v17"]=contract
-        raw["_contract_complement_source"]=str(complementary.get("source") or "COMPLEMENTARY")
+        raw["_contract_complement_source"]=source
+    elif isinstance(contract,dict) and contract and existing_contract != contract:
+        ignored=list(raw.get("_ignored_lower_priority_contract_sources") or [])
+        if source not in ignored:
+            ignored.append(source)
+        raw["_ignored_lower_priority_contract_sources"]=ignored
 
-    if primary.get("last_seen_at") and not raw.get("_primary_last_seen_at"):
-        raw["_primary_last_seen_at"]=primary.get("last_seen_at")
-    observed_at = complementary.get("observed_at") or complementary.get("provider_observed_at")
-    if observed_at:
-        raw["_complement_observed_at"]=str(observed_at)
-        primary["last_seen_at"]=str(observed_at)
+    stamp=_source_timestamp(complementary)
+    freshness=dict(raw.get("_freshness_by_source") or {})
+    if stamp:
+        freshness[source]=str(stamp)
+        raw["_freshness_by_source"]=freshness
+        raw["_effective_observed_at"]=_max_timestamp(
+            primary.get("last_seen_at"), *freshness.values())
+
+    applied=list(raw.get("_applied_complement_sources") or [])
+    if source not in applied:
+        applied.append(source)
+    applied.sort(key=lambda value: (
+        SOURCE_PRECEDENCE.index(value) if value in SOURCE_PRECEDENCE else len(SOURCE_PRECEDENCE),
+        value))
+    raw["_applied_complement_sources"]=applied
+    raw["_source_precedence"]="PPI_PRIMARY>IOL_COMPLEMENTARY>BYMA_PUBLIC_COMPLEMENTARY"
 
     primary["raw"]=raw
-    # Recompute from current contract semantics instead of preserving a stale
-    # historical label such as HISTORY_UNAVAILABLE_PPI.
     primary["capability"]=capability(primary)
     if str(primary["capability"]).startswith("READY_PAPER_"):
         primary["status"]="AVAILABLE"
-        raw["_availability_source"]="PPI_IDENTITY_PLUS_" + str(
-            complementary.get("source") or "COMPLEMENTARY").upper()
+        chain=["PPI_PRIMARY"] + [s for s in applied if s != "PPI_PRIMARY"]
+        raw["_availability_source"]="+".join(chain)
     return primary
 
 
