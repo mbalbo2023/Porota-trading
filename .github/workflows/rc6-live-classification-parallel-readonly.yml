@@ -1,0 +1,198 @@
+name: RC6 live classification parallel read-only
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-live-classification-parallel-readonly
+  cancel-in-progress: true
+
+jobs:
+  classify-host-diffs:
+    if: github.head_ref == 'audit/rc6-live-baseline-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      BASELINE_SHA: c81f8d7c089433e89f3d664b57d3a9b915565419
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          fetch-depth: 0
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+      - name: Classify byte drift against baseline
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          files=(
+            by_strategy_backtest.py
+            cp_contract_evidence_v2_hf6.py
+            cp_history_ingest_policy_hf6.py
+            cr_data912_reconcile_hf6.py
+            df_daily_operation_summary_hf6.py
+            dg_dashboard_daily_result_ux_hf6.py
+            dh_dashboard_compact_lists_hf6.py
+            eb_dashboard_live_policy_hf2.py
+            em_validation_campaign_rc6.py
+            ep_dashboard_truth_layer_rc6.py
+            fe_fixed_income_nominal_contract_rc6.py
+            q_backtest.py
+            rc6_postclose_history_job.py
+            rc6_preopen.py
+            systemd/porota-history-postclose-rc6.service
+            systemd/porota-history-postclose-rc6.timer
+            test_cp_history_ingest_policy_hf6.py
+            test_hf6_history_data912_v2.py
+            zz_wave8_dashboard_live_rc6.py
+          )
+          mkdir -p /tmp/live
+          echo "===HOST_DIFF_CLASSIFICATION_BEGIN==="
+          for rel in "${files[@]}"; do
+            mkdir -p "/tmp/live/$(dirname "$rel")"
+            if "${SSH[@]}" "$DO_USER@$DO_HOST" "test -f /opt/porota-trading/'$rel'"; then
+              "${SSH[@]}" "$DO_USER@$DO_HOST" "cat /opt/porota-trading/'$rel'" > "/tmp/live/$rel"
+              bsha="$(sha256sum "$rel" | awk '{print $1}')"
+              lsha="$(sha256sum "/tmp/live/$rel" | awk '{print $1}')"
+              num="$(git diff --no-index --numstat -- "$rel" "/tmp/live/$rel" 2>/dev/null || true)"
+              printf 'FILE=%s|BASE_SHA=%s|LIVE_SHA=%s|NUMSTAT=%s\n' "$rel" "$bsha" "$lsha" "$num"
+              echo "DIFF_BEGIN=$rel"
+              diff -u --label "baseline/$rel" --label "live/$rel" "$rel" "/tmp/live/$rel" | head -n 220 || true
+              echo "DIFF_END=$rel"
+            else
+              echo "FILE=$rel|LIVE_MISSING"
+            fi
+          done
+          echo "===HOST_DIFF_CLASSIFICATION_END==="
+      - name: Local-dirty versus host HEAD
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_audit" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          cd /opt/porota-trading || exit 21
+          echo "===HOST_HEAD_DIRTY_BREAKDOWN_BEGIN==="
+          echo "HEAD=$(git rev-parse HEAD 2>/dev/null || true)"
+          git diff --numstat HEAD --             by_strategy_backtest.py cp_contract_evidence_v2_hf6.py cp_history_ingest_policy_hf6.py             cr_data912_reconcile_hf6.py df_daily_operation_summary_hf6.py dg_dashboard_daily_result_ux_hf6.py             dh_dashboard_compact_lists_hf6.py eb_dashboard_live_policy_hf2.py em_validation_campaign_rc6.py             ep_dashboard_truth_layer_rc6.py fe_fixed_income_nominal_contract_rc6.py q_backtest.py             rc6_postclose_history_job.py rc6_preopen.py systemd/porota-history-postclose-rc6.service             systemd/porota-history-postclose-rc6.timer test_cp_history_ingest_policy_hf6.py             test_hf6_history_data912_v2.py zz_wave8_dashboard_live_rc6.py || true
+          echo "===HOST_HEAD_DIRTY_BREAKDOWN_END==="
+          REMOTE
+      - if: always()
+        run: rm -rf "$HOME/.ssh/porota_rc6_audit" /tmp/live
+
+  timer-intent:
+    if: github.head_ref == 'audit/rc6-live-baseline-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      BASELINE_SHA: c81f8d7c089433e89f3d664b57d3a9b915565419
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          fetch-depth: 0
+      - name: Baseline declared timer policy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "===BASELINE_TIMER_POLICY_BEGIN==="
+          grep -RInE 'systemctl (enable|disable|start|stop|restart).*porota-|porota-(preopen|functional-health|fast-functional-health|full-db-integrity|host-general-backup|history-postclose|a3-history|snapshot-preopen|snapshot-postclose|iol-shadow)'             .github/workflows systemd ops/systemd rc6_preopen.py 2>/dev/null | head -n 800 || true
+          echo "===BASELINE_TIMER_POLICY_END==="
+      - name: Live timer provenance and last outcomes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===LIVE_TIMER_PROVENANCE_BEGIN==="
+          for unit in             porota-iol-shadow-collector-rc6.timer             porota-preopen-rc6.timer             porota-functional-health-rc6.timer             porota-fast-functional-health-rc6.timer             porota-host-general-backup-rc6.timer             porota-full-db-integrity-rc6.timer             porota-history-postclose-rc6.timer             porota-a3-history-daily-rc6.timer             porota-a3-history-reconcile-rc6.timer             porota-a3-history-weekend-rc6.timer             porota-snapshot-preopen-rc6.timer             porota-snapshot-postclose-rc6.timer; do
+            frag="$(systemctl show -p FragmentPath --value "$unit" 2>/dev/null || true)"
+            printf 'TIMER=%s|ENABLED=%s|ACTIVE=%s|FRAGMENT=%s|FRAG_MTIME=%s|NEXT=%s|LAST=%s\n'               "$unit"               "$(systemctl is-enabled "$unit" 2>/dev/null || true)"               "$(systemctl is-active "$unit" 2>/dev/null || true)"               "$frag"               "$([ -n "$frag" ] && stat -c '%y' "$frag" 2>/dev/null || true)"               "$(systemctl show -p NextElapseUSecRealtime --value "$unit" 2>/dev/null || true)"               "$(systemctl show -p LastTriggerUSec --value "$unit" 2>/dev/null || true)"
+          done
+          echo "---WANTS_SYMLINKS---"
+          find /etc/systemd/system -maxdepth 2 -type l -name 'porota-*rc6.timer' -printf '%p -> %l\n' 2>/dev/null | sort || true
+          echo "---RECENT_TIMER_MUTATION_EVIDENCE---"
+          sudo -n journalctl --since '2026-09-23 00:00:00' --no-pager 2>/dev/null | grep -E 'systemctl|Created symlink.*porota-|Removed .*porota-|porota-(preopen|functional-health|fast-functional-health|full-db-integrity|host-general-backup|history-postclose|a3-history).*timer' | tail -n 250 || true
+          echo "===LIVE_TIMER_PROVENANCE_END==="
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  missing-dependency-provenance:
+    if: github.head_ref == 'audit/rc6-live-baseline-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      BASELINE_SHA: c81f8d7c089433e89f3d664b57d3a9b915565419
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          fetch-depth: 0
+      - name: Baseline reference graph for missing paths
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "===BASELINE_MISSING_REFERENCE_GRAPH_BEGIN==="
+          for needle in rc6_preopen_freshness_audit.py rc6_iol_mcp_inventory.py rc6_public_source_capture.py rc6_telegram_diagnostic.py; do
+            echo "REFERENCE=$needle"
+            grep -RInF "$needle" --exclude-dir=.git . 2>/dev/null | head -n 250 || true
+          done
+          echo "===BASELINE_MISSING_REFERENCE_GRAPH_END==="
+      - name: Live removal chronology and dependency state
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          cd /opt/porota-trading || exit 21
+          echo "===LIVE_MISSING_PROVENANCE_BEGIN==="
+          echo "---REFLOG---"
+          git reflog --date=iso -n 30 2>/dev/null || true
+          echo "---REFERENCE_GRAPH---"
+          for needle in rc6_preopen_freshness_audit.py rc6_iol_mcp_inventory.py rc6_public_source_capture.py rc6_telegram_diagnostic.py; do
+            echo "REFERENCE=$needle"
+            grep -RInF "$needle" . /etc/systemd/system 2>/dev/null | head -n 250 || true
+          done
+          echo "---IOL_UNIT_AND_REPO_TIMES---"
+          stat -c '%n|mtime=%y|ctime=%z|size=%s'             /etc/systemd/system/porota-iol-shadow-collector-rc6.service             /etc/systemd/system/porota-iol-shadow-collector-rc6.timer             /opt/porota-trading             /opt/porota-trading/scripts 2>/dev/null || true
+          echo "---IOL_RECENT_AFTER_LAST_SUCCESS---"
+          sudo -n journalctl -u porota-iol-shadow-collector-rc6.service --since '2026-09-24 19:59:39' --no-pager -n 120 || true
+          echo "---DEPLOY_RELATED_RECENT_JOURNAL---"
+          sudo -n journalctl --since '2026-09-24 19:59:39' --no-pager 2>/dev/null | grep -Ei 'docker compose|porota.*deploy|systemctl daemon-reload|porota_production_(observer|dashboard)|Started.*Porota|Stopped.*Porota' | tail -n 300 || true
+          echo "===LIVE_MISSING_PROVENANCE_END==="
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
