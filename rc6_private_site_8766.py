@@ -173,6 +173,121 @@ def operation_rows(rows: list[dict]) -> str:
     return "".join(out)
 
 
+
+def fmt_number(value, decimals: int = 2) -> str:
+    x = number(value)
+    if x is None:
+        return "N/D"
+    return f"{x:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def position_rows(rows: list[dict]) -> str:
+    if not rows:
+        return '<tr><td colspan="10" class="muted">Sin posiciones PAPER abiertas verificables.</td></tr>'
+    out = []
+    for row in rows[:MAX_ROWS]:
+        pnl = number(row.get("unrealized_pnl"))
+        cls = "pos" if pnl is not None and pnl > 0 else ("neg" if pnl is not None and pnl < 0 else "")
+        out.append(
+            "<tr>"
+            f"<td><b>{esc(row.get('symbol') or 'N/D')}</b></td>"
+            f"<td>{esc(row.get('asset_class') or 'N/D')}</td>"
+            f"<td>{esc(row.get('currency') or 'N/D')}</td>"
+            f"<td>{fmt_number(row.get('quantity'), 4)}</td>"
+            f"<td>{money(row.get('entry_price'))}</td>"
+            f"<td>{money(row.get('current_price'))}</td>"
+            f"<td>{money(row.get('stop_price'))}</td>"
+            f"<td>{money(row.get('target_price'))}</td>"
+            f"<td class='{cls}'>{money(pnl)}</td>"
+            f"<td>{fmt_dt(row.get('opened_at'))}</td>"
+            "</tr>"
+        )
+    return "".join(out)
+
+
+def balance_rows(rows: list[dict]) -> str:
+    if not rows:
+        return '<tr><td colspan="6" class="muted">Sin balance por moneda verificable.</td></tr>'
+    out = []
+    for row in rows[:16]:
+        out.append(
+            "<tr>"
+            f"<td><b>{esc(row.get('currency') or 'N/D')}</b></td>"
+            f"<td>{money(row.get('cash'))}</td>"
+            f"<td>{money(row.get('exposure'))}</td>"
+            f"<td>{money(row.get('unrealized_pnl'))}</td>"
+            f"<td>{money(row.get('realized_pnl'))}</td>"
+            f"<td>{money(row.get('equity'))}</td>"
+            "</tr>"
+        )
+    return "".join(out)
+
+
+def daily_risk_rows(rows: list[dict]) -> str:
+    if not rows:
+        return '<tr><td colspan="7" class="muted">Sin corte diario de riesgo verificable.</td></tr>'
+    out = []
+    for row in rows[:16]:
+        out.append(
+            "<tr>"
+            f"<td>{esc(row.get('day') or 'N/D')}</td>"
+            f"<td><b>{esc(row.get('currency') or 'N/D')}</b></td>"
+            f"<td>{esc(row.get('state') or 'N/D')}</td>"
+            f"<td>{money(row.get('baseline_equity'))}</td>"
+            f"<td>{money(row.get('daily_pnl'))}</td>"
+            f"<td>{money(row.get('loss_budget'))}</td>"
+            f"<td>{esc(row.get('detail') or 'N/D')}</td>"
+            "</tr>"
+        )
+    return "".join(out)
+
+
+def family_rows(rows: list[dict]) -> str:
+    if not rows:
+        return '<tr><td colspan="5" class="muted">Sin desglose observable por familia.</td></tr>'
+    return "".join(
+        "<tr>"
+        f"<td><b>{esc(row.get('family') or 'N/D')}</b></td>"
+        f"<td>{esc(row.get('quotes', 0))}</td>"
+        f"<td>{esc(row.get('decisions', 0))}</td>"
+        f"<td>{esc(row.get('open_positions', 0))}</td>"
+        f"<td>{esc(row.get('closed_positions', 0))}</td>"
+        "</tr>"
+        for row in rows[:20]
+    )
+
+
+def mapping_rows(mapping: dict, empty: str = "Sin datos verificables.") -> str:
+    if not isinstance(mapping, dict) or not mapping:
+        return f'<tr><td colspan="2" class="muted">{esc(empty)}</td></tr>'
+    return "".join(
+        f"<tr><td><b>{esc(k)}</b></td><td>{esc(v)}</td></tr>"
+        for k, v in list(mapping.items())[:10]
+    )
+
+
+def performance_rows(by_currency: dict) -> str:
+    if not isinstance(by_currency, dict) or not by_currency:
+        return '<tr><td colspan="10" class="muted">Sin operaciones cerradas con PnL comparable.</td></tr>'
+    out = []
+    for currency, row in list(by_currency.items())[:12]:
+        out.append(
+            "<tr>"
+            f"<td><b>{esc(currency)}</b></td>"
+            f"<td>{esc(row.get('trades', 0))}</td>"
+            f"<td>{esc(row.get('wins', 0))}</td>"
+            f"<td>{esc(row.get('losses', 0))}</td>"
+            f"<td>{pct(row.get('win_rate_pct'))}</td>"
+            f"<td>{money(row.get('net_pnl'))}</td>"
+            f"<td>{fmt_number(row.get('profit_factor'), 3)}</td>"
+            f"<td>{money(row.get('expectancy'))}</td>"
+            f"<td>{money(row.get('largest_win'))}</td>"
+            f"<td>{money(row.get('largest_loss'))}</td>"
+            "</tr>"
+        )
+    return "".join(out)
+
+
 def render() -> str:
     b = state_bundle()
     current, pre, live, post, review = b["current"], b["pre"], b["live"], b["post"], b["review"]
@@ -190,6 +305,15 @@ def render() -> str:
     changes = live.get("changes_from_preopen") if isinstance(live.get("changes_from_preopen"), dict) else {}
     runtime = live.get("runtime") if isinstance(live.get("runtime"), dict) else {}
     alerts = live.get("urgent_alerts") if isinstance(live.get("urgent_alerts"), list) else []
+    positions = live.get("positions") if isinstance(live.get("positions"), list) else []
+    market = live.get("market") if isinstance(live.get("market"), dict) else {}
+    performance = live.get("performance") if isinstance(live.get("performance"), dict) else {}
+    funnel = live.get("decision_funnel") if isinstance(live.get("decision_funnel"), dict) else {}
+    families = live.get("families") if isinstance(live.get("families"), list) else []
+    portfolio = live.get("portfolio") if isinstance(live.get("portfolio"), dict) else {}
+    balances = portfolio.get("balances_by_currency") if isinstance(portfolio.get("balances_by_currency"), list) else []
+    daily_risk = portfolio.get("daily_risk") if isinstance(portfolio.get("daily_risk"), list) else []
+    exit_intents = portfolio.get("exit_intents") if isinstance(portfolio.get("exit_intents"), list) else []
 
     post_metrics = post.get("metrics") if isinstance(post.get("metrics"), dict) else {}
     post_ops = post.get("operations") if isinstance(post.get("operations"), list) else []
@@ -221,8 +345,8 @@ def render() -> str:
 h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.muted{{color:var(--muted)}}
 .badges{{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}} .badge{{padding:7px 10px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:850}}
 .badge.ok{{color:var(--g);background:#10271f;border-color:#245b47}} .badge.warn{{color:var(--y);background:#28220f;border-color:#665629}}
-.nav{{display:flex;gap:8px;overflow:auto;margin-bottom:14px}} .nav button{{background:var(--p);color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:10px 13px;font-weight:800;white-space:nowrap}}
-.nav button.active{{background:#222938;color:white;border-color:#485365}} .panel{{display:none}} .panel.active{{display:block}}
+.nav{{display:flex;gap:8px;overflow:auto;margin-bottom:14px;padding-bottom:2px}} .nav button{{background:var(--p);color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-weight:800;white-space:nowrap;min-height:44px}}
+.nav button:focus-visible{{outline:3px solid #79a8ff;outline-offset:2px}} .nav button.active{{background:#222938;color:white;border-color:#64748b}} .panel{{display:none}} .panel.active{{display:block}}
 .grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}} @media(max-width:850px){{.grid{{grid-template-columns:repeat(2,1fr)}}}} @media(max-width:520px){{.grid{{grid-template-columns:1fr}}}}
 .stat,.card{{background:linear-gradient(180deg,var(--p2),var(--p));border:1px solid var(--line);border-radius:15px;padding:16px;box-shadow:0 8px 24px #0003}}
 .sl{{font-size:11px;letter-spacing:.08em;color:var(--muted);font-weight:900}} .sv{{font-size:24px;font-weight:900;margin:7px 0}} .sd{{font-size:13px;color:var(--muted)}}
@@ -239,13 +363,17 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 {badge("localhost:8766")}
 </div>
 
-<div class="nav">
-<button class="active" onclick="tab('live',this)">Decision Cockpit</button>
-<button onclick="tab('pre',this)">Bloqueos pre-rueda</button>
-<button onclick="tab('fam',this)">Explorar familias</button>
-<button onclick="tab('evi',this)">Evidencia y servicios</button>
-<button onclick="tab('cie',this)">Cierre de rueda</button>
-<button onclick="tab('sem',this)">Semáforo ejecutivo</button>
+<div class="nav" role="tablist" aria-label="Vistas del trader">
+<button class="active" role="tab" aria-selected="true" onclick="tab('live',this)">Decision Cockpit</button>
+<button role="tab" aria-selected="false" onclick="tab('pos',this)">Posiciones y riesgo</button>
+<button role="tab" aria-selected="false" onclick="tab('mkt',this)">Mercado y liquidez</button>
+<button role="tab" aria-selected="false" onclick="tab('str',this)">Estrategia y gates</button>
+<button role="tab" aria-selected="false" onclick="tab('pre',this)">Bloqueos pre-rueda</button>
+<button role="tab" aria-selected="false" onclick="tab('fam',this)">Explorar familias</button>
+<button role="tab" aria-selected="false" onclick="tab('perf',this)">Performance</button>
+<button role="tab" aria-selected="false" onclick="tab('evi',this)">Evidencia y servicios</button>
+<button role="tab" aria-selected="false" onclick="tab('cie',this)">Cierre de rueda</button>
+<button role="tab" aria-selected="false" onclick="tab('sem',this)">Semáforo ejecutivo</button>
 </div>
 
 <section id="live" class="panel active">
@@ -275,6 +403,48 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 <div class="card section"><h2>Trazabilidad y alarmas</h2><ul>{alert_html}</ul></div>
 </section>
 
+
+<section id="pos" class="panel">
+<div class="grid">
+{stat("POSICIONES ABIERTAS",len(positions),"PAPER")}
+{stat("NOTIONAL EST.",money(risk.get("estimated_notional_ars")),"suma disponible; no mezcla si falta identidad")}
+{stat("PNL NO REALIZADO",money(risk.get("unrealized_pnl_ars")),"sólo lo publicado por runtime")}
+{stat("SALIDAS PENDIENTES",len(exit_intents),"intenciones registradas")}
+</div>
+<div class="card section"><h2>Libro de posiciones abierto</h2><div class="tablewrap"><table><thead><tr><th>Símbolo</th><th>Familia</th><th>Moneda</th><th>Cantidad</th><th>Entrada</th><th>Marca</th><th>Stop</th><th>Target</th><th>uPnL</th><th>Desde</th></tr></thead><tbody>{position_rows(positions)}</tbody></table></div></div>
+<div class="card section"><h2>Riesgo diario por moneda</h2><div class="tablewrap"><table><thead><tr><th>Día</th><th>Moneda</th><th>Estado</th><th>Equity base</th><th>PnL diario</th><th>Presupuesto pérdida</th><th>Detalle</th></tr></thead><tbody>{daily_risk_rows(daily_risk)}</tbody></table></div></div>
+<div class="card section"><h2>Caja, exposición y patrimonio por moneda</h2><div class="tablewrap"><table><thead><tr><th>Moneda</th><th>Caja</th><th>Exposición</th><th>uPnL</th><th>rPnL</th><th>Equity</th></tr></thead><tbody>{balance_rows(balances)}</tbody></table></div><p class="muted">No se consolida ARS/USD/MEP/CCL en un total artificial sin una conversión explícita y contemporánea.</p></div>
+</section>
+
+<section id="mkt" class="panel">
+<div class="grid">
+{stat("COTIZACIONES",market.get("quotes","N/D"),"identidades observadas")}
+{stat("LIBROS VÁLIDOS",market.get("valid_books","N/D"),"bid/ask utilizables")}
+{stat("SPREAD MEDIANA",fmt_number(market.get("median_spread_bps"),2)+" bps" if market.get("median_spread_bps") is not None else "N/D","microestructura observada")}
+{stat("STALE / N/D",market.get("stale_or_unknown","N/D"),"según timestamp publicado")}
+</div>
+<div class="card section"><h2>Cobertura de mercado por familia</h2><div class="tablewrap"><table><thead><tr><th>Familia</th><th>Cotizaciones</th></tr></thead><tbody>{mapping_rows(market.get("by_asset_class") if isinstance(market.get("by_asset_class"),dict) else {}, "Sin familias cotizadas.")}</tbody></table></div></div>
+<div class="grid section">
+{stat("BOOKS CRUZADOS",market.get("crossed_books","N/D"),"ask &lt; bid; revisar calidad")}
+{stat("BOOK FALTANTE",market.get("missing_book","N/D"),"sin bid/ask válido")}
+{stat("FRESHEST",fmt_number(market.get("freshest_age_seconds"),1)+" s" if market.get("freshest_age_seconds") is not None else "N/D","edad mínima")}
+{stat("STALEST",fmt_number(market.get("stalest_age_seconds"),1)+" s" if market.get("stalest_age_seconds") is not None else "N/D","edad máxima")}
+</div>
+<div class="notice warnbox"><b>Disciplina de datos:</b> esta vista no fabrica variaciones, volumen, profundidad ni indicadores que el runtime no publique. Cuando falte una serie, queda N/D.</div>
+</section>
+
+<section id="str" class="panel">
+<div class="grid">
+{stat("DECISIONES MUESTRA",funnel.get("sample_size","N/D"),"ventana visible del observer")}
+{stat("BUY",((funnel.get("actions") or {}).get("BUY","N/D")) if isinstance(funnel.get("actions"),dict) else "N/D","candidatos/decisiones publicadas")}
+{stat("HOLD",((funnel.get("actions") or {}).get("HOLD","N/D")) if isinstance(funnel.get("actions"),dict) else "N/D","abstenciones")}
+{stat("RÉGIMEN",live.get("market_regime","N/D"),"declarado por runtime")}
+</div>
+<div class="card section"><h2>Embudo de decisiones</h2><div class="tablewrap"><table><thead><tr><th>Acción</th><th>Cantidad</th></tr></thead><tbody>{mapping_rows(funnel.get("actions") if isinstance(funnel.get("actions"),dict) else {})}</tbody></table></div></div>
+<div class="card section"><h2>Principales gates / motivos</h2><div class="tablewrap"><table><thead><tr><th>Motivo</th><th>Cantidad</th></tr></thead><tbody>{mapping_rows(funnel.get("top_reasons") if isinstance(funnel.get("top_reasons"),dict) else {})}</tbody></table></div></div>
+<div class="card section"><h2>Versiones de estrategia observadas</h2><div class="tablewrap"><table><thead><tr><th>Versión</th><th>Decisiones</th></tr></thead><tbody>{mapping_rows(funnel.get("strategies") if isinstance(funnel.get("strategies"),dict) else {}, "Sin versión de estrategia publicada.")}</tbody></table></div></div>
+</section>
+
 <section id="pre" class="panel">{pre_notice}<div class="grid">
 {stat("SNAPSHOT PREOPEN","VERIFICADO" if pre.get("status")=="VERIFIED" else "N/D",fmt_dt(pre.get("generated_at")))}
 {stat("MODO",pre.get("mode","N/D"),"PRODUCTION_PAPER esperado")}
@@ -282,8 +452,16 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 {stat("DECISIONES",pre.get("decision_count","N/D"),"snapshot")}
 </div></section>
 
-<section id="fam" class="panel"><div class="card"><h2>Explorar familias</h2>
-<div class="notice warnbox"><b>N/D si la fuente no lo publica.</b> Este Site no inventa desglose por familia ni readiness contractual.</div></div></section>
+<section id="fam" class="panel">
+<div class="card"><h2>Explorar familias</h2><div class="tablewrap"><table><thead><tr><th>Familia</th><th>Cotizaciones</th><th>Decisiones</th><th>Abiertas</th><th>Cerradas</th></tr></thead><tbody>{family_rows(families)}</tbody></table></div>
+<p class="muted">Este desglose muestra actividad observada. Readiness contractual, Greeks, duration, TIR, cupón, vencimiento, basis u otras métricas específicas sólo se muestran cuando una fuente canónica las publica; nunca se infieren.</p></div>
+</section>
+
+<section id="perf" class="panel">
+<div class="card"><h2>Performance PAPER por moneda</h2><div class="tablewrap"><table><thead><tr><th>Moneda</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Win rate</th><th>PnL neto</th><th>Profit factor</th><th>Expectancy</th><th>Mayor win</th><th>Mayor loss</th></tr></thead><tbody>{performance_rows(performance.get("by_currency") if isinstance(performance.get("by_currency"),dict) else {})}</tbody></table></div>
+<div class="notice warnbox"><b>Sin total multi-moneda:</b> si hay más de una moneda, el Site mantiene resultados separados para evitar una suma económicamente inválida.</div></div>
+<div class="card section"><h2>Motivos de cierre</h2><div class="tablewrap"><table><thead><tr><th>Motivo</th><th>Cantidad</th></tr></thead><tbody>{mapping_rows(performance.get("close_reasons") if isinstance(performance.get("close_reasons"),dict) else {}, "Sin cierres clasificables.")}</tbody></table></div></div>
+</section>
 
 <section id="evi" class="panel"><div class="grid">
 {stat("PREOPEN",fmt_dt(pre.get("generated_at")),"preservado" if pre else "no disponible")}
@@ -309,11 +487,14 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 {stat("DINERO REAL","VERDE" if real==0 else "VERIFICAR",f"real_orders_sent={real if real is not None else 'N/D'}")}
 {stat("LIVE","VERDE" if b["live_fresh"] else "FUERA DE VENTANA",fmt_dt(live.get("generated_at")))}
 {stat("ALERTAS",len(alerts),"collector LIVE")}
+{stat("STALE QUOTES",market.get("stale_or_unknown","N/D"),"calidad de mercado")}
+{stat("IOL FRESCO",iol.get("fresh_ready","N/D"),"OBSERVE_ONLY")}
+{stat("RISK ROWS",len(daily_risk),"por moneda")}
 </div></section>
 
 <div class="foot">Privado · localhost-only · SSH Port Forwarding · auto-refresh 30 s · sin controles de ejecución.</div>
 </div><script>
-function tab(id,b){{document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');b.classList.add('active')}}
+function tab(id,b){{document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.nav button').forEach(x=>{{x.classList.remove('active');x.setAttribute('aria-selected','false')}});document.getElementById(id).classList.add('active');b.classList.add('active');b.setAttribute('aria-selected','true')}}
 </script></body></html>'''
 
 
