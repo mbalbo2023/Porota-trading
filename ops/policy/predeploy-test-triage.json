@@ -1,0 +1,328 @@
+{
+  "schema_version": 1,
+  "status": "REFERENCE_ONLY_REBASE_PENDING_CURRENT_FULL_SUITE",
+  "source_run_id": 36038555334,
+  "source_sha": "143f958eca3aecdbccf40153e164e4b795ba7efc",
+  "policy": {
+    "all_tests_must_execute": true,
+    "silent_omission_forbidden": true,
+    "current_contract_failures_block": true,
+    "legacy_and_harness_failures_remain_visible": true,
+    "classification_is_not_permission_to_delete": true
+  },
+  "counts": {
+    "total_failures": 51,
+    "current_contract": 12,
+    "environment_harness": 4,
+    "legacy_regression": 35
+  },
+  "failures": [
+    {
+      "nodeid": "tests/test_candle_archive_v17.py::test_historial_vacio_no_borra_ultimo_valido_y_raw_se_conserva",
+      "classification": "ENVIRONMENT_HARNESS_FIXTURE",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_candle_archive_v17.py::test_descarga_fallida_rota_en_vez_de_bloquear_universo",
+      "classification": "ENVIRONMENT_HARNESS_FIXTURE",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_candle_archive_v17.py::test_panel_no_presenta_muestras_como_cobertura_validada",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_container_rootfs.py::test_init_prepara_la_cache_para_el_usuario_sin_privilegios",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_container_rootfs.py::test_chroma_usa_rootfs_de_solo_lectura_con_escrituras_aisladas",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_daily_responsive_hf6.py::test_home_page_does_not_render_official_source_status_panel",
+      "classification": "ENVIRONMENT_HARNESS_FIXTURE",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_decision_evidence_rc6.py::test_decision_evidence_panel_is_standard_read_only_and_bounded",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_live_policy_hf2.py::test_tablet_page_defaults_to_twenty_and_caps_at_fifty",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_paper_v1634.py::test_v17_dashboard_separa_plazos_y_muestra_caucion_real_del_simulador",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_paper_v1634.py::test_vivo_esta_enrutado_al_panel_consolidado",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_paper_v1634.py::test_historial_hold_no_inventa_colocacion_y_no_reintenta",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_paper_v1634.py::test_historial_oferta_no_canonica_no_rompe_el_panel",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_paper_v1634.py::test_historial_distingue_faltantes_vacio_y_error_sin_crear_base",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_paper_v1634.py::test_historial_y_panel_son_solo_lectura",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_session.py::test_actividad_en_vivo_responde_con_sesion_valida",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_session.py::test_vivo_es_alias_del_panel_consolidado",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_dashboard_v17_rc3.py::test_release_version_and_image_are_consistent",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_data912_history_fallback.py::test_scheduler_contains_catchup_and_postclose_historical_refresh",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_exit_supervision_v17.py::test_reloj_avanza_mientras_cuatro_procesos_hijos_estan_bloqueados",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_historical_candle_shadow_rc6.py::test_tax_is_unknown_without_explicit_rate",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_historical_candle_shadow_rc6.py::test_configured_tax_is_shadow_only",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_historical_candle_shadow_rc6.py::test_take_profit_diagnostic_does_not_change_execution",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_historical_freshness_v1633.py::test_scheduler_incluye_catchup_inicio_manana_y_postcierre",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_history_freshness_metrics_rc5.py::test_dashboard_separates_any_depth_and_freshness",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_hotfix_rc3_hf2.py::test_ingesta_background_respeta_ttl_por_intento",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_hotfix_rc3_hf2.py::test_ingesta_background_usa_history_y_nunca_current_book",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_hotfix_rc3_hf5.py::test_configuracion_hf5_bloquea_real_y_activa_scalping_paper",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_hotfix_rc3_hf6.py::test_menu_tecnico_consolidado_y_refresh_accesible",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_maintenance_scheduler.py::test_scheduler_siempre_activo_contiene_todas_las_tareas",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_production_paper_v1634.py::test_parcial_renta_fija_conserva_nominal_lote_y_ganancia[BONOS]",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_production_paper_v1634.py::test_parcial_renta_fija_conserva_nominal_lote_y_ganancia[LETRAS]",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_production_paper_v1634.py::test_parcial_renta_fija_conserva_nominal_lote_y_ganancia[ON]",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_production_paper_v1634.py::test_catalogo_real_preserva_clase_moneda_y_no_duplica_resultados",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_production_paper_v1634.py::test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor[BONOS]",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_production_paper_v1634.py::test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor[LETRAS]",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_production_paper_v1634.py::test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor[ON]",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_production_paper_v1634.py::test_universo_ampliado_mantiene_derivados_solo_contexto",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_production_paper_v1634.py::test_lote_por_ciclo_rota_sobre_todo_el_universo",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_production_paper_v1634.py::test_historicos_usan_universo_completo_no_lote_activo",
+      "classification": "ENVIRONMENT_HARNESS_FIXTURE",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_rc4_acceptance.py::test_scheduler_uses_multiple_evidence_sources_and_news_off",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_rc4_acceptance.py::test_navigation_and_system_sections_and_vivo_contract",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_rc4_acceptance.py::test_deploy_contract_is_split_and_preflight_green",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_rc4_hf2_consolidation.py::test_live_page_keeps_current_round_and_history_semantics_clean",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_rc6_byma_calendar_failclosed.py::TestBymaCalendarFailClosed::test_calendar_exception_closes_business_day",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_rc6_byma_calendar_failclosed.py::TestBymaCalendarFailClosed::test_calendar_true_is_preserved",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_rc6_table_headers_visible_sticky.py::test_rc6_table_headers_are_sticky_and_wide_tables_scroll_as_tables",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_rc6_validation_dynamic.py::test_m11_always_remains_blocked",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_rc6_validation_dynamic.py::test_summary_is_descriptive_only",
+      "classification": "LEGACY_REGRESSION_STALE_EXPECTATION",
+      "blocks_predeploy": false,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_single_close_ledger_v17.py::test_cierre_unico_respeta_nominal_por_cien[BONOS]",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_single_close_ledger_v17.py::test_cierre_unico_respeta_nominal_por_cien[LETRAS]",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    },
+    {
+      "nodeid": "tests/test_single_close_ledger_v17.py::test_cierre_unico_respeta_nominal_por_cien[ON]",
+      "classification": "CURRENT_CONTRACT_RECONCILIATION_REQUIRED",
+      "blocks_predeploy": true,
+      "executed_always": true
+    }
+  ],
+  "note": "Historical triage seed only. Current candidate full automatic discovery is authoritative; classifications must be refreshed from the new exact-artifact run and never suppress pytest failures."
+}
