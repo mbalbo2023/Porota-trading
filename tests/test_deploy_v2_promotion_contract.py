@@ -39,3 +39,10 @@ def test_deploy_v2_uses_loaded_runtime_identity_after_docker_normalization():
     assert 'test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"' in PROMOTE
     assert 'test "$IMAGE_TAR_SHA" = "$EXPECTED_TAR_SHA"' in PROMOTE
     assert "POROTA_RUNTIME_IMAGE_ID_VERIFY=observer=" in PROMOTE
+
+
+def test_deploy_v2_retries_post_state_with_diagnostics():
+    assert "POST_CONTAINER_OOM_KILLED" in PROMOTE
+    assert "POST_STATE_ATTEMPT=" in PROMOTE
+    assert "timeout 45 docker exec" in PROMOTE
+    assert 'test "$POST_STATE_RC" -eq 0' in PROMOTE
