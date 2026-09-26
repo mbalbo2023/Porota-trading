@@ -30,7 +30,7 @@ def test_iol_shadow_propagates_provider_timestamp_for_freshness(tmp_path: Path):
     (tmp_path/"iol_shadow_latest.json").write_text(json.dumps({
       "refreshed_at":"2026-09-25T21:00:00+00:00",
       "symbols":[{
-        "symbol":"AAPL","asset_type":"CEDEARS","market":"BCBA","currency":"ARS","term":"t1",
+        "symbol":"AAPL","state":"READY","asset_type":"CEDEARS","market":"BCBA","currency":"ARS","term":"t1",
         "quote":{"last":100,"provider_observed_at":"2026-09-25T20:59:30+00:00"}
       }]
     }),encoding="utf-8")
@@ -47,7 +47,7 @@ def test_discovery_keeps_iol_then_byma_instead_of_collapsing_one_winner(tmp_path
     (tmp_path/"iol_shadow_latest.json").write_text(json.dumps({
       "refreshed_at":"2026-09-25T21:00:00+00:00",
       "symbols":[{
-        "symbol":"AAPL","asset_type":"CEDEARS","market":"BCBA","currency":"ARS","term":"t1",
+        "symbol":"AAPL","state":"READY","asset_type":"CEDEARS","market":"BCBA","currency":"ARS","term":"t1",
         "quote":{"last":100,"provider_observed_at":"2026-09-25T20:59:30+00:00"}
       }]
     }),encoding="utf-8")
