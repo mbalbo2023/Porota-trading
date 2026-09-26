@@ -594,9 +594,12 @@ def _reconcile_complementary_catalog(store):
                 family = financial_catalog.canonical_family(
                     raw.get("instrument_type") or raw.get("asset_type") or raw.get("family"))
                 source = financial_catalog.complement_source(raw)
-                store.event(
-                    "COMPLEMENTARY_IDENTITY_AMBIGUOUS",
-                    f"{ticker}|{family}|{source}|matches={len(matches)}")
+                # The reconciliation holds BEGIN IMMEDIATE, so use that
+                # connection for the event too; PaperStore.event() opens a
+                # second writer and would self-lock SQLite here.
+                connection.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
+                  (checked, "PAPER_ENGINE", "COMPLEMENTARY_IDENTITY_AMBIGUOUS", None,
+                   f"{ticker}|{family}|{source}|matches={len(matches)}"))
                 # Keep every colliding primary identity in the explicit retry
                 # ledger.  No row is selected or mutated while the provider
                 # evidence cannot distinguish the canonical PPI identity.
