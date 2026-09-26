@@ -146,6 +146,12 @@ def test_trader_workstation_metrics_and_render(monkeypatch, tmp_path):
             "catalog_status": [],
             "api_health": [{"component": "PPI", "state": "GREEN", "detail": "OK", "checked_at": now.isoformat(), "last_success_at": now.isoformat(), "source": "PPI"}],
             "source_sync": [{"source": "IOL", "status": "READY", "last_attempt_at": now.isoformat(), "last_success_at": now.isoformat(), "items": 20, "detail": "OK"}],
+            "equity_curve": [
+                {"id": 1, "measured_at": now.isoformat(), "currency": "ARS", "cash": "900000", "exposure": "100000", "pending_proceeds": "0", "caucion_principal": "0", "caucion_accrued": "0", "unrealized_pnl": "0", "realized_pnl": "0", "equity": "1000000"},
+                {"id": 2, "measured_at": now.isoformat(), "currency": "ARS", "cash": "899000", "exposure": "100000", "pending_proceeds": "0", "caucion_principal": "0", "caucion_accrued": "0", "unrealized_pnl": "0", "realized_pnl": "0", "equity": "990000"},
+            ],
+            "gdelt": {"status": "AVAILABLE", "latest_run": {"state": "GREEN", "finished_at": now.isoformat(), "authority": "SHADOW_ONLY"}, "events": [{"event_type": "FX_INTERVENTION", "available_to_engine_at": now.isoformat(), "title": "event", "source_domain": "example.com", "region": "AR", "authority": "SHADOW_ONLY"}]},
+            "instrument_analytics": [{"symbol": "GGAL", "family": "ACCIONES", "market": "BYMA", "settlement": "A-48HS", "asof": "2026-09-18", "close": 100, "momentum_20": 0.10, "momentum_60": 0.20, "rsi14": 55, "atr14": 2.5, "realized_vol20": 0.30, "max_drawdown_252": -0.12, "high_252": 120, "low_252": 80, "volume_ratio_20": 1.2, "source": "PPI", "signal_authority": "CONTEXT_ONLY"}],
         },
     }
     result = live.build_payload(observer, {}, {}, {}, {}, now)
@@ -161,6 +167,9 @@ def test_trader_workstation_metrics_and_render(monkeypatch, tmp_path):
     assert result["gate_matrix"]["final_results"]["OPENED_SIMULATED"] == 1
     assert result["family_readiness"][0]["ready_paper_count"] == 18
     assert result["source_health"]["api_health"][0]["component"] == "PPI"
+    assert result["equity_curve"]["by_currency"]["ARS"]["max_drawdown_pct"] == -1.0
+    assert result["event_risk"]["latest_run"]["state"] == "GREEN"
+    assert result["instrument_analytics"][0]["symbol"] == "GGAL"
 
     snapshots = tmp_path / "snapshots"
     reports = tmp_path / "reports"
@@ -179,6 +188,10 @@ def test_trader_workstation_metrics_and_render(monkeypatch, tmp_path):
     assert "Estrategia y gates" in rendered
     assert "Readiness canónico por familia" in rendered
     assert "Salud de APIs / adaptadores" in rendered
+    assert "Instrumentos" in rendered
+    assert "Contexto técnico por instrumento" in rendered
+    assert "Eventos y macro" in rendered
+    assert "Equity y drawdown por moneda" in rendered
     assert "Performance" in rendered
     assert "Riesgo diario por moneda" in rendered
     assert "Sin total multi-moneda" in rendered
