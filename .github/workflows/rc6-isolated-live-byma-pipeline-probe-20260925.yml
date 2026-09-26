@@ -1,0 +1,78 @@
+name: RC6 isolated live BYMA morning pipeline probe 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-availability-readonly-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rc6-full-family-paper-promotion-20260925
+          fetch-depth: 0
+
+      - name: Pin exact candidate
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "c847ba702909a449b0fb80cf6ebbf7ffb5e49e3d"
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+
+      - name: Package exact BYMA candidate files
+        run: |
+          set -Eeuo pipefail
+          tar -czf /tmp/rc6-byma-pipeline.tgz             rc6_source_consolidation.py             scripts/rc6_public_source_capture.py             scripts/rc6_byma_morning_watch.py             scripts/rc6_byma_morning_pipeline.py
+
+      - name: Run exact candidate against live public BYMA in isolated temp root
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          SCP=(scp -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SCP[@]}" /tmp/rc6-byma-pipeline.tgz "$DO_USER@$DO_HOST:/tmp/rc6-byma-pipeline.tgz"
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          TMP="$(mktemp -d /tmp/porota-byma-pipeline.XXXXXX)"
+          trap 'sudo -n rm -rf "$TMP" /tmp/rc6-byma-pipeline.tgz' EXIT
+          tar -xzf /tmp/rc6-byma-pipeline.tgz -C "$TMP"
+          mkdir -p "$TMP/data/market"
+          PYTHONPATH="$TMP" python3 "$TMP/scripts/rc6_byma_morning_pipeline.py" --root "$TMP/data/market"
+          python3 - "$TMP/data/market" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          structured=json.loads((root/"rc6_public_sources_latest.json").read_text())
+          watch=json.loads((root/"byma_morning_watch_latest.json").read_text())
+          byma=next(x for x in structured["sources"] if x.get("source")=="BYMA")
+          assert byma.get("status")=="SCRAPED_PUBLIC_DATA", byma
+          assert int(byma.get("record_count") or 0)>0, byma
+          assert watch.get("structured_byma",{}).get("record_count")==byma.get("record_count")
+          assert watch.get("pipeline",{}).get("single_structured_scraper") is True
+          assert watch.get("pipeline",{}).get("authority_watch_reuses_structured_snapshot") is True
+          assert watch.get("decision_effect")=="OBSERVE_ONLY"
+          assert watch.get("real_money_authorized") is False
+          print("BYMA_PIPELINE_LIVE=GREEN|records=%s|state=%s|structured_sha=%s" % (
+              byma.get("record_count"),watch.get("state"),
+              watch.get("structured_byma",{}).get("identity_sha256")))
+          print("BYMA_PIPELINE_ENDPOINTS="+json.dumps(byma.get("endpoints",[]),sort_keys=True))
+          print("BYMA_PIPELINE_CHANGED="+json.dumps(watch.get("changed_components",[]),sort_keys=True))
+          PY
+          REMOTE
