@@ -80,3 +80,39 @@ def test_candidate_universe_is_rebuilt_from_catalog_readiness():
     result={r[0]:(r[4],r[5],r[6]) for r in c.execute("SELECT * FROM candidate_universe")}
     assert result["GGAL"]==(1,"AVAILABLE","READY_PAPER_SPOT")
     assert result["GD30"]==(0,"STALE","NEEDS_NOMINAL_UNITS")
+
+
+def test_fresh_exact_complement_revives_stale_spot_without_contract_payload():
+    primary={
+        "ticker":"SPY","instrument_type":"CEDEARS","market":"BYMA","currency":"ARS",
+        "settlement":"A-24HS","settlement_source":"PPI_FIELD","description":"SPY",
+        "last_seen_at":"2026-09-01T12:00:00+00:00","run_id":"PPI","status":"STALE",
+        "capability":"HISTORY_UNAVAILABLE_PPI","raw":{},
+    }
+    comp={
+        "ticker":"SPY","instrument_type":"CEDEARS","market":"BYMA","currency":"ARS",
+        "settlement":"A-24HS","source":"IOL_COMPLEMENTARY",
+        "observed_at":"2026-09-25T21:00:00+00:00",
+    }
+    merged=catalog.complete_with_complement(primary,comp)
+    assert merged["status"]=="AVAILABLE"
+    assert merged["capability"]=="READY_PAPER_SPOT"
+    assert merged["last_seen_at"]==comp["observed_at"]
+    assert merged["raw"]["_availability_source"]=="PPI_IDENTITY_PLUS_IOL_COMPLEMENTARY"
+
+
+def test_complement_does_not_revive_spot_when_currency_identity_differs():
+    primary={
+        "ticker":"SPY","instrument_type":"CEDEARS","market":"BYMA","currency":"ARS",
+        "settlement":"A-24HS","settlement_source":"PPI_FIELD","description":"SPY",
+        "last_seen_at":"2026-09-01T12:00:00+00:00","run_id":"PPI","status":"STALE",
+        "capability":"READY_PAPER_SPOT","raw":{},
+    }
+    comp={
+        "ticker":"SPY","instrument_type":"CEDEARS","market":"BYMA","currency":"USD_CCL",
+        "settlement":"A-24HS","source":"IOL_COMPLEMENTARY",
+        "observed_at":"2026-09-25T21:00:00+00:00",
+    }
+    merged=catalog.complete_with_complement(primary,comp)
+    assert merged["status"]=="STALE"
+    assert merged["last_seen_at"]=="2026-09-01T12:00:00+00:00"

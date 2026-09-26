@@ -4,7 +4,7 @@ RC5 centraliza aquí los relojes que usa POROTA. No convierte una ventana de
 mercado en autorización para operar: la capacidad de órdenes reales continúa
 BLOCKED y las familias no verificadas siguen fail-closed.
 
-BYMA publicó el Comunicado 19016 el 2026-09-01 como tabla vigente de horarios.
+BYMA publicó el Comunicado 19024 el 2026-09-22 como referencia vigente de horarios.
 La página pública actual de horarios apunta a un PDF ajeno (INFORME BYMA 2026),
 por lo que RC5 no infiere subastas/cierres especiales desde ese adjunto roto.
 Para el PAPER spot que POROTA ya simula se promueve únicamente la ventana
@@ -35,11 +35,10 @@ class MarketSession:
 
 # ---- BYMA -----------------------------------------------------------------
 BYMA_HOURS_SOURCE = (
-    "https://www.byma.com.ar/comunicados/"
-    "horarios-de-negociacion-liquidacion-y-recepcion-de-informacion"
+    "https://www.byma.com.ar/comunicados/com19024-horarios"
 )
-BYMA_HOURS_SOURCE_DATE = date(2026, 9, 1)
-BYMA_HOURS_COMMUNICATION = "19016"
+BYMA_HOURS_SOURCE_DATE = date(2026, 9, 22)
+BYMA_HOURS_COMMUNICATION = "19024"
 BYMA_CURRENT_HOURS_PAGE = "https://www.byma.com.ar/mercado/horarios"
 
 # Ventana operacional RC5 del simulador spot. Intervalo half-open: 17:00 ya no
@@ -63,7 +62,7 @@ BYMA_PAPER_SPOT = MarketSession(
     source=BYMA_HOURS_SOURCE,
     source_date=BYMA_HOURS_SOURCE_DATE,
     notes=(
-        "RC5 PAPER spot regular only; comunicado vigente 19016. "
+        "RC6 PAPER regular only; comunicado vigente 19024. "
         "Adjunto horario público 2026-09-05 detectado mal enlazado; "
         "subastas y sesiones extendidas no se infieren ni se habilitan."
     ),

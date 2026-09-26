@@ -12,7 +12,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import cd_spot_ledger as spot_ledger
-from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
+from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value, family_name
 from de_concurrent_risk_capacity_hf6 import capacity, full_trade_stop_risk
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -52,12 +52,20 @@ def realized_losing_fills_today(broker, currency, at, *, connection) -> Decimal:
 
 
 def position_stop_risk(broker, position) -> Decimal:
-    """Full remaining-position risk from historical entry through modeled stop."""
+    """Full remaining-position risk using the financial family's loss contract.
+
+    For a long option the loss is not the modeled stop distance: the premium
+    can gap to zero. Concurrent risk therefore reserves the entire premium
+    paid plus entry costs. Spot families retain the stop-loss model.
+    """
     qty = decimal_value(position.get("quantity"), "cantidad", positive=True)
     entry = decimal_value(position.get("entry_price"), "entrada", positive=True)
-    stop = decimal_value(position.get("stop_price"), "stop", positive=True)
     entry_cost = decimal_value(position.get("entry_cost"), "costo entrada", nonnegative=True)
     factor = broker._position_multiplier(position)
+    family = family_name(position.get("asset_class"))
+    if family == "OPCIONES":
+        return entry * qty * factor + entry_cost
+    stop = decimal_value(position.get("stop_price"), "stop", positive=True)
     modeled_stop_fill = (stop * (Decimal("1") - broker.slippage)).quantize(Decimal("0.0001"))
     exit_cost = broker._cost(modeled_stop_fill * factor, qty, position.get("asset_class"))
     return full_trade_stop_risk(
@@ -80,10 +88,12 @@ def candidate_stop_risk(broker, *, entry_price, stop_price, quantity,
                         cash_multiplier, asset_class) -> Decimal:
     qty = decimal_value(quantity, "cantidad candidata", positive=True)
     entry = decimal_value(entry_price, "entrada candidata", positive=True)
-    stop = decimal_value(stop_price, "stop candidato", positive=True)
     factor = decimal_value(cash_multiplier, "multiplicador candidato", positive=True)
-    modeled_stop_fill = (stop * (Decimal("1") - broker.slippage)).quantize(Decimal("0.0001"))
     entry_cost = broker._cost(entry * factor, qty, asset_class)
+    if family_name(asset_class) == "OPCIONES":
+        return entry * qty * factor + entry_cost
+    stop = decimal_value(stop_price, "stop candidato", positive=True)
+    modeled_stop_fill = (stop * (Decimal("1") - broker.slippage)).quantize(Decimal("0.0001"))
     exit_cost = broker._cost(modeled_stop_fill * factor, qty, asset_class)
     return full_trade_stop_risk(
         entry_price=entry,

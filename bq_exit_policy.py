@@ -5,6 +5,7 @@ No simula subastas, sesiones extendidas, after-market ni horarios no verificados
 La salida EOD conserva buffers propios de riesgo antes del cierre regular.
 """
 from dataclasses import dataclass
+import json
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -18,7 +19,9 @@ from co_market_sessions_hf6 import (
 )
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
-SESSION_SOURCE = f"BYMA COM{BYMA_HOURS_COMMUNICATION}; {BYMA_HOURS_SOURCE}; RC5 PAPER spot regular"
+SESSION_SOURCE = f"BYMA COM{BYMA_HOURS_COMMUNICATION}; {BYMA_HOURS_SOURCE}; RC6 PAPER regular"
+OPTION_EXPIRY_TRADING_CUTOFF = time(15, 30)
+PAPER_SESSION_FAMILIES = frozenset(set(SPOT_FAMILIES) | {"OPCIONES"})
 
 
 @dataclass(frozen=True)
@@ -37,18 +40,55 @@ class PaperSessionPolicy:
         if not 0 <= self.exit_minutes <= self.no_entry_minutes < span:
             raise ValueError("Buffers EOD incompatibles con la sesión")
 
-    def supports(self, instrument):
-        get = instrument.get if isinstance(instrument, dict) else lambda k: getattr(instrument, k)
-        try:
-            return (get("market") == "BYMA" and family_name(get("asset_class")) in SPOT_FAMILIES
-                    and get("settlement") in {"INMEDIATA", "A-24HS", "CI", "24HS", "T+0", "T+1"})
-        except (ValueError, AttributeError):
-            return False
+    @staticmethod
+    def _get(instrument, key, default=None):
+        if isinstance(instrument, dict):
+            return instrument.get(key, default)
+        return getattr(instrument, key, default)
 
-    def bounds(self, at):
-        at = aware_datetime(at).astimezone(TZ)
-        return (datetime.combine(at.date(), self.open_time, TZ),
-                datetime.combine(at.date(), self.close_time, TZ))
+    def _family(self, instrument):
+        try:
+            return family_name(self._get(instrument, "asset_class"))
+        except (ValueError, AttributeError):
+            return None
+
+    def _option_expiry(self, instrument):
+        if self._family(instrument) != "OPCIONES":
+            return None
+        contract = self._get(instrument, "contract")
+        value = getattr(contract, "expires_at", None) if contract is not None else None
+        if value is None and isinstance(instrument, dict):
+            try:
+                features = json.loads(instrument.get("features_json") or "{}")
+                value = (features.get("financial_contract") or {}).get("expires_at")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                value = None
+        try:
+            return aware_datetime(value, "vencimiento opción").astimezone(TZ) if value else None
+        except (ValueError, TypeError):
+            return None
+
+    def supports(self, instrument):
+        family = self._family(instrument)
+        market = str(self._get(instrument, "market") or "").upper()
+        settlement = str(self._get(instrument, "settlement") or "").upper()
+        if market != "BYMA" or family not in PAPER_SESSION_FAMILIES:
+            return False
+        if family == "OPCIONES":
+            # BYMA Clearing: premium settlement is T+0 from 2026-04-24.
+            return settlement in {"INMEDIATA", "CI", "T+0", "T0"}
+        return settlement in {"INMEDIATA", "A-24HS", "CI", "24HS", "T+0", "T+1"}
+
+    def bounds(self, at, instrument=None):
+        local = aware_datetime(at).astimezone(TZ)
+        end_time = self.close_time
+        expiry = self._option_expiry(instrument) if instrument is not None else None
+        if expiry is not None and expiry.date() == local.date():
+            # BYMA currently permits options only until 15:30 on expiration
+            # day. Keep the standard exit buffer before that hard cutoff.
+            end_time = min(end_time, OPTION_EXPIRY_TRADING_CUTOFF)
+        return (datetime.combine(local.date(), self.open_time, TZ),
+                datetime.combine(local.date(), end_time, TZ))
 
     def execution_error(self, instrument, at):
         if not self.supports(instrument):
@@ -56,15 +96,21 @@ class PaperSessionPolicy:
         local = aware_datetime(at).astimezone(TZ)
         if not calendar.es_dia_habil_operativo(local.date()):
             return "MARKET_CLOSED_OR_CALENDAR_UNKNOWN"
-        start, end = self.bounds(at)
+        expiry = self._option_expiry(instrument)
+        if self._family(instrument) == "OPCIONES":
+            if expiry is None:
+                return "OPTION_EXPIRY_UNAVAILABLE"
+            if local >= expiry:
+                return "OPTION_EXPIRED"
+        start, end = self.bounds(at, instrument)
         return "" if start <= local < end else "OUTSIDE_PAPER_EXECUTION_WINDOW"
 
     def admission_error(self, instrument, at):
         error = self.execution_error(instrument, at)
         if error:
             return error
-        _, end = self.bounds(at)
-        if self.close_at_eod and aware_datetime(at) >= end - timedelta(minutes=self.no_entry_minutes):
+        _, end = self.bounds(at, instrument)
+        if self.close_at_eod and aware_datetime(at).astimezone(TZ) >= end - timedelta(minutes=self.no_entry_minutes):
             return "EOD_NO_NEW_ENTRIES"
         return ""
 
@@ -73,5 +119,5 @@ class PaperSessionPolicy:
             return False
         opened = aware_datetime(position["opened_at"]).astimezone(TZ)
         local = aware_datetime(at).astimezone(TZ)
-        _, end = self.bounds(at)
+        _, end = self.bounds(at, position)
         return opened.date() < local.date() or local >= end - timedelta(minutes=self.exit_minutes)

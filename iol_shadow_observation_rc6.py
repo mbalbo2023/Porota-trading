@@ -64,7 +64,15 @@ def _quote_summary(payload: dict) -> dict:
         except (TypeError,ValueError):
             continue
     spread=(ask-bid)/bid*100.0 if bid is not None and ask is not None and bid>0 and ask>=bid else None
+    # Preserve both IOL price bases. For fixed income the API exposes a
+    # per-nominal `unit_price` and a quoted-lot/per-100 `lot_price`.
+    # Collapsing them into one number made contract validation impossible and
+    # encouraged accidental unit conversions. `last` keeps its historical
+    # behavior; family-specific contract code must choose the explicit basis.
+    unit_price=_first_number(payload.get("unit_price"),trade.get("unit_price"))
+    lot_price=_first_number(payload.get("lot_price"),trade.get("lot_price"))
     return {"last":last,"bid":bid,"ask":ask,"bid_size":bid_size,"ask_size":ask_size,"spread_pct":spread,
+            "unit_price":unit_price,"lot_price":lot_price,
             "variation_pct":_first_number(payload.get("variation"),payload.get("variation_pct"),trade.get("variation")),
             "cash_volume":_first_number(payload.get("cash_volume"),payload.get("volume_amount"),trade.get("cash_volume")),
             "provider_observed_at":provider_observed_at}

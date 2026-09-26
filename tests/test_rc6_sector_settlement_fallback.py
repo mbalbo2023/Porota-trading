@@ -33,3 +33,21 @@ def test_ambiguous_reviewed_sectors_remain_fail_closed():
     }
     target = ("TEST", "ACCIONES", "BYMA", "ARS", "INMEDIATA")
     assert policy._reviewed_sector_mapping(mapping, target) is None
+
+
+def test_option_inherits_sector_only_from_unambiguous_reviewed_underlying():
+    mapping = {
+        ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS"): row("FINANCIERO"),
+        ("GGAL", "ACCIONES", "BYMA", "ARS", "INMEDIATA"): row("FINANCIERO"),
+    }
+    resolved = policy._reviewed_underlying_sector_mapping(mapping, "GGAL", "BYMA")
+    assert resolved["sector"] == "FINANCIERO"
+    assert resolved["resolution"] == "REVIEWED_UNDERLYING_SECTOR"
+
+
+def test_option_underlying_sector_ambiguity_stays_fail_closed():
+    mapping = {
+        ("TEST", "ACCIONES", "BYMA", "ARS", "A-24HS"): row("ENERGIA"),
+        ("TEST", "CEDEARS", "BYMA", "ARS", "A-24HS"): row("TECNOLOGIA"),
+    }
+    assert policy._reviewed_underlying_sector_mapping(mapping, "TEST", "BYMA") is None

@@ -415,8 +415,8 @@ def test_catalogo_real_preserva_clase_moneda_y_no_duplica_resultados(tmp_path, m
     observer._support_schema(store)
     monkeypatch.setattr(observer, "CATALOG_QUERY_SLEEP_SECONDS", 0)
     monkeypatch.setattr(observer, "_candidate_universe", lambda: [
-        ("FILTRO-A", "ACCIONES", "A-24HS", "BYMA", True),
-        ("FILTRO-B", "ACCIONES", "A-24HS", "BYMA", True)])
+        ("FILTRO-A", "ACCIONES", "A-24HS", "BYMA", True, "ACCIONES"),
+        ("FILTRO-B", "ACCIONES", "A-24HS", "BYMA", True, "ACCIONES")])
     class Reader:
         def search_instruments(self, *_args, **_kwargs):
             return real_catalog
@@ -428,27 +428,42 @@ def test_catalogo_real_preserva_clase_moneda_y_no_duplica_resultados(tmp_path, m
         assert not c.execute("SELECT 1 FROM candidate_universe WHERE ticker LIKE 'FILTRO-%'").fetchone()
     assert catalog.lookup(store, "ALUAC", "ACCIONES", "A-24HS")["currency"] == "USD_CCL"
     assert catalog.lookup(store, "AAPLD", "CEDEARS", "A-24HS")["currency"] == "USD_MEP"
-    assert ("DLR/AGO26", "FUTUROS", "A-24HS") in observer._eligible_symbols(store)
+    assert ("DLR/AGO26", "FUTUROS", "A-24HS") not in observer._eligible_symbols(store)
+    with store.connect() as c:
+        assert c.execute("""SELECT COUNT(*) FROM financial_instrument_catalog
+                            WHERE ticker='DLR/AGO26' AND instrument_type='FUTUROS'""").fetchone()[0] == 1
 
 
-def test_actualizacion_fallida_no_borra_catalogo_ni_habilita_registros_viejos(tmp_path, monkeypatch, real_catalog):
+def test_actualizacion_fallida_preserva_catalogo_fresco_y_no_inventa_disponibilidad(tmp_path, monkeypatch, real_catalog):
     store = PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
     monkeypatch.setattr(observer, "CATALOG_QUERY_SLEEP_SECONDS", 0)
-    monkeypatch.setattr(observer, "_candidate_universe", lambda: [("A", "ACCIONES", "A-24HS", "BYMA", True)])
+    monkeypatch.setattr(observer, "_candidate_universe", lambda: [("A", "ACCIONES", "A-24HS", "BYMA", True, "ACCIONES")])
+    monkeypatch.setattr(observer, "complementary_discovery", lambda *_args, **_kwargs: [])
     class Reader:
         def search_instruments(self, *_args, **_kwargs):
             return real_catalog
-    observer._download_catalog(Reader(), store)
+    assert observer._download_catalog(Reader(), store) == 12
+    before = {}
+    with store.connect() as db:
+        before = {
+            (r["ticker"],r["instrument_type"],r["market"],r["currency"],r["settlement"]):
+            (r["status"],r["capability"],r["last_seen_at"])
+            for r in db.execute("SELECT * FROM financial_instrument_catalog")
+        }
     class Broken:
         def search_instruments(self, *_args, **_kwargs):
             raise TimeoutError("fixture")
     assert observer._download_catalog(Broken(), store) == 0
-    with store.connect() as c:
-        assert c.execute("SELECT COUNT(*) FROM instrument_catalog").fetchone()[0] == 12
-        assert c.execute("SELECT COUNT(*) FROM financial_instrument_catalog WHERE status='STALE'").fetchone()[0] == 12
-    metadata = catalog.lookup(store, "AAPL", "CEDEARS", "A-24HS")
-    assert catalog.quote_terms(metadata)["opening_block_reason"]
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM instrument_catalog").fetchone()[0] == 12
+        after = {
+            (r["ticker"],r["instrument_type"],r["market"],r["currency"],r["settlement"]):
+            (r["status"],r["capability"],r["last_seen_at"])
+            for r in db.execute("SELECT * FROM financial_instrument_catalog")
+        }
+    # A same-day provider outage must not erase or rewrite still-fresh evidence.
+    assert after == before
 
 
 def test_cotizacion_mep_del_catalogo_no_gasta_ars_ni_usd_generico(tmp_path, real_catalog):
@@ -1412,18 +1427,16 @@ def test_fases_de_mercado_impiden_operar_fuera_de_rueda(monkeypatch):
     assert observer._market_phase(after) == "CLOSED"
 
 
-def test_universo_ampliado_mantiene_derivados_solo_contexto(monkeypatch, tmp_path):
+def test_universo_ampliado_descubre_familias_sin_watchlist_manual(monkeypatch, tmp_path):
     watchlist = tmp_path / "watchlist.json"
-    watchlist.write_text(json.dumps({
-        "ACCIONES": {"instrument_type": "ACCIONES", "settlement": "A-24HS",
-                      "tickers": ["GGAL", "YPFD"]},
-        "FUTUROS": {"instrument_type": "FUTUROS", "settlement": "A-24HS",
-                     "tickers": ["DLR"]},
-    }), encoding="utf-8")
+    watchlist.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(observer, "WATCHLIST_PATH", watchlist)
     candidates = observer._candidate_universe()
-    assert any(row[0] == "YPFD" and row[4] for row in candidates)
-    assert any(row[1] == "FUTUROS" and not row[4] for row in candidates)
+    # Discovery is generated dynamically by family/prefix. The query-plan flag
+    # only means "perform this read-only discovery query"; PAPER eligibility is
+    # decided later from the normalized financial contract.
+    assert any(row[5] == "ACCIONES" and row[4] for row in candidates)
+    assert any(row[5] == "FUTUROS" and row[4] for row in candidates)
 
 
 def test_rc6_ia_intradia_esta_retirada_del_porton_operativo():
@@ -1474,7 +1487,7 @@ def test_catalogo_incorpora_cada_instrumento_devuelto(monkeypatch, tmp_path):
     store = PaperStore(str(tmp_path / "observer.db"))
     observer._support_schema(store)
     monkeypatch.setattr(observer, "_candidate_universe",
-                        lambda: [("A", "ACCIONES", "A-24HS", "BYMA", True)])
+                        lambda: [("A", "ACCIONES", "A-24HS", "BYMA", True, "ACCIONES")])
     class Reader:
         def search_instruments(self, ticker, kind, name=None, market="BYMA"):
             assert ticker and name
@@ -1516,12 +1529,9 @@ def test_historicos_usan_universo_completo_no_lote_activo(tmp_path, monkeypatch)
             connection.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
                                (ticker, "ACCIONES", "A-24HS", "BYMA", 1, "AVAILABLE", "ok", "2026-08-26"))
     monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 2)
-    monkeypatch.setattr(observer, "HISTORY_BATCH_LIMIT", 100)
-    class Reader:
-        def history(self, symbol, *_args):
-            return [{"date":"2026-08-25T17:00:00-03:00","price":1,
-                     "openingPrice":1,"max":1,"min":1,"volume":100}]
-    observer._download_histories(Reader(), store)
-    with store.connect() as connection:
-        covered = connection.execute("SELECT COUNT(*) FROM production_history").fetchone()[0]
-    assert covered >= 4
+    # Historical targeting must use the complete eligible catalog, not the
+    # scanner's small active rotation. The one-shot repair gate belongs to the
+    # writer and is intentionally not part of this universe-selection test.
+    targets = observer._historical_targets(store)
+    assert len(targets) >= 4
+    assert {row[0] for row in targets}.issuperset({"GGAL","YPFD","PAMP","BMA"})

@@ -23,6 +23,7 @@ from bu_instrument_catalog import rc6_underlying_opening_block
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 ROOT = Path('/opt/porota-trading')
 DB = ROOT / 'data/paper_v17/observer_v17.db'
+BYMA_MORNING_WATCH = ROOT / 'data/market/byma_morning_watch_latest.json'
 EXPECTED_IMAGE = 'porota-trading-bot:17.0.0-rc6'
 MIN_FREE_BYTES = 8 * 1024**3
 REQUIRED_TIMERS = (
@@ -30,6 +31,7 @@ REQUIRED_TIMERS = (
     'porota-host-general-backup-rc6.timer',
     'porota-preopen-rc6.timer',
     'porota-candle-integrity-rc6.timer',
+    'porota-byma-morning-watch-rc6.timer',
 )
 
 
@@ -108,6 +110,46 @@ def required_timers():
     return {'state':'GREEN' if ok else 'RED','units':values}
 
 
+def byma_morning_watch(today):
+    """Require today's read-only BYMA authority check before preopen.
+
+    Changes to hours/calendar are blocking until reviewed because they can
+    change the legal/operational trading window. Other official changes are
+    surfaced as AMBER for review without globally disabling unrelated PAPER
+    families. Missing/degraded monitoring is RED: the requested daily control
+    did not complete.
+    """
+    try:
+        payload=json.loads(BYMA_MORNING_WATCH.read_text(encoding='utf-8'))
+        observed=datetime.fromisoformat(str(payload.get('observed_at') or '').replace('Z','+00:00'))
+        if observed.tzinfo is None:
+            return {'state':'RED','reason':'BYMA_WATCH_TIMESTAMP_NAIVE'}
+        local=observed.astimezone(TZ)
+        if local.date() != today:
+            return {'state':'RED','reason':'BYMA_WATCH_NOT_TODAY',
+                    'observed_at':payload.get('observed_at')}
+        state=str(payload.get('state') or '').upper()
+        changed={str(x).upper() for x in payload.get('changed_components',[]) if x}
+        if state == 'DEGRADED':
+            return {'state':'RED','reason':'BYMA_WATCH_DEGRADED',
+                    'changed_components':sorted(changed),'errors':payload.get('errors',[])}
+        if state == 'CHANGED_REVIEW_REQUIRED':
+            critical=changed & {'HOURS','CALENDAR'}
+            if critical:
+                return {'state':'RED','reason':'BYMA_AUTHORITY_CHANGE_REVIEW_REQUIRED',
+                        'critical_components':sorted(critical),
+                        'changed_components':sorted(changed)}
+            return {'state':'AMBER','reason':'BYMA_CHANGE_REVIEW_REQUIRED',
+                    'changed_components':sorted(changed)}
+        if state in {'NO_CHANGE','BASELINE_CREATED'}:
+            return {'state':'GREEN','reason':state,
+                    'changed_components':sorted(changed)}
+        return {'state':'RED','reason':'BYMA_WATCH_STATE_UNKNOWN','watch_state':state}
+    except Exception as exc:
+        return {'state':'RED','reason':'BYMA_WATCH_UNAVAILABLE',
+                'detail':f'{type(exc).__name__}:{exc}'}
+
+
 def release_identity():
     try:
         import _version
@@ -157,6 +199,7 @@ def main():
         'observer_db': observer_db(),
         'disk': {'state':'GREEN' if free >= MIN_FREE_BYTES else 'RED','free':free,'minimum':MIN_FREE_BYTES},
         'required_rc6_timers': required_timers(),
+        'byma_morning_watch': byma_morning_watch(today),
         'history_quarantine': blocked_history_timers(),
         'foreign_market_policy': foreign_market_policy(today),
     }

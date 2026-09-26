@@ -23,7 +23,7 @@ from rc6_source_consolidation import consolidate
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
 DEFAULT_DB = os.getenv("POROTA_IOL_OPERATIONAL_DB", "/opt/porota-trading/data/paper_v17/observer_v17.db")
-BATCH_SIZE = 20
+BATCH_SIZE = 12
 PRIMARY_MAX_AGE_SECONDS = 300
 
 
@@ -407,23 +407,26 @@ def main() -> int:
     batch, rotation_start, prior_cycle = _rotation(universe, fingerprint)
     primary, primary_contract = _primary_snapshot()
     client = OAuthStoreReadOnlyMCP()
+    # Reserve a deterministic part of IOL's 40-call/minute budget for family
+    # contracts.  Twelve quote symbols cost at most 24 calls when every
+    # metadata TTL expires; family enrichment is bounded to at most 15 calls.
+    # This removes the previous starvation mode where a 20-symbol quote batch
+    # consumed the entire minute and contract promotion never ran.
     policy = CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40)
     governor = RateGovernor(policy)
+
+    class GovernedClient:
+        def call(self, tool_name, arguments):
+            return _safe_call(client, tool_name, arguments, governor, policy)
+
+    family_reference_state = "UPDATED"
+    try:
+        family_reference.collect(GovernedClient(), root=DEFAULT_ROOT, db_path=DEFAULT_DB)
+    except Exception as exc:
+        family_reference_state = "ERROR:" + type(exc).__name__
+
     run_batch(batch, client, root=DEFAULT_ROOT, primary_last_by_symbol=primary,
               policy=policy, governor=governor)
-    # Family enrichment shares the exact same rate governor.  Metadata-heavy
-    # quote batches can consume the whole minute; in that case enrichment is
-    # skipped rather than creating a second independent call budget.
-    family_reference_state = "SKIPPED_CALL_BUDGET"
-    if governor.calls_total <= 26:
-        class GovernedClient:
-            def call(self, tool_name, arguments):
-                return _safe_call(client, tool_name, arguments, governor, policy)
-        try:
-            family_reference.collect(GovernedClient(), root=DEFAULT_ROOT, db_path=DEFAULT_DB)
-            family_reference_state = "UPDATED"
-        except Exception as exc:
-            family_reference_state = "ERROR:" + type(exc).__name__
     cycle = _commit_rotation(universe, fingerprint, rotation_start, batch, prior_cycle)
     payload = _publish_progress(universe, batch, universe_source, fingerprint, cycle, primary_contract)
     ppi_rows = []
