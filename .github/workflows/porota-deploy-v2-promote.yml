@@ -219,9 +219,12 @@ jobs:
           gunzip -c "$REMOTE_DIR/porota-predeploy-image.tar.gz" | sudo -n docker load
           LOADED_IMAGE_ID="$(sudo -n docker image inspect -f '{{.Id}}' "$FROZEN_IMAGE" | tr -d '\r\n')"
           EXPECTED_IMAGE_ID="$(printf "%s" "$EXPECTED_IMAGE_ID" | tr -d '\r\n')"
+          IMAGE_CONFIG_SHA="$(sudo -n docker image inspect -f '{{json .Config}}' "$FROZEN_IMAGE" | sha256sum | awk '{print $1}')"
+          EXPECTED_CONFIG_SHA="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_config_sha256"])')"
           echo "POROTA_IMAGE_ID_VERIFY=loaded=$LOADED_IMAGE_ID|expected=$EXPECTED_IMAGE_ID"
+          echo "POROTA_IMAGE_CONFIG_VERIFY=loaded=$IMAGE_CONFIG_SHA|expected=$EXPECTED_CONFIG_SHA"
           test -n "$LOADED_IMAGE_ID"
-          test "$LOADED_IMAGE_ID" = "$EXPECTED_IMAGE_ID"
+          test "$IMAGE_CONFIG_SHA" = "$EXPECTED_CONFIG_SHA"
           sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
           sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
           echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|image=$EXPECTED_IMAGE_ID"
