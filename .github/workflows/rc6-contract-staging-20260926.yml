@@ -1,0 +1,133 @@
+name: RC6 build contract staging 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-contract-resolution-20260926]
+    paths:
+      - '.github/workflows/rc6-contract-staging-20260926.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  stage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_stage"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_stage" "$HOME/.ssh/known_hosts"
+      - name: Build staging contracts without production writes
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY' > option_chain_compact.json
+          import json, glob
+          out={}
+          for p in sorted(glob.glob("diag/contract_resolution_20260926/iol_options_*.json")):
+              d=json.load(open(p))
+              for under,v in d.items():
+                  if isinstance(v,dict):
+                      out[under]=v
+          print(json.dumps(out,ensure_ascii=False))
+          PY
+          scp -i "$HOME/.ssh/porota_rc6_stage" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" option_chain_compact.json "$DO_USER@$DO_HOST:/tmp/porota-option-chain-20260926.json"
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_stage" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' > contract_staging.json
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, sqlite3, re
+          from pathlib import Path
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=30); c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          rows=[dict(r) for r in c.execute("""SELECT ticker,instrument_type,market,currency,settlement,status,capability,metadata_json
+             FROM financial_instrument_catalog WHERE capability IN ('NEEDS_OPTION_CONTRACT','NEEDS_NOMINAL_UNITS')""")]
+          c.close()
+          shadow={}
+          p=Path("/opt/porota-trading/data/market/iol_shadow_latest.json")
+          if p.exists():
+              d=json.loads(p.read_text())
+              shadow={str(x.get("symbol") or "").upper():x for x in d.get("symbols",[]) if isinstance(x,dict)}
+          familyref={}
+          p=Path("/opt/porota-trading/data/market/iol_family_reference_latest.json")
+          if p.exists():
+              d=json.loads(p.read_text())
+              for x in d.get("records",[]) if isinstance(d,dict) else []:
+                  if isinstance(x,dict):
+                      familyref[(str(x.get("instrument_type") or "").upper(),str(x.get("ticker") or "").upper())]=x
+          chains=json.loads(Path("/tmp/porota-option-chain-20260926.json").read_text())
+          opt_by_norm={}
+          underlying_of={}
+          for under,chain in chains.items():
+              if not isinstance(chain,dict): continue
+              for o in chain.get("options",[]) or []:
+                  if not isinstance(o,dict): continue
+                  sym=str(o.get("symbol") or "").upper()
+                  if sym:
+                      opt_by_norm[re.sub(r'[^A-Z0-9]','',sym)]=o
+                      underlying_of[re.sub(r'[^A-Z0-9]','',sym)]=under
+          local_underlying_families={}
+          # infer underlying family only from exact catalog identity.
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute("PRAGMA query_only=ON")
+          for under in set(underlying_of.values()):
+              rr=c.execute("""SELECT instrument_type FROM financial_instrument_catalog
+                 WHERE ticker=? AND status='AVAILABLE' ORDER BY CASE WHEN instrument_type='ACCIONES' THEN 0 WHEN instrument_type='CEDEARS' THEN 1 WHEN instrument_type='BONOS' THEN 2 WHEN instrument_type='LETRAS' THEN 3 ELSE 9 END LIMIT 1""",(under,)).fetchone()
+              if rr: local_underlying_families[under]=str(rr[0]).upper()
+          c.close()
+          lot_policy={"ACCIONES":100,"CEDEARS":10,"BONOS":1000,"LETRAS":1000}
+
+          option_complete=[]; option_unresolved=[]
+          nominal_complete=[]; nominal_unresolved=[]
+          for r in rows:
+              t=str(r["ticker"]).upper()
+              if r["capability"]=="NEEDS_OPTION_CONTRACT":
+                  norm=re.sub(r'[^A-Z0-9]','',t)
+                  o=opt_by_norm.get(norm); under=underlying_of.get(norm)
+                  info=shadow.get(t) or shadow.get(t.replace(".",""))
+                  step=(info or {}).get("units_per_lot")
+                  fam=local_underlying_families.get(under)
+                  lot=lot_policy.get(fam)
+                  right={"C":"CALL","V":"PUT","CALL":"CALL","PUT":"PUT"}.get(str((o or {}).get("option_type") or "").upper())
+                  if o and under and lot and step not in (None,"",0,"0") and o.get("strike_price") and o.get("expiration") and right:
+                      option_complete.append({"ticker":t,"source":"IOL_OPTIONS_CHAIN+IOL_SHADOW_ASSET_INFO+BYMA_OPTION_LOT_POLICY_2026",
+                        "financial_contract_v17":{"family":"OPCIONES","currency":r["currency"],"market":"BYMA","settlement":"INMEDIATA",
+                          "cash_multiplier":str(lot),"quantity_step":str(step),"expires_at":o["expiration"],"underlying":under,
+                          "strike":str(o["strike_price"]),"option_right":right}})
+                  else:
+                      option_unresolved.append({"ticker":t,"chain_match":bool(o),"underlying":under,"underlying_family":fam,
+                        "contract_lot":lot,"units_per_lot":step})
+              elif r["capability"]=="NEEDS_NOMINAL_UNITS":
+                  fr=familyref.get((str(r["instrument_type"]).upper(),t))
+                  sh=shadow.get(t)
+                  unit=(fr or {}).get("units_per_lot")
+                  source="IOL_FAMILY_REFERENCE"
+                  if unit in (None,"",0,"0"):
+                      unit=(sh or {}).get("units_per_lot"); source="IOL_SHADOW"
+                  if unit not in (None,"",0,"0"):
+                      nominal_complete.append({"ticker":t,"family":r["instrument_type"],"units_per_lot":unit,"source":source})
+                  else:
+                      nominal_unresolved.append({"ticker":t,"family":r["instrument_type"]})
+          result={"option_complete":option_complete,"option_unresolved":option_unresolved,
+                  "nominal_complete":nominal_complete,"nominal_unresolved":nominal_unresolved,
+                  "counts":{"option_complete":len(option_complete),"option_unresolved":len(option_unresolved),
+                    "nominal_complete":len(nominal_complete),"nominal_unresolved":len(nominal_unresolved)}}
+          print(json.dumps(result,ensure_ascii=False))
+          PY
+          rm -f /tmp/porota-option-chain-20260926.json
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: porota-contract-staging-da79fdf6
+          path: contract_staging.json
+          if-no-files-found: error
