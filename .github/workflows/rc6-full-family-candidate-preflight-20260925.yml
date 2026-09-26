@@ -1,5 +1,5 @@
 name: RC6 full-family candidate preflight 2026-09-25
-# candidate-refresh: 2f3df14af2ec6eab5d44a62f1d875ee96265016b
+# candidate-refresh: 5bff0a51f8f07b1f43586bdcd9f077c0395161c8
 
 on:
   push:
@@ -60,7 +60,8 @@ jobs:
             tests/test_rc6_family_readiness.py \
             tests/test_fixed_income_nominal_contract_rc6.py \
             tests/test_rc6_cauciones_contract.py \
-            tests/test_rc6_option_paper_execution.py
+            tests/test_rc6_option_paper_execution.py \
+            tests/test_rc6_sector_settlement_fallback.py
 
       - name: Run BYMA contract calendar and session regressions
         run: |
@@ -115,7 +116,7 @@ jobs:
           assert '"BYMA"' in source and "open.bymadata.com.ar" in source
           assert 'item.get("source") != "BYMA"' in capture
           assert "ANIOS_AUDITADOS" in calendar and "fail" in calendar.lower()
-          assert "BYMA_HOURS_COMMUNICATION" in sessions and "19016" in sessions
+          assert "BYMA_HOURS_COMMUNICATION" in sessions and "19024" in sessions
           assert "OPTION_EXPIRY_TRADING_CUTOFF" in policy
           assert '"OPCIONES"' in policy and '"BYMA"' in policy
 
