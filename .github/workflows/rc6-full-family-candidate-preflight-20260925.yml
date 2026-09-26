@@ -23,7 +23,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ACTUAL="$(git rev-parse HEAD)"
-          EXPECTED="2f3df14af2ec6eab5d44a62f1d875ee96265016b"
+          EXPECTED="5bff0a51f8f07b1f43586bdcd9f077c0395161c8"
           echo "CANDIDATE_SHA=$ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
