@@ -10,7 +10,10 @@ import subprocess
 import tarfile
 from pathlib import Path
 
-from scripts.porota_validate_deploy_artifact import is_runtime_relevant
+try:
+    from scripts.porota_validate_deploy_artifact import is_runtime_relevant
+except ModuleNotFoundError:
+    from porota_validate_deploy_artifact import is_runtime_relevant
 
 METADATA_PREFIXES = ("ops/policy/", "ops/state/")
 
