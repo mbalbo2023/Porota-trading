@@ -434,24 +434,36 @@ def test_catalogo_real_preserva_clase_moneda_y_no_duplica_resultados(tmp_path, m
                             WHERE ticker='DLR/AGO26' AND instrument_type='FUTUROS'""").fetchone()[0] == 1
 
 
-def test_actualizacion_fallida_no_borra_catalogo_ni_habilita_registros_viejos(tmp_path, monkeypatch, real_catalog):
+def test_actualizacion_fallida_preserva_catalogo_fresco_y_no_inventa_disponibilidad(tmp_path, monkeypatch, real_catalog):
     store = PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
     monkeypatch.setattr(observer, "CATALOG_QUERY_SLEEP_SECONDS", 0)
     monkeypatch.setattr(observer, "_candidate_universe", lambda: [("A", "ACCIONES", "A-24HS", "BYMA", True, "ACCIONES")])
+    monkeypatch.setattr(observer, "complementary_discovery", lambda *_args, **_kwargs: [])
     class Reader:
         def search_instruments(self, *_args, **_kwargs):
             return real_catalog
-    observer._download_catalog(Reader(), store)
+    assert observer._download_catalog(Reader(), store) == 12
+    before = {}
+    with store.connect() as db:
+        before = {
+            (r["ticker"],r["instrument_type"],r["market"],r["currency"],r["settlement"]):
+            (r["status"],r["capability"],r["last_seen_at"])
+            for r in db.execute("SELECT * FROM financial_instrument_catalog")
+        }
     class Broken:
         def search_instruments(self, *_args, **_kwargs):
             raise TimeoutError("fixture")
     assert observer._download_catalog(Broken(), store) == 0
-    with store.connect() as c:
-        assert c.execute("SELECT COUNT(*) FROM instrument_catalog").fetchone()[0] == 12
-        assert c.execute("SELECT COUNT(*) FROM financial_instrument_catalog WHERE status='STALE'").fetchone()[0] == 12
-    metadata = catalog.lookup(store, "AAPL", "CEDEARS", "A-24HS")
-    assert catalog.quote_terms(metadata)["opening_block_reason"]
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM instrument_catalog").fetchone()[0] == 12
+        after = {
+            (r["ticker"],r["instrument_type"],r["market"],r["currency"],r["settlement"]):
+            (r["status"],r["capability"],r["last_seen_at"])
+            for r in db.execute("SELECT * FROM financial_instrument_catalog")
+        }
+    # A same-day provider outage must not erase or rewrite still-fresh evidence.
+    assert after == before
 
 
 def test_cotizacion_mep_del_catalogo_no_gasta_ars_ni_usd_generico(tmp_path, real_catalog):
