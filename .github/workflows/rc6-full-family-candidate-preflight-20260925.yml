@@ -194,7 +194,7 @@ jobs:
           failure_set /tmp/baseline-suite.log > /tmp/baseline.failures
           failure_set /tmp/candidate-suite.log > /tmp/candidate.failures
           comm -13 /tmp/baseline.failures /tmp/candidate.failures > /tmp/new.failures
-          comm -23 /tmp/baseline.failures /tmp/candidate.failures > /tmp.fixed.failures
+          comm -23 /tmp/baseline.failures /tmp/candidate.failures > /tmp/fixed.failures
 
           echo "FULL_SUITE_BASELINE_FAILURES=$(wc -l < /tmp/baseline.failures)"
           echo "FULL_SUITE_CANDIDATE_FAILURES=$(wc -l < /tmp/candidate.failures)"
