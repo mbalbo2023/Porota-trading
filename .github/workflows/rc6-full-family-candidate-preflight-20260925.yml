@@ -1,5 +1,5 @@
 name: RC6 full-family candidate preflight 2026-09-25
-# candidate-refresh: e8cbb97a60b202fa63e750f0b3d5ba1c044d6a77
+# candidate-refresh: 3a54d4f9bb0ab0e38c0ce2838c887ceef63ed8ee
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ACTUAL="$(git rev-parse HEAD)"
-          EXPECTED="e8cbb97a60b202fa63e750f0b3d5ba1c044d6a77"
+          EXPECTED="3a54d4f9bb0ab0e38c0ce2838c887ceef63ed8ee"
           echo "CANDIDATE_SHA=$ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
@@ -44,8 +44,10 @@ jobs:
             ak_byma_calendar.py \
             co_market_sessions_hf6.py
 
-      - name: Install deterministic runner
-        run: python -m pip install --disable-pip-version-check "pytest>=8.3.0,<9" requests
+      - name: Install repository runtime and test dependencies
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check -r requirements.txt
 
       - name: Run focused promotion and safety tests
         run: |
