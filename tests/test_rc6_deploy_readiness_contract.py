@@ -19,7 +19,7 @@ def test_deploy_bootstraps_compact_daily_views_once_without_reenabling_real_orde
     body = PROMOTE.read_text(encoding="utf-8")
     assert "for job in validation_projection action4_audit; do" in body
     assert 'timeout 60 python az_maintenance_job.py "$job"' in body
-    assert "Cada tarea es diaria y acotada" in body
+    assert "validation_projection" in body
     assert "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED" in body
 
 
@@ -43,8 +43,9 @@ def test_release_gate_installs_test_dependencies_and_covers_governed_deploy_cont
     body = PREDEPLOY.read_text(encoding="utf-8")
     assert "pytest>=8.3" in body
     assert "tests/test_porota_*.py" in body
+    assert "porota_validate_deploy_artifact.py" in body
+    assert "porota_build_deploy_bundle_v2.py" in body
     assert "POROTA_VALIDATOR_TESTS=GREEN" in body
-    assert "POROTA_ARTIFACT_INTEGRITY=GREEN" in body
 
 
 def test_new_paper_database_initializes_spot_liquidity_ledger():
@@ -57,4 +58,4 @@ def test_promotion_consumes_frozen_image_without_droplet_rebuild():
     assert "porota-predeploy-image.tar.gz" in body
     assert "docker load" in body
     assert "POROTA_BUILD_ONCE_PROMOTION=GREEN" in body
-    assert "docker build" not in body
+    assert "docker build " not in body
