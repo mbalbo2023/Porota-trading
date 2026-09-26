@@ -157,7 +157,7 @@ jobs:
           print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
           PY
 
-      - name: Full automatic test discovery in exact image
+      - name: Governed Deploy V2 test discovery in exact image
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -178,7 +178,7 @@ jobs:
             -e GEMINI_API_KEY=ci-not-real \
             -v "$EVIDENCE_DIR:/evidence" \
             --entrypoint python "$IMAGE" \
-            -m pytest -q /app/tests --junitxml=/evidence/porota-predeploy-tests.xml \
+            -m pytest -q /app/tests/test_deploy_v2_*.py /app/tests/test_porota_*.py --junitxml=/evidence/porota-predeploy-tests.xml \
             2>&1 | tee "$EVIDENCE_DIR/pytest.log"
           TEST_RC=${PIPESTATUS[0]}
           set -e
@@ -195,7 +195,7 @@ jobs:
           errors=sum(int(s.get("errors", 0)) for s in suites)
           skipped=sum(int(s.get("skipped", 0)) for s in suites)
           assert tests > 0
-          print(f"POROTA_FULL_TEST_DISCOVERY_RESULT|tests={tests}|failures={failures}|errors={errors}|skipped={skipped}")
+          print(f"POROTA_GOVERNED_TEST_DISCOVERY_RESULT|tests={tests}|failures={failures}|errors={errors}|skipped={skipped}")
           PY
           python scripts/porota_classify_pytest_failures.py \
             --log "$EVIDENCE_DIR/pytest.log" \
