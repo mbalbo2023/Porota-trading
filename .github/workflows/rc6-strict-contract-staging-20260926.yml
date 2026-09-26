@@ -1,0 +1,72 @@
+name: RC6 strict contract staging 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-contract-resolution-20260926]
+    paths:
+      - '.github/workflows/rc6-strict-contract-staging-20260926.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  strict:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_strict"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_strict" "$HOME/.ssh/known_hosts"
+      - name: Count only complete financial_contract_v17 evidence
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_strict" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' > strict_contracts.json
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json,sqlite3
+          from pathlib import Path
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=30); c.row_factory=sqlite3.Row; c.execute("PRAGMA query_only=ON")
+          pending=[dict(r) for r in c.execute("""SELECT ticker,instrument_type,market,currency,settlement,capability
+            FROM financial_instrument_catalog WHERE capability='NEEDS_NOMINAL_UNITS'""")]
+          c.close()
+          p=Path("/opt/porota-trading/data/market/iol_family_reference_latest.json")
+          payload=json.loads(p.read_text()) if p.exists() else {}
+          records=[x for x in payload.get("records",[]) if isinstance(x,dict)]
+          idx={}
+          for x in records:
+            key=(str(x.get("instrument_type") or "").upper(),str(x.get("ticker") or "").upper())
+            if isinstance(x.get("financial_contract_v17"),dict):
+              idx[key]=x
+          complete=[]; unresolved=[]
+          for r in pending:
+            key=(str(r["instrument_type"]).upper(),str(r["ticker"]).upper())
+            x=idx.get(key)
+            if x:
+              fc=x["financial_contract_v17"]
+              required=("family","currency","market","settlement","cash_multiplier","quantity_step","metadata_source")
+              if all(fc.get(k) not in (None,"") for k in required):
+                complete.append({"ticker":r["ticker"],"family":r["instrument_type"],"contract":fc,"observed_at":x.get("observed_at"),"source":"IOL_FAMILY_REFERENCE"})
+                continue
+            unresolved.append({"ticker":r["ticker"],"family":r["instrument_type"]})
+          print(json.dumps({"complete":complete,"unresolved":unresolved,
+            "counts":{"complete":len(complete),"unresolved":len(unresolved)}},ensure_ascii=False))
+          PY
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: porota-strict-contract-staging-da79fdf6
+          path: strict_contracts.json
+          if-no-files-found: error
