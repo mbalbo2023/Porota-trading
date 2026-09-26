@@ -283,6 +283,12 @@ def _support_schema(store):
           market TEXT NOT NULL, can_simulate INTEGER NOT NULL, status TEXT NOT NULL,
           detail TEXT NOT NULL, last_checked_at TEXT NOT NULL,
           PRIMARY KEY(ticker,instrument_type,market));
+        CREATE TABLE IF NOT EXISTS complementary_contract_retry(
+          ticker TEXT NOT NULL, instrument_type TEXT NOT NULL, market TEXT NOT NULL,
+          currency TEXT NOT NULL, settlement TEXT NOT NULL, source TEXT NOT NULL,
+          observed_at TEXT, state TEXT NOT NULL, reason TEXT NOT NULL,
+          last_attempt_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY(ticker,instrument_type,market,currency,settlement,source));
         CREATE TABLE IF NOT EXISTS paper_book_consumption(
           fill_id INTEGER PRIMARY KEY REFERENCES paper_fills(id),
           instrument_key TEXT NOT NULL, book_at TEXT NOT NULL,
@@ -559,11 +565,12 @@ def _reconcile_complementary_catalog(store):
     except Exception as exc:
         store.event("COMPLEMENTARY_RECONCILIATION_UNAVAILABLE", type(exc).__name__)
         return 0
-    if not complementary:
-        return 0
-
+    # An empty or temporarily unavailable complementary snapshot never deletes
+    # the PPI identity or closes the retry loop.  We still inventory every
+    # incomplete contract below, so the next periodic reconciliation can retry.
     checked = now_iso()
     promoted = inserted = refreshed = 0
+    retry_pending = 0
     applied_by_source = {}
 
     with store.connect() as connection:
@@ -661,6 +668,33 @@ def _reconcile_complementary_catalog(store):
             if now_ready and not before_ready:
                 promoted += 1
 
+        # Persist the exact unresolved contract condition even when IOL/BYMA
+        # supplied no usable row in this cycle. This is retry state, not a
+        # rejection: the scheduler and IOL timer will reconcile it again.
+        for row in connection.execute("""SELECT ticker,instrument_type,market,currency,
+          settlement,capability,status,last_seen_at FROM financial_instrument_catalog""").fetchall():
+            ticker, family, market, currency, settlement, capability, status, last_seen = row
+            ready = (status == "AVAILABLE"
+                     and str(capability or "").startswith("READY_PAPER_"))
+            if ready:
+                connection.execute("""DELETE FROM complementary_contract_retry
+                  WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?""",
+                  (ticker, family, market, currency, settlement))
+                continue
+            reason = str(capability or "").strip()
+            if not (reason.startswith("NEEDS_") or reason.startswith("READY_CONTRACT_")):
+                continue
+            connection.execute("""INSERT INTO complementary_contract_retry
+              VALUES(?,?,?,?,?,?,?,?,?,?,?)
+              ON CONFLICT(ticker,instrument_type,market,currency,settlement,source)
+              DO UPDATE SET observed_at=excluded.observed_at,state=excluded.state,
+                reason=excluded.reason,last_attempt_at=excluded.last_attempt_at,
+                attempts=complementary_contract_retry.attempts+1""",
+              (ticker, family, market, currency, settlement,
+               "CONTRACT_EVIDENCE_RECONCILER", last_seen, "PENDING_RETRY",
+               reason, checked, 1))
+            retry_pending += 1
+
         financial_catalog.sync_candidate_universe(connection, checked)
         ready_total = connection.execute("""SELECT COUNT(*) FROM financial_instrument_catalog
           WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER_%'""").fetchone()[0]
@@ -679,6 +713,7 @@ def _reconcile_complementary_catalog(store):
         f"promoted_this_run={promoted}; inserted_this_run={inserted}; "
         f"refreshed_this_run={refreshed}; ready_total={ready_total}; "
         f"pending_total={catalog_total-ready_total}; "
+        f"pending_contract_retry={retry_pending}; "
         f"ready_by_family={json.dumps(ready_by_family,sort_keys=True)}; "
         f"sources={json.dumps(applied_by_source,sort_keys=True)}; "
         "precedence=PPI>IOL>BYMA; real_orders=blocked")

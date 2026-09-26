@@ -137,3 +137,26 @@ def test_observer_applies_iol_then_byma_without_overwriting_ppi_identity(tmp_pat
     assert row["capability"]=="READY_PAPER_SPOT"
     assert meta["_source_precedence"]=="PPI_PRIMARY>IOL_COMPLEMENTARY>BYMA_PUBLIC_COMPLEMENTARY"
     assert meta["_applied_complement_sources"]==["IOL_COMPLEMENTARY","BYMA_PUBLIC_COMPLEMENTARY"]
+
+
+def test_missing_contract_is_recorded_and_retried_when_no_complement_arrives(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    with store.connect() as c:
+        c.execute("""INSERT INTO financial_instrument_catalog
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
+            "GD30", "BONOS", "BYMA", "ARS", "A-24HS", "PPI_FIELD", "GD30",
+            "2026-09-25T18:00:00+00:00", "PPI-RUN", "STALE",
+            "NEEDS_NOMINAL_UNITS", json.dumps({"_discovery_source": "PPI_PRIMARY"}),
+        ))
+    monkeypatch.setattr(observer, "complementary_discovery", lambda _root: [])
+    assert observer._reconcile_complementary_catalog(store) == 0
+    with store.connect() as c:
+        row = c.execute("""SELECT state,reason,attempts
+          FROM complementary_contract_retry WHERE ticker='GD30'""").fetchone()
+    assert tuple(row) == ("PENDING_RETRY", "NEEDS_NOMINAL_UNITS", 1)
+
+    assert observer._reconcile_complementary_catalog(store) == 0
+    with store.connect() as c:
+        attempts = c.execute("""SELECT attempts FROM complementary_contract_retry
+          WHERE ticker='GD30'""").fetchone()[0]
+    assert attempts == 2
