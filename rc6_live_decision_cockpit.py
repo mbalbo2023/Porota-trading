@@ -15,6 +15,7 @@ import tempfile
 from collections import Counter
 from datetime import datetime, time as clock_time, timezone
 from pathlib import Path
+from statistics import median
 from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -126,6 +127,7 @@ def _compact_decision(row: dict) -> dict:
         "action": row.get("action"),
         "score": _number(row.get("score")),
         "reason": row.get("reason") or "NO_REASON",
+        "strategy_version": row.get("strategy_version"),
     }
 
 
@@ -237,6 +239,178 @@ def _risk_summary(opened: list[dict]) -> dict:
     }
 
 
+
+def _first_number(row: dict, *names):
+    for name in names:
+        value = _number(row.get(name))
+        if value is not None:
+            return value
+    return None
+
+
+def _compact_position(row: dict) -> dict:
+    return {
+        "paper_id": row.get("paper_id"),
+        "symbol": row.get("symbol"),
+        "asset_class": row.get("asset_class") or row.get("instrument_type"),
+        "currency": row.get("currency") or "N/D",
+        "market": row.get("market") or "N/D",
+        "settlement": row.get("settlement") or "N/D",
+        "status": row.get("status"),
+        "quantity": _first_number(row, "quantity", "open_quantity"),
+        "entry_price": _first_number(row, "entry_price", "average_price"),
+        "current_price": _first_number(row, "current_price", "mark_price", "last"),
+        "stop_price": _first_number(row, "stop_price", "stop"),
+        "target_price": _first_number(row, "target_price", "target"),
+        "unrealized_pnl": _first_number(row, "unrealized_pnl", "unrealized_pnl_ars"),
+        "net_pnl": _first_number(row, "net_pnl", "net_pnl_ars"),
+        "opened_at": row.get("opened_at"),
+        "closed_at": row.get("closed_at"),
+        "close_reason": row.get("close_reason"),
+        "max_favorable": _first_number(row, "max_favorable"),
+        "max_adverse": _first_number(row, "max_adverse"),
+    }
+
+
+def _performance_summary(closed: list[dict]) -> dict:
+    by_currency: dict[str, dict] = {}
+    reasons = Counter()
+    for raw in closed:
+        if not isinstance(raw, dict):
+            continue
+        row = _compact_position(raw)
+        currency = str(row.get("currency") or "N/D")
+        bucket = by_currency.setdefault(currency, {
+            "trades": 0, "wins": 0, "losses": 0, "flats": 0,
+            "net_pnl": 0.0, "gross_profit": 0.0, "gross_loss": 0.0,
+            "largest_win": None, "largest_loss": None,
+        })
+        pnl = row.get("net_pnl")
+        if pnl is None:
+            continue
+        bucket["trades"] += 1
+        bucket["net_pnl"] += pnl
+        if pnl > 0:
+            bucket["wins"] += 1
+            bucket["gross_profit"] += pnl
+            bucket["largest_win"] = pnl if bucket["largest_win"] is None else max(bucket["largest_win"], pnl)
+        elif pnl < 0:
+            bucket["losses"] += 1
+            bucket["gross_loss"] += pnl
+            bucket["largest_loss"] = pnl if bucket["largest_loss"] is None else min(bucket["largest_loss"], pnl)
+        else:
+            bucket["flats"] += 1
+        if row.get("close_reason"):
+            reasons[str(row["close_reason"])] += 1
+    for bucket in by_currency.values():
+        trades = bucket["trades"]
+        decided = bucket["wins"] + bucket["losses"]
+        bucket["net_pnl"] = round(bucket["net_pnl"], 2)
+        bucket["gross_profit"] = round(bucket["gross_profit"], 2)
+        bucket["gross_loss"] = round(bucket["gross_loss"], 2)
+        bucket["win_rate_pct"] = round(bucket["wins"] * 100.0 / decided, 2) if decided else None
+        bucket["profit_factor"] = round(bucket["gross_profit"] / abs(bucket["gross_loss"]), 3) if bucket["gross_loss"] < 0 else None
+        bucket["expectancy"] = round(bucket["net_pnl"] / trades, 2) if trades else None
+    return {
+        "by_currency": by_currency,
+        "close_reasons": dict(reasons.most_common(10)),
+        "mixed_currency_total_suppressed": len(by_currency) > 1,
+    }
+
+
+def _market_summary(quotes: list[dict], now: datetime) -> dict:
+    spreads = []
+    ages = []
+    crossed = 0
+    missing_book = 0
+    stale = 0
+    by_asset = Counter()
+    for row in quotes:
+        if not isinstance(row, dict):
+            continue
+        asset = str(row.get("asset_class") or row.get("instrument_type") or "N/D")
+        by_asset[asset] += 1
+        bid, ask = _number(row.get("bid")), _number(row.get("ask"))
+        if bid is not None and ask is not None and bid > 0 and ask > 0:
+            mid = (bid + ask) / 2.0
+            if ask < bid:
+                crossed += 1
+            if mid > 0:
+                spreads.append((ask - bid) / mid * 10000.0)
+        else:
+            missing_book += 1
+        stamp = _parse_dt(row.get("book_at") or row.get("trade_at") or row.get("observed_at"))
+        if stamp:
+            age = (now.astimezone(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds()
+            if age >= 0:
+                ages.append(age)
+                if age > IOL_FRESH_SECONDS:
+                    stale += 1
+        else:
+            stale += 1
+    return {
+        "quotes": len([q for q in quotes if isinstance(q, dict)]),
+        "valid_books": len(spreads),
+        "median_spread_bps": round(median(spreads), 2) if spreads else None,
+        "crossed_books": crossed,
+        "missing_book": missing_book,
+        "stale_or_unknown": stale,
+        "freshest_age_seconds": round(min(ages), 1) if ages else None,
+        "stalest_age_seconds": round(max(ages), 1) if ages else None,
+        "by_asset_class": dict(by_asset),
+    }
+
+
+def _decision_funnel(decisions: list[dict]) -> dict:
+    actions = Counter()
+    reasons = Counter()
+    strategies = Counter()
+    for raw in decisions:
+        if not isinstance(raw, dict):
+            continue
+        action = str(raw.get("action") or "N/D").upper()
+        actions[action] += 1
+        reasons[str(raw.get("reason") or "NO_REASON")] += 1
+        if raw.get("strategy_version"):
+            strategies[str(raw.get("strategy_version"))] += 1
+    return {
+        "actions": dict(actions),
+        "top_reasons": dict(reasons.most_common(10)),
+        "strategies": dict(strategies.most_common(10)),
+        "sample_size": sum(actions.values()),
+    }
+
+
+def _family_summary(quotes: list[dict], decisions: list[dict], opened: list[dict], closed: list[dict]) -> list[dict]:
+    symbol_family = {}
+    for row in quotes:
+        if isinstance(row, dict) and row.get("symbol"):
+            symbol_family[str(row["symbol"]).upper()] = str(row.get("asset_class") or row.get("instrument_type") or "N/D")
+    families: dict[str, dict] = {}
+    def bucket(name):
+        return families.setdefault(name or "N/D", {"family": name or "N/D", "quotes": 0, "decisions": 0, "open_positions": 0, "closed_positions": 0})
+    for row in quotes:
+        if isinstance(row, dict):
+            bucket(str(row.get("asset_class") or row.get("instrument_type") or "N/D"))["quotes"] += 1
+    for row in decisions:
+        if isinstance(row, dict):
+            family = str(row.get("asset_class") or symbol_family.get(str(row.get("symbol") or "").upper()) or "N/D")
+            bucket(family)["decisions"] += 1
+    for row in opened:
+        if isinstance(row, dict):
+            bucket(str(row.get("asset_class") or row.get("instrument_type") or "N/D"))["open_positions"] += 1
+    for row in closed:
+        if isinstance(row, dict):
+            bucket(str(row.get("asset_class") or row.get("instrument_type") or "N/D"))["closed_positions"] += 1
+    return sorted(families.values(), key=lambda row: (row["quotes"], row["decisions"], row["open_positions"]), reverse=True)[:20]
+
+
+def _copy_rows(value, limit=20) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    return [dict(row) for row in value if isinstance(row, dict)][:limit]
+
+
 def capture_preopen_baseline(observer: dict, now: datetime, path: Path = PREOPEN) -> dict:
     """Attach a bounded read-only decision sample to the preserved preopen file."""
     preopen = _read_json(path)
@@ -258,6 +432,13 @@ def build_payload(observer: dict, iol: dict, validation: dict, preopen: dict, po
     closed = observer.get("closed") if isinstance(observer.get("closed"), list) else []
 
     opportunities, why_not, trace = _decision_views(decisions)
+    quotes = observer.get("quotes") if isinstance(observer.get("quotes"), list) else []
+    compact_open = [_compact_position(row) for row in opened if isinstance(row, dict)][:MAX_ROWS]
+    compact_closed = [_compact_position(row) for row in closed if isinstance(row, dict)][:MAX_ROWS]
+    market_summary = _market_summary(quotes, now)
+    performance_summary = _performance_summary(closed)
+    decision_funnel = _decision_funnel(decisions)
+    family_summary = _family_summary(quotes, decisions, opened, closed)
 
     try:
         real_orders_sent = int(state.get("real_orders_sent"))
@@ -296,6 +477,21 @@ def build_payload(observer: dict, iol: dict, validation: dict, preopen: dict, po
         "changes_from_preopen": _change_from_preopen(preopen, opportunities),
         "iol": iol_state,
         "risk": _risk_summary(opened),
+        "positions": compact_open,
+        "recent_closed_positions": compact_closed,
+        "market": market_summary,
+        "performance": performance_summary,
+        "decision_funnel": decision_funnel,
+        "families": family_summary,
+        "portfolio": {
+            "equity": observer.get("equity") if isinstance(observer.get("equity"), dict) else {},
+            "balances_by_currency": _copy_rows(observer.get("balances_by_currency"), 16),
+            "daily_risk": _copy_rows(observer.get("daily_risk"), 16),
+            "valuation_quality": _copy_rows(observer.get("valuation_quality"), 16),
+            "exit_supervisor": observer.get("exit_supervisor") if isinstance(observer.get("exit_supervisor"), dict) else {},
+            "exit_intents": _copy_rows(observer.get("exit_intents"), 20),
+            "notification_counts": _copy_rows(observer.get("notification_counts"), 20),
+        },
         "runtime": {
             "decisions_visible": len(decisions),
             "open_positions": len(opened),
