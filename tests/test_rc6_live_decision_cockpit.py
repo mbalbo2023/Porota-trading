@@ -195,3 +195,13 @@ def test_trader_workstation_metrics_and_render(monkeypatch, tmp_path):
     assert "Performance" in rendered
     assert "Riesgo diario por moneda" in rendered
     assert "Sin total multi-moneda" in rendered
+    assert 'id="menu-principal"' in rendered
+    assert 'aria-label="Ir al menú principal"' in rendered
+    assert 'aria-label="Ir arriba de la página"' in rendered
+    assert '>Menú</button>' in rendered
+    assert '>Arriba</button>' in rendered
+    assert "grid-template-columns:repeat(auto-fit,minmax(135px,1fr))" in rendered
+    assert "sessionStorage.setItem(TAB_KEY,id)" in rendered
+    assert "enhanceTables()" in rendered
+    assert "data-label" in rendered
+    assert 'http-equiv="refresh"' not in rendered

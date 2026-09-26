@@ -521,7 +521,6 @@ def render() -> str:
 
     return f'''<!doctype html><html lang="es"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="30">
 <title>Porota Trading RC6 · Decision Cockpit</title>
 <style>
 :root{{--bg:#0b0d11;--p:#151922;--p2:#1a202b;--line:#2d3440;--text:#f5f7fa;--muted:#9aa5b3;--g:#3ddc97;--y:#ffd166;--r:#ff6b6b}}
@@ -530,15 +529,38 @@ def render() -> str:
 h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.muted{{color:var(--muted)}}
 .badges{{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}} .badge{{padding:7px 10px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:850}}
 .badge.ok{{color:var(--g);background:#10271f;border-color:#245b47}} .badge.warn{{color:var(--y);background:#28220f;border-color:#665629}}
-.nav{{display:flex;gap:8px;overflow:auto;margin-bottom:14px;padding-bottom:2px}} .nav button{{background:var(--p);color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-weight:800;white-space:nowrap;min-height:44px}}
-.nav button:focus-visible{{outline:3px solid #79a8ff;outline-offset:2px}} .nav button.active{{background:#222938;color:white;border-color:#64748b}} .panel{{display:none}} .panel.active{{display:block}}
+.nav{{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:9px;overflow:visible;margin-bottom:16px;padding:0;scroll-margin-top:12px}}
+.nav button{{background:var(--p);color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:11px 10px;font-size:14px;font-weight:850;white-space:normal;line-height:1.2;min-height:52px;width:100%}}
+.nav button:focus-visible,.voice-action:focus-visible,.skip-link:focus-visible{{outline:3px solid #79a8ff;outline-offset:3px}} .nav button.active{{background:#222938;color:white;border-color:#64748b}}
+.panel{{display:none;scroll-margin-top:12px}} .panel.active{{display:block}}
+.voice-hint{{margin:-4px 0 12px;color:var(--muted);font-size:13px}}
+.voicebar{{position:fixed;right:18px;bottom:max(18px,env(safe-area-inset-bottom));z-index:9999;display:flex;gap:10px;padding:8px;background:#0b0d11e8;border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px #0008}}
+.voice-action{{min-width:86px;min-height:54px;border:1px solid #586579;border-radius:11px;background:#222938;color:white;font-size:16px;font-weight:900;padding:10px 14px}}
+.skip-link{{position:fixed;left:12px;top:12px;z-index:10000;transform:translateY(-160%);background:white;color:#111;padding:12px 16px;border-radius:9px;font-weight:900;text-decoration:none}}
+.skip-link:focus{{transform:none}}
 .grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}} @media(max-width:850px){{.grid{{grid-template-columns:repeat(2,1fr)}}}} @media(max-width:520px){{.grid{{grid-template-columns:1fr}}}}
+@media(max-width:1000px){{
+  .wrap{{padding-bottom:96px}}
+  .nav{{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  .tablewrap{{overflow:visible;border:0}}
+  .tablewrap table{{min-width:0;background:transparent}}
+  .tablewrap thead{{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
+  .tablewrap tbody,.tablewrap tr,.tablewrap td{{display:block;width:100%}}
+  .tablewrap tr{{background:var(--p);border:1px solid var(--line);border-radius:12px;margin:0 0 10px;padding:5px 10px}}
+  .tablewrap td{{display:grid;grid-template-columns:minmax(120px,34%) 1fr;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}}
+  .tablewrap td:last-child{{border-bottom:0}}
+  .tablewrap td::before{{content:attr(data-label);color:var(--muted);font-size:11px;font-weight:900;letter-spacing:.04em}}
+  .tablewrap td[colspan]{{display:block}}
+  .tablewrap td[colspan]::before{{content:none}}
+}}
+@media(max-width:620px){{.nav{{grid-template-columns:repeat(2,minmax(0,1fr))}} .voicebar{{left:12px;right:12px;justify-content:flex-end}} .voice-action{{flex:1}}}}
+@media(prefers-reduced-motion:reduce){{html{{scroll-behavior:auto!important}}}}
 .stat,.card{{background:linear-gradient(180deg,var(--p2),var(--p));border:1px solid var(--line);border-radius:15px;padding:16px;box-shadow:0 8px 24px #0003}}
 .sl{{font-size:11px;letter-spacing:.08em;color:var(--muted);font-weight:900}} .sv{{font-size:24px;font-weight:900;margin:7px 0}} .sd{{font-size:13px;color:var(--muted)}}
 .section{{margin-top:14px}} .notice{{border:1px solid var(--line);border-radius:13px;padding:14px 16px;margin:12px 0}} .warnbox{{background:#28220f;border-color:#665629;color:#ffe49a}}
 .tablewrap{{overflow:auto;border:1px solid var(--line);border-radius:13px}} table{{width:100%;min-width:780px;border-collapse:collapse;background:var(--p)}} th,td{{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}} th{{font-size:11px;color:var(--muted)}}
 .pos{{color:var(--g);font-weight:900}} .neg{{color:var(--r);font-weight:900}} .foot{{margin-top:20px;color:var(--muted);font-size:12px}} code{{color:#dce7ff;overflow-wrap:anywhere}}
-</style></head><body><div class="wrap">
+</style></head><body><a class="skip-link" href="#menu-principal">Ir al menú principal</a><div id="page-top" class="wrap">
 <div class="ey">POROTA TRADING · RC6</div><h1>Decision Cockpit privado</h1>
 <div class="sub">LIVE durante rueda + snapshots inmutables pre/post. Sólo lectura; no cambia decisiones, parámetros ni órdenes.</div>
 <div class="badges">
@@ -548,21 +570,22 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 {badge("localhost:8766")}
 </div>
 
-<div class="nav" role="tablist" aria-label="Vistas del trader">
-<button class="active" role="tab" aria-selected="true" onclick="tab('live',this)">Decision Cockpit</button>
-<button role="tab" aria-selected="false" onclick="tab('pos',this)">Posiciones y riesgo</button>
-<button role="tab" aria-selected="false" onclick="tab('mkt',this)">Mercado y liquidez</button>
-<button role="tab" aria-selected="false" onclick="tab('ins',this)">Instrumentos</button>
-<button role="tab" aria-selected="false" onclick="tab('exe',this)">Ejecución y costos</button>
-<button role="tab" aria-selected="false" onclick="tab('str',this)">Estrategia y gates</button>
-<button role="tab" aria-selected="false" onclick="tab('evt',this)">Eventos y macro</button>
-<button role="tab" aria-selected="false" onclick="tab('pre',this)">Bloqueos pre-rueda</button>
-<button role="tab" aria-selected="false" onclick="tab('fam',this)">Explorar familias</button>
-<button role="tab" aria-selected="false" onclick="tab('perf',this)">Performance</button>
-<button role="tab" aria-selected="false" onclick="tab('evi',this)">Evidencia y servicios</button>
-<button role="tab" aria-selected="false" onclick="tab('cie',this)">Cierre de rueda</button>
-<button role="tab" aria-selected="false" onclick="tab('sem',this)">Semáforo ejecutivo</button>
+<div id="menu-principal" class="nav" role="tablist" aria-label="Menú principal del trader">
+<button class="active" role="tab" aria-selected="true" aria-controls="live" aria-label="Decision Cockpit" onclick="tab('live',this)">Cockpit</button>
+<button role="tab" aria-selected="false" aria-controls="pos" aria-label="Posiciones y riesgo" onclick="tab('pos',this)">Posiciones</button>
+<button role="tab" aria-selected="false" aria-controls="mkt" aria-label="Mercado y liquidez" onclick="tab('mkt',this)">Mercado</button>
+<button role="tab" aria-selected="false" aria-controls="ins" aria-label="Instrumentos" onclick="tab('ins',this)">Instrumentos</button>
+<button role="tab" aria-selected="false" aria-controls="exe" aria-label="Ejecución y costos" onclick="tab('exe',this)">Ejecución</button>
+<button role="tab" aria-selected="false" aria-controls="str" aria-label="Estrategia y gates" onclick="tab('str',this)">Estrategia</button>
+<button role="tab" aria-selected="false" aria-controls="evt" aria-label="Eventos y macro" onclick="tab('evt',this)">Eventos</button>
+<button role="tab" aria-selected="false" aria-controls="pre" aria-label="Bloqueos pre-rueda" onclick="tab('pre',this)">Pre-rueda</button>
+<button role="tab" aria-selected="false" aria-controls="fam" aria-label="Explorar familias" onclick="tab('fam',this)">Familias</button>
+<button role="tab" aria-selected="false" aria-controls="perf" aria-label="Performance" onclick="tab('perf',this)">Performance</button>
+<button role="tab" aria-selected="false" aria-controls="evi" aria-label="Evidencia y servicios" onclick="tab('evi',this)">Evidencia</button>
+<button role="tab" aria-selected="false" aria-controls="cie" aria-label="Cierre de rueda" onclick="tab('cie',this)">Cierre</button>
+<button role="tab" aria-selected="false" aria-controls="sem" aria-label="Semáforo ejecutivo" onclick="tab('sem',this)">Semáforo</button>
 </div>
+<div class="voice-hint" aria-live="polite">Control por voz: podés decir el nombre de una opción. Los botones “Menú” y “Arriba” quedan siempre visibles.</div>
 
 <section id="live" class="panel active">
 <div class="grid">
@@ -734,9 +757,66 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 {stat("ANÁLISIS TÉCNICO",len(instrument_analytics),"context-only")}
 </div></section>
 
-<div class="foot">Privado · localhost-only · SSH Port Forwarding · auto-refresh 30 s · sin controles de ejecución.</div>
-</div><script>
-function tab(id,b){{document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.nav button').forEach(x=>{{x.classList.remove('active');x.setAttribute('aria-selected','false')}});document.getElementById(id).classList.add('active');b.classList.add('active');b.setAttribute('aria-selected','true')}}
+<div class="foot">Privado · localhost-only · SSH Port Forwarding · auto-refresh 30 s con posición preservada · sin controles de ejecución.</div>
+</div>
+<div class="voicebar" role="navigation" aria-label="Navegación rápida por voz">
+<button class="voice-action" type="button" aria-label="Ir al menú principal" onclick="goMenu()">Menú</button>
+<button class="voice-action" type="button" aria-label="Ir arriba de la página" onclick="goTop()">Arriba</button>
+</div>
+<script>
+const TAB_KEY='porota8766.activeTab';
+const SCROLL_KEY='porota8766.scrollY';
+let lastInteraction=Date.now();
+function enhanceTables(){{
+  document.querySelectorAll('.tablewrap table').forEach(table=>{{
+    const headers=Array.from(table.querySelectorAll('thead th')).map(th=>th.textContent.trim());
+    table.querySelectorAll('tbody tr').forEach(tr=>{{
+      Array.from(tr.children).forEach((td,i)=>{{
+        if(!td.hasAttribute('colspan')) td.setAttribute('data-label',headers[i]||'Dato');
+      }});
+    }});
+  }});
+}}
+function selectTab(id,b,scroll){{
+  const panel=document.getElementById(id);
+  if(!panel) return;
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(x=>{{x.classList.remove('active');x.setAttribute('aria-selected','false')}});
+  panel.classList.add('active');
+  if(b){{b.classList.add('active');b.setAttribute('aria-selected','true')}}
+  sessionStorage.setItem(TAB_KEY,id);
+  if(scroll){{
+    panel.setAttribute('tabindex','-1');
+    panel.scrollIntoView({{behavior:'smooth',block:'start'}});
+    panel.focus({{preventScroll:true}});
+  }}
+}}
+function tab(id,b){{selectTab(id,b,true)}}
+function goMenu(){{
+  const menu=document.getElementById('menu-principal');
+  if(menu) menu.scrollIntoView({{behavior:'smooth',block:'start'}});
+}}
+function goTop(){{window.scrollTo({{top:0,behavior:'smooth'}})}}
+function saveScroll(){{sessionStorage.setItem(SCROLL_KEY,String(Math.round(window.scrollY||0)))}}
+['click','keydown','touchstart'].forEach(evt=>document.addEventListener(evt,()=>{{lastInteraction=Date.now()}},{{passive:true}}));
+window.addEventListener('scroll',saveScroll,{{passive:true}});
+window.addEventListener('beforeunload',saveScroll);
+window.addEventListener('DOMContentLoaded',()=>{{
+  enhanceTables();
+  const id=sessionStorage.getItem(TAB_KEY);
+  if(id){{
+    const b=document.querySelector('.nav button[aria-controls="'+id+'"]');
+    selectTab(id,b,false);
+  }}
+  const y=parseInt(sessionStorage.getItem(SCROLL_KEY)||'0',10);
+  if(Number.isFinite(y)&&y>0) requestAnimationFrame(()=>window.scrollTo(0,y));
+}});
+setInterval(()=>{{
+  if(document.visibilityState==='visible' && Date.now()-lastInteraction>15000){{
+    saveScroll();
+    window.location.reload();
+  }}
+}},30000);
 </script></body></html>'''
 
 
