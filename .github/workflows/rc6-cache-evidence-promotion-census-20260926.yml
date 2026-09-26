@@ -20,7 +20,7 @@ jobs:
       - name: Pin exact candidate
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = "4e98c9fc3d8278856e8db282c507e4617f3ec124"
+          test "$(git rev-parse HEAD)" = "88f12691e473d802de8b6af7f20f3bd5ab37f669"
 
       - name: Prepare strict SSH
         env:
@@ -83,6 +83,13 @@ jobs:
               try: item["raw"]=json.loads(item.pop("metadata_json"))
               except Exception: item["raw"]={}
               state.append(item)
+          retry_summary = [dict(row) for row in conn.execute("""SELECT source,state,reason,
+            COUNT(*) AS instruments FROM complementary_contract_retry
+            GROUP BY source,state,reason ORDER BY source,state,reason""").fetchall()]
+          retry_special = [dict(row) for row in conn.execute("""SELECT ticker,instrument_type,
+            market,currency,settlement,source,state,reason,attempts,last_attempt_at
+            FROM complementary_contract_retry WHERE state='PENDING_SPECIAL'
+            ORDER BY ticker,instrument_type""").fetchall()]
           conn.close()
 
           before=[row for row in state if ready(row)]
@@ -121,13 +128,14 @@ jobs:
           promoted=unique(promoted); inserted=unique(inserted)
           after=[row for row in state if ready(row)]
           result={
-              "candidate_sha":"4e98c9fc3d8278856e8db282c507e4617f3ec124",
+              "candidate_sha":"88f12691e473d802de8b6af7f20f3bd5ab37f669",
               "ready_before":len(before),"promoted_existing":len(promoted),"inserted_ready":len(inserted),
               "ready_after":len(after),"pending_after":len(state)-len(after),
               "ready_by_family":dict(Counter(row["instrument_type"] for row in after)),
               "pending_by_family":dict(Counter(row["instrument_type"] for row in state if not ready(row))),
               "applied_by_source":dict(applied),"blocked_cache_rows":len(blocked),
               "special_pending_ambiguous":len(ambiguous),"ambiguous":ambiguous,
+              "retry_ledger_summary": retry_summary, "retry_special": retry_special,
               "promoted":sorted(promoted,key=lambda x:(x["family"],x["ticker"])),
               "inserted":sorted(inserted,key=lambda x:(x["family"],x["ticker"])),
           }
