@@ -1,0 +1,141 @@
+name: RC6 PPI gap resolution 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-contract-resolution-20260926]
+    paths:
+      - '.github/workflows/rc6-ppi-gap-resolution-20260926.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ppi-resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_ppi"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_ppi" "$HOME/.ssh/known_hosts"
+      - name: Resolve PPI gaps read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_ppi" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=60)
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' > ppi_resolution.json
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3, string, time
+          from pathlib import Path
+          from bd_ppi_readonly_guard import ProductionMarketReader
+
+          DB="/app/data/paper_v17/observer_v17.db"
+          SECRET="/run/secrets/ppi_production.json"
+          FAMILY_PROVIDER={"ACCIONES":"ACCIONES","CEDEARS":"CEDEARS","BONOS":"BONOS",
+            "LETRAS":"LETRAS","OBLIGACIONES":"ON","ON":"ON","OPCIONES":"OPCIONES",
+            "ETFS":"ETF","FUTUROS":"FUTUROS","CAUCIONES":"CAUCIONES","FCI":"FCI"}
+          sec=json.loads(Path(SECRET).read_text())
+          key=sec.get("api_key") or sec.get("key") or sec.get("ppi_api_key")
+          secret=sec.get("api_secret") or sec.get("secret") or sec.get("ppi_api_secret")
+          if not key or not secret:
+            raise SystemExit("PPI_SECRET_FIELDS_NOT_FOUND")
+          reader=ProductionMarketReader(key,secret)
+          reader.login_once()
+
+          c=sqlite3.connect(f"file:{DB}?mode=ro",uri=True,timeout=30)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          missing=[dict(r) for r in c.execute("""
+            SELECT ticker,instrument_type,market,currency,settlement,status,capability
+            FROM financial_instrument_catalog
+            WHERE capability='MISSING_CURRENCY_OR_MARKET'
+            ORDER BY instrument_type,ticker
+          """)]
+          spot=[dict(r) for r in c.execute("""
+            SELECT ticker,instrument_type,market,currency,settlement,status,capability
+            FROM financial_instrument_catalog
+            WHERE capability='READY_PAPER_SPOT' AND status!='AVAILABLE'
+            ORDER BY instrument_type,ticker
+          """)]
+          c.close()
+
+          def safe_search(ticker,family,market="BYMA"):
+            provider=FAMILY_PROVIDER.get(family,family)
+            try:
+              rows=reader.search_instruments(ticker,provider,name=ticker,market=market)
+              exact=[x for x in rows if isinstance(x,dict) and str(x.get("ticker") or "").upper()==ticker.upper()]
+              return {"ok":True,"rows":exact}
+            except Exception as exc:
+              return {"ok":False,"error":type(exc).__name__+":"+str(exc)[:160]}
+
+          ymc={t:safe_search(t,"OBLIGACIONES","BYMA") for t in ("YMCIO","YMCJO","YMCXO","YMCYO","YMCZO")}
+
+          resolved_missing=[]; unresolved_missing=[]
+          for i,row in enumerate(missing):
+            out=safe_search(row["ticker"],row["instrument_type"],"BYMA")
+            if out.get("rows"):
+              resolved_missing.append({"requested":row,"ppi":out["rows"]})
+            else:
+              unresolved_missing.append({"requested":row,"error":out.get("error"),"row_count":len(out.get("rows") or [])})
+            if i and i%100==0:
+              time.sleep(0.2)
+
+          refreshed_spot=[]; unresolved_spot=[]
+          for row in spot:
+            t,f,s=row["ticker"],row["instrument_type"],row["settlement"]
+            try:
+              cur=reader.current(t,FAMILY_PROVIDER.get(f,f),s)
+              book=reader.book(t,FAMILY_PROVIDER.get(f,f),s)
+              refreshed_spot.append({"requested":row,"current":cur,"book":book})
+            except Exception as exc:
+              unresolved_spot.append({"requested":row,"error":type(exc).__name__+":"+str(exc)[:160]})
+
+          etf=[]
+          for prefix in string.ascii_uppercase+string.digits:
+            try:
+              vals=reader.search_instruments(prefix,"ETF",name=prefix,market="BYMA")
+              for x in vals:
+                if isinstance(x,dict):
+                  etf.append(x)
+            except Exception:
+              pass
+          dedup={}
+          for x in etf:
+            k=(str(x.get("ticker") or "").upper(),str(x.get("market") or "").upper(),str(x.get("currency") or "").upper())
+            if k[0]: dedup[k]=x
+
+          result={
+            "ppi_metrics":reader.metrics,
+            "ymc":ymc,
+            "missing_total":len(missing),
+            "missing_resolved":len(resolved_missing),
+            "missing_unresolved":len(unresolved_missing),
+            "resolved_missing":resolved_missing,
+            "unresolved_missing":unresolved_missing,
+            "spot_total":len(spot),
+            "spot_refreshed":len(refreshed_spot),
+            "spot_unresolved":len(unresolved_spot),
+            "refreshed_spot":refreshed_spot,
+            "unresolved_spot":unresolved_spot,
+            "etf_count":len(dedup),
+            "etfs":list(dedup.values()),
+          }
+          print(json.dumps(result,ensure_ascii=False))
+          reader.close()
+          PY
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: porota-ppi-gap-resolution-da79fdf6
+          path: ppi_resolution.json
+          if-no-files-found: error
