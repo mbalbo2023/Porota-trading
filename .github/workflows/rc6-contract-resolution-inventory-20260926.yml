@@ -31,7 +31,10 @@ jobs:
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -Eeuo pipefail
-          ssh -i "$HOME/.ssh/porota_rc6_resolution" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'python3 - <<'"'"'PY'"'"'
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_resolution" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' > pending_inventory.json
+          set -Eeuo pipefail
+          python3 - <<'PY'
           import sqlite3, json
           db="/opt/porota-trading/data/paper_v17/observer_v17.db"
           c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=30)
@@ -54,7 +57,8 @@ jobs:
           """)]
           c.close()
           print(json.dumps({"rows":rows,"retries":retries,"candidates":candidates},ensure_ascii=False))
-          PY' > pending_inventory.json
+          PY
+          REMOTE
       - uses: actions/upload-artifact@v4
         with:
           name: porota-pending-contract-inventory-da79fdf6
