@@ -1,0 +1,62 @@
+name: RC6 contract-resolution inventory 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-contract-resolution-20260926]
+    paths:
+      - '.github/workflows/rc6-contract-resolution-inventory-20260926.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_resolution"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_resolution" "$HOME/.ssh/known_hosts"
+      - name: Export pending identities read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_resolution" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'python3 - <<'"'"'PY'"'"'
+          import sqlite3, json
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=30)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          rows=[dict(r) for r in c.execute("""
+          SELECT ticker,instrument_type,market,currency,settlement,status,capability,last_seen_at,metadata_json
+          FROM financial_instrument_catalog
+          WHERE NOT (status='AVAILABLE' AND capability LIKE 'READY_PAPER_%')
+          ORDER BY instrument_type,ticker,market,currency,settlement
+          """)]
+          retries=[dict(r) for r in c.execute("""
+          SELECT ticker,instrument_type,market,currency,settlement,source,observed_at,state,reason,last_attempt_at,attempts
+          FROM complementary_contract_retry
+          ORDER BY instrument_type,ticker,market,currency,settlement,source
+          """)]
+          candidates=[dict(r) for r in c.execute("""
+          SELECT ticker,instrument_type,market,settlement,can_simulate,status,detail,last_checked_at
+          FROM candidate_universe ORDER BY instrument_type,ticker,market
+          """)]
+          c.close()
+          print(json.dumps({"rows":rows,"retries":retries,"candidates":candidates},ensure_ascii=False))
+          PY' > pending_inventory.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: porota-pending-contract-inventory-da79fdf6
+          path: pending_inventory.json
+          if-no-files-found: error
