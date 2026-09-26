@@ -40,7 +40,7 @@ jobs:
           rows=[dict(r) for r in c.execute("""
           SELECT ticker,instrument_type,market,currency,settlement,status,capability,last_seen_at,metadata_json
           FROM financial_instrument_catalog
-          WHERE NOT (status='AVAILABLE' AND capability LIKE 'READY_PAPER_%')
+          WHERE status!='AVAILABLE' OR capability NOT LIKE 'READY_PAPER_%'
           ORDER BY instrument_type,ticker,market,currency,settlement
           """)]
           retries=[dict(r) for r in c.execute("""
