@@ -548,14 +548,11 @@ def _download_catalog(reader, store):
 
 
 def _reconcile_complementary_catalog(store):
-    """Merge fresh IOL/BYMA evidence into the canonical operational catalog.
+    """Apply complements in strict PPI-primary -> IOL -> BYMA order.
 
-    Stored RC6 rows predate the _discovery_source marker, and some legacy
-    family names (for example ON) are aliases of the canonical family
-    (OBLIGACIONES).  Matching therefore happens on canonical identity rather
-    than raw strings.  An explicit non-PPI provenance is never re-labelled as
-    PPI.  Complement-only identities may enter the catalog only when their own
-    normalized evidence is already PAPER-ready.
+    PPI rows remain the canonical identity whenever they exist. IOL and BYMA
+    are gap-fill sources: they may add missing contract/freshness evidence but
+    never overwrite explicit higher-priority identity fields.
     """
     try:
         complementary = complementary_discovery("/app/data/market")
@@ -564,18 +561,10 @@ def _reconcile_complementary_catalog(store):
         return 0
     if not complementary:
         return 0
+
     checked = now_iso()
     promoted = inserted = refreshed = 0
-
-    def identity(record):
-        return (
-            str(record.get("ticker") or "").strip().upper(),
-            financial_catalog.canonical_family(record.get("instrument_type")),
-            financial_catalog.canonical_market(record.get("market")),
-            financial_catalog.canonical_settlement(
-                record.get("settlement"), record.get("instrument_type")),
-            str(record.get("currency") or "").strip().upper(),
-        )
+    applied_by_source = {}
 
     with store.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
@@ -583,25 +572,34 @@ def _reconcile_complementary_catalog(store):
             if not financial_catalog.complementary_is_fresh(
                     raw, max_age_seconds=COMPLEMENTARY_CONTRACT_TTL_SECONDS):
                 continue
-            try:
-                complement = financial_catalog.normalize_complementary_record(
-                    raw, checked, "COMPLEMENTARY_RECONCILE")
-            except (ValueError, TypeError):
+
+            ticker = str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
+            if not ticker:
                 continue
-            target = identity(complement)
             candidates = connection.execute(
                 "SELECT * FROM financial_instrument_catalog WHERE ticker=?",
-                (complement["ticker"],)).fetchall()
-            matches = []
-            for candidate in candidates:
-                value = dict(candidate)
-                if identity(value) == target:
-                    matches.append(value)
+                (ticker,)).fetchall()
+            matches = [
+                dict(candidate) for candidate in candidates
+                if financial_catalog.complement_matches_primary(dict(candidate), raw)
+            ]
             if len(matches) > 1:
-                store.event("COMPLEMENTARY_IDENTITY_AMBIGUOUS",
-                            "|".join(map(str,target)))
+                family = financial_catalog.canonical_family(
+                    raw.get("instrument_type") or raw.get("asset_type") or raw.get("family"))
+                source = financial_catalog.complement_source(raw)
+                store.event(
+                    "COMPLEMENTARY_IDENTITY_AMBIGUOUS",
+                    f"{ticker}|{family}|{source}|matches={len(matches)}")
                 continue
+
             if not matches:
+                # A complement-only identity may enter only if that provider
+                # supplied a complete, internally consistent PAPER contract.
+                try:
+                    complement = financial_catalog.normalize_complementary_record(
+                        raw, checked, "COMPLEMENTARY_RECONCILE")
+                except (ValueError, TypeError):
+                    continue
                 if (complement.get("status") == "AVAILABLE"
                         and str(complement.get("capability") or "").startswith("READY_PAPER_")):
                     financial_catalog.persist(connection, complement)
@@ -613,6 +611,8 @@ def _reconcile_complementary_catalog(store):
                        json.dumps(complement["raw"], ensure_ascii=False, default=str)))
                     inserted += 1
                     promoted += 1
+                    source = financial_catalog.complement_source(raw)
+                    applied_by_source[source] = applied_by_source.get(source, 0) + 1
                 continue
 
             primary = matches[0]
@@ -620,43 +620,57 @@ def _reconcile_complementary_catalog(store):
                 primary["raw"] = json.loads(primary.pop("metadata_json"))
             except (TypeError, ValueError, json.JSONDecodeError):
                 continue
-            discovery_source = str(primary["raw"].get("_discovery_source") or "").upper()
-            # Legacy catalog rows have no marker but were built by PPI before
-            # provenance was persisted. Explicit complementary rows are not
-            # silently converted into PPI-primary identities.
-            if discovery_source and discovery_source not in {"PPI_PRIMARY","UNKNOWN"}:
-                continue
+
             before_ready = (
                 primary.get("status") == "AVAILABLE"
                 and str(primary.get("capability") or "").startswith("READY_PAPER_"))
-            before = (primary.get("status"), primary.get("capability"),
-                      primary.get("last_seen_at"),
-                      json.dumps(primary.get("raw") or {}, sort_keys=True, default=str))
+            before = (
+                primary.get("status"), primary.get("capability"),
+                primary.get("last_seen_at"), primary.get("currency"),
+                primary.get("settlement"), primary.get("market"),
+                json.dumps(primary.get("raw") or {}, sort_keys=True, default=str),
+            )
             merged = financial_catalog.complete_with_complement(primary, raw)
-            after = (merged.get("status"), merged.get("capability"),
-                     merged.get("last_seen_at"),
-                     json.dumps(merged.get("raw") or {}, sort_keys=True, default=str))
+            after = (
+                merged.get("status"), merged.get("capability"),
+                merged.get("last_seen_at"), merged.get("currency"),
+                merged.get("settlement"), merged.get("market"),
+                json.dumps(merged.get("raw") or {}, sort_keys=True, default=str),
+            )
             if after == before:
                 continue
+
+            # Hard invariant: a complement must not mutate the primary identity.
+            for field in ("ticker","instrument_type","market","currency","settlement",
+                          "settlement_source","description","last_seen_at","run_id"):
+                if merged.get(field) != primary.get(field):
+                    raise RuntimeError(f"COMPLEMENT_OVERWRITE_BLOCKED:{field}:{ticker}")
+
             financial_catalog.persist(connection, merged)
             connection.execute("""INSERT OR REPLACE INTO instrument_catalog
               VALUES(?,?,?,?,?,?,?)""",
               (merged["instrument_type"], merged["ticker"], merged["description"],
                merged["market"], merged["settlement"], checked,
                json.dumps(merged["raw"], ensure_ascii=False, default=str)))
+            refreshed += 1
+            source = financial_catalog.complement_source(raw)
+            applied_by_source[source] = applied_by_source.get(source, 0) + 1
             now_ready = (
                 merged.get("status") == "AVAILABLE"
                 and str(merged.get("capability") or "").startswith("READY_PAPER_"))
-            refreshed += 1
             if now_ready and not before_ready:
                 promoted += 1
+
         financial_catalog.sync_candidate_universe(connection, checked)
+
     if promoted or inserted or refreshed:
         store.event(
             "COMPLEMENTARY_CATALOG_RECONCILIATION",
             f"promoted={promoted}; inserted={inserted}; refreshed={refreshed}; "
-            "identity=canonical; real_orders=blocked")
+            f"sources={json.dumps(applied_by_source,sort_keys=True)}; "
+            "precedence=PPI>IOL>BYMA; real_orders=blocked")
     return promoted
+
 
 
 def _eligible_symbols(store):
