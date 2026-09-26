@@ -389,6 +389,79 @@ def gate_recent_rows(rows: list[dict]) -> str:
     )
 
 
+
+def pct_fraction(value) -> str:
+    x = number(value)
+    return "N/D" if x is None else f"{x * 100.0:.2f}%".replace(".", ",")
+
+
+def instrument_rows(rows: list[dict]) -> str:
+    if not rows:
+        return '<tr><td colspan="16" class="muted">Sin histórico canónico suficiente para los instrumentos visibles.</td></tr>'
+    out = []
+    for row in rows[:MAX_ROWS]:
+        out.append(
+            "<tr>"
+            f"<td><b>{esc(row.get('symbol') or 'N/D')}</b></td>"
+            f"<td>{esc(row.get('family') or 'N/D')}</td>"
+            f"<td>{esc(row.get('market') or 'N/D')}</td>"
+            f"<td>{esc(row.get('settlement') or 'N/D')}</td>"
+            f"<td>{esc(row.get('asof') or 'N/D')}</td>"
+            f"<td>{fmt_number(row.get('close'), 4)}</td>"
+            f"<td>{pct_fraction(row.get('momentum_20'))}</td>"
+            f"<td>{pct_fraction(row.get('momentum_60'))}</td>"
+            f"<td>{fmt_number(row.get('rsi14'), 1)}</td>"
+            f"<td>{fmt_number(row.get('atr14'), 4)}</td>"
+            f"<td>{pct_fraction(row.get('realized_vol20'))}</td>"
+            f"<td>{pct_fraction(row.get('max_drawdown_252'))}</td>"
+            f"<td>{fmt_number(row.get('high_252'), 4)}</td>"
+            f"<td>{fmt_number(row.get('low_252'), 4)}</td>"
+            f"<td>{fmt_number(row.get('volume_ratio_20'), 2)}×</td>"
+            f"<td>{esc(row.get('source') or 'N/D')}</td>"
+            "</tr>"
+        )
+    return "".join(out)
+
+
+def equity_curve_rows(by_currency: dict) -> str:
+    if not isinstance(by_currency, dict) or not by_currency:
+        return '<tr><td colspan="10" class="muted">Sin curva de patrimonio verificable.</td></tr>'
+    out = []
+    for currency, row in list(by_currency.items())[:12]:
+        latest = row.get("latest") if isinstance(row.get("latest"), dict) else {}
+        out.append(
+            "<tr>"
+            f"<td><b>{esc(currency)}</b></td>"
+            f"<td>{money(latest.get('equity'))}</td>"
+            f"<td>{money(row.get('peak_equity'))}</td>"
+            f"<td>{pct(row.get('current_drawdown_pct'))}</td>"
+            f"<td>{pct(row.get('max_drawdown_pct'))}</td>"
+            f"<td>{money(latest.get('cash'))}</td>"
+            f"<td>{money(latest.get('exposure'))}</td>"
+            f"<td>{money(latest.get('unrealized_pnl'))}</td>"
+            f"<td>{money(latest.get('realized_pnl'))}</td>"
+            f"<td>{esc(row.get('samples', 0))}</td>"
+            "</tr>"
+        )
+    return "".join(out)
+
+
+def event_rows(rows: list[dict]) -> str:
+    if not rows:
+        return '<tr><td colspan="6" class="muted">Sin eventos estructurados disponibles.</td></tr>'
+    return "".join(
+        "<tr>"
+        f"<td>{fmt_dt(row.get('available_to_engine_at'))}</td>"
+        f"<td><b>{esc(row.get('event_type') or 'N/D')}</b></td>"
+        f"<td>{esc(row.get('region') or 'N/D')}</td>"
+        f"<td>{esc(row.get('title') or 'N/D')}</td>"
+        f"<td>{esc(row.get('source_domain') or 'N/D')}</td>"
+        f"<td>{esc(row.get('authority') or 'SHADOW_ONLY')}</td>"
+        "</tr>"
+        for row in rows[:20]
+    )
+
+
 def render() -> str:
     b = state_bundle()
     current, pre, live, post, review = b["current"], b["pre"], b["live"], b["post"], b["review"]
@@ -421,6 +494,11 @@ def render() -> str:
     source_health = live.get("source_health") if isinstance(live.get("source_health"), dict) else {}
     api_health = source_health.get("api_health") if isinstance(source_health.get("api_health"), list) else []
     source_sync = source_health.get("source_sync") if isinstance(source_health.get("source_sync"), list) else []
+    equity_curve = live.get("equity_curve") if isinstance(live.get("equity_curve"), dict) else {}
+    event_risk = live.get("event_risk") if isinstance(live.get("event_risk"), dict) else {}
+    event_run = event_risk.get("latest_run") if isinstance(event_risk.get("latest_run"), dict) else {}
+    events = event_risk.get("events") if isinstance(event_risk.get("events"), list) else []
+    instrument_analytics = live.get("instrument_analytics") if isinstance(live.get("instrument_analytics"), list) else []
 
     post_metrics = post.get("metrics") if isinstance(post.get("metrics"), dict) else {}
     post_ops = post.get("operations") if isinstance(post.get("operations"), list) else []
@@ -474,8 +552,10 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 <button class="active" role="tab" aria-selected="true" onclick="tab('live',this)">Decision Cockpit</button>
 <button role="tab" aria-selected="false" onclick="tab('pos',this)">Posiciones y riesgo</button>
 <button role="tab" aria-selected="false" onclick="tab('mkt',this)">Mercado y liquidez</button>
+<button role="tab" aria-selected="false" onclick="tab('ins',this)">Instrumentos</button>
 <button role="tab" aria-selected="false" onclick="tab('exe',this)">Ejecución y costos</button>
 <button role="tab" aria-selected="false" onclick="tab('str',this)">Estrategia y gates</button>
+<button role="tab" aria-selected="false" onclick="tab('evt',this)">Eventos y macro</button>
 <button role="tab" aria-selected="false" onclick="tab('pre',this)">Bloqueos pre-rueda</button>
 <button role="tab" aria-selected="false" onclick="tab('fam',this)">Explorar familias</button>
 <button role="tab" aria-selected="false" onclick="tab('perf',this)">Performance</button>
@@ -542,6 +622,19 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 </section>
 
 
+
+<section id="ins" class="panel">
+<div class="grid">
+{stat("INSTRUMENTOS",len(instrument_analytics),"máximo 10 visibles")}
+{stat("AUTORIDAD","CONTEXT_ONLY","no emite BUY/SELL")}
+{stat("HISTÓRICO","CANÓNICO v2","identidad exacta mercado/liquidación")}
+{stat("ACTUALIZACIÓN",fmt_dt(live.get("generated_at")),"snapshot LIVE")}
+</div>
+<div class="card section"><h2>Contexto técnico por instrumento</h2>
+<div class="tablewrap"><table><thead><tr><th>Símbolo</th><th>Familia</th><th>Mercado</th><th>Liquidación</th><th>Fecha</th><th>Cierre</th><th>Mom 20</th><th>Mom 60</th><th>RSI14</th><th>ATR14</th><th>Vol 20 anual.</th><th>DD máx 252</th><th>Máx 252</th><th>Mín 252</th><th>Volumen / prom20</th><th>Fuente</th></tr></thead><tbody>{instrument_rows(instrument_analytics)}</tbody></table></div>
+<p class="muted">Indicadores descriptivos sobre la serie canónica. No se convierten en una señal, no alteran el score del motor y no mezclan identidades distintas.</p></div>
+</section>
+
 <section id="exe" class="panel">
 <div class="grid">
 {stat("FILLS MUESTRA",execution.get("sample_size","N/D"),"últimos fills persistidos")}
@@ -574,6 +667,18 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 <div class="card section"><h2>Gates recientes</h2><div class="tablewrap"><table><thead><tr><th>Hora</th><th>Símbolo</th><th>Técnico</th><th>IA</th><th>Patrimonial</th><th>Final</th><th>Motivo</th><th>Paper ID</th></tr></thead><tbody>{gate_recent_rows(gate_matrix.get("recent") if isinstance(gate_matrix.get("recent"),list) else [])}</tbody></table></div></div>
 </section>
 
+
+<section id="evt" class="panel">
+<div class="grid">
+{stat("ESTADO GDELT",event_risk.get("status","N/D"),"evidencia estructurada")}
+{stat("ÚLTIMA CORRIDA",event_run.get("state","N/D"),fmt_dt(event_run.get("finished_at")))}
+{stat("EVENTOS VISIBLES",len(events),"máximo 20")}
+{stat("AUTORIDAD",event_run.get("authority","SHADOW_ONLY"),"OBSERVE_ONLY")}
+</div>
+<div class="card section"><h2>Riesgo de eventos estructurado</h2><div class="tablewrap"><table><thead><tr><th>Disponible</th><th>Tipo</th><th>Región</th><th>Título</th><th>Dominio</th><th>Autoridad</th></tr></thead><tbody>{event_rows(events)}</tbody></table></div>
+<p class="muted">Eventos macro/geopolíticos se muestran como contexto SHADOW. No habilitan, bloquean ni modifican órdenes por sí solos.</p></div>
+</section>
+
 <section id="pre" class="panel">{pre_notice}<div class="grid">
 {stat("SNAPSHOT PREOPEN","VERIFICADO" if pre.get("status")=="VERIFIED" else "N/D",fmt_dt(pre.get("generated_at")))}
 {stat("MODO",pre.get("mode","N/D"),"PRODUCTION_PAPER esperado")}
@@ -591,6 +696,8 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 <div class="card"><h2>Performance PAPER por moneda</h2><div class="tablewrap"><table><thead><tr><th>Moneda</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Win rate</th><th>PnL neto</th><th>Profit factor</th><th>Expectancy</th><th>Mayor win</th><th>Mayor loss</th></tr></thead><tbody>{performance_rows(performance.get("by_currency") if isinstance(performance.get("by_currency"),dict) else {})}</tbody></table></div>
 <div class="notice warnbox"><b>Sin total multi-moneda:</b> si hay más de una moneda, el Site mantiene resultados separados para evitar una suma económicamente inválida.</div></div>
 <div class="card section"><h2>Motivos de cierre</h2><div class="tablewrap"><table><thead><tr><th>Motivo</th><th>Cantidad</th></tr></thead><tbody>{mapping_rows(performance.get("close_reasons") if isinstance(performance.get("close_reasons"),dict) else {}, "Sin cierres clasificables.")}</tbody></table></div></div>
+<div class="card section"><h2>Equity y drawdown por moneda</h2><div class="tablewrap"><table><thead><tr><th>Moneda</th><th>Equity</th><th>Pico</th><th>DD actual</th><th>DD máximo</th><th>Caja</th><th>Exposición</th><th>uPnL</th><th>rPnL</th><th>Muestras</th></tr></thead><tbody>{equity_curve_rows(equity_curve.get("by_currency") if isinstance(equity_curve.get("by_currency"),dict) else {})}</tbody></table></div>
+<p class="muted">La curva se calcula por moneda sobre snapshots persistidos; no se genera un equity total mezclando monedas.</p></div>
 </section>
 
 <section id="evi" class="panel"><div class="grid">
@@ -623,6 +730,8 @@ h1{{font-size:31px;margin:7px 0}} h2{{font-size:20px;margin:0 0 12px}} .sub,.mut
 {stat("STALE QUOTES",market.get("stale_or_unknown","N/D"),"calidad de mercado")}
 {stat("IOL FRESCO",iol.get("fresh_ready","N/D"),"OBSERVE_ONLY")}
 {stat("RISK ROWS",len(daily_risk),"por moneda")}
+{stat("EVENT RISK",event_run.get("state","N/D"),"SHADOW_ONLY")}
+{stat("ANÁLISIS TÉCNICO",len(instrument_analytics),"context-only")}
 </div></section>
 
 <div class="foot">Privado · localhost-only · SSH Port Forwarding · auto-refresh 30 s · sin controles de ejecución.</div>
