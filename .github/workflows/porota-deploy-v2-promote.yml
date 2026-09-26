@@ -170,7 +170,7 @@ jobs:
           # Safe preflight reclamation: only this deploy's temporary directories,
           # dangling images, and build caches. Never volumes, SQLite, active images,
           # persistent data, or PPI Watch state.
-          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -exec rm -rf -- {} +
+          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' ! -path "$REMOTE_DIR" -exec rm -rf -- {} +
           sudo -n docker image prune -f
           sudo -n docker builder prune -af
           if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
