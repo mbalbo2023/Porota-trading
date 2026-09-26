@@ -1,0 +1,14 @@
+[Unit]
+Description=Porota RC6 live Decision Cockpit read-only collector
+After=docker.service
+Requires=docker.service
+ConditionPathExists=/opt/porota-private-snapshot/live_collector.py
+
+[Service]
+Type=oneshot
+Environment=PYTHONPATH=/opt/porota-trading
+Environment=POROTA_ROOT=/opt/porota-trading
+ExecStart=/usr/bin/flock -n /run/lock/porota-live-decision-cockpit-rc6.lock /usr/bin/python3 /opt/porota-private-snapshot/live_collector.py
+TimeoutStartSec=45s
+NoNewPrivileges=true
+PrivateTmp=true
