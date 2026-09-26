@@ -154,12 +154,12 @@ BYMA_NON_OPERATIVE_DAYS = frozenset({
 
 
 def _business_day(day):
-    # Fail closed fuera del año auditado, fines de semana y feriados BYMA.
-    return (
-        day.year == BYMA_CALENDAR_AUDITED_YEAR
-        and day.weekday() < 5
-        and day.isoformat() not in BYMA_NON_OPERATIVE_DAYS
-    )
+    """Use the single audited BYMA calendar authority and fail closed."""
+    try:
+        import ak_byma_calendar as calendar
+        return bool(calendar.es_dia_habil_operativo(day))
+    except Exception:
+        return False
 
 
 def _market_phase(now=None):
