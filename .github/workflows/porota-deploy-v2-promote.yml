@@ -163,7 +163,23 @@ jobs:
           echo "RC6_DEPLOY_V2=START|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA"
           DISK_BEFORE="$(df -PB1 / | awk 'NR==2 {print $4}')"
           echo "DISK_BEFORE=$DISK_BEFORE"
-          test "$DISK_BEFORE" -ge 1073741824
+          DOCKER_DF_BEFORE="$(sudo -n docker system df 2>&1 || true)"
+          echo "DOCKER_SYSTEM_DF_BEFORE=$DOCKER_DF_BEFORE"
+          REMOTE_TMP_BEFORE="$(du -sb /tmp/porota-deploy-v2-* 2>/dev/null | awk '{sum += $1} END {print sum+0}')"
+          echo "REMOTE_DEPLOY_TMP_BEFORE=$REMOTE_TMP_BEFORE"
+          # Safe preflight reclamation: only this deploy's temporary directories,
+          # dangling images, and build caches. Never volumes, SQLite, active images,
+          # persistent data, or PPI Watch state.
+          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -exec rm -rf -- {} +
+          sudo -n docker image prune -f
+          sudo -n docker builder prune -af
+          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
+          DISK_PREFLIGHT_AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          DOCKER_DF_AFTER="$(sudo -n docker system df 2>&1 || true)"
+          echo "DISK_PREFLIGHT_AFTER=$DISK_PREFLIGHT_AFTER"
+          echo "SAFE_PREFLIGHT_RECLAIM=$((DISK_PREFLIGHT_AFTER-DISK_BEFORE))"
+          echo "DOCKER_SYSTEM_DF_AFTER=$DOCKER_DF_AFTER"
+          test "$DISK_PREFLIGHT_AFTER" -ge 1073741824
 
           PRE_STATE="NO_RUNNING_OBSERVER"
           if [ "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)" = running ]; then
