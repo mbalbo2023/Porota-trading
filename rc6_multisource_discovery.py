@@ -90,6 +90,9 @@ def _rows(path: Path, source: str):
             family=canonical_family(row.get("asset_type") or row.get("family"))
             symbol=str(row.get("symbol") or "").strip().upper()
             if not family or not symbol:continue
+            quote=row.get("quote") if isinstance(row.get("quote"),dict) else {}
+            observed=(quote.get("provider_observed_at") or row.get("provider_observed_at")
+                      or row.get("captured_at") or payload.get("refreshed_at"))
             out.append({
                 "ticker":symbol,"instrument_type":family,
                 "market":canonical_market(row.get("market") or "BYMA"),
@@ -97,7 +100,15 @@ def _rows(path: Path, source: str):
                 "settlement":canonical_settlement(row.get("term"),family),
                 "description":str(row.get("description") or ""),
                 "units_per_lot":row.get("units_per_lot"),
-                "source":"IOL_COMPLEMENTARY","raw":row,
+                "source":"IOL_COMPLEMENTARY","source_channel":"IOL_SHADOW",
+                "observed_at":observed,
+                "provider_observed_at":quote.get("provider_observed_at"),
+                "identity_evidence":{
+                    "market_explicit":bool(row.get("market")),
+                    "currency_explicit":bool(row.get("currency")),
+                    "settlement_explicit":bool(row.get("term")),
+                },
+                "raw":row,
             })
         return out
     if source=="BYMA":
@@ -115,7 +126,14 @@ def _rows(path: Path, source: str):
                     "currency":row.get("currency"),
                     "settlement":canonical_settlement(row.get("term") or row.get("settlement"),family),
                     "description":str(row.get("description") or ""),
-                    "source":"BYMA_PUBLIC_COMPLEMENTARY","observed_at":observed,"raw":row,
+                    "source":"BYMA_PUBLIC_COMPLEMENTARY","source_channel":"BYMA_PUBLIC",
+                    "observed_at":observed,
+                    "identity_evidence":{
+                        "market_explicit":True,
+                        "currency_explicit":bool(row.get("currency")),
+                        "settlement_explicit":bool(row.get("term") or row.get("settlement")),
+                    },
+                    "raw":row,
                 })
         return out
     return []
@@ -134,6 +152,13 @@ def _family_reference_rows(path: Path):
         row["market"]=canonical_market(raw.get("market") or "BYMA")
         row["settlement"]=canonical_settlement(raw.get("settlement") or raw.get("term"),family)
         row["source"]="IOL_COMPLEMENTARY"
+        row["source_channel"]="IOL_FAMILY_REFERENCE"
+        row["observed_at"]=raw.get("observed_at") or payload.get("refreshed_at")
+        row["identity_evidence"]={
+            "market_explicit":bool(raw.get("market")),
+            "currency_explicit":bool(raw.get("currency")),
+            "settlement_explicit":bool(raw.get("settlement") or raw.get("term")),
+        }
         out.append(row)
     # FCI inventory is discovery evidence, not a complete trading contract.
     for raw in payload.get("fci",[]) if isinstance(payload,dict) else []:
@@ -146,7 +171,13 @@ def _family_reference_rows(path: Path):
             "currency":raw.get("currency"),
             "settlement":canonical_settlement("T0","FCI"),
             "description":str(raw.get("description") or ""),
-            "source":"IOL_COMPLEMENTARY",
+            "source":"IOL_COMPLEMENTARY","source_channel":"IOL_FAMILY_REFERENCE",
+            "observed_at":payload.get("refreshed_at"),
+            "identity_evidence":{
+                "market_explicit":bool(raw.get("market")),
+                "currency_explicit":bool(raw.get("currency")),
+                "settlement_explicit":False,
+            },
             "fci_type":raw.get("fciType"),
             "raw":dict(raw),
         })
@@ -160,17 +191,26 @@ def _load(path: Path):
         return {}
 
 def complementary_discovery(root: Path|str="/app/data/market"):
+    """Return complements in strict source order: IOL first, BYMA last.
+
+    PPI is not in this list because the persistent financial catalog is the
+    primary identity authority.  We intentionally keep both IOL and BYMA rows
+    for the same identity instead of collapsing them to one winner: IOL gets
+    the first chance to fill a missing field/contract and BYMA can only fill
+    what is still missing afterwards.
+    """
     root=Path(root)
     values=(
         _rows(root/"iol_shadow_latest.json","IOL")
         + _family_reference_rows(root/"iol_family_reference_latest.json")
         + _rows(root/"rc6_public_sources_latest.json","BYMA")
     )
-    unique={}
-    priority={"BYMA_PUBLIC_COMPLEMENTARY":1,"IOL_COMPLEMENTARY":2}
-    for row in values:
-        key=(row["ticker"],row["instrument_type"],row["market"],row.get("settlement") or "")
-        current=unique.get(key)
-        if current is None or priority.get(str(row.get("source")),0) > priority.get(str(current.get("source")),0):
-            unique[key]=row
-    return list(unique.values())
+    source_rank={"IOL_COMPLEMENTARY":1,"BYMA_PUBLIC_COMPLEMENTARY":2}
+    channel_rank={"IOL_SHADOW":1,"IOL_FAMILY_REFERENCE":2,"BYMA_PUBLIC":3}
+    indexed=list(enumerate(values))
+    indexed.sort(key=lambda item:(
+        source_rank.get(str(item[1].get("source") or ""),99),
+        channel_rank.get(str(item[1].get("source_channel") or ""),99),
+        item[0],
+    ))
+    return [row for _,row in indexed]
