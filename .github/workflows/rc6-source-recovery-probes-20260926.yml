@@ -1,0 +1,87 @@
+name: RC6 source recovery probes 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-contract-resolution-20260926]
+    paths:
+      - '.github/workflows/rc6-source-recovery-probes-20260926.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_probe"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_probe" "$HOME/.ssh/known_hosts"
+      - name: Probe host sources and repair IOL refresh if possible
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_probe" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          sudo -n python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          import iol_mcp_readonly_adapter_rc6 as adapter
+          presence={
+            "ppi_secret_file": Path("/run/secrets/ppi_production.json").exists(),
+            "iol_oauth_store": Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json").exists(),
+            "a3_primary_user": bool(os.getenv("A3_PRIMARY_USER")),
+            "a3_primary_password": bool(os.getenv("A3_PRIMARY_PASSWORD")),
+            "a3_primary_account": bool(os.getenv("A3_PRIMARY_ACCOUNT")),
+            "rofex_enabled": os.getenv("ROFEX_ENABLED",""),
+            "rofex_user": bool(os.getenv("ROFEX_USER")),
+            "rofex_password": bool(os.getenv("ROFEX_PASSWORD")),
+            "rofex_account": bool(os.getenv("ROFEX_ACCOUNT")),
+          }
+          print("SOURCE_CREDENTIAL_PRESENCE="+json.dumps(presence,sort_keys=True))
+          try:
+            store=json.loads(Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json").read_text())
+            print("IOL_BOOTSTRAP_META="+json.dumps({
+              "issuer_present":bool(store.get("issuer")),
+              "refresh_token_present":bool((store.get("tokens") or {}).get("refresh_token")),
+              "access_token_present":bool((store.get("tokens") or {}).get("access_token")),
+              "client_id_present":bool((store.get("client_registration") or {}).get("client_id")),
+              "client_secret_present":bool((store.get("client_registration") or {}).get("client_secret")),
+              "auth_method":(store.get("client_registration") or {}).get("token_endpoint_auth_method"),
+            },sort_keys=True))
+          except Exception as exc:
+            print("IOL_BOOTSTRAP_META_ERROR="+type(exc).__name__)
+          client=adapter.OAuthStoreReadOnlyMCP()
+          for name,args in [
+            ("get_options_chain",{"symbol":"GGAL"}),
+            ("get_caucion_rates",{"currency":"ARS","caucion_type":"colocadora"}),
+            ("get_fci_funds",{}),
+          ]:
+            try:
+              out=client.call(name,args)
+              if name=="get_options_chain":
+                opts=out.get("options") or (out.get("result") or {}).get("options") or []
+                populated=sum(1 for x in opts if isinstance(x,dict) and x.get("implied_volatility") is not None and x.get("delta") is not None)
+                print("IOL_LIVE_OPTIONS="+json.dumps({"ok":True,"count":len(opts),"iv_greeks_populated":populated},sort_keys=True))
+              elif name=="get_caucion_rates":
+                vals=out.get("result") or []
+                print("IOL_LIVE_CAUCIONES="+json.dumps({"ok":True,"count":len(vals),"rates_non_null":sum(1 for x in vals if isinstance(x,dict) and x.get("rate") is not None),"sample":vals[:3]},sort_keys=True))
+              else:
+                vals=out.get("result") or []
+                print("IOL_LIVE_FCI="+json.dumps({"ok":True,"count":len(vals)},sort_keys=True))
+            except Exception as exc:
+              print("IOL_LIVE_ERROR="+json.dumps({"tool":name,"type":type(exc).__name__,"message":str(exc),"status":getattr(exc,"status_code",None),"retry_after":getattr(exc,"retry_after",None)},sort_keys=True))
+          PY
+          REMOTE
