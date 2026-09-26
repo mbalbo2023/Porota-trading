@@ -1,0 +1,151 @@
+name: RC6 read-only promotion-zero RCA 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-availability-readonly-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+      - name: Explain current zero promotions without writes
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          from collections import Counter,defaultdict
+          from datetime import datetime, timezone
+          import bf_production_paper_observer as observer
+          import bu_instrument_catalog as catalog
+          from rc6_multisource_discovery import complementary_discovery
+
+          root=Path('/app/data/market')
+          db='/app/data/paper_v17/observer_v17.db'
+          files={}
+          for name in ('iol_shadow_latest.json','iol_family_reference_latest.json','rc6_public_sources_latest.json','byma_morning_watch_latest.json'):
+              p=root/name
+              item={'exists':p.exists()}
+              if p.exists():
+                  st=p.stat()
+                  item['mtime_utc']=datetime.fromtimestamp(st.st_mtime,timezone.utc).isoformat()
+                  try:
+                      payload=json.loads(p.read_text(encoding='utf-8'))
+                      item['schema']=payload.get('schema')
+                      item['observed_at']=payload.get('observed_at') or payload.get('collected_at')
+                      if name=='iol_family_reference_latest.json':
+                          item['records']=len(payload.get('records') or [])
+                          item['fci']=len(payload.get('fci') or [])
+                          item['caucion_ars']=len((payload.get('cauciones') or {}).get('ARS') or [])
+                          item['caucion_usd']=len((payload.get('cauciones') or {}).get('USD') or [])
+                          item['errors']=payload.get('errors') or []
+                      if name=='rc6_public_sources_latest.json':
+                          byma=next((x for x in payload.get('sources',[]) if x.get('source')=='BYMA'),{})
+                          item['byma_records']=byma.get('record_count')
+                          item['byma_observed_at']=byma.get('observed_at')
+                  except Exception as exc:
+                      item['parse_error']=type(exc).__name__
+              files[name]=item
+          print('PROMOTION_RCA_FILES='+json.dumps(files,sort_keys=True,default=str))
+
+          complements=complementary_discovery(root)
+          counts=Counter()
+          by_source=Counter()
+          by_family=Counter()
+          outcomes=Counter()
+          promotions=Counter()
+          examples=defaultdict(list)
+
+          def ident(record):
+              return (
+                  str(record.get('ticker') or '').strip().upper(),
+                  catalog.canonical_family(record.get('instrument_type')),
+                  catalog.canonical_market(record.get('market')),
+                  catalog.canonical_settlement(record.get('settlement'),record.get('instrument_type')),
+                  str(record.get('currency') or '').strip().upper(),
+              )
+
+          conn=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=20)
+          conn.row_factory=sqlite3.Row
+          conn.execute('PRAGMA query_only=ON')
+          for raw in complements:
+              counts['total']+=1
+              src=str(raw.get('source') or 'UNKNOWN')
+              fam=catalog.canonical_family(raw.get('instrument_type') or raw.get('family'))
+              by_source[src]+=1; by_family[fam]+=1
+              if not catalog.complementary_is_fresh(raw,max_age_seconds=observer.COMPLEMENTARY_CONTRACT_TTL_SECONDS):
+                  outcomes['stale_or_undated']+=1
+                  if len(examples['stale_or_undated'])<6:
+                      examples['stale_or_undated'].append({'ticker':raw.get('ticker'),'family':fam,'source':src,'observed_at':raw.get('observed_at'),'provider_observed_at':raw.get('provider_observed_at')})
+                  continue
+              outcomes['fresh']+=1
+              try:
+                  comp=catalog.normalize_complementary_record(raw,observer.now_iso(),'RCA_READ_ONLY')
+              except Exception as exc:
+                  outcomes['normalize_error']+=1
+                  continue
+              target=ident(comp)
+              rows=[dict(r) for r in conn.execute('SELECT * FROM financial_instrument_catalog WHERE ticker=?',(comp['ticker'],))]
+              matches=[r for r in rows if ident(r)==target]
+              if len(matches)>1:
+                  outcomes['ambiguous']+=1; continue
+              if not matches:
+                  if comp.get('status')=='AVAILABLE' and str(comp.get('capability') or '').startswith('READY_PAPER_'):
+                      outcomes['would_insert_ready']+=1
+                      promotions[fam]+=1
+                      if len(examples['would_insert_ready'])<8: examples['would_insert_ready'].append({'ticker':comp['ticker'],'family':fam,'capability':comp['capability'],'source':src})
+                  else:
+                      outcomes['unmatched_not_ready']+=1
+                  continue
+              primary=matches[0]
+              try:
+                  primary['raw']=json.loads(primary.pop('metadata_json'))
+              except Exception:
+                  outcomes['metadata_parse_error']+=1; continue
+              discovery_source=str(primary['raw'].get('_discovery_source') or '').upper()
+              if discovery_source and discovery_source not in {'PPI_PRIMARY','UNKNOWN'}:
+                  outcomes['existing_complement_owned']+=1; continue
+              before_ready=primary.get('status')=='AVAILABLE' and str(primary.get('capability') or '').startswith('READY_PAPER_')
+              merged=catalog.complete_with_complement(primary,raw)
+              now_ready=merged.get('status')=='AVAILABLE' and str(merged.get('capability') or '').startswith('READY_PAPER_')
+              if now_ready and not before_ready:
+                  outcomes['would_promote_existing']+=1
+                  promotions[fam]+=1
+                  if len(examples['would_promote_existing'])<12:
+                      examples['would_promote_existing'].append({'ticker':merged['ticker'],'family':fam,'before':primary.get('capability'),'after':merged.get('capability'),'source':src})
+              elif now_ready and before_ready:
+                  outcomes['already_ready']+=1
+              elif merged != primary:
+                  outcomes['refresh_without_ready']+=1
+              else:
+                  outcomes['no_effect']+=1
+          conn.close()
+          print('PROMOTION_RCA_COMPLEMENTS='+json.dumps({
+              'by_source':dict(by_source),'by_family':dict(by_family),
+              'outcomes':dict(outcomes),'would_promote_by_family':dict(promotions),
+              'examples':dict(examples)
+          },sort_keys=True,default=str))
+          PY
+          REMOTE
