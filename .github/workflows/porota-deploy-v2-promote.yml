@@ -217,7 +217,10 @@ jobs:
 
           EXPECTED_IMAGE_ID="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_id"])')"
           gunzip -c "$REMOTE_DIR/porota-predeploy-image.tar.gz" | sudo -n docker load
-          LOADED_IMAGE_ID="$(sudo -n docker image inspect -f '{{.Id}}' "$FROZEN_IMAGE")"
+          LOADED_IMAGE_ID="$(sudo -n docker image inspect -f '{{.Id}}' "$FROZEN_IMAGE" | tr -d '\r\n')"
+          EXPECTED_IMAGE_ID="$(printf "%s" "$EXPECTED_IMAGE_ID" | tr -d '\r\n')"
+          echo "POROTA_IMAGE_ID_VERIFY=loaded=$LOADED_IMAGE_ID|expected=$EXPECTED_IMAGE_ID"
+          test -n "$LOADED_IMAGE_ID"
           test "$LOADED_IMAGE_ID" = "$EXPECTED_IMAGE_ID"
           sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
           sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
