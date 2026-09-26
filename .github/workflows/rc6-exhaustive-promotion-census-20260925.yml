@@ -22,7 +22,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ACTUAL="$(git rev-parse HEAD)"
-          EXPECTED="3c71d5cd0af7851c6ffa3c35f69959f7f904fa07"
+          EXPECTED="1686da1cc0b4e111b4315e8d86b4577170a145de"
           echo "PROMOTION_CENSUS_CANDIDATE_SHA=$ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
@@ -364,7 +364,7 @@ jobs:
 
           manifest={
               "schema":"rc6-exhaustive-promotion-census-v1",
-              "candidate_sha":"3c71d5cd0af7851c6ffa3c35f69959f7f904fa07",
+              "candidate_sha":"1686da1cc0b4e111b4315e8d86b4577170a145de",
               "observed_at":OBSERVED,
               "baseline":{"catalog_total":catalog_total,"ready_total":len(ready_before)},
               "evidence":{
