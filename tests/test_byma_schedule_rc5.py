@@ -15,8 +15,8 @@ def at(value):
 
 def test_byma_rc5_source_and_scope_are_explicit():
     status = sessions.byma_schedule_status()
-    assert status["communication"] == "19016"
-    assert status["source_date"] == "2026-09-01"
+    assert status["communication"] == "19024"
+    assert status["source_date"] == "2026-09-22"
     assert status["paper_spot_regular_open"] == "10:30"
     assert status["paper_spot_regular_close"] == "17:00"
     assert status["interval"] == "[10:30,17:00)"
