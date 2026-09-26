@@ -27,7 +27,8 @@ def test_deploy_v2_requires_merge_tree_identity_and_successful_predeploy():
 
 
 def test_deploy_v2_preserves_paper_and_ppi_watch_invariants():
-    assert 'test "$POST_STATE" = "ok|PRODUCTION_PAPER|0"' in PROMOTE
+    assert 'test "$POST_STATE" = "STATE_FAST|PRODUCTION_PAPER|0"' in PROMOTE
+    assert "POST_SQLITE_QUICK_CHECK=DEFERRED_TO_CONTRACT_RUNNER" in PROMOTE
     assert "PPI_WATCH_UNTOUCHED=GREEN" in PROMOTE
     assert "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED" in PROMOTE
     assert "rollback" not in PROMOTE.lower()
@@ -53,3 +54,9 @@ def test_deploy_v2_reads_runtime_state_host_readonly():
     assert 'python3 - "$REPO/data/paper_v17/observer_v17.db"' in PROMOTE
     assert 'RUNTIME_CHECK="$(sudo -n timeout 120 python3 - "$REPO/data/paper_v17/observer_v17.db"' in PROMOTE
     assert 'OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES' in PROMOTE
+
+
+def test_deploy_v2_separates_fast_state_guard_from_contract_quick_check():
+    assert "PRAGMA busy_timeout=1000" in PROMOTE
+    assert 'timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db"' in PROMOTE
+    assert 'grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"' in PROMOTE
