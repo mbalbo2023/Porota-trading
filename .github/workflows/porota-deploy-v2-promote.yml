@@ -171,7 +171,7 @@ jobs:
           # dangling images, and build caches. Never volumes, SQLite, active images,
           # persistent data, or PPI Watch state.
           find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' ! -path "$REMOTE_DIR" -exec rm -rf -- {} +
-          sudo -n docker image prune -f
+          sudo -n docker image prune -af
           sudo -n docker builder prune -af
           if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
           DISK_PREFLIGHT_AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
@@ -179,7 +179,15 @@ jobs:
           echo "DISK_PREFLIGHT_AFTER=$DISK_PREFLIGHT_AFTER"
           echo "SAFE_PREFLIGHT_RECLAIM=$((DISK_PREFLIGHT_AFTER-DISK_BEFORE))"
           echo "DOCKER_SYSTEM_DF_AFTER=$DOCKER_DF_AFTER"
-          test "$DISK_PREFLIGHT_AFTER" -ge 1073741824
+          IMAGE_TAR_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-predeploy-image.tar.gz")"
+          BUNDLE_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-deploy-bundle-v2.tgz")"
+          # Loading/unpacking a compressed image needs materially more space than
+          # its tarball. Keep a 1 GiB floor plus conservative artifact headroom.
+          REQUIRED_PREFLIGHT_FREE=$((IMAGE_TAR_BYTES * 4 + BUNDLE_BYTES * 2 + 1073741824))
+          echo "IMAGE_TAR_BYTES=$IMAGE_TAR_BYTES"
+          echo "BUNDLE_BYTES=$BUNDLE_BYTES"
+          echo "REQUIRED_PREFLIGHT_FREE=$REQUIRED_PREFLIGHT_FREE"
+          test "$DISK_PREFLIGHT_AFTER" -ge "$REQUIRED_PREFLIGHT_FREE"
 
           PRE_STATE="NO_RUNNING_OBSERVER"
           if [ "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)" = running ]; then
