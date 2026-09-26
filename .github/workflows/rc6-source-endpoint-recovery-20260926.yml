@@ -1,0 +1,49 @@
+name: RC6 source endpoint recovery 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-contract-resolution-20260926]
+    paths:
+      - '.github/workflows/rc6-source-endpoint-recovery-20260926.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  endpoints:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe correct technical endpoints read-only
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, requests
+          def get(name,url,headers=None):
+              try:
+                  r=requests.get(url,headers=headers or {"Accept":"application/json"},timeout=20)
+                  ct=r.headers.get("content-type","")
+                  out={"name":name,"url":url,"http":r.status_code,"content_type":ct}
+                  try:
+                      j=r.json()
+                      out["json"]=True
+                      if isinstance(j,dict):
+                          out["keys"]=sorted(j.keys())[:30]
+                          for k in ("data","items","results","products","symbols"):
+                              if isinstance(j.get(k),list):
+                                  out["records_key"]=k; out["record_count"]=len(j[k]); out["sample"]=j[k][:2]; break
+                      elif isinstance(j,list):
+                          out["record_count"]=len(j); out["sample"]=j[:2]
+                  except Exception:
+                      out["json"]=False
+                      out["body_prefix"]=r.text[:120].replace("\n"," ")
+                  print("ENDPOINT_PROBE="+json.dumps(out,ensure_ascii=False,sort_keys=True))
+              except Exception as exc:
+                  print("ENDPOINT_PROBE="+json.dumps({"name":name,"url":url,"error":type(exc).__name__+":"+str(exc)[:160]},sort_keys=True))
+          get("CEM_PRODUCTS","https://apicem.matbarofex.com.ar/api/v1/products")
+          get("CEM_SYMBOLS","https://apicem.matbarofex.com.ar/api/v1/symbols")
+          get("CEM_DLR_CLOSING","https://apicem.matbarofex.com.ar/api/v1/closing-prices?symbol=DLR/SEP26&from=2026-09-25&to=2026-09-25&page=1&pageSize=5")
+          get("PRIMARY_REMARKETS_DETAILS_NOAUTH","https://api.remarkets.primary.com.ar/rest/instruments/details")
+          get("PRIMARY_PROD_DETAILS_NOAUTH","https://api.primary.com.ar/rest/instruments/details")
+          PY
