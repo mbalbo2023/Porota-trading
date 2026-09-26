@@ -1,0 +1,37 @@
+name: RC6 baseline full-suite comparator 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-availability-readonly-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 3559d1a4f4b66b0b0011ec3d6374150f3e979575
+          fetch-depth: 0
+      - name: Pin productive baseline
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "3559d1a4f4b66b0b0011ec3d6374150f3e979575"
+          echo "BASELINE_SHA=$(git rev-parse HEAD)"
+      - name: Install repository dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Run full baseline suite and retain failure names
+        shell: bash
+        run: |
+          set +e
+          python -m pytest -q 2>&1 | tee /tmp/baseline-pytest.log
+          rc=${PIPESTATUS[0]}
+          echo "BASELINE_FULL_SUITE_RC=$rc"
+          echo "BASELINE_FAILURE_SET_BEGIN"
+          grep -E '^(FAILED|ERROR) ' /tmp/baseline-pytest.log | sed -E 's/ - .*//' | sort -u || true
+          echo "BASELINE_FAILURE_SET_END"
+          exit "$rc"
