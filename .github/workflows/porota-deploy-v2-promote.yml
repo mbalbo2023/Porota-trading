@@ -284,9 +284,10 @@ jobs:
           POST_STATE_RC=1
           for POST_STATE_ATTEMPT in 1 2 3; do
             set +e
-            POST_STATE="$(sudo -n timeout 45 docker exec -i porota_production_observer python - <<'PY'
-          import sqlite3
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+            POST_STATE="$(sudo -n timeout 45 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          path=sys.argv[1]
+          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=20)
           c.execute('PRAGMA query_only=ON')
           q=c.execute('PRAGMA quick_check').fetchone()[0]
           mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
@@ -296,7 +297,7 @@ jobs:
             )"
             POST_STATE_RC=$?
             set -e
-            echo "POST_STATE_ATTEMPT=$POST_STATE_ATTEMPT|RC=$POST_STATE_RC|VALUE=$POST_STATE"
+            echo "POST_STATE_HOST_READONLY_ATTEMPT=$POST_STATE_ATTEMPT|RC=$POST_STATE_RC|VALUE=$POST_STATE"
             [ "$POST_STATE_RC" -eq 0 ] && break
             sleep 5
           done
@@ -334,7 +335,9 @@ jobs:
             echo "RC6_FULL_CONTRACT_RECONCILIATION=GREEN"
           fi
 
-          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          sudo -n docker run --rm --pull never --user botuser --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            --entrypoint python -i "$STABLE_IMAGE" - <<'PY'
           from bs_instrument_contracts import FAMILIES
           import bf_production_paper_observer as observer
           assert observer.OPERATIONAL_FAMILIES == FAMILIES
@@ -342,9 +345,10 @@ jobs:
           print("OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES")
           PY
 
-          RUNTIME_CHECK="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
-          import sqlite3,time
+          RUNTIME_CHECK="$(sudo -n timeout 120 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys,time
           from datetime import datetime,timezone
+          path=sys.argv[1]
           deadline=time.monotonic()+90
           last=None
           def fresh(value,seconds):
@@ -355,7 +359,7 @@ jobs:
                   return False
           while time.monotonic() < deadline:
               try:
-                  c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=3)
+                  c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=3)
                   c.execute('PRAGMA query_only=ON')
                   last=c.execute(
                       'SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at,heartbeat_at '
