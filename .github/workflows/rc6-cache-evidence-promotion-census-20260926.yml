@@ -95,7 +95,7 @@ jobs:
                   continue
               matches=[row for row in state if catalog.complement_matches_primary(row,raw)]
               if len(matches)>1:
-                  ambiguous.append({"ticker":ticker,"source":raw.get("source"),"matches":len(matches)})
+                  ambiguous.append({"ticker":ticker,"source":raw.get("source"),"matches":len(matches),"identities":[{"family":m.get("instrument_type"),"market":m.get("market"),"currency":m.get("currency"),"settlement":m.get("settlement"),"status":m.get("status"),"capability":m.get("capability")} for m in matches]})
                   continue
               if not matches:
                   try: candidate=catalog.normalize_complementary_record(raw,NOW.isoformat(),"CACHE_CENSUS")
