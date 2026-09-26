@@ -90,9 +90,13 @@ def _rows(path: Path, source: str):
             family=canonical_family(row.get("asset_type") or row.get("family"))
             symbol=str(row.get("symbol") or "").strip().upper()
             if not family or not symbol:continue
+            if str(row.get("state") or "").upper() != "READY":
+                continue
             quote=row.get("quote") if isinstance(row.get("quote"),dict) else {}
             observed=(quote.get("provider_observed_at") or row.get("provider_observed_at")
-                      or row.get("captured_at") or payload.get("refreshed_at"))
+                      or row.get("captured_at"))
+            if not observed:
+                continue
             out.append({
                 "ticker":symbol,"instrument_type":family,
                 "market":canonical_market(row.get("market") or "BYMA"),
