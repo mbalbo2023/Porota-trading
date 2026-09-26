@@ -272,7 +272,19 @@ jobs:
           test "$OBSERVER_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
           test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
 
-          POST_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          POST_CONTAINER_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)"
+          POST_CONTAINER_OOM_KILLED="$(sudo -n docker inspect -f '{{.State.OOMKilled}}' porota_production_observer 2>/dev/null || true)"
+          echo "POST_CONTAINER_STATUS=$POST_CONTAINER_STATUS|OOM_KILLED=$POST_CONTAINER_OOM_KILLED"
+          if [ "$POST_CONTAINER_STATUS" != running ]; then
+            sudo -n docker start porota_production_observer >/dev/null
+            POST_CONTAINER_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)"
+            echo "POST_CONTAINER_RESTARTED_STATUS=$POST_CONTAINER_STATUS"
+          fi
+          POST_STATE=""
+          POST_STATE_RC=1
+          for POST_STATE_ATTEMPT in 1 2 3; do
+            set +e
+            POST_STATE="$(sudo -n timeout 45 docker exec -i porota_production_observer python - <<'PY'
           import sqlite3
           c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
           c.execute('PRAGMA query_only=ON')
@@ -281,7 +293,14 @@ jobs:
           c.close()
           print(f"{q}|{mode}|{orders}")
           PY
-          )"
+            )"
+            POST_STATE_RC=$?
+            set -e
+            echo "POST_STATE_ATTEMPT=$POST_STATE_ATTEMPT|RC=$POST_STATE_RC|VALUE=$POST_STATE"
+            [ "$POST_STATE_RC" -eq 0 ] && break
+            sleep 5
+          done
+          test "$POST_STATE_RC" -eq 0
           echo "POST_STATE=$POST_STATE"
           test "$POST_STATE" = "ok|PRODUCTION_PAPER|0"
 
