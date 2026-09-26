@@ -1,7 +1,7 @@
 # ============================================================================
 # Dockerfile - Porota Trading v16.2
 # ============================================================================
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9
 
 # No escribir bytecode en la capa del contenedor. Las caches descargables van
 # a un volumen persistente y los temporales a tmpfs desde Docker Compose.
@@ -22,12 +22,11 @@ WORKDIR /app
 
 # Copiar solo requirements primero (cache de capas: si cambia el codigo pero no
 # las dependencias, no se reinstala nada).
-COPY requirements.txt .
+COPY requirements.txt requirements.lock.txt ./
 
-# UNA SOLA fuente de dependencias. Ya no hay `pip install` suelto detras de
-# esta linea: todo lo que entra a la imagen esta declarado y fijado en
-# requirements.txt.
-RUN pip install --no-cache-dir -r requirements.txt
+# requirements.txt conserva la intención humana/top-level. requirements.lock.txt
+# congela el entorno exacto validado por Predeploy V2; runtime instala sólo el lock.
+RUN pip install --no-cache-dir -r requirements.lock.txt
 
 # El .dockerignore (nuevo en v16.2) impide que este COPY meta archivos de
 # entorno, la base de datos o el indice vectorial dentro de la imagen.

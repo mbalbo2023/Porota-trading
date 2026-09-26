@@ -1,0 +1,19 @@
+schema_version: 1
+test_governance:
+  automatic_discovery_required: true
+  manual_test_file_allowlist_as_primary_ci: false
+  new_test_must_be_discovered_automatically: true
+  silent_exclusion_allowed: false
+  current_contract_tests_block_predeploy: true
+  legacy_regressions:
+    explicit_classification_required: true
+    reason_required: true
+    successor_or_preserved_intent_required: true
+  brittle_assertions:
+    workflow_text_occurrence_counts_allowed: false
+    ui_literal_text_should_be_semantic_when_possible: true
+  failure_handling:
+    delete_test_to_get_green: false
+    xfail_without_reason: false
+    known_failure_requires_triage: true
+    product_defect_must_be_distinguished_from_test_contract_drift: true
