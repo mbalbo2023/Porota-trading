@@ -109,3 +109,60 @@ def test_preopen_baseline_is_bounded_and_read_only(tmp_path):
     assert result == {"status": "VERIFIED", "decision_sample": live.MAX_ROWS}
     assert stored["decision_sample_read_only"] is True
     assert len(stored["decision_sample"]) == live.MAX_ROWS
+
+
+
+def test_trader_workstation_metrics_and_render(monkeypatch, tmp_path):
+    now = datetime(2026, 9, 18, 14, 32, tzinfo=TZ)
+    observer = {
+        "state": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0, "regime": "MIXED"},
+        "quotes": [
+            {"symbol": "GGAL", "asset_class": "ACCIONES", "bid": "100", "ask": "101", "observed_at": now.isoformat()},
+            {"symbol": "AAPL", "asset_class": "CEDEARS", "bid": "50", "ask": "50.5", "observed_at": now.isoformat()},
+        ],
+        "decisions": [
+            {"decided_at": now.isoformat(), "symbol": "GGAL", "action": "BUY", "score": 0.82, "reason": "signal", "strategy_version": "s1"},
+            {"decided_at": now.isoformat(), "symbol": "AAPL", "action": "HOLD", "score": 0.51, "reason": "spread", "strategy_version": "s1"},
+        ],
+        "open": [{
+            "paper_id": "p1", "symbol": "GGAL", "asset_class": "ACCIONES", "currency": "ARS",
+            "quantity": "2", "entry_price": "100", "current_price": "102", "stop_price": "95",
+            "target_price": "112", "unrealized_pnl": "4", "opened_at": now.isoformat(),
+        }],
+        "closed": [
+            {"paper_id": "c1", "symbol": "GGAL", "asset_class": "ACCIONES", "currency": "ARS", "status": "CLOSED", "net_pnl": "100", "close_reason": "TAKE_PROFIT"},
+            {"paper_id": "c2", "symbol": "AAPL", "asset_class": "CEDEARS", "currency": "ARS", "status": "CLOSED", "net_pnl": "-50", "close_reason": "STOP"},
+        ],
+        "equity": {"equity": "1000050"},
+        "balances_by_currency": [{"currency": "ARS", "cash": "900000", "exposure": "100050", "unrealized_pnl": "4", "realized_pnl": "50", "equity": "1000054"}],
+        "daily_risk": [{"day": "2026-09-18", "currency": "ARS", "state": "OK", "baseline_equity": "1000000", "daily_pnl": "50", "loss_budget": "30000", "detail": "OK"}],
+        "valuation_quality": [{"currency": "ARS", "state": "FRESH"}],
+        "exit_intents": [],
+        "notification_counts": [],
+    }
+    result = live.build_payload(observer, {}, {}, {}, {}, now)
+    assert result["market"]["quotes"] == 2
+    assert result["market"]["valid_books"] == 2
+    assert result["performance"]["by_currency"]["ARS"]["trades"] == 2
+    assert result["performance"]["by_currency"]["ARS"]["net_pnl"] == 50.0
+    assert result["decision_funnel"]["actions"]["BUY"] == 1
+    assert result["families"][0]["quotes"] >= 1
+    assert result["positions"][0]["symbol"] == "GGAL"
+
+    snapshots = tmp_path / "snapshots"
+    reports = tmp_path / "reports"
+    snapshots.mkdir()
+    reports.mkdir()
+    (snapshots / "live_latest.json").write_text(json.dumps(result), encoding="utf-8")
+    monkeypatch.setattr(site, "LIVE", snapshots / "live_latest.json")
+    monkeypatch.setattr(site, "PREOPEN", snapshots / "preopen_latest.json")
+    monkeypatch.setattr(site, "POSTCLOSE", snapshots / "postclose_latest.json")
+    monkeypatch.setattr(site, "LATEST", snapshots / "latest.json")
+    monkeypatch.setattr(site, "POST_REVIEW", reports / "postclose_review_latest.json")
+    rendered = site.render()
+    assert "Posiciones y riesgo" in rendered
+    assert "Mercado y liquidez" in rendered
+    assert "Estrategia y gates" in rendered
+    assert "Performance" in rendered
+    assert "Riesgo diario por moneda" in rendered
+    assert "Sin total multi-moneda" in rendered
