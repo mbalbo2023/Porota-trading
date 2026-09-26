@@ -87,11 +87,13 @@ def test_rebate_se_registra_en_fill_y_ledger_intradiario(tmp_path):
     assert D(broker.store.recent_closed()[0]["net_pnl"]) > 0
 
 
-def test_derivado_es_hold_explicado_no_data_error(tmp_path):
+def test_derivado_sin_contrato_explicito_es_hold_no_data_error(tmp_path):
     broker = deployed_broker(tmp_path / "derivative.db")
     action, _, reason, features = broker.decide(quote("OPCIONES", symbol="GFGC1000"))
     assert action == "HOLD"
-    assert "ciclo financiero específico" in reason
+    # RC6 now supports long-option PAPER only when an explicit financial
+    # contract proves underlying, right, strike, expiry and contract lot.
+    assert "contrato financiero explícito" in reason
     assert features["family"] == "OPCIONES"
 
 
