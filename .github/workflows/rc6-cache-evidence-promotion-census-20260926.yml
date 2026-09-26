@@ -39,10 +39,16 @@ jobs:
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -Eeuo pipefail
+          tar -czf /tmp/rc6-cache-census-candidate.tgz bu_instrument_catalog.py rc6_multisource_discovery.py rc6_iol_family_reference.py bs_instrument_contracts.py
+          SCP=(scp -i "$HOME/.ssh/porota_rc6_cache_census" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
           SSH=(ssh -i "$HOME/.ssh/porota_rc6_cache_census" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+          "${SCP[@]}" /tmp/rc6-cache-census-candidate.tgz "$DO_USER@$DO_HOST:/tmp/rc6-cache-census-candidate.tgz"
           "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
-          sudo -n env PYTHONPATH="/opt/porota-trading" python3 - <<'PY'
+          TMP="$(mktemp -d /tmp/porota-cache-census.XXXXXX)"
+          trap 'sudo -n rm -rf "$TMP" /tmp/rc6-cache-census-candidate.tgz' EXIT
+          tar -xzf /tmp/rc6-cache-census-candidate.tgz -C "$TMP"
+          sudo -n env PYTHONPATH="$TMP:/opt/porota-trading" python3 - <<'PY'
           import hashlib, json, sqlite3
           from collections import Counter
           from datetime import datetime, timezone
