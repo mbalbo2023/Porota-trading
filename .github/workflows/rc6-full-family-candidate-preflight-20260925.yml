@@ -1,5 +1,5 @@
 name: RC6 full-family candidate preflight 2026-09-25
-# candidate-refresh: 48eed9315e87ff531afeff2043cf7082335655f1
+# candidate-refresh: d95793cd05e7fa9be3e090a93c68e08bae215894
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ACTUAL="$(git rev-parse HEAD)"
-          EXPECTED="48eed9315e87ff531afeff2043cf7082335655f1"
+          EXPECTED="d95793cd05e7fa9be3e090a93c68e08bae215894"
           echo "CANDIDATE_SHA=$ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
@@ -64,7 +64,8 @@ jobs:
             tests/test_rc6_cauciones_contract.py \
             tests/test_rc6_option_paper_execution.py \
             tests/test_rc6_sector_settlement_fallback.py \
-            tests/test_rc6_byma_morning_watch.py
+            tests/test_rc6_byma_morning_watch.py \
+            tests/test_rc6_byma_preopen_watch.py
 
       - name: Run BYMA contract calendar and session regressions
         run: |
@@ -141,6 +142,14 @@ jobs:
           assert '"OPCIONES"' in policy and '"BYMA"' in policy
 
           workflow=Path(".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml").read_text(encoding="utf-8")
+          for required in (
+              "scripts/rc6_byma_morning_watch.py",
+              "systemd/porota-byma-morning-watch-rc6.service",
+              "systemd/porota-byma-morning-watch-rc6.timer",
+              "rc6_preopen.py",
+              "BYMA_MORNING_WATCH_TIMER=GREEN|08:30_ART|OBSERVE_ONLY",
+          ):
+              assert required in workflow, "DEPLOY_MISSING_REQUIRED_ARTIFACT:" + required
           if "python /app/scripts/rc6_history_cutoff_repair_once.py" in workflow:
               raise SystemExit("ONE_SHOT_HISTORY_REPAIR_REENTERED_DEPLOY")
           print("STATIC_BYMA_AND_PAPER_SAFETY=GREEN")
