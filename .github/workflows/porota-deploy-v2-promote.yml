@@ -284,26 +284,27 @@ jobs:
           POST_STATE_RC=1
           for POST_STATE_ATTEMPT in 1 2 3; do
             set +e
-            POST_STATE="$(sudo -n timeout 45 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+            POST_STATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
           import sqlite3,sys
           path=sys.argv[1]
-          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=20)
+          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=2)
           c.execute('PRAGMA query_only=ON')
-          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          c.execute('PRAGMA busy_timeout=1000')
           mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
           c.close()
-          print(f"{q}|{mode}|{orders}")
+          print(f"STATE_FAST|{mode}|{orders}")
           PY
             )"
             POST_STATE_RC=$?
             set -e
             echo "POST_STATE_HOST_READONLY_ATTEMPT=$POST_STATE_ATTEMPT|RC=$POST_STATE_RC|VALUE=$POST_STATE"
             [ "$POST_STATE_RC" -eq 0 ] && break
-            sleep 5
+            sleep 2
           done
           test "$POST_STATE_RC" -eq 0
           echo "POST_STATE=$POST_STATE"
-          test "$POST_STATE" = "ok|PRODUCTION_PAPER|0"
+          test "$POST_STATE" = "STATE_FAST|PRODUCTION_PAPER|0"
+          echo "POST_SQLITE_QUICK_CHECK=DEFERRED_TO_CONTRACT_RUNNER"
 
           # Full contract evidence reconciliation remains read-only at the broker
           # boundary. It runs from the exact frozen image; during market hours
