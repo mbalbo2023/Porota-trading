@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Callable
 from urllib.request import Request, urlopen
 
-from rc6_source_consolidation import collect_public_sources
 
 SCHEMA = "porota-byma-morning-watch-v1"
 DEFAULT_ROOT = Path("/opt/porota-trading/data/market")
@@ -107,10 +106,18 @@ def _default_fetch(url: str) -> bytes:
         return response.read(2_000_000)
 
 
-def _structured_byma_signature() -> dict:
-    result = collect_public_sources({"BYMA": "https://open.bymadata.com.ar/"})
-    block = next((row for row in result.get("sources", [])
-                  if str(row.get("source") or "").upper() == "BYMA"), {})
+def _structured_byma_signature(snapshot_path: Path) -> dict:
+    """Read the exact BYMA block produced by the shared public-source scraper.
+
+    This function performs no network access.  Instrument discovery belongs to
+    rc6_public_source_capture; the morning watcher only fingerprints that same
+    persisted result and watches the official authority pages for rule changes.
+    """
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    block = next((row for row in payload.get("sources", [])
+                  if str(row.get("source") or "").upper() == "BYMA"), None)
+    if not isinstance(block, dict):
+        raise ValueError("BYMA_STRUCTURED_BLOCK_MISSING")
     records = block.get("records", []) if isinstance(block.get("records"), list) else []
     identities = sorted({
         "|".join((
@@ -120,6 +127,7 @@ def _structured_byma_signature() -> dict:
             str(row.get("maturity") or row.get("settlement") or "").upper(),
         ))
         for row in records if isinstance(row, dict)
+        and str(row.get("symbol") or row.get("ticker") or "").strip()
     })
     return {
         "status": block.get("status"),
@@ -127,12 +135,16 @@ def _structured_byma_signature() -> dict:
         "identity_count": len(identities),
         "identity_sha256": _sha("\n".join(identities)),
         "observed_at": block.get("observed_at"),
-        "errors": block.get("errors") or [],
+        "capture_collected_at": payload.get("collected_at"),
+        "scrape_method": block.get("scrape_method"),
+        "endpoints": block.get("endpoints") or [],
+        "errors": block.get("errors") or ([block.get("error")] if block.get("error") else []),
     }
 
 
 def collect(*, fetch: Callable[[str], bytes] = _default_fetch,
-            include_structured: bool = True) -> dict:
+            include_structured: bool = True,
+            structured_snapshot: Path | None = None) -> dict:
     observed = _now()
     pages = {}
     errors = []
@@ -150,7 +162,14 @@ def collect(*, fetch: Callable[[str], bytes] = _default_fetch,
     structured = {}
     if include_structured:
         try:
-            structured = _structured_byma_signature()
+            snapshot = structured_snapshot or (DEFAULT_ROOT / "rc6_public_sources_latest.json")
+            structured = _structured_byma_signature(Path(snapshot))
+            if structured.get("status") != "SCRAPED_PUBLIC_DATA":
+                errors.append("OPEN_DATA:BYMA_NOT_STRUCTURED")
+            if int(structured.get("record_count") or 0) <= 0:
+                errors.append("OPEN_DATA:BYMA_EMPTY")
+            if structured.get("errors"):
+                errors.extend("OPEN_DATA:" + str(item) for item in structured.get("errors", []))
         except Exception as exc:
             structured = {"status": "ERROR",
                           "error": f"{type(exc).__name__}:{str(exc)[:180]}"}
@@ -246,11 +265,21 @@ def persist(root: Path, current: dict) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=str(DEFAULT_ROOT))
+    parser.add_argument("--structured-snapshot", default="")
     parser.add_argument("--no-structured", action="store_true")
     args = parser.parse_args()
+    root = Path(args.root)
+    structured_snapshot = (
+        Path(args.structured_snapshot)
+        if args.structured_snapshot
+        else root / "rc6_public_sources_latest.json"
+    )
     payload = persist(
-        Path(args.root),
-        collect(include_structured=not args.no_structured),
+        root,
+        collect(
+            include_structured=not args.no_structured,
+            structured_snapshot=structured_snapshot,
+        ),
     )
     print("BYMA_MORNING_WATCH=" + json.dumps({
         "state": payload["state"],
