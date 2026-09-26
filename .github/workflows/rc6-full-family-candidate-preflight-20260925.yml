@@ -1,5 +1,5 @@
 name: RC6 full-family candidate preflight 2026-09-25
-# candidate-refresh: de8126db4d613390fbab8c568aa39f4b7775ab87
+# candidate-refresh: 494f34721b2699966f8f24d3e8842bd1d2240e76
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ACTUAL="$(git rev-parse HEAD)"
-          EXPECTED="de8126db4d613390fbab8c568aa39f4b7775ab87"
+          EXPECTED="494f34721b2699966f8f24d3e8842bd1d2240e76"
           echo "CANDIDATE_SHA=$ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
@@ -93,22 +93,36 @@ jobs:
         run: |
           set -Eeuo pipefail
           python - <<'PY'
+          import ast
           from pathlib import Path
+          import iol_mcp_readonly_adapter_rc6 as iol_adapter
+
           changed = [
               "iol_mcp_readonly_adapter_rc6.py","iol_shadow_observation_rc6.py",
               "rc6_iol_family_reference.py","scripts/rc6_iol_shadow_collect.py",
               "bu_instrument_catalog.py","bf_production_paper_observer.py",
               "be_paper_engine.py","bq_exit_policy.py","dh_paper_dynamic_risk_gate_hf6.py",
           ]
-          forbidden = (
-              "place_order(", "cancel_order(", "subscribe_fci(",
-              "redeem_fci(", "place_caucion(",
-          )
+          forbidden_tools = {
+              "place_order","cancel_order","subscribe_fci","redeem_fci","place_caucion",
+              "validate_order","validate_caucion","validate_fci_subscription","validate_fci_redemption",
+          }
+          assert not (iol_adapter.ALLOWED_TOOLS & iol_adapter.FORBIDDEN_ACCOUNT_OR_EXECUTION_TOOLS)
           for name in changed:
-              source=Path(name).read_text(encoding="utf-8")
-              for marker in forbidden:
-                  if marker in source:
-                      raise SystemExit(f"FORBIDDEN_REAL_ROUTE:{name}:{marker}")
+              tree=ast.parse(Path(name).read_text(encoding="utf-8"), filename=name)
+              for node in ast.walk(tree):
+                  if not isinstance(node, ast.Call):
+                      continue
+                  # Block direct calls to external execution verbs. A local
+                  # PAPER method definition named place_caucion is not a Call
+                  # and therefore is not a false positive.
+                  if isinstance(node.func, ast.Attribute) and node.func.attr in forbidden_tools:
+                      raise SystemExit(f"FORBIDDEN_REAL_ROUTE_CALL:{name}:{node.func.attr}")
+                  # Also block generic MCP client.call('execution_tool', ...).
+                  if (isinstance(node.func, ast.Attribute) and node.func.attr == "call"
+                          and node.args and isinstance(node.args[0], ast.Constant)
+                          and node.args[0].value in forbidden_tools):
+                      raise SystemExit(f"FORBIDDEN_MCP_EXECUTION_TOOL:{name}:{node.args[0].value}")
 
           source=Path("rc6_source_consolidation.py").read_text(encoding="utf-8")
           capture=Path("scripts/rc6_public_source_capture.py").read_text(encoding="utf-8")
