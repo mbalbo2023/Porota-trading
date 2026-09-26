@@ -1,0 +1,55 @@
+name: RC6 source precedence preflight 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-availability-readonly-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rc6-source-precedence-ppi-iol-byma-20260925
+          fetch-depth: 0
+
+      - name: Pin exact candidate
+        run: |
+          set -Eeuo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          EXPECTED="785420c1d59256f7600797032ac9eb7eb1c398a9"
+          echo "SOURCE_PRECEDENCE_CANDIDATE_SHA=$ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Install repository dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Compile precedence paths
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile             rc6_multisource_discovery.py             bu_instrument_catalog.py             bf_production_paper_observer.py
+
+      - name: Run precedence and promotion regressions
+        run: |
+          set -Eeuo pipefail
+          python -m pytest -q             tests/test_rc6_multisource_discovery.py             tests/test_rc6_complementary_catalog_merge.py             tests/test_rc6_observer_complementary_reconcile.py             tests/test_rc6_iol_family_reference.py             tests/test_rc6_option_paper_execution.py             tests/test_production_paper_v1634.py
+
+      - name: Static source-precedence invariant
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          catalog=Path("bu_instrument_catalog.py").read_text(encoding="utf-8")
+          discovery=Path("rc6_multisource_discovery.py").read_text(encoding="utf-8")
+          observer=Path("bf_production_paper_observer.py").read_text(encoding="utf-8")
+          assert 'PPI_PRIMARY>IOL_COMPLEMENTARY>BYMA_PUBLIC_COMPLEMENTARY' in catalog
+          assert 'IOL_COMPLEMENTARY":1,"BYMA_PUBLIC_COMPLEMENTARY":2' in discovery
+          assert 'promoted_this_run=' in observer and 'ready_total=' in observer
+          assert 'COMPLEMENT_OVERWRITE_BLOCKED' in observer
+          print("SOURCE_PRECEDENCE_STATIC=GREEN|PPI>IOL>BYMA")
+          PY
