@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 BYMA authority watch at 08:30 Argentina on weekdays
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 08:30:00 America/Argentina/Buenos_Aires
+AccuracySec=30s
+Persistent=true
+Unit=porota-byma-morning-watch-rc6.service
+
+[Install]
+WantedBy=timers.target
