@@ -60,7 +60,7 @@
           "count": 84
         }
       ],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -71,7 +71,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -87,7 +87,7 @@
           "count": 467
         }
       ],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
@@ -98,7 +98,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "EMPTY_FILTER_RESULTS",
       "excluded_by_default": false,
@@ -114,7 +114,7 @@
           "count": 578
         }
       ],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -125,7 +125,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -136,7 +136,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "EMPTY_FILTER_RESULTS",
       "excluded_by_default": false,
@@ -152,7 +152,7 @@
           "count": 778
         }
       ],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -163,7 +163,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -179,7 +179,7 @@
           "count": 70
         }
       ],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -190,7 +190,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -201,7 +201,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -217,7 +217,7 @@
           "count": 24
         }
       ],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -228,7 +228,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -239,7 +239,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -255,7 +255,7 @@
           "count": 1305
         }
       ],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -266,7 +266,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -282,7 +282,7 @@
           "count": 761
         }
       ],
-      "checked_at": "2026-09-26T03:16:00.311541+00:00",
+      "checked_at": "2026-09-26T04:15:58.006594+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -294,9 +294,9 @@
   ],
   "github_publication": {
     "branch": "runtime-observability",
-    "day": "2026-09-25",
+    "day": "2026-09-26",
     "detail": null,
-    "recorded_at": "2026-09-26T02:20:38.714977+00:00",
+    "recorded_at": "2026-09-26T03:20:24.366213+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -355,7 +355,7 @@
     "unchanged": 0
   },
   "observer": {
-    "heartbeat_at": "2026-09-26T03:16:40.320626+00:00",
+    "heartbeat_at": "2026-09-26T04:16:39.825528+00:00",
     "http_allowed": 3051,
     "http_blocked": 0,
     "last_market_data_at": "2026-09-25T19:59:33.417165+00:00",
@@ -385,18 +385,18 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 922128384,
-    "filesystem_free": 9466527744,
+    "database_bytes": 922931200,
+    "filesystem_free": 9451098112,
     "filesystem_total": 24883167232,
-    "filesystem_used": 15399862272,
-    "filesystem_used_pct": 61.89,
-    "wal_bytes": 26850072
+    "filesystem_used": 15415291904,
+    "filesystem_used_pct": 61.95,
+    "wal_bytes": 40685032
   },
   "telegram": {
     "SENT": 307,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-09-26T00:15:31-03:00",
+  "timestamp": "2026-09-26T01:15:05-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
@@ -412,28 +412,28 @@
   ],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": -116.324062,
-      "heartbeat_at": "2026-09-26T03:17:28.085143+00:00",
+      "heartbeat_age_seconds": -96.253288,
+      "heartbeat_at": "2026-09-26T04:16:41.763800+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": -113.709646,
-      "heartbeat_at": "2026-09-26T03:17:25.470727+00:00",
+      "heartbeat_age_seconds": -92.624905,
+      "heartbeat_at": "2026-09-26T04:16:38.135417+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": -103.082856,
-      "heartbeat_at": "2026-09-26T03:17:14.843937+00:00",
+      "heartbeat_age_seconds": -82.000927,
+      "heartbeat_at": "2026-09-26T04:16:27.511439+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
-      "heartbeat_age_seconds": -113.588731,
-      "heartbeat_at": "2026-09-26T03:17:25.349812+00:00",
+      "heartbeat_age_seconds": -95.002673,
+      "heartbeat_at": "2026-09-26T04:16:40.513185+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": -117.188688,
-      "heartbeat_at": "2026-09-26T03:17:28.949769+00:00",
+      "heartbeat_age_seconds": -97.342927,
+      "heartbeat_at": "2026-09-26T04:16:42.853439+00:00",
       "state": "RUNNING"
     }
   }
