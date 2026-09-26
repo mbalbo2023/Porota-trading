@@ -8,6 +8,7 @@ from __future__ import annotations
 import json, os
 from datetime import date
 from pathlib import Path
+from datetime import datetime
 from typing import Any
 
 from bs_instrument_contracts import family_name
@@ -93,8 +94,8 @@ def _rows(path: Path, source: str):
             if str(row.get("state") or "").upper() != "READY":
                 continue
             quote=row.get("quote") if isinstance(row.get("quote"),dict) else {}
-            observed=(quote.get("provider_observed_at") or row.get("provider_observed_at")
-                      or row.get("captured_at"))
+            observed=_provider_timestamp(
+                quote.get("provider_observed_at") or row.get("provider_observed_at"))
             if not observed:
                 continue
             out.append({
@@ -119,8 +120,8 @@ def _rows(path: Path, source: str):
         out=[]
         for block in payload.get("sources",[]) if isinstance(payload,dict) else []:
             if not isinstance(block,dict) or str(block.get("source") or "").upper()!="BYMA":continue
-            observed=block.get("observed_at") or payload.get("collected_at")
             for row in block.get("records",[]) if isinstance(block.get("records"),list) else []:
+                observed=_provider_timestamp(row.get("timestamp"))
                 if not isinstance(row,dict):continue
                 family=canonical_family(row.get("family"))
                 symbol=str(row.get("symbol") or row.get("ticker") or "").strip().upper()
@@ -186,6 +187,19 @@ def _family_reference_rows(path: Path):
             "raw":dict(raw),
         })
     return out
+
+def _provider_timestamp(value):
+    """Accept only an explicit provider datetime as liveness evidence."""
+    if not value:
+        return None
+    try:
+        parsed=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+    except (TypeError,ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.isoformat()
+
 
 def _load(path: Path):
     try:
