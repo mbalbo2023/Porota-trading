@@ -1,0 +1,69 @@
+name: RC6 IOL census error RCA 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-promotion-census-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_rca"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_rca" "$HOME/.ssh/known_hosts"
+
+      - name: Compare live OAuth store and isolated copy
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_rca" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          TMP="$(mktemp -d /tmp/porota-iol-census-rca.XXXXXX)"
+          trap 'sudo -n rm -rf "$TMP"' EXIT
+          sudo -n cp /root/.config/porota/iol_mcp_oauth_bootstrap.json "$TMP/copied.json"
+          sudo -n chmod 600 "$TMP/copied.json"
+          sudo -n env PYTHONPATH=/opt/porota-trading LIVE_STORE=/root/.config/porota/iol_mcp_oauth_bootstrap.json COPY_STORE="$TMP/copied.json" python3 - <<'PY'
+          import json,os
+          from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
+          probes=[
+            ("get_asset_info",{"symbol":"AL30","market":"BCBA"}),
+            ("get_fixed_income_analytics",{"ticker":"AL30"}),
+            ("simulate_fixed_income_by_nominals",{"ticker":"AL30","nominals":1,"currency":"ARS"}),
+            ("get_asset_quote",{"symbol":"AL30","market":"BCBA","term":"t1"}),
+            ("get_options_chain",{"symbol":"GGAL"}),
+            ("get_fci_funds",{}),
+            ("get_caucion_rates",{"currency":"ARS","caucion_type":"colocadora"}),
+          ]
+          for label,path in (("LIVE",os.environ["LIVE_STORE"]),("COPY",os.environ["COPY_STORE"])):
+            c=OAuthStoreReadOnlyMCP(store=path,timeout_seconds=25)
+            for name,args in probes:
+              try:
+                r=c.call(name,args)
+                print("IOL_CENSUS_RCA="+json.dumps({
+                  "store":label,"tool":name,"ok":True,
+                  "keys":sorted(r.keys()) if isinstance(r,dict) else [],
+                  "options":len(r.get("options",[])) if isinstance(r,dict) and isinstance(r.get("options"),list) else None,
+                  "result_count":len(r.get("result",[])) if isinstance(r,dict) and isinstance(r.get("result"),list) else None,
+                },sort_keys=True))
+              except Exception as exc:
+                print("IOL_CENSUS_RCA="+json.dumps({
+                  "store":label,"tool":name,"ok":False,
+                  "error_type":type(exc).__name__,"error":str(exc)[:240],
+                  "status_code":getattr(exc,"status_code",None)
+                },sort_keys=True))
+          PY
+          REMOTE
