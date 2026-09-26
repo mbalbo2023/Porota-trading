@@ -139,6 +139,14 @@ def test_trader_workstation_metrics_and_render(monkeypatch, tmp_path):
         "valuation_quality": [{"currency": "ARS", "state": "FRESH"}],
         "exit_intents": [],
         "notification_counts": [],
+        "_cockpit_db": {
+            "gates": [{"evaluated_at": now.isoformat(), "symbol": "GGAL", "technical_gate": "PASS", "ai_gate": "PASS", "patrimonial_gate": "PASS", "final_result": "OPENED_SIMULATED", "reason": "OK", "paper_id": "p1"}],
+            "fills": [{"filled_at": now.isoformat(), "paper_id": "p1", "side": "BUY", "quantity": "2", "price": "100", "costs": "1.5", "slippage": "0.25", "symbol": "GGAL", "currency": "ARS", "asset_class": "ACCIONES"}],
+            "family_coverage": [{"instrument_type": "ACCIONES", "declared": 1, "queries": 2, "observed_count": 20, "ready_paper_count": 18, "discovery_status": "READY", "checked_at": now.isoformat()}],
+            "catalog_status": [],
+            "api_health": [{"component": "PPI", "state": "GREEN", "detail": "OK", "checked_at": now.isoformat(), "last_success_at": now.isoformat(), "source": "PPI"}],
+            "source_sync": [{"source": "IOL", "status": "READY", "last_attempt_at": now.isoformat(), "last_success_at": now.isoformat(), "items": 20, "detail": "OK"}],
+        },
     }
     result = live.build_payload(observer, {}, {}, {}, {}, now)
     assert result["market"]["quotes"] == 2
@@ -148,6 +156,11 @@ def test_trader_workstation_metrics_and_render(monkeypatch, tmp_path):
     assert result["decision_funnel"]["actions"]["BUY"] == 1
     assert result["families"][0]["quotes"] >= 1
     assert result["positions"][0]["symbol"] == "GGAL"
+    assert result["execution"]["by_currency"]["ARS"]["fills"] == 1
+    assert result["execution"]["by_currency"]["ARS"]["avg_slippage"] == 0.25
+    assert result["gate_matrix"]["final_results"]["OPENED_SIMULATED"] == 1
+    assert result["family_readiness"][0]["ready_paper_count"] == 18
+    assert result["source_health"]["api_health"][0]["component"] == "PPI"
 
     snapshots = tmp_path / "snapshots"
     reports = tmp_path / "reports"
@@ -162,7 +175,10 @@ def test_trader_workstation_metrics_and_render(monkeypatch, tmp_path):
     rendered = site.render()
     assert "Posiciones y riesgo" in rendered
     assert "Mercado y liquidez" in rendered
+    assert "Ejecución y costos" in rendered
     assert "Estrategia y gates" in rendered
+    assert "Readiness canónico por familia" in rendered
+    assert "Salud de APIs / adaptadores" in rendered
     assert "Performance" in rendered
     assert "Riesgo diario por moneda" in rendered
     assert "Sin total multi-moneda" in rendered
