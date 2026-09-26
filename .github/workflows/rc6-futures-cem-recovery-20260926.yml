@@ -1,0 +1,67 @@
+name: RC6 futures CEM partial contract recovery 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-contract-resolution-20260926]
+    paths:
+      - '.github/workflows/rc6-futures-cem-recovery-20260926.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Cross futures with CEM
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' > futures_cem.json
+          python3 - <<'PY'
+          import sqlite3,json,re,requests
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True); c.row_factory=sqlite3.Row; c.execute("PRAGMA query_only=ON")
+          fut=[dict(r) for r in c.execute("""SELECT ticker,market,currency,settlement,status,capability
+            FROM financial_instrument_catalog WHERE instrument_type='FUTUROS' ORDER BY ticker""")]
+          c.close()
+          data=requests.get("https://apicem.matbarofex.com.ar/api/v1/symbols",headers={"Accept":"application/json"},timeout=20).json().get("data",[])
+          bysym={str(x.get("symbol") or "").upper():x for x in data if isinstance(x,dict)}
+          # map DLR/MMMYY style to DLRMMYYYY exact CEM convention only.
+          months={"ENE":"01","FEB":"02","MAR":"03","ABR":"04","MAY":"05","JUN":"06","JUL":"07","AGO":"08","SEP":"09","OCT":"10","NOV":"11","DIC":"12"}
+          def candidates(t):
+              u=t.upper()
+              out=[u]
+              m=re.fullmatch(r"DLR/([A-Z]{3})(\d{2})",u)
+              if m and m.group(1) in months:
+                  out.append("DLR"+months[m.group(1)]+"20"+m.group(2))
+              return out
+          matched=[]; unresolved=[]
+          for r in fut:
+              hit=None
+              for k in candidates(r["ticker"]):
+                  if k in bysym: hit=bysym[k]; break
+              if hit:
+                  matched.append({"catalog":r,"cem":{k:hit.get(k) for k in ("symbol","description","currency","maturityDate","maturityMonthYear","product","securityType","segment","cfiCode")}})
+              else:
+                  unresolved.append(r)
+          print(json.dumps({"total":len(fut),"matched":len(matched),"unresolved":len(unresolved),"matched_rows":matched,"unresolved_rows":unresolved},ensure_ascii=False))
+          PY
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: futures-cem-recovery-da79fdf6
+          path: futures_cem.json
