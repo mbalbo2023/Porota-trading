@@ -94,7 +94,7 @@ def _observer_state_via_container() -> dict:
     a second broker/API reader.
     """
     code = r'''
-import json, os, sqlite3, urllib.request
+import json, math, os, sqlite3, statistics, urllib.request
 token=os.getenv("DASHBOARD_ACCESS_TOKEN","")
 if not token:
     raise SystemExit("DASHBOARD_ACCESS_TOKEN_NOT_AVAILABLE")
@@ -108,7 +108,7 @@ if not isinstance(obj,dict):
     raise SystemExit("OBSERVER_STATE_INVALID")
 
 db_path=os.getenv("PAPER_V17_DB_PATH","/app/data/paper_v17/observer_v17.db")
-extra={"gates":[],"fills":[],"family_coverage":[],"catalog_status":[],"api_health":[],"source_sync":[]}
+extra={"gates":[],"fills":[],"family_coverage":[],"catalog_status":[],"api_health":[],"source_sync":[],"equity_curve":[],"gdelt":{},"instrument_analytics":[]}
 try:
     conn=sqlite3.connect("file:"+db_path+"?mode=ro",uri=True,timeout=5)
     conn.row_factory=sqlite3.Row
@@ -137,9 +137,126 @@ try:
     if exists("source_sync"):
         extra["source_sync"]=rows("""SELECT source,status,last_attempt_at,last_success_at,items,detail
             FROM source_sync ORDER BY source""")
+    if exists("paper_equity_by_currency"):
+        extra["equity_curve"]=rows("""SELECT id,measured_at,currency,cash,exposure,pending_proceeds,
+            caucion_principal,caucion_accrued,unrealized_pnl,realized_pnl,equity
+            FROM (SELECT * FROM paper_equity_by_currency ORDER BY id DESC LIMIT 500)
+            ORDER BY id""")
     conn.close()
+
+    # Structured event risk is already persisted by the existing SHADOW collector.
+    gdelt_path=os.getenv("POROTA_GDELT_EVENT_DB","/app/data/event_risk/gdelt_shadow_rc6.db")
+    if os.path.exists(gdelt_path):
+        try:
+            g=sqlite3.connect("file:"+gdelt_path+"?mode=ro",uri=True,timeout=5)
+            g.row_factory=sqlite3.Row
+            g.execute("PRAGMA query_only=ON")
+            run=g.execute("""SELECT run_id,started_at,finished_at,state,requested_event_types,
+                successful_event_types,fetched_events,stored_events,error_count,authority
+                FROM gdelt_event_risk_runs ORDER BY started_at DESC LIMIT 1""").fetchone()
+            events=[dict(r) for r in g.execute("""SELECT event_type,available_to_engine_at,title,
+                source_domain,region,authority FROM gdelt_event_risk_events
+                ORDER BY available_to_engine_at DESC LIMIT 20""").fetchall()]
+            extra["gdelt"]={"status":"AVAILABLE","latest_run":dict(run) if run else {},"events":events}
+            g.close()
+        except Exception as exc:
+            extra["gdelt"]={"status":"READ_ERROR","error":type(exc).__name__,"latest_run":{},"events":[]}
+    else:
+        extra["gdelt"]={"status":"NOT_AVAILABLE","latest_run":{},"events":[]}
+
+    # Compact technical context for the symbols already visible to the cockpit.
+    # Exact market/settlement identity is preserved; no synthetic signal is emitted.
+    hist_path=os.getenv("HIST_DB_PATH","/app/data/market_history.db")
+    if os.path.exists(hist_path):
+        try:
+            h=sqlite3.connect("file:"+hist_path+"?mode=ro",uri=True,timeout=5)
+            h.row_factory=sqlite3.Row
+            h.execute("PRAGMA query_only=ON")
+            has_hist=h.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='history_canonical_v2'").fetchone()
+            if has_hist:
+                quote_by_symbol={}
+                for q in (obj.get("quotes") or []):
+                    if isinstance(q,dict) and q.get("symbol") and str(q.get("symbol")).upper() not in quote_by_symbol:
+                        quote_by_symbol[str(q.get("symbol")).upper()]=q
+                symbols=[]
+                for d in (obj.get("decisions") or []):
+                    sym=str(d.get("symbol") or "").upper().strip() if isinstance(d,dict) else ""
+                    if sym and sym not in symbols:
+                        symbols.append(sym)
+                    if len(symbols)>=10:
+                        break
+                def num(v):
+                    try:
+                        x=float(v)
+                        return x if math.isfinite(x) else None
+                    except Exception:
+                        return None
+                def sma(vals,n):
+                    return sum(vals[-n:])/n if len(vals)>=n else None
+                def ret(vals,n):
+                    return vals[-1]/vals[-n-1]-1 if len(vals)>n and vals[-n-1]>0 else None
+                def rsi(vals,n=14):
+                    if len(vals)<=n: return None
+                    changes=[vals[i]-vals[i-1] for i in range(len(vals)-n,len(vals))]
+                    gains=[max(0.0,x) for x in changes]; losses=[max(0.0,-x) for x in changes]
+                    ag=sum(gains)/n; al=sum(losses)/n
+                    return 100.0 if al==0 and ag>0 else (50.0 if al==0 else 100.0-100.0/(1.0+ag/al))
+                def atr(rows,n=14):
+                    vals=[]; prev=None
+                    for rr in rows:
+                        hi,lo,cl=num(rr["high"]),num(rr["low"]),num(rr["close"])
+                        if hi is None or lo is None or cl is None or hi<lo:
+                            prev=cl; continue
+                        tr=hi-lo
+                        if prev is not None: tr=max(tr,abs(hi-prev),abs(lo-prev))
+                        vals.append(tr); prev=cl
+                    return sum(vals[-n:])/n if len(vals)>=n else None
+                for sym in symbols:
+                    q=quote_by_symbol.get(sym) or {}
+                    family=str(q.get("asset_class") or "").upper()
+                    market=str(q.get("market") or "")
+                    settlement=str(q.get("settlement") or "")
+                    if not (family and market and settlement):
+                        continue
+                    bars=[dict(r) for r in h.execute("""SELECT date,open,high,low,close,volume,source,adjusted
+                        FROM history_canonical_v2 WHERE UPPER(instrument_type)=? AND symbol=? AND market=? AND settlement=?
+                        ORDER BY date DESC LIMIT 260""",(family,sym,market,settlement)).fetchall()]
+                    bars.reverse()
+                    valid=[(rr,num(rr.get("close"))) for rr in bars]
+                    valid=[x for x in valid if x[1] is not None and x[1]>0]
+                    if not valid:
+                        continue
+                    rows2=[x[0] for x in valid]; closes=[x[1] for x in valid]
+                    returns=[closes[i]/closes[i-1]-1 for i in range(1,len(closes)) if closes[i-1]>0]
+                    vol20=statistics.pstdev(returns[-20:])*math.sqrt(252) if len(returns)>=2 else None
+                    recent=closes[-252:]
+                    peak=recent[0]; mdd=0.0
+                    for px in recent:
+                        peak=max(peak,px); mdd=min(mdd,px/peak-1 if peak else 0.0)
+                    highs=[num(rr.get("high")) for rr in rows2[-252:]]
+                    lows=[num(rr.get("low")) for rr in rows2[-252:]]
+                    highs=[x for x in highs if x is not None]; lows=[x for x in lows if x is not None]
+                    vols=[num(rr.get("volume")) for rr in rows2[-20:]]
+                    vols=[x for x in vols if x is not None and x>=0]
+                    lastvol=num(rows2[-1].get("volume"))
+                    avgvol=sum(vols)/len(vols) if vols else None
+                    extra["instrument_analytics"].append({
+                        "symbol":sym,"family":family,"market":market,"settlement":settlement,
+                        "asof":rows2[-1].get("date"),"close":closes[-1],
+                        "momentum_20":ret(closes,20),"momentum_60":ret(closes,60),
+                        "momentum_120":ret(closes,120),"momentum_252":ret(closes,252),
+                        "sma20":sma(closes,20),"sma50":sma(closes,50),"sma200":sma(closes,200),
+                        "rsi14":rsi(closes),"atr14":atr(rows2),"realized_vol20":vol20,
+                        "max_drawdown_252":mdd,"high_252":max(highs) if highs else None,
+                        "low_252":min(lows) if lows else None,
+                        "volume_ratio_20":(lastvol/avgvol if lastvol is not None and avgvol and avgvol>0 else None),
+                        "source":rows2[-1].get("source"),"bars":len(rows2),"signal_authority":"CONTEXT_ONLY"
+                    })
+            h.close()
+        except Exception as exc:
+            extra["instrument_analytics_error"]=type(exc).__name__
 except Exception as exc:
-    extra={"status":"READ_ERROR","error":type(exc).__name__,"gates":[],"fills":[],"family_coverage":[],"catalog_status":[],"api_health":[],"source_sync":[]}
+    extra={"status":"READ_ERROR","error":type(exc).__name__,"gates":[],"fills":[],"family_coverage":[],"catalog_status":[],"api_health":[],"source_sync":[],"equity_curve":[],"gdelt":{"status":"UNAVAILABLE","events":[]},"instrument_analytics":[]}
 obj["_cockpit_db"]=extra
 print(json.dumps(obj,ensure_ascii=False,separators=(",",":")))
 '''
@@ -510,6 +627,45 @@ def _gate_summary(rows: list[dict]) -> dict:
     }
 
 
+
+def _equity_curve_summary(rows: list[dict]) -> dict:
+    grouped: dict[str, list[dict]] = {}
+    for raw in rows if isinstance(rows, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        currency = str(raw.get("currency") or "N/D")
+        equity = _number(raw.get("equity"))
+        if equity is None:
+            continue
+        grouped.setdefault(currency, []).append({
+            "measured_at": raw.get("measured_at"), "equity": equity,
+            "cash": _number(raw.get("cash")), "exposure": _number(raw.get("exposure")),
+            "unrealized_pnl": _number(raw.get("unrealized_pnl")),
+            "realized_pnl": _number(raw.get("realized_pnl")),
+        })
+    result = {}
+    for currency, series in grouped.items():
+        peak = None
+        max_dd = 0.0
+        for point in series:
+            value = point["equity"]
+            peak = value if peak is None else max(peak, value)
+            if peak and peak > 0:
+                max_dd = min(max_dd, value / peak - 1.0)
+        latest = series[-1]
+        peak_now = max(p["equity"] for p in series)
+        current_dd = latest["equity"] / peak_now - 1.0 if peak_now > 0 else None
+        result[currency] = {
+            "samples": len(series),
+            "latest": latest,
+            "peak_equity": round(peak_now, 2),
+            "max_drawdown_pct": round(max_dd * 100.0, 3),
+            "current_drawdown_pct": round(current_dd * 100.0, 3) if current_dd is not None else None,
+            "series": series[-60:],
+        }
+    return {"by_currency": result, "mixed_currency_total_suppressed": len(result) > 1}
+
+
 def _deep_cockpit_summary(observer: dict) -> dict:
     raw = observer.get("_cockpit_db") if isinstance(observer.get("_cockpit_db"), dict) else {}
     return {
@@ -521,6 +677,9 @@ def _deep_cockpit_summary(observer: dict) -> dict:
         "catalog_status": _copy_rows(raw.get("catalog_status"), 80),
         "api_health": _copy_rows(raw.get("api_health"), 40),
         "source_sync": _copy_rows(raw.get("source_sync"), 40),
+        "equity_curve": _equity_curve_summary(raw.get("equity_curve") if isinstance(raw.get("equity_curve"), list) else []),
+        "event_risk": raw.get("gdelt") if isinstance(raw.get("gdelt"), dict) else {"status": "UNAVAILABLE", "events": []},
+        "instrument_analytics": _copy_rows(raw.get("instrument_analytics"), MAX_ROWS),
     }
 
 
@@ -607,6 +766,9 @@ def build_payload(observer: dict, iol: dict, validation: dict, preopen: dict, po
             "api_health": deep["api_health"],
             "source_sync": deep["source_sync"],
         },
+        "equity_curve": deep["equity_curve"],
+        "event_risk": deep["event_risk"],
+        "instrument_analytics": deep["instrument_analytics"],
         "portfolio": {
             "equity": observer.get("equity") if isinstance(observer.get("equity"), dict) else {},
             "balances_by_currency": _copy_rows(observer.get("balances_by_currency"), 16),
