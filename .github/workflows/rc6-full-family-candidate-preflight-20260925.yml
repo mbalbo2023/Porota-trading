@@ -1,5 +1,5 @@
 name: RC6 full-family candidate preflight 2026-09-25
-# candidate-refresh: f40668955b536e041c6ffab96aafa22a3d3f339f
+# candidate-refresh: e8cbb97a60b202fa63e750f0b3d5ba1c044d6a77
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ACTUAL="$(git rev-parse HEAD)"
-          EXPECTED="f40668955b536e041c6ffab96aafa22a3d3f339f"
+          EXPECTED="e8cbb97a60b202fa63e750f0b3d5ba1c044d6a77"
           echo "CANDIDATE_SHA=$ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
