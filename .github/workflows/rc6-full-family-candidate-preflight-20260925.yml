@@ -84,8 +84,7 @@ jobs:
             tests/test_rc6_take_profit_regression.py \
             tests/test_exit_supervision_v17.py \
             tests/test_derivatives_and_gate.py \
-            tests/test_catalog_v17.py \
-            tests/test_paper_engine_v17.py
+            tests/test_production_paper_v1634.py
 
       - name: Static BYMA and real-order guards
         run: |
