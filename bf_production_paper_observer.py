@@ -662,13 +662,26 @@ def _reconcile_complementary_catalog(store):
                 promoted += 1
 
         financial_catalog.sync_candidate_universe(connection, checked)
+        ready_total = connection.execute("""SELECT COUNT(*) FROM financial_instrument_catalog
+          WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER_%'""").fetchone()[0]
+        catalog_total = connection.execute(
+            "SELECT COUNT(*) FROM financial_instrument_catalog").fetchone()[0]
+        ready_by_family = {
+            str(family): int(count)
+            for family, count in connection.execute("""SELECT instrument_type,COUNT(*)
+              FROM financial_instrument_catalog
+              WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER_%'
+              GROUP BY instrument_type ORDER BY instrument_type""").fetchall()
+        }
 
-    if promoted or inserted or refreshed:
-        store.event(
-            "COMPLEMENTARY_CATALOG_RECONCILIATION",
-            f"promoted={promoted}; inserted={inserted}; refreshed={refreshed}; "
-            f"sources={json.dumps(applied_by_source,sort_keys=True)}; "
-            "precedence=PPI>IOL>BYMA; real_orders=blocked")
+    store.event(
+        "COMPLEMENTARY_CATALOG_RECONCILIATION",
+        f"promoted_this_run={promoted}; inserted_this_run={inserted}; "
+        f"refreshed_this_run={refreshed}; ready_total={ready_total}; "
+        f"pending_total={catalog_total-ready_total}; "
+        f"ready_by_family={json.dumps(ready_by_family,sort_keys=True)}; "
+        f"sources={json.dumps(applied_by_source,sort_keys=True)}; "
+        "precedence=PPI>IOL>BYMA; real_orders=blocked")
     return promoted
 
 
