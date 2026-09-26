@@ -1,0 +1,83 @@
+name: RC6 PPI compact missing-identity resolution 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-contract-resolution-20260926]
+    paths:
+      - '.github/workflows/rc6-ppi-compact-missing-resolution-20260926.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        family: [ACCIONES, CEDEARS, BONOS, OBLIGACIONES, OPCIONES]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_ppi_compact"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_ppi_compact" "$HOME/.ssh/known_hosts"
+      - name: Resolve exact identities
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          FAMILY: ${{ matrix.family }}
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_ppi_compact" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=40)
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "FAMILY='$FAMILY' bash -s" <<'REMOTE' > "ppi_missing_${FAMILY}.json"
+          set -Eeuo pipefail
+          sudo -n docker exec -e FAMILY="$FAMILY" -i porota_production_observer python - <<'PY'
+          import json, sqlite3, os, time
+          from pathlib import Path
+          from bd_ppi_readonly_guard import ProductionMarketReader
+          fam=os.environ["FAMILY"]
+          fmap={"ACCIONES":"ACCIONES","CEDEARS":"CEDEARS","BONOS":"BONOS","OBLIGACIONES":"ON","OPCIONES":"OPCIONES"}
+          sec=json.loads(Path("/run/secrets/ppi_production.json").read_text())
+          key=sec.get("api_key") or sec.get("key") or sec.get("ppi_api_key")
+          secret=sec.get("api_secret") or sec.get("secret") or sec.get("ppi_api_secret")
+          reader=ProductionMarketReader(key,secret); reader.login_once()
+          c=sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=30); c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          rows=[dict(r) for r in c.execute("""SELECT ticker,instrument_type,market,currency,settlement
+             FROM financial_instrument_catalog WHERE capability='MISSING_CURRENCY_OR_MARKET' AND instrument_type=? ORDER BY ticker""",(fam,))]
+          c.close()
+          resolved=[]; unresolved=[]
+          for i,r in enumerate(rows):
+              t=r["ticker"]
+              try:
+                  vals=reader.search_instruments(t,fmap[fam],name=t,market="BYMA")
+                  exact=[x for x in vals if isinstance(x,dict) and str(x.get("ticker") or "").upper()==t.upper()]
+                  if exact:
+                      compact=[]
+                      for x in exact:
+                          compact.append({k:x.get(k) for k in ("ticker","description","currency","type","market","isin","cajaValoresCode","nominalInPrice")})
+                      resolved.append({"ticker":t,"matches":compact})
+                  else:
+                      unresolved.append({"ticker":t,"reason":"NO_EXACT_MATCH"})
+              except Exception as exc:
+                  unresolved.append({"ticker":t,"reason":type(exc).__name__+":"+str(exc)[:120]})
+              if i and i%100==0: time.sleep(0.15)
+          print(json.dumps({"family":fam,"total":len(rows),"resolved":len(resolved),"unresolved":len(unresolved),
+            "resolved_rows":resolved,"unresolved_rows":unresolved,"metrics":reader.metrics},ensure_ascii=False))
+          reader.close()
+          PY
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ppi-missing-${{ matrix.family }}-da79fdf6
+          path: ppi_missing_${{ matrix.family }}.json
+          if-no-files-found: error
