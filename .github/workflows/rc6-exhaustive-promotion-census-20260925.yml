@@ -1,0 +1,446 @@
+name: RC6 exhaustive promotion census 2026-09-25
+
+on:
+  push:
+    branches:
+      - diag/rc6-promotion-census-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  census:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rc6-source-precedence-ppi-iol-byma-20260925
+          fetch-depth: 0
+
+      - name: Pin exact candidate
+        run: |
+          set -Eeuo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          EXPECTED="3c71d5cd0af7851c6ffa3c35f69959f7f904fa07"
+          echo "PROMOTION_CENSUS_CANDIDATE_SHA=$ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_census"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_census" "$HOME/.ssh/known_hosts"
+
+      - name: Package exact census candidate
+        run: |
+          set -Eeuo pipefail
+          tar -czf /tmp/rc6-promotion-census.tgz             rc6_multisource_discovery.py             rc6_source_consolidation.py             bu_instrument_catalog.py             rc6_iol_family_reference.py             iol_mcp_readonly_adapter_rc6.py
+
+      - name: Exhaustive live-source census without production writes
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SCP=(scp -i "$HOME/.ssh/porota_rc6_census" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_census" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SCP[@]}" /tmp/rc6-promotion-census.tgz "$DO_USER@$DO_HOST:/tmp/rc6-promotion-census.tgz"
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          TMP="$(mktemp -d /tmp/porota-promotion-census.XXXXXX)"
+          trap 'sudo -n rm -rf "$TMP" /tmp/rc6-promotion-census.tgz' EXIT
+          tar -xzf /tmp/rc6-promotion-census.tgz -C "$TMP"
+          mkdir -p "$TMP/data/market"
+          if [ -f /opt/porota-trading/data/market/iol_shadow_latest.json ]; then
+            cp /opt/porota-trading/data/market/iol_shadow_latest.json "$TMP/data/market/iol_shadow_latest.json"
+          fi
+          sudo -n cp /root/.config/porota/iol_mcp_oauth_bootstrap.json "$TMP/iol_oauth.json"
+          sudo -n chmod 600 "$TMP/iol_oauth.json"
+
+          sudo -n env             PYTHONPATH="$TMP:/opt/porota-trading"             CENSUS_ROOT="$TMP/data/market"             CENSUS_OAUTH="$TMP/iol_oauth.json"             python3 - <<'PY'
+          from __future__ import annotations
+          import copy, json, os, sqlite3, time
+          from collections import Counter, defaultdict
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          import bu_instrument_catalog as catalog
+          import rc6_iol_family_reference as family
+          import rc6_multisource_discovery as discovery
+          import rc6_source_consolidation as public
+          from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP, IOLMCPError
+
+          ROOT=Path(os.environ["CENSUS_ROOT"])
+          DB="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          NOW=datetime.now(timezone.utc)
+          OBSERVED=NOW.isoformat()
+          MAX_AGE=86400
+          MIN_INTERVAL=1.65
+
+          class CensusClient:
+              def __init__(self):
+                  self.client=OAuthStoreReadOnlyMCP(store=os.environ["CENSUS_OAUTH"],timeout_seconds=25)
+                  self.last=0.0
+                  self.calls=Counter()
+                  self.provider_errors=[]
+                  self.transport_errors=[]
+              def call(self,name,args,*,provider_error_ok=False):
+                  last_exc=None
+                  for attempt in range(4):
+                      wait=MIN_INTERVAL-(time.monotonic()-self.last)
+                      if wait>0: time.sleep(wait)
+                      self.last=time.monotonic()
+                      self.calls[name]+=1
+                      try:
+                          return self.client.call(name,args)
+                      except IOLMCPError as exc:
+                          last_exc=exc
+                          transient=(exc.status_code in {429,500,502,503,504}
+                                     or "TRANSPORT" in str(exc)
+                                     or "HTTP_5" in str(exc))
+                          if transient and attempt<3:
+                              time.sleep(max(2.0, float(exc.retry_after or 0), 2.0*(attempt+1)))
+                              continue
+                          item={"tool":name,"args":args,"error":str(exc),
+                                "status_code":exc.status_code}
+                          if provider_error_ok and not transient:
+                              self.provider_errors.append(item)
+                              return None
+                          self.transport_errors.append(item)
+                          raise
+                  raise last_exc
+
+          def can_ready(row):
+              return row.get("status")=="AVAILABLE" and str(row.get("capability") or "").startswith("READY_PAPER_")
+
+          def family_name(value):
+              return discovery.canonical_family(value)
+
+          conn=sqlite3.connect(f"file:{DB}?mode=ro",uri=True,timeout=30)
+          conn.row_factory=sqlite3.Row
+          conn.execute("PRAGMA query_only=ON")
+          db_rows=[dict(r) for r in conn.execute("SELECT * FROM financial_instrument_catalog ORDER BY instrument_type,ticker,currency,settlement")]
+          conn.close()
+          catalog_total=len(db_rows)
+          ready_before=[r for r in db_rows if can_ready(r)]
+          print("CENSUS_BASELINE="+json.dumps({
+              "catalog_total":catalog_total,"ready_total":len(ready_before),
+              "pending_total":catalog_total-len(ready_before),
+              "ready_by_family":dict(Counter(r["instrument_type"] for r in ready_before)),
+              "pending_by_family":dict(Counter(r["instrument_type"] for r in db_rows if not can_ready(r))),
+          },sort_keys=True))
+
+          # Fresh BYMA structured scrape into the isolated root. This is public
+          # read-only data and never touches production files.
+          byma_payload=public.collect_public_sources({"BYMA":"https://open.bymadata.com.ar/"})
+          (ROOT/"rc6_public_sources_latest.json").write_text(
+              json.dumps(byma_payload,ensure_ascii=False,sort_keys=True),encoding="utf-8")
+          byma=next((x for x in byma_payload.get("sources",[]) if x.get("source")=="BYMA"),{})
+          if byma.get("status")!="SCRAPED_PUBLIC_DATA" or int(byma.get("record_count") or 0)<=0:
+              raise SystemExit("CENSUS_INCOMPLETE:BYMA_STRUCTURED_UNAVAILABLE")
+          print("CENSUS_BYMA="+json.dumps({
+              "status":byma.get("status"),"record_count":byma.get("record_count"),
+              "endpoints":byma.get("endpoints"),"errors":byma.get("errors",[])
+          },sort_keys=True))
+
+          client=CensusClient()
+
+          # Exhaustive fixed-income evidence for every current non-READY
+          # PPI identity in BONOS/LETRAS/ON.
+          fixed=[]
+          fixed_blocked=[]
+          fixed_candidates=[
+              r for r in db_rows
+              if family_name(r["instrument_type"]) in {"BONOS","LETRAS","OBLIGACIONES"}
+              and not can_ready(r)
+          ]
+          for idx,r in enumerate(fixed_candidates,1):
+              ticker=str(r["ticker"]).upper()
+              fam=family_name(r["instrument_type"])
+              currency=str(r["currency"] or "").upper()
+              settlement=discovery.canonical_settlement(r["settlement"],fam)
+              try:
+                  asset=client.call("get_asset_info",{"symbol":ticker,"market":"BCBA"},provider_error_ok=True)
+                  analytics=client.call("get_fixed_income_analytics",{"ticker":ticker},provider_error_ok=True)
+                  simulation=client.call("simulate_fixed_income_by_nominals",
+                      {"ticker":ticker,"nominals":1,"currency":currency},provider_error_ok=True)
+                  quote=client.call("get_asset_quote",
+                      {"symbol":ticker,"market":"BCBA","term":"t0" if settlement=="INMEDIATA" else "t1"},
+                      provider_error_ok=True)
+                  if not all(isinstance(v,dict) for v in (asset,analytics,simulation,quote)):
+                      fixed_blocked.append({"ticker":ticker,"family":fam,"reason":"IOL_PROVIDER_TOOL_ERROR"})
+                      continue
+                  contract=family._fixed_contract(
+                      ticker,asset,analytics,simulation,quote,
+                      identity_family=fam,identity_currency=currency,
+                      identity_settlement=settlement)
+                  if not contract:
+                      fixed_blocked.append({"ticker":ticker,"family":fam,"reason":"CONTRACT_PROOF_INCOMPLETE"})
+                      continue
+                  fixed.append({
+                      "ticker":ticker,"instrument_type":fam,
+                      "market":discovery.canonical_market(r["market"]),
+                      "currency":currency,"settlement":settlement,
+                      "description":str(asset.get("description") or r.get("description") or ""),
+                      "source":"IOL_COMPLEMENTARY","source_channel":"IOL_EXHAUSTIVE_CENSUS",
+                      "observed_at":OBSERVED,
+                      "identity_evidence":{"market_explicit":True,"currency_explicit":True,"settlement_explicit":True},
+                      "financial_contract_v17":contract,
+                  })
+              except IOLMCPError:
+                  raise
+              if idx%25==0:
+                  print(f"CENSUS_PROGRESS_FIXED={idx}/{len(fixed_candidates)}")
+
+          # Exhaustive option-chain scan across every current BYMA underlying
+          # family accepted by the candidate. Only provider-backed chains are used.
+          shadow={}
+          try:
+              sh=json.loads((ROOT/"iol_shadow_latest.json").read_text(encoding="utf-8"))
+              shadow={str(x.get("symbol") or "").upper():x for x in sh.get("symbols",[]) if isinstance(x,dict)}
+          except Exception:
+              shadow={}
+
+          underlyings=sorted({
+              str(r["ticker"]).upper()
+              for r in db_rows
+              if family_name(r["instrument_type"]) in {"ACCIONES","CEDEARS","BONOS","LETRAS"}
+              and discovery.canonical_market(r["market"])=="BYMA"
+          })
+          option_rows={}
+          option_chain_errors=[]
+          option_underlyings_with_chain=[]
+          for idx,underlying in enumerate(underlyings,1):
+              chain=client.call("get_options_chain",{"symbol":underlying},provider_error_ok=True)
+              if chain is None:
+                  option_chain_errors.append(underlying)
+                  continue
+              options=[x for x in chain.get("options",[]) if isinstance(x,dict) and x.get("symbol")]
+              if not options:
+                  continue
+              underlying_info=client.call("get_asset_info",{"symbol":underlying,"market":"BCBA"},provider_error_ok=True)
+              if not isinstance(underlying_info,dict):
+                  option_chain_errors.append(underlying+":UNDERLYING_INFO")
+                  continue
+              option_underlyings_with_chain.append(underlying)
+              infos={}
+              for raw in options:
+                  symbol=str(raw.get("symbol") or "").upper()
+                  cached=shadow.get(symbol,{})
+                  if cached.get("units_per_lot") not in (None,""):
+                      infos[symbol]={
+                          "type":cached.get("asset_type") or "OPCIONES",
+                          "currency":cached.get("currency") or "ARS",
+                          "units_per_lot":cached.get("units_per_lot"),
+                          "market":cached.get("market") or "BCBA",
+                          "term":"T0",
+                      }
+              for raw in options:
+                  symbol=str(raw.get("symbol") or "").upper()
+                  if symbol in infos:
+                      continue
+                  info=client.call("get_asset_info",{"symbol":symbol,"market":"BCBA"},provider_error_ok=True)
+                  if isinstance(info,dict):
+                      infos[symbol]=info
+              for row in family._option_records(chain,infos,OBSERVED,underlying_info=underlying_info):
+                  row["source"]="IOL_COMPLEMENTARY"
+                  row["source_channel"]="IOL_EXHAUSTIVE_CENSUS"
+                  row["identity_evidence"]={
+                      "market_explicit":True,"currency_explicit":True,"settlement_explicit":True}
+                  option_rows[(row["instrument_type"],row["ticker"])]=row
+              if idx%50==0:
+                  print(f"CENSUS_PROGRESS_OPTIONS={idx}/{len(underlyings)}")
+
+          # Broad family inventories once, not per instrument.
+          fci_result=client.call("get_fci_funds",{},provider_error_ok=True) or {}
+          cauc_ars=client.call("get_caucion_rates",
+              {"currency":"ARS","caucion_type":"colocadora"},provider_error_ok=True) or {}
+          cauc_usd=client.call("get_caucion_rates",
+              {"currency":"USD","caucion_type":"colocadora"},provider_error_ok=True) or {}
+
+          if client.transport_errors:
+              print("CENSUS_TRANSPORT_ERRORS="+json.dumps(client.transport_errors,sort_keys=True))
+              raise SystemExit("CENSUS_INCOMPLETE:TRANSIENT_OR_TRANSPORT_ERRORS")
+
+          family_payload={
+              "schema":family.SCHEMA,"refreshed_at":OBSERVED,"source":"IOL_MCP",
+              "decision_effect":"OBSERVE_ONLY","real_money_authorized":False,
+              "rotation":{},
+              "records":fixed+list(option_rows.values()),
+              "fci":fci_result.get("result",[]) if isinstance(fci_result,dict) else [],
+              "cauciones":{
+                  "ARS":cauc_ars.get("result",[]) if isinstance(cauc_ars,dict) else [],
+                  "USD":cauc_usd.get("result",[]) if isinstance(cauc_usd,dict) else [],
+              },
+              "errors":[],
+          }
+          (ROOT/"iol_family_reference_latest.json").write_text(
+              json.dumps(family_payload,ensure_ascii=False,sort_keys=True),encoding="utf-8")
+
+          complements=discovery.complementary_discovery(ROOT)
+
+          # Apply the exact candidate reconciliation in memory only.
+          state=[]
+          for r in db_rows:
+              x=dict(r)
+              try:x["raw"]=json.loads(x.pop("metadata_json"))
+              except Exception:x["raw"]={}
+              state.append(x)
+
+          baseline_keys={
+              (r["ticker"],r["instrument_type"],r["market"],r["currency"],r["settlement"])
+              for r in state
+          }
+          promoted_existing=[]
+          inserted_ready=[]
+          ambiguous=[]
+          applied=Counter()
+
+          for raw in complements:
+              if not catalog.complementary_is_fresh(raw,max_age_seconds=MAX_AGE,now=NOW):
+                  continue
+              ticker=str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
+              matches=[r for r in state if catalog.complement_matches_primary(r,raw)]
+              if len(matches)>1:
+                  ambiguous.append({
+                      "ticker":ticker,
+                      "family":family_name(raw.get("instrument_type") or raw.get("family")),
+                      "source":raw.get("source"),"matches":len(matches)})
+                  continue
+              if not matches:
+                  try:
+                      comp=catalog.normalize_complementary_record(raw,OBSERVED,"CENSUS")
+                  except Exception:
+                      continue
+                  if can_ready(comp):
+                      key=(comp["ticker"],comp["instrument_type"],comp["market"],comp["currency"],comp["settlement"])
+                      if key not in baseline_keys and not any(
+                          (r["ticker"],r["instrument_type"],r["market"],r["currency"],r["settlement"])==key
+                          for r in state):
+                          state.append(comp)
+                          inserted_ready.append({
+                              "ticker":comp["ticker"],"family":comp["instrument_type"],
+                              "market":comp["market"],"currency":comp["currency"],
+                              "settlement":comp["settlement"],"capability":comp["capability"],
+                              "source":raw.get("source")})
+                          applied[str(raw.get("source"))]+=1
+                  continue
+
+              primary=matches[0]
+              before=can_ready(primary)
+              merged=catalog.complete_with_complement(primary,raw)
+              # identity invariance is part of the approved refactor
+              for field in ("ticker","instrument_type","market","currency","settlement",
+                            "settlement_source","description","last_seen_at","run_id"):
+                  if merged.get(field)!=primary.get(field):
+                      raise SystemExit("CENSUS_INCOMPLETE:IDENTITY_MUTATION:"+field+":"+ticker)
+              if merged!=primary:
+                  primary.clear(); primary.update(merged)
+                  applied[str(raw.get("source"))]+=1
+              after=can_ready(primary)
+              if after and not before:
+                  promoted_existing.append({
+                      "ticker":primary["ticker"],"family":primary["instrument_type"],
+                      "market":primary["market"],"currency":primary["currency"],
+                      "settlement":primary["settlement"],"capability":primary["capability"],
+                      "source":raw.get("source")})
+
+          ready_after=[r for r in state if can_ready(r)]
+          pending_after=[r for r in state if not can_ready(r)]
+          promo_unique={(x["ticker"],x["family"],x["market"],x["currency"],x["settlement"]):x
+                        for x in promoted_existing}
+          insert_unique={(x["ticker"],x["family"],x["market"],x["currency"],x["settlement"]):x
+                         for x in inserted_ready}
+          promoted_existing=list(promo_unique.values())
+          inserted_ready=list(insert_unique.values())
+          total_delta=len(ready_after)-len(ready_before)
+
+          manifest={
+              "schema":"rc6-exhaustive-promotion-census-v1",
+              "candidate_sha":"3c71d5cd0af7851c6ffa3c35f69959f7f904fa07",
+              "observed_at":OBSERVED,
+              "baseline":{"catalog_total":catalog_total,"ready_total":len(ready_before)},
+              "evidence":{
+                  "byma_records":int(byma.get("record_count") or 0),
+                  "iol_shadow_rows":len(shadow),
+                  "fixed_candidates_scanned":len(fixed_candidates),
+                  "fixed_contracts_proven":len(fixed),
+                  "fixed_provider_blocked":fixed_blocked,
+                  "option_underlyings_scanned":len(underlyings),
+                  "option_underlyings_with_chain":option_underlyings_with_chain,
+                  "option_contract_rows_proven":sum(
+                      1 for r in option_rows.values() if isinstance(r.get("financial_contract_v17"),dict)
+                      and r.get("financial_contract_v17")),
+                  "option_chain_provider_errors":option_chain_errors,
+                  "fci_rows":len(family_payload["fci"]),
+                  "caucion_ars_rows":len(family_payload["cauciones"]["ARS"]),
+                  "caucion_usd_rows":len(family_payload["cauciones"]["USD"]),
+                  "iol_calls":dict(client.calls),
+                  "iol_provider_semantic_errors":client.provider_errors,
+              },
+              "result":{
+                  "promoted_existing_count":len(promoted_existing),
+                  "inserted_ready_count":len(inserted_ready),
+                  "ready_delta":total_delta,
+                  "ready_after_total":len(ready_after),
+                  "pending_after_total":len(pending_after),
+                  "promoted_existing_by_family":dict(Counter(x["family"] for x in promoted_existing)),
+                  "inserted_ready_by_family":dict(Counter(x["family"] for x in inserted_ready)),
+                  "ready_after_by_family":dict(Counter(x["instrument_type"] for x in ready_after)),
+                  "pending_after_by_family":dict(Counter(x["instrument_type"] for x in pending_after)),
+                  "applied_complements_by_source":dict(applied),
+                  "ambiguous_count":len(ambiguous),
+                  "ambiguous":ambiguous,
+                  "promoted_existing":sorted(promoted_existing,key=lambda x:(x["family"],x["ticker"],x["currency"],x["settlement"])),
+                  "inserted_ready":sorted(inserted_ready,key=lambda x:(x["family"],x["ticker"],x["currency"],x["settlement"])),
+              },
+              "safety":{"production_writes":0,"real_orders_sent":0,"decision_effect":"CENSUS_ONLY"},
+          }
+
+          # Exactness gates: the arithmetic must balance and the census cannot
+          # silently lose a provider transport call.
+          if total_delta != len(promoted_existing)+len(inserted_ready):
+              print("CENSUS_MANIFEST="+json.dumps(manifest,ensure_ascii=False,sort_keys=True))
+              raise SystemExit("CENSUS_INCOMPLETE:DELTA_MISMATCH")
+          if ambiguous:
+              print("CENSUS_MANIFEST="+json.dumps(manifest,ensure_ascii=False,sort_keys=True))
+              raise SystemExit("CENSUS_INCOMPLETE:AMBIGUOUS_IDENTITIES")
+
+          import hashlib
+          canonical=json.dumps(manifest["result"],ensure_ascii=False,sort_keys=True,separators=(",",":"))
+          manifest["result_fingerprint"]=hashlib.sha256(canonical.encode()).hexdigest()
+          print("CENSUS_SUMMARY="+json.dumps({
+              "candidate_sha":manifest["candidate_sha"],
+              "promoted_existing_count":len(promoted_existing),
+              "inserted_ready_count":len(inserted_ready),
+              "ready_delta":total_delta,
+              "ready_after_total":len(ready_after),
+              "pending_after_total":len(pending_after),
+              "promoted_existing_by_family":manifest["result"]["promoted_existing_by_family"],
+              "inserted_ready_by_family":manifest["result"]["inserted_ready_by_family"],
+              "fixed_candidates_scanned":len(fixed_candidates),
+              "fixed_contracts_proven":len(fixed),
+              "option_underlyings_scanned":len(underlyings),
+              "option_contract_rows_proven":manifest["evidence"]["option_contract_rows_proven"],
+              "byma_records":manifest["evidence"]["byma_records"],
+              "iol_calls":sum(client.calls.values()),
+              "provider_semantic_errors":len(client.provider_errors),
+              "fingerprint":manifest["result_fingerprint"],
+              "production_writes":0,
+          },ensure_ascii=False,sort_keys=True))
+          for item in manifest["result"]["promoted_existing"]:
+              print("CENSUS_PROMOTE="+json.dumps(item,ensure_ascii=False,sort_keys=True))
+          for item in manifest["result"]["inserted_ready"]:
+              print("CENSUS_INSERT_READY="+json.dumps(item,ensure_ascii=False,sort_keys=True))
+          print("CENSUS_PENDING_BY_FAMILY="+json.dumps(
+              manifest["result"]["pending_after_by_family"],sort_keys=True))
+          print("CENSUS_COMPLETE=GREEN|EXHAUSTIVE|PRODUCTION_WRITES=0|REAL_ORDERS=0")
+          PY
+          REMOTE
