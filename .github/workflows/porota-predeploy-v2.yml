@@ -192,16 +192,18 @@ jobs:
           docker save "$IMAGE" | gzip -1 > /tmp/porota-predeploy-image.tar.gz
           IMAGE_TAR_SHA="$(sha256sum /tmp/porota-predeploy-image.tar.gz | awk '{print $1}')"
           IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
+          IMAGE_CONFIG_SHA="$(docker image inspect -f '{{json .Config}}' "$IMAGE" | sha256sum | awk '{print $1}')"
           TREE_SHA="$(git rev-parse HEAD^{tree})"
-          python - "$CANDIDATE_SHA" "$TREE_SHA" "$IMAGE_ID" "$IMAGE_TAR_SHA" <<'PY'
+          python - "$CANDIDATE_SHA" "$TREE_SHA" "$IMAGE_ID" "$IMAGE_TAR_SHA" "$IMAGE_CONFIG_SHA" <<'PY'
           import json,sys
-          candidate,tree,image_id,image_tar_sha=sys.argv[1:]
+          candidate,tree,image_id,image_tar_sha,image_config_sha=sys.argv[1:]
           payload={
             "schema_version":1,
             "candidate_sha":candidate,
             "candidate_tree_sha":tree,
             "image_id":image_id,
             "image_tar_sha256":image_tar_sha,
+            "image_config_sha256":image_config_sha,
             "paper_mode_required":"PRODUCTION_PAPER",
             "real_orders_sent_required":0,
             "build_once":True,
