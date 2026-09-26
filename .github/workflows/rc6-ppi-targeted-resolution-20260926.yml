@@ -1,0 +1,93 @@
+name: RC6 PPI targeted gap resolution 2026-09-26
+
+on:
+  push:
+    branches: [diag/rc6-contract-resolution-20260926]
+    paths:
+      - '.github/workflows/rc6-ppi-targeted-resolution-20260926.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  targeted:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_ppi_target"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_ppi_target" "$HOME/.ssh/known_hosts"
+      - name: Targeted PPI reads
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_ppi_target" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' > targeted_ppi.json
+          set -Eeuo pipefail
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3, string
+          from pathlib import Path
+          from bd_ppi_readonly_guard import ProductionMarketReader
+          sec=json.loads(Path("/run/secrets/ppi_production.json").read_text())
+          key=sec.get("api_key") or sec.get("key") or sec.get("ppi_api_key")
+          secret=sec.get("api_secret") or sec.get("secret") or sec.get("ppi_api_secret")
+          reader=ProductionMarketReader(key,secret); reader.login_once()
+          def search(t,f):
+              try:
+                  vals=reader.search_instruments(t,f,name=t,market="BYMA")
+                  return [x for x in vals if isinstance(x,dict) and str(x.get("ticker") or "").upper()==t.upper()]
+              except Exception as exc:
+                  return {"error":type(exc).__name__+":"+str(exc)[:180]}
+          ymc={t:search(t,"ON") for t in ("YMCIO","YMCJO","YMCXO","YMCYO","YMCZO")}
+          c=sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=30); c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          spot=[dict(r) for r in c.execute("""
+            SELECT ticker,instrument_type,market,currency,settlement,status,capability
+            FROM financial_instrument_catalog
+            WHERE capability='READY_PAPER_SPOT' AND status!='AVAILABLE'
+            ORDER BY instrument_type,ticker
+          """)]
+          c.close()
+          smap={"ACCIONES":"ACCIONES","CEDEARS":"CEDEARS"}
+          refreshed=[]
+          for r in spot:
+              t,f,s=r["ticker"],r["instrument_type"],r["settlement"]
+              item={"requested":r}
+              try:
+                  item["search"]=search(t,smap.get(f,f))
+                  item["current"]=reader.current(t,smap.get(f,f),s)
+                  item["book"]=reader.book(t,smap.get(f,f),s)
+                  item["ok"]=True
+              except Exception as exc:
+                  item["ok"]=False; item["error"]=type(exc).__name__+":"+str(exc)[:180]
+              refreshed.append(item)
+          # ETF discovery: query known legal provider enum via simple prefixes.
+          etfs={}
+          for q in list(string.ascii_uppercase)+["SPY","QQQ","DIA","IWM","XLE","XLF","XLK","ARKK","EWZ","EEM"]:
+              try:
+                  vals=reader.search_instruments(q,"ETF",name=q,market="BYMA")
+              except Exception:
+                  continue
+              for x in vals:
+                  if not isinstance(x,dict): continue
+                  t=str(x.get("ticker") or "").upper()
+                  if t: etfs[(t,str(x.get("market") or ""),str(x.get("currency") or ""))]=x
+          print(json.dumps({"ymc":ymc,"spot":refreshed,"etfs":list(etfs.values()),"metrics":reader.metrics},ensure_ascii=False))
+          reader.close()
+          PY
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: porota-ppi-targeted-resolution-da79fdf6
+          path: targeted_ppi.json
+          if-no-files-found: error
