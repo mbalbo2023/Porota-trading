@@ -32,7 +32,17 @@ def _paper_snapshot():
     }
 
 
-def test_home_exposes_four_cash_ledgers_and_daily_simulated_summary(monkeypatch):
+def test_home_exposes_cash_ledgers_and_daily_summary_only_on_operating_day(monkeypatch):
+    real_datetime = dashboard.datetime
+
+    def fixed_datetime(moment):
+        class FixedDateTime(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return moment if tz is None else moment.astimezone(tz)
+
+        return FixedDateTime
+
     monkeypatch.setattr(dashboard, "snapshot", _paper_snapshot)
     monkeypatch.setattr(dashboard, "_table", lambda name, path=None: True)
     monkeypatch.setattr(
@@ -44,6 +54,9 @@ def test_home_exposes_four_cash_ledgers_and_daily_simulated_summary(monkeypatch)
         {"key": "TELEGRAM", "state": "VERDE", "applicable": True},
         {"key": "PPI_PRODUCTION_AUTH", "state": "VERDE", "applicable": True},
     ])
+
+    operating_day = real_datetime(2026, 9, 28, 12, 0, tzinfo=dashboard.TZ)
+    monkeypatch.setattr(dashboard, "datetime", fixed_datetime(operating_day))
     page = dashboard.home_page()
     for currency in ("ARS", "USD", "USD_MEP", "USD_CCL"):
         assert f"Patrimonio paper {currency}" in page
@@ -51,6 +64,13 @@ def test_home_exposes_four_cash_ledgers_and_daily_simulated_summary(monkeypatch)
     assert "Compras simuladas" in page and "Ventas simuladas" in page
     assert "Cuenta fills PAPER, no órdenes enviadas a PPI" in page
     assert "Órdenes reales" in page and ">0<" in page
+
+    non_operating_day = real_datetime(2026, 9, 27, 12, 0, tzinfo=dashboard.TZ)
+    monkeypatch.setattr(dashboard, "datetime", fixed_datetime(non_operating_day))
+    weekend_page = dashboard.home_page()
+    assert "Resumen simulado del día" not in weekend_page
+    for currency in ("ARS", "USD", "USD_MEP", "USD_CCL"):
+        assert f"Patrimonio paper {currency}" in weekend_page
 
 
 def test_health_distinguishes_pending_from_not_applicable(monkeypatch):

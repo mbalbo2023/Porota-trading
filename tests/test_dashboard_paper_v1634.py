@@ -29,7 +29,7 @@ def test_v17_dashboard_separa_plazos_y_muestra_caucion_real_del_simulador(tmp_pa
     snapshot = dashboard.snapshot()
     assert {row["settlement"] for row in snapshot["quotes"]} == {"INMEDIATA", "A-24HS"}
     assert snapshot["cauciones"][0]["principal"] == "1000"
-    page = dashboard.motor_page()
+    page = dashboard._cauciones_panel()
     assert "CONTRATO-PRUEBA" in page
     assert "Cauciones colocadoras" in page
     assert "Capital inmovilizado hasta el vencimiento" in page
@@ -142,8 +142,11 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
         assert vivo.status_code == 200
         assert "Operaciones abiertas ahora" in vivo.text
         assert "Operaciones cerradas hoy" in vivo.text
-        assert "Scalping" in vivo.text
-        assert "Motores / workers" in vivo.text
+        assert "3. Decisiones en vivo — BUY / HOLD / abstenciones" in vivo.text
+        assert "<h2>4. Scalping" not in vivo.text
+        assert "<h2>5. Motores / workers" not in vivo.text
+        assert "href='/scalping'" in vivo.text
+        assert "href='/sistema'" in vivo.text
         assert vivo.text.count("id='porota-canonical-nav'") == 1
         assert vivo.text.count("id='porota-paper-mode'") == 1
         assert "MODO SIMULACIÓN PRODUCTIVA" in vivo.text
@@ -171,7 +174,13 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
         response = cliente.get('/api/paper/caucion-allocations')
         assert response.status_code == 200
         assert response.json()['records'][0]['decision'] == original
-        assert 'Colocación simulada registrada' in cliente.get('/motor-trading').text
+        motor = cliente.get('/motor-trading')
+        assert motor.status_code == 200
+        assert 'Colocación simulada registrada' not in motor.text
+        cauciones = cliente.get('/trading/cauciones')
+        assert cauciones.status_code == 200
+        assert 'Trading — Cauciones' in cauciones.text
+        assert 'Historial PAPER y readiness actual se muestran separados' in cauciones.text
         with broker.store.connect() as c:
             c.execute('DROP TABLE paper_caucion_allocations')
             c.execute('CREATE TABLE paper_caucion_allocations(x)')
@@ -409,7 +418,7 @@ def test_historial_hold_no_inventa_colocacion_y_no_reintenta(allocation_case):
     for _ in range(2):
         record = allocation_history(broker.store.path)['records'][0]
         assert record['decision'] == original and record['placement'] is None
-        page = dashboard.motor_page()
+        page = dashboard._caucion_allocations_panel()
         assert 'Abstención' in page and 'Sin inversión' in page
         assert 'Excede la fracción disponible después de la reserva' in page
     assert broker.cauciones.positions() == []
@@ -440,7 +449,7 @@ def test_historial_oferta_no_canonica_no_rompe_el_panel(allocation_case):
     report = allocation_history(broker.store.path)
     assert report['state'] == 'PARTIAL'
     assert report['records'][0]['issue'] == 'NON_CANONICAL_OFFER'
-    assert 'Registro inconsistente' in dashboard.motor_page()
+    assert 'Registro inconsistente' in dashboard._caucion_allocations_panel()
 
 
 def test_historial_maduro_no_confunde_decision_con_saldo_actual(allocation_case):
@@ -537,7 +546,7 @@ def test_historial_distingue_faltantes_vacio_y_error_sin_crear_base(tmp_path, mo
     path = tmp_path/'sin-base.db'
     monkeypatch.setattr(dashboard,'DB_PATH',str(path))
     assert allocation_history(path)['state'] == 'MISSING_DATABASE'
-    assert 'Base no disponible' in dashboard.motor_page()
+    assert 'Base no disponible' in dashboard._caucion_allocations_panel()
     assert not path.exists()
     with sqlite3.connect(path):
         pass
@@ -561,7 +570,7 @@ def test_historial_y_panel_son_solo_lectura(allocation_case):
     path = Path(broker.store.path)
     before = path.read_bytes()
     assert allocation_history(path)['state'] == 'READABLE'
-    assert 'Decisiones de caución' in dashboard.motor_page()
+    assert 'Decisiones de caución' in dashboard._caucion_allocations_panel()
     with dashboard._conn() as c:
         with pytest.raises(sqlite3.OperationalError,match='readonly'):
             c.execute('DELETE FROM paper_cauciones')
