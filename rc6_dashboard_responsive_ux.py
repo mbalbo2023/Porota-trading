@@ -32,8 +32,9 @@ html,body{overflow-x:hidden!important}
 .analysis-grid>.paper-card .analysis-value{font-size:1.02rem;font-weight:700;line-height:1.25;margin:0;overflow-wrap:anywhere}
 .porota-semaphore{position:absolute;right:12px;top:14px;width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 2px #fff}
 .porota-semaphore.green{background:#168544}.porota-semaphore.yellow{background:#b47a00}.porota-semaphore.red{background:#ba2937}.porota-semaphore.gray{background:#7b8794}
-#porota-scroll-rail{position:fixed;right:3px;top:112px;bottom:12px;width:9px;background:#dbe4ef;border:1px solid #aebdd0;border-radius:99px;z-index:9999;box-shadow:0 1px 4px #14213d33}
-#porota-scroll-thumb{position:absolute;left:1px;right:1px;top:0;min-height:28px;background:#1769aa;border-radius:99px;cursor:pointer}
+#porota-quick-nav{position:fixed;right:10px;bottom:10px;z-index:10020;display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100vw - 20px)}
+#porota-quick-nav a{display:inline-flex;align-items:center;min-height:44px;background:#14213d;color:#fff;border:2px solid #fff;border-radius:10px;padding:9px 12px;text-decoration:none;font:800 .9rem system-ui;box-shadow:0 2px 8px #0004}
+#porota-quick-nav a:focus-visible,.porota-expandable:focus-visible{outline:3px solid #ffbf47;outline-offset:2px}
 @media(max-width:700px){
   .paper-table-wrap th,.paper-table-wrap td,.paper-card table th,.paper-card table td,.classic-responsive-table th,.classic-responsive-table td{padding:6px 5px;font-size:.78rem}
   .paper-card table th,.paper-card table td{line-height:1.2}
@@ -56,46 +57,38 @@ SCRIPT = r"""
     if(/GREEN|READY|VERIFIED|FAVORABLE|COMPLETA|OK/.test(text)) return "green";
     return "gray";
   }
-  function installScrollRail(){
-    if(document.getElementById("porota-scroll-rail")) return;
-    const rail=document.createElement("div");
-    rail.id="porota-scroll-rail";
-    rail.setAttribute("aria-label","Progreso de la página; tocar para desplazarse");
-    const thumb=document.createElement("span");
-    thumb.id="porota-scroll-thumb";
-    rail.appendChild(thumb);
-    document.body.appendChild(rail);
-    function sync(){
-      const max=Math.max(1,document.documentElement.scrollHeight-window.innerHeight);
-      const ratio=Math.min(1,Math.max(0,window.scrollY/max));
-      const visible=Math.min(1,window.innerHeight/Math.max(window.innerHeight,document.documentElement.scrollHeight));
-      thumb.style.height=Math.max(28,Math.round(rail.clientHeight*visible))+"px";
-      thumb.style.top=Math.round((rail.clientHeight-thumb.offsetHeight)*ratio)+"px";
-    }
-    rail.addEventListener("click",function(event){
-      if(event.target===thumb) return;
-      const rect=rail.getBoundingClientRect();
-      const ratio=Math.min(1,Math.max(0,(event.clientY-rect.top)/rect.height));
-      window.scrollTo({top:ratio*Math.max(0,document.documentElement.scrollHeight-window.innerHeight),behavior:"smooth"});
-    });
-    window.addEventListener("scroll",sync,{passive:true});
-    window.addEventListener("resize",sync);
-    sync();
+  function installQuickNav(){
+    if(document.getElementById("porota-quick-nav")) return;
+    if(!document.body.id) document.body.id="top";
+    const controls=document.createElement("nav");
+    controls.id="porota-quick-nav";
+    controls.setAttribute("aria-label","Accesos rápidos");
+    controls.innerHTML='<a href="#porota-canonical-nav" aria-label="Menú principal">Menú</a><a href="#top" aria-label="Ir arriba">Arriba</a>';
+    document.body.appendChild(controls);
   }
   function decorate(){
-    installScrollRail();
+    installQuickNav();
     document.querySelectorAll("table").forEach(function(table){
       table.querySelectorAll("td").forEach(function(cell){
         const raw=(cell.innerText||"").replace(/\s+/g," ").trim();
         if(raw.length<32 || cell.querySelector("a,button,details,input,select,textarea")) return;
         cell.classList.add("porota-expandable");
-        cell.title="Tocar para expandir: "+raw;
-        cell.setAttribute("aria-label",raw);
+        cell.tabIndex=0;
+        cell.setAttribute("role","button");
+        cell.setAttribute("aria-expanded",cell.dataset.porotaExpanded==="1"?"true":"false");
+        cell.title="Expandir celda: "+raw;
+        cell.setAttribute("aria-label","Expandir celda: "+raw);
         if(!cell.dataset.porotaBound){
           cell.dataset.porotaBound="1";
-          cell.addEventListener("click",function(){
+          const toggle=function(){
             const expanded=cell.dataset.porotaExpanded==="1";
             cell.dataset.porotaExpanded=expanded?"0":"1";
+            cell.setAttribute("aria-expanded",expanded?"false":"true");
+            cell.setAttribute("aria-label",(expanded?"Expandir":"Contraer")+" celda: "+raw);
+          };
+          cell.addEventListener("click",toggle);
+          cell.addEventListener("keydown",function(event){
+            if(event.key==="Enter" || event.key===" "){event.preventDefault();toggle();}
           });
         }
       });

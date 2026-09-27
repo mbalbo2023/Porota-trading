@@ -1905,8 +1905,12 @@ def live_page(*, offset=0, limit=10):
     data=snapshot(); state=data['state']; now=datetime.now(TZ)
     positions=data.get('open',[])
     closed_today=live_policy.closed_for_live(data.get('closed',[]),now=now)
-    closed_page=live_policy.page_for_tablet(closed_today,offset=offset,limit=limit)
-    closed=list(closed_page.items)
+    # Render every record from the current day.  The accessibility layer keeps
+    # ten visible at a time; backend truncation used to make records 11+ truly
+    # unreachable from the "Mostrar más" control.  Keep
+    # live_policy.page_for_tablet available for API consumers, but do not use it
+    # to discard HTML records before the accessible progressive control mounts.
+    closed=list(closed_today)
     intents={r.get('paper_id'):r for r in data.get('exit_intents',[])}
 
     gates=[]
@@ -1964,11 +1968,12 @@ def live_page(*, offset=0, limit=10):
         )
 
     closed_rows=[]
-    for pos in closed:
+    for closed_index,pos in enumerate(closed):
         pnl=_num(pos.get('net_pnl')); cls='positive' if pnl>0 else 'negative' if pnl<0 else 'neutral'
         gate=gate_by_paper.get(pos.get('paper_id')) or gate_by_symbol.get(pos.get('symbol'),{})
+        initially_hidden=" hidden aria-hidden='true'" if closed_index>=10 else " aria-hidden='false'"
         closed_rows.append(
-            f"<details class='paper-trade'><summary>{_e(pos.get('symbol'))} · {_local_time(pos.get('closed_at'))} · "
+            f"<details class='paper-trade' data-porota-record='1'{initially_hidden}><summary>{_e(pos.get('symbol'))} · {_local_time(pos.get('closed_at'))} · "
             f"<span class='{cls}'>{_amount(pnl, pos.get('currency'))}</span> · {_e(pos.get('close_reason'))}</summary>"
             f"<div class='trade-body'><p><b>Entrada:</b> {_amount(pos.get('entry_price'), pos.get('currency'))} · <b>Salida:</b> {_amount(pos.get('exit_price'), pos.get('currency'))}. "
             f"<b>Aceptación original:</b> {_e(gate.get('reason','sin gate persistido'))}</p>"
@@ -2013,9 +2018,9 @@ def live_page(*, offset=0, limit=10):
     else:
         decision_source = []
     all_live_decisions=live_policy.decisions_for_live(decision_source,now=now)
-    decision_page=live_policy.page_for_tablet(all_live_decisions,offset=offset,limit=limit)
-    live_decisions=list(decision_page.items)
-    for row in live_decisions:
+    live_decisions=list(all_live_decisions)
+    for decision_index,row in enumerate(live_decisions):
+        initially_hidden=" hidden aria-hidden='true'" if decision_index>=10 else " aria-hidden='false'"
         action=str(row.get('action') or '').upper()
         gate=gate_by_symbol.get(row.get('symbol')) if action=='BUY' else None
         technical=_status(gate.get('technical_gate')) if gate else '—'
@@ -2024,17 +2029,17 @@ def live_page(*, offset=0, limit=10):
         if gate and gate.get('reason') and str(gate.get('reason')) not in explanation:
             explanation=(explanation+' · gate: '+str(gate.get('reason'))).strip(' ·')
         decision_rows.append(
-            f"<tr><td>{_local_time(row.get('decided_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+            f"<tr data-porota-record='1'{initially_hidden}><td>{_local_time(row.get('decided_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
             f"<td>{_status(action)}</td><td>{technical}</td><td>{patrimonial}</td>"
             f"<td>{_e(explanation)}</td></tr>"
         )
     if not decision_rows:
-        decision_page=live_policy.page_for_tablet(gates,offset=offset,limit=limit)
-        for row in decision_page.items:
+        for decision_index,row in enumerate(gates):
+            initially_hidden=" hidden aria-hidden='true'" if decision_index>=10 else " aria-hidden='false'"
             result=str(row.get('final_result') or '')
             label='ACEPTADA' if result=='OPENED_SIMULATED' else 'RECHAZADA/BLOQUEADA'
             decision_rows.append(
-                f"<tr><td>{_local_time(row.get('evaluated_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+                f"<tr data-porota-record='1'{initially_hidden}><td>{_local_time(row.get('evaluated_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
                 f"<td>{_status(label)}</td><td>{_status(row.get('technical_gate'))}</td>"
                 f"<td>{_status(row.get('patrimonial_gate'))}</td><td>{_e(row.get('reason'))}</td></tr>"
             )
@@ -2102,19 +2107,24 @@ def live_page(*, offset=0, limit=10):
 
     cards=''.join((
       _card('Operaciones abiertas',len(positions),'Lo primero de /vivo: dinero PAPER y marks actuales','green' if positions else 'gray'),
-      _card('Cerradas hoy',closed_page.total,f'Mostrando {len(closed)} de {closed_page.total}; resultado, causa y lección','green' if closed else 'gray'),
+      _card('Cerradas hoy',len(closed_today),f'{len(closed_today)} disponibles; 10 visibles por tanda','green' if closed else 'gray'),
       _card('PPI autenticación',state.get('ppi_auth','UNKNOWN'),f"Último mercado {_local_time(state.get('last_market_data_at'))}",'green' if state.get('ppi_auth')=='OK' else 'yellow'),
       _card('Órdenes reales',state.get('real_orders_sent',0),'Invariante permanente: cero','green' if state.get('real_orders_sent',0)==0 else 'red'),
     ))
-    body=(f"<h1>En vivo — operaciones primero</h1><div class='paper-grid'>{cards}</div>"
+    freshness=("<div class='paper-notice' aria-label='Freshness de En vivo'><b>Timestamps y freshness:</b> "
+               f"vista generada {_local_time(now.isoformat())} · heartbeat {_local_time(state.get('heartbeat_at'))} · "
+               f"último dato de mercado {_local_time(state.get('last_market_data_at'))}. "
+               "Los horarios se muestran en America/Argentina/Buenos_Aires.</div>")
+    body=(f"<h1>En vivo — operaciones primero</h1>{freshness}<div class='paper-grid'>{cards}</div>"
           "<div class='paper-card'><h2>1. Operaciones abiertas ahora</h2><p class='paper-muted'>P&amp;L, marca y freshness visibles; abrir la flecha para gates y variables.</p>"+
           (''.join(open_details) or "<p>Sin posiciones abiertas.</p>")+"</div>"
-          "<div class='paper-card'><h2>2. Operaciones cerradas hoy</h2>"+
-          (''.join(closed_rows) or "<p>Sin operaciones cerradas hoy.</p>")+"</div>"+
+          "<div class='paper-card'><h2>2. Operaciones cerradas hoy</h2>"
+          "<div id='porota-live-closed' data-porota-progressive-list='1' data-page-size='10'>"+
+          (''.join(closed_rows) or "<p>Sin operaciones cerradas hoy.</p>")+"</div></div>"+
           close_reason_html+settlement_diag_html+
           "<div class='paper-card'><h2>3. Decisiones en vivo — BUY / HOLD / abstenciones</h2>"
           "<p class='paper-muted'>Fuente primaria: paper_decisions. Los gates técnico/patrimonial son event-driven y sólo aparecen cuando una señal BUY alcanza esa etapa; un gate antiguo no significa que el motor esté detenido.</p>"
-          "<table class='paper-table'>"
+          "<table id='porota-live-decisions' class='paper-table'>"
           "<tr><th>Hora</th><th>Instrumento</th><th>Decisión</th><th>Técnico</th><th>Patrimonial</th><th>Explicación</th></tr>"+
           (''.join(decision_rows) or "<tr><td colspan='6'>Sin decisiones de hoy.</td></tr>")+"</table>"+
           decision_pager+"<a class='paper-action' href='/en-vivo'>Actualizar ahora</a></div>"
