@@ -9,6 +9,7 @@ Group=porotaadmin
 SupplementaryGroups=docker
 RuntimeDirectory=porota-observability-publish
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 ExecStart=/bin/sh /opt/porota-trading/scripts/porota_publish_introspection_github_rc6.sh
 TimeoutStartSec=180
 Nice=10

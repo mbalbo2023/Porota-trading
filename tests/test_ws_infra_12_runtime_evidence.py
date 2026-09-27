@@ -299,6 +299,7 @@ def test_systemd_unit_is_hardened_and_has_no_docker_group():
     for required in (
         "User=porotaadmin", "NoNewPrivileges=true", "ProtectSystem=strict",
         "ProtectHome=true", "ReadWritePaths=/var/lib/porota-runtime-evidence",
+        "StateDirectory=porota-runtime-evidence", "RuntimeDirectoryPreserve=yes",
     ):
         assert required in unit
     assert "SupplementaryGroups=docker" not in unit
