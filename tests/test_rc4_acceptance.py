@@ -115,15 +115,24 @@ def test_settlement_no_time_max():
     assert 'time.max' not in src
 
 def test_navigation_and_system_sections_and_vivo_contract():
+    import bg_paper_dashboard as dashboard
+
     ux.assert_ux_invariants()
     assert '/scalping' in [x.href for x in ux.TOP_NAV] and '/validacion' in [x.href for x in ux.TOP_NAV]
     dash=Path(__file__).parents[1].joinpath('bg_paper_dashboard.py').read_text()
-    assert '"scraping"' in dash.lower() and '"backups"' in dash.lower()
+    assert [key for key, _ in dashboard.SYSTEM_SECTIONS] == [
+        'introspeccion', 'salud', 'scheduler', 'backups',
+        'configuracion', 'telegram', 'logs',
+    ]
     start=dash.index('def live_page('); end=dash.index('\ndef ',start+5)
     live=dash[start:end]
     assert '_rejection_funnel()' not in live
-    assert 'Operaciones abiertas' in live and 'Lección aprendida' in live and 'Scalping' in live
-    assert live.index('1. Operaciones abiertas ahora') < live.index('4. Scalping')
+    assert '1. Operaciones abiertas ahora' in live
+    assert '2. Operaciones cerradas hoy' in live
+    assert '3. Decisiones en vivo' in live
+    assert '4. Scalping' not in live and '5. Motores / workers' not in live
+    assert dashboard.top_nav_html().count("href='/scalping'") == 1
+    assert dashboard.top_nav_html().count("href='/sistema'") == 1
 
 def test_trusted_browser_wrapper_has_no_credential_login():
     root=Path(__file__).parents[1]

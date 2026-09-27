@@ -288,5 +288,6 @@ def test_panel_no_presenta_muestras_como_cobertura_validada(store,monkeypatch):
     SampleMaterializer(store).tick(END)
     monkeypatch.setattr(dashboard,'DB_PATH',store.path)
     page=dashboard.history_page()
-    assert 'Archivo versionado' in page and 'TRADE_SAMPLES' in page
+    assert 'Archivo incremental de velas' in page and 'TRADE_SAMPLES' in page
     assert 'Históricos cubiertos' not in page and 'no equivale a series validadas' in page
+    assert 'Ingesta full histórica PPI: cerrada y en cuarentena' in page
