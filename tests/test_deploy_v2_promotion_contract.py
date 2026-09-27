@@ -44,8 +44,10 @@ def test_deploy_v2_uses_loaded_runtime_identity_after_docker_normalization():
 
 def test_deploy_v2_retries_post_state_with_diagnostics():
     assert "POST_CONTAINER_OOM_KILLED" in PROMOTE
-    assert "POST_STATE_ATTEMPT=" in PROMOTE
-    assert "timeout 45 docker exec" in PROMOTE
+    assert "for POST_STATE_ATTEMPT in 1 2 3" in PROMOTE
+    assert 'timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db"' in PROMOTE
+    assert "POST_STATE_HOST_READONLY_ATTEMPT=" in PROMOTE
+    assert "timeout 45 docker exec" not in PROMOTE
     assert 'test "$POST_STATE_RC" -eq 0' in PROMOTE
 
 

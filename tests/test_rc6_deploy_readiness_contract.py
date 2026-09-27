@@ -41,11 +41,16 @@ def test_deploy_storage_audit_and_allowlisted_image_retention_are_safe():
 
 def test_release_gate_installs_test_dependencies_and_covers_governed_deploy_contracts():
     body = PREDEPLOY.read_text(encoding="utf-8")
-    assert "pytest>=8.3" in body
-    assert "tests/test_porota_*.py" in body
+    assert "--requirement requirements.lock.txt" in body
+    assert "--collect-only" in body
+    assert "ops/policy/test-policy.yaml" in body
+    assert "POROTA_TEST_DISCOVERED" in body
+    assert "POROTA_TEST_EXECUTED" in body
+    assert "POROTA_TEST_SKIPPED" in body
+    assert "POROTA_TEST_XFAIL" in body
     assert "porota_validate_deploy_artifact.py" in body
     assert "porota_build_deploy_bundle_v2.py" in body
-    assert "POROTA_VALIDATOR_TESTS=GREEN" in body
+    assert "POROTA_GOVERNED_TESTS=GREEN" in body
 
 
 def test_new_paper_database_initializes_spot_liquidity_ledger():

@@ -47,13 +47,114 @@ jobs:
           python -m compileall -q             -x '(^|/)(\.git|\.venv|venv|tests|docs)/' .
           echo 'POROTA_COMPILE_GATE=GREEN'
 
-      - name: Validator regression tests
+      - name: Fail-closed negative fixtures
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m pip install --disable-pip-version-check 'pytest>=8.3,<10'
-          python -m pytest -q tests/test_porota_*.py
-          echo 'POROTA_VALIDATOR_TESTS=GREEN'
+          python tests/ci_frozen_candidate_contract.py negative \
+            --evidence /tmp/porota-negative-fixtures.json
+          test "$(python -c 'import json; print(len(json.load(open("/tmp/porota-negative-fixtures.json"))))')" -eq 6
+          echo 'POROTA_NEGATIVE_FIXTURES=GREEN'
+
+      - name: Governed automatic test discovery and execution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          policy = yaml.safe_load(Path('ops/policy/test-policy.yaml').read_text(encoding='utf-8'))
+          governance = policy['test_governance']
+          scope = policy['productive_scope']
+          assert governance['automatic_discovery_required'] is True
+          assert governance['manual_test_file_allowlist_as_primary_ci'] is False
+          assert scope['roots'] == ['.'], 'productive scope must discover from repository root'
+          exclusions = scope.get('exclusions', [])
+          args = list(scope['roots'])
+          evidence = []
+          for item in exclusions:
+              path = Path(item['path'])
+              successor = Path(item['successor'])
+              assert path.is_file(), f'excluded path missing: {path}'
+              assert successor.is_file(), f'exclusion successor missing: {successor}'
+              assert item.get('classification') and item.get('reason') and item.get('owner')
+              args.append(f'--ignore={path.as_posix()}')
+              evidence.append('|'.join((path.as_posix(), item['classification'], successor.as_posix())))
+          Path('/tmp/porota-test-args.txt').write_text('\n'.join(args) + '\n', encoding='utf-8')
+          Path('/tmp/porota-test-exclusions.txt').write_text('\n'.join(evidence) + ('\n' if evidence else ''), encoding='utf-8')
+          print(f'POROTA_TEST_EXCLUSIONS={len(exclusions)}')
+          PY
+          mapfile -t TEST_ARGS < /tmp/porota-test-args.txt
+          python -m pytest --collect-only -q "${TEST_ARGS[@]}" > /tmp/porota-test-collection.txt
+          set +e
+          python -m pytest -q "${TEST_ARGS[@]}" --junitxml=/tmp/porota-governed-tests.xml
+          TEST_RC=$?
+          set -e
+          TEST_RC="$TEST_RC" python - <<'PY'
+          from pathlib import Path
+          import json, os, re, xml.etree.ElementTree as ET
+
+          collection = Path('/tmp/porota-test-collection.txt').read_text(encoding='utf-8')
+          discovered = sum(int(n) for n in re.findall(r': (\d+)$', collection, re.MULTILINE))
+          suite = ET.parse('/tmp/porota-governed-tests.xml').find('.//testsuite')
+          tests = int(suite.get('tests', 0))
+          failures = int(suite.get('failures', 0))
+          errors = int(suite.get('errors', 0))
+          skipped_nodes = [node for node in suite.iter('skipped')]
+          xfail = sum(node.get('type') == 'pytest.xfail' for node in skipped_nodes)
+          skipped = len(skipped_nodes) - xfail
+          exclusions = [line for line in Path('/tmp/porota-test-exclusions.txt').read_text(encoding='utf-8').splitlines() if line]
+          result = {
+              'schema_version': 1,
+              'scope': 'repository-root automatic pytest discovery',
+              'discovered': discovered,
+              'executed': tests,
+              'skipped': skipped,
+              'xfail': xfail,
+              'failures': failures,
+              'errors': errors,
+              'exclusions': exclusions,
+              'pytest_exit_code': int(os.environ['TEST_RC']),
+              'status': 'GREEN' if int(os.environ['TEST_RC']) == 0 and discovered == tests else 'RED',
+          }
+          Path('/tmp/porota-governed-tests.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(f'POROTA_TEST_DISCOVERED={discovered}')
+          print(f'POROTA_TEST_EXECUTED={tests}')
+          print(f'POROTA_TEST_SKIPPED={skipped}')
+          print(f'POROTA_TEST_XFAIL={xfail}')
+          print(f'POROTA_TEST_FAILURES={failures}')
+          print(f'POROTA_TEST_ERRORS={errors}')
+          print(f'POROTA_TEST_EXCLUSIONS={len(exclusions)}')
+          print(f'POROTA_GOVERNED_TEST_STATUS={result["status"]}')
+          assert discovered > 0, 'automatic discovery returned zero tests'
+          assert discovered == tests, f'collected/executed mismatch: {discovered}!={tests}'
+          PY
+          test "$TEST_RC" -eq 0
+          echo 'POROTA_GOVERNED_TESTS=GREEN'
+
+      - name: Governed test evidence summary
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [ ! -f /tmp/porota-governed-tests.json ]; then
+            echo '### Governed productive suite' >> "$GITHUB_STEP_SUMMARY"
+            echo '- Status: RED — evidence file missing' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          data=json.load(open('/tmp/porota-governed-tests.json',encoding='utf-8'))
+          print('### Governed productive suite')
+          print(f'- Status: {data["status"]}')
+          print(f'- Discovered: {data["discovered"]}')
+          print(f'- Executed: {data["executed"]}')
+          print(f'- Failures: {data["failures"]} | Errors: {data["errors"]}')
+          print(f'- Skipped: {data["skipped"]} | Xfail: {data["xfail"]}')
+          print(f'- Exclusions: {len(data["exclusions"])}')
+          PY
 
       - name: Secret scan of tracked source
         shell: bash
@@ -165,8 +266,8 @@ jobs:
           # image has already passed compile/import-closure/import-smoke gates.
           echo "POROTA_EXACT_IMAGE_TEST_SOURCES=EXCLUDED_FROM_RUNTIME_IMAGE"
           echo "POROTA_EXACT_IMAGE_IMPORT_SMOKE=GREEN"
-          echo "POROTA_FULL_SUITE=NO_VERIFICADO"
-          echo "POROTA_GOVERNED_TEST_DISCOVERY=HOST_CHECKOUT_EXACT_CANDIDATE"
+          echo "POROTA_FULL_SUITE=SEE_GOVERNED_TEST_EVIDENCE"
+          echo "POROTA_GOVERNED_TEST_DISCOVERY=REPOSITORY_ROOT_AUTOMATIC"
       - name: PAPER safety source gate
         shell: bash
         run: |
@@ -206,12 +307,25 @@ jobs:
             "image_config_sha256":image_config_sha,
             "paper_mode_required":"PRODUCTION_PAPER",
             "real_orders_sent_required":0,
+            "real_order_capability_required":"BLOCKED",
             "build_once":True,
           }
           open("/tmp/porota-frozen-candidate.json","w",encoding="utf-8").write(
               json.dumps(payload,indent=2,sort_keys=True)+"\n")
           print("POROTA_FROZEN_CANDIDATE=GREEN|"+candidate+"|"+tree+"|"+image_id)
           PY
+
+      - name: Frozen candidate fail-closed contract
+        if: success() && github.event.pull_request.draft == false
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python tests/ci_frozen_candidate_contract.py validate \
+            --frozen /tmp/porota-frozen-candidate.json \
+            --image /tmp/porota-predeploy-image.tar.gz \
+            --manifest /tmp/porota-deploy-bundle-v2-manifest.json \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --tree-sha "$(git rev-parse HEAD^{tree})"
 
       - name: Upload predeploy evidence
         if: always()
@@ -230,6 +344,11 @@ jobs:
             /tmp/porota-deploy-bundle-v2-manifest.json
             /tmp/porota-predeploy-image.tar.gz
             /tmp/porota-frozen-candidate.json
+            /tmp/porota-governed-tests.xml
+            /tmp/porota-governed-tests.json
+            /tmp/porota-test-collection.txt
+            /tmp/porota-test-exclusions.txt
+            /tmp/porota-negative-fixtures.json
             ${{ runner.temp }}/porota-predeploy-evidence/
 
       - name: Predeploy summary
@@ -241,7 +360,7 @@ jobs:
             echo "- Candidate SHA: \`${CANDIDATE_SHA}\`"
             echo '- Policy: GREEN'
             echo '- Compile: GREEN'
-            echo '- Validator regression: GREEN'
+            echo '- Governed automatic test discovery: GREEN'
             echo '- Secret scan: GREEN'
             echo '- Host control-plane provenance: GREEN'
             echo '- Dependency reproducibility: GREEN'
@@ -251,7 +370,8 @@ jobs:
             echo '- Exact artifact integrity: GREEN'
             echo '- Import closure: GREEN'
             echo '- Runtime import smoke: GREEN'
-            echo '- Full automatic test discovery: GREEN'
+            echo '- Full governed suite: GREEN (see porota-governed-tests.json)'
+            echo '- Negative fail-closed fixtures: GREEN'
             echo '- PAPER safety source gate: GREEN'
             echo '- Droplet touched: NO'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -265,5 +385,5 @@ jobs:
           set +e
           docker ps -aq --filter "ancestor=$IMAGE" | xargs -r docker rm -f
           docker image rm "$IMAGE" >/dev/null 2>&1 || true
-          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json "${RUNNER_TEMP}/porota-predeploy-evidence"
+          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence"
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'
