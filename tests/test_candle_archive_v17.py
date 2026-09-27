@@ -1,7 +1,7 @@
 """Pruebas de procedencia, revisión temporal y agregación sin volumen inventado."""
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -44,6 +44,38 @@ def sample_series(**changes):
 def rows(store,table):
     with store.connect() as c:
         return [dict(r) for r in c.execute('SELECT * FROM '+table)]
+
+
+def seed_ppi_history_identity(store, *symbols):
+    """Seed the complete PPI identity required by the history writer."""
+    with store.connect() as connection:
+        for symbol in symbols:
+            metadata = {
+                'ticker': symbol,
+                'instrument_type': 'ACCIONES',
+                'market': 'BYMA',
+                'currency': 'ARS',
+                'settlement': 'A-24HS',
+                '_discovery_source': 'PPI_PRIMARY',
+            }
+            connection.execute("""INSERT INTO financial_instrument_catalog VALUES(
+              ?,?,'BYMA','ARS','A-24HS','PPI_FIELD','fixture',?,'fixture-run',
+              'AVAILABLE','READY_PAPER_SPOT',?)""",
+              (symbol, 'ACCIONES', AT, json.dumps(metadata, sort_keys=True)))
+
+
+@pytest.fixture
+def history_pipeline(store, tmp_path, monkeypatch):
+    """Exercise incremental history without touching the one-time real runner."""
+    import cu_history_store_v2_hf6 as history_v2
+    import cv_history_store_adapter_hf6 as history_adapter
+
+    history_store = history_adapter.HistoricalStore(str(tmp_path/'history-v2.db'))
+    history_v2.init_schema(history_store)
+    monkeypatch.setattr(history_adapter, 'default_history_store', lambda: history_store)
+    monkeypatch.setattr(observer, '_history_cutoff_repair_complete', lambda: True)
+    monkeypatch.setattr(observer, '_history_end_date', lambda now=None: date(2026, 8, 28))
+    return history_store
 
 
 @pytest.mark.parametrize('changes',[
@@ -234,8 +266,9 @@ def history_payload():
     return [{'date':'2026-08-25T17:00:00-03:00','openingPrice':100,'max':105,'min':99,'price':102,'volume':123}]
 
 
-def test_historial_vacio_no_borra_ultimo_valido_y_raw_se_conserva(store,monkeypatch):
+def test_historial_vacio_no_borra_ultimo_valido_y_raw_se_conserva(store,history_pipeline,monkeypatch):
     observer._support_schema(store)
+    seed_ppi_history_identity(store, 'GGAL')
     monkeypatch.setattr(observer,'_historical_targets',lambda _: [('GGAL','ACCIONES','A-24HS')])
     clock=[AT]
     monkeypatch.setattr(observer,'now_iso',lambda:clock[0])
@@ -268,8 +301,9 @@ def test_duplicados_no_inflan_cobertura():
     assert observer._history_count(history_payload()*3,as_of=AT)==1
 
 
-def test_descarga_fallida_rota_en_vez_de_bloquear_universo(store,monkeypatch):
+def test_descarga_fallida_rota_en_vez_de_bloquear_universo(store,history_pipeline,monkeypatch):
     observer._support_schema(store)
+    seed_ppi_history_identity(store, 'AAA', 'BBB')
     with store.connect() as c:
         for symbol in ('AAA','BBB'):
             c.execute('INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)',
@@ -280,6 +314,19 @@ def test_descarga_fallida_rota_en_vez_de_bloquear_universo(store,monkeypatch):
     assert observer._historical_targets(store)[0][0]=='AAA'
     observer._download_histories(Reader(),store)
     assert observer._historical_targets(store)[0][0]=='BBB'
+
+
+def test_identidad_de_mercado_ausente_sigue_fallando_cerrado(store,history_pipeline,monkeypatch):
+    observer._support_schema(store)
+    monkeypatch.setattr(observer,'_historical_targets',lambda _: [('SINID','ACCIONES','A-24HS')])
+    class Reader:
+        def history(self,*a):
+            pytest.fail('Una identidad sin mercado no debe consultar históricos')
+    assert observer._download_histories(Reader(),store)==0
+    assert rows(store,'production_history')==[]
+    assert any(r['event_type']=='HISTORY_V2_ERROR'
+               and r['detail']=='SINID: HISTORY_MARKET_IDENTITY_MISSING'
+               for r in rows(store,'paper_events'))
 
 
 def test_panel_no_presenta_muestras_como_cobertura_validada(store,monkeypatch):
