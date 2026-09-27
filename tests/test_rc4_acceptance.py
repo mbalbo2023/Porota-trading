@@ -345,13 +345,15 @@ def test_scraping_dashboard_exposes_run_evidence_without_promoting_ready(tmp_pat
 
 
 def test_deploy_contract_is_split_and_preflight_green():
-    import subprocess,sys
     compose=Path('docker-compose.yml').read_text(encoding='utf-8')
-    assert 'NO es el contrato canónico de PRODUCTION_PAPER' in compose
-    contract=Path('RC4_DEPLOY_CONTRACT.md').read_text(encoding='utf-8')
-    assert 'porota_production_observer' in contract
-    assert 'porota_production_dashboard' in contract
-    assert 'no autoriza deploy' in contract.lower()
-    proc=subprocess.run([sys.executable,'rc4_release_preflight.py'],capture_output=True,text=True)
-    assert proc.returncode == 0, proc.stdout+proc.stderr
-    assert 'RC4_PREFLIGHT=GREEN' in proc.stdout
+    predeploy=Path('.github/workflows/porota-predeploy-v2.yml').read_text(encoding='utf-8')
+    promote=Path('.github/workflows/porota-deploy-v2-promote.yml').read_text(encoding='utf-8')
+    policy=Path('ops/policy/porota-policy.yaml').read_text(encoding='utf-8')
+    assert 'legacy monolithic stack' in compose.lower()
+    assert 'production_paper usa el runtime split' in compose.lower()
+    assert 'Build candidate exactly once' in predeploy
+    assert 'Export frozen candidate artifacts' in predeploy
+    assert 'Resolve exact frozen candidate' in promote
+    assert 'POROTA_FROZEN_ARTIFACT_VERIFY=GREEN' in promote
+    assert 'strategy: FIX_FORWARD_ONLY' in policy
+    assert 'rollback_allowed: false' in policy

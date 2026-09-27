@@ -77,9 +77,15 @@ def test_release_version_and_image_are_consistent():
     assert dashboard.VERSION == o_dashboard.VERSION == VERSION
     assert workspace.IMAGE == IMAGE
     root = Path(__file__).resolve().parents[1]
-    compose = (root / "docker-compose.yml").read_text()
+    compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
     mode = (root / "porota_mode_manager.py").read_text()
-    assert "NO es el contrato canónico de PRODUCTION_PAPER" in compose
+    predeploy = root / ".github/workflows/porota-predeploy-v2.yml"
+    promote = root / ".github/workflows/porota-deploy-v2-promote.yml"
+    assert "legacy monolithic stack" in compose.lower()
+    assert "production_paper usa el runtime split" in compose.lower()
+    assert predeploy.is_file() and promote.is_file()
+    assert not (root / ".github/workflows/deploy.yml").exists()
+    assert not (root / ".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml").exists()
     assert "from cg_paper_workspace import DB_ENV, CONTAINER_DB, IMAGE" in mode
     assert 'IMAGE, "o_dashboard.py"' in mode
     assert 'IMAGE, "bv_paper_runtime.py"' in mode
