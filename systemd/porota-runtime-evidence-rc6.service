@@ -1,0 +1,30 @@
+[Unit]
+Description=Porota RC6 read-only runtime evidence publisher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=porotaadmin
+Group=porotaadmin
+RuntimeDirectory=porota-observability-publish
+RuntimeDirectoryMode=0750
+ExecStart=/bin/sh /opt/porota-trading/scripts/porota_publish_runtime_evidence_github_rc6.sh
+TimeoutStartSec=180
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadOnlyPaths=/opt/porota-trading/data/paper_v17/observer_v17.db
+ReadOnlyPaths=/opt/porota-trading/data/operation_mode.json
+ReadOnlyPaths=/opt/porota-trading/data/deploy
+ReadWritePaths=/var/lib/porota-runtime-evidence
+ReadWritePaths=/var/lib/porota-observability/repo
+ReadWritePaths=/run/porota-observability-publish
