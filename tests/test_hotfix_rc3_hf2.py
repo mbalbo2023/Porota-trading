@@ -97,43 +97,52 @@ def test_economia_shadow_cuenta_apertura_con_fallo(tmp_path):
                       "opened_with_failure": 1, "blocked_with_failure": 0}
 
 
-def test_ingesta_background_respeta_ttl_por_intento(tmp_path, monkeypatch):
+def test_ingesta_background_se_limita_a_una_vez_por_rueda_postcierre(tmp_path):
     store = engine.PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
-    now = datetime.now(observer.TZ)
+    first_attempt = datetime(2026, 9, 28, 17, 5, tzinfo=observer.TZ)
     with store.connect() as connection:
         connection.execute("INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
-                           ("PPI_PRODUCTION_HISTORY", "ROJO", now.isoformat(),
+                           ("PPI_PRODUCTION_HISTORY", "ROJO", first_attempt.isoformat(),
                             None, 0, "falló"))
-    assert observer._background_ingest_due(store, now=now + timedelta(minutes=30)) is False
     assert observer._background_ingest_due(
-        store, now=now + timedelta(seconds=observer.BACKGROUND_INGEST_SECONDS + 1)
+        store, now=datetime(2026, 9, 28, 23, 30, tzinfo=observer.TZ)
+    ) is False
+    assert observer._background_ingest_due(
+        store, now=datetime(2026, 9, 29, 16, 59, tzinfo=observer.TZ)
+    ) is False
+    assert observer._background_ingest_due(
+        store, now=datetime(2026, 9, 29, 17, 1, tzinfo=observer.TZ)
     ) is True
 
 
 def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypatch):
     store = engine.PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
-    monkeypatch.setattr(observer, "_historical_targets",
-                        lambda _store: [("GGAL", "ACCIONES", "A-24HS")])
-    monkeypatch.setattr(observer, "HISTORY_BATCH_LIMIT", 1)
     calls = []
 
     class Reader:
-        def history(self, symbol, kind, settlement, start, end):
-            calls.append(("history", symbol, kind, settlement))
-            return [{"date": datetime.now(timezone.utc).isoformat(),
-                     "openingPrice": 100, "max": 101, "min": 99,
-                     "price": 100, "volume": 1000}]
-
         def current(self, *_args):
             raise AssertionError("current no debe usarse fuera de rueda")
 
         def book(self, *_args):
             raise AssertionError("book no debe usarse fuera de rueda")
 
-    assert observer._background_ingest(Reader(), store, force=True) == 1
-    assert calls == [("history", "GGAL", "ACCIONES", "A-24HS")]
+    reader = Reader()
+    monkeypatch.setattr(
+        observer,
+        "_download_histories",
+        lambda received, received_store: (
+            calls.append(("history", received, received_store)) or 1
+        ),
+    )
+    monkeypatch.setattr(observer, "_background_ingest_due", lambda _store: False)
+    assert observer._background_ingest(reader, store, force=True) is None
+    assert calls == []
+
+    monkeypatch.setattr(observer, "_background_ingest_due", lambda _store: True)
+    assert observer._background_ingest(reader, store, force=True) == 1
+    assert calls == [("history", reader, store)]
 
 
 def test_dashboard_expone_binding_y_guardas_hf3(tmp_path, monkeypatch):

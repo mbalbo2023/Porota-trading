@@ -47,12 +47,18 @@ def test_fecha_futura_o_invalida_falla_cerrada(monkeypatch):
     assert hist.calcular_ruedas_atrasadas("invalida", now) is None
 
 
-def test_scheduler_incluye_catchup_inicio_manana_y_postcierre():
+def test_scheduler_interno_no_reactiva_escritores_historicos_retirados():
     scheduler = scheduler_module.build_scheduler()
     ids = {item.id for item in scheduler.get_jobs()}
-    assert "maintenance_historical_startup_catchup" in ids
-    assert "maintenance_historical_catchup" in ids
-    assert "maintenance_historical_refresh" in ids
+    assert ids.isdisjoint({
+        "maintenance_historical_startup_catchup",
+        "maintenance_historical_catchup",
+        "maintenance_historical_refresh",
+    })
+    assert {
+        "historical_refresh",
+        "historical_refresh_if_needed",
+    }.issubset(scheduler_module.INTERNAL_HISTORICAL_WRITE_JOBS)
 
 
 def test_catchup_no_descarga_si_esta_al_dia(monkeypatch):

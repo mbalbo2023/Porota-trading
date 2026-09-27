@@ -89,7 +89,9 @@ def test_scheduler_uses_multiple_evidence_sources_and_news_off(monkeypatch):
     rows=sched.internal_rows([],source_sync_rows=[{'source':'PPI_PRODUCTION_HISTORY','last_attempt_at':'2026-09-03T10:00:00+00:00','last_success_at':'2026-09-03T10:00:00+00:00','status':'OK'}],contract_run_rows=[{'job_key':'CONTRACT_EVIDENCE_CAUCIONES','started_at':'2026-09-03T10:00:00+00:00','finished_at':'2026-09-03T10:00:01+00:00','state':'OK'}])
     by={r['key']:r for r in rows}
     assert by['PPI_PRODUCTION_HISTORY']['evidence_table']=='source_sync'
-    assert by['CONTRACT_EVIDENCE_CAUCIONES']['evidence_table']=='contract_evidence_runs'
+    assert 'CONTRACT_EVIDENCE_CAUCIONES' not in by
+    assert 'CONTRACT_EVIDENCE_CAUCIONES' in {job.key for job in sched.INTERNAL_JOBS}
+    assert sched._is_active_scope_job('CONTRACT_EVIDENCE_CAUCIONES') is False
 
 def test_ppi_normalizer_drops_account_quantity_and_does_not_infer_steps():
     p={'payload':[{'ticker':'AAA','cantidadDisponible':999,'cantidadDecimales':0,'cantidadDecimalesPrecio':3,'instrumentosDerivados':[{'private':'x'}]}]}

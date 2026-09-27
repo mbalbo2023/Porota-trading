@@ -30,10 +30,10 @@ def test_refresh_es_parcial_y_no_meta_refresh(monkeypatch):
     assert "details.paper-trade[open]" in page
 
 
-def test_configuracion_hf5_bloquea_real_y_activa_scalping_paper():
+def test_configuracion_rc6_bloquea_real_y_mantiene_scalping_observe():
     import porota_mode_manager as mode
     settings=mode.paper_settings({})
-    assert settings["PAPER_SCALPING_MODE"]=="ACTIVE_PAPER"
+    assert settings["PAPER_SCALPING_MODE"]=="ACTIVE_OBSERVE"
     assert settings["PAPER_SCALPING_RISK_PER_TRADE"]=="0.001"
     assert settings["PAPER_SCALPING_MAX_OPEN_POSITIONS"]=="1"
     assert settings["PPI_BACKGROUND_INGEST_SECONDS"]=="7200"
