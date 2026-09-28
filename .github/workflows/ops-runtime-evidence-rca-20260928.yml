@@ -1,0 +1,59 @@
+name: RC6 runtime evidence publisher RCA
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/ops-runtime-evidence-rca-20260928.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-runtime-evidence-rca-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  readonly-rca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_diag" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only publisher RCA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_diag" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "RCA_RUNTIME_EVIDENCE=START"
+          sudo -n systemctl show porota-runtime-evidence-rc6.timer -p LoadState -p ActiveState -p SubState -p UnitFileState -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager
+          sudo -n systemctl show porota-runtime-evidence-rc6.service -p LoadState -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus --no-pager
+          sudo -n systemctl status porota-runtime-evidence-rc6.service --no-pager -n 80 || true
+          sudo -n journalctl -u porota-runtime-evidence-rc6.service --since '2026-09-28 03:24:00 UTC' --no-pager -n 200 || true
+          for path in             /opt/porota-trading/data/paper_v17/observer_v17.db             /opt/porota-trading/data/operation_mode.json             /opt/porota-trading/data/deploy/CURRENT_STATE_V2.json             /opt/porota-trading/data/deploy/porota-frozen-candidate.json             /opt/porota-trading/data/deploy/porota-deploy-bundle-v2-manifest.json             /var/lib/porota-observability/repo/.git; do
+            if sudo -n test -e "$path"; then echo "RCA_PATH_PRESENT=$path"; else echo "RCA_PATH_MISSING=$path"; fi
+          done
+          echo "RCA_BRANCH=$(sudo -n -u porotaadmin git -C /var/lib/porota-observability/repo branch --show-current 2>/dev/null || true)"
+          if sudo -n -u porotaadmin test -z "$(sudo -n -u porotaadmin git -C /var/lib/porota-observability/repo status --porcelain 2>/dev/null)"; then echo "RCA_REPO_CLEAN=YES"; else echo "RCA_REPO_CLEAN=NO"; fi
+          if sudo -n -u porotaadmin test -r /home/porotaadmin/.gitconfig; then echo "RCA_HOME_GITCONFIG_READABLE=YES"; else echo "RCA_HOME_GITCONFIG_READABLE=NO"; fi
+          echo "RCA_RUNTIME_EVIDENCE=END"
+          REMOTE
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/porota_rc6_diag"
