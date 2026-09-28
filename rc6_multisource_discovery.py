@@ -121,8 +121,16 @@ def _rows(path: Path, source: str):
         for block in payload.get("sources",[]) if isinstance(payload,dict) else []:
             if not isinstance(block,dict) or str(block.get("source") or "").upper()!="BYMA":continue
             for row in block.get("records",[]) if isinstance(block.get("records"),list) else []:
-                observed=_provider_timestamp(row.get("timestamp"))
                 if not isinstance(row,dict):continue
+                provider_observed=_provider_timestamp(
+                    row.get("provider_observed_at") or row.get("timestamp"))
+                capture_observed=_provider_timestamp(
+                    block.get("observed_at") or payload.get("collected_at"))
+                # BYMA's public tables often omit a per-row exchange timestamp.
+                # The successful structured HTTP capture still dates the
+                # observation; keep that distinction explicit instead of
+                # silently discarding the whole source as undated.
+                observed=provider_observed or capture_observed
                 family=canonical_family(row.get("family"))
                 symbol=str(row.get("symbol") or row.get("ticker") or "").strip().upper()
                 if not family or not symbol:continue
@@ -133,6 +141,10 @@ def _rows(path: Path, source: str):
                     "description":str(row.get("description") or ""),
                     "source":"BYMA_PUBLIC_COMPLEMENTARY","source_channel":"BYMA_PUBLIC",
                     "observed_at":observed,
+                    "provider_observed_at":provider_observed,
+                    "capture_observed_at":capture_observed,
+                    "freshness_basis":"PROVIDER_TIMESTAMP" if provider_observed else (
+                        "STRUCTURED_CAPTURE_TIMESTAMP" if capture_observed else "UNKNOWN"),
                     "identity_evidence":{
                         "market_explicit":True,
                         "currency_explicit":bool(row.get("currency")),

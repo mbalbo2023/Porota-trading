@@ -173,6 +173,30 @@ def test_complete_bundle_has_readonly_proof_and_instrument_contract(tmp_path):
     assert set(row["sources"]) == set(evidence.SOURCES)
 
 
+def test_complementary_shadow_does_not_contradict_unique_primary_candidate(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        ("GGAL", "ACCIONES", "BYMA", "UNKNOWN", "A-24HS", "IOL_COMPLEMENTARY",
+         "2026-09-27T16:59:00+00:00", "iol", "OBSERVED_SHADOW",
+         "MISSING_CURRENCY_OR_MARKET",
+         json.dumps({"_discovery_source": "IOL_COMPLEMENTARY"})),
+    )
+    conn.commit()
+    conn.close()
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    primary = next(row for row in payload["instruments"]
+                   if row["identity"]["currency"] == "ARS")
+    assert primary["readiness"]["status"] == "READY_PAPER"
+    assert primary["identity_flags"]["ambiguous"] is False
+    assert "CANDIDATE_LEDGER_CONTRADICTION" not in payload["gaps"]
+
+
 def test_mixed_generation_provenance_is_explicitly_incomplete(tmp_path):
     db, mode, deploy, frozen, manifest = inputs(tmp_path)
     frozen.write_text(json.dumps({
@@ -241,7 +265,7 @@ def test_candidate_ledger_contradiction_is_exact_for_each_fail_closed_gate(
     conn = sqlite3.connect(db)
     if case == "freshness":
         conn.execute("UPDATE financial_instrument_catalog SET last_seen_at=?",
-                     ("2026-09-20T16:59:00+00:00",))
+                     ("2026-09-10T16:59:00+00:00",))
     elif case == "primary":
         conn.execute("""UPDATE financial_instrument_catalog
           SET settlement_source='IOL_COMPLEMENTARY',metadata_json='{}'""")
