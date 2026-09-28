@@ -50,23 +50,23 @@
   "currency_funnel": [
     {
       "currency": "ARS",
-      "last_observed_at": "2026-09-28T17:17:19.165260+00:00",
-      "observed_symbols": 290
+      "last_observed_at": "2026-09-28T18:17:15.354859+00:00",
+      "observed_symbols": 299
     },
     {
       "currency": "USD_CCL",
-      "last_observed_at": "2026-09-28T17:16:30.228253+00:00",
-      "observed_symbols": 205
+      "last_observed_at": "2026-09-28T18:15:42.168114+00:00",
+      "observed_symbols": 210
     },
     {
       "currency": "USD_MEP",
-      "last_observed_at": "2026-09-28T17:16:31.631358+00:00",
-      "observed_symbols": 215
+      "last_observed_at": "2026-09-28T18:15:43.747639+00:00",
+      "observed_symbols": 228
     }
   ],
   "economics": {
-    "blocked_1h": 0,
-    "evaluated_1h": 0,
+    "blocked_1h": 1,
+    "evaluated_1h": 1,
     "opened_1h": 0
   },
   "family_readiness": [
@@ -77,7 +77,7 @@
           "count": 122
         }
       ],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -88,7 +88,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -104,7 +104,7 @@
           "count": 788
         }
       ],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
@@ -115,7 +115,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "EMPTY_FILTER_RESULTS",
       "excluded_by_default": false,
@@ -131,7 +131,7 @@
           "count": 638
         }
       ],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -142,7 +142,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -153,7 +153,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "EMPTY_FILTER_RESULTS",
       "excluded_by_default": false,
@@ -169,7 +169,7 @@
           "count": 886
         }
       ],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -180,7 +180,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -196,7 +196,7 @@
           "count": 113
         }
       ],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -207,7 +207,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -218,7 +218,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -234,7 +234,7 @@
           "count": 28
         }
       ],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -245,7 +245,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -256,7 +256,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -272,7 +272,7 @@
           "count": 1404
         }
       ],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
@@ -283,7 +283,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -299,12 +299,12 @@
           "count": 979
         }
       ],
-      "checked_at": "2026-09-28T17:00:55.339510+00:00",
+      "checked_at": "2026-09-28T18:00:57.377338+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "OPCIONES",
-      "observed_count": 1298,
+      "observed_count": 1302,
       "queries": 4,
       "ready_paper_count": 0
     }
@@ -313,16 +313,16 @@
     "branch": "runtime-observability",
     "day": "2026-09-28",
     "detail": null,
-    "recorded_at": "2026-09-28T16:20:19.079161+00:00",
+    "recorded_at": "2026-09-28T17:20:30.910195+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
   "ingestion": {
-    "candle_versions": 88267,
+    "candle_versions": 88764,
     "instruments": 1151,
     "last_download": "2026-09-25T20:02:13.939573+00:00",
     "last_market_date": "2026-09-25",
-    "latest_candle_known_at": "2026-09-28T17:16:29.009010+00:00",
+    "latest_candle_known_at": "2026-09-28T18:17:16.625156+00:00",
     "raw": 0,
     "rows": 242636
   },
@@ -362,20 +362,20 @@
   ],
   "market_regime_observation": {
     "binding": false,
-    "falling": 86,
+    "falling": 141,
     "method": "FIRST_LAST_TRADE_SAMPLE_BREADTH_NOT_AN_INDEX",
     "minimum_symbols": 4,
     "policy": "ALERT_ONLY",
-    "rising": 46,
+    "rising": 104,
     "state": "MIXED_OR_POSITIVE",
-    "symbols": 445,
-    "unchanged": 313
+    "symbols": 485,
+    "unchanged": 240
   },
   "observer": {
-    "heartbeat_at": "2026-09-28T17:16:32.398306+00:00",
-    "http_allowed": 297,
+    "heartbeat_at": "2026-09-28T18:15:48.486944+00:00",
+    "http_allowed": 251,
     "http_blocked": 0,
-    "last_market_data_at": "2026-09-28T17:16:27.851758+00:00",
+    "last_market_data_at": "2026-09-28T18:16:55.437879+00:00",
     "mode": "PRODUCTION_PAPER",
     "ppi_auth": "OK",
     "process_state": "RUNNING",
@@ -384,19 +384,19 @@
   },
   "ppi_errors_1h": [
     {
-      "count": 4,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 4,
-      "event_type": "DATA_ERROR"
-    },
-    {
       "count": 3,
       "event_type": "DATA_ERROR"
     },
     {
-      "count": 3,
+      "count": 2,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 2,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 2,
       "event_type": "DATA_ERROR"
     },
     {
@@ -467,7 +467,7 @@
   "quick_check": "ok",
   "scalping": {
     "approved_1h": 0,
-    "evaluated_1h": 402,
+    "evaluated_1h": 401,
     "paper_positions_today": 0,
     "rejected_1h": 402
   },
@@ -483,22 +483,22 @@
     "unmapped_positions": 1
   },
   "storage": {
-    "database_bytes": 986402816,
-    "filesystem_free": 5851578368,
+    "database_bytes": 989466624,
+    "filesystem_free": 5846859776,
     "filesystem_total": 24883167232,
-    "filesystem_used": 19014811648,
-    "filesystem_used_pct": 76.42,
+    "filesystem_used": 19019530240,
+    "filesystem_used_pct": 76.44,
     "wal_bytes": 44013992
   },
   "telegram": {
     "SENT": 310,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-09-28T14:15:09-03:00",
+  "timestamp": "2026-09-28T15:15:09-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
-    "decisions_1h": 217,
+    "decisions_1h": 202,
     "net_pnl_today": 0,
     "open": 1,
     "sells_1h": 0
@@ -512,27 +512,27 @@
   "workers": {
     "candles": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-28T17:17:20.664126+00:00",
+      "heartbeat_at": "2026-09-28T18:17:14.614398+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-28T17:17:20.180884+00:00",
+      "heartbeat_at": "2026-09-28T18:17:14.745256+00:00",
       "state": "READY"
     },
     "scalping": {
-      "heartbeat_age_seconds": 83.503299,
-      "heartbeat_at": "2026-09-28T17:13:45.713331+00:00",
+      "heartbeat_age_seconds": 91.266028,
+      "heartbeat_at": "2026-09-28T18:13:38.151539+00:00",
       "state": "RUNNING"
     },
     "supervisor": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-28T17:17:20.910967+00:00",
+      "heartbeat_at": "2026-09-28T18:17:10.891826+00:00",
       "state": "RUNNING"
     },
     "telegram": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-28T17:17:20.943753+00:00",
+      "heartbeat_at": "2026-09-28T18:17:15.065389+00:00",
       "state": "RUNNING"
     }
   }
