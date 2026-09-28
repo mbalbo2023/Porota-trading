@@ -27,6 +27,7 @@ ausencia no se detecta ejecutando lo que sí está.
 
 import ast
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -125,6 +126,20 @@ def _imports_de(nombre):
         elif isinstance(nodo, ast.ImportFrom) and nodo.module:
             modulos.add(nodo.module.split(".")[0])
     return modulos
+
+
+def _instalaciones_pip_fuera_del_lock(dockerfile):
+    """Devuelve comandos pip que no instalan exclusivamente el lock vigente."""
+    invalidas = []
+    for instalacion in (l.strip() for l in dockerfile.splitlines() if "pip install" in l):
+        tokens = shlex.split(instalacion)
+        if tokens[:3] != ["RUN", "pip", "install"]:
+            invalidas.append(instalacion)
+            continue
+        args = [t for t in tokens[3:] if t != "--no-cache-dir"]
+        if args != ["-r", "requirements.lock.txt"]:
+            invalidas.append(instalacion)
+    return invalidas
 
 
 # ===========================================================================
@@ -529,11 +544,16 @@ class TestHigiene:
 
     def test_el_dockerfile_no_instala_nada_por_fuera_de_requirements(self):
         df = _sin_comentarios("Dockerfile")
-        instalaciones = [l for l in df.splitlines()
-                         if "pip install" in l and "requirements.txt" not in l]
-        assert not instalaciones, (
-            f"Instalaciones sueltas en el Dockerfile: {instalaciones}. Dos "
+        instalaciones = [l.strip() for l in df.splitlines() if "pip install" in l]
+        assert instalaciones, "El Dockerfile debe instalar el lock reproducible."
+        invalidas = _instalaciones_pip_fuera_del_lock(df)
+        assert not invalidas, (
+            f"Instalaciones sueltas en el Dockerfile: {invalidas}. Dos "
             f"builds en semanas distintas producirían sistemas distintos.")
+        assert _instalaciones_pip_fuera_del_lock("RUN pip install requests")
+        assert _instalaciones_pip_fuera_del_lock(
+            "RUN pip install -r requirements.lock.txt requests"
+        )
 
     def test_no_quedan_restos_de_codespaces(self):
         assert not (RAIZ / ".devcontainer").exists()
@@ -557,27 +577,32 @@ class TestPipeline:
             "rojo si el CI no los corre.")
 
     def test_el_despliegue_no_se_dispara_con_un_push(self):
-        deploy = _sin_comentarios(".github/workflows/deploy.yml")
-        assert "workflow_dispatch" in deploy
-        assert "branches: [main]" not in deploy, (
-            "Producción no se dispara por un simple push a main: es un "
-            "principio de arquitectura declarado del propio sistema.")
-        assert "DESPLEGAR" in deploy
+        deploy = _sin_comentarios(".github/workflows/porota-deploy-v2-promote.yml")
+        assert "push:" in deploy
+        assert "deploy/rc6-pr69-isolated-20260915" in deploy
+        assert "branches: [main]" not in deploy
+        assert "group: rc6-unified-paper-deploy" in deploy
+        assert "cancel-in-progress: false" in deploy
+        assert not (RAIZ / ".github/workflows/deploy.yml").exists()
+        assert not (RAIZ / ".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml").exists()
 
     def test_la_verificacion_de_salud_corre_en_el_servidor(self):
-        deploy = _sin_comentarios(".github/workflows/deploy.yml")
-        assert "ssh-action" in deploy
-        posicion_ssh = deploy.index("ssh-action")
-        posicion_health = deploy.index("/health")
-        assert posicion_health > posicion_ssh, (
-            "El curl al /health tiene que estar DENTRO de la sesión SSH. En la "
-            "máquina efímera de GitHub no hay ni bot ni Docker del proyecto: "
-            "no verifica nada y no revierte nada.")
+        deploy = _sin_comentarios(".github/workflows/porota-deploy-v2-promote.yml")
+        inicio = deploy.index("<<'REMOTE'")
+        fin = deploy.index("\n          REMOTE\n", inicio)
+        remoto = deploy[inicio:fin]
+        assert "DASHBOARD_HTTP=" in remoto
+        assert "http://127.0.0.1:8000/health" in remoto
+        assert 'test "$DASHBOARD_HTTP" = 200' in remoto
+        assert "POST_STATE_HOST_READONLY_ATTEMPT" in remoto
 
     def test_la_vuelta_atras_es_sobre_la_version_anterior(self):
-        deploy = _sin_comentarios(".github/workflows/deploy.yml")
-        assert "ANTERIOR" in deploy and "git checkout --detach \"$ANTERIOR\"" in deploy, (
-            "Un `up -d` del mismo código roto reinicia lo que ya no funciona.")
+        deploy = _sin_comentarios(".github/workflows/porota-deploy-v2-promote.yml")
+        policy = (RAIZ / "ops/policy/porota-policy.yaml").read_text(encoding="utf-8")
+        assert "strategy: FIX_FORWARD_ONLY" in policy
+        assert "rollback_allowed: false" in policy
+        assert "FIX-FORWARD ONLY" in deploy
+        assert "rollback" not in deploy.lower()
 
     def test_el_barrido_de_secretos_cubre_todo_el_arbol(self):
         ci = self._wf("ci.yml")

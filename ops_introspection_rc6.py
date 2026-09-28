@@ -29,6 +29,33 @@ HOTFIX_TAG = VERSION.rsplit("-", 1)[-1].upper()
 FILE_TAG = HOTFIX_TAG.lower()
 
 
+def non_negative_age_seconds(now: datetime, heartbeat_at: str | None) -> float | None:
+    """Return a monotonic presentation age even during concurrent updates.
+
+    A worker can commit a heartbeat a few milliseconds after this snapshot took
+    its ``now`` value.  That clock race must not be exposed as a negative age.
+    """
+    if not heartbeat_at:
+        return None
+    try:
+        observed = datetime.fromisoformat(str(heartbeat_at).replace("Z", "+00:00"))
+        if observed.tzinfo is None:
+            observed = observed.replace(tzinfo=TZ)
+        return max(0.0, (now - observed.astimezone(TZ)).total_seconds())
+    except (ValueError, TypeError):
+        return None
+
+
+def should_warn_no_usd_operations(session_state: str | None, currencies: list[dict]) -> bool:
+    """Only expect intraday USD activity while the market is actually open."""
+    if str(session_state or "").upper() != "MARKET_OPEN":
+        return False
+    return not any(
+        row.get("currency") in {"USD", "USD_MEP", "USD_CCL"}
+        for row in (currencies or [])
+    )
+
+
 def connect(readonly=True):
     target = f"file:{DB}?mode=ro" if readonly else DB
     c = sqlite3.connect(target, uri=readonly, timeout=10)
@@ -123,8 +150,9 @@ def collect():
             if table(c, source):
                 row = dict(c.execute(f"SELECT * FROM {source} WHERE id=1").fetchone() or {})
                 selected={k: row.get(k) for k in ("state","heartbeat_at","detail")}
-                try: selected["heartbeat_age_seconds"]=(now-datetime.fromisoformat(row["heartbeat_at"]).astimezone(TZ)).total_seconds()
-                except (KeyError,ValueError,TypeError): selected["heartbeat_age_seconds"]=None
+                selected["heartbeat_age_seconds"] = non_negative_age_seconds(
+                    now, row.get("heartbeat_at")
+                )
                 result["workers"][name] = selected
             else:
                 result["workers"][name] = {"state":"NOT_INSTALLED","heartbeat_at":None,"detail":""}
@@ -302,7 +330,9 @@ def collect():
             age=item.get("heartbeat_age_seconds")
             if age is None or age > (300 if name=="scalping" else 60):
                 result["anomalies"].append(f"worker_stale:{name}")
-    if not any(row.get("currency") in {"USD","USD_MEP","USD_CCL"} for row in result["currencies_today"]):
+    if should_warn_no_usd_operations(
+        result["observer"].get("session_state"), result["currencies_today"]
+    ):
         result["warnings"].append("no_usd_operations_today")
     return result
 

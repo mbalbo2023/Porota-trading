@@ -115,12 +115,14 @@ def test_actividad_en_vivo_responde_con_sesion_valida(monkeypatch):
 
     respuesta = cliente.get("/vivo")
     assert respuesta.status_code == 200
-    # RC4 convierte /vivo en la vista operacional canónica: operaciones primero,
-    # decisiones y scalping después, motores al final.
+    # RC6 mantiene /vivo acotado a la actividad operativa. Scalping y Sistema
+    # siguen accesibles como rutas superiores, sin duplicar paneles aquí.
     assert "1. Operaciones abiertas ahora" in respuesta.text
     assert "3. Decisiones en vivo — BUY / HOLD / abstenciones" in respuesta.text
-    assert "4. Scalping" in respuesta.text
-    assert "5. Motores / workers" in respuesta.text
+    assert "<h2>4. Scalping" not in respuesta.text
+    assert "<h2>5. Motores / workers" not in respuesta.text
+    assert "href='/scalping'" in respuesta.text
+    assert "href='/sistema'" in respuesta.text
     assert "Embudo de rechazos — última hora" not in respuesta.text
     assert respuesta.text.count("id='porota-canonical-nav'") == 1
 
@@ -161,8 +163,11 @@ def test_vivo_es_alias_del_panel_consolidado(monkeypatch, tmp_path):
     assert respuesta.status_code == 200
     assert "1. Operaciones abiertas ahora" in respuesta.text
     assert "2. Operaciones cerradas hoy" in respuesta.text
-    assert "4. Scalping" in respuesta.text
-    assert "5. Motores / workers" in respuesta.text
+    assert "3. Decisiones en vivo — BUY / HOLD / abstenciones" in respuesta.text
+    assert "<h2>4. Scalping" not in respuesta.text
+    assert "<h2>5. Motores / workers" not in respuesta.text
+    assert "href='/scalping'" in respuesta.text
+    assert "href='/sistema'" in respuesta.text
     assert "Embudo de rechazos — última hora" not in respuesta.text
     assert respuesta.text.count("id='porota-canonical-nav'") == 1
     # La ruta heredada conserva sus lecturas SQLite para no saltear la

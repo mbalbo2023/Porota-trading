@@ -44,7 +44,10 @@ def test_live_page_keeps_current_round_and_history_semantics_clean():
     assert "Todas las operaciones de esta página son simuladas." in src
     assert "Nunca representan una orden enviada a PPI." in src
     assert "Fuente que habilita una nueva etiqueta" in src
-    assert "Aprendizaje EVENT-DRIVEN" in src
+    # El aprendizaje conserva su ruta propia; /vivo no duplica ese panel.
+    assert "Aprendizaje event-driven." in src
+    live=src[src.index('def live_page('):src.index('\ndef ',src.index('def live_page(')+5)]
+    assert "Aprendizaje event-driven." not in live
 
 
 def test_formalized_browser_runner_keeps_fail_closed_guards():

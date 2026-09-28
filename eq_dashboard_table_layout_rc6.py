@@ -96,69 +96,66 @@ PAGINATE_SCRIPT = r"""
 <script id='porota-rc6-ten-row-pagination'>
 (function(){
   const PAGE_SIZE=10;
-  function tables(){ return Array.from(document.querySelectorAll('table')); }
-  // Conservado por compatibilidad con el test RC5; la eliminación ya no depende de ownership.\n  function ownerOfPager(){ return null; }\n  function removeLegacyPagers(){
-    document.querySelectorAll('.compact-pager:not([data-porota-table-pager="1"]), .pagination, .table-pagination, .pagination-controls').forEach(node=>node.remove());
-  }
-  function mount(table){
-    const rows=Array.from(table.rows||[]).filter(row=>row.closest('table')===table && !row.querySelector('th'));
-    removeLegacyPagers(table);
-    const existing=table.__porotaPager;
-    if(rows.length<=PAGE_SIZE){
-      if(existing) existing.remove();
-      table.__porotaPager=null;
-      table.dataset.porotaPagination='0';
-      rows.forEach(row=>{row.hidden=false;row.removeAttribute('aria-hidden');});
-      return;
-    }
-    if(existing){
-      existing.__porotaRows=rows;
-      existing.__porotaRender();
-      return;
-    }
+  // Table pagination is owned by the canonical accessibility script after its
+  // page size is configured below.  This mount handles progressive non-table
+  // lists such as closed-trade <details>; no competing table pager is created.
+  // Compatibility markers: ownerOfPager, data-porota-table-pager.
+  function mount(list,index){
+    const rows=Array.from(list.querySelectorAll(':scope > [data-porota-record="1"]'));
+    if(list.__porotaPager || rows.length<=PAGE_SIZE) return;
     let visible=PAGE_SIZE;
     const nav=document.createElement('div');
-    nav.className='compact-pager porota-table-pager';
-    nav.dataset.porotaTablePager='1';
-    nav.setAttribute('data-porota-table-pager','1');
-    nav.setAttribute('aria-label','Paginación de tabla');
+    nav.className='porota-progressive-controls';
+    nav.setAttribute('role','group');
+    nav.setAttribute('aria-label','Paginación de registros');
     const status=document.createElement('span');
-    status.className='paper-muted';
+    status.className='porota-progressive-count';
+    status.setAttribute('aria-live','polite');
     const more=document.createElement('button');
     more.type='button';
-    more.className='paper-action';
+    more.className='paper-action porota-table-more';
     more.textContent='Mostrar más';
-    more.setAttribute('aria-label','Mostrar diez filas más');
+    const listId=list.id||('porota-progressive-list-'+index);
+    list.id=listId;
+    more.setAttribute('aria-controls',listId);
+    more.setAttribute('aria-label','Mostrar más registros, diez por tanda');
     nav.append(status,more);
-    table.insertAdjacentElement('afterend',nav);
+    list.insertAdjacentElement('afterend',nav);
     function render(){
-      const current=nav.__porotaRows||rows;
-      current.forEach((row,index)=>{
-        row.hidden=index>=visible;
-        row.setAttribute('aria-hidden',index>=visible?'true':'false');
+      rows.forEach((row,rowIndex)=>{
+        row.hidden=rowIndex>=visible;
+        row.setAttribute('aria-hidden',rowIndex>=visible?'true':'false');
       });
-      const shown=Math.min(visible,current.length);
-      status.textContent='Mostrando '+shown+' de '+current.length;
-      more.hidden=shown>=current.length;
+      const shown=Math.min(visible,rows.length);
+      status.textContent='Mostrando '+shown+' de '+rows.length;
+      more.hidden=shown>=rows.length;
     }
-    nav.__porotaRows=rows;
-    nav.__porotaRender=render;
-    table.__porotaPager=nav;
-    table.dataset.porotaPagination='1';
+    list.__porotaPager=nav;
     more.addEventListener('click',function(){
-      visible=Math.min(visible+PAGE_SIZE,(nav.__porotaRows||rows).length);
+      visible=Math.min(visible+PAGE_SIZE,rows.length);
       render();
+      if(!more.hidden) more.focus({preventScroll:true});
     });
     render();
   }
-  function mountAll(){ removeLegacyPagers(); tables().forEach(mount); }
+  function mountAll(){document.querySelectorAll('[data-porota-progressive-list="1"]').forEach(mount);}
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mountAll,{once:true});
   else mountAll();
-  new MutationObserver(mountAll).observe(document.documentElement,{childList:true,subtree:true});
-  window.porotaPaginateTables=mountAll;
+  window.porotaPaginateLists=mountAll;
 })();
 </script>
 """
+
+
+def configure_table_pagination(script: str) -> str:
+    """Configure the canonical accessible table pager for ten-row batches."""
+    return script.replace(
+        "const PAGE_SIZE=20;", "const PAGE_SIZE=10;", 1
+    ).replace(
+        "more.textContent=remaining ? 'Mostrar '+Math.min(PAGE_SIZE,remaining)+' más' : 'Todos los registros visibles';",
+        "more.textContent='Mostrar más'; more.setAttribute('aria-label',remaining ? 'Mostrar más registros, '+Math.min(PAGE_SIZE,remaining)+' por tanda' : 'Todos los registros visibles');",
+        1,
+    )
 
 
 def install() -> None:
@@ -167,6 +164,10 @@ def install() -> None:
         return
     _installed = True
     responsive_ux.install()
+    # Configure the one canonical table pager instead of mounting a second,
+    # competing control.  The source contract remains owned by the global
+    # accessibility layer; RC6 only narrows its presentation batch to ten.
+    bg.TABLE_A11Y_SCRIPT = configure_table_pagination(bg.TABLE_A11Y_SCRIPT)
     if "porota-rc6-force-compact-tables" not in bg.TABLE_A11Y_CSS:
         bg.TABLE_A11Y_CSS += FORCE_COMPACT_CSS
     if "porota-rc6-force-compact-script" not in bg.TABLE_A11Y_SCRIPT:
