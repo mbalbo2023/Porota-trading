@@ -1,0 +1,49 @@
+name: Cancel stuck legacy deploy run 34982641293
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - .github/workflows/ops-cancel-stuck-run-34982641293.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel-exact-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel only legacy run 34982641293
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN_ID: '34982641293'
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          run_id="$TARGET_RUN_ID"
+          before_status="$(gh api "repos/$repo/actions/runs/$run_id" --jq '.status')"
+          before_conclusion="$(gh api "repos/$repo/actions/runs/$run_id" --jq '.conclusion // ""')"
+          echo "before status=$before_status conclusion=$before_conclusion"
+
+          if [[ "$before_status" == "queued" || "$before_status" == "in_progress" ]]; then
+            gh api --method POST "repos/$repo/actions/runs/$run_id/cancel"
+          fi
+
+          for i in $(seq 1 30); do
+            status="$(gh api "repos/$repo/actions/runs/$run_id" --jq '.status')"
+            conclusion="$(gh api "repos/$repo/actions/runs/$run_id" --jq '.conclusion // ""')"
+            echo "poll=$i status=$status conclusion=$conclusion"
+            if [[ "$status" == "completed" && "$conclusion" == "cancelled" ]]; then
+              exit 0
+            fi
+            if [[ "$status" == "completed" && "$conclusion" != "cancelled" ]]; then
+              echo "::error::Target run completed with unexpected conclusion=$conclusion"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "::error::Target run did not reach completed/cancelled"
+          exit 1
