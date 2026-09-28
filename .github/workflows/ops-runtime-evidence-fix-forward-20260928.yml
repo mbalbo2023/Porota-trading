@@ -1,4 +1,4 @@
-name: RC6 post-fix runtime read-only verification
+name: RC6 exact failed-attempt temp cleanup
 
 on:
   pull_request:
@@ -10,65 +10,33 @@ permissions:
   contents: read
 
 jobs:
-  readonly-postfix:
+  exact-cleanup:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
-      - name: Prepare strict SSH
+      - name: Remove only failed-attempt temp directory
         shell: bash
         run: |
           set -Eeuo pipefail
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_verify"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_cleanup"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/porota_rc6_verify" "$HOME/.ssh/known_hosts"
-
-      - name: Verify runtime routes and publisher read-only
-        shell: bash
-        run: |
+          chmod 600 "$HOME/.ssh/porota_rc6_cleanup" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/porota_rc6_cleanup" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
-          ssh -i "$HOME/.ssh/porota_rc6_verify" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
-          set -Eeuo pipefail
-          test "$(sudo -n systemctl show porota-runtime-evidence-rc6.service -p Result --value)" = success
-          test "$(sudo -n systemctl show porota-runtime-evidence-rc6.service -p ExecMainStatus --value)" = 0
-          test "$(sudo -n systemctl is-enabled porota-runtime-evidence-rc6.timer)" = enabled
-          test "$(sudo -n systemctl is-active porota-runtime-evidence-rc6.timer)" = active
-          echo "RUNTIME_EVIDENCE_TIMER=GREEN|next=$(sudo -n systemctl show porota-runtime-evidence-rc6.timer -p NextElapseUSecRealtime --value)"
-
-          for route in / /en-vivo /analisis /scalping /riesgo /sistema /dashboard/logs; do
-            safe="$(printf '%s' "$route" | tr '/-' '__')"
-            code="$(curl -sS -L -o "/tmp/porota-route-${safe}" -w '%{http_code}' --max-time 15 "http://127.0.0.1:8000$route")"
-            test "$code" -ge 200
-            test "$code" -lt 500
-            bytes="$(stat -c '%s' "/tmp/porota-route-${safe}")"
-            test "$bytes" -gt 0
-            echo "DASHBOARD_ROUTE=GREEN|route=$route|http=$code|bytes=$bytes"
-            rm -f "/tmp/porota-route-${safe}"
-          done
-          health="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/health)"
-          test "$health" = 200
-          echo "DASHBOARD_HEALTH=GREEN|http=200"
-
-          sudo -n python3 - <<'PY'
-          import sqlite3
-          path="/opt/porota-trading/data/paper_v17/observer_v17.db"
-          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True)
-          c.execute("PRAGMA query_only=ON")
-          assert c.execute("PRAGMA query_only").fetchone()[0]==1
-          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
-          assert mode=="PRODUCTION_PAPER"
-          assert int(orders)==0
-          print("POSTFIX_DB_READONLY=GREEN|mode=PRODUCTION_PAPER|real_orders_sent=0")
-          PY
-          echo "POSTFIX_RUNTIME_VERIFY=GREEN|mutation=none"
+          TARGET=/tmp/porota-runtime-evidence-fix-36374546512
+          test "$TARGET" = /tmp/porota-runtime-evidence-fix-36374546512
+          rm -rf -- "$TARGET"
+          test ! -e "$TARGET"
+          echo "EXACT_FAILED_ATTEMPT_CLEANUP=GREEN|target=$TARGET"
           REMOTE
 
-      - name: Cleanup
+      - name: Runner cleanup
         if: always()
         shell: bash
-        run: rm -f "$HOME/.ssh/porota_rc6_verify"
+        run: rm -f "$HOME/.ssh/porota_rc6_cleanup"
