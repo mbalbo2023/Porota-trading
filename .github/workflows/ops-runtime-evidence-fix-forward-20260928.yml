@@ -104,6 +104,19 @@ jobs:
           sudo -n install -d -m 0755 /etc/systemd/system/porota-runtime-evidence-rc6.service.d
           printf '[Service]\nProtectHome=read-only\n' | sudo -n tee /etc/systemd/system/porota-runtime-evidence-rc6.service.d/10-git-credentials-readonly.conf >/dev/null
           sudo -n systemctl daemon-reload
+
+          sudo -n -u porotaadmin git -C "$OBS_REPO" fetch origin runtime-observability
+          LOCAL_SHA="$(sudo -n -u porotaadmin git -C "$OBS_REPO" rev-parse HEAD)"
+          REMOTE_SHA="$(sudo -n -u porotaadmin git -C "$OBS_REPO" rev-parse origin/runtime-observability)"
+          test -z "$(sudo -n -u porotaadmin git -C "$OBS_REPO" status --porcelain)"
+          if [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+            sudo -n -u porotaadmin git -C "$OBS_REPO" branch -f "quarantine/runtime-evidence-failed-$LOCAL_SHA" "$LOCAL_SHA"
+            sudo -n -u porotaadmin git -C "$OBS_REPO" checkout -B runtime-observability origin/runtime-observability
+            echo "OBSERVABILITY_CLONE_REALIGNED=GREEN|preserved=$LOCAL_SHA|remote=$REMOTE_SHA"
+          fi
+          test "$(sudo -n -u porotaadmin git -C "$OBS_REPO" rev-parse HEAD)" = "$REMOTE_SHA"
+          test -z "$(sudo -n -u porotaadmin git -C "$OBS_REPO" status --porcelain)"
+
           sudo -n systemctl reset-failed porota-runtime-evidence-rc6.service || true
           sudo -n systemctl start porota-runtime-evidence-rc6.service
           test "$(sudo -n systemctl show porota-runtime-evidence-rc6.service -p Result --value)" = success
