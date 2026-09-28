@@ -1,0 +1,157 @@
+name: RC6 runtime evidence publisher fix-forward
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.github/workflows/ops-runtime-evidence-fix-forward-20260928.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  exact-fix-forward:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      ARTIFACT_ID: "10946880658"
+      CANDIDATE_SHA: "ae9c42c159df6f40bbece43ce7e45057fe2c73ff"
+      DEPLOY_SHA: "4cdc124b7925339a614c736d4f627d0a8750ff74"
+      ARTIFACT_DIGEST: "sha256:e9a6c1e0fe83953a58d9ce986cea1d2b24d987f2409917760b377542dc795171"
+      BUNDLE_SHA256: "8ddff67dce3e24a7b7c2f2788a7b70375fe82ebcca454ef6c9da90906ff41478"
+    steps:
+      - name: Fetch only exact frozen provenance files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          meta="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID")"
+          test "$(jq -r .expired <<<"$meta")" = false
+          test "$(jq -r .name <<<"$meta")" = "porota-predeploy-v2-$CANDIDATE_SHA"
+          test "$(jq -r .digest <<<"$meta")" = "$ARTIFACT_DIGEST"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
+            -o /tmp/porota-runtime-evidence-fix.zip
+          frozen_path="$(unzip -Z1 /tmp/porota-runtime-evidence-fix.zip | awk '/(^|\/)porota-frozen-candidate.json$/ {print; exit}')"
+          manifest_path="$(unzip -Z1 /tmp/porota-runtime-evidence-fix.zip | awk '/(^|\/)porota-deploy-bundle-v2-manifest.json$/ {print; exit}')"
+          test -n "$frozen_path" && test -n "$manifest_path"
+          unzip -p /tmp/porota-runtime-evidence-fix.zip "$frozen_path" > /tmp/porota-frozen-candidate.json
+          unzip -p /tmp/porota-runtime-evidence-fix.zip "$manifest_path" > /tmp/porota-deploy-bundle-v2-manifest.json
+          test "$(jq -r .candidate_sha /tmp/porota-frozen-candidate.json)" = "$CANDIDATE_SHA"
+          test "$(jq -r .bundle_sha256 /tmp/porota-deploy-bundle-v2-manifest.json)" = "$BUNDLE_SHA256"
+          echo "EXACT_FROZEN_PROVENANCE=GREEN|artifact=$ARTIFACT_ID|candidate=$CANDIDATE_SHA"
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_fix"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_fix" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/porota_rc6_fix" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "rm -rf /tmp/porota-runtime-evidence-fix-$GITHUB_RUN_ID && mkdir -p /tmp/porota-runtime-evidence-fix-$GITHUB_RUN_ID"
+          scp -i "$HOME/.ssh/porota_rc6_fix" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" /tmp/porota-frozen-candidate.json /tmp/porota-deploy-bundle-v2-manifest.json "$DO_USER@$DO_HOST:/tmp/porota-runtime-evidence-fix-$GITHUB_RUN_ID/"
+
+      - name: Apply bounded publisher fix and publish
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_fix" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' DEPLOY_SHA='$DEPLOY_SHA' FIX_DIR='/tmp/porota-runtime-evidence-fix-$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          OBS_REPO=/var/lib/porota-observability/repo
+          STATE="$REPO/data/deploy/CURRENT_STATE_V2.json"
+          PPI_BEFORE="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          OBSERVER_BEFORE="$(sudo -n docker inspect -f '{{.Image}}|{{.State.Status}}|{{.State.OOMKilled}}' porota_production_observer)"
+          DASHBOARD_BEFORE="$(sudo -n docker inspect -f '{{.Image}}|{{.State.Status}}|{{.State.OOMKilled}}' porota_production_dashboard)"
+
+          sudo -n python3 - "$STATE" "$CANDIDATE_SHA" "$DEPLOY_SHA" <<'PY'
+          import json, os, stat, sys, tempfile
+          path,candidate,deploy=sys.argv[1:]
+          with open(path,encoding="utf-8") as f: data=json.load(f)
+          assert data["candidate_sha"]==candidate
+          assert data["deploy_sha"]==deploy
+          assert data["mode"]=="PRODUCTION_PAPER"
+          assert int(data["real_orders_sent"])==0
+          st=os.stat(path)
+          data["real_order_capability"]="BLOCKED"
+          data["real_order_routes"]="NOT_CALLED"
+          fd,tmp=tempfile.mkstemp(prefix=".CURRENT_STATE_V2.",dir=os.path.dirname(path))
+          with os.fdopen(fd,"w",encoding="utf-8") as f:
+              json.dump(data,f,indent=2,sort_keys=True); f.write("\n"); f.flush(); os.fsync(f.fileno())
+          os.chmod(tmp,stat.S_IMODE(st.st_mode))
+          os.replace(tmp,path)
+          os.chown(path,st.st_uid,st.st_gid)
+          print("CURRENT_STATE_V2_ROUTE_PROOF=GREEN")
+          PY
+
+          sudo -n install -o porotaadmin -g porotaadmin -m 0640 "$FIX_DIR/porota-frozen-candidate.json" "$REPO/data/deploy/porota-frozen-candidate.json"
+          sudo -n install -o porotaadmin -g porotaadmin -m 0640 "$FIX_DIR/porota-deploy-bundle-v2-manifest.json" "$REPO/data/deploy/porota-deploy-bundle-v2-manifest.json"
+          test "$(sudo -n jq -r .candidate_sha "$REPO/data/deploy/porota-frozen-candidate.json")" = "$CANDIDATE_SHA"
+
+          sudo -n install -d -m 0755 /etc/systemd/system/porota-runtime-evidence-rc6.service.d
+          printf '[Service]\nProtectHome=read-only\n' | sudo -n tee /etc/systemd/system/porota-runtime-evidence-rc6.service.d/10-git-credentials-readonly.conf >/dev/null
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl reset-failed porota-runtime-evidence-rc6.service || true
+          sudo -n systemctl start porota-runtime-evidence-rc6.service
+          test "$(sudo -n systemctl show porota-runtime-evidence-rc6.service -p Result --value)" = success
+          test "$(sudo -n systemctl show porota-runtime-evidence-rc6.service -p ExecMainStatus --value)" = 0
+
+          COMMIT_SHA="$(sudo -n -u porotaadmin git -C "$OBS_REPO" rev-parse HEAD)"
+          BLOB_SHA="$(sudo -n -u porotaadmin git -C "$OBS_REPO" rev-parse "$COMMIT_SHA:runtime/evidence/latest.json")"
+          sudo -n -u porotaadmin env PYTHONPATH="$REPO" python3 "$REPO/scripts/porota_consume_runtime_evidence_rc6.py" \
+            --repo "$OBS_REPO" --commit-sha "$COMMIT_SHA" --blob-sha "$BLOB_SHA" \
+            --output "$FIX_DIR/consumer.json"
+          sudo -n python3 - "$FIX_DIR/consumer.json" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding="utf-8"))
+          b=data["bundle"]
+          s=b["safety"]
+          assert s["mode"]=="PRODUCTION_PAPER"
+          assert s["operation_mode"]=="PRODUCTION_PAPER"
+          assert s["execution"]=="SIMULATED"
+          assert int(s["real_orders_sent"])==0
+          assert s["real_order_route_capability"]=="BLOCKED"
+          assert s["real_order_routes"] in {"NOT_CALLED","BLOCKED"}
+          assert b["database"]["open_mode"]=="mode=ro"
+          assert b["database"]["query_only"] is True
+          print("RUNTIME_EVIDENCE_CONSUMER=GREEN")
+          print("RUNTIME_EVIDENCE_STATUS="+b["status"])
+          print("RUNTIME_EVIDENCE_COMMIT="+data["commit_sha"])
+          print("RUNTIME_EVIDENCE_BLOB="+data["blob_sha"])
+          print("RUNTIME_EVIDENCE_CONTENT_SHA256="+data["content_sha256"])
+          print("RUNTIME_EVIDENCE_PPI_WATCH="+b["ppi_watch"]["state"])
+          print("RUNTIME_EVIDENCE_BLOCKERS="+",".join(b["blockers"]))
+          print("RUNTIME_EVIDENCE_GAPS="+",".join(b["gaps"]))
+          PY
+
+          PPI_AFTER="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          test "$PPI_AFTER" = "$PPI_BEFORE"
+          test "$(sudo -n docker inspect -f '{{.Image}}|{{.State.Status}}|{{.State.OOMKilled}}' porota_production_observer)" = "$OBSERVER_BEFORE"
+          test "$(sudo -n docker inspect -f '{{.Image}}|{{.State.Status}}|{{.State.OOMKilled}}' porota_production_dashboard)" = "$DASHBOARD_BEFORE"
+          echo "RUNTIME_EVIDENCE_FIX_FORWARD=GREEN|docker=untouched|ppi_watch=untouched"
+          rm -rf "$FIX_DIR"
+          REMOTE
+
+      - name: Runner cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -f /tmp/porota-runtime-evidence-fix.zip /tmp/porota-frozen-candidate.json /tmp/porota-deploy-bundle-v2-manifest.json
+          rm -f "$HOME/.ssh/porota_rc6_fix"
