@@ -35,6 +35,18 @@ def test_deploy_v2_preserves_paper_and_ppi_watch_invariants():
     assert "rollback" not in PROMOTE.lower()
 
 
+def test_deploy_v2_materializes_exact_runtime_provenance():
+    assert "CANDIDATE_TREE='$CANDIDATE_TREE'" in PROMOTE
+    assert 'install -m 0644 "$REMOTE_DIR/porota-frozen-candidate.json"' in PROMOTE
+    assert '"$REPO/data/deploy/porota-frozen-candidate.json"' in PROMOTE
+    assert 'install -m 0644 "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json"' in PROMOTE
+    assert '"$REPO/data/deploy/porota-deploy-bundle-v2-manifest.json"' in PROMOTE
+    assert 'assert frozen["candidate_sha"] == candidate' in PROMOTE
+    assert 'assert frozen["candidate_tree_sha"] == tree' in PROMOTE
+    assert 'assert frozen["image_tar_sha256"] == image_tar_sha' in PROMOTE
+    assert "POROTA_RUNTIME_PROVENANCE_MATERIALIZED=GREEN" in PROMOTE
+
+
 def test_deploy_v2_uses_loaded_runtime_identity_after_docker_normalization():
     assert 'RUNTIME_IMAGE_ID="$LOADED_IMAGE_ID"' in PROMOTE
     assert 'test "$OBSERVER_IMAGE_ID" = "$RUNTIME_IMAGE_ID"' in PROMOTE

@@ -151,7 +151,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
+            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
@@ -407,6 +407,24 @@ jobs:
           echo "PPI_WATCH_UNTOUCHED=GREEN"
 
           sudo -n mkdir -p "$REPO/data/deploy"
+          sudo -n install -m 0644 "$REMOTE_DIR/porota-frozen-candidate.json" \
+            "$REPO/data/deploy/porota-frozen-candidate.json"
+          sudo -n install -m 0644 "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" \
+            "$REPO/data/deploy/porota-deploy-bundle-v2-manifest.json"
+          sudo -n python3 - "$REPO/data/deploy/porota-frozen-candidate.json" \
+            "$REPO/data/deploy/porota-deploy-bundle-v2-manifest.json" \
+            "$CANDIDATE_SHA" "$CANDIDATE_TREE" "$IMAGE_TAR_SHA" <<'PY'
+          import json,sys
+          frozen_path,manifest_path,candidate,tree,image_tar_sha=sys.argv[1:]
+          frozen=json.load(open(frozen_path,encoding="utf-8"))
+          manifest=json.load(open(manifest_path,encoding="utf-8"))
+          assert frozen["candidate_sha"] == candidate
+          assert frozen["candidate_tree_sha"] == tree
+          assert frozen["image_tar_sha256"] == image_tar_sha
+          assert manifest.get("status") == "GREEN"
+          assert manifest.get("bundle_sha256")
+          print("POROTA_RUNTIME_PROVENANCE_MATERIALIZED=GREEN")
+          PY
           sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$RUNTIME_IMAGE_ID" "$POST_STATE" <<'PY'
           import json,sys
           from datetime import datetime,timezone

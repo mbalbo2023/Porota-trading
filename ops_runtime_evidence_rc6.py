@@ -655,6 +655,19 @@ def _provenance(deploy: dict[str, Any], frozen: dict[str, Any], manifest: dict[s
     }
 
 
+def _provenance_gaps(deploy: dict[str, Any], frozen: dict[str, Any]) -> list[str]:
+    """Reject mixed-generation deploy state and frozen artifact metadata."""
+    deploy_candidate = str(deploy.get("candidate_sha") or "").lower()
+    frozen_candidate = str(frozen.get("candidate_sha") or "").lower()
+    if (
+        SHA40.fullmatch(deploy_candidate)
+        and SHA40.fullmatch(frozen_candidate)
+        and deploy_candidate != frozen_candidate
+    ):
+        return ["PROVENANCE_CANDIDATE_MISMATCH"]
+    return []
+
+
 def _safety(observer: dict[str, Any], mode: dict[str, Any], deploy: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     api = mode.get("apis") if isinstance(mode.get("apis"), dict) else {}
     route_capability = str(api.get("PPI_ORDERS") or deploy.get("real_order_capability") or "NO_VERIFICADO").upper()
@@ -734,6 +747,7 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
     if not operation_mode:
         gaps.append("OPERATION_MODE_NO_VERIFICADO")
     provenance = _provenance(deploy, frozen, manifest)
+    gaps.extend(_provenance_gaps(deploy, frozen))
     missing_provenance = sorted(key for key, value in provenance.items() if value in {None, "NO_VERIFICADO"})
     previous = _json_object(previous_path)
     source_sync = [
