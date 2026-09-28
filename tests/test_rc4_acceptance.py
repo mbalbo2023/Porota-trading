@@ -89,7 +89,9 @@ def test_scheduler_uses_multiple_evidence_sources_and_news_off(monkeypatch):
     rows=sched.internal_rows([],source_sync_rows=[{'source':'PPI_PRODUCTION_HISTORY','last_attempt_at':'2026-09-03T10:00:00+00:00','last_success_at':'2026-09-03T10:00:00+00:00','status':'OK'}],contract_run_rows=[{'job_key':'CONTRACT_EVIDENCE_CAUCIONES','started_at':'2026-09-03T10:00:00+00:00','finished_at':'2026-09-03T10:00:01+00:00','state':'OK'}])
     by={r['key']:r for r in rows}
     assert by['PPI_PRODUCTION_HISTORY']['evidence_table']=='source_sync'
-    assert by['CONTRACT_EVIDENCE_CAUCIONES']['evidence_table']=='contract_evidence_runs'
+    assert 'CONTRACT_EVIDENCE_CAUCIONES' not in by
+    assert 'CONTRACT_EVIDENCE_CAUCIONES' in {job.key for job in sched.INTERNAL_JOBS}
+    assert sched._is_active_scope_job('CONTRACT_EVIDENCE_CAUCIONES') is False
 
 def test_ppi_normalizer_drops_account_quantity_and_does_not_infer_steps():
     p={'payload':[{'ticker':'AAA','cantidadDisponible':999,'cantidadDecimales':0,'cantidadDecimalesPrecio':3,'instrumentosDerivados':[{'private':'x'}]}]}
@@ -115,15 +117,24 @@ def test_settlement_no_time_max():
     assert 'time.max' not in src
 
 def test_navigation_and_system_sections_and_vivo_contract():
+    import bg_paper_dashboard as dashboard
+
     ux.assert_ux_invariants()
     assert '/scalping' in [x.href for x in ux.TOP_NAV] and '/validacion' in [x.href for x in ux.TOP_NAV]
     dash=Path(__file__).parents[1].joinpath('bg_paper_dashboard.py').read_text()
-    assert '"scraping"' in dash.lower() and '"backups"' in dash.lower()
+    assert [key for key, _ in dashboard.SYSTEM_SECTIONS] == [
+        'introspeccion', 'salud', 'scheduler', 'backups',
+        'configuracion', 'telegram', 'logs',
+    ]
     start=dash.index('def live_page('); end=dash.index('\ndef ',start+5)
     live=dash[start:end]
     assert '_rejection_funnel()' not in live
-    assert 'Operaciones abiertas' in live and 'Lección aprendida' in live and 'Scalping' in live
-    assert live.index('1. Operaciones abiertas ahora') < live.index('4. Scalping')
+    assert '1. Operaciones abiertas ahora' in live
+    assert '2. Operaciones cerradas hoy' in live
+    assert '3. Decisiones en vivo' in live
+    assert '4. Scalping' not in live and '5. Motores / workers' not in live
+    assert dashboard.top_nav_html().count("href='/scalping'") == 1
+    assert dashboard.top_nav_html().count("href='/sistema'") == 1
 
 def test_trusted_browser_wrapper_has_no_credential_login():
     root=Path(__file__).parents[1]
@@ -345,13 +356,15 @@ def test_scraping_dashboard_exposes_run_evidence_without_promoting_ready(tmp_pat
 
 
 def test_deploy_contract_is_split_and_preflight_green():
-    import subprocess,sys
     compose=Path('docker-compose.yml').read_text(encoding='utf-8')
-    assert 'NO es el contrato canónico de PRODUCTION_PAPER' in compose
-    contract=Path('RC4_DEPLOY_CONTRACT.md').read_text(encoding='utf-8')
-    assert 'porota_production_observer' in contract
-    assert 'porota_production_dashboard' in contract
-    assert 'no autoriza deploy' in contract.lower()
-    proc=subprocess.run([sys.executable,'rc4_release_preflight.py'],capture_output=True,text=True)
-    assert proc.returncode == 0, proc.stdout+proc.stderr
-    assert 'RC4_PREFLIGHT=GREEN' in proc.stdout
+    predeploy=Path('.github/workflows/porota-predeploy-v2.yml').read_text(encoding='utf-8')
+    promote=Path('.github/workflows/porota-deploy-v2-promote.yml').read_text(encoding='utf-8')
+    policy=Path('ops/policy/porota-policy.yaml').read_text(encoding='utf-8')
+    assert 'legacy monolithic stack' in compose.lower()
+    assert 'production_paper usa el runtime split' in compose.lower()
+    assert 'Build candidate exactly once' in predeploy
+    assert 'Export frozen candidate artifacts' in predeploy
+    assert 'Resolve exact frozen candidate' in promote
+    assert 'POROTA_FROZEN_ARTIFACT_VERIFY=GREEN' in promote
+    assert 'strategy: FIX_FORWARD_ONLY' in policy
+    assert 'rollback_allowed: false' in policy

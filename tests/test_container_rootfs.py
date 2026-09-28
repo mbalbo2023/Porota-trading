@@ -60,18 +60,17 @@ def test_bot_usa_rootfs_de_solo_lectura_y_escrituras_explicitadas():
 
 
 def test_init_prepara_la_cache_para_el_usuario_sin_privilegios():
-    fuente = _compose()
-    init = _bloque(fuente, "  init_permissions:\n", "\n  sre_vectordb:\n")
+    # Deploy V2 no ejecuta el init del compose legacy. La imagen congelada
+    # prepara los directorios antes de cambiar al usuario sin privilegios.
+    fuente = (RAIZ / "Dockerfile").read_text(encoding="utf-8")
+    preparacion = fuente[:fuente.index("USER botuser")]
 
-    assert "./model_cache:/home/botuser/.cache" in init
-    assert "chown -R 1000:1000 /app/data /app/sre_vector_db" not in init
-    assert "chown 1000:1000 /app/data /app/data/paper_v17" in init
-    assert "chown -R 1000:1000 /app/data/logs /app/data/backups" in init
-    assert "/app/data/observer" not in init
-    assert "chmod 750 /app/data/paper_v17" in init
-    assert "chown -R 1000:1000 /app/sre_vector_db /home/botuser/.cache" in init
-    assert "touch /app/data/chroma.log" in init
-    assert "chmod 640 /app/data/chroma.log" in init
+    assert "useradd -m -u 1000 botuser" in preparacion
+    assert "/app/data/logs" in preparacion
+    assert "/app/data/backups" in preparacion
+    assert "/app/sre_vector_db" in preparacion
+    assert "/home/botuser/.cache" in preparacion
+    assert "chown -R botuser:botuser /app /home/botuser" in preparacion
 
 
 def test_dockerfile_no_escribe_bytecode_y_dirige_la_cache_al_volumen():
@@ -83,14 +82,18 @@ def test_dockerfile_no_escribe_bytecode_y_dirige_la_cache_al_volumen():
 
 
 def test_chroma_usa_rootfs_de_solo_lectura_con_escrituras_aisladas():
-    fuente = _compose()
-    chroma = _bloque(fuente, "  sre_vectordb:\n", "\nnetworks:\n")
+    # El runtime productivo vigente es el split de porota_mode_manager; no el
+    # servicio Chroma del compose legacy. El observer y los verificadores
+    # efimeros deben conservar rootfs read-only y escrituras acotadas a tmpfs.
+    manager = (RAIZ / "porota_mode_manager.py").read_text(encoding="utf-8")
+    deploy = (RAIZ / ".github/workflows/porota-deploy-v2-promote.yml").read_text(
+        encoding="utf-8"
+    )
 
-    assert "    read_only: true\n" in chroma
-    assert "PYTHONDONTWRITEBYTECODE: \"1\"" in chroma
-    assert "ANONYMIZED_TELEMETRY: \"FALSE\"" in chroma
-    assert "      - /tmp:rw,noexec,nosuid,size=64m\n" in chroma
-    assert "      - /root/.cache:rw,noexec,nosuid,size=16m\n" in chroma
-    assert "      - ./sre_vector_db:/chroma/chroma\n" in chroma
-    assert "      - ./data/chroma.log:/chroma/chroma.log\n" in chroma
-    assert "condition: service_completed_successfully" in chroma
+    observer = manager[manager.index('created = run("docker", "run"'):]
+    assert '"--user", "botuser", "--read-only", "--cap-drop", "ALL"' in observer
+    assert '"--security-opt", "no-new-privileges:true"' in observer
+    assert '"--tmpfs", "/tmp:rw,noexec,nosuid,size=32m"' in observer
+    assert "docker compose" not in deploy
+    assert "--user botuser --read-only --cap-drop ALL" in deploy
+    assert "--security-opt no-new-privileges:true" in deploy

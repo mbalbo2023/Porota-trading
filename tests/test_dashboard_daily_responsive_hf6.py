@@ -1,4 +1,5 @@
 from decimal import Decimal
+from pathlib import Path
 
 from dg_dashboard_daily_result_ux_hf6 import (
     daily_results_html, report_cards_html, assert_responsive_ux_invariants,
@@ -32,7 +33,6 @@ def test_daily_results_exclude_non_operational_days():
     ])
     assert "2026-09-21" in html
     assert "2026-09-20" not in html
-
 
 def test_home_page_does_not_render_official_source_status_panel():
     source=Path("bg_paper_dashboard.py").read_text(encoding="utf-8")

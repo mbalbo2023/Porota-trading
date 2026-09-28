@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-LOCK=/run/porota-introspection-publish/lock
+LOCK=/run/porota-observability-publish/lock
 SOURCE_ROOT=/opt/porota-trading
 PUBLISH_ROOT="$SOURCE_ROOT/data/introspection_publish"
 REPOSITORY=/var/lib/porota-observability/repo

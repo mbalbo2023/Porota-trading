@@ -15,8 +15,18 @@ import bu_instrument_catalog as catalog
 import bf_production_paper_observer as observer
 import bg_paper_dashboard as dashboard
 from be_paper_engine import PaperStore
+from rc6_multisource_discovery import canonical_family, canonical_market
 
 EVIDENCE = json.loads((ROOT / 'tests/fixtures/ppi_public_observation_20260828.json').read_text())
+DECLARED_FAMILIES = {canonical_family(value)
+                     for value in EVIDENCE['configuration']['instrument_types']}
+
+
+def candidate_query(ticker, provider_type, *, settlement='A-24HS', market='BYMA',
+                    enabled=False, instrument_type=None):
+    """Build the current six-field PPI discovery tuple explicitly."""
+    return (ticker, provider_type, settlement, market, enabled,
+            instrument_type or provider_type)
 
 
 @pytest.fixture
@@ -76,7 +86,9 @@ def observed_store(tmp_path, monkeypatch):
     observer._support_schema(store)
     monkeypatch.setattr(observer, 'CATALOG_QUERY_SLEEP_SECONDS', 0)
     monkeypatch.setattr(observer, '_candidate_universe', lambda: [
-        (r['filter'], r['family'], 'A-24HS', r['market'], False) for r in EVIDENCE['searches']])
+        candidate_query(r['filter'], r['family'], market=r['market'],
+                        instrument_type=r['family'])
+        for r in EVIDENCE['searches']])
     class Reader:
         def market_configuration(self):
             return EVIDENCE['configuration']
@@ -93,7 +105,7 @@ def coverage(store):
 
 def test_todas_las_familias_declaradas_visibles_sin_inventar_instrumentos(observed_store):
     rows = coverage(observed_store)
-    assert set(rows) == set(EVIDENCE['configuration']['instrument_types'])
+    assert set(rows) == DECLARED_FAMILIES
     assert rows['CAUCIONES']['declared'] == 1
     assert rows['CAUCIONES']['discovery_status'] == 'EMPTY_FILTER_RESULTS'
     assert rows['CAUCIONES']['queries'] == 3
@@ -111,8 +123,8 @@ def test_todas_las_familias_declaradas_visibles_sin_inventar_instrumentos(observ
 
 def test_no_consulta_familias_ni_mercados_ausentes_de_configuracion(observed_store, monkeypatch):
     monkeypatch.setattr(observer, '_candidate_universe', lambda: [
-        ('MERVAL', 'INDICES', 'A-24HS', 'BYMA', False),
-        ('ALUA', 'ACCIONES', 'A-24HS', 'INVENTADO', False)])
+        candidate_query('MERVAL', 'INDICES', instrument_type='INDICES'),
+        candidate_query('ALUA', 'ACCIONES', market='INVENTADO', instrument_type='ACCIONES')])
     reader = SimpleNamespace(market_configuration=lambda: EVIDENCE['configuration'],
         search_instruments=lambda *a, **k: pytest.fail('No debe consultar combinaciones no enumeradas'))
     assert observer._download_catalog(reader, observed_store) == 0
@@ -132,7 +144,7 @@ def test_configuracion_invalida_no_recicla_declaracion_anterior(observed_store, 
     reader = SimpleNamespace(market_configuration=lambda: bad, search_instruments=lambda *a, **k: [])
     assert observer._download_catalog(reader, observed_store) == 0
     rows = coverage(observed_store)
-    assert set(rows) == set(EVIDENCE['configuration']['instrument_types'])
+    assert set(rows) == DECLARED_FAMILIES
     assert all(r['declared'] == -1 for r in rows.values())
     assert all(r['observed_count'] == 0 for r in rows.values())
     assert rows['LICITACIONES']['discovery_status'] == 'CONFIGURATION_UNAVAILABLE'
@@ -151,7 +163,7 @@ def test_dashboard_muestra_cobertura_sin_leer_api_ni_escribir(observed_store, mo
     before = Path(observed_store.path).read_bytes()
     page = dashboard.history_page()
     assert 'Cobertura por familia' in page
-    assert all(kind in page for kind in EVIDENCE['configuration']['instrument_types'])
+    assert all(kind in page for kind in DECLARED_FAMILIES)
     assert 'Filtros sin coincidencias' in page
     assert 'Declarada; sin consulta' in page
     assert 'No acredita permisos ni habilita operaciones' in page
@@ -170,23 +182,32 @@ def test_familia_nueva_y_retirada_no_desaparecen_del_inventario(observed_store, 
 
 @pytest.mark.parametrize('change,reason', [
     ({'type': 'ETF'}, 'TYPE_NOT_ENUMERATED'),
-    ({'market': 'MERCADO-NUEVO'}, 'MARKET_NOT_ENUMERATED')])
+    ({'market': 'MERCADO-NUEVO'}, 'UNSUPPORTED_FAMILY')])
 def test_registro_devuelto_fuera_del_enum_se_conserva_sin_habilitar_paper(observed_store, monkeypatch, change, reason):
-    monkeypatch.setattr(observer, '_candidate_universe', lambda: [('ALUA', 'ACCIONES', 'A-24HS', 'BYMA', True)])
+    monkeypatch.setattr(observer, '_candidate_universe', lambda: [
+        candidate_query('ALUA', 'ACCIONES', enabled=True, instrument_type='ACCIONES')])
     raw = dict(EVIDENCE['searches'][-1]['sample'][0], **change)
     config = dict(EVIDENCE['configuration'], instrument_types=['ACCIONES'])
     reader = SimpleNamespace(market_configuration=lambda: config, search_instruments=lambda *a, **k: [raw])
     assert observer._download_catalog(reader, observed_store) == 1
-    record = catalog.lookup(observed_store, raw['ticker'], raw['type'], 'A-24HS')
-    assert record['capability'] == catalog.quote_terms(record)['opening_block_reason'] == reason
-    assert coverage(observed_store)[raw['type']]['ready_paper_count'] == 0
+    family = canonical_family(raw['type'])
+    market = canonical_market(raw['market'])
     with observed_store.connect() as c:
-        assert not c.execute('SELECT 1 FROM candidate_universe WHERE can_simulate=1').fetchone()
+        record = c.execute("""SELECT capability FROM financial_instrument_catalog
+          WHERE ticker=? AND instrument_type=? AND market=?""",
+          (raw['ticker'], family, market)).fetchone()
+        candidate = c.execute("""SELECT can_simulate,detail FROM candidate_universe
+          WHERE ticker=? AND instrument_type=? AND market=?""",
+          (raw['ticker'], family, market)).fetchone()
+    assert record[0] == candidate[1] == reason
+    assert candidate[0] == 0
+    assert coverage(observed_store)[family]['ready_paper_count'] == 0
 
 
 def test_errores_parciales_no_afirman_cobertura_completa(observed_store, monkeypatch):
     monkeypatch.setattr(observer, '_candidate_universe', lambda: [
-        ('ALUA', 'ACCIONES', 'A-24HS', 'BYMA', True), ('ALU', 'ACCIONES', 'A-24HS', 'BYMA', True)])
+        candidate_query('ALUA', 'ACCIONES', enabled=True, instrument_type='ACCIONES'),
+        candidate_query('ALU', 'ACCIONES', enabled=True, instrument_type='ACCIONES')])
     def search(ticker, *a, **k):
         if ticker == 'ALU':
             raise TimeoutError('FIXTURE_ONLY')
@@ -203,6 +224,28 @@ def test_configuracion_vacia_es_valida_y_distinta_de_falla(observed_store, monke
         search_instruments=lambda *a, **k: pytest.fail('No consultar enums vacíos'))
     assert observer._download_catalog(reader, observed_store) == 0
     assert all(r['declared'] == 0 and r['queries'] == 0 for r in coverage(observed_store).values())
+
+
+def test_instrument_type_de_fixture_se_conserva_sin_habilitar_paper(observed_store, monkeypatch):
+    monkeypatch.setattr(observer, '_candidate_universe', lambda: [
+        candidate_query('YMCJO', 'ON', instrument_type='OBLIGACIONES')])
+    raw = {
+        'ticker': 'YMCJO', 'description': 'ON YPF', 'currency': 'Pesos',
+        'type': 'ON', 'market': 'BYMA',
+    }
+    reader = SimpleNamespace(
+        market_configuration=lambda: EVIDENCE['configuration'],
+        search_instruments=lambda *a, **k: [raw],
+    )
+    assert observer._download_catalog(reader, observed_store) == 1
+    with observed_store.connect() as connection:
+        query = connection.execute("""SELECT instrument_type FROM catalog_query_results
+          WHERE ticker_query='YMCJO' ORDER BY rowid DESC LIMIT 1""").fetchone()
+        candidate = connection.execute("""SELECT instrument_type,can_simulate,detail
+          FROM candidate_universe WHERE ticker='YMCJO'""").fetchone()
+    assert query[0] == candidate[0] == 'OBLIGACIONES'
+    assert candidate[1] == 0
+    assert not str(candidate[2]).startswith('READY_PAPER_')
 
 
 def test_configuracion_no_mutable_y_campos_sin_normalizacion():

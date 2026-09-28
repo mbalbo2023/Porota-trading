@@ -1,0 +1,11 @@
+[Unit]
+Description=Publish canonical RC6 runtime evidence hourly
+
+[Timer]
+OnCalendar=*-*-* *:25:00
+Persistent=true
+RandomizedDelaySec=30
+Unit=porota-runtime-evidence-rc6.service
+
+[Install]
+WantedBy=timers.target

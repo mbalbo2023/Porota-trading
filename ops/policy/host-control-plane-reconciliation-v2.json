@@ -11,6 +11,22 @@
     "the Sept-09 SRE split separates frequent fast health from lower-frequency full DB integrity"
   ],
   "units": {
+    "systemd/porota-runtime-evidence-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Runs the independent mode=ro plus query_only runtime evidence collector and publishes only sanitized evidence"
+    },
+    "systemd/porota-runtime-evidence-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Schedules the dedicated read-only runtime evidence publication without restarting or mutating runtime services"
+    },
     "systemd/porota-a3-history-daily-rc6.timer": {
       "role": "ACTIVE_TIMER",
       "install": true,

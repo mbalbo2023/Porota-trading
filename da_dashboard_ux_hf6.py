@@ -99,7 +99,7 @@ def nav_html(items: Iterable[NavItem], *, css_class: str = "") -> str:
 
 
 def top_nav_html() -> str:
-    return "<nav id='porota-canonical-nav'>" + "".join(
+    return "<nav id='porota-canonical-nav' aria-label='Menú principal'>" + "".join(
         f"<a href='{item.href}'>{item.label}</a>" for item in TOP_NAV
     ) + "</nav>"
 
