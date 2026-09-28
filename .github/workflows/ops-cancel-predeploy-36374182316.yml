@@ -1,0 +1,36 @@
+name: Cancel unintended Predeploy V2 run 36374182316
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.github/workflows/ops-cancel-predeploy-36374182316.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cancel-exact-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Cancel only predeploy run 36374182316
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/36374182316/cancel" || true
+          for attempt in {1..30}; do
+            state="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/36374182316" --jq '.status + "|" + (.conclusion // "")')"
+            echo "PREDEPLOY_CANCEL_STATUS=$state"
+            if [[ "$state" == completed* ]]; then
+              test "$state" = "completed|cancelled"
+              echo "PREDEPLOY_CANCEL_EXACT=GREEN|run=36374182316"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "PREDEPLOY_CANCEL_TIMEOUT" >&2
+          exit 1
