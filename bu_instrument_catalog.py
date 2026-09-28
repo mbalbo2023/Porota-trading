@@ -357,25 +357,118 @@ def complete_with_complement(record, complementary):
     return primary
 
 
-def sync_candidate_universe(connection, checked_at):
-    """Project normalized catalog readiness into the legacy candidate table."""
-    rows = connection.execute("""SELECT ticker,instrument_type,market,settlement,status,
-      capability,last_seen_at FROM financial_instrument_catalog
-      ORDER BY ticker,instrument_type,market,settlement,last_seen_at""").fetchall()
-    best = {}
+def _candidate_timestamp_is_fresh(value, checked_at, max_age_seconds):
+    try:
+        observed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        current = datetime.fromisoformat(str(checked_at).replace("Z", "+00:00"))
+        if observed.tzinfo is None:
+            observed = observed.replace(tzinfo=ZoneInfo("UTC"))
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=ZoneInfo("UTC"))
+        age = (current.astimezone(ZoneInfo("UTC"))
+               - observed.astimezone(ZoneInfo("UTC"))).total_seconds()
+        return 0 <= age <= int(max_age_seconds)
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _candidate_has_ppi_primary(settlement_source, metadata_json):
+    try:
+        metadata = json.loads(str(metadata_json or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        metadata = {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    discovery = str(metadata.get("_discovery_source") or "").upper()
+    availability = str(metadata.get("_availability_source") or "").upper()
+    source = str(settlement_source or "").upper()
+    return (discovery in {"PPI_PRIMARY", "LEGACY_CATALOG"}
+            or availability.startswith("PPI_PRIMARY")
+            or source in {"PPI_FIELD", "REQUEST_CANDIDATE"})
+
+
+def _candidate_retry_ambiguities(connection):
+    table = connection.execute("""SELECT 1 FROM sqlite_master
+      WHERE type='table' AND name='complementary_contract_retry'""").fetchone()
+    if not table:
+        return set()
+    columns = {
+        str(row[1]) for row in connection.execute(
+            "PRAGMA table_info(complementary_contract_retry)"
+        ).fetchall()
+    }
+    required = {"ticker", "instrument_type", "market", "currency", "settlement", "reason"}
+    if not required.issubset(columns):
+        return set()
+    return {
+        tuple(str(value or "").strip().upper() for value in row[:5])
+        for row in connection.execute("""SELECT ticker,instrument_type,market,currency,
+          settlement,reason FROM complementary_contract_retry""").fetchall()
+        if "AMBIG" in str(row[5] or "").upper()
+    }
+
+
+def sync_candidate_universe(connection, checked_at, *, freshness_seconds=86400):
+    """Atomically rebuild the legacy summary without projecting ambiguity to READY.
+
+    ``candidate_universe`` intentionally remains keyed by ticker/family/market for
+    compatibility.  It is therefore only simulation-ready when that summary maps
+    to exactly one complete, fresh PPI-primary catalog identity.  Every other
+    projection fails closed.
+    """
+    rows = connection.execute("""SELECT ticker,instrument_type,market,currency,
+      settlement,settlement_source,status,capability,last_seen_at,metadata_json
+      FROM financial_instrument_catalog
+      ORDER BY ticker,instrument_type,market,currency,settlement,last_seen_at""").fetchall()
+    grouped = {}
+    symbol_family_counts = {}
     for row in rows:
-        ticker, family, market, settlement, status, capability, last_seen = row
-        key = (str(ticker).upper(), str(family).upper(), str(market).upper())
-        ready = status == "AVAILABLE" and str(capability).startswith("READY_PAPER_")
-        rank = (1 if ready else 0, 1 if status == "AVAILABLE" else 0, str(last_seen or ""))
-        if key not in best or rank > best[key][0]:
-            best[key] = (rank, (ticker, family, settlement, market,
-                                int(ready), status, capability, checked_at))
-    connection.execute("""UPDATE candidate_universe
-      SET can_simulate=0,status='STALE',detail='CATALOG_RECONCILIATION_NOT_READY',
-          last_checked_at=?""", (checked_at,))
-    for _, values in best.values():
-        connection.execute("INSERT OR REPLACE INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", values)
+        ticker, family, market = (str(row[index] or "").strip().upper()
+                                  for index in (0, 1, 2))
+        grouped.setdefault((ticker, family, market), []).append(row)
+        symbol_family_counts[(ticker, family)] = symbol_family_counts.get(
+            (ticker, family), 0) + 1
+    retry_ambiguities = _candidate_retry_ambiguities(connection)
+
+    projected = []
+    for key, identities in sorted(grouped.items()):
+        ticker, family, market = key
+        representative = max(identities, key=lambda row: str(row[8] or ""))
+        currency, settlement, settlement_source = representative[3:6]
+        status, capability, last_seen, metadata_json = representative[6:10]
+        identity_key = tuple(
+            str(value or "").strip().upper()
+            for value in (ticker, family, market, currency, settlement)
+        )
+        reasons = []
+        if len(identities) != 1 or symbol_family_counts[(ticker, family)] != 1:
+            reasons.append("IDENTITY_AMBIGUOUS")
+        if any(value in {"", "UNKNOWN", "NO_VERIFICADO"} for value in identity_key):
+            reasons.append("IDENTITY_INCOMPLETE")
+        if not _candidate_has_ppi_primary(settlement_source, metadata_json):
+            reasons.append("PPI_PRIMARY_IDENTITY_NOT_VERIFIED")
+        if not _candidate_timestamp_is_fresh(last_seen, checked_at, freshness_seconds):
+            reasons.append("PPI_FRESHNESS_STALE")
+        if status != "AVAILABLE":
+            reasons.append("CATALOG_STATUS:" + str(status or "UNKNOWN"))
+        if not str(capability or "").startswith("READY_PAPER_"):
+            reasons.append("CAPABILITY:" + str(capability or "UNKNOWN"))
+        if identity_key in retry_ambiguities:
+            reasons.append("RETRY_IDENTITY_AMBIGUOUS")
+        reasons = list(dict.fromkeys(reasons))
+        ready = not reasons
+        detail = (str(capability) if ready or not str(capability or "").startswith("READY_PAPER_")
+                  else ";".join(reasons))
+        projected.append((
+            ticker, family, str(settlement or "NO_VERIFICADO"), market,
+            int(ready), str(status or "STALE"), detail, checked_at,
+        ))
+
+    # DELETE + INSERT runs inside the caller's transaction.  Removed/reclassified
+    # catalog identities cannot survive as stale candidate ghosts.
+    connection.execute("DELETE FROM candidate_universe")
+    connection.executemany(
+        "INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", projected
+    )
 
 
 def persist(c, record):

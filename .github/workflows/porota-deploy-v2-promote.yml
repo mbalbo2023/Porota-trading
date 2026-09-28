@@ -419,6 +419,7 @@ jobs:
             "image_id":image_id,
             "mode":"PRODUCTION_PAPER",
             "real_orders_sent":0,
+            "real_order_routes":"NOT_CALLED",
             "observer_state":post,
             "dashboard_health_http":200,
             "ppi_watch_untouched":True,

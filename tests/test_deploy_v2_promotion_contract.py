@@ -31,6 +31,7 @@ def test_deploy_v2_preserves_paper_and_ppi_watch_invariants():
     assert "POST_SQLITE_QUICK_CHECK=DEFERRED_TO_CONTRACT_RUNNER" in PROMOTE
     assert "PPI_WATCH_UNTOUCHED=GREEN" in PROMOTE
     assert "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED" in PROMOTE
+    assert '"real_order_routes":"NOT_CALLED"' in PROMOTE
     assert "rollback" not in PROMOTE.lower()
 
 

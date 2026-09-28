@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -14,6 +15,43 @@ from scripts.porota_consume_runtime_evidence_rc6 import ConsumerError, consume
 
 
 NOW = datetime(2026, 9, 27, 17, 0, tzinfo=timezone.utc)
+
+
+class SystemctlResult:
+    def __init__(self, stdout="", returncode=0):
+        self.stdout = stdout
+        self.returncode = returncode
+
+
+def ppi_watch_contract(*expected):
+    contract = copy.deepcopy(evidence._ppi_watch_contract())
+    contract["expected_unit_names"] = list(expected)
+    return contract
+
+
+def install_systemctl_fixture(monkeypatch, tmp_path, listing, *, enabled="enabled",
+                              active="active", enumeration_returncode=0,
+                              fragment_exists=True):
+    unit = tmp_path / "porota-ppi-watch.service"
+    if fragment_exists:
+        unit.write_text("[Service]\nExecStart=/bin/true\n", encoding="utf-8")
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(tuple(command))
+        verb = command[1]
+        if verb == "list-unit-files":
+            return SystemctlResult(listing, enumeration_returncode)
+        if verb == "is-enabled":
+            return SystemctlResult(enabled, 0 if enabled == "enabled" else 1)
+        if verb == "is-active":
+            return SystemctlResult(active, 0 if active == "active" else 3)
+        if verb == "show":
+            return SystemctlResult(str(unit))
+        raise AssertionError(command)
+
+    monkeypatch.setattr(evidence.subprocess, "run", fake_run)
+    return unit, calls
 
 
 def make_db(path: Path, *, last_seen="2026-09-27T16:59:00+00:00",
@@ -117,6 +155,9 @@ def test_complete_bundle_has_readonly_proof_and_instrument_contract(tmp_path):
     assert payload["status"] == "COMPLETE"
     assert payload["database"]["open_mode"] == "mode=ro"
     assert payload["database"]["query_only"] is True
+    assert payload["database"]["catalog_rows"] == 1
+    assert payload["database"]["candidate_rows"] == 1
+    assert payload["database"]["ledger_rows"] == 1
     assert payload["safety"] == {
         "mode": "PRODUCTION_PAPER",
         "operation_mode": "PRODUCTION_PAPER",
@@ -137,6 +178,79 @@ def test_unknown_or_stale_freshness_never_produces_ready(tmp_path):
     row = payload["instruments"][0]
     assert row["readiness"]["status"] == "NO_READY"
     assert "PPI_FRESHNESS_UNKNOWN" in row["readiness"]["reasons"]
+    assert "CANDIDATE_LEDGER_CONTRADICTION" in payload["gaps"]
+
+
+def test_candidate_ghost_evidence_is_sanitized_and_counts_actual_ledger(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+        ("DIA", "ETF", "BYMA", "A-24HS", 0, "STALE",
+         "CATALOG_MISSING", "2026-09-27T16:59:00+00:00"),
+    )
+    conn.commit()
+    conn.close()
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    assert payload["database"]["catalog_rows"] == 1
+    assert payload["database"]["candidate_rows"] == 2
+    assert payload["database"]["ledger_rows"] == 2
+    assert "CANDIDATE_GHOSTS:1" in payload["gaps"]
+    assert payload["identity_anomalies"]["ghosts"] == [{
+        "ticker": "DIA", "family": "ETF", "market": "BYMA",
+        "settlement": "A-24HS", "can_simulate": 0, "status": "STALE",
+        "detail": "CATALOG_MISSING",
+        "last_checked_at": "2026-09-27T16:59:00+00:00",
+    }]
+
+
+@pytest.mark.parametrize(
+    "case,expected_reason",
+    [
+        ("freshness", "PPI_FRESHNESS_STALE"),
+        ("primary", "PPI_PRIMARY_IDENTITY_NOT_VERIFIED"),
+        ("ambiguity", "IDENTITY_AMBIGUOUS"),
+        ("status", "CATALOG_STATUS:OBSERVED_SHADOW"),
+        ("capability", "CAPABILITY:NEEDS_NOMINAL_UNITS"),
+    ],
+)
+def test_candidate_ledger_contradiction_is_exact_for_each_fail_closed_gate(
+        tmp_path, case, expected_reason):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    conn = sqlite3.connect(db)
+    if case == "freshness":
+        conn.execute("UPDATE financial_instrument_catalog SET last_seen_at=?",
+                     ("2026-09-20T16:59:00+00:00",))
+    elif case == "primary":
+        conn.execute("""UPDATE financial_instrument_catalog
+          SET settlement_source='IOL_COMPLEMENTARY',metadata_json='{}'""")
+    elif case == "ambiguity":
+        conn.execute(
+            "INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            ("GGAL", "ACCIONES", "BYMA", "USD_CCL", "A-24HS", "PPI_FIELD",
+             "2026-09-27T16:59:00+00:00", "run-2", "AVAILABLE",
+             "READY_PAPER_SPOT", json.dumps({"_discovery_source": "PPI_PRIMARY"})),
+        )
+    elif case == "status":
+        conn.execute("UPDATE financial_instrument_catalog SET status='OBSERVED_SHADOW'")
+    elif case == "capability":
+        conn.execute("UPDATE financial_instrument_catalog SET capability='NEEDS_NOMINAL_UNITS'")
+    conn.commit()
+    conn.close()
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    assert "CANDIDATE_LEDGER_CONTRADICTION" in payload["gaps"]
+    assert expected_reason in payload["instruments"][0]["readiness"]["reasons"]
+    assert "CANDIDATE_LEDGER_CONTRADICTS_FAIL_CLOSED" in (
+        payload["instruments"][0]["readiness"]["reasons"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -212,32 +326,111 @@ def test_sanitizer_rejects_secret_keys_paths_and_payloads():
 
 
 def test_ppi_watch_probe_uses_read_only_systemd_verbs(monkeypatch, tmp_path):
-    unit = tmp_path / "porota-ppi-watch.service"
-    unit.write_text("[Service]\nExecStart=/bin/true\n", encoding="utf-8")
-    calls = []
-
-    class Result:
-        def __init__(self, stdout):
-            self.stdout = stdout
-
-    def fake_run(command, **_kwargs):
-        calls.append(tuple(command))
-        if command[1] == "list-unit-files":
-            return Result("porota-ppi-watch.service enabled\n")
-        if command[1] == "is-enabled":
-            return Result("enabled\n")
-        if command[1] == "is-active":
-            return Result("active\n")
-        if command[1] == "show":
-            return Result(str(unit) + "\n")
-        raise AssertionError(command)
-
-    monkeypatch.setattr(evidence.subprocess, "run", fake_run)
-    result = evidence.ppi_watch_status(NOW)
+    unit, calls = install_systemctl_fixture(
+        monkeypatch, tmp_path, "porota-ppi-watch.service enabled\n"
+    )
+    contract = ppi_watch_contract("porota-ppi-watch.service")
+    result = evidence.ppi_watch_status(NOW, contract=contract)
     assert result["state"] == "VERIFIED_READ_ONLY"
+    assert result["reason"] == "EXACT_EXPECTED_UNIT_VERIFIED"
+    assert result["enumeration_succeeded"] is True
     assert result["mutation_attempted"] is False
     assert result["units"][0]["unit_sha256"] == hashlib.sha256(unit.read_bytes()).hexdigest()
     assert {call[1] for call in calls} == {"list-unit-files", "is-enabled", "is-active", "show"}
+
+
+def test_ppi_watch_zero_units_is_not_present_and_never_green(monkeypatch, tmp_path):
+    _unit, calls = install_systemctl_fixture(monkeypatch, tmp_path, "")
+    result = evidence.ppi_watch_status(NOW, contract=ppi_watch_contract())
+    assert result["state"] == "NOT_PRESENT"
+    assert result["reason"] == "NO_MATCHING_UNIT"
+    assert result["units"] == []
+    assert result["mutation_attempted"] is False
+    assert {call[1] for call in calls} == {"list-unit-files"}
+
+
+def test_ppi_watch_absence_is_green_only_when_versioned_contract_requires_it(monkeypatch, tmp_path):
+    install_systemctl_fixture(monkeypatch, tmp_path, "")
+    contract = ppi_watch_contract()
+    contract["systemd_presence_expectation"] = "ABSENT"
+    result = evidence.ppi_watch_status(NOW, contract=contract)
+    assert result["state"] == "VERIFIED_ABSENT"
+    assert result["reason"] == "ABSENCE_REQUIRED_BY_CONTRACT"
+
+
+def test_ppi_watch_multiple_candidates_are_ambiguous_without_metadata_queries(monkeypatch, tmp_path):
+    _unit, calls = install_systemctl_fixture(
+        monkeypatch, tmp_path,
+        "alpha-ppi-watch.service enabled\nbeta-ppi-watch.timer enabled\n",
+    )
+    result = evidence.ppi_watch_status(
+        NOW, contract=ppi_watch_contract("alpha-ppi-watch.service")
+    )
+    assert result["state"] == "AMBIGUOUS"
+    assert result["reason"] == "MULTIPLE_MATCHING_UNITS"
+    assert len(result["units"]) == 2
+    assert {call[1] for call in calls} == {"list-unit-files"}
+
+
+def test_ppi_watch_enumeration_failure_is_no_verificado(monkeypatch, tmp_path):
+    install_systemctl_fixture(
+        monkeypatch, tmp_path, "permission denied", enumeration_returncode=1
+    )
+    result = evidence.ppi_watch_status(NOW, contract=ppi_watch_contract())
+    assert result["state"] == "NO_VERIFICADO"
+    assert result["reason"] == "ENUMERATION_FAILED"
+    assert result["enumeration_succeeded"] is False
+    assert result["mutation_attempted"] is False
+
+
+def test_ppi_watch_unregistered_single_candidate_is_no_verificado(monkeypatch, tmp_path):
+    _unit, calls = install_systemctl_fixture(
+        monkeypatch, tmp_path, "porota-ppi-watch.service enabled\n"
+    )
+    result = evidence.ppi_watch_status(NOW, contract=ppi_watch_contract())
+    assert result["state"] == "NO_VERIFICADO"
+    assert result["reason"] == "UNIT_NOT_AUTHORIZED_BY_CONTRACT"
+    assert result["units"] == [{"unit": "porota-ppi-watch.service"}]
+    assert {call[1] for call in calls} == {"list-unit-files"}
+
+
+@pytest.mark.parametrize(
+    "enabled,active,fragment_exists",
+    [("disabled", "active", True), ("enabled", "inactive", True),
+     ("enabled", "active", False)],
+)
+def test_ppi_watch_expected_unit_requires_enabled_active_and_hash(
+        monkeypatch, tmp_path, enabled, active, fragment_exists):
+    install_systemctl_fixture(
+        monkeypatch, tmp_path, "porota-ppi-watch.service enabled\n",
+        enabled=enabled, active=active, fragment_exists=fragment_exists,
+    )
+    result = evidence.ppi_watch_status(
+        NOW, contract=ppi_watch_contract("porota-ppi-watch.service")
+    )
+    assert result["state"] == "NO_VERIFICADO"
+    assert result["reason"] == "EXPECTED_UNIT_NOT_VERIFIED"
+    assert result["mutation_attempted"] is False
+
+
+def test_ppi_watch_bundle_validator_rejects_false_green(tmp_path):
+    payload = build(tmp_path)
+    payload["ppi_watch"] = {
+        "state": "VERIFIED_READ_ONLY", "reason": "forged",
+        "checked_at": NOW.isoformat(), "contract_schema_version": 1,
+        "owner": "EXTERNAL_SEPARATE_OWNER",
+        "systemd_presence_expectation": "UNKNOWN",
+        "enumeration_succeeded": True, "units": [], "mutation_attempted": False,
+    }
+    with pytest.raises(evidence.EvidenceError, match="PPI_WATCH_FALSE_VERIFIED_UNIT"):
+        evidence.validate_bundle(payload)
+
+
+def test_ppi_watch_bundle_validator_accepts_all_fail_closed_states(tmp_path):
+    for state in ("NOT_PRESENT", "AMBIGUOUS", "NO_VERIFICADO"):
+        payload = build(tmp_path / state)
+        payload["ppi_watch"]["state"] = state
+        evidence.validate_bundle(payload)
 
 
 def test_delta_reports_promotion_from_fixed_previous_bundle(tmp_path):
@@ -298,8 +491,54 @@ def test_systemd_unit_is_hardened_and_has_no_docker_group():
     unit = (root / "systemd/porota-runtime-evidence-rc6.service").read_text(encoding="utf-8")
     for required in (
         "User=porotaadmin", "NoNewPrivileges=true", "ProtectSystem=strict",
-        "ProtectHome=true", "ReadWritePaths=/var/lib/porota-runtime-evidence",
+        "ProtectHome=read-only", "ReadWritePaths=/var/lib/porota-runtime-evidence",
         "StateDirectory=porota-runtime-evidence", "RuntimeDirectoryPreserve=yes",
     ):
         assert required in unit
+    assert "ProtectHome=false" not in unit
     assert "SupplementaryGroups=docker" not in unit
+
+
+def test_systemd_home_is_read_only_and_git_credential_fixture_remains_readable(tmp_path):
+    root = Path(__file__).parents[1]
+    unit = (root / "systemd/porota-runtime-evidence-rc6.service").read_text(encoding="utf-8")
+    fixture_home = tmp_path / "home" / "porotaadmin"
+    fixture_home.mkdir(parents=True)
+    credential_config = fixture_home / ".gitconfig"
+    credential_config.write_text(
+        "[credential]\n\thelper = fixture-readonly-helper\n", encoding="utf-8"
+    )
+    assert "ProtectHome=read-only" in unit
+    assert credential_config.read_text(encoding="utf-8").endswith(
+        "helper = fixture-readonly-helper\n"
+    )
+    write_paths = {
+        line.split("=", 1)[1] for line in unit.splitlines()
+        if line.startswith("ReadWritePaths=")
+    }
+    assert write_paths == {
+        "/var/lib/porota-runtime-evidence",
+        "/var/lib/porota-observability/repo",
+        "/run/porota-observability-publish",
+    }
+    assert not any(path.startswith("/home") for path in write_paths)
+
+
+def test_host_policy_and_manifest_remain_green_with_ppi_watch_external_contract():
+    from scripts.porota_host_manifest_v2 import build_manifest, tracked_modes
+    from scripts.porota_host_policy_v2 import validate_policy
+
+    root = Path(__file__).parents[1]
+    policy = json.loads(
+        (root / "ops/policy/host-control-plane-reconciliation-v2.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    contract = policy["ppi_watch_evidence_contract"]
+    assert contract["managed_by_porota_host_control_plane"] is False
+    assert contract["mutation_allowed"] is False
+    assert contract["expected_unit_names"] == []
+    assert contract["systemd_presence_expectation"] == "UNKNOWN"
+    manifest = build_manifest(root, policy, "a" * 40, modes=tracked_modes(root))
+    assert manifest["status"] == "GREEN"
+    assert validate_policy(manifest, policy)["status"] == "GREEN"
