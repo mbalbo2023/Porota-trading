@@ -173,6 +173,23 @@ def test_complete_bundle_has_readonly_proof_and_instrument_contract(tmp_path):
     assert set(row["sources"]) == set(evidence.SOURCES)
 
 
+def test_mixed_generation_provenance_is_explicitly_incomplete(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    frozen.write_text(json.dumps({
+        "candidate_sha": "9" * 40,
+        "candidate_tree_sha": "d" * 40,
+        "image_id": "sha256:" + "c" * 64,
+        "image_tar_sha256": "e" * 64,
+    }), encoding="utf-8")
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    assert payload["status"] == "INCOMPLETE"
+    assert payload["gaps"] == ["PROVENANCE_CANDIDATE_MISMATCH"]
+
+
 def test_unknown_or_stale_freshness_never_produces_ready(tmp_path):
     payload = build(tmp_path, last_seen=None)
     row = payload["instruments"][0]
