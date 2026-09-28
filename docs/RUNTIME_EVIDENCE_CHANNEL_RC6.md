@@ -18,6 +18,12 @@ runtime mutation. Its Git write is limited to those two evidence paths. It
 shares one host lock with the existing introspection publisher so both writers
 cannot mutate the same observability clone concurrently.
 
+The publisher service uses `ProtectHome=read-only`: Git may read the
+`porotaadmin` credential configuration, but neither Git nor the publisher can
+write anywhere under the home tree. `ProtectSystem=strict`,
+`NoNewPrivileges=true` and the three explicit runtime/state write paths remain
+in force.
+
 ## Fail-closed states
 
 - `COMPLETE`: required schema and safety contract are evidenced.
@@ -26,6 +32,19 @@ cannot mutate the same observability clone concurrently.
 - `BLOCKED`: mode is not PAPER/SIMULATED, `real_orders_sent != 0`, the real
   route is not blocked, or the route-call state is not evidenced as
   `NOT_CALLED`/`BLOCKED`.
+
+PPI Watch remains a separate owner and is never mutated. Its evidence contract
+is versioned in `ops/policy/host-control-plane-reconciliation-v2.json`. The
+repository currently has no authoritative PPI Watch systemd unit name and does
+not assert that such a unit must be absent. Consequently:
+
+- one exact unit can be `VERIFIED_READ_ONLY` only when a future versioned
+  contract names it and read-only checks prove it enabled, active and hashed;
+- zero matching units is `NOT_PRESENT`, not GREEN;
+- multiple matches are `AMBIGUOUS`;
+- enumeration, permissions or metadata failures are `NO_VERIFICADO`;
+- absence can be `VERIFIED_ABSENT` only if a versioned contract explicitly
+  changes the presence expectation to `ABSENT`.
 
 An instrument can be `READY_PAPER` only with a PPI-primary identity, fresh PPI
 evidence, an AVAILABLE catalog row, an explicit `READY_PAPER_*` capability,

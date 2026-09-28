@@ -10,6 +10,47 @@
     "tests/test_rc6_postclose_history_quarantine.py applies to the legacy postclose history timer, not to A3 background history",
     "the Sept-09 SRE split separates frequent fast health from lower-frequency full DB integrity"
   ],
+  "ppi_watch_evidence_contract": {
+    "schema_version": 1,
+    "owner": "EXTERNAL_SEPARATE_OWNER",
+    "managed_by_porota_host_control_plane": false,
+    "mutation_allowed": false,
+    "systemd_presence_expectation": "UNKNOWN",
+    "expected_unit_names": [],
+    "discovery": {
+      "case_sensitive": false,
+      "required_name_tokens": [
+        "ppi",
+        "watch"
+      ]
+    },
+    "states": {
+      "verified_unit": "VERIFIED_READ_ONLY",
+      "verified_absence": "VERIFIED_ABSENT",
+      "zero_matches": "NOT_PRESENT",
+      "multiple_matches": "AMBIGUOUS",
+      "enumeration_failure": "NO_VERIFICADO",
+      "unregistered_candidate": "NO_VERIFICADO",
+      "verification_failure": "NO_VERIFICADO"
+    },
+    "verified_unit_requires": {
+      "enumeration_succeeded": true,
+      "exactly_one_match": true,
+      "unit_listed_in_expected_unit_names": true,
+      "enabled": "enabled",
+      "active": "active",
+      "unit_sha256": true,
+      "checked_at": true,
+      "mutation_attempted": false
+    },
+    "verified_absence_requires": {
+      "systemd_presence_expectation": "ABSENT",
+      "enumeration_succeeded": true,
+      "zero_matches": true,
+      "mutation_attempted": false
+    },
+    "authority_note": "No canonical PPI Watch systemd unit name exists in this repository. An empty discovery is NOT_PRESENT, never VERIFIED, unless a future versioned contract explicitly requires ABSENT."
+  },
   "units": {
     "systemd/porota-runtime-evidence-rc6.service": {
       "role": "ACTIVE_SERVICE",

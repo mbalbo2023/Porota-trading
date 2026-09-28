@@ -19,7 +19,9 @@ IOSchedulingClass=idle
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+# The publisher uses the porotaadmin Git credential configuration.  Keep the
+# complete home tree non-writable while permitting Git's read-only lookup.
+ProtectHome=read-only
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

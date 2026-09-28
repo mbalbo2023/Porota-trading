@@ -25,6 +25,10 @@ from typing import Any, Iterable
 
 
 SCHEMA = "porota-runtime-evidence-v1"
+PPI_WATCH_CONTRACT_PATH = (
+    Path(__file__).resolve().parent
+    / "ops/policy/host-control-plane-reconciliation-v2.json"
+)
 SOURCES = ("PPI", "IOL", "BYMA", "A3", "ROFEX")
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA64 = re.compile(r"^[0-9a-f]{64}$")
@@ -455,8 +459,61 @@ def _hash_file(path: Path) -> str | None:
         return None
 
 
-def ppi_watch_status(current: datetime) -> dict[str, Any]:
-    """Read systemd metadata only; never start, stop, enable or disable a unit."""
+def _ppi_watch_contract(path: Path = PPI_WATCH_CONTRACT_PATH) -> dict[str, Any]:
+    policy = _json_object(path)
+    contract = policy.get("ppi_watch_evidence_contract")
+    if not isinstance(contract, dict):
+        raise EvidenceError("PPI_WATCH_CONTRACT_MISSING")
+    if contract.get("schema_version") != 1:
+        raise EvidenceError("PPI_WATCH_CONTRACT_VERSION_INVALID")
+    if contract.get("mutation_allowed") is not False:
+        raise EvidenceError("PPI_WATCH_MUTATION_POLICY_INVALID")
+    expected = contract.get("expected_unit_names")
+    if not isinstance(expected, list) or any(
+        not isinstance(name, str) or not name or "/" in name for name in expected
+    ):
+        raise EvidenceError("PPI_WATCH_EXPECTED_UNITS_INVALID")
+    if len(expected) != len(set(expected)):
+        raise EvidenceError("PPI_WATCH_EXPECTED_UNITS_DUPLICATED")
+    discovery = contract.get("discovery")
+    tokens = discovery.get("required_name_tokens") if isinstance(discovery, dict) else None
+    if not isinstance(tokens, list) or not tokens or any(
+        not isinstance(token, str) or not token for token in tokens
+    ):
+        raise EvidenceError("PPI_WATCH_DISCOVERY_INVALID")
+    return contract
+
+
+def _ppi_watch_result(current: datetime, contract: dict[str, Any], *, state: str,
+                      reason: str, units: list[dict[str, Any]],
+                      enumeration_succeeded: bool) -> dict[str, Any]:
+    return {
+        "state": state,
+        "reason": reason,
+        "checked_at": current.isoformat(),
+        "contract_schema_version": contract["schema_version"],
+        "owner": safe_text(contract.get("owner")),
+        "systemd_presence_expectation": safe_text(
+            contract.get("systemd_presence_expectation")
+        ),
+        "enumeration_succeeded": enumeration_succeeded,
+        "units": units,
+        "mutation_attempted": False,
+    }
+
+
+def ppi_watch_status(current: datetime, contract: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Verify PPI Watch metadata fail-closed without any systemd mutation."""
+    contract = _ppi_watch_contract() if contract is None else contract
+    # Validate injected test/consumer contracts through the same schema checks.
+    if contract.get("schema_version") != 1 or contract.get("mutation_allowed") is not False:
+        raise EvidenceError("PPI_WATCH_CONTRACT_INVALID")
+    states = contract.get("states") if isinstance(contract.get("states"), dict) else {}
+    discovery = contract.get("discovery") if isinstance(contract.get("discovery"), dict) else {}
+    tokens = discovery.get("required_name_tokens")
+    expected = contract.get("expected_unit_names")
+    if not isinstance(tokens, list) or not tokens or not isinstance(expected, list):
+        raise EvidenceError("PPI_WATCH_CONTRACT_INVALID")
     try:
         listing = subprocess.run(
             ["systemctl", "list-unit-files", "--no-legend", "--no-pager"],
@@ -464,39 +521,105 @@ def ppi_watch_status(current: datetime) -> dict[str, Any]:
             timeout=15,
         )
     except (OSError, subprocess.SubprocessError):
-        return {"state": "NO_VERIFICADO", "checked_at": current.isoformat(), "units": []}
+        return _ppi_watch_result(
+            current, contract,
+            state=str(states.get("enumeration_failure") or "NO_VERIFICADO"),
+            reason="ENUMERATION_EXCEPTION", units=[], enumeration_succeeded=False,
+        )
+    if listing.returncode != 0:
+        return _ppi_watch_result(
+            current, contract,
+            state=str(states.get("enumeration_failure") or "NO_VERIFICADO"),
+            reason="ENUMERATION_FAILED", units=[], enumeration_succeeded=False,
+        )
+    case_sensitive = discovery.get("case_sensitive") is True
+    required_tokens = [str(token) for token in tokens]
+
+    def matches(name: str) -> bool:
+        candidate = name if case_sensitive else name.lower()
+        wanted = required_tokens if case_sensitive else [token.lower() for token in required_tokens]
+        return all(token in candidate for token in wanted)
+
     names = sorted({
         line.split()[0] for line in listing.stdout.splitlines()
-        if line.split() and "ppi" in line.split()[0].lower() and "watch" in line.split()[0].lower()
+        if line.split() and matches(line.split()[0])
     })
-    units = []
-    for name in names:
-        def run(*args: str) -> str:
-            try:
-                result = subprocess.run(
-                    list(args), check=False, text=True, stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL, timeout=10,
-                )
-                return result.stdout.strip()
-            except (OSError, subprocess.SubprocessError):
-                return ""
+    if not names:
+        expectation = str(contract.get("systemd_presence_expectation") or "UNKNOWN")
+        verified_absent = expectation == "ABSENT"
+        absence_state = (
+            states.get("verified_absence") or "VERIFIED_ABSENT"
+            if verified_absent
+            else states.get("zero_matches") or "NOT_PRESENT"
+        )
+        return _ppi_watch_result(
+            current, contract,
+            state=str(absence_state),
+            reason="ABSENCE_REQUIRED_BY_CONTRACT" if verified_absent else "NO_MATCHING_UNIT",
+            units=[], enumeration_succeeded=True,
+        )
+    if len(names) != 1:
+        return _ppi_watch_result(
+            current, contract,
+            state=str(states.get("multiple_matches") or "AMBIGUOUS"),
+            reason="MULTIPLE_MATCHING_UNITS",
+            units=[{"unit": safe_text(name)} for name in names],
+            enumeration_succeeded=True,
+        )
 
-        enabled = run("systemctl", "is-enabled", name) or "NO_VERIFICADO"
-        active = run("systemctl", "is-active", name) or "NO_VERIFICADO"
-        fragment = run("systemctl", "show", name, "--property=FragmentPath", "--value")
-        digest = _hash_file(Path(fragment)) if fragment else None
-        units.append({
-            "unit": safe_text(name),
-            "enabled": safe_text(enabled),
-            "active": safe_text(active),
-            "unit_sha256": digest or "NO_VERIFICADO",
-        })
-    return {
-        "state": "VERIFIED_READ_ONLY" if units else "NO_VERIFICADO",
-        "checked_at": current.isoformat(),
-        "units": units,
-        "mutation_attempted": False,
+    name = names[0]
+    if name not in expected:
+        return _ppi_watch_result(
+            current, contract,
+            state=str(states.get("unregistered_candidate") or "NO_VERIFICADO"),
+            reason="UNIT_NOT_AUTHORIZED_BY_CONTRACT",
+            units=[{"unit": safe_text(name)}], enumeration_succeeded=True,
+        )
+
+    observed: dict[str, str] = {}
+    commands = {
+        "enabled": ["systemctl", "is-enabled", name],
+        "active": ["systemctl", "is-active", name],
+        "fragment": ["systemctl", "show", name, "--property=FragmentPath", "--value"],
     }
+    command_failed = False
+    for key, command in commands.items():
+        try:
+            result = subprocess.run(
+                command, check=False, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            command_failed = True
+            observed[key] = ""
+        else:
+            observed[key] = result.stdout.strip()
+            if result.returncode != 0 or not observed[key]:
+                command_failed = True
+    digest = _hash_file(Path(observed["fragment"])) if observed.get("fragment") else None
+    unit = {
+        "unit": safe_text(name),
+        "enabled": safe_text(observed.get("enabled")),
+        "active": safe_text(observed.get("active")),
+        "unit_sha256": digest or "NO_VERIFICADO",
+    }
+    verified = (
+        not command_failed
+        and observed.get("enabled") == "enabled"
+        and observed.get("active") == "active"
+        and digest is not None
+    )
+    verification_state = (
+        states.get("verified_unit") or "VERIFIED_READ_ONLY"
+        if verified
+        else states.get("verification_failure") or "NO_VERIFICADO"
+    )
+    return _ppi_watch_result(
+        current, contract,
+        state=str(verification_state),
+        reason="EXACT_EXPECTED_UNIT_VERIFIED" if verified else "EXPECTED_UNIT_NOT_VERIFIED",
+        units=[unit], enumeration_succeeded=True,
+    )
 
 
 def _provenance(deploy: dict[str, Any], frozen: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
@@ -613,10 +736,15 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
         for row in sorted(sync_rows, key=lambda row: str(row.get("source") or ""))
     ]
     ppi_watch = ppi_watch_status(current) if include_ppi_watch else {
-        "state": "NO_VERIFICADO", "checked_at": current.isoformat(),
-        "units": [], "mutation_attempted": False,
+        "state": "NO_VERIFICADO", "reason": "CHECK_SKIPPED",
+        "checked_at": current.isoformat(), "contract_schema_version": 1,
+        "owner": "EXTERNAL_SEPARATE_OWNER",
+        "systemd_presence_expectation": "UNKNOWN",
+        "enumeration_succeeded": False, "units": [], "mutation_attempted": False,
     }
-    if include_ppi_watch and ppi_watch["state"] != "VERIFIED_READ_ONLY":
+    if include_ppi_watch and ppi_watch["state"] not in {
+        "VERIFIED_READ_ONLY", "VERIFIED_ABSENT"
+    }:
         gaps.append("PPI_WATCH_NO_VERIFICADO")
     status = "BLOCKED" if blockers else "INCOMPLETE" if gaps else "COMPLETE"
     bundle = {
@@ -692,6 +820,30 @@ def validate_bundle(payload: dict[str, Any]) -> None:
         raise EvidenceError("BUNDLE_READONLY_PROOF_MISSING")
     if payload["publication"].get("consumer_contract") != "FIX_COMMIT_AND_BLOB_SHA":
         raise EvidenceError("BUNDLE_PINNING_CONTRACT_MISSING")
+    ppi_watch = payload["ppi_watch"]
+    if not isinstance(ppi_watch, dict) or ppi_watch.get("mutation_attempted") is not False:
+        raise EvidenceError("PPI_WATCH_READONLY_PROOF_MISSING")
+    if ppi_watch.get("state") not in {
+        "VERIFIED_READ_ONLY", "VERIFIED_ABSENT", "NOT_PRESENT",
+        "AMBIGUOUS", "NO_VERIFICADO",
+    }:
+        raise EvidenceError("PPI_WATCH_STATE_INVALID")
+    if ppi_watch.get("state") == "VERIFIED_READ_ONLY":
+        units = ppi_watch.get("units")
+        if (
+            ppi_watch.get("enumeration_succeeded") is not True
+            or not isinstance(units, list) or len(units) != 1
+            or units[0].get("enabled") != "enabled"
+            or units[0].get("active") != "active"
+            or not SHA64.fullmatch(str(units[0].get("unit_sha256") or ""))
+        ):
+            raise EvidenceError("PPI_WATCH_FALSE_VERIFIED_UNIT")
+    if ppi_watch.get("state") == "VERIFIED_ABSENT" and (
+        ppi_watch.get("systemd_presence_expectation") != "ABSENT"
+        or ppi_watch.get("enumeration_succeeded") is not True
+        or ppi_watch.get("units") != []
+    ):
+        raise EvidenceError("PPI_WATCH_FALSE_VERIFIED_ABSENCE")
     for instrument in payload["instruments"]:
         freshness = [detail.get("freshness", {}).get("state") for detail in instrument.get("sources", {}).values()]
         if instrument.get("readiness", {}).get("status") == "READY_PAPER" and "UNKNOWN" in freshness:
