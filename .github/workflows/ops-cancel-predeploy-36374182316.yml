@@ -1,4 +1,4 @@
-name: Cancel unintended Predeploy V2 run 36374182316
+name: Delete unintended partial artifact 10950785628
 
 on:
   pull_request:
@@ -11,26 +11,20 @@ permissions:
   actions: write
 
 jobs:
-  cancel-exact-run:
+  delete-exact-artifact:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Cancel only predeploy run 36374182316
+      - name: Delete only artifact 10950785628
         shell: bash
         run: |
           set -Eeuo pipefail
-          gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/36374182316/cancel" || true
-          for attempt in {1..30}; do
-            state="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/36374182316" --jq '.status + "|" + (.conclusion // "")')"
-            echo "PREDEPLOY_CANCEL_STATUS=$state"
-            if [[ "$state" == completed* ]]; then
-              test "$state" = "completed|cancelled"
-              echo "PREDEPLOY_CANCEL_EXACT=GREEN|run=36374182316"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "PREDEPLOY_CANCEL_TIMEOUT" >&2
-          exit 1
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/10950785628" --jq .id)" = "10950785628"
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/10950785628"
+          if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/10950785628" >/dev/null 2>&1; then
+            echo "UNINTENDED_ARTIFACT_STILL_PRESENT" >&2
+            exit 1
+          fi
+          echo "UNINTENDED_ARTIFACT_DELETE=GREEN|artifact=10950785628"
