@@ -562,6 +562,8 @@ def _reconcile_complementary_catalog(store):
     """
     try:
         complementary = complementary_discovery("/app/data/market")
+        from rc6_contract_bridge import complements_from_store
+        complementary += complements_from_store(store)
     except Exception as exc:
         store.event("COMPLEMENTARY_RECONCILIATION_UNAVAILABLE", type(exc).__name__)
         return 0
@@ -576,7 +578,9 @@ def _reconcile_complementary_catalog(store):
     with store.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         for raw in complementary:
-            if not financial_catalog.complementary_is_fresh(
+            negative_bridge = (raw.get("source") == "CONTRACT_EVIDENCE_V2"
+                               and (raw.get("contract_bridge") or {}).get("status") == "BLOCKED")
+            if not negative_bridge and not financial_catalog.complementary_is_fresh(
                     raw, max_age_seconds=COMPLEMENTARY_CONTRACT_TTL_SECONDS):
                 continue
 
@@ -755,24 +759,13 @@ def _eligible_symbols(store):
     allowed_sql = ",".join(f"'{family}'" for family in family_order)
     try:
         with store.connect() as c:
-            normalized_count = c.execute(
-                "SELECT COUNT(*) FROM financial_instrument_catalog"
-            ).fetchone()[0]
-            if normalized_count:
-                rows = c.execute(f"""SELECT DISTINCT ticker,instrument_type,settlement
-                  FROM financial_instrument_catalog
-                  WHERE status='AVAILABLE'
-                    AND capability LIKE 'READY_PAPER_%'
-                    AND UPPER(instrument_type) IN ({allowed_sql})
-                  ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
-                           instrument_type,ticker,settlement""").fetchall()
-            else:
-                rows = c.execute(f"""SELECT ticker,instrument_type,settlement
-                  FROM candidate_universe
-                  WHERE can_simulate=1 AND status='AVAILABLE'
-                    AND UPPER(instrument_type) IN ({allowed_sql})
-                  ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
-                  instrument_type,ticker""").fetchall()
+            gate = "candidate_identity_v2" if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_identity_v2'").fetchone() else "candidate_universe"
+            rows = c.execute(f"""SELECT ticker,instrument_type,settlement
+              FROM {gate}
+              WHERE can_simulate=1 AND status='AVAILABLE'
+                AND UPPER(instrument_type) IN ({allowed_sql})
+              ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
+                       instrument_type,ticker,settlement""").fetchall()
         seen = set(core)
         groups = {kind: [] for kind in family_order}
         for ticker, kind, settlement in rows:

@@ -54,7 +54,7 @@ def test_discovery_keeps_iol_then_byma_instead_of_collapsing_one_winner(tmp_path
     (tmp_path/"iol_family_reference_latest.json").write_text("{}",encoding="utf-8")
     (tmp_path/"rc6_public_sources_latest.json").write_text(json.dumps({
       "collected_at":"2026-09-25T21:00:15+00:00",
-      "sources":[{"source":"BYMA","observed_at":"2026-09-25T21:00:15+00:00","records":[{
+      "sources":[{"source":"BYMA","status":"SCRAPED_PUBLIC_DATA","http_status":200,"observed_at":"2026-09-25T21:00:15+00:00","records":[{
         "family":"CEDEARS","symbol":"AAPL","currency":None,"settlement":"A-24HS"
       }]}]
     }),encoding="utf-8")

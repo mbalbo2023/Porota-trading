@@ -69,7 +69,7 @@ def ppi_query_plan(*, day: date|None=None, prefixes_per_family: int|None=None):
     day=day or date.today()
     width=prefixes_per_family or int(os.getenv("PPI_DISCOVERY_PREFIXES_PER_FAMILY","4"))
     width=max(1,min(width,len(PREFIXES)))
-    start=day.toordinal()%len(PREFIXES)
+    start=(day.toordinal()*width)%len(PREFIXES)
     out=[]
     families=tuple(PPI_QUERY_TYPES)
     for offset,family in enumerate(families):
@@ -120,9 +120,13 @@ def _rows(path: Path, source: str):
         out=[]
         for block in payload.get("sources",[]) if isinstance(payload,dict) else []:
             if not isinstance(block,dict) or str(block.get("source") or "").upper()!="BYMA":continue
+            if str(block.get("status") or "") not in {"SCRAPED_PUBLIC_DATA", "REACHABLE_STRUCTURED_DATA", "SCRAPED_HTML_DATA"} or block.get("error"):
+                continue
+            if int(block.get("http_status") or 200) >= 400:
+                continue
             for row in block.get("records",[]) if isinstance(block.get("records"),list) else []:
-                observed=_provider_timestamp(row.get("timestamp"))
                 if not isinstance(row,dict):continue
+                observed=_provider_timestamp(row.get("timestamp"))
                 family=canonical_family(row.get("family"))
                 symbol=str(row.get("symbol") or row.get("ticker") or "").strip().upper()
                 if not family or not symbol:continue

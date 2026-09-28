@@ -99,6 +99,20 @@ FAMILY_CONTRACT_FIELDS = {
     }),
 }
 
+# These descriptive/analytical terms are preserved as enrichment. They do not
+# enter local spot certificate cashflows or subscription/redemption arithmetic.
+# Lifecycle/event terms and every dynamic/risk gate remain required.
+FAMILY_ENRICHMENT_FIELDS = {
+    "CEDEARS": frozenset({"conversion_ratio"}),
+    "FCI": frozenset({"manager", "custodian"}),
+    "FCI_LOCAL": frozenset({"manager", "custodian"}),
+    "FCI_EXTERIOR": frozenset({"manager", "custodian"}),
+}
+FAMILY_CONTRACT_FIELDS = {
+    family: fields - FAMILY_ENRICHMENT_FIELDS.get(family, frozenset())
+    for family, fields in FAMILY_CONTRACT_FIELDS.items()
+}
+
 # Condiciones dinámicas que no deben confundirse con contrato. Se exigen para
 # READY_PAPER_CANDIDATE, pero se ingieren a otra frecuencia.
 FAMILY_DYNAMIC_FIELDS = {
@@ -139,6 +153,15 @@ DYNAMIC_TTL_HOURS = {
     "nav_value": 36.0,
     "nav_date": 36.0,
 }
+
+
+def _positive_number(value):
+    from decimal import Decimal, InvalidOperation
+    try:
+        x = Decimal(str(value))
+        return x.is_finite() and x > 0
+    except (InvalidOperation, TypeError, ValueError):
+        return False
 
 
 def _present(value) -> bool:
@@ -197,7 +220,7 @@ def _stale_dynamic(fields, provenance, now):
             continue
         age = (now - at.astimezone(timezone.utc)).total_seconds() / 3600
         ttl = float(DYNAMIC_TTL_HOURS.get(field, 0.25))
-        if age > ttl:
+        if age < 0 or age > ttl:
             stale.append(field)
     return sorted(stale)
 
@@ -245,6 +268,9 @@ def evaluate_family(family: str, records, *, now=None) -> dict:
 
     missing_dynamic = sorted(
         field for field in dynamic_fields if not _present(merged.get(field))
+        or (field == "operable" and merged.get(field) is not True)
+        or (field in {"market_session_state", "subscription_status", "auction_status"} and str(merged.get(field)).upper() not in {"OPEN", "ACTIVE", "AVAILABLE"})
+        or (field in {"nav_value", "tna", "available_principal", "margin_requirement"} and not _positive_number(merged.get(field)))
     )
     if missing_dynamic:
         return {
