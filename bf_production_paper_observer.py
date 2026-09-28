@@ -489,6 +489,14 @@ def _download_catalog(reader, store):
             if key in found and fresh:
                 found[key] = financial_catalog.complete_with_complement(found[key], raw)
             elif key not in found:
+                # Do not persist an identity-incomplete complementary shadow
+                # beside an already observed PPI ticker/family.  It cannot
+                # become authoritative and used to create false ambiguity in
+                # candidate_universe until the 14-day catalog retention elapsed.
+                ppi_collision = financial_catalog.ppi_primary_symbol_family_exists(
+                    found.values(), record)
+                if ppi_collision:
+                    continue
                 if not fresh:
                     record["status"] = "OBSERVED_SHADOW"
                 found[key] = record

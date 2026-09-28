@@ -14,6 +14,7 @@ from rc6_multisource_discovery import canonical_family, canonical_market, canoni
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 SOURCE_PRECEDENCE = ("PPI_PRIMARY", "IOL_COMPLEMENTARY", "BYMA_PUBLIC_COMPLEMENTARY")
+PPI_IDENTITY_TTL_SECONDS = 14 * 24 * 60 * 60
 US_MARKET_WIDE_CEDEAR_HOLIDAYS = {
     "2026-09-07": "US_LABOR_DAY",
 }
@@ -386,6 +387,20 @@ def _candidate_has_ppi_primary(settlement_source, metadata_json):
             or source in {"PPI_FIELD", "REQUEST_CANDIDATE"})
 
 
+def ppi_primary_symbol_family_exists(records, candidate):
+    """Whether PPI already owns the candidate's ticker/family identity space."""
+    ticker = str((candidate or {}).get("ticker") or "").strip().upper()
+    family = canonical_family((candidate or {}).get("instrument_type"))
+    for record in records:
+        if (str(record.get("ticker") or "").strip().upper() != ticker
+                or canonical_family(record.get("instrument_type")) != family):
+            continue
+        raw = record.get("raw") if isinstance(record.get("raw"), dict) else {}
+        if str(raw.get("_discovery_source") or "").upper() == "PPI_PRIMARY":
+            return True
+    return False
+
+
 def _candidate_retry_ambiguities(connection):
     table = connection.execute("""SELECT 1 FROM sqlite_master
       WHERE type='table' AND name='complementary_contract_retry'""").fetchone()
@@ -407,7 +422,8 @@ def _candidate_retry_ambiguities(connection):
     }
 
 
-def sync_candidate_universe(connection, checked_at, *, freshness_seconds=86400):
+def sync_candidate_universe(connection, checked_at, *,
+                            freshness_seconds=PPI_IDENTITY_TTL_SECONDS):
     """Atomically rebuild the legacy summary without projecting ambiguity to READY.
 
     ``candidate_universe`` intentionally remains keyed by ticker/family/market for
@@ -420,19 +436,28 @@ def sync_candidate_universe(connection, checked_at, *, freshness_seconds=86400):
       FROM financial_instrument_catalog
       ORDER BY ticker,instrument_type,market,currency,settlement,last_seen_at""").fetchall()
     grouped = {}
-    symbol_family_counts = {}
+    primary_symbol_family_counts = {}
     for row in rows:
         ticker, family, market = (str(row[index] or "").strip().upper()
                                   for index in (0, 1, 2))
         grouped.setdefault((ticker, family, market), []).append(row)
-        symbol_family_counts[(ticker, family)] = symbol_family_counts.get(
-            (ticker, family), 0) + 1
+        if _candidate_has_ppi_primary(row[5], row[9]):
+            primary_symbol_family_counts[(ticker, family)] = (
+                primary_symbol_family_counts.get((ticker, family), 0) + 1)
     retry_ambiguities = _candidate_retry_ambiguities(connection)
 
     projected = []
     for key, identities in sorted(grouped.items()):
         ticker, family, market = key
-        representative = max(identities, key=lambda row: str(row[8] or ""))
+        primary_identities = [
+            row for row in identities
+            if _candidate_has_ppi_primary(row[5], row[9])
+        ]
+        # A newer IOL/BYMA shadow must never displace the canonical PPI row in
+        # the legacy one-row projection.  Multiple PPI identities still fail
+        # closed; complements cannot manufacture or resolve that ambiguity.
+        representative = max(primary_identities or identities,
+                             key=lambda row: str(row[8] or ""))
         currency, settlement, settlement_source = representative[3:6]
         status, capability, last_seen, metadata_json = representative[6:10]
         identity_key = tuple(
@@ -440,7 +465,9 @@ def sync_candidate_universe(connection, checked_at, *, freshness_seconds=86400):
             for value in (ticker, family, market, currency, settlement)
         )
         reasons = []
-        if len(identities) != 1 or symbol_family_counts[(ticker, family)] != 1:
+        primary_count = primary_symbol_family_counts.get((ticker, family), 0)
+        if (len(primary_identities) > 1 or primary_count > 1
+                or (primary_count == 0 and len(identities) > 1)):
             reasons.append("IDENTITY_AMBIGUOUS")
         if any(value in {"", "UNKNOWN", "NO_VERIFICADO"} for value in identity_key):
             reasons.append("IDENTITY_INCOMPLETE")
