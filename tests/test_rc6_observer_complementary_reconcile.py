@@ -46,7 +46,8 @@ def test_reconcile_matches_legacy_on_alias_without_discovery_marker(tmp_path, mo
     assert tuple(row[:2]) == ("AVAILABLE","READY_PAPER_SPOT")
     meta=json.loads(row[2])
     assert meta["_contract_complement_source"]=="IOL_COMPLEMENTARY"
-    assert tuple(candidate[:2]) == (1,"AVAILABLE")
+    assert tuple(candidate[:2]) == (0,"AVAILABLE")
+    assert candidate[2] == "PPI_FRESHNESS_STALE"
 
 
 def test_reconcile_revives_legacy_spot_from_exact_fresh_observation(tmp_path, monkeypatch):

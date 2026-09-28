@@ -72,16 +72,92 @@ def test_candidate_universe_is_rebuilt_from_catalog_readiness():
         PRIMARY KEY(ticker,instrument_type,market));
     """)
     rows=[
-      ("GGAL","ACCIONES","BYMA","ARS","A-24HS","PPI","","2026-09-25T20:00:00+00:00","r","AVAILABLE","READY_PAPER_SPOT","{}"),
-      ("GD30","BONOS","BYMA","ARS","A-24HS","PPI","","2026-09-25T20:00:00+00:00","r","STALE","NEEDS_NOMINAL_UNITS","{}"),
+      ("GGAL","ACCIONES","BYMA","ARS","A-24HS","PPI_FIELD","","2026-09-25T20:00:00+00:00","r","AVAILABLE","READY_PAPER_SPOT",'{"_discovery_source":"PPI_PRIMARY"}'),
+      ("GD30","BONOS","BYMA","ARS","A-24HS","PPI_FIELD","","2026-09-25T20:00:00+00:00","r","STALE","NEEDS_NOMINAL_UNITS",'{"_discovery_source":"PPI_PRIMARY"}'),
     ]
     c.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",rows)
-    c.execute("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
-              ("GD30","BONOS","A-24HS","BYMA",1,"AVAILABLE","OLD_GHOST","old"))
+    c.executemany("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", [
+        ("GD30","BONOS","A-24HS","BYMA",1,"AVAILABLE","OLD_VALUE","old"),
+        ("SPY","ETF","A-24HS","BYMA",1,"AVAILABLE","OLD_GHOST","old"),
+    ])
     catalog.sync_candidate_universe(c,"2026-09-25T21:00:00+00:00")
     result={r[0]:(r[4],r[5],r[6]) for r in c.execute("SELECT * FROM candidate_universe")}
     assert result["GGAL"]==(1,"AVAILABLE","READY_PAPER_SPOT")
     assert result["GD30"]==(0,"STALE","NEEDS_NOMINAL_UNITS")
+    assert "SPY" not in result
+
+
+def _candidate_projection_db():
+    c=sqlite3.connect(":memory:")
+    c.executescript("""
+      CREATE TABLE financial_instrument_catalog(
+        ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,
+        settlement_source TEXT,description TEXT,last_seen_at TEXT,run_id TEXT,
+        status TEXT,capability TEXT,metadata_json TEXT,
+        PRIMARY KEY(ticker,instrument_type,market,currency,settlement));
+      CREATE TABLE candidate_universe(
+        ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,settlement TEXT NOT NULL,
+        market TEXT NOT NULL,can_simulate INTEGER NOT NULL,status TEXT NOT NULL,
+        detail TEXT NOT NULL,last_checked_at TEXT NOT NULL,
+        PRIMARY KEY(ticker,instrument_type,market));
+      CREATE TABLE complementary_contract_retry(
+        ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,
+        source TEXT,observed_at TEXT,state TEXT,reason TEXT,last_attempt_at TEXT,
+        attempts INTEGER);
+    """)
+    return c
+
+
+def _catalog_identity(ticker="GGAL", family="ACCIONES", currency="ARS",
+                      settlement="A-24HS", settlement_source="PPI_FIELD",
+                      last_seen="2026-09-25T20:30:00+00:00", status="AVAILABLE",
+                      capability="READY_PAPER_SPOT", metadata=None):
+    metadata = metadata or {"_discovery_source":"PPI_PRIMARY"}
+    return (ticker,family,"BYMA",currency,settlement,settlement_source,"",last_seen,
+            "run",status,capability,json.dumps(metadata))
+
+
+def test_candidate_projection_fails_closed_for_multi_identity_and_is_idempotent():
+    c=_candidate_projection_db()
+    c.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [
+        _catalog_identity(currency="ARS"),
+        _catalog_identity(currency="USD_CCL"),
+    ])
+    catalog.sync_candidate_universe(c,"2026-09-25T21:00:00+00:00")
+    first=c.execute("SELECT * FROM candidate_universe").fetchall()
+    assert len(first)==1
+    assert first[0][4:7]==(0,"AVAILABLE","IDENTITY_AMBIGUOUS")
+    catalog.sync_candidate_universe(c,"2026-09-25T21:00:00+00:00")
+    assert c.execute("SELECT * FROM candidate_universe").fetchall()==first
+
+
+def test_candidate_projection_removes_reclassified_family_ghost():
+    c=_candidate_projection_db()
+    c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+              _catalog_identity(ticker="DIA",family="CEDEARS"))
+    c.execute("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+              ("DIA","ETF","A-24HS","BYMA",1,"AVAILABLE","OLD","old"))
+    catalog.sync_candidate_universe(c,"2026-09-25T21:00:00+00:00")
+    assert c.execute("SELECT instrument_type FROM candidate_universe").fetchall()==[("CEDEARS",)]
+
+
+def test_candidate_projection_rejects_stale_non_primary_and_retry_ambiguity():
+    c=_candidate_projection_db()
+    c.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [
+        _catalog_identity(ticker="STALE",last_seen="2026-09-20T20:30:00+00:00"),
+        _catalog_identity(ticker="IOL",settlement_source="IOL_COMPLEMENTARY",
+                          metadata={"_discovery_source":"IOL_COMPLEMENTARY"}),
+        _catalog_identity(ticker="RETRY"),
+    ])
+    c.execute("INSERT INTO complementary_contract_retry VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+              ("RETRY","ACCIONES","BYMA","ARS","A-24HS","PPI",None,
+               "PENDING_RETRY","IDENTITY_AMBIGUOUS","2026-09-25T20:40:00+00:00",1))
+    catalog.sync_candidate_universe(c,"2026-09-25T21:00:00+00:00")
+    result={row[0]:(row[4],row[6]) for row in c.execute(
+        "SELECT * FROM candidate_universe ORDER BY ticker")}
+    assert result["STALE"]==(0,"PPI_FRESHNESS_STALE")
+    assert result["IOL"]==(0,"PPI_PRIMARY_IDENTITY_NOT_VERIFIED")
+    assert result["RETRY"]==(0,"RETRY_IDENTITY_AMBIGUOUS")
 
 
 def test_fresh_exact_complement_revives_stale_spot_without_contract_payload():

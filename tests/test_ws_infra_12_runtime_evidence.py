@@ -155,6 +155,9 @@ def test_complete_bundle_has_readonly_proof_and_instrument_contract(tmp_path):
     assert payload["status"] == "COMPLETE"
     assert payload["database"]["open_mode"] == "mode=ro"
     assert payload["database"]["query_only"] is True
+    assert payload["database"]["catalog_rows"] == 1
+    assert payload["database"]["candidate_rows"] == 1
+    assert payload["database"]["ledger_rows"] == 1
     assert payload["safety"] == {
         "mode": "PRODUCTION_PAPER",
         "operation_mode": "PRODUCTION_PAPER",
@@ -175,6 +178,79 @@ def test_unknown_or_stale_freshness_never_produces_ready(tmp_path):
     row = payload["instruments"][0]
     assert row["readiness"]["status"] == "NO_READY"
     assert "PPI_FRESHNESS_UNKNOWN" in row["readiness"]["reasons"]
+    assert "CANDIDATE_LEDGER_CONTRADICTION" in payload["gaps"]
+
+
+def test_candidate_ghost_evidence_is_sanitized_and_counts_actual_ledger(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+        ("DIA", "ETF", "BYMA", "A-24HS", 0, "STALE",
+         "CATALOG_MISSING", "2026-09-27T16:59:00+00:00"),
+    )
+    conn.commit()
+    conn.close()
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    assert payload["database"]["catalog_rows"] == 1
+    assert payload["database"]["candidate_rows"] == 2
+    assert payload["database"]["ledger_rows"] == 2
+    assert "CANDIDATE_GHOSTS:1" in payload["gaps"]
+    assert payload["identity_anomalies"]["ghosts"] == [{
+        "ticker": "DIA", "family": "ETF", "market": "BYMA",
+        "settlement": "A-24HS", "can_simulate": 0, "status": "STALE",
+        "detail": "CATALOG_MISSING",
+        "last_checked_at": "2026-09-27T16:59:00+00:00",
+    }]
+
+
+@pytest.mark.parametrize(
+    "case,expected_reason",
+    [
+        ("freshness", "PPI_FRESHNESS_STALE"),
+        ("primary", "PPI_PRIMARY_IDENTITY_NOT_VERIFIED"),
+        ("ambiguity", "IDENTITY_AMBIGUOUS"),
+        ("status", "CATALOG_STATUS:OBSERVED_SHADOW"),
+        ("capability", "CAPABILITY:NEEDS_NOMINAL_UNITS"),
+    ],
+)
+def test_candidate_ledger_contradiction_is_exact_for_each_fail_closed_gate(
+        tmp_path, case, expected_reason):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    conn = sqlite3.connect(db)
+    if case == "freshness":
+        conn.execute("UPDATE financial_instrument_catalog SET last_seen_at=?",
+                     ("2026-09-20T16:59:00+00:00",))
+    elif case == "primary":
+        conn.execute("""UPDATE financial_instrument_catalog
+          SET settlement_source='IOL_COMPLEMENTARY',metadata_json='{}'""")
+    elif case == "ambiguity":
+        conn.execute(
+            "INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            ("GGAL", "ACCIONES", "BYMA", "USD_CCL", "A-24HS", "PPI_FIELD",
+             "2026-09-27T16:59:00+00:00", "run-2", "AVAILABLE",
+             "READY_PAPER_SPOT", json.dumps({"_discovery_source": "PPI_PRIMARY"})),
+        )
+    elif case == "status":
+        conn.execute("UPDATE financial_instrument_catalog SET status='OBSERVED_SHADOW'")
+    elif case == "capability":
+        conn.execute("UPDATE financial_instrument_catalog SET capability='NEEDS_NOMINAL_UNITS'")
+    conn.commit()
+    conn.close()
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    assert "CANDIDATE_LEDGER_CONTRADICTION" in payload["gaps"]
+    assert expected_reason in payload["instruments"][0]["readiness"]["reasons"]
+    assert "CANDIDATE_LEDGER_CONTRADICTS_FAIL_CLOSED" in (
+        payload["instruments"][0]["readiness"]["reasons"]
+    )
 
 
 @pytest.mark.parametrize(

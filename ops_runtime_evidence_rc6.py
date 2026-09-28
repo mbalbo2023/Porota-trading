@@ -383,11 +383,23 @@ def _identity_anomalies(catalog: list[dict[str, Any]], candidates: list[dict[str
                         instruments: list[dict[str, Any]]) -> dict[str, Any]:
     catalog_keys = {_candidate_key(row) for row in catalog}
     grouped = Counter(_candidate_key(row) for row in candidates)
+    candidate_by_key: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in candidates:
+        candidate_by_key[_candidate_key(row)].append(row)
     ghosts = sorted(set(grouped) - catalog_keys)
     duplicates = sorted((key, count) for key, count in grouped.items() if count > 1)
     return {
         "ghosts": [
-            {"ticker": key[0], "family": key[1], "market": key[2]}
+            {
+                "ticker": key[0],
+                "family": key[1],
+                "market": key[2],
+                "settlement": safe_text(candidate_by_key[key][0].get("settlement")),
+                "can_simulate": int(candidate_by_key[key][0].get("can_simulate") or 0),
+                "status": safe_text(candidate_by_key[key][0].get("status")),
+                "detail": safe_text(candidate_by_key[key][0].get("detail")),
+                "last_checked_at": iso(candidate_by_key[key][0].get("last_checked_at")),
+            }
             for key in ghosts
         ],
         "duplicates": [
@@ -762,7 +774,10 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
             "query_only": True,
             "schema_allowlist": sorted(ALLOWED_TABLES),
             "catalog_rows": len(catalog),
-            "ledger_rows": len(instruments),
+            "candidate_rows": len(candidates),
+            # Compatibility alias: unlike the previous implementation this now
+            # counts the actual candidate ledger, never catalog projections.
+            "ledger_rows": len(candidates),
         },
         "observer": {
             "process_state": safe_text(observer.get("process_state")),
@@ -911,6 +926,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": bundle["status"],
         "schema": bundle["schema"],
         "catalog_rows": bundle["database"]["catalog_rows"],
+        "candidate_rows": bundle["database"]["candidate_rows"],
         "ledger_rows": bundle["database"]["ledger_rows"],
         "blockers": bundle["blockers"],
         "gaps": bundle["gaps"],

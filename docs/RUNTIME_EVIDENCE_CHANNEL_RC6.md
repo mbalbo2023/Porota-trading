@@ -52,6 +52,19 @@ no ambiguity and exactly one coherent candidate-ledger row. Unknown freshness
 never becomes READY. IOL/BYMA/A3/ROFEX are complementary only and cannot
 replace the PPI identity.
 
+`candidate_universe` remains a legacy ticker/family/market summary so existing
+read-only consumers keep their schema. Reconciliation rebuilds it inside the
+caller's transaction: identities removed or reclassified in the catalog cannot
+survive as ghosts. `can_simulate=1` is allowed only when the summary maps to one
+complete, fresh PPI-primary identity with no retry ambiguity. Catalog status and
+capability remain visible for historical consumers even when this gate is zero.
+
+The bundle reports `catalog_rows` and `candidate_rows` separately. The legacy
+`ledger_rows` field is retained as a compatibility alias for `candidate_rows`;
+it no longer counts catalog projections. If a future ghost is detected, its
+sanitized settlement, gate, status, detail and check timestamp are included for
+RCA without exposing provider payloads.
+
 ## Pinned consumption
 
 Never read the moving branch name as evidence. Resolve the
