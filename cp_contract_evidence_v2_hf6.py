@@ -13,6 +13,10 @@ from datetime import datetime, timezone
 
 SCHEMA = "porota-contract-evidence-v2-rc4"
 SOURCE_RANK = {
+    "IOL_STRUCTURED_API": 40,
+    "IOL_AUTHENTICATED_WEB": 50,
+    "BYMA_OFFICIAL_DOCUMENTATION": 30,
+    "BYMA_STRUCTURED_API": 30,
     "PPI_STRUCTURED_API": 10,
     "PPI_AUTHENTICATED_XHR": 20,
     "PPI_OFFICIAL_DOCUMENTATION": 30,

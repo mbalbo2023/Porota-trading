@@ -469,7 +469,7 @@ def test_actualizacion_fallida_preserva_catalogo_fresco_y_no_inventa_disponibili
 def test_cotizacion_mep_del_catalogo_no_gasta_ars_ni_usd_generico(tmp_path, real_catalog):
     store = PaperStore(str(tmp_path / "paper.db"))
     raw = next(r for r in real_catalog if r["ticker"] == "AAPLD")
-    metadata = catalog.normalize_record(raw, "INMEDIATA", "2026-08-27T13:45:03Z", "test")
+    metadata = catalog.normalize_record(raw, "INMEDIATA", datetime.now(timezone.utc).isoformat(), "fresh-synthetic-identity")
     source_at = observer.now_iso()
     q = observer.normalize_quote("AAPLD", "CEDEARS", "INMEDIATA", {"price": 100, "date": source_at},
                                  {"bid": 99, "ask": 100, "bidsize": 10000, "asksize": 10000, "date": source_at}, metadata=metadata)

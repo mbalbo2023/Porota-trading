@@ -802,6 +802,34 @@ class PaperBroker:
             admission=(lambda c, currency, at, fees: self.daily_risk.projected_admission_error(currency,at,fees,connection=c))
                       if self.daily_risk else None)
 
+    def place_caucion_from_evidence(self, identity, principal, request_id, as_of=None, *, reserve="0"):
+        """Explicit PAPER operation through the existing caucion lifecycle.
+
+        Does not choose allocation, discover primary identities or send orders.
+        The generic spot candidate gate cannot certify a caucion offer.
+        """
+        from rc6_contract_bridge import caucion_offer_from_evidence
+        from bs_instrument_contracts import aware_datetime
+        at = self.clock_fn() if self.clock_fn else as_of or now_iso()
+        keys = ("ticker","instrument_type","market","currency","settlement")
+        with self.store.connect() as c:
+            rows = c.execute("SELECT * FROM financial_instrument_catalog WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?",
+                tuple(identity.get(k) for k in keys)).fetchall()
+        if len(rows) != 1:
+            raise ValueError("PPI_PRIMARY_IDENTITY_NOT_UNIQUE")
+        primary = dict(rows[0])
+        primary["raw"] = json.loads(primary.pop("metadata_json"))
+        from cp_contract_evidence_v2_hf6 import current_records
+        records = [r for r in current_records(self.store,family="CAUCIONES",ticker=primary["ticker"])
+                   if r["market"] == primary["market"] and r["settlement"] == primary["settlement"]]
+        with self.store.connect() as c:
+            pending = c.execute("SELECT 1 FROM contract_evidence_v2_changes WHERE family=? AND ticker=? AND market=? AND settlement=? AND status='CHANGED_REVIEW_REQUIRED' LIMIT 1",
+                ("CAUCIONES",primary["ticker"],primary["market"],primary["settlement"])).fetchone()
+        if pending:
+            raise ValueError("CAUCION_CHANGE_REVIEW_REQUIRED")
+        offer = caucion_offer_from_evidence(records,primary,now=aware_datetime(at))
+        return self.place_caucion(offer,principal,request_id,as_of=at,reserve=reserve)
+
     def settle_cauciones(self, as_of=None):
         return self.cauciones.settle_due(as_of or now_iso())
 
@@ -1192,6 +1220,11 @@ class PaperBroker:
         )
         by_total_cap = (exposure_remaining / (entry * factor)).to_integral_value(ROUND_DOWN)
         qty = (min(by_risk, by_cash, by_book, by_position_cap, by_total_cap) / step).to_integral_value(ROUND_DOWN) * step
+        if q.contract is not None and qty > 0:
+            try:
+                q.contract.quantity(qty)
+            except ValueError as exc:
+                return False, "CONTRACT_QUANTITY_INVALID:" + str(exc), None
         max_hold_minutes = int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360"))
         features["exit_policy"] = {
             "mode": "SIMULATED",

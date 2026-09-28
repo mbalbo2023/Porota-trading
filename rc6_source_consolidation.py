@@ -207,21 +207,25 @@ def _parse_html_tables(text: str) -> list[dict[str, Any]]:
             item={normalized_header[i]: values[i] for i in range(min(len(normalized_header),len(values)))}
             if any(item.values()):
                 records.append(item)
-    return records[:500]
+    return records
 
 def _normalize_public_records(source: str, records: list[dict[str, Any]], *, family: str = "") -> list[dict[str, Any]]:
     aliases={
         "symbol": ("especie","símbolo","simbolo","ticker","symbol","code"),
-        "currency": ("moneda","currency"),
+        "currency": ("moneda","currency","denominationccy"),
         "bid": ("p. cpra.","p compra","compra","bid","bidprice","bid_price","buyprice"),
         "ask": ("p. vta.","p venta","venta","ask","offerprice","offer_price","sellprice"),
-        "last": ("último","ultimo","last","lastprice","last_price","tradeprice","trade_price","price"),
+        "last": ("último","ultimo","last","lastprice","last_price","tradeprice","trade_price","price","trade"),
         "variation_pct": ("var.","variación","variacion","variation","variationpercent","variation_pct","changepercent"),
         "volume": ("volumen","volume","tradevolume","trade_volume","quantity"),
-        "cash_volume": ("vol. monto","vol monto","cash volume","cashvolume","cash_volume","tradedamount"),
+        "cash_volume": ("vol. monto","vol monto","cash volume","cashvolume","cash_volume","tradedamount","volumeamount"),
         "vwap": ("vwap",),
         "timestamp": ("hora","timestamp","fecha","date","tradedate","trade_date","marketdatadate","market_data_date"),
-        "maturity": ("vto.","vto","vencimiento","maturity"),
+        "maturity": ("vto.","vto","vencimiento","maturity","maturitydate"),
+        "settlement_code": ("settlementtype","settlement_code"),
+        "provider_time_only": ("tradehour","provider_time_only"),
+        "bid_size": ("quantitybid","bid_size"),
+        "ask_size": ("quantityoffer","ask_size"),
         "adjustment": ("ajuste","adjustment"),
         "open_interest": ("interés abierto","interes abierto","open interest"),
     }
@@ -239,13 +243,13 @@ def _normalize_public_records(source: str, records: list[dict[str, Any]], *, fam
 
 def _json_records(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, dict)][:500]
+        return [item for item in payload if isinstance(item, dict)]
     if not isinstance(payload, dict):
         return []
     for key in ("items", "data", "records", "results", "content"):
         value = payload.get(key)
         if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)][:500]
+            return [item for item in value if isinstance(item, dict)]
         if isinstance(value, dict):
             nested = _json_records(value)
             if nested:
@@ -258,7 +262,7 @@ def parse_public_payload(source: str, url: str, body: bytes, http_status: int = 
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
-        raw_records = _parse_html_tables(text)
+        raw_records = _parse_html_tables(text) if http_status < 400 else []
         records = _normalize_public_records(source, raw_records)
         title = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
         return {
@@ -269,7 +273,8 @@ def parse_public_payload(source: str, url: str, body: bytes, http_status: int = 
             "page_title": html.unescape(title.group(1)).strip() if title else "",
             "digest": digest, "observed_at": _now(), "scrape_method": "html_table",
         }
-    raw_records = _json_records(payload)
+    provider_error = isinstance(payload, dict) and (payload.get("error") or str(payload.get("status", "")).upper() in {"ERROR", "FAILED"})
+    raw_records = [] if http_status >= 400 or provider_error else _json_records(payload)
     records = _normalize_public_records(source, raw_records)
     return {
         "source": source, "url": url,
@@ -277,32 +282,53 @@ def parse_public_payload(source: str, url: str, body: bytes, http_status: int = 
         "http_status": http_status, "record_count": len(records),
         "structured": bool(records), "records": records, "digest": digest,
         "observed_at": _now(), "scrape_method": "json",
+        "pagination": payload.get("content", {}) if isinstance(payload, dict) else {},
+        "source_record_count": len(raw_records),
     }
 
 def _byma_post(url: str, endpoint: str, family: str) -> dict[str, Any]:
     target = url.rstrip("/") + "/vanoms-be-core/rest/api/bymadata/free/" + endpoint
-    body = json.dumps({
-        "excludeZeroPxAndQty": True, "T1": True, "T0": False,
-        "Content-Type": "application/json, text/plain",
-    }).encode("utf-8")
-    request = Request(target, data=body, method="POST", headers={
-        "User-Agent": "Porota-RC6-read-only/1.0",
-        "Accept": "application/json", "Content-Type": "application/json",
-    })
-    with urlopen(request, timeout=float(os.getenv("POROTA_PUBLIC_SOURCE_TIMEOUT", "15"))) as response:
-        payload = response.read(MAX_BYTES + 1)
-        status = int(getattr(response, "status", 200))
-    if len(payload) > MAX_BYTES:
-        raise ValueError("PUBLIC_SOURCE_RESPONSE_TOO_LARGE")
-    result = parse_public_payload("BYMA", target, payload, status)
-    result["records"] = _normalize_public_records("BYMA", _json_records(json.loads(payload.decode("utf-8", errors="replace"))), family=family)
-    result["record_count"] = len(result["records"])
-    result["structured"] = bool(result["records"])
-    result["status"] = "SCRAPED_PUBLIC_DATA" if result["records"] else "REFERENCE_ONLY"
-    result["scrape_method"] = "bymadata_public_post"
-    result["endpoint"] = endpoint
-    result["family"] = _canonical_family(family)
-    return result
+    records, pages = [], []
+    expected_total = None
+    for page in range(1, 101):
+        body = json.dumps({
+            "excludeZeroPxAndQty": True, "T1": True, "T0": False,
+            "Content-Type": "application/json, text/plain", "page_number": page,
+        }).encode("utf-8")
+        request = Request(target, data=body, method="POST", headers={
+            "User-Agent": "Porota-RC6-read-only/1.0",
+            "Accept": "application/json", "Content-Type": "application/json",
+        })
+        with urlopen(request, timeout=float(os.getenv("POROTA_PUBLIC_SOURCE_TIMEOUT", "15"))) as response:
+            payload = response.read(MAX_BYTES + 1)
+            status = int(getattr(response, "status", 200))
+        if len(payload) > MAX_BYTES:
+            raise ValueError("PUBLIC_SOURCE_RESPONSE_TOO_LARGE")
+        result = parse_public_payload("BYMA", target, payload, status)
+        meta = result.get("pagination") or {}
+        if not isinstance(meta, dict):
+            raise ValueError("BYMA_PAGINATION_INVALID")
+        page_count = int(meta.get("page_count") or 1)
+        if page_count > 100 or int(meta.get("page_number") or page) != page:
+            raise ValueError("BYMA_PAGINATION_NOT_ADVANCING")
+        if meta.get("total_elements_count") is not None:
+            total = int(meta["total_elements_count"])
+            if expected_total is not None and expected_total != total:
+                raise ValueError("BYMA_PAGINATION_CHANGED_DURING_CAPTURE")
+            expected_total = total
+        if result["status"] == "REFERENCE_ONLY" and (page_count > 1 or page > 1):
+            raise ValueError("BYMA_PAGE_NOT_STRUCTURED")
+        records.extend(dict(row, family=_canonical_family(family)) for row in result["records"])
+        pages.append({"page_number":page,"digest":result["digest"],"source_record_count":result.get("source_record_count",0),"record_count":len(result["records"]),"observed_at":result["observed_at"]})
+        if page >= page_count:
+            break
+    if expected_total is not None and sum(p["source_record_count"] for p in pages) != expected_total:
+        raise ValueError("BYMA_SOURCE_COUNT_MISMATCH")
+    return {"source":"BYMA","url":target,"records":records,"record_count":len(records),
+        "structured":bool(records),"status":"SCRAPED_PUBLIC_DATA" if records else "REFERENCE_ONLY",
+        "http_status":status,"scrape_method":"bymadata_public_post","endpoint":endpoint,
+        "family":_canonical_family(family),"pages":pages,"source_record_count":sum(p["source_record_count"] for p in pages),
+        "expected_total":expected_total,"observed_at":_now()}
 
 
 def _collect_byma_public(base_url: str) -> dict[str, Any]:
@@ -329,7 +355,7 @@ def _collect_byma_public(base_url: str) -> dict[str, Any]:
     unique = {}
     for row in merged:
         key = (_canonical_family(row.get("family")), str(row.get("symbol") or "").upper(),
-               str(row.get("currency") or "").upper(), str(row.get("maturity") or ""))
+               str(row.get("currency") or "").upper(), str(row.get("settlement_code") or ""), str(row.get("maturity") or ""))
         unique[key] = row
     records = list(unique.values())
     return {
@@ -340,7 +366,8 @@ def _collect_byma_public(base_url: str) -> dict[str, Any]:
         "records": records, "scrape_method": "bymadata_public_post",
         "endpoints": [{"endpoint": item.get("endpoint"), "status": item.get("status"),
                        "record_count": item.get("record_count", 0),
-                       "http_status": item.get("http_status")} for item in endpoint_results],
+                       "http_status": item.get("http_status"),"source_record_count":item.get("source_record_count"),
+                       "expected_total":item.get("expected_total"),"pages":item.get("pages",[])} for item in endpoint_results],
         "errors": errors, "observed_at": _now(),
     }
 

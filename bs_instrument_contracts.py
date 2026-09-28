@@ -89,6 +89,7 @@ class InstrumentContract:
     underlying: str | None = None
     strike: Decimal | None = None
     option_right: str | None = None
+    minimum_quantity: Decimal | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "family", family_name(self.family))
@@ -97,6 +98,10 @@ class InstrumentContract:
             raise ValueError("Contrato incompleto: símbolo, mercado, plazo y fuente son obligatorios")
         for field in ("cash_multiplier", "quantity_step"):
             object.__setattr__(self, field, decimal_value(getattr(self, field), field, positive=True))
+        if self.minimum_quantity is not None:
+            object.__setattr__(self, "minimum_quantity", decimal_value(self.minimum_quantity, "minimum_quantity", positive=True))
+            if self.minimum_quantity % self.quantity_step:
+                raise ValueError("Cantidad mínima incompatible con incremento")
         if self.family in {"OPCIONES", "FUTUROS"}:
             aware_datetime(self.expires_at, "vencimiento")
             if self.quantity_step != self.quantity_step.to_integral_value():
@@ -117,6 +122,8 @@ class InstrumentContract:
 
     def quantity(self, value):
         qty = decimal_value(value, "cantidad", positive=True)
+        if self.minimum_quantity is not None and qty < self.minimum_quantity:
+            raise ValueError("Cantidad inferior al mínimo del instrumento")
         if qty % self.quantity_step:
             raise ValueError("Cantidad incompatible con el lote del instrumento")
         return qty
