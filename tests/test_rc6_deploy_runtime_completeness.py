@@ -82,6 +82,15 @@ def test_contract_reconciliation_reuses_the_immutable_candidate_image():
     assert not re.search(r"(?m)^\s*(?:sudo -n )?docker build(?:\s|$)", promote)
 
 
+def test_contract_reconciliation_cannot_race_observer_startup_catalog_refresh():
+    source = _deploy()
+    stopped = source.index("OBSERVER_PAUSED_FOR_CONTRACT_RECONCILIATION=GREEN")
+    contract = source.index('CONTRACT_OUTPUT="$(sudo -n timeout')
+    restarted = source.index("OBSERVER_RESTARTED_AFTER_CONTRACT_RECONCILIATION=GREEN")
+    checked = source.index('test "$CONTRACT_RC" -eq 0')
+    assert stopped < contract < restarted < checked
+
+
 def test_late_verification_uses_retained_stable_image_tag():
     source = _deploy()
     assert 'STABLE_IMAGE="porota-trading-bot:17.0.0-rc6"' in source
