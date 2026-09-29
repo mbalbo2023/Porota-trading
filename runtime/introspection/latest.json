@@ -37,8 +37,6 @@
     "state": "EMPTY_FILTER_RESULTS"
   },
   "changes": [
-    "trading.closed_today: 0 -> 1",
-    "trading.net_pnl_today: 0 -> -1108.486",
     "ingestion.rows: 15624 -> 242636"
   ],
   "coherence": {
@@ -48,23 +46,7 @@
     "open_without_exit_intent": 0,
     "orphan_fills": 0
   },
-  "currency_funnel": [
-    {
-      "currency": "ARS",
-      "last_observed_at": "2026-09-28T19:59:47.966553+00:00",
-      "observed_symbols": 306
-    },
-    {
-      "currency": "USD_CCL",
-      "last_observed_at": "2026-09-28T19:59:49.364573+00:00",
-      "observed_symbols": 214
-    },
-    {
-      "currency": "USD_MEP",
-      "last_observed_at": "2026-09-28T19:59:43.391636+00:00",
-      "observed_symbols": 232
-    }
-  ],
+  "currency_funnel": [],
   "economics": {
     "blocked_1h": 0,
     "evaluated_1h": 0,
@@ -75,21 +57,21 @@
       "capabilities": [
         {
           "capability": "READY_PAPER_SPOT",
-          "count": 122
+          "count": 126
         }
       ],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "ACCIONES",
-      "observed_count": 118,
+      "observed_count": 62,
       "queries": 4,
-      "ready_paper_count": 98
+      "ready_paper_count": 42
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -102,21 +84,21 @@
       "capabilities": [
         {
           "capability": "NEEDS_NOMINAL_UNITS",
-          "count": 788
+          "count": 1674
         }
       ],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "BONOS",
-      "observed_count": 983,
+      "observed_count": 1369,
       "queries": 4,
       "ready_paper_count": 0
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
       "discovery_status": "EMPTY_FILTER_RESULTS",
       "excluded_by_default": false,
@@ -129,21 +111,21 @@
       "capabilities": [
         {
           "capability": "READY_PAPER_SPOT",
-          "count": 638
+          "count": 683
         }
       ],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "CEDEARS",
-      "observed_count": 1103,
+      "observed_count": 635,
       "queries": 4,
-      "ready_paper_count": 603
+      "ready_paper_count": 135
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -154,7 +136,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
       "discovery_status": "EMPTY_FILTER_RESULTS",
       "excluded_by_default": false,
@@ -167,21 +149,21 @@
       "capabilities": [
         {
           "capability": "NEEDS_FUND_SETTLEMENT",
-          "count": 886
+          "count": 1003
         }
       ],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "FCI",
-      "observed_count": 634,
+      "observed_count": 522,
       "queries": 4,
       "ready_paper_count": 0
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -194,21 +176,21 @@
       "capabilities": [
         {
           "capability": "NEEDS_FUTURES_MARGIN_AND_CONTRACT",
-          "count": 113
+          "count": 134
         }
       ],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "FUTUROS",
-      "observed_count": 113,
+      "observed_count": 109,
       "queries": 4,
       "ready_paper_count": 0
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -219,7 +201,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -232,21 +214,21 @@
       "capabilities": [
         {
           "capability": "NEEDS_NOMINAL_UNITS",
-          "count": 28
+          "count": 31
         }
       ],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "LETRAS",
-      "observed_count": 30,
+      "observed_count": 17,
       "queries": 4,
       "ready_paper_count": 0
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -257,7 +239,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -270,21 +252,21 @@
       "capabilities": [
         {
           "capability": "NEEDS_NOMINAL_UNITS",
-          "count": 1404
+          "count": 2057
         }
       ],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
-      "discovery_status": "OBSERVED_WITH_ERRORS",
+      "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "OBLIGACIONES",
-      "observed_count": 1179,
+      "observed_count": 1284,
       "queries": 4,
       "ready_paper_count": 0
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -297,15 +279,15 @@
       "capabilities": [
         {
           "capability": "NEEDS_OPTION_CONTRACT",
-          "count": 979
+          "count": 1181
         }
       ],
-      "checked_at": "2026-09-29T02:15:42.096933+00:00",
+      "checked_at": "2026-09-29T04:15:29.492442+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "OPCIONES",
-      "observed_count": 1310,
+      "observed_count": 1226,
       "queries": 4,
       "ready_paper_count": 0
     }
@@ -314,7 +296,7 @@
     "branch": "runtime-observability",
     "day": "2026-09-28",
     "detail": null,
-    "recorded_at": "2026-09-29T01:20:35.690392+00:00",
+    "recorded_at": "2026-09-29T02:20:30.943018+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -363,17 +345,17 @@
   ],
   "market_regime_observation": {
     "binding": false,
-    "falling": 219,
+    "falling": 0,
     "method": "FIRST_LAST_TRADE_SAMPLE_BREADTH_NOT_AN_INDEX",
     "minimum_symbols": 4,
     "policy": "ALERT_ONLY",
-    "rising": 147,
-    "state": "MIXED_OR_POSITIVE",
-    "symbols": 529,
-    "unchanged": 163
+    "rising": 0,
+    "state": "INSUFFICIENT_SAMPLE",
+    "symbols": 0,
+    "unchanged": 0
   },
   "observer": {
-    "heartbeat_at": "2026-09-29T02:16:28.121994+00:00",
+    "heartbeat_at": "2026-09-29T04:16:12.165011+00:00",
     "http_allowed": 214,
     "http_blocked": 0,
     "last_market_data_at": "2026-09-28T19:59:43.391636+00:00",
@@ -403,23 +385,23 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 1000849408,
-    "filesystem_free": 5784731648,
+    "database_bytes": 1007341568,
+    "filesystem_free": 5766356992,
     "filesystem_total": 24883167232,
-    "filesystem_used": 19081658368,
-    "filesystem_used_pct": 76.69,
+    "filesystem_used": 19100033024,
+    "filesystem_used_pct": 76.76,
     "wal_bytes": 44013992
   },
   "telegram": {
     "SENT": 313,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-09-28T23:15:05-03:00",
+  "timestamp": "2026-09-29T01:15:03-03:00",
   "trading": {
     "buys_1h": 0,
-    "closed_today": 1,
+    "closed_today": 0,
     "decisions_1h": 0,
-    "net_pnl_today": -1108.486,
+    "net_pnl_today": 0,
     "open": 0,
     "sells_1h": 0
   },
@@ -429,27 +411,27 @@
   "workers": {
     "candles": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-29T02:16:50.638460+00:00",
+      "heartbeat_at": "2026-09-29T04:16:50.751673+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-29T02:16:48.771799+00:00",
+      "heartbeat_at": "2026-09-29T04:16:47.360161+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-29T02:16:34.620501+00:00",
+      "heartbeat_at": "2026-09-29T04:16:35.041971+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-29T02:16:48.724931+00:00",
+      "heartbeat_at": "2026-09-29T04:16:50.546499+00:00",
       "state": "RUNNING"
     },
     "telegram": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-29T02:16:49.994129+00:00",
+      "heartbeat_at": "2026-09-29T04:16:50.787435+00:00",
       "state": "RUNNING"
     }
   }
