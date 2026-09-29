@@ -1,0 +1,618 @@
+{
+  "candidate_can_simulate_by_family": [
+    {
+      "count": 92,
+      "family": "ACCIONES"
+    },
+    {
+      "count": 559,
+      "family": "CEDEARS"
+    }
+  ],
+  "candidate_can_simulate_total": 651,
+  "candidate_universe_columns": [
+    "ticker",
+    "instrument_type",
+    "settlement",
+    "market",
+    "can_simulate",
+    "status",
+    "detail",
+    "last_checked_at"
+  ],
+  "candidate_universe_total": 8018,
+  "capability_by_family": [
+    {
+      "capability": "READY_PAPER_SPOT",
+      "count": 126,
+      "family": "ACCIONES"
+    },
+    {
+      "capability": "NEEDS_NOMINAL_UNITS",
+      "count": 1674,
+      "family": "BONOS"
+    },
+    {
+      "capability": "READY_PAPER_SPOT",
+      "count": 683,
+      "family": "CEDEARS"
+    },
+    {
+      "capability": "NEEDS_FUND_SETTLEMENT",
+      "count": 1003,
+      "family": "FCI"
+    },
+    {
+      "capability": "NEEDS_FUTURES_MARGIN_AND_CONTRACT",
+      "count": 134,
+      "family": "FUTUROS"
+    },
+    {
+      "capability": "NEEDS_NOMINAL_UNITS",
+      "count": 31,
+      "family": "LETRAS"
+    },
+    {
+      "capability": "NEEDS_NOMINAL_UNITS",
+      "count": 2057,
+      "family": "OBLIGACIONES"
+    },
+    {
+      "capability": "NEEDS_OPTION_CONTRACT",
+      "count": 1181,
+      "family": "OPCIONES"
+    }
+  ],
+  "catalog_available": 6889,
+  "catalog_family_coverage": [
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "instrument_type": "ACCIONES",
+      "observed_count": 42,
+      "queries": 4,
+      "ready_paper_count": 42
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 0,
+      "discovery_status": "NOT_ENUMERATED",
+      "instrument_type": "ACCIONES-USA",
+      "observed_count": 0,
+      "queries": 0,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "OBSERVED_WITH_ERRORS",
+      "instrument_type": "BONOS",
+      "observed_count": 1180,
+      "queries": 4,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "EMPTY_FILTER_RESULTS",
+      "instrument_type": "CAUCIONES",
+      "observed_count": 0,
+      "queries": 4,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "instrument_type": "CEDEARS",
+      "observed_count": 135,
+      "queries": 4,
+      "ready_paper_count": 135
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 0,
+      "discovery_status": "NOT_ENUMERATED",
+      "instrument_type": "ETF",
+      "observed_count": 0,
+      "queries": 0,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "EMPTY_FILTER_RESULTS",
+      "instrument_type": "ETFS",
+      "observed_count": 0,
+      "queries": 4,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "instrument_type": "FCI",
+      "observed_count": 522,
+      "queries": 4,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 0,
+      "discovery_status": "NOT_ENUMERATED",
+      "instrument_type": "FCI-EXTERIOR",
+      "observed_count": 0,
+      "queries": 0,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "instrument_type": "FUTUROS",
+      "observed_count": 109,
+      "queries": 4,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 0,
+      "discovery_status": "NOT_ENUMERATED",
+      "instrument_type": "INDICES",
+      "observed_count": 0,
+      "queries": 0,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 0,
+      "discovery_status": "NOT_ENUMERATED",
+      "instrument_type": "LEBAC",
+      "observed_count": 0,
+      "queries": 0,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "instrument_type": "LETRAS",
+      "observed_count": 17,
+      "queries": 4,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "DECLARED_NO_QUERY",
+      "instrument_type": "LICITACIONES",
+      "observed_count": 0,
+      "queries": 0,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 0,
+      "discovery_status": "NOT_ENUMERATED",
+      "instrument_type": "NOBAC",
+      "observed_count": 0,
+      "queries": 0,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "instrument_type": "OBLIGACIONES",
+      "observed_count": 784,
+      "queries": 4,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 0,
+      "discovery_status": "NOT_ENUMERATED",
+      "instrument_type": "ON",
+      "observed_count": 0,
+      "queries": 0,
+      "ready_paper_count": 0
+    },
+    {
+      "checked_at": "2026-09-29T12:15:14.420928+00:00",
+      "declared": 1,
+      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "instrument_type": "OPCIONES",
+      "observed_count": 726,
+      "queries": 4,
+      "ready_paper_count": 0
+    }
+  ],
+  "catalog_ready_total": 809,
+  "catalog_total": 9652,
+  "contract_evidence_by_family": [
+    {
+      "count": 77,
+      "family": "ACCIONES"
+    },
+    {
+      "count": 2,
+      "family": "ACCIONES_USA"
+    },
+    {
+      "count": 59,
+      "family": "BONOS"
+    },
+    {
+      "count": 2,
+      "family": "CAUCIONES"
+    },
+    {
+      "count": 204,
+      "family": "CEDEARS"
+    },
+    {
+      "count": 2,
+      "family": "ETF"
+    },
+    {
+      "count": 1,
+      "family": "FCI"
+    },
+    {
+      "count": 2,
+      "family": "FCI_EXTERIOR"
+    },
+    {
+      "count": 44,
+      "family": "FUTUROS"
+    },
+    {
+      "count": 2,
+      "family": "INDICES"
+    },
+    {
+      "count": 32,
+      "family": "LETRAS"
+    },
+    {
+      "count": 3,
+      "family": "LICITACIONES"
+    },
+    {
+      "count": 2,
+      "family": "MONEDAS"
+    },
+    {
+      "count": 85,
+      "family": "ON"
+    },
+    {
+      "count": 1,
+      "family": "OPCIONES"
+    },
+    {
+      "count": 2,
+      "family": "TASAS"
+    }
+  ],
+  "contract_evidence_current_total": 520,
+  "db_mode": "ro",
+  "exact_identity_count": 9652,
+  "financial_instrument_catalog_columns": [
+    "ticker",
+    "instrument_type",
+    "market",
+    "currency",
+    "settlement",
+    "settlement_source",
+    "description",
+    "last_seen_at",
+    "run_id",
+    "status",
+    "capability",
+    "metadata_json"
+  ],
+  "generated_at": "2026-09-29T12:14:21.602561+00:00",
+  "observer_state": {
+    "heartbeat_at": "2026-09-29T12:16:02.197203+00:00",
+    "mode": "PRODUCTION_PAPER",
+    "ppi_auth": "OK",
+    "process_state": "WAITING_MARKET",
+    "real_orders_sent": 0,
+    "session_state": "MARKET_CLOSED"
+  },
+  "paper_lifecycle_row_counts": {
+    "paper_caucion_allocations": 0,
+    "paper_cauciones": 0
+  },
+  "paper_safety_green": true,
+  "query_only": true,
+  "quick_check": "ok",
+  "ready_by_family": [
+    {
+      "distinct_tickers": 126,
+      "family": "ACCIONES",
+      "ready": 126
+    },
+    {
+      "distinct_tickers": 683,
+      "family": "CEDEARS",
+      "ready": 683
+    }
+  ],
+  "schema": "ws12-postdeploy-readiness-audit-v1",
+  "status_by_family": [
+    {
+      "count": 126,
+      "family": "ACCIONES",
+      "status": "AVAILABLE"
+    },
+    {
+      "count": 47,
+      "family": "ACCIONES",
+      "status": "OBSERVED_SHADOW"
+    },
+    {
+      "count": 1674,
+      "family": "BONOS",
+      "status": "AVAILABLE"
+    },
+    {
+      "count": 228,
+      "family": "BONOS",
+      "status": "OBSERVED_SHADOW"
+    },
+    {
+      "count": 20,
+      "family": "BONOS",
+      "status": "STALE"
+    },
+    {
+      "count": 10,
+      "family": "CAUCIONES",
+      "status": "STALE"
+    },
+    {
+      "count": 683,
+      "family": "CEDEARS",
+      "status": "AVAILABLE"
+    },
+    {
+      "count": 649,
+      "family": "CEDEARS",
+      "status": "OBSERVED_SHADOW"
+    },
+    {
+      "count": 2,
+      "family": "CEDEARS",
+      "status": "STALE"
+    },
+    {
+      "count": 1003,
+      "family": "FCI",
+      "status": "AVAILABLE"
+    },
+    {
+      "count": 134,
+      "family": "FUTUROS",
+      "status": "AVAILABLE"
+    },
+    {
+      "count": 52,
+      "family": "FUTUROS",
+      "status": "STALE"
+    },
+    {
+      "count": 1,
+      "family": "INDICES",
+      "status": "OBSERVED_SHADOW"
+    },
+    {
+      "count": 31,
+      "family": "LETRAS",
+      "status": "AVAILABLE"
+    },
+    {
+      "count": 7,
+      "family": "LETRAS",
+      "status": "OBSERVED_SHADOW"
+    },
+    {
+      "count": 8,
+      "family": "LETRAS",
+      "status": "STALE"
+    },
+    {
+      "count": 2057,
+      "family": "OBLIGACIONES",
+      "status": "AVAILABLE"
+    },
+    {
+      "count": 553,
+      "family": "OBLIGACIONES",
+      "status": "OBSERVED_SHADOW"
+    },
+    {
+      "count": 91,
+      "family": "ON",
+      "status": "STALE"
+    },
+    {
+      "count": 1181,
+      "family": "OPCIONES",
+      "status": "AVAILABLE"
+    },
+    {
+      "count": 945,
+      "family": "OPCIONES",
+      "status": "OBSERVED_SHADOW"
+    },
+    {
+      "count": 150,
+      "family": "OPCIONES",
+      "status": "STALE"
+    }
+  ],
+  "tables_present": [
+    "candidate_identity_v2",
+    "candidate_universe",
+    "catalog_family_coverage",
+    "catalog_query_results",
+    "contract_evidence",
+    "contract_evidence_runs",
+    "contract_evidence_v2_changes",
+    "contract_evidence_v2_current",
+    "contract_evidence_v2_runs",
+    "contract_evidence_v2_snapshots",
+    "financial_instrument_catalog",
+    "instrument_catalog",
+    "observer_commands",
+    "observer_state",
+    "paper_caucion_allocations",
+    "paper_cauciones",
+    "scalping_candidates"
+  ],
+  "target_instruments": [
+    {
+      "capability": "NEEDS_NOMINAL_UNITS",
+      "currency": "ARS",
+      "family": "BONOS",
+      "last_seen_at": "2026-09-29T03:17:59.810026+00:00",
+      "market": "BYMA",
+      "settlement": "A-24HS",
+      "status": "AVAILABLE",
+      "ticker": "AL30"
+    },
+    {
+      "capability": "MISSING_CURRENCY_OR_MARKET",
+      "currency": "UNKNOWN",
+      "family": "BONOS",
+      "last_seen_at": "2026-09-29T11:29:16.937534+00:00",
+      "market": "BYMA",
+      "settlement": "A-24HS",
+      "status": "OBSERVED_SHADOW",
+      "ticker": "AL30"
+    },
+    {
+      "capability": "NEEDS_NOMINAL_UNITS",
+      "currency": "ARS",
+      "family": "LETRAS",
+      "last_seen_at": "2026-09-29T03:17:59.810026+00:00",
+      "market": "BYMA",
+      "settlement": "A-24HS",
+      "status": "AVAILABLE",
+      "ticker": "D30N6"
+    },
+    {
+      "capability": "NEEDS_FUTURES_MARGIN_AND_CONTRACT",
+      "currency": "ARS",
+      "family": "FUTUROS",
+      "last_seen_at": "2026-09-29T03:17:59.810026+00:00",
+      "market": "A3",
+      "settlement": "INMEDIATA",
+      "status": "AVAILABLE",
+      "ticker": "DLR/DIC26"
+    },
+    {
+      "capability": "NEEDS_FUTURES_MARGIN_AND_CONTRACT",
+      "currency": "ARS",
+      "family": "FUTUROS",
+      "last_seen_at": "2026-09-16T02:58:14.831363+00:00",
+      "market": "ROFEX",
+      "settlement": "A-24HS",
+      "status": "STALE",
+      "ticker": "DLR/DIC26"
+    },
+    {
+      "capability": "NEEDS_NOMINAL_UNITS",
+      "currency": "ARS",
+      "family": "BONOS",
+      "last_seen_at": "2026-09-29T03:17:59.810026+00:00",
+      "market": "BYMA",
+      "settlement": "A-24HS",
+      "status": "AVAILABLE",
+      "ticker": "GD30"
+    },
+    {
+      "capability": "NEEDS_OPTION_CONTRACT",
+      "currency": "ARS",
+      "family": "OPCIONES",
+      "last_seen_at": "2026-09-25T16:14:52-03:00",
+      "market": "BYMA",
+      "settlement": "A-24HS",
+      "status": "OBSERVED_SHADOW",
+      "ticker": "GFGC6000OC"
+    },
+    {
+      "capability": "NEEDS_OPTION_CONTRACT",
+      "currency": "ARS",
+      "family": "OPCIONES",
+      "last_seen_at": "2026-09-28T02:59:29.098536+00:00",
+      "market": "BYMA",
+      "settlement": "INMEDIATA",
+      "status": "AVAILABLE",
+      "ticker": "GFGC6000OC"
+    },
+    {
+      "capability": "MISSING_CURRENCY_OR_MARKET",
+      "currency": "UNKNOWN",
+      "family": "OPCIONES",
+      "last_seen_at": "2026-09-29T11:29:16.937534+00:00",
+      "market": "BYMA",
+      "settlement": "INMEDIATA",
+      "status": "OBSERVED_SHADOW",
+      "ticker": "GFGC6000OC"
+    },
+    {
+      "capability": "NEEDS_OPTION_CONTRACT",
+      "currency": "ARS",
+      "family": "OPCIONES",
+      "last_seen_at": "2026-09-25T16:25:40-03:00",
+      "market": "BYMA",
+      "settlement": "A-24HS",
+      "status": "OBSERVED_SHADOW",
+      "ticker": "GFGC7000OC"
+    },
+    {
+      "capability": "NEEDS_OPTION_CONTRACT",
+      "currency": "ARS",
+      "family": "OPCIONES",
+      "last_seen_at": "2026-09-29T02:58:27.241569+00:00",
+      "market": "BYMA",
+      "settlement": "INMEDIATA",
+      "status": "AVAILABLE",
+      "ticker": "GFGC7000OC"
+    },
+    {
+      "capability": "MISSING_CURRENCY_OR_MARKET",
+      "currency": "UNKNOWN",
+      "family": "OPCIONES",
+      "last_seen_at": "2026-09-29T11:29:16.937534+00:00",
+      "market": "BYMA",
+      "settlement": "INMEDIATA",
+      "status": "OBSERVED_SHADOW",
+      "ticker": "GFGC7000OC"
+    },
+    {
+      "capability": "NEEDS_NOMINAL_UNITS",
+      "currency": "ARS",
+      "family": "OBLIGACIONES",
+      "last_seen_at": "2026-09-29T12:15:14.420928+00:00",
+      "market": "BYMA",
+      "settlement": "A-24HS",
+      "status": "AVAILABLE",
+      "ticker": "YMCJO"
+    },
+    {
+      "capability": "NEEDS_NOMINAL_UNITS",
+      "currency": "ARS",
+      "family": "ON",
+      "last_seen_at": "2026-09-16T02:58:14.831363+00:00",
+      "market": "BYMA",
+      "settlement": "A-24HS",
+      "status": "STALE",
+      "ticker": "YMCJO"
+    }
+  ]
+}
