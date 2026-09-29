@@ -2,6 +2,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import bs_instrument_contracts as contracts
 import ai_derivatives_engine as derivatives
@@ -229,6 +230,17 @@ def test_paper_only_route_invariants():
     assert lifecycle.PAPER_ONLY is True
     assert lifecycle.REAL_ROUTES_USED == ()
     assert family_cache.SCHEMA == "rc6-iol-family-reference-v1"
+
+
+def test_market_open_runner_skips_only_remote_refresh_not_local_mass_reconciliation():
+    source = (Path(__file__).resolve().parents[1] /
+              "ck_contract_evidence_runner_hf6.py").read_text(encoding="utf-8")
+    marker = source.index('print("REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN")')
+    mass_run = source.index("mass_result = evidence_v2_mass.collect")
+    reconcile = source.index("promoted = _reconcile_complementary_catalog")
+    assert marker < mass_run < reconcile
+    assert 'print("STATUS=SKIPPED_MARKET_NOT_CLOSED")' not in source
+    assert 'print("STATUS=OK")' in source
 
 
 def test_caucion_without_depth_reaches_paper_capability():

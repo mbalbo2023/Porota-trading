@@ -80,29 +80,33 @@ def main():
     mode, process_state, session_state, ppi_auth, real_orders = before
     if mode != "PRODUCTION_PAPER" or int(real_orders or 0) != 0:
         raise SystemExit("FAIL_CLOSED_RUNTIME_INVARIANT")
-    if session_state not in {"MARKET_CLOSED", "CLOSED"}:
-        print("STATUS=SKIPPED_MARKET_NOT_CLOSED")
-        return 0
+    market_closed = session_state in {"MARKET_CLOSED", "CLOSED"}
+    if market_closed:
+        secret = json.loads(Path(SECRET).read_text(encoding="utf-8"))
+        api_key = secret.get("api_key") or ""
+        api_secret = secret.get("api_secret") or ""
+        if not api_key or not api_secret:
+            raise SystemExit("PPI_SECRET_INCOMPLETE")
 
-    secret = json.loads(Path(SECRET).read_text(encoding="utf-8"))
-    api_key = secret.get("api_key") or ""
-    api_secret = secret.get("api_secret") or ""
-    if not api_key or not api_secret:
-        raise SystemExit("PPI_SECRET_INCOMPLETE")
-
-    reader = ProductionMarketReader(api_key, api_secret)
-    try:
-        reader.login_once()
-        run_id = "contract-evidence-v1-" + uuid.uuid4().hex
-        result = evidence.collect(reader, store, run_id=run_id)
-        probes = discovery.probe(reader, store)
-        official = official_sources.collect(store)
-        print("OFFICIAL_SOURCE_RESULT=" + json.dumps(official, ensure_ascii=False, sort_keys=True))
-        print("EVIDENCE_RESULT=" + json.dumps(result, ensure_ascii=False, sort_keys=True))
-        print("DISCOVERY_PROBES=" + json.dumps(probes, ensure_ascii=False, sort_keys=True))
-        print("PPI_READER_METRICS=" + json.dumps(reader.metrics, sort_keys=True))
-    finally:
-        reader.close()
+        reader = ProductionMarketReader(api_key, api_secret)
+        try:
+            reader.login_once()
+            run_id = "contract-evidence-v1-" + uuid.uuid4().hex
+            result = evidence.collect(reader, store, run_id=run_id)
+            probes = discovery.probe(reader, store)
+            official = official_sources.collect(store)
+            print("OFFICIAL_SOURCE_RESULT=" + json.dumps(official, ensure_ascii=False, sort_keys=True))
+            print("EVIDENCE_RESULT=" + json.dumps(result, ensure_ascii=False, sort_keys=True))
+            print("DISCOVERY_PROBES=" + json.dumps(probes, ensure_ascii=False, sort_keys=True))
+            print("PPI_READER_METRICS=" + json.dumps(reader.metrics, sort_keys=True))
+        finally:
+            reader.close()
+    else:
+        # The remote v1 sweep is intentionally closed-session only.  The local
+        # v2 materialization below is deterministic from the already-observed
+        # PPI catalogue and must run in every deploy/session so a market-open
+        # deploy cannot leave new PAPER policies dormant until post-close.
+        print("REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN")
 
     ready_before = readiness_counts(store)
     v2_run_id = "contract-evidence-v2-mass-" + uuid.uuid4().hex
@@ -123,16 +127,24 @@ def main():
         raise SystemExit("FAIL_CLOSED_RUNTIME_CHANGED")
 
     with store.connect() as c:
-        quick = c.execute("PRAGMA quick_check").fetchone()[0]
+        if market_closed:
+            database_check = c.execute("PRAGMA quick_check").fetchone()[0]
+            database_check_name = "QUICK_CHECK"
+        else:
+            c.execute("PRAGMA query_only=ON")
+            database_check = c.execute("SELECT 1").fetchone()[0]
+            database_check_name = "DATABASE_READONLY_PROBE"
         latest = c.execute("""SELECT total,verified,blocked_porota,blocked_provider,finished_at
           FROM contract_evidence_runs ORDER BY finished_at DESC LIMIT 1""").fetchone()
         latest_v2 = c.execute("""SELECT job_key,state,records,changed,conflicts,finished_at
           FROM contract_evidence_v2_runs WHERE run_id=?""", (v2_run_id,)).fetchone()
-    print("QUICK_CHECK=" + str(quick))
+    print(database_check_name + "=" + str(database_check))
     print("LATEST_EVIDENCE_RUN=" + repr(tuple(latest) if latest else None))
     print("LATEST_EVIDENCE_V2_RUN=" + repr(tuple(latest_v2) if latest_v2 else None))
-    if quick != "ok":
+    if market_closed and database_check != "ok":
         raise SystemExit("SQLITE_QUICK_CHECK_FAILED")
+    if not market_closed and database_check != 1:
+        raise SystemExit("SQLITE_READONLY_PROBE_FAILED")
     if not latest_v2 or latest_v2[1] != "OK":
         raise SystemExit("EVIDENCE_V2_MASS_RUN_FAILED")
     print("STATUS=OK")

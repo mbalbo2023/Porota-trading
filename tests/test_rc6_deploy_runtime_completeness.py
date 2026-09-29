@@ -29,12 +29,13 @@ def test_runtime_dependency_is_packaged_installed_rolled_back_and_verified():
     assert "rollback" not in source.lower()
 
 
-def test_postclose_reconciliation_is_only_required_when_it_can_run():
+def test_local_v2_reconciliation_is_required_even_when_remote_refresh_is_closed_only():
     source = _deploy()
-    assert 'STATUS=SKIPPED_MARKET_NOT_CLOSED' in source
-    assert 'RC6_FULL_CONTRACT_RECONCILIATION=SKIPPED_MARKET_OPEN' in source
+    assert 'REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN' in source
+    assert 'DATABASE_READONLY_PROBE=1' in source
     assert 'grep -Fq "STATUS=OK" <<< "$CONTRACT_OUTPUT"' in source
     assert 'grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"' in source
+    assert "LATEST_EVIDENCE_V2_RUN=('CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG', 'OK'" in source
 
 
 def test_dashboard_bootstrap_dependencies_and_storage_cleanup_are_deploy_guards():
