@@ -1,0 +1,150 @@
+name: WS13 metadata shape audit (read-only)
+
+on:
+  push:
+    branches:
+      - work/ws-motor-13-mass-paper-promotion-20260929
+    paths:
+      - 'audit/ws13-metadata-shape-trigger.txt'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-ws13-readonly-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Collect sanitized field coverage
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p docs/audit
+          ssh -i "$HOME/.ssh/porota_rc6_audit" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' > docs/audit/ws13_metadata_shape.json <<'PY'
+          import collections, json, sqlite3
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          DB="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          IOL=Path("/opt/porota-trading/data/market/iol_family_reference_latest.json")
+          out={"schema":"ws13-metadata-shape-audit-v1","generated_at":datetime.now(timezone.utc).isoformat(),"db_mode":"ro","query_only":True}
+          c=sqlite3.connect(f"file:{DB}?mode=ro",uri=True,timeout=10)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          c.execute("PRAGMA busy_timeout=3000")
+          out["quick_check"]=c.execute("PRAGMA quick_check").fetchone()[0]
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+          def present(v): return v not in (None,"",[],{})
+          def keys(value,prefix="",depth=0):
+              found=[]
+              if not isinstance(value,dict) or depth>2: return found
+              for k,v in value.items():
+                  name=f"{prefix}.{k}" if prefix else str(k)
+                  if present(v): found.append(name)
+                  if isinstance(v,dict): found.extend(keys(v,name,depth+1))
+              return found
+
+          rows=c.execute("""SELECT instrument_type,status,capability,metadata_json
+            FROM financial_instrument_catalog ORDER BY instrument_type""").fetchall()
+          family={}
+          for row in rows:
+              fam=str(row[0]); bucket=family.setdefault(fam,{"rows":0,"available":0,"capability":collections.Counter(),"metadata_fields":collections.Counter(),"metadata_types":collections.defaultdict(collections.Counter)})
+              bucket["rows"]+=1; bucket["available"]+=int(row[1]=="AVAILABLE"); bucket["capability"][str(row[2])]+=1
+              try: meta=json.loads(row[3] or "{}")
+              except Exception: meta={}
+              if not isinstance(meta,dict): meta={}
+              for name in keys(meta): bucket["metadata_fields"][name]+=1
+              for name,value in meta.items():
+                  if present(value): bucket["metadata_types"][str(name)][type(value).__name__]+=1
+          out["catalog_family_field_coverage"]={fam:{"rows":b["rows"],"available":b["available"],"capability":dict(b["capability"]),"metadata_fields":dict(b["metadata_fields"].most_common()),"metadata_types":{k:dict(v) for k,v in sorted(b["metadata_types"].items())}} for fam,b in sorted(family.items())}
+
+          if {"contract_evidence_v2_current","contract_evidence_v2_snapshots"} <= tables:
+              ev=collections.defaultdict(lambda:{"rows":0,"sources":collections.Counter(),"fields":collections.Counter()})
+              for row in c.execute("""SELECT s.family,s.source_class,s.evidence_json
+                FROM contract_evidence_v2_current x JOIN contract_evidence_v2_snapshots s ON s.snapshot_id=x.snapshot_id"""):
+                  b=ev[str(row[0])]; b["rows"]+=1; b["sources"][str(row[1])]+=1
+                  try: payload=json.loads(row[2] or "{}")
+                  except Exception: payload={}
+                  for name in keys(payload): b["fields"][name]+=1
+              out["evidence_v2_field_coverage"]={fam:{"rows":b["rows"],"sources":dict(b["sources"]),"fields":dict(b["fields"].most_common())} for fam,b in sorted(ev.items())}
+
+          if "candidate_identity_v2" in tables:
+              out["candidate_identity_v2_by_family"]=[dict(r) for r in c.execute("""SELECT instrument_type family,can_simulate,status,detail,COUNT(*) count FROM candidate_identity_v2 GROUP BY instrument_type,can_simulate,status,detail ORDER BY instrument_type,count DESC""")]
+          if "complementary_contract_retry" in tables:
+              out["retry_by_family_reason"]=[dict(r) for r in c.execute("""SELECT instrument_type family,state,reason,COUNT(*) count,MAX(attempts) max_attempts FROM complementary_contract_retry GROUP BY instrument_type,state,reason ORDER BY instrument_type,count DESC""")]
+          obs=c.execute("SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone()
+          out["observer_state"]=dict(obs) if obs else None
+          c.close()
+
+          if IOL.is_file():
+              try: payload=json.loads(IOL.read_text(encoding="utf-8"))
+              except Exception: payload={}
+              summary={"schema":payload.get("schema"),"refreshed_at":payload.get("refreshed_at"),"sections":{}}
+              for section,value in payload.items():
+                  if section in {"schema","refreshed_at"}: continue
+                  rows=[]
+                  if isinstance(value,list): rows=[x for x in value if isinstance(x,dict)]
+                  elif isinstance(value,dict):
+                      for nested in value.values():
+                          if isinstance(nested,list): rows.extend(x for x in nested if isinstance(x,dict))
+                  if rows:
+                      fields=collections.Counter()
+                      families=collections.Counter()
+                      for row in rows:
+                          for name in keys(row): fields[name]+=1
+                          families[str(row.get("instrument_type") or row.get("family") or "UNKNOWN")]+=1
+                      summary["sections"][section]={"rows":len(rows),"families":dict(families),"fields":dict(fields.most_common())}
+              out["iol_cache_shape"]=summary
+          else:
+              out["iol_cache_shape"]={"state":"MISSING"}
+
+          safety=out.get("observer_state") or {}
+          out["paper_safety_green"]=(safety.get("mode")=="PRODUCTION_PAPER" and int(safety.get("real_orders_sent") or 0)==0 and out["quick_check"]=="ok")
+          print(json.dumps(out,ensure_ascii=False,indent=2,sort_keys=True))
+          PY
+
+      - name: Validate and persist sanitized audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          p=json.load(open("docs/audit/ws13_metadata_shape.json",encoding="utf-8"))
+          assert p["db_mode"]=="ro" and p["query_only"] is True
+          assert p["quick_check"]=="ok" and p["paper_safety_green"] is True
+          print("WS13_METADATA_SHAPE_AUDIT=GREEN")
+          print("FAMILIES=",len(p.get("catalog_family_field_coverage",{})))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/audit/ws13_metadata_shape.json
+          git commit -m "audit(rc6): capture WS13 metadata field coverage"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
