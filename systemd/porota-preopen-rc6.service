@@ -1,5 +1,5 @@
 [Unit]
-Description=Porota RC6 10:15 preopen fail-closed readiness
+Description=Porota RC6 read-only preopen fail-closed readiness
 After=docker.service
 Requires=docker.service
 

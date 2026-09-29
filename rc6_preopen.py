@@ -9,6 +9,7 @@ RC6-native runtime state.
 """
 from __future__ import annotations
 
+import argparse
 from datetime import datetime
 import json
 import shutil
@@ -24,10 +25,12 @@ TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 ROOT = Path('/opt/porota-trading')
 DB = ROOT / 'data/paper_v17/observer_v17.db'
 BYMA_MORNING_WATCH = ROOT / 'data/market/byma_morning_watch_latest.json'
+IOL_FAMILY_REFERENCE = ROOT / 'data/market/iol_family_reference_latest.json'
 EXPECTED_IMAGE = 'porota-trading-bot:17.0.0-rc6'
 MIN_FREE_BYTES = 8 * 1024**3
 REQUIRED_TIMERS = (
-    'porota-functional-health-rc6.timer',
+    'porota-fast-functional-health-rc6.timer',
+    'porota-full-db-integrity-rc6.timer',
     'porota-host-general-backup-rc6.timer',
     'porota-preopen-rc6.timer',
     'porota-candle-integrity-rc6.timer',
@@ -59,18 +62,131 @@ def observer_db():
         c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=20)
         c.row_factory = sqlite3.Row
         c.execute('PRAGMA query_only=ON')
-        qc = c.execute('PRAGMA quick_check').fetchone()[0]
+        # Keep this daily gate bounded. Full database integrity is owned by the
+        # dedicated lower-frequency timer; the former full integrity scan
+        # exhausted a deployment runner.
+        c.execute('SELECT 1').fetchone()
+        schema_version = int(c.execute('PRAGMA schema_version').fetchone()[0])
         row = c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
-        c.close()
         state = dict(row) if row else {}
         auth = str(state.get('ppi_auth') or '').upper()
         phase = str(state.get('session_state') or '').upper()
         auth_ok = auth in {'OK','AUTHENTICATED'} or (phase == 'MARKET_CLOSED' and auth == 'NOT_ATTEMPTED')
-        ok = (qc == 'ok' and state.get('mode') == 'PRODUCTION_PAPER' and
+        runtime = runtime_contracts(c, datetime.now(TZ))
+        c.close()
+        ok = (schema_version >= 0 and state.get('mode') == 'PRODUCTION_PAPER' and
               int(state.get('real_orders_sent') or 0) == 0 and auth_ok)
-        return {'state':'GREEN' if ok else 'RED','quick_check':qc,'observer_state':state}
+        ok = ok and runtime['state'] == 'GREEN'
+        return {'state':'GREEN' if ok else 'RED',
+                'bounded_readonly_probe':'GREEN','schema_version':schema_version,
+                'observer_state':state,'runtime_contracts':runtime}
     except Exception as exc:
         return {'state':'RED','detail':f'{type(exc).__name__}:{exc}'}
+
+
+def runtime_contracts(connection, now):
+    """Read-only WS15 invariants from the canonical SQLite runtime."""
+    tables = {row[0] for row in connection.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    required = {
+        'candidate_identity_v2', 'intraday_scalping_worker_state',
+        'paper_caucion_cash_sweep_state', 'paper_supervisor_state',
+        'paper_positions', 'paper_cauciones',
+    }
+    missing = sorted(required - tables)
+    if missing:
+        return {'state':'RED','reason':'WS15_RUNTIME_TABLES_MISSING','missing':missing}
+    residual = [dict(row) for row in connection.execute("""
+      SELECT instrument_type,status,can_simulate,COUNT(*) AS count
+      FROM candidate_identity_v2
+      WHERE instrument_type IN ('OPCIONES','FUTUROS','ON','OBLIGACIONES')
+      GROUP BY instrument_type,status,can_simulate
+      ORDER BY instrument_type,status,can_simulate""")]
+    unclassified = sum(row['count'] for row in residual
+                       if row['status'] not in {'AVAILABLE','PAUSED_EXPLICIT'}
+                       or (row['status']=='AVAILABLE') != bool(row['can_simulate']))
+    scalping_eligible = connection.execute("""SELECT COUNT(*)
+      FROM candidate_identity_v2
+      WHERE status='AVAILABLE' AND can_simulate=1
+        AND instrument_type IN ('ACCIONES','CEDEARS','ETFS')""").fetchone()[0]
+    workers = {}
+    ok = not unclassified and scalping_eligible > 0
+    for name, table in (
+            ('scalping','intraday_scalping_worker_state'),
+            ('caucion_cash_sweep','paper_caucion_cash_sweep_state'),
+            ('supervisor','paper_supervisor_state')):
+        row = dict(connection.execute(f'SELECT * FROM {table} WHERE id=1').fetchone() or {})
+        try:
+            heartbeat = datetime.fromisoformat(
+                str(row.get('heartbeat_at') or '').replace('Z','+00:00'))
+            if heartbeat.tzinfo is None:
+                raise ValueError('naive heartbeat')
+            age = max(0.0,(now-heartbeat.astimezone(TZ)).total_seconds())
+        except (TypeError,ValueError):
+            age = None
+        worker_ok = bool(row) and age is not None and age <= 300
+        if name == 'caucion_cash_sweep':
+            try:
+                routes = json.loads(row.get('routes_json') or 'null')
+            except (TypeError,ValueError):
+                routes = None
+            worker_ok = (worker_ok and int(row.get('real_orders_sent',-1)) == 0
+                         and routes == [])
+        workers[name] = {'state':'GREEN' if worker_ok else 'RED',
+                         'runtime_state':row.get('state'),
+                         'heartbeat_age_seconds':age}
+        ok = ok and worker_ok
+    return {'state':'GREEN' if ok else 'RED',
+            'residual_classification':residual,
+            'unclassified_residuals':unclassified,
+            'scalping_eligible_identities':scalping_eligible,
+            'workers':workers,'real_routes_expected':[]}
+
+
+def iol_reference_state(today):
+    """IOL failure is a provenance state, never a synthetic zero value."""
+    try:
+        payload = json.loads(IOL_FAMILY_REFERENCE.read_text(encoding='utf-8'))
+        refreshed = datetime.fromisoformat(
+            str(payload.get('refreshed_at') or '').replace('Z','+00:00'))
+        if refreshed.tzinfo is None:
+            raise ValueError('naive timestamp')
+        cache = str(payload.get('cache_state') or '').upper()
+        age = (datetime.now(TZ)-refreshed.astimezone(TZ)).total_seconds()
+        fallback = payload.get('fallback_order') or []
+        continuation = payload.get('continuation_state')
+        no_zero = continuation == 'CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL'
+        caucion_ars = ((payload.get('cauciones') or {}).get('ARS') or [])
+        caucion_state = str((payload.get('section_states') or {}).get(
+            'caucion:ARS') or '').upper()
+        usable_ars = bool(caucion_ars) and caucion_state != 'SOURCE_UNAVAILABLE_NO_LKG'
+        if (cache in {'LIVE_FRESH','CACHE_FRESH'} and no_zero and usable_ars
+                and 0 <= age <= 86400):
+            state = 'GREEN'
+        elif (cache == 'CACHE_STALE' and no_zero and usable_ars and fallback
+              and 0 <= age <= 7*86400):
+            state = 'AMBER'
+        else:
+            state = 'RED'
+        return {'state':state,'cache_state':cache,
+                'refreshed_at':refreshed.isoformat(),
+                'age_seconds':round(age,1),
+                'caucion_ars_state':caucion_state,
+                'caucion_ars_records':len(caucion_ars),
+                'fallback_order':fallback,'continuation_state':continuation}
+    except Exception as exc:
+        return {'state':'RED','reason':'IOL_REFERENCE_UNAVAILABLE',
+                'detail':f'{type(exc).__name__}:{exc}'}
+
+
+def preopen_phase(now):
+    local = now.astimezone(TZ)
+    minutes = local.hour*60 + local.minute
+    if 9*60+45 <= minutes < 10*60+20:
+        return 'T_MINUS_45'
+    if 10*60+20 <= minutes < 10*60+30:
+        return 'T_MINUS_10'
+    return 'MANUAL_OR_OUTSIDE_SCHEDULE'
 
 
 BLOCKED_HISTORY_TIMERS = (
@@ -182,11 +298,11 @@ def foreign_market_policy(today):
             'policy':'OBSERVE_AND_RECORD_QUOTES; HOLD_NEW_CEDEAR_OPENINGS_WHILE_US_MARKET_CLOSED'}
 
 
-def main():
+def main(phase_override=None):
     now = datetime.now(TZ)
     today = now.date()
     if not byma.es_dia_habil_operativo(today):
-        print(json.dumps({'schema':'POROTA_RC6_PREOPEN_V2','generated_at_ar':now.isoformat(timespec='seconds'),
+        print(json.dumps({'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
                           'status':'NOT_DUE','reason':'BYMA_NON_OPERATIONAL_DAY',
                           'read_only':True,'network_order_test_performed':False}, ensure_ascii=False, sort_keys=True))
         return 0
@@ -200,11 +316,13 @@ def main():
         'disk': {'state':'GREEN' if free >= MIN_FREE_BYTES else 'RED','free':free,'minimum':MIN_FREE_BYTES},
         'required_rc6_timers': required_timers(),
         'byma_morning_watch': byma_morning_watch(today),
+        'iol_reference_fallback': iol_reference_state(today),
         'history_quarantine': blocked_history_timers(),
         'foreign_market_policy': foreign_market_policy(today),
     }
     reds = [k for k,v in checks.items() if v.get('state') == 'RED']
-    result = {'schema':'POROTA_RC6_PREOPEN_V2','generated_at_ar':now.isoformat(timespec='seconds'),
+    result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
+              'phase':phase_override or preopen_phase(now),
               'status':'GREEN' if not reds else 'RED','red_checks':reds,'checks':checks,
               'read_only':True,'network_order_test_performed':False,'direct_telegram_send':False}
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
@@ -212,4 +330,7 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--phase', choices=('T_MINUS_45','T_MINUS_10'))
+    args = parser.parse_args()
+    raise SystemExit(main(args.phase))

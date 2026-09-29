@@ -11,6 +11,7 @@ from fastapi import Header, Query, Request
 from fastapi.responses import JSONResponse
 
 import bg_paper_dashboard as bg
+import er_dashboard_truth_projection_rc6 as projection
 from eo_dashboard_truth_semantics_rc6 import (
     MARKET_OPEN,
     market_sensitive_display_state,
@@ -27,10 +28,8 @@ _original_card = None
 
 def runtime_truth() -> dict:
     """Return one authoritative dashboard context from observer_state."""
-    row = (bg._rows(
-        "SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,detail "
-        "FROM observer_state WHERE id=1"
-    ) or [{}])[0]
+    canonical = projection.build(bg._rows, bg._table)
+    row = canonical["runtime"]
     open_count = 0
     if bg._table("paper_positions"):
         open_count = int((bg._rows(
@@ -41,7 +40,7 @@ def runtime_truth() -> dict:
     session = str(row.get("session_state") or "UNKNOWN").upper()
     ppi_auth = str(row.get("ppi_auth") or "UNKNOWN").upper()
     real_orders = int(row.get("real_orders_sent") or 0)
-    return {
+    truth = {
         "source": "observer_state",
         "mode": mode,
         "execution": "SIMULATED" if mode == "PRODUCTION_PAPER" else "UNKNOWN",
@@ -53,7 +52,18 @@ def runtime_truth() -> dict:
         "open_positions": open_count,
         "heartbeat_at": row.get("heartbeat_at"),
         "detail": row.get("detail"),
+        "projection_schema": canonical["schema"],
     }
+    # Preserve the compact top-level compatibility fields while exposing the
+    # full canonical projection on the advertised truth endpoint.  No route is
+    # allowed to reconstruct readiness from history or provider caches.
+    truth.update({
+        key: canonical[key] for key in (
+            "authorities", "catalog", "readiness", "contract", "history",
+            "strategy_eligibility", "iol", "scalping", "caucion",
+        )
+    })
+    return truth
 
 
 def _fresh_internal_state(row: dict, default="NOT_STARTED", max_age_seconds=20) -> str:
@@ -189,6 +199,18 @@ def _patched_card(title, value, detail, state="gray", value_class=""):
     """Make the market-sensitive Scanner card session-aware without hiding faults."""
     if str(title) == "Scanner":
         truth = runtime_truth()
+        canonical = projection.build(bg._rows, bg._table)
+        truth.update({
+            "authorities": canonical["authorities"],
+            "catalog": canonical["catalog"],
+            "readiness": canonical["readiness"],
+            "contract": canonical["contract"],
+            "history": canonical["history"],
+            "strategy_eligibility": canonical["strategy_eligibility"],
+            "iol": canonical["iol"],
+            "scalping": canonical["scalping"],
+            "caucion": canonical["caucion"],
+        })
         raw = str(value or "UNKNOWN").upper()
         view = market_sensitive_display_state(
             raw,

@@ -35,7 +35,8 @@ def test_rc6_monotonic_timers_do_not_persist():
 def test_rc6_preopen_and_backup_calendar_timers_are_explicit():
     pre = (ROOT / 'systemd' / 'porota-preopen-rc6.timer').read_text(encoding='utf-8')
     backup = (ROOT / 'systemd' / 'porota-host-general-backup-rc6.timer').read_text(encoding='utf-8')
-    assert '10:15:00 America/Argentina/Buenos_Aires' in pre
+    assert '09:45:00 America/Argentina/Buenos_Aires' in pre
+    assert '10:20:00 America/Argentina/Buenos_Aires' in pre
     assert 'Persistent=' not in pre
     assert '04:15:00 America/Argentina/Buenos_Aires' in backup
     assert 'Persistent=true' in backup

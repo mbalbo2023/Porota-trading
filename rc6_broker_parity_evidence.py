@@ -13,6 +13,7 @@ from typing import Iterable
 
 import cp_contract_evidence_v2_hf6 as evidence_v2
 import cq_family_contract_rules_hf6 as rules
+from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 
 
@@ -230,6 +231,8 @@ def _caucion_records(payload, ppi):
                 "paper_fill_policy": "CONSERVATIVE_NOTIONAL_CAP",
                 "paper_notional_cap": minimum,
                 "paper_principal_step": "0.01",
+                "fee_authority": (CAUCION_PAPER_FEE_AUTHORITY
+                                  if str(currency).upper() == "ARS" else None),
                 "provider_timestamp": live_at,
                 "capture_timestamp": capture_timestamp,
                 "freshness_basis": "PROVIDER_TIMESTAMP" if provider_at else "LIVE_RESPONSE_CAPTURE",

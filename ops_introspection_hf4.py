@@ -119,7 +119,8 @@ def collect():
                              ("exit_reader","paper_exit_reader_state"),
                              ("telegram","paper_notification_worker"),
                              ("candles","candle_worker_state"),
-                             ("scalping","intraday_scalping_worker_state")):
+                             ("scalping","intraday_scalping_worker_state"),
+                             ("caucion_cash_sweep","paper_caucion_cash_sweep_state")):
             if table(c, source):
                 row = dict(c.execute(f"SELECT * FROM {source} WHERE id=1").fetchone() or {})
                 selected={k: row.get(k) for k in ("state","heartbeat_at","detail")}

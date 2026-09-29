@@ -1,0 +1,1492 @@
+{
+  "registered_paths": 53,
+  "route_count": 55,
+  "routes": [
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety",
+        "readiness"
+      ],
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2"
+      ],
+      "endpoint": "o_dashboard.dashboard",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "dashboard principal",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "learning_history"
+      ],
+      "datasets": [
+        "paper_decisions",
+        "decision_evidence_latest"
+      ],
+      "endpoint": "o_dashboard.ai_decisions_dashboard",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/ai-decisions",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "decisiones de IA",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "catalog",
+        "readiness",
+        "contract",
+        "history",
+        "iol_current",
+        "caucion"
+      ],
+      "datasets": [
+        "financial_instrument_catalog",
+        "candidate_identity_v2",
+        "contract_evidence_v2_current",
+        "history_canonical_v2",
+        "IOL section cache",
+        "paper_caucion_allocations"
+      ],
+      "endpoint": "bg_paper_dashboard.annual_analysis",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/analisis",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "análisis anual",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "observer_state",
+        "paper_positions"
+      ],
+      "endpoint": "o_dashboard.dashboard_json",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/dashboard",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "snapshot dashboard",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "catalog",
+        "readiness",
+        "contract",
+        "history",
+        "strategy_eligibility",
+        "iol_current",
+        "scalping",
+        "caucion"
+      ],
+      "datasets": [
+        "canonical dashboard truth projection"
+      ],
+      "endpoint": "ep_dashboard_truth_layer_rc6.dashboard_truth",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/dashboard/truth",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "API canónica",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "diagnostics snapshot"
+      ],
+      "endpoint": "bc_dashboard_v163.diagnostics",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/diagnostics/download",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "diagnóstico",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "notification_outbox"
+      ],
+      "endpoint": "o_dashboard.failed_notifications",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/failed-notifications",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "notificaciones fallidas",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "learning_history"
+      ],
+      "datasets": [
+        "paper_learning_samples"
+      ],
+      "endpoint": "o_dashboard.learning_logs",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/learning-logs",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "logs de aprendizaje",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "sanitized log snapshots"
+      ],
+      "endpoint": "bg_paper_dashboard.log_download",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/logs/current",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "log actual",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "sanitized log snapshots"
+      ],
+      "endpoint": "o_dashboard.download_log",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/logs/download/{log_type}",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "descarga de log",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "catalog",
+        "readiness"
+      ],
+      "datasets": [
+        "financial_instrument_catalog",
+        "candidate_identity_v2"
+      ],
+      "endpoint": "o_dashboard.observation_instruments",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/observation-instruments",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "instrumentos observados",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "observer_state"
+      ],
+      "endpoint": "bg_paper_dashboard.observer_state",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/observer/state",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "estado runtime",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "caucion"
+      ],
+      "datasets": [
+        "paper_caucion_allocations"
+      ],
+      "endpoint": "bg_paper_dashboard.caucion_allocations",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/paper/caucion-allocations",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "asignaciones de caución",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "datasets": [
+        "rc6 snapshots"
+      ],
+      "endpoint": "rc6_snapshot_dashboard.latest_snapshot",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/rc6/snapshots/latest",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "snapshot RC6",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history"
+      ],
+      "datasets": [
+        "action4 reports"
+      ],
+      "endpoint": "bg_paper_dashboard.action4_download",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/reports/action4",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "reporte action4",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history"
+      ],
+      "datasets": [
+        "action4 reports"
+      ],
+      "endpoint": "bg_paper_dashboard.action4_publish",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "POST"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/reports/action4",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "reporte action4",
+      "write_route": true
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "datasets": [
+        "weekly reports"
+      ],
+      "endpoint": "o_dashboard.download_weekly_report",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/reports/weekly/download",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "reporte semanal",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "datasets": [
+        "reports"
+      ],
+      "endpoint": "bg_paper_dashboard.report_download",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/reports/{report_id}/{kind}",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "reporte versionado",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "sre proposals"
+      ],
+      "endpoint": "o_dashboard.sre_encolar",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "POST"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/sre/encolar/{propuesta_id}",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "encolado SRE",
+      "write_route": true
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "sre proposals"
+      ],
+      "endpoint": "o_dashboard.sre_propuestas",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/sre/propuestas",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "propuestas SRE",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "datasets": [
+        "testing authorization ledger"
+      ],
+      "endpoint": "o_dashboard.testing_autorizar",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "POST"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/testing/autorizar",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "autorización testing",
+      "write_route": true
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "datasets": [
+        "testing state"
+      ],
+      "endpoint": "o_dashboard.testing_estado",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/testing/estado",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "estado testing",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "observer_state"
+      ],
+      "endpoint": "o_dashboard.estado_v15",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/v15/estado",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "compatibilidad v15",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "observer_state"
+      ],
+      "endpoint": "o_dashboard.estado_detallado",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/v16/estado",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "compatibilidad v16",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "learning_history",
+        "iol_current"
+      ],
+      "datasets": [
+        "decision_evidence_latest",
+        "paper_learning_samples",
+        "IOL section cache"
+      ],
+      "endpoint": "o_dashboard.blog_de_aprendizaje",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/aprendizaje",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "aprendizaje histórico y salud actual separada",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "datasets": [
+        "runtime configuration"
+      ],
+      "endpoint": "o_dashboard.config_editor",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/config",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "configuración",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "datasets": [
+        "runtime configuration"
+      ],
+      "endpoint": "o_dashboard.config_save",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "POST"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/config",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "configuración",
+      "write_route": true
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "sanitized log snapshots"
+      ],
+      "endpoint": "o_dashboard.logs_dashboard",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/dashboard/logs",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "logs",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "NOT_APPLICABLE",
+      "canonical_concepts": [],
+      "datasets": [
+        "FastAPI schema/UI"
+      ],
+      "endpoint": "fastapi.applications.swagger_ui_html",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "FRAMEWORK",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "mode_authority": "NOT_APPLICABLE",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/docs",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "NOT_APPLICABLE",
+      "title_or_surface": "framework",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "NOT_APPLICABLE",
+      "canonical_concepts": [],
+      "datasets": [
+        "FastAPI schema/UI"
+      ],
+      "endpoint": "fastapi.applications.swagger_ui_redirect",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "FRAMEWORK",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "mode_authority": "NOT_APPLICABLE",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/docs/oauth2-redirect",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "NOT_APPLICABLE",
+      "title_or_surface": "framework",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "readiness",
+        "strategy_eligibility"
+      ],
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_decisions",
+        "paper_positions",
+        "trade_gate_evaluations"
+      ],
+      "endpoint": "bg_paper_dashboard.en_vivo",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/en-vivo",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "actividad actual",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "observer_state"
+      ],
+      "endpoint": "o_dashboard.health",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/health",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "health probe",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history"
+      ],
+      "datasets": [
+        "history_canonical_v2",
+        "production_history",
+        "candle store"
+      ],
+      "endpoint": "o_dashboard.datos_historicos",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/historicos",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "histórico, sin autoridad sobre readiness",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history"
+      ],
+      "datasets": [
+        "official_source_evidence",
+        "financial snapshots"
+      ],
+      "endpoint": "bg_paper_dashboard.financial",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/informacion-financiera",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "información financiera",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "datasets": [
+        "observer_state",
+        "systemd snapshot"
+      ],
+      "endpoint": "o_dashboard.infra_dashboard",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/infra",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "infraestructura",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "catalog",
+        "readiness",
+        "contract"
+      ],
+      "datasets": [
+        "financial_instrument_catalog",
+        "candidate_identity_v2",
+        "contract_evidence_v2_current"
+      ],
+      "endpoint": "bg_paper_dashboard.instrumentos",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/instrumentos",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "instrumentos y contratos",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "readiness",
+        "strategy_eligibility"
+      ],
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "trade_gate_evaluations",
+        "paper_positions"
+      ],
+      "endpoint": "bg_paper_dashboard.motor",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/motor-trading",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "motor PAPER visible",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "catalog"
+      ],
+      "datasets": [
+        "observer_state",
+        "financial_instrument_catalog",
+        "market_snapshots"
+      ],
+      "endpoint": "bg_paper_dashboard.observacion",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/observacion",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "observación",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "NOT_APPLICABLE",
+      "canonical_concepts": [],
+      "datasets": [
+        "FastAPI schema/UI"
+      ],
+      "endpoint": "fastapi.applications.openapi",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "FRAMEWORK",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "mode_authority": "NOT_APPLICABLE",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/openapi.json",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "NOT_APPLICABLE",
+      "title_or_surface": "framework",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "NOT_APPLICABLE",
+      "canonical_concepts": [],
+      "datasets": [
+        "FastAPI schema/UI"
+      ],
+      "endpoint": "fastapi.applications.redoc_html",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "FRAMEWORK",
+      "locale": "JSON canónico",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "mode_authority": "NOT_APPLICABLE",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/redoc",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "NOT_APPLICABLE",
+      "title_or_surface": "framework",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "datasets": [
+        "paper_positions",
+        "paper_learning_samples",
+        "reports"
+      ],
+      "endpoint": "bg_paper_dashboard.reports",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/reportes",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "reportes",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "datasets": [
+        "monthly reports"
+      ],
+      "endpoint": "o_dashboard.download_monthly_report",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/reports/monthly",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "reporte mensual",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "datasets": [
+        "restart request ledger"
+      ],
+      "endpoint": "o_dashboard.restart_request",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "POST"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/restart-request",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "solicitud controlada",
+      "write_route": true
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "datasets": [
+        "observer_state",
+        "trade_gate_evaluations",
+        "risk ledgers"
+      ],
+      "endpoint": "zz_wave8_dashboard_live_rc6.riesgo",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/riesgo",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "riesgo",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "iol_current",
+        "timers"
+      ],
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "source_sync",
+        "IOL section cache"
+      ],
+      "endpoint": "o_dashboard.salud_apis",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/salud",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "salud de fuentes",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "scalping",
+        "readiness",
+        "strategy_eligibility"
+      ],
+      "datasets": [
+        "intraday_scalping_worker_state",
+        "candidate_identity_v2",
+        "ppi_intraday_contract_state",
+        "scalping_candidates",
+        "paper_positions"
+      ],
+      "endpoint": "bg_paper_dashboard.scalping",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/scalping",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "scalping PAPER/OBSERVE",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers",
+        "readiness",
+        "caucion"
+      ],
+      "datasets": [
+        "observer_state",
+        "systemd snapshot",
+        "candidate_identity_v2",
+        "paper_cauciones"
+      ],
+      "endpoint": "bg_paper_dashboard.sistema",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sistema",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "sistema e introspección",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "datasets": [
+        "sre snapshots",
+        "systemd snapshot"
+      ],
+      "endpoint": "o_dashboard.sre_dashboard",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sre",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "SRE",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "datasets": [
+        "notification_outbox",
+        "notification_worker_state"
+      ],
+      "endpoint": "bc_dashboard_v163.telegram",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/telegram",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "notificaciones",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "datasets": [
+        "observer_state",
+        "testing state"
+      ],
+      "endpoint": "o_dashboard.solapa_testing",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/testing",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "controles de testing",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "contract",
+        "strategy_eligibility",
+        "caucion"
+      ],
+      "datasets": [
+        "candidate_identity_v2",
+        "contract_evidence_v2_current",
+        "trade_gate_evaluations",
+        "paper_cauciones"
+      ],
+      "endpoint": "bg_paper_dashboard.trading",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/trading",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "estrategias",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "contract",
+        "strategy_eligibility",
+        "caucion"
+      ],
+      "datasets": [
+        "candidate_identity_v2",
+        "contract_evidence_v2_current",
+        "paper_decisions",
+        "paper_cauciones"
+      ],
+      "endpoint": "bg_paper_dashboard.trading_section",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/trading/{section}",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "estrategia por familia",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "catalog",
+        "readiness",
+        "contract",
+        "strategy_eligibility",
+        "caucion"
+      ],
+      "datasets": [
+        "financial_instrument_catalog",
+        "candidate_identity_v2",
+        "contract_evidence_v2_current",
+        "trade_gate_evaluations",
+        "paper_cauciones"
+      ],
+      "endpoint": "bh_universe_dashboard_hf6.universo_operativo",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/universo-operativo",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "universo multi-familia",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "strategy_eligibility"
+      ],
+      "datasets": [
+        "trade_gate_evaluations"
+      ],
+      "endpoint": "bg_paper_dashboard.validacion",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/validacion",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "validación SHADOW/BINDING",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "readiness",
+        "strategy_eligibility"
+      ],
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_decisions",
+        "paper_positions",
+        "trade_gate_evaluations"
+      ],
+      "endpoint": "o_dashboard.actividad_en_vivo",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/vivo",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "actividad actual",
+      "write_route": false
+    }
+  ],
+  "schema": "rc6-dashboard-route-inventory-v1"
+}

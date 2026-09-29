@@ -10,10 +10,18 @@ import json
 from ak_byma_calendar import es_dia_habil_operativo
 from bl_candle_engine import fingerprint, stamp
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
-from bt_caucion_paper import CaucionOffer, TZ, book_key, book_payload, money, offer_payload
+from bt_caucion_paper import (CaucionOffer, TZ, automatic_liquidity_cap,
+                              book_key, book_payload, money, offer_payload)
 from bw_daily_risk import loss_limit_crossed
 
 ZERO = Decimal('0')
+
+
+def _paper_tariff_authorized(offer):
+    from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+    return (offer.currency == "ARS"
+            and offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP"
+            and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)
 
 
 def encoded(value):
@@ -138,14 +146,24 @@ def choose(offers, policy, *, at, cash, risk, participation, consumed=None):
             # en fin de semana, día sin liquidación o calendario desconocido.
             if not es_dia_habil_operativo(aware_datetime(offer.maturity_at).astimezone(TZ).date()):
                 raise ValueError('MATURITY_CALENDAR_UNAVAILABLE_OR_CLOSED')
-            if offer.quoted_total_fees is None:
+            if offer.quoted_total_fees is not None:
+                principal = offer.fee_quote_principal
+            elif _paper_tariff_authorized(offer):
+                raw = min(policy.maximum_principal, budget,
+                          automatic_liquidity_cap(offer, participation))
+                principal = money((raw / offer.principal_step).to_integral_value(
+                    rounding=__import__('decimal').ROUND_DOWN) * offer.principal_step)
+            else:
+                # Stable legacy code: the new PAPER tariff authority is an
+                # alternate satisfaction path, not a new generic permission.
                 raise ValueError('EXPLICIT_COST_BUDGET_REQUIRED')
-            principal = offer.fee_quote_principal
+            if principal < offer.minimum_principal:
+                raise ValueError('PRINCIPAL_BELOW_MINIMUM')
             if principal > policy.maximum_principal:
                 raise ValueError('PRINCIPAL_CAP')
             interest,fees,net = offer.economics(principal)
             used = decimal_value(consumed.get(key,ZERO),'profundidad usada',nonnegative=True)
-            if principal + used > offer.available_principal*participation:
+            if principal + used > automatic_liquidity_cap(offer, participation):
                 raise ValueError('DEPTH_EXHAUSTED')
             debit = principal + (fees if offer.fee_payment=='UPFRONT' else ZERO)
             if debit > budget:

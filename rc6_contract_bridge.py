@@ -40,6 +40,7 @@ MAP.update({
     "paper_principal_step": "paper_principal_step", "day_count_basis": "day_count_basis",
     "fee_payment": "fee_payment", "annual_rate_fraction": "annual_rate_fraction",
     "available_principal": "available_principal",
+    "fee_authority": "fee_authority",
     "operable": "operable", "market_session_state": "market_session_state",
 })
 NUMERIC = {"cash_multiplier", "quantity_step", "minimum_quantity", "strike",
@@ -310,7 +311,7 @@ def caucion_offer_from_evidence(records, primary, *, now=None):
            for r in records if any(k in r["evidence"] for k in ("quoted_at","annual_rate_fraction","available_principal"))):
         raise ValueError("CAUCION_DYNAMIC_EVIDENCE_STALE")
     optional_cost = {name: fields[name] for name in
-                     ("quoted_total_fees", "fee_quote_principal")
+                     ("quoted_total_fees", "fee_quote_principal", "paper_fill_policy", "fee_authority")
                      if fields.get(name) is not None}
     return CaucionOffer(instrument_id=key[0],currency=key[3],
         metadata_source="CONTRACT_EVIDENCE_V2:" + ";".join(sorted(r["evidence_hash"] for r in records)),

@@ -2,10 +2,10 @@
 
 Presentación únicamente. No consulta PPI, no modifica SQLite y no participa de
 ningún portón de trading. Todas las tablas del dashboard se convierten a tarjetas
-verticales en anchos de tablet y limitan visualmente registros en bloques de 20.
+verticales en anchos de tablet y limitan visualmente registros en bloques de 10.
 """
 
-TABLE_PAGE_SIZE = 20
+TABLE_PAGE_SIZE = 10
 
 TABLE_A11Y_CSS = r"""
 <style id='porota-rc5-table-a11y'>
@@ -40,7 +40,7 @@ TABLE_A11Y_CSS = r"""
 TABLE_A11Y_SCRIPT = r"""
 <script id='porota-rc5-table-a11y-script'>
 (function(){
-  const PAGE_SIZE=20;
+  const PAGE_SIZE=10;
   let scheduled=false;
   let observer=null;
 
@@ -184,7 +184,7 @@ TABLE_A11Y_SCRIPT = r"""
 
 
 def assert_table_accessibility_contract():
-    assert TABLE_PAGE_SIZE == 20
+    assert TABLE_PAGE_SIZE == 10
     assert "max-width:980px" in TABLE_A11Y_CSS
     assert "porota-cell-label" in TABLE_A11Y_CSS
     assert "Mostrar '+Math.min(PAGE_SIZE,remaining)+' más" in TABLE_A11Y_SCRIPT
