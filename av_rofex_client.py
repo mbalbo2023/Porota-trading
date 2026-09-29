@@ -28,11 +28,9 @@ DE DÓNDE SALE CADA NÚMERO
     campo se llama `contractMultiplier` — en la documentación en castellano
     aparece como `TamCtra`, "tamaño del contrato".
 
-  · Garantía inicial: NO viene en el endpoint de instrumentos. La propia
-    documentación de Primary lo dice: márgenes y garantías se piden por la
-    API de Post Trade. En la práctica, el reporte de cuenta
-    (`get_account_report`) trae los márgenes vigentes, y los aforos por
-    producto los publica Argentina Clearing.
+  · Margen PAPER: no se consulta el reporte de una cuenta real. Si no hay un
+    margen oficial de clearing atribuible al contrato, el simulador reserva
+    conservadoramente el 100% del nocional y registra esa policy como propia.
 
 ENTORNO DE PRUEBAS
 ------------------
@@ -104,6 +102,8 @@ class ContratoFuturo:
     motivo: str = ""
     fuente_multiplicador: str = ""
     fuente_garantia: str = ""
+    paper_margin_policy: str = ""
+    paper_margin_rate: Optional[float] = None
 
 
 def _conectar() -> bool:
@@ -182,11 +182,8 @@ def _detalle_instrumento(simbolo: str) -> Optional[dict]:
 def _garantia_de_la_cuenta(simbolo: str) -> tuple:
     """(garantía_por_contrato, fuente). None si no se pudo establecer.
 
-    Los márgenes llegan por el reporte de cuenta, no por el endpoint de
-    instrumentos. Esta función es deliberadamente conservadora: si el reporte
-    no trae un margen atribuible a este símbolo, devuelve None. Prorratear un
-    margen agregado entre posiciones sería inventar el número más importante
-    de la cuenta.
+    Compatibilidad inactiva. El flujo PAPER no llama esta función: un dato de
+    cuenta real no es un requisito ni una fuente admisible para simulación.
     """
     try:
         import pyRofex
@@ -275,21 +272,18 @@ def datos_de_contrato(simbolo: str) -> ContratoFuturo:
                 "verificarlo antes de operar.",
                 simbolo, resultado.multiplicador, esperado)
 
-        garantia, fuente = _garantia_de_la_cuenta(simbolo)
-        resultado.garantia_inicial = garantia
-        resultado.fuente_garantia = fuente
-        if garantia is None:
-            resultado.motivo = (
-                "Multiplicador confirmado, pero falta la garantía inicial. Sin ese "
-                "número no se puede anticipar una llamada de margen, y una posición "
-                "apalancada sin pérdida máxima acotada no es dimensionable. " + fuente)
-            return _guardar(f"contrato:{simbolo}", resultado)
+        # PAPER must not read a real account report to discover a broker margin.
+        # Reserving 100% of notional removes leverage and is the conservative
+        # simulator fallback until an official clearing margin is available.
+        resultado.paper_margin_policy = "CONSERVATIVE_NOTIONAL_RATE"
+        resultado.paper_margin_rate = 1.0
+        resultado.fuente_garantia = "POROTA_PAPER_POLICY:notional_rate=1"
 
         resultado.operable = True
         resultado.motivo = ""
-        logger.info("Contrato %s operable: multiplicador %s (%s), garantía %s (%s).",
+        logger.info("Contrato %s operable PAPER: multiplicador %s (%s), margen %s (%s).",
                     simbolo, resultado.multiplicador, resultado.fuente_multiplicador,
-                    garantia, fuente)
+                    resultado.paper_margin_rate, resultado.fuente_garantia)
         return _guardar(f"contrato:{simbolo}", resultado)
 
 

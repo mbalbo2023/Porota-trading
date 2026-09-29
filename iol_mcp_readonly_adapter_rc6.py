@@ -7,6 +7,7 @@ credentials and never invokes an execution tool.
 from __future__ import annotations
 
 import base64
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -197,7 +198,26 @@ class OAuthStoreReadOnlyMCP:
             raise IOLMCPError("IOL_MCP_OAUTH_STORE_WRITE_FAILED") from exc
 
     def _refresh_after_401(self, headers: dict[str, str]) -> None:
-        data = self._load_store()
+        lock_path = self.store.with_suffix(self.store.suffix + ".refresh.lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            data = self._load_store()
+            current = (data.get("tokens") or {}).get("access_token")
+            used = str((self._headers or {}).get("Authorization") or "").removeprefix("Bearer ")
+            # Another collector process already rotated the refresh token and
+            # stored a new access token. Reuse it instead of replaying the old
+            # one (which produces OAuth invalid_grant).
+            if isinstance(current, str) and current and used and current != used:
+                self._headers = None
+                return
+            self._refresh_locked(headers, data)
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
+    def _refresh_locked(self, headers: dict[str, str], data: dict[str, Any]) -> None:
         tokens = data.get("tokens")
         registration = data.get("client_registration")
         if not isinstance(tokens, dict) or not isinstance(registration, dict):

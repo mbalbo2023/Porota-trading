@@ -90,6 +90,8 @@ class InstrumentContract:
     strike: Decimal | None = None
     option_right: str | None = None
     minimum_quantity: Decimal | None = None
+    paper_margin_policy: str | None = None
+    paper_margin_rate: Decimal | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "family", family_name(self.family))
@@ -111,6 +113,17 @@ class InstrumentContract:
                 raise ValueError("Opción sin subyacente o derecho válido")
             object.__setattr__(self, "strike", decimal_value(self.strike, "strike", positive=True))
         if self.family == "FUTUROS":
+            policy = str(self.paper_margin_policy or "").upper()
+            if self.initial_margin is None and policy != "CONSERVATIVE_NOTIONAL_RATE":
+                raise ValueError("Futuro sin margen publicado ni policy PAPER")
+            if policy:
+                object.__setattr__(self, "paper_margin_policy", policy)
+                rate = decimal_value(self.paper_margin_rate, "paper_margin_rate", positive=True)
+                if rate > 1:
+                    raise ValueError("paper_margin_rate superior al nocional")
+                object.__setattr__(self, "paper_margin_rate", rate)
+            if self.initial_margin is None:
+                return
             object.__setattr__(self, "initial_margin", decimal_value(
                 self.initial_margin, "initial_margin", positive=True))
             # A3/Argentina Clearing publishes one margin requirement. PAPER
@@ -146,7 +159,10 @@ class InstrumentContract:
         cost = decimal_value(fees, "costos", nonnegative=True)
         if self.family == "FUTUROS":
             # Garantía bloqueada; el nocional NO se paga como si fuera una acción.
-            return self.initial_margin * self.quantity(quantity) + cost
+            reserve = (self.initial_margin * self.quantity(quantity)
+                       if self.initial_margin is not None else
+                       self.notional(price, quantity) * self.paper_margin_rate)
+            return reserve + cost
         return self.notional(price, quantity) + cost
 
     def pnl(self, entry_price, exit_price, quantity, *, side="LONG"):
@@ -168,11 +184,16 @@ class InstrumentContract:
             raise ValueError("Sólo los futuros usan este ajuste diario")
         return self.pnl(previous_settlement, settlement_price, quantity, side=side)
 
-    def margin_deficit(self, collateral, quantity):
+    def margin_deficit(self, collateral, quantity, price=None):
         if self.family != "FUTUROS":
             raise ValueError("Sólo para garantías de futuros")
         balance = decimal_value(collateral, "garantía remanente")
         qty = self.quantity(quantity)
+        if self.initial_margin is None:
+            if price is None:
+                raise ValueError("Policy PAPER de margen requiere precio vigente")
+            required = decimal_value(price, "precio", positive=True) * qty * self.cash_multiplier * self.paper_margin_rate
+            return max(ZERO, required - balance)
         return max(ZERO, self.initial_margin * qty - balance) if balance < self.maintenance_margin * qty else ZERO
 
 

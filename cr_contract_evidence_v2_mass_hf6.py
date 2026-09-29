@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from decimal import Decimal, InvalidOperation
 
 import cp_contract_evidence_v2_hf6 as evidence_v2
 from bu_instrument_catalog import _candidate_has_ppi_primary
@@ -20,6 +21,7 @@ SCHEMA = "rc6-contract-evidence-v2-mass-catalog-v1"
 JOB_KEY = "CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG"
 MAX_CATALOG_ROWS = 20_000
 SPOT_UNIT_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS"})
+FIXED_INCOME_FAMILIES = frozenset({"BONOS", "LETRAS", "OBLIGACIONES"})
 UNKNOWN = frozenset({"", "*", "UNKNOWN", "NO_VERIFICADO"})
 
 
@@ -113,6 +115,49 @@ def planned_records(rows):
                     "readiness_guard": "NOT_APPLICABLE_TO_FIXED_INCOME_OR_DERIVATIVES",
                 },
             })
+        elif family in FIXED_INCOME_FAMILIES and identity["market"] == "BYMA":
+            # PPI's nominalInPrice is an explicit quotation basis.  For the
+            # PAPER nominal engine, one simulated quantity is one nominal and
+            # cash is price / quote-basis.  The unit min/step below is Porota's
+            # internal simulator policy; it is deliberately not a broker term.
+            try:
+                quote_basis = Decimal(str(nominal))
+            except (InvalidOperation, TypeError, ValueError):
+                quote_basis = Decimal(0)
+            if quote_basis.is_finite() and quote_basis > 0:
+                records.append({
+                    **identity,
+                    "source_class": "DERIVED_OFFICIAL_RULE",
+                    "source_ref": "PPI_QUOTE_BASIS+POROTA_PAPER_NOMINAL_POLICY:v1",
+                    "observed_at": row.get("last_seen_at"),
+                    "evidence": {
+                        "paper_cash_multiplier": str(Decimal(1) / quote_basis),
+                        "paper_quantity_min": "1",
+                        "paper_quantity_step": "1",
+                        "broker_minimum_quantity": "NO_VERIFICADO",
+                        "broker_quantity_step": "NO_VERIFICADO",
+                        "paper_quantity_policy": "ONE_NOMINAL_SIMULATION_UNIT",
+                        "derivation_rule": "cash = quoted_price * nominals / ppi_nominal_in_price",
+                        "provenance_class": "DERIVED_FROM_PROVIDER_QUOTE_BASIS",
+                        "policy_scope": "PRODUCTION_PAPER_SIMULATION_ONLY",
+                        "readiness_guard": "PPI_EXACT_IDENTITY+NOMINAL_IN_PRICE_POSITIVE",
+                    },
+                })
+        elif family == "FCI":
+            records.append({
+                **identity,
+                "source_class": "DERIVED_OFFICIAL_RULE",
+                "source_ref": "POROTA_PAPER_FCI_RISK_BUDGET_POLICY:v1",
+                "observed_at": row.get("last_seen_at"),
+                "evidence": {
+                    "paper_subscription_policy": "INTERNAL_RISK_BUDGET_BY_AMOUNT",
+                    "broker_subscription_min": "NO_VERIFICADO",
+                    "broker_subscription_step": "NO_VERIFICADO",
+                    "paper_amount_unit": "0.01",
+                    "policy_scope": "PRODUCTION_PAPER_SIMULATION_ONLY",
+                    "readiness_guard": "PPI_EXACT_AVAILABLE_IDENTITY+POSITIVE_INTERNAL_RISK_BUDGET",
+                },
+            })
     return records, dict(skipped), dict(identities)
 
 
@@ -150,5 +195,5 @@ def collect(store, *, run_id):
 def assert_read_only_invariants():
     assert MAX_CATALOG_ROWS > 0
     assert SPOT_UNIT_FAMILIES == {"ACCIONES", "CEDEARS", "ETFS"}
+    assert FIXED_INCOME_FAMILIES == {"BONOS", "LETRAS", "OBLIGACIONES"}
     assert "order" not in JOB_KEY.lower()
-

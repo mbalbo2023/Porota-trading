@@ -5,6 +5,7 @@ SearchInstrument no prueba multiplicador, margen ni vencimiento estructurado.
 """
 
 import json
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -17,6 +18,12 @@ SOURCE_PRECEDENCE = ("PPI_PRIMARY", "IOL_COMPLEMENTARY", "BYMA_PUBLIC_COMPLEMENT
 US_MARKET_WIDE_CEDEAR_HOLIDAYS = {
     "2026-09-07": "US_LABOR_DAY",
 }
+
+
+@dataclass(frozen=True)
+class PaperCaucionCapability:
+    family: str
+    market: str
 
 
 def rc6_underlying_opening_block(ticker, instrument_type, now=None):
@@ -191,6 +198,8 @@ def contract_for(record):
     if family == "FCI" and raw.get("paper_family_contract_v1"):
         from rc6_paper_family_lifecycle import fund_terms_from_metadata
         return fund_terms_from_metadata(record["ticker"], raw["paper_family_contract_v1"])
+    if family == "CAUCIONES" and raw.get("paper_caucion_contract_v1"):
+        return PaperCaucionCapability(family="CAUCIONES", market=record["market"])
     if raw.get("financial_contract_v17"):
         spec = contract_from_metadata(record["ticker"], family, raw["financial_contract_v17"])
         if (spec.currency, spec.market, spec.settlement) != (record["currency"], record["market"], record["settlement"]):
@@ -216,7 +225,14 @@ def capability(record):
     if spec.family == "FUTUROS":
         return "READY_PAPER_FUTURES" if spec.market in {"A3","ROFEX"} else "NEEDS_MARKET_EXECUTOR"
     if spec.family == "FCI":
-        return "READY_PAPER_FCI_SUBSCRIPTION" if spec.market == "FCI" else "NEEDS_MARKET_EXECUTOR"
+        # FCI PAPER subscriptions are internal amount-ledger lifecycle events;
+        # the PPI catalogue commonly labels their venue BYMA.  No real broker
+        # route is selected from this field.
+        return ("READY_PAPER_FCI_SUBSCRIPTION"
+                if spec.market in {"FCI", "BYMA"} else "NEEDS_MARKET_EXECUTOR")
+    if spec.family == "CAUCIONES":
+        return ("READY_PAPER_CAUCION_PLACING"
+                if spec.market == "BYMA" else "NEEDS_MARKET_EXECUTOR")
     if spec.market != "BYMA":
         return "NEEDS_MARKET_EXECUTOR"
     if spec.family in {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES"}:
@@ -362,6 +378,17 @@ def complete_with_complement(record, complementary):
         raw["_contract_conflicts"] = {
             "fields": ["paper_family_contract_v1"], "source": source,
             "incoming": family_contract, "existing": existing_family_contract,
+        }
+    caucion_contract = complementary.get("paper_caucion_contract_v1")
+    existing_caucion_contract = raw.get("paper_caucion_contract_v1")
+    if isinstance(caucion_contract, dict) and caucion_contract and not existing_caucion_contract:
+        raw["paper_caucion_contract_v1"] = caucion_contract
+        raw["_contract_complement_source"] = source
+    elif (isinstance(caucion_contract, dict) and caucion_contract
+          and existing_caucion_contract != caucion_contract):
+        raw["_contract_conflicts"] = {
+            "fields": ["paper_caucion_contract_v1"], "source": source,
+            "incoming": caucion_contract, "existing": existing_caucion_contract,
         }
 
     stamp=_source_timestamp(complementary)

@@ -80,7 +80,7 @@ def test_connected_fund_executor_enforces_ars_thousand_minimum(tmp_path):
     result = executor.subscribe_fund(
         terms, lifecycle_id="fci-1", event_id="sub-1000", amount="1000",
         occurred_at="2026-09-28T18:00:00+00:00")
-    assert result["state"] == "SUBSCRIBE" and result["real_routes_used"] == []
+    assert result["state"] == "SUBSCRIBE_REQUESTED" and result["real_routes_used"] == []
 
 
 def test_connected_futures_executor_requires_real_future_contract(tmp_path):

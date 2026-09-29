@@ -167,6 +167,8 @@ class DerivativeSpec:
     # API el instrumento queda no operable con código propio.
     strike_source: str = "ticker"     # "api" | "ticker"
     contract_multiplier: Optional[float] = None
+    paper_margin_policy: str = ""
+    paper_margin_rate: Optional[float] = None
     max_loss_per_unit: Optional[float] = None   # prima (opción) o riesgo al stop (futuro)
     warnings: list = field(default_factory=list)
     greeks: dict = field(default_factory=dict)
@@ -305,7 +307,9 @@ def describe_future(ticker: str, api_payload: Optional[dict] = None) -> Derivati
 
     spec.contract_multiplier = float(multiplier)
 
-    if not margin:
+    paper_policy = str(payload.get("paperMarginPolicy") or "").upper()
+    paper_rate = payload.get("paperMarginRate")
+    if not margin and paper_policy != "CONSERVATIVE_NOTIONAL_RATE":
         spec.blocking_code = "CAPACIDAD_SIN_DATO_DE_GARANTIA"
         spec.blocking_reason = (
             f"El futuro {ticker} informa multiplicador pero no garantía inicial exigida. "
@@ -313,6 +317,17 @@ def describe_future(ticker: str, api_payload: Optional[dict] = None) -> Derivati
             f"de margen que el bot no puede anticipar ni cubrir solo."
         )
         return spec
+    if not margin:
+        try:
+            rate = float(paper_rate)
+        except (TypeError, ValueError):
+            rate = 0
+        if not 0 < rate <= 1:
+            spec.blocking_code = "CAPACIDAD_POLICY_MARGEN_INVALIDA"
+            spec.blocking_reason = "La policy PAPER de margen no tiene una tasa conservadora válida."
+            return spec
+        spec.paper_margin_policy = paper_policy
+        spec.paper_margin_rate = rate
 
     expiry_raw = payload.get("expirationDate") or payload.get("vencimiento")
     if expiry_raw:
@@ -528,8 +543,12 @@ def size_future(capital_ars: float, spec: DerivativeSpec, entry_price: float,
 
     # La garantía manda cuando es más restrictiva que el riesgo: no sirve de
     # nada dimensionar tres contratos si solo alcanza para inmovilizar uno.
-    if free_margin_ars is not None and initial_margin_per_contract:
-        by_margin = int(free_margin_ars // initial_margin_per_contract)
+    effective_margin = initial_margin_per_contract
+    if (effective_margin is None and spec.paper_margin_policy == "CONSERVATIVE_NOTIONAL_RATE"
+            and spec.paper_margin_rate):
+        effective_margin = entry_price * spec.contract_multiplier * spec.paper_margin_rate
+    if free_margin_ars is not None and effective_margin:
+        by_margin = int(free_margin_ars // effective_margin)
         if by_margin < by_risk:
             logger.info("Futuro %s: la garantía limita a %d contratos (el riesgo permitía %d).",
                         spec.ticker, by_margin, by_risk)

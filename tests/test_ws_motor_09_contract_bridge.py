@@ -60,7 +60,9 @@ def test_bridge_fail_closed_essential_variants(change):
 def test_bridge_does_not_disguise_specialized_executor_as_spot(family):
     r=record();r["family"]=family
     normalized=bridge.normalize_group([r], now=NOW)
-    assert "EXECUTOR_GAP:"+family in normalized["contract_bridge"]["gaps"]
+    assert normalized["financial_contract_v17"] is None
+    assert normalized["paper_caucion_contract_v1"] is None
+    assert normalized["contract_bridge"]["status"] == "BLOCKED"
     assert normalized["financial_contract_v17"] is None
 
 
@@ -198,11 +200,14 @@ def test_public_parser_keeps_more_than_500_and_rejects_provider_error():
     assert parse_public_payload("BYMA","fixture",json.dumps(rows).encode(),500)["record_count"]==0
 
 
-def test_quantity_terms_never_inferred_from_price_basis():
+def test_one_nominal_simulation_enables_explicit_paper_policy_not_broker_terms():
     a=dict(type="TIT. PUBLICOS",currency="ARS",market="BCBA",term="T1",units_per_lot=100)
     s=dict(nominals=1,dirty_price_per100=56.4,amount_invested_ars=870.1)
     q=dict(unit_price=870.1,trade={"lot_price":{"value":87010}})
-    assert iol._fixed_contract("GD30",a,{},s,q) is None
+    contract=iol._fixed_contract("GD30",a,{},s,q)
+    assert contract["quantity_step"] == "1"
+    assert contract["broker_quantity_step"] == "NO_VERIFICADO"
+    assert contract["paper_quantity_policy"] == "ONE_NOMINAL_SIMULATION_UNIT"
     a["order_terms"]=dict(quantity_step="1",minimum_quantity="1",source_ref="fixture:separate-rule")
     assert iol._fixed_contract("GD30",a,{},s,q)["quantity_step"]=="1"
 
@@ -304,9 +309,11 @@ def test_usd_caucion_still_requires_explicit_fee_budget():
 def test_option_price_base_quantity_and_adjusted_series_cannot_be_inferred():
     chain={"underlying":"GGAL","options":[dict(symbol="OPT",strike_price=6000,option_type="C",expiration="2026-10-16T15:30:00",volume=1)]}
     info=dict(market="BCBA",currency="ARS",units_per_lot=1)
-    assert iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"type":"ACCIONES"})[0]["financial_contract_v17"] is None
+    standard=iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"type":"ACCIONES","currency":"ARS"})[0]["financial_contract_v17"]
+    assert standard["cash_multiplier"] == "100"
+    assert standard["broker_quantity_step"] == "NO_VERIFICADO"
     info.update(order_terms=dict(quantity_step=1,minimum_quantity=1,source_ref="fixture"),premium_basis="PER_CONTRACT")
-    assert iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"type":"ACCIONES"})[0]["financial_contract_v17"]["cash_multiplier"]=="1"
+    assert iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"type":"ACCIONES"})[0]["financial_contract_v17"]["cash_multiplier"]=="100"
     info["adjusted_series_unverified"]=True
     assert iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"type":"ACCIONES"})[0]["financial_contract_v17"] is None
 
