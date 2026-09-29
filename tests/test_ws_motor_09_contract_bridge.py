@@ -120,8 +120,10 @@ def test_stored_evidence_reaches_real_reconciler_candidate_lookup_and_paper(tmp_
     terms=catalog.quote_terms(row,now=NOW)
     assert terms["opening_block_reason"]==""
     assert terms["contract"].quantity_step==D(1)
-    # An expired identity blocks admission without changing quote freshness.
-    assert catalog.quote_terms(row,now=NOW+timedelta(days=2))["opening_block_reason"]=="PPI_FRESHNESS_STALE"
+    # The PAPER identity follows the catalogue's 14-day LKG window; dynamic
+    # quote/session freshness remains enforced outside this static contract.
+    assert catalog.quote_terms(row,now=NOW+timedelta(days=2))["opening_block_reason"]==""
+    assert catalog.quote_terms(row,now=NOW+timedelta(days=15))["opening_block_reason"]=="PPI_FRESHNESS_STALE"
     sector_file=tmp_path / "sector.csv"
     sector_file.write_text("ticker,family,market,currency,settlement,sector,source,reviewed\nGD30,BONOS,BYMA,ARS,A-24HS,SOVEREIGN_FIXTURE,fixture,true\n")
     monkeypatch.setenv("POROTA_SECTOR_MAP_PATH",str(sector_file))
