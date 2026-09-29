@@ -154,8 +154,9 @@ def test_caucion_rate_is_dynamic_not_static_contract():
 def test_futures_margin_is_dynamic_and_contract_multiplier_is_static():
     assert "cash_multiplier" in contract_rules.FAMILY_CONTRACT_FIELDS["FUTUROS"]
     assert "margin_requirement" not in contract_rules.FAMILY_CONTRACT_FIELDS["FUTUROS"]
-    assert {"initial_margin", "maintenance_margin"} <= \
-        contract_rules.FAMILY_DYNAMIC_FIELDS["FUTUROS"]
+    assert contract_rules.FAMILY_DYNAMIC_FIELDS["FUTUROS"] == {"margin_requirement"}
+    assert contract_rules.FIELD_CONSUMERS["margin_requirement"] == \
+        "future PAPER reserve and conservative deficit gate"
 
 
 def test_complete_static_contract_does_not_expire_only_by_age():
