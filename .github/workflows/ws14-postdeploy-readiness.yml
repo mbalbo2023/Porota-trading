@@ -1,5 +1,5 @@
-name: WS14 postdeploy mass PAPER audit READ ONLY
-# Stability recheck after observer refresh cycles; no runtime mutation.
+name: WS14 final PAPER policy materialization and audit
+# One-shot Evidence v2 finalization followed by exhaustive read-only audit.
 
 on:
   push:
@@ -46,6 +46,203 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Materialize verified option and futures PAPER policies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_audit" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" bash -s <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          EXPECTED_CANDIDATE=d2a8d43a4e414ec21560378ba9e38dc89afc65b0
+          EXPECTED_DEPLOY=7fe4f905d34ca573c3a0bc414f3c258ad6b0bba2
+          CURRENT=/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json
+
+          python3 - "$CURRENT" "$EXPECTED_CANDIDATE" "$EXPECTED_DEPLOY" <<'PY'
+          import json,sys
+          state=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert state.get('candidate_sha')==sys.argv[2], state
+          assert state.get('deploy_sha')==sys.argv[3], state
+          assert state.get('mode')=='PRODUCTION_PAPER', state
+          assert int(state.get('real_orders_sent') or 0)==0, state
+          assert state.get('real_order_routes') in ('NONE','NOT_CALLED'), state
+          assert state.get('ppi_watch_untouched') is True, state
+          print('WS14_FINAL_PROVENANCE=GREEN')
+          PY
+
+          IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          DASH_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          test -n "$IMAGE_ID" && test "$IMAGE_ID" = "$DASH_IMAGE_ID"
+          BEFORE="$(sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          print('|'.join(map(str,c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone())))
+          PY
+          )"
+          test "$BEFORE" = 'PRODUCTION_PAPER|0'
+
+          restart_observer() {
+            sudo -n docker start porota_production_observer >/dev/null 2>&1 || true
+          }
+          trap restart_observer EXIT
+          sudo -n docker stop porota_production_observer >/dev/null
+
+          sudo -n docker run --rm --pull never --user botuser --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
+            -e DATA_DIR=/app/data -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
+            -v /opt/porota-trading/data:/app/data \
+            --entrypoint python "$IMAGE_ID" - <<'PY'
+          import json, os, sqlite3
+          from datetime import datetime, timezone
+
+          from cp_contract_evidence_v2_hf6 import record_snapshots
+          from bf_production_paper_observer import _reconcile_complementary_catalog
+
+          DB=os.environ['PAPER_V17_DB_PATH']
+
+          class Store:
+              def __init__(self,path): self.path=path
+              def connect(self):
+                  c=sqlite3.connect(self.path,timeout=30)
+                  c.row_factory=sqlite3.Row
+                  c.execute('PRAGMA foreign_keys=ON')
+                  c.execute('PRAGMA busy_timeout=10000')
+                  return c
+              def event(self,event,detail):
+                  with self.connect() as c:
+                      c.execute('INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)',(
+                          datetime.now(timezone.utc).isoformat(),'PAPER_ENGINE',
+                          str(event),None,str(detail)[:2000]))
+
+          store=Store(DB)
+          with store.connect() as c:
+              state=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              assert tuple(state)==('PRODUCTION_PAPER',0), tuple(state)
+              option=c.execute("""SELECT ticker,instrument_type,market,currency,settlement,status
+                  FROM financial_instrument_catalog
+                  WHERE ticker='GFGC6000OC' AND instrument_type='OPCIONES'
+                  AND market='BYMA' AND currency='ARS' AND settlement='INMEDIATA'""").fetchall()
+              assert len(option)==1 and option[0]['status']=='AVAILABLE', [dict(r) for r in option]
+              futures=[dict(r) for r in c.execute("""SELECT ticker,instrument_type AS family,
+                  market,currency,settlement,last_seen_at FROM financial_instrument_catalog
+                  WHERE status='AVAILABLE' AND instrument_type='FUTUROS'
+                  ORDER BY ticker,market,currency,settlement""")]
+              assert len(futures)==134, len(futures)
+
+          identity=dict(family='OPCIONES',ticker='GFGC6000OC',market='BYMA',
+                        currency='ARS',settlement='INMEDIATA')
+          records=[
+              {**identity,
+               'source_class':'PPI_AUTHENTICATED_DOM',
+               'source_ref':'WS10:PPI:GFGC6000OC-order-form',
+               'observed_at':'2026-09-28T17:55:00+00:00',
+               'evidence':{
+                   'market':'BYMA','currency':'ARS','settlement':'INMEDIATA',
+                   'cash_multiplier':'100','quantity_min':'1','quantity_step':'1',
+                   'contract_multiplier':'100','lot_size':'100',
+                   'evidence_scope':'EXACT_PPI_ORDER_FORM_STATIC_TERMS'}},
+              {**identity,
+               'source_class':'IOL_STRUCTURED_API',
+               'source_ref':'IOL_MCP:get_options_chain:GGAL:2026-10-16:LKG_2026-09-29T13:26:47-03:00',
+               'observed_at':'2026-09-29T16:26:47+00:00',
+               'evidence':{
+                   'market':'BYMA','currency':'ARS','settlement':'INMEDIATA',
+                   'underlying':'GGAL','put_call':'CALL','strike':'6000',
+                   'expiry_at':'2026-10-16T15:30:00-03:00',
+                   'iol_units_per_lot':'1','premium_basis':'PER_UNDERLYING_UNIT',
+                   'quote_state_at_observation':'LIVE_NOT_STALE',
+                   'last_price_at_observation':'270',
+                   'provider_timestamp':'2026-09-29T13:26:47-03:00',
+                   'cache_semantics':'LAST_KNOWN_GOOD_STATIC_CONTRACT_TERMS'}},
+          ]
+          for row in futures:
+              records.append({
+                  'family':'FUTUROS','ticker':row['ticker'],'market':row['market'],
+                  'currency':row['currency'],'settlement':row['settlement'],
+                  'source_class':'DERIVED_OFFICIAL_RULE',
+                  'source_ref':'POROTA_PAPER_FUTURES_CONSERVATIVE_POLICY:v1',
+                  'observed_at':row['last_seen_at'],
+                  'evidence':{
+                      'market':row['market'],'currency':row['currency'],
+                      'settlement':row['settlement'],
+                      'paper_quantity_min':'1','paper_quantity_step':'1',
+                      'paper_quantity_policy':'ONE_INTEGER_CONTRACT_SIMULATION_UNIT',
+                      'broker_minimum_quantity':'NO_VERIFICADO',
+                      'broker_quantity_step':'NO_VERIFICADO',
+                      'paper_margin_policy':'CONSERVATIVE_NOTIONAL_RATE',
+                      'paper_margin_rate':'1','broker_margin':'NO_VERIFICADO',
+                      'policy_scope':'PRODUCTION_PAPER_SIMULATION_ONLY',
+                      'readiness_guard':'REQUIRES_VERIFIED_MULTIPLIER_EXPIRY_UNDERLYING'}
+              })
+
+          written=record_snapshots(store,records)
+          changed=[r for r in written if r.get('changed')]
+          assert not changed, changed
+          promoted=_reconcile_complementary_catalog(store)
+
+          with store.connect() as c:
+              option_row=dict(c.execute("""SELECT capability,metadata_json
+                  FROM financial_instrument_catalog WHERE ticker='GFGC6000OC'
+                  AND instrument_type='OPCIONES' AND market='BYMA' AND currency='ARS'
+                  AND settlement='INMEDIATA'""").fetchone())
+              candidate=dict(c.execute("""SELECT can_simulate,detail FROM candidate_identity_v2
+                  WHERE ticker='GFGC6000OC' AND instrument_type='OPCIONES'
+                  AND market='BYMA' AND currency='ARS' AND settlement='INMEDIATA'""").fetchone())
+              ready=dict(c.execute("""SELECT instrument_type,COUNT(*) FROM financial_instrument_catalog
+                  WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER_%'
+                  GROUP BY instrument_type ORDER BY instrument_type""").fetchall())
+              future_gaps=[]
+              for row in c.execute("""SELECT metadata_json FROM financial_instrument_catalog
+                  WHERE status='AVAILABLE' AND instrument_type='FUTUROS'"""):
+                  raw=json.loads(row[0] or '{}')
+                  future_gaps.extend((raw.get('_contract_bridge') or {}).get('gaps') or [])
+              observer=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+
+          raw=json.loads(option_row['metadata_json'])
+          contract=raw.get('financial_contract_v17') or {}
+          provenance=contract.get('field_provenance') or {}
+          assert option_row['capability']=='READY_PAPER_OPTION_LONG', option_row['capability']
+          assert candidate['can_simulate']==1 and candidate['detail']=='READY_PAPER_OPTION_LONG', candidate
+          assert contract.get('cash_multiplier')=='1E+2', contract
+          assert contract.get('underlying')=='GGAL' and contract.get('option_right')=='CALL', contract
+          assert provenance['cash_multiplier']['source_class']=='PPI_AUTHENTICATED_DOM', provenance
+          assert provenance['underlying']['source_class']=='IOL_STRUCTURED_API', provenance
+          assert ready.get('OPCIONES')==1, ready
+          gaps=set(future_gaps)
+          assert 'MISSING:paper_margin_policy' not in gaps, sorted(gaps)
+          assert 'MISSING:quantity_step' not in gaps and 'MISSING:minimum_quantity' not in gaps, sorted(gaps)
+          assert {'MISSING:cash_multiplier','MISSING:expires_at','MISSING:underlying'} <= gaps, sorted(gaps)
+          assert tuple(observer)==('PRODUCTION_PAPER',0), tuple(observer)
+          print(json.dumps({'records_written':len(written),'promoted':promoted,
+                            'ready_by_family':ready,'option':option_row['capability'],
+                            'candidate':candidate,'future_residual_gaps':sorted(gaps)},
+                           sort_keys=True))
+          print('WS14_FINAL_MATERIALIZATION=GREEN')
+          PY
+
+          restart_observer
+          trap - EXIT
+          for attempt in $(seq 1 24); do
+            STATE="$(sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True,timeout=5)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('SELECT mode,process_state,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+          print('|'.join(map(str,row)))
+          PY
+            )" || true
+            echo "OBSERVER_RESTART_CHECK=$attempt|$STATE"
+            case "$STATE" in PRODUCTION_PAPER\|RUNNING\|0\|*) break ;; esac
+            sleep 5
+          done
+          case "$STATE" in PRODUCTION_PAPER\|RUNNING\|0\|*) ;; *) exit 1 ;; esac
+          test "$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/health)" = 200
+          echo 'WS14_FINAL_RUNTIME=GREEN|REAL_ORDERS_SENT=0|REAL_ORDER_ROUTES=NOT_CALLED|PPI_WATCH=UNTOUCHED'
+          REMOTE
 
       - name: Collect exhaustive production evidence READ ONLY
         shell: bash
@@ -247,6 +444,22 @@ jobs:
                                      for f in catalog_family_names}
           residual_by_family = dict(collections.Counter(r['family'] for r in residuals))
           residual_by_blocker = dict(collections.Counter(r['candidate_detail'] for r in residuals))
+          witness_db = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=20)
+          witness_db.row_factory = sqlite3.Row
+          witness_db.execute('PRAGMA query_only=ON')
+          option_witness = dict(witness_db.execute("""SELECT f.ticker,f.capability,f.metadata_json,
+              v.can_simulate,v.detail FROM financial_instrument_catalog f
+              JOIN candidate_identity_v2 v USING(ticker,instrument_type,market,currency,settlement)
+              WHERE f.ticker='GFGC6000OC' AND f.instrument_type='OPCIONES'
+              AND f.market='BYMA' AND f.currency='ARS' AND f.settlement='INMEDIATA'""").fetchone())
+          witness_db.close()
+          option_metadata = safe_json(option_witness.pop('metadata_json'))
+          option_contract = option_metadata.get('financial_contract_v17') or {}
+          option_witness['contract'] = option_contract
+          future_gap_counts = collections.Counter()
+          for item in residuals:
+              if item['family'] == 'FUTUROS':
+                  future_gap_counts.update(item.get('bridge_gaps') or [])
 
           payload = {
               'schema': 'ws14-postdeploy-readiness-v1',
@@ -291,8 +504,10 @@ jobs:
                   'latest_mass_run': latest_mass},
               'iol_cache': iol_summary,
               'residual_summary': {'count': len(residuals), 'by_family': residual_by_family,
-                                   'by_blocker': residual_by_blocker},
+                                   'by_blocker': residual_by_blocker,
+                                   'future_bridge_gaps': dict(future_gap_counts)},
               'residual_instruments': residuals,
+              'option_witness': option_witness,
           }
 
           assert readonly_probe == 1
@@ -309,7 +524,21 @@ jobs:
           assert not uncovered_ppi_keys
           assert catalog_available == len(ppi_catalog_keys & ppi_evidence_keys)
           assert latest_mass and latest_mass.get('state') == 'OK'
-          assert candidate_ready >= BASELINE['candidate_ready']
+          assert catalog_ready >= 5559
+          assert candidate_ready >= 5559
+          assert catalog_ready_by_family.get('OPCIONES') == 1
+          assert candidate_ready_by_family.get('OPCIONES') == 1
+          assert option_witness.get('capability') == 'READY_PAPER_OPTION_LONG'
+          assert int(option_witness.get('can_simulate') or 0) == 1
+          assert option_witness.get('detail') == 'READY_PAPER_OPTION_LONG'
+          assert (option_contract.get('field_provenance') or {}).get('cash_multiplier', {}).get('source_class') == 'PPI_AUTHENTICATED_DOM'
+          assert (option_contract.get('field_provenance') or {}).get('underlying', {}).get('source_class') == 'IOL_STRUCTURED_API'
+          assert evidence_by_source.get('IOL_STRUCTURED_API', 0) >= 1
+          assert evidence_by_source.get('PPI_AUTHENTICATED_DOM', 0) >= 1
+          assert not any(k in future_gap_counts for k in (
+              'MISSING:paper_margin_policy','MISSING:quantity_step','MISSING:minimum_quantity'))
+          assert all(future_gap_counts.get(k, 0) == 134 for k in (
+              'MISSING:cash_multiplier','MISSING:expires_at','MISSING:underlying'))
           print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=str))
           PY
           python -m json.tool ws14_postdeploy_readiness.json >/dev/null
