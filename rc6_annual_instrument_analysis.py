@@ -13,7 +13,8 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import iol_shadow_observation_rc6 as iol_shadow_observation
-import rc6_family_readiness as family_readiness
+from cg_paper_workspace import database_path
+import er_dashboard_truth_projection_rc6 as truth_projection
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 TABLE = "history_canonical_v2"
@@ -33,6 +34,33 @@ def _connect():
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA query_only=ON")
     return connection
+
+
+def _runtime_connect():
+    path = Path(database_path()).expanduser().resolve()
+    connection = sqlite3.connect("file:" + quote(str(path), safe="/") + "?mode=ro",
+                                 uri=True, timeout=5)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA query_only=ON")
+    return connection
+
+
+def _runtime_rows(sql, params=()):
+    try:
+        with closing(_runtime_connect()) as connection:
+            return [dict(row) for row in connection.execute(sql, params).fetchall()]
+    except (sqlite3.Error, OSError, ValueError):
+        return []
+
+
+def _runtime_table(name):
+    try:
+        with closing(_runtime_connect()) as connection:
+            return bool(connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+            ).fetchone())
+    except (sqlite3.Error, OSError, ValueError):
+        return False
 
 
 def _catalog():
@@ -83,11 +111,20 @@ def _number(value):
 
 def _price(value):
     number = _number(value)
-    return "—" if number is None else f"{number:,.4f}"
+    if number is None:
+        return "—"
+    return f"{number:,.4f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
 
 def _pct(value):
-    return "—" if value is None else f"{value * 100:+.2f}%"
+    return "—" if value is None else f"{value * 100:+.2f}%".replace(".", ",")
+
+
+def _count(value):
+    try:
+        return f"{int(value or 0):,}".replace(",", ".")
+    except (TypeError, ValueError, OverflowError):
+        return "—"
 
 
 def _sma(values, count):
@@ -217,7 +254,7 @@ def _render_report(identity, bars, year):
                 + ("; excluye cupones, amortizaciones e interés corrido" if _is_on_family(family) else "")),
         _metric("Máxima caída del año", _pct(max_drawdown), "Drawdown calculado con cierres diarios desde el máximo acumulado."),
         _metric("Volatilidad realizada anualizada", _pct(volatility), "Desviación de retornos diarios × √252; requiere al menos 2 retornos."),
-        _metric("RSI (14)", "—" if _rsi(analysis_closes) is None else f"{_rsi(analysis_closes):.1f}", "Promedio simple de ganancias y pérdidas de las últimas 14 ruedas; contextual, no calibrado como gatillo."),
+        _metric("RSI (14)", "—" if _rsi(analysis_closes) is None else _price(_rsi(analysis_closes)), "Promedio simple de ganancias y pérdidas de las últimas 14 ruedas; contextual, no calibrado como gatillo."),
         _metric("Momentum 20 / 60 / 120 / 252 ruedas",
                 " / ".join(_pct(momentum_values[n]) for n in (20, 60, 120, 252)),
                 "Retorno del cierre actual frente al cierre de N ruedas atrás; si falta historial se muestra —."),
@@ -291,71 +328,38 @@ def _evidence_label(state):
 
 
 def _render_reconciliation_evidence():
-    """Render only the latest isolated IOL cache; never refreshes or authorizes."""
-    try:
-        data = iol_shadow_observation.collect()
-    except Exception:
-        data = {"state": "UNAVAILABLE", "symbols": []}
-    rows = [row for row in (data.get("symbols") or []) if isinstance(row, dict)]
-    state = str(data.get("state") or "UNKNOWN").upper()
-    ready = blocked = partial = 0
-    rendered = []
-    for row in rows[:40]:
-        comparison = row.get("primary_comparison") if isinstance(row.get("primary_comparison"), dict) else {}
-        contract = str(comparison.get("contract_state") or "INSUFFICIENT_EVIDENCE").upper()
-        tone = _evidence_tone(contract)
-        ready += contract.startswith("READY_SHADOW")
-        blocked += contract.startswith("BLOCKED")
-        partial += contract in {"READY_SHADOW_PARTIAL", "INSUFFICIENT_EVIDENCE"}
-        quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
-        freshness = comparison.get("freshness") if isinstance(comparison.get("freshness"), dict) else {}
-        ppi_fresh = freshness.get("PPI", "UNKNOWN")
-        iol_fresh = freshness.get("IOL", "UNKNOWN")
-        detail = (
-            f"Último {_price(quote.get('last'))} · Bid {_price(quote.get('bid'))} · "
-            f"Ask {_price(quote.get('ask'))} · PPI {ppi_fresh} · IOL {iol_fresh} · "
-            f"matches {comparison.get('matches', 0)} · conflictos {comparison.get('divergences', 0)} · "
-            f"complementos {comparison.get('complemented', 0)}"
-        )
-        rendered.append(
-            "<tr>"
-            f"<td><b>{_e(row.get('symbol') or '—')}</b></td>"
-            f"<td>{_e(row.get('asset_type') or 'ACCIONES/CEDEARs')}</td>"
-            f"<td><span class='paper-status {tone}'>{_e(_evidence_label(contract))}</span></td>"
-            f"<td>{_e(detail)}</td>"
-            "</tr>"
-        )
-    if not rows:
-        body = (
-            "<div class='paper-warning'><b>Sin evidencia IOL publicada todavía.</b> "
-            "Esta pantalla no consulta IOL; esperará al ciclo read-only del collector.</div>"
-        )
-    else:
-        body = (
-            "<div class='paper-grid'>"
-            + _metric("Estado del cache", state, "Lectura local; no inicia consultas.")
-            + _metric("Listos en SHADOW", str(ready), "No habilita dinero real.")
-            + _metric("Bloqueados", str(blocked), "Conflictos y vencimientos quedan visibles.")
-            + _metric("Parciales / insuficientes", str(partial), "Requieren más evidencia o cobertura.")
-            + "</div>"
-            "<div class='paper-table-wrap'><table><thead><tr>"
-            "<th>Instrumento</th><th>Familia</th><th>Semáforo</th><th>Detalle</th>"
-            "</tr></thead><tbody>"
-            + "".join(rendered)
-            + "</tbody></table></div>"
-        )
+    """Show current IOL/cache and caucion state without redefining readiness."""
+    truth = truth_projection.build(_runtime_rows, _runtime_table)
+    iol = truth["iol"]
+    quote = iol["quotes"]
+    family = iol["families"]
+    section_rows = "".join(
+        "<tr>"
+        f"<td><b>{_e(name)}</b></td><td>{_e(item.get('state'))}</td>"
+        f"<td>{_e(item.get('raw_source_state'))}</td><td>{_e(item.get('as_of') or '—')}</td>"
+        "</tr>"
+        for name, item in family.get("sections", {}).items()
+    ) or "<tr><td colspan='4'>Sin secciones publicadas; SOURCE_UNAVAILABLE.</td></tr>"
+    caucion = truth["caucion"]
     return (
-        "<section class='paper-card'><h2>Evidencia PPI / IOL · ACCIONES y CEDEARs</h2>"
-        "<p class='paper-muted'>PPI manda; IOL complementa en modo read-only. "
-        "El estado se calcula por identidad, campos comparables, frescura ≤120 s y conflictos. "
-        "Ningún estado habilita dinero real.</p>"
-        + body
-        + "<h3>Piloto cauciones</h3>"
-        "<p><span class='paper-status yellow'>SHADOW ONLY · FUERA DEL UNIVERSO OPERATIVO</span> "
-        "Para evaluar cauciones deben completarse identidad, mercado, moneda, liquidación, plazo, tasa, "
-        "monto, garantía, fecha de liquidación y timestamps PPI/IOL; además, capturas sincronizadas, "
-        "frescura, ausencia de conflictos y varias ruedas de evidencia. Hasta entonces no se mezclan "
-        "con ACCIONES/CEDEARs ni con las decisiones del motor.</p></section>"
+        "<section class='paper-card'><h2>Salud actual de IOL</h2>"
+        "<p class='paper-muted'>IOL complementa a PPI. Una falla se limita a la sección afectada; "
+        "un cache válido conserva su estado y nunca se presenta como IOL=0.</p>"
+        "<div class='analysis-grid'>"
+        + _metric("Cotizaciones IOL", quote.get("state"),
+                  f"{quote.get('total', 0)} filas · {quote.get('states', {})}")
+        + _metric("Familias IOL", family.get("state"),
+                  f"LKG {family.get('last_known_good_at') or 'no publicado'}")
+        + "</div><table><thead><tr><th>Sección</th><th>Estado visible</th>"
+        "<th>Estado de la fuente</th><th>Actualizado</th></tr></thead><tbody>"
+        + section_rows + "</tbody></table>"
+        "<h3>Caución colocadora PAPER</h3>"
+        f"<p><b>Ledger:</b> {_e(caucion.get('ledger_state'))} · "
+        f"<b>Fuente:</b> {_e((caucion.get('iol_source') or {}).get('state'))} · "
+        f"<b>Último resultado:</b> {_e(caucion.get('allocation_status'))} · "
+        f"<b>Motivo HOLD:</b> {_e(caucion.get('hold_reason'))}.</p>"
+        "<p class='paper-muted'>La garantía no es un requisito genérico de una colocadora PAPER. "
+        "Se muestran únicamente ledger, fuente, asignación y evidencia persistida.</p></section>"
     )
 
 
@@ -365,66 +369,34 @@ def _family_tone(state):
 
 
 def _render_family_readiness(catalog):
-    """Show family readiness and exact gaps from cache-only evidence."""
-    try:
-        cache = iol_shadow_observation.collect()
-        rows = [row for row in (cache.get("symbols") or []) if isinstance(row, dict)]
-        report = family_readiness.evaluate(catalog, rows)
-    except Exception as exc:
-        return (
-            "<section class='paper-card'><h2>Readiness integral por familia</h2>"
-            "<div class='paper-warning'><b>No se pudo construir la proyección.</b> "
-            + _e(f"{type(exc).__name__}: {str(exc)[:160]}")
-            + "</div></section>"
-        )
-    families = report.get("families") or []
-    instruments = report.get("instruments") or []
-    if not families:
-        return (
-            "<section class='paper-card'><h2>Readiness integral por familia</h2>"
-            "<div class='paper-warning'><b>Sin universo PPI publicado.</b> "
-            "No se habilita nada automáticamente hasta tener identidades verificables.</div></section>"
-        )
-    family_rows = []
-    for item in families:
-        state = str(item.get("state") or "PENDING").upper()
-        gaps = ", ".join(str(value) for value in (item.get("gaps") or [])[:4]) or "Sin brechas publicadas."
-        family_rows.append(
-            "<tr>"
-            f"<td><b>{_e(item.get('family'))}</b></td>"
-            f"<td><span class='paper-status {_family_tone(state)}'>{_e(state)}</span></td>"
-            f"<td>{_e(item.get('paper_auto_enabled', 0))}/{_e(item.get('instrument_count', 0))}</td>"
-            f"<td>{_e(item.get('blocked', 0))} bloqueados · {_e(item.get('pending', 0))} pendientes</td>"
-            f"<td>{_e(item.get('next_action'))}<br><span class='paper-muted'>{_e(gaps)}</span></td>"
-            "</tr>"
-        )
-    detail_rows = []
-    for item in instruments[:80]:
-        state = str(item.get("contract_state") or "INSUFFICIENT_EVIDENCE").upper()
-        tone = _evidence_tone(state)
-        reasons = ", ".join(str(value) for value in (item.get("reasons") or [])[:3])
-        detail_rows.append(
-            "<tr>"
-            f"<td>{_e(item.get('family'))}</td><td><b>{_e(item.get('symbol'))}</b></td>"
-            f"<td><span class='paper-status {tone}'>{_e(_evidence_label(state))}</span></td>"
-            f"<td>{'PAPER AUTO: ON' if item.get('paper_auto_enabled') else 'PAPER AUTO: OFF'}</td>"
-            f"<td>{_e(reasons or 'Sin brecha')}</td>"
-            "</tr>"
-        )
+    """Readiness comes only from candidate_identity_v2; catalog/history stay separate."""
+    truth = truth_projection.build(_runtime_rows, _runtime_table)
+    readiness = truth["readiness"]
+    rows = "".join(
+        "<tr>"
+        f"<td><b>{_e(item.get('family'))}</b></td>"
+        f"<td>{_e(item.get('state'))}</td>"
+        f"<td>{_count(item.get('runtime_ready'))}/{_count(item.get('candidate_total'))}</td>"
+        f"<td>{_count(item.get('catalog_available'))}/{_count(item.get('catalog_total'))}</td>"
+        f"<td>{_count(item.get('paused_explicit'))}</td>"
+        f"<td>{_e(item.get('readiness_as_of') or '—')}</td>"
+        "</tr>"
+        for item in readiness.get("families", [])
+    ) or "<tr><td colspan='6'>candidate_identity_v2 no está disponible; estado NO_VERIFICADO.</td></tr>"
+    strategy = truth["strategy_eligibility"]
     return (
-        "<section class='paper-card'><h2>Readiness integral por familia e instrumento</h2>"
-        "<p class='paper-muted'>Cruza el catálogo PPI con la evidencia PPI/IOL publicada. "
-        "Cada instrumento se promociona individualmente a PAPER/SHADOW cuando cumple; "
-        "una familia incompleta no bloquea otra. IOL complementa y PPI sigue mandando.</p>"
-        "<div class='paper-table-wrap'><table><thead><tr>"
-        "<th>Familia</th><th>Semáforo</th><th>PAPER listo</th><th>Brecha</th><th>Qué falta / próxima acción</th>"
-        "</tr></thead><tbody>" + "".join(family_rows) + "</tbody></table></div>"
-        "<h3>Detalle por instrumento</h3>"
-        "<div class='paper-table-wrap'><table><thead><tr>"
-        "<th>Familia</th><th>Instrumento</th><th>Estado</th><th>Promoción</th><th>Razón</th>"
-        "</tr></thead><tbody>" + "".join(detail_rows) + "</tbody></table></div>"
-        "<p class='paper-notice'><b>Regla de seguridad:</b> PAPER AUTO: ON habilita el circuito simulado/shadow "
-        "de ese instrumento. No autoriza órdenes reales ni modifica PPI Watch.</p></section>"
+        "<section class='paper-card'><h2>Readiness runtime por familia</h2>"
+        f"<p><b>Total READY:</b> {_count(readiness.get('ready'))}/{_count(readiness.get('total'))} · "
+        f"<b>Fuente única:</b> candidate_identity_v2 · <b>as of:</b> {_e(readiness.get('as_of') or '—')}.</p>"
+        "<p class='paper-muted'>El catálogo histórico de esta pantalla sólo alimenta el selector de series. "
+        "No habilita ni deshabilita instrumentos. CONTRACT_READY, RUNTIME_READY y STRATEGY_ELIGIBLE "
+        "son etapas distintas.</p>"
+        "<table><thead><tr><th>Familia</th><th>Estado</th><th>RUNTIME_READY</th>"
+        "<th>Catálogo disponible</th><th>PAUSED_EXPLICIT</th><th>Actualizado</th></tr></thead><tbody>"
+        + rows + "</tbody></table>"
+        f"<p class='paper-notice'><b>STRATEGY_ELIGIBLE:</b> {_e(strategy.get('state'))}; "
+        f"{_e(strategy.get('detail'))} Evaluaciones de hoy: {_e(strategy.get('evaluated_today'))}.</p>"
+        "</section>"
     )
 
 def render_page(family="", instrument=""):

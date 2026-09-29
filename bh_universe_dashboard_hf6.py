@@ -1,4 +1,4 @@
-"""Vista unificada del universo operativo HF6.
+"""Vista unificada del universo operativo RC6.
 
 Solo lectura. Reutiliza la base PAPER del dashboard y no contiene rutas de escritura.
 """
@@ -40,39 +40,41 @@ def _capability_text(items):
         return "sin capacidad observada"
 
     return ", ".join(
-        f"{name}={count}"
+        f"{name}={bg._locale_number(count,0)}"
         for name, count in sorted(items.items())
     )
 
 
 def _page():
-    coverage = bg._rows("""
-        SELECT
-            instrument_type,
-            declared,
-            queries,
-            observed_count,
-            ready_paper_count,
-            discovery_status,
-            checked_at
-        FROM catalog_family_coverage
-        WHERE upper(instrument_type) IN ('ACCIONES','CEDEARS')
-        ORDER BY instrument_type
-    """) if bg._table("catalog_family_coverage") else []
+    truth = bg.truth_projection()
+    coverage = truth.get("readiness", {}).get("families", [])
 
     catalog = bg._rows("""
         SELECT
-            ticker,
-            instrument_type,
-            market,
-            currency,
-            settlement,
-            status,
-            capability,
-            last_seen_at
-        FROM financial_instrument_catalog
-        WHERE status='AVAILABLE'
-          AND upper(instrument_type) IN ('ACCIONES','CEDEARS')
+            c.ticker,
+            c.instrument_type,
+            c.market,
+            c.currency,
+            c.settlement,
+            c.status,
+            c.capability,
+            c.last_seen_at,
+            CASE WHEN r.can_simulate=1 AND upper(r.status)='AVAILABLE' THEN 1 ELSE 0 END runtime_ready,
+            COALESCE(r.status,'NO_CANDIDATE') readiness_status,
+            r.checked_at readiness_as_of
+        FROM financial_instrument_catalog c
+        LEFT JOIN candidate_identity_v2 r
+          ON r.ticker=c.ticker
+         AND r.instrument_type=c.instrument_type
+         AND r.market=c.market
+         AND r.currency=c.currency
+         AND r.settlement=c.settlement
+        WHERE c.status='AVAILABLE'
+        ORDER BY c.instrument_type,c.ticker,c.market,c.currency,c.settlement
+    """) if bg._table("financial_instrument_catalog") and bg._table("candidate_identity_v2") else bg._rows("""
+        SELECT ticker,instrument_type,market,currency,settlement,status,capability,last_seen_at,
+               0 runtime_ready,'NO_CANDIDATE' readiness_status,NULL readiness_as_of
+        FROM financial_instrument_catalog WHERE status='AVAILABLE'
         ORDER BY instrument_type,ticker,market,currency,settlement
     """) if bg._table("financial_instrument_catalog") else []
 
@@ -86,7 +88,6 @@ def _page():
             COUNT(*) snapshots,
             MAX(observed_at) last_observed
         FROM market_snapshots
-        WHERE upper(asset_class) IN ('ACCIONES','CEDEARS','ACCION','CEDEAR')
         GROUP BY
             symbol,
             asset_class,
@@ -107,7 +108,6 @@ def _page():
             SUM(CASE WHEN status='CLOSED' THEN 1 ELSE 0 END) closed,
             MAX(opened_at) last_opened
         FROM paper_positions
-        WHERE upper(asset_class) IN ('ACCIONES','CEDEARS','ACCION','CEDEAR')
         GROUP BY
             symbol,
             asset_class,
@@ -133,7 +133,6 @@ def _page():
             close_reason,
             strategy_version
         FROM paper_positions
-        WHERE upper(asset_class) IN ('ACCIONES','CEDEARS','ACCION','CEDEAR')
         ORDER BY julianday(opened_at) DESC,paper_id DESC
     """) if bg._table("paper_positions") else []
 
@@ -142,7 +141,7 @@ def _page():
             symbol,
             COUNT(*) decisions
         FROM paper_decisions
-        WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE' AND upper(instrument_type) IN ('ACCIONES','CEDEARS'))
+        WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE')
         GROUP BY symbol
     """) if bg._table("paper_decisions") else []
 
@@ -159,7 +158,7 @@ def _page():
                 ELSE 0
             END) opened
         FROM trade_gate_evaluations
-        WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE' AND upper(instrument_type) IN ('ACCIONES','CEDEARS'))
+        WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE')
         GROUP BY symbol
     """) if bg._table("trade_gate_evaluations") else []
 
@@ -353,7 +352,7 @@ def _page():
         ] += 1
 
     coverage_by_family = {
-        r.get("instrument_type"): r
+        r.get("family"): r
         for r in coverage
     }
 
@@ -366,11 +365,7 @@ def _page():
 
     total_catalog = len(catalog)
 
-    total_ready = sum(
-        1
-        for r in catalog
-        if r.get("capability") == "READY_PAPER_SPOT"
-    )
+    total_ready = _int(truth.get("readiness", {}).get("ready"))
 
     total_market = len(market)
 
@@ -455,11 +450,11 @@ def _page():
         )
 
         observed = _int(
-            cov.get("observed_count")
+            cov.get("catalog_available")
         )
 
         ready = _int(
-            cov.get("ready_paper_count")
+            cov.get("runtime_ready")
         )
 
         market_seen = _int(
@@ -487,27 +482,27 @@ def _page():
         family_rows.append(
             "<tr>"
             f"<td><b>{bg._e(family)}</b></td>"
-            f"<td>{bg._e(cov.get('declared'))}</td>"
-            f"<td>{observed}</td>"
-            f"<td>{ready}</td>"
-            f"<td>{market_seen}</td>"
-            f"<td>{_int(mkt.get('snapshots'))}</td>"
-            f"<td>{_int(family_decisions.get(family))}</td>"
-            f"<td>{_int(gate.get('evaluations'))}</td>"
-            f"<td>{_int(gate.get('opened'))}</td>"
-            f"<td>{_int(gate.get('blocked'))}</td>"
-            f"<td>{pos_count} / "
-            f"{_int(pos.get('opened'))} / "
-            f"{_int(pos.get('closed'))}</td>"
+            f"<td>{bg._locale_number(cov.get('catalog_total'),0)}</td>"
+            f"<td>{bg._locale_number(observed,0)}</td>"
+            f"<td>{bg._locale_number(ready,0)}</td>"
+            f"<td>{bg._locale_number(market_seen,0)}</td>"
+            f"<td>{bg._locale_number(_int(mkt.get('snapshots')),0)}</td>"
+            f"<td>{bg._locale_number(_int(family_decisions.get(family)),0)}</td>"
+            f"<td>{bg._locale_number(_int(gate.get('evaluations')),0)}</td>"
+            f"<td>{bg._locale_number(_int(gate.get('opened')),0)}</td>"
+            f"<td>{bg._locale_number(_int(gate.get('blocked')),0)}</td>"
+            f"<td>{bg._locale_number(pos_count,0)} / "
+            f"{bg._locale_number(_int(pos.get('opened')),0)} / "
+            f"{bg._locale_number(_int(pos.get('closed')),0)}</td>"
             f"<td>{bg._e(_capability_text(family_caps.get(family)))}</td>"
-            f"<td>{bg._e(cov.get('discovery_status') or 'SIN_CATALOGO')}</td>"
+            f"<td>{bg._e(cov.get('state') or 'SIN_CATALOGO')}</td>"
             f"<td>{state_view}</td>"
             "</tr>"
         )
 
     instrument_rows = []
 
-    for row in catalog:
+    for row_index, row in enumerate(catalog):
         key = (
             row.get("ticker"),
             row.get("instrument_type"),
@@ -536,32 +531,25 @@ def _page():
             {},
         )
 
-        capability = (
-            row.get("capability")
-            or "UNKNOWN"
-        )
-
-        state = (
-            "OPERABLE_PAPER"
-            if capability == "READY_PAPER_SPOT"
-            else capability
+        state = "RUNTIME_READY" if _int(row.get("runtime_ready")) else (
+            row.get("readiness_status") or "PAUSED_EXPLICIT"
         )
 
         instrument_rows.append(
-            "<tr>"
+            f"<tr data-porota-record='1'{' hidden aria-hidden=\"true\"' if row_index >= 10 else ' aria-hidden=\"false\"'}>"
             f"<td><b>{bg._e(row.get('ticker'))}</b></td>"
             f"<td>{bg._e(row.get('instrument_type'))}</td>"
             f"<td>{bg._e(row.get('market'))}</td>"
             f"<td>{bg._e(row.get('currency'))}</td>"
             f"<td>{bg._e(row.get('settlement'))}</td>"
             f"<td>{bg._e(state)}</td>"
-            f"<td>{_int(mkt.get('snapshots'))}</td>"
+            f"<td>{bg._locale_number(_int(mkt.get('snapshots')),0)}</td>"
             f"<td>{bg._local_time(mkt.get('last_observed'))}</td>"
-            f"<td>{_int(decision.get('decisions'))}</td>"
-            f"<td>{_int(gate.get('evaluations'))}</td>"
-            f"<td>{_int(pos.get('positions'))} / "
-            f"{_int(pos.get('opened'))} / "
-            f"{_int(pos.get('closed'))}</td>"
+            f"<td>{bg._locale_number(_int(decision.get('decisions')),0)}</td>"
+            f"<td>{bg._locale_number(_int(gate.get('evaluations')),0)}</td>"
+            f"<td>{bg._locale_number(_int(pos.get('positions')),0)} / "
+            f"{bg._locale_number(_int(pos.get('opened')),0)} / "
+            f"{bg._locale_number(_int(pos.get('closed')),0)}</td>"
             "</tr>"
         )
 
@@ -600,7 +588,7 @@ def _page():
             f"<td>{bg._e(r.get('market'))}</td>"
             f"<td>{bg._e(r.get('currency'))}</td>"
             f"<td>{bg._e(r.get('settlement'))}</td>"
-            f"<td>{_int(r.get('snapshots'))}</td>"
+            f"<td>{bg._locale_number(_int(r.get('snapshots')),0)}</td>"
             f"<td>{bg._local_time(r.get('last_observed'))}</td>"
             "</tr>"
             for r in rows
@@ -617,7 +605,7 @@ def _page():
         f"<td>{bg._e(r.get('currency'))}</td>"
         f"<td>{bg._e(r.get('settlement'))}</td>"
         f"<td>{bg._status(r.get('status'))}</td>"
-        f"<td>{bg._e(r.get('quantity'))}</td>"
+        f"<td>{bg._locale_number(r.get('quantity'))}</td>"
         f"<td>{bg._amount(r.get('entry_price'), r.get('currency'))}</td>"
         f"<td>{bg._amount(r.get('net_pnl'), r.get('currency'))}</td>"
         f"<td>{bg._e(r.get('close_reason'))}</td>"
@@ -637,7 +625,7 @@ def _page():
         f"<td>{bg._e(r.get('currency'))}</td>"
         f"<td>{bg._status(r.get('status'))}</td>"
         f"<td>{bg._amount(r.get('principal'), r.get('currency'))}</td>"
-        f"<td>{bg._e(r.get('annual_rate_fraction'))}</td>"
+        f"<td>{bg._locale_number(r.get('annual_rate_fraction'),4)}</td>"
         f"<td>{bg._local_time(r.get('maturity_at'))}</td>"
         "</tr>"
         for r in cauciones
@@ -648,15 +636,14 @@ def _page():
     )
 
     body = (
-        "<h1>Universo operativo — acciones y CEDEARs</h1>"
+        "<h1>Universo operativo — todas las familias</h1>"
 
         "<div class='paper-notice'>"
-        "<b>Alcance operativo actual: acciones y CEDEARs.</b> Bonos, cauciones, opciones, futuros y demás familias están deshabilitados por alcance y no se procesan aquí. <b>Lectura única.</b> Esta página reúne catálogo PPI, "
+        "<b>Lectura única y multi-familia.</b> Esta página reúne catálogo financiero, "
         "observación real de mercado, capacidad contractual, "
         "decisiones, gates y ledger PAPER. "
-        "<b>Observado no significa operable:</b> una familia puede "
-        "tener cotizaciones y quedar bloqueada hasta confirmar "
-        "nominales, margen, vencimiento u otras condiciones."
+        "<b>Catálogo, contrato, RUNTIME_READY y STRATEGY_ELIGIBLE son conceptos distintos.</b> "
+        "El READY se toma exclusivamente de candidate_identity_v2; la elegibilidad se determina por evento y no se infiere desde READY."
         "</div>"
 
         f"<div class='paper-grid'>{cards}</div>"
@@ -666,7 +653,7 @@ def _page():
         "<table class='paper-table'>"
         "<tr>"
         "<th>Familia</th>"
-        "<th>PPI declara</th>"
+        "<th>Catálogo total</th>"
         "<th>Catálogo</th>"
         "<th>READY</th>"
         "<th>Mercado</th>"
@@ -690,7 +677,7 @@ def _page():
         "La columna Estado explica por qué puede o no llegar "
         "a una operación PAPER."
         "</p>"
-        "<table class='paper-table'>"
+        "<div data-porota-progressive-list='1' data-page-size='10'><table class='paper-table'>"
         "<tr>"
         "<th>Ticker</th>"
         "<th>Familia</th>"
@@ -705,7 +692,7 @@ def _page():
         "<th>Posiciones total/abiertas/cerradas</th>"
         "</tr>"
         + "".join(instrument_rows)
-        + "</table></div>"
+        + "</table></div></div>"
 
         "<div class='paper-card'>"
         "<h2>Observaciones recientes fuera del catálogo actual (no READY)</h2>"

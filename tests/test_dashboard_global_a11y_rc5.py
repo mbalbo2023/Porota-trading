@@ -5,7 +5,7 @@ import ei_dashboard_table_accessibility_rc5 as a11y
 
 def test_global_table_contract_is_accessible_and_progressive():
     a11y.assert_table_accessibility_contract()
-    assert a11y.TABLE_PAGE_SIZE == 20
+    assert a11y.TABLE_PAGE_SIZE == 10
     assert "max-width:980px" in a11y.TABLE_A11Y_CSS
     assert "porota-cell-label" in a11y.TABLE_A11Y_CSS
     assert "Mostrar menos" in a11y.TABLE_A11Y_SCRIPT

@@ -206,7 +206,7 @@ def _risk_requirement_rows(all_tables):
       ('Fees / liquidez / slippage',('fee','liquidity','slippage','trade_gate')),
       ('Concentración / correlación / sector BINDING',('sector','concentration','correlation')),
       ('Patrimonial Gate',('trade_gate_evaluations',)),
-      ('Settlement / family-data risk',('settlement','candidate_universe')),
+      ('Settlement / family-data risk',('settlement','candidate_identity_v2')),
       ('Kill switch persistido fail-closed',('kill','risk_state')),
       ('Alertas operativas de riesgo',('alert','outbox')),
     )
@@ -248,7 +248,7 @@ def _strategy_overview():
       ('/trading/acciones-cedears','Acciones y CEDEAR','Readiness spot, PPI primario e IOL complementario.'),
       ('/trading/bonos','Bonos','Identidad, nominales, liquidación y evidencia.'),
       ('/trading/on','Obligaciones negociables','Nominal, flujo, vencimiento, costos y contrato.'),
-      ('/trading/cauciones','Cauciones','Términos, tasa, garantía y liquidación.'),
+      ('/trading/cauciones','Cauciones','Colocadora PAPER: fuente, tasa, ventana, caja, reserva y liquidación.'),
       ('/trading/letras','Letras','Nominales, vencimiento y contrato PPI.'),
       ('/trading/etf','ETF','Catálogo, identidad y datos de mercado.'),
       ('/trading/indices','Índices','Tipo de instrumento y fuente contractual.'),
@@ -265,22 +265,22 @@ def _strategy_overview():
 
 def _family_activity_section(section=''):
     requested=tuple(bg.families_for_group(str(section or '').strip().lower())) if str(section or '').strip() else ()
-    families=requested or ('ACCIONES','CEDEARS','BONOS','ON','CAUCIONES','LETRAS','ETF','FUTUROS','OPCIONES','INDICES')
-    universe=bg._rows("SELECT upper(instrument_type) family,COUNT(*) total,SUM(CASE WHEN upper(status)='AVAILABLE' THEN 1 ELSE 0 END) available,SUM(CASE WHEN can_simulate=1 THEN 1 ELSE 0 END) can_simulate FROM candidate_universe GROUP BY upper(instrument_type)")
-    by_family={str(row.get('family') or '').upper():row for row in universe}
-    decisions=bg._rows("""WITH u AS (SELECT DISTINCT ticker,upper(instrument_type) family FROM candidate_universe)
+    truth=bg.truth_projection()
+    by_family={str(row.get('family') or '').upper():row for row in truth['readiness']['families']}
+    families=tuple(bg.dashboard_truth_projection.normalize_family(x) for x in requested) or tuple(sorted(by_family))
+    decisions=bg._rows("""WITH u AS (SELECT DISTINCT ticker,upper(instrument_type) family FROM candidate_identity_v2 WHERE can_simulate=1 AND upper(status)='AVAILABLE')
       SELECT u.family,COUNT(*) decisions,SUM(CASE WHEN d.action='BUY' THEN 1 ELSE 0 END) buys,SUM(CASE WHEN d.action='HOLD' THEN 1 ELSE 0 END) holds,MAX(d.decided_at) last_decision
       FROM paper_decisions d JOIN u ON u.ticker=d.symbol
-      WHERE substr(d.decided_at,1,10)=strftime('%Y-%m-%d','now') GROUP BY u.family""")
-    decision_map={str(row.get('family') or '').upper():row for row in decisions}
+      WHERE substr(d.decided_at,1,10)=strftime('%Y-%m-%d','now') GROUP BY u.family""") if bg._table('candidate_identity_v2') and bg._table('paper_decisions') else []
+    decision_map={bg.dashboard_truth_projection.normalize_family(row.get('family')):row for row in decisions}
     objectives={
       'ACCIONES':'PPI/IOL spot fresco + contrato PPI',
       'CEDEARS':'PPI spot + ratio/moneda + validación IOL',
       'BONOS':'Nominal, moneda, liquidación y contrato',
-      'ON':'Nominal, flujo, vencimiento, costos y contrato',
-      'CAUCIONES':'Términos, tasa, garantía y liquidación',
+      'OBLIGACIONES':'Nominal, flujo, vencimiento, costos y contrato',
+      'CAUCIONES':'Colocadora PAPER: tasa, ventana, caja, reserva y liquidación',
       'LETRAS':'Nominal, vencimiento y contrato',
-      'ETF':'Identidad, mercado y datos de cotización',
+      'ETFS':'Identidad, mercado y datos de cotización',
       'FUTUROS':'Contrato, margen, vencimiento y riesgo',
       'OPCIONES':'Contrato, strike, vencimiento y prima',
       'INDICES':'Tipo de instrumento y fuente contractual',
@@ -289,10 +289,10 @@ def _family_activity_section(section=''):
       'ACCIONES':'Conciliación PPI/IOL completa y fresca; IOL sigue SHADOW',
       'CEDEARS':'Comparación PPI/IOL completa; ratio/moneda faltante donde aplique',
       'BONOS':'Unidades nominales y contrato PPI',
-      'ON':'Unidades nominales, flujo y contrato PPI',
-      'CAUCIONES':'Términos de caución, tasa y garantía',
+      'OBLIGACIONES':'Unidades nominales, flujo y contrato PPI',
+      'CAUCIONES':'Mostrar sólo faltantes persistidos por planner/allocator; garantía no es requisito genérico',
       'LETRAS':'Unidades nominales y contrato PPI',
-      'ETF':'Identidad/catálogo y mercado',
+      'ETFS':'Identidad/catálogo y mercado',
       'FUTUROS':'Contrato, margen y vencimiento',
       'OPCIONES':'Contrato, strike, vencimiento y prima',
       'INDICES':'Tipo de instrumento y contrato',
@@ -300,145 +300,50 @@ def _family_activity_section(section=''):
     rows=[]
     for fam in families:
       row=by_family.get(fam,{})
-      total=int(row.get('total') or 0); available=int(row.get('available') or 0); simulated=int(row.get('can_simulate') or 0)
+      total=int(row.get('catalog_total') or 0); available=int(row.get('catalog_available') or 0)
+      candidates=int(row.get('candidate_total') or 0); paper_ready=int(row.get('runtime_ready') or 0)
+      paused=int(row.get('paused_explicit') or 0)
       d=decision_map.get(fam,{})
-      # Una fila AVAILABLE ya tiene identidad/catálogo confirmado por PPI.
-      # Para ACCIONES/CEDEARS, ese catálogo es el contrato spot ya utilizado
-      # por PAPER; no debe retroceder a PENDING por una proyección histórica
-      # de contract_evidence. Las fuentes complementarias siguen quedando
-      # registradas como SHADOW y nunca autorizan dinero real.
-      operational=fam in {'ACCIONES','CEDEARS'}
-      explicit_ready=min(total, max(0, int(row.get('ready_paper_count') or 0)))
-      paper_ready=(available if operational else explicit_ready)
-      readiness_denominator=(available if operational else total)
-      if readiness_denominator and paper_ready==readiness_denominator:
-        state='READY_PAPER'
+      state=str(row.get('state') or 'NO_VERIFICADO')
+      if state=='RUNTIME_READY':
         state_css='s-verde'
-      elif available:
-        state='PPI_CATALOG_AVAILABLE'
+      elif state in {'PARTIAL','PAUSED_EXPLICIT'}:
         state_css='s-amarillo'
       else:
-        state='PENDING'
-        state_css='s-amarillo'
-      evidence=f"{paper_ready}/{readiness_denominator} PAPER ready · {available}/{total} catálogo disponible · {simulated} simulables · {int(d.get('decisions') or 0)} decisiones"
-      next_action=('Mantener PAPER/SHADOW; PPI primario e IOL/BYMA complementarios.'
-                   if state=='READY_PAPER' else
-                   'Identidad/catálogo disponible; completar PPI/IOL/BYMA y contrato.'
-                   if state=='PPI_CATALOG_AVAILABLE' else
-                   gaps.get(fam,'Publicar evidencia PPI/IOL/BYMA consolidada.'))
+        state_css='s-gris'
+      evidence=(f"{bg._locale_number(paper_ready,0)}/{bg._locale_number(candidates,0)} RUNTIME_READY · "
+                f"{bg._locale_number(available,0)}/{bg._locale_number(total,0)} catálogo disponible · "
+                f"{bg._locale_number(paused,0)} PAUSED_EXPLICIT · "
+                f"{bg._locale_number(int(d.get('decisions') or 0),0)} decisiones")
+      next_action=('Aplicar gates de estrategia; READY no equivale a apertura.'
+                   if state=='RUNTIME_READY' else gaps.get(fam,'Revisar detalle persistido en candidate_identity_v2.'))
       rows.append(f"<tr><td><b>{_esc(fam)}</b></td><td><span class='paper-status {state_css}'>{_esc(state)}</span></td><td title='{_esc(objectives.get(fam,''))}'>{_esc(objectives.get(fam,''))}</td><td title='{_esc(evidence)}'>{_esc(evidence)}</td><td title='{_esc(next_action)}'>{_esc(next_action)}</td></tr>")
-    return """<section class='paper-card' id='rc6-family-readiness'><h2>Readiness y evidencia por familia</h2><p class='paper-muted'>PPI es primario; IOL sólo complementa/valida en modo read-only. La tabla muestra progreso y brecha exacta; no habilita dinero real.</p><table class='paper-table classic-responsive-table'><thead><tr><th>Familia</th><th>Estado</th><th>Objetivo</th><th>Evidencia/progreso</th><th>Falta / siguiente acción</th></tr></thead><tbody>"""+''.join(rows)+"</tbody></table></section>"
+    return """<section class='paper-card' id='rc6-family-readiness'><h2>Readiness por familia</h2><p class='paper-muted'>Fuente única: candidate_identity_v2. Catálogo, contrato, histórico y elegibilidad de estrategia se muestran como conceptos distintos. IOL complementa; no redefine READY.</p><table class='paper-table classic-responsive-table'><thead><tr><th>Familia</th><th>Estado</th><th>Objetivo</th><th>Evidencia/progreso</th><th>Siguiente etapa</th></tr></thead><tbody>"""+''.join(rows)+"</tbody></table></section>"
 
 
 def _evidence_detail_section():
-    """Render persisted PPI/IOL evidence for every auditable family."""
-    records = bg._rows(
-        """SELECT instrument_type,ticker,market,status,owner,source,
-                  checked_at,missing_fields_json,detail
-           FROM contract_evidence
-           ORDER BY instrument_type,ticker,market"""
-    ) if bg._table("contract_evidence") else []
-    latest = bg._rows(
-        """SELECT total,verified,blocked_porota,blocked_provider,finished_at
-           FROM contract_evidence_runs ORDER BY finished_at DESC LIMIT 1"""
-    ) if bg._table("contract_evidence_runs") else []
-    cache_rows = []
-    cache_path = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
-    try:
-        payload = json.loads((cache_path / "iol_shadow_latest.json").read_text(encoding="utf-8"))
-        cache_rows = [row for row in (payload.get("symbols") or []) if isinstance(row, dict)]
-    except (OSError, ValueError, TypeError):
-        cache_rows = []
-    iol_by_symbol = {str(row.get("symbol") or "").upper(): row for row in cache_rows}
-    if not records:
-        return (
-            "<section class='paper-card' id='rc6-evidence-progress'>"
-            "<h2>Progreso de evidencia PPI / IOL</h2>"
-            "<div class='paper-warning'><b>Sin registros persistidos todavía.</b> "
-            "El colector está preparado, pero aún no publicó una corrida utilizable.</div>"
-            "</section>"
-        )
-    groups = {}
-    for row in records:
-        family = str(row.get("instrument_type") or "UNKNOWN").upper()
-        item = groups.setdefault(family, {"total": 0, "green": 0, "yellow": 0, "red": 0, "missing": set()})
-        item["total"] += 1
-        status = str(row.get("status") or "").upper()
-        if status.startswith("VERIFIED"):
-            item["green"] += 1
-        elif "CONFLICT" in status or status.startswith("BLOCKED"):
-            item["red"] += 1
-        else:
-            item["yellow"] += 1
-        try:
-            missing = json.loads(row.get("missing_fields_json") or "[]")
-        except (TypeError, ValueError):
-            missing = ["INVALID_MISSING_FIELDS"]
-        item["missing"].update(str(value) for value in missing if value)
-    family_rows = []
-    for family in sorted(groups):
-        item = groups[family]
-        state = "READY_PAPER" if item["green"] == item["total"] else "BLOCKED" if item["red"] else "PENDING"
-        css = "s-verde" if state == "READY_PAPER" else "s-rojo" if state == "BLOCKED" else "s-amarillo"
-        missing = ", ".join(sorted(item["missing"])[:4]) or "Sin campos faltantes publicados"
-        family_rows.append(
-            "<tr>"
-            f"<td><b>{bg._e(family)}</b></td>"
-            f"<td><span class='paper-status {css}'>{state}</span></td>"
-            f"<td>{item['green']}/{item['total']}</td>"
-            f"<td>{item['yellow']}</td><td>{item['red']}</td>"
-            f"<td title='{bg._e(missing)}'>{bg._e(missing)}</td>"
-            "</tr>"
-        )
-    detail_rows = []
-    for row in records[:200]:
-        status = str(row.get("status") or "PENDING").upper()
-        css = "s-verde" if status.startswith("VERIFIED") else "s-rojo" if "CONFLICT" in status or status.startswith("BLOCKED") else "s-amarillo"
-        ticker = str(row.get("ticker") or "*").upper()
-        iol = iol_by_symbol.get(ticker, {})
-        comparison = iol.get("primary_comparison") if isinstance(iol.get("primary_comparison"), dict) else {}
-        iol_state = str(comparison.get("contract_state") or "SIN_EVIDENCIA").upper()
-        try:
-            missing = json.loads(row.get("missing_fields_json") or "[]")
-        except (TypeError, ValueError):
-            missing = ["INVALID_MISSING_FIELDS"]
-        missing_text = ", ".join(str(value) for value in missing) or "ninguno"
-        detail = str(row.get("detail") or "")
-        detail_rows.append(
-            "<tr>"
-            f"<td><b>{bg._e(row.get('instrument_type'))}</b></td>"
-            f"<td>{bg._e(ticker)}</td><td>{bg._e(row.get('market'))}</td>"
-            f"<td><span class='paper-status {css}'>{bg._e(status)}</span></td>"
-            f"<td>{bg._e(row.get('owner'))}</td>"
-            f"<td title='{bg._e(missing_text)}'>{bg._e(missing_text)}</td>"
-            f"<td title='{bg._e(detail)}'>{bg._e(detail)}</td>"
-            f"<td>{bg._e(iol_state)}</td><td>{bg._local_time(row.get('checked_at'))}</td>"
-            "</tr>"
-        )
-    run = latest[0] if latest else {}
-    cards = "".join((
-        bg._card("Registros", run.get("total", len(records)), "Instrumentos/familias evaluados", "green" if records else "yellow"),
-        bg._card("Verificados", run.get("verified", 0), "Evidencia contractual aceptada", "green" if int(run.get("verified") or 0) else "yellow"),
-        bg._card("Pendiente Porota", run.get("blocked_porota", 0), "Falta adaptador o discovery", "yellow"),
-        bg._card("Pendiente proveedor", run.get("blocked_provider", 0), "Falta campo/semántica PPI u oficial", "yellow"),
-        bg._card("IOL observado", len(cache_rows), "Cache read-only complementario", "green" if cache_rows else "yellow"),
-    ))
+    """Evidence v2 coverage and current IOL health; neither is readiness."""
+    truth=bg.truth_projection(); contract=truth['contract']; iol=truth['iol']
+    family_rows=[]
+    for item in contract.get('families',[]):
+        family_rows.append("<tr>"+f"<td><b>{bg._e(item.get('family'))}</b></td>"+
+            f"<td>{bg._e(item.get('identities'))}</td><td>{bg._e(item.get('evidence_rows'))}</td>"+
+            f"<td>{bg._e(item.get('sources'))}</td><td>{bg._local_time(item.get('as_of'))}</td></tr>")
+    sections=[]
+    for name,item in (iol.get('families',{}).get('sections',{}) or {}).items():
+        sections.append(f"<tr><td><b>{bg._e(name)}</b></td><td>{bg._status(item.get('state'))}</td>"+
+                        f"<td>{bg._e(item.get('raw_source_state'))}</td><td>{bg._local_time(item.get('as_of'))}</td></tr>")
     return (
         "<section class='paper-card' id='rc6-evidence-progress'>"
-        "<h2>Progreso de evidencia PPI / IOL por familia</h2>"
-        "<p class='paper-muted'>PPI es la autoridad. IOL se muestra como complemento read-only. "
-        "El estado se calcula con evidencia persistida; no se infieren campos y ningún estado autoriza dinero real.</p>"
-        f"<div class='paper-grid'>{cards}</div>"
-        "<table class='paper-table classic-responsive-table'><thead><tr>"
-        "<th>Familia</th><th>Estado</th><th>Verificados</th><th>Pendientes</th><th>Bloqueados</th><th>Falta principal</th>"
-        "</tr></thead><tbody>" + "".join(family_rows) + "</tbody></table>"
-        "<h3>Detalle por instrumento / registro</h3>"
-        "<div class='paper-table-wrap'><table class='paper-table classic-responsive-table'><thead><tr>"
-        "<th>Familia</th><th>Instrumento</th><th>Mercado</th><th>Estado PPI</th><th>Responsable</th>"
-        "<th>Campos faltantes</th><th>Diagnóstico</th><th>Estado IOL</th><th>Última evidencia</th>"
-        "</tr></thead><tbody>" + "".join(detail_rows) + "</tbody></table></div>"
-        "<p class='paper-notice'>La promoción automática solo puede producir un estado PAPER/SHADOW por instrumento. "
-        "Las familias fuera del alcance operativo continúan bloqueadas hasta cerrar sus gates contractuales y de riesgo.</p>"
+        "<h2>Evidence v2 e IOL actual</h2>"
+        "<p class='paper-muted'>Contrato usa contract_evidence_v2_current. Readiness usa candidate_identity_v2. "
+        "IOL es complementario y se informa como LIVE, CACHE_FRESH, CACHE_STALE o SOURCE_UNAVAILABLE.</p>"
+        "<table class='paper-table classic-responsive-table'><thead><tr><th>Familia</th><th>Identidades</th>"
+        "<th>Filas Evidence v2</th><th>Fuentes</th><th>Actualizado</th></tr></thead><tbody>"+
+        (''.join(family_rows) or "<tr><td colspan='5'>Evidence v2 no disponible.</td></tr>")+"</tbody></table>"
+        "<h3>Salud actual IOL por sección</h3><table class='paper-table classic-responsive-table'><thead><tr>"
+        "<th>Sección</th><th>Estado visible</th><th>Estado source-path</th><th>Actualizado</th></tr></thead><tbody>"+
+        (''.join(sections) or "<tr><td colspan='4'>SOURCE_UNAVAILABLE sin cache publicado.</td></tr>")+"</tbody></table>"
         "</section>"
     )
 
