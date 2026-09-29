@@ -101,7 +101,11 @@ def _json_from_mcp_body(body: str) -> dict[str, Any]:
                             continue
                         if isinstance(decoded, dict):
                             return decoded
+                        if isinstance(decoded, list):
+                            return {"result": decoded}
                 return result
+            if isinstance(result, list):
+                return {"result": result}
             return {"content": result}
     raise IOLMCPError("IOL_MCP_INVALID_RESPONSE")
 

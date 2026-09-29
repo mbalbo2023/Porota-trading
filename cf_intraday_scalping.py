@@ -21,10 +21,10 @@ from fg_intraday_contract_policy_rc6 import classify_revision, previous_for_sess
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 FOCUS = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
-SUPPORTED_FAMILIES = {
-    "ACCIONES", "BONOS", "CEDEARS", "ETF", "ETFS", "LETRAS", "ON",
-    "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
-}
+# This strategy is an intraday spot strategy.  Contract support elsewhere in
+# RC6 does not make a family suitable for this scanner: fixed income, funds,
+# derivatives and cauciones have different economics/lifecycles.
+SCALPING_STRATEGY_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS"})
 
 
 def _stamp(value):
@@ -122,27 +122,52 @@ def _market_open(at):
 
 
 def select_batch(store, *, limit, cursor=0):
-    """Foco + rotación completa. Elegible no equivale a ejecutable."""
+    """Return only full-key READY identities supported by this strategy.
+
+    ``candidate_identity_v2`` is the runtime readiness authority.  Falling
+    back to every AVAILABLE catalog row used to spend most rotations on
+    families that this strategy must reject later and could also collapse two
+    currency/market identities into one request.  Absence of the v2 gate is
+    therefore fail-closed for scalping.
+    """
     if not 8 <= limit <= 40:
         raise ValueError("INTRADAY_BATCH_LIMIT_OUT_OF_RANGE")
     with store.connect() as connection:
-        rows = [dict(row) for row in connection.execute("""
-          SELECT ticker,instrument_type,market,currency,settlement,capability,status
-          FROM financial_instrument_catalog
-          WHERE status='AVAILABLE' AND currency<>'UNKNOWN' AND market<>'UNKNOWN'
-          ORDER BY instrument_type,market,currency,ticker,settlement
-        """).fetchall()]
+        if not connection.execute("""SELECT 1 FROM sqlite_master
+          WHERE type='table' AND name='candidate_identity_v2'""").fetchone():
+            return [], cursor, 0
+        placeholders = ",".join("?" for _ in SCALPING_STRATEGY_FAMILIES)
+        rows = [dict(row) for row in connection.execute(f"""
+          SELECT c.ticker,c.instrument_type,c.market,c.currency,c.settlement,
+                 c.capability,c.status
+          FROM financial_instrument_catalog c
+          JOIN candidate_identity_v2 r
+            ON r.ticker=c.ticker AND r.instrument_type=c.instrument_type
+           AND r.market=c.market AND r.currency=c.currency
+           AND r.settlement=c.settlement
+          WHERE c.status='AVAILABLE' AND r.status='AVAILABLE'
+            AND r.can_simulate=1
+            AND UPPER(c.instrument_type) IN ({placeholders})
+            AND c.capability LIKE 'READY_PAPER_%'
+            AND c.currency<>'UNKNOWN' AND c.market<>'UNKNOWN'
+          ORDER BY c.instrument_type,c.market,c.currency,c.ticker,c.settlement
+        """, tuple(sorted(SCALPING_STRATEGY_FAMILIES))).fetchall()]
         opened = {row[0] for row in connection.execute(
             "SELECT DISTINCT symbol FROM paper_positions WHERE status='OPEN'").fetchall()}
     unique = {}
     for row in rows:
         try:
-            family_name(row["instrument_type"])
+            family = family_name(row["instrument_type"])
         except ValueError:
             continue
-        # Intraday no recibe moneda/mercado: no duplicar la misma consulta literal.
-        unique.setdefault((row["ticker"], row["instrument_type"], row["settlement"]), row)
-    rows = list(unique.values())
+        if family not in SCALPING_STRATEGY_FAMILIES:
+            continue
+        # The PPI intraday route does not take currency/market.  More than one
+        # READY full identity for the same literal request is ambiguous and is
+        # excluded instead of choosing an arbitrary sibling.
+        request_key = (row["ticker"], row["instrument_type"], row["settlement"])
+        unique.setdefault(request_key, []).append(row)
+    rows = [values[0] for values in unique.values() if len(values) == 1]
     priority = [row for row in rows if row["ticker"] in opened or row["ticker"] in FOCUS]
     priority_keys = {_identity(row) for row in priority}
     rotation = [row for row in rows if _identity(row) not in priority_keys]

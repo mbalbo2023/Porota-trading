@@ -20,6 +20,52 @@ DEFAULT_DB=os.getenv("POROTA_IOL_OPERATIONAL_DB","/opt/porota-trading/data/paper
 OPTION_CONTRACT_LOT_BY_UNDERLYING_FAMILY={"ACCIONES":100,"CEDEARS":10,"BONOS":1000,"LETRAS":1000}
 MAX_OPTION_UNDERLYINGS=4
 
+
+def _brief_call(client, name, arguments):
+    """One bounded retry for transient read failures; never an execution call."""
+    try:
+        return client.call(name, arguments)
+    except Exception:
+        return client.call(name, arguments)
+
+
+def _response_rows(payload):
+    """Normalize MCP/tool envelopes without interpreting absence as zero."""
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("result", "structuredContent", "items", "rates", "funds", "data"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [row for row in value if isinstance(row, dict)]
+        if isinstance(value, dict):
+            nested = _response_rows(value)
+            if nested:
+                return nested
+    content = payload.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                try:
+                    nested = _response_rows(json.loads(item["text"]))
+                except (ValueError, TypeError):
+                    nested = []
+                if nested:
+                    return nested
+    return []
+
+
+def _lkg_section_state(prior, section, has_value, now):
+    if not has_value:
+        return "SOURCE_UNAVAILABLE_NO_LKG"
+    seen = (prior.get("section_observed_at") or {}).get(section)
+    try:
+        age = (now-datetime.fromisoformat(str(seen).replace("Z","+00:00"))).total_seconds()
+    except (TypeError, ValueError):
+        age = None
+    return "LKG_FRESH_SOURCE_UNAVAILABLE" if age is not None and 0 <= age <= 86400 else "LKG_STALE_SOURCE_UNAVAILABLE"
+
 def _atomic(path:Path,value:dict):
     path.parent.mkdir(parents=True,exist_ok=True)
     with NamedTemporaryFile("w",encoding="utf-8",dir=path.parent,prefix=".iol-family-",suffix=".tmp",delete=False) as h:
@@ -292,11 +338,11 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
             family=canonical_family(identity.get("instrument_type"))
             currency=str(identity.get("currency") or "").upper()
             settlement=canonical_settlement(identity.get("settlement"),family)
-            asset=client.call("get_asset_info",{"symbol":fixed_symbol,"market":"BCBA"})
-            analytics=client.call("get_fixed_income_analytics",{"ticker":fixed_symbol})
-            simulation=client.call("simulate_fixed_income_by_nominals",{
+            asset=_brief_call(client,"get_asset_info",{"symbol":fixed_symbol,"market":"BCBA"})
+            analytics=_brief_call(client,"get_fixed_income_analytics",{"ticker":fixed_symbol})
+            simulation=_brief_call(client,"simulate_fixed_income_by_nominals",{
                 "ticker":fixed_symbol,"nominals":1,"currency":currency})
-            quote=client.call("get_asset_quote",{
+            quote=_brief_call(client,"get_asset_quote",{
                 "symbol":fixed_symbol,"market":"BCBA",
                 "term":"t0" if settlement=="INMEDIATA" else "t1"})
             contract=_fixed_contract(
@@ -325,18 +371,22 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
             section_observed_at["fixed_income"]=at
         except Exception as exc:
             errors.append("FIXED:"+fixed_symbol+":"+type(exc).__name__)
-            section_states["fixed_income"]="SOURCE_UNAVAILABLE"
+            prior_fixed = any(canonical_family(r.get("instrument_type")) in
+                              {"BONOS","LETRAS","OBLIGACIONES"}
+                              for r in prior.get("records",[]) if isinstance(r,dict))
+            section_states["fixed_income"]=_lkg_section_state(
+                prior,"fixed_income",prior_fixed,now or datetime.now(timezone.utc))
             successful_sections=[]
     else:
         successful_sections=[]
 
     for underlying in option_underlyings:
         try:
-            chain=client.call("get_options_chain",{"symbol":underlying})
+            chain=_brief_call(client,"get_options_chain",{"symbol":underlying})
             chain_underlying=str(chain.get("underlying") or "").strip().upper()
             if chain_underlying != str(underlying).strip().upper():
                 raise ValueError("IOL_OPTION_CHAIN_UNDERLYING_MISMATCH")
-            underlying_info=client.call("get_asset_info",{"symbol":underlying,"market":"BCBA"})
+            underlying_info=_brief_call(client,"get_asset_info",{"symbol":underlying,"market":"BCBA"})
             if str(underlying_info.get("symbol") or underlying).strip().upper() != chain_underlying:
                 raise ValueError("IOL_OPTION_UNDERLYING_INFO_MISMATCH")
             candidates=[r for r in chain.get("options",[]) if isinstance(r,dict) and r.get("symbol")]
@@ -353,23 +403,29 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
             section_observed_at["options:"+underlying]=at
         except Exception as exc:
             errors.append("OPTIONS:"+underlying+":"+type(exc).__name__)
-            section_states["options:"+underlying]="SOURCE_UNAVAILABLE"
+            section="options:"+underlying
+            prior_options=any(str(r.get("instrument_type") or "").upper()=="OPCIONES"
+                              and str((r.get("option_chain_evidence") or {}).get("underlying") or "").upper()==underlying
+                              for r in prior.get("records",[]) if isinstance(r,dict))
+            section_states[section]=_lkg_section_state(
+                prior,section,prior_options,now or datetime.now(timezone.utc))
 
     # Broad family discovery/reference calls. They do not authorize execution.
     fci=prior.get("fci",[])
     cauciones=prior.get("cauciones",{})
     try:
-        fresh=(client.call("get_fci_funds",{}) or {}).get("result",[])
+        fresh=_response_rows(_brief_call(client,"get_fci_funds",{}))
         if fresh:
             fci=fresh; successful_sections.append("fci")
             section_states["fci"]="LIVE_FRESH";section_observed_at["fci"]=at
         else:
             errors.append("FCI:EMPTY_UNEXPECTED");section_states["fci"]="EMPTY_UNEXPECTED"
     except Exception as exc:
-        errors.append("FCI:"+type(exc).__name__);section_states["fci"]="SOURCE_UNAVAILABLE"
+        errors.append("FCI:"+type(exc).__name__);section_states["fci"]=_lkg_section_state(
+            prior,"fci",bool(fci),now or datetime.now(timezone.utc))
     for currency in ("ARS","USD"):
         try:
-            fresh=(client.call("get_caucion_rates",{"currency":currency,"caucion_type":"colocadora"}) or {}).get("result",[])
+            fresh=_response_rows(_brief_call(client,"get_caucion_rates",{"currency":currency,"caucion_type":"colocadora"}))
             key="caucion:"+currency
             if fresh:
                 cauciones[currency]=fresh; successful_sections.append(key)
@@ -378,7 +434,9 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
                 errors.append("CAUCION_"+currency+":EMPTY_UNEXPECTED");section_states[key]="EMPTY_UNEXPECTED"
         except Exception as exc:
             errors.append("CAUCION_"+currency+":"+type(exc).__name__)
-            section_states["caucion:"+currency]="SOURCE_UNAVAILABLE"
+            section="caucion:"+currency
+            section_states[section]=_lkg_section_state(
+                prior,section,bool(cauciones.get(currency)),now or datetime.now(timezone.utc))
 
     prior_good=prior.get("last_known_good_at") or prior.get("refreshed_at")
     try:
@@ -394,6 +452,9 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
              "fci":fci if isinstance(fci,list) else [],"cauciones":cauciones if isinstance(cauciones,dict) else {},
              "cache_state":cache_state,"live_sections":successful_sections,
              "section_states":section_states,"section_observed_at":section_observed_at,
+             "fallback_order":["IOL_LIVE_BOUNDED_RETRY","IOL_LAST_KNOWN_GOOD",
+                               "PPI_PRIMARY","BYMA_PUBLIC_COMPLEMENTARY"],
+             "continuation_state":"CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
              "last_known_good_at":at if successful_sections else prior.get("last_known_good_at"),
              "errors":errors}
     _atomic(path,payload)

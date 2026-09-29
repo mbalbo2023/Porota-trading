@@ -216,7 +216,7 @@ def run_reader(store, stop):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'],
-                    ['--intraday-scalping-worker']):
+                    ['--intraday-scalping-worker'], ['--caucion-cash-sweep-worker']):
         raise ValueError("Argumentos desconocidos del runtime paper")
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -253,6 +253,10 @@ def main(argv=None):
         from cf_intraday_scalping import run_worker
         run_worker(store,stop,clock_fn=now_iso)
         return 0
+    if argv == ["--caucion-cash-sweep-worker"]:
+        from di_caucion_cash_sweep_runtime_hf6 import run_worker
+        run_worker(store, stop, clock_fn=now_iso)
+        return 0
     # Un reloj por libro, incluso si se intenta iniciar otro contenedor.
     with open(store.path + ".runtime.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -263,6 +267,8 @@ def main(argv=None):
             "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],
             **({"intraday_scalping": [sys.executable, str(Path(__file__).resolve()), "--intraday-scalping-worker"]}
               if os.getenv("PAPER_SCALPING_MODE", "OFF").upper() in {"ACTIVE_PAPER", "ACTIVE_OBSERVE"} else {}),
+            **({"caucion_cash_sweep": [sys.executable, str(Path(__file__).resolve()), "--caucion-cash-sweep-worker"]}
+              if os.getenv("PAPER_CAUCION_SWEEP_MODE", "OFF").upper() == "ACTIVE_PAPER" else {}),
         })
         run_clock(store,children,stop)
     return 0

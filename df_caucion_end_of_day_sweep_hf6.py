@@ -20,7 +20,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_DOWN
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
-from bt_caucion_paper import CaucionOffer, money
+from bt_caucion_paper import CaucionOffer, automatic_liquidity_cap, money
 
 ZERO = Decimal("0")
 
@@ -98,10 +98,14 @@ def plan_sweep(*, offers, currency, as_of, available_cash, required_reserve,
                 continue
             if maturity > deadline or maturity <= at:
                 continue
-            depth_cap = offer.available_principal * participation
+            depth_cap = automatic_liquidity_cap(offer, participation)
             raw_cap = min(budget, depth_cap)
             if max_principal is not None:
                 raw_cap = min(raw_cap, max_principal)
+            # Exact broker fee budgets apply only to their quoted principal;
+            # the versioned ARS tariff policy is the only scalable curve.
+            if offer.quoted_total_fees is not None:
+                raw_cap = min(raw_cap, offer.fee_quote_principal)
             principal = money(_floor_step(raw_cap, offer.principal_step))
             if principal < offer.minimum_principal or principal <= ZERO:
                 continue

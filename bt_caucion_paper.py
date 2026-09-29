@@ -150,6 +150,10 @@ class CaucionOffer:
     # Costo total del contrato, no una tasa. None usa el modelo heredado en ARS.
     quoted_total_fees: Decimal | None = None
     fee_quote_principal: Decimal | None = None
+    # PAPER policy terms are not broker terms.  They are accepted only as an
+    # explicitly named conservative cap with versioned fee provenance.
+    paper_fill_policy: str | None = None
+    fee_authority: str | None = None
 
     def __post_init__(self):
         if not self.instrument_id.strip() or not self.metadata_source.strip():
@@ -166,6 +170,17 @@ class CaucionOffer:
         if self.quoted_total_fees is not None:
             object.__setattr__(self, "quoted_total_fees", decimal_value(self.quoted_total_fees, "costos cotizados", nonnegative=True))
             object.__setattr__(self, "fee_quote_principal", decimal_value(self.fee_quote_principal, "capital del presupuesto", positive=True))
+        if self.paper_fill_policy not in {None, "CONSERVATIVE_NOTIONAL_CAP"}:
+            raise ValueError("Política PAPER de caución no soportada")
+        if (self.paper_fill_policy is not None
+                and not self.metadata_source.startswith("CONTRACT_EVIDENCE_V2:")):
+            raise ValueError("Falta provenance v2 de la política PAPER de caución")
+        if self.fee_authority is not None:
+            from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+            if (self.currency != "ARS" or self.quoted_total_fees is not None
+                    or self.paper_fill_policy != "CONSERVATIVE_NOTIONAL_CAP"
+                    or self.fee_authority != CAUCION_PAPER_FEE_AUTHORITY):
+                raise ValueError("Autoridad de costos PAPER incompatible")
         if self.currency != "ARS" and self.quoted_total_fees is None:
             raise ValueError("Caución en moneda extranjera requiere costos explícitos en esa moneda/plaza")
         start = date.fromisoformat(self.start_date)
@@ -203,6 +218,16 @@ class CaucionOffer:
             # tener otra base: no trasladar una convención a la otra.
             fees = money(principal * rate * self.interest_days / 365)
         return interest, fees, interest - fees
+
+
+def automatic_liquidity_cap(offer, participation):
+    """Return the applicable cap without relabelling PAPER policy as depth."""
+    participation = decimal_value(participation, "participación", positive=True)
+    if participation > 1:
+        raise ValueError("Participación fuera de rango")
+    if offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP":
+        return offer.available_principal
+    return offer.available_principal * participation
 
 
 def validate_position(p):
@@ -364,7 +389,7 @@ class CaucionBook:
             raise ValueError("Cotización de caución vencida o futura")
         if at.astimezone(TZ).date().isoformat() != offer.start_date or at >= aware_datetime(offer.maturity_at):
             raise ValueError("Inicio o vencimiento incompatible con el reloj de la operación")
-        if principal + self.used_principal(offer,connection=c) > offer.available_principal * participation:
+        if principal + self.used_principal(offer,connection=c) > automatic_liquidity_cap(offer, participation):
             raise ValueError("Capital supera la participación permitida en la profundidad")
         if net <= 0:
             raise ValueError("La caución no tiene retorno neto positivo con estos costos")
