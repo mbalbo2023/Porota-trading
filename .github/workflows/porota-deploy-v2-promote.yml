@@ -411,6 +411,47 @@ jobs:
             echo "BOOTSTRAP_$(tr '[:lower:]' '[:upper:]' <<< "$job")=GREEN"
           done
 
+          # Unified WS-INTEG-03 runtime truth audit. It is read-only at the DB
+          # and network boundaries and runs inside the exact promoted image.
+          sudo -n mkdir -p "$REPO/data/deploy"
+          AUDIT_BASE=/app/data/deploy/zero-known-error-immediate.json
+          sudo -n docker exec porota_production_dashboard timeout 180 \
+            python /app/scripts/rc6_zero_known_error_runtime_audit.py \
+              --label immediate --output "$AUDIT_BASE"
+          echo "RC6_ZERO_KNOWN_ERROR_IMMEDIATE=GREEN"
+
+          # Execute the same fail-closed preopen contract under both scheduled
+          # phase labels. No order route, DB write, restart or Telegram send is
+          # performed by rc6_preopen.py.
+          for phase in T_MINUS_45 T_MINUS_10; do
+            PREOPEN_OUTPUT="$(sudo -n timeout 300 python3 "$REPO/rc6_preopen.py" --phase "$phase" 2>&1)"
+            echo "$PREOPEN_OUTPUT"
+            grep -Fq '"status": "GREEN"' <<< "$PREOPEN_OUTPUT"
+            grep -Fq '"read_only": true' <<< "$PREOPEN_OUTPUT"
+            grep -Fq '"network_order_test_performed": false' <<< "$PREOPEN_OUTPUT"
+            echo "RC6_PREOPEN_${phase}=GREEN"
+          done
+
+          # Observe several worker/dashboard refresh cycles before success.
+          # Every later snapshot compares against the immediate baseline and
+          # fails if READY regresses, LKG disappears or a worker heartbeat does
+          # not advance.
+          for cycle in 1 2 3; do
+            sleep 35
+            sudo -n docker exec porota_production_dashboard timeout 180 \
+              python /app/scripts/rc6_zero_known_error_runtime_audit.py \
+                --label "stability-$cycle" --baseline "$AUDIT_BASE" \
+                --output "/app/data/deploy/zero-known-error-stability-$cycle.json"
+            echo "RC6_ZERO_KNOWN_ERROR_STABILITY_$cycle=GREEN"
+          done
+
+          RECENT_CRITICAL="$({
+            sudo -n docker logs --since 15m porota_production_observer 2>&1 || true
+            sudo -n docker logs --since 15m porota_production_dashboard 2>&1 || true
+          } | grep -E 'Traceback|REAL_ORDER_CAPABILITY=(ENABLED|REAL)|real_orders_sent=[1-9][0-9]*' || true)"
+          test -z "$RECENT_CRITICAL"
+          echo "RC6_RECENT_CRITICAL_LOG_SIGNATURES=0"
+
           PPI_WATCH_AFTER="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
               printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"

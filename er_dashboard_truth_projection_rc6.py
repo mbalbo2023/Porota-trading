@@ -103,7 +103,10 @@ def iol_truth(*, quote_payload: dict[str, Any] | None = None,
         ))
         quote_payload = _read_json(quote_path)
     if family_payload is None:
-        root = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
+        # This projection runs in the dashboard container, where host data is
+        # mounted at /app/data. The host-side collector intentionally keeps its
+        # separate /opt/porota-trading default.
+        root = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/app/data/market"))
         family_payload = _read_json(root / "iol_family_reference_latest.json")
 
     quote_rows = [row for row in (quote_payload.get("symbols") or []) if isinstance(row, dict)]

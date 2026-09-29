@@ -9,6 +9,7 @@ RC6-native runtime state.
 """
 from __future__ import annotations
 
+import argparse
 from datetime import datetime
 import json
 import shutil
@@ -28,7 +29,8 @@ IOL_FAMILY_REFERENCE = ROOT / 'data/market/iol_family_reference_latest.json'
 EXPECTED_IMAGE = 'porota-trading-bot:17.0.0-rc6'
 MIN_FREE_BYTES = 8 * 1024**3
 REQUIRED_TIMERS = (
-    'porota-functional-health-rc6.timer',
+    'porota-fast-functional-health-rc6.timer',
+    'porota-full-db-integrity-rc6.timer',
     'porota-host-general-backup-rc6.timer',
     'porota-preopen-rc6.timer',
     'porota-candle-integrity-rc6.timer',
@@ -60,7 +62,11 @@ def observer_db():
         c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=20)
         c.row_factory = sqlite3.Row
         c.execute('PRAGMA query_only=ON')
-        qc = c.execute('PRAGMA quick_check').fetchone()[0]
+        # Keep this daily gate bounded. Full database integrity is owned by the
+        # dedicated lower-frequency timer; the former full integrity scan
+        # exhausted a deployment runner.
+        c.execute('SELECT 1').fetchone()
+        schema_version = int(c.execute('PRAGMA schema_version').fetchone()[0])
         row = c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
         state = dict(row) if row else {}
         auth = str(state.get('ppi_auth') or '').upper()
@@ -68,10 +74,11 @@ def observer_db():
         auth_ok = auth in {'OK','AUTHENTICATED'} or (phase == 'MARKET_CLOSED' and auth == 'NOT_ATTEMPTED')
         runtime = runtime_contracts(c, datetime.now(TZ))
         c.close()
-        ok = (qc == 'ok' and state.get('mode') == 'PRODUCTION_PAPER' and
+        ok = (schema_version >= 0 and state.get('mode') == 'PRODUCTION_PAPER' and
               int(state.get('real_orders_sent') or 0) == 0 and auth_ok)
         ok = ok and runtime['state'] == 'GREEN'
-        return {'state':'GREEN' if ok else 'RED','quick_check':qc,
+        return {'state':'GREEN' if ok else 'RED',
+                'bounded_readonly_probe':'GREEN','schema_version':schema_version,
                 'observer_state':state,'runtime_contracts':runtime}
     except Exception as exc:
         return {'state':'RED','detail':f'{type(exc).__name__}:{exc}'}
@@ -291,7 +298,7 @@ def foreign_market_policy(today):
             'policy':'OBSERVE_AND_RECORD_QUOTES; HOLD_NEW_CEDEAR_OPENINGS_WHILE_US_MARKET_CLOSED'}
 
 
-def main():
+def main(phase_override=None):
     now = datetime.now(TZ)
     today = now.date()
     if not byma.es_dia_habil_operativo(today):
@@ -315,7 +322,7 @@ def main():
     }
     reds = [k for k,v in checks.items() if v.get('state') == 'RED']
     result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
-              'phase':preopen_phase(now),
+              'phase':phase_override or preopen_phase(now),
               'status':'GREEN' if not reds else 'RED','red_checks':reds,'checks':checks,
               'read_only':True,'network_order_test_performed':False,'direct_telegram_send':False}
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
@@ -323,4 +330,7 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--phase', choices=('T_MINUS_45','T_MINUS_10'))
+    args = parser.parse_args()
+    raise SystemExit(main(args.phase))

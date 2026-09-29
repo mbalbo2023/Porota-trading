@@ -174,6 +174,17 @@ def test_schedule_is_t45_t10_independent_and_sweep_is_eod_internal():
     assert "10:20:00 America/Argentina/Buenos_Aires" in timer
 
 
+def test_preopen_uses_current_health_split_and_bounded_db_probe():
+    source = Path("rc6_preopen.py").read_text(encoding="utf-8")
+    assert "'porota-fast-functional-health-rc6.timer'" in source
+    assert "'porota-full-db-integrity-rc6.timer'" in source
+    required_block = source.split("REQUIRED_TIMERS = (", 1)[1].split(")", 1)[0]
+    assert "'porota-functional-health-rc6.timer'" not in required_block
+    assert "PRAGMA quick_check" not in source
+    assert "bounded_readonly_probe" in source
+    assert "--phase" in source
+
+
 def test_obligation_snapshot_reserves_negative_family_ledger(tmp_path):
     store = PaperStore(str(tmp_path / "ledger.db"))
     with store.connect() as connection:

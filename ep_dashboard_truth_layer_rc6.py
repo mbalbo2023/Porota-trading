@@ -40,7 +40,7 @@ def runtime_truth() -> dict:
     session = str(row.get("session_state") or "UNKNOWN").upper()
     ppi_auth = str(row.get("ppi_auth") or "UNKNOWN").upper()
     real_orders = int(row.get("real_orders_sent") or 0)
-    return {
+    truth = {
         "source": "observer_state",
         "mode": mode,
         "execution": "SIMULATED" if mode == "PRODUCTION_PAPER" else "UNKNOWN",
@@ -54,6 +54,16 @@ def runtime_truth() -> dict:
         "detail": row.get("detail"),
         "projection_schema": canonical["schema"],
     }
+    # Preserve the compact top-level compatibility fields while exposing the
+    # full canonical projection on the advertised truth endpoint.  No route is
+    # allowed to reconstruct readiness from history or provider caches.
+    truth.update({
+        key: canonical[key] for key in (
+            "authorities", "catalog", "readiness", "contract", "history",
+            "strategy_eligibility", "iol", "scalping", "caucion",
+        )
+    })
+    return truth
 
 
 def _fresh_internal_state(row: dict, default="NOT_STARTED", max_age_seconds=20) -> str:

@@ -7,6 +7,7 @@ import bg_paper_dashboard as bg
 import bh_universe_dashboard_hf6 as universe
 import be_paper_engine
 import er_dashboard_truth_projection_rc6 as projection
+import ep_dashboard_truth_layer_rc6 as truth_layer
 import o_dashboard
 import rc6_annual_instrument_analysis as annual
 import zz_wave8_dashboard_live_rc6 as wave8
@@ -112,6 +113,17 @@ def test_projection_uses_only_the_canonical_authorities_for_counts():
                    or "candidate_universe" in sql for sql in seen)
 
 
+def test_truth_endpoint_payload_includes_the_full_canonical_projection(monkeypatch):
+    canonical = _truth()
+    monkeypatch.setattr(truth_layer.projection, "build", lambda *_args, **_kwargs: canonical)
+    monkeypatch.setattr(truth_layer.bg, "_table", lambda _name: False)
+    result = truth_layer.runtime_truth()
+    assert result["readiness"]["source"] == "candidate_identity_v2"
+    assert result["readiness"]["ready"] == 5558
+    assert result["catalog"]["source"] == "financial_instrument_catalog"
+    assert result["history"]["governs_readiness"] is False
+
+
 def test_iol_live_cache_fresh_cache_stale_and_unavailable_are_distinct():
     assert projection.normalize_iol_state("LIVE") == "LIVE"
     assert projection.normalize_iol_state("CACHE_FRESH") == "CACHE_FRESH"
@@ -130,6 +142,12 @@ def test_iol_live_cache_fresh_cache_stale_and_unavailable_are_distinct():
     assert truth["quotes"]["state"] == "LIVE"
     assert section["state"] == "CACHE_FRESH"
     assert section["raw_source_state"] == "SOURCE_UNAVAILABLE"
+
+
+def test_dashboard_iol_default_points_to_the_container_data_mount():
+    source = Path("er_dashboard_truth_projection_rc6.py").read_text(encoding="utf-8")
+    assert '"/app/data/market"' in source
+    assert '"/opt/porota-trading/data/market"' not in source
 
 
 def test_cross_route_readiness_numbers_cannot_diverge(monkeypatch):
