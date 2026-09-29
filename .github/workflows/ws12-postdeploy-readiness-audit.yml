@@ -1,0 +1,226 @@
+name: WS12 postdeploy readiness audit (read-only)
+
+on:
+  push:
+    branches:
+      - audit/ws12-postdeploy-readiness-20260929
+    paths:
+      - 'audit/ws12-postdeploy-trigger.txt'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-postdeploy-readonly-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Collect sanitized runtime readiness census
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p docs/audit
+          ssh -i "$HOME/.ssh/porota_rc6_audit"             -o BatchMode=yes             -o IdentitiesOnly=yes             -o StrictHostKeyChecking=yes             -o UserKnownHostsFile="$HOME/.ssh/known_hosts"             "$DO_USER@$DO_HOST" 'python3 -' > docs/audit/ws12_postdeploy_readiness.json <<'PY'
+          import json, sqlite3
+          from datetime import datetime, timezone
+
+          DB="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          out={
+              "schema":"ws12-postdeploy-readiness-audit-v1",
+              "generated_at":datetime.now(timezone.utc).isoformat(),
+              "db_mode":"ro",
+              "query_only":True,
+          }
+          c=sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=10)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          c.execute("PRAGMA busy_timeout=3000")
+          out["quick_check"]=c.execute("PRAGMA quick_check").fetchone()[0]
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          out["tables_present"]=sorted(t for t in tables if any(k in t.lower() for k in (
+              "catalog","candidate","contract_evidence","observer","paper_fci","paper_future","paper_cauc"
+          )))
+
+          def cols(table):
+              return [r[1] for r in c.execute(f"PRAGMA table_info({table})")]
+
+          if "observer_state" in tables:
+              oc=cols("observer_state")
+              wanted=[x for x in ("mode","real_orders_sent","ppi_auth","process_state","session_state","heartbeat_at") if x in oc]
+              row=c.execute("SELECT "+",".join(wanted)+" FROM observer_state WHERE id=1").fetchone()
+              out["observer_state"]=dict(row) if row else None
+
+          if "financial_instrument_catalog" in tables:
+              fc=cols("financial_instrument_catalog")
+              out["financial_instrument_catalog_columns"]=fc
+              required={"ticker","instrument_type","market","currency","settlement","status","capability"}
+              if required.issubset(set(fc)):
+                  out["catalog_total"]=c.execute("SELECT COUNT(*) FROM financial_instrument_catalog").fetchone()[0]
+                  out["catalog_available"]=c.execute("SELECT COUNT(*) FROM financial_instrument_catalog WHERE status='AVAILABLE'").fetchone()[0]
+                  out["catalog_ready_total"]=c.execute("""
+                    SELECT COUNT(*) FROM financial_instrument_catalog
+                    WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER%'
+                  """).fetchone()[0]
+                  out["ready_by_family"]=[
+                    dict(r) for r in c.execute("""
+                      SELECT instrument_type AS family,
+                             COUNT(*) AS ready,
+                             COUNT(DISTINCT ticker) AS distinct_tickers
+                      FROM financial_instrument_catalog
+                      WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER%'
+                      GROUP BY instrument_type
+                      ORDER BY instrument_type
+                    """)
+                  ]
+                  out["capability_by_family"]=[
+                    dict(r) for r in c.execute("""
+                      SELECT instrument_type AS family,
+                             capability,
+                             COUNT(*) AS count
+                      FROM financial_instrument_catalog
+                      WHERE status='AVAILABLE'
+                      GROUP BY instrument_type, capability
+                      ORDER BY instrument_type, capability
+                    """)
+                  ]
+                  out["status_by_family"]=[
+                    dict(r) for r in c.execute("""
+                      SELECT instrument_type AS family,
+                             status,
+                             COUNT(*) AS count
+                      FROM financial_instrument_catalog
+                      GROUP BY instrument_type, status
+                      ORDER BY instrument_type, status
+                    """)
+                  ]
+                  out["exact_identity_count"]=c.execute("""
+                    SELECT COUNT(*) FROM (
+                      SELECT DISTINCT ticker,instrument_type,market,currency,settlement
+                      FROM financial_instrument_catalog
+                    )
+                  """).fetchone()[0]
+                  targets=("GD30","GFGC6000OC","ADCAP.AP.A","AL30","D30N6","YMCJO","GFGC7000OC","DLR/DIC26")
+                  q=",".join("?" for _ in targets)
+                  out["target_instruments"]=[
+                    dict(r) for r in c.execute(f"""
+                      SELECT ticker,instrument_type AS family,market,currency,settlement,status,capability,last_seen_at
+                      FROM financial_instrument_catalog
+                      WHERE ticker IN ({q})
+                      ORDER BY ticker,market,currency,settlement
+                    """, targets)
+                  ]
+
+          if "catalog_family_coverage" in tables:
+              cc=cols("catalog_family_coverage")
+              keep=[x for x in ("instrument_type","declared","queries","observed_count","ready_paper_count","discovery_status","checked_at") if x in cc]
+              if keep:
+                  out["catalog_family_coverage"]=[dict(r) for r in c.execute(
+                      "SELECT "+",".join(keep)+" FROM catalog_family_coverage ORDER BY instrument_type"
+                  )]
+
+          if "candidate_universe" in tables:
+              cc=cols("candidate_universe")
+              out["candidate_universe_columns"]=cc
+              out["candidate_universe_total"]=c.execute("SELECT COUNT(*) FROM candidate_universe").fetchone()[0]
+              if "can_simulate" in cc:
+                  out["candidate_can_simulate_total"]=c.execute(
+                      "SELECT COUNT(*) FROM candidate_universe WHERE can_simulate=1"
+                  ).fetchone()[0]
+                  fam=next((x for x in ("instrument_type","family","asset_class") if x in cc), None)
+                  if fam:
+                      out["candidate_can_simulate_by_family"]=[
+                          dict(r) for r in c.execute(f"""
+                            SELECT {fam} AS family, COUNT(*) AS count
+                            FROM candidate_universe
+                            WHERE can_simulate=1
+                            GROUP BY {fam}
+                            ORDER BY {fam}
+                          """)
+                      ]
+
+          if "contract_evidence_v2_current" in tables:
+              ec=cols("contract_evidence_v2_current")
+              out["contract_evidence_current_total"]=c.execute(
+                  "SELECT COUNT(*) FROM contract_evidence_v2_current"
+              ).fetchone()[0]
+              if "family" in ec:
+                  out["contract_evidence_by_family"]=[
+                      dict(r) for r in c.execute("""
+                        SELECT family, COUNT(*) AS count
+                        FROM contract_evidence_v2_current
+                        GROUP BY family ORDER BY family
+                      """)
+                  ]
+
+          lifecycle={}
+          for table in sorted(tables):
+              low=table.lower()
+              if low.startswith("paper_") and any(k in low for k in ("fci","future","futuro","cauc")):
+                  try:
+                      lifecycle[table]=c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                  except sqlite3.Error:
+                      pass
+          out["paper_lifecycle_row_counts"]=lifecycle
+          c.close()
+
+          obs=out.get("observer_state") or {}
+          out["paper_safety_green"]=(
+              obs.get("mode")=="PRODUCTION_PAPER"
+              and int(obs.get("real_orders_sent") or 0)==0
+              and out.get("quick_check")=="ok"
+          )
+          print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
+          PY
+
+      - name: Validate audit result
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          p=json.load(open("docs/audit/ws12_postdeploy_readiness.json",encoding="utf-8"))
+          assert p["db_mode"]=="ro"
+          assert p["query_only"] is True
+          assert p["quick_check"]=="ok"
+          assert p["paper_safety_green"] is True
+          assert (p.get("observer_state") or {}).get("real_orders_sent")==0
+          print("WS12_POSTDEPLOY_READONLY_AUDIT=GREEN")
+          print("CATALOG_READY_TOTAL=",p.get("catalog_ready_total"))
+          print("READY_BY_FAMILY=",json.dumps(p.get("ready_by_family",[]),ensure_ascii=False,sort_keys=True))
+          print("CANDIDATE_CAN_SIMULATE_TOTAL=",p.get("candidate_can_simulate_total"))
+          PY
+
+      - name: Persist sanitized audit evidence on audit branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/audit/ws12_postdeploy_readiness.json
+          git commit -m "audit(rc6): capture WS12 postdeploy readiness census"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
