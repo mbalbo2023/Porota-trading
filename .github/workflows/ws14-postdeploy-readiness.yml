@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout audit provenance
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Source and PPI Watch scope guard
         shell: bash
