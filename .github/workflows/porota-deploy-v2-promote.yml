@@ -308,8 +308,8 @@ jobs:
           echo "POST_SQLITE_QUICK_CHECK=DEFERRED_TO_CONTRACT_RUNNER"
 
           # Full contract evidence reconciliation remains read-only at the broker
-          # boundary. It runs from the exact frozen image; during market hours
-          # an explicit SKIPPED_MARKET_NOT_CLOSED is the expected safe result.
+          # boundary. The remote v1 sweep is closed-session only, but deterministic
+          # local Evidence v2 policy materialization is mandatory in every deploy.
           set +e
           # The exhaustive PPI v1 compatibility pass performs ~2k bounded read-only
           # requests before the mass v2 reconciliation. Production evidence shows a
@@ -331,15 +331,16 @@ jobs:
           set -e
           echo "RC6_FULL_CONTRACT_RECONCILIATION_EXIT=$CONTRACT_RC"
           echo "$CONTRACT_OUTPUT"
-          if grep -Fq "STATUS=SKIPPED_MARKET_NOT_CLOSED" <<< "$CONTRACT_OUTPUT"; then
-            test "$CONTRACT_RC" -eq 0
-            echo "RC6_FULL_CONTRACT_RECONCILIATION=SKIPPED_MARKET_OPEN"
+          test "$CONTRACT_RC" -eq 0
+          grep -Fq "STATUS=OK" <<< "$CONTRACT_OUTPUT"
+          if grep -Fq "REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN" <<< "$CONTRACT_OUTPUT"; then
+            grep -Fq "DATABASE_READONLY_PROBE=1" <<< "$CONTRACT_OUTPUT"
+            echo "RC6_REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN"
           else
-            test "$CONTRACT_RC" -eq 0
-            grep -Fq "STATUS=OK" <<< "$CONTRACT_OUTPUT"
             grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
-            echo "RC6_FULL_CONTRACT_RECONCILIATION=GREEN"
           fi
+          grep -Fq "LATEST_EVIDENCE_V2_RUN=('CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG', 'OK'" <<< "$CONTRACT_OUTPUT"
+          echo "RC6_FULL_CONTRACT_RECONCILIATION=GREEN"
 
           sudo -n docker run --rm --pull never --user botuser --read-only --cap-drop ALL \
             --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m \
