@@ -310,7 +310,11 @@ jobs:
           # boundary. It runs from the exact frozen image; during market hours
           # an explicit SKIPPED_MARKET_NOT_CLOSED is the expected safe result.
           set +e
-          CONTRACT_OUTPUT="$(sudo -n timeout 1200 sudo -n docker run --rm --pull never \
+          # The exhaustive PPI v1 compatibility pass performs ~2k bounded read-only
+          # requests before the mass v2 reconciliation. Production evidence shows a
+          # normal closed-session run needs ~35 minutes. Keep a 55-minute TERM budget
+          # and a hard 60-second KILL ceiling within the 90-minute workflow limit.
+          CONTRACT_OUTPUT="$(sudo -n timeout --signal=TERM --kill-after=60 3300 sudo -n docker run --rm --pull never \
             --user botuser --read-only --cap-drop ALL \
             --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,size=32m \
