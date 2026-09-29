@@ -38,6 +38,7 @@ ALLOWED_TOOLS = frozenset({
 MAX_BATCH_SIZE = 50
 DEFAULT_TERM = "t1"
 METADATA_TTL_SECONDS = 24 * 60 * 60
+QUOTE_CACHE_TTL_SECONDS = 5 * 60
 CACHE_SCHEMA_VERSION = 3
 CHECKPOINT_SCHEMA_VERSION = 2
 MARKET_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -142,6 +143,21 @@ def _load_json(path: Path) -> dict:
         return value if isinstance(value, dict) else {}
     except (FileNotFoundError, OSError, json.JSONDecodeError):
         return {}
+
+
+def _cache_state(row: dict[str, Any], observed_at: datetime,
+                 ttl_seconds: int = QUOTE_CACHE_TTL_SECONDS) -> str:
+    """Classify cached dynamic data without expiring its static metadata."""
+    stamp = row.get("captured_at")
+    try:
+        parsed = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        age = (observed_at.astimezone(timezone.utc) -
+               parsed.astimezone(timezone.utc)).total_seconds()
+    except (TypeError, ValueError):
+        return "CACHE_STALE"
+    return "CACHE_FRESH" if 0 <= age <= ttl_seconds else "CACHE_STALE"
 
 
 def _root_path(root: Path | str | None) -> Path:
@@ -270,6 +286,7 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
                 metadata_entries[key] = cached
             completed[symbol] = {"symbol": symbol, "market": market, "term": term,
                 "state": "READY" if quote.get("last") is not None else "UNAVAILABLE",
+                "source_state": "LIVE_FRESH",
                 "capture_started_at": capture_started_at, "captured_at": captured_at,
                 "quote": quote, **_metadata_from(cached),
                 "primary_comparison": _comparison(primary.get(symbol), quote, policy.tolerance_pct),
@@ -280,8 +297,9 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
                               if isinstance(row, dict) and str(row.get("symbol") or "").upper() == symbol), None)
             failure_state = ("EMPTY_UNEXPECTED" if "EMPTY_UNEXPECTED" in str(exc).upper()
                              else "SOURCE_UNAVAILABLE")
-            completed[symbol] = ({**prior_row, "state": "CACHE_FRESH",
-                "source_state": failure_state, "last_refresh_failed_at": now().isoformat(),
+            failed_at = now()
+            completed[symbol] = ({**prior_row, "state": _cache_state(prior_row, failed_at),
+                "source_state": failure_state, "last_refresh_failed_at": failed_at.isoformat(),
                 "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
                 "decision_effect": DECISION_EFFECT} if prior_row else {
                 "symbol": symbol, "market": market, "term": term, "state": failure_state,

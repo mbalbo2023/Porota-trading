@@ -226,6 +226,7 @@ FIELD_CONSUMERS = {
     "subscription_min": "FCI PAPER subscription validation",
     "subscription_step": "FCI PAPER subscription rounding",
     "paper_subscription_policy": "FCI PAPER admission through internal risk budget by amount",
+    "paper_subscription_min": "FCI PAPER conservative internal minimum in subscription currency",
     "paper_amount_unit": "FCI PAPER cash-ledger decimal unit",
     "paper_fill_policy": "caucion PAPER fill model without a market-depth claim",
     "paper_notional_cap": "caucion PAPER maximum principal guard",
@@ -267,7 +268,7 @@ POSITIVE_CONTRACT_FIELDS = frozenset({
     "term_days", "minimum_principal", "principal_step", "subscription_min",
     "subscription_step", "subscription_max", "exchange_ratio",
     "paper_cash_multiplier", "paper_quantity_min", "paper_quantity_step",
-    "paper_amount_unit", "paper_notional_cap", "paper_principal_step",
+    "paper_subscription_min", "paper_amount_unit", "paper_notional_cap", "paper_principal_step",
     "paper_margin_rate",
 })
 
@@ -430,6 +431,11 @@ def evaluate_family(family: str, records, *, profile="FULL", now=None) -> dict:
                 "paper_cash_multiplier", "paper_quantity_min", "paper_quantity_step")):
         required_contract = ((required_contract - {"cash_multiplier", "quantity_min", "quantity_step"}) |
                              {"paper_cash_multiplier", "paper_quantity_min", "paper_quantity_step"})
+    if family == "OPCIONES" and all(
+            _present(merged.get(field)) for field in (
+                "paper_quantity_min", "paper_quantity_step")):
+        required_contract = ((required_contract - {"quantity_min", "quantity_step"}) |
+                             {"paper_quantity_min", "paper_quantity_step"})
     if family == "CAUCIONES" and all(
             _present(merged.get(field)) for field in (
                 "paper_fill_policy", "paper_notional_cap", "paper_principal_step")):
@@ -441,9 +447,9 @@ def evaluate_family(family: str, records, *, profile="FULL", now=None) -> dict:
         required_dynamic = required_dynamic - {"margin_requirement"}
     if family in {"FCI", "FCI_LOCAL"} and all(
             _present(merged.get(field)) for field in (
-                "paper_subscription_policy", "paper_amount_unit")):
+                "paper_subscription_policy", "paper_subscription_min", "paper_amount_unit")):
         required_contract = ((required_contract - {"subscription_min", "subscription_step"}) |
-                             {"paper_subscription_policy", "paper_amount_unit"})
+                             {"paper_subscription_policy", "paper_subscription_min", "paper_amount_unit"})
     ignored_account_fields = sorted(REAL_ACCOUNT_ONLY_FIELDS & set(merged))
     invalid_contract = sorted(
         field for field in required_contract

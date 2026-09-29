@@ -151,6 +151,7 @@ def planned_records(rows):
                 "observed_at": row.get("last_seen_at"),
                 "evidence": {
                     "paper_subscription_policy": "INTERNAL_RISK_BUDGET_BY_AMOUNT",
+                    "paper_subscription_min": "1000",
                     "broker_subscription_min": "NO_VERIFICADO",
                     "broker_subscription_step": "NO_VERIFICADO",
                     "paper_amount_unit": "0.01",

@@ -28,6 +28,7 @@ MAP.update({
     "paper_quantity_step": "quantity_step",
     "paper_quantity_min": "minimum_quantity",
     "paper_subscription_policy": "paper_subscription_policy",
+    "paper_subscription_min": "paper_subscription_min",
     "paper_amount_unit": "paper_amount_unit",
        "paper_margin_reserve": "initial_margin",
     "paper_margin_policy": "paper_margin_policy",
@@ -43,7 +44,7 @@ MAP.update({
 })
 NUMERIC = {"cash_multiplier", "quantity_step", "minimum_quantity", "strike",
            "initial_margin", "maintenance_margin", "subscription_min", "subscription_step",
-           "paper_amount_unit", "paper_margin_rate", "term_days", "minimum_principal",
+           "paper_subscription_min", "paper_amount_unit", "paper_margin_rate", "term_days", "minimum_principal",
            "principal_step", "paper_notional_cap", "paper_principal_step",
            "day_count_basis", "annual_rate_fraction", "available_principal"}
 
@@ -136,11 +137,12 @@ def normalize_group(records, *, now=None):
         family, ("cash_multiplier", "quantity_step", "minimum_quantity"))
     if family == "FCI":
         policy_ready = all(name in fields for name in (
-            "paper_subscription_policy", "paper_amount_unit"))
+            "paper_subscription_policy", "paper_subscription_min", "paper_amount_unit"))
         broker_ready = all(name in fields for name in (
             "subscription_min", "subscription_step"))
         if not (policy_ready or broker_ready):
-            errors.extend(("MISSING:paper_subscription_policy", "MISSING:paper_amount_unit"))
+            errors.extend(("MISSING:paper_subscription_policy", "MISSING:paper_subscription_min",
+                           "MISSING:paper_amount_unit"))
     if family == "FUTUROS":
         published = "initial_margin" in fields
         policy = (fields.get("paper_margin_policy") == "CONSERVATIVE_NOTIONAL_RATE"
