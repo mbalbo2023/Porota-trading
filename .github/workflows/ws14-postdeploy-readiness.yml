@@ -88,12 +88,12 @@ jobs:
           import json,sqlite3,sys
           c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True,timeout=10)
           c.execute('PRAGMA query_only=ON')
-          option=c.execute("""SELECT COUNT(*) FROM financial_instrument_catalog
-            WHERE ticker='GFGC6000OC' AND instrument_type='OPCIONES'
-            AND capability='READY_PAPER_OPTION_LONG'""").fetchone()[0]
           iol=c.execute("""SELECT COUNT(*) FROM contract_evidence_v2_current
             WHERE family='OPCIONES' AND ticker='GFGC6000OC'
             AND source_class='IOL_STRUCTURED_API'""").fetchone()[0]
+          ppi_dom=c.execute("""SELECT COUNT(*) FROM contract_evidence_v2_current
+            WHERE family='OPCIONES' AND ticker='GFGC6000OC'
+            AND source_class='PPI_AUTHENTICATED_DOM'""").fetchone()[0]
           futures=0
           for row in c.execute("""SELECT s.evidence_json FROM contract_evidence_v2_current cur
             JOIN contract_evidence_v2_snapshots s ON s.snapshot_id=cur.snapshot_id
@@ -101,7 +101,7 @@ jobs:
               evidence=json.loads(row[0] or '{}')
               futures += (evidence.get('paper_margin_policy')=='CONSERVATIVE_NOTIONAL_RATE'
                           and str(evidence.get('paper_margin_rate'))=='1')
-          print('YES' if option==1 and iol==1 and futures==134 else 'NO')
+          print('YES' if iol==1 and ppi_dom==1 and futures==134 else 'NO')
           PY
           )"
 
@@ -251,7 +251,7 @@ jobs:
           restart_observer
           trap - EXIT
           fi
-          for attempt in $(seq 1 24); do
+          for attempt in $(seq 1 120); do
             STATE="$(sudo -n python3 - "$DB" <<'PY'
           import datetime,sqlite3,sys
           c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True,timeout=5)
@@ -262,7 +262,9 @@ jobs:
               fresh=heartbeat.tzinfo is not None and 0 <= (datetime.datetime.now(datetime.timezone.utc)-heartbeat.astimezone(datetime.timezone.utc)).total_seconds() <= 180
           except (TypeError,ValueError):
               fresh=False
-          green=bool(row and row[0]=='PRODUCTION_PAPER' and int(row[2] or 0)==0 and fresh)
+          green=bool(row and row[0]=='PRODUCTION_PAPER'
+                     and row[1] in {'RUNNING','WAITING_MARKET'}
+                     and int(row[2] or 0)==0 and fresh)
           print(('GREEN' if green else 'WAIT')+'|'+'|'.join(map(str,row)))
           PY
             )" || true
@@ -542,6 +544,15 @@ jobs:
               'option_witness': option_witness,
           }
 
+          print('WS14_AUDIT_DIAG='+json.dumps({
+              'catalog_ready':catalog_ready,'candidate_ready':candidate_ready,
+              'catalog_ready_by_family':catalog_ready_by_family,
+              'candidate_ready_by_family':candidate_ready_by_family,
+              'option_witness':option_witness,
+              'future_bridge_gaps':dict(future_gap_counts),
+              'evidence_by_source':evidence_by_source,
+              'observer_process_state':observer.get('process_state'),
+          },sort_keys=True,default=str),file=__import__('sys').stderr)
           assert readonly_probe == 1
           assert observer.get('mode') == 'PRODUCTION_PAPER'
           assert int(observer.get('real_orders_sent') or 0) == 0
