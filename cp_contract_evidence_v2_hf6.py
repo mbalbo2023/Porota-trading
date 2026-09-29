@@ -307,6 +307,20 @@ def record_snapshot(store, *, family, ticker, market, source_class,
                     source_ref, evidence, currency=None, settlement="UNKNOWN",
                     observed_at=None, effective_at=None):
     """Append provider-backed evidence and report whether the contract changed."""
+    init_schema(store)
+    with store.connect() as c:
+        return _record_snapshot_connection(
+            c, family=family, ticker=ticker, market=market,
+            source_class=source_class, source_ref=source_ref,
+            evidence=evidence, currency=currency, settlement=settlement,
+            observed_at=observed_at, effective_at=effective_at)
+
+
+def _record_snapshot_connection(c, *, family, ticker, market, source_class,
+                                source_ref, evidence, currency=None,
+                                settlement="UNKNOWN", observed_at=None,
+                                effective_at=None):
+    """Connection-scoped primitive used by the atomic bulk ingester."""
     if source_class not in SOURCE_RANK:
         raise ValueError("CONTRACT_V2_UNSUPPORTED_SOURCE")
     if not isinstance(evidence, dict) or not evidence:
@@ -323,46 +337,63 @@ def record_snapshot(store, *, family, ticker, market, source_class,
     digest = evidence_hash(evidence)
     payload = canonical_json(evidence)
 
-    init_schema(store)
-    with store.connect() as c:
-        previous = c.execute("""SELECT snapshot_id,evidence_hash,observed_at
-          FROM contract_evidence_v2_current WHERE family=? AND ticker=? AND market=?
-          AND currency=? AND settlement=? AND source_class=?""",
-          (family,ticker,market,storage_currency,settlement,source_class)).fetchone()
-        c.execute("""INSERT OR IGNORE INTO contract_evidence_v2_snapshots
-          (family,ticker,market,currency,settlement,source_class,source_ref,observed_at,effective_at,
-           evidence_hash,evidence_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-          (family,ticker,market,storage_currency,settlement,source_class,str(source_ref),observed_at,
-           effective_at,digest,payload))
-        snap = c.execute("""SELECT snapshot_id FROM contract_evidence_v2_snapshots
-          WHERE family=? AND ticker=? AND market=? AND currency=? AND settlement=? AND source_class=?
-          AND evidence_hash=?""",
-          (family,ticker,market,storage_currency,settlement,source_class,digest)).fetchone()
-        snapshot_id = int(snap[0])
-        previous_hash = previous[1] if previous else None
-        changed = bool(previous_hash and previous_hash != digest)
-        first_seen = previous is None
-        c.execute("""INSERT INTO contract_evidence_v2_current
-          (family,ticker,market,currency,settlement,source_class,snapshot_id,evidence_hash,observed_at)
-          VALUES(?,?,?,?,?,?,?,?,?)
-          ON CONFLICT(family,ticker,market,currency,settlement,source_class) DO UPDATE SET
-            snapshot_id=excluded.snapshot_id,evidence_hash=excluded.evidence_hash,
-            observed_at=excluded.observed_at""",
-          (family,ticker,market,storage_currency,settlement,source_class,snapshot_id,digest,observed_at))
-        if first_seen or changed:
-            status = "FIRST_SEEN" if first_seen else "CHANGED_REVIEW_REQUIRED"
-            c.execute("""INSERT INTO contract_evidence_v2_changes
-              (family,ticker,market,currency,settlement,source_class,previous_hash,current_hash,
-               detected_at,status,detail) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-              (family,ticker,market,storage_currency,settlement,source_class,previous_hash,digest,observed_at,
-               status,"Nueva evidencia contractual." if first_seen else
-               "El hash contractual cambió; no promover ni ejecutar hasta revisión."))
+    previous = c.execute("""SELECT snapshot_id,evidence_hash,observed_at
+      FROM contract_evidence_v2_current WHERE family=? AND ticker=? AND market=?
+      AND currency=? AND settlement=? AND source_class=?""",
+      (family,ticker,market,storage_currency,settlement,source_class)).fetchone()
+    c.execute("""INSERT OR IGNORE INTO contract_evidence_v2_snapshots
+      (family,ticker,market,currency,settlement,source_class,source_ref,observed_at,effective_at,
+       evidence_hash,evidence_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+      (family,ticker,market,storage_currency,settlement,source_class,str(source_ref),observed_at,
+       effective_at,digest,payload))
+    snap = c.execute("""SELECT snapshot_id FROM contract_evidence_v2_snapshots
+      WHERE family=? AND ticker=? AND market=? AND currency=? AND settlement=? AND source_class=?
+      AND evidence_hash=?""",
+      (family,ticker,market,storage_currency,settlement,source_class,digest)).fetchone()
+    snapshot_id = int(snap[0])
+    previous_hash = previous[1] if previous else None
+    changed = bool(previous_hash and previous_hash != digest)
+    first_seen = previous is None
+    c.execute("""INSERT INTO contract_evidence_v2_current
+      (family,ticker,market,currency,settlement,source_class,snapshot_id,evidence_hash,observed_at)
+      VALUES(?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(family,ticker,market,currency,settlement,source_class) DO UPDATE SET
+        snapshot_id=excluded.snapshot_id,evidence_hash=excluded.evidence_hash,
+        observed_at=excluded.observed_at""",
+      (family,ticker,market,storage_currency,settlement,source_class,snapshot_id,digest,observed_at))
+    if first_seen or changed:
+        status = "FIRST_SEEN" if first_seen else "CHANGED_REVIEW_REQUIRED"
+        c.execute("""INSERT INTO contract_evidence_v2_changes
+          (family,ticker,market,currency,settlement,source_class,previous_hash,current_hash,
+           detected_at,status,detail) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+          (family,ticker,market,storage_currency,settlement,source_class,previous_hash,digest,observed_at,
+           status,"Nueva evidencia contractual." if first_seen else
+           "El hash contractual cambió; no promover ni ejecutar hasta revisión."))
     return {"schema":SCHEMA,"family":family,"ticker":ticker,"market":market,
             "currency":storage_currency,
             "settlement":settlement,"source_class":source_class,
             "snapshot_id":snapshot_id,"evidence_hash":digest,
             "first_seen":first_seen,"changed":changed,
             "status":"CHANGED_REVIEW_REQUIRED" if changed else "RECORDED"}
+
+
+def record_snapshots(store, records):
+    """Atomically ingest a bounded catalogue batch without per-row connections.
+
+    Every item accepts the same keyword fields as :func:`record_snapshot`.
+    A malformed row aborts the whole batch, leaving the append-only store
+    unchanged.  This is the mass-universe path; it has no network capability.
+    """
+    rows = list(records or [])
+    init_schema(store)
+    results = []
+    with store.connect() as c:
+        c.execute("BEGIN IMMEDIATE")
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("CONTRACT_V2_BATCH_ROW_INVALID")
+            results.append(_record_snapshot_connection(c, **row))
+    return results
 
 
 def current_records(store, *, family=None, ticker=None, currency=None, settlement=None):

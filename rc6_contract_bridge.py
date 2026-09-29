@@ -45,7 +45,7 @@ def normalize_group(records, *, now=None):
     """Full keys/provenance required; conflicts and changed terms fail closed."""
     now = now or datetime.now(timezone.utc)
     fields, provenance, keys, errors = {}, {}, set(), []
-    for r in records:
+    for r in sorted(records, key=lambda item: SOURCE_RANK.get(item.get("source_class"), 999)):
         e = r.get("evidence") or {}
         source = r.get("source_class")
         if source not in SOURCE_RANK or source == "POROTA_LEGACY_EVIDENCE":
@@ -71,7 +71,9 @@ def normalize_group(records, *, now=None):
         if r.get("change_pending") or e.get("revoked") or e.get("adjusted_series_unverified"):
             errors.append("CHANGE_REVIEW_REQUIRED")
         stored_currency = str(r.get("currency") or "").upper()
-        payload_currency = str(e.get("currency") or "").upper()
+        raw_payload_currency = e.get("currency")
+        payload_currency = (str(raw_payload_currency or "").upper()
+                            if isinstance(raw_payload_currency, (str, int, float)) else "")
         if (stored_currency and payload_currency
                 and stored_currency != payload_currency):
             errors.append("CONTRACT_V2_CURRENCY_MISMATCH")
@@ -99,8 +101,15 @@ def normalize_group(records, *, now=None):
         errors.append("IDENTITY_CONFLICT")
     key = next(iter(keys)) if len(keys)==1 else ("", "", "", "", "")
     ticker, family, market, currency, settlement = key
-    required = (("subscription_min", "subscription_step") if family == "FCI"
-                else ("cash_multiplier", "quantity_step", "minimum_quantity"))
+    required_by_family = {
+        "FCI": ("subscription_min", "subscription_step"),
+        "OPCIONES": ("cash_multiplier", "quantity_step", "minimum_quantity",
+                     "expires_at", "underlying", "strike", "option_right"),
+        "FUTUROS": ("cash_multiplier", "quantity_step", "minimum_quantity",
+                    "expires_at", "underlying", "initial_margin"),
+    }
+    required = required_by_family.get(
+        family, ("cash_multiplier", "quantity_step", "minimum_quantity"))
     for field in required:
         if field not in fields:
             errors.append("MISSING:" + field)
@@ -137,6 +146,24 @@ def normalize_group(records, *, now=None):
                 "gaps": sorted(set(errors)), "field_provenance": provenance,
                 "observed_at": max((r.get("observed_at") or "" for r in records), default="") },
             "identity_evidence": {"market_explicit": True, "currency_explicit": True, "settlement_explicit": True}}
+
+
+def hard_blocked_bridge(bridge):
+    """Only contradictory/invalid evidence overrides a family-specific gap.
+
+    A v2 row that merely inventories a PPI identity is intentionally partial.
+    Treating ``MISSING:*`` as a review failure made mass ingestion demote valid
+    spot contracts and hid the actual residual family blocker.
+    """
+    if not isinstance(bridge, dict) or bridge.get("status") != "BLOCKED":
+        return False
+    hard_prefixes = (
+        "CONFLICT:", "INVALID_", "INVALID_PROVENANCE", "UNVERIFIED_SOURCE",
+        "IDENTITY_", "EVIDENCE_NOT_CURRENT", "CHANGE_REVIEW_REQUIRED",
+        "CONTRACT_V2_CURRENCY_MISMATCH", "CONTRACT_INVALID:",
+    )
+    return any(str(gap).startswith(hard_prefixes)
+               for gap in bridge.get("gaps", []))
 
 
 def complements_from_store(store, *, now=None):

@@ -183,7 +183,8 @@ def contract_for(record):
         raise ValueError("MISSING_CURRENCY_OR_MARKET")
     family = family_name(record["instrument_type"])
     raw = record.get("raw", {})
-    if raw.get("_contract_bridge", {}).get("status") == "BLOCKED":
+    from rc6_contract_bridge import hard_blocked_bridge
+    if hard_blocked_bridge(raw.get("_contract_bridge")):
         raise ValueError("CONTRACT_EVIDENCE_REVIEW_REQUIRED")
     if raw.get("_contract_conflicts"):
         raise ValueError("CONTRACT_SOURCE_CONFLICT")
@@ -453,15 +454,30 @@ def sync_candidate_universe(connection, checked_at, *,
       FROM financial_instrument_catalog
       ORDER BY ticker,instrument_type,market,currency,settlement,last_seen_at""").fetchall()
     grouped = {}
-    primary_symbol_family_counts = {}
     for row in rows:
         ticker, family, market = (str(row[index] or "").strip().upper()
                                   for index in (0, 1, 2))
         grouped.setdefault((ticker, family, market), []).append(row)
-        if _candidate_has_ppi_primary(row[5], row[9]):
-            primary_symbol_family_counts[(ticker, family)] = (
-                primary_symbol_family_counts.get((ticker, family), 0) + 1)
     retry_ambiguities = _candidate_retry_ambiguities(connection)
+
+    def identity_reasons(row):
+        identity_key = tuple(str(value or "").strip().upper()
+                             for value in row[:5])
+        reasons = []
+        if not _candidate_has_ppi_primary(row[5], row[9]):
+            reasons.append("PPI_PRIMARY_IDENTITY_NOT_VERIFIED")
+        if any(value in {"", "UNKNOWN", "NO_VERIFICADO"}
+               for value in identity_key):
+            reasons.append("IDENTITY_INCOMPLETE")
+        if not _candidate_timestamp_is_fresh(row[8], checked_at, freshness_seconds):
+            reasons.append("PPI_FRESHNESS_STALE")
+        if row[6] != "AVAILABLE":
+            reasons.append("CATALOG_STATUS:" + str(row[6]))
+        if not str(row[7]).startswith("READY_PAPER_"):
+            reasons.append("CAPABILITY:" + str(row[7]))
+        if identity_key in retry_ambiguities:
+            reasons.append("RETRY_IDENTITY_AMBIGUOUS")
+        return list(dict.fromkeys(reasons))
 
     projected = []
     for key, identities in sorted(grouped.items()):
@@ -470,34 +486,20 @@ def sync_candidate_universe(connection, checked_at, *,
             row for row in identities
             if _candidate_has_ppi_primary(row[5], row[9])
         ]
-        # A newer IOL/BYMA shadow must never displace the canonical PPI row in
-        # the legacy one-row projection.  Multiple PPI identities still fail
-        # closed; complements cannot manufacture or resolve that ambiguity.
-        representative = max(primary_identities or identities,
+        ready_identities = [row for row in primary_identities
+                            if not identity_reasons(row)]
+        # The legacy row may represent one uniquely READY full identity even
+        # when blocked siblings share its short ticker.  Full-key v2 remains
+        # authoritative; two READY siblings are a real unresolved selection.
+        representative = max(ready_identities or primary_identities or identities,
                              key=lambda row: str(row[8] or ""))
         currency, settlement, settlement_source = representative[3:6]
         status, capability, last_seen, metadata_json = representative[6:10]
-        identity_key = tuple(
-            str(value or "").strip().upper()
-            for value in (ticker, family, market, currency, settlement)
-        )
-        reasons = []
-        primary_count = primary_symbol_family_counts.get((ticker, family), 0)
-        if (len(primary_identities) > 1 or primary_count > 1
-                or (primary_count == 0 and len(identities) > 1)):
-            reasons.append("IDENTITY_AMBIGUOUS")
-        if any(value in {"", "UNKNOWN", "NO_VERIFICADO"} for value in identity_key):
-            reasons.append("IDENTITY_INCOMPLETE")
-        if not _candidate_has_ppi_primary(settlement_source, metadata_json):
-            reasons.append("PPI_PRIMARY_IDENTITY_NOT_VERIFIED")
-        if not _candidate_timestamp_is_fresh(last_seen, checked_at, freshness_seconds):
-            reasons.append("PPI_FRESHNESS_STALE")
-        if status != "AVAILABLE":
-            reasons.append("CATALOG_STATUS:" + str(status or "UNKNOWN"))
-        if not str(capability or "").startswith("READY_PAPER_"):
-            reasons.append("CAPABILITY:" + str(capability or "UNKNOWN"))
-        if identity_key in retry_ambiguities:
-            reasons.append("RETRY_IDENTITY_AMBIGUOUS")
+        reasons = identity_reasons(representative)
+        if len(ready_identities) > 1:
+            reasons.insert(0, "IDENTITY_AMBIGUOUS")
+        elif not ready_identities and len(primary_identities) > 1:
+            reasons.insert(0, "IDENTITY_AMBIGUOUS")
         reasons = list(dict.fromkeys(reasons))
         ready = not reasons
         detail = (str(capability) if ready or not str(capability or "").startswith("READY_PAPER_")
@@ -514,37 +516,17 @@ def sync_candidate_universe(connection, checked_at, *,
         "INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", projected
     )
 
-    # The legacy summary cannot distinguish settlements/currencies. Persist the
-    # gate at the catalog's full key and let both selection and lookup consume it.
+    # Persist the independent gate at the catalog's full key.  Short-ticker
+    # selection ambiguity belongs only to the legacy projection above.
     connection.execute("""CREATE TABLE IF NOT EXISTS candidate_identity_v2(
         ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,
         currency TEXT NOT NULL,settlement TEXT NOT NULL,can_simulate INTEGER NOT NULL,
         status TEXT NOT NULL,detail TEXT NOT NULL,checked_at TEXT NOT NULL,
         PRIMARY KEY(ticker,instrument_type,market,currency,settlement))""")
-    selectable = {}
-    for row in rows:
-        if _candidate_has_ppi_primary(row[5],row[9]):
-            selection = (row[0],row[1],row[4])  # Quote API provides these three.
-            selectable[selection] = selectable.get(selection,0) + 1
     full = []
     for row in rows:
         key = tuple(row[:5])
-        reasons = []
-        primary = _candidate_has_ppi_primary(row[5],row[9])
-        if not primary:
-            reasons.append("PPI_PRIMARY_IDENTITY_NOT_VERIFIED")
-        if selectable.get((row[0],row[1],row[4]),0) != 1:
-            reasons.append("SELECTION_IDENTITY_AMBIGUOUS")
-        if any(v in {"", "UNKNOWN", "NO_VERIFICADO"} for v in key):
-            reasons.append("IDENTITY_INCOMPLETE")
-        if not _candidate_timestamp_is_fresh(row[8],checked_at,freshness_seconds):
-            reasons.append("PPI_FRESHNESS_STALE")
-        if row[6] != "AVAILABLE":
-            reasons.append("CATALOG_STATUS:" + str(row[6]))
-        if not str(row[7]).startswith("READY_PAPER_"):
-            reasons.append("CAPABILITY:" + str(row[7]))
-        if key in retry_ambiguities:
-            reasons.append("RETRY_IDENTITY_AMBIGUOUS")
+        reasons = identity_reasons(row)
         full.append((*key,int(not reasons),row[6],";".join(reasons) or row[7],checked_at))
     connection.execute("DELETE FROM candidate_identity_v2")
     connection.executemany("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",full)
@@ -560,9 +542,20 @@ def persist(c, record):
 
 def lookup(store, symbol, kind, settlement):
     """Una identidad ambigua no se resuelve eligiendo la primera fila."""
+    ready_full_keys = set()
     with store.connect() as c:
         rows = c.execute("""SELECT * FROM financial_instrument_catalog
           WHERE ticker=? AND instrument_type=? AND settlement=?""", (symbol, kind, settlement)).fetchall()
+        if (len(rows) > 1 and c.execute("""SELECT 1 FROM sqlite_master
+              WHERE type='table' AND name='candidate_identity_v2'""").fetchone()):
+            ready_full_keys = {
+                (str(row[0]).upper(), str(row[1]).upper())
+                for row in c.execute("""SELECT market,currency
+                  FROM candidate_identity_v2
+                  WHERE ticker=? AND instrument_type=? AND settlement=?
+                    AND can_simulate=1 AND status='AVAILABLE'""",
+                  (symbol, kind, settlement)).fetchall()
+            }
         if not rows:
             # Compatibilidad con el catálogo ya persistido en el Droplet.
             if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='instrument_catalog'").fetchone():
@@ -583,6 +576,10 @@ def lookup(store, symbol, kind, settlement):
     rows = primaries or rows
     available = [r for r in rows if r["status"] == "AVAILABLE"]
     rows = available or rows
+    if len(rows) > 1 and ready_full_keys:
+        rows = [row for row in rows
+                if (str(row["market"]).upper(), str(row["currency"]).upper())
+                in ready_full_keys]
     if len(rows) != 1:
         return None
     record = dict(rows[0])
