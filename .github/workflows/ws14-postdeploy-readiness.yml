@@ -114,7 +114,7 @@ jobs:
           trap restart_observer EXIT
           sudo -n docker stop porota_production_observer >/dev/null
 
-          sudo -n docker run --rm --pull never --user botuser --read-only --cap-drop ALL \
+          sudo -n docker run --rm --pull never -i --user botuser --read-only --cap-drop ALL \
             --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m \
             -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
             -e DATA_DIR=/app/data -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
