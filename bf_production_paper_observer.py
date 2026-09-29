@@ -478,7 +478,8 @@ def _download_catalog(reader, store):
     # a missing financial contract on that exact identity; otherwise it can only
     # widen the observed SHADOW universe.
     try:
-        for raw in complementary_discovery("/app/data/market"):
+        complements = list(complementary_discovery("/app/data/market"))
+        for raw in complements:
             try:
                 record = financial_catalog.normalize_complementary_record(raw, downloaded, run_id)
             except (ValueError, TypeError):
@@ -533,6 +534,22 @@ def _download_catalog(reader, store):
         c.executemany("INSERT INTO catalog_query_results VALUES(?,?,?,?,?,?,?,?)", query_results)
         financial_catalog.persist_family_coverage(c, configuration, query_results,
                                                   found.values(), run_id, downloaded)
+    # Materialize policies again from the just-persisted PPI full keys, then
+    # reconcile immediately.  This closes the race where a daily refresh could
+    # replace READY capabilities written moments earlier by the deploy runner.
+    try:
+        import cr_contract_evidence_v2_mass_hf6 as evidence_v2_mass
+        mass_result = evidence_v2_mass.collect(
+            store, run_id="catalog-refresh-v2-mass-" + uuid.uuid4().hex)
+        promoted_after_refresh = _reconcile_complementary_catalog(store)
+        store.event("CATALOG_PAPER_POLICY_MATERIALIZATION", json.dumps({
+            "promoted": promoted_after_refresh,
+            "catalog_available": mass_result.get("catalog_available"),
+            "real_routes_used": mass_result.get("real_routes_used"),
+        }, sort_keys=True))
+    except Exception as exc:
+        store.event("CATALOG_PAPER_POLICY_MATERIALIZATION_ERROR", type(exc).__name__)
+        raise
     total = len(found)
     rofex_available = sum(r["market"] in {"ROFEX", "A3"} for r in found.values())
     state = "VERDE" if available and not failures and configuration is not None else "AMARILLO" if available else "ROJO"
@@ -661,6 +678,16 @@ def _reconcile_complementary_catalog(store):
             try:
                 primary["raw"] = json.loads(primary.pop("metadata_json"))
             except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+
+            # A policy complement may satisfy a missing PAPER term, but it
+            # cannot overturn an explicit primary-provider rejection such as
+            # TYPE_NOT_ENUMERATED or UNSUPPORTED_FAMILY.
+            primary_capability = str(primary.get("capability") or "")
+            if primary_capability in {
+                "TYPE_NOT_ENUMERATED", "MARKET_NOT_ENUMERATED", "UNSUPPORTED_FAMILY",
+                "CONTRACT_EVIDENCE_REVIEW_REQUIRED", "CONTRACT_SOURCE_CONFLICT",
+            }:
                 continue
 
             before_ready = (
