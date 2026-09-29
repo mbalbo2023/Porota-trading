@@ -86,6 +86,10 @@ jobs:
                   return {}
               return parsed if isinstance(parsed, dict) else {}
 
+          def evidence_family(value):
+              return {'OBLIGACIONES': 'ON', 'ETFS': 'ETF'}.get(str(value or '').upper(),
+                                                               str(value or '').upper())
+
           c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=30)
           c.row_factory = sqlite3.Row
           c.execute('PRAGMA query_only=ON')
@@ -117,7 +121,8 @@ jobs:
           evidence_by_source = grouped(c, 'SELECT source_class,COUNT(*) FROM contract_evidence_v2_current GROUP BY source_class ORDER BY source_class')
           evidence_by_family = grouped(c, 'SELECT family,COUNT(*) FROM contract_evidence_v2_current GROUP BY family ORDER BY family')
           ppi_evidence_rows = scalar(c, "SELECT COUNT(*) FROM contract_evidence_v2_current WHERE source_class='PPI_STRUCTURED_API'")
-          ppi_catalog_keys = {tuple(r) for r in c.execute("""SELECT instrument_type,ticker,market,currency,settlement
+          ppi_catalog_keys = {(evidence_family(r[0]), *tuple(r[1:])) for r in c.execute("""
+              SELECT instrument_type,ticker,market,currency,settlement
               FROM financial_instrument_catalog WHERE status='AVAILABLE'""")}
           ppi_evidence_keys = {tuple(r) for r in c.execute("""SELECT family,ticker,market,currency,settlement
               FROM contract_evidence_v2_current WHERE source_class='PPI_STRUCTURED_API'""")}
