@@ -707,8 +707,10 @@ def _reconcile_complementary_catalog(store):
         # supplied no usable row in this cycle. This is retry state, not a
         # rejection: the scheduler and IOL timer will reconcile it again.
         for row in connection.execute("""SELECT ticker,instrument_type,market,currency,
-          settlement,capability,status,last_seen_at FROM financial_instrument_catalog""").fetchall():
-            ticker, family, market, currency, settlement, capability, status, last_seen = row
+          settlement,capability,status,last_seen_at,metadata_json
+          FROM financial_instrument_catalog""").fetchall():
+            (ticker, family, market, currency, settlement, capability, status,
+             last_seen, metadata_json) = row
             ready = (status == "AVAILABLE"
                      and str(capability or "").startswith("READY_PAPER_"))
             if ready:
@@ -719,6 +721,17 @@ def _reconcile_complementary_catalog(store):
             reason = str(capability or "").strip()
             if not (reason.startswith("NEEDS_") or reason.startswith("READY_CONTRACT_")):
                 continue
+            try:
+                metadata = json.loads(metadata_json or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                metadata = {}
+            bridge_gaps = ((metadata.get("_contract_bridge") or {}).get("gaps", [])
+                           if isinstance(metadata, dict) else [])
+            missing = sorted({str(gap).split(":", 1)[1]
+                              for gap in bridge_gaps
+                              if str(gap).startswith("MISSING:")})
+            if missing:
+                reason = "MISSING_FIELDS:" + ",".join(missing)
             connection.execute("""INSERT INTO complementary_contract_retry
               VALUES(?,?,?,?,?,?,?,?,?,?,?)
               ON CONFLICT(ticker,instrument_type,market,currency,settlement,source)
@@ -772,12 +785,22 @@ def _eligible_symbols(store):
     try:
         with store.connect() as c:
             gate = "candidate_identity_v2" if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_identity_v2'").fetchone() else "candidate_universe"
-            rows = c.execute(f"""SELECT ticker,instrument_type,settlement
-              FROM {gate}
-              WHERE can_simulate=1 AND status='AVAILABLE'
-                AND UPPER(instrument_type) IN ({allowed_sql})
-              ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
-                       instrument_type,ticker,settlement""").fetchall()
+            if gate == "candidate_identity_v2":
+                rows = c.execute(f"""SELECT ticker,instrument_type,settlement
+                  FROM candidate_identity_v2
+                  WHERE can_simulate=1 AND status='AVAILABLE'
+                    AND UPPER(instrument_type) IN ({allowed_sql})
+                  GROUP BY ticker,instrument_type,settlement
+                  HAVING COUNT(*)=1
+                  ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
+                           instrument_type,ticker,settlement""").fetchall()
+            else:
+                rows = c.execute(f"""SELECT ticker,instrument_type,settlement
+                  FROM candidate_universe
+                  WHERE can_simulate=1 AND status='AVAILABLE'
+                    AND UPPER(instrument_type) IN ({allowed_sql})
+                  ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
+                           instrument_type,ticker,settlement""").fetchall()
         seen = set(core)
         groups = {kind: [] for kind in family_order}
         for ticker, kind, settlement in rows:
