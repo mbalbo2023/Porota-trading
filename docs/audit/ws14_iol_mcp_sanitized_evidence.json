@@ -1,6 +1,7 @@
 {
   "schema": "ws14-iol-mcp-sanitized-evidence-v1",
   "observed_date": "2026-09-29",
+  "revalidated_at": "2026-09-29T16:26:54Z",
   "scope": "READ_ONLY_MARKET_REFERENCE_ONLY",
   "account_routes_called": [],
   "execution_routes_called": [],
@@ -15,6 +16,7 @@
         "units_per_lot": 100,
         "settlement": "T1",
         "simulate_nominals": 1,
+        "cashflow_rows": 8,
         "simulation_result": "SUCCESS_WITH_CASHFLOWS"
       },
       {
@@ -24,6 +26,7 @@
         "units_per_lot": 100,
         "settlement": "T1",
         "simulate_nominals": 1,
+        "cashflow_rows": 14,
         "simulation_result": "SUCCESS_WITH_CASHFLOWS"
       },
       {
@@ -44,16 +47,21 @@
       "right": "CALL",
       "strike": 6000,
       "units_per_lot": 1,
+      "last_price": 270,
+      "bid_rows": 5,
+      "ask_rows": 5,
+      "provider_timestamp": "2026-09-29T13:26:47-03:00",
       "quote_state": "LIVE_NOT_STALE"
     },
     "fci": {
       "rows": 22,
+      "operable_rows": 22,
       "structured": true,
       "fields_observed": ["asset", "currency", "type", "operable"]
     },
     "cauciones_ars_colocadora": {
       "terms_days": [1, 2, 3],
-      "rates_percent": [21.6, 21.1, 20.7],
+      "rates_percent": [21.6, 20.5, 20.8],
       "minimum_amount": 100000,
       "due_dates_present": true
     }

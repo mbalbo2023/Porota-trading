@@ -330,12 +330,19 @@ def describe_future(ticker: str, api_payload: Optional[dict] = None) -> Derivati
         spec.paper_margin_rate = rate
 
     expiry_raw = payload.get("expirationDate") or payload.get("vencimiento")
-    if expiry_raw:
-        try:
-            spec.expiry = datetime.fromisoformat(str(expiry_raw)[:10]).date()
-            spec.days_to_expiry = (spec.expiry - date.today()).days
-        except ValueError:
-            spec.warnings.append(f"Fecha de vencimiento ilegible: {expiry_raw}")
+    if not expiry_raw:
+        spec.blocking_code = "CAPACIDAD_SIN_VENCIMIENTO"
+        spec.blocking_reason = (
+            f"El futuro {ticker} no informa vencimiento; PAPER no puede gestionar "
+            "apertura, cierre ni liquidación contractual.")
+        return spec
+    try:
+        spec.expiry = datetime.fromisoformat(str(expiry_raw)[:10]).date()
+        spec.days_to_expiry = (spec.expiry - date.today()).days
+    except ValueError:
+        spec.blocking_code = "CAPACIDAD_VENCIMIENTO_INVALIDO"
+        spec.blocking_reason = f"El futuro {ticker} informa un vencimiento ilegible."
+        return spec
 
     spec.capable = True
     return spec

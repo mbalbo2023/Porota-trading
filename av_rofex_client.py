@@ -263,6 +263,11 @@ def datos_de_contrato(simbolo: str) -> ContratoFuturo:
                                 "No se dimensiona sobre un dato que no llegó.")
             return _guardar(f"contrato:{simbolo}", resultado)
 
+        if not str(resultado.vencimiento or "").strip():
+            resultado.motivo = ("El detalle del contrato no informa vencimiento. "
+                                "PAPER no abre un futuro sin conocer su ciclo contractual.")
+            return _guardar(f"contrato:{simbolo}", resultado)
+
         # Contraste contra la referencia. No corrige: avisa.
         esperado = _REFERENCIA_MULTIPLICADOR.get(_raiz(simbolo))
         if esperado and abs(resultado.multiplicador - esperado) / esperado > 0.01:

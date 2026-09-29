@@ -64,17 +64,34 @@ def _map_iol_contract(row):
     contract = row.get("financial_contract_v17")
     contract = contract if isinstance(contract, dict) else {}
     family = canonical_family(row.get("instrument_type"))
+    broker_minimum = contract.get("broker_minimum_quantity")
+    broker_step = contract.get("broker_quantity_step")
+    explicit_paper_units = any(contract.get(name) not in (None, "", [], {}) for name in (
+        "paper_quantity_min", "paper_quantity_step", "paper_quantity_policy"))
     mapped = {
         "market": canonical_market(row.get("market")),
         "currency": str(row.get("currency") or "").upper(),
         "settlement": canonical_settlement(row.get("settlement"), family),
-        "quantity_min": contract.get("minimum_quantity"),
-        "quantity_step": contract.get("quantity_step"),
+        # Generic quantity terms are admitted only for legacy/provider records
+        # that do not explicitly declare PAPER units.  A Porota PAPER policy
+        # must never be re-labelled as a broker-published minimum or step.
+        "quantity_min": (contract.get("minimum_quantity")
+                         if not explicit_paper_units else None),
+        "quantity_step": (contract.get("quantity_step")
+                          if not explicit_paper_units else None),
+        "paper_quantity_min": contract.get("paper_quantity_min"),
+        "paper_quantity_step": contract.get("paper_quantity_step"),
+        "paper_quantity_policy": contract.get("paper_quantity_policy"),
+        "broker_minimum_quantity": broker_minimum,
+        "broker_quantity_step": broker_step,
         "cash_multiplier": contract.get("cash_multiplier"),
     }
     if family in {"BONOS", "LETRAS", "ON", "OBLIGACIONES"}:
         detail = contract.get("fixed_income_evidence") or row.get("fixed_income_analytics") or {}
         mapped.update({
+            "paper_cash_multiplier": (contract.get("paper_cash_multiplier")
+                                      or (contract.get("cash_multiplier")
+                                          if explicit_paper_units else None)),
             "price_quote_unit": detail.get("quote_basis_nominal"),
             "maturity_date": detail.get("maturity_date"),
         })

@@ -62,6 +62,41 @@ def test_al30_ymcjo_and_d30n6_one_nominal_policy_is_not_broker_term(tmp_path):
         assert current["evidence"]["broker_minimum_quantity"] == "NO_VERIFICADO"
 
 
+def test_iol_paper_units_are_not_relabelled_as_broker_terms():
+    fixed = parity._map_iol_contract({
+        "ticker": "AL30", "instrument_type": "BONOS", "market": "BYMA",
+        "currency": "ARS", "settlement": "A-24HS",
+        "financial_contract_v17": {
+            "cash_multiplier": "0.01", "minimum_quantity": "1",
+            "quantity_step": "1", "paper_quantity_min": "1",
+            "paper_quantity_step": "1",
+            "paper_quantity_policy": "ONE_NOMINAL_SIMULATION_UNIT",
+            "broker_minimum_quantity": "NO_VERIFICADO",
+            "broker_quantity_step": "NO_VERIFICADO",
+            "fixed_income_evidence": {"quote_basis_nominal": "100"},
+        },
+    })
+    assert fixed["paper_cash_multiplier"] == "0.01"
+    assert fixed["paper_quantity_min"] == fixed["paper_quantity_step"] == "1"
+    assert "quantity_min" not in fixed and "quantity_step" not in fixed
+    assert fixed["broker_minimum_quantity"] == "NO_VERIFICADO"
+
+    option = parity._map_iol_contract({
+        "ticker": "GFGC6000OC", "instrument_type": "OPCIONES",
+        "market": "BYMA", "currency": "ARS", "settlement": "INMEDIATA",
+        "financial_contract_v17": {
+            "cash_multiplier": "100", "minimum_quantity": "1",
+            "quantity_step": "1", "paper_quantity_min": "1",
+            "paper_quantity_step": "1", "underlying": "GGAL",
+            "strike": "6000", "expires_at": "2026-10-16T15:30:00-03:00",
+            "option_right": "CALL", "premium_basis": "PER_UNDERLYING_UNIT",
+        },
+    })
+    assert option["cash_multiplier"] == "100"
+    assert option["paper_quantity_min"] == option["paper_quantity_step"] == "1"
+    assert "quantity_min" not in option and "quantity_step" not in option
+
+
 def test_fci_without_broker_minimum_uses_internal_risk_budget(tmp_path):
     store = make_store(tmp_path)
     primary = ppi_record("FUND.PPI.A", "FCI", settlement="INMEDIATA")
@@ -73,6 +108,13 @@ def test_fci_without_broker_minimum_uses_internal_risk_budget(tmp_path):
     assert completed["capability"] == "READY_PAPER_FCI_SUBSCRIPTION"
     terms = catalog.contract_for(completed)
     assert terms.paper_subscription_policy == "INTERNAL_RISK_BUDGET_BY_AMOUNT"
+    assert terms.paper_subscription_min == Decimal("1000")
+    try:
+        terms.subscription_amount("999.99")
+    except ValueError as exc:
+        assert "BELOW_MINIMUM" in str(exc)
+    else:
+        raise AssertionError("FCI PAPER accepted less than the ARS 1.000 internal minimum")
     assert terms.subscription_amount("1234.56") == Decimal("1234.56")
     assert terms.broker_subscription_min == "NO_VERIFICADO"
 
@@ -98,6 +140,29 @@ def test_source_failure_preserves_last_known_good_quote_and_static_metadata(tmp_
     assert row["state"] == "CACHE_FRESH"
     assert row["source_state"] == "SOURCE_UNAVAILABLE"
     assert row["asset_type"] == "ACCIONES" and row["units_per_lot"] == 1
+
+
+def test_stale_quote_cache_degrades_only_dynamic_data_and_keeps_metadata(tmp_path):
+    class Healthy:
+        def call(self, name, arguments):
+            if name == "get_asset_quote":
+                return {"unit_price": 100, "trade": {"lot_price": 100}}
+            return {"type": "ACCIONES", "currency": "ARS", "units_per_lot": 1}
+
+    class Down:
+        def call(self, name, arguments):
+            raise RuntimeError("SOURCE_UNAVAILABLE")
+
+    policy = shadow.CollectionPolicy(min_interval_seconds=1, retry_attempts=0)
+    shadow.run_batch(["GGAL"], Healthy(), root=tmp_path, policy=policy,
+                     now=lambda: NOW)
+    stale = shadow.run_batch(["GGAL"], Down(), root=tmp_path, policy=policy,
+                             now=lambda: NOW.replace(hour=16))
+    row = stale["symbols"][0]
+    assert row["state"] == "CACHE_STALE"
+    assert row["source_state"] == "SOURCE_UNAVAILABLE"
+    assert row["asset_type"] == "ACCIONES"
+    assert row["currency"] == "ARS" and row["units_per_lot"] == 1
 
 
 def test_empty_family_responses_preserve_nonempty_last_known_good(tmp_path):
@@ -152,6 +217,7 @@ def test_future_without_broker_margin_uses_full_notional_paper_reserve():
         "contractMultiplier": 1000,
         "paperMarginPolicy": "CONSERVATIVE_NOTIONAL_RATE",
         "paperMarginRate": 1,
+        "expirationDate": "2026-12-31",
     })
     assert spec.capable is True
     assert derivatives.size_future(

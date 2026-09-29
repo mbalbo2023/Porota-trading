@@ -57,6 +57,7 @@ class PaperFundTerms:
     settlement: str
     metadata_source: str
     paper_subscription_policy: str = ""
+    paper_subscription_min: Decimal = Decimal("1000")
     paper_amount_unit: Decimal = Decimal("0.01")
     subscription_min: Decimal | None = None
     subscription_step: Decimal | None = None
@@ -72,6 +73,8 @@ class PaperFundTerms:
         if policy and policy != "INTERNAL_RISK_BUDGET_BY_AMOUNT":
             raise ValueError("PAPER_FUND_POLICY_INVALID")
         object.__setattr__(self, "paper_subscription_policy", policy)
+        object.__setattr__(self, "paper_subscription_min", _positive(
+            self.paper_subscription_min, "paper_subscription_min"))
         object.__setattr__(self, "paper_amount_unit", _positive(
             self.paper_amount_unit, "paper_amount_unit"))
         if self.subscription_min is not None:
@@ -89,6 +92,8 @@ class PaperFundTerms:
     def subscription_amount(self, value):
         amount = _positive(value, "subscription_amount")
         if self.paper_subscription_policy == "INTERNAL_RISK_BUDGET_BY_AMOUNT":
+            if amount < self.paper_subscription_min:
+                raise ValueError("FCI_PAPER_SUBSCRIPTION_BELOW_MINIMUM")
             if amount % self.paper_amount_unit:
                 raise ValueError("FCI_PAPER_AMOUNT_UNIT_INVALID")
             return amount
