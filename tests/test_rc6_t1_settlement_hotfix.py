@@ -185,7 +185,7 @@ def test_mep_catalog_funding_isolated_from_labor_day_policy(tmp_path, monkeypatc
 
     records = json.loads((ROOT / "tests/fixtures/ppi_catalog_20260827.json").read_text())["records"]
     raw = next(r for r in records if r["ticker"] == "AAPLD")
-    metadata = catalog.normalize_record(raw, "INMEDIATA", "2026-08-27T13:45:03Z", "test")
+    metadata = catalog.normalize_record(raw, "INMEDIATA", datetime.now(timezone.utc).isoformat(), "fresh-synthetic-identity")
     fresh_at = datetime.now(timezone.utc).isoformat()
     q = observer.normalize_quote(
         "AAPLD", "CEDEARS", "INMEDIATA",

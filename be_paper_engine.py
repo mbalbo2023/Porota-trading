@@ -374,6 +374,8 @@ class PaperStore:
         # también en una base nueva creada por los tests/runtime, antes del primer fill.
         spot_liquidity.init_schema(self)
         init_financial_schema(self)
+        from rc6_paper_family_lifecycle import init_schema as init_family_lifecycle_schema
+        init_family_lifecycle_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
         from bn_telegram_bus import init_schema as init_outbox_schema
@@ -637,6 +639,8 @@ class PaperBroker:
         for key, value in (initial_cash_by_currency or {}).items():
             self.initial_balances[cash_currency(key)] = decimal_value(value, "capital por moneda", nonnegative=True)
         self.cauciones = CaucionBook(store)
+        from rc6_paper_family_lifecycle import FamilyPaperExecutor
+        self.family_paper = FamilyPaperExecutor(store)
         # El esquema de liquidez se migra al iniciar el runtime. No se crea un
         # índice desde cada PaperBroker: scanner y supervisor arrancan en paralelo.
         # Sin reloj inyectado, llamadas directas son simulación por tiempo de
@@ -801,6 +805,36 @@ class PaperBroker:
             reserve=D(reserve, "-1"), participation=self.participation,
             admission=(lambda c, currency, at, fees: self.daily_risk.projected_admission_error(currency,at,fees,connection=c))
                       if self.daily_risk else None)
+
+    def place_caucion_from_evidence(self, identity, principal, request_id, as_of=None, *, reserve="0"):
+        """Explicit PAPER operation through the existing caucion lifecycle.
+
+        Does not choose allocation, discover primary identities or send orders.
+        The generic spot candidate gate cannot certify a caucion offer.
+        """
+        from rc6_contract_bridge import caucion_offer_from_evidence
+        from bs_instrument_contracts import aware_datetime
+        at = self.clock_fn() if self.clock_fn else as_of or now_iso()
+        keys = ("ticker","instrument_type","market","currency","settlement")
+        with self.store.connect() as c:
+            rows = c.execute("SELECT * FROM financial_instrument_catalog WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?",
+                tuple(identity.get(k) for k in keys)).fetchall()
+        if len(rows) != 1:
+            raise ValueError("PPI_PRIMARY_IDENTITY_NOT_UNIQUE")
+        primary = dict(rows[0])
+        primary["raw"] = json.loads(primary.pop("metadata_json"))
+        from cp_contract_evidence_v2_hf6 import current_records
+        records = [r for r in current_records(
+            self.store, family="CAUCIONES", ticker=primary["ticker"],
+            currency=primary["currency"], settlement=primary["settlement"])
+                   if r["market"] == primary["market"]]
+        with self.store.connect() as c:
+            pending = c.execute("SELECT 1 FROM contract_evidence_v2_changes WHERE family=? AND ticker=? AND market=? AND currency=? AND settlement=? AND status='CHANGED_REVIEW_REQUIRED' LIMIT 1",
+                ("CAUCIONES",primary["ticker"],primary["market"],primary["currency"],primary["settlement"])).fetchone()
+        if pending:
+            raise ValueError("CAUCION_CHANGE_REVIEW_REQUIRED")
+        offer = caucion_offer_from_evidence(records,primary,now=aware_datetime(at))
+        return self.place_caucion(offer,principal,request_id,as_of=at,reserve=reserve)
 
     def settle_cauciones(self, as_of=None):
         return self.cauciones.settle_due(as_of or now_iso())
@@ -1192,6 +1226,11 @@ class PaperBroker:
         )
         by_total_cap = (exposure_remaining / (entry * factor)).to_integral_value(ROUND_DOWN)
         qty = (min(by_risk, by_cash, by_book, by_position_cap, by_total_cap) / step).to_integral_value(ROUND_DOWN) * step
+        if q.contract is not None and qty > 0:
+            try:
+                q.contract.quantity(qty)
+            except ValueError as exc:
+                return False, "CONTRACT_QUANTITY_INVALID:" + str(exc), None
         max_hold_minutes = int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360"))
         features["exit_policy"] = {
             "mode": "SIMULATED",

@@ -11,16 +11,27 @@ import json
 import os
 from datetime import datetime, timezone
 
-SCHEMA = "porota-contract-evidence-v2-rc4"
+SCHEMA = "porota-contract-evidence-v2-currency-key-v3"
 SOURCE_RANK = {
     "PPI_STRUCTURED_API": 10,
     "PPI_AUTHENTICATED_XHR": 20,
-    "PPI_OFFICIAL_DOCUMENTATION": 30,
-    "PPI_AUTHENTICATED_WEB": 40,
-    "PPI_SUPPORT": 50,
-    "A3_PRIMARY_API": 10,
-    "A3_RISK_POSTTRADE": 10,
-    "A3_OFFICIAL_DOCUMENTATION": 30,
+    "PPI_AUTHENTICATED_DOM": 30,
+    "PPI_AUTHENTICATED_WEB": 30,
+    "IOL_STRUCTURED_API": 40,
+    "IOL_AUTHENTICATED_XHR": 50,
+    "MARKET_OFFICIAL": 60,
+    "BYMA_STRUCTURED_API": 60,
+    "BYMA_OFFICIAL_DOCUMENTATION": 60,
+    "A3_PRIMARY_API": 60,
+    "A3_OFFICIAL_DOCUMENTATION": 60,
+    "CLEARING_OFFICIAL": 70,
+    "A3_RISK_POSTTRADE": 70,
+    "FUND_MANAGER_OFFICIAL": 80,
+    "IOL_AUTHENTICATED_DOM": 90,
+    "IOL_AUTHENTICATED_WEB": 90,
+    "DERIVED_OFFICIAL_RULE": 100,
+    "PPI_OFFICIAL_DOCUMENTATION": 110,
+    "PPI_SUPPORT": 120,
     "POROTA_LEGACY_EVIDENCE": 900,
 }
 FAMILY_ALIASES = {
@@ -40,6 +51,13 @@ FORBIDDEN_KEY_PARTS = (
     "password", "passwd", "otp", "one_time", "access_token", "refresh_token",
     "session_token", "bearer", "private_key", "account_number", "numero_cuenta",
 )
+PROVENANCE_ONLY_FIELDS = frozenset({
+    "provider_timestamp", "capture_timestamp", "freshness_basis",
+    "derivation_rule", "confidence", "evidence_class",
+    "source_job", "source_route", "evidence_scope", "readiness_guard",
+    "semantic_guard", "metadata_source", "quantity_terms_source",
+    "provider_currency", "fund_description", "iol_operable_observed",
+})
 
 
 def now_iso():
@@ -51,11 +69,12 @@ def normalize_family(value):
     return FAMILY_ALIASES.get(raw, raw)
 
 
-def normalize_identity(*, family, ticker, market, settlement):
+def normalize_identity(*, family, ticker, market, currency, settlement):
     return (
         normalize_family(family),
         str(ticker or "*").strip().upper(),
         str(market or "UNKNOWN").strip().upper(),
+        str(currency or "UNKNOWN").strip().upper(),
         str(settlement or "UNKNOWN").strip().upper(),
     )
 
@@ -89,15 +108,116 @@ def _assert_schema_compatible(connection):
     tables = {r[0] for r in connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
     )}
-    required = {"family", "ticker", "market", "settlement", "source_class"}
+    required = {"family", "ticker", "market", "currency", "settlement", "source_class"}
     for table in ("contract_evidence_v2_snapshots", "contract_evidence_v2_current",
                   "contract_evidence_v2_changes"):
         if table in tables and not required.issubset(_table_columns(connection, table)):
             raise RuntimeError("CONTRACT_V2_MIGRATION_REQUIRED:" + table)
 
 
+def _migrate_currencyless_schema(connection):
+    """Forward-only migration from the original key that omitted currency.
+
+    The old ``current`` table may have overwritten an ARS/USD variant.  History
+    remains append-only, so current is rebuilt from every snapshot, partitioned
+    by the recovered payload currency.  Backups are retained for audit and the
+    operation is idempotent.  This helper only acts on the supplied store; the
+    production DB is never selected implicitly.
+    """
+    tables = {r[0] for r in connection.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    )}
+    managed = ("contract_evidence_v2_snapshots", "contract_evidence_v2_current",
+               "contract_evidence_v2_changes")
+    present = [table for table in managed if table in tables]
+    if not present or all("currency" in _table_columns(connection, table)
+                          for table in present):
+        return False
+    if any(table + "_currencyless_backup" in tables for table in present):
+        raise RuntimeError("CONTRACT_V2_CURRENCY_MIGRATION_BACKUP_EXISTS")
+
+    connection.execute("PRAGMA foreign_keys=OFF")
+    try:
+        for table in present:
+            connection.execute(
+                f"ALTER TABLE {table} RENAME TO {table}_currencyless_backup")
+        connection.executescript("""
+        CREATE TABLE contract_evidence_v2_snapshots(
+          snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          family TEXT NOT NULL, ticker TEXT NOT NULL, market TEXT NOT NULL,
+          currency TEXT NOT NULL, settlement TEXT NOT NULL,
+          source_class TEXT NOT NULL, source_ref TEXT NOT NULL,
+          observed_at TEXT NOT NULL, effective_at TEXT,
+          evidence_hash TEXT NOT NULL, evidence_json TEXT NOT NULL,
+          UNIQUE(family,ticker,market,currency,settlement,source_class,evidence_hash)
+        );
+        CREATE TABLE contract_evidence_v2_current(
+          family TEXT NOT NULL, ticker TEXT NOT NULL, market TEXT NOT NULL,
+          currency TEXT NOT NULL, settlement TEXT NOT NULL,
+          source_class TEXT NOT NULL,
+          snapshot_id INTEGER NOT NULL REFERENCES contract_evidence_v2_snapshots(snapshot_id),
+          evidence_hash TEXT NOT NULL, observed_at TEXT NOT NULL,
+          PRIMARY KEY(family,ticker,market,currency,settlement,source_class)
+        );
+        CREATE TABLE contract_evidence_v2_changes(
+          change_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          family TEXT NOT NULL, ticker TEXT NOT NULL, market TEXT NOT NULL,
+          currency TEXT NOT NULL, settlement TEXT NOT NULL,
+          source_class TEXT NOT NULL, previous_hash TEXT, current_hash TEXT NOT NULL,
+          detected_at TEXT NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL
+        );
+        """)
+        if "contract_evidence_v2_snapshots" in present:
+            rows = connection.execute("""SELECT snapshot_id,family,ticker,market,
+              settlement,source_class,source_ref,observed_at,effective_at,
+              evidence_hash,evidence_json
+              FROM contract_evidence_v2_snapshots_currencyless_backup
+              ORDER BY snapshot_id""").fetchall()
+            for row in rows:
+                payload = json.loads(row[10] or "{}")
+                currency = str(payload.get("currency") or "UNKNOWN").strip().upper()
+                connection.execute("""INSERT INTO contract_evidence_v2_snapshots
+                  (snapshot_id,family,ticker,market,currency,settlement,source_class,
+                   source_ref,observed_at,effective_at,evidence_hash,evidence_json)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  tuple(row[:4]) + (currency,) + tuple(row[4:]))
+            connection.execute("""INSERT INTO contract_evidence_v2_current
+              (family,ticker,market,currency,settlement,source_class,snapshot_id,
+               evidence_hash,observed_at)
+              SELECT s.family,s.ticker,s.market,s.currency,s.settlement,s.source_class,
+                     s.snapshot_id,s.evidence_hash,s.observed_at
+              FROM contract_evidence_v2_snapshots s
+              WHERE s.snapshot_id=(SELECT s2.snapshot_id
+                FROM contract_evidence_v2_snapshots s2
+                WHERE s2.family=s.family AND s2.ticker=s.ticker
+                  AND s2.market=s.market AND s2.currency=s.currency
+                  AND s2.settlement=s.settlement AND s2.source_class=s.source_class
+                ORDER BY s2.observed_at DESC,s2.snapshot_id DESC LIMIT 1)""")
+        if "contract_evidence_v2_changes" in present:
+            rows = connection.execute("""SELECT change_id,family,ticker,market,
+              settlement,source_class,previous_hash,current_hash,detected_at,status,detail
+              FROM contract_evidence_v2_changes_currencyless_backup ORDER BY change_id""").fetchall()
+            for row in rows:
+                match = connection.execute("""SELECT currency
+                  FROM contract_evidence_v2_snapshots
+                  WHERE family=? AND ticker=? AND market=? AND settlement=?
+                    AND source_class=? AND evidence_hash=?
+                  ORDER BY snapshot_id DESC LIMIT 1""",
+                  (row[1],row[2],row[3],row[4],row[5],row[7])).fetchone()
+                currency = str(match[0] if match else "UNKNOWN").upper()
+                connection.execute("""INSERT INTO contract_evidence_v2_changes
+                  (change_id,family,ticker,market,currency,settlement,source_class,
+                   previous_hash,current_hash,detected_at,status,detail)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  tuple(row[:4]) + (currency,) + tuple(row[4:]))
+        return True
+    finally:
+        connection.execute("PRAGMA foreign_keys=ON")
+
+
 def init_schema(store):
     with store.connect() as c:
+        _migrate_currencyless_schema(c)
         _assert_schema_compatible(c)
         c.executescript("""
         CREATE TABLE IF NOT EXISTS contract_evidence_v2_snapshots(
@@ -105,6 +225,7 @@ def init_schema(store):
           family TEXT NOT NULL,
           ticker TEXT NOT NULL,
           market TEXT NOT NULL,
+          currency TEXT NOT NULL,
           settlement TEXT NOT NULL,
           source_class TEXT NOT NULL,
           source_ref TEXT NOT NULL,
@@ -112,24 +233,26 @@ def init_schema(store):
           effective_at TEXT,
           evidence_hash TEXT NOT NULL,
           evidence_json TEXT NOT NULL,
-          UNIQUE(family,ticker,market,settlement,source_class,evidence_hash)
+          UNIQUE(family,ticker,market,currency,settlement,source_class,evidence_hash)
         );
         CREATE TABLE IF NOT EXISTS contract_evidence_v2_current(
           family TEXT NOT NULL,
           ticker TEXT NOT NULL,
           market TEXT NOT NULL,
+          currency TEXT NOT NULL,
           settlement TEXT NOT NULL,
           source_class TEXT NOT NULL,
           snapshot_id INTEGER NOT NULL REFERENCES contract_evidence_v2_snapshots(snapshot_id),
           evidence_hash TEXT NOT NULL,
           observed_at TEXT NOT NULL,
-          PRIMARY KEY(family,ticker,market,settlement,source_class)
+          PRIMARY KEY(family,ticker,market,currency,settlement,source_class)
         );
         CREATE TABLE IF NOT EXISTS contract_evidence_v2_changes(
           change_id INTEGER PRIMARY KEY AUTOINCREMENT,
           family TEXT NOT NULL,
           ticker TEXT NOT NULL,
           market TEXT NOT NULL,
+          currency TEXT NOT NULL,
           settlement TEXT NOT NULL,
           source_class TEXT NOT NULL,
           previous_hash TEXT,
@@ -150,9 +273,9 @@ def init_schema(store):
           detail TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS idx_contract_v2_snapshot_key
-          ON contract_evidence_v2_snapshots(family,ticker,market,settlement,observed_at);
+          ON contract_evidence_v2_snapshots(family,ticker,market,currency,settlement,observed_at);
         CREATE INDEX IF NOT EXISTS idx_contract_v2_changes_key
-          ON contract_evidence_v2_changes(family,ticker,market,settlement,detected_at);
+          ON contract_evidence_v2_changes(family,ticker,market,currency,settlement,detected_at);
         CREATE INDEX IF NOT EXISTS idx_contract_v2_runs_job
           ON contract_evidence_v2_runs(job_key,started_at DESC);
         """)
@@ -181,7 +304,7 @@ def finish_run(store, *, run_id, state, records=0, changed=0, conflicts=0,
 
 
 def record_snapshot(store, *, family, ticker, market, source_class,
-                    source_ref, evidence, settlement="UNKNOWN",
+                    source_ref, evidence, currency=None, settlement="UNKNOWN",
                     observed_at=None, effective_at=None):
     """Append provider-backed evidence and report whether the contract changed."""
     if source_class not in SOURCE_RANK:
@@ -189,8 +312,13 @@ def record_snapshot(store, *, family, ticker, market, source_class,
     if not isinstance(evidence, dict) or not evidence:
         raise ValueError("CONTRACT_V2_EMPTY_EVIDENCE")
     _assert_sanitized(evidence)
-    family, ticker, market, settlement = normalize_identity(
-        family=family, ticker=ticker, market=market, settlement=settlement)
+    payload_currency = str(evidence.get("currency") or "UNKNOWN").strip().upper()
+    storage_currency = str(currency or payload_currency or "UNKNOWN").strip().upper()
+    if payload_currency not in {"", "UNKNOWN"} and storage_currency != payload_currency:
+        raise ValueError("CONTRACT_V2_CURRENCY_MISMATCH")
+    family, ticker, market, storage_currency, settlement = normalize_identity(
+        family=family, ticker=ticker, market=market, currency=storage_currency,
+        settlement=settlement)
     observed_at = observed_at or now_iso()
     digest = evidence_hash(evidence)
     payload = canonical_json(evidence)
@@ -199,50 +327,55 @@ def record_snapshot(store, *, family, ticker, market, source_class,
     with store.connect() as c:
         previous = c.execute("""SELECT snapshot_id,evidence_hash,observed_at
           FROM contract_evidence_v2_current WHERE family=? AND ticker=? AND market=?
-          AND settlement=? AND source_class=?""",
-          (family,ticker,market,settlement,source_class)).fetchone()
+          AND currency=? AND settlement=? AND source_class=?""",
+          (family,ticker,market,storage_currency,settlement,source_class)).fetchone()
         c.execute("""INSERT OR IGNORE INTO contract_evidence_v2_snapshots
-          (family,ticker,market,settlement,source_class,source_ref,observed_at,effective_at,
-           evidence_hash,evidence_json) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-          (family,ticker,market,settlement,source_class,str(source_ref),observed_at,
+          (family,ticker,market,currency,settlement,source_class,source_ref,observed_at,effective_at,
+           evidence_hash,evidence_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+          (family,ticker,market,storage_currency,settlement,source_class,str(source_ref),observed_at,
            effective_at,digest,payload))
         snap = c.execute("""SELECT snapshot_id FROM contract_evidence_v2_snapshots
-          WHERE family=? AND ticker=? AND market=? AND settlement=? AND source_class=?
+          WHERE family=? AND ticker=? AND market=? AND currency=? AND settlement=? AND source_class=?
           AND evidence_hash=?""",
-          (family,ticker,market,settlement,source_class,digest)).fetchone()
+          (family,ticker,market,storage_currency,settlement,source_class,digest)).fetchone()
         snapshot_id = int(snap[0])
         previous_hash = previous[1] if previous else None
         changed = bool(previous_hash and previous_hash != digest)
         first_seen = previous is None
         c.execute("""INSERT INTO contract_evidence_v2_current
-          (family,ticker,market,settlement,source_class,snapshot_id,evidence_hash,observed_at)
-          VALUES(?,?,?,?,?,?,?,?)
-          ON CONFLICT(family,ticker,market,settlement,source_class) DO UPDATE SET
+          (family,ticker,market,currency,settlement,source_class,snapshot_id,evidence_hash,observed_at)
+          VALUES(?,?,?,?,?,?,?,?,?)
+          ON CONFLICT(family,ticker,market,currency,settlement,source_class) DO UPDATE SET
             snapshot_id=excluded.snapshot_id,evidence_hash=excluded.evidence_hash,
             observed_at=excluded.observed_at""",
-          (family,ticker,market,settlement,source_class,snapshot_id,digest,observed_at))
+          (family,ticker,market,storage_currency,settlement,source_class,snapshot_id,digest,observed_at))
         if first_seen or changed:
             status = "FIRST_SEEN" if first_seen else "CHANGED_REVIEW_REQUIRED"
             c.execute("""INSERT INTO contract_evidence_v2_changes
-              (family,ticker,market,settlement,source_class,previous_hash,current_hash,
-               detected_at,status,detail) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-              (family,ticker,market,settlement,source_class,previous_hash,digest,observed_at,
+              (family,ticker,market,currency,settlement,source_class,previous_hash,current_hash,
+               detected_at,status,detail) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+              (family,ticker,market,storage_currency,settlement,source_class,previous_hash,digest,observed_at,
                status,"Nueva evidencia contractual." if first_seen else
                "El hash contractual cambió; no promover ni ejecutar hasta revisión."))
     return {"schema":SCHEMA,"family":family,"ticker":ticker,"market":market,
+            "currency":storage_currency,
             "settlement":settlement,"source_class":source_class,
             "snapshot_id":snapshot_id,"evidence_hash":digest,
             "first_seen":first_seen,"changed":changed,
             "status":"CHANGED_REVIEW_REQUIRED" if changed else "RECORDED"}
 
 
-def current_records(store, *, family=None, ticker=None):
+def current_records(store, *, family=None, ticker=None, currency=None, settlement=None):
     init_schema(store)
     clauses=[]; params=[]
     if family:
         clauses.append("c.family=?"); params.append(normalize_family(family))
     if ticker:
         clauses.append("c.ticker=?"); params.append(str(ticker).upper())
+    if currency:
+        clauses.append("c.currency=?"); params.append(str(currency).upper())
+    if settlement:
+        clauses.append("c.settlement=?"); params.append(str(settlement).upper())
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     with store.connect() as c:
         rows=c.execute("""SELECT c.*,s.source_ref,s.effective_at,s.evidence_json
@@ -268,6 +401,8 @@ def source_conflict(records):
         if source not in SOURCE_RANK or not isinstance(evidence,dict):
             continue
         for field,value in evidence.items():
+            if field in PROVENANCE_ONLY_FIELDS:
+                continue
             if value in (None,"",[],{}):
                 continue
             values.setdefault(field,[]).append((SOURCE_RANK[source],source,value))
@@ -309,7 +444,7 @@ def readiness_state(records, *, required_fields=(), max_age_seconds=None, now=No
 
 
 def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
-                           simulator_ready=False, cost_ready=False):
+                           simulator_ready=False, cost_ready=False, profile="FULL"):
     """Family-aware readiness using canonical execution requirements.
 
     This is still evidence-only: the maximum state is READY_PAPER_CANDIDATE and
@@ -317,39 +452,25 @@ def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
     """
     from cq_contract_readiness_hf6 import evaluate as evaluate_family
     rows = list(records or [])
-    if not rows:
-        base = evaluate_family(family, {}, simulator_ready=simulator_ready,
-                               cost_ready=cost_ready, freshness_ok=False,
-                               source_conflict=False)
-        return {**base, "auto_activation_allowed": False, "conflicts": {}}
     conflicts = source_conflict(rows)
     merged = {}
     for row in sorted(rows, key=lambda r: SOURCE_RANK.get(r.get("source_class"), 999), reverse=True):
         merged.update({k:v for k,v in (row.get("evidence") or {}).items()
                        if v not in (None,"",[],{})})
-    freshness_ok = True
-    if max_age_seconds is not None:
-        ref = now or datetime.now(timezone.utc)
-        for row in rows:
-            try:
-                at = datetime.fromisoformat(str(row.get("observed_at")).replace("Z","+00:00"))
-                if at.tzinfo is None:
-                    at = at.replace(tzinfo=timezone.utc)
-                if (ref - at.astimezone(timezone.utc)).total_seconds() > int(max_age_seconds):
-                    freshness_ok = False
-                    break
-            except Exception:
-                freshness_ok = False
-                break
+    # ``max_age_seconds`` is retained for API compatibility only.  A global
+    # TTL must not expire static contract terms; the canonical evaluator owns
+    # per-field TTLs for dynamic evidence.
     # Evidence completeness is distinct from execution readiness.
     # SHADOW observation can remain enabled, but it cannot fabricate a PAPER
     # simulator or a certified cost model for a family.
     result = evaluate_family(
-        family, merged,
+        family, rows,
         simulator_ready=bool(simulator_ready),
         cost_ready=bool(cost_ready),
-        freshness_ok=freshness_ok,
+        freshness_ok=False,
         source_conflict=bool(conflicts),
+        profile=profile,
+        now=now,
     )
     paper_ready = result.get("status") == "READY_PAPER_CANDIDATE"
     return {**result, "evidence": merged, "conflicts": conflicts,
@@ -357,4 +478,5 @@ def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
             "paper_execution_mode": "PAPER" if paper_ready else "SHADOW_OBSERVE_ONLY",
             "paper_auto_enabled": paper_ready,
             "auto_activation_allowed": False,
-            "real_money_authorized": False}
+            "real_money_authorized": False,
+            "legacy_global_ttl_ignored": True}

@@ -6,75 +6,9 @@ contract, cost, sizing, simulator and regression tests all pass.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class FamilyRequirements:
-    execution_required: tuple[str, ...]
-    enrichment_required: tuple[str, ...] = ()
-
-
-COMMON_SPOT = (
-    "instrument_id", "ticker", "market", "currency", "settlement",
-    "quantity_min", "quantity_step", "price_precision", "cost_model",
-)
-
-REQUIREMENTS = {
-    "ACCIONES": FamilyRequirements(COMMON_SPOT),
-    "CEDEARS": FamilyRequirements(COMMON_SPOT + ("conversion_ratio",)),
-    "BONOS": FamilyRequirements(COMMON_SPOT + (
-        "price_unit_nominals", "nominal_value", "lamina_minima", "isin",
-        "maturity", "coupon_terms", "amortization_terms",
-    ), ("payment_schedule", "tir", "modified_duration", "parity", "accrued_interest")),
-    "LETRAS": FamilyRequirements(COMMON_SPOT + (
-        "price_unit_nominals", "nominal_value", "lamina_minima", "maturity",
-    ), ("isin", "yield_context")),
-    "ON": FamilyRequirements(COMMON_SPOT + (
-        "price_unit_nominals", "nominal_value", "lamina_minima", "isin",
-        "maturity", "coupon_terms", "amortization_terms", "payment_currency",
-    ), ("payment_schedule", "tir", "modified_duration")),
-    "CAUCIONES": FamilyRequirements((
-        "instrument_id", "currency", "side", "term_days", "maturity",
-        "annual_rate", "available_principal", "minimum_principal",
-        "principal_step", "day_count_basis", "fee_model",
-    )),
-    "OPCIONES": FamilyRequirements((
-        "instrument_id", "ticker", "market", "currency", "underlying",
-        "option_right", "strike", "expiry", "contract_lot", "quantity_step",
-        "price_tick", "price_per_option", "exercise_style", "settlement",
-        "cost_model",
-    ), ("open_interest", "implied_volatility", "greeks")),
-    "FUTUROS": FamilyRequirements((
-        "instrument_id", "ticker", "market", "currency", "underlying",
-        "expiry", "contract_multiplier", "quantity_step", "price_tick",
-        "tick_value", "initial_margin", "settlement_rule", "adjustment_rule",
-        "trading_hours", "cost_model",
-    ), ("maintenance_margin", "open_interest")),
-    "FCI_LOCAL": FamilyRequirements((
-        "fund_id", "currency", "nav", "nav_as_of", "subscription_minimum",
-        "subscription_step", "cutoff", "redemption_term", "cost_model",
-    ), ("redemption_minimum", "manager", "custodian", "benchmark", "risk")),
-    "FCI_EXTERIOR": FamilyRequirements((
-        "fund_id", "currency", "nav", "nav_as_of", "subscription_minimum",
-        "subscription_step", "cutoff", "redemption_term", "cost_model",
-        "jurisdiction", "restrictions",
-    ), ("isin", "manager", "custodian", "benchmark", "risk")),
-    "ETF": FamilyRequirements(COMMON_SPOT + ("exchange",)),
-    "ACCIONES_USA": FamilyRequirements(COMMON_SPOT + (
-        "exchange", "fractional_policy", "trading_hours",
-    )),
-    "LICITACIONES": FamilyRequirements((
-        "auction_id", "instrument_id", "currency", "open_at", "close_at",
-        "status", "minimum_amount", "amount_step", "settlement",
-        "allocation_rule", "cost_model",
-    ), ("maximum_amount", "competitive_rule", "noncompetitive_rule", "proration_rule")),
-    "CANJES": FamilyRequirements((
-        "event_id", "eligible_instrument", "target_instrument", "open_at",
-        "close_at", "exchange_ratio", "quantity_min", "quantity_step",
-        "settlement", "cost_model",
-    )),
-}
+# Requirement ownership lives exclusively in cq_family_contract_rules_hf6.
+# This module is only a compatibility adapter for historical field names and
+# statuses; keeping a second family matrix here previously allowed drift.
 
 ALIASES = {
     "FCI": "FCI_LOCAL",
@@ -99,47 +33,81 @@ def canonical_family(family: str) -> str:
     return ALIASES.get(key, key)
 
 
-def evaluate(family: str, evidence: dict, *, simulator_ready=False,
-             cost_ready=False, freshness_ok=False, source_conflict=False):
-    """Return a deterministic readiness result without side effects."""
-    key = canonical_family(family)
-    req = REQUIREMENTS.get(key)
-    if req is None:
-        return {
-            "family": key,
-            "status": "FAIL_CLOSED",
-            "missing": ["family_requirements"],
-            "reason": "No existe contrato de readiness para esta familia.",
-        }
+def _adapt_payload(raw):
+    raw = dict(raw) if isinstance(raw, dict) else {}
+    canonical = dict(raw)
+    for old, new in FIELD_ALIASES.items():
+        if canonical.get(new) in (None, "", [], {}) and raw.get(old) not in (None, "", [], {}):
+            canonical[new] = raw[old]
+    if raw.get("market") and canonical.get("trading_session") in (None, ""):
+        canonical["trading_session"] = "BROKER_DEFINED"
+    return canonical
 
-    evidence = evidence if isinstance(evidence, dict) else {}
-    missing = [name for name in req.execution_required
-               if evidence.get(name) in (None, "", [], {})]
+
+FIELD_ALIASES = {
+    "price_precision": "price_tick", "cost_model": "fee_schedule",
+    "price_unit_nominals": "price_quote_unit", "maturity": "maturity_date",
+    "lamina_minima": "quantity_min", "nominal_value": "quantity_step",
+    "option_right": "put_call", "expiry": "expiry_at",
+    "contract_lot": "lot_size", "annual_rate": "annual_rate_fraction",
+    "principal_min": "minimum_principal", "fee_model": "fee_schedule",
+    "settlement_rule": "settlement_method",
+    "trading_hours": "trading_session", "nav": "nav_value",
+    "nav_as_of": "nav_date", "subscription_minimum": "subscription_min",
+    "cutoff": "cutoff_time",
+}
+
+
+def evaluate(family: str, evidence, *, simulator_ready=False,
+             cost_ready=False, freshness_ok=False, source_conflict=False,
+             profile="FULL", now=None):
+    """Legacy facade over the single canonical family-rule evaluator.
+
+    Old callers use historical field names.  This function adapts those names
+    and integration flags, but owns no independent requirement list.
+    """
+    from datetime import datetime, timezone
+    from cq_family_contract_rules_hf6 import evaluate_family
+
+    key = canonical_family(family)
+    key = {"FCI_LOCAL": "FCI", "ETF": "ETF"}.get(key, key)
+    stamp = now or datetime.now(timezone.utc)
+    if isinstance(evidence, (list, tuple)):
+        records = []
+        for item in evidence:
+            if not isinstance(item, dict):
+                continue
+            records.append({**item, "evidence": _adapt_payload(item.get("evidence"))})
+    else:
+        canonical = _adapt_payload(evidence)
+        # Only the historical dict API accepts the historical freshness flag.
+        # Stored records must carry their own dynamic fields and timestamps.
+        if freshness_ok:
+            canonical.setdefault("operable", True)
+            canonical.setdefault("market_session_state", "OPEN")
+            canonical.setdefault("subscription_status", "AVAILABLE")
+            canonical.setdefault("auction_status", "OPEN")
+        records = [{"source_class": "PPI_STRUCTURED_API",
+                    "observed_at": stamp.isoformat(), "evidence": canonical}]
+    result = evaluate_family(key, records, profile=profile, now=stamp)
 
     if source_conflict:
-        status = "CONFLICT"
-        reason = "Fuentes contractuales contradictorias."
-    elif missing:
-        status = "MISSING"
-        reason = "Faltan campos requeridos para ejecución PAPER."
-    elif not freshness_ok:
-        status = "STALE"
-        reason = "Contrato completo pero fuera de TTL."
+        status, reason = "CONFLICT", "Fuentes contractuales contradictorias."
+    elif result["status"] == "MISSING_CONTRACT":
+        status, reason = "MISSING", "Faltan campos requeridos para ejecución PAPER."
+    elif result["status"] in {"MISSING_DYNAMIC", "STALE_DYNAMIC"}:
+        status, reason = "STALE", "Contrato completo pero dinámica no vigente."
+    elif result["status"] not in {"READY_PAPER_CANDIDATE", "NOT_APPLICABLE"}:
+        status, reason = result["status"], result.get("detail", "Fail closed.")
     elif not cost_ready:
-        status = "POROTA_INTEGRATION_REQUIRED"
-        reason = "Contrato completo pero modelo de costos no certificado."
+        status, reason = "POROTA_INTEGRATION_REQUIRED", "Contrato completo pero modelo de costos no certificado."
     elif not simulator_ready:
-        status = "POROTA_INTEGRATION_REQUIRED"
-        reason = "Contrato completo pero simulador especializado no certificado."
+        status, reason = "POROTA_INTEGRATION_REQUIRED", "Contrato completo pero simulador especializado no certificado."
     else:
-        status = "READY_PAPER_CANDIDATE"
-        reason = "Contrato/costo/simulador completos; requiere gate final de integración."
-
+        status, reason = result["status"], "Contrato/costo/simulador completos; requiere gate final de integración."
     return {
-        "family": key,
-        "status": status,
-        "missing": missing,
-        "enrichment_missing": [name for name in req.enrichment_required
-                               if evidence.get(name) in (None, "", [], {})],
-        "reason": reason,
+        "family": key, "profile": str(profile).upper(), "status": status,
+        "missing": result.get("missing_contract", []) + result.get("missing_dynamic", []),
+        "enrichment_missing": [], "event_missing": result.get("event_missing", []),
+        "reason": reason, "canonical_result": result,
     }

@@ -6,6 +6,16 @@ excluded. This module has no order capability.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
+
+def _positive(value):
+    try:
+        number = Decimal(str(value))
+        return number if number.is_finite() and number > 0 else None
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
 
 def _currency(row):
     value = row.get("moneda") if isinstance(row, dict) else None
@@ -68,12 +78,26 @@ def bond_technical(payload):
             "fechaEmision","fechaVencimiento","intereses","amortizacion","pagosPorAnio","tir",
             "modifiedDuration","paridad","interesesCorridos","valorTecnico","valorResidual")
     result = {k: row.get(k) for k in keys if row.get(k) not in (None, "")}
-    result["currency"] = _currency(row)
+    result["provider_currency"] = _currency(row)
+    basis = _positive(row.get("nominalesEnPrecio"))
+    minimum = _positive(row.get("laminaMinima"))
+    step = _positive(row.get("multiploMinimo"))
     result["provider_nominales_en_precio"] = row.get("nominalesEnPrecio")
     result["provider_quantity_decimal_places"] = row.get("cantidadDecimales")
     result["provider_price_decimal_places"] = row.get("cantidadDecimalesPrecio")
-    result["order_quantity_step"] = None
+    # These are explicit contract fields from DatosTecnicos, unlike decimal
+    # display precision.  They feed PAPER only for this exact PPI identity.
+    result["quantity_min"] = str(minimum) if minimum is not None else None
+    result["quantity_step"] = str(step) if step is not None else None
+    result["order_quantity_step"] = result["quantity_step"]
     result["order_price_tick"] = None
-    result["price_unit_nominals"] = None
-    result["semantic_guard"] = "TECHNICAL_FIELDS_DO_NOT_DEFINE_ORDER_UNIT_OR_STEP"
+    result["price_quote_unit"] = str(basis) if basis is not None else None
+    result["cash_multiplier"] = str(Decimal(1) / basis) if basis is not None else None
+    result["maturity_date"] = row.get("fechaVencimiento")
+    result["coupon_terms"] = row.get("intereses")
+    result["amortization_terms"] = row.get("amortizacion")
+    result["derivation_rule"] = (
+        "cash_multiplier = 1 / PPI DatosTecnicos.nominalesEnPrecio"
+        if basis is not None else None)
+    result["semantic_guard"] = "DECIMAL_PLACES_NOT_USED;EXPLICIT_MINIMUM_MULTIPLE_AND_QUOTE_BASIS_ONLY"
     return result

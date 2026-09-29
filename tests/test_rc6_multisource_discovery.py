@@ -54,10 +54,30 @@ def test_discovery_keeps_iol_then_byma_instead_of_collapsing_one_winner(tmp_path
     (tmp_path/"iol_family_reference_latest.json").write_text("{}",encoding="utf-8")
     (tmp_path/"rc6_public_sources_latest.json").write_text(json.dumps({
       "collected_at":"2026-09-25T21:00:15+00:00",
-      "sources":[{"source":"BYMA","observed_at":"2026-09-25T21:00:15+00:00","records":[{
+      "sources":[{"source":"BYMA","status":"SCRAPED_PUBLIC_DATA","http_status":200,"observed_at":"2026-09-25T21:00:15+00:00","records":[{
         "family":"CEDEARS","symbol":"AAPL","currency":None,"settlement":"A-24HS"
       }]}]
     }),encoding="utf-8")
     rows=[r for r in m.complementary_discovery(tmp_path) if r["ticker"]=="AAPL"]
     assert [r["source"] for r in rows]==["IOL_COMPLEMENTARY","BYMA_PUBLIC_COMPLEMENTARY"]
     assert rows[1]["identity_evidence"]["currency_explicit"] is False
+    assert rows[1]["observed_at"] is None
+    assert rows[1]["capture_observed_at"]=="2026-09-25T21:00:15+00:00"
+    assert rows[1]["provider_observed_at"] is None
+    assert rows[1]["freshness_basis"]=="STRUCTURED_CAPTURE_TIMESTAMP"
+
+
+def test_byma_provider_timestamp_has_precedence_over_capture_timestamp(tmp_path: Path):
+    (tmp_path/"iol_shadow_latest.json").write_text('{"symbols":[]}',encoding="utf-8")
+    (tmp_path/"iol_family_reference_latest.json").write_text("{}",encoding="utf-8")
+    (tmp_path/"rc6_public_sources_latest.json").write_text(json.dumps({
+      "collected_at":"2026-09-25T21:00:15+00:00",
+      "sources":[{"source":"BYMA","status":"REACHABLE_STRUCTURED_DATA","http_status":200,
+        "observed_at":"2026-09-25T21:00:15+00:00","records":[{
+        "family":"ACCIONES","symbol":"GGAL","timestamp":"2026-09-25T20:59:59+00:00"
+      }]}]
+    }),encoding="utf-8")
+    row=m.complementary_discovery(tmp_path)[0]
+    assert row["observed_at"]=="2026-09-25T20:59:59+00:00"
+    assert row["provider_observed_at"]=="2026-09-25T20:59:59+00:00"
+    assert row["freshness_basis"]=="PROVIDER_TIMESTAMP"

@@ -4,7 +4,8 @@ Read-only only.  Complements PPI metadata without execution/account tools.
 Persists evidence with provenance; missing terms remain missing.
 """
 from __future__ import annotations
-import json, os, sqlite3
+import json, os, sqlite3, math
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -93,6 +94,13 @@ def _fixed_contract(symbol:str, asset:dict, analytics:dict, simulation:dict, quo
         return None
     currency = str(identity_currency or asset.get("currency") or "").upper()
     settlement = canonical_settlement(identity_settlement or asset.get("term"), expected_family)
+    asset_currency = str(asset.get("currency") or "").upper()
+    if asset_currency != currency:
+        return None
+    if asset.get("symbol") and str(asset["symbol"]).upper() != symbol.upper():
+        return None
+    if canonical_settlement(asset.get("term"), expected_family) != settlement:
+        return None
     try:
         nominal = float(simulation.get("nominals"))
         dirty = float(simulation.get("dirty_price_per100"))
@@ -118,19 +126,30 @@ def _fixed_contract(symbol:str, asset:dict, analytics:dict, simulation:dict, quo
     if not (abs(lot_ratio - units_per_lot) <= max(0.01, units_per_lot * 0.005)
             and 0.98 <= unit_ratio <= 1.02):
         return None
+    terms = asset.get("order_terms") or {}
+    try:
+        step = Decimal(str(terms.get("quantity_step")))
+        minimum = Decimal(str(terms.get("minimum_quantity")))
+        if not all(x.is_finite() and x > 0 for x in (step, minimum)) or minimum % step or not terms.get("source_ref"):
+            return None
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if not all(math.isfinite(x) for x in (dirty, unit_price, lot_price, simulated_unit)):
+        return None
     multiplier = 1.0 / units_per_lot
     maturity=(analytics.get("calculation_inputs") or {}).get("maturity_date") or simulation.get("maturity_date")
     return {
       "family":expected_family,"currency":currency,
       "market":canonical_market(asset.get("market") or "BYMA"),"settlement":settlement,
-      "cash_multiplier":format(multiplier, ".12g"),"quantity_step":str(units_per_lot),
+      "cash_multiplier":format(multiplier, ".12g"),"quantity_step":str(step),
+      "minimum_quantity":str(minimum),"quantity_terms_source":terms["source_ref"],
       "metadata_source":"IOL_ASSET_INFO+IOL_QUOTE_PRICE_BASES+IOL_FIXED_INCOME_SIMULATION_1_NOMINAL",
       "fixed_income_evidence":{
         "quote_basis":"EXPLICIT_IOL_LOT_PRICE_WITH_UNIT_PRICE_CROSSCHECK",
         "simulated_nominals":simulation.get("nominals"),
         "quote_basis_nominal":str(units_per_lot),
-        "quantity_step_nominal":str(units_per_lot),
-        "minimum_nominal":str(units_per_lot),
+        "quantity_step_nominal":str(step),
+        "minimum_nominal":str(minimum),
         "dirty_price_per100":simulation.get("dirty_price_per100"),
         "amount_invested":simulation.get("amount_invested"),
         "amount_invested_ars":simulation.get("amount_invested_ars"),
@@ -163,7 +182,7 @@ def _option_records(chain:dict, infos:dict[str,dict], observed_at:str, *,
                     underlying_info:dict|None=None):
     """Normalize IOL option-chain rows and attach the current BYMA lot policy.
 
-    IOL's option `units_per_lot` is the order quantity step (normally one
+    The price basis and order increment require independent source terms (one
     contract), not the amount of underlying delivered by that contract.  The
     latter comes from BYMA's published option lot rule: 100 nominales for local
     shares, 10 for CEDEARs and 1,000 for public fixed-income securities.
@@ -180,23 +199,30 @@ def _option_records(chain:dict, infos:dict[str,dict], observed_at:str, *,
         symbol=str(raw.get("symbol") or "").upper()
         info=infos.get(symbol,{}) if isinstance(infos,dict) else {}
         try:
-            order_step=int(info.get("units_per_lot") or 0)
+            terms=info.get("order_terms") or {}
+            order_step=Decimal(str(terms.get("quantity_step")))
+            minimum=Decimal(str(terms.get("minimum_quantity")))
+            if not all(x.is_finite() and x>0 for x in (order_step,minimum)) or minimum % order_step or not terms.get("source_ref"):
+                raise ValueError("UNVERIFIED_OPTION_ORDER_TERMS")
             strike=float(raw.get("strike_price"))
-        except (TypeError,ValueError):
-            order_step=0;strike=0
+        except (TypeError,ValueError,InvalidOperation):
+            order_step=0;minimum=0;strike=0
         expiry=_option_expiry(raw.get("expiration"))
         right={"C":"CALL","V":"PUT","CALL":"CALL","PUT":"PUT"}.get(str(raw.get("option_type") or "").upper())
-        market=canonical_market(info.get("market") or "BYMA")
-        currency=str(info.get("currency") or underlying_info.get("currency") or "ARS").upper()
+        market=canonical_market(info.get("market") or "UNKNOWN")
+        currency=str(info.get("currency") or "UNKNOWN").upper()
         # BYMA option premium settles T+0 under the current clearing contract.
         settlement="INMEDIATA"
         contract=None
         if (contract_lot and order_step>0 and strike>0 and expiry and underlying and right
-                and market=="BYMA"):
+                and market=="BYMA" and currency in {"ARS","USD","USD_MEP","USD_CCL"}
+                and info.get("premium_basis") in {"PER_UNDERLYING_UNIT","PER_CONTRACT"}
+                and not raw.get("adjusted_series_unverified") and not info.get("adjusted_series_unverified")):
             contract={
               "family":"OPCIONES","currency":currency,"market":market,
               "settlement":settlement,
-              "cash_multiplier":str(contract_lot),"quantity_step":str(order_step),
+              "cash_multiplier":str(contract_lot if info["premium_basis"]=="PER_UNDERLYING_UNIT" else 1),"quantity_step":str(order_step),
+              "minimum_quantity":str(minimum),"quantity_terms_source":terms["source_ref"],"premium_basis":info["premium_basis"],
               "metadata_source":"IOL_OPTIONS_CHAIN+IOL_ASSET_INFO+BYMA_OPTION_LOT_POLICY_2026",
               "expires_at":expiry,"underlying":underlying,"strike":str(strike),
               "option_right":right,
@@ -212,6 +238,8 @@ def _option_records(chain:dict, infos:dict[str,dict], observed_at:str, *,
           "option_chain_evidence":{
               **{k:raw.get(k) for k in ("option_id","option_type","strike_price","expiration",
                                         "implied_volatility","delta","gamma","theta","vega","rho")},
+              "underlying":underlying,
+              "expires_at":expiry,
               "underlying_family":underlying_family,
               "contract_lot":contract_lot,
               "contract_lot_source":"BYMA_OPTION_LOT_POLICY_2026" if contract_lot else None,
@@ -231,8 +259,9 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
     shadow=_iol_shadow(root)
     fixed_rows=[r for r in catalog
                 if canonical_family(r.get("instrument_type")) in {"BONOS","LETRAS","OBLIGACIONES"}]
-    fixed_by_symbol={str(r.get("ticker") or "").upper():r for r in fixed_rows if r.get("ticker")}
-    fixed_symbol=_rotate(list(fixed_by_symbol),state,"fixed_index")
+    fixed_by_identity={"|".join(str(r.get(k) or "").upper() for k in ("ticker","instrument_type","market","currency","settlement")):r for r in fixed_rows if r.get("ticker")}
+    fixed_key=_rotate(list(fixed_by_identity),state,"fixed_index")
+    fixed_symbol=str(fixed_by_identity[fixed_key]["ticker"]).upper() if fixed_key else None
 
     # Option chains are keyed by their underlying, not by the option ticker.
     # Rotate provider-confirmed underlyings across every BYMA family for which
@@ -244,11 +273,11 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
     underlying=_rotate(underlyings,state,"option_underlying_index")
 
     records=[r for r in prior.get("records",[]) if isinstance(r,dict)]
-    by_key={(r.get("instrument_type"),r.get("ticker")):r for r in records}
+    by_key={(r.get("instrument_type"),r.get("ticker"),r.get("market"),r.get("currency"),r.get("settlement")):r for r in records}
     errors=[]
 
     if fixed_symbol:
-        identity=fixed_by_symbol[fixed_symbol]
+        identity=fixed_by_identity[fixed_key]
         try:
             family=canonical_family(identity.get("instrument_type"))
             currency=str(identity.get("currency") or "").upper()
@@ -278,7 +307,7 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
                    "technical_value":(analytics.get("prices") or {}).get("technical_value"),
                    "simulation_payment_currency":simulation.get("payment_currency"),
                  }}
-            by_key[(family,fixed_symbol)]=row
+            by_key[(family,fixed_symbol,row["market"],currency,settlement)]=row
         except Exception as exc:
             errors.append("FIXED:"+fixed_symbol+":"+type(exc).__name__)
 
@@ -306,18 +335,22 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
                         "type":cached.get("asset_type") or "OPCIONES",
                         "currency":cached.get("currency") or "ARS",
                         "units_per_lot":cached.get("units_per_lot"),
+                        "order_terms":cached.get("order_terms"),"premium_basis":cached.get("premium_basis"),
                         "market":cached.get("market") or "BCBA",
                         "term":"T0",
                     }
             missing=[r for r in candidates if str(r.get("symbol") or "").upper() not in infos]
-            for raw in missing[:MAX_OPTIONS_INFO]:
+            offset = int(state.get("option_info:"+underlying, 0)) % max(1, len(missing))
+            rotated = missing[offset:] + missing[:offset]
+            state["option_info:"+underlying] = (offset + MAX_OPTIONS_INFO) % max(1, len(missing))
+            for raw in rotated[:MAX_OPTIONS_INFO]:
                 symbol=str(raw.get("symbol") or "").upper()
                 try:
                     infos[symbol]=client.call("get_asset_info",{"symbol":symbol,"market":"BCBA"})
                 except Exception as exc:
                     errors.append("OPTION_INFO:"+symbol+":"+type(exc).__name__)
             for row in _option_records(chain,infos,at,underlying_info=underlying_info):
-                by_key[("OPCIONES",row["ticker"])]=row
+                by_key[("OPCIONES",row["ticker"],row["market"],row["currency"],row["settlement"])]=row
         except Exception as exc:
             errors.append("OPTIONS:"+underlying+":"+type(exc).__name__)
 

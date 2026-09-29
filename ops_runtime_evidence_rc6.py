@@ -250,9 +250,13 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
         candidate_by_key[_candidate_key(candidate)].append(candidate)
 
     symbol_groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    primary_symbol_groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in catalog:
-        symbol_groups[(str(row.get("ticker") or "").upper(),
-                       str(row.get("instrument_type") or "").upper())].append(row)
+        symbol_key = (str(row.get("ticker") or "").upper(),
+                      str(row.get("instrument_type") or "").upper())
+        symbol_groups[symbol_key].append(row)
+        if _primary_identity(row, _metadata(row.get("metadata_json"))):
+            primary_symbol_groups[symbol_key].append(row)
 
     instruments: list[dict[str, Any]] = []
     for row in sorted(catalog, key=_identity_key):
@@ -262,20 +266,24 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
             source: {
                 "evidence": "PRIMARY_IDENTITY" if source == "PPI" and primary else (
                     "COMPLEMENTARY" if _source_freshness(
-                        metadata, source, row.get("last_seen_at"), current, freshness_seconds
+                        metadata, source, row.get("last_seen_at"), current,
+                        freshness_seconds
                     )["observed_at"] else "NO_VERIFICADO"
                 ),
                 "freshness": _source_freshness(
-                    metadata, source, row.get("last_seen_at"), current, freshness_seconds
+                    metadata, source, row.get("last_seen_at"), current,
+                    freshness_seconds
                 ),
             }
             for source in SOURCES
         }
         key = _catalog_key(row)
         retry_rows = retry_by_key.get(key, [])
-        ambiguity = len(symbol_groups[
-            (str(row.get("ticker") or "").upper(), str(row.get("instrument_type") or "").upper())
-        ]) > 1
+        symbol_key = (str(row.get("ticker") or "").upper(),
+                      str(row.get("instrument_type") or "").upper())
+        primary_count = len(primary_symbol_groups[symbol_key])
+        ambiguity = (primary_count > 1
+                     or (primary_count == 0 and len(symbol_groups[symbol_key]) > 1))
         retry_ambiguity = any("AMBIG" in str(item.get("reason") or "").upper() for item in retry_rows)
         capability = safe_text(row.get("capability"), "UNKNOWN_CAPABILITY")
         catalog_status = safe_text(row.get("status"), "UNKNOWN_STATUS")
@@ -293,13 +301,15 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
             reasons.append("IDENTITY_AMBIGUOUS")
 
         projected = candidate_by_key.get(_candidate_key(row), [])
+        candidate_applies = primary or primary_count == 0
         if len(projected) != 1:
             reasons.append("CANDIDATE_LEDGER_CARDINALITY:" + str(len(projected)))
             issues.append("CANDIDATE_LEDGER_CARDINALITY")
         elif int(projected[0].get("can_simulate") or 0) not in {0, 1}:
             reasons.append("CANDIDATE_LEDGER_INVALID")
             issues.append("CANDIDATE_LEDGER_INVALID")
-        elif int(projected[0].get("can_simulate") or 0) == 1 and reasons:
+        elif (candidate_applies
+              and int(projected[0].get("can_simulate") or 0) == 1 and reasons):
             reasons.append("CANDIDATE_LEDGER_CONTRADICTS_FAIL_CLOSED")
             issues.append("CANDIDATE_LEDGER_CONTRADICTION")
 

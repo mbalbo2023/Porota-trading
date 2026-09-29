@@ -183,6 +183,13 @@ def contract_for(record):
         raise ValueError("MISSING_CURRENCY_OR_MARKET")
     family = family_name(record["instrument_type"])
     raw = record.get("raw", {})
+    if raw.get("_contract_bridge", {}).get("status") == "BLOCKED":
+        raise ValueError("CONTRACT_EVIDENCE_REVIEW_REQUIRED")
+    if raw.get("_contract_conflicts"):
+        raise ValueError("CONTRACT_SOURCE_CONFLICT")
+    if family == "FCI" and raw.get("paper_family_contract_v1"):
+        from rc6_paper_family_lifecycle import fund_terms_from_metadata
+        return fund_terms_from_metadata(record["ticker"], raw["paper_family_contract_v1"])
     if raw.get("financial_contract_v17"):
         spec = contract_from_metadata(record["ticker"], family, raw["financial_contract_v17"])
         if (spec.currency, spec.market, spec.settlement) != (record["currency"], record["market"], record["settlement"]):
@@ -206,7 +213,9 @@ def capability(record):
     except ValueError as exc:
         return str(exc)
     if spec.family == "FUTUROS":
-        return "READY_CONTRACT_FUTURES_NEEDS_EXECUTOR" if spec.market in {"A3","ROFEX"} else "NEEDS_MARKET_EXECUTOR"
+        return "READY_PAPER_FUTURES" if spec.market in {"A3","ROFEX"} else "NEEDS_MARKET_EXECUTOR"
+    if spec.family == "FCI":
+        return "READY_PAPER_FCI_SUBSCRIPTION" if spec.market == "FCI" else "NEEDS_MARKET_EXECUTOR"
     if spec.market != "BYMA":
         return "NEEDS_MARKET_EXECUTOR"
     if spec.family in {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES"}:
@@ -320,6 +329,8 @@ def complete_with_complement(record, complementary):
         return primary
 
     source=complement_source(complementary)
+    if complementary.get("contract_bridge"):
+        raw["_contract_bridge"] = complementary["contract_bridge"]
     contract=complementary.get("financial_contract_v17")
     existing_contract=raw.get("financial_contract_v17")
     if isinstance(contract,dict) and contract and not existing_contract:
@@ -330,6 +341,27 @@ def complete_with_complement(record, complementary):
         if source not in ignored:
             ignored.append(source)
         raw["_ignored_lower_priority_contract_sources"]=ignored
+        essential = {"currency", "market", "settlement", "cash_multiplier", "quantity_step", "minimum_quantity", "expires_at", "underlying", "strike", "option_right", "initial_margin", "maintenance_margin"}
+        numeric = {"cash_multiplier", "quantity_step", "minimum_quantity", "strike", "initial_margin", "maintenance_margin"}
+        def same_term(k):
+            try:
+                return Decimal(str(contract[k])) == Decimal(str(existing_contract[k])) if k in numeric else str(contract[k]) == str(existing_contract[k])
+            except (ValueError, ArithmeticError):
+                return False
+        changed = sorted(k for k in essential if k in contract and k in existing_contract and not same_term(k))
+        if changed:
+            raw["_contract_conflicts"] = {"fields": changed, "source": source, "incoming": contract, "existing": existing_contract}
+    family_contract = complementary.get("paper_family_contract_v1")
+    existing_family_contract = raw.get("paper_family_contract_v1")
+    if isinstance(family_contract, dict) and family_contract and not existing_family_contract:
+        raw["paper_family_contract_v1"] = family_contract
+        raw["_contract_complement_source"] = source
+    elif (isinstance(family_contract, dict) and family_contract
+          and existing_family_contract != family_contract):
+        raw["_contract_conflicts"] = {
+            "fields": ["paper_family_contract_v1"], "source": source,
+            "incoming": family_contract, "existing": existing_family_contract,
+        }
 
     stamp=_source_timestamp(complementary)
     freshness=dict(raw.get("_freshness_by_source") or {})
@@ -407,7 +439,8 @@ def _candidate_retry_ambiguities(connection):
     }
 
 
-def sync_candidate_universe(connection, checked_at, *, freshness_seconds=86400):
+def sync_candidate_universe(connection, checked_at, *,
+                            freshness_seconds=86400):
     """Atomically rebuild the legacy summary without projecting ambiguity to READY.
 
     ``candidate_universe`` intentionally remains keyed by ticker/family/market for
@@ -420,19 +453,28 @@ def sync_candidate_universe(connection, checked_at, *, freshness_seconds=86400):
       FROM financial_instrument_catalog
       ORDER BY ticker,instrument_type,market,currency,settlement,last_seen_at""").fetchall()
     grouped = {}
-    symbol_family_counts = {}
+    primary_symbol_family_counts = {}
     for row in rows:
         ticker, family, market = (str(row[index] or "").strip().upper()
                                   for index in (0, 1, 2))
         grouped.setdefault((ticker, family, market), []).append(row)
-        symbol_family_counts[(ticker, family)] = symbol_family_counts.get(
-            (ticker, family), 0) + 1
+        if _candidate_has_ppi_primary(row[5], row[9]):
+            primary_symbol_family_counts[(ticker, family)] = (
+                primary_symbol_family_counts.get((ticker, family), 0) + 1)
     retry_ambiguities = _candidate_retry_ambiguities(connection)
 
     projected = []
     for key, identities in sorted(grouped.items()):
         ticker, family, market = key
-        representative = max(identities, key=lambda row: str(row[8] or ""))
+        primary_identities = [
+            row for row in identities
+            if _candidate_has_ppi_primary(row[5], row[9])
+        ]
+        # A newer IOL/BYMA shadow must never displace the canonical PPI row in
+        # the legacy one-row projection.  Multiple PPI identities still fail
+        # closed; complements cannot manufacture or resolve that ambiguity.
+        representative = max(primary_identities or identities,
+                             key=lambda row: str(row[8] or ""))
         currency, settlement, settlement_source = representative[3:6]
         status, capability, last_seen, metadata_json = representative[6:10]
         identity_key = tuple(
@@ -440,7 +482,9 @@ def sync_candidate_universe(connection, checked_at, *, freshness_seconds=86400):
             for value in (ticker, family, market, currency, settlement)
         )
         reasons = []
-        if len(identities) != 1 or symbol_family_counts[(ticker, family)] != 1:
+        primary_count = primary_symbol_family_counts.get((ticker, family), 0)
+        if (len(primary_identities) > 1 or primary_count > 1
+                or (primary_count == 0 and len(identities) > 1)):
             reasons.append("IDENTITY_AMBIGUOUS")
         if any(value in {"", "UNKNOWN", "NO_VERIFICADO"} for value in identity_key):
             reasons.append("IDENTITY_INCOMPLETE")
@@ -469,6 +513,41 @@ def sync_candidate_universe(connection, checked_at, *, freshness_seconds=86400):
     connection.executemany(
         "INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", projected
     )
+
+    # The legacy summary cannot distinguish settlements/currencies. Persist the
+    # gate at the catalog's full key and let both selection and lookup consume it.
+    connection.execute("""CREATE TABLE IF NOT EXISTS candidate_identity_v2(
+        ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,
+        currency TEXT NOT NULL,settlement TEXT NOT NULL,can_simulate INTEGER NOT NULL,
+        status TEXT NOT NULL,detail TEXT NOT NULL,checked_at TEXT NOT NULL,
+        PRIMARY KEY(ticker,instrument_type,market,currency,settlement))""")
+    selectable = {}
+    for row in rows:
+        if _candidate_has_ppi_primary(row[5],row[9]):
+            selection = (row[0],row[1],row[4])  # Quote API provides these three.
+            selectable[selection] = selectable.get(selection,0) + 1
+    full = []
+    for row in rows:
+        key = tuple(row[:5])
+        reasons = []
+        primary = _candidate_has_ppi_primary(row[5],row[9])
+        if not primary:
+            reasons.append("PPI_PRIMARY_IDENTITY_NOT_VERIFIED")
+        if selectable.get((row[0],row[1],row[4]),0) != 1:
+            reasons.append("SELECTION_IDENTITY_AMBIGUOUS")
+        if any(v in {"", "UNKNOWN", "NO_VERIFICADO"} for v in key):
+            reasons.append("IDENTITY_INCOMPLETE")
+        if not _candidate_timestamp_is_fresh(row[8],checked_at,freshness_seconds):
+            reasons.append("PPI_FRESHNESS_STALE")
+        if row[6] != "AVAILABLE":
+            reasons.append("CATALOG_STATUS:" + str(row[6]))
+        if not str(row[7]).startswith("READY_PAPER_"):
+            reasons.append("CAPABILITY:" + str(row[7]))
+        if key in retry_ambiguities:
+            reasons.append("RETRY_IDENTITY_AMBIGUOUS")
+        full.append((*key,int(not reasons),row[6],";".join(reasons) or row[7],checked_at))
+    connection.execute("DELETE FROM candidate_identity_v2")
+    connection.executemany("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",full)
 
 
 def persist(c, record):
@@ -500,27 +579,51 @@ def lookup(store, symbol, kind, settlement):
                     candidates.append(record)
             keys = {(r["market"], r["currency"]) for r in candidates}
             return candidates[0] if len(keys) == 1 else None
+    primaries = [r for r in rows if _candidate_has_ppi_primary(r["settlement_source"], r["metadata_json"])]
+    rows = primaries or rows
     available = [r for r in rows if r["status"] == "AVAILABLE"]
     rows = available or rows
     if len(rows) != 1:
         return None
     record = dict(rows[0])
     record["raw"] = json.loads(record.pop("metadata_json"))
+    with store.connect() as c:
+        ledger = []
+        if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_identity_v2'").fetchone():
+            ledger = c.execute("SELECT can_simulate,status,detail FROM candidate_identity_v2 WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?",
+                (symbol,kind,record["market"],record["currency"],settlement)).fetchall()
+        elif c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_universe'").fetchone():
+            ledger = c.execute("SELECT can_simulate,status,detail FROM candidate_universe WHERE ticker=? AND instrument_type=? AND market=? AND settlement=?",
+                (symbol,kind,record["market"],settlement)).fetchall()
+    if len(ledger) != 1 or not ledger[0][0] or ledger[0][1] != "AVAILABLE":
+        record["_admission_reason"] = "CANDIDATE_GATE:" + (str(ledger[0][2]) if len(ledger)==1 else "NO_UNIQUE_CANDIDATE")
     return record
 
 
-def quote_terms(record):
+def quote_terms(record, *, now=None):
     if record is None:
         return {"currency": None, "market": None, "metadata_source": None,
                 "opening_block_reason": "Falta catálogo confirmado o la identidad es ambigua"}
     spec = None
     try:
         spec = contract_for(record)
-    except ValueError:
-        pass
-    reason = "" if str(record["capability"]).startswith("READY_PAPER_") else record["capability"]
+    except ValueError as exc:
+        contract_error = str(exc)
+    else:
+        contract_error = ""
+    reason = contract_error or ("" if str(record["capability"]).startswith("READY_PAPER_") else record["capability"])
     if record["status"] != "AVAILABLE":
         reason = "Catálogo no confirmado en la última actualización"
+    if record.get("_admission_reason"):
+        reason = record["_admission_reason"]
+    if not _candidate_has_ppi_primary(record.get("settlement_source"), json.dumps(record.get("raw") or {})):
+        reason = "PPI_PRIMARY_IDENTITY_NOT_VERIFIED"
+    checked = now or datetime.now(ZoneInfo("UTC"))
+    bridge = (record.get("raw") or {}).get("_contract_bridge") or {}
+    if bridge and not _candidate_timestamp_is_fresh(bridge.get("observed_at"), checked.isoformat(), 86400):
+        reason = "CONTRACT_EVIDENCE_STALE"
+    if not _candidate_timestamp_is_fresh(record.get("last_seen_at"), checked.isoformat(), 86400):
+        reason = "PPI_FRESHNESS_STALE"
     holiday_reason = rc6_underlying_opening_block(record["ticker"], record["instrument_type"])
     if holiday_reason:
         reason = holiday_reason if not reason else f"{reason}; {holiday_reason}"
