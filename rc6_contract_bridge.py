@@ -15,12 +15,16 @@ from bs_instrument_contracts import contract_from_metadata
 from cp_contract_evidence_v2_hf6 import SOURCE_RANK, evidence_hash
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 
-SUPPORTED = {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES"}
+SUPPORTED = {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES", "FUTUROS"}
 MAP = {"cash_multiplier": "cash_multiplier", "quantity_step": "quantity_step",
        "quantity_min": "minimum_quantity", "minimum_quantity": "minimum_quantity",
        "expiry_at": "expires_at", "expires_at": "expires_at", "underlying": "underlying",
-       "strike": "strike", "put_call": "option_right", "option_right": "option_right"}
-NUMERIC = {"cash_multiplier", "quantity_step", "minimum_quantity", "strike"}
+       "strike": "strike", "put_call": "option_right", "option_right": "option_right",
+       "initial_margin": "initial_margin", "maintenance_margin": "maintenance_margin",
+       "margin_requirement": "initial_margin",
+       "subscription_min": "subscription_min", "subscription_step": "subscription_step"}
+NUMERIC = {"cash_multiplier", "quantity_step", "minimum_quantity", "strike",
+           "initial_margin", "maintenance_margin", "subscription_min", "subscription_step"}
 
 
 def _value(field, value):
@@ -95,15 +99,31 @@ def normalize_group(records, *, now=None):
         errors.append("IDENTITY_CONFLICT")
     key = next(iter(keys)) if len(keys)==1 else ("", "", "", "", "")
     ticker, family, market, currency, settlement = key
-    for field in ("cash_multiplier", "quantity_step", "minimum_quantity"):
+    required = (("subscription_min", "subscription_step") if family == "FCI"
+                else ("cash_multiplier", "quantity_step", "minimum_quantity"))
+    for field in required:
         if field not in fields:
             errors.append("MISSING:" + field)
-    if family not in SUPPORTED:
+    if family not in SUPPORTED and family != "FCI":
         errors.append("EXECUTOR_GAP:" + family)
     contract = {**fields, "family": family, "market": market, "currency": currency,
                 "settlement": settlement, "metadata_source": "CONTRACT_EVIDENCE_V2_BOUND",
                 "field_provenance": provenance}
-    if not errors:
+    family_contract = None
+    if not errors and family == "FCI":
+        from rc6_paper_family_lifecycle import fund_terms_from_metadata
+        family_contract = {
+            **fields, "family": family, "market": market, "currency": currency,
+            "settlement": settlement,
+            "metadata_source": "CONTRACT_EVIDENCE_V2_BOUND",
+            "field_provenance": provenance,
+        }
+        try:
+            fund_terms_from_metadata(ticker, family_contract)
+        except ValueError as exc:
+            errors.append("CONTRACT_INVALID:" + str(exc))
+            family_contract = None
+    elif not errors:
         try:
             contract_from_metadata(ticker, family, contract)
         except ValueError as exc:
@@ -111,7 +131,8 @@ def normalize_group(records, *, now=None):
     return {"ticker": ticker, "instrument_type": family, "market": market,
             "currency": currency, "settlement": settlement,
             "source": "CONTRACT_EVIDENCE_V2", "observed_at": max((r.get("observed_at") or "" for r in records), default=""),
-            "financial_contract_v17": contract if not errors else None,
+            "financial_contract_v17": contract if not errors and family != "FCI" else None,
+            "paper_family_contract_v1": family_contract if not errors else None,
             "contract_bridge": {"status": "NORMALIZED" if not errors else "BLOCKED",
                 "gaps": sorted(set(errors)), "field_provenance": provenance,
                 "observed_at": max((r.get("observed_at") or "" for r in records), default="") },

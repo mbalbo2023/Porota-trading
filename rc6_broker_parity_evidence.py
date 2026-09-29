@@ -22,6 +22,7 @@ DOM_SOURCES = frozenset({"PPI_AUTHENTICATED_DOM", "IOL_AUTHENTICATED_DOM"})
 EXECUTOR_READY = frozenset({
     "ACCIONES", "CEDEARS", "ETF", "ETFS", "BONOS", "LETRAS",
     "ON", "OBLIGACIONES", "OPCIONES", "CAUCIONES",
+    "FCI", "FCI_LOCAL", "FUTUROS",
 })
 
 
@@ -284,9 +285,10 @@ def classify_instrument(family, records, *, profile="OPEN", now=None):
     event_fields = (set(rules.EVENT_CONDITIONAL_FIELDS.get(family, ())) |
                     set(rules.EVENT_DYNAMIC_FIELDS.get(family, ())))
     blocker_axes = []
-    if status in {"MISSING_CONTRACT", "CONFLICT"}:
+    if status in {"MISSING_CONTRACT", "CONFLICT"} or result.get("missing_contract"):
         blocker_axes.append("BLOCKED_DATA")
-    elif status in {"MISSING_DYNAMIC", "STALE_DYNAMIC"}:
+    if (status in {"MISSING_DYNAMIC", "STALE_DYNAMIC"}
+            or result.get("missing_dynamic") or result.get("stale_dynamic")):
         blocker_axes.append("BLOCKED_DYNAMIC_DATA")
     if family not in EXECUTOR_READY:
         blocker_axes.append("BLOCKED_EXECUTOR")

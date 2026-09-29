@@ -156,15 +156,22 @@ FAMILY_DYNAMIC_FIELDS = {
         "available_principal", "quoted_at",
     }),
     "OPCIONES": frozenset(),
-    "FUTUROS": frozenset({
-        "initial_margin", "maintenance_margin",
-    }),
-    "FCI": frozenset({"subscription_status", "nav_value", "nav_date"}),
-    "FCI_LOCAL": frozenset({"subscription_status", "nav_value", "nav_date"}),
+    # Argentina Clearing publishes one margin per contract/month position. A
+    # second broker-style maintenance margin is not an independently published
+    # term and has no distinct PAPER consumer: the simulator conservatively
+    # maintains the full published requirement.
+    "FUTUROS": frozenset({"margin_requirement"}),
+    # PPI's exact primary-catalog AVAILABLE state already gates admission in
+    # the catalog.  Requiring a second, unpublished subscription_status made
+    # PAPER depend on a broker-account control with no independent consumer.
+    # NAV remains event-only: it is required when applying/settling an event,
+    # never to create a simulated subscription request.
+    "FCI": frozenset({"nav_value", "nav_date"}),
+    "FCI_LOCAL": frozenset({"nav_value", "nav_date"}),
     "LICITACIONES": frozenset({"auction_status"}),
     "ETF": frozenset(),
     "ACCIONES_USA": frozenset(),
-    "FCI_EXTERIOR": frozenset({"subscription_status", "nav_value", "nav_date"}),
+    "FCI_EXTERIOR": frozenset({"nav_value", "nav_date"}),
     "CANJES": frozenset({"auction_status"}),
 }
 
@@ -179,6 +186,7 @@ DYNAMIC_TTL_HOURS = {
     "operable": 1 / 4,
     "initial_margin": 24.0,
     "maintenance_margin": 24.0,
+    "margin_requirement": 24.0,
     "subscription_status": 1 / 4,
     "expiry_at": 1 / 4,
     "nav_value": 36.0,
@@ -211,6 +219,7 @@ FIELD_CONSUMERS = {
     "quoted_at": "caucion executable freshness",
     "initial_margin": "future PAPER margin reserve",
     "maintenance_margin": "future PAPER deficit gate",
+    "margin_requirement": "future PAPER reserve and conservative deficit gate",
     "subscription_min": "FCI PAPER subscription validation",
     "subscription_step": "FCI PAPER subscription rounding",
     "subscription_status": "FCI subscription admission",
@@ -277,8 +286,6 @@ def merge_evidence(records):
     """Merge only when sources agree; highest-ranked source wins provenance."""
     records = [r for r in (records or []) if isinstance(r, dict)]
     conflicts = evidence_v2.source_conflict(records)
-    if conflicts:
-        return {}, {}, conflicts
 
     candidates = {}
     for record in records:
@@ -296,22 +303,33 @@ def merge_evidence(records):
             if not _present(value):
                 continue
             current = candidates.get(field)
-            item = (rank, source, observed_at, value)
+            item = (
+                rank, source, observed_at, value,
+                payload.get("provider_timestamp"),
+                payload.get("freshness_basis"),
+            )
             if current is None or rank < current[0]:
                 candidates[field] = item
 
     merged = {field: item[3] for field, item in candidates.items()}
     provenance = {
-        field: {"source_class": item[1], "observed_at": item[2]}
+        field: {
+            "source_class": item[1], "observed_at": item[2],
+            "provider_timestamp": item[4], "freshness_basis": item[5],
+        }
         for field, item in candidates.items()
     }
-    return merged, provenance, {}
+    return merged, provenance, conflicts
 
 
 def _stale_dynamic(fields, provenance, now):
     stale = []
     for field in fields:
-        at = _parse_at(provenance.get(field, {}).get("observed_at"))
+        detail = provenance.get(field, {})
+        if detail.get("freshness_basis") != "PROVIDER_TIMESTAMP":
+            stale.append(field)
+            continue
+        at = _parse_at(detail.get("provider_timestamp"))
         if at is None:
             stale.append(field)
             continue
@@ -320,6 +338,34 @@ def _stale_dynamic(fields, provenance, now):
         if age < 0 or age > ttl:
             stale.append(field)
     return sorted(stale)
+
+
+def _missing_dynamic(fields, merged, provenance):
+    """Return absent/invalid dynamics, including values lacking provider time.
+
+    Capture/collection time is provenance for the observation, not evidence of
+    when the provider produced a dynamic quote, margin, status or NAV.
+    """
+    missing = []
+    for field in fields:
+        value = merged.get(field)
+        invalid_value = (
+            not _present(value)
+            or (field == "operable" and value is not True)
+            or (field in {"market_session_state", "subscription_status", "auction_status"}
+                and str(value).upper() not in {"OPEN", "ACTIVE", "AVAILABLE"})
+            or (field in {"nav_value", "annual_rate_fraction", "available_principal",
+                          "initial_margin", "maintenance_margin", "margin_requirement"}
+                and not _positive_number(value))
+        )
+        detail = provenance.get(field, {})
+        provider_time_missing = (
+            detail.get("freshness_basis") != "PROVIDER_TIMESTAMP"
+            or _parse_at(detail.get("provider_timestamp")) is None
+        )
+        if invalid_value or provider_time_missing:
+            missing.append(field)
+    return sorted(missing)
 
 
 def _profile_fields(family, profile):
@@ -365,16 +411,6 @@ def evaluate_family(family: str, records, *, profile="FULL", now=None) -> dict:
         }
     merged, provenance, conflicts = merge_evidence(records)
     ignored_account_fields = sorted(REAL_ACCOUNT_ONLY_FIELDS & set(merged))
-    if conflicts:
-        return {
-            "family": family, "profile": profile,
-            "status": "CONFLICT",
-            "missing_contract": [],
-            "missing_dynamic": [],
-            "conflicts": conflicts,
-            "detail": "Fuentes permitidas discrepan; revisión obligatoria.",
-        }
-
     invalid_contract = sorted(
         field for field in required_contract
         if _present(merged.get(field)) and field in POSITIVE_CONTRACT_FIELDS
@@ -387,12 +423,34 @@ def evaluate_family(family: str, records, *, profile="FULL", now=None) -> dict:
     event_missing = sorted(
         field for field in event_fields | event_dynamic if not _present(merged.get(field))
     )
+    missing_dynamic = _missing_dynamic(required_dynamic, merged, provenance)
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    stale_dynamic = _stale_dynamic(
+        set(required_dynamic) - set(missing_dynamic), provenance, now)
+    if conflicts:
+        return {
+            "family": family, "profile": profile,
+            "status": "CONFLICT",
+            "missing_contract": missing_contract,
+            "missing_dynamic": missing_dynamic,
+            "stale_dynamic": stale_dynamic,
+            "invalid_contract": invalid_contract,
+            "conflicts": conflicts,
+            "evidence": merged,
+            "provenance": provenance,
+            "event_missing": event_missing,
+            "ignored_real_account_fields": ignored_account_fields,
+            "detail": "Fuentes permitidas discrepan; revisión obligatoria.",
+        }
     if missing_contract:
         return {
             "family": family, "profile": profile,
             "status": "MISSING_CONTRACT",
             "missing_contract": missing_contract,
-            "missing_dynamic": [],
+            "missing_dynamic": missing_dynamic,
+            "stale_dynamic": stale_dynamic,
             "invalid_contract": invalid_contract,
             "conflicts": {},
             "evidence": merged,
@@ -402,12 +460,6 @@ def evaluate_family(family: str, records, *, profile="FULL", now=None) -> dict:
             "detail": f"Faltan {len(missing_contract)} término(s) contractuales.",
         }
 
-    missing_dynamic = sorted(
-        field for field in required_dynamic if not _present(merged.get(field))
-        or (field == "operable" and merged.get(field) is not True)
-        or (field in {"market_session_state", "subscription_status", "auction_status"} and str(merged.get(field)).upper() not in {"OPEN", "ACTIVE", "AVAILABLE"})
-        or (field in {"nav_value", "annual_rate_fraction", "available_principal", "initial_margin", "maintenance_margin"} and not _positive_number(merged.get(field)))
-    )
     if missing_dynamic:
         return {
             "family": family, "profile": profile,
@@ -423,10 +475,6 @@ def evaluate_family(family: str, records, *, profile="FULL", now=None) -> dict:
             "detail": f"Contrato completo; faltan {len(missing_dynamic)} condición(es) dinámicas.",
         }
 
-    now = now or datetime.now(timezone.utc)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-    stale_dynamic = _stale_dynamic(required_dynamic, provenance, now)
     if stale_dynamic:
         return {
             "family": family, "profile": profile,

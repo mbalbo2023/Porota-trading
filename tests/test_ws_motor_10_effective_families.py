@@ -125,7 +125,9 @@ def test_real_account_controls_are_never_paper_requirements():
     for fields in rules.FAMILY_DYNAMIC_FIELDS.values():
         assert not rules.REAL_ACCOUNT_ONLY_FIELDS & fields
     payload = _valid_fields("FUTUROS")
-    payload.update({"initial_margin": 100, "maintenance_margin": 80,
+    payload.update({"margin_requirement": 100,
+                    "provider_timestamp": NOW.isoformat(),
+                    "freshness_basis": "PROVIDER_TIMESTAMP",
                     "account_balance": 0, "broker_account_permission": False,
                     "ppi_rofex_enabled": False})
     result = rules.evaluate_family("FUTUROS", [_record("FUTUROS", payload)], now=NOW)

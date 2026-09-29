@@ -560,8 +560,20 @@ def _reconcile_complementary_catalog(store):
     are gap-fill sources: they may add missing contract/freshness evidence but
     never overwrite explicit higher-priority identity fields.
     """
+    market_root = Path(os.getenv("POROTA_MARKET_DATA_ROOT", "/app/data/market"))
     try:
-        complementary = complementary_discovery("/app/data/market")
+        iol_path = market_root / "iol_family_reference_latest.json"
+        if iol_path.is_file():
+            payload = json.loads(iol_path.read_text(encoding="utf-8"))
+            with store.connect() as connection:
+                ppi_catalog = [dict(row) for row in connection.execute(
+                    "SELECT * FROM financial_instrument_catalog")]
+            from rc6_broker_parity_evidence import ingest_iol_structured_cache
+            ingest_iol_structured_cache(store, payload, ppi_catalog)
+    except Exception as exc:
+        store.event("IOL_EVIDENCE_INGEST_UNAVAILABLE", type(exc).__name__)
+    try:
+        complementary = complementary_discovery(market_root)
         from rc6_contract_bridge import complements_from_store
         complementary += complements_from_store(store)
     except Exception as exc:

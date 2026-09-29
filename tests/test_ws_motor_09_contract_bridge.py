@@ -56,12 +56,46 @@ def test_bridge_fail_closed_essential_variants(change):
     assert bridge.normalize_group(rows, now=NOW)["financial_contract_v17"] is None
 
 
-@pytest.mark.parametrize("family", ["FCI", "FUTUROS", "CAUCIONES"])
+@pytest.mark.parametrize("family", ["CAUCIONES"])
 def test_bridge_does_not_disguise_specialized_executor_as_spot(family):
     r=record();r["family"]=family
     normalized=bridge.normalize_group([r], now=NOW)
     assert "EXECUTOR_GAP:"+family in normalized["contract_bridge"]["gaps"]
     assert normalized["financial_contract_v17"] is None
+
+
+def test_fci_bridge_reaches_connected_subscription_capability():
+    payload = {
+        "currency": "ARS", "subscription_min": "1000", "subscription_step": "1",
+    }
+    r = dict(family="FCI", ticker="ADCAP.AP.A", market="FCI", currency="ARS",
+             settlement="INMEDIATA", source_class="PPI_OFFICIAL_DOCUMENTATION",
+             source_ref="ppi:supermercado-fci", observed_at=NOW.isoformat(),
+             evidence=payload, evidence_hash=evidence.evidence_hash(payload))
+    claim = bridge.normalize_group([r], now=NOW)
+    assert claim["financial_contract_v17"] is None
+    assert claim["paper_family_contract_v1"]["subscription_min"] == "1E+3"
+    primary = catalog.normalize_record(
+        {"ticker": "ADCAP.AP.A", "type": "FCI", "market": "FCI", "currency": "ARS"},
+        "INMEDIATA", NOW.isoformat(), "ppi-primary")
+    completed = catalog.complete_with_complement(primary, claim)
+    assert completed["capability"] == "READY_PAPER_FCI_SUBSCRIPTION"
+    assert catalog.contract_for(completed).subscription_amount("1000") == Decimal("1000")
+
+
+def test_future_bridge_uses_one_published_margin_as_conservative_floor():
+    payload = {
+        "currency": "ARS", "cash_multiplier": "1000", "quantity_min": "1",
+        "quantity_step": "1", "underlying": "USDARS",
+        "expiry_at": "2026-12-31T15:00:00-03:00", "margin_requirement": "160000",
+    }
+    r = dict(family="FUTUROS", ticker="DLR/DIC26", market="ROFEX", currency="ARS",
+             settlement="INMEDIATA", source_class="CLEARING_OFFICIAL",
+             source_ref="argentina-clearing:margin-contracts-551", observed_at=NOW.isoformat(),
+             evidence=payload, evidence_hash=evidence.evidence_hash(payload))
+    claim = bridge.normalize_group([r], now=NOW)
+    contract = contract_from_metadata("DLR/DIC26", "FUTUROS", claim["financial_contract_v17"])
+    assert contract.initial_margin == contract.maintenance_margin == Decimal("160000")
 
 
 def test_stored_evidence_reaches_real_reconciler_candidate_lookup_and_paper(tmp_path, monkeypatch):
@@ -100,6 +134,37 @@ def test_stored_evidence_reaches_real_reconciler_candidate_lookup_and_paper(tmp_
     with s.connect() as c:
         assert [r[0] for r in c.execute("SELECT side FROM paper_fills WHERE paper_id=? ORDER BY id",(paper_id,))]==["BUY_SIMULATED","SELL_SIMULATED"]
         assert c.execute("SELECT COUNT(*) FROM complementary_contract_retry WHERE ticker='GD30'").fetchone()[0]==0
+
+
+def test_runtime_reconciler_ingests_iol_mcp_cache_into_evidence_v2(tmp_path, monkeypatch):
+    s = store(tmp_path)
+    primary = catalog.normalize_record(
+        {"ticker": "GD30", "type": "BONOS", "market": "BYMA", "currency": "ARS"},
+        "A-24HS", NOW.isoformat(), "fixture-ppi-snapshot")
+    with s.connect() as c:
+        catalog.persist(c, primary)
+    market_root = tmp_path / "market"
+    market_root.mkdir()
+    payload = {
+        "schema": "rc6-iol-family-reference-v1", "refreshed_at": NOW.isoformat(),
+        "records": [{
+            "ticker": "GD30", "instrument_type": "BONOS", "market": "BYMA",
+            "currency": "ARS", "settlement": "A-24HS",
+            "financial_contract_v17": {
+                "currency": "ARS", "cash_multiplier": "0.01",
+                "quantity_step": "1", "minimum_quantity": "1",
+            },
+        }], "fci": [], "cauciones": {},
+    }
+    (market_root / "iol_family_reference_latest.json").write_text(
+        json.dumps(payload), encoding="utf-8")
+    monkeypatch.setenv("POROTA_MARKET_DATA_ROOT", str(market_root))
+    monkeypatch.setattr(observer, "now_iso", lambda: NOW.isoformat())
+    observer._reconcile_complementary_catalog(s)
+    rows = evidence.current_records(
+        s, family="BONOS", ticker="GD30", currency="ARS", settlement="A-24HS")
+    assert rows and rows[0]["source_class"] == "IOL_STRUCTURED_API"
+    assert rows[0]["evidence"]["freshness_basis"] == "CAPTURE_TIMESTAMP_STATIC_ONLY"
 
 
 def test_catalog_cannot_bypass_blocked_candidate(tmp_path):
@@ -143,7 +208,11 @@ def test_quantity_terms_never_inferred_from_price_basis():
 
 
 def test_future_dynamic_observation_is_stale():
-    assert rules._stale_dynamic(["tna"],{"tna":{"observed_at":(NOW+timedelta(seconds=1)).isoformat()}},NOW)==["tna"]
+    assert rules._stale_dynamic(["tna"], {"tna": {
+        "observed_at": NOW.isoformat(),
+        "provider_timestamp": (NOW + timedelta(seconds=1)).isoformat(),
+        "freshness_basis": "PROVIDER_TIMESTAMP",
+    }}, NOW) == ["tna"]
 
 
 def test_essential_conflict_is_not_resolved_by_source_priority():

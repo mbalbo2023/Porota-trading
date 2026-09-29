@@ -187,6 +187,9 @@ def contract_for(record):
         raise ValueError("CONTRACT_EVIDENCE_REVIEW_REQUIRED")
     if raw.get("_contract_conflicts"):
         raise ValueError("CONTRACT_SOURCE_CONFLICT")
+    if family == "FCI" and raw.get("paper_family_contract_v1"):
+        from rc6_paper_family_lifecycle import fund_terms_from_metadata
+        return fund_terms_from_metadata(record["ticker"], raw["paper_family_contract_v1"])
     if raw.get("financial_contract_v17"):
         spec = contract_from_metadata(record["ticker"], family, raw["financial_contract_v17"])
         if (spec.currency, spec.market, spec.settlement) != (record["currency"], record["market"], record["settlement"]):
@@ -210,7 +213,9 @@ def capability(record):
     except ValueError as exc:
         return str(exc)
     if spec.family == "FUTUROS":
-        return "READY_CONTRACT_FUTURES_NEEDS_EXECUTOR" if spec.market in {"A3","ROFEX"} else "NEEDS_MARKET_EXECUTOR"
+        return "READY_PAPER_FUTURES" if spec.market in {"A3","ROFEX"} else "NEEDS_MARKET_EXECUTOR"
+    if spec.family == "FCI":
+        return "READY_PAPER_FCI_SUBSCRIPTION" if spec.market == "FCI" else "NEEDS_MARKET_EXECUTOR"
     if spec.market != "BYMA":
         return "NEEDS_MARKET_EXECUTOR"
     if spec.family in {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES"}:
@@ -346,6 +351,17 @@ def complete_with_complement(record, complementary):
         changed = sorted(k for k in essential if k in contract and k in existing_contract and not same_term(k))
         if changed:
             raw["_contract_conflicts"] = {"fields": changed, "source": source, "incoming": contract, "existing": existing_contract}
+    family_contract = complementary.get("paper_family_contract_v1")
+    existing_family_contract = raw.get("paper_family_contract_v1")
+    if isinstance(family_contract, dict) and family_contract and not existing_family_contract:
+        raw["paper_family_contract_v1"] = family_contract
+        raw["_contract_complement_source"] = source
+    elif (isinstance(family_contract, dict) and family_contract
+          and existing_family_contract != family_contract):
+        raw["_contract_conflicts"] = {
+            "fields": ["paper_family_contract_v1"], "source": source,
+            "incoming": family_contract, "existing": existing_family_contract,
+        }
 
     stamp=_source_timestamp(complementary)
     freshness=dict(raw.get("_freshness_by_source") or {})

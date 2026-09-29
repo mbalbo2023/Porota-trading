@@ -374,6 +374,8 @@ class PaperStore:
         # también en una base nueva creada por los tests/runtime, antes del primer fill.
         spot_liquidity.init_schema(self)
         init_financial_schema(self)
+        from rc6_paper_family_lifecycle import init_schema as init_family_lifecycle_schema
+        init_family_lifecycle_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
         from bn_telegram_bus import init_schema as init_outbox_schema
@@ -637,6 +639,8 @@ class PaperBroker:
         for key, value in (initial_cash_by_currency or {}).items():
             self.initial_balances[cash_currency(key)] = decimal_value(value, "capital por moneda", nonnegative=True)
         self.cauciones = CaucionBook(store)
+        from rc6_paper_family_lifecycle import FamilyPaperExecutor
+        self.family_paper = FamilyPaperExecutor(store)
         # El esquema de liquidez se migra al iniciar el runtime. No se crea un
         # índice desde cada PaperBroker: scanner y supervisor arrancan en paralelo.
         # Sin reloj inyectado, llamadas directas son simulación por tiempo de

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic WS-MOTOR-11 replay on a disposable controlled SQLite copy.
+"""Deterministic WS-MOTOR-12 replay on a disposable controlled SQLite copy.
 
 The fixture contains only sanitized observations inherited from WS09/WS10.  It
 does not connect to a broker, read a productive database, or expose an order
@@ -72,8 +72,8 @@ WITNESSES = (
     witness("CAUCIONES", "CAUCION_ARS_2D_COLOCADORA", "BYMA", "ARS", "A-48HS", ppi_identity=True),
     witness("CAUCIONES", "CAUCION_ARS_3D_COLOCADORA", "BYMA", "ARS", "A-72HS", ppi_identity=True),
     witness("CAUCIONES", "CAUCION_USD_1D_COLOCADORA", "BYMA", "USD", "A-24HS", ppi_identity=True),
-    witness("FCI", "ADRDOLA", "FCI", "ARS", "INMEDIATA", ppi_identity=False,
-            note="Adcap Ahorro Pesos inventory/class still requires exact PPI class binding"),
+    witness("FCI", "ADCAP.AP.A", "FCI", "ARS", "INMEDIATA", ppi_identity=True,
+            note="PPI exact primary identity: Adcap Ahorro Pesos Clase A"),
     witness("FCI", "IOLCAMA", "FCI", "ARS", "INMEDIATA", ppi_identity=False,
             note="IOL inventory cannot create PPI identity"),
     witness("FCI", "ADCUSAD", "FCI", "USD", "INMEDIATA", ppi_identity=False,
@@ -158,9 +158,9 @@ KNOWN = {
         "minimum_principal": obs(100, "IOL_STRUCTURED_API", "WS11:IOL:get_caucion_rates:USD", unit="USD"),
         "annual_rate_fraction": obs(0.002, "IOL_STRUCTURED_API", "WS11:IOL:get_caucion_rates:USD", unit="fraction/year"),
     },
-    "ADRDOLA": {
-        "currency": obs("ARS", "IOL_STRUCTURED_API", "WS11:IOL:get_fci_funds"),
-        "subscription_min": obs(1, "PPI_AUTHENTICATED_DOM", "WS10:PPI:Adcap-Ahorro-Pesos", unit="ARS"),
+    "ADCAP.AP.A": {
+        "currency": obs("ARS", "PPI_STRUCTURED_API", "WS12:PPI:ADCAP.AP.A:catalog"),
+        "subscription_min": obs(1000, "PPI_OFFICIAL_DOCUMENTATION", "WS12:PPI:SupermercadoFCI:desde-1000", unit="ARS"),
         "subscription_step": obs(1, "PPI_AUTHENTICATED_DOM", "WS10:PPI:Adcap-Ahorro-Pesos", unit="ARS"),
         "cutoff_time": obs("BROKER_PAGE_OBSERVED", "PPI_AUTHENTICATED_DOM", "WS10:PPI:Adcap-Ahorro-Pesos"),
         "redemption_term": obs("BROKER_PAGE_OBSERVED", "PPI_AUTHENTICATED_DOM", "WS10:PPI:Adcap-Ahorro-Pesos"),
@@ -242,19 +242,22 @@ def _ingest(store, item):
     grouped = defaultdict(dict)
     refs = defaultdict(set)
     for field, detail in _observations(item).items():
-        grouped[detail["source_class"]][field] = detail["value"]
-        grouped[detail["source_class"]].update({
+        group_key = (detail["source_class"], detail["provider_timestamp"],
+                     detail["freshness_basis"])
+        grouped[group_key][field] = detail["value"]
+        grouped[group_key].update({
             "provider_timestamp": detail["provider_timestamp"],
             "capture_timestamp": detail["capture_timestamp"],
             "freshness_basis": detail["freshness_basis"],
         })
-        refs[detail["source_class"]].add(detail["source_ref"])
-    for source, payload in grouped.items():
+        refs[group_key].add(detail["source_ref"])
+    for group_key, payload in grouped.items():
+        source = group_key[0]
         evidence_v2.record_snapshot(
             store, family=item["family"], ticker=item["ticker"],
             market=item["market"], currency=item["currency"],
             settlement=item["settlement"], source_class=source,
-            source_ref=";".join(sorted(refs[source])), observed_at=CAPTURE_AT,
+            source_ref=";".join(sorted(refs[group_key])), observed_at=CAPTURE_AT,
             evidence=payload,
         )
     return len(grouped)
@@ -262,13 +265,19 @@ def _ingest(store, item):
 
 def _classify(store, item):
     if not item["ppi_identity"]:
+        evaluated = rules.evaluate_family(item["family"], [], profile="OPEN", now=REPLAY_AT)
         axes = ["BLOCKED_DATA"]
+        if evaluated.get("missing_dynamic"):
+            axes.append("BLOCKED_DYNAMIC_DATA")
         if item["family"] not in parity.EXECUTOR_READY:
             axes.append("BLOCKED_EXECUTOR")
         return {
             "status": "BLOCKED_IDENTITY", "blocker_class": "BLOCKED_DATA",
-            "blocker_axes": axes, "missing_contract": [],
-            "missing_dynamic": [], "event_missing": [],
+            "blocker_axes": axes,
+            "missing_contract": evaluated.get("missing_contract", []),
+            "missing_dynamic": evaluated.get("missing_dynamic", []),
+            "stale_dynamic": evaluated.get("stale_dynamic", []),
+            "event_missing": evaluated.get("event_missing", []),
         }
     return parity.classify_instrument(
         item["family"], _records_for(store, item), profile="OPEN", now=REPLAY_AT)
@@ -280,7 +289,8 @@ def _integrated_status(store, item, classified):
         return classified.get("blocker_class")
     records = _records_for(store, item)
     claim = bridge.normalize_group(records, now=REPLAY_AT)
-    if claim.get("financial_contract_v17") is None:
+    if (claim.get("financial_contract_v17") is None
+            and claim.get("paper_family_contract_v1") is None):
         return "READY_PAPER_CANDIDATE"
     primary = catalog.normalize_record({
         "ticker": item["ticker"], "type": item["family"],
@@ -359,7 +369,13 @@ def _matrix(before_by_ticker, after_by_ticker):
                 "profiles": profiles,
                 "necessity": necessity,
                 "status_before": "MISSING",
-                "status_after": "EVIDENCED" if detail else "UNRESOLVED",
+                "status_after": (
+                    "DYNAMIC_WITHOUT_PROVIDER_TIMESTAMP"
+                    if detail and kind == "dynamic"
+                    and (detail.get("freshness_basis") != "PROVIDER_TIMESTAMP"
+                         or not detail.get("provider_timestamp"))
+                    else "EVIDENCED" if detail else "UNRESOLVED"
+                ),
                 "evidence": detail["source_ref"] if detail else item["note"] or "NO_INSTRUMENT_EVIDENCE",
                 "test": "tests/test_ws_motor_11_replay.py",
                 "instrument_readiness_before": before_by_ticker[item["ticker"]]["blocker_class"],
@@ -403,9 +419,9 @@ def replay():
         before_summary["required_field_rows_total"] = len(matrix)
         after_summary["required_field_rows_total"] = len(matrix)
         return {
-            "schema": "ws-motor-11-controlled-replay-v1",
+            "schema": "ws-motor-12-controlled-replay-v1",
             "mode": "PAPER_SHADOW_ONLY",
-            "fixture_scope": "SANITIZED_WS09_WS10_INHERITED_EVIDENCE_PLUS_ONE_WS11_READONLY_REVALIDATION",
+            "fixture_scope": "SANITIZED_WS09_WS10_WS11_EVIDENCE_PLUS_WS12_OFFICIAL_REVALIDATION",
             "replay_at": REPLAY_AT.isoformat(),
             "productive_db_mutations": 0,
             "real_orders_sent": 0,
@@ -426,6 +442,7 @@ def replay():
                 "blocker_axes": row.get("blocker_axes", [row["blocker_class"]]),
                 "missing_contract": row.get("missing_contract", []),
                 "missing_dynamic": row.get("missing_dynamic", []),
+                "stale_dynamic": row.get("stale_dynamic", []),
                 "event_missing": row.get("event_missing", []),
                 "note": row["note"],
             } for row in after],

@@ -31,9 +31,16 @@ def test_executor_axis_is_independent_from_data_axis():
     result = replay_module.replay()
     rows = {row["ticker"]: row for row in result["instruments"]}
     assert "BLOCKED_DATA" in rows["IOLCAMA"]["blocker_axes"]
-    assert "BLOCKED_EXECUTOR" in rows["IOLCAMA"]["blocker_axes"]
-    assert "BLOCKED_EXECUTOR" in rows["DLR/DIC26"]["blocker_axes"]
-    assert "BLOCKED_EXECUTOR" not in rows["GD30"]["blocker_axes"]
+    assert "BLOCKED_EXECUTOR" not in rows["IOLCAMA"]["blocker_axes"]
+    assert "BLOCKED_DYNAMIC_DATA" in rows["DLR/ENE27"]["blocker_axes"]
+
+
+def test_adcap_minimum_is_one_thousand_ars_not_one():
+    result = replay_module.replay()
+    rows = {row["ticker"]: row for row in result["field_matrix"]
+            if row["field"] == "subscription_min"}
+    assert rows["ADCAP.AP.A"]["value"] == 1000
+    assert rows["ADCAP.AP.A"]["status_after"] == "EVIDENCED"
 
 
 def test_evidence_candidates_cross_the_real_catalog_gate():
@@ -43,7 +50,8 @@ def test_evidence_candidates_cross_the_real_catalog_gate():
     assert rows["GD30"]["after"] == "READY_PAPER_SPOT"
     assert rows["GFGC6000OC"]["after_evidence"] == "READY_PAPER_CANDIDATE"
     assert rows["GFGC6000OC"]["after"] == "READY_PAPER_OPTION_LONG"
-    assert result["after"]["ready_by_instrument"] == 2
+    assert rows["ADCAP.AP.A"]["after"] == "READY_PAPER_FCI_SUBSCRIPTION"
+    assert result["after"]["ready_by_instrument"] == 3
 
 
 def test_matrix_has_one_row_per_required_field_and_provenance_columns():

@@ -7,7 +7,11 @@ remain distinguishable from missing contract evidence.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+
+from bs_instrument_contracts import InstrumentContract, cash_currency
 
 
 PAPER_ONLY = True
@@ -31,6 +35,93 @@ TRANSITIONS = {
         "MARGIN_DEFICIT": {"DAILY_VARIATION", "CLOSE", "EXPIRY"},
     },
 }
+
+
+def _positive(value, name):
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError(f"{name}: número inválido") from exc
+    if not result.is_finite() or result <= 0:
+        raise ValueError(f"{name}: valor fuera de rango")
+    return result
+
+
+@dataclass(frozen=True)
+class PaperFundTerms:
+    symbol: str
+    family: str
+    currency: str
+    market: str
+    settlement: str
+    subscription_min: Decimal
+    subscription_step: Decimal
+    metadata_source: str
+
+    def __post_init__(self):
+        if str(self.family).upper() not in {"FCI", "FCI_LOCAL"}:
+            raise ValueError("PAPER_FUND_FAMILY_INVALID")
+        object.__setattr__(self, "family", "FCI")
+        object.__setattr__(self, "currency", cash_currency(self.currency))
+        object.__setattr__(self, "subscription_min", _positive(
+            self.subscription_min, "subscription_min"))
+        object.__setattr__(self, "subscription_step", _positive(
+            self.subscription_step, "subscription_step"))
+        if not all(str(value or "").strip() for value in (
+                self.symbol, self.market, self.settlement, self.metadata_source)):
+            raise ValueError("PAPER_FUND_TERMS_INCOMPLETE")
+
+    def subscription_amount(self, value):
+        amount = _positive(value, "subscription_amount")
+        if amount < self.subscription_min:
+            raise ValueError("FCI_SUBSCRIPTION_BELOW_MINIMUM")
+        if (amount - self.subscription_min) % self.subscription_step:
+            raise ValueError("FCI_SUBSCRIPTION_STEP_INVALID")
+        return amount
+
+
+def fund_terms_from_metadata(symbol, metadata):
+    fields = {name: metadata[name] for name in PaperFundTerms.__dataclass_fields__
+              if name not in {"symbol", "family"} and name in metadata}
+    try:
+        return PaperFundTerms(symbol=symbol, family="FCI", **fields)
+    except TypeError as exc:
+        raise ValueError("PAPER_FUND_TERMS_INCOMPLETE") from exc
+
+
+class FamilyPaperExecutor:
+    """Motor durable de FCI/futuros, exclusivamente simulado y sin broker."""
+
+    paper_only = True
+    real_routes_used = ()
+
+    def __init__(self, store):
+        self.store = store
+        init_schema(store)
+
+    def subscribe_fund(self, terms, *, lifecycle_id, event_id, amount, occurred_at=None):
+        if not isinstance(terms, PaperFundTerms):
+            raise ValueError("FCI_TERMS_REQUIRED")
+        subscribed = terms.subscription_amount(amount)
+        return apply_paper_event(
+            self.store, lifecycle_id=lifecycle_id, event_id=event_id,
+            family="FCI", instrument=terms.symbol, currency=terms.currency,
+            to_state="SUBSCRIBE", amount=-subscribed, occurred_at=occurred_at,
+            detail={"mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
+                    "subscription_amount": str(subscribed),
+                    "metadata_source": terms.metadata_source})
+
+    def future_event(self, contract, *, lifecycle_id, event_id, to_state,
+                     amount="0", occurred_at=None, detail=None):
+        if not isinstance(contract, InstrumentContract) or contract.family != "FUTUROS":
+            raise ValueError("FUTURES_CONTRACT_REQUIRED")
+        return apply_paper_event(
+            self.store, lifecycle_id=lifecycle_id, event_id=event_id,
+            family="FUTUROS", instrument=contract.symbol,
+            currency=contract.currency, to_state=to_state, amount=amount,
+            occurred_at=occurred_at,
+            detail={"mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
+                    "metadata_source": contract.metadata_source, **(detail or {})})
 
 
 def _now():

@@ -99,19 +99,38 @@ def _full(family):
             "market_session_state": "OPEN", "subscription_status": "AVAILABLE",
             "auction_status": "OPEN", "margin_requirement": 100,
             "initial_margin": 100, "maintenance_margin": 80,
+            "margin_requirement": 100,
             "nav_value": 10, "nav_date": "2026-09-28",
             "available_principal": 100000, "tna": 0.15, "expiry_at": "2026-12-31",
         }.get(field, "X")
     return [{"source_class": "PPI_STRUCTURED_API",
-             "observed_at": NOW.isoformat(), "evidence": payload}]
+             "observed_at": NOW.isoformat(), "evidence": {
+                 **payload, "provider_timestamp": NOW.isoformat(),
+                 "freshness_basis": "PROVIDER_TIMESTAMP",
+             }}]
 
 
-def test_data_and_executor_blockers_are_separate():
+def test_fci_executor_is_connected_and_missing_axes_remain_independent():
     ready_fci = parity.classify_instrument("FCI", _full("FCI"), now=NOW)
     assert ready_fci["status"] == "READY_PAPER_CANDIDATE"
-    assert ready_fci["blocker_class"] == "BLOCKED_EXECUTOR"
+    assert ready_fci["blocker_class"] == "READY_PAPER_CANDIDATE"
     missing = parity.classify_instrument("BONOS", [], now=NOW)
     assert missing["blocker_class"] == "BLOCKED_DATA"
+
+
+def test_dynamic_without_provider_timestamp_is_not_fresh_and_both_axes_report():
+    result = parity.classify_instrument("FUTUROS", [], now=NOW)
+    assert result["status"] == "MISSING_CONTRACT"
+    assert result["missing_contract"]
+    assert result["missing_dynamic"] == ["margin_requirement"]
+    assert {"BLOCKED_DATA", "BLOCKED_DYNAMIC_DATA"} <= set(result["blocker_axes"])
+
+    records = _full("FUTUROS")
+    records[0]["evidence"].pop("provider_timestamp")
+    records[0]["evidence"]["freshness_basis"] = "CAPTURE_TIMESTAMP_STATIC_ONLY"
+    result = parity.classify_instrument("FUTUROS", records, now=NOW)
+    assert result["status"] == "MISSING_DYNAMIC"
+    assert result["missing_dynamic"] == ["margin_requirement"]
 
 
 def test_option_open_does_not_require_exercise_but_full_lifecycle_does():

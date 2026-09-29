@@ -111,8 +111,15 @@ class InstrumentContract:
                 raise ValueError("Opción sin subyacente o derecho válido")
             object.__setattr__(self, "strike", decimal_value(self.strike, "strike", positive=True))
         if self.family == "FUTUROS":
-            for field in ("initial_margin", "maintenance_margin"):
-                object.__setattr__(self, field, decimal_value(getattr(self, field), field, positive=True))
+            object.__setattr__(self, "initial_margin", decimal_value(
+                self.initial_margin, "initial_margin", positive=True))
+            # A3/Argentina Clearing publishes one margin requirement. PAPER
+            # keeps that full amount as both reserve and maintenance floor;
+            # this is a conservative simulator policy, not a provider claim.
+            maintenance = (self.initial_margin if self.maintenance_margin is None
+                           else self.maintenance_margin)
+            object.__setattr__(self, "maintenance_margin", decimal_value(
+                maintenance, "maintenance_margin", positive=True))
             if self.maintenance_margin > self.initial_margin:
                 raise ValueError("Garantía de mantenimiento superior a la inicial")
 
