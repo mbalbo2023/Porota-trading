@@ -199,9 +199,18 @@ def pick(obj,names):
 def candidate_map(store):
     with store.connect() as c:
         tabs={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if "candidate_universe" not in tabs:return {}
+        if "candidate_identity_v2" in tabs:
+            query="""SELECT ticker,instrument_type,market,currency,settlement,status
+              FROM candidate_identity_v2 WHERE status='AVAILABLE'"""
+        elif {"candidate_universe","financial_instrument_catalog"} <= tabs:
+            query="""SELECT cu.ticker,cu.instrument_type,cu.market,f.currency,cu.settlement,cu.status
+              FROM candidate_universe cu JOIN financial_instrument_catalog f
+                ON f.ticker=cu.ticker AND f.instrument_type=cu.instrument_type
+               AND f.market=cu.market AND f.settlement=cu.settlement
+              WHERE cu.status='AVAILABLE'"""
+        else:return {}
         out={}
-        for r in c.execute("SELECT ticker,instrument_type,market,settlement,status FROM candidate_universe WHERE status='AVAILABLE'"):
+        for r in c.execute(query):
             d=dict(r); out.setdefault(str(d.get("ticker") or "").upper(),[]).append(d)
         return out
 
@@ -234,13 +243,16 @@ for ek,item in (raw.get("endpoints") or {}).items():
         for row in rows:
             ticker=str(pick(row,["ticker","simbolo","símbolo","especie"]) or "*").upper()
             market=str(pick(row,["market","mercado"]) or "UNKNOWN")
+            currency=str(pick(row,["currency","moneda"]) or "UNKNOWN")
             settlement=str(pick(row,["settlement","liquidacion","liquidación","plazo_liquidacion"]) or "UNKNOWN")
             ev=nonempty({**row,"evidence_scope":"PARTIAL_AUTHENTICATED_XHR",
                          "source_job":job,"source_route":route,
                          "readiness_guard":"NO_AUTO_ACTIVATION_MISSING_FIELDS_REMAIN"})
+            if "currency" in ev:
+                ev["provider_currency"]=ev.pop("currency")
             try:
                 r=ce.record_snapshot(store,family="CAUCIONES",ticker=ticker,market=market,
-                    settlement=settlement,source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
+                    currency=currency,settlement=settlement,source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
                 total+=1; changed+=int(bool(r.get("changed")))
             except Exception as exc: notes.append("CAUCIONES_"+type(exc).__name__)
 
@@ -248,7 +260,9 @@ for ek,item in (raw.get("endpoints") or {}).items():
         for ev0 in item.get("rows") or []:
             ticker=str(ev0.get("ticker") or "").upper()
             if not ticker: continue
-            ev=nonempty({k:v for k,v in ev0.items() if k!="ticker"})
+            ev=nonempty({k:v for k,v in ev0.items() if k not in {"ticker","currency"}})
+            if ev0.get("currency") not in (None,"",[],{}):
+                ev["provider_currency"]=ev0["currency"]
             ev.update({"evidence_scope":"PARTIAL_AUTHENTICATED_XHR","source_job":job,
                        "source_route":route,"readiness_guard":"NO_AUTO_ACTIVATION_MISSING_FIELDS_REMAIN"})
             if job=="CONTRACT_EVIDENCE_AUCTIONS":
@@ -263,6 +277,7 @@ for ek,item in (raw.get("endpoints") or {}).items():
                 try:
                     r=ce.record_snapshot(store,family=ident.get("instrument_type"),ticker=ticker,
                         market=ident.get("market") or "UNKNOWN",settlement=ident.get("settlement") or "UNKNOWN",
+                        currency=ident.get("currency") or "UNKNOWN",
                         source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
                     total+=1; changed+=int(bool(r.get("changed")))
                 except Exception as exc: notes.append("INSTRUMENTOS_"+type(exc).__name__)
@@ -271,11 +286,14 @@ for ek,item in (raw.get("endpoints") or {}).items():
         ev0=item.get("row") or {}; ticker=str(ev0.get("ticker") or "").upper()
         for ident in cmap.get(ticker,[]):
             if ce.normalize_family(ident.get("instrument_type")) not in {"BONOS","LETRAS","ON","LEBAC","NOBAC"}: continue
-            ev=nonempty({k:v for k,v in ev0.items() if k!="ticker"})
+            ev=nonempty({k:v for k,v in ev0.items() if k not in {"ticker","currency"}})
+            if ev0.get("currency") not in (None,"",[],{}):
+                ev["provider_currency"]=ev0["currency"]
             ev.update({"source_job":job,"source_route":route})
             try:
                 r=ce.record_snapshot(store,family=ident.get("instrument_type"),ticker=ticker,
                     market=ident.get("market"),settlement=ident.get("settlement"),
+                    currency=ident.get("currency") or "UNKNOWN",
                     source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
                 total+=1; changed+=int(bool(r.get("changed")))
             except Exception as exc: notes.append("DATOSTECNICOS_"+type(exc).__name__)

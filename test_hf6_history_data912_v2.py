@@ -161,7 +161,7 @@ def test_complete_static_contract_does_not_expire_only_by_age():
     old="2026-01-01T00:00:00+00:00"
     now=datetime(2026,9,2,22,0,tzinfo=timezone.utc)
     fields={name:"X" for name in contract_rules.FAMILY_CONTRACT_FIELDS["ACCIONES"]}
-    dynamic={name:True for name in contract_rules.FAMILY_DYNAMIC_FIELDS["ACCIONES"]}
+    dynamic={"operable":True,"market_session_state":"OPEN"}
     result=contract_rules.evaluate_family("ACCIONES",[
         _record("PPI_STRUCTURED_API",old,fields),
         _record("PPI_STRUCTURED_API",now.isoformat(),dynamic),
@@ -172,7 +172,7 @@ def test_complete_static_contract_does_not_expire_only_by_age():
 def test_stale_dynamic_evidence_blocks_candidate():
     now=datetime(2026,9,2,22,0,tzinfo=timezone.utc)
     fields={name:"X" for name in contract_rules.FAMILY_CONTRACT_FIELDS["ACCIONES"]}
-    dynamic={name:True for name in contract_rules.FAMILY_DYNAMIC_FIELDS["ACCIONES"]}
+    dynamic={"operable":True,"market_session_state":"OPEN"}
     result=contract_rules.evaluate_family("ACCIONES",[
         _record("PPI_STRUCTURED_API",now.isoformat(),fields),
         _record("PPI_STRUCTURED_API","2026-09-02T20:00:00+00:00",dynamic),
@@ -193,7 +193,7 @@ def test_contract_missing_stays_fail_closed_before_dynamic_layer():
 def test_unknown_source_class_is_ignored_fail_closed():
     now=datetime(2026,9,2,22,0,tzinfo=timezone.utc)
     fields={name:"X" for name in contract_rules.FAMILY_CONTRACT_FIELDS["ACCIONES"]}
-    dynamic={name:True for name in contract_rules.FAMILY_DYNAMIC_FIELDS["ACCIONES"]}
+    dynamic={"operable":True,"market_session_state":"OPEN"}
     result=contract_rules.evaluate_family("ACCIONES",[
         _record("PPI_API",now.isoformat(),fields | dynamic)
     ],now=now)

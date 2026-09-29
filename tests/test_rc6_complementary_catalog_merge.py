@@ -131,6 +131,19 @@ def test_candidate_projection_fails_closed_for_multi_identity_and_is_idempotent(
     assert c.execute("SELECT * FROM candidate_universe").fetchall()==first
 
 
+def test_complementary_shadow_does_not_make_unique_ppi_identity_ambiguous():
+    c=_candidate_projection_db()
+    c.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [
+        _catalog_identity(ticker="GGAL",currency="ARS"),
+        _catalog_identity(ticker="GGAL",currency="UNKNOWN",settlement_source="IOL_COMPLEMENTARY",
+                          status="OBSERVED_SHADOW",capability="MISSING_CURRENCY_OR_MARKET",
+                          metadata={"_discovery_source":"IOL_COMPLEMENTARY"}),
+    ])
+    catalog.sync_candidate_universe(c,"2026-09-25T21:00:00+00:00")
+    row=c.execute("SELECT can_simulate,status,detail FROM candidate_universe").fetchone()
+    assert row==(1,"AVAILABLE","READY_PAPER_SPOT")
+
+
 def test_candidate_projection_removes_reclassified_family_ghost():
     c=_candidate_projection_db()
     c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -144,7 +157,7 @@ def test_candidate_projection_removes_reclassified_family_ghost():
 def test_candidate_projection_rejects_stale_non_primary_and_retry_ambiguity():
     c=_candidate_projection_db()
     c.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [
-        _catalog_identity(ticker="STALE",last_seen="2026-09-20T20:30:00+00:00"),
+        _catalog_identity(ticker="STALE",last_seen="2026-09-10T20:30:00+00:00"),
         _catalog_identity(ticker="IOL",settlement_source="IOL_COMPLEMENTARY",
                           metadata={"_discovery_source":"IOL_COMPLEMENTARY"}),
         _catalog_identity(ticker="RETRY"),

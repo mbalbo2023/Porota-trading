@@ -161,7 +161,8 @@ def test_family_readiness_never_auto_activates_even_when_complete(tmp_path):
     s=Store(tmp_path/'family.db')
     ev={'instrument_id':1,'ticker':'AAA','market':'BYMA','currency':'ARS',
         'settlement':'A-24HS','quantity_min':1,'quantity_step':1,
-        'price_precision':2,'cost_model':'MODEL_V1'}
+        'price_precision':2,'cost_model':'MODEL_V1','operable':True,
+        'market_session_state':'OPEN'}
     ce.record_snapshot(s,family='ACCIONES',ticker='AAA',market='BYMA',settlement='A-24HS',
         source_class='PPI_AUTHENTICATED_XHR',source_ref='fixture',evidence=ev)
     rows=ce.current_records(s,family='ACCIONES',ticker='AAA')

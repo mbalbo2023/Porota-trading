@@ -183,12 +183,12 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
             continue
         family = _row_family(row)
         comparison = _comparison(row)
-        contract = _text(comparison.get("contract_state"), "INSUFFICIENT_EVIDENCE").upper()
+        contract = _effective_contract(comparison)
         instruments.append({
             "family": family, "symbol": symbol, "market": _text(row.get("market")),
             "settlement": _text(row.get("term") or row.get("settlement")),
-            "contract_state": contract, "paper_auto_enabled": contract in PAPER_SIMULATABLE_STATES,
-            "real_money_authorized": False, "reasons": _reason(row, contract),
+            "contract_state": contract, "paper_auto_enabled": False,
+            "real_money_authorized": False, "reasons": _reason(row, contract) + ["PPI_CATALOG_IDENTITY_NOT_VERIFIED"],
             "comparison": comparison,
         })
 

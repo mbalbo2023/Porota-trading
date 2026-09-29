@@ -103,6 +103,8 @@ def test_complete_multi_source_contract_stays_fail_closed_without_executor_and_c
         "quantity_step": 1,
         "price_precision": 2,
         "cost_model": "PAPER",
+        "operable": True,
+        "market_session_state": "OPEN",
     }
     records = [
         {"source_class": "PPI_STRUCTURED_API", "observed_at": "2026-09-24T12:00:00+00:00",
