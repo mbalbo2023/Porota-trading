@@ -145,16 +145,17 @@ def _record(source,observed_at,evidence):
     return {"source_class":source,"observed_at":observed_at,"evidence":evidence}
 
 
-def test_caucion_tna_is_dynamic_not_static_contract():
-    assert "tna" not in contract_rules.FAMILY_CONTRACT_FIELDS["CAUCIONES"]
-    assert "tna" in contract_rules.FAMILY_DYNAMIC_FIELDS["CAUCIONES"]
-    assert contract_rules.DYNAMIC_TTL_HOURS["tna"]==1/12
+def test_caucion_rate_is_dynamic_not_static_contract():
+    assert "annual_rate_fraction" not in contract_rules.FAMILY_CONTRACT_FIELDS["CAUCIONES"]
+    assert "annual_rate_fraction" in contract_rules.FAMILY_DYNAMIC_FIELDS["CAUCIONES"]
+    assert contract_rules.DYNAMIC_TTL_HOURS["annual_rate_fraction"]==1/12
 
 
 def test_futures_margin_is_dynamic_and_contract_multiplier_is_static():
-    assert "contract_multiplier" in contract_rules.FAMILY_CONTRACT_FIELDS["FUTUROS"]
+    assert "cash_multiplier" in contract_rules.FAMILY_CONTRACT_FIELDS["FUTUROS"]
     assert "margin_requirement" not in contract_rules.FAMILY_CONTRACT_FIELDS["FUTUROS"]
-    assert "margin_requirement" in contract_rules.FAMILY_DYNAMIC_FIELDS["FUTUROS"]
+    assert {"initial_margin", "maintenance_margin"} <= \
+        contract_rules.FAMILY_DYNAMIC_FIELDS["FUTUROS"]
 
 
 def test_complete_static_contract_does_not_expire_only_by_age():
@@ -169,7 +170,7 @@ def test_complete_static_contract_does_not_expire_only_by_age():
     assert result["status"]=="READY_PAPER_CANDIDATE"
 
 
-def test_stale_dynamic_evidence_blocks_candidate():
+def test_duplicate_spot_dynamic_flags_do_not_block_contract_candidate():
     now=datetime(2026,9,2,22,0,tzinfo=timezone.utc)
     fields={name:"X" for name in contract_rules.FAMILY_CONTRACT_FIELDS["ACCIONES"]}
     dynamic={"operable":True,"market_session_state":"OPEN"}
@@ -177,8 +178,8 @@ def test_stale_dynamic_evidence_blocks_candidate():
         _record("PPI_STRUCTURED_API",now.isoformat(),fields),
         _record("PPI_STRUCTURED_API","2026-09-02T20:00:00+00:00",dynamic),
     ],now=now)
-    assert result["status"]=="STALE_DYNAMIC"
-    assert result["stale_dynamic"]
+    assert result["status"]=="READY_PAPER_CANDIDATE"
+    assert result["stale_dynamic"]==[]
 
 
 def test_contract_missing_stays_fail_closed_before_dynamic_layer():
@@ -187,7 +188,7 @@ def test_contract_missing_stays_fail_closed_before_dynamic_layer():
         _record("PPI_STRUCTURED_API",now.isoformat(),{"market":"ROFEX","currency":"ARS"})
     ],now=now)
     assert result["status"]=="MISSING_CONTRACT"
-    assert "contract_multiplier" in result["missing_contract"]
+    assert "cash_multiplier" in result["missing_contract"]
 
 
 def test_unknown_source_class_is_ignored_fail_closed():

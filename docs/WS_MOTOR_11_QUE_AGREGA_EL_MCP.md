@@ -49,7 +49,7 @@ términos antes de simular dinero, no sólo la afirmación comercial del broker.
 
 ## Numerador/denominador reproducible
 
-Sobre los 20 testigos y 297 filas requeridas del replay:
+Sobre los 20 testigos y 222 filas requeridas del replay:
 
 | Medición | Numerador / denominador | Lectura |
 |---|---:|---|
