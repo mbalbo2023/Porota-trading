@@ -191,19 +191,20 @@ jobs:
 
           PRE_STATE="NO_RUNNING_OBSERVER"
           if [ "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)" = running ]; then
-            PRE_STATE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
-          import sqlite3
-          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=20)
+            PRE_STATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          path=sys.argv[1]
+          c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=2)
           c.execute('PRAGMA query_only=ON')
-          q=c.execute('PRAGMA quick_check').fetchone()[0]
+          c.execute('PRAGMA busy_timeout=1000')
           mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
           c.close()
-          print(f"{q}|{mode}|{orders}")
+          print(f"STATE_FAST|{mode}|{orders}")
           PY
             )"
           fi
-          echo "PRE_STATE=$PRE_STATE"
-          if [ "$PRE_STATE" != NO_RUNNING_OBSERVER ]; then test "$PRE_STATE" = "ok|PRODUCTION_PAPER|0"; fi
+          echo "PRE_STATE_HOST_READONLY=$PRE_STATE"
+          if [ "$PRE_STATE" != NO_RUNNING_OBSERVER ]; then test "$PRE_STATE" = "STATE_FAST|PRODUCTION_PAPER|0"; fi
 
           PPI_WATCH_BEFORE="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do

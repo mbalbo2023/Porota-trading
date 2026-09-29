@@ -75,3 +75,12 @@ def test_deploy_v2_separates_fast_state_guard_from_contract_quick_check():
     assert "PRAGMA busy_timeout=1000" in PROMOTE
     assert 'timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db"' in PROMOTE
     assert 'grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"' in PROMOTE
+
+
+def test_deploy_v2_preflight_state_guard_is_bounded_and_never_scans_full_db():
+    preflight = PROMOTE.split('PRE_STATE="NO_RUNNING_OBSERVER"', 1)[1].split(
+        'PPI_WATCH_BEFORE=', 1)[0]
+    assert 'timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db"' in preflight
+    assert "PRE_STATE_HOST_READONLY=" in preflight
+    assert "PRAGMA quick_check" not in preflight
+    assert "docker exec -i porota_production_observer python" not in preflight
