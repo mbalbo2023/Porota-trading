@@ -60,7 +60,7 @@ def test_option_contract_uses_byma_underlying_lot_not_iol_order_step():
     assert contract["quantity_step"]=="1"
 
 
-def test_option_lot_policy_distinguishes_cedear_and_public_bond():
+def test_option_lot_policy_pauses_non_equity_standard_series():
     raw={"symbol":"OPT1","option_type":"C","strike_price":10,
          "expiration":"2026-10-16T15:30:00-03:00","bid_price":1,"ask_price":2,
          "volume":1,"is_stale":False}
@@ -71,8 +71,8 @@ def test_option_lot_policy_distinguishes_cedear_and_public_bond():
     bond=m._option_records(
         {"underlying":"AL30","options":[raw]},info,"2026-09-25T18:00:00+00:00",
         underlying_info={"type":"TIT. PUBLICOS","currency":"ARS"})[0]["financial_contract_v17"]
-    assert cedear["cash_multiplier"]=="10"
-    assert bond["cash_multiplier"]=="1000"
+    assert cedear is None
+    assert bond is None
 
 
 def test_option_contract_stays_incomplete_when_underlying_family_is_unknown():

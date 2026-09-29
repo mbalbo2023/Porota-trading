@@ -1,0 +1,339 @@
+name: WS14 postdeploy mass PAPER audit READ ONLY
+
+on:
+  push:
+    branches:
+      - audit/ws13-postdeploy-readiness-20260929
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout audit provenance
+        uses: actions/checkout@v4
+
+      - name: Source and PPI Watch scope guard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git diff --name-only fc4b247c4f3a2cb453407f20cbe60dbdd8700f6d..HEAD > changed-paths.txt
+          test "$(wc -l < changed-paths.txt)" -eq 1
+          grep -Fxq '.github/workflows/ws14-postdeploy-readiness.yml' changed-paths.txt
+          if grep -Eiq '(^|/)(ppi[^/]*watch|watch[^/]*ppi)' changed-paths.txt; then
+            echo 'PPI_WATCH_SOURCE_SCOPE=FAILED'
+            exit 1
+          fi
+          echo 'PPI_WATCH_SOURCE_SCOPE=UNTOUCHED'
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Collect exhaustive production evidence READ ONLY
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_audit" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" python3 - > ws14_postdeploy_readiness.json <<'PY'
+          import collections, datetime, json, pathlib, sqlite3, subprocess
+
+          DB = '/opt/porota-trading/data/paper_v17/observer_v17.db'
+          EXPECTED_CANDIDATE = '6e79a15dde93c33a699a48c01ad6e392c7319fba'
+          EXPECTED_DEPLOY = 'fc4b247c4f3a2cb453407f20cbe60dbdd8700f6d'
+          BASELINE = {
+              'catalog_ready': 809,
+              'candidate_ready': 651,
+              'catalog_ready_by_family': {'ACCIONES': 126, 'CEDEARS': 683},
+              'candidate_ready_by_family': {'ACCIONES': 92, 'CEDEARS': 559},
+          }
+
+          def command(*args):
+              return subprocess.run(args, text=True, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, check=False).stdout.strip()
+
+          def scalar(c, sql, params=()):
+              row = c.execute(sql, params).fetchone()
+              return row[0] if row else None
+
+          def grouped(c, sql):
+              return {str(row[0]): int(row[1]) for row in c.execute(sql)}
+
+          def safe_json(value):
+              try:
+                  parsed = json.loads(value or '{}')
+              except (TypeError, ValueError):
+                  return {}
+              return parsed if isinstance(parsed, dict) else {}
+
+          def read_json(path):
+              try:
+                  return safe_json(pathlib.Path(path).read_text(encoding='utf-8'))
+              except OSError:
+                  return {}
+
+          def evidence_family(value):
+              return {'OBLIGACIONES': 'ON', 'ETFS': 'ETF'}.get(str(value or '').upper(),
+                                                               str(value or '').upper())
+
+          c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=20)
+          c.row_factory = sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          c.execute('PRAGMA busy_timeout=2000')
+          readonly_probe = scalar(c, 'SELECT 1')
+          observer = dict(c.execute('SELECT * FROM observer_state WHERE id=1').fetchone())
+          available_tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+          catalog_total = scalar(c, 'SELECT COUNT(*) FROM financial_instrument_catalog')
+          catalog_available = scalar(c, "SELECT COUNT(*) FROM financial_instrument_catalog WHERE status='AVAILABLE'")
+          catalog_ready = scalar(c, "SELECT COUNT(*) FROM financial_instrument_catalog WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER_%'")
+          catalog_available_by_family = grouped(c, "SELECT instrument_type,COUNT(*) FROM financial_instrument_catalog WHERE status='AVAILABLE' GROUP BY instrument_type ORDER BY instrument_type")
+          catalog_ready_by_family = grouped(c, "SELECT instrument_type,COUNT(*) FROM financial_instrument_catalog WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER_%' GROUP BY instrument_type ORDER BY instrument_type")
+          catalog_by_capability = grouped(c, "SELECT capability,COUNT(*) FROM financial_instrument_catalog WHERE status='AVAILABLE' GROUP BY capability ORDER BY capability")
+
+          candidate_total = scalar(c, 'SELECT COUNT(*) FROM candidate_identity_v2')
+          candidate_ready = scalar(c, "SELECT COUNT(*) FROM candidate_identity_v2 WHERE status='AVAILABLE' AND can_simulate=1")
+          candidate_ready_by_family = grouped(c, "SELECT instrument_type,COUNT(*) FROM candidate_identity_v2 WHERE status='AVAILABLE' AND can_simulate=1 GROUP BY instrument_type ORDER BY instrument_type")
+          candidate_blocked_by_family = grouped(c, "SELECT instrument_type,COUNT(*) FROM candidate_identity_v2 WHERE status='AVAILABLE' AND can_simulate=0 GROUP BY instrument_type ORDER BY instrument_type")
+          runtime_unique_ready = scalar(c, """SELECT COUNT(*) FROM (
+              SELECT ticker,instrument_type,settlement FROM candidate_identity_v2
+              WHERE status='AVAILABLE' AND can_simulate=1
+              GROUP BY ticker,instrument_type,settlement HAVING COUNT(*)=1)""")
+
+          evidence_current = scalar(c, 'SELECT COUNT(*) FROM contract_evidence_v2_current')
+          evidence_by_source = grouped(c, 'SELECT source_class,COUNT(*) FROM contract_evidence_v2_current GROUP BY source_class ORDER BY source_class')
+          evidence_by_family = grouped(c, 'SELECT family,COUNT(*) FROM contract_evidence_v2_current GROUP BY family ORDER BY family')
+          ppi_catalog_keys = {(evidence_family(r[0]), *tuple(r[1:])) for r in c.execute("""
+              SELECT instrument_type,ticker,market,currency,settlement
+              FROM financial_instrument_catalog WHERE status='AVAILABLE'""")}
+          ppi_evidence_keys = {tuple(r) for r in c.execute("""SELECT family,ticker,market,currency,settlement
+              FROM contract_evidence_v2_current WHERE source_class='PPI_STRUCTURED_API'""")}
+          uncovered_ppi_keys = [dict(zip(('family','ticker','market','currency','settlement'), row))
+                                for row in sorted(ppi_catalog_keys - ppi_evidence_keys)]
+
+          policy_fields = collections.Counter()
+          policy_by_family = collections.Counter()
+          broker_unknown = collections.Counter()
+          for row in c.execute("""SELECT cur.family,cur.source_class,s.evidence_json
+              FROM contract_evidence_v2_current cur
+              JOIN contract_evidence_v2_snapshots s ON s.snapshot_id=cur.snapshot_id"""):
+              evidence = safe_json(row['evidence_json'])
+              for field in ('paper_cash_multiplier','paper_quantity_min','paper_quantity_step',
+                            'paper_quantity_policy','paper_subscription_policy',
+                            'paper_subscription_min','paper_amount_unit','paper_fill_policy',
+                            'paper_notional_cap','paper_principal_step','paper_margin_policy',
+                            'paper_margin_rate'):
+                  if evidence.get(field) not in (None, '', [], {}):
+                      policy_fields[field] += 1
+                      policy_by_family[(row['family'], field)] += 1
+              for field in ('broker_minimum_quantity','broker_quantity_step',
+                            'broker_subscription_min','broker_subscription_step',
+                            'broker_margin'):
+                  if str(evidence.get(field) or '').upper() == 'NO_VERIFICADO':
+                      broker_unknown[(row['family'], field)] += 1
+
+          latest_mass = None
+          row = c.execute("""SELECT run_id,job_key,started_at,finished_at,state,records,changed,conflicts,detail
+              FROM contract_evidence_v2_runs WHERE job_key='CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG'
+              ORDER BY started_at DESC LIMIT 1""").fetchone()
+          if row:
+              latest_mass = dict(row)
+              latest_mass['detail'] = safe_json(latest_mass.get('detail'))
+
+          retry = {}
+          if 'complementary_contract_retry' in available_tables:
+              for row in c.execute("""SELECT ticker,instrument_type,market,currency,settlement,
+                  source,state,reason,last_attempt_at,attempts FROM complementary_contract_retry"""):
+                  key = tuple(row[k] for k in ('ticker','instrument_type','market','currency','settlement'))
+                  retry.setdefault(key, []).append({k: row[k] for k in
+                      ('source','state','reason','last_attempt_at','attempts')})
+
+          candidates = {}
+          for row in c.execute('SELECT * FROM candidate_identity_v2'):
+              key = tuple(row[k] for k in ('ticker','instrument_type','market','currency','settlement'))
+              candidates[key] = dict(row)
+          residuals = []
+          for row in c.execute("""SELECT ticker,instrument_type,market,currency,settlement,
+              settlement_source,last_seen_at,capability,metadata_json
+              FROM financial_instrument_catalog WHERE status='AVAILABLE'
+              ORDER BY instrument_type,ticker,market,currency,settlement"""):
+              key = tuple(row[k] for k in ('ticker','instrument_type','market','currency','settlement'))
+              candidate = candidates.get(key) or {}
+              if int(candidate.get('can_simulate') or 0) == 1:
+                  continue
+              metadata = safe_json(row['metadata_json'])
+              bridge = metadata.get('_contract_bridge') if isinstance(metadata.get('_contract_bridge'), dict) else {}
+              residuals.append({
+                  'ticker': row['ticker'], 'family': row['instrument_type'],
+                  'market': row['market'], 'currency': row['currency'],
+                  'settlement': row['settlement'], 'settlement_source': row['settlement_source'],
+                  'last_seen_at': row['last_seen_at'], 'catalog_capability': row['capability'],
+                  'candidate_detail': candidate.get('detail') or 'MISSING_CANDIDATE_IDENTITY_V2',
+                  'bridge_status': bridge.get('status'), 'bridge_gaps': bridge.get('gaps') or [],
+                  'retry': retry.get(key, []),
+              })
+
+          c.close()
+          current_state = read_json('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+          frozen = read_json('/opt/porota-trading/data/deploy/porota-frozen-candidate.json')
+          manifest = read_json('/opt/porota-trading/data/deploy/porota-deploy-bundle-v2-manifest.json')
+          iol_quote = read_json('/opt/porota-trading/data/market/iol_shadow_latest.json')
+          iol_family = read_json('/opt/porota-trading/data/market/iol_family_reference_latest.json')
+
+          quote_rows = [r for r in iol_quote.get('symbols', []) if isinstance(r, dict)]
+          family_rows = [r for r in iol_family.get('records', []) if isinstance(r, dict)]
+          iol_summary = {
+              'quote_cache_present': bool(iol_quote),
+              'quote_refreshed_at': iol_quote.get('refreshed_at'),
+              'quote_rows': len(quote_rows),
+              'quote_state_counts': dict(collections.Counter(str(r.get('state') or 'UNKNOWN') for r in quote_rows)),
+              'quote_source_state_counts': dict(collections.Counter(str(r.get('source_state') or 'UNKNOWN') for r in quote_rows)),
+              'family_cache_present': bool(iol_family),
+              'family_refreshed_at': iol_family.get('refreshed_at'),
+              'family_cache_state': iol_family.get('cache_state'),
+              'family_records': len(family_rows),
+              'fci_rows': len(iol_family.get('fci') or []),
+              'caucion_rows': sum(len(v) for v in (iol_family.get('cauciones') or {}).values() if isinstance(v, list)),
+              'section_states': iol_family.get('section_states') or {},
+          }
+
+          runtime = {}
+          for name in ('porota_production_observer', 'porota_production_dashboard'):
+              raw = command('sudo', '-n', 'docker', 'inspect', name)
+              try:
+                  item = json.loads(raw)[0]
+                  runtime[name] = {
+                      'status': (item.get('State') or {}).get('Status'),
+                      'image': item.get('Image'),
+                      'config_image': (item.get('Config') or {}).get('Image'),
+                  }
+              except (ValueError, IndexError, TypeError):
+                  runtime[name] = {'inspect_error': raw[:1000]}
+          dashboard_http = command('curl', '-sS', '-o', '/dev/null', '-w', '%{http_code}',
+                                   '--max-time', '10', 'http://127.0.0.1:8000/health')
+          watch_units = []
+          for unit in command('systemctl', 'list-unit-files', '--no-legend').splitlines():
+              name = unit.split()[0] if unit.split() else ''
+              if 'ppi' in name.lower() and 'watch' in name.lower():
+                  watch_units.append({'unit': name,
+                    'enabled': command('systemctl', 'is-enabled', name),
+                    'active': command('systemctl', 'is-active', name)})
+
+          family_names = sorted(set(BASELINE['candidate_ready_by_family']) | set(candidate_ready_by_family))
+          candidate_delta_by_family = {f: candidate_ready_by_family.get(f, 0) -
+                                       BASELINE['candidate_ready_by_family'].get(f, 0)
+                                       for f in family_names}
+          catalog_family_names = sorted(set(BASELINE['catalog_ready_by_family']) | set(catalog_ready_by_family))
+          catalog_delta_by_family = {f: catalog_ready_by_family.get(f, 0) -
+                                     BASELINE['catalog_ready_by_family'].get(f, 0)
+                                     for f in catalog_family_names}
+          residual_by_family = dict(collections.Counter(r['family'] for r in residuals))
+          residual_by_blocker = dict(collections.Counter(r['candidate_detail'] for r in residuals))
+
+          payload = {
+              'schema': 'ws14-postdeploy-readiness-v1',
+              'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'database': {'path': DB, 'mode': 'ro', 'query_only': True,
+                           'readonly_probe': readonly_probe},
+              'safety': {
+                  'mode': observer.get('mode'), 'real_orders_sent': observer.get('real_orders_sent'),
+                  'real_order_routes': current_state.get('real_order_routes'),
+                  'ppi_watch_untouched': current_state.get('ppi_watch_untouched'),
+                  'ppi_watch_units': watch_units, 'paper_only': True,
+                  'dashboard_health_http': dashboard_http,
+              },
+              'runtime': runtime,
+              'runtime_provenance': {'current_state': current_state,
+                                     'frozen_candidate': frozen, 'deploy_manifest': manifest},
+              'before': BASELINE,
+              'after': {
+                  'catalog_total': catalog_total, 'catalog_available': catalog_available,
+                  'catalog_ready': catalog_ready, 'candidate_total': candidate_total,
+                  'candidate_ready': candidate_ready, 'runtime_unique_ready': runtime_unique_ready,
+                  'evidence_v2_current': evidence_current,
+              },
+              'delta': {'catalog_ready': catalog_ready - BASELINE['catalog_ready'],
+                        'candidate_ready': candidate_ready - BASELINE['candidate_ready']},
+              'catalog': {'available_by_family': catalog_available_by_family,
+                          'ready_by_family': catalog_ready_by_family,
+                          'delta_ready_by_family': catalog_delta_by_family,
+                          'available_by_capability': catalog_by_capability},
+              'candidate_identity_v2': {'ready_by_family': candidate_ready_by_family,
+                  'delta_ready_by_family': candidate_delta_by_family,
+                  'blocked_by_family': candidate_blocked_by_family},
+              'evidence_v2': {'current_by_source': evidence_by_source,
+                  'current_by_family': evidence_by_family,
+                  'ppi_available_key_coverage': {'catalog_keys': len(ppi_catalog_keys),
+                    'evidence_keys': len(ppi_evidence_keys),
+                    'covered_keys': len(ppi_catalog_keys & ppi_evidence_keys),
+                    'uncovered_keys': uncovered_ppi_keys},
+                  'paper_policy_fields': dict(policy_fields),
+                  'paper_policy_by_family': {f'{k[0]}|{k[1]}': v for k, v in policy_by_family.items()},
+                  'broker_terms_no_verificado': {f'{k[0]}|{k[1]}': v for k, v in broker_unknown.items()},
+                  'latest_mass_run': latest_mass},
+              'iol_cache': iol_summary,
+              'residual_summary': {'count': len(residuals), 'by_family': residual_by_family,
+                                   'by_blocker': residual_by_blocker},
+              'residual_instruments': residuals,
+          }
+
+          assert readonly_probe == 1
+          assert observer.get('mode') == 'PRODUCTION_PAPER'
+          assert int(observer.get('real_orders_sent') or 0) == 0
+          assert current_state.get('real_order_routes') in ('NONE', 'NOT_CALLED')
+          assert current_state.get('ppi_watch_untouched') is True
+          assert current_state.get('candidate_sha') == EXPECTED_CANDIDATE
+          assert current_state.get('deploy_sha') == EXPECTED_DEPLOY
+          assert dashboard_http == '200'
+          assert runtime['porota_production_observer'].get('status') == 'running'
+          assert runtime['porota_production_dashboard'].get('status') == 'running'
+          assert runtime['porota_production_observer'].get('image') == runtime['porota_production_dashboard'].get('image')
+          assert not uncovered_ppi_keys
+          assert catalog_available == len(ppi_catalog_keys & ppi_evidence_keys)
+          assert latest_mass and latest_mass.get('state') == 'OK'
+          assert candidate_ready >= BASELINE['candidate_ready']
+          print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=str))
+          PY
+          python -m json.tool ws14_postdeploy_readiness.json >/dev/null
+          echo "WS14_POSTDEPLOY_AUDIT=GREEN|bytes=$(stat -c %s ws14_postdeploy_readiness.json)"
+
+      - name: Upload exhaustive audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ws14-postdeploy-readiness
+          path: ws14_postdeploy_readiness.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Audit summary
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          p=json.load(open('ws14_postdeploy_readiness.json',encoding='utf-8'))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
+              f.write('### WS14 postdeploy READ_ONLY\n')
+              f.write(f"- mode: `{p['safety']['mode']}`\n")
+              f.write(f"- real_orders_sent: `{p['safety']['real_orders_sent']}`\n")
+              f.write(f"- catalog READY: `{p['before']['catalog_ready']} -> {p['after']['catalog_ready']}`\n")
+              f.write(f"- runtime READY: `{p['before']['candidate_ready']} -> {p['after']['candidate_ready']}`\n")
+              f.write(f"- READY by family: `{json.dumps(p['candidate_identity_v2']['ready_by_family'],sort_keys=True)}`\n")
+              f.write(f"- Evidence v2 sources: `{json.dumps(p['evidence_v2']['current_by_source'],sort_keys=True)}`\n")
+              f.write(f"- IOL cache: `{json.dumps(p['iol_cache'],sort_keys=True)}`\n")
+              f.write(f"- residual rows: `{p['residual_summary']['count']}`\n")
+          PY

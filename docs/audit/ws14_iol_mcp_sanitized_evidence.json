@@ -1,0 +1,94 @@
+{
+  "schema": "ws14-iol-mcp-sanitized-evidence-v1",
+  "observed_date": "2026-09-29",
+  "revalidated_at": "2026-09-29T16:26:54Z",
+  "scope": "READ_ONLY_MARKET_REFERENCE_ONLY",
+  "account_routes_called": [],
+  "execution_routes_called": [],
+  "real_orders_sent": 0,
+  "serial_retry_result": "LIVE_FRESH",
+  "observations": {
+    "fixed_income": [
+      {
+        "ticker": "AL30",
+        "asset_type": "TIT. PUBLICOS",
+        "currency": "ARS",
+        "units_per_lot": 100,
+        "settlement": "T1",
+        "simulate_nominals": 1,
+        "cashflow_rows": 8,
+        "simulation_result": "SUCCESS_WITH_CASHFLOWS"
+      },
+      {
+        "ticker": "YMCJO",
+        "asset_type": "ON",
+        "currency": "ARS",
+        "units_per_lot": 100,
+        "settlement": "T1",
+        "simulate_nominals": 1,
+        "cashflow_rows": 14,
+        "simulation_result": "SUCCESS_WITH_CASHFLOWS"
+      },
+      {
+        "ticker": "D30N6",
+        "asset_type": "LETRAS",
+        "currency": "ARS",
+        "units_per_lot": 100,
+        "settlement": "T1",
+        "simulation_result": "STRUCTURED_NOT_FOUND",
+        "interpretation": "ENDPOINT_GAP_NOT_INSTRUMENT_ABSENCE"
+      }
+    ],
+    "options": {
+      "underlying": "GGAL",
+      "expiry": "2026-10-16",
+      "chain_rows": 58,
+      "verified_symbol": "GFGC6000OC",
+      "right": "CALL",
+      "strike": 6000,
+      "units_per_lot": 1,
+      "last_price": 270,
+      "bid_rows": 5,
+      "ask_rows": 5,
+      "provider_timestamp": "2026-09-29T13:26:47-03:00",
+      "quote_state": "LIVE_NOT_STALE"
+    },
+    "fci": {
+      "rows": 22,
+      "operable_rows": 22,
+      "structured": true,
+      "fields_observed": ["asset", "currency", "type", "operable"]
+    },
+    "cauciones_ars_colocadora": {
+      "terms_days": [1, 2, 3],
+      "rates_percent": [21.6, 20.5, 20.8],
+      "minimum_amount": 100000,
+      "due_dates_present": true
+    }
+  },
+  "resilience_rca": {
+    "symptom": "parallel OAuth refresh could rotate one refresh token twice",
+    "serial_retry": "SUCCESS",
+    "guard": "interprocess refresh lock plus token reload plus last-known-good preservation",
+    "human_reconnect_required": false
+  },
+  "local_full_catalog_replay": {
+    "available_identities": 6889,
+    "ready_total": 5574,
+    "ready_by_family": {
+      "ACCIONES": 126,
+      "BONOS": 1674,
+      "CEDEARS": 683,
+      "FCI": 1003,
+      "LETRAS": 31,
+      "OBLIGACIONES": 2057
+    },
+    "interpretation": "deterministic synthetic replay of the exact WS13 family counts; runtime audit remains authoritative"
+  },
+  "safety": {
+    "mode": "PRODUCTION_PAPER",
+    "execution": "SIMULATION",
+    "paper_shadow_only": true,
+    "ppi_watch": "UNTOUCHED"
+  }
+}

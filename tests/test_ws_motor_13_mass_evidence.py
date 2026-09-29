@@ -54,18 +54,18 @@ def test_mass_collector_covers_every_available_ppi_identity_without_nominal_infe
     assert result["real_routes_used"] == []
 
     rows = evidence.current_records(store)
-    assert len(rows) == 3  # two PPI identities plus the BYMA spot-unit rule
+    assert len(rows) == 4  # identities + spot rule + fixed-income PAPER policy
     bond = [row for row in rows if row["ticker"] == "GD30"][0]
     assert bond["evidence"]["price_quote_unit"] == 100
-    assert "cash_multiplier" not in bond["evidence"]
-    assert "quantity_step" not in bond["evidence"]
+    policy = next(row for row in rows if row["ticker"] == "GD30"
+                  and row["source_class"] == "DERIVED_OFFICIAL_RULE")
+    assert policy["evidence"]["paper_cash_multiplier"] == "0.01"
+    assert policy["evidence"]["paper_quantity_step"] == "1"
+    assert policy["evidence"]["broker_quantity_step"] == "NO_VERIFICADO"
 
     claims = {row["ticker"]: row for row in bridge.complements_from_store(store)}
     assert claims["GGAL"]["contract_bridge"]["status"] == "NORMALIZED"
-    assert claims["GD30"]["contract_bridge"]["status"] == "BLOCKED"
-    assert set(claims["GD30"]["contract_bridge"]["gaps"]) >= {
-        "MISSING:cash_multiplier", "MISSING:quantity_step", "MISSING:minimum_quantity",
-    }
+    assert claims["GD30"]["contract_bridge"]["status"] == "NORMALIZED"
 
 
 def test_mass_collector_is_idempotent_and_does_not_create_change_review(tmp_path):
@@ -82,14 +82,14 @@ def test_mass_collector_is_idempotent_and_does_not_create_change_review(tmp_path
           WHERE status='CHANGED_REVIEW_REQUIRED'""").fetchone()[0] == 0
 
 
-def test_partial_v2_inventory_keeps_real_family_blocker_in_catalog(tmp_path):
+def test_mass_v2_policy_removes_unneeded_broker_quantity_blocker(tmp_path):
     store = _store(tmp_path)
     primary = _persist(store, ticker="GD30", family="BONOS", nominal=100)
     mass.collect(store, run_id="ws13")
     claim = bridge.complements_from_store(store)[0]
     merged = catalog.complete_with_complement(primary, claim)
-    assert merged["capability"] == "NEEDS_NOMINAL_UNITS"
-    assert merged["raw"]["_contract_bridge"]["status"] == "BLOCKED"
+    assert merged["capability"] == "READY_PAPER_SPOT"
+    assert merged["raw"]["_contract_bridge"]["status"] == "NORMALIZED"
 
 
 def test_full_key_candidate_can_be_ready_while_legacy_selection_stays_closed(tmp_path):

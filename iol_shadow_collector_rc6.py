@@ -38,6 +38,7 @@ ALLOWED_TOOLS = frozenset({
 MAX_BATCH_SIZE = 50
 DEFAULT_TERM = "t1"
 METADATA_TTL_SECONDS = 24 * 60 * 60
+QUOTE_CACHE_TTL_SECONDS = 5 * 60
 CACHE_SCHEMA_VERSION = 3
 CHECKPOINT_SCHEMA_VERSION = 2
 MARKET_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -144,6 +145,21 @@ def _load_json(path: Path) -> dict:
         return {}
 
 
+def _cache_state(row: dict[str, Any], observed_at: datetime,
+                 ttl_seconds: int = QUOTE_CACHE_TTL_SECONDS) -> str:
+    """Classify cached dynamic data without expiring its static metadata."""
+    stamp = row.get("captured_at")
+    try:
+        parsed = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        age = (observed_at.astimezone(timezone.utc) -
+               parsed.astimezone(timezone.utc)).total_seconds()
+    except (TypeError, ValueError):
+        return "CACHE_STALE"
+    return "CACHE_FRESH" if 0 <= age <= ttl_seconds else "CACHE_STALE"
+
+
 def _root_path(root: Path | str | None) -> Path:
     return Path(root) if root is not None else cache_path().parent
 
@@ -168,6 +184,15 @@ def _is_rate_limited(exc: Exception) -> bool:
     return getattr(exc, "status_code", None) == 429 or "429" in str(exc) or "RATE_LIMIT" in str(exc).upper()
 
 
+def _is_transient(exc: Exception) -> bool:
+    text = (type(exc).__name__ + ":" + str(exc)).upper()
+    return (_is_rate_limited(exc) or any(token in text for token in (
+        "TRANSPORT", "UNAVAILABLE", "TIMEOUT", "HTTP_500", "HTTP_502",
+        "HTTP_503", "HTTP_504", "OAUTH_REFRESH_FAILED", "INVALID_GRANT",
+        "EMPTY_UNEXPECTED",
+    )))
+
+
 def _retry_after(exc: Exception) -> float | None:
     value = getattr(exc, "retry_after", None)
     try:
@@ -186,11 +211,12 @@ def _safe_call(client: ReadOnlyMCP, tool_name: str, arguments: dict[str, Any],
             result = client.call(tool_name, arguments)
             return result if isinstance(result, dict) else {}
         except Exception as exc:
-            if not _is_rate_limited(exc) or attempt >= policy.retry_attempts:
+            if not _is_transient(exc) or attempt >= policy.retry_attempts:
                 if _is_rate_limited(exc):
                     governor.trip(_retry_after(exc))
                 raise
-            governor.trip(_retry_after(exc))
+            if _is_rate_limited(exc):
+                governor.trip(_retry_after(exc))
             governor.sleep(governor.retry_delay(attempt, _retry_after(exc)))
     raise AssertionError("unreachable")
 
@@ -246,6 +272,8 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
         try:
             quote = _quote_summary(_safe_call(client, "get_asset_quote",
                 {"symbol": symbol, "market": market, "term": term}, rate_governor, policy))
+            if quote.get("last") is None:
+                raise RuntimeError("IOL_EMPTY_UNEXPECTED")
             # Capture completion records when the response became available.
             # It is intentionally separate from IOL's provider timestamp.
             captured_at = now().isoformat()
@@ -258,16 +286,26 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
                 metadata_entries[key] = cached
             completed[symbol] = {"symbol": symbol, "market": market, "term": term,
                 "state": "READY" if quote.get("last") is not None else "UNAVAILABLE",
+                "source_state": "LIVE_FRESH",
                 "capture_started_at": capture_started_at, "captured_at": captured_at,
                 "quote": quote, **_metadata_from(cached),
                 "primary_comparison": _comparison(primary.get(symbol), quote, policy.tolerance_pct),
                 "decision_effect": DECISION_EFFECT}
         except Exception as exc:
             errors_total += 1
-            completed[symbol] = {"symbol": symbol, "market": market, "term": term, "state": "UNAVAILABLE",
+            prior_row = next((row for row in (_load_json(cache_path(root)).get("symbols") or [])
+                              if isinstance(row, dict) and str(row.get("symbol") or "").upper() == symbol), None)
+            failure_state = ("EMPTY_UNEXPECTED" if "EMPTY_UNEXPECTED" in str(exc).upper()
+                             else "SOURCE_UNAVAILABLE")
+            failed_at = now()
+            completed[symbol] = ({**prior_row, "state": _cache_state(prior_row, failed_at),
+                "source_state": failure_state, "last_refresh_failed_at": failed_at.isoformat(),
+                "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
+                "decision_effect": DECISION_EFFECT} if prior_row else {
+                "symbol": symbol, "market": market, "term": term, "state": failure_state,
                 "capture_started_at": capture_started_at, "captured_at": now().isoformat(),
                 "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
-                "decision_effect": DECISION_EFFECT}
+                "decision_effect": DECISION_EFFECT})
         state["completed"], state["status"] = completed, "RUNNING"
         _atomic_json(checkpoint_file, state)
 

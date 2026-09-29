@@ -153,7 +153,7 @@ FAMILY_DYNAMIC_FIELDS = {
     "OBLIGACIONES": frozenset(),
     "CAUCIONES": frozenset({
         "operable", "market_session_state", "annual_rate_fraction",
-        "available_principal", "quoted_at",
+        "quoted_at",
     }),
     "OPCIONES": frozenset(),
     # Argentina Clearing publishes one margin per contract/month position. A
@@ -200,8 +200,11 @@ FIELD_CONSUMERS = {
     "currency": "cash ledger and InstrumentContract.key",
     "settlement": "cash availability and InstrumentContract.key",
     "cash_multiplier": "notional, cash, risk and P&L",
+    "paper_cash_multiplier": "PAPER notional, cash, risk and P&L",
     "quantity_min": "InstrumentContract.quantity minimum",
     "quantity_step": "InstrumentContract.quantity rounding",
+    "paper_quantity_min": "PAPER simulator quantity minimum",
+    "paper_quantity_step": "PAPER simulator quantity rounding",
     "underlying": "long-option/future contract identity",
     "put_call": "long-option payoff direction",
     "strike": "long-option contract validation",
@@ -222,6 +225,14 @@ FIELD_CONSUMERS = {
     "margin_requirement": "future PAPER reserve and conservative deficit gate",
     "subscription_min": "FCI PAPER subscription validation",
     "subscription_step": "FCI PAPER subscription rounding",
+    "paper_subscription_policy": "FCI PAPER admission through internal risk budget by amount",
+    "paper_subscription_min": "FCI PAPER conservative internal minimum in subscription currency",
+    "paper_amount_unit": "FCI PAPER cash-ledger decimal unit",
+    "paper_fill_policy": "caucion PAPER fill model without a market-depth claim",
+    "paper_notional_cap": "caucion PAPER maximum principal guard",
+    "paper_principal_step": "caucion PAPER cash-ledger rounding",
+    "paper_margin_policy": "future PAPER reserve model independent of broker margin",
+    "paper_margin_rate": "future PAPER conservative notional reserve fraction",
     "subscription_status": "FCI subscription admission",
     "nav_value": "FCI NAV_APPLIED ledger event",
     "nav_date": "FCI NAV freshness",
@@ -256,6 +267,9 @@ POSITIVE_CONTRACT_FIELDS = frozenset({
     "cash_multiplier", "quantity_min", "quantity_step", "strike",
     "term_days", "minimum_principal", "principal_step", "subscription_min",
     "subscription_step", "subscription_max", "exchange_ratio",
+    "paper_cash_multiplier", "paper_quantity_min", "paper_quantity_step",
+    "paper_subscription_min", "paper_amount_unit", "paper_notional_cap", "paper_principal_step",
+    "paper_margin_rate",
 })
 
 
@@ -326,7 +340,7 @@ def _stale_dynamic(fields, provenance, now):
     stale = []
     for field in fields:
         detail = provenance.get(field, {})
-        if detail.get("freshness_basis") != "PROVIDER_TIMESTAMP":
+        if detail.get("freshness_basis") not in {"PROVIDER_TIMESTAMP", "LIVE_RESPONSE_CAPTURE"}:
             stale.append(field)
             continue
         at = _parse_at(detail.get("provider_timestamp"))
@@ -360,7 +374,7 @@ def _missing_dynamic(fields, merged, provenance):
         )
         detail = provenance.get(field, {})
         provider_time_missing = (
-            detail.get("freshness_basis") != "PROVIDER_TIMESTAMP"
+            detail.get("freshness_basis") not in {"PROVIDER_TIMESTAMP", "LIVE_RESPONSE_CAPTURE"}
             or _parse_at(detail.get("provider_timestamp")) is None
         )
         if invalid_value or provider_time_missing:
@@ -410,6 +424,32 @@ def evaluate_family(family: str, records, *, profile="FULL", now=None) -> dict:
             "event_missing": [], "detail": "SIN_EVENTO_CONTRACTUAL_ESPECIAL",
         }
     merged, provenance, conflicts = merge_evidence(records)
+    # A published broker term and an internal PAPER policy are alternative
+    # ways to satisfy simulator mechanics, never aliases in provenance.
+    if family in {"BONOS", "LETRAS", "ON", "OBLIGACIONES"} and all(
+            _present(merged.get(field)) for field in (
+                "paper_cash_multiplier", "paper_quantity_min", "paper_quantity_step")):
+        required_contract = ((required_contract - {"cash_multiplier", "quantity_min", "quantity_step"}) |
+                             {"paper_cash_multiplier", "paper_quantity_min", "paper_quantity_step"})
+    if family == "OPCIONES" and all(
+            _present(merged.get(field)) for field in (
+                "paper_quantity_min", "paper_quantity_step")):
+        required_contract = ((required_contract - {"quantity_min", "quantity_step"}) |
+                             {"paper_quantity_min", "paper_quantity_step"})
+    if family == "CAUCIONES" and all(
+            _present(merged.get(field)) for field in (
+                "paper_fill_policy", "paper_notional_cap", "paper_principal_step")):
+        required_contract = ((required_contract - {"principal_step"}) |
+                             {"paper_fill_policy", "paper_notional_cap", "paper_principal_step"})
+    if family == "FUTUROS" and all(
+            _present(merged.get(field)) for field in (
+                "paper_margin_policy", "paper_margin_rate")):
+        required_dynamic = required_dynamic - {"margin_requirement"}
+    if family in {"FCI", "FCI_LOCAL"} and all(
+            _present(merged.get(field)) for field in (
+                "paper_subscription_policy", "paper_subscription_min", "paper_amount_unit")):
+        required_contract = ((required_contract - {"subscription_min", "subscription_step"}) |
+                             {"paper_subscription_policy", "paper_subscription_min", "paper_amount_unit"})
     ignored_account_fields = sorted(REAL_ACCOUNT_ONLY_FIELDS & set(merged))
     invalid_contract = sorted(
         field for field in required_contract

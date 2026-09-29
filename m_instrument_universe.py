@@ -339,6 +339,9 @@ def assess_derivative_eligibility(inst, ppi_client, permisos: dict) -> dict:
                 payload.setdefault("contractMultiplier", contrato.multiplicador)
             if contrato.garantia_inicial:
                 payload.setdefault("initialMargin", contrato.garantia_inicial)
+            if contrato.paper_margin_policy:
+                payload.setdefault("paperMarginPolicy", contrato.paper_margin_policy)
+                payload.setdefault("paperMarginRate", contrato.paper_margin_rate)
             if contrato.vencimiento:
                 payload.setdefault("expirationDate", contrato.vencimiento)
             if not contrato.operable and contrato.motivo:
