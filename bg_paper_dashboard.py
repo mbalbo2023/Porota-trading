@@ -32,6 +32,7 @@ from cg_paper_workspace import database_path, checked_path, identity_from_connec
 from _version import VERSION
 from dd_history_metrics_hf6 import observer_history_metrics, v2_store_metrics, effective_store_metrics
 import rc6_annual_instrument_analysis as annual_instrument_analysis
+import er_dashboard_truth_projection_rc6 as dashboard_truth_projection
 from ek_history_freshness_metrics_rc5 import freshness_qualified_metrics
 # HF6_V2_HISTORY_DASHBOARD_PATCH
 from df_daily_operation_summary_hf6 import summarize as daily_operation_summaries
@@ -179,6 +180,11 @@ def _table(name, path=None):
     except Exception: return False
 
 
+def truth_projection():
+    """Single authority projection shared by every dashboard route."""
+    return dashboard_truth_projection.build(_rows, _table)
+
+
 def _effective_mode():
     """Resolver el modo desde evidencia viva, no desde un env congelado.
 
@@ -249,9 +255,9 @@ def _caucion_warning(state):
 
 def _status(value):
     key = str(value or "").upper()
-    css = "s-verde" if key in {"OK","VERDE","RUNNING","APPROVE","WIN","OPENED_SIMULATED","AVAILABLE"} else \
+    css = "s-verde" if key in {"OK","VERDE","RUNNING","APPROVE","WIN","OPENED_SIMULATED","AVAILABLE","RUNTIME_READY","READY_PAPER","LIVE","CACHE_FRESH","ACTIVE_PAPER"} else \
           "s-rojo" if key in {"ERROR","ROJO","FAILED","LOSS","VETO","BLOCKED","DEGRADED"} else \
-          "s-amarillo" if key in {"HOLD","PARTIAL","COOLDOWN","WAITING","AMARILLO","PENDIENTE"} else "s-gris"
+          "s-amarillo" if key in {"HOLD","PARTIAL","COOLDOWN","WAITING","AMARILLO","PENDIENTE","PAUSED_EXPLICIT","CACHE_STALE","SOURCE_UNAVAILABLE","ACTIVE_OBSERVE"} else "s-gris"
     return f"<span class='paper-status {css}'>{_e(key or 'GRIS')}</span>"
 
 
@@ -269,7 +275,8 @@ def _health_status(value):
 
 def _card(title, value, detail, state="gray", value_class=""):
     state = state if state in {"green","red","yellow","gray"} else "gray"
-    return f"<div class='paper-card card-{state}'>{_e(title)}<br><b class='metric {value_class}'>{_e(value)}</b><br><span class='paper-muted'>{_e(detail)}</span></div>"
+    visible_value = _locale_number(value, 0) if isinstance(value, int) and not isinstance(value, bool) else value
+    return f"<div class='paper-card card-{state}'>{_e(title)}<br><b class='metric {value_class}'>{_e(visible_value)}</b><br><span class='paper-muted'>{_e(detail)}</span></div>"
 
 
 def _fresh(value, seconds=180):
@@ -951,7 +958,7 @@ def paper_page(compact=False):
         _card("Sesión BYMA", state.get("session_state"), "El dashboard sigue activo fuera de rueda", "green" if state.get("session_state")=="MARKET_OPEN" else "gray"),
         _card("PPI Producción", state.get("ppi_auth"), "Sólo lectura", "green" if state.get("ppi_auth")=="OK" else "yellow"),
         _card("Resultado acumulado ARS", _money(pnl) if data["spot_state"]=="READY" else "s/d", "Incluye fills parciales realizados", "green" if pnl>0 else "red" if pnl<0 else "gray", "positive" if pnl>0 else "negative" if pnl<0 else "neutral"),
-        _card("Win rate", "s/d" if wr is None else f"{wr:.1f}%", f"{wins}/{len(data['closed'])} ganadoras", "green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),
+        _card("Win rate", "s/d" if wr is None else f"{_locale_number(wr,1)}%", f"{wins}/{len(data['closed'])} ganadoras", "green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),
         _card("Universo del ciclo", f"{latest.get('selected_count',0)}/{latest.get('eligible_total',0)}", f"Rotación activa; recomendación medida: {latest.get('recommended_limit','s/d')}", "green" if latest.get('successful_count')==latest.get('selected_count') and latest.get('selected_count') else "yellow"),
     ))
     # /vivo, /testing y /observacion comparten encabezado y explicación visible.
@@ -1021,6 +1028,9 @@ def _economic_shadow_panel():
 
 
 def scalping_page():
+    canonical_truth=truth_projection()
+    scalping_truth=canonical_truth['scalping']
+    readiness_truth=canonical_truth['readiness']
     worker=(_rows("SELECT * FROM intraday_scalping_worker_state WHERE id=1") or [{}])[0] if _table("intraday_scalping_worker_state") else {}
     state="DISABLED" if PAPER_SCALPING_MODE=="OFF" else worker.get("state","NOT_STARTED")
     try:
@@ -1039,6 +1049,39 @@ def scalping_page():
       WHERE features_json LIKE '%\"execution_style\": \"SCALPING_PAPER\"%'
       ORDER BY opened_at DESC LIMIT 100""") if _table("paper_positions") else []
     buy_candidates=sum(row.get("action")=="BUY_CANDIDATE" for row in decisions)
+    blocker_labels={
+      "CONTRACT_NOT_SIMULATABLE":"Contrato no simulable",
+      "PENDING_LIVE_CONFIRMATION":"Contrato intradía aún no confirmado",
+      "INSUFFICIENT_INTRADAY_POINTS":"Muestras intradía insuficientes",
+      "NO_CURRENT_BOOK":"Sin libro actual",
+      "STALE_BOOK":"Libro vencido",
+      "NO_RECENT_VOLUME":"Sin volumen reciente",
+      "SPREAD_TOO_WIDE":"Spread demasiado amplio",
+      "ECONOMICS_BINDING_RANGE_BELOW_COST":"Rango observado no cubre costos",
+      "SCALPING_SCORE_BELOW_THRESHOLD":"Score debajo del umbral",
+    }
+    blocker_counts=Counter(str(row.get('reason') or 'Sin motivo publicado') for row in decisions
+                           if row.get('action')!='BUY_CANDIDATE')
+    blocker_rows="".join(
+      f"<tr><td>{_e(blocker_labels.get(reason,reason.replace('_',' ').title()))}</td>"
+      f"<td>{_locale_number(count,0)}</td></tr>"
+      for reason,count in blocker_counts.most_common(5)
+    ) or "<tr><td colspan='2'>Sin bloqueos persistidos.</td></tr>"
+    latest_economics={}
+    latest_economics_at=None
+    for row in decisions:
+        candidate_economics=_features(row.get('economics_json'))
+        if candidate_economics:
+            latest_economics=candidate_economics
+            latest_economics_at=row.get('evaluated_at')
+            break
+    cost=_num(latest_economics.get('modeled_roundtrip_fraction'),None)
+    required=_num(latest_economics.get('required_move_fraction'),None)
+    observed_range=_num(latest_economics.get('observed_15m_range_fraction'),None)
+    edge=(observed_range-required) if observed_range is not None and required is not None else None
+    cost_edge=("NO_VERIFICADO" if cost is None or required is None or edge is None else
+               f"costo {_locale_number(cost*100,2)}% · requerido {_locale_number(required*100,2)}% · "
+               f"edge {_locale_number(edge*100,2)}%")
     contract_table="".join(
       f"<tr><td><b>{_e(r['symbol'])}</b> · {_e(r['asset_class'])}</td><td>{_e(r['market'])} / {_e(r['currency'])} / {_e(r['settlement'])}</td>"
       f"<td>{_status(r['state'])}</td><td>{_e(r['observations'])}</td><td>{_e(r['stable_overlap'])}</td>"
@@ -1046,23 +1089,31 @@ def scalping_page():
     ) or "<tr><td colspan='7'>Esperando la primera rueda con el colector HF3.</td></tr>"
     candidate_table="".join(
       f"<tr><td>{_local_time(r['evaluated_at'])}</td><td><b>{_e(r['symbol'])}</b> · {_e(r['asset_class'])}</td>"
-      f"<td>{_e(r['currency'])}</td><td>{_status(r['action'])}</td><td>{_e(r['score'])}</td>"
-      f"<td>{_e(r['points'])}</td><td>{_e(r['reason'])}</td></tr>" for r in decisions
+      f"<td>{_e(r['currency'])}</td><td>{_status(r['action'])}</td><td>{_locale_number(r['score'],4)}</td>"
+      f"<td>{_locale_number(r['points'],0)}</td><td title='{_e(r['reason'])}'>{_e(blocker_labels.get(r['reason'],str(r['reason']).replace('_',' ').title()))}</td></tr>" for r in decisions
     ) or "<tr><td colspan='7'>Todavía no hay evaluaciones intradiarias.</td></tr>"
     cards="".join((
       _card("Scanner",state,f"Modo {PAPER_SCALPING_MODE}; pulso {_local_time(worker.get('heartbeat_at'))}","green" if state=="RUNNING" else "yellow"),
+      _card("Universo RUNTIME_READY",_locale_number(readiness_truth.get('ready',0),0),"Fuente exclusiva: candidate_identity_v2","green" if readiness_truth.get('ready') else "yellow"),
+      _card("Elegibles de estrategia","EVENT_DRIVEN","No hay censo estático; se decide en cada evaluación","gray"),
+      _card("Escaneados último ciclo",scalping_truth.get('selected_last_cycle',0),
+            f"correctos {scalping_truth.get('successful_last_cycle',0)} · fallidos {scalping_truth.get('failed_last_cycle',0)}","green" if scalping_truth.get('selected_last_cycle') else "gray"),
       _card("Puntos intradiarios",point_count,"PPI date/price/volume; inserción idempotente","green" if point_count else "gray"),
-      _card("Contratos de volumen",confirmed,"Confirmados automáticamente durante rueda","green" if confirmed else "yellow"),
-      _card("Candidatos recientes",buy_candidates,"No equivalen a fills; economía BINDING","green" if buy_candidates else "gray"),
+      _card("Contratos de volumen",confirmed,f"Confirmados · {_local_time(scalping_truth.get('contract_as_of'))}","green" if confirmed else "yellow"),
+      _card("Candidatos recientes",buy_candidates,f"No equivalen a fills · {_local_time(scalping_truth.get('candidate_as_of'))}","green" if buy_candidates else "gray"),
       _card("Fills scalping PAPER",len(scalp_positions),"Separados del scanner y siempre simulados","green" if scalp_positions else "gray"),
-      _card("Órdenes reales",worker.get("real_orders_sent",0),"Debe ser siempre cero","green" if worker.get("real_orders_sent",0)==0 else "red"),
+      _card("Costo / edge",cost_edge,f"última evaluación {_local_time(latest_economics_at)}","green" if edge is not None and edge>0 else "yellow"),
+      _card("EOD / Max Hold",scalping_truth.get('exit_supervisor_state','NOT_STARTED'),
+            f"{scalping_truth.get('eod_policy')} · Max Hold {scalping_truth.get('max_hold_minutes',0)} min · {_local_time(scalping_truth.get('exit_supervisor_heartbeat_at'))}",
+            "green" if scalping_truth.get('exit_supervisor_state')=='RUNNING' else "yellow"),
+      _card("Órdenes reales",canonical_truth['runtime'].get("real_orders_sent",0),"Autoridad: observer_state; debe ser siempre cero","green" if canonical_truth['runtime'].get("real_orders_sent",0)==0 else "red"),
     ))
     scalp_rows="".join(f"<tr><td>{_local_time(p['opened_at'])}</td><td>{_e(p['symbol'])}</td><td>{_e(p['currency'])}</td><td>{_status(p['status'])}</td><td>{_e(p['quantity'])}</td><td>{_money(p.get('net_pnl'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in scalp_positions) or "<tr><td colspan='7'>Todavía no hubo fills scalping PAPER.</td></tr>"
     execution_notice=("<div class='paper-warning'><b>DESACTIVADO:</b> scalping no está disponible con el universo READY actual. No se generan candidatos ni fills scalping.</div>"
                       if PAPER_SCALPING_MODE=="OFF" else
-                      "<div class='paper-notice'><b>ACTIVE_PAPER:</b> los candidatos validados pueden abrir sólo posiciones simuladas. Riesgo 0,10%, máximo una posición scalping y permanencia máxima 30 minutos. PPI Orders permanece bloqueado.</div>"
+                      "<div class='paper-notice'><b>ACTIVE_PAPER:</b> fills exclusivamente simulados; los candidatos validados pueden abrir sólo posiciones PAPER. Riesgo, máximo de posiciones y Max Hold se leen de la política vigente. EOD y Max Hold quedan auditados por el supervisor. PPI Orders permanece bloqueado.</div>"
                       if PAPER_SCALPING_MODE=="ACTIVE_PAPER" else
-                      "<div class='paper-warning'><b>ACTIVE_OBSERVE:</b> el scanner observa; no genera fills.</div>")
+                      "<div class='paper-warning'><b>ACTIVE_OBSERVE: NO ABRE POSICIONES.</b> El scanner observa y persiste evidencia; no genera fills.</div>")
     body=(f"<h1>Scalping intradiario</h1><div class='paper-grid'>{cards}</div>{execution_notice}"
       f"<div class='paper-notice'>{_e(worker.get('detail','Esperando estado del proceso.'))}</div>"
       "<div class='paper-card'><h2>Contrato intradiario por identidad</h2><table class='paper-table'>"
@@ -1071,6 +1122,8 @@ def scalping_page():
       "<div class='paper-card'><h2>Decisiones del scanner</h2><table class='paper-table'>"
       "<tr><th>Hora</th><th>Instrumento</th><th>Moneda</th><th>Acción</th><th>Score</th><th>Puntos</th>"
       f"<th>Motivo</th></tr>{candidate_table}</table></div>"
+      "<div class='paper-card'><h2>Bloqueos principales</h2><table class='paper-table'>"
+      f"<tr><th>Motivo legible</th><th>Cantidad</th></tr>{blocker_rows}</table></div>"
       "<div class='paper-card'><h2>Operaciones scalping PAPER</h2><table class='paper-table'>"
       f"<tr><th>Apertura</th><th>Instrumento</th><th>Moneda</th><th>Estado</th><th>Cantidad</th><th>PnL</th><th>Cierre</th></tr>{scalp_rows}</table></div>")
     return _document("Scalping",body,refresh=30)
@@ -1120,7 +1173,7 @@ def _trade_lesson(position):
     pnl=_num(position.get("net_pnl"))
     mfe=_num(position.get("max_favorable")); mae=_num(position.get("max_adverse"))
     direction="ganancia" if pnl>0 else "pérdida" if pnl<0 else "resultado plano"
-    return (f"Muestra cerrada con {direction}; causa {reason}; MFE={mfe:.4f}; MAE={mae:.4f}. "
+    return (f"Muestra cerrada con {direction}; causa {reason}; MFE={_locale_number(mfe,4)}; MAE={_locale_number(mae,4)}. "
             "Se conserva como evidencia para replay/validación; no auto-modifica stops, targets ni riesgo.")
 
 
@@ -1181,20 +1234,18 @@ def _rejection_funnel():
 def _universe_execution_panel():
     if not _table("financial_instrument_catalog"):
         return "<div class='paper-card'>Catálogo financiero ampliado todavía no disponible.</div>"
+    canonical=truth_projection()
     rows=_rows("""SELECT instrument_type,currency,capability,COUNT(*) total
       FROM financial_instrument_catalog WHERE status='AVAILABLE'
       GROUP BY instrument_type,currency,capability ORDER BY instrument_type,currency,capability""")
-    items=''.join(f"<tr><td>{_e(r['instrument_type'])}</td><td>{_e(r['currency'])}</td><td>{_e(r['capability'])}</td><td>{r['total']}</td></tr>" for r in rows)
-    unavailable=_rows("""SELECT instrument_type,COUNT(*) total FROM financial_instrument_catalog
-      WHERE status='DISABLED_NON_READY' GROUP BY instrument_type ORDER BY instrument_type""")
-    unavailable_text=", ".join(f"{_e(r['instrument_type'])}: {r['total']}" for r in unavailable) or "ninguna"
-    usd_ready=sum(int(r['total']) for r in rows if r['currency'] in {'USD','USD_MEP','USD_CCL'} and r['capability']=='READY_PAPER_SPOT')
+    items=''.join(f"<tr><td>{_e(r['instrument_type'])}</td><td>{_e(r['currency'])}</td><td>{_e(r['capability'])}</td><td>{_locale_number(r['total'],0)}</td></tr>" for r in rows)
+    ready=canonical['readiness']
     usd_positions=(_rows("""SELECT COUNT(*) n FROM paper_positions
       WHERE date(opened_at,'-3 hours')=date('now','-3 hours') AND currency IN ('USD','USD_MEP','USD_CCL')""") or [{'n':0}])[0]['n']
     return ("<div class='paper-card'><h2>Universo por familia y moneda</h2>"
-            f"<div class='paper-notice'><b>Universo operativo actual:</b> solo Acciones y CEDEARs ({sum(int(r['total']) for r in rows if r['capability']=='READY_PAPER_SPOT')} instrumentos READY). "
-            f"Familias no disponibles y excluidas del motor: {unavailable_text}.</div>"
-            f"<div class='paper-notice'>Contratos spot USD listos: {usd_ready}; operaciones USD hoy: {usd_positions}. "
+            f"<div class='paper-notice'><b>RUNTIME_READY actual:</b> {_locale_number(ready.get('ready',0),0)} identidades en {_locale_number(len(ready.get('families',[])),0)} familias. "
+            "Fuente exclusiva: candidate_identity_v2; las capacidades del catálogo se muestran por separado.</div>"
+            f"<div class='paper-notice'>Operaciones USD hoy: {_locale_number(usd_positions,0)}. "
             "Saldo intacto significa que ninguna señal USD atravesó todos los portones; nunca se fabrican transacciones para mover caja.</div>"
             "<table class='paper-table'><tr><th>Familia</th><th>Moneda/plaza</th><th>Capacidad contractual</th><th>Instrumentos</th></tr>"+items+"</table></div>")
 
@@ -1274,7 +1325,7 @@ def motor_page():
                   "Su Cantidad remanente, realizaciones y resultado permanecen conciliados en Aprendizaje y Reportes.</div>"
                   if previous else "")
     body=f"<h1>Motor de trading — rueda actual</h1><p class='paper-muted'>Trazabilidad técnica → economía matemática → patrimonio/liquidez → resultado.</p><div class='paper-warning'><b>Todas las operaciones de esta página son simuladas.</b> Nunca representan una orden enviada a PPI.</div>{history_note}{trade_cards}<div class='paper-card'><h2>Decisiones bloqueadas o aprobadas de hoy</h2><table class='paper-table'><tr><th>Hora</th><th>Instrumento</th><th>Economía</th><th>Patrimonial</th><th>Final</th><th>Explicación</th></tr>{gate_rows}</table></div>"
-    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + _economic_shadow_panel() + body + _rejection_funnel() + _universe_execution_panel() + _balances_panel() + "<div class='paper-warning'><b>Alcance operativo:</b> cauciones y demás familias no operativas no se evalúan ni se muestran como estrategia activa.</div>")
+    return _document("Motor de trading",_spot_warning(spot["state"])+_daily_risk_panel() + _exit_supervision_panel() + _economic_shadow_panel() + body + _rejection_funnel() + _universe_execution_panel() + _balances_panel() + "<div class='paper-notice'><b>Lectura por etapas:</b> RUNTIME_READY no equivale a STRATEGY_ELIGIBLE ni a una apertura. Cada estrategia aplica sus propios gates y toda ejecución permanece simulada.</div>")
 
 
 def _next_check(component, checked):
@@ -1369,7 +1420,7 @@ def health_page():
     summary = ("VERDE: verificación exitosa. RETRASADO: evidencia más vieja que su cadencia esperada. "
                "EN PROGRESO/PARCIAL: cobertura o rotación incompleta sin implicar caída del proceso. "
                "NO UTILIZADO/CONTEXTO: fuente deliberadamente no operativa para PAPER. "
-               "NUNCA_EJECUTADO: falta primera evidencia. NO_APLICA: fuera de alcance; no es una falla.")
+               "NUNCA_EJECUTADO: falta primera evidencia. NO_APLICA: el control no corresponde a esa condición; no es una falla.")
     body = (f"<h1>Salud de APIs y fuentes</h1><div class='paper-notice'><b>Resumen:</b> "
             f"{red} en rojo, {pending} pendientes/requieren atención y {informational} informativas entre fuentes aplicables. {_e(summary)}</div>"
             "<p class='paper-muted'>Este panel muestra reportes persistidos y no ejecuta una prueba en vivo al abrirse. Un estado degradado antiguo no confirma una caída actual; verificá la edad y la próxima comprobación.</p>"
@@ -1379,18 +1430,19 @@ def health_page():
     return _document("Salud de APIs", body, refresh=60)
 
 def history_page():
-    operational_families=("ACCIONES","CEDEARS")
-    catalog=(_rows("SELECT COUNT(*) n FROM instrument_catalog") or [{"n":0}])[0]["n"] if _table("instrument_catalog") else 0
-    eligible=(_rows("SELECT COUNT(*) n FROM candidate_universe WHERE can_simulate=1 AND status='AVAILABLE' AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS')") or [{"n":0}])[0]["n"] if _table("candidate_universe") else 0
-    history=(_rows("SELECT COUNT(*) instruments,SUM(row_count) rows,MAX(downloaded_at) latest FROM production_history WHERE UPPER(instrument_type) IN ('ACCIONES','CEDEARS')") or [{}])[0] if _table("production_history") else {}
-    last_market=(_rows("SELECT MAX(date_to) latest FROM production_history WHERE UPPER(instrument_type) IN ('ACCIONES','CEDEARS')") or [{}])[0].get("latest") if _table("production_history") else None
+    current_truth=truth_projection()
+    operational_families=tuple(row.get('family') for row in current_truth['readiness']['families'])
+    catalog=current_truth['catalog']['available']
+    eligible=current_truth['readiness']['ready']
+    history=(_rows("SELECT COUNT(*) instruments,SUM(row_count) rows,MAX(downloaded_at) latest FROM production_history") or [{}])[0] if _table("production_history") else {}
+    last_market=(_rows("SELECT MAX(date_to) latest FROM production_history") or [{}])[0].get("latest") if _table("production_history") else None
     sync=(_rows("""SELECT source,status,last_attempt_at,last_success_at,items,detail
       FROM source_sync WHERE source LIKE 'PPI_%' ORDER BY last_attempt_at DESC""")
       if _table("source_sync") else [])
     last_attempt=max((str(r.get("last_attempt_at") or "") for r in sync),default="") or None
     last_success=max((str(r.get("last_success_at") or "") for r in sync),default="") or None
     cycles=_rows("SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 30") if _table("universe_cycle_metrics") else []
-    cycle_rows="".join(f"<tr><td>{_local_time(r['started_at'])}</td><td>{r['selected_count']}/{r['eligible_total']}</td><td>{r['successful_count']}</td><td>{r['failed_count']}</td><td>{r['duration_seconds']:.2f}s</td><td>{r['recommended_limit']}</td></tr>" for r in cycles) or "<tr><td colspan='6'>Esperando métricas.</td></tr>"
+    cycle_rows="".join(f"<tr><td>{_local_time(r['started_at'])}</td><td>{r['selected_count']}/{r['eligible_total']}</td><td>{r['successful_count']}</td><td>{r['failed_count']}</td><td>{_locale_number(r['duration_seconds'],2)}s</td><td>{r['recommended_limit']}</td></tr>" for r in cycles) or "<tr><td colspan='6'>Esperando métricas.</td></tr>"
     try:
         with closing(_conn()) as c:
             dynamic=observer_history_metrics(c,families=operational_families)
@@ -1417,13 +1469,13 @@ def history_page():
     coverage_state_label='COMPLETA' if coverage_complete else 'EN PROGRESO'
     target_label=(f"{coverage_state_label} · {history_count}/{history_target}"
                   if history_target else f"EN PROGRESO · {history_count}/objetivo dinámico pendiente")
-    coverage_detail=(f"{history_pct:.1f}% · {history_rows} filas canónicas · cobertura parcial incremental; objetivo derivado del universo AVAILABLE"
+    coverage_detail=(f"{_locale_number(history_pct,1)}% · {_locale_number(history_rows,0)} filas canónicas · cobertura parcial incremental; objetivo derivado del universo AVAILABLE"
                      if history_target and not coverage_complete else
-                     f"{history_pct:.1f}% · {history_rows} filas canónicas · objetivo dinámico cubierto"
-                     if history_target else f"{history_rows} filas; esperando universo dinámico")
+                     f"{_locale_number(history_pct,1)}% · {_locale_number(history_rows,0)} filas canónicas · objetivo dinámico cubierto"
+                     if history_target else f"{_locale_number(history_rows,0)} filas; esperando universo dinámico")
     cards="".join((
         _card("Catálogo PPI",catalog,"Inventario PPI observado; no equivale a READY PAPER","green" if catalog else "gray"),
-        _card("Universo elegible",eligible,"Elegible para motor PAPER; distinto del universo histórico","green" if eligible else "gray"),
+        _card("RUNTIME_READY actual",eligible,"candidate_identity_v2; se muestra sólo como referencia y no deriva del histórico","green" if eligible else "gray"),
         _card("Cobertura histórica operativa",target_label,coverage_detail+" · profundidad/freshness se informan por separado",
               "green" if coverage_complete else "gray"),
         _card("Historia fresca ≥30",
@@ -1439,7 +1491,7 @@ def history_page():
               "FULL_OHLC profundo y fresco; no es precio de ejecución ni autorización PAPER",
               "green" if fresh_v5.get('available') else "yellow"),
         _card("Historia efectiva",f"{store_v2.get('canonical_rows',0)} filas",
-              f"capa {store_v2.get('layer','V2')} · sólo acciones/CEDEARs · coverage no equivale a fresh",
+            f"capa {store_v2.get('layer','V2')} · cobertura histórica por capacidad · coverage no equivale a fresh",
               "green" if store_v2.get('available') else "yellow"),
         _card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,"Ventana rotativa del motor; no limita la cola histórica","green"),
         _card("Última fecha PPI legacy",_e(last_market),"Dato de production_history; History Store v2 puede contener otras fuentes","gray"),
@@ -1478,7 +1530,7 @@ def history_page():
         "Para CEDEAR cada día faltante exige rueda BYMA y rueda del subyacente US. "
         "CLOSE_ONLY se informa por separado y nunca habilita ATR, VWAP, precio de ejecución ni READY PAPER.</div>"
     )
-    body=f"<h1>Históricos y universo operativo</h1><div class='paper-notice'><b>Ingesta full histórica PPI: cerrada y en cuarentena.</b> Esta pantalla no la ejecuta. El estado del Archivo incremental de velas corresponde a otro proceso y no significa que la ingesta full esté corriendo.</div><div class='paper-warning'><b>Alcance actual:</b> esta vista y el motor usan acciones y CEDEARs. Los datos de otras familias se conservan sólo como legado/auditoría y no disparan ingesta ni decisiones.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una familia HOLD puede acumular históricos si su identidad financiera está verificada. El denominador ya no es 243 fijo: surge del universo histórico disponible por familia. Para saber cuándo vuelve a ejecutarse cada trabajo, usar Sistema → Scheduler.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI legacy (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
+    body=f"<h1>Históricos y universo</h1><div class='paper-notice'><b>Ingesta full histórica PPI: cerrada y en cuarentena.</b> Esta pantalla no la ejecuta. El estado del archivo incremental de velas corresponde a otro proceso y no significa que la ingesta full esté corriendo.</div><div class='paper-notice'><b>Histórico es histórico.</b> La cobertura de series describe disponibilidad para análisis/backtest; no gobierna catálogo, contrato, RUNTIME_READY ni STRATEGY_ELIGIBLE.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una identidad puede tener histórico sin estar READY, o estar READY sin serie profunda. Para el readiness actual usar Instrumentos o Validación.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI histórica (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
     return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
 
 
@@ -1498,15 +1550,15 @@ def _family_coverage_panel():
         items.append(f"<tr><td>{_e(r['instrument_type'])}</td><td>{declared}</td>"
             f"<td>{_e(labels.get(r['discovery_status'], r['discovery_status']))}</td>"
             f"<td>{_e(r['queries'])}</td><td>{_e(r['observed_count'])}</td>"
-            f"<td>{_e(r['ready_paper_count'])}</td><td>{_local_time(r['checked_at'])}</td></tr>")
+            f"<td>{_local_time(r['checked_at'])}</td></tr>")
     return ("<div class='paper-card'><h2>Cobertura por familia</h2>"
         "<p>Última ejecución de catálogo, no estado en tiempo real. No acredita permisos ni habilita operaciones. "
         "Una familia declarada no garantiza instrumentos, cotizaciones o contratos ejecutables. "
         "Cero coincidencias no prueba indisponibilidad; sin consulta no significa cero instrumentos existentes. "
-        "Compatibles PAPER cuenta sólo contratos de contado reconocidos; faltan los demás portones y no implica ejecución real.</p>"
+        "Esta tabla describe descubrimiento histórico de catálogo y nunca publica readiness. Para RUNTIME_READY se usa candidate_identity_v2.</p>"
         "<table class='paper-table'><tr><th>Familia</th><th>Declarada por PPI</th><th>Descubrimiento</th>"
-        "<th>Consultas</th><th>Identidades encontradas</th><th>Compatibles PAPER</th><th>Consultado</th></tr>" +
-        (''.join(items) or "<tr><td colspan='7'>Sin inventario de familias persistido.</td></tr>") + "</table></div>")
+        "<th>Consultas</th><th>Identidades encontradas</th><th>Consultado</th></tr>" +
+        (''.join(items) or "<tr><td colspan='6'>Sin inventario de familias persistido.</td></tr>") + "</table></div>")
 
 
 def _candle_archive_panel():
@@ -1596,7 +1648,7 @@ def _decision_evidence_panel():
         for key, value in list(aggregate.items())[:12]
     ) or "<tr><td colspan='2'>Sin evidencia acumulada publicada todavía.</td></tr>"
     return (
-        "<div class='paper-card'><h2>Evidencia por decisión y perfiles SHADOW</h2>"
+        "<div class='paper-card'><h2>Evidencia por decisión y perfiles SHADOW — histórica</h2>"
         "<div class='paper-grid'>" + cards + "</div>"
         "<div class='paper-notice'><b>Perfiles evaluados en modo SHADOW, sólo para análisis.</b> Conservador = referencia factual congelada. Balanceado = umbral de score 90%, spread máximo 110% y una confirmación menos. Agresivo = umbral 80%, spread máximo 125% y una confirmación menos. Los perfiles SHADOW requieren evidencia de seguridad; ninguno puede alterar ni autorizar órdenes. La decisión factual PAPER no se modifica. "
         "Los perfiles BASELINE_CONSERVATIVE_V1, SHADOW_BALANCED_V1 y SHADOW_AGGRESSIVE_V1 se comparan sobre "
@@ -1607,9 +1659,38 @@ def _decision_evidence_panel():
         rows_html + "</table>"
         "<h3>Aprendizaje acumulado publicado</h3><table class='paper-table'><tr><th>Métrica</th><th>Valor</th></tr>" +
         aggregate_rows + "</table>"
-        f"<p class='paper-muted'>Fuente: {_e(evidence['source'])} · publicado: {_local_time(evidence['generated_at'])} · "
+        f"<p class='paper-muted'><b>Fuentes al momento de la decisión.</b> Fuente: {_e(evidence['source'])} · publicado: {_local_time(evidence['generated_at'])} · "
         f"política: {_e(evidence['policy'])}</p></div>"
     )
+
+
+def _current_source_health_panel():
+    """Current source health, deliberately separate from decision-time evidence."""
+    iol=truth_projection()['iol']
+    quote=iol.get('quotes',{})
+    families=iol.get('families',{})
+    section_rows="".join(
+        f"<tr><td>{_e(name)}</td><td>{_status(item.get('state'))}</td>"
+        f"<td>{_e(item.get('raw_source_state'))}</td><td>{_local_time(item.get('as_of'))}</td></tr>"
+        for name,item in sorted((families.get('sections') or {}).items())
+    ) or "<tr><td colspan='4'>IOL no publicó secciones actuales; SOURCE_UNAVAILABLE.</td></tr>"
+    return (
+        "<section class='paper-card' id='learning-current-source-health'>"
+        "<h2>Salud actual de fuentes</h2>"
+        "<div class='paper-notice'><b>Esta sección es actual.</b> No reescribe el estado de las fuentes al momento de una decisión histórica.</div>"
+        "<div class='paper-grid'>"
+        +_card('IOL cotizaciones',quote.get('state','SOURCE_UNAVAILABLE'),
+               f"{quote.get('total',0)} filas · {_local_time(quote.get('as_of'))}",
+               'green' if quote.get('state') in {'LIVE','CACHE_FRESH'} else 'yellow')
+        +_card('IOL familias',families.get('state','SOURCE_UNAVAILABLE'),
+               f"LKG {_local_time(families.get('last_known_good_at'))}",
+               'green' if families.get('state') in {'LIVE','CACHE_FRESH'} else 'yellow')
+        +"</div><table class='paper-table'><tr><th>Sección</th><th>Estado operativo</th>"
+         "<th>Estado de fuente</th><th>Dato observado</th></tr>"+section_rows+"</table>"
+        "<p class='paper-muted'>Estados válidos: LIVE, CACHE_FRESH, CACHE_STALE y SOURCE_UNAVAILABLE. "
+        "La caché last-known-good se identifica como caché; nunca se etiqueta LIVE.</p></section>"
+    )
+
 
 def learning_page():
     data=snapshot(); _pnl,wins,wr=_trade_metrics(data["closed"])
@@ -1634,7 +1715,7 @@ def learning_page():
         _card("Muestras cerradas",len(data["closed"]),"Etiquetas para aprendizaje","green" if data["closed"] else "gray"),
         _card("Último cierre PAPER",_local_time(latest_close),"Fuente que habilita una nueva etiqueta","gray"),
         _card("Última etiqueta",_local_time(latest_label),"Puede permanecer sin cambios si no hubo cierres nuevos","gray"),
-        _card("Win rate","s/d" if wr is None else f"{wr:.1f}%",f"{wins}/{len(data['closed'])}","green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),
+        _card("Win rate","s/d" if wr is None else f"{_locale_number(wr,1)}%",f"{wins}/{len(data['closed'])}","green" if wr is not None and wr>=50 else "red" if wr is not None else "gray"),
         *(_card(f"Resultado {item['currency']}", _amount(item["net_total"], item['currency']),
                 "Neto de costos y slippage PAPER en su propia moneda",
                 "green" if Decimal(item["net_total"])>0 else "red" if Decimal(item["net_total"])<0 else "gray")
@@ -1670,7 +1751,7 @@ def learning_page():
     body=(f"<h1>Aprendizaje del sistema</h1><div class='paper-grid'>{cards}</div>"
           "<div class='paper-notice'><b>Aprendizaje event-driven.</b> Cada compra simulada conserva señal, economía, riesgo, liquidez, resultado y lección. "
           "Sólo un nuevo cierre PAPER produce una nueva etiqueta; por eso una etiqueta antigua sin cierres posteriores no significa pipeline detenido. "
-          "La expectativa mostrada es descriptiva y neta sobre fills PAPER cerrados; no prueba ventaja futura, no bloquea operaciones y no cambia parámetros automáticamente.</div>" + _decision_evidence_panel() + counterfactual_panel
+          "La expectativa mostrada es descriptiva y neta sobre fills PAPER cerrados; no prueba ventaja futura, no bloquea operaciones y no cambia parámetros automáticamente.</div>" + _decision_evidence_panel() + _current_source_health_panel() + counterfactual_panel
           + "<div class='paper-card'><h2>Expectativa empírica por moneda — últimas 100 cerradas</h2>"
           "<table class='paper-table'><tr><th>Moneda</th><th>Muestras</th><th>Win rate</th><th>Ganancia media</th>"
           "<th>Pérdida media</th><th>Expectativa por operación</th><th>Profit factor</th><th>Estado muestral</th></tr>"
@@ -1724,10 +1805,10 @@ def financial_page():
     ipc_map={r['month']:r['value'] for r in ipc}
     compare="".join(f"<tr><td>{_e(r['month'])}</td><td>{_e(ipc_map.get(r['month'],'s/d'))}%</td><td class='{'positive' if _num(r['pnl'])>0 else 'negative' if _num(r['pnl'])<0 else 'neutral'}'>{_money(r['pnl'])} ARS</td><td>NO COMPARABLE: falta rentabilidad porcentual del período</td></tr>" for r in monthly) or "<tr><td colspan='4'>Aún no hay meses cerrados.</td></tr>"
     proxy = _porota_leaders_proxy()
-    proxy_value = "s/d" if proxy["average"] is None else f"{proxy['average']:+.2f}%"
-    median_value = "s/d" if proxy["average"] is None else f"{proxy['median']:+.2f}%"
+    proxy_value = "s/d" if proxy["average"] is None else ("+" if proxy["average"]>0 else "")+_locale_number(proxy['average'],2)+"%"
+    median_value = "s/d" if proxy["average"] is None else ("+" if proxy["median"]>0 else "")+_locale_number(proxy['median'],2)+"%"
     proxy_asof = f"Última muestra {_local_time(proxy['as_of'])}"
-    proxy_rows = "".join(f"<tr><td><b>{_e(r['symbol'])}</b></td><td class='{'positive' if r['return']>0 else 'negative' if r['return']<0 else 'neutral'}'>{r['return']:+.2f}%</td><td>{_local_time(r['as_of'])}</td></tr>" for r in proxy["returns"]) or "<tr><td colspan='3'>Esperando dos muestras de negocio por instrumento.</td></tr>"
+    proxy_rows = "".join(f"<tr><td><b>{_e(r['symbol'])}</b></td><td class='{'positive' if r['return']>0 else 'negative' if r['return']<0 else 'neutral'}'>{'+' if r['return']>0 else ''}{_locale_number(r['return'],2)}%</td><td>{_local_time(r['as_of'])}</td></tr>" for r in proxy["returns"]) or "<tr><td colspan='3'>Esperando dos muestras de negocio por instrumento.</td></tr>"
     pulse_state=('green' if proxy['average'] is not None and proxy['average']>0 else
                  'red' if proxy['average'] is not None and proxy['average']<0 else
                  'gray')
@@ -1839,9 +1920,9 @@ def sre_page(section="overview"):
         query_ms=_num(snap.get("db_query_ms"))
         integrity=snap.get("db_integrity","sin medición")
         cards="".join((
-            _card("SQLite + WAL",f"{db_mb:.2f} MB",f"WAL {wal_mb:.2f} MB","green" if integrity=="ok" else "red"),
+            _card("SQLite + WAL",f"{_locale_number(db_mb,2)} MB",f"WAL {_locale_number(wal_mb,2)} MB","green" if integrity=="ok" else "red"),
             _card("Integridad",integrity,"PRAGMA quick_check","green" if integrity=="ok" else "red"),
-            _card("Latencia consulta",f"{query_ms:.2f} ms","Objetivo menor a 250 ms","green" if query_ms<250 else "red"),
+            _card("Latencia consulta",f"{_locale_number(query_ms,2)} ms","Objetivo menor a 250 ms","green" if query_ms<250 else "red"),
         ))
         content=f"<h2>Base de datos</h2><div class='paper-grid'>{cards}</div><div class='paper-card'><p>Se listan todas las tablas. Para evitar bloquear SQLite durante rueda, sólo se muestran conteos ya persistidos por SRE.</p><table class='paper-table'><tr><th>Tabla</th><th>Filas</th><th>Esquema</th></tr>{rows}</table></div>"
     elif section=="performance":
@@ -1851,15 +1932,15 @@ def sre_page(section="overview"):
         failure_rate=failures/max(1,selected)
         memory_bytes=_num(snap.get("memory_rss_bytes"))
         cards="".join((
-            _card("Duración p95 del ciclo",f"{p95:.2f} s","Presupuesto: 75% del intervalo","green" if p95<REFRESH_SECONDS*.75 else "red"),
-            _card("Errores de instrumentos",f"{failures}/{selected}",f"{failure_rate*100:.1f}%","green" if failure_rate<.05 else "red"),
-            _card("Memoria observador",f"{memory_bytes/1048576:.1f} MB","Máximo residente","green" if memory_bytes<512*1048576 else "red"),
+            _card("Duración p95 del ciclo",f"{_locale_number(p95,2)} s","Presupuesto: 75% del intervalo","green" if p95<REFRESH_SECONDS*.75 else "red"),
+            _card("Errores de instrumentos",f"{failures}/{selected}",f"{_locale_number(failure_rate*100,1)}%","green" if failure_rate<.05 else "red"),
+            _card("Memoria observador",f"{_locale_number(memory_bytes/1048576,1)} MB","Máximo residente","green" if memory_bytes<512*1048576 else "red"),
         ))
         content=f"<h2>Performance</h2><div class='paper-grid'>{cards}</div>"
     elif section=="infrastructure":
         disk_free_gb=_num(snap.get("disk_free_bytes"))/1073741824
         cards="".join((
-            _card("Disco libre",f"{free_pct:.1f}%",f"{disk_free_gb:.2f} GB libres","green" if free_pct>=20 else "red"),
+            _card("Disco libre",f"{_locale_number(free_pct,1)}%",f"{_locale_number(disk_free_gb,2)} GB libres","green" if free_pct>=20 else "red"),
             _card("Dashboard","ACTIVO 24x7","Contenedor independiente y sin credenciales","green"),
             _card("Observador","AISLADO","Sólo lectura PPI; órdenes bloqueadas","green"),
         ))
@@ -1869,10 +1950,10 @@ def sre_page(section="overview"):
         integrity=snap.get("db_integrity","sin medición")
         query_ms=_num(snap.get("db_query_ms"),999)
         cards="".join((
-            _card("Base",integrity,f"{db_mb:.2f} MB","green" if integrity=="ok" else "red"),
+            _card("Base",integrity,f"{_locale_number(db_mb,2)} MB","green" if integrity=="ok" else "red"),
             _card("Último backup",_local_time(last_backup.get("created_at")),last_backup.get("restore_test","sin prueba"),"green" if last_backup.get("state")=="VERDE" else "red"),
-            _card("Disco libre",f"{free_pct:.1f}%","Alerta debajo de 20%","green" if free_pct>=20 else "red"),
-            _card("Consulta DB",f"{query_ms:.2f} ms","Performance persistida","green" if query_ms<250 else "red"),
+            _card("Disco libre",f"{_locale_number(free_pct,1)}%","Alerta debajo de 20%","green" if free_pct>=20 else "red"),
+            _card("Consulta DB",f"{_locale_number(query_ms,2)} ms","Performance persistida","green" if query_ms<250 else "red"),
         ))
         content=f"<h2>Resumen SRE</h2><div class='paper-grid'>{cards}</div>"
     return _document("SRE",f"<h1>SRE e infraestructura</h1>{nav}{content}",refresh=60)
@@ -1914,20 +1995,11 @@ def live_page(*, offset=0, limit=10):
     intents={r.get('paper_id'):r for r in data.get('exit_intents',[])}
 
     gates=[]
-    if _table('trade_gate_evaluations') and _table('financial_instrument_catalog'):
+    if _table('trade_gate_evaluations') and _table('candidate_identity_v2'):
         gates=live_policy.rows_for_today(_rows("""SELECT g.* FROM trade_gate_evaluations g
           WHERE EXISTS (
-              SELECT 1 FROM financial_instrument_catalog f
-              WHERE f.ticker=g.symbol AND f.status='AVAILABLE'
-                AND UPPER(f.instrument_type) IN ('ACCIONES','CEDEARS')
-          )
-          ORDER BY g.evaluated_at DESC,g.id DESC LIMIT 500"""),'evaluated_at',now=now)
-    elif _table('trade_gate_evaluations') and _table('candidate_universe'):
-        gates=live_policy.rows_for_today(_rows("""SELECT g.* FROM trade_gate_evaluations g
-          WHERE EXISTS (
-              SELECT 1 FROM candidate_universe u
-              WHERE u.ticker=g.symbol AND u.can_simulate=1
-                AND UPPER(u.instrument_type) IN ('ACCIONES','CEDEARS')
+              SELECT 1 FROM candidate_identity_v2 r
+              WHERE r.ticker=g.symbol AND r.can_simulate=1 AND upper(r.status)='AVAILABLE'
           )
           ORDER BY g.evaluated_at DESC,g.id DESC LIMIT 500"""),'evaluated_at',now=now)
     gate_by_paper={r.get('paper_id'):r for r in gates if r.get('paper_id')}
@@ -1946,7 +2018,7 @@ def live_page(*, offset=0, limit=10):
         features=_features(pos.get('features_json'))
         economics=features.get('economics') if isinstance(features.get('economics'),dict) else {}
         variables=''.join(f"<tr><td>{_e(k)}</td><td>{_e(v)}</td></tr>" for k,v in sorted(features.items()))
-        age_text='s/d' if age is None else f'{age:.1f} s'
+        age_text='s/d' if age is None else f'{_locale_number(age,1)} s'
         open_details.append(
             f"<details class='paper-trade'><summary data-trade-id='{_e(pos.get('paper_id'))}'>"
             f"{_e(pos.get('symbol'))} · {_e(pos.get('currency'))} · "
@@ -1991,27 +2063,14 @@ def live_page(*, offset=0, limit=10):
     # sólo existe después de una decisión BUY que alcanzó los gates. Un gate viejo
     # nunca debe ocultar HOLD/abstenciones nuevas del motor.
     decision_rows=[]
-    # Fail-closed también en presentación: decisiones históricas de familias
-    # retiradas no vuelven a aparecer aunque permanezcan auditables en SQLite.
-    if _table('paper_decisions') and _table('financial_instrument_catalog'):
+    # Fail-closed también en presentación: sólo identidades RUNTIME_READY.
+    if _table('paper_decisions') and _table('candidate_identity_v2'):
         decision_source = _rows(
             """SELECT d.decided_at,d.symbol,d.action,d.score,d.reason
                FROM paper_decisions d
                WHERE EXISTS (
-                   SELECT 1 FROM financial_instrument_catalog f
-                   WHERE f.ticker=d.symbol AND f.status='AVAILABLE'
-                     AND UPPER(f.instrument_type) IN ('ACCIONES','CEDEARS')
-               )
-               ORDER BY d.decided_at DESC LIMIT 500"""
-        )
-    elif _table('paper_decisions') and _table('candidate_universe'):
-        decision_source = _rows(
-            """SELECT d.decided_at,d.symbol,d.action,d.score,d.reason
-               FROM paper_decisions d
-               WHERE EXISTS (
-                   SELECT 1 FROM candidate_universe u
-                   WHERE u.ticker=d.symbol AND u.can_simulate=1
-                     AND UPPER(u.instrument_type) IN ('ACCIONES','CEDEARS')
+                   SELECT 1 FROM candidate_identity_v2 r
+                   WHERE r.ticker=d.symbol AND r.can_simulate=1 AND upper(r.status)='AVAILABLE'
                )
                ORDER BY d.decided_at DESC LIMIT 500"""
         )
@@ -2102,7 +2161,7 @@ def live_page(*, offset=0, limit=10):
         try: age=(now-aware_datetime(heartbeat).astimezone(TZ)).total_seconds()
         except (ValueError,TypeError): pass
         workers.append(f"<tr><td>{_e(label)}</td><td>{_status(row.get('state','NOT_STARTED'))}</td>"
-                       f"<td>{_local_time(heartbeat)}</td><td>{_e('s/d' if age is None else f'{age:.1f} s')}</td>"
+                       f"<td>{_local_time(heartbeat)}</td><td>{_e('s/d' if age is None else f'{_locale_number(age,1)} s')}</td>"
                        f"<td>{_e(row.get('detail'))}</td></tr>")
 
     cards=''.join((
@@ -2157,66 +2216,35 @@ def _paper_history_by_family(normalize_family):
 
 
 def _family_ux_snapshot(families):
-    from cp_contract_evidence_v2_hf6 import normalize_family
-    families=tuple(normalize_family(str(x).upper()) for x in families)
-    if not families:
+    requested=tuple(dashboard_truth_projection.normalize_family(x) for x in families)
+    if not requested:
         return []
-    coverage={normalize_family(r.get('instrument_type')):r for r in (_rows(
-        'SELECT * FROM catalog_family_coverage ORDER BY instrument_type')
-        if _table('catalog_family_coverage') else [])}
-    paper_history = _paper_history_by_family(normalize_family)
-
-    v2_counts={}
-    changed_counts={}
-    if _table('contract_evidence_v2_current'):
-        for r in _rows('SELECT family,COUNT(*) n,MAX(observed_at) observed_at FROM contract_evidence_v2_current GROUP BY family'):
-            key=normalize_family(r.get('family'))
-            item=v2_counts.setdefault(key,{'n':0,'observed_at':None})
-            item['n']+=int(r.get('n') or 0)
-            item['observed_at']=max(str(item.get('observed_at') or ''),str(r.get('observed_at') or '')) or None
-    if _table('contract_evidence_v2_changes'):
-        for r in _rows("SELECT family,COUNT(*) n FROM contract_evidence_v2_changes WHERE status='CHANGED_REVIEW_REQUIRED' GROUP BY family"):
-            key=normalize_family(r.get('family'))
-            changed_counts[key]=changed_counts.get(key,0)+int(r.get('n') or 0)
-
-    legacy={}
-    if _table('contract_evidence'):
-        for r in _rows('SELECT instrument_type,status,COUNT(*) n,MAX(checked_at) checked_at FROM contract_evidence GROUP BY instrument_type,status'):
-            key=normalize_family(r.get('instrument_type'))
-            item=legacy.setdefault(key,{'total':0,'verified':0,'blocked':0,'statuses':{},'checked_at':None})
-            n=int(r.get('n') or 0); status=str(r.get('status') or 'UNKNOWN')
-            item['total']+=n; item['statuses'][status]=item['statuses'].get(status,0)+n
-            if status=='VERIFIED_EXISTING_PAPER_CONTRACT': item['verified']+=n
-            else: item['blocked']+=n
-            item['checked_at']=max(str(item.get('checked_at') or ''),str(r.get('checked_at') or '')) or None
-
+    truth=truth_projection()
+    authority={item['family']:item for item in truth['readiness']['families']}
+    contracts={item['family']:item for item in truth['contract']['families']}
+    paper_history=_paper_history_by_family(dashboard_truth_projection.normalize_family)
     result=[]
-    for family in families:
-        row=coverage.get(family,{})
-        explicit_ready=int(row.get('ready_paper_count') or 0)
-        observed=int(row.get('observed_count') or 0)
-        v2=v2_counts.get(family,{})
-        old=legacy.get(family,{'total':0,'verified':0,'blocked':0,'statuses':{}})
-        changes=changed_counts.get(family,0)
-        historical=paper_history.get(family,{})
-        state='READY_PAPER' if explicit_ready>0 else 'HOLD'
-        blockers=sorted(old.get('statuses',{}).items(),key=lambda kv:(-kv[1],kv[0]))
-        blockers=[(k,v) for k,v in blockers if k!='VERIFIED_EXISTING_PAPER_CONTRACT'][:3]
+    for family in requested:
+        item=authority.get(family,{})
+        contract=contracts.get(family,{})
+        ready=int(item.get('runtime_ready') or 0)
+        total=int(item.get('candidate_total') or 0)
+        paused=int(item.get('paused_explicit') or 0)
         result.append({
             'family':family,
-            'label':FAMILY_LABELS.get(family,family),
-            'state':state,
-            'observed':observed,
-            'ready':explicit_ready,
-            'discovery':row.get('discovery_status','SIN_REGISTRO'),
-            'evidence_legacy':int(old.get('total') or 0),
-            'evidence_v2':int(v2.get('n') or 0),
-            'verified':int(old.get('verified') or 0),
-            'blocked':int(old.get('blocked') or 0),
-            'evidence_at':v2.get('observed_at') or old.get('checked_at'),
-            'changed':changes,
-            'blockers':blockers,
-            'paper_history':historical,
+            'label':FAMILY_LABELS.get(family) or (FAMILY_LABELS.get('ON') if family=='OBLIGACIONES' else family) or family,
+            'state':item.get('state','NO_VERIFICADO'),
+            'observed':int(item.get('catalog_total') or 0),
+            'catalog_available':int(item.get('catalog_available') or 0),
+            'candidate_total':total,
+            'ready':ready,
+            'paused':paused,
+            'evidence_v2':int(contract.get('evidence_rows') or 0),
+            'contract_identities':int(contract.get('identities') or 0),
+            'contract_sources':int(contract.get('sources') or 0),
+            'evidence_at':contract.get('as_of'),
+            'readiness_at':item.get('readiness_as_of'),
+            'paper_history':paper_history.get(family,{}),
         })
     return result
 
@@ -2224,21 +2252,21 @@ def _family_ux_snapshot(families):
 def _family_ux_table(families):
     rows=[]
     for item in _family_ux_snapshot(families):
-        blocker_text=' · '.join(f'{k}={v}' for k,v in item.get('blockers',[])) or ('Sin bloqueos legacy' if item['verified'] else 'Sin clasificación suficiente')
         history=item.get('paper_history') or {}
         history_label=(f"{history.get('positions',0)} posiciones históricas · "
                        f"última {_local_time(history.get('last_seen'))}"
                        if history.get('positions') else 'Sin historial PAPER')
-        detail=('READY_PAPER explícito en catálogo/runtime' if item['ready'] else
-                'Visible/observada; HOLD hasta contrato + costo + sizing + simulador + tests + evidencia fresca')
-        evidence_label=f"legacy {item['evidence_legacy']} · v2 {item['evidence_v2']}"
+        detail=('RUNTIME_READY desde candidate_identity_v2' if item['ready'] else
+                'PAUSED_EXPLICIT según candidate_identity_v2; revisar detalle por instrumento')
+        evidence_label=(f"{_locale_number(item['contract_identities'],0)} identidades · "
+                        f"{_locale_number(item['evidence_v2'],0)} filas · {_locale_number(item['contract_sources'],0)} fuentes")
         rows.append(
             f"<tr><td><b>{_e(item['label'])}</b></td><td>{_status(item['state'])}</td>"
-            f"<td>{_e(item['observed'])}</td><td>{_e(evidence_label)}</td>"
-            f"<td>{_e(item['verified'])}</td><td>{_e(item['ready'])}</td>"
-            f"<td>{_e(history_label)}</td><td>{_e(item['blocked'])}</td><td>{_e(item['changed'])}</td>"
-            f"<td>{_e(blocker_text)}</td><td>{_e(detail)}</td></tr>")
-    return ''.join(rows) or "<tr><td colspan='11'>Sin evidencia para este grupo.</td></tr>"
+            f"<td>{_locale_number(item['catalog_available'],0)}/{_locale_number(item['observed'],0)}</td>"
+            f"<td>{_e(evidence_label)}</td><td>{_locale_number(item['ready'],0)}/{_locale_number(item['candidate_total'],0)}</td>"
+            f"<td>{_locale_number(item['paused'],0)}</td><td>{_e(history_label)}</td>"
+            f"<td>{_local_time(item.get('readiness_at'))}</td><td>{_e(detail)}</td></tr>")
+    return ''.join(rows) or "<tr><td colspan='9'>Sin evidencia para este grupo.</td></tr>"
 
 
 
@@ -2254,8 +2282,7 @@ def _trading_motor_summary():
     now = datetime.now(TZ)
     positions = _rows("SELECT * FROM paper_positions ORDER BY COALESCE(closed_at, opened_at) DESC LIMIT 1000") if _table("paper_positions") else []
     positions = [row for row in positions
-        if str(row.get("asset_class") or "").upper() in {"ACCIONES", "ACCION", "CEDEARS", "CEDEAR"}
-        and any(_local_day_for_dashboard(row.get(field)) == now.date() for field in ("opened_at", "closed_at"))]
+        if any(_local_day_for_dashboard(row.get(field)) == now.date() for field in ("opened_at", "closed_at"))]
     open_count = sum(str(row.get("status")) == "OPEN" for row in positions)
     closed_count = sum(str(row.get("status")) == "CLOSED" for row in positions)
     position_rows = "".join(
@@ -2263,26 +2290,14 @@ def _trading_motor_summary():
         f"<td>{_e(row.get('asset_class'))}</td><td>{_status(row.get('status'))}</td>"
         f"<td>{_e(row.get('close_reason') or '—')}</td><td>{_amount(row.get('net_pnl'), row.get('currency')) if row.get('net_pnl') is not None else '—'}</td></tr>"
         for row in positions
-    ) or "<tr><td colspan='6'>Sin operaciones PAPER de acciones o CEDEARs registradas.</td></tr>"
-    if _table("trade_gate_evaluations") and _table("financial_instrument_catalog"):
+    ) or "<tr><td colspan='6'>Sin operaciones PAPER registradas hoy.</td></tr>"
+    if _table("trade_gate_evaluations") and _table("candidate_identity_v2"):
         gates = _rows(
             """SELECT g.evaluated_at,g.symbol,g.final_result,g.reason
                FROM trade_gate_evaluations g
                WHERE EXISTS (
-                   SELECT 1 FROM financial_instrument_catalog f
-                   WHERE f.ticker=g.symbol AND f.status='AVAILABLE'
-                     AND UPPER(f.instrument_type) IN ('ACCIONES','CEDEARS')
-               )
-               ORDER BY g.evaluated_at DESC LIMIT 500"""
-        )
-    elif _table("trade_gate_evaluations") and _table("candidate_universe"):
-        gates = _rows(
-            """SELECT g.evaluated_at,g.symbol,g.final_result,g.reason
-               FROM trade_gate_evaluations g
-               WHERE EXISTS (
-                   SELECT 1 FROM candidate_universe u
-                   WHERE u.ticker=g.symbol AND u.can_simulate=1
-                     AND UPPER(u.instrument_type) IN ('ACCIONES','CEDEARS')
+                   SELECT 1 FROM candidate_identity_v2 r
+                   WHERE r.ticker=g.symbol AND r.can_simulate=1 AND upper(r.status)='AVAILABLE'
                )
                ORDER BY g.evaluated_at DESC LIMIT 500"""
         )
@@ -2346,13 +2361,48 @@ def _trading_motor_summary():
     )
     return (
         "<div class='paper-card'><h2>Motor de trading — actividad de hoy</h2>"
-        f"<p><b>{open_count}</b> abiertas · <b>{closed_count}</b> cerradas hoy. Sólo acciones y CEDEARs.</p>"
+        f"<p><b>{open_count}</b> abiertas · <b>{closed_count}</b> cerradas hoy, en todas las familias con actividad PAPER persistida.</p>"
         "<table class='paper-table'><tr><th>Apertura</th><th>Instrumento</th><th>Familia</th>"
         "<th>Estado</th><th>Salida</th><th>PnL</th></tr>" + position_rows + "</table>" + more_positions
         + "<h3>Decisiones de hoy</h3><table class='paper-table'><tr><th>Hora</th>"
         "<th>Instrumento</th><th>Resultado</th><th>Explicación</th></tr>" + gate_rows + "</table>" + more_gates + gdelt_html + macro_html +
         "<p class='paper-muted'>El detalle forense completo sigue disponible en Motor de trading; "
         "esta tabla evita cargar masivamente operaciones, fills o históricos al abrir Trading.</p></div>"
+    )
+
+
+def _caucion_truth_panel():
+    """Real, persisted state of the PAPER placing/cash-sweep path."""
+    caucion=truth_projection()['caucion']
+    source=caucion.get('iol_source') or {}
+    hold_code=str(caucion.get('hold_reason') or 'NO_ATTEMPT_RECORDED')
+    hold_label=_allocation_reason(hold_code)
+    def amount(value):
+        return _amount(value,'ARS') if value not in (None,'') else 'NO_VERIFICADO'
+    return (
+        "<section class='paper-card' id='caucion-paper-truth'><h2>Caución colocadora PAPER / EOD</h2>"
+        "<p class='paper-muted'>Estado de ledger, asignador y tesorería persistidos. No es un contrato real ni usa garantía como requisito genérico de la colocadora.</p>"
+        "<div class='paper-grid'>"
+        +_card('Fuente IOL',source.get('state','SOURCE_UNAVAILABLE'),
+               f"source state {source.get('raw_source_state','—')} · {_local_time(source.get('as_of'))}",
+               'green' if source.get('state') in {'LIVE','CACHE_FRESH'} else 'yellow')
+        +_card('Ledger PAPER',caucion.get('ledger_state'),
+               f"{caucion.get('open',0)} abiertas · {caucion.get('settled',0)} liquidadas",'green' if caucion.get('ledger_state')=='AVAILABLE' else 'yellow')
+        +_card('Último resultado',caucion.get('allocation_status'),
+               hold_label,'green' if caucion.get('allocation_status')=='PLACED_SIMULATED' else 'yellow')
+        +_card('Policy PAPER',caucion.get('paper_policy','PAPER_COLOCADORA'),
+               'Simulación colocadora; no contrato real','gray')
+        +_card('Próxima liquidez',_local_time(caucion.get('next_liquidity') or caucion.get('next_maturity')),
+               f"último intento {_local_time(caucion.get('last_attempt'))}",'gray')
+        +_card('Vencimiento ledger',_local_time(caucion.get('next_maturity')),
+               'Más próximo entre cauciones PAPER abiertas','gray')
+        +"</div><table class='paper-table'><tr><th>Ventana</th><th>Tasa seleccionada</th><th>Mínimo comercial</th>"
+        "<th>Caja libre</th><th>Reserva</th><th>Sweep budget</th><th>Candidato</th></tr>"
+        f"<tr><td>{_e(caucion.get('window'))}</td><td>{_e(caucion.get('selected_rate') or 'NO_VERIFICADO')}</td>"
+        f"<td>{_e(caucion.get('commercial_minimum'))}</td><td>{_e(amount(caucion.get('free_cash')))}</td>"
+        f"<td>{_e(amount(caucion.get('reserve')))}</td><td>{_e(amount(caucion.get('sweep_budget')))}</td>"
+        f"<td>{_e(caucion.get('selected_candidate') or 'NINGUNO')}</td></tr></table>"
+        "<p class='paper-notice' title='"+_e(hold_code)+"'><b>HOLD:</b> "+_e(hold_label)+". Los campos no publicados se muestran NO_VERIFICADO; no se completan por inferencia.</p></section>"
     )
 
 def trading_page(section=''):
@@ -2364,8 +2414,8 @@ def trading_page(section=''):
                   "<div class='paper-warning'><b>Scalping PAPER/SHADOW en observación.</b> "
                   "La ruta está disponible y muestra el estado del scanner; mientras la evidencia "
                   "intradiaria esté STALE o incompleta no se habilitan candidatos ni fills operativos.</div>"
-                  "<div class='paper-card'><h2>Estrategia activa</h2>"
-                  "<p>El motor PAPER evalúa posiciones de acciones y CEDEARs. Las velas e "
+                  "<div class='paper-card'><h2>Estado de estrategia</h2>"
+                  "<p>El motor PAPER sólo evalúa una identidad cuando además de RUNTIME_READY cumple los gates de la estrategia. Las velas e "
                   "históricos generan señales en <b>SHADOW</b>; Riesgo, costos, liquidación, "
                   "take-profit, End of Day y Max Hold quedan registrados como portones explicables."
                   "</p></div>")
@@ -2383,17 +2433,17 @@ def trading_page(section=''):
               "<div class='paper-notice'>Una familia visible puede seguir HOLD. Descubrimiento, histórico y evidencia contractual "
               "no equivalen por sí solos a READY PAPER. Historial PAPER y readiness actual se muestran separados. Cadena: PPI primario → IOL read-only → BYMA scraping; A3/ROFEX API para derivados.</div>"
               "<div class='paper-card'><table class='paper-table'><tr><th>Familia</th><th>Readiness</th>"
-              "<th>Observadas</th><th>Evidencias</th><th>Verificadas</th><th>READY PAPER</th>"
-              "<th>Historial PAPER</th><th>Bloqueadas/pendientes</th><th>Cambios v2</th><th>Principales bloqueos</th>"
-              f"<th>Interpretación</th></tr>{table}</table></div>")
+              "<th>Catálogo disponible/total</th><th>Evidence v2</th><th>RUNTIME_READY</th>"
+              "<th>PAUSED_EXPLICIT</th><th>Historial PAPER</th><th>Actualizado</th>"
+              f"<th>Interpretación</th></tr>{table}</table></div>"+
+              (_caucion_truth_panel() if 'CAUCIONES' in tuple(dashboard_truth_projection.normalize_family(x) for x in families) else ""))
         return _document('Trading — '+title,body,refresh=30)
 
     if section:
-        body=("<h1>Trading — familia no operativa</h1>"+subnav+
-              "<div class='paper-warning'><b>DESACTIVADO POR ALCANCE:</b> "
-              "por ahora el motor sólo analiza y opera PAPER sobre acciones y CEDEARs. "
-              "La ruta se conserva para enlaces anteriores, sin ejecutar ingestión ni decisiones.</div>")
-        return _document('Trading — fuera de alcance',body,refresh=60)
+        body=("<h1>Trading — ruta no reconocida</h1>"+subnav+
+              "<div class='paper-warning'><b>NO_VERIFICADO:</b> la sección solicitada no pertenece al catálogo de vistas. "
+              "Esto no cambia la readiness de ningún instrumento.</div>")
+        return _document('Trading — ruta no reconocida',body,refresh=60)
 
     cards=[]
     for group,all_families in FAMILY_GROUPS.items():
@@ -2403,13 +2453,13 @@ def trading_page(section=''):
         snap=_family_ux_snapshot(families)
         ready=sum(x['ready'] for x in snap)
         observed=sum(x['observed'] for x in snap)
-        evidence_legacy=sum(x['evidence_legacy'] for x in snap)
         evidence_v2=sum(x['evidence_v2'] for x in snap)
-        verified=sum(x['verified'] for x in snap)
+        candidate_total=sum(x['candidate_total'] for x in snap)
+        paused=sum(x['paused'] for x in snap)
         cards.append(
             f"<a class='paper-card' style='text-decoration:none;color:inherit' href='/trading/{_e(group)}'>"
             f"<h2>{_e(group.replace('-',' ').title())}</h2><b class='metric'>{ready} READY PAPER</b>"
-            f"<p class='paper-muted'>{observed} observadas · legacy {evidence_legacy} · v2 {evidence_v2} · {verified} verificadas</p></a>")
+            f"<p class='paper-muted'>{ready}/{candidate_total} runtime · {observed} catálogo · Evidence v2 {evidence_v2} · {paused} PAUSED_EXPLICIT</p></a>")
     body=("<h1>Trading</h1>"+subnav+
           "<div class='paper-notice'>PPI es la fuente live primaria. A3/CEM/Data912 no agregan latencia al camino de decisión. "
           "Los datos background enriquecen contratos/históricos y nunca habilitan una familia por sí solos.</div>"
@@ -2430,109 +2480,45 @@ def trading_page(section=''):
           "<p>El detalle histórico y actual convive en esta sección; la URL anterior se mantiene "
           "sólo por compatibilidad.</p>"
           "<a class='paper-action' href='/motor-trading'>Abrir detalle y auditoría del motor</a></div>"
-          "<div class='paper-warning'><b>Alcance actual:</b> acciones y CEDEARs. "
-          "Bonos, cauciones, opciones, futuros, FCI y licitaciones no se procesan ni consumen "
-          "ciclo de decisión.</div>")
+          "<div class='paper-notice'><b>Estados separados:</b> OBSERVED → AVAILABLE_PPI → CONTRACT_READY → "
+          "RUNTIME_READY → STRATEGY_ELIGIBLE → ACTIVE_PAPER. Una identidad READY que no participa de una "
+          "estrategia no se presenta como deshabilitada.</div>")
     return _document('Trading',body,refresh=30)
 
 
 
 def _instrument_readiness_matrix():
-    """Matriz factual por instrumento; solo usa catálogo y evidencia persistida."""
-    try:
-        import rc6_family_readiness as readiness
-        import iol_shadow_observation_rc6 as iol_observation
-    except Exception as exc:
-        return (
-            "<div class='paper-warning'>Matriz no disponible: "
-            f"{_e(type(exc).__name__)}</div>"
-        )
-    if not _table("financial_instrument_catalog"):
-        return "<div class='paper-warning'>No existe el catálogo financiero verificable.</div>"
-    catalog_raw = _rows(
-        """SELECT * FROM financial_instrument_catalog
-           WHERE status='AVAILABLE'
-             AND UPPER(instrument_type) IN ('ACCIONES','CEDEARS')
-           ORDER BY ticker LIMIT 1000"""
-    )
-    catalog = []
-    for row in catalog_raw:
-        catalog.append({
-            "symbol": row.get("ticker") or row.get("symbol"),
-            "family": row.get("instrument_type"),
-            "market": row.get("market"),
-            "settlement": row.get("settlement") or row.get("term"),
-            "currency": row.get("currency"),
-            "catalog_status": row.get("status"),
-            "capability": row.get("capability"),
-        })
-    try:
-        observed_payload = iol_observation.collect()
-        observed = observed_payload.get("symbols", []) if isinstance(observed_payload, dict) else observed_payload
-    except Exception as exc:
-        observed = []
-        observation_error = type(exc).__name__
-    else:
-        observation_error = ""
-    observed = [dict(row) for row in observed if isinstance(row, dict)]
-    evaluated = readiness.evaluate(catalog, observed)
-    by_symbol = {str(row.get("symbol") or "").upper(): row
-                 for row in evaluated.get("instruments", [])}
-    iol_by_symbol = {str(row.get("symbol") or "").upper(): row for row in observed}
-    rows = []
-    for item in catalog:
-        symbol = str(item.get("symbol") or "").upper()
-        decision = by_symbol.get(symbol, {})
-        source = iol_by_symbol.get(symbol, {})
-        comparison = decision.get("comparison") if isinstance(decision.get("comparison"), dict) else {}
-        fields = comparison.get("fields") if isinstance(comparison.get("fields"), dict) else {}
-        def field_state(name):
-            detail = fields.get(name)
-            if not isinstance(detail, dict):
-                return "SIN_EVIDENCIA"
-            return str(detail.get("state") or "SIN_EVIDENCIA")
-        checked = ", ".join(
-            f"{name}={field_state(name)}" for name in ("last", "bid", "ask", "variation_pct", "cash_volume")
-        )
-        reasons = decision.get("reasons") or ["SIN_EVIDENCIA_DE_RECONCILIACION"]
-        gaps = " · ".join(str(reason) for reason in reasons)
-        quote = source.get("quote") if isinstance(source.get("quote"), dict) else source
-        observed_at = (quote or {}).get("provider_observed_at") or (quote or {}).get("observed_at")
-        ready = decision.get("contract_state") or "INSUFFICIENT_EVIDENCE"
+    """Full-key projection: catalog, Evidence v2 and runtime readiness stay distinct."""
+    items=dashboard_truth_projection.instrument_rows(_rows,_table,limit=50000)
+    rows=[]
+    for index,item in enumerate(items):
+        hidden=" hidden aria-hidden='true'" if index>=10 else " aria-hidden='false'"
         rows.append(
-            "<tr>"
-            f"<td><b>{_e(symbol)}</b></td>"
-            f"<td>{_e(item.get('family'))}</td>"
-            f"<td>{_e(item.get('market') or 'SIN_DATO')} · {_e(item.get('settlement') or 'SIN_DATO')} · {_e(item.get('currency') or 'SIN_DATO')}</td>"
-            f"<td>{_e(item.get('catalog_status') or 'SIN_DATO')} · {_e(item.get('capability') or 'SIN_DATO')}</td>"
-            f"<td>{_e(ready)}</td>"
-            f"<td data-wrap='true'>{_e(checked)}</td>"
-            f"<td data-wrap='true'>{_e(gaps)}</td>"
-            f"<td data-wrap='true'>{_e(observed_at or 'SIN_TIMESTAMP')}</td>"
-            "</tr>"
+            f"<tr data-porota-record='1'{hidden}>"
+            f"<td><b>{_e(item.get('ticker'))}</b></td><td>{_e(item.get('family'))}</td>"
+            f"<td>{_e(item.get('market'))} · {_e(item.get('settlement'))} · {_e(item.get('currency'))}</td>"
+            f"<td>{_e(item.get('catalog_status'))} · {_e(item.get('catalog_capability'))}</td>"
+            f"<td>{_status(item.get('ui_state'))}</td>"
+            f"<td>{_e(item.get('contract_sources'))} fuente(s) · {_local_time(item.get('contract_as_of'))}</td>"
+            f"<td data-wrap='true'>{_e(item.get('readiness_detail'))}</td>"
+            f"<td>{_local_time(item.get('readiness_as_of'))}</td></tr>"
         )
     if not rows:
-        return "<div class='paper-warning'>El catálogo no contiene instrumentos operativos verificables.</div>"
-    note = (
-        "READY aquí significa promoción PAPER/SHADOW; las órdenes reales siguen bloqueadas."
-        " Los faltantes son los motivos publicados por la reconciliación PPI primaria/IOL complementaria."
-    )
-    if observation_error:
-        note += f" Error al leer la observación IOL: {observation_error}."
+        return "<div class='paper-warning'>Catálogo o candidate_identity_v2 no disponible; estado NO_VERIFICADO.</div>"
     return (
-        "<div class='paper-card'>"
-        "<h2>Matriz por instrumento: contrato y faltantes para READY</h2>"
-        f"<p class='paper-muted'>{_e(note)}</p>"
-        "<table class='paper-table' data-porota-force-compact='1'>"
-        "<tr><th>Instrumento</th><th>Familia</th><th>Mercado · plazo · moneda</th>"
-        "<th>Catálogo PPI</th><th>Readiness</th><th>Campos comparados</th>"
-        "<th>Faltantes/bloqueos</th><th>Timestamp evidencia</th></tr>"
-        + "".join(rows) + "</table></div>"
+        "<div class='paper-card'><h2>Matriz por instrumento</h2>"
+        "<p class='paper-muted'>Catálogo = financial_instrument_catalog. Contrato = Evidence v2. "
+        "RUNTIME_READY = candidate_identity_v2. IOL complementa y su ausencia no reinterpreta READY.</p>"
+        "<div data-porota-progressive-list='1' data-page-size='10'>"
+        "<table class='paper-table' data-porota-force-compact='1'><tr><th>Instrumento</th>"
+        "<th>Familia</th><th>Mercado · plazo · moneda</th><th>Catálogo PPI</th>"
+        "<th>Readiness runtime</th><th>Evidence v2</th><th>Detalle</th><th>Actualizado</th></tr>"
+        + "".join(rows) + "</table></div></div>"
     )
 
 
 def instruments_page():
-    families=families_for_group("acciones-cedears")
+    families=tuple(item['family'] for item in truth_projection()['readiness']['families'])
     table=_family_ux_table(families)
     matrix=_instrument_readiness_matrix()
     body=("<h1>Instrumentos y contratos</h1>"
@@ -2540,8 +2526,8 @@ def instruments_page():
           "PPI es la fuente primaria; IOL solo complementa y valida en modo read-only. "
           "La matriz no autoriza dinero real.</div>"
           "<div class='paper-card'><table class='paper-table' data-porota-force-compact='1'><tr><th>Familia</th><th>Readiness</th>"
-          "<th>Observadas</th><th>Evidencias</th><th>Verificadas</th><th>READY PAPER</th>"
-          "<th>Historial PAPER</th><th>Bloqueadas/pendientes</th><th>Cambios v2</th><th>Principales bloqueos</th>"
+          "<th>Catálogo disponible/total</th><th>Evidence v2</th><th>RUNTIME_READY</th>"
+          "<th>PAUSED_EXPLICIT</th><th>Historial PAPER</th><th>Actualizado</th>"
           "<th>Interpretación</th></tr>"+table+"</table></div>"
           +matrix)
     return _document('Instrumentos y contratos',body,refresh=60)
@@ -2680,6 +2666,8 @@ def introspection_content():
     warnings = report.get("warnings", [])
     anomalies = report.get("anomalies", [])
     verdict = report.get("verdict", "UNKNOWN")
+    canonical_truth=truth_projection()
+    canonical_ready=canonical_truth['readiness']
     cards = "".join((
         _card("Dictamen", verdict, report.get("timestamp", "sin fecha"),
               "red" if verdict=="CRITICAL" else "yellow" if verdict=="WARN" else "green" if verdict=="OK" else "gray"),
@@ -2698,9 +2686,9 @@ def introspection_content():
         _card("GitHub observabilidad", publication.get("status", "SIN_REGISTRO"),
               f"Última confirmación {_local_time(publication.get('recorded_at'))} · retención {publication.get('retention_days',90)} días",
               "green" if publication.get("status") in {"PUBLISHED", "UNCHANGED"} else "red"),
-        _card("Alcance operativo", "ACCIONES Y CEDEARs",
-              "Bonos, cauciones, opciones, futuros, FCI y licitaciones están desactivados; no consumen ciclo del motor.",
-              "green"),
+        _card("RUNTIME_READY", canonical_ready.get('ready',0),
+              f"{len(canonical_ready.get('families',[]))} familias · candidate_identity_v2",
+              "green" if canonical_ready.get('ready') else "yellow"),
         _card("Régimen observado", regime.get("state", "SIN_DATOS"),
               f"Suben {regime.get('rising',0)} · bajan {regime.get('falling',0)} · política ALERT_ONLY",
               "yellow" if regime.get("state")=="BEARISH_BREADTH" else "gray"),
@@ -2730,11 +2718,10 @@ def introspection_content():
     caucion_missing_offer = ", ".join(cauciones.get("missing_offer_requirements") or []) or "ninguno"
     caucion_missing_policy = ", ".join(cauciones.get("missing_policy_requirements") or []) or "ninguno"
     family_rows = "".join(
-        f"<tr><td>{_e(row.get('instrument_type'))}</td><td>{_e(row.get('observed_count'))}</td>"
-        f"<td>{_e(row.get('ready_paper_count'))}</td><td>{_status(row.get('discovery_status'))}</td>"
-        f"<td>{_e(', '.join(str(item.get('capability'))+'='+str(item.get('count')) for item in row.get('capabilities',[])) or 'sin capacidad observada')}</td>"
-        f"<td>{_e('NO' if row.get('excluded_by_default') is False else 'DESCONOCIDO')}</td></tr>"
-        for row in report.get("family_readiness",[])) or "<tr><td colspan='6'>Sin inventario contractual.</td></tr>"
+        f"<tr><td>{_e(row.get('family'))}</td><td>{_e(row.get('catalog_available'))}</td>"
+        f"<td>{_e(row.get('runtime_ready'))}</td><td>{_status(row.get('state'))}</td>"
+        f"<td>{_e(row.get('paused_explicit'))}</td><td>{_local_time(row.get('readiness_as_of'))}</td></tr>"
+        for row in canonical_ready.get('families',[])) or "<tr><td colspan='6'>candidate_identity_v2 no disponible.</td></tr>"
     freshness_note=("<div class='paper-warning'><b>Snapshot de introspección no vigente:</b> "
                     f"{_e(snapshot_freshness)} · edad {_e('s/d' if snapshot_age is None else f'{snapshot_age:.0f} s')}. "
                     "El estado del motor mostrado arriba se reconcilió con observer_state vivo.</div>"
@@ -2754,6 +2741,12 @@ def introspection_content():
             f"{ppi_rows}</table></div>"
             "<div class='paper-card'><h2>Embudo por moneda</h2><table class='paper-table'><tr><th>Moneda</th><th>Símbolos observados</th><th>Última observación</th></tr>"
             f"{currency_rows}</table></div>"
+            "<div class='paper-card'><h2>RUNTIME_READY por familia</h2>"
+            "<p class='paper-muted'>Fuente exclusiva: candidate_identity_v2. Catálogo e histórico no gobiernan estos valores.</p>"
+            "<table class='paper-table'><tr><th>Familia</th><th>Catálogo disponible</th><th>READY</th>"
+            "<th>Estado</th><th>PAUSED_EXPLICIT</th><th>Actualizado</th></tr>"
+            f"{family_rows}</table></div>"
+            f"{_caucion_truth_panel()}"
 )
 
 
@@ -2962,9 +2955,9 @@ def system_page(section="introspeccion"):
         section = "introspeccion"
     if requested_section == "scraping":
         content = ("<h1>Scraping / evidencia contractual</h1>"
-                   "<div class='paper-warning'><b>DESACTIVADO POR ALCANCE.</b> "
-                   "No hay scraping activo ni reintentos contractuales. El perfil Chrome confiable "
-                   "se conserva sin abrirse.</div>")
+                   "<div class='paper-notice'><b>Contrato actual: Evidence v2.</b> "
+                   "Esta superficie es de solo lectura y no inicia scraping ni reintentos. "
+                   "La ausencia de un colector activo no altera el catálogo ni RUNTIME_READY.</div>")
     elif section == "introspeccion":
         content = introspection_content()
     elif section == "salud":
@@ -3021,7 +3014,7 @@ def logs_page():
     cards=[]
     actions=[]
     for source in sources:
-        size=f"{source.size_bytes/1024:.1f} KB"
+        size=f"{_locale_number(source.size_bytes/1024,1)} KB"
         cards.append(_card(source.label,size,str(source.path),'green'))
         actions.append(f"<a class='paper-action' href='/api/logs/current?source={_e(source.source_id)}'>Descargar {_e(source.label)}</a>")
     if chosen:

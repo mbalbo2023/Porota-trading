@@ -76,7 +76,7 @@ def test_live_html_keeps_all_30_decisions_and_25_closures_reachable(monkeypatch)
     monkeypatch.setattr(
         dashboard,
         "_table",
-        lambda name, path=None: name in {"paper_decisions", "financial_instrument_catalog"},
+        lambda name, path=None: name in {"paper_decisions", "candidate_identity_v2"},
     )
 
     def fake_rows(sql, params=(), path=None):

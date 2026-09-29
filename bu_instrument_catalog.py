@@ -488,6 +488,24 @@ def sync_candidate_universe(connection, checked_at, *,
         grouped.setdefault((ticker, family, market), []).append(row)
     retry_ambiguities = _candidate_retry_ambiguities(connection)
 
+    def explicit_projection(family, reasons, fallback_status, detail):
+        """Classify WS15 residual families without a generic pending bucket."""
+        family = str(family or "").upper()
+        if not reasons:
+            return "AVAILABLE", detail
+        ambiguous = any("AMBIG" in str(reason).upper() for reason in reasons)
+        if family == "OPCIONES":
+            code = "OPTION_CONTRACT_UNRESOLVED"
+        elif family == "FUTUROS":
+            code = "FUTURES_CONTRACT_OR_PAPER_MARGIN_UNRESOLVED"
+        elif family in {"ON", "OBLIGACIONES"}:
+            code = ("ON_IDENTITY_AMBIGUOUS" if ambiguous
+                    else "ON_CONTRACT_UNRESOLVED")
+        else:
+            return str(fallback_status or "STALE"), detail
+        rendered = ";".join(str(reason) for reason in reasons)
+        return "PAUSED_EXPLICIT", "PAUSED_EXPLICIT:" + code + ";" + rendered
+
     def identity_reasons(row):
         identity_key = tuple(str(value or "").strip().upper()
                              for value in row[:5])
@@ -532,9 +550,11 @@ def sync_candidate_universe(connection, checked_at, *,
         ready = not reasons
         detail = (str(capability) if ready or not str(capability or "").startswith("READY_PAPER_")
                   else ";".join(reasons))
+        projected_status, detail = explicit_projection(
+            family, reasons, status, detail)
         projected.append((
             ticker, family, str(settlement or "NO_VERIFICADO"), market,
-            int(ready), str(status or "STALE"), detail, checked_at,
+            int(ready), projected_status, detail, checked_at,
         ))
 
     # DELETE + INSERT runs inside the caller's transaction.  Removed/reclassified
@@ -555,7 +575,10 @@ def sync_candidate_universe(connection, checked_at, *,
     for row in rows:
         key = tuple(row[:5])
         reasons = identity_reasons(row)
-        full.append((*key,int(not reasons),row[6],";".join(reasons) or row[7],checked_at))
+        base_detail = ";".join(reasons) or row[7]
+        projected_status, detail = explicit_projection(
+            row[1], reasons, row[6], base_detail)
+        full.append((*key,int(not reasons),projected_status,detail,checked_at))
     connection.execute("DELETE FROM candidate_identity_v2")
     connection.executemany("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",full)
 

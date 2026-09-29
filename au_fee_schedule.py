@@ -53,6 +53,14 @@ logger = logging.getLogger("fee_schedule")
 
 IVA_PCT = float(os.getenv("IVA_PCT", "0.21"))
 
+# Provenance token used by PAPER-only caucion policies.  This is deliberately
+# not a broker quote: it names the versioned commercial tariff and market-right
+# verification already documented above.  Automatic simulation may use this
+# model for ARS only; foreign-currency cauciones still require an exact quote.
+CAUCION_PAPER_FEE_AUTHORITY = (
+    "PPI_TARIFF_EFFECTIVE_2026-07-01+BYMA_RIGHTS_VERIFIED_2026-08-21"
+)
+
 
 @dataclass(frozen=True)
 class Arancel:

@@ -71,7 +71,7 @@ def test_modificar_un_minuto_cerrado_frena_el_contrato(store):
     assert result["state"] == "REJECTED_MUTABLE_CLOSED_POINTS"
 
 
-def test_rotacion_no_excluye_familias_ni_mercados(store):
+def test_rotacion_usa_solo_spot_ready_y_excluye_derivados(store):
     rows = [
         record(),
         record(ticker="AAPLD",instrument_type="CEDEARS",currency="USD_MEP"),
@@ -79,15 +79,27 @@ def test_rotacion_no_excluye_familias_ni_mercados(store):
                currency="USD",settlement="INMEDIATA",capability="NEEDS_FUTURES_MARGIN_AND_CONTRACT"),
     ]
     with store.connect() as connection:
+        connection.execute("""CREATE TABLE IF NOT EXISTS candidate_identity_v2(
+          ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,
+          currency TEXT NOT NULL,settlement TEXT NOT NULL,can_simulate INTEGER NOT NULL,
+          status TEXT NOT NULL,detail TEXT NOT NULL,checked_at TEXT NOT NULL,
+          PRIMARY KEY(ticker,instrument_type,market,currency,settlement))""")
         for row in rows:
             connection.execute("""INSERT INTO financial_instrument_catalog VALUES(
               ?,?,?,?,?,'PPI_FIELD','test',?,'run','AVAILABLE',?,?)""",
               (row["ticker"],row["instrument_type"],row["market"],row["currency"],row["settlement"],
                "2026-09-01T10:00:00-03:00",row["capability"],json.dumps(row)))
+        connection.executemany("""INSERT INTO candidate_identity_v2 VALUES(
+          ?,?,?,?,?,?,?,?,?)""", [
+            (row["ticker"],row["instrument_type"],row["market"],row["currency"],
+             row["settlement"],int(row["capability"].startswith("READY_PAPER_")),
+             "AVAILABLE" if row["capability"].startswith("READY_PAPER_") else "PAUSED_EXPLICIT",
+             row["capability"],"2026-09-01T10:00:00-03:00")
+            for row in rows])
     selected, _, total = scalping.select_batch(store,limit=8)
-    assert total == 3
-    assert {row["market"] for row in selected} == {"BYMA","ROFEX"}
-    assert {row["instrument_type"] for row in selected} == {"ACCIONES","CEDEARS","FUTUROS"}
+    assert total == 2
+    assert {row["market"] for row in selected} == {"BYMA"}
+    assert {row["instrument_type"] for row in selected} == {"ACCIONES","CEDEARS"}
 
 
 def test_dashboard_tiene_solapa_y_declara_scanner_sin_fills(monkeypatch, store):

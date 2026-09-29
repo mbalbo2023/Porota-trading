@@ -46,8 +46,11 @@ def test_reconcile_matches_legacy_on_alias_without_discovery_marker(tmp_path, mo
     assert tuple(row[:2]) == ("AVAILABLE","READY_PAPER_SPOT")
     meta=json.loads(row[2])
     assert meta["_contract_complement_source"]=="IOL_COMPLEMENTARY"
-    assert tuple(candidate[:2]) == (0,"AVAILABLE")
-    assert candidate[2] == "PPI_FRESHNESS_STALE"
+    # The legacy ON alias is preserved in the catalog, but its unresolved
+    # full-key identity is an explicit WS15 pause rather than generic AVAILABLE.
+    assert tuple(candidate[:2]) == (0,"PAUSED_EXPLICIT")
+    assert str(candidate[2]).startswith("PAUSED_EXPLICIT:ON_CONTRACT_UNRESOLVED")
+    assert "PPI_FRESHNESS_STALE" in candidate[2]
 
 
 def test_reconcile_accepts_static_v2_policy_inside_ppi_lkg_window(tmp_path, monkeypatch):
