@@ -254,6 +254,16 @@ def test_ppi_catalog_refresh_reapplies_and_rematerializes_paper_policy_evidence(
     assert "CATALOG_PAPER_POLICY_MATERIALIZATION_ERROR" in download
 
 
+def test_static_v2_paper_contracts_are_not_rejected_by_dynamic_complement_ttl():
+    source = (Path(__file__).resolve().parents[1] /
+              "bf_production_paper_observer.py").read_text(encoding="utf-8")
+    reconcile = source[source.index("def _reconcile_complementary_catalog"):source.index(
+        "def _eligible_symbols")]
+    assert 'raw.get("source") == "CONTRACT_EVIDENCE_V2"' in reconcile
+    assert '(raw.get("contract_bridge") or {}).get("status") == "NORMALIZED"' in reconcile
+    assert "not static_v2_contract and not financial_catalog.complementary_is_fresh" in reconcile
+
+
 def test_caucion_without_depth_reaches_paper_capability():
     primary = {
         "ticker": "PESOS1", "instrument_type": "CAUCIONES", "market": "BYMA",

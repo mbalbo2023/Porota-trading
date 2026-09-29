@@ -50,6 +50,44 @@ def test_reconcile_matches_legacy_on_alias_without_discovery_marker(tmp_path, mo
     assert candidate[2] == "PPI_FRESHNESS_STALE"
 
 
+def test_reconcile_accepts_static_v2_policy_inside_ppi_lkg_window(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    observed = "2026-09-24T18:00:00+00:00"
+    with store.connect() as c:
+        c.execute("""INSERT INTO financial_instrument_catalog
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
+            "LKG1", "BONOS", "BYMA", "ARS", "A-24HS", "PPI_FIELD", "LKG1",
+            observed, "PPI-RUN", "AVAILABLE", "NEEDS_NOMINAL_UNITS",
+            json.dumps({"_discovery_source": "PPI_PRIMARY"}),
+        ))
+    comp = {
+        "ticker": "LKG1", "instrument_type": "BONOS", "market": "BYMA",
+        "currency": "ARS", "settlement": "A-24HS",
+        "source": "CONTRACT_EVIDENCE_V2", "observed_at": observed,
+        "contract_bridge": {"status": "NORMALIZED", "observed_at": observed},
+        "financial_contract_v17": {
+            "family": "BONOS", "currency": "ARS", "market": "BYMA",
+            "settlement": "A-24HS", "cash_multiplier": "0.01",
+            "quantity_step": "1", "minimum_quantity": "1",
+            "metadata_source": "CONTRACT_EVIDENCE_V2_BOUND",
+        },
+        "identity_evidence": {
+            "market_explicit": True, "currency_explicit": True,
+            "settlement_explicit": True,
+        },
+    }
+    monkeypatch.setattr(observer, "complementary_discovery", lambda _root: [comp])
+    monkeypatch.setattr("rc6_contract_bridge.complements_from_store", lambda _store: [])
+    assert observer._reconcile_complementary_catalog(store) == 1
+    with store.connect() as c:
+        row = c.execute("""SELECT capability FROM financial_instrument_catalog
+          WHERE ticker='LKG1'""").fetchone()
+        candidate = c.execute("""SELECT can_simulate,detail FROM candidate_identity_v2
+          WHERE ticker='LKG1'""").fetchone()
+    assert row[0] == "READY_PAPER_SPOT"
+    assert tuple(candidate) == (1, "READY_PAPER_SPOT")
+
+
 def test_reconcile_revives_legacy_spot_from_exact_fresh_observation(tmp_path, monkeypatch):
     store = _store(tmp_path)
     with store.connect() as c:
