@@ -609,7 +609,14 @@ def _reconcile_complementary_catalog(store):
         for raw in complementary:
             negative_bridge = (raw.get("source") == "CONTRACT_EVIDENCE_V2"
                                and (raw.get("contract_bridge") or {}).get("status") == "BLOCKED")
-            if not negative_bridge and not financial_catalog.complementary_is_fresh(
+            static_v2_contract = (
+                raw.get("source") == "CONTRACT_EVIDENCE_V2"
+                and (raw.get("contract_bridge") or {}).get("status") == "NORMALIZED"
+                and raw.get("instrument_type") != "CAUCIONES"
+                and (raw.get("financial_contract_v17")
+                     or raw.get("paper_family_contract_v1"))
+            )
+            if not negative_bridge and not static_v2_contract and not financial_catalog.complementary_is_fresh(
                     raw, max_age_seconds=COMPLEMENTARY_CONTRACT_TTL_SECONDS):
                 continue
 

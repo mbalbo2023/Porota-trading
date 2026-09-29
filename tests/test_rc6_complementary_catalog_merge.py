@@ -173,6 +173,19 @@ def test_candidate_projection_rejects_stale_non_primary_and_retry_ambiguity():
     assert result["RETRY"]==(0,"RETRY_IDENTITY_AMBIGUOUS")
 
 
+def test_candidate_projection_uses_same_fourteen_day_lkg_window_as_catalog():
+    c=_candidate_projection_db()
+    c.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [
+        _catalog_identity(ticker="LKG",last_seen="2026-09-20T20:30:00+00:00"),
+        _catalog_identity(ticker="EXPIRED",last_seen="2026-09-10T20:30:00+00:00"),
+    ])
+    catalog.sync_candidate_universe(c,"2026-09-25T21:00:00+00:00")
+    result={row[0]:(row[4],row[6]) for row in c.execute(
+        "SELECT * FROM candidate_universe ORDER BY ticker")}
+    assert result["LKG"]==(1,"READY_PAPER_SPOT")
+    assert result["EXPIRED"]==(0,"PPI_FRESHNESS_STALE")
+
+
 def test_fresh_exact_complement_revives_stale_spot_without_contract_payload():
     primary={
         "ticker":"SPY","instrument_type":"CEDEARS","market":"BYMA","currency":"ARS",

@@ -15,6 +15,7 @@ from rc6_multisource_discovery import canonical_family, canonical_market, canoni
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 SOURCE_PRECEDENCE = ("PPI_PRIMARY", "IOL_COMPLEMENTARY", "BYMA_PUBLIC_COMPLEMENTARY")
+PAPER_PPI_IDENTITY_LKG_SECONDS = 14 * 86400
 US_MARKET_WIDE_CEDEAR_HOLIDAYS = {
     "2026-09-07": "US_LABOR_DAY",
 }
@@ -468,7 +469,7 @@ def _candidate_retry_ambiguities(connection):
 
 
 def sync_candidate_universe(connection, checked_at, *,
-                            freshness_seconds=86400):
+                            freshness_seconds=PAPER_PPI_IDENTITY_LKG_SECONDS):
     """Atomically rebuild the legacy summary without projecting ambiguity to READY.
 
     ``candidate_universe`` intentionally remains keyed by ticker/family/market for
@@ -643,10 +644,21 @@ def quote_terms(record, *, now=None):
     if not _candidate_has_ppi_primary(record.get("settlement_source"), json.dumps(record.get("raw") or {})):
         reason = "PPI_PRIMARY_IDENTITY_NOT_VERIFIED"
     checked = now or datetime.now(ZoneInfo("UTC"))
-    bridge = (record.get("raw") or {}).get("_contract_bridge") or {}
-    if bridge and not _candidate_timestamp_is_fresh(bridge.get("observed_at"), checked.isoformat(), 86400):
+    raw = record.get("raw") or {}
+    bridge = raw.get("_contract_bridge") or {}
+    static_v2_contract = (
+        record.get("instrument_type") != "CAUCIONES"
+        and any(isinstance(raw.get(name), dict)
+                and raw[name].get("metadata_source") == "CONTRACT_EVIDENCE_V2_BOUND"
+                for name in ("financial_contract_v17", "paper_family_contract_v1"))
+    )
+    if (bridge and not static_v2_contract
+            and not _candidate_timestamp_is_fresh(
+                bridge.get("observed_at"), checked.isoformat(), 86400)):
         reason = "CONTRACT_EVIDENCE_STALE"
-    if not _candidate_timestamp_is_fresh(record.get("last_seen_at"), checked.isoformat(), 86400):
+    if not _candidate_timestamp_is_fresh(
+            record.get("last_seen_at"), checked.isoformat(),
+            PAPER_PPI_IDENTITY_LKG_SECONDS):
         reason = "PPI_FRESHNESS_STALE"
     holiday_reason = rc6_underlying_opening_block(record["ticker"], record["instrument_type"])
     if holiday_reason:
