@@ -1,0 +1,54 @@
+name: RC6 ingestion pause manifest read-only
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  manifest:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Read original ingestion-isolation manifest and current state
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          M=/opt/porota-trading/data/audit/ingestion_isolation_pause_20260912.txt
+          echo "===INGESTION_PAUSE_MANIFEST_BEGIN==="
+          if [ -f "$M" ]; then
+            cat "$M"
+          else
+            echo "MANIFEST=MISSING"
+          fi
+          echo "===INGESTION_PAUSE_MANIFEST_END==="
+          echo "===CURRENT_RELEVANT_TIMERS_BEGIN==="
+          for t in             porota-a3-history-daily-rc6.timer             porota-a3-history-reconcile-rc6.timer             porota-a3-history-weekend-rc6.timer             porota-candle-integrity-rc6.timer             porota-contract-evidence-rc6.timer             porota-contract-evidence-weekend-backfill-rc6.timer             porota-fast-functional-health-rc6.timer             porota-full-db-integrity-rc6.timer             porota-functional-health-rc6.timer             porota-history-postclose-rc6.timer             porota-host-general-backup-rc6.timer             porota-introspection-publish-rc6.timer             porota-introspection-rc6.timer             porota-log-export-hf6.timer             porota-ppi-argentina-nightly-rc6.timer             porota-preopen-rc6.timer             porota-scheduler-export-hf6.timer             porota-weekend-ingestion-audit-rc6.timer; do
+            printf 'CURRENT|%s|ENABLED=%s|ACTIVE=%s\n'               "$t"               "$(systemctl is-enabled "$t" 2>/dev/null || true)"               "$(systemctl is-active "$t" 2>/dev/null || true)"
+          done
+          echo "===CURRENT_RELEVANT_TIMERS_END==="
+          REMOTE
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"

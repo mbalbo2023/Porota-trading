@@ -1,0 +1,88 @@
+name: RC6 SRE control-plane candidate read-only
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-sre-control-plane-candidate-readonly
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Focused policy tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check "pytest>=8.3.0,<9"
+          python -m py_compile rc6_preopen.py rc6_preopen_host_hardened.py
+          python -m pytest -q tests/test_rc6_preopen_timer_policy.py tests/test_rc6_postclose_history_quarantine.py
+
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Evaluate candidate policy against live host without mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          echo "===CANDIDATE_PREOPEN_LIVE_EVAL_BEGIN==="
+          set +e
+          cat rc6_preopen.py | "${SSH[@]}" "$DO_USER@$DO_HOST" "cd /opt/porota-trading && PYTHONPATH=/opt/porota-trading python3 -" 
+          rc=$?
+          set -e
+          echo "CANDIDATE_PREOPEN_EXIT=$rc"
+          echo "===CANDIDATE_PREOPEN_LIVE_EVAL_END==="
+
+      - name: Observer restart provenance and exact image contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===RESTART_PROVENANCE_BEGIN==="
+          for c in porota_production_observer porota_production_dashboard; do
+            sudo -n docker inspect -f 'CONTAINER={{.Name}}|CONFIG_IMAGE={{.Config.Image}}|IMAGE_ID={{.Image}}|RUNNING={{.State.Running}}|OOM={{.State.OOMKilled}}|RESTARTS={{.RestartCount}}|STARTED={{.State.StartedAt}}|FINISHED={{.State.FinishedAt}}|EXIT={{.State.ExitCode}}|ERROR={{.State.Error}}' "$c"
+          done
+          echo "---HOST_JOURNAL_AROUND_OBSERVER_LAST_START---"
+          sudo -n journalctl --since '2026-09-25 04:15:00' --until '2026-09-25 04:35:00' --no-pager 2>/dev/null | grep -Ei 'porota_production_observer|docker|container|oom|killed|restart|compose' | tail -n 500 || true
+          echo "---KERNEL_OOM_SINCE_MIDNIGHT---"
+          sudo -n journalctl -k --since '2026-09-25 00:00:00' --no-pager 2>/dev/null | grep -Ei 'out of memory|oom|killed process|memory cgroup' || true
+          echo "---CURRENT_TIMERS---"
+          for u in porota-fast-functional-health-rc6.timer porota-full-db-integrity-rc6.timer porota-functional-health-rc6.timer porota-history-postclose-rc6.timer porota-host-general-backup-rc6.timer porota-preopen-rc6.timer porota-candle-integrity-rc6.timer; do
+            echo "TIMER=$u|ENABLED=$(systemctl is-enabled "$u" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$u" 2>/dev/null || true)"
+          done
+          echo "===RESTART_PROVENANCE_END==="
+          REMOTE
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"

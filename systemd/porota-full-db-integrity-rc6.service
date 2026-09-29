@@ -1,10 +1,12 @@
 [Unit]
-Description=Porota RC6 full SQLite integrity check (read-only, expensive)
+Description=Porota RC6 full SQLite quick_check (read-only, postclose)
 After=docker.service
 Requires=docker.service
 
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/porota-trading
-ExecStart=/usr/bin/docker exec porota_production_observer python /app/rc6_full_db_integrity.py
-TimeoutStartSec=2min
+Environment=PAPER_V17_DB_PATH=/opt/porota-trading/data/paper_v17/observer_v17.db
+ExecStart=/usr/bin/python3 /usr/local/lib/porota-sre-rc6/rc6_full_db_integrity.py
+TimeoutStartSec=3min
+Nice=10

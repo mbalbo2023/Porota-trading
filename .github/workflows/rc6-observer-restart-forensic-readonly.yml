@@ -1,0 +1,111 @@
+name: RC6 observer restart forensic read-only
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-observer-restart-forensic-readonly
+  cancel-in-progress: true
+
+jobs:
+  forensic:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Correlate observer restarts without mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===OBSERVER_RESTART_FORENSIC_BEGIN==="
+          CID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer 2>/dev/null || true)"
+          echo "CID=$CID"
+          sudo -n docker inspect -f 'STATE|running={{.State.Running}}|status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|started={{.State.StartedAt}}|finished={{.State.FinishedAt}}|exit={{.State.ExitCode}}|error={{.State.Error}}|restart_policy={{.HostConfig.RestartPolicy.Name}}|mem={{.HostConfig.Memory}}|pids={{.HostConfig.PidsLimit}}' porota_production_observer || true
+          echo "---DOCKERD_RESTART_TIMELINE---"
+          sudo -n journalctl -u docker.service --since '2026-09-25 00:00:00' --no-pager -o short-iso 2>/dev/null |             grep -F "$CID" | grep -Ei 'restarting container|task-delete|exitCode|restartCount' || true
+          echo "---KERNEL_FAULTS---"
+          sudo -n journalctl -k --since '2026-09-25 00:00:00' --no-pager -o short-iso 2>/dev/null |             grep -Ei 'segfault|general protection|trap|oom|out of memory|killed process|memory cgroup' || true
+          echo "---COREDUMPS---"
+          sudo -n coredumpctl list --since '2026-09-25 00:00:00' --no-pager 2>/dev/null | tail -n 100 || true
+          echo "---OBSERVER_LOG_SIGNAL---"
+          sudo -n docker logs --since '2026-09-25T00:00:00Z' --timestamps porota_production_observer 2>&1 |             grep -Ei 'traceback|exception|error|fatal|segmentation|segfault|killed|signal|core|ppi|auth|heartbeat|starting|shutdown|exit' | tail -n 500 || true
+          echo "---OBSERVER_LOG_TAIL---"
+          sudo -n docker logs --tail 220 --timestamps porota_production_observer 2>&1 || true
+          echo "---FAULT_HANDLER_SOURCE---"
+          sudo -n docker exec porota_production_observer sh -c "grep -RInE 'dump_traceback_later|faulthandler' /app/*.py 2>/dev/null | head -n 200" || true
+          echo "---LAST_CRASH_WINDOW_1010Z---"
+          sudo -n docker logs --since '2026-09-25T10:00:00Z' --until '2026-09-25T10:08:10Z' --timestamps porota_production_observer 2>&1 | tail -n 500 || true
+          echo "---LAST_CRASH_WINDOW_1049Z---"
+          sudo -n docker logs --since '2026-09-25T10:44:00Z' --until '2026-09-25T10:50:20Z' --timestamps porota_production_observer 2>&1 | tail -n 500 || true
+          echo "---LAST_CRASH_WINDOW_1216Z---"
+          sudo -n docker logs --since '2026-09-25T12:11:00Z' --until '2026-09-25T12:17:00Z' --timestamps porota_production_observer 2>&1 | tail -n 700 || true
+          echo "---LAST_CRASH_WINDOW_1649Z---"
+          sudo -n docker logs --since '2026-09-25T16:46:30Z' --until '2026-09-25T16:49:29Z' --timestamps porota_production_observer 2>&1 | tail -n 1200 || true
+          echo "---OPERATIONAL_JOB_CORRELATION---"
+          sudo -n python3 - <<'PY'
+          import json, sqlite3
+          path='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=10)
+          c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          for table in ('operational_jobs','sre_snapshots','backup_runs'):
+              exists=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(table,)).fetchone()
+              print('TABLE='+table+'|EXISTS='+str(bool(exists)).lower())
+              if not exists:
+                  continue
+              cols=[r[1] for r in c.execute(f'PRAGMA table_info({table})')]
+              print('COLUMNS='+table+'|'+','.join(cols))
+              order='rowid'
+              if 'collected_at' in cols: order='collected_at'
+              elif 'last_run_at' in cols: order='last_run_at'
+              elif 'created_at' in cols: order='created_at'
+              rows=c.execute(f'SELECT * FROM {table} ORDER BY {order} DESC LIMIT 80').fetchall()
+              for row in reversed(rows):
+                  print('ROW='+table+'|'+json.dumps(dict(row),sort_keys=True,default=str))
+          c.close()
+          PY
+          echo "---DOCKER_EVENTS_RECENT---"
+          sudo -n docker events --since '2026-09-25T15:30:00Z' --until '2026-09-25T16:50:00Z' --filter container=porota_production_observer --format '{{json .}}' 2>/dev/null | tail -n 300 || true
+          echo "---CONTAINER_COMMAND---"
+          sudo -n docker inspect -f 'ENTRYPOINT={{json .Config.Entrypoint}}|CMD={{json .Config.Cmd}}|HEALTH={{json .Config.Healthcheck}}' porota_production_observer || true
+          echo "---CURRENT_PROCESS_TREE---"
+          sudo -n docker top porota_production_observer -eo pid,ppid,etimes,pcpu,pmem,args 2>/dev/null || true
+          echo "---HOST_PRESSURE---"
+          free -m
+          df -h /
+          echo "---OBSERVER_DB_LIGHT_HOST---"
+          sudo -n python3 - <<'PY'
+          import json,sqlite3
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print(json.dumps(dict(zip(('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at','last_market_data_at'),row or [])),sort_keys=True,default=str))
+          PY
+          echo "===OBSERVER_RESTART_FORENSIC_END==="
+          REMOTE
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"

@@ -6,5 +6,7 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/porota-trading
-ExecStart=/usr/bin/docker exec porota_production_observer python /app/rc6_fast_functional_health.py
+Environment=PYTHONPATH=/opt/porota-trading
+Environment=PAPER_V17_DB_PATH=/opt/porota-trading/data/paper_v17/observer_v17.db
+ExecStart=/usr/bin/python3 /usr/local/lib/porota-sre-rc6/rc6_fast_functional_health.py
 TimeoutStartSec=30s

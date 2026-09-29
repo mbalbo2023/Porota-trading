@@ -1,0 +1,126 @@
+name: RC6 SRE runtime provenance read-only
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-sre-runtime-provenance-readonly
+  cancel-in-progress: true
+
+jobs:
+  sre-provenance:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      BASELINE_SHA: c81f8d7c089433e89f3d664b57d3a9b915565419
+      CANDIDATE_SHA: 107b1cbc6d90da7516d096668e0baf35e920b1d1
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build baseline and candidate fingerprints
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git cat-file -e "$CANDIDATE_SHA^{commit}"
+          : > /tmp/sre-fingerprints.tsv
+          files=(
+            rc6_preopen.py
+            rc6_preopen_host_hardened.py
+            rc6_fast_functional_health.py
+            rc6_full_db_integrity.py
+          )
+          for rel in "${files[@]}"; do
+            b=""
+            c=""
+            if git cat-file -e "$BASELINE_SHA:$rel" 2>/dev/null; then b="$(git show "$BASELINE_SHA:$rel" | sha256sum | awk '{print $1}')"; fi
+            if git cat-file -e "$CANDIDATE_SHA:$rel" 2>/dev/null; then c="$(git show "$CANDIDATE_SHA:$rel" | sha256sum | awk '{print $1}')"; fi
+            printf '%s\t%s\t%s\n' "$rel" "$b" "$c" >> /tmp/sre-fingerprints.tsv
+          done
+          cat /tmp/sre-fingerprints.tsv
+          echo "---BASELINE_PREOPEN_POLICY---"
+          git show "$BASELINE_SHA:rc6_preopen.py" | grep -nE 'REQUIRED_TIMERS|BLOCKED_HISTORY_TIMERS|porota-.*timer' || true
+          git show "$BASELINE_SHA:rc6_preopen_host_hardened.py" | grep -nE 'REQUIRED_TIMERS|BLOCKED_HISTORY_TIMERS|porota-.*timer|override' || true
+          echo "---CANDIDATE_PREOPEN_POLICY---"
+          git show "$CANDIDATE_SHA:rc6_preopen.py" | grep -nE 'REQUIRED_TIMERS|BLOCKED_HISTORY_TIMERS|porota-.*timer' || true
+          git show "$CANDIDATE_SHA:rc6_preopen_host_hardened.py" | grep -nE 'REQUIRED_TIMERS|BLOCKED_HISTORY_TIMERS|porota-.*timer|override' || true
+
+      - name: Strict SSH
+        shell: bash
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Classify installed SRE library and units
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat /tmp/sre-fingerprints.tsv | ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'python3 -c '"'"'
+          import hashlib,sys
+          from pathlib import Path
+          root=Path("/usr/local/lib/porota-sre-rc6")
+          for line in sys.stdin:
+              rel,b,c=line.rstrip("\n").split("\t")
+              p=root/rel
+              if not p.is_file():
+                  print(f"SRE_FILE={rel}|STATE=MISSING|BASELINE={b}|CANDIDATE={c}")
+                  continue
+              actual=hashlib.sha256(p.read_bytes()).hexdigest()
+              state="BASELINE" if b and actual==b else ("CANDIDATE" if c and actual==c else "OTHER")
+              print(f"SRE_FILE={rel}|STATE={state}|ACTUAL={actual}|BASELINE={b}|CANDIDATE={c}")
+          '"'"''
+
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===SRE_INSTALLED_POLICY_BEGIN==="
+          for p in /usr/local/lib/porota-sre-rc6/rc6_preopen.py /usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py; do
+            echo "FILE_BEGIN=$p"
+            if [ -f "$p" ]; then grep -nE 'REQUIRED_TIMERS|BLOCKED_HISTORY_TIMERS|porota-.*timer|override|DASHBOARD_PREFIX' "$p" || true; else echo MISSING; fi
+            echo "FILE_END=$p"
+          done
+          echo "---FULL_TIMER_CONTENTS---"
+          for unit in porota-fast-functional-health-rc6.timer porota-full-db-integrity-rc6.timer porota-host-general-backup-rc6.timer porota-preopen-rc6.timer; do
+            echo "FULL_UNIT_BEGIN=$unit"
+            systemctl cat "$unit" --no-pager 2>/dev/null || true
+            echo "FULL_UNIT_END=$unit"
+          done
+          echo "---OBSERVER_CONTAINER_RESTART_POLICY---"
+          sudo -n docker inspect -f 'OBSERVER_RESTARTS={{.RestartCount}}|OOM={{.State.OOMKilled}}|RUNNING={{.State.Running}}|IMAGE={{.Image}}|STARTED={{.State.StartedAt}}' porota_production_observer
+          echo "---INSTALLED_TIMER_UNITS---"
+          for unit in porota-fast-functional-health-rc6.timer porota-full-db-integrity-rc6.timer porota-host-general-backup-rc6.timer porota-preopen-rc6.timer porota-history-postclose-rc6.timer porota-candle-integrity-rc6.timer; do
+            echo "UNIT_BEGIN=$unit|ENABLED=$(systemctl is-enabled "$unit" 2>/dev/null || true)|ACTIVE=$(systemctl is-active "$unit" 2>/dev/null || true)"
+            systemctl cat "$unit" --no-pager 2>/dev/null | grep -E '^(Description|OnCalendar|OnBootSec|OnUnitActiveSec|Persistent|Unit=|WantedBy=)' || true
+            echo "UNIT_END=$unit"
+          done
+          echo "---INSTALLED_HARDENED_FULL---"
+          sed -n '1,180p' /usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py 2>/dev/null || true
+          echo "---PREOPEN_IMPORT_RESOLUTION---"
+          cd /opt/porota-trading
+          python3 - <<'PY'
+          import importlib.util,sys
+          spec=importlib.util.find_spec("rc6_preopen")
+          print("IMPORT_ORIGIN="+str(getattr(spec,"origin",None)))
+          print("SYS_PATH="+repr(sys.path))
+          PY
+          echo "---SRE_DIRECTORY---"
+          find /usr/local/lib/porota-sre-rc6 -maxdepth 1 -type f -printf '%f|%s|%TY-%Tm-%TdT%TH:%TM:%TSZ\n' 2>/dev/null | sort
+          echo "===SRE_INSTALLED_POLICY_END==="
+          REMOTE
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key" /tmp/sre-fingerprints.tsv

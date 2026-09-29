@@ -1,0 +1,168 @@
+name: RC6 candle integrity lightweight fix-forward 2026-09-25
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-candle-integrity-lightweight-fix-forward-20260925
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Regression guard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check "pytest>=8.3.0,<9"
+          python -m py_compile rc6_candle_integrity.py
+          python -m pytest -q tests/test_rc6_sre_host_process_isolation.py
+          ! grep -Fq "PRAGMA quick_check" rc6_candle_integrity.py
+          grep -Fq "FULL_SCAN_POSTCLOSE_ONLY" rc6_candle_integrity.py
+
+      - name: Live read-only preflight
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = "a47f3339ec6dfe9d5afde444b1aaddabceb0e94d"
+          test "$(systemctl is-enabled porota-candle-integrity-rc6.timer 2>/dev/null || true)" = enabled
+          test "$(systemctl is-active porota-candle-integrity-rc6.timer 2>/dev/null || true)" = active
+          test "$(systemctl is-enabled porota-full-db-integrity-rc6.timer 2>/dev/null || true)" = disabled
+          test "$(systemctl is-enabled porota-history-postclose-rc6.timer 2>/dev/null || true)" = disabled
+          python3 - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          assert row and row[0]=='PRODUCTION_PAPER' and int(row[1] or 0)==0, row
+          PY
+          echo "CANDLE_LIGHTWEIGHT_PREFLIGHT=GREEN|MUTATION=NONE"
+          REMOTE
+
+      - if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+
+      - name: Prepare strict SSH and transfer exact script
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile rc6_candle_integrity.py
+          sha256sum rc6_candle_integrity.py
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts"             rc6_candle_integrity.py "$DO_USER@$DO_HOST:/tmp/rc6_candle_integrity-$TARGET_SHA.py"
+
+      - name: Apply script-only fix-forward and prove bounded runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=30 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          SRC="/tmp/rc6_candle_integrity-$TARGET_SHA.py"
+          DST="$ROOT/rc6_candle_integrity.py"
+          MARKER="$ROOT/data/audit/candle_integrity_lightweight_20260925.txt"
+          trap 'sudo -n rm -f "$SRC" >/dev/null 2>&1 || true' EXIT
+
+          cd "$ROOT"
+          test "$(git rev-parse HEAD)" = "a47f3339ec6dfe9d5afde444b1aaddabceb0e94d"
+          test "$(systemctl is-enabled porota-candle-integrity-rc6.timer)" = enabled
+          test "$(systemctl is-active porota-candle-integrity-rc6.timer)" = active
+
+          python3 - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          assert row and row[0]=='PRODUCTION_PAPER' and int(row[1] or 0)==0, row
+          PY
+
+          sudo -n install -m 0644 "$SRC" "$DST"
+          sudo -n python3 -m py_compile "$DST"
+          ! grep -Fq "PRAGMA quick_check" "$DST"
+          grep -Fq "FULL_SCAN_POSTCLOSE_ONLY" "$DST"
+
+          start="$(date +%s)"
+          out="$(sudo -n env PYTHONPATH=/opt/porota-trading PAPER_V17_DB_PATH=/opt/porota-trading/data/paper_v17/observer_v17.db /usr/bin/python3 "$DST")"
+          end="$(date +%s)"
+          elapsed="$((end-start))"
+          echo "$out"
+          echo "$out" | grep -Fq '"status": "GREEN"'
+          echo "$out" | grep -Fq '"full_integrity_check_performed": false'
+          test "$elapsed" -lt 60
+
+          sudo -n systemctl reset-failed porota-candle-integrity-rc6.service >/dev/null 2>&1 || true
+
+          sudo -n mkdir -p "$ROOT/data/audit"
+          {
+            echo "STATUS=GREEN"
+            echo "APPLIED_AT=$(date -u +%FT%TZ)"
+            echo "SOURCE_SHA=$TARGET_SHA"
+            echo "ROOT_CAUSE=INTRADAY_PRAGMA_QUICK_CHECK_EXCEEDED_3MIN_TIMEOUT"
+            echo "DIRECT_PROBE_SECONDS=$elapsed"
+            echo "FULL_DB_SCAN=POSTCLOSE_ONLY"
+            echo "TIMER_ENABLED=$(systemctl is-enabled porota-candle-integrity-rc6.timer)"
+            echo "TIMER_ACTIVE=$(systemctl is-active porota-candle-integrity-rc6.timer)"
+            echo "DOCKER_RESTART=NONE"
+            echo "DB_MUTATION=NONE"
+            echo "PPI_WATCH_MUTATION=NONE"
+            echo "REAL_ORDER_ROUTE=NOT_CALLED"
+          } | sudo -n tee "$MARKER" >/dev/null
+
+          echo "CANDLE_LIGHTWEIGHT_FIX_FORWARD=GREEN|SECONDS=$elapsed|DOCKER_MUTATION=NONE|DB_MUTATION=NONE|PPI_WATCH_MUTATION=NONE"
+          REMOTE
+
+      - name: Runner cleanup
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"

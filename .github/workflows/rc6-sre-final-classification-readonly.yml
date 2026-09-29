@@ -1,0 +1,241 @@
+name: RC6 SRE final classification read-only
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-sre-final-classification-readonly
+  cancel-in-progress: true
+
+jobs:
+  replacement-map:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Map all current Porota schedules and replacements
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===POROTA_SCHEDULE_MAP_BEGIN==="
+          echo "---LIST_TIMERS_ALL---"
+          systemctl list-timers --all --no-pager --no-legend 2>/dev/null | grep -i porota || true
+          echo "---TIMER_UNIT_FILES---"
+          systemctl list-unit-files --type=timer --no-pager --no-legend 2>/dev/null | grep -i porota || true
+          echo "---SERVICE_UNIT_FILES---"
+          systemctl list-unit-files --type=service --no-pager --no-legend 2>/dev/null | grep -Ei 'porota.*(preopen|health|backup|integrity|snapshot|history|iol|candle)' || true
+          echo "---TIMERS_TARGET_WANTS---"
+          find /etc/systemd/system/timers.target.wants -maxdepth 1 -type l -name 'porota-*' -printf '%f -> %l\n' 2>/dev/null | sort || true
+          echo "---MULTIUSER_TARGET_WANTS---"
+          find /etc/systemd/system/multi-user.target.wants -maxdepth 1 -type l -name 'porota-*' -printf '%f -> %l\n' 2>/dev/null | sort || true
+          echo "---CRON_REFERENCES---"
+          sudo -n grep -RInE 'porota|preopen|functional-health|full-db-integrity|host-general-backup' /etc/cron.d /etc/crontab /var/spool/cron 2>/dev/null | head -n 250 || true
+          echo "---RELATED_RUNNING_SERVICES---"
+          systemctl list-units --type=service --state=running --no-pager --no-legend 2>/dev/null | grep -Ei 'porota.*(health|backup|integrity|preopen|snapshot|history|iol|candle)' || true
+          echo "===POROTA_SCHEDULE_MAP_END==="
+          REMOTE
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  unit-provenance:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Read unit lifecycle and recent outcomes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===SRE_UNIT_PROVENANCE_BEGIN==="
+          units=(
+            porota-fast-functional-health-rc6.timer
+            porota-full-db-integrity-rc6.timer
+            porota-host-general-backup-rc6.timer
+            porota-preopen-rc6.timer
+            porota-history-postclose-rc6.timer
+            porota-candle-integrity-rc6.timer
+            porota-snapshot-preopen-rc6.timer
+            porota-snapshot-postclose-rc6.timer
+            porota-iol-shadow-collector-rc6.timer
+          )
+          for unit in "${units[@]}"; do
+            frag="$(systemctl show -p FragmentPath --value "$unit" 2>/dev/null || true)"
+            wants="$(systemctl show -p WantedBy --value "$unit" 2>/dev/null || true)"
+            reqby="$(systemctl show -p RequiredBy --value "$unit" 2>/dev/null || true)"
+            printf 'UNIT=%s|LOAD=%s|ENABLED=%s|ACTIVE=%s|SUB=%s|NEXT=%s|LAST=%s|FRAG=%s|WANTED_BY=%s|REQUIRED_BY=%s\n'               "$unit"               "$(systemctl show -p LoadState --value "$unit" 2>/dev/null || true)"               "$(systemctl is-enabled "$unit" 2>/dev/null || true)"               "$(systemctl is-active "$unit" 2>/dev/null || true)"               "$(systemctl show -p SubState --value "$unit" 2>/dev/null || true)"               "$(systemctl show -p NextElapseUSecRealtime --value "$unit" 2>/dev/null || true)"               "$(systemctl show -p LastTriggerUSec --value "$unit" 2>/dev/null || true)"               "$frag" "$wants" "$reqby"
+            [ -n "$frag" ] && stat -c 'FRAGSTAT=%n|mtime=%y|ctime=%z|mode=%a|uid=%u|gid=%g' "$frag" 2>/dev/null || true
+          done
+
+          echo "---SERVICE_RESULTS---"
+          for svc in             porota-fast-functional-health-rc6.service             porota-full-db-integrity-rc6.service             porota-host-general-backup-rc6.service             porota-preopen-rc6.service             porota-history-postclose-rc6.service             porota-candle-integrity-rc6.service             porota-snapshot-preopen-rc6.service             porota-snapshot-postclose-rc6.service             porota-iol-shadow-collector-rc6.service; do
+            printf 'SERVICE=%s|ACTIVE=%s|RESULT=%s|STATUS=%s|LAST_START=%s|LAST_EXIT=%s\n'               "$svc"               "$(systemctl is-active "$svc" 2>/dev/null || true)"               "$(systemctl show -p Result --value "$svc" 2>/dev/null || true)"               "$(systemctl show -p ExecMainStatus --value "$svc" 2>/dev/null || true)"               "$(systemctl show -p ExecMainStartTimestamp --value "$svc" 2>/dev/null || true)"               "$(systemctl show -p ExecMainExitTimestamp --value "$svc" 2>/dev/null || true)"
+          done
+
+          echo "---SYSTEMD_MANAGER_JOURNAL_RELEVANT---"
+          sudo -n journalctl --since '2026-09-06 00:00:00' --no-pager 2>/dev/null |             grep -Ei 'Created symlink.*porota-|Removed .*(porota-|timers.target.wants)|porota-(preopen|fast-functional-health|functional-health|full-db-integrity|host-general-backup|history-postclose).*timer' | tail -n 500 || true
+
+          echo "---RECENT_SERVICE_JOURNALS---"
+          for svc in porota-preopen-rc6.service porota-fast-functional-health-rc6.service porota-full-db-integrity-rc6.service porota-host-general-backup-rc6.service; do
+            echo "JOURNAL_BEGIN=$svc"
+            sudo -n journalctl -u "$svc" --since '2026-09-06 00:00:00' --no-pager -n 120 2>/dev/null || true
+            echo "JOURNAL_END=$svc"
+          done
+          echo "===SRE_UNIT_PROVENANCE_END==="
+          REMOTE
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  git-provenance:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git fetch --all --tags --prune
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Match installed SRE files against repository history
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          mkdir -p /tmp/live-sre
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "cat /usr/local/lib/porota-sre-rc6/rc6_preopen_host_hardened.py" > /tmp/live-sre/rc6_preopen_host_hardened.py
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "cat /opt/porota-trading/rc6_preopen.py" > /tmp/live-sre/rc6_preopen.py
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "cat /etc/systemd/system/porota-preopen-rc6.service" > /tmp/live-sre/porota-preopen-rc6.service
+
+          echo "===GIT_PROVENANCE_BEGIN==="
+          for rel in rc6_preopen_host_hardened.py rc6_preopen.py systemd/porota-preopen-rc6.service; do
+            case "$rel" in
+              rc6_preopen_host_hardened.py) live=/tmp/live-sre/rc6_preopen_host_hardened.py ;;
+              rc6_preopen.py) live=/tmp/live-sre/rc6_preopen.py ;;
+              systemd/porota-preopen-rc6.service) live=/tmp/live-sre/porota-preopen-rc6.service ;;
+            esac
+            target="$(sha256sum "$live" | awk '{print $1}')"
+            echo "TARGET=$rel|SHA256=$target"
+            found=0
+            git log --all --format='%H' -- "$rel" | awk '!seen[$0]++' | while read -r commit; do
+              if git cat-file -e "$commit:$rel" 2>/dev/null; then
+                h="$(git show "$commit:$rel" | sha256sum | awk '{print $1}')"
+                if [ "$h" = "$target" ]; then
+                  echo "MATCH=$rel|COMMIT=$commit|DATE=$(git show -s --format=%cI "$commit")|SUBJECT=$(git show -s --format=%s "$commit")"
+                fi
+              fi
+            done
+          done
+          echo "===GIT_PROVENANCE_END==="
+          rm -rf /tmp/live-sre
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  operational-evidence:
+    if: github.head_ref == 'fix/rc6-live-host-reconcile-20260925'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Verify IOL snapshots and safety invariants without mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "===OPERATIONAL_EVIDENCE_BEGIN==="
+          for svc in porota-iol-shadow-collector-rc6.service porota-snapshot-preopen-rc6.service porota-snapshot-postclose-rc6.service porota-candle-integrity-rc6.service; do
+            echo "JOURNAL_BEGIN=$svc"
+            sudo -n journalctl -u "$svc" --since '2026-09-25 00:00:00' --no-pager -n 160 2>/dev/null || true
+            echo "JOURNAL_END=$svc"
+          done
+          echo "---ARTIFACT_TIMES---"
+          for p in             /opt/porota-trading/data/market/iol_shadow_latest.json             /opt/porota-trading/data/market/rc6_public_sources_latest.json             /opt/porota-trading/data/market/rc6_instrument_evidence_latest.json             /opt/porota-trading/data/paper_v17/snapshots/latest.json; do
+            if [ -f "$p" ]; then stat -c 'ARTIFACT=%n|mtime=%y|size=%s' "$p"; else echo "ARTIFACT=$p|MISSING"; fi
+          done
+          echo "---OBSERVER_SAFETY---"
+          sudo -n python3 - <<'PY'
+          import json,sqlite3
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=5)
+          c.execute('PRAGMA query_only=ON')
+          cols=[r[1] for r in c.execute('PRAGMA table_info(observer_state)')]
+          wanted=[x for x in ('mode','process_state','session_state','ppi_auth','real_orders_sent','heartbeat_at') if x in cols]
+          row=c.execute('SELECT '+','.join(wanted)+' FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          state=dict(zip(wanted,row or []))
+          print('OBSERVER_STATE='+json.dumps(state,sort_keys=True,default=str))
+          assert state.get('mode')=='PRODUCTION_PAPER'
+          assert int(state.get('real_orders_sent') or 0)==0
+          PY
+          echo "FULL_DB_SCAN=SKIPPED_IN_LIVE_AUDIT|reason=dedicated_postclose_integrity_only"
+          echo "===OPERATIONAL_EVIDENCE_END==="
+          REMOTE
+
+      - if: always()
+        run: rm -f "$HOME/.ssh/key"
