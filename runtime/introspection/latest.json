@@ -37,6 +37,7 @@
     "state": "EMPTY_FILTER_RESULTS"
   },
   "changes": [
+    "trading.open: 0 -> 1",
     "ingestion.rows: 15624 -> 242636"
   ],
   "coherence": {
@@ -46,11 +47,27 @@
     "open_without_exit_intent": 0,
     "orphan_fills": 0
   },
-  "currency_funnel": [],
+  "currency_funnel": [
+    {
+      "currency": "ARS",
+      "last_observed_at": "2026-09-29T14:17:39.226581+00:00",
+      "observed_symbols": 78
+    },
+    {
+      "currency": "USD_CCL",
+      "last_observed_at": "2026-09-29T14:17:19.177538+00:00",
+      "observed_symbols": 57
+    },
+    {
+      "currency": "USD_MEP",
+      "last_observed_at": "2026-09-29T14:17:13.758297+00:00",
+      "observed_symbols": 59
+    }
+  ],
   "economics": {
-    "blocked_1h": 0,
-    "evaluated_1h": 0,
-    "opened_1h": 0
+    "blocked_1h": 7,
+    "evaluated_1h": 8,
+    "opened_1h": 1
   },
   "family_readiness": [
     {
@@ -60,18 +77,18 @@
           "count": 126
         }
       ],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "ACCIONES",
-      "observed_count": 42,
+      "observed_count": 53,
       "queries": 4,
-      "ready_paper_count": 42
+      "ready_paper_count": 53
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -87,18 +104,18 @@
           "count": 1674
         }
       ],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "BONOS",
-      "observed_count": 1180,
+      "observed_count": 1682,
       "queries": 4,
       "ready_paper_count": 0
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "EMPTY_FILTER_RESULTS",
       "excluded_by_default": false,
@@ -114,18 +131,18 @@
           "count": 683
         }
       ],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "CEDEARS",
-      "observed_count": 135,
+      "observed_count": 1254,
       "queries": 4,
-      "ready_paper_count": 135
+      "ready_paper_count": 941
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -136,7 +153,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "EMPTY_FILTER_RESULTS",
       "excluded_by_default": false,
@@ -152,7 +169,7 @@
           "count": 1003
         }
       ],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -163,7 +180,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -179,7 +196,7 @@
           "count": 134
         }
       ],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -190,7 +207,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -201,7 +218,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -217,7 +234,7 @@
           "count": 31
         }
       ],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
@@ -228,7 +245,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "DECLARED_NO_QUERY",
       "excluded_by_default": false,
@@ -239,7 +256,7 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -255,18 +272,18 @@
           "count": 2057
         }
       ],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "OBLIGACIONES",
-      "observed_count": 784,
+      "observed_count": 1927,
       "queries": 4,
       "ready_paper_count": 0
     },
     {
       "capabilities": [],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 0,
       "discovery_status": "NOT_ENUMERATED",
       "excluded_by_default": false,
@@ -282,12 +299,12 @@
           "count": 1181
         }
       ],
-      "checked_at": "2026-09-29T13:14:49.417357+00:00",
+      "checked_at": "2026-09-29T14:02:42.733986+00:00",
       "declared": 1,
       "discovery_status": "INSTRUMENTS_OBSERVED",
       "excluded_by_default": false,
       "instrument_type": "OPCIONES",
-      "observed_count": 726,
+      "observed_count": 971,
       "queries": 4,
       "ready_paper_count": 0
     }
@@ -296,16 +313,16 @@
     "branch": "runtime-observability",
     "day": "2026-09-29",
     "detail": null,
-    "recorded_at": "2026-09-29T12:20:37.714078+00:00",
+    "recorded_at": "2026-09-29T13:20:43.444330+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
   "ingestion": {
-    "candle_versions": 89683,
+    "candle_versions": 90099,
     "instruments": 1151,
     "last_download": "2026-09-25T20:02:13.939573+00:00",
     "last_market_date": "2026-09-25",
-    "latest_candle_known_at": "2026-09-28T20:00:01.057452+00:00",
+    "latest_candle_known_at": "2026-09-29T14:17:21.182509+00:00",
     "raw": 0,
     "rows": 242636
   },
@@ -345,33 +362,114 @@
   ],
   "market_regime_observation": {
     "binding": false,
-    "falling": 0,
+    "falling": 2,
     "method": "FIRST_LAST_TRADE_SAMPLE_BREADTH_NOT_AN_INDEX",
     "minimum_symbols": 4,
     "policy": "ALERT_ONLY",
-    "rising": 0,
-    "state": "INSUFFICIENT_SAMPLE",
-    "symbols": 0,
-    "unchanged": 0
+    "rising": 3,
+    "state": "MIXED_OR_POSITIVE",
+    "symbols": 83,
+    "unchanged": 78
   },
   "observer": {
-    "heartbeat_at": "2026-09-29T13:17:07.518556+00:00",
-    "http_allowed": 214,
+    "heartbeat_at": "2026-09-29T14:17:21.166490+00:00",
+    "http_allowed": 211,
     "http_blocked": 0,
-    "last_market_data_at": "2026-09-28T19:59:43.391636+00:00",
+    "last_market_data_at": "2026-09-29T14:17:16.500085+00:00",
     "mode": "PRODUCTION_PAPER",
     "ppi_auth": "OK",
-    "process_state": "READY_PREOPEN",
+    "process_state": "RUNNING",
     "real_orders_sent": 0,
-    "session_state": "PREOPEN"
+    "session_state": "MARKET_OPEN"
   },
-  "ppi_errors_1h": [],
+  "ppi_errors_1h": [
+    {
+      "count": 2,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 2,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 1,
+      "event_type": "DATA_ERROR"
+    }
+  ],
   "quick_check": "ok",
   "scalping": {
     "approved_1h": 0,
-    "evaluated_1h": 0,
+    "evaluated_1h": 301,
     "paper_positions_today": 0,
-    "rejected_1h": 0
+    "rejected_1h": 301
   },
   "schema": "porota-introspection-public-v1",
   "sector_concentration": {
@@ -382,56 +480,59 @@
     "maximum_observed_concentration": 0,
     "policy": "OBSERVATION_ONLY",
     "state": "MAP_UNAVAILABLE",
-    "unmapped_positions": 0
+    "unmapped_positions": 1
   },
   "storage": {
-    "database_bytes": 1014423552,
-    "filesystem_free": 2641682432,
+    "database_bytes": 1045032960,
+    "filesystem_free": 5193932800,
     "filesystem_total": 24883167232,
-    "filesystem_used": 22224707584,
-    "filesystem_used_pct": 89.32,
-    "wal_bytes": 44013992
+    "filesystem_used": 19672457216,
+    "filesystem_used_pct": 79.06,
+    "wal_bytes": 48117512
   },
   "telegram": {
-    "SENT": 314,
+    "SENT": 316,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-09-29T10:15:16-03:00",
+  "timestamp": "2026-09-29T11:15:04-03:00",
   "trading": {
-    "buys_1h": 0,
+    "buys_1h": 1,
     "closed_today": 0,
-    "decisions_1h": 0,
+    "decisions_1h": 129,
     "net_pnl_today": 0,
-    "open": 0,
+    "open": 1,
     "sells_1h": 0
   },
-  "verdict": "OK",
+  "verdict": "WARN",
   "version": "17.0.0-rc6",
-  "warnings": [],
+  "warnings": [
+    "ppi_errors_last_hour",
+    "no_usd_operations_today"
+  ],
   "workers": {
     "candles": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-29T13:17:18.412317+00:00",
+      "heartbeat_at": "2026-09-29T14:17:38.100545+00:00",
       "state": "RUNNING"
     },
     "exit_reader": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-29T13:17:20.110707+00:00",
-      "state": "WAITING_MARKET"
+      "heartbeat_at": "2026-09-29T14:17:38.084840+00:00",
+      "state": "READY"
     },
     "scalping": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-29T13:17:01.095461+00:00",
-      "state": "WAITING_MARKET"
+      "heartbeat_at": "2026-09-29T14:15:52.424639+00:00",
+      "state": "RUNNING"
     },
     "supervisor": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-29T13:17:12.434474+00:00",
+      "heartbeat_at": "2026-09-29T14:17:34.952534+00:00",
       "state": "RUNNING"
     },
     "telegram": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-09-29T13:17:19.885433+00:00",
+      "heartbeat_at": "2026-09-29T14:17:39.068943+00:00",
       "state": "RUNNING"
     }
   }
