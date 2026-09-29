@@ -282,7 +282,6 @@ jobs:
           PY
 
       - name: Export frozen candidate artifacts
-        if: success() && github.event.pull_request.draft == false
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -316,7 +315,6 @@ jobs:
           PY
 
       - name: Frozen candidate fail-closed contract
-        if: success() && github.event.pull_request.draft == false
         shell: bash
         run: |
           set -Eeuo pipefail
