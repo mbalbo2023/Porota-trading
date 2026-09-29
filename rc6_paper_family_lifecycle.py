@@ -19,8 +19,9 @@ REAL_ROUTES_USED = ()
 
 TRANSITIONS = {
     "FCI": {
-        None: {"SUBSCRIBE"},
-        "SUBSCRIBE": {"PENDING"},
+        None: {"SUBSCRIBE_REQUESTED", "SUBSCRIBE"},
+        "SUBSCRIBE_REQUESTED": {"PENDING"},
+        "SUBSCRIBE": {"PENDING"},  # legacy replay compatibility
         "PENDING": {"NAV_APPLIED"},
         "NAV_APPLIED": {"SETTLED"},
         "SETTLED": {"REDEEM_REQUESTED"},
@@ -54,25 +55,43 @@ class PaperFundTerms:
     currency: str
     market: str
     settlement: str
-    subscription_min: Decimal
-    subscription_step: Decimal
     metadata_source: str
+    paper_subscription_policy: str = ""
+    paper_amount_unit: Decimal = Decimal("0.01")
+    subscription_min: Decimal | None = None
+    subscription_step: Decimal | None = None
+    broker_subscription_min: str = "NO_VERIFICADO"
+    broker_subscription_step: str = "NO_VERIFICADO"
 
     def __post_init__(self):
         if str(self.family).upper() not in {"FCI", "FCI_LOCAL"}:
             raise ValueError("PAPER_FUND_FAMILY_INVALID")
         object.__setattr__(self, "family", "FCI")
         object.__setattr__(self, "currency", cash_currency(self.currency))
-        object.__setattr__(self, "subscription_min", _positive(
-            self.subscription_min, "subscription_min"))
-        object.__setattr__(self, "subscription_step", _positive(
-            self.subscription_step, "subscription_step"))
+        policy = str(self.paper_subscription_policy or "").upper()
+        if policy and policy != "INTERNAL_RISK_BUDGET_BY_AMOUNT":
+            raise ValueError("PAPER_FUND_POLICY_INVALID")
+        object.__setattr__(self, "paper_subscription_policy", policy)
+        object.__setattr__(self, "paper_amount_unit", _positive(
+            self.paper_amount_unit, "paper_amount_unit"))
+        if self.subscription_min is not None:
+            object.__setattr__(self, "subscription_min", _positive(
+                self.subscription_min, "subscription_min"))
+        if self.subscription_step is not None:
+            object.__setattr__(self, "subscription_step", _positive(
+                self.subscription_step, "subscription_step"))
+        if not policy and (self.subscription_min is None or self.subscription_step is None):
+            raise ValueError("PAPER_FUND_POLICY_OR_BROKER_TERMS_REQUIRED")
         if not all(str(value or "").strip() for value in (
                 self.symbol, self.market, self.settlement, self.metadata_source)):
             raise ValueError("PAPER_FUND_TERMS_INCOMPLETE")
 
     def subscription_amount(self, value):
         amount = _positive(value, "subscription_amount")
+        if self.paper_subscription_policy == "INTERNAL_RISK_BUDGET_BY_AMOUNT":
+            if amount % self.paper_amount_unit:
+                raise ValueError("FCI_PAPER_AMOUNT_UNIT_INVALID")
+            return amount
         if amount < self.subscription_min:
             raise ValueError("FCI_SUBSCRIPTION_BELOW_MINIMUM")
         if (amount - self.subscription_min) % self.subscription_step:
@@ -106,7 +125,7 @@ class FamilyPaperExecutor:
         return apply_paper_event(
             self.store, lifecycle_id=lifecycle_id, event_id=event_id,
             family="FCI", instrument=terms.symbol, currency=terms.currency,
-            to_state="SUBSCRIBE", amount=-subscribed, occurred_at=occurred_at,
+            to_state="SUBSCRIBE_REQUESTED", amount=-subscribed, occurred_at=occurred_at,
             detail={"mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
                     "subscription_amount": str(subscribed),
                     "metadata_source": terms.metadata_source})

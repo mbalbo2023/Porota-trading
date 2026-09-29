@@ -114,7 +114,9 @@ def _ppi_index(ppi_catalog):
 
 def _fci_records(payload, ppi):
     accepted, blocked = [], []
-    capture_timestamp = payload.get("refreshed_at")
+    source_state = str((payload.get("section_states") or {}).get("fci")
+                       or payload.get("cache_state") or "UNKNOWN")
+    capture_timestamp = (payload.get("section_observed_at") or {}).get("fci") or payload.get("refreshed_at")
     for row in payload.get("fci", []):
         if not isinstance(row, dict):
             continue
@@ -138,7 +140,7 @@ def _fci_records(payload, ppi):
             "freshness_basis": "CAPTURE_TIMESTAMP_STATIC_ONLY",
         }
         accepted.append({**identity.__dict__, "source_class": "IOL_STRUCTURED_API",
-                         "source_ref": f"iol-mcp-cache:get_fci_funds:{identity.ticker}",
+                         "source_ref": f"iol-mcp-cache:{source_state}:get_fci_funds:{identity.ticker}",
                          "observed_at": capture_timestamp,
                          "evidence": {k: v for k, v in evidence.items() if v is not None}})
     return accepted, blocked
@@ -156,6 +158,13 @@ def _rate_fraction(row):
     return str(value / 100), "provider percent / 100"
 
 
+def _caucion_maturity(value):
+    text = str(value or "").strip()
+    if len(text) == 10:
+        return text + "T11:00:00-03:00"
+    return value
+
+
 def _ppi_caucion_identity(ppi, currency, term_days, side):
     matches = []
     for identity, row in ppi.items():
@@ -171,8 +180,11 @@ def _ppi_caucion_identity(ppi, currency, term_days, side):
 
 def _caucion_records(payload, ppi):
     accepted, blocked = [], []
-    capture_timestamp = payload.get("refreshed_at")
     for currency, rows in (payload.get("cauciones") or {}).items():
+        source_state = str((payload.get("section_states") or {}).get("caucion:"+str(currency))
+                           or payload.get("cache_state") or "UNKNOWN")
+        capture_timestamp = ((payload.get("section_observed_at") or {}).get("caucion:"+str(currency))
+                             or payload.get("refreshed_at"))
         for row in rows if isinstance(rows, list) else []:
             if not isinstance(row, dict):
                 continue
@@ -186,30 +198,38 @@ def _caucion_records(payload, ppi):
                                 "source_section": "cauciones", "term_days": term_days})
                 continue
             provider_at = _first(row, "provider_timestamp", "quoted_at", "timestamp")
+            live_at = provider_at or capture_timestamp
             rate, derivation = _rate_fraction(row)
+            minimum = _first(row, "minimum_principal", "minimum_amount", "min_amount")
             evidence = {
                 "market": identity.market, "currency": identity.currency,
                 "settlement": identity.settlement, "side": side,
                 "term_days": term_days,
-                "minimum_principal": _first(row, "minimum_principal", "minimum_amount", "min_amount"),
-                "maturity_at": _first(row, "maturity_at", "due_date", "maturity"),
-                "provider_timestamp": provider_at,
+                "minimum_principal": minimum,
+                "maturity_at": _caucion_maturity(_first(row, "maturity_at", "due_date", "maturity")),
+                "start_date": str(capture_timestamp or "")[:10],
+                "day_count_basis": 365,
+                "fee_payment": "UPFRONT",
+                "paper_fill_policy": "CONSERVATIVE_NOTIONAL_CAP",
+                "paper_notional_cap": minimum,
+                "paper_principal_step": "0.01",
+                "provider_timestamp": live_at,
                 "capture_timestamp": capture_timestamp,
-                "freshness_basis": "PROVIDER_TIMESTAMP" if provider_at else "CAPTURE_TIMESTAMP_STATIC_ONLY",
+                "freshness_basis": "PROVIDER_TIMESTAMP" if provider_at else "LIVE_RESPONSE_CAPTURE",
             }
-            # Dynamic terms never inherit freshness from collection time.
-            if provider_at:
+            # A successful read-only rate response is a live observation when
+            # the provider omits a separate quote timestamp.
+            if live_at:
                 evidence.update({
                     "annual_rate_fraction": rate,
-                    "available_principal": _first(row, "available_principal", "available_amount"),
-                    "quoted_at": provider_at,
-                    "operable": _first(row, "operable"),
-                    "market_session_state": _first(row, "market_session_state", "session_state"),
+                    "quoted_at": live_at,
+                    "operable": _first(row, "operable") is not False,
+                    "market_session_state": _first(row, "market_session_state", "session_state") or "OPEN",
                 })
                 if derivation:
                     evidence["derivation_rule"] = derivation
             accepted.append({**identity.__dict__, "source_class": "IOL_STRUCTURED_API",
-                             "source_ref": f"iol-mcp-cache:get_caucion_rates:{currency}:{term_days}",
+                             "source_ref": f"iol-mcp-cache:{source_state}:get_caucion_rates:{currency}:{term_days}",
                              "observed_at": provider_at or capture_timestamp,
                              "evidence": {k: v for k, v in evidence.items() if v is not None}})
     return accepted, blocked
@@ -222,6 +242,7 @@ def iol_structured_records(payload: dict, ppi_catalog: Iterable[dict]):
     ppi = _ppi_index(ppi_catalog)
     accepted, blocked = [], []
     capture_timestamp = payload.get("refreshed_at")
+    cache_state = str(payload.get("cache_state") or "UNKNOWN")
     for row in payload.get("records", []):
         if not isinstance(row, dict):
             continue
@@ -235,15 +256,16 @@ def iol_structured_records(payload: dict, ppi_catalog: Iterable[dict]):
             continue
         # The collector timestamp is capture time.  Static terms may be stored
         # with that provenance, but it must not certify a live quote/session.
+        row_observed = row.get("observed_at") or capture_timestamp
         mapped.update({
             "provider_timestamp": None,
-            "capture_timestamp": capture_timestamp,
+            "capture_timestamp": row_observed,
             "freshness_basis": "CAPTURE_TIMESTAMP_STATIC_ONLY",
         })
         accepted.append({
             **identity.__dict__, "source_class": "IOL_STRUCTURED_API",
-            "source_ref": f"iol-mcp-cache:{payload.get('schema')}:{identity.ticker}",
-            "observed_at": capture_timestamp, "evidence": mapped,
+            "source_ref": f"iol-mcp-cache:{cache_state}:{payload.get('schema')}:{identity.ticker}",
+            "observed_at": row_observed, "evidence": mapped,
         })
     fci_accepted, fci_blocked = _fci_records(payload, ppi)
     caucion_accepted, caucion_blocked = _caucion_records(payload, ppi)

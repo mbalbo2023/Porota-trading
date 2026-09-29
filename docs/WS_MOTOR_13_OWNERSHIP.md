@@ -7,7 +7,9 @@
 - PRODUCTIVE_BASE_SHA: `9003834fd284e7cd71c64c67467bafee2cbbe550`
 - STARTED_READ_ONLY: `YES`
 - DEPLOY_OWNER: `NO`
-- STATUS: `ACTIVE`
+- STATUS: `RELEASED`
+- RELEASED_UTC: `2026-09-29T14:11:59.127Z`
+- RELEASE_EVIDENCE: `PR #363 comment; deploy run 36578708844 SUCCESS; postdeploy audit run 36580331494 SUCCESS`
 - ACQUIRED_UTC: `2026-09-29T12:35:00Z`
 
 Scope: migración del runner contractual masivo desde Evidence v1 a Evidence v2,

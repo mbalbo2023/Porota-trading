@@ -194,8 +194,9 @@ def test_fci_inventory_and_caucion_sections_are_not_dropped_but_require_ppi_bind
     bound = parity.iol_structured_records(payload, [ppi_fci, ppi_caucion])
     assert {row["family"] for row in bound["accepted"]} == {"FCI", "CAUCIONES"}
     caucion = next(row for row in bound["accepted"] if row["family"] == "CAUCIONES")
-    assert "annual_rate_fraction" not in caucion["evidence"]
-    assert caucion["evidence"]["freshness_basis"] == "CAPTURE_TIMESTAMP_STATIC_ONLY"
+    assert caucion["evidence"]["annual_rate_fraction"] == "0.159"
+    assert caucion["evidence"]["freshness_basis"] == "LIVE_RESPONSE_CAPTURE"
+    assert caucion["evidence"]["paper_fill_policy"] == "CONSERVATIVE_NOTIONAL_CAP"
 
 
 def test_complementary_option_fields_reach_real_catalog_capability(tmp_path):

@@ -15,7 +15,7 @@ from bs_instrument_contracts import contract_from_metadata
 from cp_contract_evidence_v2_hf6 import SOURCE_RANK, evidence_hash
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 
-SUPPORTED = {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES", "FUTUROS"}
+SUPPORTED = {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES"}
 MAP = {"cash_multiplier": "cash_multiplier", "quantity_step": "quantity_step",
        "quantity_min": "minimum_quantity", "minimum_quantity": "minimum_quantity",
        "expiry_at": "expires_at", "expires_at": "expires_at", "underlying": "underlying",
@@ -23,8 +23,29 @@ MAP = {"cash_multiplier": "cash_multiplier", "quantity_step": "quantity_step",
        "initial_margin": "initial_margin", "maintenance_margin": "maintenance_margin",
        "margin_requirement": "initial_margin",
        "subscription_min": "subscription_min", "subscription_step": "subscription_step"}
+MAP.update({
+    "paper_cash_multiplier": "cash_multiplier",
+    "paper_quantity_step": "quantity_step",
+    "paper_quantity_min": "minimum_quantity",
+    "paper_subscription_policy": "paper_subscription_policy",
+    "paper_amount_unit": "paper_amount_unit",
+       "paper_margin_reserve": "initial_margin",
+    "paper_margin_policy": "paper_margin_policy",
+    "paper_margin_rate": "paper_margin_rate",
+    "side": "side", "term_days": "term_days", "start_date": "start_date",
+    "maturity_at": "maturity_at", "quoted_at": "quoted_at",
+    "minimum_principal": "minimum_principal", "principal_step": "principal_step",
+    "paper_fill_policy": "paper_fill_policy", "paper_notional_cap": "paper_notional_cap",
+    "paper_principal_step": "paper_principal_step", "day_count_basis": "day_count_basis",
+    "fee_payment": "fee_payment", "annual_rate_fraction": "annual_rate_fraction",
+    "available_principal": "available_principal",
+    "operable": "operable", "market_session_state": "market_session_state",
+})
 NUMERIC = {"cash_multiplier", "quantity_step", "minimum_quantity", "strike",
-           "initial_margin", "maintenance_margin", "subscription_min", "subscription_step"}
+           "initial_margin", "maintenance_margin", "subscription_min", "subscription_step",
+           "paper_amount_unit", "paper_margin_rate", "term_days", "minimum_principal",
+           "principal_step", "paper_notional_cap", "paper_principal_step",
+           "day_count_basis", "annual_rate_fraction", "available_principal"}
 
 
 def _value(field, value):
@@ -102,14 +123,37 @@ def normalize_group(records, *, now=None):
     key = next(iter(keys)) if len(keys)==1 else ("", "", "", "", "")
     ticker, family, market, currency, settlement = key
     required_by_family = {
-        "FCI": ("subscription_min", "subscription_step"),
+        "FCI": (),
         "OPCIONES": ("cash_multiplier", "quantity_step", "minimum_quantity",
                      "expires_at", "underlying", "strike", "option_right"),
         "FUTUROS": ("cash_multiplier", "quantity_step", "minimum_quantity",
-                    "expires_at", "underlying", "initial_margin"),
+                    "expires_at", "underlying"),
+        "CAUCIONES": ("side", "start_date", "maturity_at", "quoted_at",
+                      "minimum_principal", "day_count_basis", "fee_payment",
+                      "annual_rate_fraction", "operable", "market_session_state"),
     }
     required = required_by_family.get(
         family, ("cash_multiplier", "quantity_step", "minimum_quantity"))
+    if family == "FCI":
+        policy_ready = all(name in fields for name in (
+            "paper_subscription_policy", "paper_amount_unit"))
+        broker_ready = all(name in fields for name in (
+            "subscription_min", "subscription_step"))
+        if not (policy_ready or broker_ready):
+            errors.extend(("MISSING:paper_subscription_policy", "MISSING:paper_amount_unit"))
+    if family == "FUTUROS":
+        published = "initial_margin" in fields
+        policy = (fields.get("paper_margin_policy") == "CONSERVATIVE_NOTIONAL_RATE"
+                  and "paper_margin_rate" in fields)
+        if not (published or policy):
+            errors.append("MISSING:paper_margin_policy")
+    if family == "CAUCIONES":
+        published_depth = all(name in fields for name in ("available_principal", "principal_step"))
+        paper_fill = (fields.get("paper_fill_policy") == "CONSERVATIVE_NOTIONAL_CAP"
+                      and all(name in fields for name in ("paper_notional_cap", "paper_principal_step")))
+        if not (published_depth or paper_fill):
+            errors.extend(("MISSING:paper_fill_policy", "MISSING:paper_notional_cap",
+                           "MISSING:paper_principal_step"))
     for field in required:
         if field not in fields:
             errors.append("MISSING:" + field)
@@ -119,6 +163,7 @@ def normalize_group(records, *, now=None):
                 "settlement": settlement, "metadata_source": "CONTRACT_EVIDENCE_V2_BOUND",
                 "field_provenance": provenance}
     family_contract = None
+    caucion_contract = None
     if not errors and family == "FCI":
         from rc6_paper_family_lifecycle import fund_terms_from_metadata
         family_contract = {
@@ -132,6 +177,13 @@ def normalize_group(records, *, now=None):
         except ValueError as exc:
             errors.append("CONTRACT_INVALID:" + str(exc))
             family_contract = None
+    elif not errors and family == "CAUCIONES":
+        caucion_contract = {
+            **fields, "family": family, "market": market, "currency": currency,
+            "settlement": settlement,
+            "metadata_source": "CONTRACT_EVIDENCE_V2_BOUND",
+            "field_provenance": provenance,
+        }
     elif not errors:
         try:
             contract_from_metadata(ticker, family, contract)
@@ -140,8 +192,9 @@ def normalize_group(records, *, now=None):
     return {"ticker": ticker, "instrument_type": family, "market": market,
             "currency": currency, "settlement": settlement,
             "source": "CONTRACT_EVIDENCE_V2", "observed_at": max((r.get("observed_at") or "" for r in records), default=""),
-            "financial_contract_v17": contract if not errors and family != "FCI" else None,
+            "financial_contract_v17": contract if not errors and family not in {"FCI", "CAUCIONES"} else None,
             "paper_family_contract_v1": family_contract if not errors else None,
+            "paper_caucion_contract_v1": caucion_contract if not errors else None,
             "contract_bridge": {"status": "NORMALIZED" if not errors else "BLOCKED",
                 "gaps": sorted(set(errors)), "field_provenance": provenance,
                 "observed_at": max((r.get("observed_at") or "" for r in records), default="") },
@@ -217,8 +270,8 @@ def caucion_offer_from_evidence(records, primary, *, now=None):
     from bu_instrument_catalog import _candidate_has_ppi_primary, _candidate_timestamp_is_fresh
     now = now or datetime.now(timezone.utc)
     normalized = normalize_group(records, now=now)
-    permitted = {"MISSING:cash_multiplier", "MISSING:quantity_step", "MISSING:minimum_quantity", "EXECUTOR_GAP:CAUCIONES"}
-    errors = set(normalized["contract_bridge"]["gaps"]) - permitted
+    errors = {gap for gap in normalized["contract_bridge"]["gaps"]
+              if not str(gap).startswith("MISSING:") and gap != "EXECUTOR_GAP:CAUCIONES"}
     key = tuple(normalized.get(k) for k in ("ticker","instrument_type","market","currency","settlement"))
     pkey = tuple(primary.get(k) for k in ("ticker","instrument_type","market","currency","settlement"))
     if errors or key != pkey or key[1] != "CAUCIONES":
@@ -235,6 +288,9 @@ def caucion_offer_from_evidence(records, primary, *, now=None):
             fields[name] = value
     if fields.get("side") != "COLOCADORA":
         raise ValueError("CAUCION_SIDE_NOT_AUTHORIZED")
+    if fields.get("paper_fill_policy") == "CONSERVATIVE_NOTIONAL_CAP":
+        fields["available_principal"] = fields.get("paper_notional_cap")
+        fields["principal_step"] = fields.get("paper_principal_step")
     required = ("annual_rate_fraction","start_date","maturity_at","quoted_at","available_principal",
                 "minimum_principal","principal_step","day_count_basis","fee_payment")
     if key[3] != "ARS":

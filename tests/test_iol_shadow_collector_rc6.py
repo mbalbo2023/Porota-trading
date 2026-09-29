@@ -48,7 +48,7 @@ def test_429_trips_circuit_and_does_not_fall_back_to_orders(tmp_path):
             raise exc
     governor=collector.RateGovernor(policy(),clock=lambda:0,sleep=lambda _:None,jitter=lambda:0)
     result=collector.run_batch(["YPFD"],Limited(),root=tmp_path,policy=policy(),governor=governor)
-    assert result["symbols"][0]["state"]=="UNAVAILABLE"
+    assert result["symbols"][0]["state"]=="SOURCE_UNAVAILABLE"
     assert governor.open_until>0
     try: governor.acquire()
     except collector.CircuitOpenError: pass
