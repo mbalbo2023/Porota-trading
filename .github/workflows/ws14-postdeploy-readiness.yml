@@ -1,4 +1,5 @@
 name: WS14 postdeploy mass PAPER audit READ ONLY
+# Stability recheck after observer refresh cycles; no runtime mutation.
 
 on:
   push:
