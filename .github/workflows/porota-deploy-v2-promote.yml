@@ -398,9 +398,33 @@ jobs:
           echo "$RUNTIME_CHECK"
           grep -q '^GO_CHECK=GREEN' <<< "$RUNTIME_CHECK"
 
-          DASHBOARD_HTTP="$(curl -sS -o /tmp/porota-v2-health -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/health)"
+          # The exhaustive contract reconciliation can create a transient host
+          # memory peak.  The dashboard is independently restartable and must
+          # be proven healthy after that peak before any postdeploy assertion.
+          DASHBOARD_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard 2>/dev/null || true)"
+          DASHBOARD_OOM_KILLED="$(sudo -n docker inspect -f '{{.State.OOMKilled}}' porota_production_dashboard 2>/dev/null || true)"
+          echo "DASHBOARD_POST_RECONCILIATION_STATUS=$DASHBOARD_STATUS|OOM_KILLED=$DASHBOARD_OOM_KILLED"
+          if [ "$DASHBOARD_STATUS" != running ]; then
+            sudo -n docker logs --tail 120 porota_production_dashboard 2>&1 || true
+            sudo -n docker start porota_production_dashboard >/dev/null
+            echo "DASHBOARD_POST_RECONCILIATION_RESTART=PERFORMED"
+          fi
+          DASHBOARD_HTTP=000
+          for DASHBOARD_ATTEMPT in $(seq 1 18); do
+            DASHBOARD_HTTP="$(curl -sS -o /tmp/porota-v2-health -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/health || true)"
+            echo "DASHBOARD_HEALTH_ATTEMPT=$DASHBOARD_ATTEMPT|HTTP=$DASHBOARD_HTTP"
+            [ "$DASHBOARD_HTTP" = 200 ] && break
+            sleep 5
+          done
+          if [ "$DASHBOARD_HTTP" != 200 ]; then
+            sudo -n docker inspect porota_production_dashboard || true
+            sudo -n docker logs --tail 200 porota_production_dashboard 2>&1 || true
+            exit 1
+          fi
           test "$DASHBOARD_HTTP" = 200
-          echo "DASHBOARD_HEALTH_HTTP=200"
+          DASHBOARD_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
+          echo "DASHBOARD_HEALTH_HTTP=200|image=$DASHBOARD_IMAGE_ID"
 
           # Bootstrap compacto tras un deploy correcto. Cada tarea es diaria y
           # acotada; no habilita rutas de orden real.
