@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          git diff --name-only 26dc4c72dcb49890e40e4197b84121e3d622b7b6..HEAD > changed-paths.txt
+          git diff --name-only cca90c0b4642b2b5f551bf0f1bd5b03567f04c68..HEAD > changed-paths.txt
           test "$(wc -l < changed-paths.txt)" -eq 1
           grep -Fxq '.github/workflows/ws14-postdeploy-readiness.yml' changed-paths.txt
           if grep -Eiq '(^|/)(ppi[^/]*watch|watch[^/]*ppi)' changed-paths.txt; then
@@ -56,8 +56,8 @@ jobs:
           import collections, datetime, json, pathlib, sqlite3, subprocess
 
           DB = '/opt/porota-trading/data/paper_v17/observer_v17.db'
-          EXPECTED_CANDIDATE = '75338509ce78a05aaa17761da8e4bbaa709a4da7'
-          EXPECTED_DEPLOY = '26dc4c72dcb49890e40e4197b84121e3d622b7b6'
+          EXPECTED_CANDIDATE = '8b59ff0bd48b7dba43fd372c7b90af04e037bbe4'
+          EXPECTED_DEPLOY = 'cca90c0b4642b2b5f551bf0f1bd5b03567f04c68'
           BASELINE = {
               'catalog_ready': 809,
               'candidate_ready': 651,

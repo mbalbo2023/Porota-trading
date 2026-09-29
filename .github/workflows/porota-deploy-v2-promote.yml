@@ -310,6 +310,11 @@ jobs:
           # Full contract evidence reconciliation remains read-only at the broker
           # boundary. The remote v1 sweep is closed-session only, but deterministic
           # local Evidence v2 policy materialization is mandatory in every deploy.
+          # Stop the observer during the database mutation to prevent its startup
+          # catalogue refresh racing the exact deploy reconciliation.  It is
+          # restarted unconditionally before evaluating the runner result.
+          sudo -n docker stop porota_production_observer >/dev/null
+          echo "OBSERVER_PAUSED_FOR_CONTRACT_RECONCILIATION=GREEN"
           set +e
           # The exhaustive PPI v1 compatibility pass performs ~2k bounded read-only
           # requests before the mass v2 reconciliation. Production evidence shows a
@@ -329,6 +334,8 @@ jobs:
             --entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py 2>&1)"
           CONTRACT_RC=$?
           set -e
+          sudo -n docker start porota_production_observer >/dev/null
+          echo "OBSERVER_RESTARTED_AFTER_CONTRACT_RECONCILIATION=GREEN"
           echo "RC6_FULL_CONTRACT_RECONCILIATION_EXIT=$CONTRACT_RC"
           echo "$CONTRACT_OUTPUT"
           test "$CONTRACT_RC" -eq 0

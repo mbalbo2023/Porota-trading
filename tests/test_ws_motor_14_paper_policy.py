@@ -243,6 +243,17 @@ def test_market_open_runner_skips_only_remote_refresh_not_local_mass_reconciliat
     assert 'print("STATUS=OK")' in source
 
 
+def test_ppi_catalog_refresh_reapplies_and_rematerializes_paper_policy_evidence():
+    source = (Path(__file__).resolve().parents[1] /
+              "bf_production_paper_observer.py").read_text(encoding="utf-8")
+    download = source[source.index("def _download_catalog"):source.index(
+        "def _reconcile_complementary_catalog")]
+    materialize = download.index("mass_result = evidence_v2_mass.collect")
+    reconcile = download.index("promoted_after_refresh = _reconcile_complementary_catalog")
+    assert materialize < reconcile
+    assert "CATALOG_PAPER_POLICY_MATERIALIZATION_ERROR" in download
+
+
 def test_caucion_without_depth_reaches_paper_capability():
     primary = {
         "ticker": "PESOS1", "instrument_type": "CAUCIONES", "market": "BYMA",
