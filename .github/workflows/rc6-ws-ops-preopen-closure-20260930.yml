@@ -48,8 +48,10 @@ jobs:
           sudo -n docker inspect -f '{{.Name}}|status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' porota_production_observer porota_production_dashboard
           echo "RUNTIME_STABLE_IMAGE=$(sudo -n docker image inspect -f '{{.Id}}' porota-trading-bot:17.0.0-rc6)"
           echo "RUNTIME_CONTAINERS_END"
-          sudo -n timeout 30 python3 - "$DB" <<'PY'
-          import json,re,sqlite3,sys
+          TOKEN="$(sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_dashboard | sed -n 's/^DASHBOARD_ACCESS_TOKEN=//p' | head -n1)"
+          test -n "$TOKEN"
+          sudo -n timeout 30 env DASH_TOKEN="$TOKEN" python3 - "$DB" <<'PY'
+          import json,os,re,sqlite3,sys
           from urllib.request import urlopen,Request
           db=sys.argv[1]
           c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=3)
@@ -62,7 +64,7 @@ jobs:
           print("RUNTIME_READY="+str(ready))
           assert obs["mode"]=="PRODUCTION_PAPER" and int(obs["real_orders_sent"] or 0)==0
           for path in ["/vivo","/universo-operativo","/instrumentos","/riesgo","/api/dashboard/truth"]:
-              req=Request("http://127.0.0.1:8000"+path,headers={"User-Agent":"porota-runtime-audit"})
+              req=Request("http://127.0.0.1:8000"+path,headers={"User-Agent":"porota-runtime-audit","Authorization":"Bearer "+os.environ["DASH_TOKEN"]})
               with urlopen(req,timeout=45) as r:
                   body=r.read(); code=r.status
               text=body.decode("utf-8","replace")
