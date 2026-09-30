@@ -110,10 +110,24 @@ def transient_payload_error(error: BaseException) -> bool:
     return False
 
 
+def instrument_not_found(error: BaseException) -> bool:
+    """True only for PPI's explicit per-instrument negative capability response."""
+    current = error
+    for _ in range(6):
+        if str(current).strip().casefold() == "instrument not found":
+            return True
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+        if current is None:
+            break
+    return False
+
+
 def classify_read_error(error: BaseException) -> str:
     """Etiqueta estable para observabilidad sin almacenar cuerpos sensibles."""
     if session_invalid(error):
         return "PPI_SESSION_INVALID"
+    if instrument_not_found(error):
+        return "PPI_INSTRUMENT_NOT_FOUND"
     current = error
     for _ in range(6):
         response = getattr(current, "response", None)
