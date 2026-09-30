@@ -1,0 +1,97 @@
+name: RC6 Dashboard Surface Audit Read-Only 2026-09-30
+
+on:
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-dashboard-surface-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_dashboard_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_dashboard_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Audit live dashboard surfaces and disk read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_dashboard_audit" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "DASH_AUDIT_DISK_FREE_BYTES=$(df -PB1 / | awk 'NR==2{print $4}')"
+          echo "DASH_AUDIT_DOCKER_DF_BEGIN"
+          sudo -n docker system df || true
+          echo "DASH_AUDIT_DOCKER_DF_END"
+          sudo -n docker inspect porota_production_dashboard porota_production_observer >/dev/null
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import json, os, re, time, urllib.request
+          paths = (
+              "/", "/vivo", "/trading", "/trading/acciones", "/universo-operativo",
+              "/instrumentos", "/validacion", "/analisis", "/aprendizaje", "/scalping",
+              "/riesgo", "/historicos", "/reportes", "/sistema", "/salud",
+          )
+          token=os.environ.get("DASHBOARD_ACCESS_TOKEN","").strip()
+          assert token, "DASHBOARD_ACCESS_TOKEN_MISSING"
+          results={}
+          for path in paths:
+              request=urllib.request.Request(
+                  "http://127.0.0.1:8000"+path,
+                  headers={"Authorization":"Bearer "+token},
+              )
+              started=time.monotonic()
+              with urllib.request.urlopen(request, timeout=75) as response:
+                  body=response.read()
+                  status=response.status
+              seconds=round(time.monotonic()-started,3)
+              text=body.decode("utf-8","replace")
+              results[path]={
+                  "http":status,
+                  "bytes":len(body),
+                  "seconds":seconds,
+                  "tr":len(re.findall(r"<tr\\b",text,re.I)),
+                  "paper_cards":len(re.findall(r"class=['\"][^'\"]*paper-card",text,re.I)),
+                  "progressive_records":len(re.findall(r"data-porota-record=['\"]1['\"]",text,re.I)),
+                  "literal_pending_badges":len(re.findall(r">\\s*(?:PENDING|PENDIENTE)\\s*<",text,re.I)),
+                  "mostrar_mas":text.lower().count("mostrar más"),
+                  "candidate_identity_v2":text.count("candidate_identity_v2"),
+              }
+              print("DASH_SURFACE="+json.dumps({"path":path,**results[path]},ensure_ascii=False,sort_keys=True),flush=True)
+          print("DASH_SURFACE_SUMMARY="+json.dumps(results,ensure_ascii=False,sort_keys=True),flush=True)
+          PY
+          echo "DASH_AUDIT_REAL_ORDERS=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True)
+          c.execute('PRAGMA query_only=ON')
+          print(c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())
+          c.close()
+          PY
+          )"
+          REMOTE
+
+      - name: Runner cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/porota_rc6_dashboard_audit"
