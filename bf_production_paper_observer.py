@@ -1262,6 +1262,18 @@ def _download_histories(reader, store):
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
+def _history_provider_instrument_type(metadata, canonical_family):
+    """Use PPI's literal provider family only for the read-only history request.
+
+    The canonical family remains authoritative inside Porota storage/readiness.
+    This prevents aliases such as OBLIGACIONES -> ON from being sent back to
+    PPI as if they were provider enum values.
+    """
+    raw = (metadata or {}).get("raw") if isinstance(metadata, dict) else {}
+    provider = str((raw or {}).get("_provider_instrument_type") or "").strip().upper()
+    return provider or str(canonical_family or "").strip().upper()
+
+
 def _download_histories_locked(reader, store, history_store):
     end = _history_end_date()
     if end is None:
@@ -1300,7 +1312,8 @@ def _download_histories_locked(reader, store, history_store):
     for symbol, instrument_type, settlement, market, start, metadata in symbols:
         attempted = now_iso()
         try:
-            payload = reader.history(symbol, instrument_type, settlement, start, end)
+            provider_type = _history_provider_instrument_type(metadata, instrument_type)
+            payload = reader.history(symbol, provider_type, settlement, start, end)
             attempted = now_iso()
             bounded_payload = [
                 row for row in payload
