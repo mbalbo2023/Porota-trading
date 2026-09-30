@@ -306,6 +306,8 @@ jobs:
 
   preopen:
     name: Auditoría operativa pre-rueda 2026-10-01
+    needs: [disk_cleanup]
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -357,11 +359,11 @@ jobs:
           echo "PREOPEN_BASELINE_END"
           rc45=0;rc15=0
           set +e
-          o45="$(timeout 300 python3 rc6_preopen.py --phase T_MINUS_45 2>&1)";rc45=$?
-          o15="$(timeout 300 python3 rc6_preopen.py --phase T_MINUS_15 2>&1)";rc15=$?
+          o45="$(sudo -n timeout 300 python3 rc6_preopen.py --phase T_MINUS_45 2>&1)";rc45=$?
+          o15="$(sudo -n timeout 300 python3 rc6_preopen.py --phase T_MINUS_10 2>&1)";rc15=$?
           set -e
           echo "PREOPEN_T_MINUS_45_RC=$rc45";echo "$o45"
-          echo "PREOPEN_T_MINUS_15_RC=$rc15";echo "$o15"
+          echo "PREOPEN_T_MINUS_10_RC=$rc15";echo "$o15"
           echo "RECENT_CRITICAL_BEGIN"
           { sudo -n docker logs --since 8h porota_production_observer 2>&1 || true; sudo -n docker logs --since 8h porota_production_dashboard 2>&1 || true; } | grep -Ei 'Traceback|segmentation|exit.?139|oom|REAL_ORDER_CAPABILITY=(ENABLED|REAL)|real_orders_sent=[1-9][0-9]*' | tail -n 120 || true
           echo "RECENT_CRITICAL_END"
@@ -391,7 +393,7 @@ jobs:
 
   disk_cleanup:
     name: Limpieza segura y medida de disco
-    needs: [runtime_dashboard, caucion, history, preopen]
+    needs: [runtime_dashboard, caucion, history]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 12
