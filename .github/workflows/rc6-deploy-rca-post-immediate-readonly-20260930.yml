@@ -6,15 +6,14 @@ on:
       - audit/ws-deploy-rca-post-immediate-readonly-20260930
     paths:
       - '.github/workflows/rc6-deploy-rca-post-immediate-readonly-20260930.yml'
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  observer_restart_events_readonly:
+  observer_restart_window_readonly:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 6
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -22,18 +21,16 @@ jobs:
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Prepare strict SSH
         shell: bash
         run: |
           set -Eeuo pipefail
-          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
 
-      - name: Read Docker restart events and host control plane
+      - name: Read exact observer restart window
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -42,29 +39,20 @@ jobs:
             "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
           DB=/opt/porota-trading/data/paper_v17/observer_v17.db
-          END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          echo "RCA_EVENTS_CONTAINER=$(sudo -n docker inspect -f 'status={{.State.Status}}|started={{.State.StartedAt}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' porota_production_observer)"
-          echo "RCA_DOCKER_LIFECYCLE_EVENTS_BEGIN"
-          sudo -n timeout 15 docker events \
-            --since '2026-09-30T13:15:00Z' --until "$END" \
-            --filter container=porota_production_observer \
-            --format '{{.Time}}|{{.Action}}|{{json .Actor.Attributes}}' 2>/dev/null | \
-            grep -E '\|(create|start|stop|die|kill|restart|destroy|oom)\|' || true
-          echo "RCA_DOCKER_LIFECYCLE_EVENTS_END"
-
-          echo "RCA_SYSTEMD_REFERENCES_BEGIN"
-          sudo -n grep -RIl --exclude='*.wants' 'porota_production_observer' /etc/systemd/system 2>/dev/null | sort || true
-          for unit_file in $(sudo -n grep -RIl 'porota_production_observer' /etc/systemd/system 2>/dev/null | sort -u); do
-            echo "RCA_SYSTEMD_FILE=$unit_file"
-            sudo -n grep -n -E 'porota_production_observer|docker (start|stop|restart|rm|run)|Restart=|OnUnit|OnCalendar' "$unit_file" 2>/dev/null || true
-          done
-          echo "RCA_SYSTEMD_REFERENCES_END"
-
-          echo "RCA_POROTA_TIMERS_BEGIN"
-          systemctl list-timers --all --no-pager --no-legend 2>/dev/null | grep -Ei 'porota|rc6|observer|reconcil|deploy' || true
-          echo "RCA_POROTA_TIMERS_END"
-
-          SAFETY="$(sudo -n timeout 15 python3 - "$DB" <<'PY'
+          echo "RCA_RESTART_WINDOW_STATE=$(sudo -n docker inspect -f 'status={{.State.Status}}|started={{.State.StartedAt}}|restarts={{.RestartCount}}|oom={{.State.OOMKilled}}|exit={{.State.ExitCode}}|error={{.State.Error}}' porota_production_observer)"
+          echo "RCA_RESTART_WINDOW_LOGS_BEGIN"
+          sudo -n docker logs \
+            --since '2026-09-30T14:38:30Z' \
+            --until '2026-09-30T14:46:00Z' \
+            --timestamps porota_production_observer 2>&1 | tail -n 700 || true
+          echo "RCA_RESTART_WINDOW_LOGS_END"
+          echo "RCA_RESTART_WINDOW_DOCKERD_BEGIN"
+          sudo -n journalctl -u docker.service \
+            --since '2026-09-30 14:38:30 UTC' \
+            --until '2026-09-30 14:46:00 UTC' \
+            --no-pager 2>/dev/null | tail -n 400 || true
+          echo "RCA_RESTART_WINDOW_DOCKERD_END"
+          SAFETY="$(sudo -n python3 - "$DB" <<'PY'
           import sqlite3,sys
           c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
           c.execute("PRAGMA query_only=ON")
@@ -73,9 +61,9 @@ jobs:
           print(f"{row[0]}|{int(row[1] or 0)}")
           PY
           )"
-          echo "RCA_EVENTS_SAFETY=$SAFETY"
+          echo "RCA_RESTART_WINDOW_SAFETY=$SAFETY"
           test "$SAFETY" = "PRODUCTION_PAPER|0"
-          echo "RCA_OBSERVER_RESTART_EVENTS_READ_ONLY=GREEN"
+          echo "RCA_RESTART_WINDOW_READ_ONLY=GREEN"
           REMOTE
 
       - name: Cleanup SSH key
