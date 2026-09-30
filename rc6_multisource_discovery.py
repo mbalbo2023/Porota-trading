@@ -73,6 +73,16 @@ def ppi_query_plan(*, day: date|None=None, prefixes_per_family: int|None=None):
     out=[]
     families=tuple(PPI_QUERY_TYPES)
     for offset,family in enumerate(families):
+        # PPI's documented/read-only caucion adapter uses the family alias
+        # CAUCION and expands it to the exact PESOS{días}/DOLAR{días} set.
+        # Rotating one-character prefixes bypass that adapter and let the ten
+        # exact identities age to STALE even though the specialized probe can
+        # still see them.
+        if family == "CAUCIONES":
+            for market in PPI_MARKETS[family]:
+                out.append(("CAUCION", PPI_QUERY_TYPES[family],
+                            DEFAULT_SETTLEMENT[family], market, True, family))
+            continue
         base=(start+offset*3)%len(PREFIXES)
         chosen=[PREFIXES[(base+i)%len(PREFIXES)] for i in range(width)]
         for market in PPI_MARKETS[family]:
