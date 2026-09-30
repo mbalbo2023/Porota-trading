@@ -1,0 +1,49 @@
+name: RC6 Observer Parent Child Exit RCA Read-Only 2026-09-30
+on:
+  push:
+    branches: [audit/ws-deploy-rca-post-immediate-readonly-20260930]
+    paths: ['.github/workflows/rc6-observer-parent-child-exit-rca-readonly-20260930.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"; printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Inspect parent child lifecycle and resource envelope
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          echo "RCA_PC_STATE=$(sudo -n docker inspect -f 'started={{.State.StartedAt}}|restarts={{.RestartCount}}|oom={{.State.OOMKilled}}|pid={{.State.Pid}}|mem={{.HostConfig.Memory}}|pidslimit={{.HostConfig.PidsLimit}}' porota_production_observer)"
+          echo RCA_PC_TOP_BEGIN
+          sudo -n docker top porota_production_observer -eo pid,ppid,etime,stat,rss,vsz,cmd || true
+          echo RCA_PC_TOP_END
+          echo "RCA_PC_STATS=$(sudo -n docker stats --no-stream --format '{{.Name}}|cpu={{.CPUPerc}}|mem={{.MemUsage}}|pids={{.PIDs}}' porota_production_observer porota_production_dashboard)"
+          echo "RCA_PC_HOST=$(free -m | tr '\n' ';')"
+          echo RCA_PC_RECENT_ERRORS_BEGIN
+          sudo -n docker logs --since '2026-09-30T15:12:21Z' --timestamps porota_production_observer 2>&1 | grep -E 'Traceback|database is locked|Fatal Python error|Segmentation fault|Timeout \(0:00:45\)!' | tail -n 400 || true
+          echo RCA_PC_RECENT_ERRORS_END
+          SAFETY="$(sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3); c.execute("pragma query_only=on")
+          r=c.execute("select mode,real_orders_sent from observer_state where id=1").fetchone(); print(f"{r[0]}|{int(r[1] or 0)}"); c.close()
+          PY
+          )"
+          echo "RCA_PC_SAFETY=$SAFETY"; test "$SAFETY" = PRODUCTION_PAPER\|0
+          echo RCA_PARENT_CHILD_READ_ONLY=GREEN
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
