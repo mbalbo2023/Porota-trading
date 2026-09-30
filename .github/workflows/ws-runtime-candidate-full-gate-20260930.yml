@@ -1,0 +1,21 @@
+name: WS Runtime Candidate Full Gate 2026-09-30
+on:
+  push:
+    branches: [fix/ws-runtime-sqlite-contention-20260930]
+    paths: ['.github/workflows/ws-runtime-candidate-full-gate-20260930.yml']
+permissions:
+  contents: read
+jobs:
+  full:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install canonical dependencies
+        run: python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+      - name: Compile candidate
+        run: python -m compileall -q -x '(^|/)(\.git|\.venv|venv|docs)/' .
+      - name: Governed tests
+        run: |
+          set -Eeuo pipefail
+          python -m pytest -q --disable-warnings
