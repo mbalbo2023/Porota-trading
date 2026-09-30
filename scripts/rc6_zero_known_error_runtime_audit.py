@@ -129,6 +129,32 @@ def _iol_snapshot():
     }
 
 
+def _candidate_state_violations(connection):
+    """Return only unsafe or WS15 residual-classification violations.
+
+    Fail-closed rows such as OBSERVED_SHADOW, STALE, or AVAILABLE with
+    can_simulate=0 are legitimate outside the explicit residual families.
+    A simulation-ready row, however, must always be AVAILABLE.  Options,
+    futures and ON/OBLIGACIONES residuals additionally must be either READY
+    or PAUSED_EXPLICIT; no generic third state is accepted there.
+    """
+    unsafe = int(connection.execute("""
+        SELECT COUNT(*) FROM candidate_identity_v2
+        WHERE can_simulate NOT IN (0,1)
+           OR (can_simulate=1 AND upper(status)<>'AVAILABLE')
+           OR (upper(status)='PAUSED_EXPLICIT' AND can_simulate<>0)
+    """).fetchone()[0])
+    residual = int(connection.execute("""
+        SELECT COUNT(*) FROM candidate_identity_v2
+        WHERE upper(instrument_type) IN ('OPCIONES','FUTUROS','ON','OBLIGACIONES')
+          AND NOT (
+              (can_simulate=1 AND upper(status)='AVAILABLE')
+              OR (can_simulate=0 AND upper(status)='PAUSED_EXPLICIT')
+          )
+    """).fetchone()[0])
+    return unsafe, residual
+
+
 def _database_snapshot():
     path = database_path()
     connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=10)
@@ -149,12 +175,7 @@ def _database_snapshot():
     """)]
     by_family = {row["family"]: int(row["ready"] or 0) for row in rows}
     ready = sum(by_family.values())
-    invalid = int(connection.execute("""
-        SELECT COUNT(*) FROM candidate_identity_v2
-        WHERE (upper(status)='AVAILABLE' AND can_simulate<>1)
-           OR (upper(status)='PAUSED_EXPLICIT' AND can_simulate<>0)
-           OR upper(status) NOT IN ('AVAILABLE','PAUSED_EXPLICIT')
-    """).fetchone()[0])
+    invalid, residual_violations = _candidate_state_violations(connection)
     generic_pending = int(connection.execute("""
         SELECT COUNT(*) FROM candidate_identity_v2
         WHERE upper(instrument_type) IN ('OPCIONES','FUTUROS','ON','OBLIGACIONES')
@@ -188,6 +209,7 @@ def _database_snapshot():
         "readiness": {"source": "candidate_identity_v2", "ready": ready,
                       "by_family": by_family, "rows": rows},
         "invalid_candidate_states": invalid,
+        "residual_candidate_state_violations": residual_violations,
         "generic_pending_residuals": generic_pending,
         "residual_classification": residual,
         "workers": workers,
@@ -208,6 +230,7 @@ def _assert_snapshot(snapshot, baseline=None):
     for family, expected in BASELINE_READY.items():
         assert readiness["by_family"].get(family, 0) >= expected, (family, readiness)
     assert db["invalid_candidate_states"] == 0
+    assert db["residual_candidate_state_violations"] == 0
     assert db["generic_pending_residuals"] == 0
     scalping = db["workers"]["scalping"]
     sweep = db["workers"]["caucion_cash_sweep"]
