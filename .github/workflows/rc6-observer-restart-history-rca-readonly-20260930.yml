@@ -1,0 +1,55 @@
+name: RC6 Observer Restart History RCA Read-Only 2026-09-30
+on:
+  push:
+    branches: [audit/ws-deploy-rca-post-immediate-readonly-20260930]
+    paths: ['.github/workflows/rc6-observer-restart-history-rca-readonly-20260930.yml']
+permissions:
+  contents: read
+jobs:
+  history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Read complete restart evidence
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          CID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)"
+          SHORT="${CID:0:12}"
+          echo "RCA_HISTORY_CONTAINER=$CID"
+          echo "RCA_HISTORY_STATE=$(sudo -n docker inspect -f 'started={{.State.StartedAt}}|restarts={{.RestartCount}}|oom={{.State.OOMKilled}}|pid={{.State.Pid}}' porota_production_observer)"
+          echo RCA_HISTORY_DOCKER_BEGIN
+          sudo -n journalctl -u docker.service --since '2026-09-30 13:15:00 UTC' --no-pager 2>/dev/null | grep -E "$SHORT|$CID" | grep -Ei 'restart|exitCode|task-delete|oom|kill|die' || true
+          echo RCA_HISTORY_DOCKER_END
+          echo RCA_HISTORY_KERNEL_BEGIN
+          sudo -n journalctl -k --since '2026-09-30 13:15:00 UTC' --no-pager 2>/dev/null | grep -Ei 'segfault|general protection|oom|killed process|out of memory|python' || true
+          echo RCA_HISTORY_KERNEL_END
+          echo RCA_HISTORY_LOG_FATAL_BEGIN
+          sudo -n docker logs --since '2026-09-30T13:15:00Z' --timestamps porota_production_observer 2>&1 | grep -E 'Fatal Python error|Segmentation fault|database is locked|Traceback|Timeout \(0:00:45\)!' | tail -n 500 || true
+          echo RCA_HISTORY_LOG_FATAL_END
+          SAFETY="$(sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3); c.execute("pragma query_only=on")
+          r=c.execute("select mode,real_orders_sent from observer_state where id=1").fetchone(); print(f"{r[0]}|{int(r[1] or 0)}"); c.close()
+          PY
+          )"
+          echo "RCA_HISTORY_SAFETY=$SAFETY"; test "$SAFETY" = PRODUCTION_PAPER\|0
+          echo RCA_HISTORY_READ_ONLY=GREEN
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
