@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -260,3 +261,9 @@ def test_universe_source_uses_candidate_identity_v2_and_all_families():
     assert "candidate_identity_v2" in source
     assert "Universo operativo — todas las familias" in source
     assert "WHERE upper(instrument_type) IN" not in source
+
+
+def test_dashboard_sources_parse_with_runtime_python_311():
+    for path in ("bh_universe_dashboard_hf6.py", "o_dashboard.py"):
+        source = Path(path).read_text(encoding="utf-8")
+        ast.parse(source, filename=path, feature_version=(3, 11))

@@ -535,8 +535,12 @@ def _page():
             row.get("readiness_status") or "PAUSED_EXPLICIT"
         )
 
+        row_visibility = (
+            ' hidden aria-hidden="true"' if row_index >= 10
+            else ' aria-hidden="false"'
+        )
         instrument_rows.append(
-            f"<tr data-porota-record='1'{' hidden aria-hidden=\"true\"' if row_index >= 10 else ' aria-hidden=\"false\"'}>"
+            f"<tr data-porota-record='1'{row_visibility}>"
             f"<td><b>{bg._e(row.get('ticker'))}</b></td>"
             f"<td>{bg._e(row.get('instrument_type'))}</td>"
             f"<td>{bg._e(row.get('market'))}</td>"
