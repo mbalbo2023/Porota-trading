@@ -25,8 +25,13 @@ jobs:
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
       - name: Copy candidate observer only
         run: |
+          set -Eeuo pipefail
+          git fetch --depth=1 origin fix/ws-runtime-sqlite-contention-20260930
+          git show FETCH_HEAD:bf_production_paper_observer.py > /tmp/bf_candidate_no_repeat.py
+          grep -Fq 'faulthandler.dump_traceback_later(45, repeat=False)' /tmp/bf_candidate_no_repeat.py
+          ! grep -Fq 'dump_traceback_later(45, repeat=True)' /tmp/bf_candidate_no_repeat.py
           scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            bf_production_paper_observer.py "$DO_USER@$DO_HOST:/tmp/bf_candidate_no_repeat.py"
+            /tmp/bf_candidate_no_repeat.py "$DO_USER@$DO_HOST:/tmp/bf_candidate_no_repeat.py"
       - name: Compare baseline import watchdog with candidate overlay
         run: |
           set -Eeuo pipefail
