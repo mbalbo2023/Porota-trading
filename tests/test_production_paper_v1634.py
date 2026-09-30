@@ -1598,3 +1598,44 @@ def test_historicos_usan_universo_completo_no_lote_activo(tmp_path, monkeypatch)
     targets = observer._historical_targets(store)
     assert len(targets) >= 4
     assert {row[0] for row in targets}.issuperset({"GGAL","YPFD","PAMP","BMA"})
+
+def test_paper_store_connect_no_reissues_wal_write_pragma(tmp_path, monkeypatch):
+    """Every child connection must validate WAL without requesting journal mutation."""
+    db = tmp_path / "shared.db"
+    store = PaperStore(str(db))
+    import sqlite3 as _sqlite3
+    real_connect = _sqlite3.connect
+    statements = []
+
+    class Traced:
+        def __init__(self, connection):
+            object.__setattr__(self, "_connection", connection)
+        def execute(self, sql, *args, **kwargs):
+            statements.append(str(sql).strip().lower())
+            return self._connection.execute(sql, *args, **kwargs)
+        def __getattr__(self, name):
+            return getattr(self._connection, name)
+        def __setattr__(self, name, value):
+            setattr(self._connection, name, value)
+
+    monkeypatch.setattr(_sqlite3, "connect", lambda *a, **k: Traced(real_connect(*a, **k)))
+    connection = store.connect()
+    try:
+        assert "pragma busy_timeout=20000" in statements
+        assert "pragma journal_mode" in statements
+        assert "pragma journal_mode=wal" not in statements
+    finally:
+        connection.close()
+
+
+def test_paper_store_connect_fails_closed_when_database_is_not_wal(tmp_path):
+    import sqlite3 as _sqlite3
+    db = tmp_path / "not_wal.db"
+    with _sqlite3.connect(db) as connection:
+        connection.execute("CREATE TABLE fixture(id INTEGER)")
+        connection.execute("PRAGMA journal_mode=DELETE")
+    store = object.__new__(PaperStore)
+    store.path = str(db)
+    with pytest.raises(RuntimeError, match="PAPER_SQLITE_WAL_REQUIRED"):
+        store.connect()
+
