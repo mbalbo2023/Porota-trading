@@ -15,7 +15,7 @@ def _snapshot():
     by_family = dict(audit.BASELINE_READY)
     ready = sum(by_family.values())
     workers = {
-        "scalping": {"state": "RUNNING", "heartbeat_at": now,
+        "scalping": {"state": "WAITING_MARKET", "heartbeat_at": now,
                      "heartbeat_age_seconds": 0, "real_orders_sent": 0, "routes": []},
         "caucion_cash_sweep": {"state": "WAITING_WINDOW", "heartbeat_at": now,
                                "heartbeat_age_seconds": 0, "real_orders_sent": 0, "routes": []},
@@ -53,6 +53,42 @@ def test_runtime_audit_accepts_only_complete_paper_truth(monkeypatch):
     monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
     monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
     audit._assert_snapshot(_snapshot())
+
+
+def test_premarket_scalping_waiting_market_is_a_healthy_live_state(monkeypatch):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    snapshot = _snapshot()
+    assert "WAITING_MARKET" in audit.SCALPING_HEALTHY_RUNTIME_STATES
+    audit._assert_snapshot(snapshot)
+
+
+@pytest.mark.parametrize("state", ["LOGIN_COOLDOWN", "LOGIN_ERROR", "DEGRADED", "ERROR", "SECURITY_BLOCK", "STOPPED"])
+def test_scalping_nonhealthy_states_remain_fail_closed_with_diagnostic(monkeypatch, state):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    snapshot = _snapshot()
+    snapshot["database"]["workers"]["scalping"]["state"] = state
+    with pytest.raises(RuntimeError, match=rf"WORKER_STATE_UNHEALTHY\|worker=scalping\|state={state}"):
+        audit._assert_snapshot(snapshot)
+
+
+def test_scalping_waiting_market_still_requires_fresh_heartbeat(monkeypatch):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    snapshot = _snapshot()
+    snapshot["database"]["workers"]["scalping"]["heartbeat_age_seconds"] = 301
+    with pytest.raises(RuntimeError, match=r"WORKER_HEARTBEAT_STALE\|worker=scalping\|state=WAITING_MARKET"):
+        audit._assert_snapshot(snapshot)
+
+
+def test_worker_health_contracts_are_distinct_and_fail_closed():
+    assert audit.SCALPING_HEALTHY_RUNTIME_STATES == frozenset({"RUNNING", "WAITING_MARKET"})
+    assert audit.CASH_SWEEP_HEALTHY_RUNTIME_STATES == frozenset({
+        "WAITING_WINDOW", "WAITING_CALENDAR", "HOLD", "PLACED_SIMULATED",
+    })
+    assert audit.EXIT_SUPERVISOR_HEALTHY_RUNTIME_STATES == frozenset({"RUNNING"})
+    assert "WAITING_MARKET" not in audit.CASH_SWEEP_HEALTHY_RUNTIME_STATES
 
 
 def test_candidate_state_guard_accepts_fail_closed_shadow_and_blocks_unsafe_residuals():
