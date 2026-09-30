@@ -36,6 +36,12 @@ ALLOWED_IOL_STATES = {"LIVE", "CACHE_FRESH", "CACHE_STALE", "SOURCE_UNAVAILABLE"
 ALLOWED_WORKER_STATES = {
     "RUNNING", "WAITING_WINDOW", "WAITING_CALENDAR", "HOLD", "PLACED_SIMULATED",
 }
+DEFAULT_HTTP_TIMEOUT_SECONDS = 20
+PATH_HTTP_TIMEOUT_SECONDS = {
+    # This route renders the complete multi-family catalog. Production has
+    # 6,889 identities and the cold-path proof is ~25 seconds / 1.68 MiB.
+    "/universo-operativo": 60,
+}
 
 
 def _stamp(value):
@@ -55,9 +61,10 @@ def _http(path):
         raise RuntimeError("DASHBOARD_ACCESS_TOKEN_MISSING")
     request = Request("http://127.0.0.1:8000" + path,
                       headers={"Authorization": "Bearer " + token})
-    print(f"POROTA_RUNTIME_AUDIT_HTTP_START={path}", flush=True)
+    timeout = PATH_HTTP_TIMEOUT_SECONDS.get(path, DEFAULT_HTTP_TIMEOUT_SECONDS)
+    print(f"POROTA_RUNTIME_AUDIT_HTTP_START={path}|TIMEOUT={timeout}", flush=True)
     try:
-        with urlopen(request, timeout=20) as response:
+        with urlopen(request, timeout=timeout) as response:
             body = response.read()
             print(
                 f"POROTA_RUNTIME_AUDIT_HTTP_RESULT={path}|HTTP={response.status}|BYTES={len(body)}",
@@ -75,6 +82,8 @@ def _http(path):
         return exc.code, body
     except URLError as exc:
         raise RuntimeError(f"DASHBOARD_HTTP_TRANSPORT_ERROR|path={path}|reason={exc.reason}") from exc
+    except TimeoutError as exc:
+        raise RuntimeError(f"DASHBOARD_HTTP_TIMEOUT|path={path}|seconds={timeout}") from exc
 
 
 def _iol_snapshot():
