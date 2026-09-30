@@ -1,0 +1,83 @@
+name: RC6 Scalping DEGRADED RCA Read-Only 2026-09-30
+on:
+  push:
+    branches: [audit/ws-deploy-rca-scalping-degraded-20260930]
+    paths: ['.github/workflows/rc6-scalping-degraded-rca-readonly-20260930.yml']
+permissions:
+  contents: read
+jobs:
+  rca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Inspect live scalping degradation without mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          echo "RCA_SCALPING_CONTAINER=$(sudo -n docker inspect -f 'status={{.State.Status}}|restarts={{.RestartCount}}|oom={{.State.OOMKilled}}|image={{.Image}}|started={{.State.StartedAt}}' porota_production_observer)"
+          echo RCA_SCALPING_ENV_BEGIN
+          sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_observer \
+            | grep -E '^(PAPER_SCALPING_MODE|PAPER_INTRADAY_SCAN_SECONDS|PAPER_INTRADAY_BATCH_LIMIT|PAPER_V17_DB_PATH|SERVER_TIMEZONE)=' || true
+          echo RCA_SCALPING_ENV_END
+          echo RCA_SCALPING_TOP_BEGIN
+          sudo -n docker top porota_production_observer -eo pid,ppid,etime,stat,args \
+            | grep -E 'PID|intraday-scalping-worker|bf_production_paper_observer.py|bv_paper_runtime.py$' || true
+          echo RCA_SCALPING_TOP_END
+          for i in 1 2 3; do
+            sudo -n python3 - "$DB" "$i" <<'PY'
+          import json,sqlite3,sys
+          path,iteration=sys.argv[1:]
+          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          state=c.execute("SELECT * FROM intraday_scalping_worker_state WHERE id=1").fetchone()
+          print("RCA_SCALPING_STATE_"+iteration+"="+json.dumps(dict(state) if state else None,ensure_ascii=False,sort_keys=True,separators=(",",":")))
+          obs=c.execute("SELECT mode,process_state,session_state,ppi_auth,heartbeat_at,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          print("RCA_SCALPING_OBSERVER_"+iteration+"="+json.dumps(dict(obs) if obs else None,ensure_ascii=False,sort_keys=True,separators=(",",":")))
+          cols=[r[1] for r in c.execute("PRAGMA table_info(paper_events)")]
+          if cols:
+              rows=c.execute("""SELECT * FROM paper_events
+                WHERE event_type IN ('INTRADAY_SCALPING_ERROR','PPI_LOGIN','SCALPING_PAPER_PROMOTION')
+                ORDER BY id DESC LIMIT 40""").fetchall()
+              print("RCA_SCALPING_EVENTS_"+iteration+"="+json.dumps([dict(r) for r in rows],ensure_ascii=False,sort_keys=True,separators=(",",":")))
+          c.close()
+          PY
+            sleep 20
+          done
+          echo RCA_SCALPING_LOGS_BEGIN
+          sudo -n docker logs --since '2026-09-30T17:09:45Z' --timestamps porota_production_observer 2>&1 \
+            | grep -Ei 'scalping|intraday|Traceback|database is locked|login|session|ppi' | tail -n 500 || true
+          echo RCA_SCALPING_LOGS_END
+          SAFETY="$(sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3); c.execute("PRAGMA query_only=ON")
+          r=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone(); c.close()
+          print(f"{r[0]}|{int(r[1] or 0)}")
+          PY
+          )"
+          echo "RCA_SCALPING_SAFETY=$SAFETY"
+          test "$SAFETY" = 'PRODUCTION_PAPER|0'
+          echo RCA_SCALPING_READ_ONLY=GREEN
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
