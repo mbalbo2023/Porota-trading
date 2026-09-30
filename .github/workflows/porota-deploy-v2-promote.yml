@@ -580,8 +580,15 @@ jobs:
           # phase labels. No order route, DB write, restart or Telegram send is
           # performed by rc6_preopen.py.
           for phase in T_MINUS_45 T_MINUS_10; do
+            set +e
             PREOPEN_OUTPUT="$(sudo -n timeout 300 python3 "$REPO/rc6_preopen.py" --phase "$phase" 2>&1)"
+            PREOPEN_RC=$?
+            set -e
             echo "$PREOPEN_OUTPUT"
+            if [ "$PREOPEN_RC" -ne 0 ]; then
+              echo "RC6_PREOPEN_${phase}=RED|RC=$PREOPEN_RC"
+              exit "$PREOPEN_RC"
+            fi
             grep -Fq '"status": "GREEN"' <<< "$PREOPEN_OUTPUT"
             grep -Fq '"read_only": true' <<< "$PREOPEN_OUTPUT"
             grep -Fq '"network_order_test_performed": false' <<< "$PREOPEN_OUTPUT"
