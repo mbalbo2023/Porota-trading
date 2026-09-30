@@ -87,9 +87,9 @@ jobs:
           print(f'POROTA_TEST_EXCLUSIONS={len(exclusions)}')
           PY
           mapfile -t TEST_ARGS < /tmp/porota-test-args.txt
-          python -m pytest --collect-only -q "${TEST_ARGS[@]}" > /tmp/porota-test-collection.txt
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" > /tmp/porota-test-collection.txt
           set +e
-          python -m pytest -q "${TEST_ARGS[@]}" --junitxml=/tmp/porota-governed-tests.xml
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" --junitxml=/tmp/porota-governed-tests.xml
           TEST_RC=$?
           set -e
           TEST_RC="$TEST_RC" python - <<'PY'
@@ -255,6 +255,7 @@ jobs:
           import be_paper_engine
           import bw_daily_risk
           import dh_paper_dynamic_risk_gate_hf6
+          import o_dashboard
           print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
           PY
 

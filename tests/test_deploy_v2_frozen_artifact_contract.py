@@ -27,3 +27,9 @@ def test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped():
 
 def test_ready_for_review_retriggers_final_predeploy():
     assert "types: [opened, synchronize, reopened, ready_for_review]" in WORKFLOW
+
+
+def test_governed_pytest_isolated_from_runner_entrypoints():
+    assert WORKFLOW.count(
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest"
+    ) == 2
