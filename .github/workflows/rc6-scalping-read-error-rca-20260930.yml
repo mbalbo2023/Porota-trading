@@ -1,0 +1,139 @@
+name: RC6 Scalping Read Error RCA Read-Only 2026-09-30
+
+on:
+  push:
+    branches:
+      - audit/ws-deploy-rca-scalping-read-errors-20260930
+    paths:
+      - '.github/workflows/rc6-scalping-read-error-rca-20260930.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Inspect failing scalping instruments and probe PPI read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "RCA_CONTAINER=$(sudo -n docker inspect -f 'status={{.State.Status}}|restarts={{.RestartCount}}|oom={{.State.OOMKilled}}|image={{.Image}}' porota_production_observer)"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, os, re, sqlite3
+          from datetime import datetime, timezone
+          from bf_production_paper_observer import _secret
+          from bd_ppi_readonly_guard import ProductionMarketReader, retry_read, classify_read_error
+
+          db=os.environ.get("PAPER_V17_DB_PATH","/app/data/paper_v17/observer_v17.db")
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          state=c.execute("SELECT * FROM intraday_scalping_worker_state WHERE id=1").fetchone()
+          obs=c.execute("SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1").fetchone()
+          print("RCA_SCALPING_STATE="+json.dumps(dict(state) if state else None,sort_keys=True,separators=(",",":")))
+          print("RCA_OBSERVER="+json.dumps(dict(obs) if obs else None,sort_keys=True,separators=(",",":")))
+          events=c.execute("""SELECT id,event_at,event_type,detail FROM paper_events
+            WHERE event_type IN ('INTRADAY_SCALPING_ERROR','PPI_LOGIN')
+            ORDER BY id DESC LIMIT 30""").fetchall()
+          print("RCA_RECENT_EVENTS="+json.dumps([dict(r) for r in events],sort_keys=True,separators=(",",":")))
+          rows=c.execute("""
+            SELECT c.ticker,c.instrument_type,c.market,c.currency,c.settlement,
+                   c.capability,c.status,r.can_simulate,r.status AS readiness_status
+            FROM financial_instrument_catalog c
+            JOIN candidate_identity_v2 r
+              ON r.ticker=c.ticker AND r.instrument_type=c.instrument_type
+             AND r.market=c.market AND r.currency=c.currency AND r.settlement=c.settlement
+            WHERE c.ticker IN ('BAES','CTIO','AAPL')
+            ORDER BY c.ticker,c.instrument_type,c.market,c.currency,c.settlement
+          """).fetchall()
+          identities=[dict(r) for r in rows]
+          print("RCA_IDENTITIES="+json.dumps(identities,sort_keys=True,separators=(",",":")))
+          c.close()
+
+          def safe_text(exc):
+              text=str(exc).replace("\n"," ")[:240]
+              text=re.sub(r'(?i)(authorization|token|secret|api[_ -]?key)\s*[:=]\s*\S+',r'\1=<redacted>',text)
+              text=re.sub(r'\b[A-Za-z0-9_\-]{32,}\b','<redacted-long-token>',text)
+              return text
+
+          reader=ProductionMarketReader(*_secret())
+          reader.login_once()
+          try:
+              seen=set()
+              for row in identities:
+                  key=(row["ticker"],row["instrument_type"],row["settlement"])
+                  if key in seen:
+                      continue
+                  seen.add(key)
+                  try:
+                      payload=retry_read(lambda row=row: reader.intraday(
+                          row["ticker"],row["instrument_type"],row["settlement"]),retries=1)
+                      shape=type(payload).__name__
+                      size=len(payload) if isinstance(payload,list) else None
+                      first_keys=sorted(str(k) for k in payload[0].keys()) if isinstance(payload,list) and payload and isinstance(payload[0],dict) else []
+                      print("RCA_PPI_INTRADAY="+json.dumps({
+                          "ticker":row["ticker"],"instrument_type":row["instrument_type"],
+                          "settlement":row["settlement"],"status":"OK","shape":shape,
+                          "rows":size,"first_keys":first_keys,
+                      },sort_keys=True,separators=(",",":")))
+                  except Exception as exc:
+                      chain=[]
+                      cur=exc
+                      for _ in range(6):
+                          if cur is None:
+                              break
+                          response=getattr(cur,"response",None)
+                          chain.append({"type":type(cur).__name__,"status":getattr(response,"status_code",None)})
+                          cur=getattr(cur,"__cause__",None) or getattr(cur,"__context__",None)
+                      print("RCA_PPI_INTRADAY="+json.dumps({
+                          "ticker":row["ticker"],"instrument_type":row["instrument_type"],
+                          "settlement":row["settlement"],"status":"ERROR",
+                          "classification":classify_read_error(exc),"type":type(exc).__name__,
+                          "chain":chain,"message":safe_text(exc),
+                      },sort_keys=True,separators=(",",":")))
+          finally:
+              metrics=reader.metrics
+              reader.close()
+              print("RCA_PPI_METRICS="+json.dumps(metrics,sort_keys=True,separators=(",",":")))
+          PY
+          SAFETY="$(sudo -n python3 - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          r=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"{r[0]}|{int(r[1] or 0)}")
+          PY
+          )"
+          echo "RCA_SAFETY=$SAFETY"
+          test "$SAFETY" = "PRODUCTION_PAPER|0"
+          echo "RCA_SCALPING_READ_ERROR_READ_ONLY=GREEN"
+          REMOTE
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"
