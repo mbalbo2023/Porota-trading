@@ -1635,7 +1635,7 @@ def test_paper_store_connect_no_reissues_wal_write_pragma(tmp_path, monkeypatch)
         connection.close()
 
 
-def test_paper_store_connect_fails_closed_when_database_is_not_wal(tmp_path):
+def test_paper_store_connect_fails_closed_when_database_is_not_wal(tmp_path, monkeypatch):
     import sqlite3 as _sqlite3
     db = tmp_path / "not_wal.db"
     with _sqlite3.connect(db) as connection:
@@ -1643,7 +1643,7 @@ def test_paper_store_connect_fails_closed_when_database_is_not_wal(tmp_path):
         connection.execute("PRAGMA journal_mode=DELETE")
     store = object.__new__(PaperStore)
     store.path = str(db)
-    os.environ["POROTA_RUNTIME_SCHEMA_READY"] = "1"
+    monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "1")
     with pytest.raises(RuntimeError, match="PAPER_SQLITE_WAL_REQUIRED"):
         store.connect()
 
