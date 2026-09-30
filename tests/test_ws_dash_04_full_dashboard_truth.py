@@ -114,6 +114,51 @@ def test_projection_uses_only_the_canonical_authorities_for_counts():
                    or "candidate_universe" in sql for sql in seen)
 
 
+def test_projection_aggregates_family_aliases_without_last_write_wins():
+    def table(name):
+        return name in {"observer_state", "financial_instrument_catalog", "candidate_identity_v2"}
+
+    def query(sql, params=()):
+        if "FROM observer_state" in sql:
+            return [{"mode": "PRODUCTION_PAPER", "real_orders_sent": 0}]
+        if "FROM financial_instrument_catalog" in sql:
+            return [
+                {"family": "OBLIGACIONES", "total": 2993, "available": 2993,
+                 "as_of": "2026-09-30T13:01:22+00:00"},
+                {"family": "ON", "total": 16, "available": 16,
+                 "as_of": "2026-09-30T13:01:23+00:00"},
+            ]
+        if "FROM candidate_identity_v2" in sql:
+            return [
+                {"family": "OBLIGACIONES", "total": 2993, "ready": 2993, "paused": 0,
+                 "as_of": "2026-09-30T13:01:22+00:00"},
+                {"family": "ON", "total": 16, "ready": 0, "paused": 16,
+                 "as_of": "2026-09-30T13:01:23+00:00"},
+            ]
+        raise AssertionError(sql)
+
+    truth = projection.build(query, table, quote_payload={}, family_payload={})
+    obligation_rows = [
+        row for row in truth["readiness"]["families"]
+        if row["family"] == "OBLIGACIONES"
+    ]
+    assert len(obligation_rows) == 1
+    row = obligation_rows[0]
+    assert row["candidate_total"] == 3009
+    assert row["runtime_ready"] == 2993
+    assert row["paused_explicit"] == 16
+    assert row["readiness_as_of"] == "2026-09-30T13:01:23+00:00"
+    assert truth["readiness"]["total"] == 3009
+    assert truth["readiness"]["ready"] == 2993
+    assert truth["readiness"]["paused_explicit"] == 16
+    catalog_row = next(
+        row for row in truth["catalog"]["families"]
+        if row["family"] == "OBLIGACIONES"
+    )
+    assert catalog_row["catalog_total"] == 3009
+    assert catalog_row["catalog_available"] == 3009
+
+
 def test_truth_endpoint_payload_includes_the_full_canonical_projection(monkeypatch):
     canonical = _truth()
     monkeypatch.setattr(truth_layer.projection, "build", lambda *_args, **_kwargs: canonical)
