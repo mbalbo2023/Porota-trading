@@ -1,0 +1,469 @@
+name: RC6 WS OPS Preopen Closure Parallel Audit 2026-09-30
+
+on:
+  push:
+    branches:
+      - ops/ws-ops-preopen-closure-20260930
+    paths:
+      - '.github/workflows/rc6-ws-ops-preopen-closure-20260930.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  runtime_dashboard:
+    name: Runtime + dashboard residual + Riesgo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Probe exact runtime HTML and safety
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts"             "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          echo "RUNTIME_CONTAINERS_BEGIN"
+          sudo -n docker inspect -f '{{.Name}}|status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' porota_production_observer porota_production_dashboard
+          echo "RUNTIME_STABLE_IMAGE=$(sudo -n docker image inspect -f '{{.Id}}' porota-trading-bot:17.0.0-rc6)"
+          echo "RUNTIME_CONTAINERS_END"
+          sudo -n timeout 30 python3 - "$DB" <<'PY'
+          import json,re,sqlite3,sys
+          from urllib.request import urlopen,Request
+          db=sys.argv[1]
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          obs=dict(c.execute("SELECT mode,real_orders_sent,process_state,session_state,ppi_auth,heartbeat_at FROM observer_state WHERE id=1").fetchone())
+          ready=c.execute("SELECT COUNT(*) FROM candidate_identity_v2 WHERE can_simulate=1 AND upper(status)='AVAILABLE'").fetchone()[0]
+          c.close()
+          print("RUNTIME_SAFETY="+json.dumps(obs,sort_keys=True,separators=(",",":")))
+          print("RUNTIME_READY="+str(ready))
+          assert obs["mode"]=="PRODUCTION_PAPER" and int(obs["real_orders_sent"] or 0)==0
+          for path in ["/vivo","/universo-operativo","/instrumentos","/riesgo","/api/dashboard/truth"]:
+              req=Request("http://127.0.0.1:8000"+path,headers={"User-Agent":"porota-runtime-audit"})
+              with urlopen(req,timeout=45) as r:
+                  body=r.read(); code=r.status
+              text=body.decode("utf-8","replace")
+              markers=list(re.finditer(r"data-porota-record=['\"]1['\"]",text,re.I))
+              server=len(re.findall(r"data-porota-server-page-record=['\"]1['\"]",text,re.I))
+              print(f"HTTP|{path}|{code}|bytes={len(body)}|progressive={len(markers)}|server_page={server}")
+              for n,m in enumerate(markers,1):
+                  start=max(0,m.start()-260); end=min(len(text),m.end()+260)
+                  ctx=re.sub(r"\s+"," ",text[start:end])
+                  print(f"PROGRESSIVE_CONTEXT|{path}|{n}|{ctx}")
+              if path=="/riesgo":
+                  tables=re.findall(r"<table\b.*?</table>",text,re.I|re.S)
+                  wrap_count=len(re.findall(r"data-wrap=['\"]true['\"]",text,re.I))
+                  print(f"RISK_TABLES={len(tables)}|classic_max_width_zero={'max-width:0!important' in text}|wrap_cells={wrap_count}")
+                  for i,t in enumerate(tables,1):
+                      headers=[re.sub(r"<[^>]+>"," ",x) for x in re.findall(r"<th\b[^>]*>(.*?)</th>",t,re.I|re.S)]
+                      headers=[" ".join(h.split()) for h in headers]
+                      print("RISK_TABLE|%d|headers=%s|bytes=%d"%(i,json.dumps(headers,ensure_ascii=False),len(t.encode())))
+              assert code==200
+          PY
+          echo "FAILED_DEPLOY_TEMP_EVIDENCE_BEGIN"
+          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -printf '%p\n' 2>/dev/null | sort || true
+          for d in /tmp/porota-deploy-v2-*; do
+            [ -d "$d" ] || continue
+            du -sb "$d" 2>/dev/null || true
+            if [ -f "$d/porota-frozen-candidate.json" ]; then
+              python3 - "$d/porota-frozen-candidate.json" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding="utf-8"))
+          keep={k:p.get(k) for k in ("candidate_sha","candidate_tree","deploy_sha","image_tar_sha256","bundle_sha256")}
+          print("FROZEN_CANDIDATE="+json.dumps(keep,sort_keys=True,separators=(",",":")))
+          PY
+            fi
+          done
+          echo "FAILED_DEPLOY_TEMP_EVIDENCE_END"
+          echo "RUNTIME_DASHBOARD_PROBE=GREEN"
+          REMOTE
+          )"
+          printf '%s\n' "$OUT"
+          mkdir -p evidence
+          {
+            echo '# Runtime + dashboard + Riesgo'
+            echo
+            echo 'Estado: probe read-only. No se ejecutaron órdenes ni cambios.'
+            echo
+            echo '~~~text'
+            printf '%s\n' "$OUT"
+            echo '~~~'
+          } > evidence/runtime-dashboard.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-ops-runtime-dashboard
+          path: evidence/runtime-dashboard.md
+          if-no-files-found: error
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  caucion:
+    name: Caución PAPER RCA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only caucion worker and evidence audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          echo "CAUCION_ENV_BEGIN"
+          sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_observer | grep -E '^(PAPER_CAUCION_SWEEP_MODE|PAPER_CAUCION_SWEEP_INTERVAL_SECONDS|PAPER_CAUCION_SWEEP_START_MINUTES_BEFORE_CLOSE|PAPER_CAUCION_SWEEP_CUTOFF_MINUTES_BEFORE_CLOSE|PAPER_V17_DB_PATH)=' || true
+          echo "CAUCION_ENV_END"
+          echo "CAUCION_PROCESS_BEGIN"
+          sudo -n docker top porota_production_observer -eo pid,ppid,etime,args | grep -Ei 'caucion|cash.sweep|paper_runtime|PID' || true
+          echo "CAUCION_PROCESS_END"
+          sudo -n timeout 30 python3 - "$DB" <<'PY'
+          import json,sqlite3,sys
+          path=sys.argv[1]
+          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row;c.execute("PRAGMA query_only=ON")
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
+          obs=dict(c.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone())
+          assert obs["mode"]=="PRODUCTION_PAPER" and int(obs["real_orders_sent"] or 0)==0
+          out={"observer":obs}
+          def rows(sql,args=()): return [dict(r) for r in c.execute(sql,args).fetchall()]
+          out["worker_state"]=rows("SELECT * FROM paper_caucion_cash_sweep_state WHERE id=1") if "paper_caucion_cash_sweep_state" in tables else "MISSING_TABLE"
+          out["attempts"]=rows("""SELECT request_id,evaluated_at,status,code,substr(result_json,1,1200) result_json FROM paper_caucion_cash_sweep_attempts ORDER BY evaluated_at DESC LIMIT 12""") if "paper_caucion_cash_sweep_attempts" in tables else "MISSING_TABLE"
+          if "financial_instrument_catalog" in tables:
+              out["catalog"]=rows("SELECT status,COUNT(*) n FROM financial_instrument_catalog WHERE upper(instrument_type)='CAUCIONES' GROUP BY status ORDER BY status")
+              out["catalog_sample"]=rows("""SELECT ticker,instrument_type,market,currency,settlement,status,substr(metadata_json,1,700) metadata FROM financial_instrument_catalog WHERE upper(instrument_type)='CAUCIONES' ORDER BY ticker,market,settlement LIMIT 20""")
+          if "candidate_identity_v2" in tables:
+              cols={r[1] for r in c.execute("PRAGMA table_info(candidate_identity_v2)")}
+              fam="instrument_type" if "instrument_type" in cols else ("family" if "family" in cols else None)
+              if fam: out["candidate_counts"]=rows(f"SELECT upper({fam}) family,status,can_simulate,COUNT(*) n FROM candidate_identity_v2 WHERE upper({fam})='CAUCIONES' GROUP BY upper({fam}),status,can_simulate")
+          if "contract_evidence_v2_current" in tables:
+              cols={r[1] for r in c.execute("PRAGMA table_info(contract_evidence_v2_current)")}
+              fam="instrument_type" if "instrument_type" in cols else ("family" if "family" in cols else None)
+              if fam: out["evidence_count"]=rows(f"SELECT COUNT(*) n FROM contract_evidence_v2_current WHERE upper({fam})='CAUCIONES'")
+          out["caucion_tables"]=[]
+          for t in sorted(x for x in tables if "cauc" in x.lower()):
+              try: out["caucion_tables"].append({"table":t,"count":c.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]})
+              except sqlite3.Error as exc: out["caucion_tables"].append({"table":t,"error":type(exc).__name__})
+          c.close()
+          print("CAUCION_RUNTIME="+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          PY
+          echo "CAUCION_LOGS_BEGIN"
+          sudo -n docker logs --since 8h porota_production_observer 2>&1 | grep -Ei 'caucion|cash.?sweep' | tail -n 120 || true
+          echo "CAUCION_LOGS_END"
+          echo "CAUCION_AUDIT=GREEN_READONLY"
+          REMOTE
+          )"
+          printf '%s\n' "$OUT"
+          mkdir -p evidence
+          { echo '# Caución PAPER — RCA runtime'; echo; echo 'Probe read-only; rutas reales no llamadas.'; echo; echo '~~~text'; printf '%s\n' "$OUT"; echo '~~~'; } > evidence/caucion.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-ops-caucion
+          path: evidence/caucion.md
+          if-no-files-found: error
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  history:
+    name: Históricos + cobertura nuevos instrumentos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only history coverage and scheduler audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          echo "HISTORY_ENV_BEGIN"
+          sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_observer | grep -E '^(HIST_DB_PATH|PPI_HISTORY_RAW_STORAGE_MODE|PAPER_V17_DB_PATH)=' || true
+          echo "HISTORY_ENV_END"
+          echo "HISTORY_UNITS_BEGIN"
+          systemctl list-unit-files --no-legend 2>/dev/null | grep -Ei 'porota.*(history|histor|a3)' || true
+          systemctl list-timers --all --no-pager 2>/dev/null | grep -Ei 'porota.*(history|histor|a3)' || true
+          for u in porota-history-postclose-rc6.service porota-history-postclose-rc6.timer porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer; do
+            echo "UNIT|$u|enabled=$(systemctl is-enabled "$u" 2>/dev/null || true)|active=$(systemctl is-active "$u" 2>/dev/null || true)"
+          done
+          echo "HISTORY_UNITS_END"
+          echo "HISTORY_CODE_GUARDS_BEGIN"
+          grep -nE 'RC6_HISTORY_QUARANTINE|BLOCKED_BY_POLICY|OPERATIONAL_HISTORY_FAMILIES|OUT_OF_SCOPE' /opt/porota-trading/rc6_postclose_history_job.py /opt/porota-trading/cp_history_ingest_policy_hf6.py /opt/porota-trading/historical_candle_shadow_rc6.py 2>/dev/null || true
+          echo "HISTORY_CODE_GUARDS_END"
+          sudo -n timeout 50 python3 - "$DB" <<'PY'
+          import json,os,sqlite3,sys
+          obs_path=sys.argv[1]
+          obs=sqlite3.connect(f"file:{obs_path}?mode=ro",uri=True,timeout=5)
+          obs.row_factory=sqlite3.Row;obs.execute("PRAGMA query_only=ON")
+          tables={r[0] for r in obs.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
+          state=dict(obs.execute("SELECT mode,real_orders_sent,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone())
+          assert state["mode"]=="PRODUCTION_PAPER" and int(state["real_orders_sent"] or 0)==0
+          ready=[tuple(r) for r in obs.execute("""SELECT upper(ticker),upper(instrument_type),upper(market),upper(settlement) FROM candidate_identity_v2 WHERE can_simulate=1 AND upper(status)='AVAILABLE'""")]
+          ready_by={}
+          for _,fam,_,_ in ready: ready_by[fam]=ready_by.get(fam,0)+1
+          result={"observer":state,"ready_total":len(ready),"ready_by_family":ready_by}
+          for t in ("production_history","production_history_attempts","postclose_history_runs_v2","a3_history_ingest_state_rc6"):
+              if t in tables:
+                  try:
+                      result[t]={"count":obs.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]}
+                      cols={r[1] for r in obs.execute(f'PRAGMA table_info("{t}")')}
+                      for col in ("downloaded_at","attempted_at","finished_at","last_success_at","last_attempt_at"):
+                          if col in cols: result[t]["max_"+col]=obs.execute(f'SELECT MAX("{col}") FROM "{t}"').fetchone()[0]
+                  except sqlite3.Error as exc: result[t]={"error":type(exc).__name__}
+          obs.close()
+          candidates=["/opt/porota-trading/data/market_history.db","/opt/porota-trading/data/market/market_history.db","/opt/porota-trading/data/paper_v17/market_history.db"]
+          hist_path=next((p for p in candidates if os.path.isfile(p)),None)
+          result["history_db_path"]=hist_path
+          history_ids=set()
+          if hist_path:
+              h=sqlite3.connect(f"file:{hist_path}?mode=ro",uri=True,timeout=8)
+              h.row_factory=sqlite3.Row;h.execute("PRAGMA query_only=ON")
+              ht={r[0] for r in h.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
+              result["history_tables"]=sorted(x for x in ht if "history" in x.lower() or "candle" in x.lower())
+              if "history_canonical_v2" in ht:
+                  history_ids={tuple(r) for r in h.execute("""SELECT upper(symbol),upper(instrument_type),upper(market),upper(settlement) FROM history_canonical_v2 GROUP BY 1,2,3,4""")}
+                  result["canonical_rows"]=h.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()[0]
+                  result["canonical_by_family"]=[dict(r) for r in h.execute("""SELECT instrument_type family,COUNT(*) rows,COUNT(DISTINCT symbol||'|'||market||'|'||settlement) identities,MIN(date) first_date,MAX(date) last_date FROM history_canonical_v2 GROUP BY instrument_type ORDER BY instrument_type""")]
+              h.close()
+          coverage={}
+          for identity in ready:
+              fam=identity[1]; row=coverage.setdefault(fam,{"ready":0,"with_canonical_history":0,"without_canonical_history":0}); row["ready"]+=1
+              if identity in history_ids: row["with_canonical_history"]+=1
+              else: row["without_canonical_history"]+=1
+          result["exact_identity_coverage"]=coverage
+          result["ready_with_history_total"]=sum(1 for x in ready if x in history_ids)
+          result["ready_without_history_total"]=sum(1 for x in ready if x not in history_ids)
+          print("HISTORY_RUNTIME="+json.dumps(result,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          PY
+          echo "HISTORY_RECENT_JOURNAL_BEGIN"
+          journalctl --no-pager --since '48 hours ago' -u porota-history-postclose-rc6.service -u porota-a3-history-rc6@.service 2>/dev/null | tail -n 160 || true
+          echo "HISTORY_RECENT_JOURNAL_END"
+          echo "HISTORY_AUDIT=GREEN_READONLY"
+          REMOTE
+          )"
+          printf '%s\n' "$OUT"
+          mkdir -p evidence
+          { echo '# Históricos — cobertura y schedulers'; echo; echo 'Probe read-only. READY de trading no se considera evidencia de histórico.'; echo; echo '~~~text'; printf '%s\n' "$OUT"; echo '~~~'; } > evidence/history.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-ops-history
+          path: evidence/history.md
+          if-no-files-found: error
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  preopen:
+    name: Auditoría operativa pre-rueda 2026-10-01
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Execute fail-closed read-only preopen probes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          OUT="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          DB=data/paper_v17/observer_v17.db
+          echo "PREOPEN_BASELINE_BEGIN"
+          df -h /
+          free -h || true
+          sudo -n docker inspect -f '{{.Name}}|{{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' porota_production_observer porota_production_dashboard
+          python3 - "$DB" <<'PY'
+          import json,sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3);c.row_factory=sqlite3.Row;c.execute("PRAGMA query_only=ON")
+          row=dict(c.execute("SELECT mode,real_orders_sent,process_state,session_state,ppi_auth,last_market_data_at,heartbeat_at FROM observer_state WHERE id=1").fetchone())
+          print("OBSERVER="+json.dumps(row,sort_keys=True,separators=(",",":")))
+          assert row["mode"]=="PRODUCTION_PAPER" and int(row["real_orders_sent"] or 0)==0
+          c.close()
+          PY
+          echo "TOMORROW_CALENDAR=$(sudo -n docker exec porota_production_observer python - <<'PY'
+          from datetime import date
+          import ak_byma_calendar as c
+          d=date(2026,10,1)
+          try: print(f'{d.isoformat()}|operational={c.es_dia_habil_operativo(d)}')
+          except Exception as e: print(f'{d.isoformat()}|calendar_error={type(e).__name__}:{e}')
+          PY
+          )"
+          echo "PREOPEN_TIMERS_BEGIN"
+          systemctl list-timers --all --no-pager 2>/dev/null | grep -Ei 'porota.*(preopen|snapshot|history|a3|contract|iol|risk|gdelt|cauc)' || true
+          echo "PREOPEN_TIMERS_END"
+          echo "PPI_WATCH_SNAPSHOT_BEGIN"
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"; done
+          echo "PPI_WATCH_SNAPSHOT_END"
+          echo "PREOPEN_BASELINE_END"
+          rc45=0;rc15=0
+          set +e
+          o45="$(timeout 300 python3 rc6_preopen.py --phase T_MINUS_45 2>&1)";rc45=$?
+          o15="$(timeout 300 python3 rc6_preopen.py --phase T_MINUS_15 2>&1)";rc15=$?
+          set -e
+          echo "PREOPEN_T_MINUS_45_RC=$rc45";echo "$o45"
+          echo "PREOPEN_T_MINUS_15_RC=$rc15";echo "$o15"
+          echo "RECENT_CRITICAL_BEGIN"
+          { sudo -n docker logs --since 8h porota_production_observer 2>&1 || true; sudo -n docker logs --since 8h porota_production_dashboard 2>&1 || true; } | grep -Ei 'Traceback|segmentation|exit.?139|oom|REAL_ORDER_CAPABILITY=(ENABLED|REAL)|real_orders_sent=[1-9][0-9]*' | tail -n 120 || true
+          echo "RECENT_CRITICAL_END"
+          echo "PREOPEN_AUDIT_RCS=$rc45/$rc15"
+          test "$rc45" -eq 0
+          test "$rc15" -eq 0
+          echo "PREOPEN_AUDIT=GREEN_READONLY"
+          REMOTE
+          )"
+          RC=$?
+          set -e
+          printf '%s\n' "$OUT"
+          mkdir -p evidence
+          { echo '# Pre-rueda 2026-10-01 — auditoría operativa'; echo; echo "SSH/probe RC: $RC"; echo; echo '~~~text'; printf '%s\n' "$OUT"; echo '~~~'; } > evidence/preopen.md
+          test "$RC" -eq 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-ops-preopen
+          path: evidence/preopen.md
+          if-no-files-found: warn
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  disk_cleanup:
+    name: Limpieza segura y medida de disco
+    needs: [runtime_dashboard, caucion, history, preopen]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Reclaim only Deploy V2 temporaries and safe Docker cache
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          BEFORE="$(df -PB1 / | awk 'NR==2{print $4}')"
+          echo "DISK_BEFORE=$BEFORE"
+          echo "DOCKER_DF_BEFORE_BEGIN";sudo -n docker system df || true;echo "DOCKER_DF_BEFORE_END"
+          PRE="$(python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3);c.execute("PRAGMA query_only=ON")
+          m,o=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone();c.close();print(f"{m}|{int(o or 0)}")
+          PY
+          )"
+          test "$PRE" = "PRODUCTION_PAPER|0"
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
+          PPI_BEFORE="$(for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"; done)"
+          echo "DEPLOY_TMP_BEFORE_BEGIN";find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -exec du -sb {} + 2>/dev/null || true;echo "DEPLOY_TMP_BEFORE_END"
+          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -exec rm -rf -- {} +
+          sudo -n docker image prune -f
+          sudo -n docker builder prune -af
+          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
+          AFTER="$(df -PB1 / | awk 'NR==2{print $4}')"
+          POST="$(python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3);c.execute("PRAGMA query_only=ON")
+          m,o=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone();c.close();print(f"{m}|{int(o or 0)}")
+          PY
+          )"
+          test "$POST" = "PRODUCTION_PAPER|0"
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
+          PPI_AFTER="$(for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"; done)"
+          test "$PPI_AFTER" = "$PPI_BEFORE"
+          echo "DISK_AFTER=$AFTER"
+          echo "RECLAIMED_BYTES=$((AFTER-BEFORE))"
+          echo "DOCKER_DF_AFTER_BEGIN";sudo -n docker system df || true;echo "DOCKER_DF_AFTER_END"
+          echo "DEPLOY_TMP_AFTER=$(find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' | wc -l)"
+          test "$AFTER" -ge 2147483648
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          echo "DISK_CLEANUP=GREEN"
+          REMOTE
+          )"
+          printf '%s\n' "$OUT"
+          mkdir -p evidence
+          { echo '# Limpieza segura de disco'; echo; echo 'Scope: temporales Deploy V2 + dangling images + build cache. Sin volúmenes, SQLite, datos persistentes ni contenedores.'; echo; echo '~~~text'; printf '%s\n' "$OUT"; echo '~~~'; } > evidence/disk-cleanup.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-ops-disk-cleanup
+          path: evidence/disk-cleanup.md
+          if-no-files-found: error
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
