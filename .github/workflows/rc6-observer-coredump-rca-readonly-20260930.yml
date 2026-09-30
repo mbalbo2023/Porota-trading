@@ -1,0 +1,63 @@
+name: RC6 Observer CoreDump RCA Read-Only 2026-09-30
+on:
+  push:
+    branches: [audit/ws-deploy-rca-post-immediate-readonly-20260930]
+    paths: ['.github/workflows/rc6-observer-coredump-rca-readonly-20260930.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Inspect core dump and signal evidence
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          echo "RCA_CORE_PATTERN=$(cat /proc/sys/kernel/core_pattern 2>/dev/null || true)"
+          echo "RCA_CORE_USES_PID=$(cat /proc/sys/kernel/core_uses_pid 2>/dev/null || true)"
+          echo "RCA_CORE_LIMIT_HOST=$(ulimit -c)"
+          echo RCA_COREDUMPCTL_LIST_BEGIN
+          if command -v coredumpctl >/dev/null 2>&1; then
+            sudo -n coredumpctl list --since '2026-09-30 13:15:00 UTC' --no-pager 2>/dev/null | grep -Ei 'python|porota|SIGSEGV|11' || true
+          else
+            echo COREDUMPCTL=UNAVAILABLE
+          fi
+          echo RCA_COREDUMPCTL_LIST_END
+          echo RCA_COREDUMP_FILES_BEGIN
+          sudo -n find /var/lib/systemd/coredump /var/crash /tmp -maxdepth 2 -type f \( -iname '*core*' -o -iname '*.crash' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ|%s|%p\n' 2>/dev/null | tail -n 100 || true
+          echo RCA_COREDUMP_FILES_END
+          echo RCA_DOCKER_EXIT_HISTORY_BEGIN
+          CID="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)"
+          sudo -n journalctl -u docker.service --since '2026-09-30 13:15:00 UTC' --no-pager 2>/dev/null | grep "$CID" | grep 'exitCode=139' || true
+          echo RCA_DOCKER_EXIT_HISTORY_END
+          echo RCA_SIGNAL_JOURNAL_BEGIN
+          sudo -n journalctl --since '2026-09-30 13:15:00 UTC' --no-pager 2>/dev/null | grep -Ei 'segfault|SIGSEGV|signal 11|core dumped|python.*dumped core' | tail -n 200 || true
+          echo RCA_SIGNAL_JOURNAL_END
+          SAFETY="$(sudo -n python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3); c.execute("pragma query_only=on")
+          r=c.execute("select mode,real_orders_sent from observer_state where id=1").fetchone(); print(f"{r[0]}|{int(r[1] or 0)}"); c.close()
+          PY
+          )"
+          echo "RCA_CORE_SAFETY=$SAFETY"; test "$SAFETY" = PRODUCTION_PAPER\|0
+          echo RCA_COREDUMP_READ_ONLY=GREEN
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
