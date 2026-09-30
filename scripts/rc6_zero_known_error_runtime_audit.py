@@ -128,19 +128,29 @@ def _http(path):
 
 def _surface_metrics(path, body):
     text = body.decode("utf-8", "replace")
-    lowered = text.lower()
+    # Budget/row guards describe serialized DOM records, not JavaScript source
+    # literals.  The accessibility helper legitimately contains the historical
+    # marker string as code; counting it as an HTML row made server-side paging
+    # fail closed after the actual unbounded rows had already been removed.
+    markup = re.sub(
+        r"<(?:script|style)\\b[^>]*>.*?</(?:script|style)>",
+        "",
+        text,
+        flags=re.I | re.S,
+    )
+    lowered = markup.lower()
     return {
         "bytes": len(body),
-        "table_rows": len(re.findall(r"<tr\\b", text, re.I)),
-        "paper_cards": len(re.findall(r"class=['\"][^'\"]*paper-card", text, re.I)),
+        "table_rows": len(re.findall(r"<tr\\b", markup, re.I)),
+        "paper_cards": len(re.findall(r"class=['\"][^'\"]*paper-card", markup, re.I)),
         "server_page_records": len(
-            re.findall(r"data-porota-server-page-record=['\"]1['\"]", text, re.I)
+            re.findall(r"data-porota-server-page-record=['\"]1['\"]", markup, re.I)
         ),
         "progressive_records": len(
-            re.findall(r"data-porota-record=['\"]1['\"]", text, re.I)
+            re.findall(r"data-porota-record=['\"]1['\"]", markup, re.I)
         ),
         "literal_pending_badges": len(
-            re.findall(r">\\s*(?:PENDING|PENDIENTE)\\s*<", text, re.I)
+            re.findall(r">\\s*(?:PENDING|PENDIENTE)\\s*<", markup, re.I)
         ),
         "mostrar_mas": lowered.count("mostrar más"),
         "legacy_text_hits": [
