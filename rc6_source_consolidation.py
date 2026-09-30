@@ -17,6 +17,8 @@ from urllib.request import Request, urlopen
 
 SCHEMA = "rc6-consolidated-source-evidence-v1"
 MAX_BYTES = 2_000_000
+BYMA_MAX_BYTES = 16_000_000
+BYMA_FULL_CAPTURE_PAGE_SIZE = 5_000
 # These are references only until a documented technical endpoint with
 # credentials returns structured records. A3/MAE is separate from MATBA-ROFEX.
 SOURCE_URLS = {
@@ -287,48 +289,67 @@ def parse_public_payload(source: str, url: str, body: bytes, http_status: int = 
     }
 
 def _byma_post(url: str, endpoint: str, family: str) -> dict[str, Any]:
+    """Fetch one complete BYMA panel without relying on ignored page indexes.
+
+    BYMA currently exposes a pagination-looking content block while ignoring
+    page/page_number selectors on these public panels. Request the complete
+    panel in one bounded response and prove completeness against
+    total_elements_count when the provider publishes it. Any partial/empty
+    capture remains fail-closed.
+    """
     target = url.rstrip("/") + "/vanoms-be-core/rest/api/bymadata/free/" + endpoint
-    records, pages = [], []
-    expected_total = None
-    for page in range(1, 101):
-        body = json.dumps({
-            "excludeZeroPxAndQty": True, "T1": True, "T0": False,
-            "Content-Type": "application/json, text/plain", "page_number": page,
-        }).encode("utf-8")
-        request = Request(target, data=body, method="POST", headers={
-            "User-Agent": "Porota-RC6-read-only/1.0",
-            "Accept": "application/json", "Content-Type": "application/json",
-        })
-        with urlopen(request, timeout=float(os.getenv("POROTA_PUBLIC_SOURCE_TIMEOUT", "15"))) as response:
-            payload = response.read(MAX_BYTES + 1)
-            status = int(getattr(response, "status", 200))
-        if len(payload) > MAX_BYTES:
-            raise ValueError("PUBLIC_SOURCE_RESPONSE_TOO_LARGE")
-        result = parse_public_payload("BYMA", target, payload, status)
-        meta = result.get("pagination") or {}
-        if not isinstance(meta, dict):
-            raise ValueError("BYMA_PAGINATION_INVALID")
-        page_count = int(meta.get("page_count") or 1)
-        if page_count > 100 or int(meta.get("page_number") or page) != page:
-            raise ValueError("BYMA_PAGINATION_NOT_ADVANCING")
-        if meta.get("total_elements_count") is not None:
-            total = int(meta["total_elements_count"])
-            if expected_total is not None and expected_total != total:
-                raise ValueError("BYMA_PAGINATION_CHANGED_DURING_CAPTURE")
-            expected_total = total
-        if result["status"] == "REFERENCE_ONLY" and (page_count > 1 or page > 1):
-            raise ValueError("BYMA_PAGE_NOT_STRUCTURED")
-        records.extend(dict(row, family=_canonical_family(family)) for row in result["records"])
-        pages.append({"page_number":page,"digest":result["digest"],"source_record_count":result.get("source_record_count",0),"record_count":len(result["records"]),"observed_at":result["observed_at"]})
-        if page >= page_count:
-            break
-    if expected_total is not None and sum(p["source_record_count"] for p in pages) != expected_total:
-        raise ValueError("BYMA_SOURCE_COUNT_MISMATCH")
-    return {"source":"BYMA","url":target,"records":records,"record_count":len(records),
-        "structured":bool(records),"status":"SCRAPED_PUBLIC_DATA" if records else "REFERENCE_ONLY",
-        "http_status":status,"scrape_method":"bymadata_public_post","endpoint":endpoint,
-        "family":_canonical_family(family),"pages":pages,"source_record_count":sum(p["source_record_count"] for p in pages),
-        "expected_total":expected_total,"observed_at":_now()}
+    body = json.dumps({
+        "page_size": BYMA_FULL_CAPTURE_PAGE_SIZE,
+    }).encode("utf-8")
+    request = Request(target, data=body, method="POST", headers={
+        "User-Agent": "Porota-RC6-read-only/1.0",
+        "Accept": "application/json", "Content-Type": "application/json",
+    })
+    with urlopen(request, timeout=float(os.getenv("POROTA_PUBLIC_SOURCE_TIMEOUT", "15"))) as response:
+        payload = response.read(BYMA_MAX_BYTES + 1)
+        status = int(getattr(response, "status", 200))
+    if len(payload) > BYMA_MAX_BYTES:
+        raise ValueError("BYMA_PUBLIC_SOURCE_RESPONSE_TOO_LARGE")
+
+    result = parse_public_payload("BYMA", target, payload, status)
+    meta = result.get("pagination") or {}
+    if not isinstance(meta, dict):
+        raise ValueError("BYMA_PAGINATION_INVALID")
+    expected_total = (
+        int(meta["total_elements_count"])
+        if meta.get("total_elements_count") is not None
+        else None
+    )
+    source_count = int(result.get("source_record_count") or 0)
+    if result["status"] == "REFERENCE_ONLY" or source_count <= 0:
+        raise ValueError("BYMA_PANEL_EMPTY")
+    if expected_total is not None and source_count != expected_total:
+        raise ValueError(
+            f"BYMA_SOURCE_COUNT_MISMATCH expected={expected_total} actual={source_count}"
+        )
+
+    records = [
+        dict(row, family=_canonical_family(family))
+        for row in result["records"]
+    ]
+    page = {
+        "page_number": int(meta.get("page_number") or 1),
+        "page_count": int(meta.get("page_count") or 1),
+        "page_size_requested": BYMA_FULL_CAPTURE_PAGE_SIZE,
+        "digest": result["digest"],
+        "source_record_count": source_count,
+        "record_count": len(records),
+        "observed_at": result["observed_at"],
+    }
+    return {
+        "source": "BYMA", "url": target, "records": records,
+        "record_count": len(records), "structured": True,
+        "status": "SCRAPED_PUBLIC_DATA", "http_status": status,
+        "scrape_method": "bymadata_public_post_full_capture",
+        "endpoint": endpoint, "family": _canonical_family(family),
+        "pages": [page], "source_record_count": source_count,
+        "expected_total": expected_total, "observed_at": _now(),
+    }
 
 
 def _collect_byma_public(base_url: str) -> dict[str, Any]:
