@@ -45,11 +45,23 @@ WORKER_MAX_HEARTBEAT_AGE_SECONDS = 300
 DEFAULT_HTTP_TIMEOUT_SECONDS = 20
 HTML_SURFACE_PATHS = tuple(path for path in CORE_GET_PATHS if not path.startswith("/api/"))
 MAX_HTML_BYTES = {
-    # /instrumentos must stay bounded: ten server-rendered records, not the
-    # complete production catalog hidden with CSS/JavaScript.
+    # Large catalog/live surfaces must stay bounded. The historical failure
+    # mode serialized thousands of hidden rows and froze tablet browsers.
     "/instrumentos": 350_000,
+    "/universo-operativo": 550_000,
+    "/vivo": 300_000,
 }
-MAX_SERVER_PAGE_RECORDS = {"/instrumentos": 10}
+MAX_SERVER_PAGE_RECORDS = {
+    "/instrumentos": 10,
+    "/universo-operativo": 10,
+    # One ten-record page for closes plus one for decisions.
+    "/vivo": 20,
+}
+MAX_PROGRESSIVE_RECORDS = {
+    "/instrumentos": 0,
+    "/universo-operativo": 0,
+    "/vivo": 0,
+}
 FORBIDDEN_LEGACY_TEXT = (
     "pending contrato",
     "solo Acciones/CEDEARs",
@@ -149,6 +161,11 @@ def _assert_surface_metrics(metrics):
         if row_limit is not None and int(item["server_page_records"]) > row_limit:
             violations.append(
                 f"{path}:SERVER_PAGE_RECORDS={item['server_page_records']}>{row_limit}"
+            )
+        progressive_limit = MAX_PROGRESSIVE_RECORDS.get(path)
+        if progressive_limit is not None and int(item["progressive_records"]) > progressive_limit:
+            violations.append(
+                f"{path}:PROGRESSIVE_RECORDS={item['progressive_records']}>{progressive_limit}"
             )
         if item["legacy_text_hits"]:
             violations.append(
