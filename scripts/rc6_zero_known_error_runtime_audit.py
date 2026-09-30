@@ -163,9 +163,10 @@ def _assert_surface_metrics(metrics):
                 f"{path}:SERVER_PAGE_RECORDS={item['server_page_records']}>{row_limit}"
             )
         progressive_limit = MAX_PROGRESSIVE_RECORDS.get(path)
-        if progressive_limit is not None and int(item["progressive_records"]) > progressive_limit:
+        progressive_records = int(item.get("progressive_records", 0) or 0)
+        if progressive_limit is not None and progressive_records > progressive_limit:
             violations.append(
-                f"{path}:PROGRESSIVE_RECORDS={item['progressive_records']}>{progressive_limit}"
+                f"{path}:PROGRESSIVE_RECORDS={progressive_records}>{progressive_limit}"
             )
         if item["legacy_text_hits"]:
             violations.append(
