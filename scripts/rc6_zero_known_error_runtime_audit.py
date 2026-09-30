@@ -42,8 +42,15 @@ ALLOWED_WORKER_STATES = {
 }
 DEFAULT_HTTP_TIMEOUT_SECONDS = 20
 PATH_HTTP_TIMEOUT_SECONDS = {
-    # This route renders the complete multi-family catalog. Production has
-    # 6,889 identities and the cold-path proof is ~25 seconds / 1.68 MiB.
+    # Runtime evidence after the full contract sweep shows that these pages
+    # perform materially heavier read-only aggregation.  The cold cycle was
+    # bounded at 14.8s (/), 6.9s (/vivo), 13.5s (/trading), 10.4s
+    # (/historicos) and 29.5s (/universo-operativo).  Preserve fail-closed HTTP
+    # checks while budgeting post-reconciliation CPU contention explicitly.
+    "/": 45,
+    "/vivo": 45,
+    "/trading": 45,
+    "/historicos": 45,
     "/universo-operativo": 60,
 }
 
