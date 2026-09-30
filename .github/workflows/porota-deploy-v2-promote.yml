@@ -511,7 +511,7 @@ jobs:
           # not advance. Container restart counters are also invariant: a
           # self-recovered SIGSEGV/exit-139 is still a failed deployment.
           echo "RC6_STABILITY_RESTART_BASELINE=observer=$OBSERVER_RESTART_BASE|dashboard=$DASHBOARD_RESTART_BASE"
-          for cycle in 1 2 3; do
+          for cycle in 1 2 3 4 5; do
             sleep 35
             set +e
             AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
