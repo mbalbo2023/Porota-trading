@@ -1625,6 +1625,7 @@ def test_paper_store_connect_no_reissues_wal_write_pragma(tmp_path, monkeypatch)
             setattr(self._connection, name, value)
 
     monkeypatch.setattr(_sqlite3, "connect", lambda *a, **k: Traced(real_connect(*a, **k)))
+    monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "1")
     connection = store.connect()
     try:
         assert "pragma busy_timeout=20000" in statements
@@ -1642,6 +1643,7 @@ def test_paper_store_connect_fails_closed_when_database_is_not_wal(tmp_path):
         connection.execute("PRAGMA journal_mode=DELETE")
     store = object.__new__(PaperStore)
     store.path = str(db)
+    os.environ["POROTA_RUNTIME_SCHEMA_READY"] = "1"
     with pytest.raises(RuntimeError, match="PAPER_SQLITE_WAL_REQUIRED"):
         store.connect()
 
