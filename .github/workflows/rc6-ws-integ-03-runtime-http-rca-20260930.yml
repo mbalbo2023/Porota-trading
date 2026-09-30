@@ -22,6 +22,9 @@ jobs:
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
+      - name: Checkout candidate source
+        uses: actions/checkout@v4
+
       - name: Prepare strict SSH
         shell: bash
         run: |
@@ -31,6 +34,15 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Transfer candidate route module
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            bh_universe_dashboard_hf6.py \
+            "$DO_USER@$DO_HOST:/tmp/bh_universe_dashboard_hf6.ws-integ-03.py"
 
       - name: Probe every runtime audit path without writes
         shell: bash
@@ -100,7 +112,33 @@ jobs:
           print(f"RUNTIME_SAFETY={mode}|real_orders_sent={orders}")
           assert mode == "PRODUCTION_PAPER" and int(orders or 0) == 0
           PY
-          exit "$PROBE_RC"
+          echo "RUNTIME_RCA_CAPTURED=GREEN|probe_rc=$PROBE_RC"
+          REMOTE
+
+      - name: Prove candidate fix against production data in isolated read-only container
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          IMAGE='porota-trading-bot:17.0.0-rc6'
+          sudo -n docker run --rm --pull never --network none --read-only \
+            --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            --env-file /opt/porota-trading/data/diagnosticos/observer_runtime_v17.env \
+            -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
+            -v /opt/porota-trading/data:/app/data:ro \
+            -v /tmp/bh_universe_dashboard_hf6.ws-integ-03.py:/app/bh_universe_dashboard_hf6.py:ro \
+            --entrypoint python "$IMAGE" - <<'PY'
+          import bh_universe_dashboard_hf6 as universe
+          page = universe._page()
+          assert "Universo operativo" in page
+          assert "candidate_identity_v2" in page
+          print(f"CANDIDATE_UNIVERSE_PRODUCTION_DATA=GREEN|BYTES={len(page.encode('utf-8'))}")
+          PY
+          rm -f /tmp/bh_universe_dashboard_hf6.ws-integ-03.py
           REMOTE
 
       - name: Cleanup SSH key
