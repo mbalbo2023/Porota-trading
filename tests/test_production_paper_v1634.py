@@ -1647,3 +1647,9 @@ def test_paper_store_connect_fails_closed_when_database_is_not_wal(tmp_path):
     with pytest.raises(RuntimeError, match="PAPER_SQLITE_WAL_REQUIRED"):
         store.connect()
 
+def test_observer_faulthandler_is_startup_only():
+    source = Path("bf_production_paper_observer.py").read_text(encoding="utf-8")
+    assert "faulthandler.dump_traceback_later(45, repeat=False)" in source
+    assert "faulthandler.cancel_dump_traceback_later()" in source
+    assert "dump_traceback_later(45, repeat=True)" not in source
+
