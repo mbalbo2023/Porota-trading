@@ -8,7 +8,14 @@ def test_ppi_query_plan_is_generated_not_ticker_allowlist():
     assert plan
     assert all(len(row)==6 for row in plan)
     assert {"ACCIONES","CEDEARS","ETFS","BONOS","LETRAS","OBLIGACIONES","OPCIONES","FUTUROS","CAUCIONES","FCI"} <= {row[5] for row in plan}
-    assert all(row[0] in m.PREFIXES for row in plan)
+    assert all(row[0] in m.PREFIXES for row in plan if row[5] != "CAUCIONES")
+
+
+def test_ppi_query_plan_uses_official_caucion_alias_instead_of_rotating_prefixes():
+    plan=m.ppi_query_plan(day=date(2026,9,25),prefixes_per_family=4)
+    cauciones=[row for row in plan if row[5]=="CAUCIONES"]
+    assert cauciones == [("CAUCION","CAUCIONES","INMEDIATA","BYMA",True,"CAUCIONES")]
+    assert all(row[0] != "CAUCION" for row in plan if row[5] != "CAUCIONES")
 
 def test_complementary_discovery_includes_family_reference_and_fci(tmp_path: Path):
     (tmp_path/"iol_shadow_latest.json").write_text(json.dumps({"symbols":[]}),encoding="utf-8")
