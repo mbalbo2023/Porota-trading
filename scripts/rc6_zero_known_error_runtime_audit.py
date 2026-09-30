@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -42,6 +43,19 @@ IOL_FALLBACK_ORDER = [
 ]
 WORKER_MAX_HEARTBEAT_AGE_SECONDS = 300
 DEFAULT_HTTP_TIMEOUT_SECONDS = 20
+HTML_SURFACE_PATHS = tuple(path for path in CORE_GET_PATHS if not path.startswith("/api/"))
+MAX_HTML_BYTES = {
+    # /instrumentos must stay bounded: ten server-rendered records, not the
+    # complete production catalog hidden with CSS/JavaScript.
+    "/instrumentos": 350_000,
+}
+MAX_SERVER_PAGE_RECORDS = {"/instrumentos": 10}
+FORBIDDEN_LEGACY_TEXT = (
+    "pending contrato",
+    "solo Acciones/CEDEARs",
+    "sólo Acciones/CEDEARs",
+    "DESACTIVADO POR ALCANCE",
+)
 PATH_HTTP_TIMEOUT_SECONDS = {
     # Runtime evidence after the full contract sweep shows that these pages
     # perform materially heavier read-only aggregation.  The cold cycle was
@@ -98,6 +112,50 @@ def _http(path):
         raise RuntimeError(f"DASHBOARD_HTTP_TRANSPORT_ERROR|path={path}|reason={exc.reason}") from exc
     except TimeoutError as exc:
         raise RuntimeError(f"DASHBOARD_HTTP_TIMEOUT|path={path}|seconds={timeout}") from exc
+
+
+def _surface_metrics(path, body):
+    text = body.decode("utf-8", "replace")
+    lowered = text.lower()
+    return {
+        "bytes": len(body),
+        "table_rows": len(re.findall(r"<tr\\b", text, re.I)),
+        "paper_cards": len(re.findall(r"class=['\"][^'\"]*paper-card", text, re.I)),
+        "server_page_records": len(
+            re.findall(r"data-porota-server-page-record=['\"]1['\"]", text, re.I)
+        ),
+        "progressive_records": len(
+            re.findall(r"data-porota-record=['\"]1['\"]", text, re.I)
+        ),
+        "literal_pending_badges": len(
+            re.findall(r">\\s*(?:PENDING|PENDIENTE)\\s*<", text, re.I)
+        ),
+        "mostrar_mas": lowered.count("mostrar más"),
+        "legacy_text_hits": [
+            phrase for phrase in FORBIDDEN_LEGACY_TEXT if phrase.lower() in lowered
+        ],
+    }
+
+
+def _assert_surface_metrics(metrics):
+    violations = []
+    for path, item in metrics.items():
+        byte_limit = MAX_HTML_BYTES.get(path)
+        if byte_limit is not None and int(item["bytes"]) > byte_limit:
+            violations.append(
+                f"{path}:HTML_BYTES={item['bytes']}>{byte_limit}"
+            )
+        row_limit = MAX_SERVER_PAGE_RECORDS.get(path)
+        if row_limit is not None and int(item["server_page_records"]) > row_limit:
+            violations.append(
+                f"{path}:SERVER_PAGE_RECORDS={item['server_page_records']}>{row_limit}"
+            )
+        if item["legacy_text_hits"]:
+            violations.append(
+                f"{path}:LEGACY_TEXT={','.join(item['legacy_text_hits'])}"
+            )
+    if violations:
+        raise RuntimeError("DASHBOARD_SURFACE_BUDGET_VIOLATION|" + "|".join(violations))
 
 
 def _iol_snapshot():
@@ -282,6 +340,7 @@ def _assert_snapshot(snapshot, baseline=None):
     assert matrix["route_count"] == 55 and matrix["registered_paths"] == 53
     assert snapshot["route_matrix_matches_artifact"] is True
     assert all(code == 200 for code in snapshot["http_status"].values())
+    _assert_surface_metrics(snapshot.get("surface_metrics", {}))
     if baseline:
         prior = baseline["database"]
         assert readiness["ready"] >= prior["readiness"]["ready"]
@@ -307,10 +366,14 @@ def collect(label):
             + json.dumps(failures, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         )
     truth = json.loads(bodies["/api/dashboard/truth"].decode("utf-8"))
+    surface_metrics = {
+        path: _surface_metrics(path, bodies[path]) for path in HTML_SURFACE_PATHS
+    }
+    _assert_surface_metrics(surface_metrics)
     route_inventory = inventory()
     artifact_matrix = json.loads(Path("DASHBOARD_TRUTH_MATRIX_RC6.json").read_text(encoding="utf-8"))
     return {
-        "schema": "porota-rc6-zero-known-error-runtime-audit-v1",
+        "schema": "porota-rc6-zero-known-error-runtime-audit-v2",
         "label": label,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "read_only": True,
@@ -320,6 +383,7 @@ def collect(label):
         "iol": _iol_snapshot(),
         "dashboard_truth": truth,
         "http_status": statuses,
+        "surface_metrics": surface_metrics,
         "route_inventory": route_inventory,
         "route_matrix_matches_artifact": route_inventory == artifact_matrix,
         "known_p0": [],
@@ -367,6 +431,7 @@ def main():
         "route_matrix_matches_artifact": snapshot["route_matrix_matches_artifact"],
         "http_200": sum(code == 200 for code in snapshot["http_status"].values()),
         "http_checked": len(snapshot["http_status"]),
+        "dashboard_surface_metrics": snapshot.get("surface_metrics", {}),
         "read_only": snapshot["read_only"],
         "network_order_test_performed": snapshot["network_order_test_performed"],
     }
