@@ -320,22 +320,37 @@ def test_option_price_base_quantity_and_adjusted_series_cannot_be_inferred():
     assert iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"type":"ACCIONES"})[0]["financial_contract_v17"] is None
 
 
-def test_byma_pagination_reconciles_source_count_and_preserves_dimensions(monkeypatch):
+def test_byma_full_capture_reconciles_source_count_and_preserves_dimensions(monkeypatch):
     import rc6_source_consolidation as source
+
     class Response:
         status=200
-        def __init__(self,page): self.page=page
         def __enter__(self): return self
         def __exit__(self,*args): pass
         def read(self,n):
-            rows=[dict(symbol=f"X{self.page}-{i}",denominationCcy="ARS",settlementType="2",trade=100,tradeHour="17:00:09",quantityBid=50,quantityOffer=70) for i in range(200)]
-            return json.dumps(dict(content=dict(page_number=self.page,page_count=3,total_elements_count=600),data=rows)).encode()
+            rows=[
+                dict(
+                    symbol=f"X-{i}", denominationCcy="ARS", settlementType="2",
+                    trade=100, tradeHour="17:00:09", quantityBid=50, quantityOffer=70,
+                )
+                for i in range(600)
+            ]
+            return json.dumps(dict(
+                content=dict(page_number=1,page_count=1,total_elements_count=600),
+                data=rows,
+            )).encode()
+
     seen=[]
     def fetch(request,timeout):
-        page=json.loads(request.data)["page_number"];seen.append(page);return Response(page)
+        payload=json.loads(request.data)
+        seen.append(payload)
+        return Response()
+
     monkeypatch.setattr(source,"urlopen",fetch)
     result=source._byma_post("https://fixture.invalid","bonds","BONOS")
-    assert seen==[1,2,3] and result["source_record_count"]==result["record_count"]==600
+    assert seen==[{"page_size":source.BYMA_FULL_CAPTURE_PAGE_SIZE}]
+    assert result["source_record_count"]==result["record_count"]==600
+    assert result["expected_total"]==600
     row=result["records"][0]
     assert row["currency"]=="ARS" and row["settlement_code"]=="2"
     assert row["bid_size"]==50 and row["ask_size"]==70
