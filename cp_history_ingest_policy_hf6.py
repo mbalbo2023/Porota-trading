@@ -1,8 +1,9 @@
 """HF6 Contract/Data v2: policy for progressive historical ingestion.
 
-Historical collection and PAPER readiness are deliberately independent. In RC6,
-collection is restricted to the current operational families (ACCIONES and
-CEDEARS); legacy history is preserved for audit but never refreshed.
+Historical collection and PAPER readiness are deliberately independent. RC6
+collects read-only PPI history for every canonical family admitted to the PAPER
+universe when the provider exposes a historical series. A missing series never
+creates synthetic candles and never grants READY by itself.
 
 Policy proven from the 02-Sep-2026 HF6 audit:
 - 169 PPI payloads were PARTIAL but contained 31,654 valid daily bars;
@@ -22,14 +23,19 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
-OPERATIONAL_HISTORY_FAMILIES = frozenset({"ACCIONES", "CEDEARS"})
-# Retained only to explain why legacy instruments are not scheduled for new
-# collection. They are not an ingest permission in RC6.
-LEGACY_HISTORY_FAMILIES = frozenset({
-    "BONOS", "LETRAS", "ON", "OBLIGACIONES", "OPCIONES", "FUTUROS",
-    "ETF", "ETFS", "INDICES", "CAUCIONES", "FCI", "FCIS", "LICITACIONES",
+OPERATIONAL_HISTORY_FAMILIES = frozenset({
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
 })
-DATA912_FALLBACK_FAMILIES = OPERATIONAL_HISTORY_FAMILIES
+# Aliases/retired categories are preserved for audit but are not scheduled as
+# independent canonical identities. Provider aliases (for example PPI ON) are
+# resolved at the transport boundary and stored as OBLIGACIONES internally.
+LEGACY_HISTORY_FAMILIES = frozenset({
+    "ON", "ETF", "INDICES", "FCIS", "LICITACIONES",
+})
+# Data912 remains a separately-vetted fallback for spot equity history only.
+# Expanding PPI primary scope must never silently expand third-party fallback.
+DATA912_FALLBACK_FAMILIES = frozenset({"ACCIONES", "CEDEARS"})
 
 MIN_CONTEXT_BARS = 30
 PREFERRED_CONTEXT_BARS = 90
