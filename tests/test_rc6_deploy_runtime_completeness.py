@@ -174,3 +174,17 @@ def test_deploy_v2_fails_closed_without_two_parent_promotion_merge():
     assert "requires a two-parent merge commit" in source
     assert "exit 31" in source
     assert 'CANDIDATE_SHA="${PARTS[2]}"' in source
+
+def test_zero_known_error_output_path_is_writable_by_dashboard_runtime_before_audit():
+    source = _deploy()
+    prepared = source.index('AUDIT_HOST_DIR="$REPO/data/deploy"')
+    audited = source.index('AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300')
+    assert prepared < audited
+    assert 'AUDIT_UID="$(sudo -n docker exec porota_production_dashboard id -u)"' in source
+    assert 'AUDIT_GID="$(sudo -n docker exec porota_production_dashboard id -g)"' in source
+    assert 'install -d -o "$AUDIT_UID" -g "$AUDIT_GID" -m 0750 "$AUDIT_HOST_DIR"' in source
+    assert "-name 'zero-known-error-*.json'" in source
+    assert 'test "$AUDIT_HOST_STAT" = "$AUDIT_UID:$AUDIT_GID|750"' in source
+    assert 'docker exec porota_production_dashboard test -w /app/data/deploy' in source
+    assert "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH_WRITABLE=GREEN" in source
+
