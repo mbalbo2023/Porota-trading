@@ -42,7 +42,7 @@ jobs:
           set -Eeuo pipefail
           cd /opt/porota-trading
           DB=data/paper_v17/observer_v17.db
-          sudo -n timeout 60 docker exec porota_production_observer python - <<'PY'
+          sudo -n timeout 60 docker exec -i porota_production_observer python - <<'PY'
           import json,sqlite3
           import bf_production_paper_observer as m
           from cg_paper_workspace import runtime_store
