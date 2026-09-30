@@ -201,3 +201,12 @@ def test_collect_reports_all_non_200_paths_before_truth_parse(monkeypatch):
     )
     with pytest.raises(RuntimeError, match=r'DASHBOARD_HTTP_FAILURES=.*"/salud":500'):
         audit.collect("diagnostic")
+
+
+def test_heavy_dashboard_routes_have_evidence_based_cold_render_budgets():
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS["/"] == 45
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS["/vivo"] == 45
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS["/trading"] == 45
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS["/historicos"] == 45
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS["/universo-operativo"] == 60
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS.get("/salud", audit.DEFAULT_HTTP_TIMEOUT_SECONDS) == 20

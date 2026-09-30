@@ -160,3 +160,8 @@ def test_history_cutoff_repair_is_decoupled_from_code_deploy():
     assert "rollback_allowed: false" in policy
     assert not (ROOT / ".github/workflows/deploy.yml").exists()
     assert not (ROOT / ".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml").exists()
+
+
+def test_runtime_audit_outer_budget_covers_measured_route_cycle():
+    source = _deploy()
+    assert source.count("docker exec porota_production_dashboard timeout 300") == 2

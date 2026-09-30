@@ -448,7 +448,7 @@ jobs:
           sudo -n mkdir -p "$REPO/data/deploy"
           AUDIT_BASE=/app/data/deploy/zero-known-error-immediate.json
           set +e
-          AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 180 \
+          AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
             python /app/scripts/rc6_zero_known_error_runtime_audit.py \
               --label immediate --output "$AUDIT_BASE" 2>&1)"
           AUDIT_RC=$?
@@ -481,7 +481,7 @@ jobs:
           for cycle in 1 2 3; do
             sleep 35
             set +e
-            AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 180 \
+            AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
               python /app/scripts/rc6_zero_known_error_runtime_audit.py \
                 --label "stability-$cycle" --baseline "$AUDIT_BASE" \
                 --output "/app/data/deploy/zero-known-error-stability-$cycle.json" 2>&1)"
