@@ -97,6 +97,32 @@ def test_runtime_surface_metrics_detect_legacy_pending_contract():
     assert metrics["legacy_text_hits"] == ["pending contrato"]
 
 
+def test_runtime_surface_metrics_ignore_marker_literal_inside_accessibility_script():
+    body = (
+        "<table><tr data-porota-server-page-record='1'><td>SERVER</td></tr></table>"
+        "<script>const legacy=\"data-porota-record='1'\";</script>"
+    ).encode()
+    metrics = runtime_audit._surface_metrics("/instrumentos", body)
+    assert metrics["server_page_records"] == 1
+    assert metrics["progressive_records"] == 0
+    runtime_audit._assert_surface_metrics({"/instrumentos": metrics})
+
+
+def test_runtime_surface_metrics_still_block_real_progressive_dom_rows():
+    body = (
+        "<table><tr data-porota-record='1'><td>LEGACY</td></tr></table>"
+        "<script>const harmless=\"data-porota-record='1'\";</script>"
+    ).encode()
+    metrics = runtime_audit._surface_metrics("/instrumentos", body)
+    assert metrics["progressive_records"] == 1
+    try:
+        runtime_audit._assert_surface_metrics({"/instrumentos": metrics})
+    except RuntimeError as exc:
+        assert "PROGRESSIVE_RECORDS=1>0" in str(exc)
+    else:
+        raise AssertionError("real progressive DOM row must remain fail-closed")
+
+
 def test_universe_catalog_is_server_paged_and_no_generic_pending_label():
     source = __import__("pathlib").Path("bh_universe_dashboard_hf6.py").read_text(encoding="utf-8")
     assert "catalog_page=catalog[offset:offset+limit]" in source
