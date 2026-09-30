@@ -77,3 +77,20 @@ Estado:
 - ARTEFACTO_VALIDADO: NO_VERIFICADO hasta Predeploy final.
 - DESPLEGADO: NO.
 - VALIDADO_RUNTIME: NO.
+
+
+## Checkpoint 4 — Predeploy RED y fix-forward de regresiones legacy
+Predeploy `36784458319` sobre `60b6cea70433e6b4f37612c15da6c64947d43817`: RED antes de build.
+
+RCA:
+- 4 tests legacy exigían el antiguo full-DOM: 30 decisiones + 25 cierres serializados en la misma respuesta, límite HTTP hasta 50 y marker client-side.
+- Esa expectativa contradice el requisito operativo de 10 registros por tanda y reproduce la causa del cuelgue.
+
+FIX/GUARD:
+- tests migrados a contrato server-side: 10 registros por respuesta;
+- se prueba accesibilidad del resto recorriendo offsets 0/10/20;
+- se prueba que la primera respuesta no contenga registros 11+;
+- se conserva Voice Access, “Mostrar más”, freshness y HTTP 200.
+- No se relajó ningún gate productivo.
+
+Estado continúa EN_GITHUB; no hubo deploy ni mutación runtime por el Predeploy RED.
