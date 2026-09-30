@@ -95,3 +95,32 @@ def test_runtime_surface_metrics_detect_legacy_pending_contract():
     ).encode()
     metrics = runtime_audit._surface_metrics("/instrumentos", body)
     assert metrics["legacy_text_hits"] == ["pending contrato"]
+
+
+def test_universe_catalog_is_server_paged_and_no_generic_pending_label():
+    source = __import__("pathlib").Path("bh_universe_dashboard_hf6.py").read_text(encoding="utf-8")
+    assert "catalog_page=catalog[offset:offset+limit]" in source
+    assert "data-porota-server-page-record='1'" in source
+    assert "data-porota-progressive-list='1'" not in source
+    assert '"OBSERVED_BLOCKED": bg._status("PENDIENTE")' not in source
+    assert '"OBSERVED_BLOCKED": bg._status("OBSERVED_BLOCKED")' in source
+
+
+def test_live_page_never_serializes_the_full_decision_day():
+    source = __import__("pathlib").Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    assert "live_decisions=all_live_decisions[decision_offset:decision_offset+limit]" in source
+    assert "closed=closed_all[closed_offset:closed_offset+limit]" in source
+    assert "data-porota-server-page-record='1'" in source
+    assert "data-porota-record='1'" not in source
+
+
+def test_runtime_budgets_cover_all_three_previous_full_dom_hotspots():
+    assert runtime_audit.MAX_HTML_BYTES["/instrumentos"] == 350_000
+    assert runtime_audit.MAX_HTML_BYTES["/universo-operativo"] == 550_000
+    assert runtime_audit.MAX_HTML_BYTES["/vivo"] == 300_000
+    assert runtime_audit.MAX_SERVER_PAGE_RECORDS["/instrumentos"] == 10
+    assert runtime_audit.MAX_SERVER_PAGE_RECORDS["/universo-operativo"] == 10
+    assert runtime_audit.MAX_SERVER_PAGE_RECORDS["/vivo"] == 20
+    assert runtime_audit.MAX_PROGRESSIVE_RECORDS["/instrumentos"] == 0
+    assert runtime_audit.MAX_PROGRESSIVE_RECORDS["/universo-operativo"] == 0
+    assert runtime_audit.MAX_PROGRESSIVE_RECORDS["/vivo"] == 0
