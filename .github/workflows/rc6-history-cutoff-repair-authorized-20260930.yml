@@ -1,0 +1,116 @@
+name: RC6 History Cutoff Repair Authorized 2026-09-30
+
+on:
+  push:
+    branches:
+      - ops/ws-ops-preopen-closure-20260930
+    paths:
+      - '.github/workflows/rc6-history-cutoff-repair-authorized-20260930.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Run resumable cutoff repair through read-only PPI
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          state() {
+            python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=5);c.execute("PRAGMA query_only=ON")
+          row=c.execute("SELECT mode,real_orders_sent,process_state,session_state,ppi_auth FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print("|".join(str(x) for x in row))
+          PY
+          }
+          BEFORE_STATE="$(state)"
+          echo "STATE_BEFORE=$BEFORE_STATE"
+          test "$(printf '%s' "$BEFORE_STATE" | cut -d'|' -f1)" = "PRODUCTION_PAPER"
+          test "$(printf '%s' "$BEFORE_STATE" | cut -d'|' -f2)" = "0"
+          test "$(printf '%s' "$BEFORE_STATE" | cut -d'|' -f4)" = "MARKET_CLOSED"
+          PPI_WATCH_BEFORE="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          echo "DISK_BEFORE=$(df -PB1 / | awk 'NR==2{print $4}')"
+          echo "CUTOFF_REPAIR_BEGIN=$(date -u +%FT%TZ)"
+          set +e
+          sudo -n timeout 3000 docker exec             -e RC6_HISTORY_ALLOW_PPI_GAP_REPAIR=APPROVED             -e RC6_HISTORY_QUARANTINE_REPEATED_PPI=             -e RC6_HISTORY_REQUEST_PAUSE_SECONDS=0.5             porota_production_observer             python /app/scripts/rc6_history_cutoff_repair_once.py 2>&1
+          RC=$?
+          set -e
+          echo "CUTOFF_REPAIR_RC=$RC"
+          echo "CUTOFF_REPAIR_END=$(date -u +%FT%TZ)"
+          AFTER_STATE="$(state)"
+          echo "STATE_AFTER=$AFTER_STATE"
+          test "$(printf '%s' "$AFTER_STATE" | cut -d'|' -f1)" = "PRODUCTION_PAPER"
+          test "$(printf '%s' "$AFTER_STATE" | cut -d'|' -f2)" = "0"
+          PPI_WATCH_AFTER="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          test "$PPI_WATCH_AFTER" = "$PPI_WATCH_BEFORE"
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+          echo "DISK_AFTER=$(df -PB1 / | awk 'NR==2{print $4}')"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json
+          import bf_production_paper_observer as m
+          from cv_history_store_adapter_hf6 import default_history_store
+          db=default_history_store()
+          out={"cutoff_repair_complete":m._history_cutoff_repair_complete()}
+          with db.connect() as c:
+              c.execute("PRAGMA query_only=ON")
+              tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              if "rc6_history_cutoff_repair_runs" in tables:
+                  out["run"]=[dict(r) for r in c.execute("SELECT * FROM rc6_history_cutoff_repair_runs ORDER BY cutoff")]
+              if "rc6_history_cutoff_repair" in tables:
+                  out["states"]=[dict(r) for r in c.execute("SELECT state,COUNT(*) n FROM rc6_history_cutoff_repair GROUP BY state ORDER BY state")]
+          print("CUTOFF_REPAIR_EVIDENCE="+json.dumps(out,sort_keys=True,separators=(",",":"),default=str))
+          PY
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          test "$RC" -eq 0
+          echo "CUTOFF_REPAIR_ACTION=GREEN"
+          REMOTE
+          )"
+          printf '%s\n' "$OUT"
+          mkdir -p evidence
+          { echo '# History cutoff repair'; echo; echo '~~~text'; printf '%s\n' "$OUT"; echo '~~~'; } > evidence/history-cutoff-repair.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: history-cutoff-repair-evidence
+          path: evidence/history-cutoff-repair.md
+          if-no-files-found: warn
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
