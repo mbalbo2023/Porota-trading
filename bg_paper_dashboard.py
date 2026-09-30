@@ -2487,14 +2487,17 @@ def trading_page(section=''):
 
 
 
-def _instrument_readiness_matrix():
-    """Full-key projection: catalog, Evidence v2 and runtime readiness stay distinct."""
-    items=dashboard_truth_projection.instrument_rows(_rows,_table,limit=50000)
+def _instrument_readiness_matrix(*, offset=0, limit=10, total=0):
+    """Render one bounded server-side page of the full-key instrument matrix."""
+    offset=max(0,int(offset))
+    limit=max(1,min(10,int(limit)))
+    items=dashboard_truth_projection.instrument_rows(
+        _rows,_table,limit=limit,offset=offset,
+    )
     rows=[]
-    for index,item in enumerate(items):
-        hidden=" hidden aria-hidden='true'" if index>=10 else " aria-hidden='false'"
+    for item in items:
         rows.append(
-            f"<tr data-porota-record='1'{hidden}>"
+            "<tr data-porota-server-page-record='1'>"
             f"<td><b>{_e(item.get('ticker'))}</b></td><td>{_e(item.get('family'))}</td>"
             f"<td>{_e(item.get('market'))} · {_e(item.get('settlement'))} · {_e(item.get('currency'))}</td>"
             f"<td>{_e(item.get('catalog_status'))} · {_e(item.get('catalog_capability'))}</td>"
@@ -2505,22 +2508,42 @@ def _instrument_readiness_matrix():
         )
     if not rows:
         return "<div class='paper-warning'>Catálogo o candidate_identity_v2 no disponible; estado NO_VERIFICADO.</div>"
+    total=max(int(total or 0),offset+len(items))
+    start=offset+1
+    end=offset+len(items)
+    controls=[
+        f"<span class='paper-muted'>Mostrando {start}-{end} de {_locale_number(total,0)}</span>"
+    ]
+    if offset>0:
+        controls.append(
+            f"<a class='paper-action' href='/instrumentos?offset={max(0,offset-limit)}#instrument-matrix'>Anterior</a>"
+        )
+    if end<total:
+        controls.append(
+            f"<a class='paper-action' href='/instrumentos?offset={offset+limit}#instrument-matrix' "
+            "aria-label='Mostrar más instrumentos, diez por tanda'>Mostrar más</a>"
+        )
     return (
-        "<div class='paper-card'><h2>Matriz por instrumento</h2>"
+        "<div class='paper-card' id='instrument-matrix'><h2>Matriz por instrumento</h2>"
         "<p class='paper-muted'>Catálogo = financial_instrument_catalog. Contrato = Evidence v2. "
-        "RUNTIME_READY = candidate_identity_v2. IOL complementa y su ausencia no reinterpreta READY.</p>"
-        "<div data-porota-progressive-list='1' data-page-size='10'>"
+        "RUNTIME_READY = candidate_identity_v2. IOL complementa y su ausencia no reinterpreta READY. "
+        "La tabla consulta sólo diez instrumentos por request para no saturar el navegador.</p>"
         "<table class='paper-table' data-porota-force-compact='1'><tr><th>Instrumento</th>"
         "<th>Familia</th><th>Mercado · plazo · moneda</th><th>Catálogo PPI</th>"
         "<th>Readiness runtime</th><th>Evidence v2</th><th>Detalle</th><th>Actualizado</th></tr>"
-        + "".join(rows) + "</table></div></div>"
+        + "".join(rows) + "</table>"
+        "<nav class='compact-pager' aria-label='Paginación de instrumentos'>"
+        + "".join(controls) + "</nav></div>"
     )
 
 
-def instruments_page():
-    families=tuple(item['family'] for item in truth_projection()['readiness']['families'])
+def instruments_page(*, offset=0, limit=10):
+    canonical=truth_projection()
+    families=tuple(item['family'] for item in canonical['readiness']['families'])
     table=_family_ux_table(families)
-    matrix=_instrument_readiness_matrix()
+    matrix=_instrument_readiness_matrix(
+        offset=offset,limit=limit,total=canonical['catalog'].get('total',0),
+    )
     body=("<h1>Instrumentos y contratos</h1>"
           "<div class='paper-notice'><b>Lectura corregida: readiness contractual actual separada del historial PAPER.</b> "
           "PPI es la fuente primaria; IOL solo complementa y valida en modo read-only. "
@@ -3062,7 +3085,10 @@ def install(app,check_auth):
     @app.get("/trading/{section}",response_class=HTMLResponse)
     def trading_section(section:str,request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(trading_page(section))
     @app.get("/instrumentos",response_class=HTMLResponse)
-    def instrumentos(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(instruments_page())
+    def instrumentos(request:Request,offset:int=Query(default=0,ge=0,le=50000),
+                     token:str=Query(default=""),authorization:str|None=Header(default=None)):
+        auth(request,token,authorization)
+        return HTMLResponse(instruments_page(offset=offset,limit=10))
     @app.get("/sistema",response_class=HTMLResponse)
     def sistema(request:Request,section:str=Query(default="introspeccion"),token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(system_page(section))
     @app.get("/scalping",response_class=HTMLResponse)
