@@ -450,7 +450,24 @@ jobs:
 
           # Unified WS-INTEG-03 runtime truth audit. It is read-only at the DB
           # and network boundaries and runs inside the exact promoted image.
-          sudo -n mkdir -p "$REPO/data/deploy"
+          # Its only write is the persisted audit evidence JSON. The dashboard
+          # runs as botuser, so the bind-mounted evidence directory must be owned
+          # by that exact runtime UID/GID before invoking the auditor.
+          AUDIT_HOST_DIR="$REPO/data/deploy"
+          AUDIT_UID="$(sudo -n docker exec porota_production_dashboard id -u)"
+          AUDIT_GID="$(sudo -n docker exec porota_production_dashboard id -g)"
+          [[ "$AUDIT_UID" =~ ^[0-9]+$ ]]
+          [[ "$AUDIT_GID" =~ ^[0-9]+$ ]]
+          sudo -n install -d -o "$AUDIT_UID" -g "$AUDIT_GID" -m 0750 "$AUDIT_HOST_DIR"
+          sudo -n find "$AUDIT_HOST_DIR" -maxdepth 1 -type f -name 'zero-known-error-*.json' \
+            -exec chown "$AUDIT_UID:$AUDIT_GID" {} +
+          sudo -n find "$AUDIT_HOST_DIR" -maxdepth 1 -type f -name 'zero-known-error-*.json' \
+            -exec chmod 0640 {} +
+          AUDIT_HOST_STAT="$(sudo -n stat -c '%u:%g|%a' "$AUDIT_HOST_DIR")"
+          echo "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH=$AUDIT_HOST_STAT|runtime=$AUDIT_UID:$AUDIT_GID"
+          test "$AUDIT_HOST_STAT" = "$AUDIT_UID:$AUDIT_GID|750"
+          sudo -n docker exec porota_production_dashboard test -w /app/data/deploy
+          echo "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH_WRITABLE=GREEN"
           AUDIT_BASE=/app/data/deploy/zero-known-error-immediate.json
           set +e
           AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
