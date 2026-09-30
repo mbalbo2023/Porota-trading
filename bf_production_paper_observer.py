@@ -4,10 +4,6 @@ from __future__ import annotations
 
 import faulthandler
 import fcntl
-faulthandler.enable()
-# Debe instalarse antes de importar módulos internos: si uno queda esperando
-# I/O local, el volcado permite identificarlo sin exponer secretos.
-faulthandler.dump_traceback_later(45, repeat=True)
 
 import json
 import math
@@ -1567,7 +1563,10 @@ def run():
     # Sólo ante un arranque anormalmente lento se vuelca la pila Python para
     # localizar I/O local; no contiene ni lee secretos.
     faulthandler.enable()
-    faulthandler.dump_traceback_later(45, repeat=True)
+    # Startup watchdog only: repeating dumps every 45s made a healthy long-lived
+    # scanner emit perpetual "Timeout (0:00:45)!" traces, obscuring real crashes.
+    # Disarm it as soon as the runtime reaches the normal loop below.
+    faulthandler.dump_traceback_later(45, repeat=False)
     # Bajo el runtime padre, el esquema y la identidad ya fueron validados
     # una sola vez. El scanner no debe competir por el lock de arranque.
     if os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1":
@@ -1598,8 +1597,12 @@ def run():
     last_complementary_reconcile = 0.0
     next_login_at = 0.0
     last_phase = None  # Publicar BOOT_* antes de resolver el calendario.
+    startup_watchdog_armed = True
     try:
         while not STOP:
+            if startup_watchdog_armed:
+                faulthandler.cancel_dump_traceback_later()
+                startup_watchdog_armed = False
             # Una caución vence por contrato, aunque el mercado esté cerrado
             # o falle el login. No depende de cotizaciones ni de IA.
             if broker is not None:

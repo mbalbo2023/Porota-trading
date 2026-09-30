@@ -174,3 +174,40 @@ def test_deploy_v2_fails_closed_without_two_parent_promotion_merge():
     assert "requires a two-parent merge commit" in source
     assert "exit 31" in source
     assert 'CANDIDATE_SHA="${PARTS[2]}"' in source
+
+def test_zero_known_error_output_path_is_writable_by_dashboard_runtime_before_audit():
+    source = _deploy()
+    prepared = source.index('AUDIT_HOST_DIR="$REPO/data/deploy"')
+    audited = source.index('AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300')
+    assert prepared < audited
+    assert 'AUDIT_UID="$(sudo -n docker exec porota_production_dashboard id -u)"' in source
+    assert 'AUDIT_GID="$(sudo -n docker exec porota_production_dashboard id -g)"' in source
+    assert 'install -d -o "$AUDIT_UID" -g "$AUDIT_GID" -m 0750 "$AUDIT_HOST_DIR"' in source
+    assert "-name 'zero-known-error-*.json'" in source
+    assert 'test "$AUDIT_HOST_STAT" = "$AUDIT_UID:$AUDIT_GID|750"' in source
+    assert 'docker exec porota_production_dashboard test -w /app/data/deploy' in source
+    assert "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH_WRITABLE=GREEN" in source
+
+def test_deploy_stability_fails_on_any_runtime_container_restart():
+    source = _deploy()
+    assert "OBSERVER_RESTART_BASE=" in source
+    assert "DASHBOARD_RESTART_BASE=" in source
+    assert "RC6_POST_RECONCILIATION_RESTART_BASELINE=" in source
+    assert 'test "$OBSERVER_RESTART_BASE" = 0' in source
+    assert 'test "$DASHBOARD_RESTART_BASE" = 0' in source
+    assert "RC6_STABILITY_RESTART_BASELINE=" in source
+    assert 'test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"' in source
+    assert 'test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"' in source
+    assert source.index("OBSERVER_RESTART_BASE=") < source.index("BOOTSTRAP_")
+    assert source.index("OBSERVER_RESTART_BASE=") < source.index("for cycle in 1 2 3; do")
+    assert source.index('test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"') < source.index('echo "RC6_ZERO_KNOWN_ERROR_STABILITY_$cycle=GREEN"')
+
+
+
+def test_deploy_has_lightweight_exit139_soak_after_full_audits():
+    source = _deploy()
+    assert "for cycle in 1 2 3; do" in source
+    assert "for soak in 1 2 3 4 5; do" in source
+    assert "RC6_EXIT139_SOAK=GREEN" in source
+    assert 'test "$OBSERVER_RESTART_SOAK" = "$OBSERVER_RESTART_BASE"' in source
+    assert 'test "$DASHBOARD_RESTART_SOAK" = "$DASHBOARD_RESTART_BASE"' in source

@@ -1598,3 +1598,61 @@ def test_historicos_usan_universo_completo_no_lote_activo(tmp_path, monkeypatch)
     targets = observer._historical_targets(store)
     assert len(targets) >= 4
     assert {row[0] for row in targets}.issuperset({"GGAL","YPFD","PAMP","BMA"})
+
+def test_paper_store_connect_no_reissues_wal_write_pragma(tmp_path, monkeypatch):
+    """Every child connection must validate WAL without requesting journal mutation."""
+    db = tmp_path / "shared.db"
+    store = PaperStore(str(db))
+    # PaperStore creation uses the candidate connection policy itself, so a
+    # fresh unit-test DB is intentionally rejected until the runtime-parent
+    # initialization contract has established WAL. Model that parent step with
+    # raw sqlite before tracing child connections.
+    import sqlite3 as _sqlite3
+    with _sqlite3.connect(db) as connection:
+        assert connection.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+    real_connect = _sqlite3.connect
+    statements = []
+
+    class Traced:
+        def __init__(self, connection):
+            object.__setattr__(self, "_connection", connection)
+        def execute(self, sql, *args, **kwargs):
+            statements.append(str(sql).strip().lower())
+            return self._connection.execute(sql, *args, **kwargs)
+        def __getattr__(self, name):
+            return getattr(self._connection, name)
+        def __setattr__(self, name, value):
+            setattr(self._connection, name, value)
+
+    monkeypatch.setattr(_sqlite3, "connect", lambda *a, **k: Traced(real_connect(*a, **k)))
+    monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "1")
+    connection = store.connect()
+    try:
+        assert "pragma busy_timeout=20000" in statements
+        assert "pragma journal_mode" in statements
+        assert "pragma journal_mode=wal" not in statements
+    finally:
+        connection.close()
+
+
+def test_paper_store_connect_fails_closed_when_database_is_not_wal(tmp_path, monkeypatch):
+    import sqlite3 as _sqlite3
+    db = tmp_path / "not_wal.db"
+    with _sqlite3.connect(db) as connection:
+        connection.execute("CREATE TABLE fixture(id INTEGER)")
+        connection.execute("PRAGMA journal_mode=DELETE")
+    store = object.__new__(PaperStore)
+    store.path = str(db)
+    monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "1")
+    with pytest.raises(RuntimeError, match="PAPER_SQLITE_WAL_REQUIRED"):
+        store.connect()
+
+def test_observer_faulthandler_is_startup_only():
+    source = Path("bf_production_paper_observer.py").read_text(encoding="utf-8")
+    before_run = source.split("def run():", 1)[0]
+    assert "faulthandler.enable()" not in before_run
+    assert "dump_traceback_later" not in before_run
+    assert "faulthandler.dump_traceback_later(45, repeat=False)" in source
+    assert "faulthandler.cancel_dump_traceback_later()" in source
+    assert "dump_traceback_later(45, repeat=True)" not in source
+

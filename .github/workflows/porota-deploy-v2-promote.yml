@@ -431,6 +431,15 @@ jobs:
           test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
           echo "DASHBOARD_HEALTH_HTTP=200|image=$DASHBOARD_IMAGE_ID"
 
+          # From this point onward no controlled container restart is expected.
+          # A newly recreated exact-image runtime must still have zero automatic
+          # restarts before any postdeploy bootstrap or audit begins.
+          OBSERVER_RESTART_BASE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+          DASHBOARD_RESTART_BASE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+          echo "RC6_POST_RECONCILIATION_RESTART_BASELINE=observer=$OBSERVER_RESTART_BASE|dashboard=$DASHBOARD_RESTART_BASE"
+          test "$OBSERVER_RESTART_BASE" = 0
+          test "$DASHBOARD_RESTART_BASE" = 0
+
           # Bootstrap compacto tras un deploy correcto. Cada tarea es diaria y
           # acotada; no habilita rutas de orden real.
           for job in validation_projection action4_audit; do
@@ -450,7 +459,24 @@ jobs:
 
           # Unified WS-INTEG-03 runtime truth audit. It is read-only at the DB
           # and network boundaries and runs inside the exact promoted image.
-          sudo -n mkdir -p "$REPO/data/deploy"
+          # Its only write is the persisted audit evidence JSON. The dashboard
+          # runs as botuser, so the bind-mounted evidence directory must be owned
+          # by that exact runtime UID/GID before invoking the auditor.
+          AUDIT_HOST_DIR="$REPO/data/deploy"
+          AUDIT_UID="$(sudo -n docker exec porota_production_dashboard id -u)"
+          AUDIT_GID="$(sudo -n docker exec porota_production_dashboard id -g)"
+          [[ "$AUDIT_UID" =~ ^[0-9]+$ ]]
+          [[ "$AUDIT_GID" =~ ^[0-9]+$ ]]
+          sudo -n install -d -o "$AUDIT_UID" -g "$AUDIT_GID" -m 0750 "$AUDIT_HOST_DIR"
+          sudo -n find "$AUDIT_HOST_DIR" -maxdepth 1 -type f -name 'zero-known-error-*.json' \
+            -exec chown "$AUDIT_UID:$AUDIT_GID" {} +
+          sudo -n find "$AUDIT_HOST_DIR" -maxdepth 1 -type f -name 'zero-known-error-*.json' \
+            -exec chmod 0640 {} +
+          AUDIT_HOST_STAT="$(sudo -n stat -c '%u:%g|%a' "$AUDIT_HOST_DIR")"
+          echo "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH=$AUDIT_HOST_STAT|runtime=$AUDIT_UID:$AUDIT_GID"
+          test "$AUDIT_HOST_STAT" = "$AUDIT_UID:$AUDIT_GID|750"
+          sudo -n docker exec porota_production_dashboard test -w /app/data/deploy
+          echo "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH_WRITABLE=GREEN"
           AUDIT_BASE=/app/data/deploy/zero-known-error-immediate.json
           set +e
           AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
@@ -482,7 +508,9 @@ jobs:
           # Observe several worker/dashboard refresh cycles before success.
           # Every later snapshot compares against the immediate baseline and
           # fails if READY regresses, LKG disappears or a worker heartbeat does
-          # not advance.
+          # not advance. Container restart counters are also invariant: a
+          # self-recovered SIGSEGV/exit-139 is still a failed deployment.
+          echo "RC6_STABILITY_RESTART_BASELINE=observer=$OBSERVER_RESTART_BASE|dashboard=$DASHBOARD_RESTART_BASE"
           for cycle in 1 2 3; do
             sleep 35
             set +e
@@ -498,8 +526,31 @@ jobs:
               sudo -n docker logs --tail 250 porota_production_dashboard 2>&1 || true
               exit "$AUDIT_RC"
             fi
+            OBSERVER_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+            DASHBOARD_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+            echo "RC6_STABILITY_RESTART_$cycle=observer=$OBSERVER_RESTART_NOW|dashboard=$DASHBOARD_RESTART_NOW"
+            test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"
+            test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"
             echo "RC6_ZERO_KNOWN_ERROR_STABILITY_$cycle=GREEN"
           done
+
+          # Exit-139 incidents appeared after the runtime had initially looked
+          # healthy. Extend the observation window cheaply after the three full
+          # audits: no heavy HTTP sweep, only direct container-liveness and
+          # restart-count invariants once per minute.
+          for soak in 1 2 3 4 5; do
+            sleep 60
+            OBSERVER_STATUS_SOAK="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)"
+            DASHBOARD_STATUS_SOAK="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)"
+            OBSERVER_RESTART_SOAK="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+            DASHBOARD_RESTART_SOAK="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+            echo "RC6_EXIT139_SOAK_$soak=observer:$OBSERVER_STATUS_SOAK/$OBSERVER_RESTART_SOAK|dashboard:$DASHBOARD_STATUS_SOAK/$DASHBOARD_RESTART_SOAK"
+            test "$OBSERVER_STATUS_SOAK" = running
+            test "$DASHBOARD_STATUS_SOAK" = running
+            test "$OBSERVER_RESTART_SOAK" = "$OBSERVER_RESTART_BASE"
+            test "$DASHBOARD_RESTART_SOAK" = "$DASHBOARD_RESTART_BASE"
+          done
+          echo "RC6_EXIT139_SOAK=GREEN"
 
           RECENT_CRITICAL="$({
             sudo -n docker logs --since 15m porota_production_observer 2>&1 || true

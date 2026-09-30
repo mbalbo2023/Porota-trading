@@ -269,7 +269,21 @@ class PaperStore:
     def connect(self):
         conn = sqlite3.connect(self.path, timeout=20)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        # Runtime RC6 has several PAPER child processes sharing this DB. Keep
+        # lock waiting bounded and explicit at SQLite level.
+        conn.execute("PRAGMA busy_timeout=20000")
+        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+        mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        if str(mode).lower() != "wal":
+            if runtime_schema_ready:
+                # Child/runtime connections must never negotiate journal mode.
+                conn.close()
+                raise RuntimeError("PAPER_SQLITE_WAL_REQUIRED")
+            # Initialization/migration owns the only permitted WAL transition.
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            if str(mode).lower() != "wal":
+                conn.close()
+                raise RuntimeError("PAPER_SQLITE_WAL_INIT_FAILED")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
