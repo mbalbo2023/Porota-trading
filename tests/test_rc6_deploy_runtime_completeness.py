@@ -199,6 +199,6 @@ def test_deploy_stability_fails_on_any_runtime_container_restart():
     assert 'test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"' in source
     assert 'test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"' in source
     assert source.index("OBSERVER_RESTART_BASE=") < source.index("BOOTSTRAP_")
-    assert source.index("OBSERVER_RESTART_BASE=") < source.index("for cycle in 1 2 3; do")
+    assert source.index("OBSERVER_RESTART_BASE=") < source.index("for cycle in 1 2 3 4 5; do")
     assert source.index('test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"') < source.index('echo "RC6_ZERO_KNOWN_ERROR_STABILITY_$cycle=GREEN"')
 
