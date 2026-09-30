@@ -4,6 +4,9 @@ on:
     branches: [fix/ws-runtime-sqlite-contention-20260930]
 permissions:
   contents: read
+concurrency:
+  group: ws-runtime-candidate-full-gate-20260930
+  cancel-in-progress: true
 jobs:
   full:
     runs-on: ubuntu-24.04
