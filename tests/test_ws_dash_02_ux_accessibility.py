@@ -83,17 +83,27 @@ def test_live_html_keeps_all_30_decisions_and_25_closures_reachable(monkeypatch)
         return decisions if "FROM paper_decisions" in sql else []
 
     monkeypatch.setattr(dashboard, "_rows", fake_rows)
-    rendered = dashboard.live_page()
 
-    assert rendered.count("decision-") == 30
-    assert rendered.count("data-porota-record='1'") >= 55
+    pages = [
+        dashboard.live_page(closed_offset=0, decision_offset=0),
+        dashboard.live_page(closed_offset=10, decision_offset=10),
+        dashboard.live_page(closed_offset=20, decision_offset=20),
+    ]
+    rendered = pages[0]
+    all_rendered = "".join(pages)
+
+    assert rendered.count("decision-") == 10
+    assert rendered.count("data-porota-server-page-record='1'") == 20
+    assert "decision-10" not in rendered
+    assert "CLOSE10" not in rendered
+    assert all_rendered.count("decision-") == 30
+    assert all(f"decision-{i:02d}" in all_rendered for i in range(30))
+    assert all(f"CLOSE{i:02d}" in all_rendered for i in range(25))
     assert "id='porota-live-closed'" in rendered
     assert "id='porota-live-decisions'" in rendered
-    assert "Mostrando" in dashboard.TABLE_A11Y_SCRIPT
-    assert "const PAGE_SIZE=10;" in dashboard.TABLE_A11Y_SCRIPT
-    assert "Mostrar más" in dashboard.TABLE_A11Y_SCRIPT
+    assert "Mostrar más" in rendered
     assert "Timestamps y freshness" in rendered
-    assert rendered.count(" hidden aria-hidden='true'") >= 35
+    assert "data-porota-record='1'" not in rendered
 
     app = FastAPI()
 
@@ -103,7 +113,8 @@ def test_live_html_keeps_all_30_decisions_and_25_closures_reachable(monkeypatch)
 
     response = TestClient(app).get("/en-vivo")
     assert response.status_code == 200
-    assert "decision-29" in response.text
+    assert "decision-09" in response.text
+    assert "decision-29" not in response.text
 
 
 def test_navigation_and_cell_controls_are_voice_and_keyboard_accessible():
