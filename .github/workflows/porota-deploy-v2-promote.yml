@@ -37,7 +37,12 @@ jobs:
         run: |
           set -Eeuo pipefail
           mapfile -t PARTS < <(git rev-list --parents -n 1 HEAD | tr ' ' '\n')
-          test "${#PARTS[@]}" -eq 3
+          if [ "${#PARTS[@]}" -ne 3 ]; then
+            PARENT_COUNT=$(( ${#PARTS[@]} - 1 ))
+            echo "POROTA_DEPLOY_V2_PROMOTION_COMMIT_INVALID=RED|sha=${PARTS[0]:-UNKNOWN}|parents=${PARENT_COUNT}|required=2"
+            echo "::error::Deploy V2 requires a two-parent merge commit so the exact Predeploy candidate remains addressable."
+            exit 31
+          fi
           CANDIDATE_SHA="${PARTS[2]}"
           DEPLOY_SHA="${PARTS[0]}"
           CANDIDATE_TREE="$(git rev-parse "$CANDIDATE_SHA^{tree}")"
