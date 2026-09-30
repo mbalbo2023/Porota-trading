@@ -24,6 +24,17 @@ jobs:
       - name: Checkout diagnostic branch
         uses: actions/checkout@v4
 
+      - name: Inventory candidate writers from exact production source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'CANDIDATE_WRITER_CALLS_BEGIN'
+          grep -RFn --include='*.py' 'sync_candidate_universe' . | head -100 || true
+          echo 'CANDIDATE_WRITER_CALLS_END'
+          echo 'MASS_MATERIALIZATION_CALLS_BEGIN'
+          grep -RFn --include='*.py' 'evidence_v2_mass.collect' . | head -100 || true
+          echo 'MASS_MATERIALIZATION_CALLS_END'
+
       - name: Prepare strict SSH
         shell: bash
         run: |
@@ -34,7 +45,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
 
-      - name: Query runtime candidate states read-only
+      - name: Query runtime candidate chronology read-only
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -42,14 +53,15 @@ jobs:
           set -Eeuo pipefail
           DB=/opt/porota-trading/data/paper_v17/observer_v17.db
           BEFORE="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          OBSERVER_BEFORE="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_observer)"
           echo "DASHBOARD_BEFORE=$BEFORE"
+          echo "OBSERVER_CONTAINER_BEFORE=$OBSERVER_BEFORE"
           sudo -n timeout 60 python3 - "$DB" <<'PY'
           import json
           import sqlite3
           import sys
 
-          path = sys.argv[1]
-          db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+          db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True, timeout=5)
           db.row_factory = sqlite3.Row
           db.execute("PRAGMA query_only=ON")
 
@@ -59,57 +71,101 @@ jobs:
           ).fetchone() or {})
           print("OBSERVER=" + json.dumps(observer, sort_keys=True, default=str))
 
-          status_matrix = [
+          candidate_matrix = [
               dict(row) for row in db.execute("""
-              SELECT upper(instrument_type) AS family,
-                     coalesce(upper(status),'<NULL>') AS status,
-                     coalesce(can_simulate,-1) AS can_simulate,
-                     COUNT(*) AS count
+              SELECT upper(instrument_type) family, upper(status) status,
+                     can_simulate, COUNT(*) count
               FROM candidate_identity_v2
-              GROUP BY upper(instrument_type),coalesce(upper(status),'<NULL>'),coalesce(can_simulate,-1)
+              GROUP BY upper(instrument_type),upper(status),can_simulate
               ORDER BY family,status,can_simulate
               """)
           ]
-          print("CANDIDATE_STATUS_MATRIX=" + json.dumps(status_matrix, sort_keys=True))
+          print("CANDIDATE_STATUS_MATRIX=" + json.dumps(candidate_matrix, sort_keys=True))
 
-          invalid_sql = """
-              SELECT COUNT(*) FROM candidate_identity_v2
-              WHERE (upper(status)='AVAILABLE' AND can_simulate<>1)
-                 OR (upper(status)='PAUSED_EXPLICIT' AND can_simulate<>0)
-                 OR upper(status) NOT IN ('AVAILABLE','PAUSED_EXPLICIT')
-          """
-          invalid_count = int(db.execute(invalid_sql).fetchone()[0])
-          print(f"INVALID_CANDIDATE_STATES={invalid_count}")
-
-          invalid_rows = [
+          invalid_groups = [
               dict(row) for row in db.execute("""
-              SELECT ticker,instrument_type,market,currency,settlement,status,can_simulate,detail
+              SELECT upper(instrument_type) family, upper(status) status,
+                     can_simulate, COUNT(*) count
               FROM candidate_identity_v2
               WHERE (upper(status)='AVAILABLE' AND can_simulate<>1)
                  OR (upper(status)='PAUSED_EXPLICIT' AND can_simulate<>0)
                  OR upper(status) NOT IN ('AVAILABLE','PAUSED_EXPLICIT')
-              ORDER BY upper(instrument_type),upper(status),ticker,market,currency,settlement
-              LIMIT 200
+              GROUP BY upper(instrument_type),upper(status),can_simulate
+              ORDER BY family,status,can_simulate
               """)
           ]
-          print("INVALID_CANDIDATE_SAMPLE=" + json.dumps(invalid_rows, sort_keys=True, default=str))
+          print("INVALID_CANDIDATE_GROUPS=" + json.dumps(invalid_groups, sort_keys=True))
+          print("INVALID_CANDIDATE_STATES=" + str(sum(int(x["count"]) for x in invalid_groups)))
 
-          pending = int(db.execute("""
+          candidate_clock = dict(db.execute("""
+              SELECT COUNT(*) total, MIN(checked_at) min_checked_at, MAX(checked_at) max_checked_at
+              FROM candidate_identity_v2
+          """).fetchone())
+          print("CANDIDATE_CLOCK=" + json.dumps(candidate_clock, sort_keys=True, default=str))
+
+          catalog_matrix = [
+              dict(row) for row in db.execute("""
+              SELECT upper(instrument_type) family, upper(status) status,
+                     capability, COUNT(*) count
+              FROM financial_instrument_catalog
+              GROUP BY upper(instrument_type),upper(status),capability
+              ORDER BY family,status,capability
+              """)
+          ]
+          print("CATALOG_STATUS_CAPABILITY_MATRIX=" + json.dumps(catalog_matrix, sort_keys=True))
+
+          discovery = [
+              dict(row) for row in db.execute("""
+              SELECT upper(instrument_type) family,
+                     json_extract(metadata_json,'$._discovery_source') discovery_source,
+                     upper(status) status, COUNT(*) count
+              FROM financial_instrument_catalog
+              GROUP BY upper(instrument_type),json_extract(metadata_json,'$._discovery_source'),upper(status)
+              ORDER BY family,discovery_source,status
+              """)
+          ]
+          print("CATALOG_DISCOVERY_MATRIX=" + json.dumps(discovery, sort_keys=True))
+
+          for table in ("contract_evidence_v2_runs","catalog_query_results"):
+              exists = db.execute(
+                  "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+              ).fetchone()
+              if not exists:
+                  print(f"{table.upper()}=MISSING")
+                  continue
+              rows = [dict(row) for row in db.execute(
+                  f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT 20"
+              )]
+              print(table.upper() + "_LATEST=" + json.dumps(rows, sort_keys=True, default=str))
+
+          events = []
+          if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_events'").fetchone():
+              for row in db.execute("SELECT * FROM paper_events ORDER BY rowid DESC LIMIT 500"):
+                  item = dict(row)
+                  rendered = json.dumps(item, sort_keys=True, default=str)
+                  if any(token in rendered.upper() for token in (
+                      "CATALOG", "COMPLEMENTARY", "EVIDENCE_V2", "PPI_PRODUCTION"
+                  )):
+                      events.append(item)
+                  if len(events) >= 120:
+                      break
+          print("RELEVANT_PAPER_EVENTS=" + json.dumps(events, sort_keys=True, default=str))
+
+          generic_pending = int(db.execute("""
               SELECT COUNT(*) FROM candidate_identity_v2
               WHERE upper(instrument_type) IN ('OPCIONES','FUTUROS','ON','OBLIGACIONES')
                 AND (upper(status) LIKE '%PENDING%' OR upper(detail) LIKE '%PENDING%')
           """).fetchone()[0])
-          print(f"GENERIC_PENDING_RESIDUALS={pending}")
-
           total = int(db.execute("SELECT COUNT(*) FROM candidate_identity_v2").fetchone()[0])
-          ready = int(db.execute(
-              "SELECT COUNT(*) FROM candidate_identity_v2 "
-              "WHERE can_simulate=1 AND upper(status)='AVAILABLE'"
-          ).fetchone()[0])
-          paused = int(db.execute(
-              "SELECT COUNT(*) FROM candidate_identity_v2 "
-              "WHERE can_simulate=0 AND upper(status)='PAUSED_EXPLICIT'"
-          ).fetchone()[0])
+          ready = int(db.execute("""
+              SELECT COUNT(*) FROM candidate_identity_v2
+              WHERE can_simulate=1 AND upper(status)='AVAILABLE'
+          """).fetchone()[0])
+          paused = int(db.execute("""
+              SELECT COUNT(*) FROM candidate_identity_v2
+              WHERE can_simulate=0 AND upper(status)='PAUSED_EXPLICIT'
+          """).fetchone()[0])
+          print(f"GENERIC_PENDING_RESIDUALS={generic_pending}")
           print(f"CANDIDATE_TOTAL={total}|READY={ready}|PAUSED_EXPLICIT={paused}")
 
           db.close()
@@ -117,9 +173,17 @@ jobs:
           assert int(observer.get("real_orders_sent") or 0) == 0
           print("READ_ONLY_RCA_SAFETY=GREEN")
           PY
+
+          echo 'OBSERVER_RELEVANT_LOGS_BEGIN'
+          sudo -n docker logs --since '2026-09-30T05:00:00Z' porota_production_observer 2>&1             | grep -Ei 'catalog|complement|evidence|ready|ppi|reconcil|error|exception'             | tail -400 || true
+          echo 'OBSERVER_RELEVANT_LOGS_END'
+
           AFTER="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          OBSERVER_AFTER="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_observer)"
           echo "DASHBOARD_AFTER=$AFTER"
+          echo "OBSERVER_CONTAINER_AFTER=$OBSERVER_AFTER"
           test "$AFTER" = "$BEFORE"
+          test "$OBSERVER_AFTER" = "$OBSERVER_BEFORE"
           echo "READ_ONLY_RUNTIME_UNCHANGED=GREEN"
           REMOTE
 
