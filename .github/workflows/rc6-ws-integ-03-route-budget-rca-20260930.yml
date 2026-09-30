@@ -40,6 +40,8 @@ jobs:
             "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
           sudo -n docker inspect -f 'ROUTE_RCA_IMAGE={{.Image}}|STATUS={{.State.Status}}|OOM={{.State.OOMKilled}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          df -PB1 / | awk 'NR==2 {print "ROUTE_RCA_DISK_FREE=" $4}'
+          du -sb /tmp/porota-deploy-v2-* 2>/dev/null | awk '{sum += $1} END {print "ROUTE_RCA_DEPLOY_TMP_BYTES=" sum+0}'
           sudo -n docker exec -i porota_production_dashboard python - <<'PY'
           import json, os, time
           from urllib.request import Request, urlopen
