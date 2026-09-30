@@ -233,3 +233,18 @@ def test_deploy_has_lightweight_exit139_soak_after_full_audits():
     assert "RC6_EXIT139_SOAK=GREEN" in source
     assert 'test "$OBSERVER_RESTART_SOAK" = "$OBSERVER_RESTART_BASE"' in source
     assert 'test "$DASHBOARD_RESTART_SOAK" = "$DASHBOARD_RESTART_BASE"' in source
+
+
+def test_preopen_failure_preserves_diagnostics_before_fail_closed_exit():
+    source = _deploy()
+    start = source.index("for phase in T_MINUS_45 T_MINUS_10; do")
+    end = source.index("# Observe several worker/dashboard refresh cycles", start)
+    block = source[start:end]
+    assert "set +e" in block
+    assert "PREOPEN_RC=$?" in block
+    assert "set -e" in block
+    assert 'echo "$PREOPEN_OUTPUT"' in block
+    assert 'RC6_PREOPEN_${phase}=RED|RC=$PREOPEN_RC' in block
+    assert 'exit "$PREOPEN_RC"' in block
+    assert block.index('echo "$PREOPEN_OUTPUT"') < block.index('exit "$PREOPEN_RC"')
+    assert 'grep -Fq \'"status": "GREEN"\'' in block
