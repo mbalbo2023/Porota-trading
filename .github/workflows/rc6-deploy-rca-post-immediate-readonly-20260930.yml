@@ -12,9 +12,9 @@ permissions:
   contents: read
 
 jobs:
-  post_immediate_readonly:
+  sistema_latency_readonly:
     runs-on: ubuntu-24.04
-    timeout-minutes: 18
+    timeout-minutes: 25
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -33,7 +33,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
 
-      - name: Exercise full runtime auditor and remaining gates without mutation
+      - name: Measure sistema and canonical projections without mutation
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -42,12 +42,11 @@ jobs:
             "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
-          IMAGE='porota-trading-bot:17.0.0-rc6'
           DB="$REPO/data/paper_v17/observer_v17.db"
+          IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          OBSERVER_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          test "$IMAGE_ID" = "$OBSERVER_IMAGE_ID"
 
-          echo "RCA_POST_IMMEDIATE_BEGIN"
-          sudo -n docker inspect -f 'RCA_IMAGE={{.Image}}|status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_dashboard
-          sudo -n docker inspect -f 'RCA_OBSERVER_IMAGE={{.Image}}|status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_observer
           SAFETY="$(sudo -n timeout 15 python3 - "$DB" <<'PY'
           import sqlite3,sys
           c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
@@ -57,8 +56,13 @@ jobs:
           print(f"{row[0]}|{int(row[1] or 0)}")
           PY
           )"
-          echo "RCA_SAFETY=$SAFETY"
+          echo "RCA_SISTEMA_SAFETY=$SAFETY"
           test "$SAFETY" = "PRODUCTION_PAPER|0"
+          echo "RCA_SISTEMA_IMAGE=$IMAGE_ID"
+          echo "RCA_SISTEMA_HOST_LOAD=$(uptime)"
+          echo "RCA_SISTEMA_HOST_MEMORY=$(free -m | tr '\n' ';')"
+          echo "RCA_SISTEMA_DASHBOARD_BEFORE=$(sudo -n docker stats --no-stream --format '{{.Name}}|cpu={{.CPUPerc}}|mem={{.MemUsage}}|pids={{.PIDs}}' porota_production_dashboard)"
+          echo "RCA_SISTEMA_DASHBOARD_STATE_BEFORE=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_dashboard)"
 
           COMMON=(
             sudo -n docker run --rm --pull never --network host --read-only
@@ -73,70 +77,92 @@ jobs:
             -v "$REPO/data:/app/data:ro"
           )
 
-          set +e
-          FULL="$("${COMMON[@]}" --entrypoint python "$IMAGE" \
-            /app/scripts/rc6_zero_known_error_runtime_audit.py \
-            --label rca-full-main --output /tmp/rca-full-main.json 2>&1)"
-          FULL_RC=$?
-          set -e
-          echo "$FULL"
-          echo "RCA_FULL_MAIN_RC=$FULL_RC"
-          test "$FULL_RC" -eq 0
-          grep -Fq 'POROTA_ZERO_KNOWN_ERROR_RUNTIME_AUDIT=GREEN|rca-full-main' <<< "$FULL"
-          grep -Fq 'ZERO_KNOWN_P0=YES' <<< "$FULL"
-          grep -Fq 'ZERO_KNOWN_P1=YES' <<< "$FULL"
-          grep -Fq 'DASHBOARD_TRUTH=CONSISTENT' <<< "$FULL"
-          echo "RCA_FULL_MAIN_OUTPUT_WRITE_TMPFS=GREEN"
+          # HTTP latency against the running dashboard. Token remains inside the
+          # disposable container and is never printed.
+          timeout 720 "${COMMON[@]}" --entrypoint python "$IMAGE_ID" - <<'PY'
+          import os,time,json
+          from urllib.request import Request,urlopen
+          token=os.environ["DASHBOARD_ACCESS_TOKEN"].strip()
+          paths=[
+              "/sistema?section=introspeccion",
+              "/sistema?section=scheduler",
+              "/sistema?section=salud",
+              "/api/observer/state",
+              "/api/dashboard/truth",
+          ]
+          def fetch(path, timeout=90):
+              req=Request("http://127.0.0.1:8000"+path,headers={"Authorization":"Bearer "+token})
+              started=time.monotonic()
+              with urlopen(req,timeout=timeout) as r:
+                  body=r.read()
+                  elapsed=time.monotonic()-started
+                  print("RCA_HTTP_LATENCY="+json.dumps({
+                      "path":path,"status":r.status,"seconds":round(elapsed,3),"bytes":len(body)
+                  },sort_keys=True),flush=True)
+                  if r.status != 200:
+                      raise SystemExit("NON_200")
+          for path in paths:
+              for _ in range(3):
+                  fetch(path)
+          core=[
+              "/", "/vivo", "/trading", "/trading/acciones",
+              "/universo-operativo", "/instrumentos", "/validacion", "/analisis",
+              "/aprendizaje", "/scalping", "/riesgo", "/historicos", "/reportes",
+              "/sistema", "/salud", "/api/dashboard/truth",
+          ]
+          print("RCA_CORE_SEQUENCE_BEGIN",flush=True)
+          for path in core:
+              fetch(path)
+          print("RCA_CORE_SEQUENCE_END",flush=True)
+          fetch("/sistema")
+          PY
 
-          # Exercise the same baseline/stability contract without writing the host DB
-          # or the host evidence directory. Each snapshot only reads runtime truth.
-          set +e
-          STABILITY="$("${COMMON[@]}" --entrypoint python "$IMAGE" - 2>&1 <<'PY'
-          import time
-          from scripts import rc6_zero_known_error_runtime_audit as audit
-          baseline=audit.collect("rca-stability-baseline")
-          audit._assert_snapshot(baseline)
-          print("RCA_STABILITY_BASELINE=GREEN", flush=True)
-          for cycle in range(1,4):
-              time.sleep(35)
-              snap=audit.collect(f"rca-stability-{cycle}")
-              audit._assert_snapshot(snap, baseline)
-              print(f"RCA_STABILITY_{cycle}=GREEN", flush=True)
+          echo "RCA_SISTEMA_DASHBOARD_MID=$(sudo -n docker stats --no-stream --format '{{.Name}}|cpu={{.CPUPerc}}|mem={{.MemUsage}}|pids={{.PIDs}}' porota_production_dashboard)"
+          echo "RCA_SISTEMA_DASHBOARD_STATE_MID=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_dashboard)"
+
+          # Profile the read-only building blocks directly inside the exact image,
+          # over a read-only bind mount. This localizes route cost without changing
+          # runtime state or the production database.
+          timeout 420 "${COMMON[@]}" --entrypoint python "$IMAGE_ID" - <<'PY'
+          import time,json
+          import bg_paper_dashboard as d
+          probes=[
+              ("latest_introspection", d._latest_introspection),
+              ("timer_panel", d._rc6_introspection_timer_panel),
+              ("snapshot", d.snapshot),
+              ("truth_projection", d.truth_projection),
+              ("caucion_truth_panel", d._caucion_truth_panel),
+              ("introspection_content", d.introspection_content),
+              ("system_page_introspeccion", lambda:d.system_page("introspeccion")),
+              ("system_page_scheduler", lambda:d.system_page("scheduler")),
+              ("system_page_salud", lambda:d.system_page("salud")),
+          ]
+          for name,fn in probes:
+              started=time.monotonic()
+              value=fn()
+              elapsed=time.monotonic()-started
+              size=len(value.encode("utf-8")) if isinstance(value,str) else len(json.dumps(value,default=str).encode("utf-8"))
+              print("RCA_FUNCTION_LATENCY="+json.dumps({
+                  "probe":name,"seconds":round(elapsed,3),"bytes":size
+              },sort_keys=True),flush=True)
+          print("RCA_FUNCTION_PROFILE=GREEN",flush=True)
+          PY
+
+          echo "RCA_SISTEMA_DASHBOARD_AFTER=$(sudo -n docker stats --no-stream --format '{{.Name}}|cpu={{.CPUPerc}}|mem={{.MemUsage}}|pids={{.PIDs}}' porota_production_dashboard)"
+          echo "RCA_SISTEMA_DASHBOARD_STATE_AFTER=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_dashboard)"
+          echo "RCA_SISTEMA_OBSERVER_STATE_AFTER=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_observer)"
+          SAFETY_AFTER="$(sudo -n timeout 15 python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          row=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"{row[0]}|{int(row[1] or 0)}")
           PY
           )"
-          STABILITY_RC=$?
-          set -e
-          echo "$STABILITY"
-          echo "RCA_STABILITY_RC=$STABILITY_RC"
-          test "$STABILITY_RC" -eq 0
-          grep -Fq 'RCA_STABILITY_1=GREEN' <<< "$STABILITY"
-          grep -Fq 'RCA_STABILITY_2=GREEN' <<< "$STABILITY"
-          grep -Fq 'RCA_STABILITY_3=GREEN' <<< "$STABILITY"
-
-          # Exact dry preopen phase gates are explicitly read-only/no-order tests.
-          for phase in T_MINUS_45 T_MINUS_10; do
-            PREOPEN="$(sudo -n timeout 300 python3 "$REPO/rc6_preopen.py" --phase "$phase" 2>&1)"
-            echo "$PREOPEN"
-            grep -Fq '"status": "GREEN"' <<< "$PREOPEN"
-            grep -Fq '"read_only": true' <<< "$PREOPEN"
-            grep -Fq '"network_order_test_performed": false' <<< "$PREOPEN"
-            echo "RCA_PREOPEN_${phase}=GREEN"
-          done
-
-          RECENT_CRITICAL="$({
-            sudo -n docker logs --since 20m porota_production_observer 2>&1 || true
-            sudo -n docker logs --since 20m porota_production_dashboard 2>&1 || true
-          } | grep -E 'Traceback|REAL_ORDER_CAPABILITY=(ENABLED|REAL)|real_orders_sent=[1-9][0-9]*' || true)"
-          test -z "$RECENT_CRITICAL"
-          echo "RCA_RECENT_CRITICAL_LOG_SIGNATURES=0"
-
-          PPI_WATCH="$(
-            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
-              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
-            done
-          )"
-          printf 'RCA_PPI_WATCH_READ_ONLY=%s\n' "$PPI_WATCH"
-          echo "RCA_POST_IMMEDIATE_READ_ONLY=GREEN"
+          echo "RCA_SISTEMA_SAFETY_AFTER=$SAFETY_AFTER"
+          test "$SAFETY_AFTER" = "PRODUCTION_PAPER|0"
+          echo "RCA_SISTEMA_LATENCY_READ_ONLY=GREEN"
           REMOTE
 
       - name: Cleanup SSH key
