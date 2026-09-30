@@ -263,6 +263,17 @@ jobs:
           sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
           echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
 
+          # The compressed image, deploy bundle and expanded stage are needed only
+          # through verified install + docker load. Reclaim them before runtime
+          # gates so transient deploy storage cannot consume the 2 GiB safety
+          # reserve. Keep frozen/manifest metadata for later provenance checks.
+          TRANSIENT_BYTES_BEFORE="$(du -sb "$STAGE" "$REMOTE_DIR/porota-predeploy-image.tar.gz" "$REMOTE_DIR/porota-deploy-bundle-v2.tgz" 2>/dev/null | awk '{sum += $1} END {print sum+0}')"
+          rm -rf "$STAGE"
+          rm -f "$REMOTE_DIR/porota-predeploy-image.tar.gz" "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"
+          DISK_AFTER_TRANSIENT_CLEANUP="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "RC6_TRANSIENT_ARTIFACT_CLEANUP=GREEN|bytes=$TRANSIENT_BYTES_BEFORE|free=$DISK_AFTER_TRANSIENT_CLEANUP"
+          test "$DISK_AFTER_TRANSIENT_CLEANUP" -ge 2147483648
+
           sudo -n python3 "$REPO/scripts/porota_apply_host_control_plane_v2.py" \
             --root "$REPO" \
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
