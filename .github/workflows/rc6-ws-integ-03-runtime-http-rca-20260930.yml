@@ -124,7 +124,7 @@ jobs:
             "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
           IMAGE='porota-trading-bot:17.0.0-rc6'
-          sudo -n docker run --rm --pull never --network none --read-only \
+          sudo -n docker run --rm -i --pull never --network none --read-only \
             --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,size=32m \
             --env-file /opt/porota-trading/data/diagnosticos/observer_runtime_v17.env \
