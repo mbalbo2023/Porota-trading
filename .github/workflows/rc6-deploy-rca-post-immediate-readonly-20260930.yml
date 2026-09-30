@@ -12,9 +12,9 @@ permissions:
   contents: read
 
 jobs:
-  sistema_latency_readonly:
+  observer_lock_readonly:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 8
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -33,7 +33,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
 
-      - name: Measure sistema and projections without mutation
+      - name: Isolate observer database-lock restart without mutation
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -43,9 +43,54 @@ jobs:
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           DB="$REPO/data/paper_v17/observer_v17.db"
-          IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
-          OBSERVER_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
-          test "$IMAGE_ID" = "$OBSERVER_IMAGE_ID"
+
+          echo "RCA_LOCK_CONTAINER=$(sudo -n docker inspect -f 'status={{.State.Status}}|started={{.State.StartedAt}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}|policy={{.HostConfig.RestartPolicy.Name}}' porota_production_observer)"
+          echo "RCA_LOCK_DASHBOARD=$(sudo -n docker inspect -f 'status={{.State.Status}}|started={{.State.StartedAt}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' porota_production_dashboard)"
+          echo "RCA_LOCK_PROCESSES_BEGIN"
+          sudo -n docker top porota_production_observer -eo pid,ppid,etime,comm,args || true
+          echo "RCA_LOCK_PROCESSES_END"
+
+          echo "RCA_LOCK_LOG_CONTEXT_BEGIN"
+          sudo -n docker logs --since 45m --timestamps porota_production_observer 2>&1 | python3 - <<'PY'
+          import sys
+          lines=sys.stdin.read().splitlines()
+          needles=("database is locked","Traceback (most recent call last)","Fatal Python error",
+                   "segmentation","MemoryError","OperationalError")
+          hits={i for i,line in enumerate(lines) if any(n.lower() in line.lower() for n in needles)}
+          keep=set()
+          for i in hits:
+              keep.update(range(max(0,i-18),min(len(lines),i+20)))
+          for i in sorted(keep):
+              print(lines[i])
+          print(f"RCA_LOCK_LOG_LINES={len(lines)}|HITS={len(hits)}")
+          PY
+          echo "RCA_LOCK_LOG_CONTEXT_END"
+
+          echo "RCA_LOCK_KERNEL_OOM_BEGIN"
+          sudo -n journalctl -k --since '45 minutes ago' --no-pager 2>/dev/null | \
+            grep -Ei 'out of memory|oom-kill|killed process' | tail -n 80 || true
+          echo "RCA_LOCK_KERNEL_OOM_END"
+
+          sudo -n timeout 20 python3 - "$DB" <<'PY'
+          import sqlite3,sys,json,time
+          path=sys.argv[1]
+          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=5)
+          c.execute("PRAGMA query_only=ON")
+          pragmas={}
+          for name in ("journal_mode","locking_mode","busy_timeout","cache_size"):
+              try: pragmas[name]=c.execute(f"PRAGMA {name}").fetchone()[0]
+              except sqlite3.Error as exc: pragmas[name]=type(exc).__name__
+          print("RCA_LOCK_PRAGMAS="+json.dumps(pragmas,sort_keys=True))
+          row=c.execute("SELECT mode,process_state,session_state,ppi_auth,heartbeat_at,real_orders_sent,detail FROM observer_state WHERE id=1").fetchone()
+          print("RCA_LOCK_OBSERVER_STATE="+json.dumps(list(row),default=str))
+          for table in ("intraday_scalping_worker_state","paper_caucion_sweep_worker_state","paper_supervisor_state","paper_exit_reader_state"):
+              try:
+                  rows=c.execute(f"SELECT * FROM {table} LIMIT 3").fetchall()
+                  print("RCA_LOCK_TABLE="+table+"|"+json.dumps([list(r) for r in rows],default=str))
+              except sqlite3.Error as exc:
+                  print("RCA_LOCK_TABLE="+table+"|ERROR="+type(exc).__name__)
+          c.close()
+          PY
 
           SAFETY="$(sudo -n timeout 15 python3 - "$DB" <<'PY'
           import sqlite3,sys
@@ -56,139 +101,9 @@ jobs:
           print(f"{row[0]}|{int(row[1] or 0)}")
           PY
           )"
-          echo "RCA_SISTEMA_SAFETY=$SAFETY"
+          echo "RCA_LOCK_SAFETY=$SAFETY"
           test "$SAFETY" = "PRODUCTION_PAPER|0"
-          echo "RCA_SISTEMA_IMAGE=$IMAGE_ID"
-          echo "RCA_SISTEMA_HOST_LOAD=$(uptime)"
-          echo "RCA_SISTEMA_HOST_MEMORY=$(free -m | tr '\n' ';')"
-          echo "RCA_SISTEMA_DASHBOARD_BEFORE=$(sudo -n docker stats --no-stream --format '{{.Name}}|cpu={{.CPUPerc}}|mem={{.MemUsage}}|pids={{.PIDs}}' porota_production_dashboard)"
-          echo "RCA_SISTEMA_DASHBOARD_STATE_BEFORE=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|started={{.State.StartedAt}}|policy={{.HostConfig.RestartPolicy.Name}}' porota_production_dashboard)"
-          echo "RCA_SISTEMA_OBSERVER_STATE_BEFORE=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|started={{.State.StartedAt}}|policy={{.HostConfig.RestartPolicy.Name}}' porota_production_observer)"
-          echo "RCA_OBSERVER_CRITICAL_LOGS_BEGIN"
-          sudo -n docker logs --since 30m porota_production_observer 2>&1 | \
-            grep -E 'Traceback|Exception|ERROR|CRITICAL|segmentation|killed|OperationalError|database is locked|MemoryError' | \
-            tail -n 160 || true
-          echo "RCA_OBSERVER_CRITICAL_LOGS_END"
-
-          COMMON=(
-            sudo -n docker run --rm -i --pull never --network host --read-only
-            --user botuser --cap-drop ALL --security-opt no-new-privileges:true
-            --tmpfs /tmp:rw,noexec,nosuid,size=64m
-            --env-file "$REPO/data/diagnosticos/dashboard_mode_v17.env"
-            -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db
-            -e DATA_DIR=/app/data
-            -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires
-            -e PAPER_SCALPING_MODE=ACTIVE_PAPER
-            -e PAPER_CAUCION_SWEEP_MODE=ACTIVE_PAPER
-            -v "$REPO/data:/app/data:ro"
-          )
-
-          timeout 720 "${COMMON[@]}" --entrypoint python "$IMAGE_ID" - <<'PY'
-          import os,time,json
-          from urllib.request import Request,urlopen
-          token=os.environ["DASHBOARD_ACCESS_TOKEN"].strip()
-          def fetch(path, timeout=90):
-              req=Request("http://127.0.0.1:8000"+path,headers={"Authorization":"Bearer "+token})
-              started=time.monotonic()
-              with urlopen(req,timeout=timeout) as r:
-                  body=r.read()
-                  elapsed=time.monotonic()-started
-                  print("RCA_HTTP_LATENCY="+json.dumps({
-                      "path":path,"status":r.status,"seconds":round(elapsed,3),"bytes":len(body)
-                  },sort_keys=True),flush=True)
-                  if r.status != 200:
-                      raise SystemExit("NON_200")
-          for path in (
-              "/sistema?section=introspeccion",
-              "/sistema?section=scheduler",
-              "/sistema?section=salud",
-              "/api/observer/state",
-              "/api/dashboard/truth",
-          ):
-              for _ in range(3):
-                  fetch(path)
-          core=(
-              "/", "/vivo", "/trading", "/trading/acciones",
-              "/universo-operativo", "/instrumentos", "/validacion", "/analisis",
-              "/aprendizaje", "/scalping", "/riesgo", "/historicos", "/reportes",
-              "/sistema", "/salud", "/api/dashboard/truth",
-          )
-          print("RCA_CORE_SEQUENCE_BEGIN",flush=True)
-          for path in core:
-              fetch(path)
-          print("RCA_CORE_SEQUENCE_END",flush=True)
-          fetch("/sistema")
-          PY
-
-          echo "RCA_SISTEMA_DASHBOARD_MID=$(sudo -n docker stats --no-stream --format '{{.Name}}|cpu={{.CPUPerc}}|mem={{.MemUsage}}|pids={{.PIDs}}' porota_production_dashboard)"
-          echo "RCA_SISTEMA_DASHBOARD_STATE_MID=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_dashboard)"
-          echo "RCA_SISTEMA_OBSERVER_STATE_MID=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_observer)"
-
-          timeout 420 "${COMMON[@]}" --entrypoint python "$IMAGE_ID" - <<'PY'
-          import time,json,sqlite3,os
-          import bg_paper_dashboard as d
-          probes=(
-              ("latest_introspection", d._latest_introspection),
-              ("timer_panel", d._rc6_introspection_timer_panel),
-              ("snapshot", d.snapshot),
-              ("truth_projection", d.truth_projection),
-              ("caucion_truth_panel", d._caucion_truth_panel),
-              ("introspection_content", d.introspection_content),
-              ("system_page_introspeccion", lambda:d.system_page("introspeccion")),
-              ("system_page_scheduler", lambda:d.system_page("scheduler")),
-              ("system_page_salud", lambda:d.system_page("salud")),
-          )
-          for name,fn in probes:
-              started=time.monotonic()
-              value=fn()
-              elapsed=time.monotonic()-started
-              size=len(value.encode("utf-8")) if isinstance(value,str) else len(json.dumps(value,default=str).encode("utf-8"))
-              print("RCA_FUNCTION_LATENCY="+json.dumps({
-                  "probe":name,"seconds":round(elapsed,3),"bytes":size
-              },sort_keys=True),flush=True)
-
-          db=os.environ.get("PAPER_V17_DB_PATH","/app/data/paper_v17/observer_v17.db")
-          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5)
-          c.execute("PRAGMA query_only=ON")
-          for table in ("market_snapshots","trade_gate_evaluations","candidate_identity_v2",
-                        "financial_instrument_catalog","contract_evidence_v2_current"):
-              try:
-                  started=time.monotonic()
-                  n=c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-                  print("RCA_TABLE_COUNT="+json.dumps({
-                      "table":table,"rows":n,"seconds":round(time.monotonic()-started,3)
-                  },sort_keys=True),flush=True)
-              except sqlite3.Error as exc:
-                  print("RCA_TABLE_COUNT="+json.dumps({"table":table,"error":type(exc).__name__},sort_keys=True),flush=True)
-          timed=(
-              ("gate_today","SELECT COUNT(*),MAX(evaluated_at) FROM trade_gate_evaluations WHERE substr(evaluated_at,1,10)=date('now','-3 hours')"),
-              ("latest_quotes","SELECT COUNT(*) FROM (SELECT symbol,asset_class,settlement,currency,market,MAX(id) FROM market_snapshots GROUP BY symbol,asset_class,settlement,currency,market)"),
-          )
-          for name,sql in timed:
-              started=time.monotonic()
-              row=c.execute(sql).fetchone()
-              print("RCA_SQL_LATENCY="+json.dumps({
-                  "probe":name,"seconds":round(time.monotonic()-started,3),"result":list(row)
-              },sort_keys=True),flush=True)
-          c.close()
-          print("RCA_FUNCTION_PROFILE=GREEN",flush=True)
-          PY
-
-          echo "RCA_SISTEMA_DASHBOARD_AFTER=$(sudo -n docker stats --no-stream --format '{{.Name}}|cpu={{.CPUPerc}}|mem={{.MemUsage}}|pids={{.PIDs}}' porota_production_dashboard)"
-          echo "RCA_SISTEMA_DASHBOARD_STATE_AFTER=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_dashboard)"
-          echo "RCA_SISTEMA_OBSERVER_STATE_AFTER=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_observer)"
-          SAFETY_AFTER="$(sudo -n timeout 15 python3 - "$DB" <<'PY'
-          import sqlite3,sys
-          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
-          c.execute("PRAGMA query_only=ON")
-          row=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
-          c.close()
-          print(f"{row[0]}|{int(row[1] or 0)}")
-          PY
-          )"
-          echo "RCA_SISTEMA_SAFETY_AFTER=$SAFETY_AFTER"
-          test "$SAFETY_AFTER" = "PRODUCTION_PAPER|0"
-          echo "RCA_SISTEMA_LATENCY_READ_ONLY=GREEN"
+          echo "RCA_OBSERVER_LOCK_READ_ONLY=GREEN"
           REMOTE
 
       - name: Cleanup SSH key
