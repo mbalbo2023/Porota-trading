@@ -1,0 +1,99 @@
+name: RC6 WS OPS Dashboard Exact Runtime Probe 2026-09-30
+
+on:
+  push:
+    branches:
+      - ops/ws-ops-preopen-closure-20260930
+    paths:
+      - '.github/workflows/rc6-ws-ops-dashboard-exact-probe-20260930.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  dashboard_exact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Probe authenticated HTML
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          TOKEN="$(sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_dashboard | sed -n 's/^DASHBOARD_ACCESS_TOKEN=//p' | head -n1)"
+          test -n "$TOKEN"
+          sudo -n timeout 210 env DASH_TOKEN="$TOKEN" python3 - "$DB" <<'PY'
+          import json,os,re,sqlite3,sys,time
+          from urllib.request import Request,urlopen
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row;c.execute("PRAGMA query_only=ON")
+          obs=dict(c.execute("SELECT mode,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1").fetchone())
+          c.close()
+          assert obs["mode"]=="PRODUCTION_PAPER" and int(obs["real_orders_sent"] or 0)==0
+          print("SAFETY="+json.dumps(obs,sort_keys=True,separators=(",",":")))
+          token=os.environ["DASH_TOKEN"]
+          for path in ("/vivo","/universo-operativo","/instrumentos","/riesgo"):
+              t0=time.monotonic()
+              req=Request("http://127.0.0.1:8000"+path,headers={"Authorization":"Bearer "+token,"User-Agent":"porota-dashboard-exact-probe"})
+              with urlopen(req,timeout=90) as r: body=r.read();code=r.status
+              elapsed=time.monotonic()-t0
+              text=body.decode("utf-8","replace")
+              markers=list(re.finditer(r"data-porota-record=['\"]1['\"]",text,re.I))
+              server=list(re.finditer(r"data-porota-server-page-record=['\"]1['\"]",text,re.I))
+              print(f"SURFACE|{path}|HTTP={code}|BYTES={len(body)}|SECONDS={elapsed:.3f}|PROGRESSIVE={len(markers)}|SERVER={len(server)}")
+              for n,m in enumerate(markers,1):
+                  tr0=text.rfind("<tr",0,m.start());tr1=text.find("</tr>",m.end())
+                  if tr0<0: tr0=max(0,m.start()-500)
+                  if tr1<0: tr1=min(len(text),m.end()+500)
+                  else: tr1+=5
+                  ctx=re.sub(r"\s+"," ",text[tr0:tr1])
+                  print(f"PROGRESSIVE_ROW|{path}|{n}|{ctx[:2400]}")
+              if path=="/riesgo":
+                  tables=re.findall(r"<table\b.*?</table>",text,re.I|re.S)
+                  print("RISK_STYLE|classic_max_width_zero=%s|nowrap=%s|wrap_cells=%d|tables=%d"%(
+                      "max-width:0!important" in text,
+                      "white-space:nowrap!important" in text,
+                      len(re.findall(r"data-wrap=['\"]true['\"]",text,re.I)),
+                      len(tables)))
+                  for i,t in enumerate(tables,1):
+                      headers=[" ".join(re.sub(r"<[^>]+>"," ",x).split()) for x in re.findall(r"<th\b[^>]*>(.*?)</th>",t,re.I|re.S)]
+                      rows=len(re.findall(r"<tr\b",t,re.I))
+                      cells=len(re.findall(r"<td\b",t,re.I))
+                      print("RISK_TABLE|%d|headers=%s|rows=%d|cells=%d|bytes=%d"%(i,json.dumps(headers,ensure_ascii=False),rows,cells,len(t.encode())))
+              assert code==200
+          print("DASHBOARD_EXACT_PROBE=GREEN")
+          PY
+          REMOTE
+          )"
+          printf '%s\n' "$OUT"
+          mkdir -p evidence
+          { echo '# Dashboard exact runtime probe'; echo; echo '~~~text'; printf '%s\n' "$OUT"; echo '~~~'; } > evidence/dashboard-exact.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-ops-dashboard-exact
+          path: evidence/dashboard-exact.md
+          if-no-files-found: error
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
