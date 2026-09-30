@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  observer_lock_readonly:
+  observer_restart_events_readonly:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     env:
@@ -33,7 +33,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
 
-      - name: Isolate observer database-lock restart without mutation
+      - name: Read Docker restart events and host control plane
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -41,41 +41,28 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
-          REPO=/opt/porota-trading
-          DB="$REPO/data/paper_v17/observer_v17.db"
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "RCA_EVENTS_CONTAINER=$(sudo -n docker inspect -f 'status={{.State.Status}}|started={{.State.StartedAt}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' porota_production_observer)"
+          echo "RCA_DOCKER_LIFECYCLE_EVENTS_BEGIN"
+          sudo -n timeout 15 docker events \
+            --since '2026-09-30T13:15:00Z' --until "$END" \
+            --filter container=porota_production_observer \
+            --format '{{.Time}}|{{.Action}}|{{json .Actor.Attributes}}' 2>/dev/null | \
+            grep -E '\|(create|start|stop|die|kill|restart|destroy|oom)\|' || true
+          echo "RCA_DOCKER_LIFECYCLE_EVENTS_END"
 
-          echo "RCA_LOCK_CONTAINER=$(sudo -n docker inspect -f 'status={{.State.Status}}|started={{.State.StartedAt}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}|policy={{.HostConfig.RestartPolicy.Name}}' porota_production_observer)"
-          echo "RCA_LOCK_PROCESSES_BEGIN"
-          sudo -n docker top porota_production_observer -eo pid,ppid,etime,comm,args || true
-          echo "RCA_LOCK_PROCESSES_END"
+          echo "RCA_SYSTEMD_REFERENCES_BEGIN"
+          sudo -n grep -RIl --exclude='*.wants' 'porota_production_observer' /etc/systemd/system 2>/dev/null | sort || true
+          for unit_file in $(sudo -n grep -RIl 'porota_production_observer' /etc/systemd/system 2>/dev/null | sort -u); do
+            echo "RCA_SYSTEMD_FILE=$unit_file"
+            sudo -n grep -n -E 'porota_production_observer|docker (start|stop|restart|rm|run)|Restart=|OnUnit|OnCalendar' "$unit_file" 2>/dev/null || true
+          done
+          echo "RCA_SYSTEMD_REFERENCES_END"
 
-          echo "RCA_LOCK_LOG_CONTEXT_BEGIN"
-          sudo -n docker logs --since 60m --timestamps porota_production_observer 2>&1 | \
-            grep -B 25 -A 35 -E 'database is locked|Traceback \(most recent call last\)|Fatal Python error|segmentation|MemoryError|OperationalError' | \
-            tail -n 260 || true
-          echo "RCA_LOCK_LOG_CONTEXT_END"
-
-          echo "RCA_LOCK_KERNEL_OOM_BEGIN"
-          sudo -n journalctl -k --since '60 minutes ago' --no-pager 2>/dev/null | \
-            grep -Ei 'out of memory|oom-kill|killed process' | tail -n 80 || true
-          echo "RCA_LOCK_KERNEL_OOM_END"
-
-          sudo -n timeout 20 python3 - "$DB" <<'PY'
-          import sqlite3,sys,json
-          path=sys.argv[1]
-          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=5)
-          c.execute("PRAGMA query_only=ON")
-          pragmas={}
-          for name in ("journal_mode","locking_mode","busy_timeout","cache_size"):
-              try:
-                  pragmas[name]=c.execute(f"PRAGMA {name}").fetchone()[0]
-              except sqlite3.Error as exc:
-                  pragmas[name]=type(exc).__name__
-          print("RCA_LOCK_PRAGMAS="+json.dumps(pragmas,sort_keys=True))
-          row=c.execute("SELECT mode,process_state,session_state,ppi_auth,heartbeat_at,real_orders_sent,detail FROM observer_state WHERE id=1").fetchone()
-          print("RCA_LOCK_OBSERVER_STATE="+json.dumps(list(row),default=str))
-          c.close()
-          PY
+          echo "RCA_POROTA_TIMERS_BEGIN"
+          systemctl list-timers --all --no-pager --no-legend 2>/dev/null | grep -Ei 'porota|rc6|observer|reconcil|deploy' || true
+          echo "RCA_POROTA_TIMERS_END"
 
           SAFETY="$(sudo -n timeout 15 python3 - "$DB" <<'PY'
           import sqlite3,sys
@@ -86,9 +73,9 @@ jobs:
           print(f"{row[0]}|{int(row[1] or 0)}")
           PY
           )"
-          echo "RCA_LOCK_SAFETY=$SAFETY"
+          echo "RCA_EVENTS_SAFETY=$SAFETY"
           test "$SAFETY" = "PRODUCTION_PAPER|0"
-          echo "RCA_OBSERVER_LOCK_READ_ONLY=GREEN"
+          echo "RCA_OBSERVER_RESTART_EVENTS_READ_ONLY=GREEN"
           REMOTE
 
       - name: Cleanup SSH key
