@@ -1603,10 +1603,13 @@ def test_paper_store_connect_no_reissues_wal_write_pragma(tmp_path, monkeypatch)
     """Every child connection must validate WAL without requesting journal mutation."""
     db = tmp_path / "shared.db"
     store = PaperStore(str(db))
-    # The runtime parent establishes WAL once during DB initialization.
-    with store.connect() as connection:
-        assert connection.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    # PaperStore creation uses the candidate connection policy itself, so a
+    # fresh unit-test DB is intentionally rejected until the runtime-parent
+    # initialization contract has established WAL. Model that parent step with
+    # raw sqlite before tracing child connections.
     import sqlite3 as _sqlite3
+    with _sqlite3.connect(db) as connection:
+        assert connection.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
     real_connect = _sqlite3.connect
     statements = []
 
