@@ -62,10 +62,10 @@ jobs:
           echo "RCA_SISTEMA_HOST_LOAD=$(uptime)"
           echo "RCA_SISTEMA_HOST_MEMORY=$(free -m | tr '\n' ';')"
           echo "RCA_SISTEMA_DASHBOARD_BEFORE=$(sudo -n docker stats --no-stream --format '{{.Name}}|cpu={{.CPUPerc}}|mem={{.MemUsage}}|pids={{.PIDs}}' porota_production_dashboard)"
-          echo "RCA_SISTEMA_DASHBOARD_STATE_BEFORE=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}' porota_production_dashboard)"
+          echo "RCA_SISTEMA_DASHBOARD_STATE_BEFORE=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|started={{.State.StartedAt}}|restart_policy={{.HostConfig.RestartPolicy.Name}}' porota_production_dashboard)"\n          echo "RCA_SISTEMA_OBSERVER_STATE_BEFORE=$(sudo -n docker inspect -f 'status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|started={{.State.StartedAt}}|restart_policy={{.HostConfig.RestartPolicy.Name}}' porota_production_observer)"\n          echo "RCA_DOCKER_EVENTS_RECENT_BEGIN"\n          sudo -n timeout 8 docker events --since 20m --until 0s --filter container=porota_production_observer --format '{{.Time}}|{{.Action}}|{{json .Actor.Attributes}}' 2>/dev/null || true\n          echo "RCA_DOCKER_EVENTS_RECENT_END"\n          echo "RCA_OBSERVER_CRITICAL_LOGS_BEGIN"\n          { sudo -n docker logs --since 20m porota_production_observer 2>&1 || true; } | grep -E 'Traceback|Exception|ERROR|CRITICAL|segmentation|killed|OperationalError|database is locked|MemoryError' | tail -n 120 || true\n          echo "RCA_OBSERVER_CRITICAL_LOGS_END"
 
           COMMON=(
-            sudo -n docker run --rm --pull never --network host --read-only
+            sudo -n docker run --rm -i --pull never --network host --read-only
             --user botuser --cap-drop ALL --security-opt no-new-privileges:true
             --tmpfs /tmp:rw,noexec,nosuid,size=64m
             --env-file "$REPO/data/diagnosticos/dashboard_mode_v17.env"
