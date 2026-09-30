@@ -48,6 +48,38 @@ html,body{overflow-x:hidden!important}
 </style>
 """
 
+RISK_READABLE_CSS="""
+<style id='porota-rc6-risk-readable'>
+/* Risk is an operator evidence surface: long control/evidence text must stay
+   readable instead of inheriting the global max-width:0 + nowrap ellipsis. */
+.porota-risk-page .paper-card{overflow-x:auto!important}
+.porota-risk-page .paper-table,.porota-risk-page .classic-responsive-table{
+  table-layout:auto!important;
+}
+.porota-risk-page .paper-table th,.porota-risk-page .paper-table td,
+.porota-risk-page .classic-responsive-table th,.porota-risk-page .classic-responsive-table td{
+  min-width:6rem!important;
+  max-width:none!important;
+  white-space:normal!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+  overflow-wrap:anywhere!important;
+  word-break:break-word!important;
+  vertical-align:top!important;
+}
+.porota-risk-page .paper-table td[data-wrap='true'],
+.porota-risk-page .classic-responsive-table td[data-wrap='true']{
+  max-width:none!important;
+  white-space:normal!important;
+}
+@media(max-width:620px){
+  .porota-risk-page .paper-table,.porota-risk-page .classic-responsive-table{
+    font-size:.78rem!important;
+  }
+}
+</style>
+"""
+
 _TABLE_TAG=re.compile(r"<table\b[^>]*>",re.IGNORECASE)
 _CLASS_ATTR=re.compile(r"\bclass=(['\"])(.*?)\1",re.IGNORECASE)
 _HEADING=re.compile(r"<h([23])\b([^>]*)>(.*?)</h\1>",re.IGNORECASE|re.DOTALL)
@@ -215,7 +247,7 @@ def _risk_requirement_rows(all_tables):
     for label,patterns in requirements:
         matched=[all_tables[i] for i,name in enumerate(low) if any(p in name for p in patterns)]
         state='EVIDENCE' if matched else 'PENDIENTE'
-        rows.append(f"<tr><td><b>{_esc(label)}</b></td><td>{_esc(state)}</td><td>{_esc(', '.join(matched) or 'Sin persistencia identificable')}</td></tr>")
+        rows.append(f"<tr><td data-wrap='true'><b>{_esc(label)}</b></td><td>{_esc(state)}</td><td data-wrap='true'>{_esc(', '.join(matched) or 'Sin persistencia identificable')}</td></tr>")
     return ''.join(rows)
 
 
@@ -227,10 +259,10 @@ def _risk_html():
     for name in risk_tables:
         try: n=(bg._rows(f'SELECT COUNT(*) AS n FROM "{name}"') or [{'n':'—'}])[0].get('n')
         except Exception: n='—'
-        rows.append(f'<tr><td><b>{_esc(name)}</b></td><td>{_esc(n)}</td><td>Persistencia runtime</td></tr>')
+        rows.append(f"<tr><td data-wrap='true'><b>{_esc(name)}</b></td><td>{_esc(n)}</td><td data-wrap='true'>Persistencia runtime</td></tr>")
     table=''.join(rows) or "<tr><td colspan='3'>No se encontraron tablas de riesgo; requiere reconciliación.</td></tr>"
     requirements=_risk_requirement_rows(all_tables)
-    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>{bg.THEME}{bg.TABLE_A11Y_CSS}{CLASSIC_CSS}</head><body>{bg.top_nav_html()}<main class='paper-page'>
+    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>{bg.THEME}{bg.TABLE_A11Y_CSS}{CLASSIC_CSS}{RISK_READABLE_CSS}</head><body>{bg.top_nav_html()}<main class='paper-page porota-risk-page'>
     <h1>Riesgo — controles RC6</h1><div class='paper-grid'>
     <div class='paper-card'><h3>Modo</h3><b class='metric'>{_esc(observer.get('mode'))}</b></div>
     <div class='paper-card'><h3>Órdenes reales</h3><b class='metric'>{_esc(observer.get('real_orders_sent'))}</b><div class='paper-muted'>Debe ser 0</div></div>
