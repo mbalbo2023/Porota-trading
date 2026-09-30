@@ -417,12 +417,14 @@ def _heartbeat(store, *, at, state, cursor, selected=0, successful=0, failed=0,
 def run_worker(store, stop, *, clock_fn):
     """Proceso independiente; un error de PPI nunca detiene reloj ni salidas."""
     from bd_ppi_readonly_guard import (ProductionMarketReader, retry_read,
-                                       session_invalid, classify_read_error)
+                                       session_invalid, classify_read_error,
+                                       instrument_not_found)
     from bf_production_paper_observer import _secret
     init_schema(store)
     cursor = 0
     reader = None
     next_login = 0.0
+    unsupported_requests = set()
     interval = max(60, int(os.getenv("PAPER_INTRADAY_SCAN_SECONDS", "180")))
     batch_limit = max(8, min(40, int(os.getenv("PAPER_INTRADAY_BATCH_LIMIT", "24"))))
     try:
@@ -452,7 +454,11 @@ def run_worker(store, stop, *, clock_fn):
                     stop.wait(20)
                     continue
             selected, cursor, universe = select_batch(store,limit=batch_limit,cursor=cursor)
+            selected = [record for record in selected
+                        if (record["ticker"], record["instrument_type"], record["settlement"])
+                        not in unsupported_requests]
             successful = failed = inserted = confirmed = candidates = 0
+            unsupported_this_batch = 0
             invalid_session = False
             for record in selected:
                 if stop.is_set():
@@ -472,12 +478,19 @@ def run_worker(store, stop, *, clock_fn):
                         store.event("SCALPING_PAPER_PROMOTION", f"{record['ticker']}: {result_action}")
                     successful += 1
                 except Exception as exc:
-                    failed += 1
-                    store.event("INTRADAY_SCALPING_ERROR",
-                                f"{record['ticker']}: {classify_read_error(exc)}")
-                    if session_invalid(exc):
-                        invalid_session = True
-                        break
+                    if instrument_not_found(exc):
+                        unsupported_requests.add((
+                            record["ticker"], record["instrument_type"], record["settlement"]))
+                        unsupported_this_batch += 1
+                        store.event("INTRADAY_SCALPING_UNSUPPORTED",
+                                    f"{record['ticker']}: PPI_INSTRUMENT_NOT_FOUND")
+                    else:
+                        failed += 1
+                        store.event("INTRADAY_SCALPING_ERROR",
+                                    f"{record['ticker']}: {classify_read_error(exc)}")
+                        if session_invalid(exc):
+                            invalid_session = True
+                            break
                 stop.wait(0.75)
             metrics = reader.metrics if reader else {"http_blocked": 0}
             state = "SECURITY_BLOCK" if metrics.get("http_blocked") or False else \
@@ -486,6 +499,8 @@ def run_worker(store, stop, *, clock_fn):
                        successful=successful,failed=failed,inserted=inserted,
                        confirmed=confirmed,candidates=candidates,
                        detail=(f"universo={universe}; lote={len(selected)}; scanner activo; "
+                               f"intraday_unavailable={unsupported_this_batch}; "
+                               f"unsupported_cached={len(unsupported_requests)}; "
                                f"modo={os.getenv('PAPER_SCALPING_MODE','ACTIVE_OBSERVE')}; "
                                "fills exclusivamente PAPER; órdenes reales bloqueadas"))
             if invalid_session:

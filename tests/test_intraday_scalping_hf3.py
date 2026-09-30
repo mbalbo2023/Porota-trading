@@ -147,6 +147,73 @@ def test_salud_binding_es_roja_si_una_falla_economica_igual_abrio(monkeypatch, s
     assert "BINDING bloquea" in row["detail"]
 
 
+def test_instrument_not_found_is_explicit_strategy_unavailability():
+    error = Exception("Instrument not found")
+    assert readonly.instrument_not_found(error) is True
+    assert readonly.classify_read_error(error) == "PPI_INSTRUMENT_NOT_FOUND"
+    assert readonly.transient_payload_error(error) is False
+
+
+def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeypatch):
+    import bf_production_paper_observer as observer
+
+    class FakeStop:
+        stopped = False
+        def is_set(self):
+            return self.stopped
+        def wait(self, seconds):
+            if seconds >= 60:
+                self.stopped = True
+
+    class FakeStore:
+        def __init__(self):
+            self.events = []
+            self.audit_http = lambda *args: None
+        def event(self, *args):
+            self.events.append(args)
+
+    class FakeReader:
+        metrics = {"http_blocked": 0}
+        def __init__(self, *args, **kwargs):
+            pass
+        def login_once(self):
+            pass
+        def intraday(self, ticker, instrument_type, settlement):
+            if ticker == "BAES":
+                raise Exception("Instrument not found")
+            return []
+        def close(self):
+            pass
+
+    store = FakeStore()
+    heartbeats = []
+    selected = [
+        record(ticker="BAES"),
+        record(ticker="GGAL"),
+    ]
+    monkeypatch.setattr(scalping, "init_schema", lambda store: None)
+    monkeypatch.setattr(scalping, "_market_open", lambda at: True)
+    monkeypatch.setattr(scalping, "select_batch",
+                        lambda store, limit, cursor=0: (selected, 2, len(selected)))
+    monkeypatch.setattr(scalping, "normalize_payload", lambda payload, received_at: [])
+    monkeypatch.setattr(scalping, "persist_payload",
+                        lambda store, record, points, received_at: {"inserted": 0, "state": "PENDING_LIVE_CONFIRMATION"})
+    monkeypatch.setattr(scalping, "evaluate_candidate", lambda store, record, at: "HOLD")
+    monkeypatch.setattr(scalping, "_heartbeat",
+                        lambda store, **kwargs: heartbeats.append(kwargs))
+    monkeypatch.setattr(readonly, "ProductionMarketReader", FakeReader)
+    monkeypatch.setattr(observer, "_secret", lambda: ("key", "secret"))
+    monkeypatch.setenv("PAPER_INTRADAY_SCAN_SECONDS", "60")
+
+    scalping.run_worker(store, FakeStop(), clock_fn=lambda: START)
+
+    running = [row for row in heartbeats if row["state"] == "RUNNING"]
+    assert running and running[0]["successful"] == 1 and running[0]["failed"] == 0
+    assert "intraday_unavailable=1" in running[0]["detail"]
+    assert any(event[0] == "INTRADAY_SCALPING_UNSUPPORTED" for event in store.events)
+    assert not any(event[0] == "INTRADAY_SCALPING_ERROR" for event in store.events)
+
+
 def test_lectura_vacia_se_reintenta_una_sola_vez_sin_login():
     calls=[]
     def read():

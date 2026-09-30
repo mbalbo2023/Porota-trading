@@ -486,6 +486,7 @@ jobs:
           # self-recovering worker was sampled between scan cycles.
           SCALPING_STABILIZATION_SECONDS=420
           SCALPING_STABILIZATION_POLL_SECONDS=15
+          SCALPING_STABILIZATION_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%6N+00:00)"
           SCALPING_STABILIZATION_ATTEMPTS=$((SCALPING_STABILIZATION_SECONDS / SCALPING_STABILIZATION_POLL_SECONDS + 1))
           SCALPING_STABILIZED=false
           for SCALPING_ATTEMPT in $(seq 1 "$SCALPING_STABILIZATION_ATTEMPTS"); do
@@ -493,11 +494,12 @@ jobs:
             DASHBOARD_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
             test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"
             test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"
-            SCALPING_GATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+            SCALPING_GATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" "$SCALPING_STABILIZATION_STARTED_AT" <<'PY'
           import sqlite3,sys
           from datetime import datetime, timezone
 
-          path=sys.argv[1]
+          path,started_raw=sys.argv[1:3]
+          started=datetime.fromisoformat(started_raw.replace("Z","+00:00"))
           c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=3)
           c.row_factory=sqlite3.Row
           c.execute("PRAGMA query_only=ON")
@@ -529,12 +531,15 @@ jobs:
           observer_mode=str(observer["mode"] or "")
           observer_orders=int(observer["real_orders_sent"] or 0)
           healthy_state=state in ("RUNNING","WAITING_MARKET")
+          post_gate_heartbeat=dt >= started if age < 10**9 else False
           healthy=(healthy_state and failed==0 and 0 <= age <= 300
+                   and post_gate_heartbeat
                    and worker_orders==0 and observer_mode=="PRODUCTION_PAPER"
                    and observer_orders==0)
           prefix="GREEN" if healthy else "WAIT"
           print(
               f"{prefix}|state={state}|heartbeat_age_seconds={age:.3f}"
+              f"|post_gate_heartbeat={str(post_gate_heartbeat).lower()}"
               f"|successful={successful}|failed={failed}"
               f"|worker_orders={worker_orders}"
               f"|observer={observer_mode}/{observer_orders}"

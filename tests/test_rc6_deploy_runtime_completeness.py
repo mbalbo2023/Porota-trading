@@ -196,8 +196,11 @@ def test_deploy_waits_boundedly_for_scalping_recovery_before_immediate_audit():
     assert baseline < stabilized < audited
     assert "SCALPING_STABILIZATION_SECONDS=420" in source
     assert "SCALPING_STABILIZATION_POLL_SECONDS=15" in source
+    assert 'SCALPING_STABILIZATION_STARTED_AT="$(date -u' in source
     assert 'healthy_state=state in ("RUNNING","WAITING_MARKET")' in source
+    assert "post_gate_heartbeat=dt >= started" in source
     assert "healthy=(healthy_state and failed==0 and 0 <= age <= 300" in source
+    assert "and post_gate_heartbeat" in source
     assert 'test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"' in source
     assert 'test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"' in source
     assert 'test "$SCALPING_STABILIZED" = true' in source
