@@ -72,3 +72,37 @@ def test_collect_never_turns_page_evidence_into_operational_authority(monkeypatc
     assert current["decision_effect"]=="OBSERVE_ONLY"
     assert current["real_money_authorized"] is False
     assert not current["errors"]
+
+
+def test_structured_open_data_failure_is_complementary_not_authority_degraded():
+    previous={
+        "pages":{"CALENDAR":{"status":"OK","sha256":"a","communication_numbers":[]}},
+        "structured_byma":{"status":"SCRAPED_PUBLIC_DATA","identity_count":2,"identity_sha256":"x"},
+    }
+    current={
+        "pages":{"CALENDAR":{"status":"OK","sha256":"a","communication_numbers":[]}},
+        "structured_byma":{"status":"SOURCE_UNAVAILABLE","identity_count":0,"identity_sha256":"y"},
+        "errors":["OPEN_DATA:BYMA_NOT_STRUCTURED","OPEN_DATA:BYMA_EMPTY"],
+    }
+    verdict=watch.compare(previous,current)
+    assert verdict["state"]=="CHANGED_REVIEW_REQUIRED"
+    assert verdict["authority_errors"]==[]
+    assert verdict["complementary_errors"]==[
+        "OPEN_DATA:BYMA_NOT_STRUCTURED","OPEN_DATA:BYMA_EMPTY"
+    ]
+    assert verdict["changed_components"]==["OPEN_DATA"]
+
+
+def test_official_page_error_remains_fail_closed_even_with_open_data_errors():
+    previous={
+        "pages":{"CALENDAR":{"status":"OK","sha256":"a","communication_numbers":[]}},
+        "structured_byma":{"status":"SCRAPED_PUBLIC_DATA","identity_count":2,"identity_sha256":"x"},
+    }
+    current={
+        "pages":{"CALENDAR":{"status":"ERROR","error":"timeout"}},
+        "structured_byma":{"status":"SOURCE_UNAVAILABLE","identity_count":0,"identity_sha256":"y"},
+        "errors":["CALENDAR:TimeoutError","OPEN_DATA:BYMA_EMPTY"],
+    }
+    verdict=watch.compare(previous,current)
+    assert verdict["state"]=="DEGRADED"
+    assert verdict["authority_errors"]==["CALENDAR:TimeoutError"]

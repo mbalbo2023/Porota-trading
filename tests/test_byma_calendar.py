@@ -29,3 +29,13 @@ def test_anio_no_auditado_falla_cerrado():
     motivo = calendario.motivo_no_operativo(date(2027, 1, 4))
     assert motivo == "Calendario BYMA del año 2027 no auditado"
     assert calendario.es_dia_habil_operativo(date(2027, 1, 4)) is False
+
+
+def test_nueva_fecha_excepcional_byma_9_noviembre_2026_queda_bloqueada():
+    motivo = calendario.motivo_no_operativo(date(2026, 11, 9))
+    assert "Papa León XIV" in motivo
+    assert calendario.es_dia_habil_operativo(date(2026, 11, 9)) is False
+
+
+def test_calendario_fue_reauditado_el_30_septiembre_2026():
+    assert calendario.CALENDARIO_AUDITADO_EL == date(2026, 9, 30)

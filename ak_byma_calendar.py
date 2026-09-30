@@ -13,7 +13,7 @@ from datetime import date
 from typing import Optional
 
 FUENTE_OFICIAL = "https://www.byma.com.ar/mercado/calendario-bursatil"
-CALENDARIO_AUDITADO_EL = date(2026, 8, 23)
+CALENDARIO_AUDITADO_EL = date(2026, 9, 30)
 ANIOS_AUDITADOS = frozenset({2026})
 
 # Incluye feriados, días sin negociación y jornadas especiales/limitadas que
@@ -34,6 +34,7 @@ DIAS_NO_OPERATIVOS_2026 = {
     date(2026, 8, 17): "Paso a la Inmortalidad del General José de San Martín",
     date(2026, 10, 12): "Día del Respeto a la Diversidad Cultural",
     date(2026, 11, 6): "Día del Bancario; jornada especial sin liquidación",
+    date(2026, 11, 9): "Visita de Su Santidad el Papa León XIV; fecha excepcional informada por BYMA",
     date(2026, 11, 23): "Día de la Soberanía Nacional",
     date(2026, 12, 7): "Día no laborable con fines turísticos",
     date(2026, 12, 8): "Inmaculada Concepción de María",

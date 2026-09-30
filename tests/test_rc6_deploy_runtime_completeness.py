@@ -248,3 +248,27 @@ def test_preopen_failure_preserves_diagnostics_before_fail_closed_exit():
     assert 'exit "$PREOPEN_RC"' in block
     assert block.index('echo "$PREOPEN_OUTPUT"') < block.index('exit "$PREOPEN_RC"')
     assert 'grep -Fq \'"status": "GREEN"\'' in block
+
+
+def test_deploy_reclaims_own_transient_artifacts_before_preopen_disk_gate():
+    source = _deploy()
+    immediate = source.index('RC6_ZERO_KNOWN_ERROR_IMMEDIATE=GREEN')
+    reclaim = source.index('RC6_PREOPEN_SAFE_RECLAIM=GREEN')
+    preopen = source.index('for phase in T_MINUS_45 T_MINUS_10; do')
+    assert immediate < reclaim < preopen
+    block = source[immediate:preopen]
+    assert 'rm -f "$REMOTE_DIR/porota-predeploy-image.tar.gz" "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"' in block
+    assert 'rm -rf "$STAGE"' in block
+    assert 'test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge 2147483648' in block
+
+
+def test_deploy_refreshes_byma_authority_before_dry_preopen():
+    source = _deploy()
+    refresh = source.index('RC6_BYMA_MORNING_REFRESH=GREEN')
+    preopen = source.index('for phase in T_MINUS_45 T_MINUS_10; do')
+    assert refresh < preopen
+    block = source[source.index('BYMA_MORNING_OUTPUT='):preopen]
+    assert 'rc6_byma_morning_pipeline.py' in block
+    assert 'BYMA_MORNING_RC=$?' in block
+    assert 'RC6_BYMA_MORNING_REFRESH=RED|RC=$BYMA_MORNING_RC' in block
+    assert 'exit "$BYMA_MORNING_RC"' in block

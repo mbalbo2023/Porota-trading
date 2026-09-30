@@ -203,8 +203,16 @@ def collect(*, fetch: Callable[[str], bytes] = _default_fetch,
 
 
 def compare(previous: dict | None, current: dict) -> dict:
+    errors = [str(item) for item in current.get("errors", []) if item]
+    authority_errors = [item for item in errors if not item.startswith("OPEN_DATA:")]
+    complementary_errors = [item for item in errors if item.startswith("OPEN_DATA:")]
     if not previous:
-        return {"state": "BASELINE_CREATED", "changed_components": []}
+        return {
+            "state": "DEGRADED" if authority_errors else "BASELINE_CREATED",
+            "changed_components": [],
+            "authority_errors": authority_errors,
+            "complementary_errors": complementary_errors,
+        }
     changed = []
     previous_pages = previous.get("pages") if isinstance(previous.get("pages"), dict) else {}
     current_pages = current.get("pages") if isinstance(current.get("pages"), dict) else {}
@@ -226,13 +234,18 @@ def compare(previous: dict | None, current: dict) -> dict:
         after_struct.get("identity_sha256"),
     ):
         changed.append("OPEN_DATA")
-    if current.get("errors"):
+    if authority_errors:
         state = "DEGRADED"
     elif changed:
         state = "CHANGED_REVIEW_REQUIRED"
     else:
         state = "NO_CHANGE"
-    return {"state": state, "changed_components": changed}
+    return {
+        "state": state,
+        "changed_components": changed,
+        "authority_errors": authority_errors,
+        "complementary_errors": complementary_errors,
+    }
 
 
 def persist(root: Path, current: dict) -> dict:

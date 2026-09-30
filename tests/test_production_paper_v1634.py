@@ -1048,7 +1048,7 @@ def test_v17_venta_t1_no_es_caja_hasta_liquidacion_modelada(tmp_path):
 def test_v17_calendario_caja_respeta_dia_sin_liquidacion_y_ano_desconocido():
     # La fecha hábil esperada es sólo diagnóstica; sin confirmación del broker
     # T+1 nunca inventa hora de acreditación ni libera caja.
-    assert modeled_sale_settlement_date("A-24HS", "2026-11-05T11:00:00-03:00") == "2026-11-09"
+    assert modeled_sale_settlement_date("A-24HS", "2026-11-05T11:00:00-03:00") == "2026-11-10"
     assert modeled_sale_settlement("A-24HS", "2026-11-05T11:00:00-03:00") is None
     assert modeled_sale_settlement_date("A-24HS", "2026-12-30T11:00:00-03:00") is None
     assert modeled_sale_settlement("PLAZO-DESCONOCIDO", "2026-08-28T11:00:00-03:00") is None

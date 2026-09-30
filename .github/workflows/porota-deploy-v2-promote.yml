@@ -576,6 +576,31 @@ jobs:
           fi
           echo "RC6_ZERO_KNOWN_ERROR_IMMEDIATE=GREEN"
 
+          # The compressed frozen image/bundle and extracted stage are no longer
+          # needed after immutable promotion + immediate audit. Reclaim only these
+          # deploy-transient bytes before the preopen disk guard so the deploy
+          # cannot fail against space it is itself temporarily consuming.
+          rm -f "$REMOTE_DIR/porota-predeploy-image.tar.gz" "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"
+          rm -rf "$STAGE"
+          DISK_PREOPEN_AFTER_SAFE_RECLAIM="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "RC6_PREOPEN_SAFE_RECLAIM=GREEN|free=$DISK_PREOPEN_AFTER_SAFE_RECLAIM"
+          test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge 2147483648
+
+          # Refresh the official BYMA morning evidence with the just-installed
+          # candidate. The structured public capture remains complementary:
+          # official-page failures are fail-closed, while OPEN_DATA source-path
+          # failures remain visible without impersonating calendar authority.
+          set +e
+          BYMA_MORNING_OUTPUT="$(sudo -n timeout 180 python3 "$REPO/scripts/rc6_byma_morning_pipeline.py" --root "$REPO/data/market" 2>&1)"
+          BYMA_MORNING_RC=$?
+          set -e
+          echo "$BYMA_MORNING_OUTPUT"
+          if [ "$BYMA_MORNING_RC" -ne 0 ]; then
+            echo "RC6_BYMA_MORNING_REFRESH=RED|RC=$BYMA_MORNING_RC"
+            exit "$BYMA_MORNING_RC"
+          fi
+          echo "RC6_BYMA_MORNING_REFRESH=GREEN"
+
           # Execute the same fail-closed preopen contract under both scheduled
           # phase labels. No order route, DB write, restart or Telegram send is
           # performed by rc6_preopen.py.

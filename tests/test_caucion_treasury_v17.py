@@ -152,7 +152,7 @@ def test_ventana_cambiada_y_reloj_retrocedido_no_reinician_reserva(treasury):
 
 @pytest.mark.parametrize('today,deadline,code',[
     ('2026-08-27','2026-08-28',''),('2026-08-28','2026-08-31',''),
-    ('2026-11-05','2026-11-09',''),('2026-12-04','2026-12-09','NEXT_SETTLEMENT_DAY_OUTSIDE_LIMIT'),
+    ('2026-11-05','2026-11-10','NEXT_SETTLEMENT_DAY_OUTSIDE_LIMIT'),('2026-12-04','2026-12-09','NEXT_SETTLEMENT_DAY_OUTSIDE_LIMIT'),
     ('2027-01-04','2027-01-05','CALENDAR_UNAVAILABLE_OR_CLOSED'),
     ('2026-08-29','2026-08-31','CALENDAR_UNAVAILABLE_OR_CLOSED'),
     ('2026-08-28','2026-09-01','DEADLINE_NOT_NEXT_SETTLEMENT_DAY'),
@@ -196,13 +196,15 @@ def test_presupuesto_alterado_no_habilita_colocacion(treasury):
 
 def test_no_elige_vencimiento_sin_liquidacion_aunque_tenga_mejor_tasa(treasury):
     b,_=treasury
-    w=CaucionWindow('2026-11-05T10:00:00-03:00','2026-11-05T11:00:00-03:00',
-        '2026-11-05T16:00:00-03:00','2026-11-09T16:00:00-03:00','TEST')
-    common=dict(start_date='2026-11-05',quoted_at=w.opens_at,fee_quote_principal=D(5000))
+    # Viernes 14/8 -> fin de semana + feriado del 17/8 -> próximo día hábil 18/8,
+    # todavía dentro del límite conservador de cuatro días corridos.
+    w=CaucionWindow('2026-08-14T10:00:00-03:00','2026-08-14T11:00:00-03:00',
+        '2026-08-14T16:00:00-03:00','2026-08-18T16:00:00-03:00','TEST')
+    common=dict(start_date='2026-08-14',quoted_at=w.opens_at,fee_quote_principal=D(5000))
     closed=caucion_offer(**common,instrument_id='NO_SETTLEMENT',
-                        maturity_at='2026-11-06T12:00:00-03:00',annual_rate_fraction=D(1))
+                        maturity_at='2026-08-17T12:00:00-03:00',annual_rate_fraction=D(1))
     valid=caucion_offer(**common,instrument_id='NEXT_OPERATING_DAY',
-                       maturity_at='2026-11-09T12:00:00-03:00')
+                       maturity_at='2026-08-18T12:00:00-03:00')
     result=place(b,w,offers=[closed,valid],at=w.opens_at)
     assert result['allocation']['selected']['instrument_id']=='NEXT_OPERATING_DAY'
     rejected=next(c for c in result['allocation']['candidates'] if c['instrument_id']=='NO_SETTLEMENT')

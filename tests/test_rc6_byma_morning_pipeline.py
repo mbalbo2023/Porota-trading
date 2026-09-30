@@ -36,7 +36,7 @@ def test_authority_watcher_reuses_exact_structured_scraper_snapshot(tmp_path):
     assert first["scrape_method"]=="bymadata_public_post"
 
 
-def test_authority_watcher_degrades_when_shared_scraper_snapshot_is_missing(tmp_path):
+def test_authority_watcher_keeps_missing_shared_scraper_scoped_as_complementary(tmp_path):
     def fake_fetch(_url):
         return b"<html><body><p>Horarios de negociacion comunicado 19024</p></body></html>"
     current=watch.collect(
@@ -46,7 +46,10 @@ def test_authority_watcher_degrades_when_shared_scraper_snapshot_is_missing(tmp_
     assert any(item.startswith("OPEN_DATA:") for item in current["errors"])
     previous=dict(current)
     previous["errors"]=[]
-    assert watch.compare(previous,current)["state"]=="DEGRADED"
+    verdict=watch.compare(previous,current)
+    assert verdict["state"]=="NO_CHANGE"
+    assert verdict["authority_errors"]==[]
+    assert verdict["complementary_errors"]
 
 
 def test_pipeline_runs_single_structured_capture_before_authority_watch(tmp_path, monkeypatch):
