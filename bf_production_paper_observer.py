@@ -1569,7 +1569,7 @@ def run():
     faulthandler.enable()
     # Startup watchdog only: repeating dumps every 45s made a healthy long-lived
     # scanner emit perpetual "Timeout (0:00:45)!" traces, obscuring real crashes.
-    # Cancel it as soon as the runtime reaches the normal loop below.
+    # Disarm it as soon as the runtime reaches the normal loop below.
     faulthandler.dump_traceback_later(45, repeat=False)
     # Bajo el runtime padre, el esquema y la identidad ya fueron validados
     # una sola vez. El scanner no debe competir por el lock de arranque.
