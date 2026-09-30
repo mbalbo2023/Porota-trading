@@ -87,9 +87,9 @@ jobs:
           print(f'POROTA_TEST_EXCLUSIONS={len(exclusions)}')
           PY
           mapfile -t TEST_ARGS < /tmp/porota-test-args.txt
-          python -m pytest --collect-only -q "${TEST_ARGS[@]}" > /tmp/porota-test-collection.txt
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" > /tmp/porota-test-collection.txt
           set +e
-          python -m pytest -q "${TEST_ARGS[@]}" --junitxml=/tmp/porota-governed-tests.xml
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" --junitxml=/tmp/porota-governed-tests.xml
           TEST_RC=$?
           set -e
           TEST_RC="$TEST_RC" python - <<'PY'
