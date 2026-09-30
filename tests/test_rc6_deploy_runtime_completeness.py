@@ -188,3 +188,13 @@ def test_zero_known_error_output_path_is_writable_by_dashboard_runtime_before_au
     assert 'docker exec porota_production_dashboard test -w /app/data/deploy' in source
     assert "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH_WRITABLE=GREEN" in source
 
+def test_deploy_stability_fails_on_any_runtime_container_restart():
+    source = _deploy()
+    assert "OBSERVER_RESTART_BASE=" in source
+    assert "DASHBOARD_RESTART_BASE=" in source
+    assert "RC6_STABILITY_RESTART_BASELINE=" in source
+    assert 'test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"' in source
+    assert 'test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"' in source
+    assert source.index("OBSERVER_RESTART_BASE=") < source.index("for cycle in 1 2 3; do")
+    assert source.index('test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"') < source.index('echo "RC6_ZERO_KNOWN_ERROR_STABILITY_$cycle=GREEN"')
+
