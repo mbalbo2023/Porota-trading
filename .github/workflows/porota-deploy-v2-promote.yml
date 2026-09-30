@@ -431,6 +431,15 @@ jobs:
           test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
           echo "DASHBOARD_HEALTH_HTTP=200|image=$DASHBOARD_IMAGE_ID"
 
+          # From this point onward no controlled container restart is expected.
+          # A newly recreated exact-image runtime must still have zero automatic
+          # restarts before any postdeploy bootstrap or audit begins.
+          OBSERVER_RESTART_BASE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+          DASHBOARD_RESTART_BASE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+          echo "RC6_POST_RECONCILIATION_RESTART_BASELINE=observer=$OBSERVER_RESTART_BASE|dashboard=$DASHBOARD_RESTART_BASE"
+          test "$OBSERVER_RESTART_BASE" = 0
+          test "$DASHBOARD_RESTART_BASE" = 0
+
           # Bootstrap compacto tras un deploy correcto. Cada tarea es diaria y
           # acotada; no habilita rutas de orden real.
           for job in validation_projection action4_audit; do
@@ -501,8 +510,6 @@ jobs:
           # fails if READY regresses, LKG disappears or a worker heartbeat does
           # not advance. Container restart counters are also invariant: a
           # self-recovered SIGSEGV/exit-139 is still a failed deployment.
-          OBSERVER_RESTART_BASE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
-          DASHBOARD_RESTART_BASE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
           echo "RC6_STABILITY_RESTART_BASELINE=observer=$OBSERVER_RESTART_BASE|dashboard=$DASHBOARD_RESTART_BASE"
           for cycle in 1 2 3; do
             sleep 35
