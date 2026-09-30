@@ -264,7 +264,14 @@ def _assert_snapshot(snapshot, baseline=None):
     assert truth["mode"] == "PRODUCTION_PAPER" and truth["execution"] == "SIMULATED"
     assert int(truth["real_orders_sent"]) == 0
     assert truth["readiness"]["source"] == "candidate_identity_v2"
-    assert int(truth["readiness"]["ready"]) == readiness["ready"]
+    dashboard_ready = int(truth["readiness"]["ready"])
+    if dashboard_ready != readiness["ready"]:
+        raise RuntimeError(
+            "DASHBOARD_READINESS_MISMATCH|"
+            f"database_ready={readiness['ready']}|dashboard_ready={dashboard_ready}|"
+            f"database_by_family={json.dumps(readiness['by_family'], sort_keys=True, separators=(',', ':'))}|"
+            f"dashboard_as_of={truth['readiness'].get('as_of')}"
+        )
     assert truth["history"]["governs_readiness"] is False
     assert truth["scalping"]["mode"] == "ACTIVE_PAPER"
     allowed = set(truth["iol"]["allowed_states"])
@@ -330,6 +337,13 @@ def main():
         snapshot["database"]["workers"],
         ensure_ascii=False, sort_keys=True, separators=(",", ":"),
     ), flush=True)
+    print("POROTA_RUNTIME_AUDIT_READINESS=" + json.dumps({
+        "database_ready": snapshot["database"]["readiness"]["ready"],
+        "database_by_family": snapshot["database"]["readiness"]["by_family"],
+        "dashboard_ready": snapshot["dashboard_truth"]["readiness"].get("ready"),
+        "dashboard_total": snapshot["dashboard_truth"]["readiness"].get("total"),
+        "dashboard_as_of": snapshot["dashboard_truth"]["readiness"].get("as_of"),
+    }, ensure_ascii=False, sort_keys=True, separators=(",", ":")), flush=True)
     _assert_snapshot(snapshot, baseline)
     snapshot["status"] = "GREEN"
     args.output.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
