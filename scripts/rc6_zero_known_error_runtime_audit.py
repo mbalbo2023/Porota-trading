@@ -52,6 +52,8 @@ PATH_HTTP_TIMEOUT_SECONDS = {
     "/vivo": 45,
     "/trading": 45,
     "/historicos": 45,
+    "/sistema": 45,
+    "/salud": 45,
     "/universo-operativo": 60,
 }
 
