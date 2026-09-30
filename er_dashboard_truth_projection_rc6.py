@@ -78,6 +78,22 @@ def _max_stamp(*values: Any) -> str | None:
     return max(clean) if clean else None
 
 
+def _aggregate_normalized_family_rows(rows, numeric_fields):
+    """Aggregate aliases after normalization; never use last-write-wins."""
+    grouped = {}
+    for raw in rows:
+        row = dict(raw)
+        family = normalize_family(row.get("family"))
+        item = grouped.setdefault(
+            family,
+            {"family": family, **{field: 0 for field in numeric_fields}, "as_of": None},
+        )
+        for field in numeric_fields:
+            item[field] += _int(row.get(field))
+        item["as_of"] = _max_stamp(item.get("as_of"), row.get("as_of"))
+    return grouped
+
+
 def normalize_iol_state(raw_state: Any, *, fallback_cache_state: Any = None) -> str:
     """Collapse provider/cache vocabulary into the four operator states."""
     raw = str(raw_state or "").strip().upper()
@@ -179,8 +195,12 @@ def build(query: Callable[..., list[dict[str, Any]]],
            ORDER BY upper(instrument_type)"""
     ) if table("candidate_identity_v2") else []
 
-    catalog = {normalize_family(row.get("family")): dict(row) for row in catalog_rows}
-    readiness = {normalize_family(row.get("family")): dict(row) for row in readiness_rows}
+    catalog = _aggregate_normalized_family_rows(
+        catalog_rows, ("total", "available"),
+    )
+    readiness = _aggregate_normalized_family_rows(
+        readiness_rows, ("total", "ready", "paused"),
+    )
     families = []
     for family in sorted(set(catalog) | set(readiness)):
         cat = catalog.get(family, {})

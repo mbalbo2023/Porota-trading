@@ -1,0 +1,171 @@
+name: RC6 Deploy RCA Scalping Health Read-Only 2026-09-30
+
+on:
+  push:
+    branches:
+      - fix/ws-deploy-rca-scalping-health-contract-20260930
+    paths:
+      - '.github/workflows/rc6-deploy-rca-scalping-health-readonly-20260930.yml'
+      - 'scripts/rc6_zero_known_error_runtime_audit.py'
+      - 'cf_intraday_scalping.py'
+      - 'di_caucion_cash_sweep_runtime_hf6.py'
+      - 'bm_exit_supervisor.py'
+      - 'tests/test_ws_integ_03_runtime_audit.py'
+      - 'er_dashboard_truth_projection_rc6.py'
+      - 'tests/test_ws_dash_04_full_dashboard_truth.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readonly_runtime_probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout RCA candidate
+        uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only runtime worker contract probe
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          echo "OBSERVER_CONTAINER=$(sudo -n docker inspect -f '{{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' porota_production_observer)"
+          echo "OBSERVER_PAPER_MODES_BEGIN"
+          sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_observer \
+            | grep -E '^(PAPER_SCALPING_MODE|PAPER_CAUCION_SWEEP_MODE|PAPER_V17_DB_PATH)=' || true
+          echo "OBSERVER_PAPER_MODES_END"
+          echo "OBSERVER_PROCESS_TREE_BEGIN"
+          sudo -n docker top porota_production_observer -eo pid,ppid,etime,args || true
+          echo "OBSERVER_PROCESS_TREE_END"
+          sudo -n timeout 15 python3 - "$DB" <<'PY'
+          import json, sqlite3, sys
+          from datetime import datetime, timezone
+
+          path=sys.argv[1]
+          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+
+          def age(value):
+              try:
+                  dt=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+                  if dt.tzinfo is None:
+                      return None
+                  return round((datetime.now(timezone.utc)-dt.astimezone(timezone.utc)).total_seconds(),3)
+              except Exception:
+                  return None
+
+          tables={
+              "observer":"observer_state",
+              "scalping":"intraday_scalping_worker_state",
+              "caucion_cash_sweep":"paper_caucion_cash_sweep_state",
+              "exit_supervisor":"paper_supervisor_state",
+          }
+          out={}
+          for name,table in tables.items():
+              exists=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(table,)).fetchone()
+              if not exists:
+                  out[name]={"table":table,"missing":True}
+                  continue
+              row=c.execute(f"SELECT * FROM {table} WHERE id=1").fetchone()
+              payload=dict(row) if row else {}
+              if "heartbeat_at" in payload:
+                  payload["heartbeat_age_seconds"]=age(payload.get("heartbeat_at"))
+              for key in list(payload):
+                  if key not in {"mode","process_state","session_state","ppi_auth","real_orders_sent","heartbeat_at","heartbeat_age_seconds","state","cursor","selected","successful","failed","points_inserted","confirmed_identities","candidates","code","last_attempt_at","detail","routes_json"}:
+                      payload.pop(key,None)
+              out[name]=payload
+          c.close()
+          print("POROTA_WORKER_RUNTIME_SNAPSHOT="+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(",",":")))
+          obs=out["observer"]
+          assert obs.get("mode")=="PRODUCTION_PAPER" and int(obs.get("real_orders_sent") or 0)==0
+          print("POROTA_RUNTIME_SAFETY=GREEN|PRODUCTION_PAPER|real_orders_sent=0")
+          PY
+          REMOTE
+
+
+      - name: Prove candidate contracts against live runtime without mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SCP=(scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          SSH=(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SCP[@]}" scripts/rc6_zero_known_error_runtime_audit.py cf_intraday_scalping.py \
+            di_caucion_cash_sweep_runtime_hf6.py bm_exit_supervisor.py \
+            er_dashboard_truth_projection_rc6.py \
+            "$DO_USER@$DO_HOST:/tmp/"
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          IMAGE='porota-trading-bot:17.0.0-rc6'
+          set +e
+          OUTPUT="$(sudo -n timeout 300 docker run --rm -i --pull never --network host --read-only \
+            --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            --env-file /opt/porota-trading/data/diagnosticos/dashboard_mode_v17.env \
+            -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
+            -e DATA_DIR=/app/data \
+            -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
+            -v /opt/porota-trading/data:/app/data:ro \
+            -v /tmp/rc6_zero_known_error_runtime_audit.py:/app/scripts/rc6_zero_known_error_runtime_audit.py:ro \
+            -v /tmp/cf_intraday_scalping.py:/app/cf_intraday_scalping.py:ro \
+            -v /tmp/di_caucion_cash_sweep_runtime_hf6.py:/app/di_caucion_cash_sweep_runtime_hf6.py:ro \
+            -v /tmp/bm_exit_supervisor.py:/app/bm_exit_supervisor.py:ro \
+            -v /tmp/er_dashboard_truth_projection_rc6.py:/app/er_dashboard_truth_projection_rc6.py:ro \
+            --entrypoint python "$IMAGE" - 2>&1 <<'PY'
+          import json
+          import ep_dashboard_truth_layer_rc6 as truth_layer
+          from scripts import rc6_zero_known_error_runtime_audit as audit
+
+          snapshot = audit.collect("rca-candidate-live-readonly")
+          deployed_truth = snapshot["dashboard_truth"]
+          candidate_truth = truth_layer.runtime_truth()
+          snapshot["dashboard_truth"] = candidate_truth
+          print("RCA_DEPLOYED_DASHBOARD_READY=" + str(deployed_truth["readiness"].get("ready")), flush=True)
+          print("RCA_CANDIDATE_DASHBOARD_READY=" + str(candidate_truth["readiness"].get("ready")), flush=True)
+          print("RCA_DATABASE_READY=" + str(snapshot["database"]["readiness"]["ready"]), flush=True)
+          print("POROTA_RUNTIME_AUDIT_WORKERS=" + json.dumps(
+              snapshot["database"]["workers"],
+              ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+          ), flush=True)
+          audit._assert_snapshot(snapshot)
+          print("RCA_CANDIDATE_LIVE_READONLY=GREEN", flush=True)
+          PY
+          )"
+          RC=$?
+          set -e
+          echo "$OUTPUT"
+          echo "RCA_CANDIDATE_LIVE_AUDIT_RC=$RC"
+          rm -f /tmp/rc6_zero_known_error_runtime_audit.py /tmp/cf_intraday_scalping.py \
+            /tmp/di_caucion_cash_sweep_runtime_hf6.py /tmp/bm_exit_supervisor.py \
+            /tmp/er_dashboard_truth_projection_rc6.py
+          test "$RC" -eq 0
+          grep -Fq 'RCA_CANDIDATE_LIVE_READONLY=GREEN' <<< "$OUTPUT"
+          grep -Fq 'POROTA_RUNTIME_AUDIT_WORKERS=' <<< "$OUTPUT"
+          echo "RCA_PREDEPLOY_LIVE_CONTRACT=GREEN"
+          REMOTE
+
+      - name: Cleanup SSH key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"

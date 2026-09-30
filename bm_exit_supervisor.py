@@ -6,6 +6,8 @@ from decimal import Decimal
 
 from bs_instrument_contracts import aware_datetime, decimal_value
 
+EXIT_SUPERVISOR_HEALTHY_RUNTIME_STATES = frozenset({"RUNNING"})
+
 
 def init_schema(store):
     with store.connect() as c:

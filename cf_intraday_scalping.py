@@ -25,6 +25,7 @@ FOCUS = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 # RC6 does not make a family suitable for this scanner: fixed income, funds,
 # derivatives and cauciones have different economics/lifecycles.
 SCALPING_STRATEGY_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS"})
+SCALPING_HEALTHY_RUNTIME_STATES = frozenset({"RUNNING", "WAITING_MARKET"})
 
 
 def _stamp(value):

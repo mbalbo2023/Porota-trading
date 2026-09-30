@@ -14,7 +14,10 @@ from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from bm_exit_supervisor import EXIT_SUPERVISOR_HEALTHY_RUNTIME_STATES
+from cf_intraday_scalping import SCALPING_HEALTHY_RUNTIME_STATES
 from cg_paper_workspace import database_path
+from di_caucion_cash_sweep_runtime_hf6 import CASH_SWEEP_HEALTHY_RUNTIME_STATES
 from scripts.rc6_dashboard_route_inventory import inventory
 
 
@@ -37,9 +40,7 @@ IOL_FALLBACK_ORDER = [
     "IOL_LIVE_BOUNDED_RETRY", "IOL_LAST_KNOWN_GOOD",
     "PPI_PRIMARY", "BYMA_PUBLIC_COMPLEMENTARY",
 ]
-ALLOWED_WORKER_STATES = {
-    "RUNNING", "WAITING_WINDOW", "WAITING_CALENDAR", "HOLD", "PLACED_SIMULATED",
-}
+WORKER_MAX_HEARTBEAT_AGE_SECONDS = 300
 DEFAULT_HTTP_TIMEOUT_SECONDS = 20
 PATH_HTTP_TIMEOUT_SECONDS = {
     # Runtime evidence after the full contract sweep shows that these pages
@@ -127,6 +128,24 @@ def _iol_snapshot():
         "fallback_order": fallback,
         "section_states": sections,
     }
+
+
+def _require_worker_health(name, worker, allowed_states, max_age_seconds=WORKER_MAX_HEARTBEAT_AGE_SECONDS):
+    """Fail closed with an actionable worker-specific diagnostic."""
+    state = str(worker.get("state") or "UNKNOWN").upper()
+    allowed = frozenset(str(value).upper() for value in allowed_states)
+    age = float(worker.get("heartbeat_age_seconds"))
+    if state not in allowed:
+        rendered = ",".join(sorted(allowed))
+        raise RuntimeError(
+            f"WORKER_STATE_UNHEALTHY|worker={name}|state={state}|allowed={rendered}|"
+            f"heartbeat_age_seconds={age:.3f}"
+        )
+    if not 0 <= age <= max_age_seconds:
+        raise RuntimeError(
+            f"WORKER_HEARTBEAT_STALE|worker={name}|state={state}|"
+            f"heartbeat_age_seconds={age:.3f}|max={max_age_seconds}"
+        )
 
 
 def _candidate_state_violations(connection):
@@ -237,15 +256,22 @@ def _assert_snapshot(snapshot, baseline=None):
     supervisor = db["workers"]["exit_supervisor"]
     assert os.environ.get("PAPER_SCALPING_MODE", "").upper() == "ACTIVE_PAPER"
     assert os.environ.get("PAPER_CAUCION_SWEEP_MODE", "").upper() == "ACTIVE_PAPER"
-    assert scalping["state"] in ALLOWED_WORKER_STATES and scalping["heartbeat_age_seconds"] <= 300
-    assert sweep["state"] in ALLOWED_WORKER_STATES and sweep["heartbeat_age_seconds"] <= 300
-    assert supervisor["heartbeat_age_seconds"] <= 300
+    _require_worker_health("scalping", scalping, SCALPING_HEALTHY_RUNTIME_STATES)
+    _require_worker_health("caucion_cash_sweep", sweep, CASH_SWEEP_HEALTHY_RUNTIME_STATES)
+    _require_worker_health("exit_supervisor", supervisor, EXIT_SUPERVISOR_HEALTHY_RUNTIME_STATES)
     assert sweep["real_orders_sent"] == 0 and sweep["routes"] == []
     truth = snapshot["dashboard_truth"]
     assert truth["mode"] == "PRODUCTION_PAPER" and truth["execution"] == "SIMULATED"
     assert int(truth["real_orders_sent"]) == 0
     assert truth["readiness"]["source"] == "candidate_identity_v2"
-    assert int(truth["readiness"]["ready"]) == readiness["ready"]
+    dashboard_ready = int(truth["readiness"]["ready"])
+    if dashboard_ready != readiness["ready"]:
+        raise RuntimeError(
+            "DASHBOARD_READINESS_MISMATCH|"
+            f"database_ready={readiness['ready']}|dashboard_ready={dashboard_ready}|"
+            f"database_by_family={json.dumps(readiness['by_family'], sort_keys=True, separators=(',', ':'))}|"
+            f"dashboard_as_of={truth['readiness'].get('as_of')}"
+        )
     assert truth["history"]["governs_readiness"] is False
     assert truth["scalping"]["mode"] == "ACTIVE_PAPER"
     allowed = set(truth["iol"]["allowed_states"])
@@ -307,6 +333,17 @@ def main():
     args = parser.parse_args()
     baseline = json.loads(args.baseline.read_text(encoding="utf-8")) if args.baseline else None
     snapshot = collect(args.label)
+    print("POROTA_RUNTIME_AUDIT_WORKERS=" + json.dumps(
+        snapshot["database"]["workers"],
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ), flush=True)
+    print("POROTA_RUNTIME_AUDIT_READINESS=" + json.dumps({
+        "database_ready": snapshot["database"]["readiness"]["ready"],
+        "database_by_family": snapshot["database"]["readiness"]["by_family"],
+        "dashboard_ready": snapshot["dashboard_truth"]["readiness"].get("ready"),
+        "dashboard_total": snapshot["dashboard_truth"]["readiness"].get("total"),
+        "dashboard_as_of": snapshot["dashboard_truth"]["readiness"].get("as_of"),
+    }, ensure_ascii=False, sort_keys=True, separators=(",", ":")), flush=True)
     _assert_snapshot(snapshot, baseline)
     snapshot["status"] = "GREEN"
     args.output.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
