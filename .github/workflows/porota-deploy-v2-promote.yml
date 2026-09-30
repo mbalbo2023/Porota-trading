@@ -511,7 +511,7 @@ jobs:
           # not advance. Container restart counters are also invariant: a
           # self-recovered SIGSEGV/exit-139 is still a failed deployment.
           echo "RC6_STABILITY_RESTART_BASELINE=observer=$OBSERVER_RESTART_BASE|dashboard=$DASHBOARD_RESTART_BASE"
-          for cycle in 1 2 3 4 5; do
+          for cycle in 1 2 3; do
             sleep 35
             set +e
             AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
@@ -533,6 +533,24 @@ jobs:
             test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"
             echo "RC6_ZERO_KNOWN_ERROR_STABILITY_$cycle=GREEN"
           done
+
+          # Exit-139 incidents appeared after the runtime had initially looked
+          # healthy. Extend the observation window cheaply after the three full
+          # audits: no heavy HTTP sweep, only direct container-liveness and
+          # restart-count invariants once per minute.
+          for soak in 1 2 3 4 5; do
+            sleep 60
+            OBSERVER_STATUS_SOAK="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)"
+            DASHBOARD_STATUS_SOAK="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)"
+            OBSERVER_RESTART_SOAK="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+            DASHBOARD_RESTART_SOAK="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+            echo "RC6_EXIT139_SOAK_$soak=observer:$OBSERVER_STATUS_SOAK/$OBSERVER_RESTART_SOAK|dashboard:$DASHBOARD_STATUS_SOAK/$DASHBOARD_RESTART_SOAK"
+            test "$OBSERVER_STATUS_SOAK" = running
+            test "$DASHBOARD_STATUS_SOAK" = running
+            test "$OBSERVER_RESTART_SOAK" = "$OBSERVER_RESTART_BASE"
+            test "$DASHBOARD_RESTART_SOAK" = "$DASHBOARD_RESTART_BASE"
+          done
+          echo "RC6_EXIT139_SOAK=GREEN"
 
           RECENT_CRITICAL="$({
             sudo -n docker logs --since 15m porota_production_observer 2>&1 || true
