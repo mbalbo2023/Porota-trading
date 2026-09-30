@@ -71,6 +71,30 @@ jobs:
           ).fetchone() or {})
           print("OBSERVER=" + json.dumps(observer, sort_keys=True, default=str))
 
+          source_sync = [
+              dict(row) for row in db.execute("""
+              SELECT * FROM source_sync
+              WHERE source IN ('PPI_PRODUCTION_CATALOG','PPI_PRODUCTION_HISTORY','PPI_PRODUCTION_DAILY_SYNC')
+              ORDER BY source
+              """)
+          ]
+          print("SOURCE_SYNC=" + json.dumps(source_sync, sort_keys=True, default=str))
+
+          daily_events = []
+          if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_events'").fetchone():
+              for row in db.execute("SELECT * FROM paper_events ORDER BY rowid DESC LIMIT 2000"):
+                  item = dict(row)
+                  et = str(item.get("event_type") or "").upper()
+                  if et in {
+                      "DAILY_READONLY_SYNC", "DAILY_READONLY_SYNC_ERROR",
+                      "CATALOG_PAPER_POLICY_MATERIALIZATION",
+                      "CATALOG_PAPER_POLICY_MATERIALIZATION_ERROR",
+                  }:
+                      daily_events.append(item)
+                  if len(daily_events) >= 80:
+                      break
+          print("DAILY_SYNC_EVENTS=" + json.dumps(daily_events, sort_keys=True, default=str))
+
           candidate_matrix = [
               dict(row) for row in db.execute("""
               SELECT upper(instrument_type) family, upper(status) status,
