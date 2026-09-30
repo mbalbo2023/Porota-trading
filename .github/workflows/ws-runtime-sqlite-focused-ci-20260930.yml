@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install locked dependencies
-        run: python -m pip install --require-hashes -r requirements.lock
+        run: python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
       - name: Compile
         run: python -m py_compile be_paper_engine.py tests/test_production_paper_v1634.py
       - name: SQLite contention regressions
