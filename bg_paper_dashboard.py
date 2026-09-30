@@ -257,7 +257,7 @@ def _status(value):
     key = str(value or "").upper()
     css = "s-verde" if key in {"OK","VERDE","RUNNING","APPROVE","WIN","OPENED_SIMULATED","AVAILABLE","RUNTIME_READY","READY_PAPER","LIVE","CACHE_FRESH","ACTIVE_PAPER"} else \
           "s-rojo" if key in {"ERROR","ROJO","FAILED","LOSS","VETO","BLOCKED","DEGRADED"} else \
-          "s-amarillo" if key in {"HOLD","PARTIAL","COOLDOWN","WAITING","AMARILLO","PENDIENTE","PAUSED_EXPLICIT","CACHE_STALE","SOURCE_UNAVAILABLE","ACTIVE_OBSERVE"} else "s-gris"
+          "s-amarillo" if key in {"HOLD","PARTIAL","COOLDOWN","WAITING","AMARILLO","PENDIENTE","PAUSED_EXPLICIT","CACHE_STALE","SOURCE_UNAVAILABLE","ACTIVE_OBSERVE","OBSERVED_BLOCKED"} else "s-gris"
     return f"<span class='paper-status {css}'>{_e(key or 'GRIS')}</span>"
 
 
@@ -1982,16 +1982,17 @@ def telegram_page():
     return _document("Telegram",body,refresh=60)
 
 
-def live_page(*, offset=0, limit=10):
+def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
     data=snapshot(); state=data['state']; now=datetime.now(TZ)
+    limit=max(1,min(10,int(limit)))
+    closed_offset=max(0,int(closed_offset))
+    decision_offset=max(0,int(offset if decision_offset is None else decision_offset))
     positions=data.get('open',[])
     closed_today=live_policy.closed_for_live(data.get('closed',[]),now=now)
-    # Render every record from the current day.  The accessibility layer keeps
-    # ten visible at a time; backend truncation used to make records 11+ truly
-    # unreachable from the "Mostrar más" control.  Keep
-    # live_policy.page_for_tablet available for API consumers, but do not use it
-    # to discard HTML records before the accessible progressive control mounts.
-    closed=list(closed_today)
+    # Browser/voice-access safety: never serialize the full day merely to hide
+    # records after row ten. Each large list gets a server-side page.
+    closed_all=list(closed_today)
+    closed=closed_all[closed_offset:closed_offset+limit]
     intents={r.get('paper_id'):r for r in data.get('exit_intents',[])}
 
     gates=[]
@@ -2040,19 +2041,18 @@ def live_page(*, offset=0, limit=10):
         )
 
     closed_rows=[]
-    for closed_index,pos in enumerate(closed):
+    for pos in closed:
         pnl=_num(pos.get('net_pnl')); cls='positive' if pnl>0 else 'negative' if pnl<0 else 'neutral'
         gate=gate_by_paper.get(pos.get('paper_id')) or gate_by_symbol.get(pos.get('symbol'),{})
-        initially_hidden=" hidden aria-hidden='true'" if closed_index>=10 else " aria-hidden='false'"
         closed_rows.append(
-            f"<details class='paper-trade' data-porota-record='1'{initially_hidden}><summary>{_e(pos.get('symbol'))} · {_local_time(pos.get('closed_at'))} · "
+            f"<details class='paper-trade' data-porota-server-page-record='1'><summary>{_e(pos.get('symbol'))} · {_local_time(pos.get('closed_at'))} · "
             f"<span class='{cls}'>{_amount(pnl, pos.get('currency'))}</span> · {_e(pos.get('close_reason'))}</summary>"
             f"<div class='trade-body'><p><b>Entrada:</b> {_amount(pos.get('entry_price'), pos.get('currency'))} · <b>Salida:</b> {_amount(pos.get('exit_price'), pos.get('currency'))}. "
             f"<b>Aceptación original:</b> {_e(gate.get('reason','sin gate persistido'))}</p>"
             f"<h3>Lección aprendida</h3><p class='{cls}'>{_e(_trade_lesson(pos))}</p></div></details>"
         )
 
-    close_counts = Counter(str(row.get("close_reason") or "SIN_MOTIVO") for row in closed)
+    close_counts = Counter(str(row.get("close_reason") or "SIN_MOTIVO") for row in closed_all)
     close_reason_html = (
         "<div class='paper-card'><h3>Causas de cierre persistidas</h3>"
         "<p class='paper-muted'>Se muestra la causa guardada por el motor; esta vista no convierte STOP/TARGET en EOD ni completa motivos faltantes.</p>"
@@ -2076,10 +2076,10 @@ def live_page(*, offset=0, limit=10):
         )
     else:
         decision_source = []
-    all_live_decisions=live_policy.decisions_for_live(decision_source,now=now)
-    live_decisions=list(all_live_decisions)
-    for decision_index,row in enumerate(live_decisions):
-        initially_hidden=" hidden aria-hidden='true'" if decision_index>=10 else " aria-hidden='false'"
+    all_live_decisions=list(live_policy.decisions_for_live(decision_source,now=now))
+    decision_total=len(all_live_decisions)
+    live_decisions=all_live_decisions[decision_offset:decision_offset+limit]
+    for row in live_decisions:
         action=str(row.get('action') or '').upper()
         gate=gate_by_symbol.get(row.get('symbol')) if action=='BUY' else None
         technical=_status(gate.get('technical_gate')) if gate else '—'
@@ -2088,24 +2088,40 @@ def live_page(*, offset=0, limit=10):
         if gate and gate.get('reason') and str(gate.get('reason')) not in explanation:
             explanation=(explanation+' · gate: '+str(gate.get('reason'))).strip(' ·')
         decision_rows.append(
-            f"<tr data-porota-record='1'{initially_hidden}><td>{_local_time(row.get('decided_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+            f"<tr data-porota-server-page-record='1'><td>{_local_time(row.get('decided_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
             f"<td>{_status(action)}</td><td>{technical}</td><td>{patrimonial}</td>"
             f"<td>{_e(explanation)}</td></tr>"
         )
-    if not decision_rows:
-        for decision_index,row in enumerate(gates):
-            initially_hidden=" hidden aria-hidden='true'" if decision_index>=10 else " aria-hidden='false'"
+    if not decision_rows and not all_live_decisions:
+        decision_total=len(gates)
+        for row in gates[decision_offset:decision_offset+limit]:
             result=str(row.get('final_result') or '')
             label='ACEPTADA' if result=='OPENED_SIMULATED' else 'RECHAZADA/BLOQUEADA'
             decision_rows.append(
-                f"<tr data-porota-record='1'{initially_hidden}><td>{_local_time(row.get('evaluated_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
+                f"<tr data-porota-server-page-record='1'><td>{_local_time(row.get('evaluated_at'))}</td><td><b>{_e(row.get('symbol'))}</b></td>"
                 f"<td>{_status(label)}</td><td>{_status(row.get('technical_gate'))}</td>"
                 f"<td>{_status(row.get('patrimonial_gate'))}</td><td>{_e(row.get('reason'))}</td></tr>"
             )
-    # La paginación de /en-vivo la monta el layout responsive RC6 en un único
-    # control de diez filas. No agregar aquí el paginador backend: produciría
-    # dos controles contradictorios en la misma tabla.
-    decision_pager=""
+    def _live_pager(kind,current,total):
+        current=max(0,int(current)); total=max(0,int(total))
+        shown=min(total,current+limit)
+        start=0 if total==0 else current+1
+        params={"closed_offset":closed_offset,"decision_offset":decision_offset}
+        links=[f"<span class='paper-muted'>Mostrando {start}-{shown} de {_locale_number(total,0)}</span>"]
+        if current>0:
+            params[kind]=max(0,current-limit)
+            links.append("<a class='paper-action' href='/en-vivo?"+
+                         "&".join(f"{k}={v}" for k,v in params.items())+
+                         f"#{'porota-live-closed' if kind=='closed_offset' else 'porota-live-decisions'}'>Anterior</a>")
+        if shown<total:
+            params[kind]=current+limit
+            links.append("<a class='paper-action' href='/en-vivo?"+
+                         "&".join(f"{k}={v}" for k,v in params.items())+
+                         f"#{'porota-live-closed' if kind=='closed_offset' else 'porota-live-decisions'}'>Mostrar más</a>")
+        return "<nav class='compact-pager' aria-label='Paginación'>"+ "".join(links)+"</nav>"
+
+    closed_pager=_live_pager("closed_offset",closed_offset,len(closed_all))
+    decision_pager=_live_pager("decision_offset",decision_offset,decision_total)
 
     settlement_diag_html=""
     try:
@@ -2148,7 +2164,7 @@ def live_page(*, offset=0, limit=10):
     scalp_worker=(_rows("SELECT * FROM intraday_scalping_worker_state WHERE id=1") or [{}])[0] if _table('intraday_scalping_worker_state') else {}
     scalp_recent=(_rows("SELECT COUNT(*) n FROM scalping_candidates WHERE julianday(evaluated_at)>=julianday(?)",
                         ((now-timedelta(hours=1)).isoformat(),)) or [{'n':0}])[0]['n'] if _table('scalping_candidates') else 0
-    scalp_fills=sum(1 for p in positions+closed if 'SCALPING_PAPER' in str(p.get('features_json') or ''))
+    scalp_fills=sum(1 for p in positions+closed_all if 'SCALPING_PAPER' in str(p.get('features_json') or ''))
 
     workers=[]
     for label,table in (("Supervisor de salidas","paper_supervisor_state"),
@@ -2177,9 +2193,8 @@ def live_page(*, offset=0, limit=10):
     body=(f"<h1>En vivo — operaciones primero</h1>{freshness}<div class='paper-grid'>{cards}</div>"
           "<div class='paper-card'><h2>1. Operaciones abiertas ahora</h2><p class='paper-muted'>P&amp;L, marca y freshness visibles; abrir la flecha para gates y variables.</p>"+
           (''.join(open_details) or "<p>Sin posiciones abiertas.</p>")+"</div>"
-          "<div class='paper-card'><h2>2. Operaciones cerradas hoy</h2>"
-          "<div id='porota-live-closed' data-porota-progressive-list='1' data-page-size='10'>"+
-          (''.join(closed_rows) or "<p>Sin operaciones cerradas hoy.</p>")+"</div></div>"+
+          "<div class='paper-card' id='porota-live-closed'><h2>2. Operaciones cerradas hoy</h2>"+
+          (''.join(closed_rows) or "<p>Sin operaciones cerradas hoy.</p>")+closed_pager+"</div>"+
           close_reason_html+settlement_diag_html+
           "<div class='paper-card'><h2>3. Decisiones en vivo — BUY / HOLD / abstenciones</h2>"
           "<p class='paper-muted'>Fuente primaria: paper_decisions. Los gates técnico/patrimonial son event-driven y sólo aparecen cuando una señal BUY alcanza esa etapa; un gate antiguo no significa que el motor esté detenido.</p>"
@@ -2487,14 +2502,17 @@ def trading_page(section=''):
 
 
 
-def _instrument_readiness_matrix():
-    """Full-key projection: catalog, Evidence v2 and runtime readiness stay distinct."""
-    items=dashboard_truth_projection.instrument_rows(_rows,_table,limit=50000)
+def _instrument_readiness_matrix(*, offset=0, limit=10, total=0):
+    """Render one bounded server-side page of the full-key instrument matrix."""
+    offset=max(0,int(offset))
+    limit=max(1,min(10,int(limit)))
+    items=dashboard_truth_projection.instrument_rows(
+        _rows,_table,limit=limit,offset=offset,
+    )
     rows=[]
-    for index,item in enumerate(items):
-        hidden=" hidden aria-hidden='true'" if index>=10 else " aria-hidden='false'"
+    for item in items:
         rows.append(
-            f"<tr data-porota-record='1'{hidden}>"
+            "<tr data-porota-server-page-record='1'>"
             f"<td><b>{_e(item.get('ticker'))}</b></td><td>{_e(item.get('family'))}</td>"
             f"<td>{_e(item.get('market'))} · {_e(item.get('settlement'))} · {_e(item.get('currency'))}</td>"
             f"<td>{_e(item.get('catalog_status'))} · {_e(item.get('catalog_capability'))}</td>"
@@ -2505,22 +2523,42 @@ def _instrument_readiness_matrix():
         )
     if not rows:
         return "<div class='paper-warning'>Catálogo o candidate_identity_v2 no disponible; estado NO_VERIFICADO.</div>"
+    total=max(int(total or 0),offset+len(items))
+    start=offset+1
+    end=offset+len(items)
+    controls=[
+        f"<span class='paper-muted'>Mostrando {start}-{end} de {_locale_number(total,0)}</span>"
+    ]
+    if offset>0:
+        controls.append(
+            f"<a class='paper-action' href='/instrumentos?offset={max(0,offset-limit)}#instrument-matrix'>Anterior</a>"
+        )
+    if end<total:
+        controls.append(
+            f"<a class='paper-action' href='/instrumentos?offset={offset+limit}#instrument-matrix' "
+            "aria-label='Mostrar más instrumentos, diez por tanda'>Mostrar más</a>"
+        )
     return (
-        "<div class='paper-card'><h2>Matriz por instrumento</h2>"
+        "<div class='paper-card' id='instrument-matrix'><h2>Matriz por instrumento</h2>"
         "<p class='paper-muted'>Catálogo = financial_instrument_catalog. Contrato = Evidence v2. "
-        "RUNTIME_READY = candidate_identity_v2. IOL complementa y su ausencia no reinterpreta READY.</p>"
-        "<div data-porota-progressive-list='1' data-page-size='10'>"
+        "RUNTIME_READY = candidate_identity_v2. IOL complementa y su ausencia no reinterpreta READY. "
+        "La tabla consulta sólo diez instrumentos por request para no saturar el navegador.</p>"
         "<table class='paper-table' data-porota-force-compact='1'><tr><th>Instrumento</th>"
         "<th>Familia</th><th>Mercado · plazo · moneda</th><th>Catálogo PPI</th>"
         "<th>Readiness runtime</th><th>Evidence v2</th><th>Detalle</th><th>Actualizado</th></tr>"
-        + "".join(rows) + "</table></div></div>"
+        + "".join(rows) + "</table>"
+        "<nav class='compact-pager' aria-label='Paginación de instrumentos'>"
+        + "".join(controls) + "</nav></div>"
     )
 
 
-def instruments_page():
-    families=tuple(item['family'] for item in truth_projection()['readiness']['families'])
+def instruments_page(*, offset=0, limit=10):
+    canonical=truth_projection()
+    families=tuple(item['family'] for item in canonical['readiness']['families'])
     table=_family_ux_table(families)
-    matrix=_instrument_readiness_matrix()
+    matrix=_instrument_readiness_matrix(
+        offset=offset,limit=limit,total=canonical['catalog'].get('total',0),
+    )
     body=("<h1>Instrumentos y contratos</h1>"
           "<div class='paper-notice'><b>Lectura corregida: readiness contractual actual separada del historial PAPER.</b> "
           "PPI es la fuente primaria; IOL solo complementa y valida en modo read-only. "
@@ -3054,15 +3092,21 @@ def install(app,check_auth):
     @app.get("/motor-trading",response_class=HTMLResponse)
     def motor(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(motor_page())
     @app.get("/en-vivo",response_class=HTMLResponse)
-    def en_vivo(request:Request,offset:int=Query(default=0,ge=0),limit:int=Query(default=10,ge=1,le=50),token:str=Query(default=""),authorization:str|None=Header(default=None)):
+    def en_vivo(request:Request,offset:int=Query(default=0,ge=0),limit:int=Query(default=10,ge=1,le=10),
+                closed_offset:int=Query(default=0,ge=0),decision_offset:int|None=Query(default=None,ge=0),
+                token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
-        return HTMLResponse(live_page(offset=offset,limit=limit))
+        return HTMLResponse(live_page(offset=offset,limit=limit,closed_offset=closed_offset,
+                                      decision_offset=decision_offset))
     @app.get("/trading",response_class=HTMLResponse)
     def trading(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(trading_page())
     @app.get("/trading/{section}",response_class=HTMLResponse)
     def trading_section(section:str,request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(trading_page(section))
     @app.get("/instrumentos",response_class=HTMLResponse)
-    def instrumentos(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(instruments_page())
+    def instrumentos(request:Request,offset:int=Query(default=0,ge=0,le=50000),
+                     token:str=Query(default=""),authorization:str|None=Header(default=None)):
+        auth(request,token,authorization)
+        return HTMLResponse(instruments_page(offset=offset,limit=10))
     @app.get("/sistema",response_class=HTMLResponse)
     def sistema(request:Request,section:str=Query(default="introspeccion"),token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(system_page(section))
     @app.get("/scalping",response_class=HTMLResponse)

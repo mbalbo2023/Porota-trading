@@ -415,8 +415,13 @@ def build(query: Callable[..., list[dict[str, Any]]],
 
 
 def instrument_rows(query: Callable[..., list[dict[str, Any]]],
-                    table: Callable[[str], bool], *, limit: int = 10000) -> list[dict[str, Any]]:
-    """Full-key catalog/readiness/contract projection for instrument tables."""
+                    table: Callable[[str], bool], *, limit: int = 10000,
+                    offset: int = 0) -> list[dict[str, Any]]:
+    """Bounded full-key catalog/readiness/contract projection for instrument tables.
+
+    LIMIT/OFFSET are applied in SQL so UI pagination never materializes the full
+    production catalog merely to hide rows in the browser.
+    """
     if not table("financial_instrument_catalog"):
         return []
     readiness_join = table("candidate_identity_v2")
@@ -446,8 +451,12 @@ def instrument_rows(query: Callable[..., list[dict[str, Any]]],
                      {readiness_columns},{contract_columns}
               FROM financial_instrument_catalog c {joins}
               GROUP BY c.ticker,c.instrument_type,c.market,c.currency,c.settlement
-              ORDER BY upper(c.instrument_type),c.ticker,c.market,c.currency,c.settlement LIMIT ?"""
-    rows = query(sql, (max(1, min(int(limit), 50000)),))
+              ORDER BY upper(c.instrument_type),c.ticker,c.market,c.currency,c.settlement
+              LIMIT ? OFFSET ?"""
+    rows = query(sql, (
+        max(1, min(int(limit), 500)),
+        max(0, int(offset)),
+    ))
     for row in rows:
         row["family"] = normalize_family(row.get("instrument_type"))
         row["ui_state"] = "RUNTIME_READY" if _int(row.get("runtime_ready")) else "PAUSED_EXPLICIT"

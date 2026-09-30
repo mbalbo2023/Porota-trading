@@ -45,7 +45,9 @@ def _capability_text(items):
     )
 
 
-def _page():
+def _page(*, offset=0, limit=10):
+    offset=max(0,int(offset))
+    limit=max(1,min(10,int(limit)))
     truth = bg.truth_projection()
     coverage = truth.get("readiness", {}).get("families", [])
 
@@ -474,7 +476,7 @@ def _page():
 
         state_view = {
             "READY_PAPER": bg._status("OK"),
-            "OBSERVED_BLOCKED": bg._status("PENDIENTE"),
+            "OBSERVED_BLOCKED": bg._status("OBSERVED_BLOCKED"),
             "LEGACY_POSITION": bg._status("AMARILLO"),
             "NO_INSTRUMENTS": bg._status("GRIS"),
         }[state]
@@ -501,8 +503,10 @@ def _page():
         )
 
     instrument_rows = []
+    catalog_total=len(catalog)
+    catalog_page=catalog[offset:offset+limit]
 
-    for row_index, row in enumerate(catalog):
+    for row in catalog_page:
         key = (
             row.get("ticker"),
             row.get("instrument_type"),
@@ -535,12 +539,8 @@ def _page():
             row.get("readiness_status") or "PAUSED_EXPLICIT"
         )
 
-        row_visibility = (
-            ' hidden aria-hidden="true"' if row_index >= 10
-            else ' aria-hidden="false"'
-        )
         instrument_rows.append(
-            f"<tr data-porota-record='1'{row_visibility}>"
+            "<tr data-porota-server-page-record='1'>"
             f"<td><b>{bg._e(row.get('ticker'))}</b></td>"
             f"<td>{bg._e(row.get('instrument_type'))}</td>"
             f"<td>{bg._e(row.get('market'))}</td>"
@@ -639,6 +639,22 @@ def _page():
         "</td></tr>"
     )
 
+    catalog_start=0 if catalog_total==0 else offset+1
+    catalog_end=min(catalog_total,offset+len(catalog_page))
+    catalog_controls=[
+        f"<span class='paper-muted'>Mostrando {catalog_start}-{catalog_end} de {bg._locale_number(catalog_total,0)}</span>"
+    ]
+    if offset>0:
+        catalog_controls.append(
+            f"<a class='paper-action' href='/universo-operativo?offset={max(0,offset-limit)}#catalog-matrix'>Anterior</a>"
+        )
+    if catalog_end<catalog_total:
+        catalog_controls.append(
+            f"<a class='paper-action' href='/universo-operativo?offset={offset+limit}#catalog-matrix' "
+            "aria-label='Mostrar más instrumentos, diez por tanda'>Mostrar más</a>"
+        )
+    catalog_pager="<nav class='compact-pager' aria-label='Paginación del universo'>"+"".join(catalog_controls)+"</nav>"
+
     body = (
         "<h1>Universo operativo — todas las familias</h1>"
 
@@ -674,14 +690,14 @@ def _page():
         + "".join(family_rows)
         + "</table></div>"
 
-        "<div class='paper-card'>"
+        "<div class='paper-card' id='catalog-matrix'>"
         "<h2>Todos los instrumentos del catálogo actual</h2>"
         "<p class='paper-muted'>"
         "Una fila por identidad instrumento/mercado/moneda/plazo. "
         "La columna Estado explica por qué puede o no llegar "
         "a una operación PAPER."
         "</p>"
-        "<div data-porota-progressive-list='1' data-page-size='10'><table class='paper-table'>"
+        "<table class='paper-table'>"
         "<tr>"
         "<th>Ticker</th>"
         "<th>Familia</th>"
@@ -696,7 +712,7 @@ def _page():
         "<th>Posiciones total/abiertas/cerradas</th>"
         "</tr>"
         + "".join(instrument_rows)
-        + "</table></div></div>"
+        + "</table>" + catalog_pager + "</div>"
 
         "<div class='paper-card'>"
         "<h2>Observaciones recientes fuera del catálogo actual (no READY)</h2>"
@@ -824,6 +840,7 @@ def install(app, check_auth):
     )
     def universo_operativo(
         request: Request,
+        offset: int = Query(default=0, ge=0, le=50000),
         token: str = Query(default=""),
         authorization: str | None = Header(default=None),
     ):
@@ -835,5 +852,5 @@ def install(app, check_auth):
         )
 
         return HTMLResponse(
-            _page()
+            _page(offset=offset, limit=10)
         )

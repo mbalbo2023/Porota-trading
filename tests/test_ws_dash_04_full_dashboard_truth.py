@@ -297,7 +297,8 @@ def test_active_surfaces_have_no_legacy_two_family_readiness_filters():
     )
     for text in forbidden:
         assert text not in source
-    assert "data-porota-progressive-list='1'" in source
+    assert "data-porota-server-page-record='1'" in source
+    assert "Mostrar más" in source
     assert "aria-label='Menú principal'" in bg.top_nav_html()
 
 
