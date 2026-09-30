@@ -2,7 +2,6 @@ name: WS Runtime Candidate Full Gate 2026-09-30
 on:
   push:
     branches: [fix/ws-runtime-sqlite-contention-20260930]
-    paths: ['.github/workflows/ws-runtime-candidate-full-gate-20260930.yml']
 permissions:
   contents: read
 jobs:
