@@ -165,3 +165,12 @@ def test_history_cutoff_repair_is_decoupled_from_code_deploy():
 def test_runtime_audit_outer_budget_covers_measured_route_cycle():
     source = _deploy()
     assert source.count("docker exec porota_production_dashboard timeout 300") == 2
+
+
+def test_deploy_v2_fails_closed_without_two_parent_promotion_merge():
+    source = _deploy()
+    assert 'if [ "${#PARTS[@]}" -ne 3 ]; then' in source
+    assert "POROTA_DEPLOY_V2_PROMOTION_COMMIT_INVALID=RED" in source
+    assert "requires a two-parent merge commit" in source
+    assert "exit 31" in source
+    assert 'CANDIDATE_SHA="${PARTS[2]}"' in source
