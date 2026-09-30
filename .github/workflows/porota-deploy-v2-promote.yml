@@ -477,6 +477,84 @@ jobs:
           test "$AUDIT_HOST_STAT" = "$AUDIT_UID:$AUDIT_GID|750"
           sudo -n docker exec porota_production_dashboard test -w /app/data/deploy
           echo "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH_WRITABLE=GREEN"
+
+          # A transient per-symbol market-data failure intentionally marks the
+          # scalping worker DEGRADED for that scan interval. Never treat
+          # DEGRADED as healthy: wait, boundedly and read-only, for the worker
+          # to publish a fresh healthy heartbeat before taking the immediate
+          # Zero-Known-Error snapshot. This closes the race where a healthy
+          # self-recovering worker was sampled between scan cycles.
+          SCALPING_STABILIZATION_SECONDS=420
+          SCALPING_STABILIZATION_POLL_SECONDS=15
+          SCALPING_STABILIZATION_ATTEMPTS=$((SCALPING_STABILIZATION_SECONDS / SCALPING_STABILIZATION_POLL_SECONDS + 1))
+          SCALPING_STABILIZED=false
+          for SCALPING_ATTEMPT in $(seq 1 "$SCALPING_STABILIZATION_ATTEMPTS"); do
+            OBSERVER_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+            DASHBOARD_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+            test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"
+            test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"
+            SCALPING_GATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          from datetime import datetime, timezone
+
+          path=sys.argv[1]
+          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          c.execute("PRAGMA busy_timeout=1000")
+          worker=c.execute("""
+            SELECT heartbeat_at,state,successful,failed,real_orders_sent
+            FROM intraday_scalping_worker_state WHERE id=1
+          """).fetchone()
+          observer=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+
+          if worker is None or observer is None:
+              print("WAIT|reason=missing_state")
+              raise SystemExit(0)
+
+          heartbeat=str(worker["heartbeat_at"] or "")
+          try:
+              dt=datetime.fromisoformat(heartbeat.replace("Z","+00:00"))
+              if dt.tzinfo is None:
+                  raise ValueError("naive heartbeat")
+              age=(datetime.now(timezone.utc)-dt.astimezone(timezone.utc)).total_seconds()
+          except Exception:
+              age=10**9
+
+          state=str(worker["state"] or "")
+          successful=int(worker["successful"] or 0)
+          failed=int(worker["failed"] or 0)
+          worker_orders=int(worker["real_orders_sent"] or 0)
+          observer_mode=str(observer["mode"] or "")
+          observer_orders=int(observer["real_orders_sent"] or 0)
+          healthy_state=state in ("RUNNING","WAITING_MARKET")
+          healthy=(healthy_state and failed==0 and 0 <= age <= 300
+                   and worker_orders==0 and observer_mode=="PRODUCTION_PAPER"
+                   and observer_orders==0)
+          prefix="GREEN" if healthy else "WAIT"
+          print(
+              f"{prefix}|state={state}|heartbeat_age_seconds={age:.3f}"
+              f"|successful={successful}|failed={failed}"
+              f"|worker_orders={worker_orders}"
+              f"|observer={observer_mode}/{observer_orders}"
+          )
+          PY
+            )"
+            echo "RC6_SCALPING_STABILIZATION_ATTEMPT=$SCALPING_ATTEMPT|$SCALPING_GATE"
+            grep -Fq 'worker_orders=0' <<< "$SCALPING_GATE"
+            grep -Fq 'observer=PRODUCTION_PAPER/0' <<< "$SCALPING_GATE"
+            if [[ "$SCALPING_GATE" == GREEN\|* ]]; then
+              SCALPING_STABILIZED=true
+              break
+            fi
+            if [ "$SCALPING_ATTEMPT" -lt "$SCALPING_STABILIZATION_ATTEMPTS" ]; then
+              sleep "$SCALPING_STABILIZATION_POLL_SECONDS"
+            fi
+          done
+          test "$SCALPING_STABILIZED" = true
+          echo "RC6_SCALPING_STABILIZATION=GREEN"
+
           AUDIT_BASE=/app/data/deploy/zero-known-error-immediate.json
           set +e
           AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
