@@ -117,6 +117,18 @@ def test_sector_map_and_multisource_helpers_are_immutable_deploy_inputs():
     assert 'for row in data["files"]' in source
     assert 'assert src.is_file() and sha(src)==row["sha256"]' in source
 
+
+def test_iol_fail_safe_contract_is_packaged_and_migrated_before_runtime_audit():
+    from scripts.porota_build_deploy_bundle_v2 import select_bundle_paths
+
+    migrator = "scripts/rc6_iol_reference_contract_migrate.py"
+    assert select_bundle_paths([migrator]) == [migrator]
+    source = _deploy()
+    migrated = source.index("IOL_REFERENCE_CONTRACT_MIGRATION=GREEN")
+    audited = source.index("rc6_zero_known_error_runtime_audit.py")
+    assert migrated < audited
+    assert "ZERO_FILL=false|REAL_ROUTES=[]" in source
+
 def test_deploy_scope_rejects_watchlist_as_universe_authority():
     observer = (ROOT / "bf_production_paper_observer.py").read_text(encoding="utf-8")
     assert "DISCOVERY_SEEDS = {}" in observer
