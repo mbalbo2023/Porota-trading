@@ -6,6 +6,7 @@ on:
       - fix/ws-integ-03-runtime-http500-20260930
     paths:
       - '.github/workflows/rc6-ws-integ-03-runtime-http-rca-20260930.yml'
+      - 'bh_universe_dashboard_hf6.py'
   workflow_dispatch:
 
 permissions:
