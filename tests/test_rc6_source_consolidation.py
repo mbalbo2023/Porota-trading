@@ -1,3 +1,7 @@
+import json
+
+import pytest
+
 import rc6_source_consolidation as m
 
 def test_consolidate_keeps_ppi_primary_and_compares_iol():
@@ -143,3 +147,78 @@ def test_consolidate_unions_complementary_identity_and_canonicalizes_bcba_t1():
     assert row["effective_fields"]["last"]["source"] == "IOL"
     assert row["effective_fields"]["vwap"]["source"] == "BYMA"
     assert result["source_order"] == "PPI_PRIMARY_IOL_COMPLEMENTARY_BYMA_PUBLIC_COMPLEMENTARY"
+
+
+class _FakeBymaResponse:
+    status = 200
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self, _limit):
+        return json.dumps(self.payload).encode("utf-8")
+
+
+def test_byma_full_capture_uses_page_size_not_ignored_page_number(monkeypatch):
+    captured = {}
+    payload = {
+        "content": {
+            "page_number": 1,
+            "page_count": 1,
+            "page_size": 5000,
+            "total_elements_count": 2,
+        },
+        "data": [
+            {"symbol": "ALUA", "denominationCcy": "ARS", "settlementType": "1", "trade": 1000},
+            {"symbol": "GGAL", "denominationCcy": "ARS", "settlementType": "2", "trade": 2500},
+        ],
+    }
+
+    def fake_urlopen(request, timeout):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return _FakeBymaResponse(payload)
+
+    monkeypatch.setattr(m, "urlopen", fake_urlopen)
+    result = m._byma_post("https://open.bymadata.com.ar/", "leading-equity", "ACCIONES")
+
+    assert captured["body"] == {"page_size": 5000}
+    assert "page_number" not in captured["body"]
+    assert "T0" not in captured["body"]
+    assert "T1" not in captured["body"]
+    assert result["status"] == "SCRAPED_PUBLIC_DATA"
+    assert result["source_record_count"] == 2
+    assert result["expected_total"] == 2
+    assert result["record_count"] == 2
+    assert result["scrape_method"] == "bymadata_public_post_full_capture"
+
+
+def test_byma_full_capture_fails_closed_when_provider_total_is_partial(monkeypatch):
+    payload = {
+        "content": {
+            "page_number": 1,
+            "page_count": 2,
+            "page_size": 5000,
+            "total_elements_count": 3,
+        },
+        "data": [
+            {"symbol": "ALUA", "trade": 1000},
+            {"symbol": "GGAL", "trade": 2500},
+        ],
+    }
+    monkeypatch.setattr(m, "urlopen", lambda *_args, **_kwargs: _FakeBymaResponse(payload))
+    with pytest.raises(ValueError, match="BYMA_SOURCE_COUNT_MISMATCH"):
+        m._byma_post("https://open.bymadata.com.ar/", "leading-equity", "ACCIONES")
+
+
+def test_byma_full_capture_fails_closed_on_empty_panel(monkeypatch):
+    payload = {"content": {"page_number": 1, "page_count": 1, "total_elements_count": 0}, "data": []}
+    monkeypatch.setattr(m, "urlopen", lambda *_args, **_kwargs: _FakeBymaResponse(payload))
+    with pytest.raises(ValueError, match="BYMA_PANEL_EMPTY"):
+        m._byma_post("https://open.bymadata.com.ar/", "leading-equity", "ACCIONES")
