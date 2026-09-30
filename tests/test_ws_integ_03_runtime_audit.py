@@ -1,5 +1,6 @@
 import copy
 import json
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -29,6 +30,7 @@ def _snapshot():
             "readiness": {"source": "candidate_identity_v2", "ready": ready,
                           "by_family": by_family, "rows": []},
             "invalid_candidate_states": 0,
+            "residual_candidate_state_violations": 0,
             "generic_pending_residuals": 0,
             "workers": workers,
         },
@@ -51,6 +53,39 @@ def test_runtime_audit_accepts_only_complete_paper_truth(monkeypatch):
     monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
     monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
     audit._assert_snapshot(_snapshot())
+
+
+def test_candidate_state_guard_accepts_fail_closed_shadow_and_blocks_unsafe_residuals():
+    connection = sqlite3.connect(":memory:")
+    connection.execute("""CREATE TABLE candidate_identity_v2(
+        ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,
+        can_simulate INTEGER,status TEXT,detail TEXT,checked_at TEXT
+    )""")
+    connection.executemany(
+        "INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",
+        [
+            ("A","ACCIONES","BYMA","ARS","A-24HS",1,"AVAILABLE","READY","now"),
+            ("B","ACCIONES","BYMA","ARS","A-24HS",0,"OBSERVED_SHADOW","NO_PRIMARY","now"),
+            ("C","BONOS","BYMA","ARS","A-24HS",0,"AVAILABLE","NEEDS_NOMINAL_UNITS","now"),
+            ("D","BONOS","BYMA","ARS","A-24HS",0,"STALE","STALE","now"),
+            ("E","FUTUROS","ROFEX","ARS","A-24HS",0,"PAUSED_EXPLICIT","UNRESOLVED","now"),
+            ("F","OBLIGACIONES","BYMA","USD","A-24HS",1,"AVAILABLE","READY","now"),
+        ],
+    )
+    assert audit._candidate_state_violations(connection) == (0, 0)
+
+    connection.execute(
+        "INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",
+        ("G","FUTUROS","ROFEX","ARS","A-24HS",0,"STALE","UNRESOLVED","now"),
+    )
+    assert audit._candidate_state_violations(connection) == (0, 1)
+
+    connection.execute(
+        "INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",
+        ("H","ACCIONES","BYMA","ARS","A-24HS",1,"OBSERVED_SHADOW","BAD","now"),
+    )
+    assert audit._candidate_state_violations(connection) == (1, 1)
+    connection.close()
 
 
 def test_stability_audit_blocks_ready_regression_and_lkg_erasure(monkeypatch):
