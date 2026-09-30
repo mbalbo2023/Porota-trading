@@ -45,50 +45,35 @@ jobs:
           DB="$REPO/data/paper_v17/observer_v17.db"
 
           echo "RCA_LOCK_CONTAINER=$(sudo -n docker inspect -f 'status={{.State.Status}}|started={{.State.StartedAt}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}|policy={{.HostConfig.RestartPolicy.Name}}' porota_production_observer)"
-          echo "RCA_LOCK_DASHBOARD=$(sudo -n docker inspect -f 'status={{.State.Status}}|started={{.State.StartedAt}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' porota_production_dashboard)"
           echo "RCA_LOCK_PROCESSES_BEGIN"
           sudo -n docker top porota_production_observer -eo pid,ppid,etime,comm,args || true
           echo "RCA_LOCK_PROCESSES_END"
 
           echo "RCA_LOCK_LOG_CONTEXT_BEGIN"
-          sudo -n docker logs --since 45m --timestamps porota_production_observer 2>&1 | python3 - <<'PY'
-          import sys
-          lines=sys.stdin.read().splitlines()
-          needles=("database is locked","Traceback (most recent call last)","Fatal Python error",
-                   "segmentation","MemoryError","OperationalError")
-          hits={i for i,line in enumerate(lines) if any(n.lower() in line.lower() for n in needles)}
-          keep=set()
-          for i in hits:
-              keep.update(range(max(0,i-18),min(len(lines),i+20)))
-          for i in sorted(keep):
-              print(lines[i])
-          print(f"RCA_LOCK_LOG_LINES={len(lines)}|HITS={len(hits)}")
-          PY
+          sudo -n docker logs --since 60m --timestamps porota_production_observer 2>&1 | \
+            grep -B 25 -A 35 -E 'database is locked|Traceback \(most recent call last\)|Fatal Python error|segmentation|MemoryError|OperationalError' | \
+            tail -n 260 || true
           echo "RCA_LOCK_LOG_CONTEXT_END"
 
           echo "RCA_LOCK_KERNEL_OOM_BEGIN"
-          sudo -n journalctl -k --since '45 minutes ago' --no-pager 2>/dev/null | \
+          sudo -n journalctl -k --since '60 minutes ago' --no-pager 2>/dev/null | \
             grep -Ei 'out of memory|oom-kill|killed process' | tail -n 80 || true
           echo "RCA_LOCK_KERNEL_OOM_END"
 
           sudo -n timeout 20 python3 - "$DB" <<'PY'
-          import sqlite3,sys,json,time
+          import sqlite3,sys,json
           path=sys.argv[1]
           c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=5)
           c.execute("PRAGMA query_only=ON")
           pragmas={}
           for name in ("journal_mode","locking_mode","busy_timeout","cache_size"):
-              try: pragmas[name]=c.execute(f"PRAGMA {name}").fetchone()[0]
-              except sqlite3.Error as exc: pragmas[name]=type(exc).__name__
+              try:
+                  pragmas[name]=c.execute(f"PRAGMA {name}").fetchone()[0]
+              except sqlite3.Error as exc:
+                  pragmas[name]=type(exc).__name__
           print("RCA_LOCK_PRAGMAS="+json.dumps(pragmas,sort_keys=True))
           row=c.execute("SELECT mode,process_state,session_state,ppi_auth,heartbeat_at,real_orders_sent,detail FROM observer_state WHERE id=1").fetchone()
           print("RCA_LOCK_OBSERVER_STATE="+json.dumps(list(row),default=str))
-          for table in ("intraday_scalping_worker_state","paper_caucion_sweep_worker_state","paper_supervisor_state","paper_exit_reader_state"):
-              try:
-                  rows=c.execute(f"SELECT * FROM {table} LIMIT 3").fetchall()
-                  print("RCA_LOCK_TABLE="+table+"|"+json.dumps([list(r) for r in rows],default=str))
-              except sqlite3.Error as exc:
-                  print("RCA_LOCK_TABLE="+table+"|ERROR="+type(exc).__name__)
           c.close()
           PY
 
