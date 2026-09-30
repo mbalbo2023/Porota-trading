@@ -279,5 +279,6 @@ def test_heavy_dashboard_routes_have_evidence_based_cold_render_budgets():
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/vivo"] == 45
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/trading"] == 45
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/historicos"] == 45
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS["/sistema"] == 45
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS["/salud"] == 45
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/universo-operativo"] == 60
-    assert audit.PATH_HTTP_TIMEOUT_SECONDS.get("/salud", audit.DEFAULT_HTTP_TIMEOUT_SECONDS) == 20
