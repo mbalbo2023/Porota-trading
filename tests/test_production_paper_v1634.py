@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from dataclasses import replace
 from pathlib import Path
@@ -1396,6 +1396,69 @@ def test_sync_diario_no_se_duplica(tmp_path):
             connection.execute("INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
                                (source, "VERDE", today, today, 1, "ok"))
     assert not observer._daily_sync_needed(store)
+
+
+def test_historia_no_retrigger_catalogo_antes_del_cierre(tmp_path, monkeypatch):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    today = datetime.now(observer.TZ).date().isoformat()
+    with store.connect() as connection:
+        connection.execute(
+            "INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
+            ("PPI_PRODUCTION_CATALOG", "VERDE", today, today, 1, "ok"),
+        )
+        connection.execute(
+            "INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
+            ("PPI_PRODUCTION_HISTORY", "AMARILLO", "2026-09-25", "2026-09-25", 1, "old"),
+        )
+    monkeypatch.setattr(observer, "_history_end_date", lambda now=None: None)
+    assert not observer._daily_sync_needed(store)
+
+
+def test_daily_sync_no_redescarga_catalogo_si_solo_historia_esta_due(tmp_path, monkeypatch):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    calls = []
+    monkeypatch.setattr(
+        observer,
+        "_source_sync_due",
+        lambda _store, source, now=None: source == "PPI_PRODUCTION_HISTORY",
+    )
+    monkeypatch.setattr(observer, "_history_daily_sync_due", lambda _store, now=None: True)
+    monkeypatch.setattr(
+        observer,
+        "_download_catalog",
+        lambda *_args, **_kwargs: calls.append("catalog") or 1,
+    )
+    monkeypatch.setattr(
+        observer,
+        "_download_histories",
+        lambda *_args, **_kwargs: calls.append("history") or 2,
+    )
+
+    observer._daily_sync(object(), store)
+
+    assert calls == ["history"]
+
+
+def test_historia_postcierre_se_habilita_sin_forzar_catalogo(tmp_path, monkeypatch):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    today = datetime.now(observer.TZ).date().isoformat()
+    with store.connect() as connection:
+        connection.execute(
+            "INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
+            ("PPI_PRODUCTION_CATALOG", "VERDE", today, today, 1, "ok"),
+        )
+        connection.execute(
+            "INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
+            ("PPI_PRODUCTION_HISTORY", "AMARILLO", "2026-09-25", "2026-09-25", 1, "old"),
+        )
+    monkeypatch.setattr(observer, "_history_end_date", lambda now=None: date(2026, 9, 29))
+    monkeypatch.setattr(observer, "_history_cutoff_repair_complete", lambda: True)
+
+    assert observer._history_daily_sync_due(store)
+    assert observer._daily_sync_needed(store)
 
 
 def test_busqueda_ppi_envia_ticker_y_name_no_vacios():

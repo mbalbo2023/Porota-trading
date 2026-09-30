@@ -1372,25 +1372,54 @@ def _download_histories_locked(reader, store, history_store):
     return total
 
 
-def _daily_sync_needed(store):
-    """Una bajada de catálogo por día; un error no provoca reintentos en bucle."""
+def _source_sync_due(store, source, now=None):
+    """Return True only when this exact source has not been attempted today."""
+    now = now or datetime.now(TZ)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=TZ)
+    today = now.astimezone(TZ).date().isoformat()
     with store.connect() as connection:
-        rows = connection.execute("""SELECT source,last_attempt_at FROM source_sync
-          WHERE source IN ('PPI_PRODUCTION_CATALOG','PPI_PRODUCTION_HISTORY')""").fetchall()
-    attempts = {row[0]: str(row[1] or "")[:10] for row in rows}
-    today = datetime.now(TZ).date().isoformat()
-    return any(attempts.get(source) != today for source in
-               ("PPI_PRODUCTION_CATALOG", "PPI_PRODUCTION_HISTORY"))
+        row = connection.execute(
+            "SELECT last_attempt_at FROM source_sync WHERE source=?", (source,)
+        ).fetchone()
+    return not row or str(row[0] or "")[:10] != today
 
 
-def _daily_sync(reader, store):
-    if not _daily_sync_needed(store):
+def _history_daily_sync_due(store, now=None):
+    """History is due only when it is actually eligible to advance.
+
+    Before market close (or while the one-time cutoff repair is incomplete),
+    stale history metadata must not force another full PPI catalog download.
+    """
+    now = now or datetime.now(TZ)
+    if _history_end_date(now) is None:
+        return False
+    if not _history_cutoff_repair_complete():
+        return False
+    return _source_sync_due(store, "PPI_PRODUCTION_HISTORY", now)
+
+
+def _daily_sync_needed(store, now=None):
+    """Bound each daily source independently; never let history retrigger catalog."""
+    return (
+        _source_sync_due(store, "PPI_PRODUCTION_CATALOG", now)
+        or _history_daily_sync_due(store, now)
+    )
+
+
+def _daily_sync(reader, store, now=None):
+    catalog_due = _source_sync_due(store, "PPI_PRODUCTION_CATALOG", now)
+    history_due = _history_daily_sync_due(store, now)
+    if not catalog_due and not history_due:
         return
     try:
-        catalog = _download_catalog(reader, store)
-        histories = _download_histories(reader, store)
-        store.event("DAILY_READONLY_SYNC",
-                    f"{catalog} instrumentos; {histories} filas históricas.")
+        catalog = _download_catalog(reader, store) if catalog_due else 0
+        histories = _download_histories(reader, store) if history_due else 0
+        store.event(
+            "DAILY_READONLY_SYNC",
+            f"{catalog} instrumentos; {histories} filas históricas; "
+            f"catalog_due={catalog_due}; history_due={history_due}.",
+        )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {str(exc)[:500]}"
         _sync_state(store, "PPI_PRODUCTION_DAILY_SYNC", "ROJO", 0, detail)
