@@ -499,7 +499,11 @@ jobs:
           # Observe several worker/dashboard refresh cycles before success.
           # Every later snapshot compares against the immediate baseline and
           # fails if READY regresses, LKG disappears or a worker heartbeat does
-          # not advance.
+          # not advance. Container restart counters are also invariant: a
+          # self-recovered SIGSEGV/exit-139 is still a failed deployment.
+          OBSERVER_RESTART_BASE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+          DASHBOARD_RESTART_BASE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+          echo "RC6_STABILITY_RESTART_BASELINE=observer=$OBSERVER_RESTART_BASE|dashboard=$DASHBOARD_RESTART_BASE"
           for cycle in 1 2 3; do
             sleep 35
             set +e
@@ -515,6 +519,11 @@ jobs:
               sudo -n docker logs --tail 250 porota_production_dashboard 2>&1 || true
               exit "$AUDIT_RC"
             fi
+            OBSERVER_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+            DASHBOARD_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+            echo "RC6_STABILITY_RESTART_$cycle=observer=$OBSERVER_RESTART_NOW|dashboard=$DASHBOARD_RESTART_NOW"
+            test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"
+            test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"
             echo "RC6_ZERO_KNOWN_ERROR_STABILITY_$cycle=GREEN"
           done
 
