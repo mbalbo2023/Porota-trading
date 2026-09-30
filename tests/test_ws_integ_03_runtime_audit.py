@@ -88,10 +88,17 @@ def test_http_reports_path_status_and_bounded_body(monkeypatch, capsys):
             return b"ok"
 
     monkeypatch.setenv("DASHBOARD_ACCESS_TOKEN", "token")
-    monkeypatch.setattr(audit, "urlopen", lambda *_args, **_kwargs: Response())
+    observed = {}
+
+    def open_ok(*_args, **kwargs):
+        observed.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr(audit, "urlopen", open_ok)
     assert audit._http("/salud") == (200, b"ok")
+    assert observed["timeout"] == audit.DEFAULT_HTTP_TIMEOUT_SECONDS
     output = capsys.readouterr().out
-    assert "POROTA_RUNTIME_AUDIT_HTTP_START=/salud" in output
+    assert "POROTA_RUNTIME_AUDIT_HTTP_START=/salud|TIMEOUT=20" in output
     assert "POROTA_RUNTIME_AUDIT_HTTP_RESULT=/salud|HTTP=200|BYTES=2" in output
 
 
@@ -115,6 +122,45 @@ def test_http_transport_error_names_path(monkeypatch):
     )
     with pytest.raises(RuntimeError, match=r"path=/salud"):
         audit._http("/salud")
+
+
+def test_full_universe_route_has_production_sized_timeout(monkeypatch):
+    observed = {}
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b"ok"
+
+    def open_ok(*_args, **kwargs):
+        observed.update(kwargs)
+        return Response()
+
+    monkeypatch.setenv("DASHBOARD_ACCESS_TOKEN", "token")
+    monkeypatch.setattr(audit, "urlopen", open_ok)
+    assert audit._http("/universo-operativo") == (200, b"ok")
+    assert observed["timeout"] == 60
+
+
+def test_timeout_error_names_path_and_effective_budget(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_ACCESS_TOKEN", "token")
+    monkeypatch.setattr(
+        audit,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError("slow")),
+    )
+    with pytest.raises(
+        RuntimeError,
+        match=r"DASHBOARD_HTTP_TIMEOUT\|path=/universo-operativo\|seconds=60",
+    ):
+        audit._http("/universo-operativo")
 
 
 def test_collect_reports_all_non_200_paths_before_truth_parse(monkeypatch):
