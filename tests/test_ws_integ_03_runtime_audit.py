@@ -196,11 +196,11 @@ def test_http_reports_path_status_and_bounded_body(monkeypatch, capsys):
         return Response()
 
     monkeypatch.setattr(audit, "urlopen", open_ok)
-    assert audit._http("/salud") == (200, b"ok")
+    assert audit._http("/reportes") == (200, b"ok")
     assert observed["timeout"] == audit.DEFAULT_HTTP_TIMEOUT_SECONDS
     output = capsys.readouterr().out
-    assert "POROTA_RUNTIME_AUDIT_HTTP_START=/salud|TIMEOUT=20" in output
-    assert "POROTA_RUNTIME_AUDIT_HTTP_RESULT=/salud|HTTP=200|BYTES=2" in output
+    assert "POROTA_RUNTIME_AUDIT_HTTP_START=/reportes|TIMEOUT=20" in output
+    assert "POROTA_RUNTIME_AUDIT_HTTP_RESULT=/reportes|HTTP=200|BYTES=2" in output
 
 
 def test_http_error_keeps_path_status_and_bounded_body(monkeypatch, capsys):
@@ -279,5 +279,6 @@ def test_heavy_dashboard_routes_have_evidence_based_cold_render_budgets():
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/vivo"] == 45
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/trading"] == 45
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/historicos"] == 45
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS["/sistema"] == 45
+    assert audit.PATH_HTTP_TIMEOUT_SECONDS["/salud"] == 45
     assert audit.PATH_HTTP_TIMEOUT_SECONDS["/universo-operativo"] == 60
-    assert audit.PATH_HTTP_TIMEOUT_SECONDS.get("/salud", audit.DEFAULT_HTTP_TIMEOUT_SECONDS) == 20
