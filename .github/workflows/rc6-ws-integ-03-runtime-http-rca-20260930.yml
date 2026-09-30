@@ -1,0 +1,108 @@
+name: RC6 WS-INTEG-03 Runtime HTTP Read-Only RCA 2026-09-30
+
+on:
+  push:
+    branches:
+      - fix/ws-integ-03-runtime-http500-20260930
+    paths:
+      - '.github/workflows/rc6-ws-integ-03-runtime-http-rca-20260930.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readonly_runtime_rca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Probe every runtime audit path without writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          BEFORE="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          echo "DASHBOARD_BEFORE=$BEFORE"
+          set +e
+          sudo -n timeout 180 docker exec -i porota_production_dashboard python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          paths = (
+              "/", "/vivo", "/trading", "/trading/acciones",
+              "/universo-operativo", "/instrumentos", "/validacion", "/analisis",
+              "/aprendizaje", "/scalping", "/riesgo", "/historicos", "/reportes",
+              "/sistema", "/salud", "/api/dashboard/truth",
+          )
+          token = os.environ["DASHBOARD_ACCESS_TOKEN"]
+          failures = {}
+          for path in paths:
+              request = urllib.request.Request(
+                  "http://127.0.0.1:8000" + path,
+                  headers={"Authorization": "Bearer " + token, "Cache-Control": "no-cache"},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      body = response.read()
+                      print(f"RUNTIME_PATH={path}|HTTP={response.status}|BYTES={len(body)}", flush=True)
+                      if response.status != 200:
+                          failures[path] = response.status
+              except urllib.error.HTTPError as exc:
+                  body = exc.read()
+                  excerpt = body[:500].decode("utf-8", "replace").replace("\n", " ")
+                  print(f"RUNTIME_PATH={path}|HTTP={exc.code}|BODY={excerpt}", flush=True)
+                  failures[path] = exc.code
+              except Exception as exc:
+                  print(f"RUNTIME_PATH={path}|TRANSPORT={type(exc).__name__}:{exc}", flush=True)
+                  failures[path] = "TRANSPORT"
+          print("RUNTIME_PATH_FAILURES=" + json.dumps(failures, sort_keys=True), flush=True)
+          raise SystemExit(1 if failures else 0)
+          PY
+          PROBE_RC=$?
+          set -e
+          echo "RUNTIME_PROBE_RC=$PROBE_RC"
+          echo 'DASHBOARD_LOG_TAIL_BEGIN'
+          sudo -n docker logs --tail 300 porota_production_dashboard 2>&1 || true
+          echo 'DASHBOARD_LOG_TAIL_END'
+          AFTER="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          echo "DASHBOARD_AFTER=$AFTER"
+          test "$AFTER" = "$BEFORE"
+          sudo -n timeout 10 python3 - /opt/porota-trading/data/paper_v17/observer_v17.db <<'PY'
+          import sqlite3
+          import sys
+          connection = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True, timeout=3)
+          connection.execute("PRAGMA query_only=ON")
+          mode, orders = connection.execute(
+              "SELECT mode,real_orders_sent FROM observer_state WHERE id=1"
+          ).fetchone()
+          connection.close()
+          print(f"RUNTIME_SAFETY={mode}|real_orders_sent={orders}")
+          assert mode == "PRODUCTION_PAPER" and int(orders or 0) == 0
+          PY
+          exit "$PROBE_RC"
+          REMOTE
+
+      - name: Cleanup SSH key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"

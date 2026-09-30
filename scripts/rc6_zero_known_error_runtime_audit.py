@@ -9,6 +9,7 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -54,8 +55,26 @@ def _http(path):
         raise RuntimeError("DASHBOARD_ACCESS_TOKEN_MISSING")
     request = Request("http://127.0.0.1:8000" + path,
                       headers={"Authorization": "Bearer " + token})
-    with urlopen(request, timeout=20) as response:
-        return response.status, response.read()
+    print(f"POROTA_RUNTIME_AUDIT_HTTP_START={path}", flush=True)
+    try:
+        with urlopen(request, timeout=20) as response:
+            body = response.read()
+            print(
+                f"POROTA_RUNTIME_AUDIT_HTTP_RESULT={path}|HTTP={response.status}|BYTES={len(body)}",
+                flush=True,
+            )
+            return response.status, body
+    except HTTPError as exc:
+        body = exc.read()
+        excerpt = body[:500].decode("utf-8", "replace").replace("\n", " ")
+        print(
+            f"POROTA_RUNTIME_AUDIT_HTTP_RESULT={path}|HTTP={exc.code}|"
+            f"BYTES={len(body)}|BODY={excerpt}",
+            flush=True,
+        )
+        return exc.code, body
+    except URLError as exc:
+        raise RuntimeError(f"DASHBOARD_HTTP_TRANSPORT_ERROR|path={path}|reason={exc.reason}") from exc
 
 
 def _iol_snapshot():
@@ -203,6 +222,12 @@ def collect(label):
         status, body = _http(path)
         statuses[path] = status
         bodies[path] = body
+    failures = {path: status for path, status in statuses.items() if status != 200}
+    if failures:
+        raise RuntimeError(
+            "DASHBOARD_HTTP_FAILURES="
+            + json.dumps(failures, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        )
     truth = json.loads(bodies["/api/dashboard/truth"].decode("utf-8"))
     route_inventory = inventory()
     artifact_matrix = json.loads(Path("DASHBOARD_TRUTH_MATRIX_RC6.json").read_text(encoding="utf-8"))
