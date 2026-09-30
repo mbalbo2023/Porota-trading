@@ -248,3 +248,31 @@ def test_preopen_failure_preserves_diagnostics_before_fail_closed_exit():
     assert 'exit "$PREOPEN_RC"' in block
     assert block.index('echo "$PREOPEN_OUTPUT"') < block.index('exit "$PREOPEN_RC"')
     assert 'grep -Fq \'"status": "GREEN"\'' in block
+
+
+def test_deploy_reclaims_transient_artifacts_before_runtime_disk_gates():
+    source = _deploy()
+    cleanup = source.index("RC6_TRANSIENT_ARTIFACT_CLEANUP=GREEN")
+    host_apply = source.index("porota_apply_host_control_plane_v2.py")
+    preopen = source.index("for phase in T_MINUS_45 T_MINUS_10; do")
+    assert cleanup < host_apply < preopen
+    block = source[source.rfind("# The compressed image", 0, cleanup):host_apply]
+    assert 'rm -rf "$STAGE"' in block
+    assert 'rm -f "$REMOTE_DIR/porota-predeploy-image.tar.gz" "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"' in block
+    assert 'test "$DISK_AFTER_TRANSIENT_CLEANUP" -ge 2147483648' in block
+    assert "porota-frozen-candidate.json" not in block.split("rm -f", 1)[1].split("\n", 1)[0]
+    assert "porota-deploy-bundle-v2-manifest.json" not in block.split("rm -f", 1)[1].split("\n", 1)[0]
+
+
+def test_deploy_refreshes_readonly_byma_evidence_before_preopen():
+    source = _deploy()
+    audit = source.index("RC6_ZERO_KNOWN_ERROR_IMMEDIATE=GREEN")
+    refresh = source.index("RC6_BYMA_MORNING_REFRESH=GREEN")
+    preopen = source.index("for phase in T_MINUS_45 T_MINUS_10; do")
+    assert audit < refresh < preopen
+    block = source[audit:preopen]
+    assert 'scripts/rc6_byma_morning_pipeline.py' in block
+    assert 'BYMA_MORNING_RC=$?' in block
+    assert 'RC6_BYMA_MORNING_REFRESH=RED|RC=$BYMA_MORNING_RC' in block
+    assert '"decision_effect": "OBSERVE_ONLY"' in block
+    assert '"real_money_authorized": false' in block
