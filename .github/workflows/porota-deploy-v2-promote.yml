@@ -587,6 +587,23 @@ jobs:
           fi
           echo "RC6_ZERO_KNOWN_ERROR_IMMEDIATE=GREEN"
 
+          # Refresh the canonical read-only BYMA morning evidence with the exact
+          # deployed code before preopen. This prevents a repaired scraper from
+          # being judged against a stale DEGRADED snapshot left by the earlier
+          # scheduled run. The pipeline is OBSERVE_ONLY and has no order routes.
+          set +e
+          BYMA_MORNING_OUTPUT="$(sudo -n timeout 300 python3 "$REPO/scripts/rc6_byma_morning_pipeline.py" 2>&1)"
+          BYMA_MORNING_RC=$?
+          set -e
+          echo "$BYMA_MORNING_OUTPUT"
+          if [ "$BYMA_MORNING_RC" -ne 0 ]; then
+            echo "RC6_BYMA_MORNING_REFRESH=RED|RC=$BYMA_MORNING_RC"
+            exit "$BYMA_MORNING_RC"
+          fi
+          grep -Fq '"decision_effect": "OBSERVE_ONLY"' <<< "$BYMA_MORNING_OUTPUT"
+          grep -Fq '"real_money_authorized": false' <<< "$BYMA_MORNING_OUTPUT"
+          echo "RC6_BYMA_MORNING_REFRESH=GREEN"
+
           # Execute the same fail-closed preopen contract under both scheduled
           # phase labels. No order route, DB write, restart or Telegram send is
           # performed by rc6_preopen.py.
