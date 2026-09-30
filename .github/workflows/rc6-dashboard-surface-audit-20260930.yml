@@ -72,10 +72,15 @@ jobs:
                   "http":status,
                   "bytes":len(body),
                   "seconds":seconds,
-                  "tr":len(re.findall(r"<tr\\b",text,re.I)),
+                  "tr":len(re.findall(r"<tr\\s|<tr>",text,re.I)),
                   "paper_cards":len(re.findall(r"class=['\"][^'\"]*paper-card",text,re.I)),
                   "progressive_records":len(re.findall(r"data-porota-record=['\"]1['\"]",text,re.I)),
                   "literal_pending_badges":len(re.findall(r">\\s*(?:PENDING|PENDIENTE)\\s*<",text,re.I)),
+                  "pending_text_count":len(re.findall(r"\\b(?:pending|pendiente|pendientes)\\b",text,re.I)),
+                  "pending_contexts":[
+                      re.sub(r"\\s+"," ",m.group(0))[:220]
+                      for m in list(re.finditer(r".{0,70}\\b(?:pending|pendiente|pendientes)\\b.{0,120}",text,re.I|re.S))[:5]
+                  ],
                   "mostrar_mas":text.lower().count("mostrar más"),
                   "candidate_identity_v2":text.count("candidate_identity_v2"),
               }
