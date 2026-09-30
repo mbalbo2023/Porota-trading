@@ -435,6 +435,14 @@ jobs:
             echo "BOOTSTRAP_$(tr '[:lower:]' '[:upper:]' <<< "$job")=GREEN"
           done
 
+          # Migrate only the local cache contract. This preserves every market
+          # value byte-for-byte, never calls IOL and never creates an order route.
+          IOL_MIGRATION_OUTPUT="$(sudo -n python3 "$REPO/scripts/rc6_iol_reference_contract_migrate.py" \
+            --path "$REPO/data/market/iol_family_reference_latest.json" 2>&1)"
+          echo "$IOL_MIGRATION_OUTPUT"
+          grep -Fq 'IOL_REFERENCE_CONTRACT_MIGRATION=GREEN' <<< "$IOL_MIGRATION_OUTPUT"
+          grep -Fq 'ZERO_FILL=false|REAL_ROUTES=[]' <<< "$IOL_MIGRATION_OUTPUT"
+
           # Unified WS-INTEG-03 runtime truth audit. It is read-only at the DB
           # and network boundaries and runs inside the exact promoted image.
           sudo -n mkdir -p "$REPO/data/deploy"

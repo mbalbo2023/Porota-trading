@@ -438,7 +438,12 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
             section_states[section]=_lkg_section_state(
                 prior,section,bool(cauciones.get(currency)),now or datetime.now(timezone.utc))
 
-    prior_good=prior.get("last_known_good_at") or prior.get("refreshed_at")
+    prior_cauciones=prior.get("cauciones") if isinstance(prior.get("cauciones"),dict) else {}
+    prior_usable=(bool(prior.get("records")) or bool(prior.get("fci")) or
+                  any(bool(rows) for rows in prior_cauciones.values()))
+    # A refresh timestamp alone is not LKG evidence.  Old v1 payloads could be
+    # freshly rewritten while every IOL section was unavailable.
+    prior_good=prior.get("last_known_good_at") if prior_usable else None
     try:
         prior_age=((now or datetime.now(timezone.utc))-datetime.fromisoformat(
             str(prior_good).replace("Z","+00:00"))).total_seconds()
@@ -446,7 +451,7 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
         prior_age=None
     cache_state=("LIVE_FRESH" if successful_sections else
                  "CACHE_FRESH" if prior and prior_age is not None and 0<=prior_age<=86400 else
-                 "CACHE_STALE" if prior else "SOURCE_UNAVAILABLE")
+                 "CACHE_STALE" if prior_usable and prior_good else "SOURCE_UNAVAILABLE")
     payload={"schema":SCHEMA,"refreshed_at":at,"source":"IOL_MCP","decision_effect":"OBSERVE_ONLY",
              "real_money_authorized":False,"rotation":state,"records":list(by_key.values()),
              "fci":fci if isinstance(fci,list) else [],"cauciones":cauciones if isinstance(cauciones,dict) else {},

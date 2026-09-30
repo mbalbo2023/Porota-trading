@@ -27,7 +27,12 @@ DB = ROOT / 'data/paper_v17/observer_v17.db'
 BYMA_MORNING_WATCH = ROOT / 'data/market/byma_morning_watch_latest.json'
 IOL_FAMILY_REFERENCE = ROOT / 'data/market/iol_family_reference_latest.json'
 EXPECTED_IMAGE = 'porota-trading-bot:17.0.0-rc6'
-MIN_FREE_BYTES = 8 * 1024**3
+BLOCKING_MIN_FREE_BYTES = 2 * 1024**3
+TARGET_FREE_BYTES = 8 * 1024**3
+IOL_FALLBACK_ORDER = [
+    'IOL_LIVE_BOUNDED_RETRY', 'IOL_LAST_KNOWN_GOOD',
+    'PPI_PRIMARY', 'BYMA_PUBLIC_COMPLEMENTARY',
+]
 REQUIRED_TIMERS = (
     'porota-fast-functional-health-rc6.timer',
     'porota-full-db-integrity-rc6.timer',
@@ -160,20 +165,32 @@ def iol_reference_state(today):
         caucion_state = str((payload.get('section_states') or {}).get(
             'caucion:ARS') or '').upper()
         usable_ars = bool(caucion_ars) and caucion_state != 'SOURCE_UNAVAILABLE_NO_LKG'
-        if (cache in {'LIVE_FRESH','CACHE_FRESH'} and no_zero and usable_ars
-                and 0 <= age <= 86400):
+        exact_fallback = fallback == IOL_FALLBACK_ORDER
+        last_good = payload.get('last_known_good_at')
+        sections = payload.get('section_states') or {}
+        if (cache in {'LIVE_FRESH','CACHE_FRESH'} and no_zero and exact_fallback
+                and last_good and usable_ars and 0 <= age <= 86400):
             state = 'GREEN'
-        elif (cache == 'CACHE_STALE' and no_zero and usable_ars and fallback
+            reason = 'IOL_LIVE_OR_LKG_READY'
+        elif (cache == 'CACHE_STALE' and no_zero and exact_fallback and last_good
+              and usable_ars
               and 0 <= age <= 7*86400):
             state = 'AMBER'
+            reason = 'IOL_STALE_LKG_WITH_ALTERNATIVES'
+        elif (cache == 'SOURCE_UNAVAILABLE' and no_zero and exact_fallback
+              and isinstance(sections, dict) and sections):
+            state = 'AMBER'
+            reason = 'CONTINUE_WITH_PPI_BYMA_ALTERNATIVES'
         else:
             state = 'RED'
         return {'state':state,'cache_state':cache,
+                'reason':reason if state != 'RED' else 'IOL_FAILSAFE_CONTRACT_INVALID',
                 'refreshed_at':refreshed.isoformat(),
                 'age_seconds':round(age,1),
                 'caucion_ars_state':caucion_state,
                 'caucion_ars_records':len(caucion_ars),
-                'fallback_order':fallback,'continuation_state':continuation}
+                'fallback_order':fallback,'continuation_state':continuation,
+                'last_known_good_at':last_good,'never_zero_fill':no_zero}
     except Exception as exc:
         return {'state':'RED','reason':'IOL_REFERENCE_UNAVAILABLE',
                 'detail':f'{type(exc).__name__}:{exc}'}
@@ -226,7 +243,7 @@ def required_timers():
     return {'state':'GREEN' if ok else 'RED','units':values}
 
 
-def byma_morning_watch(today):
+def byma_morning_watch(today, *, allow_latest_safe=False):
     """Require today's read-only BYMA authority check before preopen.
 
     Changes to hours/calendar are blocking until reviewed because they can
@@ -241,11 +258,20 @@ def byma_morning_watch(today):
         if observed.tzinfo is None:
             return {'state':'RED','reason':'BYMA_WATCH_TIMESTAMP_NAIVE'}
         local=observed.astimezone(TZ)
-        if local.date() != today:
-            return {'state':'RED','reason':'BYMA_WATCH_NOT_TODAY',
-                    'observed_at':payload.get('observed_at')}
+        age = (datetime.now(TZ) - observed.astimezone(TZ)).total_seconds()
         state=str(payload.get('state') or '').upper()
         changed={str(x).upper() for x in payload.get('changed_components',[]) if x}
+        if local.date() != today and not allow_latest_safe:
+            return {'state':'RED','reason':'BYMA_WATCH_NOT_TODAY',
+                    'observed_at':payload.get('observed_at')}
+        if local.date() != today and allow_latest_safe:
+            if not (0 <= age <= 72*3600 and state in {'NO_CHANGE','BASELINE_CREATED'}):
+                return {'state':'RED','reason':'BYMA_DRY_VALIDATION_LATEST_NOT_SAFE',
+                        'watch_state':state,'age_seconds':round(age,1),
+                        'changed_components':sorted(changed)}
+            return {'state':'AMBER','reason':'DRY_VALIDATION_LATEST_SAFE',
+                    'observed_at':payload.get('observed_at'),
+                    'age_seconds':round(age,1),'changed_components':sorted(changed)}
         if state == 'DEGRADED':
             return {'state':'RED','reason':'BYMA_WATCH_DEGRADED',
                     'changed_components':sorted(changed),'errors':payload.get('errors',[])}
@@ -308,14 +334,20 @@ def main(phase_override=None):
         return 0
 
     free = shutil.disk_usage('/').free
+    disk_state = ('RED' if free < BLOCKING_MIN_FREE_BYTES else
+                  'AMBER' if free < TARGET_FREE_BYTES else 'GREEN')
     checks = {
         'release_identity': release_identity(),
         'observer_container': container('porota_production_observer', True),
         'dashboard_container': container('porota_production_dashboard', False),
         'observer_db': observer_db(),
-        'disk': {'state':'GREEN' if free >= MIN_FREE_BYTES else 'RED','free':free,'minimum':MIN_FREE_BYTES},
+        'disk': {'state':disk_state,'free':free,
+                 'blocking_minimum':BLOCKING_MIN_FREE_BYTES,
+                 'target':TARGET_FREE_BYTES,
+                 'reason':'RUNTIME_RESERVE_BELOW_TARGET' if disk_state == 'AMBER' else None},
         'required_rc6_timers': required_timers(),
-        'byma_morning_watch': byma_morning_watch(today),
+        'byma_morning_watch': byma_morning_watch(
+            today, allow_latest_safe=phase_override is not None),
         'iol_reference_fallback': iol_reference_state(today),
         'history_quarantine': blocked_history_timers(),
         'foreign_market_policy': foreign_market_policy(today),
@@ -324,6 +356,7 @@ def main(phase_override=None):
     result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
               'phase':phase_override or preopen_phase(now),
               'status':'GREEN' if not reds else 'RED','red_checks':reds,'checks':checks,
+              'dry_equivalent':phase_override is not None,
               'read_only':True,'network_order_test_performed':False,'direct_telegram_send':False}
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     return 0 if not reds else 2

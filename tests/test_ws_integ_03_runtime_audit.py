@@ -1,4 +1,5 @@
 import copy
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -24,7 +25,7 @@ def _snapshot():
     return {
         "database": {
             "observer": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
-                         "heartbeat_at": now},
+                         "heartbeat_at": now, "ppi_auth": "OK"},
             "readiness": {"source": "candidate_identity_v2", "ready": ready,
                           "by_family": by_family, "rows": []},
             "invalid_candidate_states": 0,
@@ -39,7 +40,7 @@ def _snapshot():
             "scalping": {"mode": "ACTIVE_PAPER"},
             "iol": {"allowed_states": sorted(audit.ALLOWED_IOL_STATES)},
         },
-        "iol": {"last_known_good_at": now},
+        "iol": {"cache_state": "CACHE_FRESH", "last_known_good_at": now},
         "route_inventory": route_inventory,
         "route_matrix_matches_artifact": True,
         "http_status": {path: 200 for path in audit.CORE_GET_PATHS},
@@ -72,6 +73,35 @@ def test_runtime_audit_is_read_only_and_has_no_order_client():
     assert "mode=ro" in source and "PRAGMA query_only=ON" in source
     assert "network_order_test_performed" in source
     assert "place_order" not in source and "send_order" not in source
+
+
+def test_iol_snapshot_accepts_explicit_source_unavailable_fail_safe(tmp_path, monkeypatch):
+    path = tmp_path / "iol_family_reference_latest.json"
+    path.write_text(json.dumps({
+        "cache_state": "SOURCE_UNAVAILABLE",
+        "refreshed_at": "2026-09-30T03:00:00+00:00",
+        "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "fallback_order": audit.IOL_FALLBACK_ORDER,
+        "section_states": {"caucion:ARS": "SOURCE_UNAVAILABLE_NO_LKG"},
+    }), encoding="utf-8")
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
+    snapshot = audit._iol_snapshot()
+    assert snapshot["cache_state"] == "SOURCE_UNAVAILABLE"
+    assert snapshot["last_known_good_at"] is None
+
+
+def test_iol_snapshot_rejects_fake_cache_fresh_without_lkg(tmp_path, monkeypatch):
+    path = tmp_path / "iol_family_reference_latest.json"
+    path.write_text(json.dumps({
+        "cache_state": "CACHE_FRESH",
+        "refreshed_at": "2026-09-30T03:00:00+00:00",
+        "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "fallback_order": audit.IOL_FALLBACK_ORDER,
+        "section_states": {"caucion:ARS": "SOURCE_UNAVAILABLE"},
+    }), encoding="utf-8")
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
+    with pytest.raises(RuntimeError, match="IOL_LKG_TIMESTAMP_MISSING"):
+        audit._iol_snapshot()
 
 
 def test_http_reports_path_status_and_bounded_body(monkeypatch, capsys):

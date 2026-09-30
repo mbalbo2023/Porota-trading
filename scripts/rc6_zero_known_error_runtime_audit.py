@@ -33,6 +33,10 @@ CORE_GET_PATHS = (
     "/sistema", "/salud", "/api/dashboard/truth",
 )
 ALLOWED_IOL_STATES = {"LIVE", "CACHE_FRESH", "CACHE_STALE", "SOURCE_UNAVAILABLE"}
+IOL_FALLBACK_ORDER = [
+    "IOL_LIVE_BOUNDED_RETRY", "IOL_LAST_KNOWN_GOOD",
+    "PPI_PRIMARY", "BYMA_PUBLIC_COMPLEMENTARY",
+]
 ALLOWED_WORKER_STATES = {
     "RUNNING", "WAITING_WINDOW", "WAITING_CALENDAR", "HOLD", "PLACED_SIMULATED",
 }
@@ -98,8 +102,13 @@ def _iol_snapshot():
     if continuation != "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL":
         raise RuntimeError("IOL_CONTINUATION_NOT_FAILSAFE")
     cache_state = str(payload.get("cache_state") or "").upper()
-    if cache_state not in {"LIVE_FRESH", "CACHE_FRESH", "CACHE_STALE"}:
-        raise RuntimeError("IOL_NO_LIVE_OR_LKG")
+    if cache_state not in {"LIVE_FRESH", "CACHE_FRESH", "CACHE_STALE", "SOURCE_UNAVAILABLE"}:
+        raise RuntimeError("IOL_CONTINUATION_STATE_INVALID")
+    fallback = payload.get("fallback_order") or []
+    if fallback != IOL_FALLBACK_ORDER:
+        raise RuntimeError("IOL_FALLBACK_ORDER_INVALID")
+    if cache_state in {"LIVE_FRESH", "CACHE_FRESH", "CACHE_STALE"} and not payload.get("last_known_good_at"):
+        raise RuntimeError("IOL_LKG_TIMESTAMP_MISSING")
     sections = payload.get("section_states") or {}
     if not isinstance(sections, dict) or not sections:
         raise RuntimeError("IOL_SECTION_STATES_MISSING")
@@ -108,7 +117,7 @@ def _iol_snapshot():
         "last_known_good_at": payload.get("last_known_good_at"),
         "refreshed_at": payload.get("refreshed_at"),
         "continuation_state": continuation,
-        "fallback_order": payload.get("fallback_order") or [],
+        "fallback_order": fallback,
         "section_states": sections,
     }
 
@@ -183,6 +192,8 @@ def _assert_snapshot(snapshot, baseline=None):
     observer = db["observer"]
     assert observer.get("mode") == "PRODUCTION_PAPER"
     assert int(observer.get("real_orders_sent") or 0) == 0
+    if snapshot["iol"]["cache_state"] == "SOURCE_UNAVAILABLE":
+        assert str(observer.get("ppi_auth") or "").upper() in {"OK", "AUTHENTICATED"}
     assert _age_seconds(observer.get("heartbeat_at")) <= 300
     readiness = db["readiness"]
     assert readiness["source"] == "candidate_identity_v2"
