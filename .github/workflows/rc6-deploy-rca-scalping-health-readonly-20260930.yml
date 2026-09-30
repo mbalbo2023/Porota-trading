@@ -6,6 +6,11 @@ on:
       - fix/ws-deploy-rca-scalping-health-contract-20260930
     paths:
       - '.github/workflows/rc6-deploy-rca-scalping-health-readonly-20260930.yml'
+      - 'scripts/rc6_zero_known_error_runtime_audit.py'
+      - 'cf_intraday_scalping.py'
+      - 'di_caucion_cash_sweep_runtime_hf6.py'
+      - 'bm_exit_supervisor.py'
+      - 'tests/test_ws_integ_03_runtime_audit.py'
   workflow_dispatch:
 
 permissions:
@@ -21,6 +26,9 @@ jobs:
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
+      - name: Checkout RCA candidate
+        uses: actions/checkout@v4
+
       - name: Prepare strict SSH
         shell: bash
         run: |
@@ -92,6 +100,47 @@ jobs:
           assert obs.get("mode")=="PRODUCTION_PAPER" and int(obs.get("real_orders_sent") or 0)==0
           print("POROTA_RUNTIME_SAFETY=GREEN|PRODUCTION_PAPER|real_orders_sent=0")
           PY
+          REMOTE
+
+
+      - name: Prove fixed audit against live runtime without mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SCP=(scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          SSH=(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SCP[@]}" scripts/rc6_zero_known_error_runtime_audit.py cf_intraday_scalping.py \
+            di_caucion_cash_sweep_runtime_hf6.py bm_exit_supervisor.py \
+            "$DO_USER@$DO_HOST:/tmp/"
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          IMAGE='porota-trading-bot:17.0.0-rc6'
+          set +e
+          OUTPUT="$(sudo -n timeout 300 docker run --rm --pull never --network host --read-only \
+            --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            --env-file /opt/porota-trading/data/diagnosticos/dashboard_mode_v17.env \
+            -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
+            -e DATA_DIR=/app/data \
+            -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
+            -v /opt/porota-trading/data:/app/data:ro \
+            -v /tmp/rc6_zero_known_error_runtime_audit.py:/app/scripts/rc6_zero_known_error_runtime_audit.py:ro \
+            -v /tmp/cf_intraday_scalping.py:/app/cf_intraday_scalping.py:ro \
+            -v /tmp/di_caucion_cash_sweep_runtime_hf6.py:/app/di_caucion_cash_sweep_runtime_hf6.py:ro \
+            -v /tmp/bm_exit_supervisor.py:/app/bm_exit_supervisor.py:ro \
+            --entrypoint python "$IMAGE" /app/scripts/rc6_zero_known_error_runtime_audit.py \
+              --label rca-candidate-live-readonly --output /tmp/rca-candidate-live.json 2>&1)"
+          RC=$?
+          set -e
+          echo "$OUTPUT"
+          echo "RCA_CANDIDATE_LIVE_AUDIT_RC=$RC"
+          rm -f /tmp/rc6_zero_known_error_runtime_audit.py /tmp/cf_intraday_scalping.py \
+            /tmp/di_caucion_cash_sweep_runtime_hf6.py /tmp/bm_exit_supervisor.py
+          test "$RC" -eq 0
+          grep -Fq 'POROTA_ZERO_KNOWN_ERROR_RUNTIME_AUDIT=GREEN|rca-candidate-live-readonly' <<< "$OUTPUT"
+          grep -Fq '"scalping":{"heartbeat_age_seconds":' <<< "$OUTPUT"
+          grep -Fq '"state":"WAITING_MARKET"' <<< "$OUTPUT"
+          echo "RCA_CANDIDATE_LIVE_READONLY=GREEN"
           REMOTE
 
       - name: Cleanup SSH key
