@@ -69,6 +69,11 @@ jobs:
           echo "IOL_SERVICE=$(systemctl is-active porota-iol-shadow-collector-rc6.service 2>/dev/null || true)"
           systemctl show porota-iol-shadow-collector-rc6.timer \
             -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager 2>/dev/null || true
+          for phase in T_MINUS_45 T_MINUS_10; do
+            echo "PREOPEN_READONLY_${phase}_BEGIN"
+            sudo -n timeout 180 python3 /opt/porota-trading/rc6_preopen.py --phase "$phase" || true
+            echo "PREOPEN_READONLY_${phase}_END"
+          done
           sudo -n timeout 10 python3 - /opt/porota-trading/data/paper_v17/observer_v17.db <<'PY'
           import sqlite3
           import sys
