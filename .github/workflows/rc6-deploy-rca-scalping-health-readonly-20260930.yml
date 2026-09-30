@@ -11,6 +11,8 @@ on:
       - 'di_caucion_cash_sweep_runtime_hf6.py'
       - 'bm_exit_supervisor.py'
       - 'tests/test_ws_integ_03_runtime_audit.py'
+      - 'er_dashboard_truth_projection_rc6.py'
+      - 'tests/test_ws_dash_04_full_dashboard_truth.py'
   workflow_dispatch:
 
 permissions:
@@ -103,7 +105,7 @@ jobs:
           REMOTE
 
 
-      - name: Prove fixed audit against live runtime without mutation
+      - name: Prove candidate contracts against live runtime without mutation
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -111,12 +113,13 @@ jobs:
           SSH=(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
           "${SCP[@]}" scripts/rc6_zero_known_error_runtime_audit.py cf_intraday_scalping.py \
             di_caucion_cash_sweep_runtime_hf6.py bm_exit_supervisor.py \
+            er_dashboard_truth_projection_rc6.py \
             "$DO_USER@$DO_HOST:/tmp/"
           "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
           IMAGE='porota-trading-bot:17.0.0-rc6'
           set +e
-          OUTPUT="$(sudo -n timeout 300 docker run --rm --pull never --network host --read-only \
+          OUTPUT="$(sudo -n timeout 300 docker run --rm -i --pull never --network host --read-only \
             --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,size=32m \
             --env-file /opt/porota-trading/data/diagnosticos/dashboard_mode_v17.env \
@@ -128,19 +131,38 @@ jobs:
             -v /tmp/cf_intraday_scalping.py:/app/cf_intraday_scalping.py:ro \
             -v /tmp/di_caucion_cash_sweep_runtime_hf6.py:/app/di_caucion_cash_sweep_runtime_hf6.py:ro \
             -v /tmp/bm_exit_supervisor.py:/app/bm_exit_supervisor.py:ro \
-            --entrypoint python "$IMAGE" /app/scripts/rc6_zero_known_error_runtime_audit.py \
-              --label rca-candidate-live-readonly --output /tmp/rca-candidate-live.json 2>&1)"
+            -v /tmp/er_dashboard_truth_projection_rc6.py:/app/er_dashboard_truth_projection_rc6.py:ro \
+            --entrypoint python "$IMAGE" - 2>&1 <<'PY'
+          import json
+          import ep_dashboard_truth_layer_rc6 as truth_layer
+          from scripts import rc6_zero_known_error_runtime_audit as audit
+
+          snapshot = audit.collect("rca-candidate-live-readonly")
+          deployed_truth = snapshot["dashboard_truth"]
+          candidate_truth = truth_layer.runtime_truth()
+          snapshot["dashboard_truth"] = candidate_truth
+          print("RCA_DEPLOYED_DASHBOARD_READY=" + str(deployed_truth["readiness"].get("ready")), flush=True)
+          print("RCA_CANDIDATE_DASHBOARD_READY=" + str(candidate_truth["readiness"].get("ready")), flush=True)
+          print("RCA_DATABASE_READY=" + str(snapshot["database"]["readiness"]["ready"]), flush=True)
+          print("POROTA_RUNTIME_AUDIT_WORKERS=" + json.dumps(
+              snapshot["database"]["workers"],
+              ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+          ), flush=True)
+          audit._assert_snapshot(snapshot)
+          print("RCA_CANDIDATE_LIVE_READONLY=GREEN", flush=True)
+          PY
+          )"
           RC=$?
           set -e
           echo "$OUTPUT"
           echo "RCA_CANDIDATE_LIVE_AUDIT_RC=$RC"
           rm -f /tmp/rc6_zero_known_error_runtime_audit.py /tmp/cf_intraday_scalping.py \
-            /tmp/di_caucion_cash_sweep_runtime_hf6.py /tmp/bm_exit_supervisor.py
+            /tmp/di_caucion_cash_sweep_runtime_hf6.py /tmp/bm_exit_supervisor.py \
+            /tmp/er_dashboard_truth_projection_rc6.py
           test "$RC" -eq 0
-          grep -Fq 'POROTA_ZERO_KNOWN_ERROR_RUNTIME_AUDIT=GREEN|rca-candidate-live-readonly' <<< "$OUTPUT"
-          grep -Fq '"scalping":{"heartbeat_age_seconds":' <<< "$OUTPUT"
-          grep -Fq '"state":"WAITING_MARKET"' <<< "$OUTPUT"
-          echo "RCA_CANDIDATE_LIVE_READONLY=GREEN"
+          grep -Fq 'RCA_CANDIDATE_LIVE_READONLY=GREEN' <<< "$OUTPUT"
+          grep -Fq 'POROTA_RUNTIME_AUDIT_WORKERS=' <<< "$OUTPUT"
+          echo "RCA_PREDEPLOY_LIVE_CONTRACT=GREEN"
           REMOTE
 
       - name: Cleanup SSH key
