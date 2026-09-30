@@ -43,7 +43,7 @@ jobs:
             label="$1"; mount_arg="$2"
             echo "RCA_AB_${label}_BEGIN"
             set +e
-            OUT="$(sudo -n timeout 170 docker run --rm --pull never --network none --read-only \
+            OUT="$(sudo -n timeout 170 docker run --rm -i --pull never --network none --read-only \
               --user botuser --cap-drop ALL --security-opt no-new-privileges:true \
               --tmpfs /tmp:rw,noexec,nosuid,size=32m \
               -e DATA_DIR=/app/data -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
@@ -73,7 +73,11 @@ jobs:
             echo "$OUT" | tail -n 240
             echo "RCA_AB_${label}_RC=$RC"
             echo "RCA_AB_${label}_TIMEOUT_DUMPS=$(grep -c 'Timeout (0:00:45)!' <<< "$OUT" || true)"
-            echo "RCA_AB_${label}_CHILD_CODES=$(grep 'RCA_AB_CHILD_CODES=' <<< "$OUT" | tail -n1 || true)"
+            CHILD_LINE="$(grep 'RCA_AB_CHILD_CODES=' <<< "$OUT" | tail -n1 || true)"
+            echo "RCA_AB_${label}_CHILD_CODES=$CHILD_LINE"
+            test "$RC" -eq 0
+            test -n "$CHILD_LINE"
+            grep -Fq 'RCA_AB_CHILD_CODES=[0, 0, 0]' <<< "$CHILD_LINE"
             echo "RCA_AB_${label}_END"
           }
           run_probe BASELINE ""
