@@ -482,7 +482,7 @@ def _page():
         family_rows.append(
             "<tr>"
             f"<td><b>{bg._e(family)}</b></td>"
-            f"<td>{bg._locale_number(cov.get('catalog_total'),0)}</td>"
+            f"<td>{bg._locale_number(_int(cov.get('catalog_total')),0)}</td>"
             f"<td>{bg._locale_number(observed,0)}</td>"
             f"<td>{bg._locale_number(ready,0)}</td>"
             f"<td>{bg._locale_number(market_seen,0)}</td>"

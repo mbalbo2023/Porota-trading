@@ -263,6 +263,16 @@ def test_universe_source_uses_candidate_identity_v2_and_all_families():
     assert "WHERE upper(instrument_type) IN" not in source
 
 
+def test_universe_route_treats_null_catalog_aggregate_as_zero(monkeypatch):
+    truth = _truth()
+    truth["readiness"]["families"][0]["catalog_total"] = None
+    monkeypatch.setattr(bg, "truth_projection", lambda: truth)
+    monkeypatch.setattr(bg, "_table", lambda _name: False)
+    page = universe._page()
+    assert "Universo operativo" in page
+    assert "ACCIONES" in page
+
+
 def test_dashboard_sources_parse_with_runtime_python_311():
     for path in ("bh_universe_dashboard_hf6.py", "o_dashboard.py"):
         source = Path(path).read_text(encoding="utf-8")

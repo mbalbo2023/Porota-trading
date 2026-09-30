@@ -1,6 +1,7 @@
 import copy
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -71,3 +72,56 @@ def test_runtime_audit_is_read_only_and_has_no_order_client():
     assert "mode=ro" in source and "PRAGMA query_only=ON" in source
     assert "network_order_test_performed" in source
     assert "place_order" not in source and "send_order" not in source
+
+
+def test_http_reports_path_status_and_bounded_body(monkeypatch, capsys):
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b"ok"
+
+    monkeypatch.setenv("DASHBOARD_ACCESS_TOKEN", "token")
+    monkeypatch.setattr(audit, "urlopen", lambda *_args, **_kwargs: Response())
+    assert audit._http("/salud") == (200, b"ok")
+    output = capsys.readouterr().out
+    assert "POROTA_RUNTIME_AUDIT_HTTP_START=/salud" in output
+    assert "POROTA_RUNTIME_AUDIT_HTTP_RESULT=/salud|HTTP=200|BYTES=2" in output
+
+
+def test_http_error_keeps_path_status_and_bounded_body(monkeypatch, capsys):
+    error = HTTPError("http://127.0.0.1:8000/salud", 500, "boom", {}, None)
+    error.read = lambda: b"failure-body"
+    monkeypatch.setenv("DASHBOARD_ACCESS_TOKEN", "token")
+    monkeypatch.setattr(audit, "urlopen", lambda *_args, **_kwargs: (_ for _ in ()).throw(error))
+    assert audit._http("/salud") == (500, b"failure-body")
+    output = capsys.readouterr().out
+    assert "POROTA_RUNTIME_AUDIT_HTTP_RESULT=/salud|HTTP=500" in output
+    assert "BODY=failure-body" in output
+
+
+def test_http_transport_error_names_path(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_ACCESS_TOKEN", "token")
+    monkeypatch.setattr(
+        audit,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(URLError("offline")),
+    )
+    with pytest.raises(RuntimeError, match=r"path=/salud"):
+        audit._http("/salud")
+
+
+def test_collect_reports_all_non_200_paths_before_truth_parse(monkeypatch):
+    monkeypatch.setattr(
+        audit,
+        "_http",
+        lambda path: ((500, b"boom") if path == "/salud" else (200, b"{}")),
+    )
+    with pytest.raises(RuntimeError, match=r'DASHBOARD_HTTP_FAILURES=.*"/salud":500'):
+        audit.collect("diagnostic")
