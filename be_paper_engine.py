@@ -273,15 +273,13 @@ class PaperStore:
         # lock waiting bounded and explicit at SQLite level.
         conn.execute("PRAGMA busy_timeout=20000")
         runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
-        if runtime_schema_ready:
-            # The parent already established WAL. Children only validate it:
-            # reissuing journal_mode=WAL here requests a needless lock.
-            mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
-            if str(mode).lower() != "wal":
+        mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        if str(mode).lower() != "wal":
+            if runtime_schema_ready:
+                # Child/runtime connections must never negotiate journal mode.
                 conn.close()
                 raise RuntimeError("PAPER_SQLITE_WAL_REQUIRED")
-        else:
-            # Initialization/migration owns the one permitted WAL transition.
+            # Initialization/migration owns the only permitted WAL transition.
             mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
             if str(mode).lower() != "wal":
                 conn.close()
