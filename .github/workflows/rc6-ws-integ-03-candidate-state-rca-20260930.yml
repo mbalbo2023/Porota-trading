@@ -1,0 +1,129 @@
+name: RC6 WS-INTEG-03 Candidate State Read-Only RCA 2026-09-30
+
+on:
+  push:
+    branches:
+      - diag/ws-integ-03-invalid-candidate-states-20260930
+    paths:
+      - '.github/workflows/rc6-ws-integ-03-candidate-state-rca-20260930.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readonly_candidate_state_rca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Query runtime candidate states read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts"             "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          BEFORE="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          echo "DASHBOARD_BEFORE=$BEFORE"
+          sudo -n timeout 60 python3 - "$DB" <<'PY'
+          import json
+          import sqlite3
+          import sys
+
+          path = sys.argv[1]
+          db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+          db.row_factory = sqlite3.Row
+          db.execute("PRAGMA query_only=ON")
+
+          observer = dict(db.execute(
+              "SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at "
+              "FROM observer_state WHERE id=1"
+          ).fetchone() or {})
+          print("OBSERVER=" + json.dumps(observer, sort_keys=True, default=str))
+
+          status_matrix = [
+              dict(row) for row in db.execute("""
+              SELECT upper(instrument_type) AS family,
+                     coalesce(upper(status),'<NULL>') AS status,
+                     coalesce(can_simulate,-1) AS can_simulate,
+                     COUNT(*) AS count
+              FROM candidate_identity_v2
+              GROUP BY upper(instrument_type),coalesce(upper(status),'<NULL>'),coalesce(can_simulate,-1)
+              ORDER BY family,status,can_simulate
+              """)
+          ]
+          print("CANDIDATE_STATUS_MATRIX=" + json.dumps(status_matrix, sort_keys=True))
+
+          invalid_sql = """
+              SELECT COUNT(*) FROM candidate_identity_v2
+              WHERE (upper(status)='AVAILABLE' AND can_simulate<>1)
+                 OR (upper(status)='PAUSED_EXPLICIT' AND can_simulate<>0)
+                 OR upper(status) NOT IN ('AVAILABLE','PAUSED_EXPLICIT')
+          """
+          invalid_count = int(db.execute(invalid_sql).fetchone()[0])
+          print(f"INVALID_CANDIDATE_STATES={invalid_count}")
+
+          invalid_rows = [
+              dict(row) for row in db.execute("""
+              SELECT ticker,instrument_type,market,currency,settlement,status,can_simulate,detail
+              FROM candidate_identity_v2
+              WHERE (upper(status)='AVAILABLE' AND can_simulate<>1)
+                 OR (upper(status)='PAUSED_EXPLICIT' AND can_simulate<>0)
+                 OR upper(status) NOT IN ('AVAILABLE','PAUSED_EXPLICIT')
+              ORDER BY upper(instrument_type),upper(status),ticker,market,currency,settlement
+              LIMIT 200
+              """)
+          ]
+          print("INVALID_CANDIDATE_SAMPLE=" + json.dumps(invalid_rows, sort_keys=True, default=str))
+
+          pending = int(db.execute("""
+              SELECT COUNT(*) FROM candidate_identity_v2
+              WHERE upper(instrument_type) IN ('OPCIONES','FUTUROS','ON','OBLIGACIONES')
+                AND (upper(status) LIKE '%PENDING%' OR upper(detail) LIKE '%PENDING%')
+          """).fetchone()[0])
+          print(f"GENERIC_PENDING_RESIDUALS={pending}")
+
+          total = int(db.execute("SELECT COUNT(*) FROM candidate_identity_v2").fetchone()[0])
+          ready = int(db.execute(
+              "SELECT COUNT(*) FROM candidate_identity_v2 "
+              "WHERE can_simulate=1 AND upper(status)='AVAILABLE'"
+          ).fetchone()[0])
+          paused = int(db.execute(
+              "SELECT COUNT(*) FROM candidate_identity_v2 "
+              "WHERE can_simulate=0 AND upper(status)='PAUSED_EXPLICIT'"
+          ).fetchone()[0])
+          print(f"CANDIDATE_TOTAL={total}|READY={ready}|PAUSED_EXPLICIT={paused}")
+
+          db.close()
+          assert observer.get("mode") == "PRODUCTION_PAPER"
+          assert int(observer.get("real_orders_sent") or 0) == 0
+          print("READ_ONLY_RCA_SAFETY=GREEN")
+          PY
+          AFTER="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          echo "DASHBOARD_AFTER=$AFTER"
+          test "$AFTER" = "$BEFORE"
+          echo "READ_ONLY_RUNTIME_UNCHANGED=GREEN"
+          REMOTE
+
+      - name: Cleanup SSH key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"
