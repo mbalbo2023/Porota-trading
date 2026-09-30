@@ -269,18 +269,23 @@ class PaperStore:
     def connect(self):
         conn = sqlite3.connect(self.path, timeout=20)
         conn.row_factory = sqlite3.Row
-        # Runtime RC6 has several PAPER child processes sharing this WAL.  The
-        # sqlite3 timeout only covers lock acquisition performed by the driver;
-        # keep the same bounded policy explicitly at SQLite level as well.
+        # Runtime RC6 has several PAPER child processes sharing this DB. Keep
+        # lock waiting bounded and explicit at SQLite level.
         conn.execute("PRAGMA busy_timeout=20000")
-        # journal_mode is a persistent database property established by the
-        # parent during schema preparation. Reissuing WAL on every short-lived
-        # child connection needlessly requests a schema/write lock and can turn
-        # ordinary concurrent heartbeats into OperationalError: database locked.
-        mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
-        if str(mode).lower() != "wal":
-            conn.close()
-            raise RuntimeError("PAPER_SQLITE_WAL_REQUIRED")
+        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+        if runtime_schema_ready:
+            # The parent already established WAL. Children only validate it:
+            # reissuing journal_mode=WAL here requests a needless lock.
+            mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+            if str(mode).lower() != "wal":
+                conn.close()
+                raise RuntimeError("PAPER_SQLITE_WAL_REQUIRED")
+        else:
+            # Initialization/migration owns the one permitted WAL transition.
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            if str(mode).lower() != "wal":
+                conn.close()
+                raise RuntimeError("PAPER_SQLITE_WAL_INIT_FAILED")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
