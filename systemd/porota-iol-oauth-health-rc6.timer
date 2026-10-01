@@ -1,11 +1,10 @@
 [Unit]
-Description=Pre-market IOL MCP OAuth health for Porota RC6
+Description=Continuous IOL MCP OAuth guardian for Porota RC6
 
 [Timer]
-OnCalendar=Mon..Fri *-*-* 09:30:00 America/Argentina/Buenos_Aires
-OnCalendar=Mon..Fri *-*-* 10:20:00 America/Argentina/Buenos_Aires
-AccuracySec=30s
-Persistent=false
+OnBootSec=2min
+OnUnitActiveSec=10min
+AccuracySec=15s
 Unit=porota-iol-oauth-health-rc6.service
 
 [Install]
