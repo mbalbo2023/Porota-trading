@@ -99,7 +99,8 @@ def collect():
     result = {"version": VERSION, "hotfix": HOTFIX_TAG,
               "timestamp": now.isoformat(timespec="seconds"), "warnings": [], "anomalies": []}
     with connect() as c:
-        result["quick_check"] = one(c, "PRAGMA quick_check", default="missing")
+        result["database_probe"] = "ok" if one(c, "SELECT 1", default=0) == 1 else "error"
+        result["quick_check"] = "DELEGATED_TO_FULL_DB_INTEGRITY"
         observer = dict(c.execute("SELECT * FROM observer_state WHERE id=1").fetchone() or {})
         result["observer"] = {k: observer.get(k) for k in (
             "mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
@@ -312,8 +313,8 @@ def collect():
                 "branch": "runtime-observability", "day": None,
                 "detail": None, "retention_days": 90,
             }
-    if result["quick_check"] != "ok":
-        result["anomalies"].append("sqlite_quick_check_not_ok")
+    if result["database_probe"] != "ok":
+        result["anomalies"].append("sqlite_bounded_probe_not_ok")
     if int(result["observer"].get("real_orders_sent") or 0) != 0:
         result["anomalies"].append("real_orders_sent_nonzero")
     market_open = str(result["observer"].get("session_state") or "").upper() == "MARKET_OPEN"
@@ -385,7 +386,7 @@ def render(result):
              f"## {result['verdict']}", "",
              f"- Motor: {result['observer'].get('process_state')} / {result['observer'].get('session_state')}",
              f"- Órdenes reales: {result['observer'].get('real_orders_sent')}",
-             f"- SQLite: {result['quick_check']}",
+             f"- SQLite bounded probe: {result['database_probe']} · full integrity: {result['quick_check']}",
              f"- Decisiones última hora: {t['decisions_1h']}",
              f"- Compras / ventas última hora: {t['buys_1h']} / {t['sells_1h']}",
              f"- Posiciones abiertas / cerradas hoy: {t['open']} / {t['closed_today']}",
