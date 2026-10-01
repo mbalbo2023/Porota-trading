@@ -308,11 +308,12 @@ jobs:
           docker save "$IMAGE" | gzip -1 > /tmp/porota-predeploy-image.tar.gz
           IMAGE_TAR_SHA="$(sha256sum /tmp/porota-predeploy-image.tar.gz | awk '{print $1}')"
           IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
+          IMAGE_SIZE_BYTES="$(docker image inspect -f '{{.Size}}' "$IMAGE")"
           IMAGE_CONFIG_SHA="$(docker image inspect -f '{{json .Config}}' "$IMAGE" | sha256sum | awk '{print $1}')"
           TREE_SHA="$(git rev-parse HEAD^{tree})"
-          python - "$CANDIDATE_SHA" "$TREE_SHA" "$IMAGE_ID" "$IMAGE_TAR_SHA" "$IMAGE_CONFIG_SHA" <<'PY'
+          python - "$CANDIDATE_SHA" "$TREE_SHA" "$IMAGE_ID" "$IMAGE_TAR_SHA" "$IMAGE_CONFIG_SHA" "$IMAGE_SIZE_BYTES" <<'PY'
           import json,sys
-          candidate,tree,image_id,image_tar_sha,image_config_sha=sys.argv[1:]
+          candidate,tree,image_id,image_tar_sha,image_config_sha,image_size_bytes=sys.argv[1:]
           payload={
             "schema_version":1,
             "candidate_sha":candidate,
@@ -320,6 +321,7 @@ jobs:
             "image_id":image_id,
             "image_tar_sha256":image_tar_sha,
             "image_config_sha256":image_config_sha,
+            "image_size_bytes":int(image_size_bytes),
             "paper_mode_required":"PRODUCTION_PAPER",
             "real_orders_sent_required":0,
             "real_order_capability_required":"BLOCKED",
