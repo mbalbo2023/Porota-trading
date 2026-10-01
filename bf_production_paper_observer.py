@@ -1576,6 +1576,7 @@ def _announce_phase(store, previous, current):
 
 
 def run():
+    gdelt_scheduler = None
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     # Sólo ante un arranque anormalmente lento se vuelca la pila Python para
@@ -1617,6 +1618,13 @@ def run():
     last_phase = None  # Publicar BOOT_* antes de resolver el calendario.
     startup_watchdog_armed = True
     try:
+        # Current RC6 launches this observer directly, bypassing entrypoint.py.
+        # Reuse the existing maintenance scheduler only for the structured
+        # GDELT SHADOW job; starting the full legacy scheduler here would
+        # duplicate backups/news/macro already owned elsewhere.
+        import az_maintenance_scheduler
+        gdelt_scheduler = az_maintenance_scheduler.start(
+            only_jobs={"gdelt_shadow_refresh"})
         while not STOP:
             if startup_watchdog_armed:
                 faulthandler.cancel_dump_traceback_later()
@@ -1827,6 +1835,11 @@ def run():
                 next_login_at = time.time() + 60
             time.sleep(INTERVAL)
     finally:
+        if gdelt_scheduler is not None:
+            try:
+                gdelt_scheduler.shutdown(wait=False)
+            except Exception:
+                pass
         if reader:
             reader.close()
         store.state(process_state="STOPPED", heartbeat_at=now_iso(), real_orders_sent=0,
