@@ -1,4 +1,4 @@
-name: RC6 WS-DISK Deploy Progress Readonly #3
+name: RC6 WS-DISK Deploy Progress Readonly #4
 
 on:
   push:
@@ -58,6 +58,12 @@ jobs:
           echo "ACTIVE_POROTA_BEGIN"
           sudo -n docker ps --format 'name={{.Names}}|image={{.Image}}|status={{.Status}}|command={{.Command}}' | grep -E 'porota|ck_contract' || true
           echo "ACTIVE_POROTA_END"
+          echo "HOST_PROCESS_BEGIN"
+          ps -eo pid,ppid,etimes,stat,cmd --sort=-etimes | grep -E 'ck_contract|rc6_zero_known|porota_mode|docker run|rc6_preopen|az_maintenance|ppi|contract_evidence' | grep -v grep || true
+          echo "HOST_PROCESS_END"
+          echo "DOCKER_ALL_BEGIN"
+          sudo -n docker ps -a --no-trunc --format 'name={{.Names}}|image={{.Image}}|status={{.Status}}|command={{.Command}}' | head -100 || true
+          echo "DOCKER_ALL_END"
           echo "ZERO_KNOWN_BEGIN"
           sudo -n find "$REPO/data/deploy" -maxdepth 1 -type f -name 'zero-known-error-*.json' -printf '%f|%TY-%Tm-%TdT%TH:%TM:%TSZ|%s\n' 2>/dev/null | sort || true
           echo "ZERO_KNOWN_END"
