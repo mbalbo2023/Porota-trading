@@ -53,7 +53,7 @@ def test_full_integrity_is_explicit_service_not_five_minute_timer():
     assert '/app/rc6_full_db_integrity.py' in service
     assert 'OnCalendar=Mon..Fri *-*-* 17:20:00 America/Argentina/Buenos_Aires' in timer
     assert 'RandomizedDelaySec=120' in timer
-    assert 'Persistent=true' in timer
+    assert 'Persistent=false' in timer
     assert 'Unit=porota-full-db-integrity-rc6.service' in timer
     assert 'OnUnitActiveSec=5min' not in timer
     assert 'OnBootSec=' not in timer
