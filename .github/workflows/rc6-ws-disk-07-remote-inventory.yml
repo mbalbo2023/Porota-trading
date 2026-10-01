@@ -1,0 +1,67 @@
+name: RC6 WS-DISK-07 remote mutation inventory
+
+on:
+  push:
+    branches:
+      - work/ws-disk-07-housekeeping-policy-20261001
+    paths:
+      - '.github/workflows/rc6-ws-disk-07-remote-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inventory remote-mutating workflows
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          rows=[]
+          patterns={
+            "scp":r"\bscp\b",
+            "rsync":r"\brsync\b",
+            "docker_load":r"docker\s+load",
+            "docker_tag":r"docker\s+tag",
+            "docker_mutate":r"docker\s+(?:start|stop|restart|rm|image\s+rm|system\s+prune|image\s+prune|builder\s+prune|buildx\s+prune)",
+            "systemctl_mutate":r"systemctl\s+(?:start|stop|restart|enable|disable|daemon-reload)",
+            "remote_rm":r"\brm\s+-[rf]",
+            "remote_install":r"\binstall\s+-[a-zA-Z]",
+            "remote_cp_mv":r"\b(?:cp|mv)\s+",
+          }
+          for p in sorted(Path(".github/workflows").glob("*.y*ml")):
+              s=p.read_text(errors="replace")
+              remote=bool(re.search(r"DO_HOST|DO_USER|ssh\s|scp\s|rsync\s|UserKnownHostsFile|known_hosts",s,re.I))
+              if not remote:
+                  continue
+              muts=[name for name,pat in patterns.items() if re.search(pat,s,re.I)]
+              if not muts:
+                  continue
+              rows.append({
+                  "path":str(p),
+                  "mutations":muts,
+                  "has_disk_guard":bool(re.search(r"RC6_DISK_(?:PRETRANSFER_)?PREFLIGHT|REQUIRED_PREFLIGHT_FREE|DISK_PREFLIGHT",s,re.I)),
+                  "canonical_mutex":"rc6-unified-paper-deploy" in s,
+                  "workflow_dispatch":"workflow_dispatch" in s,
+                  "schedule":bool(re.search(r"^\s*schedule\s*:",s,re.M)),
+              })
+          print("REMOTE_MUTATION_WORKFLOW_COUNT="+str(len(rows)))
+          for row in rows:
+              print("REMOTE_MUTATION|"+json.dumps(row,sort_keys=True))
+          missing=[r for r in rows if not r["has_disk_guard"]]
+          print("REMOTE_MUTATION_MISSING_DISK_GUARD="+str(len(missing)))
+          for row in missing:
+              print("MISSING_GUARD|"+row["path"])
+          Path("remote-mutation-inventory.json").write_text(json.dumps(rows,indent=2,sort_keys=True)+"\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc6-ws-disk-07-remote-inventory
+          path: remote-mutation-inventory.json
+          retention-days: 14
