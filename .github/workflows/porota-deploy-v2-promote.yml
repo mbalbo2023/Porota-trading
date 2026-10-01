@@ -285,7 +285,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
+            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
@@ -310,13 +310,19 @@ jobs:
           IMAGE_TAR_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-predeploy-image.tar.gz")"
           BUNDLE_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-deploy-bundle-v2.tgz")"
           IMAGE_UNPACKED_BYTES="$(python3 -c 'import json; print(int(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_size_bytes"]))')"
-          FINAL_RESERVE_BYTES="$(python3 -c 'import json; print(int(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["post_cleanup_min_free_bytes"]))')"
-          REQUIRED_LOAD_FREE=$((IMAGE_UNPACKED_BYTES + BUNDLE_BYTES + FINAL_RESERVE_BYTES))
+          # Keep the post-transfer gate on the exact same candidate-policy
+          # calculation that already passed before transfer. The Droplet's
+          # currently installed repo may still carry an older disk policy until
+          # the candidate bundle is installed, so it is not an authority here.
+          [[ "$RC6_DISK_REQUIRED_PRETRANSFER_FREE" =~ ^[0-9]+$ ]]
+          REQUIRED_LOAD_FREE=$((RC6_DISK_REQUIRED_PRETRANSFER_FREE - IMAGE_TAR_BYTES - BUNDLE_BYTES))
+          test "$REQUIRED_LOAD_FREE" -gt 0
           echo "DISK_PREFLIGHT_AFTER=$DISK_PREFLIGHT_AFTER"
           echo "DOCKER_SYSTEM_DF_AFTER=$DOCKER_DF_AFTER"
           echo "IMAGE_TAR_BYTES=$IMAGE_TAR_BYTES"
           echo "IMAGE_UNPACKED_BYTES=$IMAGE_UNPACKED_BYTES"
           echo "BUNDLE_BYTES=$BUNDLE_BYTES"
+          echo "RC6_DISK_REQUIRED_PRETRANSFER_FREE=$RC6_DISK_REQUIRED_PRETRANSFER_FREE"
           echo "REQUIRED_LOAD_FREE=$REQUIRED_LOAD_FREE"
           test "$DISK_PREFLIGHT_AFTER" -ge "$REQUIRED_LOAD_FREE"
           echo "RC6_DISK_POSTTRANSFER_LOAD_GATE=GREEN|available=$DISK_PREFLIGHT_AFTER|required=$REQUIRED_LOAD_FREE"
