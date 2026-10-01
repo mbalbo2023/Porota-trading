@@ -1451,6 +1451,29 @@ def history_page():
     last_attempt=max((str(r.get("last_attempt_at") or "") for r in sync),default="") or None
     last_success=max((str(r.get("last_success_at") or "") for r in sync),default="") or None
     cycles=_rows("SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 30") if _table("universe_cycle_metrics") else []
+    latest_cycle=cycles[0] if cycles else {}
+    rotation={}
+    try:
+        detail=str(latest_cycle.get("detail") or "")
+        marker="factibilidad="
+        rotation=json.loads(detail.split(marker,1)[1]) if marker in detail else {}
+    except (ValueError,TypeError,json.JSONDecodeError,IndexError):
+        rotation={}
+    candle_summary=(_rows("""SELECT COUNT(*) versions,MAX(bar_end) last_bar,MAX(known_at) last_known
+      FROM candle_versions""") or [{}])[0] if _table("candle_versions") else {}
+    candle_samples=(_rows("""SELECT COUNT(*) samples,MAX(event_at) last_event,MAX(received_at) last_received
+      FROM candle_samples""") or [{}])[0] if _table("candle_samples") else {}
+    candle_worker=(_rows("SELECT * FROM candle_worker_state WHERE id=1") or [{}])[0] if _table("candle_worker_state") else {}
+    candle_state=str(candle_worker.get("state") or "NOT_STARTED").upper()
+    try:
+        heartbeat=datetime.fromisoformat(str(candle_worker.get("heartbeat_at") or ""))
+        if heartbeat.tzinfo is None:
+            heartbeat=heartbeat.replace(tzinfo=timezone.utc)
+        if not 0 <= (datetime.now(timezone.utc)-heartbeat.astimezone(timezone.utc)).total_seconds() <= 30:
+            candle_state="STALE"
+    except (TypeError,ValueError):
+        if candle_worker:
+            candle_state="UNKNOWN"
     cycle_rows="".join(f"<tr><td>{_local_time(r['started_at'])}</td><td>{r['selected_count']}/{r['eligible_total']}</td><td>{r['successful_count']}</td><td>{r['failed_count']}</td><td>{_locale_number(r['duration_seconds'],2)}s</td><td>{r['recommended_limit']}</td></tr>" for r in cycles) or "<tr><td colspan='6'>Esperando métricas.</td></tr>"
     try:
         with closing(_conn()) as c:
@@ -1502,7 +1525,26 @@ def history_page():
         _card("Historia efectiva",f"{store_v2.get('canonical_rows',0)} filas",
             f"capa {store_v2.get('layer','V2')} · cobertura histórica por capacidad · coverage no equivale a fresh",
               "green" if store_v2.get('available') else "yellow"),
-        _card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,"Ventana rotativa del motor; no limita la cola histórica","green"),
+        _card("Última barra intradiaria",_local_time(candle_summary.get('last_bar')),
+              f"{_locale_number(candle_summary.get('versions') or 0,0)} versiones · conocida {_local_time(candle_summary.get('last_known'))}",
+              "green" if candle_summary.get('last_bar') else "yellow"),
+        _card("Última muestra de mercado",_local_time(candle_samples.get('last_event')),
+              f"{_locale_number(candle_samples.get('samples') or 0,0)} muestras · recibida {_local_time(candle_samples.get('last_received'))}",
+              "green" if candle_samples.get('last_event') else "yellow"),
+        _card("Worker de velas",candle_state,
+              f"heartbeat {_local_time(candle_worker.get('heartbeat_at'))} · {_e(candle_worker.get('detail'))}",
+              "green" if candle_state=="RUNNING" else "yellow"),
+        _card("Foco intradiario",
+              "FACTIBLE" if rotation.get('focus_feasible') else "NO_VERIFICADO",
+              f"{rotation.get('focus_count','—')} instrumentos · ~{rotation.get('focus_estimated_samples_per_window','—')} muestras/ventana",
+              "green" if rotation.get('focus_feasible') else "yellow"),
+        _card("Rotación universo completo",
+              "NO FACTIBLE" if rotation and not rotation.get('rotation_feasible') else ("FACTIBLE" if rotation.get('rotation_feasible') else "NO_VERIFICADO"),
+              f"pool {rotation.get('rotation_pool','—')} · slots {rotation.get('rotation_slots','—')} · vueltas {rotation.get('rotation_turns','—')}; no aumentar el lote a ciegas",
+              "yellow" if rotation and not rotation.get('rotation_feasible') else "green" if rotation.get('rotation_feasible') else "gray"),
+        _card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,
+              f"configurado; último recomendado {latest_cycle.get('recommended_limit','—')} según duración real del ciclo",
+              "green"),
         _card("Última fecha PPI legacy",_e(last_market),"Dato de production_history; History Store v2 puede contener otras fuentes","gray"),
         _card("Última corrida PPI",_local_time(last_attempt),"La cadencia real es por fuente; ver Sistema → Scheduler","gray"),
         _card("Última ingesta PPI exitosa",_local_time(last_success),"Una fuente puede quedar parcial sin bloquear otras fuentes/familias","green" if last_success else "yellow")))
@@ -1539,7 +1581,7 @@ def history_page():
         "Para CEDEAR cada día faltante exige rueda BYMA y rueda del subyacente US. "
         "CLOSE_ONLY se informa por separado y nunca habilita ATR, VWAP, precio de ejecución ni READY PAPER.</div>"
     )
-    body=f"<h1>Históricos y universo</h1><div class='paper-notice'><b>Ingesta full histórica PPI: cerrada y en cuarentena.</b> Esta pantalla no la ejecuta. El estado del archivo incremental de velas corresponde a otro proceso y no significa que la ingesta full esté corriendo.</div><div class='paper-notice'><b>Histórico es histórico.</b> La cobertura de series describe disponibilidad para análisis/backtest; no gobierna catálogo, contrato, RUNTIME_READY ni STRATEGY_ELIGIBLE.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una identidad puede tener histórico sin estar READY, o estar READY sin serie profunda. Para el readiness actual usar Instrumentos o Validación.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI histórica (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
+    body=f"<h1>Históricos y universo</h1><div class='paper-notice'><b>Histórico diario y velas intradiarias son capas distintas.</b> La fecha del History Store describe cobertura diaria; la tarjeta «Última barra intradiaria» lee candle_versions directamente y el heartbeat del worker se muestra por separado. Un histórico diario atrasado no significa que las velas estén detenidas.</div><div class='paper-notice'><b>Histórico es histórico.</b> La cobertura de series describe disponibilidad para análisis/backtest; no gobierna catálogo, contrato, RUNTIME_READY ni STRATEGY_ELIGIBLE.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una identidad puede tener histórico sin estar READY, o estar READY sin serie profunda. Para el readiness actual usar Instrumentos o Validación.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI histórica (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
     return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
 
 
