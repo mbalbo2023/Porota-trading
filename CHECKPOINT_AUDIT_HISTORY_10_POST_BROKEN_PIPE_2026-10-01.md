@@ -51,3 +51,12 @@ Decision remains: do not retry; allow the single remote process to finish. This 
 - PRODUCTION_PAPER / MARKET_CLOSED / real_orders_sent=0 / PPI Watch untouched.
 
 Code review confirms run counters are rewritten every 20 symbols from current execution state and are not cumulative across resumptions. This update triggers Audit 4 READ_ONLY.
+
+## Audit 4 — run 36805772572 — GREEN
+- same repair PID 1861766 active.
+- current-run counters: complete=293; ppi_queries=120; failed=212; state=RUNNING.
+- identity states: ALREADY_COVERED=183; ARCHIVE_PARTIAL_COVERAGE=610; BLOCKED_NO_CANONICAL_BASELINE=149; COMPLETE=125; NO_NEW_VALID_ROWS=37; PPI_QUERY_FAILED=1.
+- canonical store: 439,833 rows / latest 2026-09-28.
+- PRODUCTION_PAPER / MARKET_CLOSED / real_orders_sent=0 / PPI Watch untouched.
+
+This update triggers Audit 5 READ_ONLY. No repair retry is started.
