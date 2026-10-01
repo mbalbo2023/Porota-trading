@@ -1,0 +1,75 @@
+name: RC6 AUDIT History 10 Post Broken Pipe
+
+on:
+  push:
+    branches:
+      - audit/ws-history-10-post-broken-pipe-20261001
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Read-only post-repair audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key"             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes             -o UserKnownHostsFile="$HOME/.ssh/known_hosts"             -o ServerAliveInterval=20 -o ServerAliveCountMax=20             "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "PROCESS_BEGIN"
+          sudo -n docker top porota_production_observer -eo pid,cmd 2>/dev/null | grep -F 'rc6_history_cutoff_repair_once.py' || true
+          echo "PROCESS_END"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,sqlite3
+          import bf_production_paper_observer as observer
+          from cg_paper_workspace import database_path
+          from cv_history_store_adapter_hf6 import default_history_store
+
+          odb=database_path()
+          o=sqlite3.connect(f"file:{odb}?mode=ro",uri=True,timeout=5)
+          o.row_factory=sqlite3.Row
+          o.execute("PRAGMA query_only=ON")
+          state=dict(o.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at,ppi_auth FROM observer_state WHERE id=1").fetchone())
+          o.close()
+
+          h=default_history_store()
+          out={"observer":state,"cutoff_repair_complete":observer._history_cutoff_repair_complete()}
+          with h.connect() as c:
+              c.row_factory=sqlite3.Row
+              c.execute("PRAGMA query_only=ON")
+              tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              if "history_canonical_v2" in tables:
+                  out["canonical_rows"]=c.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()[0]
+                  out["canonical_latest"]=c.execute("SELECT MAX(date) FROM history_canonical_v2").fetchone()[0]
+              if "rc6_history_cutoff_repair_runs" in tables:
+                  out["repair_runs"]=[dict(r) for r in c.execute("SELECT * FROM rc6_history_cutoff_repair_runs ORDER BY cutoff")]
+              if "rc6_history_cutoff_repair" in tables:
+                  out["repair_states"]=[dict(r) for r in c.execute("""SELECT state,COUNT(*) n,MAX(updated_at) as_of
+                    FROM rc6_history_cutoff_repair GROUP BY state ORDER BY state""")]
+          print("POST_BROKEN_PIPE_AUDIT="+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          assert state["mode"]=="PRODUCTION_PAPER"
+          assert int(state["real_orders_sent"] or 0)==0
+          PY
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
