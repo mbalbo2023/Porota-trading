@@ -11,7 +11,7 @@ import sqlite3
 import statistics
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
