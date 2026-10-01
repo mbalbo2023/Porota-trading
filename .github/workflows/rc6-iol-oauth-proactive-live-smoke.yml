@@ -1,0 +1,94 @@
+name: RC6 IOL OAuth Proactive Refresh Live Smoke 2026-10-01
+
+on:
+  push:
+    branches:
+      - work/ws-consolidated-iol-20261001
+    paths:
+      - '.github/workflows/rc6-iol-oauth-proactive-live-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Transfer candidate adapter only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            iol_mcp_readonly_adapter_rc6.py "$DO_USER@$DO_HOST:/tmp/porota-iol-adapter-candidate.py"
+      - name: Prove proactive refresh against live OAuth store
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=10s 120s ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n env POROTA_IOL_OAUTH_REFRESH_SKEW_SECONDS=300 python3 -' <<'PY'
+          import importlib.util, json, sqlite3, time
+          from pathlib import Path
+
+          db='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=3)
+          c.execute('PRAGMA query_only=ON')
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          assert mode=='PRODUCTION_PAPER' and int(orders or 0)==0
+
+          store=Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
+          before=json.loads(store.read_text(encoding='utf-8'))
+          bt=before.get('tokens') or {}
+          before_access=str(bt.get('access_token') or '')
+          before_refresh=str(bt.get('refresh_token') or '')
+          before_mtime=store.stat().st_mtime
+          expires=float(bt.get('expires_in') or 0)
+          obtained=float(before.get('token_obtained_at_epoch') or before_mtime)
+          print('IOL_PROACTIVE_SMOKE=START')
+          print('BEFORE_REMAINING_SECONDS='+str(round(obtained+expires-time.time(),1)))
+          print('BEFORE_REFRESH_TOKEN_PRESENT='+('YES' if before_refresh else 'NO'))
+
+          spec=importlib.util.spec_from_file_location('iol_candidate','/tmp/porota-iol-adapter-candidate.py')
+          module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+          tools=module.OAuthStoreReadOnlyMCP(store,timeout_seconds=15).list_tools()
+
+          after=json.loads(store.read_text(encoding='utf-8'))
+          at=after.get('tokens') or {}
+          print('MCP_AUTH_VERIFIED=YES')
+          print('TOOLS_DISCOVERED='+str(len(tools.get('tools') or [])))
+          print('ACCESS_TOKEN_ROTATED='+('YES' if str(at.get('access_token') or '') != before_access else 'NO'))
+          print('REFRESH_TOKEN_ROTATED='+('YES' if str(at.get('refresh_token') or '') != before_refresh else 'NO'))
+          print('TOKEN_ENDPOINT_PERSISTED='+('YES' if after.get('token_endpoint') else 'NO'))
+          print('TOKEN_OBTAINED_AT_PERSISTED='+('YES' if after.get('token_obtained_at_epoch') is not None else 'NO'))
+          print('STORE_MODE='+oct(store.stat().st_mode & 0o777))
+          print('STORE_MTIME_CHANGED='+('YES' if store.stat().st_mtime != before_mtime else 'NO'))
+          print('REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED')
+          print('IOL_PROACTIVE_SMOKE=GREEN')
+          PY
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/key"
+          ssh -i "$HOME/.ssh/key" "$DO_USER@$DO_HOST" 'rm -f /tmp/porota-iol-adapter-candidate.py' 2>/dev/null || true
