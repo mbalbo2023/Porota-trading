@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import time
 import uuid
 
 from fk_gdelt_shadow_feed_rc6 import QUERY_PACKS, GDELTShadowError, collect_shadow
@@ -27,6 +28,7 @@ DEFAULT_MAXRECORDS = 5
 MAX_EVENT_TYPES_PER_RUN = 10
 MAX_STORED_EVENTS_FOR_DASHBOARD = 100
 EVENT_RETENTION_DAYS = 30
+INTER_QUERY_SECONDS = max(0.0, min(10.0, float(os.environ.get("POROTA_GDELT_INTER_QUERY_SECONDS", "0"))))
 
 
 class GDELTEventRiskJobError(RuntimeError):
@@ -130,7 +132,7 @@ def run_once(*, db_path: str = DEFAULT_DB, safety_db_path: str = DEFAULT_SAFETY_
             (run_id, started, "RUNNING", len(selected)),
         )
         conn.commit()
-        for event_type in selected:
+        for event_index, event_type in enumerate(selected):
             try:
                 items = collect_shadow(event_type=event_type, timespan=timespan,
                                        maxrecords=maxrecords, session=session)
@@ -167,6 +169,9 @@ def run_once(*, db_path: str = DEFAULT_DB, safety_db_path: str = DEFAULT_SAFETY_
             except Exception as exc:
                 errors[event_type] = f"{type(exc).__name__}:{exc}"
                 conn.rollback()
+            finally:
+                if INTER_QUERY_SECONDS and event_index < len(selected) - 1:
+                    time.sleep(INTER_QUERY_SECONDS)
         if successful == len(selected):
             state = "GREEN"
         elif successful:
