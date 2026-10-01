@@ -57,6 +57,23 @@ jobs:
           out["ready_by_family"]=[dict(r) for r in c.execute("""SELECT upper(instrument_type) family,COUNT(*) n
               FROM candidate_identity_v2 WHERE can_simulate=1 AND upper(status)='AVAILABLE'
               GROUP BY upper(instrument_type) ORDER BY family""")] if "candidate_identity_v2" in tables else []
+          out["candle_tables"]={}
+          for name in ("candle_series","candle_versions","candle_samples","candle_dirty","candle_rejections"):
+              if name not in tables:
+                  continue
+              item={"count":c.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0]}
+              cols={r[1] for r in c.execute(f'PRAGMA table_info("{name}")')}
+              for col in ("known_at","bar_start","bar_end","event_at","received_at","processed_at"):
+                  if col in cols:
+                      item["max_"+col]=c.execute(f'SELECT MAX("{col}") FROM "{name}"').fetchone()[0]
+              out["candle_tables"][name]=item
+          if "market_snapshots" in tables:
+              out["market_snapshots"]={
+                  "count":c.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0],
+                  "max_id":c.execute("SELECT MAX(id) FROM market_snapshots").fetchone()[0],
+                  "latest_observed_at":c.execute("SELECT MAX(observed_at) FROM market_snapshots").fetchone()[0],
+                  "trade_rows":c.execute("SELECT COUNT(*) FROM market_snapshots WHERE last_kind='TRADE'").fetchone()[0],
+              }
           c.close()
           h=default_history_store()
           with h.connect() as hc:
@@ -98,3 +115,27 @@ jobs:
       - name: Cleanup SSH
         if: always()
         run: rm -f "$HOME/.ssh/key"
+
+  history-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and PAPER guard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m compileall -q historical_candle_shadow_rc6.py cp_history_ingest_policy_hf6.py
+          git diff --check
+      - name: Install test dependencies
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: History and candle regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q tests/test_historical_candle_shadow_rc6.py tests/test_candle_archive_v17.py tests/test_rc6_candle_inmarket_evidence.py tests/test_ws_ops_history_all_families.py
+          echo WS_HISTORY_08_REGRESSION=GREEN
